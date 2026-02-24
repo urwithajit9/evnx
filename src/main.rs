@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Parser};
+use clap::Parser;
 use dotenv_space::cli::{Cli, Commands};
 use dotenv_space::commands;
 

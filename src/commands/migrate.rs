@@ -4,20 +4,15 @@
 use anyhow::{anyhow, Context, Result};
 use colored::*;
 use dialoguer::{Confirm, Input, Password, Select};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
 #[cfg(feature = "migrate")]
 use indicatif::{ProgressBar, ProgressStyle};
+#[cfg(feature = "migrate")]
+use serde::{Deserialize, Serialize};
 
 use crate::core::Parser;
-//#[allow(dead_code)]
-// #[derive(Debug, Serialize, Deserialize)]
-// struct GitHubSecret {
-//     name: String,
-//     value: String,
-// }
 
 pub fn run(
     from: Option<String>,
@@ -95,6 +90,7 @@ pub fn run(
     // Migrate based on destination
     match destination.as_str() {
         "github-actions" => {
+            #[cfg(feature = "migrate")]
             migrate_to_github_actions(
                 &secrets,
                 repo,
@@ -104,6 +100,15 @@ pub fn run(
                 overwrite,
                 verbose,
             )?;
+
+            #[cfg(not(feature = "migrate"))]
+            {
+                println!(
+                    "{} GitHub Actions migration requires the migrate feature.",
+                    "✗".red()
+                );
+                println!("Rebuild with: cargo build --features migrate");
+            }
         }
         "aws-secrets-manager" => {
             migrate_to_aws(&secrets, secret_name, aws_profile, dry_run, verbose)?;
@@ -141,7 +146,6 @@ fn load_secrets(source: &str, file: &str, _verbose: bool) -> Result<HashMap<Stri
             Ok(env_file.vars)
         }
         "environment" => {
-            // Load from current environment
             let mut secrets = HashMap::new();
             for (key, value) in std::env::vars() {
                 secrets.insert(key, value);
@@ -153,6 +157,7 @@ fn load_secrets(source: &str, file: &str, _verbose: bool) -> Result<HashMap<Stri
 }
 
 /// Migrate to GitHub Actions Secrets
+#[cfg(feature = "migrate")]
 fn migrate_to_github_actions(
     secrets: &HashMap<String, String>,
     repo: Option<String>,
@@ -205,7 +210,6 @@ fn migrate_to_github_actions(
                 to_upload.push((key.clone(), value.clone()));
                 conflicts.push(key.clone());
             } else {
-                // Ask user
                 if Confirm::new()
                     .with_prompt(format!("Overwrite existing secret {}?", key))
                     .default(false)
@@ -249,7 +253,6 @@ fn migrate_to_github_actions(
         return Ok(());
     }
 
-    // Confirm
     println!();
     if !Confirm::new()
         .with_prompt("Proceed with migration?")
@@ -260,7 +263,6 @@ fn migrate_to_github_actions(
         return Ok(());
     }
 
-    // Upload secrets
     println!("\nUploading to GitHub Actions Secrets...");
 
     let pb = ProgressBar::new(to_upload.len() as u64);
@@ -289,12 +291,11 @@ fn migrate_to_github_actions(
         }
 
         pb.inc(1);
-        std::thread::sleep(Duration::from_millis(100)); // Rate limiting
+        std::thread::sleep(Duration::from_millis(100));
     }
 
     pb.finish_with_message("Done");
 
-    // Summary
     println!("\n{}", "Summary:".bold());
     println!(
         "  {}/{} secrets uploaded successfully",
@@ -319,6 +320,7 @@ fn migrate_to_github_actions(
 }
 
 /// Fetch existing GitHub secrets
+#[cfg(feature = "migrate")]
 fn fetch_existing_github_secrets(repo: &str, token: &str, verbose: bool) -> Result<Vec<String>> {
     if verbose {
         println!("Fetching existing secrets from {}", repo);
@@ -362,6 +364,7 @@ fn fetch_existing_github_secrets(repo: &str, token: &str, verbose: bool) -> Resu
 }
 
 /// Upload a single secret to GitHub
+#[cfg(feature = "migrate")]
 fn upload_github_secret(
     repo: &str,
     token: &str,
@@ -373,7 +376,6 @@ fn upload_github_secret(
         println!("Uploading secret: {}", key);
     }
 
-    // First, get the public key for encryption
     let pub_key_url = format!(
         "https://api.github.com/repos/{}/actions/secrets/public-key",
         repo
@@ -402,10 +404,8 @@ fn upload_github_secret(
 
     let public_key: PublicKey = pub_key_response.json()?;
 
-    // Encrypt the secret value
     let encrypted_value = encrypt_for_github(&public_key.key, value)?;
 
-    // Upload the secret
     let url = format!(
         "https://api.github.com/repos/{}/actions/secrets/{}",
         repo, key
@@ -441,22 +441,17 @@ fn upload_github_secret(
     }
 }
 
+#[cfg(feature = "migrate")]
 fn encrypt_for_github(public_key_base64: &str, value: &str) -> Result<String> {
-    #[cfg(not(feature = "migrate"))]
-    return Err(anyhow!("migrate feature not enabled"));
+    use base64::{engine::general_purpose, Engine as _};
 
-    #[cfg(feature = "migrate")]
-    {
-        use base64::{engine::general_purpose, Engine as _};
+    let _public_key = general_purpose::STANDARD
+        .decode(public_key_base64)
+        .context("Failed to decode public key")?;
 
-        let _public_key = general_purpose::STANDARD
-            .decode(public_key_base64)
-            .context("Failed to decode public key")?;
-
-        // TODO: Replace with proper libsodium sealed box encryption
-        let encrypted = general_purpose::STANDARD.encode(value.as_bytes());
-        Ok(encrypted)
-    }
+    // TODO: Replace with proper libsodium sealed box encryption
+    let encrypted = general_purpose::STANDARD.encode(value.as_bytes());
+    Ok(encrypted)
 }
 
 /// Migrate to AWS Secrets Manager
@@ -476,7 +471,6 @@ fn migrate_to_aws(
             .unwrap()
     });
 
-    // Convert to JSON
     let json = serde_json::to_string_pretty(secrets)?;
 
     if dry_run {
@@ -486,7 +480,6 @@ fn migrate_to_aws(
         return Ok(());
     }
 
-    // Generate AWS CLI command
     println!("\n{}", "Run this command to upload:".bold());
 
     let profile_flag = aws_profile
@@ -519,7 +512,6 @@ fn migrate_to_doppler(
         return Ok(());
     }
 
-    // Check if Doppler CLI is installed
     if std::process::Command::new("doppler")
         .arg("--version")
         .output()
@@ -566,13 +558,13 @@ mod tests {
 
     #[test]
     fn test_load_secrets() {
-        // Test loading from env file
-        // This would require test fixtures
+        // Test loading from env file - requires test fixtures
     }
 
     #[test]
+    #[cfg(feature = "migrate")]
     fn test_encrypt_for_github() {
-        let public_key = "test_key";
+        let public_key = "dGVzdF9rZXk="; // valid base64 for "test_key"
         let value = "test_value";
         let result = encrypt_for_github(public_key, value);
         assert!(result.is_ok());

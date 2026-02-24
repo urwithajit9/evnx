@@ -209,8 +209,7 @@ pub enum Commands {
         placeholder: bool,
     },
 
-    /// Generate config files from templates
-    #[command(hide = true)] // Phase 3 feature
+    /// Generate config files from templates   
     Template {
         /// Input template file
         #[arg(long)]
@@ -226,8 +225,7 @@ pub enum Commands {
     },
 
     /// Create encrypted backup of .env
-    #[cfg(feature = "backup")]
-    #[command(hide = true)] // Phase 3 feature
+    #[cfg(feature = "backup")]    
     Backup {
         /// .env file to backup
         #[arg(default_value = ".env")]
@@ -239,8 +237,7 @@ pub enum Commands {
     },
 
     /// Restore from encrypted backup
-    #[cfg(feature = "backup")]
-    #[command(hide = true)] // Phase 3 feature
+    #[cfg(feature = "backup")]    
     Restore {
         /// Backup file
         backup: String,
@@ -250,8 +247,7 @@ pub enum Commands {
         output: String,
     },
 
-    /// Diagnose common setup issues
-    #[command(hide = true)] // Phase 3 feature
+    /// Diagnose common setup issues   
     Doctor {
         /// Project directory to diagnose
         #[arg(default_value = ".")]

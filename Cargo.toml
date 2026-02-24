@@ -30,7 +30,7 @@ dialoguer = "0.11"
 
 # Terminal UI
 console = "0.15"
-indicatif = { version = "0.17", optional = true}
+indicatif = { version = "0.17"}
 colored = "2"
 
 # Serialization
@@ -56,7 +56,7 @@ walkdir = "2"
 # Crypto (for Phase 3 backup/restore)
 aes-gcm = { version = "0.10", optional = true }
 argon2 = { version = "0.5", optional = true }
-base64 = { version = "0.22", optional = true }
+base64 = { version = "0.22" }
 
 
 # HTTP client (for Phase 2 migrate)
@@ -74,8 +74,8 @@ pretty_assertions = "1"
 
 [features]
 default = []
-migrate = ["reqwest", "base64", "indicatif"]
-backup = ["aes-gcm", "argon2","base64"]
+migrate = ["reqwest"]
+backup = ["aes-gcm", "argon2"]
 full = ["migrate", "backup"]
 
 [profile.release]

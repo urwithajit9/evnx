@@ -6,7 +6,6 @@ use colored::*;
 use dialoguer::Select;
 use std::fs;
 
-
 use crate::core::{
     converter::{ConvertOptions, Converter, KeyTransform},
     Parser,

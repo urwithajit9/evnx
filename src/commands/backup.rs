@@ -7,15 +7,13 @@ use dialoguer::Password;
 use std::fs;
 use std::path::Path;
 
-
-
+#[cfg(feature = "backup")]
+use aes_gcm::aead::rand_core::RngCore;
 #[cfg(feature = "backup")]
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-#[cfg(feature = "backup")]
-use aes_gcm::aead::rand_core::RngCore;
 #[cfg(feature = "backup")]
 use argon2::{Argon2, PasswordHasher};
 #[cfg(feature = "backup")]
@@ -94,7 +92,6 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
 
 #[cfg(feature = "backup")]
 fn encrypt_content(plaintext: &str, password: &str) -> Result<String> {
-
     // Generate salt for key derivation
     let mut salt = [0u8; 32];
     OsRng.fill_bytes(&mut salt);
@@ -106,7 +103,6 @@ fn encrypt_content(plaintext: &str, password: &str) -> Result<String> {
     let password_hash = argon2
         .hash_password(password.as_bytes(), &salt_string)
         .map_err(|e| anyhow!("Failed to derive key: {}", e))?;
-
 
     // Extract 32-byte key
     let key_bytes = password_hash.hash.unwrap();
