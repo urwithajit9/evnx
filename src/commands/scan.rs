@@ -343,11 +343,19 @@ fn scan_text_file(
 }
 
 /// Truncate a value for display (show first and last few chars)
+const PREFIX_LEN: usize = 8;
+const SUFFIX_LEN: usize = 5;
+const MAX_VISIBLE: usize = 20;
+
 fn truncate_value(value: &str) -> String {
-    if value.len() <= 20 {
+    if value.len() <= MAX_VISIBLE {
         value.to_string()
     } else {
-        format!("{}...{}", &value[..8], &value[value.len() - 8..])
+        format!(
+            "{}...{}",
+            &value[..PREFIX_LEN],
+            &value[value.len() - SUFFIX_LEN..]
+        )
     }
 }
 

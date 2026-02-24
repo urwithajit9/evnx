@@ -47,13 +47,13 @@ lazy_static! {
     pub static ref STRIPE_SECRET_TEST: Regex = Regex::new(r"sk_test_[0-9a-zA-Z]{24,}").unwrap();
 
     /// GitHub Personal Access Token
-    pub static ref GITHUB_PAT: Regex = Regex::new(r"ghp_[0-9a-zA-Z]{36}").unwrap();
+    pub static ref GITHUB_PAT: Regex = Regex::new(r"\bghp_[A-Za-z0-9]{36,40}\b").unwrap();
 
     /// GitHub OAuth Token
-    pub static ref GITHUB_OAUTH: Regex = Regex::new(r"gho_[0-9a-zA-Z]{36}").unwrap();
+    pub static ref GITHUB_OAUTH: Regex = Regex::new(r"\bgho_[A-Za-z0-9]{36,40}\b").unwrap();
 
     /// GitHub App Token
-    pub static ref GITHUB_APP: Regex = Regex::new(r"(ghu|ghs)_[0-9a-zA-Z]{36}").unwrap();
+    pub static ref GITHUB_APP: Regex = Regex::new(r"\b(ghu|ghs)_[A-Za-z0-9]{36,40}\b").unwrap();
 
     /// OpenAI API Key
     pub static ref OPENAI_API_KEY: Regex = Regex::new(r"sk-[0-9a-zA-Z]{48}").unwrap();
@@ -151,24 +151,43 @@ pub fn calculate_entropy(s: &str) -> f64 {
 
 /// Check if a value looks like a placeholder (not a real secret)
 pub fn is_placeholder(value: &str) -> bool {
-    let lower = value.to_lowercase();
+    let v = value.trim();
+    let lower = v.to_lowercase();
 
-    let placeholders = [
+    // Exact known fake/example secrets
+    const EXACT: &[&str] = &[
+        "akiaiosfodnn7example",
+        "wjalrxutnfemi/k7mdeng/bpxrficyexamplekey",
         "your_key_here",
         "your_secret_here",
         "your_token_here",
         "change_me",
         "changeme",
         "replace_me",
-        "example",
         "xxx",
         "todo",
-        "generate-with",
-        "akiaiosfodnn7example", // AWS example key
-        "wjalrxutnfemi",        // AWS example secret
     ];
 
-    placeholders.iter().any(|p| lower.contains(p))
+    if EXACT.iter().any(|p| lower == *p) {
+        return true;
+    }
+
+    // Structured placeholder patterns (safe substrings)
+    const SUBSTRINGS: &[&str] = &[
+        "change_me",
+        "changeme",
+        "your_key_here",
+        "your_secret_here",
+        "your_token_here",
+        "replace_me",
+        "generate-with",
+    ];
+
+    if SUBSTRINGS.iter().any(|p| lower.contains(p)) {
+        return true;
+    }
+
+    false
 }
 
 /// Detect if a value matches any secret pattern
@@ -282,8 +301,14 @@ mod tests {
 
     #[test]
     fn test_github_tokens() {
-        assert!(GITHUB_PAT.is_match("ghp_1234567890abcdefghijklmnopqrstuvw"));
-        assert!(GITHUB_OAUTH.is_match("gho_1234567890abcdefghijklmnopqrstuvw"));
+        assert!(GITHUB_PAT.is_match("ghp_1234567890abcdefghijklmnopqrstuvwxyzABCD"));
+
+        assert!(GITHUB_OAUTH.is_match("gho_1234567890abcdefghijklmnopqrstuvwxyzABCD"));
+
+        assert!(GITHUB_APP.is_match("ghu_1234567890abcdefghijklmnopqrstuvwxyzABCD"));
+
+        assert!(!GITHUB_PAT.is_match("ghp_short"));
+        assert!(!GITHUB_PAT.is_match("not_a_token"));
     }
 
     #[test]

@@ -57,7 +57,7 @@ impl Converter for HerokuConfigConverter {
         let app_flag = if let Some(ref app) = self.app_name {
             format!(" --app {}", app)
         } else {
-            " --app ${{HEROKU_APP:-YOUR_APP_NAME}}".to_string()
+            " --app ${HEROKU_APP:-YOUR_APP_NAME}".to_string()
         };
 
         output.push_str("set -e\n\n");

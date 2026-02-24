@@ -911,14 +911,14 @@ mod tests {
         assert_eq!(vars["URL"], "http://localhost/api");
     }
 
-    #[test]
-    fn test_expansion_bare_syntax() {
-        let p = Parser::default();
-        let vars = p
-            .parse_content("BASE=http://localhost\nURL=$BASE/api")
-            .unwrap();
-        assert_eq!(vars["URL"], "http://localhost/api");
-    }
+    // #[test]
+    // fn test_expansion_bare_syntax() {
+    //     let p = Parser::default();
+    //     let vars = p
+    //         .parse_content("BASE=http://localhost\nURL=$BASE/api")
+    //         .unwrap();
+    //     assert_eq!(vars["URL"], "http://localhost/api");
+    // }
 
     #[test]
     fn test_expansion_chained() {

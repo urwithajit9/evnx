@@ -103,34 +103,6 @@ impl ConvertOptions {
 }
 
 /// Converter trait for format conversion
-///
-/// Implement this trait to add support for a new output format.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use dotenv_space::core::converter::{Converter, ConvertOptions};
-/// use anyhow::Result;
-/// use std::collections::HashMap;
-///
-/// pub struct MyFormatConverter;
-///
-/// impl Converter for MyFormatConverter {
-///     fn convert(&self, vars: &HashMap<String, String>, options: &ConvertOptions) -> Result<String> {
-///         let filtered = options.filter_vars(vars);
-///         // ... format conversion logic
-///         Ok(output)
-///     }
-///
-///     fn name(&self) -> &str {
-///         "my-format"
-///     }
-///
-///     fn description(&self) -> &str {
-///         "My custom format description"
-///     }
-/// }
-/// ```
 pub trait Converter {
     /// Convert environment variables to the target format
     ///
@@ -210,21 +182,48 @@ fn to_camel_case(s: &str) -> String {
     result
 }
 
-/// Convert string to snake_case
-fn to_snake_case(s: &str) -> String {
-    let mut result = String::new();
-    let mut prev_is_upper = false;
+// Convert string to snake_case
+// fn to_snake_case(s: &str) -> String {
+//     let mut result = String::with_capacity(s.len());
+//     let mut prev_is_upper = false;
 
-    for (i, ch) in s.chars().enumerate() {
+//     for (i, ch) in s.chars().enumerate() {
+//         if ch.is_uppercase() {
+//             if i > 0 && !prev_is_upper {
+//                 result.push('_');
+//             }
+//             result.extend(ch.to_lowercase());
+//             prev_is_upper = true;
+//         } else {
+//             result.push(ch);
+//             prev_is_upper = false;
+//         }
+//     }
+
+//     result
+// }
+
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let chars: Vec<char> = s.chars().collect();
+
+    for i in 0..chars.len() {
+        let ch = chars[i];
+
         if ch.is_uppercase() {
-            if i > 0 && !prev_is_upper {
-                result.push('_');
+            if i > 0 {
+                let prev = chars[i - 1];
+                let next = chars.get(i + 1);
+
+                if prev.is_lowercase()
+                    || (prev.is_uppercase() && next.map(|c| c.is_lowercase()).unwrap_or(false))
+                {
+                    result.push('_');
+                }
             }
-            result.push(ch.to_lowercase().next().unwrap());
-            prev_is_upper = true;
+            result.extend(ch.to_lowercase());
         } else {
             result.push(ch);
-            prev_is_upper = false;
         }
     }
 
@@ -346,7 +345,13 @@ mod tests {
 
     #[test]
     fn test_to_snake_case() {
-        assert_eq!(to_snake_case("DatabaseURL"), "database_u_r_l");
+        assert_eq!(to_snake_case("DatabaseURL"), "database_url");
         assert_eq!(to_snake_case("SecretKey"), "secret_key");
+        assert_eq!(to_snake_case("HTTPServer"), "http_server");
+        assert_eq!(to_snake_case("UserID"), "user_id");
+        assert_eq!(to_snake_case("MySQLDatabase"), "my_sql_database");
+        assert_eq!(to_snake_case("JSONParser"), "json_parser");
+        assert_eq!(to_snake_case("Already_snake"), "already_snake");
+        // assert_eq!(to_snake_case("DatabaseURL"), "database_u_r_l");
     }
 }
