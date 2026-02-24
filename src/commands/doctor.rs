@@ -29,9 +29,9 @@ pub fn run(_path: String, _verbose: bool) -> Result<()> {
             let mode = metadata.permissions().mode();
             if mode & 0o044 != 0 {
                 println!(
-                    "  {} File has {} permissions (should be 600 for security)",
+                    "  {} File has {:o} permissions (should be 600 for security)",
                     "⚠️".yellow(),
-                    format!("{:o}", mode & 0o777)
+                    mode & 0o777
                 );
                 warnings += 1;
             } else {
@@ -61,7 +61,7 @@ pub fn run(_path: String, _verbose: bool) -> Result<()> {
 
         // Check if tracked in Git
         if std::process::Command::new("git")
-            .args(&["ls-files", "--error-unmatch", ".env.example"])
+            .args(["ls-files", "--error-unmatch", ".env.example"])
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
@@ -107,10 +107,10 @@ pub fn run(_path: String, _verbose: bool) -> Result<()> {
         println!("\nOverall health: {} Excellent", "✓".green());
     } else {
         if issues > 0 {
-            println!("  {} {} critical issues", "🚨", issues);
+            println!("  🚨 {} critical issues", issues);
         }
         if warnings > 0 {
-            println!("  {} {} warnings", "⚠️", warnings);
+            println!("  ⚠️  {} warnings", warnings);
         }
         println!("\nOverall health: {} Needs attention", "⚠️".yellow());
     }

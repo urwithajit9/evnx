@@ -225,7 +225,7 @@ pub enum Commands {
     },
 
     /// Create encrypted backup of .env
-    #[cfg(feature = "backup")]    
+    #[cfg(feature = "backup")]
     Backup {
         /// .env file to backup
         #[arg(default_value = ".env")]
@@ -237,7 +237,7 @@ pub enum Commands {
     },
 
     /// Restore from encrypted backup
-    #[cfg(feature = "backup")]    
+    #[cfg(feature = "backup")]
     Restore {
         /// Backup file
         backup: String,

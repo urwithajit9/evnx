@@ -1,91 +1,90 @@
-/// Convert command - transform .env to different formats
-///
-/// # Overview
-///
-/// Orchestrates format conversion using the converter infrastructure.
-/// Supports 14+ output formats for various deployment targets and secret managers.
-///
-/// # Architecture
-///
-/// ```text
-/// .env file → Parser → HashMap<K,V> → ConvertOptions → Converter → Output
-/// ```
-///
-/// # Adding New Formats
-///
-/// To add a new format converter:
-///
-/// ## 1. Create the converter file
-///
-/// Create `src/formats/myformat.rs`:
-///
-/// ```rust
-/// use crate::core::converter::{Converter, ConvertOptions};
-/// use anyhow::Result;
-/// use std::collections::HashMap;
-///
-/// pub struct MyFormatConverter;
-///
-/// impl Converter for MyFormatConverter {
-///     fn convert(&self, vars: &HashMap<String, String>, options: &ConvertOptions) -> Result<String> {
-///         let filtered = options.filter_vars(vars);
-///         // ... your format logic
-///         Ok(output)
-///     }
-///
-///     fn name(&self) -> &str { "myformat" }
-///     fn description(&self) -> &str { "My format description" }
-/// }
-/// ```
-///
-/// ## 2. Declare in mod.rs
-///
-/// Add to `src/formats/mod.rs`:
-///
-/// ```rust
-/// pub mod myformat;
-/// pub use myformat::MyFormatConverter;
-/// ```
-///
-/// ## 3. Add to this file (3 locations)
-///
-/// **A. Interactive menu** (in `run()` function, `formats` vec):
-/// ```rust
-/// "myformat - Description of my format",
-/// ```
-///
-/// **B. Converter match** (in `run()` function, `match format.as_str()`):
-/// ```rust
-/// "myformat" | "alias" => Box::new(formats::MyFormatConverter),
-/// ```
-///
-/// **C. Error message** (in unknown format handler):
-/// ```rust
-/// eprintln!("    ..., myformat");
-/// ```
-///
-/// ## 4. Test
-///
-/// ```bash
-/// cargo run -- convert --to myformat
-/// ```
-///
-/// # Examples
-///
-/// ```bash
-/// # Interactive mode
-/// dotenv-space convert
-///
-/// # Direct conversion
-/// dotenv-space convert --to json
-///
-/// # With filtering
-/// dotenv-space convert --to aws-secrets --include "AWS_*"
-///
-/// # With transformation
-/// dotenv-space convert --to kubernetes --base64
-/// ```
-
+//! Convert command - transform .env to different formats
+//!
+//! # Overview
+//!
+//! Orchestrates format conversion using the converter infrastructure.
+//! Supports 14+ output formats for various deployment targets and secret managers.
+//!
+//! # Architecture
+//!
+//! ```text
+//! .env file → Parser → HashMap<K,V> → ConvertOptions → Converter → Output
+//! ```
+//!
+//! # Adding New Formats
+//!
+//! To add a new format converter:
+//!
+//! ## 1. Create the converter file
+//!
+//! Create `src/formats/myformat.rs`:
+//!
+//! ```rust
+//! use crate::core::converter::{Converter, ConvertOptions};
+//! use anyhow::Result;
+//! use std::collections::HashMap;
+//!
+//! pub struct MyFormatConverter;
+//!
+//! impl Converter for MyFormatConverter {
+//!     fn convert(&self, vars: &HashMap<String, String>, options: &ConvertOptions) -> Result<String> {
+//!         let filtered = options.filter_vars(vars);
+//!         // ... your format logic
+//!         Ok(output)
+//!     }
+//!
+//!     fn name(&self) -> &str { "myformat" }
+//!     fn description(&self) -> &str { "My format description" }
+//! }
+//! ```
+//!
+//! ## 2. Declare in mod.rs
+//!
+//! Add to `src/formats/mod.rs`:
+//!
+//! ```rust
+//! pub mod myformat;
+//! pub use myformat::MyFormatConverter;
+//! ```
+//!
+//! ## 3. Add to this file (3 locations)
+//!
+//! **A. Interactive menu** (in `run()` function, `formats` vec):
+//! ```rust
+//! "myformat - Description of my format",
+//! ```
+//!
+//! **B. Converter match** (in `run()` function, `match format.as_str()`):
+//! ```rust
+//! "myformat" | "alias" => Box::new(formats::MyFormatConverter),
+//! ```
+//!
+//! **C. Error message** (in unknown format handler):
+//! ```rust
+//! eprintln!("    ..., myformat");
+//! ```
+//!
+//! ## 4. Test
+//!
+//! ```bash
+//! cargo run -- convert --to myformat
+//! ```
+//!
+//! # Examples
+//!
+//! ```bash
+//! # Interactive mode
+//! dotenv-space convert
+//!
+//! # Direct conversion
+//! dotenv-space convert --to json
+//!
+//! # With filtering
+//! dotenv-space convert --to aws-secrets --include "AWS_*"
+//!
+//! # With transformation
+//! dotenv-space convert --to kubernetes --base64
+//! ```
 use anyhow::{Context, Result};
 use colored::*;
 use dialoguer::Select;
@@ -97,30 +96,30 @@ use crate::core::{
 };
 use crate::formats;
 
-/// Run the convert command
-///
-/// Converts .env file to various output formats with optional filtering and transformation.
-///
-/// # Arguments
-///
-/// * `env` - Path to .env file
-/// * `to` - Target format (None = interactive mode)
-/// * `output` - Optional output file (None = stdout)
-/// * `include` - Include only matching vars (glob pattern)
-/// * `exclude` - Exclude matching vars (glob pattern)
-/// * `base64` - Base64-encode all values
-/// * `prefix` - Add prefix to all keys
-/// * `transform` - Key transformation (uppercase/lowercase/camelCase/snake_case)
-/// * `verbose` - Enable verbose output
-///
-/// # Supported Formats (14)
-///
-/// **Generic:** json, yaml, shell
-/// **Cloud:** aws-secrets, gcp-secrets, azure-keyvault
-/// **CI/CD:** github-actions
-/// **Containers:** docker-compose, kubernetes
-/// **IaC:** terraform
-/// **Secret Managers:** doppler, heroku, vercel, railway
+// Run the convert command
+//
+// Converts .env file to various output formats with optional filtering and transformation.
+//
+// # Arguments
+//
+// * `env` - Path to .env file
+// * `to` - Target format (None = interactive mode)
+// * `output` - Optional output file (None = stdout)
+// * `include` - Include only matching vars (glob pattern)
+// * `exclude` - Exclude matching vars (glob pattern)
+// * `base64` - Base64-encode all values
+// * `prefix` - Add prefix to all keys
+// * `transform` - Key transformation (uppercase/lowercase/camelCase/snake_case)
+// * `verbose` - Enable verbose output
+//
+// # Supported Formats (14)
+//
+// **Generic:** json, yaml, shell
+// **Cloud:** aws-secrets, gcp-secrets, azure-keyvault
+// **CI/CD:** github-actions
+// **Containers:** docker-compose, kubernetes
+// **IaC:** terraform
+// **Secret Managers:** doppler, heroku, vercel, railway
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     env: String,
@@ -147,19 +146,32 @@ pub fn run(
         println!("Loaded {} variables from {}", env_file.vars.len(), env);
     }
 
-    // Build conversion options
-    let mut options = ConvertOptions::default();
-    options.include_pattern = include;
-    options.exclude_pattern = exclude;
-    options.base64 = base64;
-    options.prefix = prefix;
-    options.transform = transform.as_ref().and_then(|t| match t.as_str() {
-        "uppercase" => Some(KeyTransform::Uppercase),
-        "lowercase" => Some(KeyTransform::Lowercase),
-        "camelCase" => Some(KeyTransform::CamelCase),
-        "snake_case" => Some(KeyTransform::SnakeCase),
-        _ => None,
-    });
+    // // Build conversion options
+    // let mut options = ConvertOptions::default();
+    // options.include_pattern = include;
+    // options.exclude_pattern = exclude;
+    // options.base64 = base64;
+    // options.prefix = prefix;
+    // options.transform = transform.as_ref().and_then(|t| match t.as_str() {
+    //     "uppercase" => Some(KeyTransform::Uppercase),
+    //     "lowercase" => Some(KeyTransform::Lowercase),
+    //     "camelCase" => Some(KeyTransform::CamelCase),
+    //     "snake_case" => Some(KeyTransform::SnakeCase),
+    //     _ => None,
+    // });
+    let options = ConvertOptions {
+        include_pattern: include,
+        exclude_pattern: exclude,
+        base64,
+        prefix,
+        transform: transform.as_ref().and_then(|t| match t.as_str() {
+            "uppercase" => Some(KeyTransform::Uppercase),
+            "lowercase" => Some(KeyTransform::Lowercase),
+            "camelCase" => Some(KeyTransform::CamelCase),
+            "snake_case" => Some(KeyTransform::SnakeCase),
+            _ => None,
+        }),
+    };
 
     // Determine format
     let format = match to {
@@ -228,14 +240,12 @@ pub fn run(
         "shell" | "bash" | "export" => Box::new(formats::ShellExportConverter),
 
         // Cloud providers
-        "aws" | "aws-secrets" | "aws-secrets-manager" => {
-            Box::new(formats::AwsSecretsConverter)
-        }
+        "aws" | "aws-secrets" | "aws-secrets-manager" => Box::new(formats::AwsSecretsConverter),
         "gcp" | "gcp-secrets" | "gcp-secret-manager" => {
-            Box::new(formats::GcpSecretConverter { project_id: val })
+            Box::new(formats::GcpSecretConverter::default())
         }
         "azure" | "azure-keyvault" | "azure-key-vault" => {
-            Box::new(formats::AzureKeyVaultConverter {vault_name: val})
+            Box::new(formats::AzureKeyVaultConverter::default())
         }
 
         // CI/CD platforms
@@ -244,19 +254,15 @@ pub fn run(
         }
 
         // Container platforms
-        "docker" | "docker-compose" | "compose" => {
-            Box::new(formats::DockerComposeConverter)
-        }
-        "kubernetes" | "k8s" | "kubectl" => {
-            Box::new(formats::KubernetesSecretConverter::default())
-        }
+        "docker" | "docker-compose" | "compose" => Box::new(formats::DockerComposeConverter),
+        "kubernetes" | "k8s" | "kubectl" => Box::new(formats::KubernetesSecretConverter::default()),
 
         // Infrastructure as Code
         "terraform" | "tfvars" | "tf" => Box::new(formats::TerraformConverter),
 
         // Secret management platforms
         "doppler" => Box::new(formats::DopplerConverter),
-        "heroku" => Box::new(formats::HerokuConfigConverter {app_name: value}),
+        "heroku" => Box::new(formats::HerokuConfigConverter::default()),
         "vercel" => Box::new(formats::VercelEnvConverter),
         "railway" => Box::new(formats::RailwayConverter),
 
@@ -301,8 +307,7 @@ pub fn run(
     // Output
     match output {
         Some(path) => {
-            fs::write(&path, &result)
-                .with_context(|| format!("Failed to write to {}", path))?;
+            fs::write(&path, &result).with_context(|| format!("Failed to write to {}", path))?;
             println!("{} Converted successfully", "✓".green());
             println!("Output written to: {}", path);
         }

@@ -292,10 +292,10 @@ fn output_pretty(
 
     println!("\n{}", "Summary:".bold());
     if result.summary.errors > 0 {
-        println!("  {} {} critical issues", "🚨", result.summary.errors);
+        println!("  🚨 {} critical issues", result.summary.errors);
     }
     if result.summary.warnings > 0 {
-        println!("  {} {} warnings", "⚠️ ", result.summary.warnings);
+        println!("  ⚠️  {} warnings", result.summary.warnings);
     }
     if result.summary.errors == 0 && result.summary.warnings == 0 {
         println!("  {} 0 issues found", "✓".green());

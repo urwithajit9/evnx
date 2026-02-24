@@ -412,19 +412,13 @@ fn output_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
     }
 
     println!("{}", "Summary:".bold());
+    println!("  🚨 {} high-confidence secrets", results.high_confidence);
     println!(
-        "  {} {} high-confidence secrets",
-        "🚨", results.high_confidence
-    );
-    println!(
-        "  {} {} medium-confidence secrets",
-        "⚠️ ", results.medium_confidence
+        "  ⚠️  {} medium-confidence secrets",
+        results.medium_confidence
     );
     if results.low_confidence > 0 {
-        println!(
-            "  {} {} low-confidence detections",
-            "ℹ️ ", results.low_confidence
-        );
+        println!("  ℹ️ {} low-confidence detections", results.low_confidence);
     }
 
     println!(
@@ -465,7 +459,7 @@ fn output_sarif(results: &ScanResults) -> Result<()> {
 
             // Parse location to extract file and line
             let parts: Vec<&str> = f.location.split(':').collect();
-            let file = parts.get(0).unwrap_or(&"unknown");
+            let file = parts.first().unwrap_or(&"unknown");
             let line: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
 
             serde_json::json!({

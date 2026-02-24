@@ -1,12 +1,55 @@
-/// Config file support for .dotenv-space.toml
-///
-/// Allows users to set defaults and preferences
+//! Config file support for .dotenv-space.toml
+//!
+//! # Overview
+//!
+//! Provides configuration file support allowing users to set defaults and preferences
+//! that persist across command invocations. Configuration files are searched in:
+//!
+//! 1. Current directory (`.dotenv-space.toml` or `dotenv-space.toml`)
+//! 2. Parent directories (recursively up to root)
+//! 3. Home directory (`~/.dotenv-space.toml` or `~/dotenv-space.toml`)
+//!
+//! # Configuration Sections
+//!
+//! - **defaults** - Default file paths and behavior
+//! - **validate** - Validation command defaults
+//! - **scan** - Secret scanning defaults
+//! - **convert** - Format conversion defaults
+//! - **aliases** - Custom format aliases
+//!
+//! # Example Configuration
+//!
+//! ```toml
+//! [defaults]
+//! env_file = ".env"
+//! example_file = ".env.example"
+//! verbose = false
+//!
+//! [validate]
+//! strict = true
+//! format = "pretty"
+//!
+//! [scan]
+//! ignore_placeholders = true
+//! exclude_patterns = ["*.example", "*.template"]
+//!
+//! [convert]
+//! default_format = "json"
+//!
+//! [aliases]
+//! gh = "github-actions"
+//! k8s = "kubernetes"
+//! ```
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+/// Main configuration struct
+///
+/// ✅ CLIPPY FIX: Uses `#[derive(Default)]` instead of manual implementation
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct Config {
     #[serde(default)]
     pub defaults: Defaults,
@@ -24,6 +67,7 @@ pub struct Config {
     pub aliases: Aliases,
 }
 
+/// Default settings for file paths and general behavior
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Defaults {
     #[serde(default = "default_env_file")]
@@ -36,6 +80,7 @@ pub struct Defaults {
     pub verbose: bool,
 }
 
+/// Configuration for validation command
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ValidateConfig {
     #[serde(default)]
@@ -48,6 +93,7 @@ pub struct ValidateConfig {
     pub format: String,
 }
 
+/// Configuration for secret scanning command
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ScanConfig {
     #[serde(default)]
@@ -60,6 +106,7 @@ pub struct ScanConfig {
     pub format: String,
 }
 
+/// Configuration for format conversion command
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ConvertConfig {
     #[serde(default = "default_convert_format")]
@@ -72,23 +119,14 @@ pub struct ConvertConfig {
     pub transform: Option<String>,
 }
 
+/// Custom format aliases for the convert command
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct Aliases {
     #[serde(flatten)]
     pub formats: std::collections::HashMap<String, String>,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            defaults: Defaults::default(),
-            validate: ValidateConfig::default(),
-            scan: ScanConfig::default(),
-            convert: ConvertConfig::default(),
-            aliases: Aliases::default(),
-        }
-    }
-}
+// ✅ CLIPPY FIX: Removed manual impl Default for Config (using #[derive(Default)])
 
 impl Default for Defaults {
     fn default() -> Self {
