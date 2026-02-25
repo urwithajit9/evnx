@@ -276,7 +276,7 @@ run_lint() {
 
 main() {
     echo "========================================"
-    echo "dotenv-space Test Suite"
+    echo "evnx Test Suite"
     echo "========================================"
     echo
     

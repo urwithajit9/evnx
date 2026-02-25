@@ -1,4 +1,4 @@
-# dotenv-space Architecture
+# evnx Architecture
 
 ## Table of Contents
 1. [System Overview](#system-overview)
@@ -14,7 +14,7 @@
 
 ## System Overview
 
-dotenv-space is a command-line tool for managing environment variables. It follows a modular architecture with clear separation of concerns.
+evnx is a command-line tool for managing environment variables. It follows a modular architecture with clear separation of concerns.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -135,12 +135,12 @@ let parser = Parser::new(config);
 **Implementation:**
 ```bash
 # Each command is independent
-dotenv-space validate
-dotenv-space scan
-dotenv-space convert --to json
+evnx validate
+evnx scan
+evnx convert --to json
 
 # But they work together
-dotenv-space validate && dotenv-space scan && dotenv-space convert --to json > output.json
+evnx validate && evnx scan && evnx convert --to json > output.json
 ```
 
 ### 5. Idempotent by Default
@@ -757,7 +757,7 @@ use predicates::prelude::*;
 
 #[test]
 fn test_validate_command() {
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["validate", "--format", "json"])
         .assert()
@@ -798,7 +798,7 @@ pub trait Plugin {
     fn converters(&self) -> Vec<Box<dyn Converter>>;
 }
 
-// Load plugins from ~/.dotenv-space/plugins/
+// Load plugins from ~/.evnx/plugins/
 ```
 
 ### 2. Configuration System
@@ -806,7 +806,7 @@ pub trait Plugin {
 **Vision:** User preferences
 
 ```rust
-// .dotenv-space.toml
+// .evnx.toml
 [defaults]
 validate_strict = true
 scan_ignore_placeholders = true
@@ -849,7 +849,7 @@ pub fn interactive_diff() -> Result<()> {
 
 ## Summary
 
-dotenv-space follows clean architecture principles:
+evnx follows clean architecture principles:
 - **Separation of concerns** - Clear module boundaries
 - **Dependency inversion** - Core depends on abstractions (traits)
 - **Open/closed principle** - Easy to extend (new formats), hard to break (existing code)

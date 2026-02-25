@@ -470,40 +470,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dotenv-space-cli"
-version = "0.2.2"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "argon2",
- "assert_cmd",
- "base64",
- "chrono",
- "clap",
- "clap_complete",
- "colored",
- "console",
- "dialoguer",
- "dirs",
- "dotenvy",
- "glob",
- "indicatif",
- "lazy_static",
- "predicates",
- "pretty_assertions",
- "rand",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "thiserror",
- "toml",
- "walkdir",
-]
-
-[[package]]
 name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -538,6 +504,40 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "evnx"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "argon2",
+ "assert_cmd",
+ "base64",
+ "chrono",
+ "clap",
+ "clap_complete",
+ "colored",
+ "console",
+ "dialoguer",
+ "dirs",
+ "dotenvy",
+ "glob",
+ "indicatif",
+ "lazy_static",
+ "predicates",
+ "pretty_assertions",
+ "rand",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "walkdir",
 ]
 
 [[package]]

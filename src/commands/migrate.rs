@@ -36,17 +36,17 @@
 //!
 //! ```bash
 //! # Interactive migration
-//! dotenv-space migrate
+//! evnx migrate
 //!
 //! # Direct migration to GitHub Actions
-//! dotenv-space migrate \
+//! evnx migrate \
 //!   --from env-file \
 //!   --to github-actions \
 //!   --repo owner/repo \
 //!   --source-file .env
 //!
 //! # Dry run
-//! dotenv-space migrate --to aws-secrets-manager --dry-run
+//! evnx migrate --to aws-secrets-manager --dry-run
 //! ```
 
 use anyhow::{anyhow, Context, Result};
@@ -518,7 +518,7 @@ fn fetch_existing_github_secrets(repo: &str, token: &str, verbose: bool) -> Resu
         .get(&url)
         .header("Authorization", format!("Bearer {}", token))
         .header("Accept", "application/vnd.github.v3+json")
-        .header("User-Agent", "dotenv-space")
+        .header("User-Agent", "evnx")
         .send()
         .context("Failed to fetch existing secrets")?;
 
@@ -589,7 +589,7 @@ fn upload_github_secret(
         .put(&url)
         .header("Authorization", format!("Bearer {}", token))
         .header("Accept", "application/vnd.github.v3+json")
-        .header("User-Agent", "dotenv-space")
+        .header("User-Agent", "evnx")
         .json(&payload)
         .send()?;
 
@@ -617,7 +617,7 @@ fn fetch_github_public_key(repo: &str, token: &str) -> Result<PublicKey> {
         .get(&pub_key_url)
         .header("Authorization", format!("Bearer {}", token))
         .header("Accept", "application/vnd.github.v3+json")
-        .header("User-Agent", "dotenv-space")
+        .header("User-Agent", "evnx")
         .send()?;
 
     if !pub_key_response.status().is_success() {
@@ -813,7 +813,7 @@ fn migrate_to_gcp(secrets: &HashMap<String, String>, dry_run: bool, verbose: boo
         "ℹ️".cyan()
     );
     println!();
-    println!("dotenv-space convert --to gcp-secrets > upload.sh");
+    println!("evnx convert --to gcp-secrets > upload.sh");
     println!("bash upload.sh");
     println!();
     println!("Or upload manually via gcloud CLI:");

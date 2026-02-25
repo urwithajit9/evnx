@@ -25,8 +25,8 @@
 //! # Example
 //!
 //! ```bash
-//! dotenv-space restore .env.backup
-//! dotenv-space restore .env.backup --output .env.production
+//! evnx restore .env.backup
+//! evnx restore .env.backup --output .env.production
 //! ```
 //!
 //! # Future work
@@ -47,7 +47,7 @@ use colored::*;
 ///
 /// # Arguments
 ///
-/// * `backup`  — Path to the `.backup` file created by `dotenv-space backup`.
+/// * `backup`  — Path to the `.backup` file created by `evnx backup`.
 /// * `output`  — Desired destination path for the restored file (default `.env`).
 ///   If decrypted content fails `.env` validation this path receives
 ///   a `.restored` suffix to avoid overwriting a live file with
@@ -123,7 +123,7 @@ pub fn run(backup: String, output: String, verbose: bool) -> Result<()> {
         println!("\n{}", "Backup information:".bold());
         println!("  Original file : {}", metadata.original_file);
         println!("  Created at    : {}", metadata.created_at);
-        println!("  Tool version  : dotenv-space v{}", metadata.tool_version);
+        println!("  Tool version  : evnx v{}", metadata.tool_version);
         println!("  Variables     : {}", count_vars(&content));
 
         // ── Validation — choose write path ───────────────────────────────────
@@ -185,7 +185,7 @@ pub fn run(backup: String, output: String, verbose: bool) -> Result<()> {
         // Context-aware next steps depending on whether we used the fallback.
         println!("\n{}", "Next steps:".bold());
         if write_path == output {
-            println!("  1. Run: dotenv-space validate --env {}", write_path);
+            println!("  1. Run: evnx validate --env {}", write_path);
             println!("  2. Verify your application starts correctly");
             println!("  3. Delete the backup file once you have confirmed the restore");
         } else {
@@ -195,7 +195,7 @@ pub fn run(backup: String, output: String, verbose: bool) -> Result<()> {
                 "  2. If the content is correct, rename it: mv {} {}",
                 write_path, output
             );
-            println!("  3. Run: dotenv-space validate --env {}", output);
+            println!("  3. Run: evnx validate --env {}", output);
         }
 
         Ok(())

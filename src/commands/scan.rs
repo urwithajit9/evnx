@@ -492,7 +492,7 @@ fn output_sarif(results: &ScanResults) -> Result<()> {
         "runs": [{
             "tool": {
                 "driver": {
-                    "name": "dotenv-space scan",
+                    "name": "evnx scan",
                     "version": env!("CARGO_PKG_VERSION")
                 }
             },

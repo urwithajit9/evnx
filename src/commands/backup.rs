@@ -46,8 +46,8 @@
 //! # Example
 //!
 //! ```bash
-//! dotenv-space backup
-//! dotenv-space backup --env .env.production --output prod.backup
+//! evnx backup
+//! evnx backup --env .env.production --output prod.backup
 //! ```
 //!
 //! # Future work
@@ -187,7 +187,7 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
         println!("  • Keep your password safe — it cannot be recovered");
         println!("  • Store the backup in a secure, separate location");
         println!(
-            "  • To restore: dotenv-space restore {} --output {}",
+            "  • To restore: evnx restore {} --output {}",
             output_path, env
         );
         println!("  • Test the restore before deleting the original .env");
@@ -312,7 +312,7 @@ fn encrypt_content(plaintext: &str, password: &str, original_filename: &str) -> 
 /// # Errors
 ///
 /// Returns a descriptive [`anyhow::Error`] for:
-/// - Base64 decode failure (not a dotenv-space backup, or file is truncated).
+/// - Base64 decode failure (not a evnx backup, or file is truncated).
 /// - Unknown format version (backup was made by a newer tool version).
 /// - Argon2id key derivation failure (should not occur with valid inputs).
 /// - AES-256-GCM decryption failure — almost always wrong password or tampered
@@ -331,7 +331,7 @@ pub fn decrypt_content(encoded: &str, password: &str) -> Result<(String, BackupM
     // ── Base64 decode ─────────────────────────────────────────────────────────
     let raw = general_purpose::STANDARD.decode(encoded.trim()).context(
         "Failed to Base64-decode the backup file. \
-             Is this a valid dotenv-space backup?",
+             Is this a valid evnx backup?",
     )?;
 
     // Minimum valid size: 1 (version) + 32 (salt) + 12 (nonce) + 16 (GCM tag)
@@ -349,7 +349,7 @@ pub fn decrypt_content(encoded: &str, password: &str) -> Result<(String, BackupM
     if version != 1 {
         return Err(anyhow!(
             "Unsupported backup format version: {}. \
-             This backup was created by a newer version of dotenv-space. \
+             This backup was created by a newer version of evnx. \
              Please upgrade the tool and try again.",
             version
         ));

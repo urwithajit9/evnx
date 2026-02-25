@@ -1,13 +1,13 @@
-//! Config file support for .dotenv-space.toml
+//! Config file support for .evnx.toml
 //!
 //! # Overview
 //!
 //! Provides configuration file support allowing users to set defaults and preferences
 //! that persist across command invocations. Configuration files are searched in:
 //!
-//! 1. Current directory (`.dotenv-space.toml` or `dotenv-space.toml`)
+//! 1. Current directory (`.evnx.toml` or `evnx.toml`)
 //! 2. Parent directories (recursively up to root)
-//! 3. Home directory (`~/.dotenv-space.toml` or `~/dotenv-space.toml`)
+//! 3. Home directory (`~/.evnx.toml` or `~/evnx.toml`)
 //!
 //! # Configuration Sections
 //!
@@ -209,7 +209,7 @@ impl Config {
 
     /// Find config file by searching up the directory tree
     pub fn find_config_file() -> Result<PathBuf> {
-        let config_names = [".dotenv-space.toml", "dotenv-space.toml"];
+        let config_names = [".evnx.toml", "evnx.toml"];
 
         // Start from current directory
         let mut current_dir = std::env::current_dir()?;
@@ -251,7 +251,7 @@ impl Config {
 
     /// Create example config file
     pub fn create_example(path: &Path) -> Result<()> {
-        let example = r#"# dotenv-space configuration file
+        let example = r#"# evnx configuration file
 # Place this in your project root or home directory
 
 [defaults]

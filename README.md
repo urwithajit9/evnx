@@ -1,14 +1,14 @@
-# dotenv-space CLI
+# evnx CLI
 
-[![CI](https://github.com/urwithajit9/dotenv-space/workflows/CI/badge.svg)](https://github.com/urwithajit9/dotenv-space/actions)
-[![Release](https://img.shields.io/github/v/release/urwithajit9/dotenv-space)](https://github.com/urwithajit9/dotenv-space/releases)
+[![CI](https://github.com/urwithajit9/evnx/workflows/CI/badge.svg)](https://github.com/urwithajit9/evnx/actions)
+[![Release](https://img.shields.io/github/v/release/urwithajit9/evnx)](https://github.com/urwithajit9/evnx/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A comprehensive CLI tool for managing `.env` files — validation, secret scanning, format conversion, and migration to cloud secret managers.
 
 **📚 [Documentation](./docs/GETTING_STARTED.md)** | **🌐 [Website](https://dotenv.space)**
 
-## Why dotenv-space?
+## Why evnx?
 
 I built this after accidentally pushing AWS credentials to GitHub in a test file during an Airflow refactor (20 DAGs, 300+ Scrapy spiders). The key was revoked immediately, other services went down, and I had to explain the incident to my development head. That conversation was more painful than any billing alert.
 
@@ -48,46 +48,46 @@ cargo build --all-features
 
 #### macOS / Linux
 ```bash
-curl -sSL https://raw.githubusercontent.com/urwithajit9/dotenv-space/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/install.sh | bash
 ```
 
 #### From source
 ```bash
 # Install with core features only
-cargo install dotenv-space
+cargo install evnx
 
 # Install with all features
-cargo install dotenv-space --features full
+cargo install evnx --features full
 ```
 
 #### Verify
 ```bash
-dotenv-space --version
-dotenv-space --help
+evnx --version
+evnx --help
 ```
 
 ### Basic Usage
 
 ```bash
 # 1. Initialize a new project
-dotenv-space init
+evnx init
 
 # 2. Validate your configuration
-dotenv-space validate --strict
+evnx validate --strict
 
 # 3. Scan for accidentally committed secrets
-dotenv-space scan
+evnx scan
 
 # 4. Compare files
-dotenv-space diff --show-values
+evnx diff --show-values
 
 # 5. Convert to different formats
-dotenv-space convert --to json > config.json
-dotenv-space convert --to github-actions
-dotenv-space convert --to kubernetes > secret.yaml
+evnx convert --to json > config.json
+evnx convert --to github-actions
+evnx convert --to kubernetes > secret.yaml
 
 # 6. Keep files in sync
-dotenv-space sync --direction forward
+evnx sync --direction forward
 ```
 
 ## 📖 Documentation
@@ -100,14 +100,14 @@ dotenv-space sync --direction forward
 
 ## 🎯 Command Overview
 
-### `dotenv-space init`
+### `evnx init`
 
 **Interactive project setup** - Generates `.env.example` with sensible defaults.
 
 ```bash
-dotenv-space init                                # Interactive mode
-dotenv-space init --stack python --yes           # Quick setup
-dotenv-space init --stack nodejs --services postgres,redis
+evnx init                                # Interactive mode
+evnx init --stack python --yes           # Quick setup
+evnx init --stack nodejs --services postgres,redis
 ```
 
 **Supported stacks:** Python, Node.js, Rust, Go, PHP  
@@ -115,15 +115,15 @@ dotenv-space init --stack nodejs --services postgres,redis
 
 ---
 
-### `dotenv-space validate`
+### `evnx validate`
 
 **Comprehensive validation** - Catches misconfigurations before deployment.
 
 ```bash
-dotenv-space validate                            # Pretty output
-dotenv-space validate --strict                   # Fail on warnings
-dotenv-space validate --format json              # JSON output
-dotenv-space validate --format github-actions    # GitHub annotations
+evnx validate                            # Pretty output
+evnx validate --strict                   # Fail on warnings
+evnx validate --format json              # JSON output
+evnx validate --format github-actions    # GitHub annotations
 ```
 
 **Detects:**
@@ -136,15 +136,15 @@ dotenv-space validate --format github-actions    # GitHub annotations
 
 ---
 
-### `dotenv-space scan`
+### `evnx scan`
 
 **Secret detection** - Find accidentally committed credentials.
 
 ```bash
-dotenv-space scan                                # Scan current directory
-dotenv-space scan --path src/                    # Specific directory
-dotenv-space scan --format sarif                 # SARIF for GitHub Security
-dotenv-space scan --exit-zero                    # Don't fail CI
+evnx scan                                # Scan current directory
+evnx scan --path src/                    # Specific directory
+evnx scan --format sarif                 # SARIF for GitHub Security
+evnx scan --exit-zero                    # Don't fail CI
 ```
 
 **Detects 8+ secret types:**
@@ -161,43 +161,43 @@ dotenv-space scan --exit-zero                    # Don't fail CI
 
 ---
 
-### `dotenv-space diff`
+### `evnx diff`
 
 **File comparison** - See what's different between environments.
 
 ```bash
-dotenv-space diff                                # Compare .env and .env.example
-dotenv-space diff --show-values                  # Show actual values
-dotenv-space diff --reverse                      # Swap comparison
-dotenv-space diff --format json                  # JSON output
+evnx diff                                # Compare .env and .env.example
+evnx diff --show-values                  # Show actual values
+evnx diff --reverse                      # Swap comparison
+evnx diff --format json                  # JSON output
 ```
 
 ---
 
-### `dotenv-space convert`
+### `evnx convert`
 
 **Format conversion** - Transform to 14+ output formats.
 
 ```bash
-dotenv-space convert --to json                   # Generic JSON
-dotenv-space convert --to yaml                   # Generic YAML
-dotenv-space convert --to shell                  # Shell export script
-dotenv-space convert --to docker-compose         # Docker Compose format
-dotenv-space convert --to kubernetes             # Kubernetes Secret YAML
-dotenv-space convert --to terraform              # Terraform .tfvars
-dotenv-space convert --to github-actions         # GitHub Actions format
-dotenv-space convert --to aws-secrets            # AWS Secrets Manager
-dotenv-space convert --to gcp-secrets            # GCP Secret Manager
-dotenv-space convert --to azure-keyvault         # Azure Key Vault
-dotenv-space convert --to heroku                 # Heroku Config Vars
-dotenv-space convert --to vercel                 # Vercel Environment Variables
-dotenv-space convert --to railway               # Railway JSON
-dotenv-space convert --to doppler                # Doppler format
+evnx convert --to json                   # Generic JSON
+evnx convert --to yaml                   # Generic YAML
+evnx convert --to shell                  # Shell export script
+evnx convert --to docker-compose         # Docker Compose format
+evnx convert --to kubernetes             # Kubernetes Secret YAML
+evnx convert --to terraform              # Terraform .tfvars
+evnx convert --to github-actions         # GitHub Actions format
+evnx convert --to aws-secrets            # AWS Secrets Manager
+evnx convert --to gcp-secrets            # GCP Secret Manager
+evnx convert --to azure-keyvault         # Azure Key Vault
+evnx convert --to heroku                 # Heroku Config Vars
+evnx convert --to vercel                 # Vercel Environment Variables
+evnx convert --to railway               # Railway JSON
+evnx convert --to doppler                # Doppler format
 ```
 
 **Advanced options:**
 ```bash
-dotenv-space convert --to json \
+evnx convert --to json \
   --output secrets.json \              # Write to file
   --include "AWS_*" \                  # Filter variables
   --exclude "*_LOCAL" \                # Exclude patterns
@@ -208,7 +208,7 @@ dotenv-space convert --to json \
 
 **Real-world example - Deploy to AWS:**
 ```bash
-dotenv-space convert --to aws-secrets | \
+evnx convert --to aws-secrets | \
   aws secretsmanager create-secret \
     --name prod/myapp/config \
     --secret-string file:///dev/stdin
@@ -216,16 +216,16 @@ dotenv-space convert --to aws-secrets | \
 
 ---
 
-### `dotenv-space sync`
+### `evnx sync`
 
 **Bidirectional sync** - Keep `.env` and `.env.example` aligned.
 
 ```bash
 # Forward: .env → .env.example (document what you have)
-dotenv-space sync --direction forward --placeholder
+evnx sync --direction forward --placeholder
 
 # Reverse: .env.example → .env (generate from template)
-dotenv-space sync --direction reverse
+evnx sync --direction reverse
 ```
 
 **Use cases:**
@@ -235,25 +235,25 @@ dotenv-space sync --direction reverse
 
 ---
 
-### `dotenv-space migrate` *(Requires `--features migrate`)*
+### `evnx migrate` *(Requires `--features migrate`)*
 
 **Cloud migration** - Move secrets directly to secret managers.
 
 ```bash
 # GitHub Actions Secrets
-dotenv-space migrate \
+evnx migrate \
   --from env-file \
   --to github-actions \
   --repo owner/repo \
   --github-token $GITHUB_TOKEN
 
 # AWS Secrets Manager
-dotenv-space migrate \
+evnx migrate \
   --to aws-secrets-manager \
   --secret-name prod/myapp/config
 
 # Doppler
-dotenv-space migrate \
+evnx migrate \
   --to doppler \
   --dry-run  # Preview changes first
 ```
@@ -266,13 +266,13 @@ dotenv-space migrate \
 
 ---
 
-### `dotenv-space doctor`
+### `evnx doctor`
 
 **Health check** - Diagnose common issues.
 
 ```bash
-dotenv-space doctor                              # Check current directory
-dotenv-space doctor --path /path/to/project
+evnx doctor                              # Check current directory
+evnx doctor --path /path/to/project
 ```
 
 **Checks:**
@@ -283,12 +283,12 @@ dotenv-space doctor --path /path/to/project
 
 ---
 
-### `dotenv-space template`
+### `evnx template`
 
 **Template generation** - Dynamic config file creation.
 
 ```bash
-dotenv-space template \
+evnx template \
   --input config.template.yml \
   --output config.yml \
   --env .env
@@ -306,16 +306,16 @@ database:
 
 ---
 
-### `dotenv-space backup/restore` *(Requires `--features backup`)*
+### `evnx backup/restore` *(Requires `--features backup`)*
 
 **Encrypted backups** - AES-256-GCM encryption with Argon2 key derivation.
 
 ```bash
 # Create backup
-dotenv-space backup .env --output .env.backup
+evnx backup .env --output .env.backup
 
 # Restore
-dotenv-space restore .env.backup --output .env
+evnx restore .env.backup --output .env
 ```
 
 **Security:**
@@ -340,15 +340,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install dotenv-space
+      - name: Install evnx
         run: |
-          curl -sSL https://raw.githubusercontent.com/urwithajit9/dotenv-space/main/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/install.sh | bash
       
       - name: Validate configuration
-        run: dotenv-space validate --strict --format github-actions
+        run: evnx validate --strict --format github-actions
       
       - name: Scan for secrets
-        run: dotenv-space scan --format sarif > scan-results.sarif
+        run: evnx scan --format sarif > scan-results.sarif
       
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v2
@@ -367,8 +367,8 @@ validate-env:
     - apk add --no-cache curl bash
     - curl -sSL https://install.dotenv.space | bash
   script:
-    - dotenv-space validate --strict --format json
-    - dotenv-space scan --format sarif > scan.sarif
+    - evnx validate --strict --format json
+    - evnx scan --format sarif > scan.sarif
   artifacts:
     reports:
       sast: scan.sarif
@@ -383,13 +383,13 @@ repos:
     hooks:
       - id: dotenv-validate
         name: Validate .env files
-        entry: dotenv-space validate --strict
+        entry: evnx validate --strict
         language: system
         pass_filenames: false
       
       - id: dotenv-scan
         name: Scan for secrets
-        entry: dotenv-space scan --exit-zero
+        entry: evnx scan --exit-zero
         language: system
         pass_filenames: false
 ```
@@ -398,7 +398,7 @@ repos:
 
 ## ⚙️ Configuration
 
-Store preferences in `.dotenv-space.toml`:
+Store preferences in `.evnx.toml`:
 
 ```toml
 [defaults]
@@ -432,8 +432,8 @@ tf = "terraform"
 
 ```bash
 # Clone repository
-git clone https://github.com/urwithajit9/dotenv-space.git
-cd dotenv-space
+git clone https://github.com/urwithajit9/evnx.git
+cd evnx
 
 # Build (core features only)
 cargo build
@@ -511,9 +511,9 @@ Built by [Ajit Kumar](https://github.com/urwithajit9) after learning the hard wa
 
 ## 🆘 Support
 
-- 🐛 [Report a bug](https://github.com/urwithajit9/dotenv-space/issues/new?template=bug_report.md)
-- 💡 [Request a feature](https://github.com/urwithajit9/dotenv-space/issues/new?template=feature_request.md)
-- 💬 [Start a discussion](https://github.com/urwithajit9/dotenv-space/discussions)
+- 🐛 [Report a bug](https://github.com/urwithajit9/evnx/issues/new?template=bug_report.md)
+- 💡 [Request a feature](https://github.com/urwithajit9/evnx/issues/new?template=feature_request.md)
+- 💬 [Start a discussion](https://github.com/urwithajit9/evnx/discussions)
 - 📧 [Email](mailto:support@dotenv.space)
 
 ---
@@ -522,9 +522,9 @@ Built by [Ajit Kumar](https://github.com/urwithajit9) after learning the hard wa
 
 If this tool saved you from a secrets incident or made your life easier, please:
 
-- ⭐ [Star the repository](https://github.com/urwithajit9/dotenv-space)
-- 🐦 [Tweet about it](https://twitter.com/intent/tweet?text=Check%20out%20dotenv-space%20-%20a%20comprehensive%20CLI%20for%20managing%20.env%20files!&url=https://github.com/urwithajit9/dotenv-space)
-- 📝 [Write a blog post](https://github.com/urwithajit9/dotenv-space/discussions)
+- ⭐ [Star the repository](https://github.com/urwithajit9/evnx)
+- 🐦 [Tweet about it](https://twitter.com/intent/tweet?text=Check%20out%20evnx%20-%20a%20comprehensive%20CLI%20for%20managing%20.env%20files!&url=https://github.com/urwithajit9/evnx)
+- 📝 [Write a blog post](https://github.com/urwithajit9/evnx/discussions)
 - 💬 Tell your teammates
 
 **Your support helps improve the tool for everyone!**
@@ -535,6 +535,6 @@ If this tool saved you from a secrets incident or made your life easier, please:
 
 **Made with 🦀 Rust and ❤️ by developers who've been there**
 
-[Website](https://dotenv.space) • [Documentation](./docs/GETTING_STARTED.md) • [GitHub](https://github.com/urwithajit9/dotenv-space)
+[Website](https://dotenv.space) • [Documentation](./docs/GETTING_STARTED.md) • [GitHub](https://github.com/urwithajit9/evnx)
 
 </div>

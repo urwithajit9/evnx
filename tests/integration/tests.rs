@@ -1,4 +1,4 @@
-/// Integration tests for dotenv-space CLI
+/// Integration tests for evnx CLI
 /// 
 /// Tests actual command execution with real files
 
@@ -44,7 +44,7 @@ fn create_env(dir: &TempDir, content: &str) -> std::path::PathBuf {
 
 #[test]
 fn test_init_help() {
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["init", "--help"])
         .assert()
@@ -56,7 +56,7 @@ fn test_init_help() {
 fn test_init_non_interactive() {
     let dir = setup_test_env();
     
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["init", "--stack", "python", "--services", "postgres,redis", "--yes"])
         .current_dir(dir.path())
@@ -80,7 +80,7 @@ fn test_init_non_interactive() {
 
 #[test]
 fn test_validate_help() {
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["validate", "--help"])
         .assert()
@@ -92,7 +92,7 @@ fn test_validate_help() {
 fn test_validate_missing_file() {
     let dir = setup_test_env();
     
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .arg("validate")
         .current_dir(dir.path())
@@ -114,7 +114,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 "#,
     );
     
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .arg("validate")
         .current_dir(dir.path())
@@ -137,7 +137,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 "#,
     );
     
-    let output = Command::cargo_bin("dotenv-space")
+    let output = Command::cargo_bin("evnx")
         .unwrap()
         .args(&["validate", "--format", "json"])
         .current_dir(dir.path())
@@ -163,7 +163,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 "#,
     );
     
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .arg("validate")
         .current_dir(dir.path())
@@ -177,7 +177,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 
 #[test]
 fn test_scan_help() {
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["scan", "--help"])
         .assert()
@@ -195,7 +195,7 @@ AWS_SECRET_ACCESS_KEY=realSecretKeyWith40CharactersHere12345
 "#,
     );
     
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .arg("scan")
         .current_dir(dir.path())
@@ -212,7 +212,7 @@ fn test_scan_json_output() {
         r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#,
     );
     
-    let output = Command::cargo_bin("dotenv-space")
+    let output = Command::cargo_bin("evnx")
         .unwrap()
         .args(&["scan", "--format", "json"])
         .current_dir(dir.path())
@@ -229,7 +229,7 @@ fn test_scan_sarif_output() {
     let dir = setup_test_env();
     create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
     
-    let output = Command::cargo_bin("dotenv-space")
+    let output = Command::cargo_bin("evnx")
         .unwrap()
         .args(&["scan", "--format", "sarif"])
         .current_dir(dir.path())
@@ -246,7 +246,7 @@ fn test_scan_exit_zero() {
     let dir = setup_test_env();
     create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
     
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["scan", "--exit-zero"])
         .current_dir(dir.path())
@@ -260,7 +260,7 @@ fn test_scan_exit_zero() {
 
 #[test]
 fn test_diff_help() {
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["diff", "--help"])
         .assert()
@@ -279,7 +279,7 @@ SECRET_KEY=test
 "#,
     );
     
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .arg("diff")
         .current_dir(dir.path())
@@ -294,7 +294,7 @@ fn test_diff_json_output() {
     create_env_example(&dir);
     create_env(&dir, r#"DATABASE_URL=postgresql://localhost:5432/db"#);
     
-    let output = Command::cargo_bin("dotenv-space")
+    let output = Command::cargo_bin("evnx")
         .unwrap()
         .args(&["diff", "--format", "json"])
         .current_dir(dir.path())
@@ -312,7 +312,7 @@ fn test_diff_json_output() {
 
 #[test]
 fn test_convert_help() {
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["convert", "--help"])
         .assert()
@@ -327,7 +327,7 @@ fn test_convert_to_json() {
 KEY2=value2
 "#);
     
-    let output = Command::cargo_bin("dotenv-space")
+    let output = Command::cargo_bin("evnx")
         .unwrap()
         .args(&["convert", "--to", "json"])
         .current_dir(dir.path())
@@ -344,7 +344,7 @@ fn test_convert_to_github_actions() {
     let dir = setup_test_env();
     create_env(&dir, r#"SECRET_KEY=abc123"#);
     
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["convert", "--to", "github-actions"])
         .current_dir(dir.path())
@@ -365,7 +365,7 @@ AWS_SECRET=val3
 "#,
     );
     
-    let output = Command::cargo_bin("dotenv-space")
+    let output = Command::cargo_bin("evnx")
         .unwrap()
         .args(&["convert", "--to", "json", "--include", "AWS_*"])
         .current_dir(dir.path())
@@ -383,7 +383,7 @@ fn test_convert_with_transform() {
     let dir = setup_test_env();
     create_env(&dir, r#"DATABASE_URL=test"#);
     
-    let output = Command::cargo_bin("dotenv-space")
+    let output = Command::cargo_bin("evnx")
         .unwrap()
         .args(&["convert", "--to", "json", "--transform", "lowercase"])
         .current_dir(dir.path())
@@ -403,7 +403,7 @@ fn test_workflow_init_validate_scan() {
     let dir = setup_test_env();
     
     // 1. Init
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["init", "--stack", "python", "--yes"])
         .current_dir(dir.path())
@@ -411,7 +411,7 @@ fn test_workflow_init_validate_scan() {
         .success();
     
     // 2. Validate (should find placeholders)
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .arg("validate")
         .current_dir(dir.path())
@@ -419,7 +419,7 @@ fn test_workflow_init_validate_scan() {
         .failure();
     
     // 3. Scan (should find example keys)
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .arg("scan")
         .current_dir(dir.path())
@@ -433,7 +433,7 @@ fn test_workflow_convert_multiple_formats() {
     create_env(&dir, r#"KEY=value"#);
     
     // Convert to JSON
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["convert", "--to", "json"])
         .current_dir(dir.path())
@@ -441,7 +441,7 @@ fn test_workflow_convert_multiple_formats() {
         .success();
     
     // Convert to YAML
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["convert", "--to", "yaml"])
         .current_dir(dir.path())
@@ -449,7 +449,7 @@ fn test_workflow_convert_multiple_formats() {
         .success();
     
     // Convert to shell
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["convert", "--to", "shell"])
         .current_dir(dir.path())
@@ -464,7 +464,7 @@ fn test_workflow_convert_multiple_formats() {
 
 #[test]
 fn test_version_flag() {
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .arg("--version")
         .assert()
@@ -474,12 +474,12 @@ fn test_version_flag() {
 
 #[test]
 fn test_help_flag() {
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("dotenv-space"))
+        .stdout(predicate::str::contains("evnx"))
         .stdout(predicate::str::contains("init"))
         .stdout(predicate::str::contains("validate"));
 }
@@ -489,7 +489,7 @@ fn test_verbose_flag() {
     let dir = setup_test_env();
     create_env(&dir, r#"KEY=value"#);
     
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["convert", "--to", "json", "--verbose"])
         .current_dir(dir.path())
@@ -504,7 +504,7 @@ fn test_verbose_flag() {
 
 #[test]
 fn test_invalid_command() {
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .arg("invalid-command")
         .assert()
@@ -516,7 +516,7 @@ fn test_convert_invalid_format() {
     let dir = setup_test_env();
     create_env(&dir, r#"KEY=value"#);
     
-    Command::cargo_bin("dotenv-space")
+    Command::cargo_bin("evnx")
         .unwrap()
         .args(&["convert", "--to", "invalid-format"])
         .current_dir(dir.path())

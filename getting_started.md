@@ -1,9 +1,9 @@
-# Getting Started with dotenv-space
+# Getting Started with evnx
 
 **Version:** 0.1.0  
 **Last Updated:** February 2026  
 
-Complete guide to using dotenv-space for `.env` file management, validation, and secret scanning.
+Complete guide to using evnx for `.env` file management, validation, and secret scanning.
 
 ## Table of Contents
 
@@ -28,37 +28,37 @@ Complete guide to using dotenv-space for `.env` file management, validation, and
 ### Method 1: Install Script (Recommended)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/urwithajit9/dotenv-space/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/install.sh | bash
 ```
 
-Installs to `/usr/local/bin/dotenv-space`.
+Installs to `/usr/local/bin/evnx`.
 
 ### Method 2: Cargo Install
 
 ```bash
 # Core features only
-cargo install dotenv-space
+cargo install evnx
 
 # With all features
-cargo install dotenv-space --features full
+cargo install evnx --features full
 ```
 
 ### Method 3: Build from Source
 
 ```bash
-git clone https://github.com/urwithajit9/dotenv-space.git
-cd dotenv-space
+git clone https://github.com/urwithajit9/evnx.git
+cd evnx
 cargo build --release --all-features
-sudo cp target/release/dotenv-space /usr/local/bin/
+sudo cp target/release/evnx /usr/local/bin/
 ```
 
 ### Verify Installation
 
 ```bash
-dotenv-space --version
-# Output: dotenv-space 0.1.0
+evnx --version
+# Output: evnx 0.1.0
 
-dotenv-space --help
+evnx --help
 # Shows list of commands
 ```
 
@@ -72,8 +72,8 @@ dotenv-space --help
 # 1. Create a new project directory
 mkdir my-app && cd my-app
 
-# 2. Initialize with dotenv-space (interactive)
-dotenv-space init
+# 2. Initialize with evnx (interactive)
+evnx init
 
 # Answer prompts:
 # - Stack: python
@@ -90,7 +90,7 @@ nano .env
 # Replace placeholders with actual credentials
 
 # 4. Validate your configuration
-dotenv-space validate
+evnx validate
 
 # Output:
 # ✓ Loaded 8 variables from .env
@@ -98,14 +98,14 @@ dotenv-space validate
 # ✓ No issues found
 
 # 5. Scan for accidentally committed secrets
-dotenv-space scan
+evnx scan
 
 # Output:
 # ✓ Scanned 12 files
 # ✓ No secrets detected
 
 # 6. Compare files to see what's different
-dotenv-space diff
+evnx diff
 
 # Output:
 # Missing in .env:
@@ -114,7 +114,7 @@ dotenv-space diff
 #   - DEBUG_MODE
 
 # 7. Convert to different format
-dotenv-space convert --to json > config.json
+evnx convert --to json > config.json
 
 # Done! You now have:
 # - Validated configuration
@@ -133,7 +133,7 @@ dotenv-space convert --to json > config.json
 #### Interactive Mode
 
 ```bash
-dotenv-space init
+evnx init
 ```
 
 **Prompts:**
@@ -145,13 +145,13 @@ dotenv-space init
 
 ```bash
 # Python with PostgreSQL and Redis
-dotenv-space init --stack python --services postgres,redis --yes
+evnx init --stack python --services postgres,redis --yes
 
 # Node.js with MongoDB
-dotenv-space init --stack nodejs --services mongodb --yes
+evnx init --stack nodejs --services mongodb --yes
 
 # Custom path
-dotenv-space init --path backend/.env --yes
+evnx init --path backend/.env --yes
 ```
 
 #### What Gets Generated
@@ -196,7 +196,7 @@ SECRET_KEY=your-secret-key-here-minimum-50-characters
 #### Basic Validation
 
 ```bash
-dotenv-space validate
+evnx validate
 ```
 
 **Output (Success):**
@@ -238,7 +238,7 @@ dotenv-space validate
 #### Strict Mode
 
 ```bash
-dotenv-space validate --strict
+evnx validate --strict
 ```
 
 Fails on **warnings** too, not just errors. Recommended for CI/CD.
@@ -247,7 +247,7 @@ Fails on **warnings** too, not just errors. Recommended for CI/CD.
 
 **JSON (for parsing):**
 ```bash
-dotenv-space validate --format json
+evnx validate --format json
 ```
 
 ```json
@@ -273,7 +273,7 @@ dotenv-space validate --format json
 
 **GitHub Actions (annotations):**
 ```bash
-dotenv-space validate --format github-actions
+evnx validate --format github-actions
 ```
 
 Creates annotations in GitHub Actions UI:
@@ -344,7 +344,7 @@ PORT=99999  # ❌ ERROR: Invalid port (max 65535)
 #### Basic Scan
 
 ```bash
-dotenv-space scan
+evnx scan
 ```
 
 Scans current directory recursively.
@@ -394,22 +394,22 @@ Summary:
 
 **Scan specific directory:**
 ```bash
-dotenv-space scan --path src/
+evnx scan --path src/
 ```
 
 **Exclude files:**
 ```bash
-dotenv-space scan --exclude "*.example" --exclude "*.sample"
+evnx scan --exclude "*.example" --exclude "*.sample"
 ```
 
 **Scan for specific patterns:**
 ```bash
-dotenv-space scan --pattern aws --pattern stripe
+evnx scan --pattern aws --pattern stripe
 ```
 
 **Ignore obvious placeholders:**
 ```bash
-dotenv-space scan --ignore-placeholders
+evnx scan --ignore-placeholders
 ```
 
 Skips values like:
@@ -419,7 +419,7 @@ Skips values like:
 
 **SARIF output (for GitHub Security):**
 ```bash
-dotenv-space scan --format sarif > scan-results.sarif
+evnx scan --format sarif > scan-results.sarif
 ```
 
 Upload to GitHub:
@@ -454,7 +454,7 @@ Upload to GitHub:
 #### Basic Diff
 
 ```bash
-dotenv-space diff
+evnx diff
 ```
 
 **Output:**
@@ -484,7 +484,7 @@ Summary:
 #### Show Actual Values
 
 ```bash
-dotenv-space diff --show-values
+evnx diff --show-values
 ```
 
 ```
@@ -504,7 +504,7 @@ Different values:
 #### Reverse Comparison
 
 ```bash
-dotenv-space diff --reverse
+evnx diff --reverse
 ```
 
 Compares `.env.example` vs `.env` (swap direction).
@@ -512,7 +512,7 @@ Compares `.env.example` vs `.env` (swap direction).
 #### JSON Output
 
 ```bash
-dotenv-space diff --format json
+evnx diff --format json
 ```
 
 ```json
@@ -539,33 +539,33 @@ dotenv-space diff --format json
 
 ```bash
 # JSON
-dotenv-space convert --to json
+evnx convert --to json
 
 # YAML
-dotenv-space convert --to yaml
+evnx convert --to yaml
 
 # Shell script
-dotenv-space convert --to shell
+evnx convert --to shell
 ```
 
 #### Save to File
 
 ```bash
-dotenv-space convert --to json --output config.json
+evnx convert --to json --output config.json
 ```
 
 #### Filter Variables
 
 **Include specific variables:**
 ```bash
-dotenv-space convert --to json --include "AWS_*"
+evnx convert --to json --include "AWS_*"
 ```
 
 Only exports variables starting with `AWS_`.
 
 **Exclude variables:**
 ```bash
-dotenv-space convert --to json --exclude "*_LOCAL"
+evnx convert --to json --exclude "*_LOCAL"
 ```
 
 Skips variables ending with `_LOCAL`.
@@ -574,16 +574,16 @@ Skips variables ending with `_LOCAL`.
 
 ```bash
 # Uppercase
-dotenv-space convert --to json --transform uppercase
+evnx convert --to json --transform uppercase
 
 # Lowercase
-dotenv-space convert --to json --transform lowercase
+evnx convert --to json --transform lowercase
 
 # camelCase
-dotenv-space convert --to json --transform camelCase
+evnx convert --to json --transform camelCase
 
 # snake_case
-dotenv-space convert --to json --transform snake_case
+evnx convert --to json --transform snake_case
 ```
 
 **Example:**
@@ -598,7 +598,7 @@ dotenv-space convert --to json --transform snake_case
 #### Add Prefix
 
 ```bash
-dotenv-space convert --to json --prefix "APP_"
+evnx convert --to json --prefix "APP_"
 ```
 
 ```json
@@ -612,7 +612,7 @@ dotenv-space convert --to json --prefix "APP_"
 #### Base64 Encode
 
 ```bash
-dotenv-space convert --to kubernetes --base64
+evnx convert --to kubernetes --base64
 ```
 
 Useful for Kubernetes Secrets (must be base64-encoded).
@@ -657,7 +657,7 @@ Useful for Kubernetes Secrets (must be base64-encoded).
 **Use case:** You added variables to `.env`, now document them in `.env.example`.
 
 ```bash
-dotenv-space sync --direction forward --placeholder
+evnx sync --direction forward --placeholder
 ```
 
 **What it does:**
@@ -681,7 +681,7 @@ NEW_FEATURE_FLAG=your-value-here
 **Use case:** Generate `.env` from template in CI/CD.
 
 ```bash
-dotenv-space sync --direction reverse
+evnx sync --direction reverse
 ```
 
 **What it does:**
@@ -696,7 +696,7 @@ export DATABASE_URL="postgresql://ci-db:5432/test"
 export SECRET_KEY="ci-secret-key"
 
 # Generate .env for this run
-dotenv-space sync --direction reverse
+evnx sync --direction reverse
 
 # Now .env has:
 # DATABASE_URL=postgresql://ci-db:5432/test
@@ -712,13 +712,13 @@ dotenv-space sync --direction reverse
 ```bash
 # 1. Initialize project
 mkdir my-django-app && cd my-django-app
-dotenv-space init --stack python --services postgres,redis
+evnx init --stack python --services postgres,redis
 
 # 2. Edit .env with real values
 nano .env
 
 # 3. Validate before first run
-dotenv-space validate --strict
+evnx validate --strict
 
 # 4. Add to git
 git add .env.example .gitignore
@@ -726,7 +726,7 @@ git commit -m "Add environment configuration"
 # Note: .env is NOT committed (in .gitignore)
 
 # 5. Other developers clone and run:
-dotenv-space validate  # Shows what's missing
+evnx validate  # Shows what's missing
 # Then they fill in their own .env
 ```
 
@@ -748,7 +748,7 @@ repos:
     hooks:
       - id: dotenv-scan
         name: Scan for secrets
-        entry: dotenv-space scan --exit-zero
+        entry: evnx scan --exit-zero
         language: system
         pass_filenames: false
         stages: [commit]
@@ -787,16 +787,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install dotenv-space
+      - name: Install evnx
         run: |
           curl -sSL https://install.dotenv.space | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
       
       - name: Validate
-        run: dotenv-space validate --strict --format github-actions
+        run: evnx validate --strict --format github-actions
       
       - name: Scan for secrets
-        run: dotenv-space scan --format sarif > scan.sarif
+        run: evnx scan --format sarif > scan.sarif
       
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v2
@@ -819,7 +819,7 @@ jobs:
 **Solution 1: Docker Compose format**
 
 ```bash
-dotenv-space convert --to docker-compose > .env.docker
+evnx convert --to docker-compose > .env.docker
 
 docker-compose --env-file .env.docker up
 ```
@@ -827,7 +827,7 @@ docker-compose --env-file .env.docker up
 **Solution 2: Kubernetes Secret**
 
 ```bash
-dotenv-space convert --to kubernetes --base64 > secret.yaml
+evnx convert --to kubernetes --base64 > secret.yaml
 
 kubectl apply -f secret.yaml
 ```
@@ -835,7 +835,7 @@ kubectl apply -f secret.yaml
 **Solution 3: AWS ECS Task Definition**
 
 ```bash
-dotenv-space convert --to json | \
+evnx convert --to json | \
   aws ecs register-task-definition \
     --family my-app \
     --container-definitions file:///dev/stdin
@@ -858,7 +858,7 @@ my-app/
 ```bash
 for env in development staging production; do
   echo "Validating $env..."
-  dotenv-space validate \
+  evnx validate \
     --env .env.$env \
     --example .env.example \
     --strict
@@ -868,13 +868,13 @@ done
 **Convert for deployment:**
 ```bash
 # Staging
-dotenv-space convert \
+evnx convert \
   --env .env.staging \
   --to aws-secrets \
   --output staging-secrets.sh
 
 # Production
-dotenv-space convert \
+evnx convert \
   --env .env.production \
   --to aws-secrets \
   --output prod-secrets.sh
@@ -903,20 +903,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install dotenv-space
+      - name: Install evnx
         run: |
-          curl -sSL https://raw.githubusercontent.com/urwithajit9/dotenv-space/main/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/install.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
       
       - name: Validate configuration
         run: |
-          dotenv-space validate \
+          evnx validate \
             --strict \
             --format github-actions
       
       - name: Scan for secrets
         run: |
-          dotenv-space scan \
+          evnx scan \
             --format sarif \
             --ignore-placeholders > scan-results.sarif
       
@@ -928,7 +928,7 @@ jobs:
       
       - name: Compare with example
         run: |
-          dotenv-space diff --format json > diff-report.json
+          evnx diff --format json > diff-report.json
       
       - name: Upload diff report
         uses: actions/upload-artifact@v3
@@ -955,8 +955,8 @@ validate-env:
     - apk add --no-cache curl bash
     - curl -sSL https://install.dotenv.space | bash
   script:
-    - dotenv-space validate --strict --format json
-    - dotenv-space scan --format sarif > gl-sast-report.json
+    - evnx validate --strict --format json
+    - evnx scan --format sarif > gl-sast-report.json
   artifacts:
     reports:
       sast: gl-sast-report.json
@@ -967,15 +967,15 @@ validate-env:
 test:
   stage: test
   before_script:
-    - dotenv-space sync --direction reverse
-    - dotenv-space validate --strict
+    - evnx sync --direction reverse
+    - evnx validate --strict
   script:
     - npm test
 
 deploy-staging:
   stage: deploy
   before_script:
-    - dotenv-space convert --to aws-secrets > setup-secrets.sh
+    - evnx convert --to aws-secrets > setup-secrets.sh
   script:
     - bash setup-secrets.sh
     - ./deploy.sh staging
@@ -992,7 +992,7 @@ pipeline {
     agent any
     
     stages {
-        stage('Install dotenv-space') {
+        stage('Install evnx') {
             steps {
                 sh 'curl -sSL https://install.dotenv.space | bash'
             }
@@ -1000,13 +1000,13 @@ pipeline {
         
         stage('Validate') {
             steps {
-                sh 'dotenv-space validate --strict'
+                sh 'evnx validate --strict'
             }
         }
         
         stage('Scan') {
             steps {
-                sh 'dotenv-space scan --format json > scan-results.json'
+                sh 'evnx scan --format json > scan-results.json'
                 archiveArtifacts artifacts: 'scan-results.json'
             }
         }
@@ -1017,7 +1017,7 @@ pipeline {
             }
             steps {
                 sh '''
-                    dotenv-space convert --to aws-secrets | \
+                    evnx convert --to aws-secrets | \
                     aws secretsmanager create-secret \
                       --name prod/myapp/config \
                       --secret-string file:///dev/stdin
@@ -1032,7 +1032,7 @@ pipeline {
 
 ## Configuration
 
-### Config File: `.dotenv-space.toml`
+### Config File: `.evnx.toml`
 
 Place in project root or home directory:
 
@@ -1068,8 +1068,8 @@ aws = "aws-secrets"
 
 **Using aliases:**
 ```bash
-dotenv-space convert --to gh    # Same as --to github-actions
-dotenv-space convert --to k8s   # Same as --to kubernetes
+evnx convert --to gh    # Same as --to github-actions
+evnx convert --to k8s   # Same as --to kubernetes
 ```
 
 ---
@@ -1102,7 +1102,7 @@ git commit -m "Update environment template"
 
 ```yaml
 # GitHub Actions
-- run: dotenv-space validate --strict --format github-actions
+- run: evnx validate --strict --format github-actions
 ```
 
 ### 4. Scan Before Every Commit
@@ -1110,7 +1110,7 @@ git commit -m "Update environment template"
 ```bash
 # .pre-commit-config.yaml
 - id: dotenv-scan
-  entry: dotenv-space scan --exit-zero
+  entry: evnx scan --exit-zero
 ```
 
 ### 5. Use Descriptive Comments
@@ -1134,7 +1134,7 @@ SECRET_KEY=your-secret-key-here
 
 ```bash
 # Check secret age
-dotenv-space scan --format json | jq '.findings[] | select(.age_days > 90)'
+evnx scan --format json | jq '.findings[] | select(.age_days > 90)'
 
 # Generate new secrets
 python -c 'import secrets; print(secrets.token_urlsafe(32))'
@@ -1146,13 +1146,13 @@ python -c 'import secrets; print(secrets.token_urlsafe(32))'
 # Don't use .env files in production
 # Migrate to secret manager:
 
-dotenv-space convert --to aws-secrets | \
+evnx convert --to aws-secrets | \
   aws secretsmanager create-secret \
     --name prod/myapp/config \
     --secret-string file:///dev/stdin
 
 # Or use migrate command (with --features migrate):
-dotenv-space migrate \
+evnx migrate \
   --to aws-secrets-manager \
   --secret-name prod/myapp/config
 ```
@@ -1161,7 +1161,7 @@ dotenv-space migrate \
 
 ## Troubleshooting
 
-### Problem: "Command not found: dotenv-space"
+### Problem: "Command not found: evnx"
 
 **Solution:**
 ```bash
@@ -1180,7 +1180,7 @@ curl -sSL https://install.dotenv.space | bash
 **Solution:**
 ```bash
 # Show exact names
-dotenv-space diff --show-values
+evnx diff --show-values
 
 # Common issues:
 DATABASE_URL  # ✅ Correct
@@ -1203,13 +1203,13 @@ DATABASE_URL=postgresql://localhost:5432/mydb
 PORT=8000
 ```
 
-Then use `dotenv-space validate --strict`.
+Then use `evnx validate --strict`.
 
 ### Problem: "Permission denied" when running
 
 **Solution:**
 ```bash
-chmod +x ~/.local/bin/dotenv-space
+chmod +x ~/.local/bin/evnx
 ```
 
 ### Problem: Too many warnings
@@ -1218,7 +1218,7 @@ chmod +x ~/.local/bin/dotenv-space
 Use config file to customize:
 
 ```toml
-# .dotenv-space.toml
+# .evnx.toml
 [scan]
 ignore_placeholders = true
 exclude_patterns = ["*.example", "*.test"]
@@ -1231,15 +1231,15 @@ exclude_patterns = ["*.example", "*.test"]
 - **[Use Cases](./USE_CASES.md)** - Real-world scenarios
 - **[CI/CD Guide](./CICD_GUIDE.md)** - Detailed CI/CD integration
 - **[Architecture](../ARCHITECTURE.md)** - How it works internally
-- **[Contributing](../CONTRIBUTING.md)** - Help improve dotenv-space
+- **[Contributing](../CONTRIBUTING.md)** - Help improve evnx
 
 ---
 
 ## Get Help
 
-- 🐛 [Report a bug](https://github.com/urwithajit9/dotenv-space/issues)
-- 💡 [Request a feature](https://github.com/urwithajit9/dotenv-space/issues)
-- 💬 [Ask a question](https://github.com/urwithajit9/dotenv-space/discussions)
+- 🐛 [Report a bug](https://github.com/urwithajit9/evnx/issues)
+- 💡 [Request a feature](https://github.com/urwithajit9/evnx/issues)
+- 💬 [Ask a question](https://github.com/urwithajit9/evnx/discussions)
 
 ---
 

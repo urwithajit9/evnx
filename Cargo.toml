@@ -1,10 +1,10 @@
 [package]
-name = "dotenv-space-cli"
-version = "0.2.2"
+name = "evnx"
+version = "0.1.0"
 edition = "2021"
 authors = ["Ajit Kumar <ajitkumar.pu@gmail.com>"]
 description = "A comprehensive CLI tool for managing .env files — validation, secret scanning, and format conversion"
-repository = "https://github.com/urwithajit9/dotenv-space-cli"
+repository = "https://github.com/urwithajit9/evnx"
 homepage = "https://dotenv.space"
 documentation = "https://dotenv.space"
 keywords = ["env", "dotenv", "secrets", "cli", "devops"]
@@ -13,7 +13,7 @@ license = "MIT"
 readme = "README.md"
 
 [[bin]]
-name = "dotenv-space"
+name = "evnx"
 path = "src/main.rs"
 
 [lib]

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# dotenv-space installer
-# Usage: curl -sSL https://raw.githubusercontent.com/urwithajit9/dotenv-space-cli/main/scripts/install.sh | bash
+# evnx (formely dotenv-space-cli) installer
+# Usage: curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
 
 set -e
 
-REPO="urwithajit9/dotenv-space-cli"
-BINARY_NAME="dotenv-space"
+REPO="urwithajit9/evnx"
+BINARY_NAME="evnx"
 
 # Colors
 RED='\033[0;31m'
@@ -26,7 +26,7 @@ error() {
     exit 1
 }
 
-info "Installing dotenv-space..."
+info "Installing evnx..."
 
 # Detect OS and Architecture
 OS=$(uname -s)
@@ -135,17 +135,17 @@ $SUDO mv "${BINARY_NAME}-${TARGET}" "$INSTALL_DIR/$BINARY_NAME"
 $SUDO chmod +x "$INSTALL_DIR/$BINARY_NAME"
 
 # Verify installation
-if command -v dotenv-space >/dev/null 2>&1; then
-    VERSION=$(dotenv-space --version | awk '{print $2}')
+if command -v evnx >/dev/null 2>&1; then
+    VERSION=$(evnx --version | awk '{print $2}')
     echo
     info "✓ Installation successful!"
     info "Installed version: $VERSION"
     echo
     echo "Quick start:"
-    echo "  dotenv-space init          # Create .env.example"
-    echo "  dotenv-space validate      # Check for issues"
-    echo "  dotenv-space scan          # Detect secrets"
-    echo "  dotenv-space --help        # See all commands"
+    echo "  evnx init          # Create .env.example"
+    echo "  evnx validate      # Check for issues"
+    echo "  evnx scan          # Detect secrets"
+    echo "  evnx --help        # See all commands"
     echo
 else
     error "Installation failed - binary not found in PATH"

@@ -30,7 +30,7 @@ pub mod completions {
         };
 
         let mut cmd = Cli::command();
-        generate(shell, &mut cmd, "dotenv-space", &mut io::stdout());
+        generate(shell, &mut cmd, "evnx", &mut io::stdout());
         Ok(())
     }
 }

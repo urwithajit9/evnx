@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
-    name = "dotenv-space",
+    name = "evnx",
     about = "Manage .env files — validation, secret scanning, and format conversion",
     version,
     author

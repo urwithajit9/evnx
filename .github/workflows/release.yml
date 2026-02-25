@@ -60,15 +60,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/dotenv-space dist/dotenv-space-${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/evnx dist/evnx-${{ matrix.target }}
           cd dist
-          tar -czf dotenv-space-${{ matrix.target }}.tar.gz dotenv-space-${{ matrix.target }}
-          sha256sum dotenv-space-${{ matrix.target }}.tar.gz > dotenv-space-${{ matrix.target }}.tar.gz.sha256
+          tar -czf evnx-${{ matrix.target }}.tar.gz evnx-${{ matrix.target }}
+          sha256sum evnx-${{ matrix.target }}.tar.gz > evnx-${{ matrix.target }}.tar.gz.sha256
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dotenv-space-${{ matrix.target }}
+          name: evnx-${{ matrix.target }}
           path: dist/*
           retention-days: 1
 
@@ -98,7 +98,7 @@ jobs:
         id: notes
         run: |
           cat > release_notes.md << EOF
-          # dotenv-space v${{ steps.version.outputs.VERSION }}
+          # evnx v${{ steps.version.outputs.VERSION }}
 
           ## Installation
 
@@ -114,7 +114,7 @@ jobs:
 
           ### From source
           \`\`\`bash
-          cargo install dotenv-space
+          cargo install evnx
           \`\`\`
 
           ## What's Changed
@@ -125,7 +125,7 @@ jobs:
 
           SHA256 checksums are provided for each binary. Verify after download:
           \`\`\`bash
-          sha256sum -c dotenv-space-*.tar.gz.sha256
+          sha256sum -c evnx-*.tar.gz.sha256
           \`\`\`
           EOF
 
