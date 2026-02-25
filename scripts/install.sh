@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # dotenv-space installer
-# Usage: curl -sSL https://raw.githubusercontent.com/urwithajit9/dotenv-space/main/install.sh | bash
+# Usage: curl -sSL https://raw.githubusercontent.com/urwithajit9/dotenv-space/main/scripts/install.sh | bash
 
 set -e
 
-REPO="urwithajit9/dotenv-space"
+REPO="urwithajit9/dotenv-space-cli"
 BINARY_NAME="dotenv-space"
 
 # Colors
