@@ -88,16 +88,18 @@ trap "rm -rf $TMP_DIR" EXIT
 cd "$TMP_DIR"
 
 # Download binary
+ARCHIVE_NAME="${BINARY_NAME}-${TARGET}.tar.gz"
+
 info "Downloading from $URL"
-if ! curl -fsSL "$URL" -o "${BINARY_NAME}.tar.gz"; then
+if ! curl -fsSL "$URL" -o "$ARCHIVE_NAME"; then
     error "Failed to download binary"
 fi
 
-# Download and verify checksum
+# Verify checksum
 if curl -fsSL "$CHECKSUM_URL" -o checksum.sha256 2>/dev/null; then
     info "Verifying checksum..."
     if command -v sha256sum >/dev/null 2>&1; then
-        if ! sha256sum -c checksum.sha256 2>/dev/null; then
+        if ! sha256sum -c checksum.sha256; then
             warn "Checksum verification failed"
             read -p "Continue anyway? (y/N) " -n 1 -r
             echo
@@ -107,16 +109,11 @@ if curl -fsSL "$CHECKSUM_URL" -o checksum.sha256 2>/dev/null; then
         else
             info "Checksum verified ✓"
         fi
-    else
-        warn "sha256sum not available, skipping checksum verification"
     fi
-else
-    warn "Checksum file not available, skipping verification"
 fi
 
-# Extract
 info "Extracting..."
-tar -xzf "${BINARY_NAME}.tar.gz"
+tar -xzf "$ARCHIVE_NAME"
 
 # Determine install directory
 if [ -w "/usr/local/bin" ]; then
