@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # dotenv-space installer
-# Usage: curl -sSL https://raw.githubusercontent.com/urwithajit9/dotenv-space/main/scripts/install.sh | bash
+# Usage: curl -sSL https://raw.githubusercontent.com/urwithajit9/dotenv-space-cli/main/scripts/install.sh | bash
 
 set -e
 

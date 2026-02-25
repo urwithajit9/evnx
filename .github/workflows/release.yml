@@ -104,12 +104,12 @@ jobs:
 
           ### Linux (x86_64)
           \`\`\`bash
-          curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | bash
           \`\`\`
 
           ### macOS
           \`\`\`bash
-          curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | bash
           \`\`\`
 
           ### From source
