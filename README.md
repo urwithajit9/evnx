@@ -51,7 +51,29 @@ cargo build --all-features
 curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/install.sh | bash
 ```
 
-#### From source
+#### Windows
+**Prerequisites:** Install [Rust](https://rustup.rs/) first.
+
+```powershell
+# Clone the repository
+git clone https://github.com/urwithajit9/evnx.git
+cd evnx
+
+# Build and install with core features
+cargo install --path .
+
+# Or build with all features
+cargo install --path . --features full
+
+# Verify installation
+evnx --version
+```
+
+**Note:** Add `%USERPROFILE%\.cargo\bin` to your PATH if not already done during Rust installation.
+
+**Tested on:** Windows 10/11 with PowerShell 5.1+
+
+#### From crates.io
 ```bash
 # Install with core features only
 cargo install evnx
@@ -60,7 +82,7 @@ cargo install evnx
 cargo install evnx --features full
 ```
 
-#### Verify
+#### Verify Installation
 ```bash
 evnx --version
 evnx --help
@@ -110,7 +132,7 @@ evnx init --stack python --yes           # Quick setup
 evnx init --stack nodejs --services postgres,redis
 ```
 
-**Supported stacks:** Python, Node.js, Rust, Go, PHP  
+**Supported stacks:** Python, Node.js, Rust, Go, PHP
 **Supported services:** PostgreSQL, Redis, MongoDB, MySQL, RabbitMQ, Elasticsearch, AWS S3, Stripe, SendGrid, OpenAI, and more
 
 ---
@@ -325,6 +347,73 @@ evnx restore .env.backup --output .env
 
 ---
 
+## ⚠️ Known Issues
+
+### Array/List Value Parsing
+
+evnx currently **does not support** array-like or list-like values in `.env` files. This affects Django and other frameworks that use python-dotenv's extended syntax.
+
+**Will fail:**
+```bash
+# Arrays with brackets
+CORS_ALLOWED=["https://example.com", "https://admin.example.com"]
+
+# Multiline values
+DATABASE_HOSTS="""
+host1.example.com
+host2.example.com
+"""
+
+# JSON values
+CONFIG={"key": "value", "nested": {"data": 123}}
+```
+
+**Workaround:**
+```bash
+# Use comma-separated strings instead
+CORS_ALLOWED=https://example.com,https://admin.example.com
+
+# Or use base64-encoded JSON
+CONFIG_JSON=eyJrZXkiOiJ2YWx1ZSJ9
+
+# Parse in your application code
+# Python example:
+import os
+import json
+cors_allowed = os.getenv("CORS_ALLOWED", "").split(",")
+config = json.loads(base64.b64decode(os.getenv("CONFIG_JSON")))
+```
+
+**Why this limitation?**
+evnx follows the strict `.env` format specification which defines values as simple strings. Django's python-dotenv uses extended parsing that's not compatible with the standard format used by most other tools.
+
+**Tracking:** We're considering adding a `--lenient` or `--extended` flag for compatibility. Follow [Issue #XX](https://github.com/urwithajit9/evnx/issues) for updates.
+
+**Affects:**
+- Django projects using complex ALLOWED_HOSTS or CORS settings
+- Projects with JSON/YAML embedded in .env values
+- Multiline string values
+
+**Does NOT affect:**
+```bash
+# These work fine
+DATABASE_URL=postgres://localhost/db
+API_KEYS=key1,key2,key3           # Simple comma-separated
+ALLOWED_HOSTS=example.com admin.example.com  # Space-separated
+DEBUG=True
+PORT=3000
+```
+
+### Windows-Specific Issues
+
+- File permissions checking is limited on Windows (no Unix permissions)
+- Path handling uses backslashes (handled internally)
+- Some terminal color codes may not display correctly in older CMD (use PowerShell or Windows Terminal)
+
+**These are tracked and will be improved in future releases.**
+
+---
+
 ## 🔧 CI/CD Integration
 
 ### GitHub Actions
@@ -339,17 +428,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install evnx
         run: |
           curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/install.sh | bash
-      
+
       - name: Validate configuration
         run: evnx validate --strict --format github-actions
-      
+
       - name: Scan for secrets
         run: evnx scan --format sarif > scan-results.sarif
-      
+
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v2
         if: always()
@@ -386,7 +475,7 @@ repos:
         entry: evnx validate --strict
         language: system
         pass_filenames: false
-      
+
       - id: dotenv-scan
         name: Scan for secrets
         entry: evnx scan --exit-zero
@@ -479,7 +568,8 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
 **Areas where help is appreciated:**
 - Additional format converters
 - Secret pattern improvements
-- Windows support
+- Windows support enhancements
+- Extended `.env` format support (arrays, multiline values)
 - Documentation improvements
 - Integration examples
 - Translation (i18n)

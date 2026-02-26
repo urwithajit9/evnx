@@ -1,15 +1,16 @@
 //! Integration test to verify backward compatibility of `evnx init`.
 
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;  // ✅ Updated import
+use assert_cmd::prelude::*;
 use predicates::prelude::*;
+use std::fs;
 use tempfile::TempDir;
 
 #[test]
 fn init_with_stack_flag_creates_expected_vars() {
     let dir = TempDir::new().unwrap();
 
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")  // ✅ Fixed: use macro, no .unwrap() needed
         .arg("init")
         .arg("--stack")
         .arg("python")
@@ -22,7 +23,7 @@ fn init_with_stack_flag_creates_expected_vars() {
         .success()
         .stdout(predicate::str::contains("Created .env.example"));
 
-    let content = std::fs::read_to_string(dir.path().join(".env.example")).unwrap();
+    let content = fs::read_to_string(dir.path().join(".env.example")).unwrap();
 
     // Stack-specific vars
     assert!(content.contains("SECRET_KEY="));
@@ -40,8 +41,7 @@ fn init_with_stack_flag_creates_expected_vars() {
 fn init_with_rust_stack_uses_double_underscore_format() {
     let dir = TempDir::new().unwrap();
 
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")  // ✅ Fixed: use macro, no .unwrap() needed
         .arg("init")
         .arg("--stack")
         .arg("rust")
@@ -51,7 +51,7 @@ fn init_with_rust_stack_uses_double_underscore_format() {
         .assert()
         .success();
 
-    let content = std::fs::read_to_string(dir.path().join(".env.example")).unwrap();
+    let content = fs::read_to_string(dir.path().join(".env.example")).unwrap();
     assert!(content.contains("APP__ENVIRONMENT="));
     assert!(content.contains("APP__PORT="));
 }

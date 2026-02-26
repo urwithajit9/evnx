@@ -70,6 +70,8 @@ warning: function `looks_like_dotenv` is never used
 233 | fn looks_like_dotenv(content: &str) -> bool {
     |    ^^^^^^^^^^^^^^^^^
 
+warning: `evnx` (lib) generated 11 warnings (run `cargo fix --lib -p evnx` to apply 7 suggestions)
+   Compiling evnx v0.1.0 (/home/ajit/Documents/dotenv-space-cli)
 warning: type alias `MigrationDiff` is never used
   --> src/commands/migrate.rs:69:6
    |
@@ -78,9 +80,7 @@ warning: type alias `MigrationDiff` is never used
    |
    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
-warning: `evnx` (lib) generated 11 warnings (run `cargo fix --lib -p evnx` to apply 7 suggestions)
 warning: `evnx` (lib test) generated 8 warnings (7 duplicates)
-   Compiling evnx v0.1.0 (/home/ajit/Documents/dotenv-space-cli)
 error[E0433]: failed to resolve: use of unresolved module or unlinked crate `dotenv_space`
    --> benches/cli_benchmarks.rs:129:9
     |

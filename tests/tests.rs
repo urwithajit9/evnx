@@ -2,10 +2,10 @@
 ///
 /// Tests actual command execution with real files
 
-// use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;  // ✅ Updated import
 use assert_cmd::prelude::*;
-use std::process::Command;
 use predicates::prelude::*;
+use serde_json;
 use std::fs;
 use tempfile::TempDir;
 
@@ -46,8 +46,7 @@ fn create_env(dir: &TempDir, content: &str) -> std::path::PathBuf {
 
 #[test]
 fn test_init_help() {
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")  // ✅ Updated: use macro instead of deprecated method
         .args(&["init", "--help"])
         .assert()
         .success()
@@ -58,19 +57,16 @@ fn test_init_help() {
 fn test_init_non_interactive() {
     let dir = setup_test_env();
 
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["init", "--stack", "python", "--services", "postgres,redis", "--yes"])
         .current_dir(dir.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("Created .env.example"));
 
-    // Verify files were created
     assert!(dir.path().join(".env.example").exists());
     assert!(dir.path().join(".env").exists());
 
-    // Verify content
     let content = fs::read_to_string(dir.path().join(".env.example")).unwrap();
     assert!(content.contains("DATABASE_URL"));
     assert!(content.contains("REDIS_URL"));
@@ -82,8 +78,7 @@ fn test_init_non_interactive() {
 
 #[test]
 fn test_validate_help() {
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["validate", "--help"])
         .assert()
         .success()
@@ -94,8 +89,7 @@ fn test_validate_help() {
 fn test_validate_missing_file() {
     let dir = setup_test_env();
 
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("validate")
         .current_dir(dir.path())
         .assert()
@@ -116,12 +110,11 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 "#,
     );
 
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("validate")
         .current_dir(dir.path())
         .assert()
-        .failure() // Should fail due to placeholder
+        .failure()
         .stdout(predicate::str::contains("placeholder"));
 }
 
@@ -139,8 +132,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 "#,
     );
 
-    let output = assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    let output = cargo_bin_cmd!("evnx")
         .args(&["validate", "--format", "json"])
         .current_dir(dir.path())
         .output()
@@ -165,8 +157,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 "#,
     );
 
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("validate")
         .current_dir(dir.path())
         .assert()
@@ -179,8 +170,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 
 #[test]
 fn test_scan_help() {
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["scan", "--help"])
         .assert()
         .success()
@@ -197,12 +187,11 @@ AWS_SECRET_ACCESS_KEY=realSecretKeyWith40CharactersHere12345
 "#,
     );
 
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("scan")
         .current_dir(dir.path())
         .assert()
-        .failure() // Should fail when secrets found
+        .failure()
         .stdout(predicate::str::contains("AWS Access Key"));
 }
 
@@ -214,8 +203,7 @@ fn test_scan_json_output() {
         r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#,
     );
 
-    let output = assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    let output = cargo_bin_cmd!("evnx")
         .args(&["scan", "--format", "json"])
         .current_dir(dir.path())
         .output()
@@ -231,8 +219,7 @@ fn test_scan_sarif_output() {
     let dir = setup_test_env();
     create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
 
-    let output = assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    let output = cargo_bin_cmd!("evnx")
         .args(&["scan", "--format", "sarif"])
         .current_dir(dir.path())
         .output()
@@ -248,12 +235,11 @@ fn test_scan_exit_zero() {
     let dir = setup_test_env();
     create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
 
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["scan", "--exit-zero"])
         .current_dir(dir.path())
         .assert()
-        .success(); // Should succeed even with secrets due to --exit-zero
+        .success();
 }
 
 // ============================================================================
@@ -262,8 +248,7 @@ fn test_scan_exit_zero() {
 
 #[test]
 fn test_diff_help() {
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["diff", "--help"])
         .assert()
         .success()
@@ -281,8 +266,7 @@ SECRET_KEY=test
 "#,
     );
 
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("diff")
         .current_dir(dir.path())
         .assert()
@@ -296,8 +280,7 @@ fn test_diff_json_output() {
     create_env_example(&dir);
     create_env(&dir, r#"DATABASE_URL=postgresql://localhost:5432/db"#);
 
-    let output = assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    let output = cargo_bin_cmd!("evnx")
         .args(&["diff", "--format", "json"])
         .current_dir(dir.path())
         .output()
@@ -314,8 +297,7 @@ fn test_diff_json_output() {
 
 #[test]
 fn test_convert_help() {
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["convert", "--help"])
         .assert()
         .success()
@@ -329,8 +311,7 @@ fn test_convert_to_json() {
 KEY2=value2
 "#);
 
-    let output = assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    let output = cargo_bin_cmd!("evnx")
         .args(&["convert", "--to", "json"])
         .current_dir(dir.path())
         .output()
@@ -346,8 +327,7 @@ fn test_convert_to_github_actions() {
     let dir = setup_test_env();
     create_env(&dir, r#"SECRET_KEY=abc123"#);
 
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["convert", "--to", "github-actions"])
         .current_dir(dir.path())
         .assert()
@@ -367,8 +347,7 @@ AWS_SECRET=val3
 "#,
     );
 
-    let output = assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    let output = cargo_bin_cmd!("evnx")
         .args(&["convert", "--to", "json", "--include", "AWS_*"])
         .current_dir(dir.path())
         .output()
@@ -377,7 +356,7 @@ AWS_SECRET=val3
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(json.get("AWS_KEY").is_some());
     assert!(json.get("AWS_SECRET").is_some());
-    assert!(json.get("DB_URL").is_none()); // Should be filtered out
+    assert!(json.get("DB_URL").is_none());
 }
 
 #[test]
@@ -385,8 +364,7 @@ fn test_convert_with_transform() {
     let dir = setup_test_env();
     create_env(&dir, r#"DATABASE_URL=test"#);
 
-    let output = assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    let output = cargo_bin_cmd!("evnx")
         .args(&["convert", "--to", "json", "--transform", "lowercase"])
         .current_dir(dir.path())
         .output()
@@ -404,29 +382,23 @@ fn test_convert_with_transform() {
 fn test_workflow_init_validate_scan() {
     let dir = setup_test_env();
 
-    // 1. Init
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["init", "--stack", "python", "--yes"])
         .current_dir(dir.path())
         .assert()
         .success();
 
-    // 2. Validate (should find placeholders)
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("validate")
         .current_dir(dir.path())
         .assert()
         .failure();
 
-    // 3. Scan (should find example keys)
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("scan")
         .current_dir(dir.path())
         .assert()
-        .success(); // Example keys are placeholders, should pass
+        .success();
 }
 
 #[test]
@@ -434,25 +406,19 @@ fn test_workflow_convert_multiple_formats() {
     let dir = setup_test_env();
     create_env(&dir, r#"KEY=value"#);
 
-    // Convert to JSON
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["convert", "--to", "json"])
         .current_dir(dir.path())
         .assert()
         .success();
 
-    // Convert to YAML
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["convert", "--to", "yaml"])
         .current_dir(dir.path())
         .assert()
         .success();
 
-    // Convert to shell
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["convert", "--to", "shell"])
         .current_dir(dir.path())
         .assert()
@@ -466,8 +432,7 @@ fn test_workflow_convert_multiple_formats() {
 
 #[test]
 fn test_version_flag() {
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("--version")
         .assert()
         .success()
@@ -476,8 +441,7 @@ fn test_version_flag() {
 
 #[test]
 fn test_help_flag() {
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("--help")
         .assert()
         .success()
@@ -491,8 +455,7 @@ fn test_verbose_flag() {
     let dir = setup_test_env();
     create_env(&dir, r#"KEY=value"#);
 
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["convert", "--to", "json", "--verbose"])
         .current_dir(dir.path())
         .assert()
@@ -506,8 +469,7 @@ fn test_verbose_flag() {
 
 #[test]
 fn test_invalid_command() {
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("invalid-command")
         .assert()
         .failure();
@@ -518,8 +480,7 @@ fn test_convert_invalid_format() {
     let dir = setup_test_env();
     create_env(&dir, r#"KEY=value"#);
 
-    assert_cmd::Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .args(&["convert", "--to", "invalid-format"])
         .current_dir(dir.path())
         .assert()
