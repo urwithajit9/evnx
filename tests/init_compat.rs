@@ -1,6 +1,6 @@
 //! Integration test to verify backward compatibility of `evnx init`.
 
-use assert_cmd::cargo::cargo_bin_cmd;  // ✅ Updated import
+use assert_cmd::cargo::cargo_bin_cmd; // ✅ Updated import
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use std::fs;
@@ -10,7 +10,7 @@ use tempfile::TempDir;
 fn init_with_stack_flag_creates_expected_vars() {
     let dir = TempDir::new().unwrap();
 
-    cargo_bin_cmd!("evnx")  // ✅ Fixed: use macro, no .unwrap() needed
+    cargo_bin_cmd!("evnx") // ✅ Fixed: use macro, no .unwrap() needed
         .arg("init")
         .arg("--stack")
         .arg("python")
@@ -41,7 +41,7 @@ fn init_with_stack_flag_creates_expected_vars() {
 fn init_with_rust_stack_uses_double_underscore_format() {
     let dir = TempDir::new().unwrap();
 
-    cargo_bin_cmd!("evnx")  // ✅ Fixed: use macro, no .unwrap() needed
+    cargo_bin_cmd!("evnx") // ✅ Fixed: use macro, no .unwrap() needed
         .arg("init")
         .arg("--stack")
         .arg("rust")

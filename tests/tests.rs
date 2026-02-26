@@ -1,8 +1,7 @@
 /// Integration tests for evnx CLI
 ///
 /// Tests actual command execution with real files
-
-use assert_cmd::cargo::cargo_bin_cmd;  // ✅ Updated import
+use assert_cmd::cargo::cargo_bin_cmd; // ✅ Updated import
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use serde_json;
@@ -46,7 +45,7 @@ fn create_env(dir: &TempDir, content: &str) -> std::path::PathBuf {
 
 #[test]
 fn test_init_help() {
-    cargo_bin_cmd!("evnx")  // ✅ Updated: use macro instead of deprecated method
+    cargo_bin_cmd!("evnx") // ✅ Updated: use macro instead of deprecated method
         .args(&["init", "--help"])
         .assert()
         .success()
@@ -58,7 +57,14 @@ fn test_init_non_interactive() {
     let dir = setup_test_env();
 
     cargo_bin_cmd!("evnx")
-        .args(&["init", "--stack", "python", "--services", "postgres,redis", "--yes"])
+        .args(&[
+            "init",
+            "--stack",
+            "python",
+            "--services",
+            "postgres,redis",
+            "--yes",
+        ])
         .current_dir(dir.path())
         .assert()
         .success()
@@ -198,10 +204,7 @@ AWS_SECRET_ACCESS_KEY=realSecretKeyWith40CharactersHere12345
 #[test]
 fn test_scan_json_output() {
     let dir = setup_test_env();
-    create_env(
-        &dir,
-        r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#,
-    );
+    create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
 
     let output = cargo_bin_cmd!("evnx")
         .args(&["scan", "--format", "json"])
@@ -307,9 +310,12 @@ fn test_convert_help() {
 #[test]
 fn test_convert_to_json() {
     let dir = setup_test_env();
-    create_env(&dir, r#"KEY1=value1
+    create_env(
+        &dir,
+        r#"KEY1=value1
 KEY2=value2
-"#);
+"#,
+    );
 
     let output = cargo_bin_cmd!("evnx")
         .args(&["convert", "--to", "json"])
