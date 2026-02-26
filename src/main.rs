@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
-use dotenv_space::cli::{Cli, Commands};
-use dotenv_space::commands;
+use evnx::cli::{Cli, Commands};
+use evnx::commands;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();

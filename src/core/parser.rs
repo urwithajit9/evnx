@@ -149,7 +149,7 @@ pub struct EnvFile {
 /// # Example
 ///
 /// ```rust
-/// use dotenv_space::core::parser::ParserConfig;
+/// use evnx::core::parser::ParserConfig;
 ///
 /// // Strict mode: only uppercase keys, no inline comments
 /// let config = ParserConfig {
@@ -261,7 +261,7 @@ impl Parser {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use dotenv_space::core::Parser;
+    /// use evnx::core::Parser;
     ///
     /// let parser = Parser::default();
     /// let env_file = parser.parse_file(".env")?;
@@ -286,12 +286,12 @@ impl Parser {
     /// # Example
     ///
     /// ```rust
-    /// use dotenv_space::core::Parser;
+    /// use evnx::core::Parser;
     ///
     /// let parser = Parser::default();
     /// let vars = parser.parse_content("KEY=value\nOTHER=123")?;
     /// assert_eq!(vars["KEY"], "value");
-    /// # Ok::<(), dotenv_space::core::parser::ParseError>(())
+    /// # Ok::<(), evnx::core::parser::ParseError>(())
     /// ```
     pub fn parse_content(&self, content: &str) -> ParseResult<HashMap<String, String>> {
         let mut vars: HashMap<String, String> = HashMap::new();

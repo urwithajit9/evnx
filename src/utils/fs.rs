@@ -103,7 +103,7 @@ pub fn is_text_file(path: &Path) -> Result<bool> {
 /// # Examples
 ///
 /// ```
-/// use dotenv_space::utils::fs::human_readable_size;
+/// use evnx::utils::fs::human_readable_size;
 /// assert_eq!(human_readable_size(1024), "1.00 KB");
 /// assert_eq!(human_readable_size(1_048_576), "1.00 MB");
 /// ```

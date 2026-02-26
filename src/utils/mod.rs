@@ -1,3 +1,4 @@
+pub mod file_ops;
 pub mod fs;
 pub mod git;
 pub mod patterns;
