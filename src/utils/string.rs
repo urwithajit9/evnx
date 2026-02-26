@@ -11,7 +11,7 @@
 /// # Examples
 ///
 /// ```
-/// use dotenv_space::utils::string::truncate;
+/// use evnx::utils::string::truncate;
 /// assert_eq!(truncate("hello world", 8), "hello...");
 /// assert_eq!(truncate("hi", 10), "hi");
 /// ```
@@ -34,7 +34,7 @@ pub fn truncate(s: &str, max_len: usize) -> String {
 /// # Examples
 ///
 /// ```
-/// use dotenv_space::utils::string::redact;
+/// use evnx::utils::string::redact;
 /// assert_eq!(redact("secret"), "******");
 /// assert_eq!(redact("secretkey123"), "secr...****");
 /// ```
@@ -51,7 +51,7 @@ pub fn redact(s: &str) -> String {
 /// # Examples
 ///
 /// ```
-/// use dotenv_space::utils::string::pluralize;
+/// use evnx::utils::string::pluralize;
 /// assert_eq!(pluralize(1, "file", "files"), "1 file");
 /// assert_eq!(pluralize(3, "file", "files"), "3 files");
 /// ```

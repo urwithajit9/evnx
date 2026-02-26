@@ -17,7 +17,7 @@ name = "evnx"
 path = "src/main.rs"
 
 [lib]
-name = "dotenv_space"
+name = "evnx"
 path = "src/lib.rs"
 
 [dependencies]

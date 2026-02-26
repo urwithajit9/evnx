@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crate::config::registry;
 use crate::generators::template::EnvTemplateBuilder;
+use crate::utils::file_ops;
 
 /// Interactive project setup — generates .env.example
 #[allow(clippy::too_many_arguments)]
@@ -20,18 +21,9 @@ pub fn run(
         println!("{}", "Running init in verbose mode".dimmed());
     }
 
-    println!(
-        "\n{}",
-        "┌─ evnx init ─────────────────────────────────┐".cyan()
-    );
-    println!(
-        "{}",
-        "│ Let's set up environment variables for your project │".cyan()
-    );
-    println!(
-        "{}\n",
-        "└──────────────────────────────────────────────────────┘".cyan()
-    );
+    print_header();
+
+    let reg = registry();
 
     // Determine stack (interactive or from flag)
     let selected_stack_id = resolve_stack(stack, yes, reg)?;
@@ -41,6 +33,10 @@ pub fn run(
 
     // Determine output path
     let output_path = resolve_output_path(path, yes)?;
+
+    // Ensure output directory exists
+    file_ops::ensure_dir(Path::new(&output_path))
+        .with_context(|| format!("Failed to create directory: {}", output_path))?;
 
     // Build environment template
     let stack_gen = reg
@@ -133,10 +129,7 @@ fn resolve_stack(
     let stacks: Vec<_> = reg.list_stacks();
     let display_names: Vec<_> = stacks
         .iter()
-        .filter_map(|&id| {
-            reg.get_stack(id)
-                .map(|g: &dyn crate::generators::StackGenerator| g.display_name())
-        })
+        .filter_map(|&id| reg.get_stack(id).map(|g| g.display_name()))
         .collect();
 
     let selection = Select::new()
@@ -164,10 +157,7 @@ fn resolve_services(
     let services: Vec<_> = reg.list_services();
     let display_names: Vec<_> = services
         .iter()
-        .filter_map(|&id| {
-            reg.get_service(id)
-                .map(|g: &dyn crate::generators::ServiceGenerator| g.display_name())
-        })
+        .filter_map(|&id| reg.get_service(id).map(|g| g.display_name()))
         .collect();
 
     let selections = MultiSelect::new()
@@ -236,90 +226,5 @@ fn print_next_steps() {
     println!("\n{}", "Next steps:".bold());
     println!("  1. Edit .env and replace placeholder values");
     println!("  2. Never commit .env to Git");
-    println!("  3. Run 'evnx validate' to check for issues");
-
-    Ok(())
-}
-
-fn generate_env_example(stack: &str, services: &[String]) -> String {
-    let mut content = String::new();
-
-    // Stack-specific variables
-    match stack {
-        "python" => {
-            content.push_str("# Django/FastAPI\n");
-            content.push_str("SECRET_KEY=generate-with-openssl-rand-hex-32\n");
-            content.push_str("DEBUG=True\n");
-            content.push_str("ALLOWED_HOSTS=localhost,127.0.0.1\n\n");
-        }
-        "nodejs" => {
-            content.push_str("# Node.js\n");
-            content.push_str("NODE_ENV=development\n");
-            content.push_str("PORT=3000\n\n");
-        }
-        "rust" => {
-            content.push_str("# Rust\n");
-            content.push_str("APP__ENVIRONMENT=development\n");
-            content.push_str("APP__PORT=8080\n\n");
-        }
-        _ => {
-            content.push_str("# Application\n");
-            content.push_str("APP_ENV=development\n\n");
-        }
-    }
-
-    // Service-specific variables
-    for service in services {
-        match service.as_str() {
-            "postgresql" => {
-                content.push_str("# Database\n");
-                content
-                    .push_str("DATABASE_URL=postgresql://user:password@localhost:5432/dbname\n\n");
-            }
-            "redis" => {
-                content.push_str("# Cache\n");
-                content.push_str("REDIS_URL=redis://localhost:6379/0\n\n");
-            }
-            "mongodb" => {
-                content.push_str("# Database\n");
-                content.push_str("MONGODB_URI=mongodb://localhost:27017/mydb\n\n");
-            }
-            "aws_s3" => {
-                content.push_str("# AWS S3\n");
-                content.push_str("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
-                content
-                    .push_str("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n");
-                content.push_str("AWS_STORAGE_BUCKET_NAME=your-bucket-name\n");
-                content.push_str("AWS_REGION=us-east-1\n\n");
-            }
-            "stripe" => {
-                content.push_str("# Stripe\n");
-                content.push_str("STRIPE_SECRET_KEY=sk_test_YOUR_KEY_HERE\n");
-                content.push_str("STRIPE_PUBLISHABLE_KEY=pk_test_YOUR_KEY_HERE\n");
-                content.push_str("STRIPE_WEBHOOK_SECRET=whsec_YOUR_WEBHOOK_SECRET\n\n");
-            }
-            "sendgrid" => {
-                content.push_str("# SendGrid\n");
-                content.push_str("SENDGRID_API_KEY=SG.YOUR_API_KEY_HERE\n\n");
-            }
-            "sentry" => {
-                content.push_str("# Sentry\n");
-                content.push_str("SENTRY_DSN=https://YOUR_SENTRY_DSN@sentry.io/PROJECT_ID\n\n");
-            }
-            "openai" => {
-                content.push_str("# OpenAI\n");
-                content.push_str("OPENAI_API_KEY=sk-proj-YOUR_KEY_HERE\n\n");
-            }
-            _ => {}
-        }
-    }
-
-    // Add generation footer
-    content.push_str(&format!(
-        "# Generated by evnx v{} on {}\n",
-        env!("CARGO_PKG_VERSION"),
-        chrono::Local::now().format("%Y-%m-%d")
-    ));
-
-    content
+    println!("  3. Run 'dotenv-space validate' to check for issues");
 }

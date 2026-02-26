@@ -11,7 +11,7 @@ use std::fmt;
 /// # Example
 ///
 /// ```
-/// use dotenv_space::generators::env_var::EnvVar;
+/// use evnx::generators::env_var::EnvVar;
 ///
 /// let var = EnvVar::new("DATABASE_URL", "postgresql://localhost/db")
 ///     .with_description("Primary database connection string")

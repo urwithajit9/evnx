@@ -13,8 +13,8 @@ use crate::generators::{EnvVar, ServiceGenerator, StackGenerator};
 /// # Example
 ///
 /// ```no_run
-/// use dotenv_space::config::registry;
-/// use dotenv_space::generators::template::EnvTemplateBuilder;
+/// use evnx::config::registry;
+/// use evnx::generators::template::EnvTemplateBuilder;
 ///
 /// let reg = registry();
 /// let stack = reg.get_stack("python").unwrap();
