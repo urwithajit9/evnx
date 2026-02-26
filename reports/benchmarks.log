@@ -1,84 +1,279 @@
-   Compiling memchr v2.8.0
-   Compiling syn v2.0.117
-   Compiling diff v0.1.13
-   Compiling yansi v1.0.1
-   Compiling pretty_assertions v1.4.1
-   Compiling aho-corasick v1.1.4
-   Compiling serde_json v1.0.149
-   Compiling regex-automata v0.4.14
-   Compiling serde_derive v1.0.228
-   Compiling thiserror-impl v1.0.69
-   Compiling clap_derive v4.5.55
-   Compiling thiserror v1.0.69
-   Compiling clap v4.5.60
-   Compiling dialoguer v0.11.0
-   Compiling serde v1.0.228
-   Compiling regex v1.12.3
-   Compiling bstr v1.12.1
-   Compiling clap_complete v4.5.66
-   Compiling predicates v3.1.4
-   Compiling assert_cmd v2.1.2
-   Compiling serde_spanned v0.6.9
-   Compiling toml_datetime v0.6.11
-   Compiling serde_yaml v0.9.34+deprecated
-   Compiling toml_edit v0.22.27
-   Compiling toml v0.8.23
-   Compiling dotenv-space-cli v0.1.0 (/Users/kumarajit/Documents/dotenv-space-cli)
-error: character literal may only contain one codepoint
-   --> src/commands/scan.rs:184:37
+warning: unused imports: `Context` and `anyhow`
+  --> src/commands/backup.rs:63:14
+   |
+63 | use anyhow::{anyhow, Context, Result};
+   |              ^^^^^^  ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Confirm` and `Password`
+  --> src/commands/migrate.rs:54:17
+   |
+54 | use dialoguer::{Confirm, Input, Password, Select};
+   |                 ^^^^^^^         ^^^^^^^^
+
+warning: unused imports: `Context` and `anyhow`
+  --> src/commands/restore.rs:40:14
+   |
+40 | use anyhow::{anyhow, Context, Result};
+   |              ^^^^^^  ^^^^^^^
+
+warning: unused variable: `repo`
+  --> src/commands/migrate.rs:91:5
+   |
+91 |     repo: Option<String>,
+   |     ^^^^ help: if this is intentional, prefix it with an underscore: `_repo`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `skip_existing`
+  --> src/commands/migrate.rs:94:5
+   |
+94 |     skip_existing: bool,
+   |     ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_skip_existing`
+
+warning: unused variable: `overwrite`
+  --> src/commands/migrate.rs:95:5
+   |
+95 |     overwrite: bool,
+   |     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_overwrite`
+
+warning: unused variable: `github_token`
+  --> src/commands/migrate.rs:96:5
+   |
+96 |     github_token: Option<String>,
+   |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_github_token`
+
+warning: function `looks_like_dotenv` is never used
+   --> src/commands/backup.rs:454:4
     |
-184 |             if name_str.starts_with('.env') 
-    |                                     ^^^^^^
+454 | fn looks_like_dotenv(content: &str) -> bool {
+    |    ^^^^^^^^^^^^^^^^^
     |
-help: if you meant to write a string literal, use double quotes
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: type alias `MigrationDiff` is never used
+  --> src/commands/migrate.rs:69:6
+   |
+69 | type MigrationDiff = (Vec<(String, String)>, Vec<String>, Vec<String>);
+   |      ^^^^^^^^^^^^^
+
+warning: function `count_vars` is never used
+   --> src/commands/restore.rs:210:4
     |
-184 -             if name_str.starts_with('.env') 
-184 +             if name_str.starts_with(".env") 
+210 | fn count_vars(content: &str) -> usize {
+    |    ^^^^^^^^^^
+
+warning: function `looks_like_dotenv` is never used
+   --> src/commands/restore.rs:233:4
     |
+233 | fn looks_like_dotenv(content: &str) -> bool {
+    |    ^^^^^^^^^^^^^^^^^
 
-error: unknown start of token: \
-  --> src/utils/patterns.rs:66:75
+warning: type alias `MigrationDiff` is never used
+  --> src/commands/migrate.rs:69:6
    |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                                           ^
+69 | type MigrationDiff = (Vec<(String, String)>, Vec<String>, Vec<String>);
+   |      ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
-error: unknown start of token: \
-  --> src/utils/patterns.rs:66:82
-   |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                                                  ^
+warning: `evnx` (lib) generated 11 warnings (run `cargo fix --lib -p evnx` to apply 7 suggestions)
+warning: `evnx` (lib test) generated 8 warnings (7 duplicates)
+   Compiling evnx v0.1.0 (/home/ajit/Documents/dotenv-space-cli)
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `dotenv_space`
+   --> benches/cli_benchmarks.rs:129:9
+    |
+129 |     use dotenv_space::utils::patterns::detect_secret;
+    |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `dotenv_space`
+    |
+    = help: if you wanted to use a crate named `dotenv_space`, use `cargo add dotenv_space` to add it to your `Cargo.toml`
 
-error: character literal may only contain one codepoint
-  --> src/utils/patterns.rs:66:86
-   |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   |
-help: if you meant to write a string literal, use double quotes
-   |
-66 -     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-66 +     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*["\"]?([0-9a-zA-Z_\-]{32,})["\"]?").unwrap();
-   |
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `dotenv_space`
+   --> benches/cli_benchmarks.rs:148:9
+    |
+148 |     use dotenv_space::utils::patterns::calculate_entropy;
+    |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `dotenv_space`
+    |
+    = help: if you wanted to use a crate named `dotenv_space`, use `cargo add dotenv_space` to add it to your `Cargo.toml`
 
-error: unknown start of token: \
-  --> src/utils/patterns.rs:66:114
-   |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                                                                                  ^
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `dotenv_space`
+   --> benches/cli_benchmarks.rs:166:9
+    |
+166 |     use dotenv_space::core::converter::{ConvertOptions, Converter};
+    |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `dotenv_space`
+    |
+    = help: if you wanted to use a crate named `dotenv_space`, use `cargo add dotenv_space` to add it to your `Cargo.toml`
 
-error: mismatched closing delimiter: `]`
-  --> src/utils/patterns.rs:66:55
-   |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                       ^                 ^ mismatched closing delimiter
-   |                                                       |
-   |                                                       unclosed delimiter
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `dotenv_space`
+   --> benches/cli_benchmarks.rs:167:9
+    |
+167 |     use dotenv_space::formats::json::JsonConverter;
+    |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `dotenv_space`
+    |
+    = help: if you wanted to use a crate named `dotenv_space`, use `cargo add dotenv_space` to add it to your `Cargo.toml`
 
-error: mismatched closing delimiter: `)`
-  --> src/utils/patterns.rs:66:85
-   |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                                                     ^ unclosed delimiter              ^ mismatched closing delimiter
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `dotenv_space`
+   --> benches/cli_benchmarks.rs:186:9
+    |
+186 |     use dotenv_space::core::converter::{ConvertOptions, Converter};
+    |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `dotenv_space`
+    |
+    = help: if you wanted to use a crate named `dotenv_space`, use `cargo add dotenv_space` to add it to your `Cargo.toml`
 
-error: could not compile `dotenv-space-cli` (lib) due to 7 previous errors
-warning: build failed, waiting for other jobs to finish...
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `dotenv_space`
+   --> benches/cli_benchmarks.rs:187:9
+    |
+187 |     use dotenv_space::formats::json::JsonConverter;
+    |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `dotenv_space`
+    |
+    = help: if you wanted to use a crate named `dotenv_space`, use `cargo add dotenv_space` to add it to your `Cargo.toml`
+
+error[E0432]: unresolved import `criterion`
+ --> benches/cli_benchmarks.rs:4:5
+  |
+4 | use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+  |     ^^^^^^^^^ use of unresolved module or unlinked crate `criterion`
+  |
+  = help: if you wanted to use a crate named `criterion`, use `cargo add criterion` to add it to your `Cargo.toml`
+
+error[E0282]: type annotations needed
+  --> benches/cli_benchmarks.rs:57:39
+   |
+57 |     c.bench_function("parser_small", |b| {
+   |                                       ^
+58 |         let parser = Parser::default();
+59 |         b.iter(|| {
+   |         - type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+57 |     c.bench_function("parser_small", |b: /* Type */| {
+   |                                        ++++++++++++
+
+error[E0282]: type annotations needed
+  --> benches/cli_benchmarks.rs:66:40
+   |
+66 |     c.bench_function("parser_medium", |b| {
+   |                                        ^
+67 |         let parser = Parser::default();
+68 |         b.iter(|| {
+   |         - type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+66 |     c.bench_function("parser_medium", |b: /* Type */| {
+   |                                         ++++++++++++
+
+error[E0282]: type annotations needed
+  --> benches/cli_benchmarks.rs:79:74
+   |
+79 |         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
+   |                                                                          ^
+80 |             let parser = Parser::default();
+81 |             b.iter(|| {
+   |             - type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+79 |         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b: /* Type */, _| {
+   |                                                                           ++++++++++++
+
+error[E0282]: type annotations needed
+   --> benches/cli_benchmarks.rs:98:48
+    |
+ 98 |     c.bench_function("parser_with_expansion", |b| {
+    |                                                ^
+ 99 |         let parser = Parser::default();
+100 |         b.iter(|| {
+    |         - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+ 98 |     c.bench_function("parser_with_expansion", |b: /* Type */| {
+    |                                                 ++++++++++++
+
+error[E0282]: type annotations needed
+   --> benches/cli_benchmarks.rs:114:46
+    |
+114 |     c.bench_function("parser_no_expansion", |b| {
+    |                                              ^
+...
+118 |         b.iter(|| {
+    |         - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+114 |     c.bench_function("parser_no_expansion", |b: /* Type */| {
+    |                                               ++++++++++++
+
+error[E0282]: type annotations needed
+   --> benches/cli_benchmarks.rs:138:43
+    |
+138 |     c.bench_function("secret_detection", |b| {
+    |                                           ^
+139 |         b.iter(|| {
+    |         - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+138 |     c.bench_function("secret_detection", |b: /* Type */| {
+    |                                            ++++++++++++
+
+error[E0282]: type annotations needed
+   --> benches/cli_benchmarks.rs:152:46
+    |
+152 |     c.bench_function("entropy_calculation", |b| {
+    |                                              ^
+153 |         b.iter(|| {
+    |         - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+152 |     c.bench_function("entropy_calculation", |b: /* Type */| {
+    |                                               ++++++++++++
+
+error[E0282]: type annotations needed
+   --> benches/cli_benchmarks.rs:174:42
+    |
+174 |     c.bench_function("convert_to_json", |b| {
+    |                                          ^
+...
+177 |         b.iter(|| {
+    |         - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+174 |     c.bench_function("convert_to_json", |b: /* Type */| {
+    |                                           ++++++++++++
+
+error[E0282]: type annotations needed
+   --> benches/cli_benchmarks.rs:195:49
+    |
+195 |     c.bench_function("convert_with_filtering", |b| {
+    |                                                 ^
+...
+199 |         b.iter(|| {
+    |         - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+195 |     c.bench_function("convert_with_filtering", |b: /* Type */| {
+    |                                                  ++++++++++++
+
+error[E0282]: type annotations needed
+   --> benches/cli_benchmarks.rs:220:48
+    |
+220 |     c.bench_function("placeholder_detection", |b| {
+    |                                                ^
+221 |         b.iter(|| {
+    |         - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+220 |     c.bench_function("placeholder_detection", |b: /* Type */| {
+    |                                                 ++++++++++++
+
+Some errors have detailed explanations: E0282, E0432, E0433.
+For more information about an error, try `rustc --explain E0282`.
+error: could not compile `evnx` (bench "cli_benchmarks") due to 17 previous errors

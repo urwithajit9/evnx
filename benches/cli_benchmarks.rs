@@ -1,8 +1,8 @@
-/// Benchmarks for dotenv-space CLI
+/// Benchmarks for evnx (formely dotenv-space) CLI
 ///
 /// Run with: cargo bench
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use dotenv_space::core::{Parser, ParserConfig};
+use evnx::core::{Parser, ParserConfig};
 use std::collections::HashMap;
 
 // Sample .env content for benchmarking

@@ -1,0 +1,343 @@
+warning: unused imports: `Context` and `anyhow`
+  --> src/commands/backup.rs:63:14
+   |
+63 | use anyhow::{anyhow, Context, Result};
+   |              ^^^^^^  ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Confirm` and `Password`
+  --> src/commands/migrate.rs:54:17
+   |
+54 | use dialoguer::{Confirm, Input, Password, Select};
+   |                 ^^^^^^^         ^^^^^^^^
+
+warning: unused imports: `Context` and `anyhow`
+  --> src/commands/restore.rs:40:14
+   |
+40 | use anyhow::{anyhow, Context, Result};
+   |              ^^^^^^  ^^^^^^^
+
+warning: unused variable: `repo`
+  --> src/commands/migrate.rs:91:5
+   |
+91 |     repo: Option<String>,
+   |     ^^^^ help: if this is intentional, prefix it with an underscore: `_repo`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `skip_existing`
+  --> src/commands/migrate.rs:94:5
+   |
+94 |     skip_existing: bool,
+   |     ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_skip_existing`
+
+warning: unused variable: `overwrite`
+  --> src/commands/migrate.rs:95:5
+   |
+95 |     overwrite: bool,
+   |     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_overwrite`
+
+warning: unused variable: `github_token`
+  --> src/commands/migrate.rs:96:5
+   |
+96 |     github_token: Option<String>,
+   |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_github_token`
+
+warning: function `looks_like_dotenv` is never used
+   --> src/commands/backup.rs:454:4
+    |
+454 | fn looks_like_dotenv(content: &str) -> bool {
+    |    ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: type alias `MigrationDiff` is never used
+  --> src/commands/migrate.rs:69:6
+   |
+69 | type MigrationDiff = (Vec<(String, String)>, Vec<String>, Vec<String>);
+   |      ^^^^^^^^^^^^^
+
+warning: function `count_vars` is never used
+   --> src/commands/restore.rs:210:4
+    |
+210 | fn count_vars(content: &str) -> usize {
+    |    ^^^^^^^^^^
+
+warning: function `looks_like_dotenv` is never used
+   --> src/commands/restore.rs:233:4
+    |
+233 | fn looks_like_dotenv(content: &str) -> bool {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: `evnx` (lib) generated 11 warnings (run `cargo fix --lib -p evnx` to apply 7 suggestions)
+warning: unused import: `std::process::Command`
+ --> tests/tests.rs:7:5
+  |
+7 | use std::process::Command;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+  --> tests/tests.rs:49:26
+   |
+49 |     assert_cmd::Command::cargo_bin("evnx")
+   |                          ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+  --> tests/tests.rs:61:26
+   |
+61 |     assert_cmd::Command::cargo_bin("evnx")
+   |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+  --> tests/tests.rs:85:26
+   |
+85 |     assert_cmd::Command::cargo_bin("evnx")
+   |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+  --> tests/tests.rs:97:26
+   |
+97 |     assert_cmd::Command::cargo_bin("evnx")
+   |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:119:26
+    |
+119 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:142:39
+    |
+142 |     let output = assert_cmd::Command::cargo_bin("evnx")
+    |                                       ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:168:26
+    |
+168 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:182:26
+    |
+182 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:200:26
+    |
+200 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:217:39
+    |
+217 |     let output = assert_cmd::Command::cargo_bin("evnx")
+    |                                       ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:234:39
+    |
+234 |     let output = assert_cmd::Command::cargo_bin("evnx")
+    |                                       ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:251:26
+    |
+251 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:265:26
+    |
+265 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:284:26
+    |
+284 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:299:39
+    |
+299 |     let output = assert_cmd::Command::cargo_bin("evnx")
+    |                                       ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:317:26
+    |
+317 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:332:39
+    |
+332 |     let output = assert_cmd::Command::cargo_bin("evnx")
+    |                                       ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:349:26
+    |
+349 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:370:39
+    |
+370 |     let output = assert_cmd::Command::cargo_bin("evnx")
+    |                                       ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:388:39
+    |
+388 |     let output = assert_cmd::Command::cargo_bin("evnx")
+    |                                       ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:408:26
+    |
+408 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:416:26
+    |
+416 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:424:26
+    |
+424 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:438:26
+    |
+438 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:446:26
+    |
+446 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:454:26
+    |
+454 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:469:26
+    |
+469 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:479:26
+    |
+479 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:494:26
+    |
+494 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:509:26
+    |
+509 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+   --> tests/tests.rs:521:26
+    |
+521 |     assert_cmd::Command::cargo_bin("evnx")
+    |                          ^^^^^^^^^
+
+warning: unused import: `assert_cmd::prelude`
+ --> tests/tests.rs:6:5
+  |
+6 | use assert_cmd::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: `evnx` (test "tests") generated 33 warnings (run `cargo fix --test "tests" -p evnx` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/tests.rs (target/debug/deps/tests-76bf5de41c3c3c30)
+
+running 27 tests
+test test_diff_help ... ok
+test test_convert_with_transform ... ok
+test test_convert_to_json ... ok
+test test_convert_invalid_format ... ok
+test test_convert_to_github_actions ... ok
+test test_convert_help ... ok
+test test_convert_with_filter ... ok
+test test_diff_json_output ... FAILED
+test test_help_flag ... ok
+test test_invalid_command ... ok
+test test_scan_help ... ok
+test test_scan_exit_zero ... ok
+test test_init_help ... ok
+test test_init_non_interactive ... FAILED
+test test_diff_shows_missing ... ok
+test test_validate_missing_file ... ok
+test test_validate_boolean_trap ... ok
+test test_verbose_flag ... ok
+test test_scan_sarif_output ... FAILED
+test test_scan_json_output ... FAILED
+test test_validate_help ... ok
+test test_validate_finds_placeholder ... ok
+test test_version_flag ... ok
+test test_validate_json_output ... ok
+test test_scan_detects_aws_key ... ok
+test test_workflow_convert_multiple_formats ... ok
+test test_workflow_init_validate_scan ... ok
+
+failures:
+
+---- test_diff_json_output stdout ----
+
+thread 'test_diff_json_output' (216774) panicked at tests/tests.rs:306:74:
+called `Result::unwrap()` on an `Err` value: Error("expected value", line: 2, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- test_init_non_interactive stdout ----
+
+thread 'test_init_non_interactive' (216796) panicked at tests/tests.rs:75:5:
+assertion failed: content.contains("DATABASE_URL")
+
+---- test_scan_sarif_output stdout ----
+
+thread 'test_scan_sarif_output' (216829) panicked at tests/tests.rs:241:75:
+called `Result::unwrap()` on an `Err` value: Error("expected value", line: 2, column: 1)
+
+---- test_scan_json_output stdout ----
+
+thread 'test_scan_json_output' (216819) panicked at tests/tests.rs:224:74:
+called `Result::unwrap()` on an `Err` value: Error("expected value", line: 2, column: 1)
+
+
+failures:
+    test_diff_json_output
+    test_init_non_interactive
+    test_scan_json_output
+    test_scan_sarif_output
+
+test result: FAILED. 23 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--test tests`
+error: 1 target failed:
+    `--test tests`

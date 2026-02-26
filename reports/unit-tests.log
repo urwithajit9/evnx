@@ -1,59 +1,283 @@
+   Compiling memchr v2.8.0
+   Compiling anstyle v1.0.13
+   Compiling cfg-if v1.0.4
+   Compiling utf8parse v0.2.2
+   Compiling rand_core v0.10.0
+   Compiling regex-syntax v0.8.9
+   Compiling equivalent v1.0.2
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling anstyle-query v1.1.5
+   Compiling hashbrown v0.16.1
+   Compiling libc v0.2.182
+   Compiling serde_core v1.0.228
+   Compiling colorchoice v1.0.4
+   Compiling once_cell v1.21.3
+   Compiling num-traits v0.2.19
+   Compiling unicode-width v0.2.2
+   Compiling linux-raw-sys v0.11.0
+   Compiling clap_lex v1.0.0
+   Compiling bitflags v2.11.0
+   Compiling anstyle-parse v0.2.7
+   Compiling strsim v0.11.1
+   Compiling predicates-core v1.0.10
+   Compiling termtree v0.5.1
+   Compiling anstream v0.6.21
+   Compiling itoa v1.0.17
+   Compiling fastrand v2.3.0
+   Compiling difflib v0.4.0
+   Compiling toml_write v0.1.2
+   Compiling winnow v0.7.14
+   Compiling normalize-line-endings v0.3.0
+   Compiling cpufeatures v0.3.0
+   Compiling option-ext v0.2.0
+   Compiling chacha20 v0.10.0
+   Compiling predicates-tree v1.0.13
+   Compiling thiserror v1.0.69
+   Compiling clap_builder v4.5.60
+   Compiling portable-atomic v1.13.1
+   Compiling zmij v1.0.21
+   Compiling aho-corasick v1.1.4
+   Compiling rustix v1.1.3
+   Compiling yansi v1.0.1
+   Compiling ryu v1.0.23
+   Compiling zeroize v1.8.2
+   Compiling indexmap v2.13.0
+   Compiling float-cmp v0.10.0
+   Compiling number_prefix v0.4.0
+   Compiling iana-time-zone v0.1.65
+   Compiling unsafe-libyaml v0.2.11
+   Compiling diff v0.1.13
+   Compiling same-file v1.0.6
+   Compiling lazy_static v1.5.0
+   Compiling shell-words v1.1.1
+   Compiling colored v2.2.0
+   Compiling pretty_assertions v1.4.1
+   Compiling walkdir v2.5.0
+   Compiling chrono v0.4.43
+   Compiling anyhow v1.0.102
+   Compiling base64 v0.22.1
+   Compiling glob v0.3.3
+   Compiling getrandom v0.4.1
+   Compiling console v0.15.11
+   Compiling dirs-sys v0.4.1
+   Compiling wait-timeout v0.2.1
+   Compiling rand v0.10.0
+   Compiling dirs v5.0.1
+   Compiling dotenvy v0.15.7
+   Compiling indicatif v0.17.11
+   Compiling regex-automata v0.4.14
+   Compiling tempfile v3.25.0
+   Compiling dialoguer v0.11.0
+   Compiling clap v4.5.60
+   Compiling serde v1.0.228
+   Compiling serde_json v1.0.149
+   Compiling clap_complete v4.5.66
+   Compiling toml_datetime v0.6.11
+   Compiling serde_spanned v0.6.9
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling toml_edit v0.22.27
+   Compiling regex v1.12.3
+   Compiling bstr v1.12.1
+   Compiling predicates v3.1.4
+   Compiling toml v0.8.23
    Compiling assert_cmd v2.1.2
-   Compiling dotenv-space-cli v0.1.0 (/Users/kumarajit/Documents/dotenv-space-cli)
-error: character literal may only contain one codepoint
-   --> src/commands/scan.rs:184:37
-    |
-184 |             if name_str.starts_with('.env') 
-    |                                     ^^^^^^
-    |
-help: if you meant to write a string literal, use double quotes
-    |
-184 -             if name_str.starts_with('.env') 
-184 +             if name_str.starts_with(".env") 
-    |
+   Compiling evnx v0.1.0 (/home/ajit/Documents/dotenv-space-cli)
+warning: unused imports: `Context` and `anyhow`
+  --> src/commands/backup.rs:63:14
+   |
+63 | use anyhow::{anyhow, Context, Result};
+   |              ^^^^^^  ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
-error: unknown start of token: \
-  --> src/utils/patterns.rs:66:75
+warning: unused imports: `Confirm` and `Password`
+  --> src/commands/migrate.rs:54:17
    |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                                           ^
+54 | use dialoguer::{Confirm, Input, Password, Select};
+   |                 ^^^^^^^         ^^^^^^^^
 
-error: unknown start of token: \
-  --> src/utils/patterns.rs:66:82
+warning: unused imports: `Context` and `anyhow`
+  --> src/commands/restore.rs:40:14
    |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                                                  ^
+40 | use anyhow::{anyhow, Context, Result};
+   |              ^^^^^^  ^^^^^^^
 
-error: character literal may only contain one codepoint
-  --> src/utils/patterns.rs:66:86
+warning: unused variable: `repo`
+  --> src/commands/migrate.rs:91:5
    |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+91 |     repo: Option<String>,
+   |     ^^^^ help: if this is intentional, prefix it with an underscore: `_repo`
    |
-help: if you meant to write a string literal, use double quotes
-   |
-66 -     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-66 +     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*["\"]?([0-9a-zA-Z_\-]{32,})["\"]?").unwrap();
-   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
-error: unknown start of token: \
-  --> src/utils/patterns.rs:66:114
+warning: unused variable: `skip_existing`
+  --> src/commands/migrate.rs:94:5
    |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                                                                                  ^
+94 |     skip_existing: bool,
+   |     ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_skip_existing`
 
-error: mismatched closing delimiter: `]`
-  --> src/utils/patterns.rs:66:55
+warning: unused variable: `overwrite`
+  --> src/commands/migrate.rs:95:5
    |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                       ^                 ^ mismatched closing delimiter
-   |                                                       |
-   |                                                       unclosed delimiter
+95 |     overwrite: bool,
+   |     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_overwrite`
 
-error: mismatched closing delimiter: `)`
-  --> src/utils/patterns.rs:66:85
+warning: unused variable: `github_token`
+  --> src/commands/migrate.rs:96:5
    |
-66 |     pub static ref GENERIC_API_KEY: Regex = Regex::new(r"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?").unwrap();
-   |                                                                                     ^ unclosed delimiter              ^ mismatched closing delimiter
+96 |     github_token: Option<String>,
+   |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_github_token`
 
-error: could not compile `dotenv-space-cli` (lib test) due to 7 previous errors
+warning: type alias `MigrationDiff` is never used
+  --> src/commands/migrate.rs:69:6
+   |
+69 | type MigrationDiff = (Vec<(String, String)>, Vec<String>, Vec<String>);
+   |      ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `evnx` (lib test) generated 8 warnings (run `cargo fix --lib -p evnx --tests` to apply 7 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.84s
+     Running unittests src/lib.rs (target/debug/deps/evnx-077ef94bac284a3d)
+
+running 137 tests
+test commands::backup::tests::test_looks_like_dotenv_comments_and_blanks ... ok
+test commands::backup::tests::test_looks_like_dotenv_empty ... ok
+test commands::backup::tests::test_looks_like_dotenv_rejects_prose ... ok
+test commands::backup::tests::test_looks_like_dotenv_valid ... ok
+test commands::convert::tests::test_key_transform_uppercase ... ok
+test commands::diff::tests::test_compute_diff ... ok
+test commands::migrate::tests::test_is_system_variable ... ok
+test commands::migrate::tests::test_load_secrets_from_environment ... ok
+test commands::restore::tests::test_count_vars_empty ... ok
+test commands::restore::tests::test_count_vars_normal ... ok
+test commands::restore::tests::test_count_vars_only_assignments ... ok
+test commands::restore::tests::test_looks_like_dotenv_empty ... ok
+test commands::restore::tests::test_looks_like_dotenv_rejects_prose ... ok
+test commands::restore::tests::test_looks_like_dotenv_rejects_too_much_noise ... ok
+test commands::restore::tests::test_looks_like_dotenv_tolerates_some_noise ... ok
+test commands::restore::tests::test_looks_like_dotenv_valid ... ok
+test commands::scan::tests::test_is_scannable_file ... ok
+test commands::scan::tests::test_should_exclude ... ok
+test commands::scan::tests::test_truncate_value ... ok
+test commands::sync::tests::test_generate_placeholder ... ok
+test commands::sync::tests::test_generate_placeholder_with_value ... ok
+test commands::template::tests::test_filter_bool ... ok
+test commands::template::tests::test_filter_int ... ok
+test commands::template::tests::test_filter_upper ... ok
+test commands::template::tests::test_process_template_double_braces ... ok
+test commands::template::tests::test_process_template_simple ... ok
+test commands::validate::tests::test_is_placeholder ... ok
+test commands::validate::tests::test_is_weak_secret_key ... ok
+test config::registry::tests::test_registry_gets_service ... ok
+test config::registry::tests::test_registry_gets_stack ... ok
+test config::registry::tests::test_registry_lists_stacks ... ok
+test config::registry::tests::test_registry_unknown_stack ... ok
+test core::config::tests::test_create_example ... ok
+test core::config::tests::test_default_config ... ok
+test core::config::tests::test_load_from_toml ... ok
+test core::config::tests::test_merge_with_args ... ok
+test core::config::tests::test_resolve_alias ... ok
+test core::converter::tests::test_default_options ... ok
+test core::converter::tests::test_filter_vars_exclude ... ok
+test core::converter::tests::test_filter_vars_include ... ok
+test core::converter::tests::test_filter_vars_no_pattern ... ok
+test core::converter::tests::test_glob_match ... ok
+test core::converter::tests::test_new_options ... ok
+test core::converter::tests::test_to_camel_case ... ok
+test core::converter::tests::test_to_snake_case ... ok
+test core::converter::tests::test_transform_key_lowercase ... ok
+test core::converter::tests::test_transform_key_prefix ... ok
+test core::converter::tests::test_transform_key_uppercase ... ok
+test core::converter::tests::test_transform_value_base64 ... ok
+test core::parser::tests::test_backtick_quoted ... ok
+test core::parser::tests::test_basic_key_value ... ok
+test core::parser::tests::test_circular_expansion_detected ... ok
+test core::parser::tests::test_double_quoted ... ok
+test core::parser::tests::test_empty_double_quoted ... ok
+test core::parser::tests::test_empty_lines_and_comments_skipped ... ok
+test core::parser::tests::test_empty_value ... ok
+test core::parser::tests::test_escape_newline_tab ... ok
+test core::parser::tests::test_escape_quote_and_backslash ... ok
+test core::parser::tests::test_escape_single_quote_in_double ... ok
+test core::parser::tests::test_expansion_brace_syntax ... ok
+test core::parser::tests::test_expansion_chained ... ok
+test core::parser::tests::test_expansion_depth_limit ... ok
+test core::parser::tests::test_expansion_disabled ... ok
+test core::parser::tests::test_export_prefix ... ok
+test core::parser::tests::test_hash_inside_double_quotes_preserved ... ok
+test core::parser::tests::test_inline_comment_disabled ... ok
+test core::parser::tests::test_inline_comment_stripped ... ok
+test core::parser::tests::test_key_starting_with_digit_rejected ... ok
+test core::parser::tests::test_key_with_hyphen_rejected ... ok
+test core::parser::tests::test_key_with_space_rejected ... ok
+test core::parser::tests::test_mixed_case_key_accepted_by_default ... ok
+test core::parser::tests::test_multiline_disabled_returns_error ... ok
+test core::parser::tests::test_multiline_double_quoted ... ok
+test core::parser::tests::test_real_world_dotenv ... ok
+test core::parser::tests::test_single_quoted ... ok
+test core::parser::tests::test_single_quoted_no_escaping ... ok
+test core::parser::tests::test_strict_mode_accepts_uppercase ... ok
+test core::parser::tests::test_strict_mode_rejects_lowercase ... ok
+test core::parser::tests::test_undefined_bare_var_kept_literal ... ok
+test core::parser::tests::test_undefined_brace_var_errors ... ok
+test core::parser::tests::test_unterminated_string_eof ... ok
+test core::parser::tests::test_whitespace_around_equals ... ok
+test formats::azure::tests::test_azure_converter ... ok
+test formats::gcp::tests::test_gcp_converter ... ok
+test formats::heroku::tests::test_convert_basic ... ok
+test formats::heroku::tests::test_convert_with_special_chars ... ok
+test formats::heroku::tests::test_convert_without_app ... ok
+test formats::heroku::tests::test_converter_description ... ok
+test formats::heroku::tests::test_converter_name ... ok
+test formats::heroku::tests::test_converter_with_app ... ok
+test formats::heroku::tests::test_converter_without_app ... ok
+test formats::heroku::tests::test_default_converter ... ok
+test formats::json::tests::test_json_converter ... ok
+test generators::env_var::tests::test_display_trait ... ok
+test generators::env_var::tests::test_new_var ... ok
+test generators::env_var::tests::test_to_example_line_with_desc ... ok
+test generators::env_var::tests::test_to_example_line_without_desc ... ok
+test generators::env_var::tests::test_with_description ... ok
+test generators::service::postgresql::tests::test_postgresql_generator ... ok
+test generators::service::redis::tests::test_redis_generator ... ok
+test generators::stack::go::tests::test_go_generator ... ok
+test generators::stack::nodejs::tests::test_nodejs_generator ... ok
+test generators::stack::other::tests::test_other_generator ... ok
+test generators::stack::php::tests::test_php_generator ... ok
+test generators::stack::python::tests::test_python_default_vars_count ... ok
+test generators::stack::python::tests::test_python_generator_id ... ok
+test generators::stack::python::tests::test_secret_key_required ... ok
+test generators::stack::rust::tests::test_rust_generator ... ok
+test generators::template::tests::test_builder_basic ... ok
+test generators::template::tests::test_builder_no_footer ... ok
+test generators::tests::test_normalize_service_name ... ok
+test utils::fs::tests::test_backup_file_creates_copy ... ok
+test utils::fs::tests::test_human_readable_size_bytes ... ok
+test utils::fs::tests::test_human_readable_size_kilobytes ... ok
+test utils::fs::tests::test_human_readable_size_megabytes ... ok
+test utils::fs::tests::test_is_text_file_with_null_byte ... ok
+test utils::fs::tests::test_is_text_file_with_text ... ok
+test utils::fs::tests::test_set_and_check_secure_permissions ... ok
+test utils::git::tests::test_is_in_gitignore_finds_entry ... ok
+test utils::git::tests::test_is_in_gitignore_missing_file_returns_false ... ok
+test utils::patterns::tests::test_aws_access_key ... ok
+test utils::patterns::tests::test_detect_secret ... ok
+test utils::patterns::tests::test_entropy ... ok
+test utils::patterns::tests::test_github_tokens ... ok
+test utils::patterns::tests::test_is_placeholder ... ok
+test utils::patterns::tests::test_stripe_keys ... ok
+test utils::string::tests::test_pluralize_plural ... ok
+test utils::string::tests::test_pluralize_singular ... ok
+test utils::string::tests::test_pluralize_zero ... ok
+test utils::string::tests::test_redact_exactly_eight ... ok
+test utils::string::tests::test_redact_long ... ok
+test utils::string::tests::test_redact_short ... ok
+test utils::string::tests::test_truncate_exact_boundary ... ok
+test utils::string::tests::test_truncate_long ... ok
+test utils::string::tests::test_truncate_short ... ok
+test utils::ui::tests::test_progress_bar_length ... ok
+test utils::ui::tests::test_progress_bar_zero ... ok
+
+test result: ok. 137 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

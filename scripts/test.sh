@@ -47,7 +47,7 @@ mkdir -p reports
 
 run_unit_tests() {
     info "Running unit tests..."
-    
+
     if cargo test --lib --no-fail-fast -- --test-threads=1 2>&1 | tee reports/unit-tests.log; then
         success "Unit tests passed"
         return 0
@@ -63,14 +63,14 @@ run_unit_tests() {
 
 run_integration_tests() {
     info "Running integration tests..."
-    
+
     # Build first to catch compile errors
     if ! cargo build --tests; then
         error "Failed to build tests"
         return 1
     fi
-    
-    if cargo test --test integration_tests --no-fail-fast 2>&1 | tee reports/integration-tests.log; then
+
+    if cargo test --test tests --no-fail-fast 2>&1 | tee reports/integration-tests.log; then
         success "Integration tests passed"
         return 0
     else
@@ -85,15 +85,15 @@ run_integration_tests() {
 
 run_coverage() {
     info "Running coverage analysis..."
-    
+
     # Check if tarpaulin is installed
     if ! command -v cargo-tarpaulin &> /dev/null; then
         warn "cargo-tarpaulin not installed, installing..."
         cargo install cargo-tarpaulin
     fi
-    
+
     info "Generating coverage report (this may take a few minutes)..."
-    
+
     if cargo tarpaulin \
         --out Html \
         --out Xml \
@@ -101,13 +101,13 @@ run_coverage() {
         --exclude-files 'target/*' \
         --exclude-files 'tests/*' \
         --timeout 300 2>&1 | tee reports/coverage.log; then
-        
+
         # Extract coverage percentage
         COVERAGE=$(grep -oP 'Coverage: \K[0-9.]+' reports/coverage.log | tail -1)
-        
+
         if [ -n "$COVERAGE" ]; then
             info "Coverage: ${COVERAGE}%"
-            
+
             if (( $(echo "$COVERAGE >= 80" | bc -l) )); then
                 success "Coverage is above 80% threshold"
             elif (( $(echo "$COVERAGE >= 60" | bc -l) )); then
@@ -116,7 +116,7 @@ run_coverage() {
                 error "Coverage is ${COVERAGE}%, below 60% minimum"
             fi
         fi
-        
+
         if [ "$CI_MODE" = false ]; then
             info "Opening coverage report..."
             if command -v xdg-open &> /dev/null; then
@@ -125,7 +125,7 @@ run_coverage() {
                 open reports/coverage/index.html
             fi
         fi
-        
+
         success "Coverage report generated: reports/coverage/index.html"
         return 0
     else
@@ -140,14 +140,14 @@ run_coverage() {
 
 run_benchmarks() {
     info "Running benchmarks..."
-    
+
     if cargo bench --no-fail-fast 2>&1 | tee reports/benchmarks.log; then
         success "Benchmarks completed"
-        
+
         if [ "$CI_MODE" = false ]; then
             info "Benchmark results saved in target/criterion/"
         fi
-        
+
         return 0
     else
         error "Benchmarks failed"
@@ -162,21 +162,21 @@ run_benchmarks() {
 run_all_tests() {
     info "Running complete test suite..."
     echo
-    
+
     local failed=0
-    
+
     # Unit tests
     if ! run_unit_tests; then
         ((failed++))
     fi
     echo
-    
+
     # Integration tests
     if ! run_integration_tests; then
         ((failed++))
     fi
     echo
-    
+
     # Coverage (only if tests passed)
     if [ $failed -eq 0 ]; then
         if ! run_coverage; then
@@ -186,7 +186,7 @@ run_all_tests() {
         warn "Skipping coverage due to test failures"
     fi
     echo
-    
+
     # Benchmarks (only if not in CI)
     if [ "$CI_MODE" = false ]; then
         if ! run_benchmarks; then
@@ -196,12 +196,12 @@ run_all_tests() {
         info "Skipping benchmarks in CI mode"
     fi
     echo
-    
+
     # Summary
     echo "========================================"
     echo "Test Summary"
     echo "========================================"
-    
+
     if [ $failed -eq 0 ]; then
         success "All tests passed! ✓"
         echo
@@ -221,7 +221,7 @@ run_all_tests() {
 
 run_quick_tests() {
     info "Running quick tests (unit only)..."
-    
+
     if cargo test --lib --quiet; then
         success "Quick tests passed"
         return 0
@@ -237,9 +237,9 @@ run_quick_tests() {
 
 run_lint() {
     info "Running linting checks..."
-    
+
     local failed=0
-    
+
     # Format check
     info "Checking formatting..."
     if cargo fmt --check; then
@@ -248,7 +248,7 @@ run_lint() {
         error "Formatting issues found (run: cargo fmt)"
         ((failed++))
     fi
-    
+
     # Clippy
     info "Running clippy..."
     if cargo clippy --all-features -- -D warnings; then
@@ -257,7 +257,7 @@ run_lint() {
         error "Clippy issues found"
         ((failed++))
     fi
-    
+
     # Doc check
     info "Checking documentation..."
     if cargo doc --no-deps --quiet; then
@@ -266,7 +266,7 @@ run_lint() {
         error "Documentation issues found"
         ((failed++))
     fi
-    
+
     return $failed
 }
 
@@ -279,7 +279,7 @@ main() {
     echo "evnx Test Suite"
     echo "========================================"
     echo
-    
+
     case "$TEST_TYPE" in
         unit)
             run_unit_tests
@@ -318,7 +318,7 @@ main() {
             exit 1
             ;;
     esac
-    
+
     exit $?
 }
 
