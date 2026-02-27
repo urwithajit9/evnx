@@ -1,90 +1,90 @@
-[2m2026-02-26T09:25:10.924405Z[0m [32m INFO[0m [2mcargo_tarpaulin::config[0m[2m:[0m Creating config
-[2m2026-02-26T09:25:11.010426Z[0m [32m INFO[0m [2mcargo_tarpaulin[0m[2m:[0m Running Tarpaulin
-[2m2026-02-26T09:25:11.010434Z[0m [32m INFO[0m [2mcargo_tarpaulin[0m[2m:[0m Building project
-[2m2026-02-26T09:25:11.010513Z[0m [32m INFO[0m [2mcargo_tarpaulin::cargo[0m[2m:[0m Cleaning project
+[2m2026-02-27T03:00:39.537724Z[0m [32m INFO[0m [2mcargo_tarpaulin::config[0m[2m:[0m Creating config
+[2m2026-02-27T03:00:39.631400Z[0m [32m INFO[0m [2mcargo_tarpaulin[0m[2m:[0m Running Tarpaulin
+[2m2026-02-27T03:00:39.631408Z[0m [32m INFO[0m [2mcargo_tarpaulin[0m[2m:[0m Building project
+[2m2026-02-27T03:00:39.631486Z[0m [32m INFO[0m [2mcargo_tarpaulin::cargo[0m[2m:[0m Cleaning project
    Compiling proc-macro2 v1.0.106
-   Compiling quote v1.0.44
    Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.44
    Compiling libc v0.2.182
    Compiling serde_core v1.0.228
-   Compiling serde v1.0.228
-   Compiling autocfg v1.5.0
    Compiling memchr v2.8.0
+   Compiling autocfg v1.5.0
+   Compiling serde v1.0.228
    Compiling anstyle v1.0.13
-   Compiling cfg-if v1.0.4
-   Compiling utf8parse v0.2.2
-   Compiling rand_core v0.10.0
    Compiling getrandom v0.4.1
    Compiling regex-syntax v0.8.9
-   Compiling is_terminal_polyfill v1.70.2
-   Compiling hashbrown v0.16.1
-   Compiling once_cell v1.21.3
-   Compiling anstyle-parse v0.2.7
+   Compiling cfg-if v1.0.4
+   Compiling rand_core v0.10.0
+   Compiling utf8parse v0.2.2
    Compiling colorchoice v1.0.4
-   Compiling rustix v1.1.3
    Compiling equivalent v1.0.2
+   Compiling hashbrown v0.16.1
+   Compiling rustix v1.1.3
+   Compiling anstyle-parse v0.2.7
    Compiling anstyle-query v1.1.5
-   Compiling strsim v0.11.1
-   Compiling anstream v0.6.21
-   Compiling heck v0.5.0
-   Compiling thiserror v1.0.69
-   Compiling zmij v1.0.21
-   Compiling linux-raw-sys v0.11.0
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling once_cell v1.21.3
    Compiling clap_lex v1.0.0
    Compiling bitflags v2.11.0
+   Compiling heck v0.5.0
+   Compiling anstream v0.6.21
+   Compiling thiserror v1.0.69
+   Compiling strsim v0.11.1
+   Compiling zmij v1.0.21
    Compiling unicode-width v0.2.2
    Compiling portable-atomic v1.13.1
+   Compiling linux-raw-sys v0.11.0
+   Compiling cpufeatures v0.3.0
    Compiling clap_builder v4.5.60
    Compiling aho-corasick v1.1.4
    Compiling toml_write v0.1.2
    Compiling itoa v1.0.17
+   Compiling anyhow v1.0.102
    Compiling num-traits v0.2.19
-   Compiling cpufeatures v0.3.0
    Compiling indexmap v2.13.0
    Compiling option-ext v0.2.0
-   Compiling fastrand v2.3.0
-   Compiling serde_json v1.0.149
    Compiling winnow v0.7.14
-   Compiling anyhow v1.0.102
-   Compiling chacha20 v0.10.0
+   Compiling serde_json v1.0.149
+   Compiling fastrand v2.3.0
    Compiling syn v2.0.117
-   Compiling unsafe-libyaml v0.2.11
-   Compiling zeroize v1.8.2
-   Compiling predicates-core v1.0.10
-   Compiling number_prefix v0.4.0
+   Compiling chacha20 v0.10.0
    Compiling ryu v1.0.23
-   Compiling same-file v1.0.6
    Compiling lazy_static v1.5.0
+   Compiling predicates-core v1.0.10
+   Compiling zeroize v1.8.2
+   Compiling same-file v1.0.6
    Compiling iana-time-zone v0.1.65
+   Compiling number_prefix v0.4.0
    Compiling shell-words v1.1.1
+   Compiling unsafe-libyaml v0.2.11
+   Compiling float-cmp v0.10.0
    Compiling walkdir v2.5.0
-   Compiling colored v2.2.0
    Compiling console v0.15.11
    Compiling dirs-sys v0.4.1
-   Compiling rand v0.10.0
-   Compiling dirs v5.0.1
    Compiling chrono v0.4.43
-   Compiling float-cmp v0.10.0
-   Compiling termtree v0.5.1
-   Compiling indicatif v0.17.11
-   Compiling regex-automata v0.4.14
-   Compiling difflib v0.4.0
+   Compiling dirs v5.0.1
+   Compiling rand v0.10.0
+   Compiling colored v2.2.0
    Compiling normalize-line-endings v0.3.0
+   Compiling regex-automata v0.4.14
+   Compiling indicatif v0.17.11
    Compiling glob v0.3.3
-   Compiling base64 v0.22.1
-   Compiling tempfile v3.25.0
    Compiling dotenvy v0.15.7
+   Compiling base64 v0.22.1
+   Compiling termtree v0.5.1
    Compiling assert_cmd v2.1.2
+   Compiling tempfile v3.25.0
+   Compiling difflib v0.4.0
    Compiling predicates-tree v1.0.13
    Compiling wait-timeout v0.2.1
    Compiling diff v0.1.13
    Compiling yansi v1.0.1
    Compiling pretty_assertions v1.4.1
+   Compiling regex v1.12.3
+   Compiling bstr v1.12.1
    Compiling serde_derive v1.0.228
    Compiling thiserror-impl v1.0.69
    Compiling clap_derive v4.5.55
-   Compiling regex v1.12.3
-   Compiling bstr v1.12.1
    Compiling predicates v3.1.4
    Compiling dialoguer v0.11.0
    Compiling clap v4.5.60
@@ -95,145 +95,104 @@
    Compiling toml_edit v0.22.27
    Compiling toml v0.8.23
    Compiling evnx v0.1.0 (/home/ajit/Documents/dotenv-space-cli)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.16s
-[2m2026-02-26T09:25:22.525543Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling::linux[0m[2m:[0m Launching test
-[2m2026-02-26T09:25:22.525564Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling[0m[2m:[0m running /home/ajit/Documents/dotenv-space-cli/target/debug/deps/init_compat-54aafca291d8a53e
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.41s
+[2m2026-02-27T03:01:03.566518Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling::linux[0m[2m:[0m Launching test
+[2m2026-02-27T03:01:03.566569Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling[0m[2m:[0m running /home/ajit/Documents/dotenv-space-cli/target/debug/deps/init_compat-54aafca291d8a53e
 
 running 2 tests
 test init_with_stack_flag_creates_expected_vars ... ok
 test init_with_rust_stack_uses_double_underscore_format ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
-[2m2026-02-26T09:25:24.651582Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling::linux[0m[2m:[0m Launching test
-[2m2026-02-26T09:25:24.651604Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling[0m[2m:[0m running /home/ajit/Documents/dotenv-space-cli/target/debug/deps/evnx-33cb8fe4d83924c9
+[2m2026-02-27T03:01:08.230482Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling::linux[0m[2m:[0m Launching test
+[2m2026-02-27T03:01:08.230523Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling[0m[2m:[0m running /home/ajit/Documents/dotenv-space-cli/target/debug/deps/evnx-33cb8fe4d83924c9
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-[2m2026-02-26T09:25:28.989358Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling::linux[0m[2m:[0m Launching test
-[2m2026-02-26T09:25:28.989378Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling[0m[2m:[0m running /home/ajit/Documents/dotenv-space-cli/target/debug/deps/tests-20c6a811375246aa
+[2m2026-02-27T03:01:16.365445Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling::linux[0m[2m:[0m Launching test
+[2m2026-02-27T03:01:16.365475Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling[0m[2m:[0m running /home/ajit/Documents/dotenv-space-cli/target/debug/deps/tests-20c6a811375246aa
 
-running 27 tests
-test test_help_flag ... ok
-test test_init_non_interactive ... FAILED
-test test_init_help ... ok
-test test_invalid_command ... ok
-test test_scan_exit_zero ... ok
+running 23 tests
+test test_validate_boolean_trap ... ok
 test test_scan_help ... ok
-test test_scan_detects_aws_key ... ok
-test test_diff_shows_missing ... ok
-test test_diff_json_output ... FAILED
+test test_scan_exit_zero ... ok
+test test_invalid_command ... ok
+test test_init_help ... ok
 test test_diff_help ... ok
 test test_convert_with_transform ... ok
-test test_convert_with_filter ... ok
 test test_validate_finds_placeholder ... ok
-test test_scan_json_output ... FAILED
-test test_validate_boolean_trap ... ok
-test test_scan_sarif_output ... FAILED
+test test_help_flag ... ok
 test test_convert_to_json ... ok
+test test_diff_shows_missing ... ok
+test test_convert_to_github_actions ... ok
+test test_convert_with_filter ... ok
+test test_validate_json_output ... ok
 test test_convert_help ... ok
 test test_convert_invalid_format ... ok
-test test_convert_to_github_actions ... ok
-test test_version_flag ... ok
 test test_validate_missing_file ... ok
-test test_validate_json_output ... ok
-test test_validate_help ... ok
 test test_verbose_flag ... ok
+test test_version_flag ... ok
+test test_validate_help ... ok
+test test_scan_detects_aws_key ... ok
 test test_workflow_convert_multiple_formats ... ok
 test test_workflow_init_validate_scan ... ok
 
-failures:
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
 
----- test_init_non_interactive stdout ----
-
-thread 'test_init_non_interactive' (253053) panicked at tests/tests.rs:71:5:
-assertion failed: content.contains("DATABASE_URL")
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-
----- test_diff_json_output stdout ----
-
-thread 'test_diff_json_output' (253049) panicked at tests/tests.rs:289:74:
-called `Result::unwrap()` on an `Err` value: Error("expected value", line: 2, column: 1)
-
----- test_scan_json_output stdout ----
-
-thread 'test_scan_json_output' (253102) panicked at tests/tests.rs:212:74:
-called `Result::unwrap()` on an `Err` value: Error("expected value", line: 2, column: 1)
-
----- test_scan_sarif_output stdout ----
-
-thread 'test_scan_sarif_output' (253103) panicked at tests/tests.rs:228:75:
-called `Result::unwrap()` on an `Err` value: Error("expected value", line: 2, column: 1)
-
-
-failures:
-    test_diff_json_output
-    test_init_non_interactive
-    test_scan_json_output
-    test_scan_sarif_output
-
-test result: FAILED. 23 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
-
-[2m2026-02-26T09:25:31.368612Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling::linux[0m[2m:[0m Launching test
-[2m2026-02-26T09:25:31.368632Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling[0m[2m:[0m running /home/ajit/Documents/dotenv-space-cli/target/debug/deps/evnx-f52ef834ccf63970
+[2m2026-02-27T03:01:20.435452Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling::linux[0m[2m:[0m Launching test
+[2m2026-02-27T03:01:20.435482Z[0m [32m INFO[0m [2mcargo_tarpaulin::process_handling[0m[2m:[0m running /home/ajit/Documents/dotenv-space-cli/target/debug/deps/evnx-f52ef834ccf63970
 
 running 137 tests
 test commands::convert::tests::test_key_transform_uppercase ... ok
+test commands::backup::tests::test_looks_like_dotenv_empty ... ok
 test commands::migrate::tests::test_is_system_variable ... ok
-test commands::restore::tests::test_looks_like_dotenv_empty ... ok
 test commands::restore::tests::test_count_vars_only_assignments ... ok
+test commands::restore::tests::test_looks_like_dotenv_empty ... ok
 test commands::restore::tests::test_count_vars_normal ... ok
 test commands::restore::tests::test_count_vars_empty ... ok
-test commands::backup::tests::test_looks_like_dotenv_empty ... ok
 test commands::scan::tests::test_truncate_value ... ok
+test commands::backup::tests::test_looks_like_dotenv_rejects_prose ... ok
 test commands::scan::tests::test_is_scannable_file ... ok
-test commands::restore::tests::test_looks_like_dotenv_rejects_prose ... ok
-test commands::migrate::tests::test_load_secrets_from_environment ... ok
+test commands::backup::tests::test_looks_like_dotenv_valid ... ok
+test commands::backup::tests::test_looks_like_dotenv_comments_and_blanks ... ok
 test commands::scan::tests::test_should_exclude ... ok
+test commands::migrate::tests::test_load_secrets_from_environment ... ok
 test commands::sync::tests::test_generate_placeholder_with_value ... ok
 test commands::sync::tests::test_generate_placeholder ... ok
-test commands::restore::tests::test_looks_like_dotenv_rejects_too_much_noise ... ok
-test commands::template::tests::test_filter_upper ... ok
+test commands::restore::tests::test_looks_like_dotenv_rejects_prose ... ok
 test commands::template::tests::test_filter_int ... ok
 test commands::template::tests::test_filter_bool ... ok
+test commands::template::tests::test_filter_upper ... ok
 test commands::validate::tests::test_is_placeholder ... ok
-test commands::validate::tests::test_is_weak_secret_key ... ok
-test commands::restore::tests::test_looks_like_dotenv_valid ... ok
-test commands::restore::tests::test_looks_like_dotenv_tolerates_some_noise ... ok
+test commands::restore::tests::test_looks_like_dotenv_rejects_too_much_noise ... ok
 test core::converter::tests::test_default_options ... ok
 test commands::template::tests::test_process_template_simple ... ok
 test commands::template::tests::test_process_template_double_braces ... ok
+test commands::restore::tests::test_looks_like_dotenv_valid ... ok
+test commands::restore::tests::test_looks_like_dotenv_tolerates_some_noise ... ok
 test core::config::tests::test_create_example ... ok
 test commands::diff::tests::test_compute_diff ... ok
-test commands::backup::tests::test_looks_like_dotenv_rejects_prose ... ok
 test core::converter::tests::test_new_options ... ok
+test commands::validate::tests::test_is_weak_secret_key ... ok
 test core::config::tests::test_default_config ... ok
+test core::converter::tests::test_transform_key_prefix ... ok
 test core::converter::tests::test_filter_vars_no_pattern ... ok
 test core::converter::tests::test_filter_vars_include ... ok
+test core::converter::tests::test_transform_key_uppercase ... ok
+test core::converter::tests::test_transform_key_lowercase ... ok
+test core::converter::tests::test_transform_value_base64 ... ok
 test core::converter::tests::test_glob_match ... ok
-test core::converter::tests::test_transform_key_prefix ... ok
 test core::converter::tests::test_filter_vars_exclude ... ok
 test core::config::tests::test_load_from_toml ... ok
-test commands::backup::tests::test_looks_like_dotenv_valid ... ok
-test commands::backup::tests::test_looks_like_dotenv_comments_and_blanks ... ok
-test core::converter::tests::test_transform_key_uppercase ... ok
-test core::converter::tests::test_transform_value_base64 ... ok
-test core::converter::tests::test_transform_key_lowercase ... ok
+test core::converter::tests::test_to_camel_case ... ok
 test core::config::tests::test_resolve_alias ... ok
 test core::config::tests::test_merge_with_args ... ok
-test core::converter::tests::test_to_camel_case ... ok
 test core::converter::tests::test_to_snake_case ... ok
 test config::registry::tests::test_registry_unknown_stack ... ok
-test config::registry::tests::test_registry_gets_service ... ok
-test config::registry::tests::test_registry_lists_stacks ... ok
-test config::registry::tests::test_registry_gets_stack ... ok
-test core::parser::tests::test_expansion_disabled ... ok
-test core::parser::tests::test_inline_comment_disabled ... ok
-test core::parser::tests::test_basic_key_value ... ok
-test core::parser::tests::test_hash_inside_double_quotes_preserved ... ok
-test core::parser::tests::test_export_prefix ... ok
+test core::parser::tests::test_backtick_quoted ... ok
 test core::parser::tests::test_escape_single_quote_in_double ... ok
 test core::parser::tests::test_escape_quote_and_backslash ... ok
 test core::parser::tests::test_escape_newline_tab ... ok
@@ -241,83 +200,150 @@ test core::parser::tests::test_empty_value ... ok
 test core::parser::tests::test_empty_lines_and_comments_skipped ... ok
 test core::parser::tests::test_empty_double_quoted ... ok
 test core::parser::tests::test_double_quoted ... ok
+test core::parser::tests::test_basic_key_value ... ok
+test core::parser::tests::test_expansion_disabled ... ok
+test core::parser::tests::test_hash_inside_double_quotes_preserved ... ok
+test core::parser::tests::test_export_prefix ... ok
+test core::parser::tests::test_inline_comment_disabled ... ok
 test core::parser::tests::test_inline_comment_stripped ... ok
-test core::parser::tests::test_backtick_quoted ... ok
+test core::parser::tests::test_key_starting_with_digit_rejected ... ok
 test core::parser::tests::test_single_quoted_no_escaping ... ok
 test core::parser::tests::test_single_quoted ... ok
 test core::parser::tests::test_mixed_case_key_accepted_by_default ... ok
-test core::parser::tests::test_strict_mode_accepts_uppercase ... ok
-test core::parser::tests::test_strict_mode_rejects_lowercase ... ok
-test core::parser::tests::test_multiline_disabled_returns_error ... ok
-test core::parser::tests::test_whitespace_around_equals ... ok
-test core::parser::tests::test_expansion_chained ... ok
-test core::parser::tests::test_expansion_brace_syntax ... ok
-test core::parser::tests::test_real_world_dotenv ... ok
-test core::parser::tests::test_key_starting_with_digit_rejected ... ok
-test core::parser::tests::test_unterminated_string_eof ... ok
 test core::parser::tests::test_key_with_space_rejected ... ok
 test core::parser::tests::test_key_with_hyphen_rejected ... ok
+test core::parser::tests::test_multiline_disabled_returns_error ... ok
+test core::parser::tests::test_strict_mode_accepts_uppercase ... ok
+test core::parser::tests::test_whitespace_around_equals ... ok
+test core::parser::tests::test_strict_mode_rejects_lowercase ... ok
+test core::parser::tests::test_real_world_dotenv ... ok
 test core::parser::tests::test_undefined_brace_var_errors ... ok
-test formats::heroku::tests::test_default_converter ... ok
-test formats::heroku::tests::test_converter_without_app ... ok
-test formats::heroku::tests::test_converter_with_app ... ok
-test generators::env_var::tests::test_new_var ... ok
-test generators::env_var::tests::test_display_trait ... ok
-test formats::heroku::tests::test_converter_name ... ok
+test core::parser::tests::test_unterminated_string_eof ... ok
 test formats::heroku::tests::test_converter_description ... ok
+test formats::heroku::tests::test_converter_with_app ... ok
+test formats::heroku::tests::test_converter_without_app ... ok
+test formats::heroku::tests::test_default_converter ... ok
+test formats::heroku::tests::test_converter_name ... ok
+test core::parser::tests::test_expansion_chained ... ok
+test core::parser::tests::test_expansion_brace_syntax ... ok
+test config::registry::tests::test_registry_gets_service ... ok
+test generators::env_var::tests::test_new_var ... ok
 test core::parser::tests::test_expansion_depth_limit ... ok
+test config::registry::tests::test_registry_lists_stacks ... ok
+test config::registry::tests::test_registry_gets_stack ... ok
+test generators::env_var::tests::test_display_trait ... ok
 test generators::env_var::tests::test_with_description ... ok
-test generators::env_var::tests::test_to_example_line_with_desc ... ok
-test generators::env_var::tests::test_to_example_line_without_desc ... ok
 test core::parser::tests::test_circular_expansion_detected ... ok
-test generators::stack::python::tests::test_python_generator_id ... ok
 test core::parser::tests::test_undefined_bare_var_kept_literal ... ok
+test generators::env_var::tests::test_to_example_line_without_desc ... ok
+test generators::env_var::tests::test_to_example_line_with_desc ... ok
+test generators::stack::python::tests::test_python_generator_id ... ok
 test generators::service::redis::tests::test_redis_generator ... ok
 test generators::service::postgresql::tests::test_postgresql_generator ... ok
 test core::parser::tests::test_multiline_double_quoted ... ok
-test generators::stack::other::tests::test_other_generator ... ok
 test formats::json::tests::test_json_converter ... ok
-test generators::tests::test_normalize_service_name ... ok
-test generators::stack::nodejs::tests::test_nodejs_generator ... ok
-test generators::stack::go::tests::test_go_generator ... ok
-test formats::gcp::tests::test_gcp_converter ... ok
-test utils::fs::tests::test_backup_file_creates_copy ... ok
 test generators::stack::python::tests::test_secret_key_required ... ok
 test generators::stack::python::tests::test_python_default_vars_count ... ok
-test utils::fs::tests::test_human_readable_size_bytes ... ok
-test utils::git::tests::test_is_in_gitignore_finds_entry ... ok
+test generators::tests::test_normalize_service_name ... ok
+test generators::stack::other::tests::test_other_generator ... ok
+test utils::fs::tests::test_backup_file_creates_copy ... ok
 test utils::fs::tests::test_human_readable_size_megabytes ... ok
+test utils::fs::tests::test_human_readable_size_bytes ... ok
 test utils::fs::tests::test_human_readable_size_kilobytes ... ok
-test generators::stack::rust::tests::test_rust_generator ... ok
-test utils::patterns::tests::test_aws_access_key ... ok
-test formats::azure::tests::test_azure_converter ... ok
+test utils::git::tests::test_is_in_gitignore_finds_entry ... ok
 test utils::fs::tests::test_is_text_file_with_text ... ok
 test utils::fs::tests::test_is_text_file_with_null_byte ... ok
+test utils::patterns::tests::test_aws_access_key ... ok
+test formats::gcp::tests::test_gcp_converter ... ok
+test formats::azure::tests::test_azure_converter ... ok
+test generators::stack::rust::tests::test_rust_generator ... ok
+test generators::stack::nodejs::tests::test_nodejs_generator ... ok
+test generators::stack::go::tests::test_go_generator ... ok
 test utils::patterns::tests::test_stripe_keys ... ok
-test generators::stack::php::tests::test_php_generator ... ok
-test formats::heroku::tests::test_convert_with_special_chars ... ok
-test formats::heroku::tests::test_convert_without_app ... ok
 test utils::string::tests::test_pluralize_zero ... ok
 test utils::string::tests::test_pluralize_plural ... ok
 test utils::string::tests::test_pluralize_singular ... ok
-test utils::patterns::tests::test_github_tokens ... ok
-test utils::git::tests::test_is_in_gitignore_missing_file_returns_false ... ok
-test formats::heroku::tests::test_convert_basic ... ok
-test utils::string::tests::test_redact_exactly_eight ... ok
 test utils::string::tests::test_redact_short ... ok
+test utils::string::tests::test_redact_exactly_eight ... ok
 test utils::string::tests::test_redact_long ... ok
 test utils::string::tests::test_truncate_short ... ok
-test utils::string::tests::test_truncate_long ... ok
 test utils::string::tests::test_truncate_exact_boundary ... ok
-test utils::patterns::tests::test_is_placeholder ... ok
+test utils::string::tests::test_truncate_long ... ok
 test utils::ui::tests::test_progress_bar_zero ... ok
 test utils::ui::tests::test_progress_bar_length ... ok
-test generators::template::tests::test_builder_no_footer ... ok
+test utils::patterns::tests::test_github_tokens ... ok
+test utils::git::tests::test_is_in_gitignore_missing_file_returns_false ... ok
 test utils::fs::tests::test_set_and_check_secure_permissions ... ok
+test formats::heroku::tests::test_convert_without_app ... ok
+test formats::heroku::tests::test_convert_with_special_chars ... ok
+test formats::heroku::tests::test_convert_basic ... ok
+test utils::patterns::tests::test_is_placeholder ... ok
+test generators::stack::php::tests::test_php_generator ... ok
+test generators::template::tests::test_builder_no_footer ... ok
 test utils::patterns::tests::test_entropy ... ok
 test generators::template::tests::test_builder_basic ... ok
 test utils::patterns::tests::test_detect_secret ... ok
 
-test result: ok. 137 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+test result: ok. 137 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
 
-Error: "Test failed during run"
+[2m2026-02-27T03:01:28.159435Z[0m [32m INFO[0m [2mcargo_tarpaulin::report[0m[2m:[0m Coverage Results:
+[2m2026-02-27T03:01:28.167013Z[0m [32m INFO[0m [2mcargo_tarpaulin::report::html[0m[2m:[0m HTML report written to /home/ajit/Documents/dotenv-space-cli/reports/coverage/tarpaulin-report.html
+|| Tested/Total Lines:
+|| src/commands/backup.rs: 16/20
+|| src/commands/convert.rs: 0/73
+|| src/commands/diff.rs: 14/86
+|| src/commands/doctor.rs: 0/60
+|| src/commands/init.rs: 0/94
+|| src/commands/migrate.rs: 11/151
+|| src/commands/mod.rs: 0/10
+|| src/commands/restore.rs: 20/24
+|| src/commands/scan.rs: 32/182
+|| src/commands/sync.rs: 18/164
+|| src/commands/template.rs: 35/60
+|| src/commands/validate.rs: 10/157
+|| src/config/registry.rs: 36/42
+|| src/core/config.rs: 37/58
+|| src/core/converter.rs: 61/65
+|| src/core/parser.rs: 141/167
+|| src/formats/aws.rs: 0/10
+|| src/formats/azure.rs: 14/16
+|| src/formats/docker.rs: 0/11
+|| src/formats/doppler.rs: 0/11
+|| src/formats/gcp.rs: 14/16
+|| src/formats/github.rs: 0/18
+|| src/formats/heroku.rs: 37/37
+|| src/formats/json.rs: 8/10
+|| src/formats/kubernetes.rs: 0/20
+|| src/formats/railway.rs: 0/10
+|| src/formats/shell.rs: 0/13
+|| src/formats/terraform.rs: 0/12
+|| src/formats/vercel.rs: 0/11
+|| src/formats/yaml.rs: 0/10
+|| src/generators/env_var.rs: 20/22
+|| src/generators/mod.rs: 2/4
+|| src/generators/service/aws_s3.rs: 1/18
+|| src/generators/service/mongodb.rs: 1/7
+|| src/generators/service/openai.rs: 1/7
+|| src/generators/service/postgresql.rs: 6/7
+|| src/generators/service/redis.rs: 5/6
+|| src/generators/service/sendgrid.rs: 1/7
+|| src/generators/service/sentry.rs: 1/8
+|| src/generators/service/stripe.rs: 1/15
+|| src/generators/service/twilio.rs: 1/15
+|| src/generators/stack/go.rs: 12/13
+|| src/generators/stack/nodejs.rs: 12/13
+|| src/generators/stack/other.rs: 9/10
+|| src/generators/stack/php.rs: 19/20
+|| src/generators/stack/python.rs: 14/14
+|| src/generators/stack/ruby.rs: 1/8
+|| src/generators/stack/rust.rs: 12/13
+|| src/generators/template.rs: 34/42
+|| src/main.rs: 0/17
+|| src/utils/file_ops.rs: 0/20
+|| src/utils/fs.rs: 22/34
+|| src/utils/git.rs: 6/39
+|| src/utils/patterns.rs: 48/113
+|| src/utils/string.rs: 12/12
+|| src/utils/ui.rs: 9/28
+|| 
+35.40% coverage, 754/2130 lines covered

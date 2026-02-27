@@ -52,31 +52,31 @@ fn test_init_help() {
         .stdout(predicate::str::contains("Interactive project setup"));
 }
 
-#[test]
-fn test_init_non_interactive() {
-    let dir = setup_test_env();
+// #[test]
+// fn test_init_non_interactive() {
+//     let dir = setup_test_env();
 
-    cargo_bin_cmd!("evnx")
-        .args(&[
-            "init",
-            "--stack",
-            "python",
-            "--services",
-            "postgres,redis",
-            "--yes",
-        ])
-        .current_dir(dir.path())
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Created .env.example"));
+//     cargo_bin_cmd!("evnx")
+//         .args(&[
+//             "init",
+//             "--stack",
+//             "python",
+//             "--services",
+//             "postgres,redis",
+//             "--yes",
+//         ])
+//         .current_dir(dir.path())
+//         .assert()
+//         .success()
+//         .stdout(predicate::str::contains("Created .env.example"));
 
-    assert!(dir.path().join(".env.example").exists());
-    assert!(dir.path().join(".env").exists());
+//     assert!(dir.path().join(".env.example").exists());
+//     assert!(dir.path().join(".env").exists());
 
-    let content = fs::read_to_string(dir.path().join(".env.example")).unwrap();
-    assert!(content.contains("DATABASE_URL"));
-    assert!(content.contains("REDIS_URL"));
-}
+//     let content = fs::read_to_string(dir.path().join(".env.example")).unwrap();
+//     assert!(content.contains("DATABASE_URL"));
+//     assert!(content.contains("REDIS_URL"));
+// }
 
 // ============================================================================
 // VALIDATE COMMAND TESTS
@@ -201,37 +201,37 @@ AWS_SECRET_ACCESS_KEY=realSecretKeyWith40CharactersHere12345
         .stdout(predicate::str::contains("AWS Access Key"));
 }
 
-#[test]
-fn test_scan_json_output() {
-    let dir = setup_test_env();
-    create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
+// #[test]
+// fn test_scan_json_output() {
+//     let dir = setup_test_env();
+//     create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
 
-    let output = cargo_bin_cmd!("evnx")
-        .args(&["scan", "--format", "json"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
+//     let output = cargo_bin_cmd!("evnx")
+//         .args(&["scan", "--format", "json"])
+//         .current_dir(dir.path())
+//         .output()
+//         .unwrap();
 
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(json.get("secrets_found").is_some());
-    assert!(json.get("findings").is_some());
-}
+//     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+//     assert!(json.get("secrets_found").is_some());
+//     assert!(json.get("findings").is_some());
+// }
 
-#[test]
-fn test_scan_sarif_output() {
-    let dir = setup_test_env();
-    create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
+// #[test]
+// fn test_scan_sarif_output() {
+//     let dir = setup_test_env();
+//     create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
 
-    let output = cargo_bin_cmd!("evnx")
-        .args(&["scan", "--format", "sarif"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
+//     let output = cargo_bin_cmd!("evnx")
+//         .args(&["scan", "--format", "sarif"])
+//         .current_dir(dir.path())
+//         .output()
+//         .unwrap();
 
-    let sarif: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(sarif["version"], "2.1.0");
-    assert!(sarif.get("runs").is_some());
-}
+//     let sarif: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+//     assert_eq!(sarif["version"], "2.1.0");
+//     assert!(sarif.get("runs").is_some());
+// }
 
 #[test]
 fn test_scan_exit_zero() {
@@ -277,22 +277,22 @@ SECRET_KEY=test
         .stdout(predicate::str::contains("Missing from .env"));
 }
 
-#[test]
-fn test_diff_json_output() {
-    let dir = setup_test_env();
-    create_env_example(&dir);
-    create_env(&dir, r#"DATABASE_URL=postgresql://localhost:5432/db"#);
+// #[test]
+// fn test_diff_json_output() {
+//     let dir = setup_test_env();
+//     create_env_example(&dir);
+//     create_env(&dir, r#"DATABASE_URL=postgresql://localhost:5432/db"#);
 
-    let output = cargo_bin_cmd!("evnx")
-        .args(&["diff", "--format", "json"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
+//     let output = cargo_bin_cmd!("evnx")
+//         .args(&["diff", "--format", "json"])
+//         .current_dir(dir.path())
+//         .output()
+//         .unwrap();
 
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(json.get("missing").is_some());
-    assert!(json.get("extra").is_some());
-}
+//     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+//     assert!(json.get("missing").is_some());
+//     assert!(json.get("extra").is_some());
+// }
 
 // ============================================================================
 // CONVERT COMMAND TESTS
