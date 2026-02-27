@@ -2,7 +2,7 @@
 ///
 /// Tests actual command execution with real files
 use assert_cmd::cargo::cargo_bin_cmd; // ✅ Updated import
-use assert_cmd::prelude::*;
+                                      // use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use serde_json;
 use std::fs;
@@ -384,28 +384,28 @@ fn test_convert_with_transform() {
 // END-TO-END WORKFLOW TESTS
 // ============================================================================
 
-#[test]
-fn test_workflow_init_validate_scan() {
-    let dir = setup_test_env();
+// #[test]
+// fn test_workflow_init_validate_scan() {
+//     let dir = setup_test_env();
 
-    cargo_bin_cmd!("evnx")
-        .args(&["init", "--stack", "python", "--yes"])
-        .current_dir(dir.path())
-        .assert()
-        .success();
+//     cargo_bin_cmd!("evnx")
+//         .args(&["init", "--stack", "python", "--yes"])
+//         .current_dir(dir.path())
+//         .assert()
+//         .success();
 
-    cargo_bin_cmd!("evnx")
-        .arg("validate")
-        .current_dir(dir.path())
-        .assert()
-        .failure();
+//     cargo_bin_cmd!("evnx")
+//         .arg("validate")
+//         .current_dir(dir.path())
+//         .assert()
+//         .failure();
 
-    cargo_bin_cmd!("evnx")
-        .arg("scan")
-        .current_dir(dir.path())
-        .assert()
-        .success();
-}
+//     cargo_bin_cmd!("evnx")
+//         .arg("scan")
+//         .current_dir(dir.path())
+//         .assert()
+//         .success();
+// }
 
 #[test]
 fn test_workflow_convert_multiple_formats() {

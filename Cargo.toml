@@ -73,6 +73,10 @@ serde_json = "1.0"
 tempfile = "3"
 pretty_assertions = "1"
 
+
+[build-dependencies]
+serde_json = "1.0"
+
 [features]
 default = []
 migrate = ["reqwest"]

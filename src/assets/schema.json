@@ -1,0 +1,731 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evnx.dev/schema/v1",
+  "title": "evnx Environment Variable Schema",
+  "description": "Defines languages, frameworks, services, infrastructure, and stack blueprints",
+  "version": "1.0.0",
+
+  "languages": {
+    "javascript_typescript": {
+      "display_name": "JavaScript / TypeScript",
+      "frameworks": {
+        "nextjs": {
+          "display_name": "Next.js",
+          "vars": [
+            "NEXT_PUBLIC_API_URL",
+            "NEXTAUTH_SECRET",
+            "NEXTAUTH_URL",
+            "NEXT_PUBLIC_APP_URL"
+          ],
+          "descriptions": {
+            "NEXTAUTH_SECRET": "Secret for NextAuth.js session encryption (generate with openssl)",
+            "NEXTAUTH_URL": "Canonical URL for your app",
+            "NEXT_PUBLIC_APP_URL": "Public app URL for client-side usage"
+          },
+          "defaults": {
+            "NEXTAUTH_URL": "http://localhost:3000",
+            "NEXT_PUBLIC_APP_URL": "http://localhost:3000"
+          },
+          "categories": {
+            "NEXTAUTH_SECRET": "Auth",
+            "NEXTAUTH_URL": "Application",
+            "NEXT_PUBLIC_API_URL": "API",
+            "NEXT_PUBLIC_APP_URL": "Application"
+          }
+        },
+        "vite": {
+          "display_name": "Vite",
+          "vars": ["VITE_APP_TITLE", "VITE_API_BASE_URL", "VITE_ENV"],
+          "descriptions": {
+            "VITE_API_BASE_URL": "Base URL for API requests"
+          },
+          "defaults": {
+            "VITE_ENV": "development"
+          }
+        },
+        "express_fastify": {
+          "display_name": "Express / Fastify",
+          "vars": [
+            "PORT",
+            "NODE_ENV",
+            "API_PREFIX",
+            "CORS_ORIGIN",
+            "JWT_SECRET"
+          ],
+          "descriptions": {
+            "JWT_SECRET": "Secret for signing JWT tokens",
+            "CORS_ORIGIN": "Allowed CORS origins (comma-separated)"
+          },
+          "defaults": {
+            "PORT": "3000",
+            "NODE_ENV": "development",
+            "CORS_ORIGIN": "http://localhost:3000"
+          }
+        },
+        "nest": {
+          "display_name": "NestJS",
+          "vars": ["PORT", "DATABASE_URL", "JWT_SECRET", "JWT_EXPIRES_IN"],
+          "defaults": {
+            "PORT": "3000",
+            "JWT_EXPIRES_IN": "1h"
+          }
+        },
+        "nuxt": {
+          "display_name": "Nuxt",
+          "vars": ["NUXT_PUBLIC_API_BASE", "NUXT_APP_CONFIG", "NUXT_ENV"]
+        },
+        "sveltekit": {
+          "display_name": "SvelteKit",
+          "vars": ["PUBLIC_API_URL", "PRIVATE_DB_KEY", "ORIGIN"],
+          "defaults": {
+            "ORIGIN": "http://localhost:5173"
+          }
+        }
+      }
+    },
+
+    "python": {
+      "display_name": "Python",
+      "frameworks": {
+        "django": {
+          "display_name": "Django",
+          "vars": [
+            "DJANGO_SETTINGS_MODULE",
+            "SECRET_KEY",
+            "DEBUG",
+            "ALLOWED_HOSTS",
+            "DATABASE_URL"
+          ],
+          "descriptions": {
+            "SECRET_KEY": "Django secret key (generate with: python -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())')",
+            "ALLOWED_HOSTS": "Comma-separated list of allowed host/domain names"
+          },
+          "defaults": {
+            "DJANGO_SETTINGS_MODULE": "myproject.settings",
+            "DEBUG": "True",
+            "ALLOWED_HOSTS": "localhost,127.0.0.1"
+          },
+          "categories": {
+            "SECRET_KEY": "Security",
+            "DEBUG": "Application",
+            "ALLOWED_HOSTS": "Security",
+            "DATABASE_URL": "Database"
+          }
+        },
+        "fastapi_flask": {
+          "display_name": "FastAPI / Flask",
+          "vars": ["APP_ENV", "SECRET_KEY", "HOST", "PORT", "DATABASE_URL"],
+          "defaults": {
+            "APP_ENV": "development",
+            "HOST": "0.0.0.0",
+            "PORT": "8000"
+          }
+        }
+      }
+    },
+
+    "rust": {
+      "display_name": "Rust",
+      "frameworks": {
+        "axum_actix": {
+          "display_name": "Axum / Actix",
+          "vars": ["RUST_LOG", "DATABASE_URL", "SOCKET_ADDR", "APP_ENV"],
+          "descriptions": {
+            "RUST_LOG": "Log level filter (e.g., info, debug, trace)",
+            "SOCKET_ADDR": "Address to bind the HTTP server"
+          },
+          "defaults": {
+            "RUST_LOG": "info",
+            "SOCKET_ADDR": "0.0.0.0:8080",
+            "APP_ENV": "development"
+          }
+        }
+      }
+    },
+
+    "go": {
+      "display_name": "Go",
+      "frameworks": {
+        "gin_echo": {
+          "display_name": "Gin / Echo",
+          "vars": ["GIN_MODE", "PORT", "DB_SOURCE", "APP_ENV"],
+          "defaults": {
+            "GIN_MODE": "debug",
+            "PORT": "8080",
+            "APP_ENV": "development"
+          }
+        }
+      }
+    },
+
+    "ruby": {
+      "display_name": "Ruby",
+      "frameworks": {
+        "rails": {
+          "display_name": "Ruby on Rails",
+          "vars": [
+            "RAILS_ENV",
+            "RAILS_MAX_THREADS",
+            "SECRET_KEY_BASE",
+            "DATABASE_URL"
+          ],
+          "descriptions": {
+            "SECRET_KEY_BASE": "Rails encryption key (generate with: rails secret)"
+          },
+          "defaults": {
+            "RAILS_ENV": "development",
+            "RAILS_MAX_THREADS": "5"
+          }
+        }
+      }
+    },
+
+    "php": {
+      "display_name": "PHP",
+      "frameworks": {
+        "laravel": {
+          "display_name": "Laravel",
+          "vars": [
+            "APP_KEY",
+            "APP_DEBUG",
+            "APP_URL",
+            "LOG_CHANNEL",
+            "DB_CONNECTION"
+          ],
+          "descriptions": {
+            "APP_KEY": "Laravel encryption key (generate with: php artisan key:generate)"
+          },
+          "defaults": {
+            "APP_DEBUG": "true",
+            "APP_URL": "http://localhost",
+            "LOG_CHANNEL": "stack",
+            "DB_CONNECTION": "mysql"
+          }
+        }
+      }
+    },
+
+    "java_kotlin": {
+      "display_name": "Java / Kotlin",
+      "frameworks": {
+        "spring_boot": {
+          "display_name": "Spring Boot",
+          "vars": [
+            "SPRING_PROFILES_ACTIVE",
+            "SERVER_PORT",
+            "LOGGING_LEVEL_ROOT",
+            "SPRING_DATASOURCE_URL"
+          ],
+          "defaults": {
+            "SPRING_PROFILES_ACTIVE": "dev",
+            "SERVER_PORT": "8080",
+            "LOGGING_LEVEL_ROOT": "INFO"
+          }
+        }
+      }
+    }
+  },
+
+  "services": {
+    "databases": {
+      "postgresql": {
+        "display_name": "PostgreSQL",
+        "vars": [
+          "DB_HOST",
+          "DB_PORT",
+          "DB_USER",
+          "DB_PASSWORD",
+          "DB_NAME",
+          "DATABASE_URL"
+        ],
+        "defaults": {
+          "DB_HOST": "localhost",
+          "DB_PORT": "5432",
+          "DATABASE_URL": "postgresql://user:password@localhost:5432/dbname"
+        },
+        "descriptions": {
+          "DB_PASSWORD": "Database password (use strong value in production)",
+          "DATABASE_URL": "Full connection string (overrides individual DB_* vars)"
+        },
+        "category": "Database",
+        "required": ["DB_NAME", "DB_USER"]
+      },
+      "mysql_mariadb": {
+        "display_name": "MySQL / MariaDB",
+        "vars": [
+          "DB_HOST",
+          "DB_PORT",
+          "DB_USER",
+          "DB_PASSWORD",
+          "DB_DATABASE",
+          "DATABASE_URL"
+        ],
+        "defaults": {
+          "DB_HOST": "localhost",
+          "DB_PORT": "3306",
+          "DATABASE_URL": "mysql://user:password@localhost:3306/dbname"
+        },
+        "category": "Database"
+      },
+      "mongodb": {
+        "display_name": "MongoDB",
+        "vars": ["MONGODB_URI", "MONGODB_DB_NAME"],
+        "defaults": {
+          "MONGODB_URI": "mongodb://localhost:27017"
+        },
+        "category": "Database"
+      },
+      "redis": {
+        "display_name": "Redis",
+        "vars": [
+          "REDIS_HOST",
+          "REDIS_PORT",
+          "REDIS_PASSWORD",
+          "REDIS_URL",
+          "REDIS_DB"
+        ],
+        "defaults": {
+          "REDIS_HOST": "localhost",
+          "REDIS_PORT": "6379",
+          "REDIS_URL": "redis://localhost:6379/0",
+          "REDIS_DB": "0"
+        },
+        "category": "Cache"
+      },
+      "elasticsearch": {
+        "display_name": "Elasticsearch",
+        "vars": ["ELASTICSEARCH_URL", "ELASTIC_USER", "ELASTIC_PASSWORD"],
+        "defaults": {
+          "ELASTICSEARCH_URL": "http://localhost:9200"
+        },
+        "category": "Search"
+      },
+      "supabase": {
+        "display_name": "Supabase",
+        "vars": [
+          "SUPABASE_URL",
+          "SUPABASE_ANON_KEY",
+          "SUPABASE_SERVICE_ROLE_KEY",
+          "SUPABASE_JWT_SECRET"
+        ],
+        "descriptions": {
+          "SUPABASE_ANON_KEY": "Public anon key for client-side usage",
+          "SUPABASE_SERVICE_ROLE_KEY": "Secret service key (server-side only!)"
+        },
+        "category": "Backend-as-a-Service"
+      },
+      "firebase": {
+        "display_name": "Firebase",
+        "vars": [
+          "FIREBASE_API_KEY",
+          "FIREBASE_PROJECT_ID",
+          "FIREBASE_AUTH_DOMAIN",
+          "FIREBASE_STORAGE_BUCKET"
+        ],
+        "category": "Backend-as-a-Service"
+      }
+    },
+
+    "messaging_queues": {
+      "rabbitmq": {
+        "display_name": "RabbitMQ",
+        "vars": [
+          "RABBITMQ_URL",
+          "RABBITMQ_DEFAULT_USER",
+          "RABBITMQ_DEFAULT_PASS"
+        ],
+        "defaults": {
+          "RABBITMQ_URL": "amqp://localhost:5672"
+        },
+        "category": "Message Queue"
+      },
+      "kafka": {
+        "display_name": "Apache Kafka",
+        "vars": ["KAFKA_BROKERS", "KAFKA_CLIENT_ID", "KAFKA_GROUP_ID"],
+        "defaults": {
+          "KAFKA_BROKERS": "localhost:9092"
+        },
+        "category": "Message Queue"
+      },
+      "redis_pubsub": {
+        "display_name": "Redis Pub/Sub",
+        "vars": ["REDIS_PUBSUB_URL"],
+        "category": "Message Queue"
+      }
+    },
+
+    "auth_providers": {
+      "auth0": {
+        "display_name": "Auth0",
+        "vars": [
+          "AUTH0_DOMAIN",
+          "AUTH0_CLIENT_ID",
+          "AUTH0_CLIENT_SECRET",
+          "AUTH0_AUDIENCE"
+        ],
+        "category": "Authentication"
+      },
+      "clerk": {
+        "display_name": "Clerk",
+        "vars": [
+          "CLERK_PUBLISHABLE_KEY",
+          "CLERK_SECRET_KEY",
+          "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"
+        ],
+        "descriptions": {
+          "CLERK_PUBLISHABLE_KEY": "Public key for client-side Clerk SDK",
+          "CLERK_SECRET_KEY": "Secret key for server-side Clerk API"
+        },
+        "category": "Authentication"
+      },
+      "google_oauth": {
+        "display_name": "Google OAuth",
+        "vars": [
+          "GOOGLE_CLIENT_ID",
+          "GOOGLE_CLIENT_SECRET",
+          "GOOGLE_CALLBACK_URL"
+        ],
+        "category": "Authentication"
+      }
+    },
+
+    "storage": {
+      "aws_s3": {
+        "display_name": "AWS S3",
+        "vars": [
+          "AWS_S3_BUCKET",
+          "AWS_S3_REGION",
+          "AWS_ACCESS_KEY_ID",
+          "AWS_SECRET_ACCESS_KEY",
+          "AWS_ENDPOINT"
+        ],
+        "descriptions": {
+          "AWS_ACCESS_KEY_ID": "AWS access key (use IAM roles in production)",
+          "AWS_SECRET_ACCESS_KEY": "AWS secret key (never commit to version control)"
+        },
+        "category": "Cloud Storage"
+      },
+      "cloudinary": {
+        "display_name": "Cloudinary",
+        "vars": [
+          "CLOUDINARY_URL",
+          "CLOUDINARY_CLOUD_NAME",
+          "CLOUDINARY_API_KEY",
+          "CLOUDINARY_API_SECRET"
+        ],
+        "category": "Media Storage"
+      },
+      "uploadthing": {
+        "display_name": "UploadThing",
+        "vars": ["UPLOADTHING_SECRET", "UPLOADTHING_APP_ID"],
+        "category": "File Upload"
+      }
+    },
+
+    "monitoring_logging": {
+      "sentry": {
+        "display_name": "Sentry",
+        "vars": [
+          "SENTRY_DSN",
+          "SENTRY_AUTH_TOKEN",
+          "SENTRY_ORG",
+          "SENTRY_PROJECT"
+        ],
+        "descriptions": {
+          "SENTRY_DSN": "Data Source Name for error tracking"
+        },
+        "category": "Error Tracking"
+      },
+      "datadog": {
+        "display_name": "Datadog",
+        "vars": ["DD_API_KEY", "DD_APP_KEY", "DD_SITE", "DD_ENV"],
+        "defaults": {
+          "DD_SITE": "datadoghq.com"
+        },
+        "category": "Observability"
+      },
+      "logtail": {
+        "display_name": "Logtail (Better Stack)",
+        "vars": ["LOGTAIL_SOURCE_TOKEN"],
+        "category": "Logging"
+      }
+    },
+
+    "payments": {
+      "stripe": {
+        "display_name": "Stripe",
+        "vars": [
+          "STRIPE_PUBLIC_KEY",
+          "STRIPE_SECRET_KEY",
+          "STRIPE_WEBHOOK_SECRET"
+        ],
+        "descriptions": {
+          "STRIPE_PUBLIC_KEY": "Publishable key (safe for client-side)",
+          "STRIPE_SECRET_KEY": "Secret key (server-side only)",
+          "STRIPE_WEBHOOK_SECRET": "Secret for verifying webhook signatures"
+        },
+        "category": "Payments"
+      },
+      "razorpay": {
+        "display_name": "Razorpay",
+        "vars": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"],
+        "category": "Payments"
+      },
+      "lemon_squeezy": {
+        "display_name": "Lemon Squeezy",
+        "vars": ["LEMON_SQUEEZY_API_KEY", "LEMON_SQUEEZY_STORE_ID"],
+        "category": "Payments"
+      }
+    },
+
+    "ai_ml": {
+      "openai_api": {
+        "display_name": "OpenAI API",
+        "vars": ["OPENAI_API_KEY", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID"],
+        "category": "AI/ML"
+      },
+      "anthropic": {
+        "display_name": "Anthropic (Claude)",
+        "vars": ["ANTHROPIC_API_KEY"],
+        "category": "AI/ML"
+      },
+      "huggingface": {
+        "display_name": "Hugging Face",
+        "vars": ["HF_API_TOKEN", "HF_MODEL_NAME"],
+        "category": "AI/ML"
+      }
+    },
+
+    "email_sms": {
+      "resend_email": {
+        "display_name": "Resend",
+        "vars": ["RESEND_API_KEY", "RESEND_FROM_EMAIL"],
+        "category": "Email"
+      },
+      "sendgrid": {
+        "display_name": "SendGrid",
+        "vars": ["SENDGRID_API_KEY", "SENDGRID_FROM_EMAIL"],
+        "category": "Email"
+      },
+      "twilio": {
+        "display_name": "Twilio",
+        "vars": [
+          "TWILIO_ACCOUNT_SID",
+          "TWILIO_AUTH_TOKEN",
+          "TWILIO_PHONE_NUMBER"
+        ],
+        "category": "SMS/VoIP"
+      }
+    }
+  },
+
+  "infrastructure": {
+    "aws": {
+      "display_name": "AWS (Basic)",
+      "vars": ["AWS_REGION", "AWS_PROFILE", "AWS_ACCOUNT_ID"],
+      "defaults": {
+        "AWS_REGION": "us-east-1"
+      },
+      "category": "Cloud Provider"
+    },
+    "vercel": {
+      "display_name": "Vercel",
+      "vars": [
+        "VERCEL_TOKEN",
+        "VERCEL_ORG_ID",
+        "VERCEL_PROJECT_ID",
+        "NEXT_PUBLIC_VERCEL_ENV"
+      ],
+      "descriptions": {
+        "VERCEL_TOKEN": "API token for Vercel CLI deployments"
+      },
+      "category": "Deployment Platform"
+    },
+    "docker": {
+      "display_name": "Docker (Basic)",
+      "vars": ["DOCKER_IMAGE_NAME", "DOCKER_REGISTRY_URL"],
+      "defaults": {
+        "DOCKER_REGISTRY_URL": "docker.io"
+      },
+      "category": "Containerization"
+    },
+    "kubernetes": {
+      "display_name": "Kubernetes",
+      "vars": ["KUBECONFIG_PATH", "K8S_NAMESPACE", "K8S_CONTEXT"],
+      "defaults": {
+        "KUBECONFIG_PATH": "~/.kube/config",
+        "K8S_NAMESPACE": "default"
+      },
+      "category": "Orchestration"
+    },
+    "railway": {
+      "display_name": "Railway",
+      "vars": ["RAILWAY_TOKEN", "RAILWAY_PROJECT_ID"],
+      "category": "Deployment Platform"
+    },
+    "github_actions": {
+      "display_name": "GitHub Actions",
+      "vars": ["GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN"],
+      "deployment_vars": ["APP_ENV", "STAGING_URL", "PRODUCTION_URL"],
+      "oidc": [
+        "AWS_ROLE_ARN",
+        "AZURE_CLIENT_ID",
+        "GCP_WORKLOAD_IDENTITY_PROVIDER"
+      ],
+      "category": "CI/CD"
+    },
+    "gitlab_ci": {
+      "display_name": "GitLab CI",
+      "vars": ["CI_JOB_TOKEN", "CI_REGISTRY_USER", "CI_REGISTRY_PASSWORD"],
+      "predefined": ["CI_COMMIT_SHA", "CI_ENVIRONMENT_NAME", "CI_PIPELINE_ID"],
+      "category": "CI/CD"
+    },
+    "azure_devops": {
+      "display_name": "Azure DevOps",
+      "vars": ["AZURE_DEVOPS_EXT_PIPELINE_VAR_SECRET", "SYSTEM_DEBUG"],
+      "auth": [
+        "AZURE_CLIENT_SECRET",
+        "AZURE_TENANT_ID",
+        "AZURE_SUBSCRIPTION_ID"
+      ],
+      "category": "CI/CD"
+    },
+    "aws_advanced": {
+      "display_name": "AWS (Advanced)",
+      "vars": ["AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+      "ecs_lambda": [
+        "AWS_ECS_CLUSTER",
+        "AWS_LAMBDA_FUNCTION_NAME",
+        "AWS_S3_LOG_BUCKET"
+      ],
+      "category": "Cloud Provider"
+    },
+    "docker_advanced": {
+      "display_name": "Docker (Advanced)",
+      "vars": [
+        "DOCKER_BUILDKIT",
+        "COMPOSE_PROJECT_NAME",
+        "DOCKER_DEFAULT_PLATFORM"
+      ],
+      "registry": ["DOCKER_REGISTRY_SERVER", "DOCKER_USER", "DOCKER_PASSWORD"],
+      "defaults": {
+        "DOCKER_BUILDKIT": "1",
+        "DOCKER_DEFAULT_PLATFORM": "linux/amd64"
+      },
+      "category": "Containerization"
+    }
+  },
+
+  "stacks": {
+    "t3_modern": {
+      "name": "T3 Turbo (Next.js + Clerk + Prisma)",
+      "description": "The 2026 standard for type-safe fullstack apps.",
+      "components": {
+        "language": "javascript_typescript",
+        "framework": "nextjs",
+        "services": ["postgresql", "clerk", "aws_s3", "stripe"],
+        "infrastructure": ["github_actions", "vercel"]
+      },
+      "tags": ["fullstack", "typescript", "auth", "payments", "saas"]
+    },
+    "mern_v2": {
+      "name": "Modern MERN (Vite + Express + MongoDB)",
+      "description": "The classic SPA stack, updated with Vite & TypeScript.",
+      "components": {
+        "language": "javascript_typescript",
+        "framework": "express_fastify",
+        "services": ["mongodb", "redis", "auth0"],
+        "infrastructure": ["docker"]
+      },
+      "tags": ["fullstack", "javascript", "spa", "nosql"]
+    },
+    "fastapi_ai": {
+      "name": "AI/ML Backend (FastAPI + Redis + S3)",
+      "description": "Optimized for high-concurrency AI agent backends.",
+      "components": {
+        "language": "python",
+        "framework": "fastapi_flask",
+        "services": ["postgresql", "redis", "aws_s3", "openai_api"],
+        "infrastructure": ["aws_advanced"]
+      },
+      "tags": ["backend", "python", "ai", "ml", "async"]
+    },
+    "rust_high_perf": {
+      "name": "Rust Speedstack (Axum + SQLx + Postgres)",
+      "description": "Maximum performance and memory safety.",
+      "components": {
+        "language": "rust",
+        "framework": "axum_actix",
+        "services": ["postgresql", "redis", "sentry"],
+        "infrastructure": ["docker_advanced", "github_actions"]
+      },
+      "tags": ["backend", "rust", "performance", "safety"]
+    },
+    "laravel_monolith": {
+      "name": "Laravel V-Stack (Laravel + Vue + MySQL)",
+      "description": "Batteries-included monolith for rapid shipping.",
+      "components": {
+        "language": "php",
+        "framework": "laravel",
+        "services": ["mysql_mariadb", "redis", "stripe"],
+        "infrastructure": ["github_actions"]
+      },
+      "tags": ["fullstack", "php", "monolith", "rapid-dev"]
+    },
+    "go_microservice": {
+      "name": "Go Cloud Native (Gin + Kafka + Postgres)",
+      "description": "Scalable microservices with event-driven architecture.",
+      "components": {
+        "language": "go",
+        "framework": "gin_echo",
+        "services": ["postgresql", "kafka", "datadog"],
+        "infrastructure": ["kubernetes"]
+      },
+      "tags": ["microservices", "go", "event-driven", "cloud-native"]
+    },
+    "supabase_fullstack": {
+      "name": "Supabase Starter (Next.js + Supabase)",
+      "description": "Zero-backend architecture using Supabase as a Platform.",
+      "components": {
+        "language": "javascript_typescript",
+        "framework": "nextjs",
+        "services": ["supabase", "stripe", "resend_email"],
+        "infrastructure": ["vercel"]
+      },
+      "tags": ["fullstack", "serverless", "baas", "typescript"]
+    },
+    "django_enterprise": {
+      "name": "Django Secure (Django + Postgres + Celery)",
+      "description": "Enterprise-grade Python monolith with background tasks.",
+      "components": {
+        "language": "python",
+        "framework": "django",
+        "services": ["postgresql", "rabbitmq", "redis", "sentry"],
+        "infrastructure": ["aws_advanced"]
+      },
+      "tags": ["backend", "python", "enterprise", "async-tasks"]
+    },
+    "firebase_mobile": {
+      "name": "App Backend (Node + Firebase)",
+      "description": "Standard for mobile-first application backends.",
+      "components": {
+        "language": "javascript_typescript",
+        "framework": "express_fastify",
+        "services": ["firebase", "google_oauth", "logtail"],
+        "infrastructure": ["github_actions"]
+      },
+      "tags": ["backend", "mobile", "firebase", "oauth"]
+    },
+    "content_marketing": {
+      "name": "SEO Content Stack (Nuxt + S3 + Stripe)",
+      "description": "High-performance static sites with e-commerce hooks.",
+      "components": {
+        "language": "javascript_typescript",
+        "framework": "nuxt",
+        "services": ["aws_s3", "stripe", "cloudinary"],
+        "infrastructure": ["vercel"]
+      },
+      "tags": ["static-site", "seo", "ecommerce", "content"]
+    }
+  }
+}
