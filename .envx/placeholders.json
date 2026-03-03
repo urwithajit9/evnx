@@ -1,0 +1,24 @@
+{
+  "$schema": "https://evnx.dev/schemas/placeholders.v1.json",
+  "description": "Project-specific placeholder rules for environment variables",
+  "patterns": {
+    ".*_API_KEY$": "sk_demo_XXXXXXXXXXXXXXXX",
+    ".*_SECRET$": "demo_secret_placeholder",
+    ".*_TOKEN$": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.demo",
+    "DATABASE_URL": "postgresql://demo:demo@localhost:5432/demo_db",
+    "REDIS_URL": "redis://localhost:6379/0",
+    ".*_PORT$": "8080",
+    ".*_HOST$": "localhost",
+    ".*_URL$": "https://api.demo.example.com",
+    "DEBUG": "true",
+    "ENVIRONMENT": "development",
+    "LOG_LEVEL": "debug"
+  },
+  "default": "REPLACE_IN_PRODUCTION",
+  "allow_actual": ["APP_NAME", "APP_VERSION", "ENVIRONMENT", "LOG_LEVEL"],
+  "naming_convention": {
+    "style": "SCREAMING_SNAKE_CASE",
+    "allow_prefixes": ["MY_APP_", "SERVICE_"],
+    "warn_on_lowercase": true
+  }
+}

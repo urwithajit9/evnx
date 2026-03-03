@@ -2,7 +2,7 @@
 //!
 //! Uses clap derive macros for type-safe argument handling.
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 // ─────────────────────────────────────────────────────────────
 // AddTarget: Subcommands for `evnx add`
@@ -44,6 +44,69 @@ pub enum AddTarget {
 
     /// Add custom variables interactively.
     Custom,
+}
+
+// ------------------------------------
+// sync related Enum and implementation
+// -------------------------------------
+
+/// Direction for sync operation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub enum SyncDirection {
+    /// Sync .env → .env.example (add new vars to template)
+    #[default]
+    Forward,
+    /// Sync .env.example → .env (add missing vars to local env)
+    Reverse,
+}
+
+impl std::fmt::Display for SyncDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SyncDirection::Forward => write!(f, "forward"),
+            SyncDirection::Reverse => write!(f, "reverse"),
+        }
+    }
+}
+
+/// Keep .env and .env.example in sync.
+#[derive(Args, Debug)]
+pub struct SyncArgs {
+    /// Direction of sync operation
+    #[arg(long, value_enum, default_value_t = SyncDirection::Forward)]
+    pub direction: SyncDirection,
+
+    /// Use placeholder values when adding new variables
+    #[arg(long)]
+    pub placeholder: bool,
+
+    /// Preview changes without writing to files
+    #[arg(long, short = 'n')]
+    pub dry_run: bool,
+
+    /// Skip interactive prompts (for CI/CD usage)
+    #[arg(long, short = 'f')]
+    pub force: bool,
+
+    /// Path to custom placeholder template config (JSON)
+    #[arg(long, value_name = "PATH")]
+    pub template_config: Option<std::path::PathBuf>,
+
+    /// Warn on non-standard env var naming (default: warn)
+    #[arg(long, value_enum, default_value_t = NamingPolicy::Warn)]
+    pub naming_policy: NamingPolicy,
+}
+
+/// Policy for handling non-standard environment variable names
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, Default)]
+pub enum NamingPolicy {
+    /// Warn but continue (default)
+    #[default]
+    Warn,
+    /// Treat non-standard names as errors
+    Error,
+    /// Ignore naming conventions entirely
+    Ignore,
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -212,11 +275,15 @@ pub enum Commands {
     },
 
     /// Keep .env and .env.example in sync.
+    // Sync {
+    //     #[arg(long, default_value = "forward")]
+    //     direction: String, // "forward" | "reverse"
+    //     #[arg(long)]
+    //     placeholder: bool, // Flag for placeholder usage
+    // },
     Sync {
-        #[arg(long, default_value = "forward")]
-        direction: String,
-        #[arg(long)]
-        placeholder: bool,
+        #[command(flatten)]
+        args: SyncArgs, // ✅ Nested struct with flatten
     },
 
     /// Generate config files from templates.

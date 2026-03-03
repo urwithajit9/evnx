@@ -156,7 +156,7 @@ pub fn handle(path: String, yes: bool, verbose: bool) -> Result<()> {
     //     "✓".green(),
     //     vars.vars.len()
     // );
-    success(&format!(
+    success(format!(
         "Created .env.example with {} variables",
         vars.vars.len()
     ));

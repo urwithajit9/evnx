@@ -47,7 +47,7 @@ pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) 
 
     if !conflicts.is_empty() {
         //println!("\n{}", "⚠️  Conflicts detected:".yellow().bold());
-        warning(&format!("{} conflicts detected", conflicts.len()));
+        warning(format!("{} conflicts detected", conflicts.len()));
         for conflict in &conflicts {
             println!(
                 "  • {} (existing: \"{}\", new: \"{}\")",
