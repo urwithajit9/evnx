@@ -40,6 +40,7 @@ serde_yaml = "0.9"
 toml = "0.8"
 
 # Core utilities
+tempfile = "3.10"
 regex = "1"
 lazy_static = "1.4"
 dotenvy = "0.15"

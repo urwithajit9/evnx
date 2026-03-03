@@ -71,7 +71,7 @@ pub fn handle(service_id: &str, path: &str, yes: bool, _verbose: bool) -> Result
         // Create new file if doesn't exist
         fs::write(&example_path, addition.trim()).context("Failed to create .env.example")?;
         // println!("{} Created .env.example with {} variables", "✓".green(), vars.vars.len());
-        success(&format!(
+        success(format!(
             "Added {} variables for {}",
             vars.vars.len(),
             service.display_name.as_deref().unwrap_or(service_id)

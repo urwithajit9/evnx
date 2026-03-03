@@ -82,7 +82,7 @@ pub fn handle(path: String, yes: bool, verbose: bool) -> Result<()> {
     let output_path = Path::new(&path);
     write_env_files(output_path, &example_content, &template_content)?;
 
-    success(&format!(
+    success(format!(
         "Created .env.example with {} variables",
         vars.vars.len()
     ));

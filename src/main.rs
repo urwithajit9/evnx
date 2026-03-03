@@ -2,7 +2,6 @@
 
 use anyhow::Result;
 use clap::Parser;
-// use colored::*;
 
 use evnx::cli::{Cli, Commands};
 use evnx::commands;
@@ -105,10 +104,22 @@ fn main() -> Result<()> {
             cli.verbose,
         ),
 
-        Commands::Sync {
-            direction,
-            placeholder,
-        } => commands::sync::run(direction, placeholder, cli.verbose),
+        // "forward" → sync_forward()  // .env → .env.example
+        // "reverse" → sync_reverse()  // .env.example → .env
+
+        // Commands::Sync {
+        //     direction,
+        //     placeholder,
+        // } => commands::sync::run(direction, placeholder, cli.verbose),
+        Commands::Sync { args } => commands::sync::run(
+            args.direction,
+            args.placeholder,
+            cli.verbose,
+            args.dry_run,
+            args.force,
+            args.template_config.clone(),
+            args.naming_policy,
+        ),
 
         Commands::Template { input, output, env } => {
             commands::template::run(input, output, env, cli.verbose)
