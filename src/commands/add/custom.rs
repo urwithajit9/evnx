@@ -181,7 +181,7 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<()> {
     //     "✓".green(),
     //     additions.len()
     // );
-    success(&format!("Added {} custom variables", additions.len()));
+    success(format!("Added {} custom variables", additions.len()));
 
     Ok(())
 }

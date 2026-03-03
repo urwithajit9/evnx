@@ -243,8 +243,8 @@ pub fn print_progress(message: &str) {
 /// ```text
 /// ✓ Created .env.example with 15 variables
 /// ```
-pub fn success(message: &str) {
-    println!("{} {}", "✓".green(), message);
+pub fn success(message: impl AsRef<str>) {
+    println!("{} {}", "✓".green(), message.as_ref()); // Change: message: &str → message: impl AsRef<str> allows both &str and String
 }
 
 /// Print a red error message with cross.
@@ -252,8 +252,8 @@ pub fn success(message: &str) {
 /// ```text
 /// ✗ Failed to parse schema.json
 /// ```
-pub fn error(message: &str) {
-    println!("{} {}", "✗".red(), message.red());
+pub fn error(message: impl AsRef<str>) {
+    println!("{} {}", "✗".red(), message.as_ref().red());
 }
 
 /// Print a yellow warning message with alert icon.
@@ -261,8 +261,8 @@ pub fn error(message: &str) {
 /// ```text
 /// ⚠️  Conflicting variables will be skipped
 /// ```
-pub fn warning(message: &str) {
-    println!("{} {}", "⚠️".yellow(), message.yellow());
+pub fn warning(message: impl AsRef<str>) {
+    println!("{} {}", "⚠️".yellow(), message.as_ref().yellow());
 }
 
 /// Print a cyan info message with info icon.
@@ -270,8 +270,8 @@ pub fn warning(message: &str) {
 /// ```text
 /// ℹ️  Tip: Run 'evnx validate' to check configuration
 /// ```
-pub fn info(message: &str) {
-    println!("{} {}", "ℹ️".cyan(), message.dimmed());
+pub fn info(message: impl AsRef<str>) {
+    println!("{} {}", "ℹ️".cyan(), message.as_ref().dimmed());
 }
 
 /// Print a bold important notice.
