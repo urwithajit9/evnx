@@ -17,11 +17,11 @@ use tempfile::TempDir;
 
 use common::{count_env_vars, read_env_example};
 
-fn debug_print_content(label: &str, content: &str) {
-    eprintln!("\n=== {} ===", label);
-    eprintln!("{}", content);
-    eprintln!("=== END {} ===\n", label);
-}
+// fn debug_print_content(label: &str, content: &str) {
+//     eprintln!("\n=== {} ===", label);
+//     eprintln!("{}", content);
+//     eprintln!("=== END {} ===\n", label);
+// }
 
 // ─────────────────────────────────────────────────────────────
 // Blank Mode Tests

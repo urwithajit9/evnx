@@ -131,7 +131,11 @@ fn main() -> Result<()> {
         #[cfg(feature = "backup")]
         Commands::Restore { backup, output } => commands::restore::run(backup, output, cli.verbose),
 
-        Commands::Doctor { path } => commands::doctor::run(path, cli.verbose),
+        // Commands::Doctor { path } => commands::doctor::run(path, cli.verbose),
+        Commands::Doctor { path, verbose } => {
+            // Cleanest: delegate Result handling to main's return type
+            evnx::commands::doctor::run(path, verbose)
+        }
 
         Commands::Completions { shell } => commands::completions::run(shell),
     }

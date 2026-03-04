@@ -189,12 +189,12 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     // use super::*;
-    use tempfile::TempDir;
+    // use tempfile::TempDir;
     // use std::fs;
 
     #[test]
     fn test_handle_creates_custom_section() {
-        let dir = TempDir::new().unwrap();
+        // let dir = TempDir::new().unwrap();
 
         // Simulate adding one variable (non-interactive test)
         // Note: Full interactive testing requires mocking dialoguer
