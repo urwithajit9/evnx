@@ -300,13 +300,13 @@ jobs:
           for pkg_dir in npm-publish/packages/*/; do
             echo "--- $pkg_dir ---"
             cat "$pkg_dir/package.json"
-            npm publish "$pkg_dir" --dry-run --access public
+            (cd "$pkg_dir" && npm publish --dry-run --access public)
             echo "✓ dry run passed"
           done
 
           echo "=== Wrapper package ==="
           cat npm-publish/evnx/package.json
-          npm publish npm-publish/evnx --dry-run --access public
+          (cd npm-publish/evnx && npm publish --dry-run --access public)
           echo "✓ dry run passed"
 
       # ── Publish platform-specific binary packages first ────────────────────
@@ -317,7 +317,7 @@ jobs:
           for pkg_dir in npm-publish/packages/*/; do
             pkg_name=$(node -p "require('./${pkg_dir}package.json').name")
             echo "Publishing $pkg_name..."
-            npm publish "$pkg_dir" --access public --provenance
+            (cd "$pkg_dir" && npm publish --access public --provenance)
             echo "✓ Published $pkg_name"
           done
 
@@ -331,7 +331,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm publish npm-publish/evnx --access public --provenance
+          (cd npm-publish/evnx && npm publish --access public --provenance)
           echo "✓ Published evnx@$VERSION"
 
       # ── Smoke test ─────────────────────────────────────────────────────────
