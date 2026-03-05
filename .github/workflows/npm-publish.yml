@@ -88,7 +88,7 @@ jobs:
 
           for artifact_folder in "${!ARTIFACT_MAP[@]}"; do
             npm_name="${ARTIFACT_MAP[$artifact_folder]}"
-            tarball="downloaded-artifacts/${artifact_folder}/evnx-${artifact_folder}.tar.gz"
+            tarball="downloaded-artifacts/${artifact_folder}/${artifact_folder}.tar.gz"
 
             if [[ ! -f "$tarball" ]]; then
               echo "ERROR: Expected tarball not found: $tarball"
@@ -102,12 +102,12 @@ jobs:
 
             # Rename binary to clean name (evnx or evnx.exe)
             if [[ "$npm_name" == *"win32"* ]]; then
-              mv "extracted/$npm_name/evnx-${artifact_folder}.exe" \
+              mv "extracted/$npm_name/${artifact_folder}.exe" \ \
                  "extracted/$npm_name/evnx.exe" 2>/dev/null || \
               mv "extracted/$npm_name/"*".exe" \
                  "extracted/$npm_name/evnx.exe"
             else
-              mv "extracted/$npm_name/evnx-${artifact_folder}" \
+              mv "extracted/$npm_name/${artifact_folder}" \
                  "extracted/$npm_name/evnx" 2>/dev/null || \
               mv "extracted/$npm_name/"evnx-* \
                  "extracted/$npm_name/evnx"
