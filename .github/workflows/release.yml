@@ -40,14 +40,19 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            libc6-dev-arm64-cross
 
       - name: Configure linker for aarch64
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           mkdir -p ~/.cargo
-          echo "[target.aarch64-unknown-linux-gnu]" >> ~/.cargo/config.toml
-          echo "linker = \"aarch64-linux-gnu-gcc\"" >> ~/.cargo/config.toml
+          cat >> ~/.cargo/config.toml << 'EOF'
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
 
       - name: Install musl tools
         if: matrix.target == 'x86_64-unknown-linux-musl'
@@ -56,6 +61,13 @@ jobs:
           sudo apt-get install -y musl-tools
 
       - name: Build
+        env:
+          # If any transitive dep still pulls openssl, vendor it
+          # (no-op if you've switched to rustls)
+          OPENSSL_STATIC: "1"
+          OPENSSL_DIR: "/usr"
+          PKG_CONFIG_ALLOW_CROSS: "1"
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: cargo build --release --all-features --target ${{ matrix.target }}
 
       - name: Package
