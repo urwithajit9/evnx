@@ -245,7 +245,7 @@ jobs:
           # wrapper package.json
           cat > npm-publish/evnx/package.json << EOF
           {
-            "name": "evnx",
+            "name": "@evnx/cli",
             "version": "$VERSION",
             "description": "CLI tool for managing .env files — validation, secret scanning, format conversion",
             "keywords": ["dotenv", "env", "secrets", "cli", "security", "devtools", "environment"],
@@ -337,7 +337,7 @@ jobs:
       # ── Smoke test ─────────────────────────────────────────────────────────
       - name: Smoke test installation
         run: |
-          npm install -g evnx@$VERSION
+          npm install -g @evnx/cli@$VERSION
           evnx --version
           echo "✓ Smoke test passed"
 
