@@ -1,0 +1,380 @@
+name: Publish to npm
+
+# Triggers after release.yml completes successfully on a v* tag push.
+# This means binaries are already built and uploaded — no rebuild needed.
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write  # Required for npm provenance attestation
+
+jobs:
+  # Guard: only run if the upstream Release workflow succeeded
+  check:
+    name: Check upstream success
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Check if release workflow succeeded and was a tag push
+        id: check
+        run: |
+          CONCLUSION="${{ github.event.workflow_run.conclusion }}"
+          HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
+
+          echo "Upstream conclusion: $CONCLUSION"
+          echo "Head branch/tag: $HEAD_BRANCH"
+
+          # Only proceed if successful AND triggered by a version tag
+          if [[ "$CONCLUSION" == "success" && "$HEAD_BRANCH" =~ ^v[0-9] ]]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            # Strip leading 'v' to get clean semver for package.json
+            VERSION="${HEAD_BRANCH#v}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Will publish version: $VERSION"
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "Skipping npm publish (conclusion=$CONCLUSION, ref=$HEAD_BRANCH)"
+          fi
+
+  publish:
+    name: Publish to npm
+    needs: check
+    if: needs.check.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      # ── Download artifacts from the completed Release workflow run ──────────
+      # We use the GitHub API directly since download-artifact@v4 only works
+      # within the same workflow run. We need cross-workflow artifact access.
+      - name: Download all release artifacts
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          run_id: ${{ github.event.workflow_run.id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          path: downloaded-artifacts/
+          # Download all artifacts from that run
+          name: |
+            evnx-x86_64-unknown-linux-musl
+            evnx-aarch64-unknown-linux-gnu
+            evnx-x86_64-apple-darwin
+            evnx-aarch64-apple-darwin
+            evnx-x86_64-pc-windows-msvc
+
+      - name: Show downloaded artifacts
+        run: find downloaded-artifacts/ -type f | sort
+
+      # ── Extract binaries from tarballs ─────────────────────────────────────
+      - name: Extract binaries
+        run: |
+          mkdir -p extracted/
+
+          # Map: artifact-folder → extracted binary name
+          declare -A ARTIFACT_MAP=(
+            ["evnx-x86_64-unknown-linux-musl"]="evnx-linux-x64"
+            ["evnx-aarch64-unknown-linux-gnu"]="evnx-linux-arm64"
+            ["evnx-x86_64-apple-darwin"]="evnx-darwin-x64"
+            ["evnx-aarch64-apple-darwin"]="evnx-darwin-arm64"
+            ["evnx-x86_64-pc-windows-msvc"]="evnx-win32-x64"
+          )
+
+          for artifact_folder in "${!ARTIFACT_MAP[@]}"; do
+            npm_name="${ARTIFACT_MAP[$artifact_folder]}"
+            tarball="downloaded-artifacts/${artifact_folder}/evnx-${artifact_folder}.tar.gz"
+
+            if [[ ! -f "$tarball" ]]; then
+              echo "ERROR: Expected tarball not found: $tarball"
+              ls "downloaded-artifacts/${artifact_folder}/" || true
+              exit 1
+            fi
+
+            echo "Extracting $tarball → extracted/$npm_name"
+            mkdir -p "extracted/$npm_name"
+            tar -xzf "$tarball" -C "extracted/$npm_name/"
+
+            # Rename binary to clean name (evnx or evnx.exe)
+            if [[ "$npm_name" == *"win32"* ]]; then
+              mv "extracted/$npm_name/evnx-${artifact_folder}.exe" \
+                 "extracted/$npm_name/evnx.exe" 2>/dev/null || \
+              mv "extracted/$npm_name/"*".exe" \
+                 "extracted/$npm_name/evnx.exe"
+            else
+              mv "extracted/$npm_name/evnx-${artifact_folder}" \
+                 "extracted/$npm_name/evnx" 2>/dev/null || \
+              mv "extracted/$npm_name/"evnx-* \
+                 "extracted/$npm_name/evnx"
+              chmod +x "extracted/$npm_name/evnx"
+            fi
+          done
+
+          echo "Extracted binaries:"
+          find extracted/ -type f | sort
+
+      # ── Build npm package directory structure from templates ───────────────
+      - name: Create npm package structures
+        run: |
+          # Platform package config: "npm-pkg-name:os:cpu:binary-name"
+          PLATFORMS=(
+            "evnx-linux-x64:linux:x64:evnx"
+            "evnx-linux-arm64:linux:arm64:evnx"
+            "evnx-darwin-x64:darwin:x64:evnx"
+            "evnx-darwin-arm64:darwin:arm64:evnx"
+            "evnx-win32-x64:win32:x64:evnx.exe"
+          )
+
+          for entry in "${PLATFORMS[@]}"; do
+            IFS=':' read -r pkg_name os cpu binary <<< "$entry"
+            pkg_dir="npm-publish/packages/$pkg_name"
+
+            mkdir -p "$pkg_dir/bin"
+
+            # Copy the extracted binary
+            cp "extracted/$pkg_name/$binary" "$pkg_dir/bin/$binary"
+            chmod +x "$pkg_dir/bin/$binary" || true
+
+            # Generate package.json
+            cat > "$pkg_dir/package.json" << EOF
+          {
+            "name": "@evnx/$pkg_name",
+            "version": "$VERSION",
+            "description": "evnx CLI binary for $os/$cpu",
+            "os": ["$os"],
+            "cpu": ["$cpu"],
+            "bin": {
+              "evnx": "bin/$binary"
+            },
+            "files": ["bin/$binary"],
+            "license": "MIT",
+            "repository": {
+              "type": "git",
+              "url": "https://github.com/urwithajit9/evnx.git"
+            }
+          }
+          EOF
+
+            echo "Created $pkg_dir"
+          done
+
+      # ── Create the main wrapper package ────────────────────────────────────
+      - name: Create wrapper package
+        run: |
+          mkdir -p npm-publish/evnx/bin
+
+          # install.js — runs at postinstall, creates the shim
+          cat > npm-publish/evnx/install.js << 'INSTALLEOF'
+          #!/usr/bin/env node
+          "use strict";
+
+          const fs   = require("fs");
+          const path = require("path");
+
+          const PLATFORM_PACKAGES = {
+            "linux-x64":    "@evnx/evnx-linux-x64",
+            "linux-arm64":  "@evnx/evnx-linux-arm64",
+            "darwin-x64":   "@evnx/evnx-darwin-x64",
+            "darwin-arm64": "@evnx/evnx-darwin-arm64",
+            "win32-x64":    "@evnx/evnx-win32-x64",
+          };
+
+          function getBinaryPath() {
+            const key = `${process.platform}-${process.arch}`;
+            const pkg = PLATFORM_PACKAGES[key];
+
+            if (!pkg) {
+              throw new Error(
+                `evnx: Unsupported platform: ${process.platform}/${process.arch}\n` +
+                `Supported: ${Object.keys(PLATFORM_PACKAGES).join(", ")}\n` +
+                `Install manually: https://github.com/urwithajit9/evnx/releases`
+              );
+            }
+
+            let pkgJsonPath;
+            try {
+              pkgJsonPath = require.resolve(`${pkg}/package.json`);
+            } catch (e) {
+              throw new Error(
+                `evnx: Binary package ${pkg} not installed.\n` +
+                `This usually means your platform wasn't detected correctly at install time.\n` +
+                `Try: npm install ${pkg}\n` +
+                `Or install manually: https://github.com/urwithajit9/evnx/releases`
+              );
+            }
+
+            const pkgDir    = path.dirname(pkgJsonPath);
+            const binName   = process.platform === "win32" ? "evnx.exe" : "evnx";
+            const binPath   = path.join(pkgDir, "bin", binName);
+
+            if (!fs.existsSync(binPath)) {
+              throw new Error(`evnx: Binary not found at expected path: ${binPath}`);
+            }
+
+            return binPath;
+          }
+
+          try {
+            const binaryPath = getBinaryPath();
+            const binDir     = path.join(__dirname, "bin");
+            fs.mkdirSync(binDir, { recursive: true });
+
+            if (process.platform === "win32") {
+              const shim = `@echo off\r\n"${binaryPath}" %*\r\n`;
+              fs.writeFileSync(path.join(binDir, "evnx.cmd"), shim);
+            } else {
+              const shim = `#!/bin/sh\nexec "${binaryPath}" "$@"\n`;
+              const shimPath = path.join(binDir, "evnx");
+              fs.writeFileSync(shimPath, shim);
+              fs.chmodSync(shimPath, 0o755);
+            }
+
+            console.log(`evnx installed for ${process.platform}/${process.arch}`);
+          } catch (err) {
+            // Non-fatal — don't block npm install, just warn
+            process.stderr.write(`\nWARNING: ${err.message}\n\n`);
+            process.exit(0);
+          }
+          INSTALLEOF
+
+          # wrapper package.json
+          cat > npm-publish/evnx/package.json << EOF
+          {
+            "name": "evnx",
+            "version": "$VERSION",
+            "description": "CLI tool for managing .env files — validation, secret scanning, format conversion",
+            "keywords": ["dotenv", "env", "secrets", "cli", "security", "devtools", "environment"],
+            "author": "Ajit Kumar <support@dotenv.space>",
+            "license": "MIT",
+            "homepage": "https://dotenv.space",
+            "repository": {
+              "type": "git",
+              "url": "https://github.com/urwithajit9/evnx.git"
+            },
+            "bugs": {
+              "url": "https://github.com/urwithajit9/evnx/issues"
+            },
+            "bin": {
+              "evnx": "bin/evnx"
+            },
+            "scripts": {
+              "postinstall": "node install.js"
+            },
+            "optionalDependencies": {
+              "@evnx/evnx-linux-x64":    "$VERSION",
+              "@evnx/evnx-linux-arm64":  "$VERSION",
+              "@evnx/evnx-darwin-x64":   "$VERSION",
+              "@evnx/evnx-darwin-arm64": "$VERSION",
+              "@evnx/evnx-win32-x64":    "$VERSION"
+            },
+            "engines": {
+              "node": ">=14"
+            },
+            "files": [
+              "bin/",
+              "install.js"
+            ]
+          }
+          EOF
+
+          # Placeholder bin/evnx so npm doesn't complain the bin is missing during publish
+          # install.js replaces this at postinstall time on the user's machine
+          printf '#!/bin/sh\necho "evnx: run npm install to complete setup" >&2\nexit 1\n' \
+            > npm-publish/evnx/bin/evnx
+          chmod +x npm-publish/evnx/bin/evnx
+
+          echo "Wrapper package ready:"
+          find npm-publish/evnx -type f | sort
+
+      # ── Dry run validation before publishing ───────────────────────────────
+      - name: Validate all packages (dry run)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "=== Platform packages ==="
+          for pkg_dir in npm-publish/packages/*/; do
+            echo "--- $pkg_dir ---"
+            cat "$pkg_dir/package.json"
+            npm publish "$pkg_dir" --dry-run --access public
+            echo "✓ dry run passed"
+          done
+
+          echo "=== Wrapper package ==="
+          cat npm-publish/evnx/package.json
+          npm publish npm-publish/evnx --dry-run --access public
+          echo "✓ dry run passed"
+
+      # ── Publish platform-specific binary packages first ────────────────────
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for pkg_dir in npm-publish/packages/*/; do
+            pkg_name=$(node -p "require('./${pkg_dir}package.json').name")
+            echo "Publishing $pkg_name..."
+            npm publish "$pkg_dir" --access public --provenance
+            echo "✓ Published $pkg_name"
+          done
+
+      # ── Publish the wrapper (depends on above being available on registry) ─
+      # Small sleep so registry replication catches up before the wrapper
+      # tries to resolve its optionalDependencies metadata
+      - name: Wait for registry replication
+        run: sleep 15
+
+      - name: Publish wrapper package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm publish npm-publish/evnx --access public --provenance
+          echo "✓ Published evnx@$VERSION"
+
+      # ── Smoke test ─────────────────────────────────────────────────────────
+      - name: Smoke test installation
+        run: |
+          npm install -g evnx@$VERSION
+          evnx --version
+          echo "✓ Smoke test passed"
+
+      # ── Post install instructions in release notes ─────────────────────────
+      - name: Add npm install note to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Find the GitHub release for this tag
+          TAG="v$VERSION"
+          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/$TAG --jq '.id')
+
+          if [[ -n "$RELEASE_ID" ]]; then
+            # Fetch existing body
+            EXISTING_BODY=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID --jq '.body')
+
+            NPM_NOTE="
+
+          ### npm / Node.js
+          \`\`\`bash
+          npm install -g evnx          # global install
+          npx evnx --version           # zero-install usage
+          npm install --save-dev evnx  # as a project dev dependency
+          \`\`\`
+          "
+
+            NEW_BODY="${EXISTING_BODY}${NPM_NOTE}"
+
+            gh api --method PATCH \
+              repos/${{ github.repository }}/releases/$RELEASE_ID \
+              --field "body=$NEW_BODY"
+
+            echo "✓ Updated release notes with npm install instructions"
+          fi
