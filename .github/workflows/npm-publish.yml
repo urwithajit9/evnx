@@ -67,13 +67,7 @@ jobs:
           run_id: ${{ github.event.workflow_run.id }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           path: downloaded-artifacts/
-          # Download all artifacts from that run
-          name: |
-            evnx-x86_64-unknown-linux-musl
-            evnx-aarch64-unknown-linux-gnu
-            evnx-x86_64-apple-darwin
-            evnx-aarch64-apple-darwin
-            evnx-x86_64-pc-windows-msvc
+
 
       - name: Show downloaded artifacts
         run: find downloaded-artifacts/ -type f | sort
