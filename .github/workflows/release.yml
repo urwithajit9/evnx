@@ -25,6 +25,8 @@ jobs:
             os: macos-latest
           - target: aarch64-apple-darwin
             os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -54,15 +56,19 @@ jobs:
           sudo apt-get install -y musl-tools
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --all-features --target ${{ matrix.target }}
 
       - name: Package
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/evnx dist/evnx-${{ matrix.target }}
+          BINARY="evnx"
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            BINARY="evnx.exe"
+          fi
+          cp target/${{ matrix.target }}/release/$BINARY dist/evnx-${{ matrix.target }}${BINARY##evnx}
           cd dist
-          tar -czf evnx-${{ matrix.target }}.tar.gz evnx-${{ matrix.target }}
+          tar -czf evnx-${{ matrix.target }}.tar.gz evnx-${{ matrix.target }}${BINARY##evnx}
           sha256sum evnx-${{ matrix.target }}.tar.gz > evnx-${{ matrix.target }}.tar.gz.sha256
 
       - name: Upload artifacts
@@ -70,7 +76,7 @@ jobs:
         with:
           name: evnx-${{ matrix.target }}
           path: dist/*
-          retention-days: 1
+          retention-days: 5
 
   release:
     name: Create Release
