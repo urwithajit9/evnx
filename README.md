@@ -21,6 +21,7 @@ All features are **production-ready** and working in v0.1.0!
 ### Core Commands (Always Available)
 
 - ✅ **`init`** - Interactive project setup with templates for Python, Node.js, Rust, Go, PHP
+- ✅ **`add`** - Option to add variables to your .env file , custom, blueprint, services
 - ✅ **`validate`** - Comprehensive validation (checks for placeholders, weak secrets, misconfigurations)
 - ✅ **`scan`** - Secret detection using pattern matching and entropy analysis
 - ✅ **`diff`** - Compare `.env` and `.env.example`, show missing/extra variables
@@ -128,8 +129,6 @@ evnx sync --direction forward
 
 ```bash
 evnx init                                # Interactive mode
-evnx init --stack python --yes           # Quick setup
-evnx init --stack nodejs --services postgres,redis
 ```
 
 **Supported stacks:** Python, Node.js, Rust, Go, PHP
@@ -582,7 +581,7 @@ MIT License - see [LICENSE](LICENSE)
 
 ---
 
-## 🙏 Credits
+## Credits
 
 Built by [Ajit Kumar](https://github.com/urwithajit9) after learning the hard way about secrets management.
 
