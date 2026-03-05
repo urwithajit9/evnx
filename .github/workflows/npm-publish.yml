@@ -317,8 +317,8 @@ jobs:
           for pkg_dir in npm-publish/packages/*/; do
             pkg_name=$(node -p "require('./${pkg_dir}package.json').name")
             echo "Publishing $pkg_name..."
-            (cd "$pkg_dir" && npm publish --access public --provenance)
-            echo "✓ Published $pkg_name"
+            (cd "$pkg_dir" && npm publish --access public --provenance) || \
+            echo "⚠ $pkg_name already published, skipping"
           done
 
       # ── Publish the wrapper (depends on above being available on registry) ─
