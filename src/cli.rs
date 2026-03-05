@@ -314,9 +314,19 @@ pub enum Commands {
     },
 
     /// Diagnose common setup issues.
+    // Doctor {
+    //     #[arg(default_value = ".")]
+    //     path: String,
+    // },
+    #[command(about = "Check .env files, Git config, project structure, and security")]
     Doctor {
-        #[arg(default_value = ".")]
+        /// Project directory to analyze
+        #[arg(default_value = ".", index = 1)]
         path: String,
+
+        /// Show detailed diagnostic output
+        #[arg(short, long)]
+        verbose: bool,
     },
 
     /// Generate shell completions.
