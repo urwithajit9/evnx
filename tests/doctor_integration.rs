@@ -2,8 +2,8 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-use tempfile::TempDir;
 use std::fs;
+use tempfile::TempDir;
 
 #[test]
 fn test_doctor_json_output() {
@@ -16,7 +16,7 @@ fn test_doctor_json_output() {
     Command::cargo_bin("evnx")
         .unwrap()
         .arg("doctor")
-        .arg(dir.path())              // ← Positional path argument
+        .arg(dir.path()) // ← Positional path argument
         .env("EVNX_OUTPUT_JSON", "1") // ← JSON output via env var
         .assert()
         .success()
@@ -33,7 +33,7 @@ fn test_doctor_verbose_mode() {
         .unwrap()
         .arg("doctor")
         .arg(dir.path())
-        .arg("--verbose")            // ← Verbose flag works
+        .arg("--verbose") // ← Verbose flag works
         .assert()
         .success()
         .stdout(predicate::str::contains("Project path:"));
@@ -49,6 +49,6 @@ fn test_doctor_missing_env_warning() {
         .arg("doctor")
         .arg(dir.path())
         .assert()
-        .success()  // Warnings don't cause exit(1), only errors do
+        .success() // Warnings don't cause exit(1), only errors do
         .stdout(predicate::str::contains("Warning").or(predicate::str::contains("⚠️")));
 }
