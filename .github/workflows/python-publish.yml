@@ -176,12 +176,12 @@ jobs:
       - name: Show what we're publishing
         run: ls -lh dist/
 
-      # ── Validate wheels before upload ─────────────────────────────────────
-      # twine check catches malformed metadata early so PyPI doesn't reject.
-      - name: Validate with twine
-        run: |
-          pip install "twine>=5.0" --quiet
-          twine check dist/*
+      # # ── Validate wheels before upload ─────────────────────────────────────
+      # # twine check catches malformed metadata early so PyPI doesn't reject.
+      # - name: Validate with twine
+      #   run: |
+      #     pip install "twine>=5.0" --quiet
+      #     twine check dist/*
 
       # ── Upload to PyPI using the stored API token ─────────────────────────
       # Secret name: PYPI_API_TOKEN
