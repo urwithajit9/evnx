@@ -1,0 +1,78 @@
+[build-system]
+requires = ["maturin>=1,<2"]
+build-backend = "maturin"
+
+[project]
+name = "evnx"
+# Keep this in sync with version in Cargo.toml — maturin reads it from there at build time.
+# You still declare it here for PyPI metadata; maturin enforces they match.
+dynamic = ["version"]
+description = "evnx — blazing-fast environment variable manager and inspector built in Rust"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+keywords = ["cli", "devtools", "environment", "env", "dotenv", "evnx"]
+authors = [
+  { name = "Ajit Kumar", email = "ajitkumar.pu@gmail.com" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: System :: Systems Administration",
+  "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage     = "https://github.com/urwithajit9/evnx"
+Repository   = "https://github.com/urwithajit9/evnx"
+"Bug Tracker" = "https://github.com/urwithajit9/evnx/issues"
+Changelog    = "https://github.com/urwithajit9/evnx/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/urwithajit9/evnx#readme"
+
+[tool.maturin]
+# "bin" = ship the compiled Rust binary; no Python bindings needed.
+# The binary is installed into the Python env's bin/ (or Scripts\ on Windows)
+# so `evnx` is available on PATH after `pip install evnx`.
+bindings = "bin"
+
+# Name of the [[bin]] in Cargo.toml to ship.
+# If Cargo.toml has: [[bin]] name = "evnx"  → this must match.
+# Comment this line out if your Cargo.toml only has one [[bin]].
+# module-name = "evnx"
+
+# Strip debug symbols — keeps the wheel small for production.
+#strip = true
+
+# Produce a universal2 wheel on macOS (covers x86_64 + Apple Silicon).
+# GitHub Actions builds them separately; this is for local `maturin build`.
+# universal2 = true
+
+# Include these files in the sdist (source distribution).
+include = [
+  "LICENSE",
+  "README.md",
+  "CHANGELOG.md",
+  "Cargo.toml",
+  "Cargo.lock",
+  "src/**/*",
+]
+
+# Exclude dev/test artefacts from the sdist.
+exclude = [
+  "target/**",
+  ".github/**",
+  "tests/**",
+  "benches/**",
+  "scripts/**",
+  ".env*",
+]
