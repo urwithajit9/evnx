@@ -1,0 +1,198 @@
+name: Publish to PyPI
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Triggers on the same tag pattern as release.yml ("v*"), so every GitHub
+# release also pushes a matching pip-installable package to PyPI.
+# ─────────────────────────────────────────────────────────────────────────────
+on:
+  push:
+    tags:
+      - "v*"          # v0.1.0  v1.2.3  v2.0.0-rc.1 …
+  workflow_dispatch:  # also allows manual trigger from GitHub UI for testing
+
+permissions:
+  contents: read
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BUILD JOBS — one per platform/arch combination.
+# maturin + manylinux ensures wheels work on virtually every Linux distro.
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ── Linux wheels (x86_64 + aarch64) via manylinux Docker ──────────────────
+  linux:
+    name: Linux (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false        # build other arches even if one fails
+      matrix:
+        target:
+          - x86_64            # standard 64-bit Linux servers / desktops
+          - aarch64           # AWS Graviton, Raspberry Pi 4 (64-bit), etc.
+          - armv7             # Raspberry Pi 3 and older (32-bit ARM)
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # maturin-action handles:
+      #   • installing the right Rust cross-compilation target
+      #   • running inside a manylinux container for broad glibc compat
+      #   • calling `maturin build --release` with the right flags
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: auto        # picks manylinux2014 / manylinux_2_28 as needed
+          args: >-
+            --release
+            --out dist
+            --find-interpreter    # picks up all available Python versions
+            --strip
+          # Uncomment if you need musl (fully static) builds:
+          # manylinux: musllinux_1_2
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.target }}
+          path: dist
+          retention-days: 5
+
+  # ── macOS wheels (Intel + Apple Silicon) ──────────────────────────────────
+  macos:
+    name: macOS (${{ matrix.target }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64    # Intel Macs (also runs via Rosetta on Apple Silicon)
+          - aarch64   # Native Apple Silicon (M1/M2/M3)
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: >-
+            --release
+            --out dist
+            --find-interpreter
+            --strip
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-${{ matrix.target }}
+          path: dist
+          retention-days: 5
+
+  # ── Windows wheel (x86_64) ────────────────────────────────────────────────
+  windows:
+    name: Windows (x86_64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64
+          args: >-
+            --release
+            --out dist
+            --find-interpreter
+            --strip
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-x86_64
+          path: dist
+          retention-days: 5
+
+  # ── Source distribution (sdist) ───────────────────────────────────────────
+  # Required by PyPI best-practice: allows pip to build from source as a
+  # fallback if no pre-built wheel matches the user's platform.
+  sdist:
+    name: Source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-sdist
+          path: dist
+          retention-days: 5
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # PUBLISH JOB — runs after ALL build jobs succeed
+  # ─────────────────────────────────────────────────────────────────────────
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [linux, macos, windows, sdist]   # wait for every build matrix
+    # Only publish on real version tags, not manual workflow_dispatch re-runs
+    # that might be triggered on a non-tag branch.
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    environment:
+      name: pypi
+      url: https://pypi.org/project/evnx
+
+    steps:
+      - name: Download all wheels + sdist
+        uses: actions/download-artifact@v4
+        with:
+          # Pull every artifact whose name starts with "wheels-"
+          pattern: wheels-*
+          merge-multiple: true   # flatten into a single directory
+          path: dist
+
+      - name: Show what we're publishing
+        run: ls -lh dist/
+
+      # ── Validate wheels before upload ─────────────────────────────────────
+      # twine check catches malformed metadata early so PyPI doesn't reject.
+      - name: Validate with twine
+        run: |
+          pip install twine --quiet
+          twine check dist/*
+
+      # ── Upload to PyPI using the stored API token ─────────────────────────
+      # Secret name: PYPI_API_TOKEN
+      # How to add: GitHub repo → Settings → Secrets and variables
+      #             → Actions → New repository secret
+      # Value: the token you got from pypi.org (starts with "pypi-")
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          # Set to true only when testing against Test PyPI:
+          # repository-url: https://test.pypi.org/legacy/
+          verbose: true           # show upload progress in logs
+          skip-existing: false    # fail loudly if the version already exists
