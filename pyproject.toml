@@ -10,7 +10,7 @@ dynamic = ["version"]
 description = "evnx — blazing-fast environment variable manager and inspector built in Rust"
 readme = "README.md"
 requires-python = ">=3.8"
-license = { file = "LICENSE" }
+license = { text = "MIT" }
 keywords = ["cli", "devtools", "environment", "env", "dotenv", "evnx"]
 authors = [
   { name = "Ajit Kumar", email = "ajitkumar.pu@gmail.com" },

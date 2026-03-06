@@ -180,7 +180,7 @@ jobs:
       # twine check catches malformed metadata early so PyPI doesn't reject.
       - name: Validate with twine
         run: |
-          pip install twine --quiet
+          pip install "twine>=5.0" --quiet
           twine check dist/*
 
       # ── Upload to PyPI using the stored API token ─────────────────────────
