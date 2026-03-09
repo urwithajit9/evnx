@@ -359,6 +359,33 @@ fn test_diff_help() {
 }
 
 #[test]
+fn test_diff_identical_files_exit_zero() {
+    let dir = setup_test_env();
+
+    // Create identical files — copy the EXACT content from create_env_example
+    create_env_example(&dir);
+    create_env(
+        &dir,
+        r#"# Database
+DATABASE_URL=postgresql://localhost:5432/db
+SECRET_KEY=change-me
+DEBUG=True
+
+# AWS
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+"#, // ✅ Must match create_env_example exactly
+    );
+
+    cargo_bin_cmd!("evnx")
+        .arg("diff")
+        .current_dir(dir.path())
+        .assert()
+        .success() // ✅ Now exits 0 because files are truly identical
+        .stdout(predicate::str::contains("Files are identical"));
+}
+
+#[test]
 fn test_diff_shows_missing() {
     let dir = setup_test_env();
     create_env_example(&dir);
@@ -373,7 +400,7 @@ SECRET_KEY=test
         .arg("diff")
         .current_dir(dir.path())
         .assert()
-        .success()
+        .code(1) // ✅ Exit 1 when differences exist
         .stdout(predicate::str::contains("Missing from .env"));
 }
 

@@ -4,8 +4,8 @@
 
 use crate::core::converter::{ConvertOptions, Converter};
 use anyhow::Result;
-use std::collections::HashMap;
-
+// use std::collections::HashMap;
+use indexmap::IndexMap;
 pub struct KubernetesSecretConverter {
     pub secret_name: String,
 }
@@ -19,7 +19,7 @@ impl Default for KubernetesSecretConverter {
 }
 
 impl Converter for KubernetesSecretConverter {
-    fn convert(&self, vars: &HashMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
         let filtered = options.filter_vars(vars);
 
         let mut output = String::new();

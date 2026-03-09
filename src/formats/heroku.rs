@@ -4,7 +4,8 @@
 
 use crate::core::converter::{ConvertOptions, Converter};
 use anyhow::Result;
-use std::collections::HashMap;
+// use std::collections::HashMap;
+use indexmap::IndexMap;
 
 /// Heroku Config Vars converter
 ///
@@ -32,7 +33,7 @@ impl HerokuConfigConverter {
 }
 
 impl Converter for HerokuConfigConverter {
-    fn convert(&self, vars: &HashMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
         let filtered = options.filter_vars(vars);
         let mut output = String::new();
 
@@ -127,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_convert_basic() {
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert("DATABASE_URL".to_string(), "postgresql://...".to_string());
         vars.insert("SECRET_KEY".to_string(), "secret123".to_string());
 
@@ -143,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_convert_without_app() {
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert("KEY".to_string(), "value".to_string());
 
         let converter = HerokuConfigConverter::without_app();
@@ -155,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_convert_with_special_chars() {
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert(
             "KEY".to_string(),
             "value with \"quotes\" and $vars".to_string(),

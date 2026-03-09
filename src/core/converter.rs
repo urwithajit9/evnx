@@ -4,7 +4,8 @@
 // to different output formats.
 
 use anyhow::Result;
-use std::collections::HashMap;
+// use std::collections::HashMap;
+use indexmap::IndexMap;
 
 /// Key transformation options
 #[derive(Debug, Clone)]
@@ -49,7 +50,7 @@ impl ConvertOptions {
     }
 
     /// Filter variables based on include/exclude patterns
-    pub fn filter_vars(&self, vars: &HashMap<String, String>) -> HashMap<String, String> {
+    pub fn filter_vars(&self, vars: &IndexMap<String, String>) -> IndexMap<String, String> {
         vars.iter()
             .filter(|(key, _)| self.should_include(key))
             .map(|(k, v)| (k.clone(), v.clone()))
@@ -114,7 +115,7 @@ pub trait Converter {
     /// # Returns
     ///
     /// Formatted output as a string
-    fn convert(&self, vars: &HashMap<String, String>, options: &ConvertOptions) -> Result<String>;
+    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String>;
 
     /// Get the name of this format
     ///
@@ -252,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_filter_vars_no_pattern() {
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert("KEY1".to_string(), "value1".to_string());
         vars.insert("KEY2".to_string(), "value2".to_string());
 
@@ -266,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_filter_vars_include() {
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert("AWS_KEY".to_string(), "value1".to_string());
         vars.insert("DB_KEY".to_string(), "value2".to_string());
 
@@ -281,7 +282,7 @@ mod tests {
 
     #[test]
     fn test_filter_vars_exclude() {
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert("KEY1".to_string(), "value1".to_string());
         vars.insert("KEY2_LOCAL".to_string(), "value2".to_string());
 

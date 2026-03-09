@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use clap::Parser;
+use colored::Colorize;
 
 use evnx::cli::{Cli, Commands};
 use evnx::commands;
@@ -71,13 +72,43 @@ fn main() -> Result<()> {
             cli.verbose,
         ),
 
+        // Commands::Diff {
+        //     env,
+        //     example,
+        //     show_values,
+        //     format,
+        //     reverse,
+        // } => commands::diff::run(env, example, show_values, format, reverse, cli.verbose),
+
+        // src/main.rs — Update the Diff match arm:
         Commands::Diff {
             env,
             example,
             show_values,
             format,
             reverse,
-        } => commands::diff::run(env, example, show_values, format, reverse, cli.verbose),
+            ignore_keys,
+            with_stats,
+            interactive,
+        } => {
+            match commands::diff::run(
+                env,
+                example,
+                show_values,
+                format,
+                reverse,
+                cli.verbose,
+                ignore_keys,
+                with_stats,
+                interactive,
+            ) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".on_red().bold(), e);
+                    std::process::exit(2); // Distinct code for runtime errors
+                }
+            }
+        }
 
         Commands::Convert {
             env,

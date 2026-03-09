@@ -6,6 +6,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
+use indexmap::IndexMap;
 
 // Submodules
 pub mod assertions;
@@ -50,7 +51,7 @@ pub fn count_env_vars(content: &str) -> usize {
 }
 
 /// Parse KEY=value pairs from content
-pub fn parse_env_vars(content: &str) -> std::collections::HashMap<String, String> {
+pub fn parse_env_vars(content: &str) -> IndexMap<String, String> {
     content
         .lines()
         .filter_map(|line| {

@@ -24,7 +24,7 @@ path = "src/lib.rs"
 # CLI framework
 clap = { version = "4", features = ["derive", "cargo", "env"] }
 clap_complete = "4"
-
+indexmap = { version = "2.1", features = ["serde"] }
 # Interactive prompts
 dialoguer = "0.11"
 

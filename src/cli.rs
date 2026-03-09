@@ -247,6 +247,21 @@ pub enum Commands {
         exit_zero: bool,
     },
 
+    // /// Compare .env vs .env.example — show missing/extra vars.
+    // Diff {
+    //     #[arg(long, default_value = ".env")]
+    //     env: String,
+    //     #[arg(long, default_value = ".env.example")]
+    //     example: String,
+    //     #[arg(long)]
+    //     show_values: bool,
+    //     #[arg(long, default_value = "pretty")]
+    //     format: String,
+    //     #[arg(long)]
+    //     reverse: bool,
+    // },
+
+    // src/cli.rs — Find the Diff variant and extend it:
     /// Compare .env vs .env.example — show missing/extra vars.
     Diff {
         #[arg(long, default_value = ".env")]
@@ -259,6 +274,15 @@ pub enum Commands {
         format: String,
         #[arg(long)]
         reverse: bool,
+        /// Ignore these keys (comma-separated) — useful for env-specific vars
+        #[arg(long, value_delimiter = ',')]
+        ignore_keys: Vec<String>,
+        /// Include extended statistics in JSON output
+        #[arg(long, default_value_t = false)]
+        with_stats: bool,
+        // Enable interactive merge mode (patch format only)
+        #[arg(short, long, default_value_t = false)]
+        interactive: bool,
     },
 
     /// Transform to different formats (JSON, YAML, shell, etc.).

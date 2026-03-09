@@ -4,7 +4,8 @@
 
 use crate::core::converter::{ConvertOptions, Converter};
 use anyhow::Result;
-use std::collections::HashMap;
+// use std::collections::HashMap;
+use indexmap::IndexMap;
 
 pub struct GcpSecretConverter {
     pub project_id: String,
@@ -19,7 +20,7 @@ impl Default for GcpSecretConverter {
 }
 
 impl Converter for GcpSecretConverter {
-    fn convert(&self, vars: &HashMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
         let filtered = options.filter_vars(vars);
 
         let mut output = String::new();
@@ -58,7 +59,7 @@ mod tests {
 
     #[test]
     fn test_gcp_converter() {
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert(
             "DATABASE_URL".to_string(),
             "postgresql://localhost".to_string(),

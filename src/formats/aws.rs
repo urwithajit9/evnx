@@ -4,15 +4,16 @@
 
 use crate::core::converter::{ConvertOptions, Converter};
 use anyhow::Result;
-use std::collections::HashMap;
+// use std::collections::HashMap;
+use indexmap::IndexMap;
 
 pub struct AwsSecretsConverter;
 
 impl Converter for AwsSecretsConverter {
-    fn convert(&self, vars: &HashMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
         let filtered = options.filter_vars(vars);
 
-        let transformed: HashMap<String, String> = filtered
+        let transformed: IndexMap<String, String> = filtered
             .iter()
             .map(|(k, v)| {
                 let key = options.transform_key(k);

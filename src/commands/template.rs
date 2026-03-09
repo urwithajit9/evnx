@@ -3,7 +3,7 @@
 /// Supports variable substitution with filters and transformations
 use anyhow::{Context, Result};
 use colored::*;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::fs;
 
 use crate::core::Parser;
@@ -53,7 +53,7 @@ pub fn run(input: String, output: String, env: String, verbose: bool) -> Result<
 }
 
 /// Process template with variable substitution
-fn process_template(template: &str, vars: &HashMap<String, String>) -> Result<String> {
+fn process_template(template: &str, vars: &IndexMap<String, String>) -> Result<String> {
     let mut result = template.to_string();
 
     // Simple variable substitution: ${VAR} or {{VAR}}
@@ -95,7 +95,7 @@ fn filter_patterns() -> Vec<(&'static str, FilterFn)> {
 
 /// Process template filters
 /// Supports: {{VAR|upper}}, {{VAR|lower}}, {{VAR|bool}}, {{VAR|json}}
-fn process_filters(template: &str, vars: &HashMap<String, String>) -> Result<String> {
+fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<String> {
     let mut result = template.to_string();
 
     for (key, value) in vars {
@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn test_process_template_simple() {
         let template = "DATABASE_URL=${DATABASE_URL}";
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert(
             "DATABASE_URL".to_string(),
             "postgresql://localhost".to_string(),
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn test_process_template_double_braces() {
         let template = "url: {{DATABASE_URL}}";
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert(
             "DATABASE_URL".to_string(),
             "postgresql://localhost".to_string(),
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn test_filter_upper() {
         let template = "ENV={{ENV|upper}}";
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert("ENV".to_string(), "production".to_string());
 
         let result = process_filters(template, &vars).unwrap();
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn test_filter_bool() {
         let template = "debug={{DEBUG|bool}}";
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert("DEBUG".to_string(), "true".to_string());
 
         let result = process_filters(template, &vars).unwrap();
@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn test_filter_int() {
         let template = "port={{PORT|int}}";
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert("PORT".to_string(), "8000".to_string());
 
         let result = process_filters(template, &vars).unwrap();

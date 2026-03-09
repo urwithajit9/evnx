@@ -4,7 +4,8 @@
 
 use crate::core::converter::{ConvertOptions, Converter};
 use anyhow::Result;
-use std::collections::HashMap;
+// use std::collections::HashMap;
+use indexmap::IndexMap;
 
 pub struct GitHubActionsConverter {
     pub separator: String,
@@ -19,7 +20,7 @@ impl Default for GitHubActionsConverter {
 }
 
 impl Converter for GitHubActionsConverter {
-    fn convert(&self, vars: &HashMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
         let filtered = options.filter_vars(vars);
 
         let mut output = String::new();

@@ -4,7 +4,8 @@
 
 use crate::core::converter::{ConvertOptions, Converter};
 use anyhow::Result;
-use std::collections::HashMap;
+// use std::collections::HashMap;
+use indexmap::IndexMap;
 
 pub struct AzureKeyVaultConverter {
     pub vault_name: String,
@@ -19,7 +20,7 @@ impl Default for AzureKeyVaultConverter {
 }
 
 impl Converter for AzureKeyVaultConverter {
-    fn convert(&self, vars: &HashMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
         let filtered = options.filter_vars(vars);
 
         let mut output = String::new();
@@ -58,7 +59,7 @@ mod tests {
 
     #[test]
     fn test_azure_converter() {
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         vars.insert("API_KEY".to_string(), "secret123".to_string());
 
         let converter = AzureKeyVaultConverter::default();

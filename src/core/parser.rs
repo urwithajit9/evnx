@@ -67,7 +67,8 @@
 //! | `core/converter.rs`    | `EnvFile.vars`     | None — field name preserved |
 //! | Tests                  | `parse_content`    | None — method name preserved |
 
-use std::collections::HashMap;
+use indexmap::IndexMap;
+// use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use thiserror::Error;
@@ -132,7 +133,9 @@ pub type ParseResult<T> = Result<T, ParseError>;
 pub struct EnvFile {
     /// Parsed key-value pairs, in insertion order within the underlying
     /// `HashMap`. Use an `IndexMap` if deterministic ordering is needed.
-    pub vars: HashMap<String, String>,
+    /// Changed from `HashMap` to `IndexMap` to preserve key order for
+    /// predictable diff output and consistent user experience.
+    pub vars: IndexMap<String, String>,
 
     /// The file path this was parsed from, or `None` when parsed from a string.
     ///
@@ -293,8 +296,8 @@ impl Parser {
     /// assert_eq!(vars["KEY"], "value");
     /// # Ok::<(), evnx::core::parser::ParseError>(())
     /// ```
-    pub fn parse_content(&self, content: &str) -> ParseResult<HashMap<String, String>> {
-        let mut vars: HashMap<String, String> = HashMap::new();
+    pub fn parse_content(&self, content: &str) -> ParseResult<IndexMap<String, String>> {
+        let mut vars: IndexMap<String, String> = IndexMap::new();
 
         // Multiline accumulation state.
         let mut ml_key: Option<String> = None;
@@ -547,10 +550,10 @@ impl Parser {
     ///
     /// Each value is expanded independently. Circular references and undefined
     /// variables produce structured errors.
-    fn expand_all(&self, vars: &mut HashMap<String, String>) -> ParseResult<()> {
+    fn expand_all(&self, vars: &mut IndexMap<String, String>) -> ParseResult<()> {
         // Snapshot keys to avoid borrow conflicts while mutating the map.
         let keys: Vec<String> = vars.keys().cloned().collect();
-        let mut expanded: HashMap<String, String> = HashMap::with_capacity(vars.len());
+        let mut expanded: IndexMap<String, String> = IndexMap::with_capacity(vars.len());
 
         for key in &keys {
             let value = vars[key].clone();
@@ -575,7 +578,7 @@ impl Parser {
     fn expand_value(
         &self,
         value: &str,
-        vars: &HashMap<String, String>,
+        vars: &IndexMap<String, String>,
         stack: &mut Vec<String>,
         depth: usize,
         line_hint: usize,
@@ -983,6 +986,16 @@ mod tests {
             result.unwrap_err(),
             ParseError::ExpansionDepthExceeded { .. }
         ));
+    }
+    // New test demonstrating order preservation:
+    #[test]
+    fn test_key_order_preserved() {
+        let p = Parser::default();
+        let content = "Z=last\nA=first\nM=middle";
+        let vars = p.parse_content(content).unwrap();
+
+        let keys: Vec<_> = vars.keys().collect();
+        assert_eq!(keys, vec!["Z", "A", "M"]); // Insertion order preserved
     }
 
     // ── Real-world integration ────────────────────────────────────────────────

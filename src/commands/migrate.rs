@@ -52,7 +52,8 @@
 use anyhow::{anyhow, Context, Result};
 use colored::*;
 use dialoguer::{Confirm, Input, Password, Select};
-use std::collections::HashMap;
+// use std::collections::HashMap;
+use indexmap::IndexMap;
 
 // Feature-gated imports (only when migrate feature is enabled)
 #[cfg(feature = "migrate")]
@@ -235,7 +236,7 @@ fn select_destination() -> String {
 }
 
 // Load secrets from source
-fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<HashMap<String, String>> {
+fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<IndexMap<String, String>> {
     if verbose {
         println!("Loading secrets from {} ({})", source, file);
     }
@@ -249,7 +250,7 @@ fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<HashMap<Strin
             Ok(env_file.vars)
         }
         "environment" => {
-            let mut secrets = HashMap::new();
+            let mut secrets = IndexMap::new();
             for (key, value) in std::env::vars() {
                 // Skip common system variables
                 if !is_system_variable(&key) {
@@ -276,7 +277,7 @@ fn is_system_variable(key: &str) -> bool {
 #[cfg(feature = "migrate")]
 #[allow(clippy::too_many_arguments)]
 fn migrate_to_github_actions(
-    secrets: &HashMap<String, String>,
+    secrets: &IndexMap<String, String>,
     repo: Option<String>,
     token: Option<String>,
     dry_run: bool,
@@ -366,7 +367,7 @@ fn migrate_to_github_actions(
 // Plan the migration (which secrets to upload, skip, or have conflicts)
 #[cfg(feature = "migrate")]
 fn plan_migration(
-    secrets: &HashMap<String, String>,
+    secrets: &IndexMap<String, String>,
     existing_secrets: &[String],
     skip_existing: bool,
     overwrite: bool,
@@ -664,7 +665,7 @@ fn encrypt_for_github(public_key_base64: &str, value: &str) -> Result<String> {
 
 // Migrate to AWS Secrets Manager
 fn migrate_to_aws(
-    secrets: &HashMap<String, String>,
+    secrets: &IndexMap<String, String>,
     secret_name: Option<String>,
     aws_profile: Option<String>,
     dry_run: bool,
@@ -723,7 +724,7 @@ fn migrate_to_aws(
 
 // Migrate to Doppler
 fn migrate_to_doppler(
-    secrets: &HashMap<String, String>,
+    secrets: &IndexMap<String, String>,
     dry_run: bool,
     verbose: bool,
 ) -> Result<()> {
@@ -765,7 +766,7 @@ fn migrate_to_doppler(
 
 // Migrate to Infisical
 fn migrate_to_infisical(
-    secrets: &HashMap<String, String>,
+    secrets: &IndexMap<String, String>,
     dry_run: bool,
     verbose: bool,
 ) -> Result<()> {
@@ -795,7 +796,7 @@ fn migrate_to_infisical(
 }
 
 // Migrate to GCP Secret Manager
-fn migrate_to_gcp(secrets: &HashMap<String, String>, dry_run: bool, verbose: bool) -> Result<()> {
+fn migrate_to_gcp(secrets: &IndexMap<String, String>, dry_run: bool, verbose: bool) -> Result<()> {
     if verbose {
         println!("Preparing GCP Secret Manager migration");
     }

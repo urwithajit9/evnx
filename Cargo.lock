@@ -501,6 +501,7 @@ dependencies = [
  "dirs",
  "dotenvy",
  "glob",
+ "indexmap",
  "indicatif",
  "lazy_static",
  "predicates",

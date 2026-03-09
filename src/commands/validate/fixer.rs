@@ -5,7 +5,8 @@
 //! - Applying fixes to in-memory env vars
 //! - Writing fixed content back to .env files
 
-use std::collections::HashMap;
+// use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -93,7 +94,7 @@ pub fn apply_fix(
     key: &str,
     value: &str,
     action: &FixAction,
-    env_vars: &mut HashMap<String, String>,
+    env_vars: &mut IndexMap<String, String>,
 ) -> Option<FixApplied> {
     match action {
         FixAction::GenerateSecret => {
@@ -144,7 +145,7 @@ pub fn apply_fix(
 /// Write fixed env vars back to file, preserving comments and order where possible
 pub fn write_fixed_file(
     env_path: &str,
-    env_vars: &HashMap<String, String>,
+    env_vars: &IndexMap<String, String>,
     original_content: &str,
 ) -> Result<()> {
     let mut output = String::new();
@@ -215,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_apply_fix_generates_secret() {
-        let mut env = HashMap::new();
+        let mut env = IndexMap::new();
         let action = FixAction::GenerateSecret;
         let result = apply_fix("SECRET_KEY", "weak", &action, &mut env);
 
@@ -228,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_apply_fix_boolean() {
-        let mut env = HashMap::new();
+        let mut env = IndexMap::new();
         let action = FixAction::FixBoolean("false".to_string());
         let result = apply_fix("DEBUG", "True", &action, &mut env);
 

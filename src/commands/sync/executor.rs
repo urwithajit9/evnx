@@ -3,7 +3,8 @@
 use anyhow::{Context, Result};
 use colored::*;
 use dialoguer::{Confirm, Input, MultiSelect, Select};
-use std::collections::{HashMap, HashSet};
+use indexmap::IndexMap;
+use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -308,7 +309,7 @@ fn sync_forward(
 }
 
 fn handle_new_example_file(
-    vars: &HashMap<String, String>,
+    vars: &IndexMap<String, String>,
     use_placeholders: bool,
     dry_run: bool,
     config: &PlaceholderConfig,
@@ -513,7 +514,7 @@ fn sync_reverse(
 }
 
 fn handle_new_env_file(
-    example_vars: &HashMap<String, String>,
+    example_vars: &IndexMap<String, String>,
     dry_run: bool,
     config: &PlaceholderConfig,
 ) -> Result<()> {
@@ -553,7 +554,7 @@ fn handle_new_env_file(
 
 fn add_with_placeholders(
     keys: &[&String],
-    values: &HashMap<String, String>,
+    values: &IndexMap<String, String>,
     config: &PlaceholderConfig,
 ) -> Result<()> {
     let mut content = fs::read_to_string(".env.example").context("Failed to read .env.example")?;
@@ -570,7 +571,7 @@ fn add_with_placeholders(
 
 fn add_with_placeholders_preview(
     keys: &[&String],
-    values: &HashMap<String, String>,
+    values: &IndexMap<String, String>,
     config: &PlaceholderConfig,
 ) -> Result<Vec<VarChange>> {
     Ok(keys
@@ -587,7 +588,7 @@ fn add_with_placeholders_preview(
         .collect())
 }
 
-fn add_with_actual_values(keys: &[&String], values: &HashMap<String, String>) -> Result<()> {
+fn add_with_actual_values(keys: &[&String], values: &IndexMap<String, String>) -> Result<()> {
     let mut content = fs::read_to_string(".env.example")?;
     content.push_str("\n# Synced from .env [⚠️ ACTUAL VALUES]\n");
 
@@ -603,7 +604,7 @@ fn add_with_actual_values(keys: &[&String], values: &HashMap<String, String>) ->
 
 fn add_with_actual_values_preview(
     keys: &[&String],
-    values: &HashMap<String, String>,
+    values: &IndexMap<String, String>,
 ) -> Result<Vec<VarChange>> {
     Ok(keys
         .iter()
@@ -620,7 +621,7 @@ fn add_with_actual_values_preview(
 
 fn add_interactively(
     keys: &[&String],
-    values: &HashMap<String, String>,
+    values: &IndexMap<String, String>,
     config: &PlaceholderConfig,
 ) -> Result<()> {
     let selected = MultiSelect::new()
@@ -643,7 +644,7 @@ fn add_interactively(
 
 fn add_interactively_preview(
     keys: &[&String],
-    values: &HashMap<String, String>,
+    values: &IndexMap<String, String>,
     config: &PlaceholderConfig,
 ) -> Result<Vec<VarChange>> {
     Ok(keys
@@ -660,7 +661,7 @@ fn add_interactively_preview(
         .collect())
 }
 
-fn convert_to_example(vars: &HashMap<String, String>, config: &PlaceholderConfig) -> Result<()> {
+fn convert_to_example(vars: &IndexMap<String, String>, config: &PlaceholderConfig) -> Result<()> {
     let mut content = String::new();
     content.push_str("# Generated from .env\n");
     content.push_str("# Replace all placeholder values with real credentials\n\n");
@@ -675,7 +676,7 @@ fn convert_to_example(vars: &HashMap<String, String>, config: &PlaceholderConfig
 }
 
 fn convert_to_example_preview(
-    vars: &HashMap<String, String>,
+    vars: &IndexMap<String, String>,
     config: &PlaceholderConfig,
 ) -> Result<Vec<VarChange>> {
     Ok(vars
@@ -698,7 +699,7 @@ fn convert_to_example_preview(
 
 fn add_from_example(
     keys: &[&String],
-    example_vars: &HashMap<String, String>,
+    example_vars: &IndexMap<String, String>,
     use_placeholders: bool,
 ) -> Result<()> {
     let mut content = fs::read_to_string(".env").unwrap_or_default();
@@ -723,7 +724,7 @@ fn add_from_example(
 
 fn add_from_example_preview(
     keys: &[&String],
-    example_vars: &HashMap<String, String>,
+    example_vars: &IndexMap<String, String>,
     use_placeholders: bool,
 ) -> Result<Vec<VarChange>> {
     Ok(keys
@@ -747,7 +748,7 @@ fn add_from_example_preview(
 
 fn add_from_example_interactive(
     keys: &[&String],
-    example_vars: &HashMap<String, String>,
+    example_vars: &IndexMap<String, String>,
     config: &PlaceholderConfig,
 ) -> Result<()> {
     let selected = MultiSelect::new()
@@ -770,7 +771,7 @@ fn add_from_example_interactive(
 
 fn add_from_example_interactive_preview(
     keys: &[&String],
-    example_vars: &HashMap<String, String>,
+    example_vars: &IndexMap<String, String>,
     config: &PlaceholderConfig,
 ) -> Result<Vec<VarChange>> {
     Ok(keys
@@ -915,7 +916,7 @@ mod tests {
 
     #[test]
     fn test_add_with_placeholders_preview() {
-        let mut values = HashMap::new();
+        let mut values = IndexMap::new();
         values.insert("API_KEY".to_string(), "sk_live_123".to_string());
         values.insert("PORT".to_string(), "3000".to_string());
 
@@ -938,7 +939,7 @@ mod tests {
 
     #[test]
     fn test_add_with_actual_values_preview() {
-        let mut values = HashMap::new();
+        let mut values = IndexMap::new();
         values.insert("API_KEY".to_string(), "sk_live_123".to_string());
 
         // ✅ FIXED: Create Vec<&String> properly
@@ -955,7 +956,7 @@ mod tests {
     // NEW: Integration-style tests with temp files
     #[test]
     fn test_convert_to_example_preview() {
-        let mut vars = HashMap::new();
+        let mut vars = IndexMap::new();
         // ✅ FIXED: Use "postgresql://" to match the built-in rule
         vars.insert(
             "DB_URL".to_string(),
@@ -976,7 +977,7 @@ mod tests {
 
     #[test]
     fn test_add_from_example_preview_with_placeholders() {
-        let mut example_vars = HashMap::new();
+        let mut example_vars = IndexMap::new();
         example_vars.insert("NEW_VAR".to_string(), "placeholder_value".to_string());
 
         // ✅ FIXED: Create Vec<&String> properly
@@ -992,7 +993,7 @@ mod tests {
 
     #[test]
     fn test_add_from_example_preview_without_placeholders() {
-        let mut example_vars = HashMap::new();
+        let mut example_vars = IndexMap::new();
         example_vars.insert("NEW_VAR".to_string(), "example_default".to_string());
 
         // ✅ FIXED: Create Vec<&String> properly

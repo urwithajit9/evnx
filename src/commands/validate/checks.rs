@@ -5,7 +5,9 @@
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::collections::{HashMap, HashSet};
+// use serde_json::value::Index;
+use indexmap::IndexMap;
+use std::collections::HashSet;
 
 use super::types::{Issue, IssueType};
 
@@ -84,8 +86,8 @@ pub fn validate_email(value: &str) -> bool {
 
 /// Check 1: Missing required variables
 pub fn check_missing_variables(
-    env_vars: &HashMap<String, String>,
-    example_vars: &HashMap<String, String>,
+    env_vars: &IndexMap<String, String>,
+    example_vars: &IndexMap<String, String>,
     env_path: &str,
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
@@ -112,8 +114,8 @@ pub fn check_missing_variables(
 
 /// Check 2: Extra variables (strict mode only)
 pub fn check_extra_variables(
-    env_vars: &HashMap<String, String>,
-    example_vars: &HashMap<String, String>,
+    env_vars: &IndexMap<String, String>,
+    example_vars: &IndexMap<String, String>,
     env_path: &str,
     strict: bool,
     ignore: &HashSet<String>,
@@ -144,7 +146,7 @@ pub fn check_extra_variables(
 
 /// Check 3: Placeholder values
 pub fn check_placeholders(
-    env_vars: &HashMap<String, String>,
+    env_vars: &IndexMap<String, String>,
     env_path: &str,
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
@@ -178,7 +180,7 @@ pub fn check_placeholders(
 
 /// Check 4: Boolean string trap
 pub fn check_boolean_trap(
-    env_vars: &HashMap<String, String>,
+    env_vars: &IndexMap<String, String>,
     env_path: &str,
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
@@ -206,7 +208,7 @@ pub fn check_boolean_trap(
 
 /// Check 5: Weak SECRET_KEY
 pub fn check_weak_secret(
-    env_vars: &HashMap<String, String>,
+    env_vars: &IndexMap<String, String>,
     env_path: &str,
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
@@ -232,7 +234,7 @@ pub fn check_weak_secret(
 
 /// Check 6: localhost in Docker context
 pub fn check_localhost_docker(
-    env_vars: &HashMap<String, String>,
+    env_vars: &IndexMap<String, String>,
     env_path: &str,
     has_docker: bool,
     ignore: &HashSet<String>,
@@ -261,7 +263,7 @@ pub fn check_localhost_docker(
 
 /// Check 7: Format validation (URL, port, email)
 pub fn check_formats(
-    env_vars: &HashMap<String, String>,
+    env_vars: &IndexMap<String, String>,
     env_path: &str,
     validate: bool,
     ignore: &HashSet<String>,
@@ -386,10 +388,10 @@ mod tests {
 
     #[test]
     fn test_check_missing_variables() {
-        let mut env = HashMap::new();
+        let mut env = IndexMap::new();
         env.insert("DB_URL".to_string(), "postgres://localhost".to_string());
 
-        let mut example = HashMap::new();
+        let mut example = IndexMap::new();
         example.insert("DB_URL".to_string(), "".to_string());
         example.insert("API_KEY".to_string(), "".to_string());
 
@@ -401,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_check_boolean_trap() {
-        let mut env = HashMap::new();
+        let mut env = IndexMap::new();
         env.insert("DEBUG".to_string(), "True".to_string());
 
         let issues = check_boolean_trap(&env, ".env", &HashSet::new());

@@ -189,6 +189,21 @@ pub fn is_placeholder(value: &str) -> bool {
 
     false
 }
+#[must_use]
+pub fn is_sensitive_key(key: &str) -> bool {
+    const PATTERNS: &[&str] = &[
+        "PASSWORD",
+        "PASSWD",
+        "SECRET",
+        "TOKEN",
+        "API_KEY",
+        "PRIVATE_KEY",
+        "AUTH",
+        "CREDENTIAL",
+    ];
+    let upper = key.to_uppercase();
+    PATTERNS.iter().any(|p| upper.contains(p))
+}
 
 /// Detect if a value matches any secret pattern
 ///
@@ -357,5 +372,13 @@ mod tests {
         // Not a secret
         let result = detect_secret("localhost", "DATABASE_HOST");
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_sensitive_detection() {
+        assert!(is_sensitive_key("DB_PASSWORD"));
+        assert!(is_sensitive_key("api_key"));
+        assert!(!is_sensitive_key("APP_NAME"));
+        assert!(!is_sensitive_key("DEBUG_MODE"));
     }
 }
