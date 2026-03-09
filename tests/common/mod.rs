@@ -3,10 +3,10 @@
 //! Shared utilities for integration tests.
 
 use anyhow::Result;
+use indexmap::IndexMap;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
-use indexmap::IndexMap;
 
 // Submodules
 pub mod assertions;

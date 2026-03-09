@@ -14,7 +14,7 @@ fn test_doctor_json_output() {
     fs::write(dir.path().join(".gitignore"), ".env\n").unwrap();
 
     // Replace Command::cargo_bin() with cargo_bin_cmd!()
-    cargo_bin_cmd!("evnx")  // ← UPDATED
+    cargo_bin_cmd!("evnx") // ← UPDATED
         .arg("doctor")
         .arg(dir.path())
         .env("EVNX_OUTPUT_JSON", "1")
@@ -29,7 +29,7 @@ fn test_doctor_verbose_mode() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("requirements.txt"), "flask\n").unwrap();
 
-    cargo_bin_cmd!("evnx")  // ← UPDATED
+    cargo_bin_cmd!("evnx") // ← UPDATED
         .arg("doctor")
         .arg(dir.path())
         .arg("--verbose")
@@ -42,7 +42,7 @@ fn test_doctor_verbose_mode() {
 fn test_doctor_missing_env_warning() {
     let dir = TempDir::new().unwrap();
 
-    cargo_bin_cmd!("evnx")  // ← UPDATED
+    cargo_bin_cmd!("evnx") // ← UPDATED
         .arg("doctor")
         .arg(dir.path())
         .assert()
