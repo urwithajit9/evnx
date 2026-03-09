@@ -32,6 +32,7 @@ pub mod schema;
 pub mod utils;
 
 pub use cli::{AddTarget, Cli, Commands};
+pub use commands::validate::{Issue, IssueType, ValidationConfig, ValidationResult};
 pub use schema::{
     formatter::{format_addition, format_env_example, format_env_template, generate_preview},
     loader::{

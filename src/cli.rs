@@ -184,19 +184,51 @@ pub enum Commands {
     },
 
     /// Check .env against .env.example, find issues.
+    // Validate {
+    //     #[arg(long, default_value = ".env")]
+    //     env: String,
+    //     #[arg(long, default_value = ".env.example")]
+    //     example: String,
+    //     #[arg(long)]
+    //     strict: bool,
+    //     #[arg(long)]
+    //     fix: bool,
+    //     #[arg(long, default_value = "pretty")]
+    //     format: String,
+    //     #[arg(long)]
+    //     exit_zero: bool,
+    // },
+    /// Check .env against .env.example, find issues.
     Validate {
         #[arg(long, default_value = ".env")]
         env: String,
+
         #[arg(long, default_value = ".env.example")]
         example: String,
+
         #[arg(long)]
         strict: bool,
+
         #[arg(long)]
         fix: bool,
+
         #[arg(long, default_value = "pretty")]
         format: String,
+
         #[arg(long)]
         exit_zero: bool,
+
+        /// Comma-separated list of issue types to ignore
+        #[arg(long, value_delimiter = ',')]
+        ignore: Vec<String>,
+
+        /// Validate value formats: url, port, email
+        #[arg(long)]
+        validate_formats: bool,
+
+        /// Environment pattern (.env.production, .env.local, etc.)
+        #[arg(long, short = 'p')]
+        pattern: Option<String>,
     },
 
     /// Detect secrets that look real (AWS keys, tokens, etc.).

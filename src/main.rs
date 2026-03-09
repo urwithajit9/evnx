@@ -23,6 +23,14 @@ fn main() -> Result<()> {
 
         Commands::Add { target, path, yes } => commands::add::run(target, path, yes, cli.verbose),
 
+        // Commands::Validate {
+        //     env,
+        //     example,
+        //     strict,
+        //     fix,
+        //     format,
+        //     exit_zero,
+        // } => commands::validate::run(env, example, strict, fix, format, exit_zero, cli.verbose),
         Commands::Validate {
             env,
             example,
@@ -30,7 +38,21 @@ fn main() -> Result<()> {
             fix,
             format,
             exit_zero,
-        } => commands::validate::run(env, example, strict, fix, format, exit_zero, cli.verbose),
+            ignore,
+            validate_formats,
+            pattern,
+        } => commands::validate::run(
+            env,
+            example,
+            strict,
+            fix,
+            format,
+            exit_zero,
+            cli.verbose,
+            ignore,
+            validate_formats,
+            pattern,
+        ),
 
         Commands::Scan {
             path,

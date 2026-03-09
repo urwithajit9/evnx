@@ -142,11 +142,108 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
         .args(&["validate", "--format", "json"])
         .current_dir(dir.path())
         .output()
+        .expect("Failed to execute command");
+
+    // Ensure command succeeded (exit code 0 or 1 depending on errors)
+    // JSON output should be on stdout regardless of exit code
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+
+    // Parse JSON - if UI headers leaked to stdout, this will fail
+    // (which indicates a bug in the validate command)
+    let json: serde_json::Value = serde_json::from_str(&stdout_str).unwrap_or_else(|e| {
+        panic!(
+            "Failed to parse JSON output:\n{}\n\nError: {}\n\nFull stdout:\n{}",
+            stdout_str, e, stdout_str
+        );
+    });
+
+    // Validate expected JSON structure
+    assert!(json.get("status").is_some(), "JSON missing 'status' field");
+    assert!(json.get("issues").is_some(), "JSON missing 'issues' field");
+    assert!(
+        json.get("summary").is_some(),
+        "JSON missing 'summary' field"
+    );
+
+    // Validate status is either "passed" or "failed"
+    let status = json["status"].as_str().unwrap();
+    assert!(
+        status == "passed" || status == "failed",
+        "Invalid status value: {}",
+        status
+    );
+
+    // Issues should be an array
+    assert!(json["issues"].is_array(), "'issues' should be an array");
+}
+
+#[test]
+fn test_json_output_no_ui_decorations() {
+    let dir = setup_test_env();
+    create_env_example(&dir);
+    create_env(&dir, "VALID_VAR=test_value\n");
+
+    let output = cargo_bin_cmd!("evnx")
+        .args(&["validate", "--format", "json"])
+        .current_dir(dir.path())
+        .output()
         .unwrap();
 
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(json.get("status").is_some());
-    assert!(json.get("issues").is_some());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // ✅ Primary assertion: JSON output should NOT contain UI box-drawing characters
+    assert!(
+        !stdout.contains("┌─") && !stdout.contains("│") && !stdout.contains("└─"),
+        "JSON output should not contain UI decorations:\n{}",
+        stdout
+    );
+
+    // ✅ Should be valid JSON
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+        panic!(
+            "Failed to parse JSON output:\n{}\n\nError: {}\n\nFull stdout:\n{}",
+            stdout, e, stdout
+        );
+    });
+
+    // ✅ Validate structure (status can be "passed" OR "failed")
+    assert!(json.get("status").is_some(), "JSON missing 'status' field");
+    assert!(json.get("issues").is_some(), "JSON missing 'issues' field");
+
+    // Status should be one of the valid values
+    let status = json["status"].as_str().unwrap();
+    assert!(
+        matches!(status, "passed" | "failed"),
+        "Invalid status value: '{}'",
+        status
+    );
+
+    // Issues should be an array
+    assert!(json["issues"].is_array(), "'issues' should be an array");
+}
+
+#[test]
+fn test_json_output_passing_validation() {
+    let dir = setup_test_env();
+
+    // Create matching example and env files
+    std::fs::write(dir.path().join(".env.example"), "VALID_VAR=\n").unwrap();
+    std::fs::write(dir.path().join(".env"), "VALID_VAR=test_value\n").unwrap();
+
+    let output = cargo_bin_cmd!("evnx")
+        .args(&["validate", "--format", "json"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Still verify no UI decorations
+    assert!(!stdout.contains("┌─") && !stdout.contains("│"));
+
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(json["status"], "passed"); // Now this will pass
+    assert_eq!(json["issues"].as_array().unwrap().len(), 0);
 }
 
 #[test]
@@ -167,7 +264,10 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
         .arg("validate")
         .current_dir(dir.path())
         .assert()
-        .stdout(predicate::str::contains("truthy in Python"));
+        // Updated assertion: new message is language-agnostic
+        .stdout(predicate::str::contains("string, not boolean"))
+        .stdout(predicate::str::contains("DEBUG"))
+        .stdout(predicate::str::contains("false or 0"));
 }
 
 // ============================================================================
