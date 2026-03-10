@@ -495,6 +495,91 @@ where
 }
 
 // ─────────────────────────────────────────────────────────────
+// Stderr Variants (for machine-readable output commands)
+// ─────────────────────────────────────────────────────────────
+
+/// Print a command header to stderr in the standard boxed format.
+///
+/// Use this for commands that output structured data to stdout
+/// (e.g., JSON, SARIF) but still want to show progress to users.
+///
+/// ```text
+/// ┌─ evnx scan ─────────────────────────────────────┐
+/// │ Checking for exposed secrets                   │
+/// └────────────────────────────────────────────────┘
+/// ```
+///
+/// # Arguments
+///
+/// * `title` - The command name (e.g., "evnx scan")
+/// * `subtitle` - Optional description shown on second line
+///
+/// # Example
+///
+/// ```no_run
+/// # use evnx::utils::ui::print_header_stderr;
+/// print_header_stderr("evnx scan", Some("Checking for exposed secrets"));
+/// ```
+pub fn print_header_stderr(title: &str, subtitle: Option<&str>) {
+    let width = calculate_box_width(title, subtitle);
+    let border = "─".repeat(width - 4);
+
+    // Top border with title
+    eprintln!(
+        "\n{}",
+        format!("┌─ {} {}┐", title, "─".repeat(width - 4 - title.len())).cyan()
+    );
+
+    // Subtitle line (if provided)
+    if let Some(sub) = subtitle {
+        let padded = pad_or_truncate(sub, width - 4);
+        eprintln!("{}", format!("│ {} │", padded).cyan());
+    }
+
+    // Bottom border
+    eprintln!("{}\n", format!("└─{}─┘", border).cyan());
+}
+
+/// Print verbose progress message to stderr.
+///
+/// Useful for `--verbose` mode when stdout is reserved for data output.
+///
+/// # Arguments
+///
+/// * `message` - Status message to display
+///
+/// # Example
+///
+/// ```no_run
+/// # use evnx::utils::ui::verbose_stderr;
+/// verbose_stderr("Scanning 42 files...");
+/// ```
+pub fn verbose_stderr(message: impl AsRef<str>) {
+    eprintln!("{} {}", "⋯".dimmed(), message.as_ref().dimmed());
+}
+
+/// Print file scanning progress to stderr.
+///
+/// # Arguments
+///
+/// * `file` - Path being scanned
+///
+/// # Example
+///
+/// ```no_run
+/// # use evnx::utils::ui::scanning_file_stderr;
+/// # use std::path::Path;
+/// scanning_file_stderr(Path::new(".env"));
+/// ```
+pub fn scanning_file_stderr(file: &std::path::Path) {
+    eprintln!(
+        "{} {}",
+        "⋯".dimmed(),
+        format!("Scanning: {}", file.display()).dimmed()
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────
 
