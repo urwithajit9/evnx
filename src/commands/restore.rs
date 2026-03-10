@@ -8,6 +8,15 @@
 //!
 //! # Safety behaviours
 //!
+//! ## Password handling
+//!
+//! Unlike the `backup` command, `restore` uses a **single password prompt**
+//! without confirmation. This is intentional: a typo during backup creation
+//! could make data permanently unrecoverable, while a typo during restore
+//! simply fails decryption (a safe, reversible error). Requiring confirmation
+//! on restore would add friction without meaningful safety benefits.
+//!
+//!
 //! ## Overwrite protection
 //!
 //! If the output file already exists the user is **always prompted** before it
@@ -27,16 +36,17 @@
 //! ```bash
 //! evnx restore .env.backup
 //! evnx restore .env.backup --output .env.production
+//! evnx restore .env.backup --dry-run  # validate without writing
 //! ```
 //!
 //! # Future work
 //!
-//! - `--dry-run` flag: decrypt and validate but do not write anything.
 //! - `--print` flag: decrypt and emit to stdout (useful for piping).
 //! - `--diff` flag: show a unified diff between backup content and current file.
 //! - Support for asymmetric (public-key) backups once `--recipient` is added
 //!   to the `backup` command.
 
+// use crate::utils::{looks_like_dotenv, count_dotenv_vars};
 use anyhow::{anyhow, Context, Result};
 use colored::*;
 
@@ -53,7 +63,7 @@ use colored::*;
 ///   a `.restored` suffix to avoid overwriting a live file with
 ///   potentially corrupt content.
 /// * `verbose` — Print extra diagnostic information during the run.
-pub fn run(backup: String, output: String, verbose: bool) -> Result<()> {
+pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Result<()> {
     // ── Feature-disabled stub ────────────────────────────────────────────────
     #[cfg(not(feature = "backup"))]
     {
@@ -72,6 +82,7 @@ pub fn run(backup: String, output: String, verbose: bool) -> Result<()> {
         use dialoguer::{Confirm, Password};
         use std::fs;
         use std::path::Path;
+        use zeroize::Zeroize;
 
         if verbose {
             println!("{}", "Running restore in verbose mode".dimmed());
@@ -102,36 +113,81 @@ pub fn run(backup: String, output: String, verbose: bool) -> Result<()> {
 
         // ── Password prompt ──────────────────────────────────────────────────
         // No echo — the password is never displayed or logged.
-        let password = Password::new()
+        let mut password = Password::new()
             .with_prompt("Enter decryption password")
             .interact()?;
 
         if password.is_empty() {
+            password.zeroize();
             return Err(anyhow!("Password must not be empty"));
         }
 
         // ── Decrypt ──────────────────────────────────────────────────────────
         println!("Decrypting… (Argon2id key derivation in progress)");
 
-        let (content, metadata) = decrypt_content(&encoded, &password).context("Restore failed")?;
+        let (content, metadata) = decrypt_content(&encoded, &password)
+            .with_context(|| format!("Failed to decrypt backup: {}", backup))?;
+
+        // ── Dry-run mode: validate and exit early ────────────────────────────
+        if dry_run {
+            println!(
+                "\n{}",
+                "✓ Dry-run successful — no files were written"
+                    .green()
+                    .bold()
+            );
+            println!("\n{}", "Backup information:".bold());
+            println!("  Schema version: v{}", metadata.schema_version);
+            println!("  Original file : {}", metadata.original_file);
+            println!("  Created at    : {}", metadata.created_at);
+            println!("  Tool version  : evnx v{}", metadata.tool_version);
+            println!(
+                "  Variables     : {}",
+                crate::utils::count_dotenv_vars(&content)
+            );
+
+            if crate::utils::looks_like_dotenv(&content) {
+                println!(
+                    "\n{} Decrypted content appears to be a valid .env file",
+                    "✓".green()
+                );
+            } else {
+                println!(
+                    "\n{} Warning: Decrypted content does not look like a valid .env file",
+                    "⚠️".yellow()
+                );
+            }
+
+            password.zeroize();
+            return Ok(());
+        }
 
         println!("{} Decryption successful", "✓".green());
+        password.zeroize();
+        println!(
+            "{} Decryption key cleared from memory",
+            "✓".green().dimmed()
+        );
 
         // ── Display metadata ─────────────────────────────────────────────────
         // Always show metadata so the user can confirm this is the right backup
         // before any file is written.
         println!("\n{}", "Backup information:".bold());
+        println!("  Schema version: v{}", metadata.schema_version);
         println!("  Original file : {}", metadata.original_file);
         println!("  Created at    : {}", metadata.created_at);
         println!("  Tool version  : evnx v{}", metadata.tool_version);
-        println!("  Variables     : {}", count_vars(&content));
+        println!(
+            "  Variables     : {}",
+            crate::utils::count_dotenv_vars(&content)
+        );
 
         // ── Validation — choose write path ───────────────────────────────────
         // If the decrypted content does not look like a .env file we redirect
         // to a `.restored` fallback rather than aborting. This allows the user
         // to inspect the content and decide what to do with it, while keeping
         // the live .env file untouched.
-        let write_path: String = if looks_like_dotenv(&content) {
+        let write_path: String = if crate::utils::looks_like_dotenv(&content) {
             output.clone()
         } else {
             let fallback = format!("{}.restored", output);
@@ -172,13 +228,15 @@ pub fn run(backup: String, output: String, verbose: bool) -> Result<()> {
         }
 
         // ── Write ─────────────────────────────────────────────────────────────
-        fs::write(&write_path, &content)
+        // fs::write(&write_path, &content)
+        //     .with_context(|| format!("Failed to write restored file to {}", write_path))?;
+        crate::utils::write_secure(&write_path, content.as_bytes())
             .with_context(|| format!("Failed to write restored file to {}", write_path))?;
 
         println!(
             "\n{} Restored {} variables to {}",
             "✓".green(),
-            count_vars(&content),
+            crate::utils::count_dotenv_vars(&content),
             write_path
         );
 
@@ -202,99 +260,49 @@ pub fn run(backup: String, output: String, verbose: bool) -> Result<()> {
     }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Count the number of `KEY=VALUE` variable assignments in a `.env` string.
-///
-/// Comments (`#`) and blank lines are excluded from the count.
-fn count_vars(content: &str) -> usize {
-    content
-        .lines()
-        .filter(|line| {
-            let l = line.trim();
-            !l.is_empty() && !l.starts_with('#') && l.contains('=')
-        })
-        .count()
-}
-
-/// Heuristically check whether `content` resembles a `.env` file.
-///
-/// A file passes if at least **80%** of its non-empty lines are one of:
-/// - blank lines,
-/// - comment lines beginning with `#`, or
-/// - `KEY=VALUE` assignments where KEY contains only alphanumerics and `_`.
-///
-/// The 80% threshold is intentionally lenient — its purpose is to detect
-/// obviously wrong content (binary blobs, PDFs, prose) rather than to
-/// enforce strict `.env` grammar.
-///
-/// > **Note:** This function is duplicated from `backup.rs` to keep `restore.rs`
-/// > self-contained. If the heuristic needs updating, change both copies.
-fn looks_like_dotenv(content: &str) -> bool {
-    if content.trim().is_empty() {
-        return true;
-    }
-
-    let valid_line = |line: &str| -> bool {
-        let line = line.trim();
-        line.is_empty()
-            || line.starts_with('#')
-            || line
-                .split_once('=')
-                .map(|(key, _)| {
-                    !key.trim().is_empty()
-                        && key.trim().chars().all(|c| c.is_alphanumeric() || c == '_')
-                })
-                .unwrap_or(false)
-    };
-
-    let non_empty: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-    if non_empty.is_empty() {
-        return true;
-    }
-    let valid_count = non_empty.iter().filter(|&&l| valid_line(l)).count();
-    // Equivalent to valid_count / total >= 0.8 without floating point.
-    valid_count * 10 >= non_empty.len() * 8
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::utils::dotenv_validation;
 
     #[test]
-    fn test_count_vars_normal() {
+    fn test_count_dotenv_vars_normal() {
         let content = "# Comment\nKEY=value\nOTHER=123\n\n# Another\nFOO=bar\n";
-        assert_eq!(count_vars(content), 3);
+        assert_eq!(dotenv_validation::count_dotenv_vars(content), 3);
     }
 
     #[test]
-    fn test_count_vars_empty() {
-        assert_eq!(count_vars(""), 0);
-        assert_eq!(count_vars("# Only comments\n\n"), 0);
+    fn test_count_dotenv_vars_empty() {
+        assert_eq!(dotenv_validation::count_dotenv_vars(""), 0);
+        assert_eq!(
+            dotenv_validation::count_dotenv_vars("# Only comments\n\n"),
+            0
+        );
     }
 
     #[test]
-    fn test_count_vars_only_assignments() {
-        assert_eq!(count_vars("A=1\nB=2\nC=3\n"), 3);
+    fn test_count_dotenv_vars_only_assignments() {
+        assert_eq!(dotenv_validation::count_dotenv_vars("A=1\nB=2\nC=3\n"), 3);
     }
 
     #[test]
     fn test_looks_like_dotenv_valid() {
-        assert!(looks_like_dotenv("KEY=value\nOTHER=123\n# comment\n"));
+        assert!(dotenv_validation::looks_like_dotenv(
+            "KEY=value\nOTHER=123\n# comment\n"
+        ));
     }
 
     #[test]
     fn test_looks_like_dotenv_empty() {
-        assert!(looks_like_dotenv(""));
-        assert!(looks_like_dotenv("   \n  "));
+        assert!(dotenv_validation::looks_like_dotenv(""));
+        assert!(dotenv_validation::looks_like_dotenv("   \n  "));
     }
 
     #[test]
     fn test_looks_like_dotenv_rejects_prose() {
         // Zero KEY=VALUE lines — well below the 80% threshold.
-        assert!(!looks_like_dotenv(
+        assert!(!dotenv_validation::looks_like_dotenv(
             "This is a plain text file.\nIt contains no env vars.\nNone at all."
         ));
     }
@@ -303,13 +311,48 @@ mod tests {
     fn test_looks_like_dotenv_tolerates_some_noise() {
         // 4 valid lines, 1 invalid → 80% valid → should pass.
         let content = "KEY=value\nOTHER=123\n# comment\nFOO=bar\nnot-a-valid-line\n";
-        assert!(looks_like_dotenv(content));
+        assert!(dotenv_validation::looks_like_dotenv(content));
     }
 
     #[test]
     fn test_looks_like_dotenv_rejects_too_much_noise() {
         // 2 valid, 4 invalid → 33% valid → below threshold.
         let content = "KEY=value\nFOO=bar\nnot valid\nalso invalid\nstill wrong\nnope\n";
-        assert!(!looks_like_dotenv(content));
+        assert!(!dotenv_validation::looks_like_dotenv(content));
     }
+
+    //     #[test]
+    // #[cfg(feature = "backup")]
+    // fn test_dry_run_does_not_write_file() {
+    //     use crate::commands::backup::encrypt_content;
+    //     use tempfile::TempDir;
+
+    //     // Create a valid backup first
+    //     let dir = TempDir::new().unwrap();
+    //     let env_path = dir.path().join(".env");
+    //     let backup_path = dir.path().join("test.backup");
+
+    //     std::fs::write(&env_path, "TEST_KEY=test_value\n").unwrap();
+
+    //     // Encrypt (simplified - in real tests, call the actual backup flow)
+    //     let encrypted = encrypt_content(
+    //         "TEST_KEY=test_value\n",
+    //         "testpass123",
+    //         ".env"
+    //     ).unwrap();
+    //     std::fs::write(&backup_path, &encrypted).unwrap();
+
+    //     // Run restore in dry-run mode
+    //     let output_path = dir.path().join(".env.restored");
+    //     let result = crate::commands::restore::run(
+    //         backup_path.to_string_lossy().to_string(),
+    //         output_path.to_string_lossy().to_string(),
+    //         false,  // verbose
+    //         true,   // dry_run ← key parameter
+    //     );
+
+    //     assert!(result.is_ok());
+    //     // Verify file was NOT written
+    //     assert!(!output_path.exists(), "dry-run should not create output file");
+    // }
 }

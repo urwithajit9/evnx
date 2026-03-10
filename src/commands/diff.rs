@@ -99,13 +99,13 @@ pub fn run(
         (&env_file.vars, &example_file.vars, &env, &example)
     };
 
-    // 🟡 Convert ignore list to HashSet for O(1) lookups
+    //  Convert ignore list to HashSet for O(1) lookups
     let ignore_set: HashSet<_> = ignore_keys.into_iter().collect();
 
-    // 🔴 Compute diff with filtering + redaction
+    //  Compute diff with filtering + redaction
     let mut diff = compute_diff(left, right, &ignore_set);
 
-    // 🟢 Add statistics if requested (JSON mode)
+    //  Add statistics if requested (JSON mode)
     if with_stats && format == "json" {
         diff.stats = Some(compute_stats(left, right, &diff));
     }
@@ -114,7 +114,7 @@ pub fn run(
     match format.as_str() {
         "json" => output_json(&diff)?,
         "patch" => {
-            // 🟢 Interactive mode only applies to patch format
+            //  Interactive mode only applies to patch format
             if interactive {
                 output_patch_interactive(&diff, right, right_name)?;
             } else {
@@ -124,20 +124,20 @@ pub fn run(
         _ => output_pretty(&diff, left, right, left_name, right_name, show_values)?,
     }
 
-    // 🔴 Return appropriate exit code for CI/CD
+    // Return appropriate exit code for CI/CD
     Ok(if diff.has_changes() { 1 } else { 0 })
 }
 
 // ─────────────────────────────────────────────────────────────
-// Core Diff Logic (🟡 uses IndexMap, 🔴 adds redaction)
+// Core Diff Logic ( uses IndexMap,  adds redaction)
 // ─────────────────────────────────────────────────────────────
 
 fn compute_diff(
-    left: &IndexMap<String, String>,  // 🟡 CHANGED: HashMap → IndexMap
-    right: &IndexMap<String, String>, // 🟡 CHANGED: HashMap → IndexMap
-    ignore_keys: &HashSet<String>,    // 🟡 NEW: Filter parameter
+    left: &IndexMap<String, String>,  //  CHANGED: HashMap → IndexMap
+    right: &IndexMap<String, String>, //  CHANGED: HashMap → IndexMap
+    ignore_keys: &HashSet<String>,    //  NEW: Filter parameter
 ) -> DiffResult {
-    // 🟡 Filter out ignored keys first (preserves order via IndexMap)
+    //  Filter out ignored keys first (preserves order via IndexMap)
     let left_filtered: IndexMap<_, _> = left
         .iter()
         .filter(|(k, _)| !ignore_keys.contains(*k))
@@ -153,14 +153,14 @@ fn compute_diff(
     let left_keys: HashSet<_> = left_filtered.keys().cloned().collect();
     let right_keys: HashSet<_> = right_filtered.keys().cloned().collect();
 
-    // 🟡 Preserve order: iterate through right_filtered for "missing"
+    //  Preserve order: iterate through right_filtered for "missing"
     let missing: Vec<String> = right_filtered
         .keys()
         .filter(|k| !left_keys.contains(*k))
         .cloned()
         .collect();
 
-    // 🟡 Preserve order: iterate through left_filtered for "extra"
+    //  Preserve order: iterate through left_filtered for "extra"
     let extra: Vec<String> = left_filtered
         .keys()
         .filter(|k| !right_keys.contains(*k))
@@ -172,7 +172,7 @@ fn compute_diff(
         if let (Some(left_val), Some(right_val)) = (left_filtered.get(key), right_filtered.get(key))
         {
             if left_val != right_val {
-                // 🔴 Auto-redact sensitive values
+                // Auto-redact sensitive values
                 let (ex_redacted, env_redacted) = redact_if_sensitive(key, left_val, right_val);
 
                 different.push(DiffItem {
@@ -194,7 +194,7 @@ fn compute_diff(
     }
 }
 
-// 🔴 Security: Auto-redact values for sensitive keys
+// Security: Auto-redact values for sensitive keys
 fn redact_if_sensitive(
     key: &str,
     env_val: &str,
@@ -332,7 +332,7 @@ fn output_pretty(
         println!("{}", "Different values:".bold());
         for item in &diff.different {
             println!("  {} {}", "~".yellow(), item.key.bold());
-            // 🔴 Always show redacted values if available, regardless of show_values
+            // Always show redacted values if available, regardless of show_values
             if item.example_value_redacted.is_some() || show_values {
                 let ex_display = item
                     .example_value_redacted
@@ -355,7 +355,7 @@ fn output_pretty(
     );
     println!("  {} different values", diff.different.len());
 
-    // 🟢 Show stats in pretty mode if available
+    //  Show stats in pretty mode if available
     if let Some(stats) = &diff.stats {
         println!("\n{}", "Statistics:".bold());
         println!("  • Similarity: {:.1}%", stats.similarity_percent);
@@ -372,8 +372,8 @@ fn output_json(diff: &DiffResult) -> Result<()> {
 
 fn output_patch(
     diff: &DiffResult,
-    left: &IndexMap<String, String>,  // 🟡 CHANGED
-    right: &IndexMap<String, String>, // 🟡 CHANGED
+    left: &IndexMap<String, String>,
+    right: &IndexMap<String, String>,
 ) -> Result<()> {
     println!("# Add these to .env:");
     for key in &diff.missing {
@@ -490,7 +490,7 @@ impl DiffResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use indexmap::indexmap; // 🟡 ADD: Test helper for IndexMap
+    use indexmap::indexmap;
 
     #[test]
     fn test_compute_diff_basic() {

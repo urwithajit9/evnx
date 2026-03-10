@@ -60,6 +60,7 @@
 //! - Integrity manifest: store a SHA-256 hash of the plaintext so the restore
 //!   command can verify it was not silently corrupted after writing.
 
+use crate::utils::looks_like_dotenv;
 use anyhow::{anyhow, Context, Result};
 use colored::*;
 
@@ -91,6 +92,7 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
         use dialoguer::Password;
         use std::fs;
         use std::path::Path;
+        use zeroize::Zeroize;
 
         if verbose {
             println!("{}", "Running backup in verbose mode".dimmed());
@@ -123,7 +125,7 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
 
         // Warn — but do not abort — if the file does not look like a .env file.
         // The user might intentionally be backing up a non-standard file.
-        if !looks_like_dotenv(&content) {
+        if !looks_like_dotenv(&content) && !crate::utils::looks_like_dotenv(&content) {
             println!(
                 "{} File does not look like a standard .env file — backing up anyway",
                 "⚠️".yellow()
@@ -133,17 +135,19 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
         println!("{} Read {} bytes from {}", "✓".green(), content.len(), env);
 
         // ── Password prompt ──────────────────────────────────────────────────
-        let password = Password::new()
+        let mut password = Password::new()
             .with_prompt("Enter encryption password")
             .interact()?;
 
         if password.is_empty() {
+            password.zeroize();
             return Err(anyhow!("Password must not be empty"));
         }
 
         // Minimum length check — Argon2id makes short passwords expensive to
         // brute-force, but we still enforce a floor as a sanity guard.
         if password.len() < 8 {
+            password.zeroize();
             return Err(anyhow!(
                 "Password must be at least 8 characters (got {})",
                 password.len()
@@ -151,15 +155,18 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
         }
 
         let password_confirm = Password::new().with_prompt("Confirm password").interact()?;
+        let mut password_confirm = password_confirm;
 
         if password != password_confirm {
+            password.zeroize();
+            password_confirm.zeroize();
             return Err(anyhow!("Passwords do not match"));
         }
-
+        password_confirm.zeroize();
         println!("{} Password accepted", "✓".green());
 
         // ── Encrypt ──────────────────────────────────────────────────────────
-        println!("Encrypting… (this may take a moment due to Argon2id key derivation)");
+        println!("Encrypting… (Argon2id key derivation in progress)");
 
         let original_filename = Path::new(&env)
             .file_name()
@@ -168,12 +175,18 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
             .to_string();
 
         let encrypted = encrypt_content(&content, &password, &original_filename)
-            .context("Encryption failed")?;
+            .with_context(|| format!("Failed to encrypt backup for: {}", env))?;
+
+        password.zeroize();
+        println!(
+            "{} Decryption key cleared from memory",
+            "✓".green().dimmed()
+        );
 
         // ── Write backup ─────────────────────────────────────────────────────
         let output_path = output.unwrap_or_else(|| format!("{}.backup", env));
 
-        fs::write(&output_path, &encrypted)
+        crate::utils::write_secure(&output_path, encrypted.as_bytes())
             .with_context(|| format!("Failed to write backup to {}", output_path))?;
 
         let backup_size = std::fs::metadata(&output_path)
@@ -217,7 +230,11 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
 /// Returns an error if Argon2id key derivation or AES-256-GCM encryption fails.
 /// In practice these only fail with invalid parameters, which are hardcoded here.
 #[cfg(feature = "backup")]
-fn encrypt_content(plaintext: &str, password: &str, original_filename: &str) -> Result<String> {
+pub(crate) fn encrypt_content(
+    plaintext: &str,
+    password: &str,
+    original_filename: &str,
+) -> Result<String> {
     use aes_gcm::{
         aead::{rand_core::RngCore, Aead, KeyInit, OsRng},
         Aes256Gcm, Nonce,
@@ -229,7 +246,8 @@ fn encrypt_content(plaintext: &str, password: &str, original_filename: &str) -> 
     // Stored inside the ciphertext so it is confidential and tamper-evident.
     let created_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let envelope = serde_json::json!({
-        "version": 1,
+        "schema_version": 1,  // for future metadata schema changes
+        "version": 1, // Existing: binary format version
         "created_at": created_at,
         "original_file": original_filename,
         "tool_version": env!("CARGO_PKG_VERSION"),
@@ -329,10 +347,11 @@ pub fn decrypt_content(encoded: &str, password: &str) -> Result<(String, BackupM
     use base64::{engine::general_purpose, Engine as _};
 
     // ── Base64 decode ─────────────────────────────────────────────────────────
-    let raw = general_purpose::STANDARD.decode(encoded.trim()).context(
-        "Failed to Base64-decode the backup file. \
-             Is this a valid evnx backup?",
-    )?;
+    let raw = general_purpose::STANDARD
+        .decode(encoded.trim())
+        .with_context(|| {
+            "Failed to decode backup file: not valid Base64 or file truncated".to_string()
+        })?;
 
     // Minimum valid size: 1 (version) + 32 (salt) + 12 (nonce) + 16 (GCM tag)
     const MIN_LEN: usize = 1 + 32 + 12 + 16;
@@ -400,12 +419,28 @@ pub fn decrypt_content(encoded: &str, password: &str) -> Result<(String, BackupM
     let envelope: serde_json::Value = serde_json::from_slice(&plaintext_bytes)
         .context("Decrypted payload is not valid JSON. The backup envelope may be corrupt.")?;
 
+    // ── Validate JSON schema version ─────────────────────────────────────────
+    let schema_version = envelope["schema_version"].as_u64().unwrap_or(0);
+    if schema_version != 1 {
+        return Err(anyhow!(
+            "Unsupported metadata schema version: {}. \
+             This backup requires a newer version of evnx.",
+            schema_version
+        ));
+    }
+
     let content = envelope["content"]
         .as_str()
-        .ok_or_else(|| anyhow!("Backup envelope is missing the 'content' field."))?
+        .ok_or_else(|| {
+            anyhow!(
+                "Backup envelope (schema v{}) is missing 'content' field",
+                schema_version
+            )
+        })?
         .to_string();
 
     let metadata = BackupMetadata {
+        schema_version: envelope["schema_version"].as_u64().unwrap_or(0),
         created_at: envelope["created_at"]
             .as_str()
             .unwrap_or("unknown")
@@ -432,6 +467,8 @@ pub fn decrypt_content(encoded: &str, password: &str) -> Result<(String, BackupM
 #[cfg(feature = "backup")]
 #[derive(Debug)]
 pub struct BackupMetadata {
+    /// Schema version of the JSON envelope (for forward-compatibility checks).
+    pub schema_version: u64,
     /// ISO 8601 UTC timestamp recorded when the backup was created.
     pub created_at: String,
     /// The original filename (e.g. `.env`, `.env.production`).
@@ -440,75 +477,40 @@ pub struct BackupMetadata {
     pub tool_version: String,
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Heuristically check whether `content` resembles a `.env` file.
-///
-/// A file is considered valid if at least **80%** of its non-empty lines are:
-/// - blank lines,
-/// - comments beginning with `#`, or
-/// - `KEY=VALUE` assignments where KEY contains only alphanumerics and `_`.
-///
-/// This check is intentionally lenient — it exists to warn the user if they
-/// accidentally pass the wrong file, not to enforce strict `.env` grammar.
-fn looks_like_dotenv(content: &str) -> bool {
-    if content.trim().is_empty() {
-        return true;
-    }
-
-    let valid_line = |line: &str| -> bool {
-        let line = line.trim();
-        line.is_empty()
-            || line.starts_with('#')
-            || line
-                .split_once('=')
-                .map(|(key, _)| {
-                    !key.trim().is_empty()
-                        && key.trim().chars().all(|c| c.is_alphanumeric() || c == '_')
-                })
-                .unwrap_or(false)
-    };
-
-    let non_empty: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-    if non_empty.is_empty() {
-        return true;
-    }
-    let valid_count = non_empty.iter().filter(|&&l| valid_line(l)).count();
-    // Integer equivalent of valid_count / total >= 0.8
-    valid_count * 10 >= non_empty.len() * 8
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::dotenv_validation;
 
     // ── looks_like_dotenv ─────────────────────────────────────────────────────
 
     #[test]
     fn test_looks_like_dotenv_valid() {
-        assert!(looks_like_dotenv(
+        assert!(dotenv_validation::looks_like_dotenv(
             "# Database\nDATABASE_URL=postgresql://localhost\nSECRET_KEY=abc123\n"
         ));
     }
 
     #[test]
     fn test_looks_like_dotenv_empty() {
-        assert!(looks_like_dotenv(""));
-        assert!(looks_like_dotenv("  \n  "));
+        assert!(dotenv_validation::looks_like_dotenv(""));
+        assert!(dotenv_validation::looks_like_dotenv("  \n  "));
     }
 
     #[test]
     fn test_looks_like_dotenv_rejects_prose() {
-        assert!(!looks_like_dotenv(
+        assert!(!dotenv_validation::looks_like_dotenv(
             "This is just a plain text file.\nWith no env vars at all.\nWhatsoever."
         ));
     }
 
     #[test]
     fn test_looks_like_dotenv_comments_and_blanks() {
-        assert!(looks_like_dotenv("# Comment\n\n# Another\nKEY=value\n"));
+        assert!(dotenv_validation::looks_like_dotenv(
+            "# Comment\n\n# Another\nKEY=value\n"
+        ));
     }
 
     // ── Encrypt / decrypt roundtrip ───────────────────────────────────────────
@@ -596,5 +598,32 @@ mod tests {
         assert_eq!(meta.original_file, ".env.production");
         assert!(!meta.created_at.is_empty());
         assert_eq!(meta.tool_version, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    #[cfg(feature = "backup")]
+    fn test_backup_file_has_restrictive_permissions() {
+        // Only test on Unix where we can check mode bits
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            use tempfile::NamedTempFile;
+
+            let temp_env = NamedTempFile::new().unwrap();
+            std::fs::write(&temp_env, "KEY=value\n").unwrap();
+
+            let temp_backup = temp_env.path().with_extension("backup");
+            // Call backup logic (simplified) or test write_secure directly
+            let result = crate::utils::write_secure(&temp_backup, b"test");
+            assert!(result.is_ok());
+
+            let metadata = std::fs::metadata(&temp_backup).unwrap();
+            let mode = metadata.permissions().mode();
+            assert_eq!(
+                mode & 0o777,
+                0o600,
+                "Backup file should have 0o600 permissions"
+            );
+        }
     }
 }

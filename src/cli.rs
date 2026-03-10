@@ -367,6 +367,9 @@ pub enum Commands {
         backup: String,
         #[arg(long, default_value = ".env")]
         output: String,
+        /// Decrypt and validate but do not write any files.
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Diagnose common setup issues.

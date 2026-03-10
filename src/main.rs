@@ -182,7 +182,11 @@ fn main() -> Result<()> {
         Commands::Backup { env, output } => commands::backup::run(env, output, cli.verbose),
 
         #[cfg(feature = "backup")]
-        Commands::Restore { backup, output } => commands::restore::run(backup, output, cli.verbose),
+        Commands::Restore {
+            backup,
+            output,
+            dry_run,
+        } => commands::restore::run(backup, output, cli.verbose, dry_run),
 
         // Commands::Doctor { path } => commands::doctor::run(path, cli.verbose),
         Commands::Doctor { path, verbose } => {
