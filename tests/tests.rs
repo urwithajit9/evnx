@@ -431,7 +431,10 @@ fn test_convert_help() {
         .args(&["convert", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Transform to different formats"));
+        .stdout(predicate::str::contains(
+            "Transform `.env` files into multiple output formats",
+        ));
+    // ✅ Updated to match new help text from #[command(after_help = "...")]
 }
 
 #[test]
@@ -593,7 +596,67 @@ fn test_verbose_flag() {
         .current_dir(dir.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("verbose"));
+        .stderr(predicate::str::contains("verbose"));
+    // ✅ Verbose output goes to stderr, not stdout (so it doesn't pollute JSON output)
+}
+
+#[test]
+fn test_convert_interactive_mode() {
+    // Test that running without --to doesn't crash
+    // (Can't easily test TUI interaction, but verify it doesn't fail immediately)
+    let dir = setup_test_env();
+    create_env(&dir, r#"KEY=value"#);
+
+    cargo_bin_cmd!("evnx")
+        .args(&["convert"])
+        .current_dir(dir.path())
+        .assert()
+        .code(1); // Expected to fail since TUI can't run in test environment
+}
+
+#[test]
+fn test_convert_invalid_transform() {
+    let dir = setup_test_env();
+    create_env(&dir, r#"KEY=value"#);
+
+    cargo_bin_cmd!("evnx")
+        .args(&["convert", "--to", "json", "--transform", "invalid_mode"])
+        .current_dir(dir.path())
+        .assert()
+        .success(); // Should succeed with warning, not fail
+}
+
+#[test]
+fn test_convert_file_not_found() {
+    cargo_bin_cmd!("evnx")
+        .args(&["convert", "--to", "json", "--env", "/nonexistent/.env"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Input file not found"));
+}
+
+#[test]
+fn test_convert_with_output_file() {
+    let dir = setup_test_env();
+    create_env(&dir, r#"KEY=value"#);
+    let output_path = dir.path().join("output.json");
+
+    cargo_bin_cmd!("evnx")
+        .args(&[
+            "convert",
+            "--to",
+            "json",
+            "--output",
+            output_path.to_str().unwrap(),
+        ])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    assert!(output_path.exists());
+    let content = std::fs::read_to_string(&output_path).unwrap();
+    assert!(content.contains("KEY"));
+    assert!(content.contains("value"));
 }
 
 // ============================================================================

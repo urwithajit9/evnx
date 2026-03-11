@@ -184,21 +184,6 @@ pub enum Commands {
     },
 
     /// Check .env against .env.example, find issues.
-    // Validate {
-    //     #[arg(long, default_value = ".env")]
-    //     env: String,
-    //     #[arg(long, default_value = ".env.example")]
-    //     example: String,
-    //     #[arg(long)]
-    //     strict: bool,
-    //     #[arg(long)]
-    //     fix: bool,
-    //     #[arg(long, default_value = "pretty")]
-    //     format: String,
-    //     #[arg(long)]
-    //     exit_zero: bool,
-    // },
-    /// Check .env against .env.example, find issues.
     Validate {
         #[arg(long, default_value = ".env")]
         env: String,
@@ -247,21 +232,6 @@ pub enum Commands {
         exit_zero: bool,
     },
 
-    // /// Compare .env vs .env.example — show missing/extra vars.
-    // Diff {
-    //     #[arg(long, default_value = ".env")]
-    //     env: String,
-    //     #[arg(long, default_value = ".env.example")]
-    //     example: String,
-    //     #[arg(long)]
-    //     show_values: bool,
-    //     #[arg(long, default_value = "pretty")]
-    //     format: String,
-    //     #[arg(long)]
-    //     reverse: bool,
-    // },
-
-    // src/cli.rs — Find the Diff variant and extend it:
     /// Compare .env vs .env.example — show missing/extra vars.
     Diff {
         #[arg(long, default_value = ".env")]
@@ -280,28 +250,102 @@ pub enum Commands {
         /// Include extended statistics in JSON output
         #[arg(long, default_value_t = false)]
         with_stats: bool,
-        // Enable interactive merge mode (patch format only)
+        /// Enable interactive merge mode (patch format only)
         #[arg(short, long, default_value_t = false)]
         interactive: bool,
     },
 
-    /// Transform to different formats (JSON, YAML, shell, etc.).
+    /// Transform `.env` files into multiple output formats.
+    ///
+    /// Supports 14+ formats including JSON, YAML, cloud configs,
+    /// CI/CD variables, and infrastructure-as-code.
+    ///
+    /// # Examples
+    ///
+    /// ```text
+    /// # Basic JSON conversion
+    /// evnx convert --to json
+    ///
+    /// # Kubernetes secret with transformations
+    /// evnx convert \
+    ///   --to kubernetes \
+    ///   --include "PROD_*" \
+    ///   --prefix "MYAPP_" \
+    ///   --transform uppercase \
+    ///   --output k8s-secret.yaml
+    ///
+    /// # Interactive mode (opens format selector)
+    /// evnx convert
+    /// ```
+    #[command(after_help = "\
+Supported formats:
+  Generic:        json, yaml, shell
+  Cloud:          aws-secrets, gcp-secrets, azure-keyvault
+  CI/CD:          github-actions
+  Containers:     docker-compose, kubernetes
+  IaC:            terraform
+  Secret Managers: doppler, heroku, vercel, railway
+
+Aliases:
+  k8s → kubernetes, tf → terraform, yml → yaml
+  gh-actions → github-actions, compose → docker-compose
+
+Use 'evnx convert' without --to for interactive format selection.
+")]
     Convert {
-        #[arg(long, default_value = ".env")]
+        /// Path to input .env file
+        #[arg(long, default_value = ".env", value_name = "PATH")]
         env: String,
-        #[arg(long)]
+
+        /// Target output format (omit for interactive selection)
+        ///
+        /// Supported: json, yaml, shell, aws-secrets, gcp-secrets,
+        /// azure-keyvault, github-actions, docker-compose, kubernetes,
+        /// terraform, doppler, heroku, vercel, railway
+        #[arg(long, value_name = "FORMAT")]
         to: Option<String>,
-        #[arg(long)]
+
+        /// Write output to file instead of stdout
+        #[arg(long, short, value_name = "FILE")]
         output: Option<String>,
-        #[arg(long)]
+
+        /// Include only variables matching this glob pattern
+        ///
+        /// Examples: "AWS_*", "*_URL", "*_SECRET_*"
+        /// Supports: prefix*, *suffix, *contains*, exact
+        #[arg(long, value_name = "PATTERN")]
         include: Option<String>,
-        #[arg(long)]
+
+        /// Exclude variables matching this glob pattern
+        ///
+        /// Examples: "*_DEBUG", "TEST_*"
+        /// Applied after --include filtering
+        #[arg(long, value_name = "PATTERN")]
         exclude: Option<String>,
+
+        /// Base64-encode all values before output
+        ///
+        /// Note: Some formats (e.g., kubernetes) always base64-encode
+        /// regardless of this flag
         #[arg(long)]
         base64: bool,
-        #[arg(long)]
+
+        /// Prefix to prepend to all variable names
+        ///
+        /// Example: --prefix "APP_" transforms "KEY" → "APP_KEY"
+        /// Applied before key casing transformation
+        #[arg(long, value_name = "PREFIX")]
         prefix: Option<String>,
-        #[arg(long)]
+
+        /// Transform variable name casing
+        ///
+        /// Options: uppercase, lowercase, camelCase, snake_case
+        ///
+        /// Examples:
+        ///   "database_url" --transform uppercase → "DATABASE_URL"
+        ///   "DATABASE_URL" --transform camelCase → "databaseUrl"
+        ///   "DatabaseURL" --transform snake_case → "database_url"
+        #[arg(long, value_name = "MODE")]
         transform: Option<String>,
     },
 
@@ -331,15 +375,9 @@ pub enum Commands {
     },
 
     /// Keep .env and .env.example in sync.
-    // Sync {
-    //     #[arg(long, default_value = "forward")]
-    //     direction: String, // "forward" | "reverse"
-    //     #[arg(long)]
-    //     placeholder: bool, // Flag for placeholder usage
-    // },
     Sync {
         #[command(flatten)]
-        args: SyncArgs, // ✅ Nested struct with flatten
+        args: SyncArgs,
     },
 
     /// Generate config files from templates.
@@ -373,10 +411,6 @@ pub enum Commands {
     },
 
     /// Diagnose common setup issues.
-    // Doctor {
-    //     #[arg(default_value = ".")]
-    //     path: String,
-    // },
     #[command(about = "Check .env files, Git config, project structure, and security")]
     Doctor {
         /// Project directory to analyze

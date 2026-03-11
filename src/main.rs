@@ -1,11 +1,12 @@
 //! evnx CLI entry point.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use colored::Colorize;
 
 use evnx::cli::{Cli, Commands};
 use evnx::commands;
+use evnx::core::converter::KeyTransform;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -24,14 +25,6 @@ fn main() -> Result<()> {
 
         Commands::Add { target, path, yes } => commands::add::run(target, path, yes, cli.verbose),
 
-        // Commands::Validate {
-        //     env,
-        //     example,
-        //     strict,
-        //     fix,
-        //     format,
-        //     exit_zero,
-        // } => commands::validate::run(env, example, strict, fix, format, exit_zero, cli.verbose),
         Commands::Validate {
             env,
             example,
@@ -72,15 +65,6 @@ fn main() -> Result<()> {
             cli.verbose,
         ),
 
-        // Commands::Diff {
-        //     env,
-        //     example,
-        //     show_values,
-        //     format,
-        //     reverse,
-        // } => commands::diff::run(env, example, show_values, format, reverse, cli.verbose),
-
-        // src/main.rs — Update the Diff match arm:
         Commands::Diff {
             env,
             example,
@@ -119,17 +103,41 @@ fn main() -> Result<()> {
             base64,
             prefix,
             transform,
-        } => commands::convert::run(
-            env,
-            to,
-            output,
-            include,
-            exclude,
-            base64,
-            prefix,
-            transform,
-            cli.verbose,
-        ),
+        } => {
+            // Parse transform string to KeyTransform enum with validation
+            let transform_enum = transform.as_deref().and_then(|t| match t {
+                "uppercase" => Some(KeyTransform::Uppercase),
+                "lowercase" => Some(KeyTransform::Lowercase),
+                "camelCase" => Some(KeyTransform::CamelCase),
+                "snake_case" => Some(KeyTransform::SnakeCase),
+                unknown => {
+                    if cli.verbose {
+                        eprintln!(
+                            "{} Invalid transform '{}', ignoring",
+                            "⚠️".yellow(),
+                            unknown
+                        );
+                    }
+                    None
+                }
+            });
+
+            // Build config using builder pattern (pass Option values directly)
+            let config = commands::convert::ConvertConfig::builder()
+                .env(env) // String → impl Into<String>
+                .target_format(to) // Option<String> → Option<impl Into<String>>
+                .output_path(output) // Option<String> → Option<impl Into<String>>
+                .include_pattern(include) // Option<String> → Option<impl Into<String>>
+                .exclude_pattern(exclude) // Option<String> → Option<impl Into<String>>
+                .base64(base64) // bool
+                .prefix(prefix) // Option<String> → Option<impl Into<String>>
+                .transform(transform_enum) // Option<KeyTransform>
+                .verbose(cli.verbose) // bool
+                .build();
+
+            // Execute convert command with error context (return the Result)
+            commands::convert::run(config).context("Convert command failed")
+        }
 
         #[cfg(feature = "migrate")]
         Commands::Migrate {
@@ -157,13 +165,6 @@ fn main() -> Result<()> {
             cli.verbose,
         ),
 
-        // "forward" → sync_forward()  // .env → .env.example
-        // "reverse" → sync_reverse()  // .env.example → .env
-
-        // Commands::Sync {
-        //     direction,
-        //     placeholder,
-        // } => commands::sync::run(direction, placeholder, cli.verbose),
         Commands::Sync { args } => commands::sync::run(
             args.direction,
             args.placeholder,
@@ -188,7 +189,6 @@ fn main() -> Result<()> {
             dry_run,
         } => commands::restore::run(backup, output, cli.verbose, dry_run),
 
-        // Commands::Doctor { path } => commands::doctor::run(path, cli.verbose),
         Commands::Doctor { path, verbose } => {
             // Cleanest: delegate Result handling to main's return type
             evnx::commands::doctor::run(path, verbose)
