@@ -18,10 +18,7 @@ fn main() -> Result<()> {
 
     // Route to command handler
     match cli.command {
-        Commands::Init { path, yes } => {
-            // Clean signature: no legacy flags
-            commands::init::run(path, yes, cli.verbose)
-        }
+        Commands::Init { path, yes } => commands::init::run(path, yes, cli.verbose),
 
         Commands::Add { target, path, yes } => commands::add::run(target, path, yes, cli.verbose),
 
@@ -89,7 +86,7 @@ fn main() -> Result<()> {
                 Ok(exit_code) => std::process::exit(exit_code),
                 Err(e) => {
                     eprintln!("{} {}", "Error:".on_red().bold(), e);
-                    std::process::exit(2); // Distinct code for runtime errors
+                    std::process::exit(2);
                 }
             }
         }
@@ -104,7 +101,6 @@ fn main() -> Result<()> {
             prefix,
             transform,
         } => {
-            // Parse transform string to KeyTransform enum with validation
             let transform_enum = transform.as_deref().and_then(|t| match t {
                 "uppercase" => Some(KeyTransform::Uppercase),
                 "lowercase" => Some(KeyTransform::Lowercase),
@@ -122,48 +118,51 @@ fn main() -> Result<()> {
                 }
             });
 
-            // Build config using builder pattern (pass Option values directly)
             let config = commands::convert::ConvertConfig::builder()
-                .env(env) // String → impl Into<String>
-                .target_format(to) // Option<String> → Option<impl Into<String>>
-                .output_path(output) // Option<String> → Option<impl Into<String>>
-                .include_pattern(include) // Option<String> → Option<impl Into<String>>
-                .exclude_pattern(exclude) // Option<String> → Option<impl Into<String>>
-                .base64(base64) // bool
-                .prefix(prefix) // Option<String> → Option<impl Into<String>>
-                .transform(transform_enum) // Option<KeyTransform>
-                .verbose(cli.verbose) // bool
+                .env(env)
+                .target_format(to)
+                .output_path(output)
+                .include_pattern(include)
+                .exclude_pattern(exclude)
+                .base64(base64)
+                .prefix(prefix)
+                .transform(transform_enum)
+                .verbose(cli.verbose)
                 .build();
 
-            // Execute convert command with error context (return the Result)
             commands::convert::run(config).context("Convert command failed")
         }
 
+        // ── Migrate ───────────────────────────────────────────────────────────
+        //
+        // The variant holds Box<MigrateOptions> so the Commands enum stays
+        // small on the stack (~8 bytes for this arm vs. ~435 bytes inline).
+        // All fields are accessed via `opts.` after auto-deref.
         #[cfg(feature = "migrate")]
-        Commands::Migrate {
-            from,
-            to,
-            source_file,
-            repo,
-            secret_name,
-            dry_run,
-            skip_existing,
-            overwrite,
-            github_token,
-            aws_profile,
-        } => commands::migrate::run(
-            from,
-            to,
-            source_file,
-            repo,
-            secret_name,
-            dry_run,
-            skip_existing,
-            overwrite,
-            github_token,
-            aws_profile,
-            cli.verbose,
-        ),
+        Commands::Migrate(opts) => commands::migrate::run(commands::migrate::MigrateArgs {
+            from: opts.from.clone(),
+            source_file: opts.source_file.clone(),
+            to: opts.to.clone(),
+            dry_run: opts.dry_run,
+            skip_existing: opts.skip_existing,
+            overwrite: opts.overwrite,
+            verbose: cli.verbose,
+            include: opts.include.clone(),
+            exclude: opts.exclude.clone(),
+            strip_prefix: opts.strip_prefix.clone(),
+            add_prefix: opts.add_prefix.clone(),
+            repo: opts.repo.clone(),
+            github_token: opts.github_token.clone(),
+            secret_name: opts.secret_name.clone(),
+            aws_profile: opts.aws_profile.clone(),
+            project: opts.project.clone(),
+            doppler_config: opts.doppler_config.clone(),
+            infisical_env: opts.infisical_env.clone(),
+            vault_name: opts.vault_name.clone(),
+            heroku_app: opts.heroku_app.clone(),
+            vercel_project: opts.vercel_project.clone(),
+            railway_project: opts.railway_project.clone(),
+        }),
 
         Commands::Sync { args } => commands::sync::run(
             args.direction,
@@ -189,10 +188,7 @@ fn main() -> Result<()> {
             dry_run,
         } => commands::restore::run(backup, output, cli.verbose, dry_run),
 
-        Commands::Doctor { path, verbose } => {
-            // Cleanest: delegate Result handling to main's return type
-            evnx::commands::doctor::run(path, verbose)
-        }
+        Commands::Doctor { path, verbose } => evnx::commands::doctor::run(path, verbose),
 
         Commands::Completions { shell } => commands::completions::run(shell),
     }

@@ -110,6 +110,119 @@ pub enum NamingPolicy {
 }
 
 // ─────────────────────────────────────────────────────────────
+// MigrateOptions: flattened struct for the Migrate subcommand
+//
+// Extracted from the inline variant fields so the Commands enum
+// variant becomes Migrate(Box<MigrateOptions>) — a single pointer
+// (~8 bytes) instead of ~435 bytes inline, eliminating the
+// large_enum_variant clippy warning without boxing individual fields.
+// ─────────────────────────────────────────────────────────────
+
+#[cfg(feature = "migrate")]
+#[derive(Args, Debug)]
+pub struct MigrateOptions {
+    // ── Source ────────────────────────────────────────────────────────────────
+    /// Source system: `env-file` (default) or `environment`
+    #[arg(long)]
+    pub from: Option<String>,
+
+    /// Path to the source .env file (used when --from env-file)
+    #[arg(long, default_value = ".env")]
+    pub source_file: String,
+
+    // ── Destination ───────────────────────────────────────────────────────────
+    /// Destination system: github-actions | aws-secrets-manager | doppler |
+    /// infisical | gcp-secret-manager | azure-keyvault | vercel | heroku | railway
+    #[arg(long)]
+    pub to: Option<String>,
+
+    // ── Behaviour ─────────────────────────────────────────────────────────────
+    /// Preview what would be migrated without making any changes
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Skip secrets that already exist at the destination
+    #[arg(long)]
+    pub skip_existing: bool,
+
+    /// Overwrite secrets that already exist without prompting
+    #[arg(long)]
+    pub overwrite: bool,
+
+    // ── Filtering / key transforms ────────────────────────────────────────────
+    /// Comma-separated glob patterns — only migrate matching keys.
+    /// Example: --include "DB_*,AWS_*"
+    #[arg(long, value_delimiter = ',')]
+    pub include: Option<Vec<String>>,
+
+    /// Comma-separated glob patterns — skip matching keys.
+    /// Example: --exclude "*_LOCAL,*_TEST"
+    #[arg(long, value_delimiter = ',')]
+    pub exclude: Option<Vec<String>>,
+
+    /// Strip this prefix from key names before uploading.
+    /// Example: --strip-prefix "APP_"  →  APP_DB_URL becomes DB_URL
+    #[arg(long)]
+    pub strip_prefix: Option<String>,
+
+    /// Add this prefix to key names before uploading.
+    /// Example: --add-prefix "PROD_"
+    #[arg(long)]
+    pub add_prefix: Option<String>,
+
+    // ── GitHub Actions ────────────────────────────────────────────────────────
+    /// GitHub repository in owner/repo format
+    #[arg(long)]
+    pub repo: Option<String>,
+
+    /// GitHub Personal Access Token (or set GITHUB_TOKEN env var)
+    #[arg(long, env = "GITHUB_TOKEN")]
+    pub github_token: Option<String>,
+
+    // ── AWS Secrets Manager ───────────────────────────────────────────────────
+    /// AWS Secrets Manager secret name, e.g. prod/myapp/config
+    #[arg(long)]
+    pub secret_name: Option<String>,
+
+    /// AWS CLI named profile
+    #[arg(long)]
+    pub aws_profile: Option<String>,
+
+    // ── Doppler / Infisical ───────────────────────────────────────────────────
+    /// Doppler project slug or Infisical project ID
+    #[arg(long)]
+    pub project: Option<String>,
+
+    /// Doppler config name (dev / staging / prd)
+    #[arg(long)]
+    pub doppler_config: Option<String>,
+
+    /// Infisical environment name (dev / staging / prod)
+    #[arg(long)]
+    pub infisical_env: Option<String>,
+
+    // ── Azure Key Vault ───────────────────────────────────────────────────────
+    /// Azure Key Vault name
+    #[arg(long)]
+    pub vault_name: Option<String>,
+
+    // ── Heroku ────────────────────────────────────────────────────────────────
+    /// Heroku application name
+    #[arg(long)]
+    pub heroku_app: Option<String>,
+
+    // ── Vercel ────────────────────────────────────────────────────────────────
+    /// Vercel project ID or name
+    #[arg(long)]
+    pub vercel_project: Option<String>,
+
+    // ── Railway ───────────────────────────────────────────────────────────────
+    /// Railway project ID
+    #[arg(long)]
+    pub railway_project: Option<String>,
+}
+
+// ─────────────────────────────────────────────────────────────
 // Cli: Top-level CLI structure
 // ─────────────────────────────────────────────────────────────
 
@@ -350,29 +463,16 @@ Use 'evnx convert' without --to for interactive format selection.
     },
 
     /// Full migration workflow to secret managers.
+    ///
+    /// Supports: github-actions, aws-secrets-manager, doppler, infisical,
+    /// gcp-secret-manager, azure-keyvault, vercel, heroku, railway
+    ///
+    /// Examples:
+    ///   evnx migrate --to github-actions --repo owner/repo
+    ///   evnx migrate --to aws-secrets-manager --secret-name prod/myapp/config
+    ///   evnx migrate --to doppler --project myapp --doppler-config dev --dry-run
     #[cfg(feature = "migrate")]
-    Migrate {
-        #[arg(long)]
-        from: Option<String>,
-        #[arg(long)]
-        to: Option<String>,
-        #[arg(long, default_value = ".env")]
-        source_file: String,
-        #[arg(long)]
-        repo: Option<String>,
-        #[arg(long)]
-        secret_name: Option<String>,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long)]
-        skip_existing: bool,
-        #[arg(long)]
-        overwrite: bool,
-        #[arg(long, env = "GITHUB_TOKEN")]
-        github_token: Option<String>,
-        #[arg(long)]
-        aws_profile: Option<String>,
-    },
+    Migrate(Box<MigrateOptions>),
 
     /// Keep .env and .env.example in sync.
     Sync {

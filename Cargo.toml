@@ -1,16 +1,16 @@
 [package]
-name = "evnx"
-version = "0.2.1"
-edition = "2021"
-authors = ["Ajit Kumar <ajitkumar.pu@gmail.com>"]
+name        = "evnx"
+version     = "0.2.1"
+edition     = "2021"
+authors     = ["Ajit Kumar <ajitkumar.pu@gmail.com>"]
 description = "A comprehensive CLI tool for managing .env files — validation, secret scanning, and format conversion"
-repository = "https://github.com/urwithajit9/evnx"
-homepage = "https://dotenv.space"
+repository  = "https://github.com/urwithajit9/evnx"
+homepage    = "https://dotenv.space"
 documentation = "https://dotenv.space"
-keywords = ["env", "dotenv", "secrets", "cli", "devops"]
-categories = ["command-line-utilities", "development-tools"]
-license = "MIT"
-readme = "README.md"
+keywords    = ["env", "dotenv", "secrets", "cli", "devops"]
+categories  = ["command-line-utilities", "development-tools"]
+license     = "MIT"
+readme      = "README.md"
 
 [[bin]]
 name = "evnx"
@@ -20,76 +20,94 @@ path = "src/main.rs"
 name = "evnx"
 path = "src/lib.rs"
 
+# ─── Dependencies ─────────────────────────────────────────────────────────────
+
 [dependencies]
+
 # CLI framework
-clap = { version = "4", features = ["derive", "cargo", "env"] }
+clap          = { version = "4",    features = ["derive", "cargo", "env"] }
 clap_complete = "4"
+
+# Data structures
 indexmap = { version = "2.1", features = ["serde"] }
+
 # Interactive prompts
 dialoguer = "0.11"
 
-# Terminal UI
-console = "0.15"
-indicatif = { version = "0.17"}
-colored = "2"
+# Terminal output
+console   = "0.15"
+colored   = "2"
+
+# Progress bars — used in utils/ui.rs and migrate/destinations/github.rs;
+# always compiled so both call-sites can import without a feature gate.
+indicatif = "0.17"
 
 # Serialization
-serde = { version = "1", features = ["derive"] }
+serde      = { version = "1",   features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
-toml = "0.8"
+toml       = "0.8"
+
+# Base64 — used in core/converter.rs (convert command) and github.rs (encryption);
+# always compiled for the same reason as indicatif above.
+base64 = "0.22"
 
 # Core utilities
-tempfile = "3.10"
-regex = "1"
+tempfile   = "3.10"
+regex      = "1"
 lazy_static = "1.4"
-dotenvy = "0.15"
-chrono = "0.4"
+dotenvy    = "0.15"
+chrono     = "0.4"
+glob       = "0.3"
+walkdir    = "2"
+dirs       = "5"
 
 # Error handling
-anyhow = "1"
+anyhow    = "1"
 thiserror = "1"
 
-# File system
-glob = "0.3"
-walkdir = "2"
-
-# Crypto (for Phase 3 backup/restore)
-aes-gcm = { version = "0.10", optional = true }
-argon2 = { version = "0.5", optional = true }
-base64 = { version = "0.22" }
+# Zeroize is always compiled (used in backup structs even without the backup feature)
 zeroize = { version = "1.7", features = ["derive"] }
 
-# HTTP client (for Phase 2 migrate)
-#reqwest = { version = "0.12", features = ["json", "blocking"], optional = true }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"], optional = true }
+# ── migrate feature ───────────────────────────────────────────────────────────
+# base64 and indicatif are already always-on above, so only reqwest and
+# crypto_box (sealed-box encryption for GitHub) are optional here.
+reqwest    = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"], optional = true }
+crypto_box = { version = "0.9",  features = ["std"],                                                      optional = true }
 
+# ── backup feature ────────────────────────────────────────────────────────────
+aes-gcm = { version = "0.10", optional = true }
+argon2  = { version = "0.5",  optional = true }
+rand    = { version = "0.10", optional = true }
 
-dirs = "5"
-rand = "0.10.0"
+# ─── Dev / build dependencies ─────────────────────────────────────────────────
 
 [dev-dependencies]
-assert_cmd = "2"
-predicates = "3"
-serde_json = "1.0"
-tempfile = "3"
-pretty_assertions = "1"
-serial_test = "3.0"
+assert_cmd         = "2"
+predicates         = "3"
+serde_json         = "1.0"
+tempfile           = "3"
+pretty_assertions  = "1"
+serial_test        = "3.0"
 
 [build-dependencies]
 serde_json = "1.0"
 
+# ─── Features ────────────────────────────────────────────────────────────────
+
 [features]
 default = []
-migrate = ["reqwest"]
-backup = ["aes-gcm", "argon2"]
-full = ["migrate", "backup"]
+migrate = ["dep:reqwest", "dep:crypto_box"]
+backup  = ["dep:aes-gcm", "dep:argon2",  "dep:rand"]
+full    = ["migrate", "backup"]
+
+# ─── Build profiles ──────────────────────────────────────────────────────────
 
 [profile.release]
-opt-level = 3
-lto = true
+opt-level     = 3
+lto           = true
 codegen-units = 1
-strip = true
+strip         = true
 
 [profile.dev]
 opt-level = 0
