@@ -349,7 +349,7 @@ mod tests {
     fn test_scan_runner_returns_secrets_found() {
         // This test would need a fixture with a known secret
         // For now, just verify the method signature works
-        let runner = ScanRunner::new(&[], false, false);
+        let _runner = ScanRunner::new(&[], false, false);
         // Note: Full integration test requires test fixtures
     }
 }

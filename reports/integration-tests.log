@@ -1,102 +1,65 @@
-warning: unused imports: `Context` and `anyhow`
-  --> src/commands/backup.rs:63:14
+warning: unused import: `crate::utils::looks_like_dotenv`
+  --> src/commands/backup.rs:63:5
    |
-63 | use anyhow::{anyhow, Context, Result};
-   |              ^^^^^^  ^^^^^^^
+63 | use crate::utils::looks_like_dotenv;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
-warning: unused imports: `Confirm` and `Password`
-  --> src/commands/migrate.rs:54:17
-   |
-54 | use dialoguer::{Confirm, Input, Password, Select};
-   |                 ^^^^^^^         ^^^^^^^^
-
 warning: unused imports: `Context` and `anyhow`
-  --> src/commands/restore.rs:40:14
+  --> src/commands/backup.rs:64:14
    |
-40 | use anyhow::{anyhow, Context, Result};
+64 | use anyhow::{anyhow, Context, Result};
    |              ^^^^^^  ^^^^^^^
 
-warning: unused variable: `repo`
-  --> src/commands/migrate.rs:91:5
+warning: unused imports: `Context` and `anyhow`
+  --> src/commands/restore.rs:50:14
    |
-91 |     repo: Option<String>,
-   |     ^^^^ help: if this is intentional, prefix it with an underscore: `_repo`
+50 | use anyhow::{anyhow, Context, Result};
+   |              ^^^^^^  ^^^^^^^
+
+warning: unused variable: `dry_run`
+  --> src/commands/restore.rs:66:59
+   |
+66 | pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Result<()> {
+   |                                                           ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dry_run`
    |
    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
-warning: unused variable: `skip_existing`
-  --> src/commands/migrate.rs:94:5
-   |
-94 |     skip_existing: bool,
-   |     ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_skip_existing`
+warning: `evnx` (lib) generated 4 warnings (run `cargo fix --lib -p evnx` to apply 4 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running tests/tests.rs (target/debug/deps/tests-f320078a8dc0fdc2)
 
-warning: unused variable: `overwrite`
-  --> src/commands/migrate.rs:95:5
-   |
-95 |     overwrite: bool,
-   |     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_overwrite`
-
-warning: unused variable: `github_token`
-  --> src/commands/migrate.rs:96:5
-   |
-96 |     github_token: Option<String>,
-   |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_github_token`
-
-warning: function `looks_like_dotenv` is never used
-   --> src/commands/backup.rs:454:4
-    |
-454 | fn looks_like_dotenv(content: &str) -> bool {
-    |    ^^^^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: type alias `MigrationDiff` is never used
-  --> src/commands/migrate.rs:69:6
-   |
-69 | type MigrationDiff = (Vec<(String, String)>, Vec<String>, Vec<String>);
-   |      ^^^^^^^^^^^^^
-
-warning: function `count_vars` is never used
-   --> src/commands/restore.rs:210:4
-    |
-210 | fn count_vars(content: &str) -> usize {
-    |    ^^^^^^^^^^
-
-warning: function `looks_like_dotenv` is never used
-   --> src/commands/restore.rs:233:4
-    |
-233 | fn looks_like_dotenv(content: &str) -> bool {
-    |    ^^^^^^^^^^^^^^^^^
-
-warning: `evnx` (lib) generated 11 warnings (run `cargo fix --lib -p evnx` to apply 7 suggestions)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
-     Running tests/tests.rs (target/debug/deps/tests-a9d2522cd2c51803)
-
-running 22 tests
-test test_convert_to_json ... ok
-test test_convert_invalid_format ... ok
+running 29 tests
 test test_convert_help ... ok
-test test_convert_with_transform ... ok
+test test_convert_file_not_found ... ok
+test test_convert_invalid_transform ... ok
 test test_convert_with_filter ... ok
+test test_convert_invalid_format ... ok
+test test_convert_with_output_file ... ok
 test test_convert_to_github_actions ... ok
+test test_convert_interactive_mode ... ok
+test test_convert_with_transform ... ok
+test test_convert_to_json ... ok
 test test_diff_help ... ok
-test test_init_help ... ok
-test test_diff_shows_missing ... ok
 test test_help_flag ... ok
+test test_init_help ... ok
 test test_invalid_command ... ok
-test test_scan_help ... ok
+test test_diff_shows_missing ... ok
+test test_diff_identical_files_exit_zero ... ok
+test test_json_output_no_ui_decorations ... ok
+test test_json_output_passing_validation ... ok
+test test_validate_finds_placeholder ... ok
 test test_validate_boolean_trap ... ok
+test test_scan_exit_zero ... ok
+test test_scan_help ... ok
 test test_validate_help ... ok
+test test_version_flag ... ok
+test test_verbose_flag ... ok
 test test_validate_json_output ... ok
 test test_validate_missing_file ... ok
-test test_validate_finds_placeholder ... ok
-test test_version_flag ... ok
-test test_scan_exit_zero ... ok
-test test_verbose_flag ... ok
 test test_scan_detects_aws_key ... ok
 test test_workflow_convert_multiple_formats ... ok
 
-test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 

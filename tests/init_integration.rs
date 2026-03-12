@@ -10,18 +10,29 @@
 //! (marked with #[ignore]) and run manually with --nocapture.
 
 #![allow(deprecated)]
-mod common;
 use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::TempDir;
-
-use common::{count_env_vars, read_env_example};
 
 // fn debug_print_content(label: &str, content: &str) {
 //     eprintln!("\n=== {} ===", label);
 //     eprintln!("{}", content);
 //     eprintln!("=== END {} ===\n", label);
 // }
+
+fn read_env_example(dir: &std::path::Path) -> anyhow::Result<String> {
+    std::fs::read_to_string(dir.join(".env.example")).map_err(|e| anyhow::anyhow!("{}", e))
+}
+
+fn count_env_vars(content: &str) -> usize {
+    content
+        .lines()
+        .filter(|l| {
+            let t = l.trim();
+            !t.is_empty() && !t.starts_with('#') && t.contains('=')
+        })
+        .count()
+}
 
 // ─────────────────────────────────────────────────────────────
 // Blank Mode Tests

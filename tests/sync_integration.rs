@@ -69,9 +69,9 @@ impl SyncTestFixture {
         self.env_path.exists()
     }
 
-    fn example_exists(&self) -> bool {
-        self.example_path.exists()
-    }
+    // fn example_exists(&self) -> bool {
+    //     self.example_path.exists()
+    // }
 }
 
 #[test]

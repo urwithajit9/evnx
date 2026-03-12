@@ -1,357 +1,279 @@
 # Contributing to evnx
 
-Thank you for considering contributing to evnx! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to **evnx**. Contributions from the community help improve the project, expand its capabilities, and make it more reliable for everyone.
 
-## 🌟 Ways to Contribute
-
-- 🐛 Report bugs and issues
-- 💡 Suggest new features or improvements
-- 📝 Improve documentation
-- 🔧 Submit pull requests
-- 🌍 Help with translations (future)
-- 💬 Answer questions in discussions
-- ⭐ Star the repository and spread the word
-
-## 📋 Table of Contents
-
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [Making Changes](#making-changes)
-- [Submitting Changes](#submitting-changes)
-- [Coding Standards](#coding-standards)
-- [Testing Guidelines](#testing-guidelines)
-- [Documentation](#documentation)
-- [Community](#community)
+This guide outlines the process for contributing code, documentation, and ideas.
 
 ---
 
-## 📜 Code of Conduct
+# Ways to Contribute
 
-### Our Pledge
+There are many ways to contribute to the project:
 
-We are committed to providing a welcoming and inclusive environment for everyone, regardless of:
-- Experience level
-- Gender identity and expression
-- Sexual orientation
-- Disability
-- Personal appearance
-- Body size
-- Race
-- Ethnicity
-- Age
-- Religion
-- Nationality
+* Report bugs or unexpected behavior
+* Suggest new features or improvements
+* Improve or expand documentation
+* Submit pull requests
+* Participate in discussions and answer questions
+* Share the project within your community
 
-### Expected Behavior
-
-- ✅ Be respectful and considerate
-- ✅ Welcome newcomers and help them learn
-- ✅ Accept constructive criticism gracefully
-- ✅ Focus on what's best for the community
-- ✅ Show empathy towards other community members
-
-### Unacceptable Behavior
-
-- ❌ Harassment, trolling, or insulting comments
-- ❌ Personal or political attacks
-- ❌ Publishing others' private information
-- ❌ Any conduct inappropriate in a professional setting
-
-**Enforcement:** Violations may result in temporary or permanent ban from the project.
+Every contribution, large or small, is appreciated.
 
 ---
 
-## 🚀 Getting Started
+# Table of Contents
 
-### Prerequisites
-
-Before contributing, ensure you have:
-
-- **Rust toolchain** (stable, 1.70+)
-  ```bash
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-  ```
-
-- **Git**
-  ```bash
-  git --version
-  ```
-
-- **A GitHub account**
-
-### First-Time Contributors
-
-Looking for where to start? Check out:
-- Issues labeled [`good first issue`](https://github.com/urwithajit9/evnx/labels/good%20first%20issue)
-- Issues labeled [`help wanted`](https://github.com/urwithajit9/evnx/labels/help%20wanted)
-- [Documentation improvements](https://github.com/urwithajit9/evnx/labels/documentation)
-
-**Don't be shy!** Everyone was a beginner once. We're here to help.
+* Code of Conduct
+* Getting Started
+* Development Setup
+* Making Changes
+* Submitting Changes
+* Coding Standards
+* Testing Guidelines
+* Documentation
+* Community
 
 ---
 
-## 🛠️ Development Setup
+# Code of Conduct
 
-### 1. Fork and Clone
+We are committed to fostering a welcoming and respectful community for contributors of all backgrounds and experience levels.
+
+## Expected Behavior
+
+Contributors are expected to:
+
+* Be respectful and constructive in communication
+* Welcome and support new contributors
+* Accept feedback and code review professionally
+* Focus discussions on improving the project
+
+## Unacceptable Behavior
+
+The following behaviors will not be tolerated:
+
+* Harassment, personal attacks, or discriminatory language
+* Publishing private information without consent
+* Trolling or intentionally disruptive behavior
+* Any conduct inappropriate for a professional environment
+
+Project maintainers may take appropriate action, including removal from the community, in response to violations.
+
+---
+
+# Getting Started
+
+## Prerequisites
+
+Before contributing, ensure the following tools are installed:
+
+### Rust Toolchain
 
 ```bash
-# Fork the repository on GitHub, then:
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Recommended Rust version: **1.70 or newer**
+
+### Git
+
+```bash
+git --version
+```
+
+### GitHub Account
+
+You will need a GitHub account to fork the repository and submit pull requests.
+
+---
+
+## First-Time Contributors
+
+If you are new to the project, consider starting with issues labeled:
+
+* `good first issue`
+* `help wanted`
+* `documentation`
+
+These tasks are designed to help new contributors get familiar with the codebase.
+
+---
+
+# Development Setup
+
+## 1. Fork and Clone the Repository
+
+Fork the repository on GitHub and then clone it locally:
+
+```bash
 git clone https://github.com/YOUR_USERNAME/evnx.git
 cd evnx
+```
 
-# Add upstream remote
+Add the upstream repository:
+
+```bash
 git remote add upstream https://github.com/urwithajit9/evnx.git
 ```
 
-### 2. Install Dependencies
+---
+
+## 2. Install Dependencies
+
+All dependencies are defined in `Cargo.toml`.
 
 ```bash
-# All dependencies are in Cargo.toml
-# Just build to fetch them
 cargo build
 ```
 
-### 3. Verify Setup
+This command will automatically download and build required dependencies.
+
+---
+
+## 3. Verify the Environment
+
+Run the following commands to ensure your environment is correctly configured:
 
 ```bash
-# Run tests
 cargo test
-
-# Run clippy (linter)
 cargo clippy --all-features -- -D warnings
-
-# Format code
 cargo fmt
-
-# Build with all features
 cargo build --all-features
-
-# Run the CLI
 cargo run -- --help
 ```
 
-### 4. Create a Branch
+---
+
+## 4. Create a Feature Branch
+
+Always create a branch before making changes.
 
 ```bash
-# Create a new branch for your work
 git checkout -b feature/your-feature-name
-
-# Or for bug fixes
-git checkout -b fix/issue-123
 ```
 
-**Branch naming conventions:**
-- `feature/` - New features
-- `fix/` - Bug fixes
-- `docs/` - Documentation changes
-- `refactor/` - Code refactoring
-- `test/` - Test improvements
-- `chore/` - Maintenance tasks
+Common branch prefixes:
+
+| Prefix    | Purpose               |
+| --------- | --------------------- |
+| feature/  | New features          |
+| fix/      | Bug fixes             |
+| docs/     | Documentation updates |
+| refactor/ | Code improvements     |
+| test/     | Test additions        |
+| chore/    | Maintenance tasks     |
 
 ---
 
-## 🔨 Making Changes
+# Making Changes
 
-### Code Changes
+## Code Contributions
 
-1. **Follow Rust conventions**
-   - Use `cargo fmt` for formatting
-   - Pass `cargo clippy` without warnings
-   - Write idiomatic Rust
+When contributing code:
 
-2. **Add tests**
-   - Unit tests for individual functions
-   - Integration tests for CLI commands
-   - Document test purpose with comments
+* Follow standard Rust conventions
+* Ensure `cargo fmt` formatting is applied
+* Ensure `cargo clippy` passes without warnings
+* Write clear and maintainable code
+* Include tests where applicable
 
-3. **Update documentation**
-   - Update README.md if adding features
-   - Add/update doc comments (`///`)
-   - Update docs/ files if needed
+## Documentation Improvements
 
-### Documentation Changes
+Documentation contributions are highly valued.
 
-- Use clear, concise language
-- Include examples where helpful
-- Check spelling and grammar
-- Test any code snippets
-- Update table of contents if needed
+When editing documentation:
 
-### Example Changes
-
-**Good commit:**
-```rust
-/// Validates that a variable name follows naming conventions.
-///
-/// # Arguments
-/// * `name` - The variable name to validate
-///
-/// # Returns
-/// * `Ok(())` if valid
-/// * `Err(ValidationError)` if invalid
-///
-/// # Examples
-/// ```
-/// assert!(validate_var_name("DATABASE_URL").is_ok());
-/// assert!(validate_var_name("123invalid").is_err());
-/// ```
-pub fn validate_var_name(name: &str) -> Result<(), ValidationError> {
-    if name.is_empty() {
-        return Err(ValidationError::EmptyName);
-    }
-
-    if !name.chars().next().unwrap().is_alphabetic() {
-        return Err(ValidationError::InvalidStart);
-    }
-
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_validate_var_name() {
-        assert!(validate_var_name("VALID_NAME").is_ok());
-        assert!(validate_var_name("123invalid").is_err());
-        assert!(validate_var_name("").is_err());
-    }
-}
-```
+* Use clear and concise language
+* Include examples where helpful
+* Verify that code snippets compile or run correctly
+* Check spelling and grammar
 
 ---
 
-## 📤 Submitting Changes
+# Submitting Changes
 
-### Before Submitting
-
-Run the full test suite:
+Before submitting a pull request, run the full test suite.
 
 ```bash
-# Format code
 cargo fmt
-
-# Run linter
 cargo clippy --all-features -- -D warnings
-
-# Run all tests
 cargo test --all-features
-
-# Test individual features
-cargo test --no-default-features
-cargo test --features migrate
-cargo test --features backup
-
-# Build release to ensure it compiles
 cargo build --release --all-features
 ```
 
-### Commit Guidelines
+You may also test individual features:
 
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
-
+```bash
+cargo test --no-default-features
+cargo test --features migrate
+cargo test --features backup
 ```
-<type>(<scope>): <subject>
-
-<body>
-
-<footer>
-```
-
-**Types:**
-- `feat:` New feature
-- `fix:` Bug fix
-- `docs:` Documentation changes
-- `style:` Code style changes (formatting, etc.)
-- `refactor:` Code refactoring
-- `test:` Adding or updating tests
-- `chore:` Maintenance tasks
-
-**Examples:**
-```
-feat(scan): add support for Anthropic API key detection
-
-- Added pattern for Anthropic API keys (sk-ant-...)
-- Added tests for new pattern
-- Updated documentation
-
-Closes #123
-```
-
-```
-fix(validate): handle empty .env files gracefully
-
-Previously crashed with panic on empty files.
-Now returns appropriate error message.
-
-Fixes #456
-```
-
-### Pull Request Process
-
-1. **Update your branch**
-   ```bash
-   git fetch upstream
-   git rebase upstream/main
-   ```
-
-2. **Push to your fork**
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-3. **Create Pull Request**
-   - Go to your fork on GitHub
-   - Click "New Pull Request"
-   - Select your branch
-   - Fill out the PR template
-
-4. **PR Description Template**
-   ```markdown
-   ## Description
-   Brief description of changes
-
-   ## Type of Change
-   - [ ] Bug fix
-   - [ ] New feature
-   - [ ] Breaking change
-   - [ ] Documentation update
-
-   ## Testing
-   - [ ] Unit tests added/updated
-   - [ ] Integration tests added/updated
-   - [ ] Manual testing performed
-
-   ## Checklist
-   - [ ] Code follows project style
-   - [ ] Self-review completed
-   - [ ] Comments added where needed
-   - [ ] Documentation updated
-   - [ ] Tests pass locally
-   - [ ] No new warnings from clippy
-
-   ## Related Issues
-   Closes #123
-   ```
-
-5. **Address Review Comments**
-   - Respond to all comments
-   - Make requested changes
-   - Push updates to the same branch
-   - Re-request review
 
 ---
 
-## 📏 Coding Standards
+# Commit Guidelines
 
-### Rust Style Guide
+This project follows the **Conventional Commits** specification.
 
-Follow the [Rust Style Guide](https://doc.rust-lang.org/1.0.0/style/):
+Format:
+
+```
+<type>(scope): short description
+```
+
+Common commit types:
+
+| Type     | Description           |
+| -------- | --------------------- |
+| feat     | New feature           |
+| fix      | Bug fix               |
+| docs     | Documentation updates |
+| refactor | Code restructuring    |
+| test     | Test improvements     |
+| chore    | Maintenance tasks     |
+
+Example:
+
+```
+feat(scan): add support for Anthropic API key detection
+
+- Added detection pattern
+- Added associated tests
+- Updated documentation
+```
+
+---
+
+# Pull Request Process
+
+1. Update your branch with the latest changes:
+
+```bash
+git fetch upstream
+git rebase upstream/main
+```
+
+2. Push your branch:
+
+```bash
+git push origin feature/your-feature-name
+```
+
+3. Open a Pull Request on GitHub.
+
+4. Complete the pull request template describing your changes.
+
+5. Address feedback from maintainers during review.
+
+---
+
+# Coding Standards
+
+## Rust Style
+
+Follow the official Rust style guidelines.
 
 ```rust
-// Good
 fn calculate_entropy(data: &str) -> f64 {
     let bytes = data.as_bytes();
     let mut counts = HashMap::new();
@@ -361,6 +283,7 @@ fn calculate_entropy(data: &str) -> f64 {
     }
 
     let len = bytes.len() as f64;
+
     counts.values()
         .map(|&count| {
             let p = count as f64 / len;
@@ -368,21 +291,17 @@ fn calculate_entropy(data: &str) -> f64 {
         })
         .sum()
 }
-
-// Bad - inconsistent naming, unclear logic
-fn calcEntropy(d: &str) -> f64 {
-    let b=d.as_bytes();let mut c=HashMap::new();
-    for &x in b{*c.entry(x).or_insert(0)+=1;}
-    // ... (rest of implementation)
-}
 ```
 
-### Error Handling
+Avoid patterns that may cause runtime panics such as unnecessary `unwrap()` usage.
 
-Use `Result` and proper error types:
+---
+
+## Error Handling
+
+Prefer structured error handling using `Result`.
 
 ```rust
-// Good
 pub fn read_env_file(path: &Path) -> Result<String, EnvError> {
     fs::read_to_string(path)
         .map_err(|e| EnvError::FileRead {
@@ -390,240 +309,149 @@ pub fn read_env_file(path: &Path) -> Result<String, EnvError> {
             source: e,
         })
 }
-
-// Bad - using unwrap
-pub fn read_env_file(path: &Path) -> String {
-    fs::read_to_string(path).unwrap()  // ❌ Can panic!
-}
-```
-
-### Documentation
-
-Use doc comments for public items:
-
-```rust
-/// Scans a directory for accidentally committed secrets.
-///
-/// # Arguments
-/// * `path` - Directory to scan
-/// * `options` - Scan configuration options
-///
-/// # Returns
-/// * `Ok(ScanResults)` - Found secrets and statistics
-/// * `Err(ScanError)` - I/O errors or configuration issues
-///
-/// # Examples
-/// ```
-/// use evnx::scan::{scan_directory, ScanOptions};
-///
-/// let options = ScanOptions::default();
-/// let results = scan_directory("./src", options)?;
-/// println!("Found {} secrets", results.count);
-/// ```
-pub fn scan_directory(path: &Path, options: ScanOptions) -> Result<ScanResults, ScanError> {
-    // Implementation
-}
-```
-
-### Testing
-
-Write comprehensive tests:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_valid_env_file() {
-        let content = "DATABASE_URL=postgres://localhost\nAPI_KEY=test123";
-        let result = parse_env(content);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 2);
-    }
-
-    #[test]
-    fn test_empty_env_file() {
-        let content = "";
-        let result = parse_env(content);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
-    }
-
-    #[test]
-    fn test_malformed_env_file() {
-        let content = "INVALID LINE WITHOUT EQUALS";
-        let result = parse_env(content);
-        assert!(result.is_err());
-    }
-}
 ```
 
 ---
 
-## 🧪 Testing Guidelines
+# Testing Guidelines
 
-### Running Tests
+Testing is essential for maintaining reliability.
+
+## Running Tests
 
 ```bash
-# All tests
 cargo test --all-features
-
-# Specific test
 cargo test test_validate_var_name
-
-# With output
 cargo test -- --nocapture
-
-# Integration tests only
 cargo test --test integration_tests
 ```
 
-### Test Coverage
+## Coverage Goals
 
-We aim for:
-- **80%+ code coverage** for core functionality
-- **100% coverage** for security-critical code (parsing, scanning, validation)
-- Integration tests for all CLI commands
+* 80%+ coverage for core modules
+* 100% coverage for security-critical logic (parsing, scanning, validation)
+* Integration tests for CLI commands
 
-### Writing Tests
+Types of tests used:
 
-1. **Unit tests** - Test individual functions
-2. **Integration tests** - Test CLI commands end-to-end
-3. **Property tests** - Test with random inputs (using proptest)
-
-**Example integration test:**
-```rust
-#[test]
-fn test_validate_command() {
-    let temp_dir = tempdir().unwrap();
-    let env_path = temp_dir.path().join(".env");
-
-    fs::write(&env_path, "DATABASE_URL=postgres://localhost").unwrap();
-
-    let output = Command::cargo_bin("evnx")
-        .unwrap()
-        .arg("validate")
-        .arg("--strict")
-        .current_dir(temp_dir.path())
-        .output()
-        .unwrap();
-
-    assert!(output.status.success());
-}
-```
+* Unit tests
+* Integration tests
+* Property tests (via `proptest`)
 
 ---
 
-## 📚 Documentation
+# Documentation
 
-### What to Document
+Good documentation is critical for adoption.
 
-- **Public APIs** - All public functions, structs, enums
-- **Examples** - Show how to use the feature
-- **Edge cases** - Document unexpected behavior
-- **Errors** - What errors can occur and why
+Documentation should cover:
 
-### Documentation Files
+* Public APIs
+* Usage examples
+* Error conditions
+* Edge cases
 
-- `README.md` - Overview and quick start
-- `docs/GETTING_STARTED.md` - Detailed walkthrough
-- `docs/USE_CASES.md` - Real-world examples
-- `docs/CICD_GUIDE.md` - CI/CD integration
-- `ARCHITECTURE.md` - System design
-- `CHANGELOG.md` - Version history
+Project documentation files include:
 
-### Updating Documentation
+* `README.md`
+* `docs/GETTING_STARTED.md`
+* `docs/USE_CASES.md`
+* `docs/CICD_GUIDE.md`
+* `ARCHITECTURE.md`
+* `CHANGELOG.md`
 
-When adding features:
-1. Update relevant docs/ files
-2. Add examples to README.md
-3. Update CHANGELOG.md (unreleased section)
+Whenever a new feature is added:
+
+1. Update relevant documentation
+2. Add usage examples
+3. Update the changelog
 4. Add doc comments to code
 
 ---
 
-## 🤝 Community
+# Community
 
-### Getting Help
+## Support and Discussion
 
-- 💬 [GitHub Discussions](https://github.com/urwithajit9/evnx/discussions) - Ask questions
-- 🐛 [Issue Tracker](https://github.com/urwithajit9/evnx/issues) - Report bugs
-- 📧 Email: support@dotenv.space
+Community communication happens primarily through GitHub.
 
-### Communication Channels
+* GitHub Discussions — questions and ideas
+* Issue Tracker — bug reports and feature requests
+* Pull Requests — code review and implementation discussions
 
-- **GitHub Discussions** - Questions, ideas, show & tell
-- **Issue Tracker** - Bug reports, feature requests
-- **Pull Requests** - Code review and discussion
+Contact email:
 
-### Response Times
-
-We try to:
-- Respond to issues within 48 hours
-- Review PRs within 1 week
-- Cut releases monthly (or as needed for security)
+[support@dotenv.space](mailto:support@dotenv.space)
 
 ---
 
-## 🎯 Development Priorities
+## Response Expectations
+
+Project maintainers aim to:
+
+* Respond to issues within **48 hours**
+* Review pull requests within **one week**
+* Publish releases periodically or when necessary for security updates
+
+---
+
+# Project Priorities
 
 ### High Priority
-- Security improvements (secret detection patterns)
-- Performance optimization
-- Windows support improvements
-- Documentation
+
+* Security improvements
+* Performance optimization
+* Windows compatibility improvements
+* Documentation improvements
 
 ### Medium Priority
-- New format converters
-- Additional secret patterns
-- CLI UX improvements
-- Integration examples
 
-### Low Priority
-- Translations (i18n)
-- GUI wrapper
-- Web service version
-- Plugins/extensions
+* Additional secret detection patterns
+* CLI usability improvements
+* Integration examples
 
----
+### Long-Term
 
-## 🏆 Recognition
-
-Contributors are recognized in:
-- `CONTRIBUTORS.md` file
-- Release notes
-- GitHub contributors graph
-
-Significant contributions may be highlighted in:
-- Blog posts
-- Social media
-- Project website
+* Internationalization
+* Plugin ecosystem
+* Optional web interface
 
 ---
 
-## 📝 License
+# Contributor Recognition
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+Contributors are recognized through:
 
----
+* `CONTRIBUTORS.md`
+* Release notes
+* GitHub contributors page
 
-## ❓ Questions?
-
-Don't hesitate to ask! There are no stupid questions.
-
-- Open a [Discussion](https://github.com/urwithajit9/evnx/discussions)
-- Comment on an existing issue
-- Email: support@dotenv.space
-
-**Thank you for making evnx better!** 🙏
+Significant contributions may also be highlighted in project announcements.
 
 ---
 
-<div align="center">
+# License
 
-**Made with 🦀 Rust and ❤️ by contributors like you**
+By contributing to **evnx**, you agree that your contributions will be licensed under the **MIT License**.
 
-[Website](https://dotenv.space) • [Documentation](./docs/GETTING_STARTED.md) • [GitHub](https://github.com/urwithajit9/evnx)
+---
 
-</div>
+# Questions
+
+If you have questions about contributing:
+
+* Open a discussion on GitHub
+* Comment on an issue
+* Contact: [support@dotenv.space](mailto:support@dotenv.space)
+
+Thank you for helping improve **evnx**.
+
+---
+
+**evnx**
+Secure environment management for modern development workflows.
+
+Website: [https://dotenv.space](https://dotenv.space)
+Repository: [https://github.com/urwithajit9/evnx](https://github.com/urwithajit9/evnx)
+
+

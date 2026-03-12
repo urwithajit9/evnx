@@ -1,9 +1,23 @@
 // tests/schema_integration.rs - Top of file
 
-mod common;
-
 use evnx::schema::{formatter, loader, resolver};
+use indexmap::IndexMap;
 use std::collections::HashMap;
+
+fn parse_env_vars(content: &str) -> IndexMap<String, String> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                return None;
+            }
+            trimmed
+                .split_once('=')
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+        })
+        .collect()
+}
 
 // ─────────────────────────────────────────────────────────────
 // Schema Consistency Tests
@@ -105,8 +119,7 @@ fn test_resolve_then_format_roundtrip() {
     let vars = resolver::resolve_blueprint(blueprint).expect("Should resolve");
     let formatted = formatter::format_env_example(&vars, true).expect("Should format");
 
-    // FIX: Use common:: not crate::common::
-    let parsed = common::parse_env_vars(&formatted);
+    let parsed = parse_env_vars(&formatted);
 
     for var_name in vars.vars.keys() {
         assert!(

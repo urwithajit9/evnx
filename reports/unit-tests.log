@@ -1,69 +1,77 @@
-   Compiling evnx v0.2.0 (/home/ajit/Documents/dotenv-space-cli)
-warning: unused imports: `Context` and `anyhow`
-  --> src/commands/backup.rs:63:14
+   Compiling memchr v2.8.0
+   Compiling getrandom v0.4.1
+   Compiling futures-core v0.3.32
+   Compiling syn v2.0.117
+   Compiling smallvec v1.15.1
+   Compiling futures-util v0.3.32
+   Compiling parking_lot_core v0.9.12
+   Compiling tempfile v3.25.0
+   Compiling parking_lot v0.12.5
+   Compiling aho-corasick v1.1.4
+   Compiling serde_json v1.0.149
+   Compiling regex-automata v0.4.14
+   Compiling futures-executor v0.3.32
+   Compiling serde_derive v1.0.228
+   Compiling zeroize_derive v1.4.3
+   Compiling clap_derive v4.5.55
+   Compiling thiserror-impl v1.0.69
+   Compiling serial_test_derive v3.4.0
+   Compiling regex v1.12.3
+   Compiling bstr v1.12.1
+   Compiling zeroize v1.8.2
+   Compiling serial_test v3.4.0
+   Compiling predicates v3.1.4
+   Compiling thiserror v1.0.69
+   Compiling dialoguer v0.11.0
+   Compiling assert_cmd v2.1.2
+   Compiling clap v4.5.60
+   Compiling clap_complete v4.5.66
+   Compiling serde v1.0.228
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling toml_edit v0.22.27
+   Compiling toml v0.8.23
+   Compiling evnx v0.2.1 (/home/ajit/Documents/dotenv-space-cli)
+warning: unused import: `crate::utils::looks_like_dotenv`
+  --> src/commands/backup.rs:63:5
    |
-63 | use anyhow::{anyhow, Context, Result};
-   |              ^^^^^^  ^^^^^^^
+63 | use crate::utils::looks_like_dotenv;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
-warning: unused imports: `Confirm` and `Password`
-  --> src/commands/migrate.rs:54:17
-   |
-54 | use dialoguer::{Confirm, Input, Password, Select};
-   |                 ^^^^^^^         ^^^^^^^^
-
 warning: unused imports: `Context` and `anyhow`
-  --> src/commands/restore.rs:40:14
+  --> src/commands/backup.rs:64:14
    |
-40 | use anyhow::{anyhow, Context, Result};
+64 | use anyhow::{anyhow, Context, Result};
    |              ^^^^^^  ^^^^^^^
 
-warning: unused variable: `dir`
-   --> src/commands/add/custom.rs:197:13
+warning: unused import: `super::*`
+   --> src/commands/backup.rs:484:9
     |
-197 |         let dir = TempDir::new().unwrap();
-    |             ^^^ help: if this is intentional, prefix it with an underscore: `_dir`
-    |
-    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+484 |     use super::*;
+    |         ^^^^^^^^
 
-warning: unused variable: `repo`
-  --> src/commands/migrate.rs:91:5
+warning: unused imports: `Context` and `anyhow`
+  --> src/commands/restore.rs:50:14
    |
-91 |     repo: Option<String>,
-   |     ^^^^ help: if this is intentional, prefix it with an underscore: `_repo`
+50 | use anyhow::{anyhow, Context, Result};
+   |              ^^^^^^  ^^^^^^^
 
-warning: unused variable: `skip_existing`
-  --> src/commands/migrate.rs:94:5
+warning: unused variable: `dry_run`
+  --> src/commands/restore.rs:66:59
    |
-94 |     skip_existing: bool,
-   |     ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_skip_existing`
-
-warning: unused variable: `overwrite`
-  --> src/commands/migrate.rs:95:5
+66 | pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Result<()> {
+   |                                                           ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dry_run`
    |
-95 |     overwrite: bool,
-   |     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_overwrite`
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
-warning: unused variable: `github_token`
-  --> src/commands/migrate.rs:96:5
-   |
-96 |     github_token: Option<String>,
-   |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_github_token`
+warning: `evnx` (lib test) generated 5 warnings (run `cargo fix --lib -p evnx --tests` to apply 5 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 24.59s
+     Running unittests src/lib.rs (target/debug/deps/evnx-8226d6ed165475b2)
 
-warning: type alias `MigrationDiff` is never used
-  --> src/commands/migrate.rs:69:6
-   |
-69 | type MigrationDiff = (Vec<(String, String)>, Vec<String>, Vec<String>);
-   |      ^^^^^^^^^^^^^
-   |
-   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: `evnx` (lib test) generated 9 warnings (run `cargo fix --lib -p evnx --tests` to apply 8 suggestions)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.35s
-     Running unittests src/lib.rs (target/debug/deps/evnx-953717fb07268802)
-
-running 132 tests
+running 285 tests
 test commands::add::blueprint::tests::test_handle_skips_conflicting_vars ... ok
 test commands::add::custom::tests::test_handle_creates_custom_section ... ok
 test commands::add::framework::tests::test_handle_appends_framework_vars ... ok
@@ -73,38 +81,156 @@ test commands::backup::tests::test_looks_like_dotenv_comments_and_blanks ... ok
 test commands::backup::tests::test_looks_like_dotenv_empty ... ok
 test commands::backup::tests::test_looks_like_dotenv_rejects_prose ... ok
 test commands::backup::tests::test_looks_like_dotenv_valid ... ok
-test commands::convert::tests::test_key_transform_uppercase ... ok
-test commands::diff::tests::test_compute_diff ... ok
-test commands::migrate::tests::test_is_system_variable ... ok
-test commands::migrate::tests::test_load_secrets_from_environment ... ok
-test commands::restore::tests::test_count_vars_empty ... ok
-test commands::restore::tests::test_count_vars_normal ... ok
-test commands::restore::tests::test_count_vars_only_assignments ... ok
+test commands::convert::tests::test_build_options_clone ... ok
+test commands::convert::tests::test_builder_chaining_order_independence ... ok
+test commands::convert::tests::test_builder_with_none_values ... ok
+test commands::convert::tests::test_convert_config_builder ... ok
+test commands::convert::tests::test_convert_config_default ... ok
+test commands::convert::tests::test_get_converter_aliases ... ok
+test commands::convert::tests::test_get_converter_known_formats ... ok
+test commands::convert::tests::test_glob_filter_integration ... ok
+test commands::convert::tests::test_key_transform_integration ... ok
+test commands::convert::tests::test_validate_input_exists ... ok
+test commands::convert::tests::test_validate_input_not_a_file ... ok
+test commands::convert::tests::test_validate_input_not_found ... ok
+test commands::convert::tests::test_write_output_to_file ... ok
+test commands::convert::tests::test_write_output_to_stdout ... ok
+test commands::diff::tests::test_compute_diff_basic ... ok
+test commands::diff::tests::test_compute_stats ... ok
+test commands::diff::tests::test_compute_stats_empty_files ... ok
+test commands::diff::tests::test_compute_stats_identical_files ... ok
+test commands::diff::tests::test_compute_stats_no_overlap ... ok
+test commands::diff::tests::test_has_changes ... ok
+test commands::diff::tests::test_ignore_keys_filtering ... ok
+test commands::diff::tests::test_order_preservation ... ok
+test commands::diff::tests::test_redact_sensitive_values ... ok
+test commands::doctor::runner::tests::test_detect_project_type ... ok
+test commands::doctor::runner::tests::test_fallback_gitignore_check ... ok
+test commands::doctor::runner::tests::test_severity_serialization ... ok
+test commands::doctor::runner::tests::test_validate_env_syntax_invalid ... ok
+test commands::doctor::runner::tests::test_validate_env_syntax_valid ... ok
+test commands::migrate::destinations::aws::tests::test_dry_run_returns_skipped ... ok
+test commands::migrate::destinations::aws::tests::test_live_run_returns_uploaded ... ok
+test commands::migrate::destinations::azure::tests::test_dry_run ... ok
+test commands::migrate::destinations::azure::tests::test_underscore_conversion ... ok
+test commands::migrate::destinations::doppler::tests::test_dry_run ... ok
+test commands::migrate::destinations::heroku::tests::test_dry_run ... ok
+test commands::migrate::destinations::tests::test_all_non_github_destinations_resolve ... ok
+test commands::migrate::destinations::tests::test_available_destinations_are_all_resolvable ... ok
+test commands::migrate::destinations::tests::test_aws_slug_and_alias_both_resolve ... ok
+test commands::migrate::destinations::tests::test_unknown_destination_errors ... ok
+test commands::migrate::filtering::tests::test_apply_filters_add_prefix ... ok
+test commands::migrate::filtering::tests::test_apply_filters_combined ... ok
+test commands::migrate::filtering::tests::test_apply_filters_exclude ... ok
+test commands::migrate::filtering::tests::test_apply_filters_include ... ok
+test commands::migrate::filtering::tests::test_apply_filters_strip_prefix ... ok
+test commands::migrate::filtering::tests::test_glob_exact ... ok
+test commands::migrate::filtering::tests::test_glob_question_mark ... ok
+test commands::migrate::filtering::tests::test_glob_star ... ok
+test commands::migrate::sources::tests::test_is_system_variable_known ... ok
+test commands::migrate::sources::tests::test_is_system_variable_unknown ... ok
+test commands::migrate::sources::tests::test_load_secrets_from_environment ... ok
+test commands::migrate::sources::tests::test_load_secrets_unsupported_source ... ok
+test commands::restore::tests::test_count_dotenv_vars_empty ... ok
+test commands::restore::tests::test_count_dotenv_vars_normal ... ok
+test commands::restore::tests::test_count_dotenv_vars_only_assignments ... ok
 test commands::restore::tests::test_looks_like_dotenv_empty ... ok
 test commands::restore::tests::test_looks_like_dotenv_rejects_prose ... ok
 test commands::restore::tests::test_looks_like_dotenv_rejects_too_much_noise ... ok
 test commands::restore::tests::test_looks_like_dotenv_tolerates_some_noise ... ok
 test commands::restore::tests::test_looks_like_dotenv_valid ... ok
-test commands::scan::tests::test_is_scannable_file ... ok
-test commands::scan::tests::test_should_exclude ... ok
-test commands::scan::tests::test_truncate_value ... ok
-test commands::sync::tests::test_atomic_write_sets_permissions ... ok
-test commands::sync::tests::test_custom_pattern_matching ... ok
-test commands::sync::tests::test_default_placeholder_not_empty ... ok
-test commands::sync::tests::test_generate_placeholder_builtin_rules ... ok
-test commands::sync::tests::test_generate_placeholder_custom_config ... ok
-test commands::sync::tests::test_generate_placeholder_with_url_values ... ok
-test commands::sync::tests::test_is_placeholder_value ... ok
-test commands::sync::tests::test_placeholder_config_serialization ... ok
-test commands::sync::tests::test_sync_direction_display ... ok
-test commands::sync::tests::test_validate_var_name ... ok
-test commands::template::tests::test_filter_bool ... ok
-test commands::template::tests::test_filter_int ... ok
+test commands::scan::detector::tests::test_detection_struct ... ok
+test commands::scan::detector::tests::test_pattern_detector_name ... ok
+test commands::scan::detector::tests::test_registry_new_has_default_detectors ... ok
+test commands::scan::detector::tests::test_registry_register ... ok
+test commands::scan::filters::tests::test_collect_files ... ok
+test commands::scan::filters::tests::test_file_filter_new ... ok
+test commands::scan::filters::tests::test_is_scannable_extensions ... ok
+test commands::scan::filters::tests::test_is_scannable_special_files ... ok
+test commands::scan::filters::tests::test_should_exclude_always ... ok
+test commands::scan::filters::tests::test_should_exclude_substring ... ok
+test commands::scan::models::tests::test_confidence_display ... ok
+test commands::scan::models::tests::test_confidence_from_patterns ... ok
+test commands::scan::models::tests::test_finding_new ... ok
+test commands::scan::models::tests::test_has_critical_findings ... ok
+test commands::scan::models::tests::test_scan_results_add_finding ... ok
+test commands::scan::models::tests::test_scan_results_new ... ok
+test commands::scan::output::tests::test_output_format_from_str ... ok
+test commands::scan::output::tests::test_render_json_structure ... ok
+test commands::scan::output::tests::test_render_sarif_structure ... ok
+test commands::scan::runner::tests::test_extract_tokens ... ok
+test commands::scan::runner::tests::test_scan_runner_new ... ok
+test commands::scan::runner::tests::test_scan_runner_returns_secrets_found ... ok
+test commands::scan::runner::tests::test_truncate_value_long ... ok
+test commands::scan::runner::tests::test_truncate_value_short ... ok
+test commands::scan::tests::test_module_exports ... ok
+test commands::sync::executor::tests::test_add_from_example_preview_with_placeholders ... ok
+test commands::sync::executor::tests::test_add_from_example_preview_without_placeholders ... ok
+test commands::sync::executor::tests::test_add_with_actual_values_preview ... ok
+test commands::sync::executor::tests::test_add_with_placeholders_preview ... ok
+test commands::sync::executor::tests::test_atomic_write_creates_parent_dirs ... ok
+test commands::sync::executor::tests::test_atomic_write_ensures_env_file_permissions ... ok
+test commands::sync::executor::tests::test_atomic_write_sets_permissions ... ok
+test commands::sync::executor::tests::test_convert_to_example_preview ... ok
+test commands::sync::executor::tests::test_key_highlight_returns_colored ... ok
+test commands::sync::executor::tests::test_value_preview_placeholder_vs_actual ... ok
+test commands::sync::models::tests::test_placeholder_config_default ... ok
+test commands::sync::models::tests::test_placeholder_config_from_path_invalid_json ... ok
+test commands::sync::models::tests::test_placeholder_config_from_path_missing_file ... ok
+test commands::sync::models::tests::test_placeholder_config_from_path_success ... ok
+test commands::sync::models::tests::test_placeholder_config_serialization ... ok
+test commands::sync::models::tests::test_sync_action_equality ... ok
+test commands::sync::models::tests::test_var_change_clone ... ok
+test commands::sync::placeholder::tests::test_custom_pattern_case_insensitive ... ok
+test commands::sync::placeholder::tests::test_custom_pattern_matching ... ok
+test commands::sync::placeholder::tests::test_generate_placeholder_builtin_rules ... ok
+test commands::sync::placeholder::tests::test_generate_placeholder_custom_config ... ok
+test commands::sync::placeholder::tests::test_generate_placeholder_empty_key ... ok
+test commands::sync::placeholder::tests::test_generate_placeholder_priority_order ... ok
+test commands::sync::placeholder::tests::test_generate_placeholder_special_chars_in_key ... ok
+test commands::sync::placeholder::tests::test_generate_placeholder_with_url_values ... ok
+test commands::sync::placeholder::tests::test_invalid_regex_pattern_fallback ... ok
+test commands::sync::placeholder::tests::test_is_placeholder_value ... ok
+test commands::sync::placeholder::tests::test_is_placeholder_value_with_custom_config ... ok
+test commands::sync::security::tests::test_check_env_permissions_nonexistent_file ... ok
+test commands::sync::security::tests::test_log_security_event_no_panic ... ok
+test commands::sync::security::tests::test_validate_var_name_edge_cases ... ok
+test commands::sync::security::tests::test_validate_var_name_invalid_names ... ok
+test commands::sync::security::tests::test_validate_var_name_valid_names ... ok
+test commands::sync::tests::test_run_signature_compiles ... ok
+test commands::template::tests::test_detect_undefined_vars_all_styles ... ok
+test commands::template::tests::test_detect_undefined_vars_no_duplicates ... ok
+test commands::template::tests::test_filter_bool_falsy_values ... ok
+test commands::template::tests::test_filter_bool_truthy_values ... ok
+test commands::template::tests::test_filter_default_when_defined ... ok
+test commands::template::tests::test_filter_default_when_empty ... ok
+test commands::template::tests::test_filter_int_invalid_error ... ok
+test commands::template::tests::test_filter_int_valid ... ok
+test commands::template::tests::test_filter_json_proper_escaping ... ok
+test commands::template::tests::test_filter_lower ... ok
+test commands::template::tests::test_filter_order_prevents_conflicts ... ok
+test commands::template::tests::test_filter_title ... ok
 test commands::template::tests::test_filter_upper ... ok
+test commands::template::tests::test_filter_var_pattern ... ok
+test commands::template::tests::test_mixed_substitution_styles ... ok
+test commands::template::tests::test_pattern_helpers ... ok
 test commands::template::tests::test_process_template_double_braces ... ok
-test commands::template::tests::test_process_template_simple ... ok
-test commands::validate::tests::test_is_placeholder ... ok
-test commands::validate::tests::test_is_weak_secret_key ... ok
+test commands::template::tests::test_process_template_simple_prefix ... ok
+test commands::template::tests::test_process_template_simple_substitution ... ok
+test commands::template::tests::test_regex_escaping_for_special_var_names ... ok
+test commands::template::tests::test_shell_var_pattern ... ok
+test commands::template::tests::test_template_var_pattern ... ok
+test commands::validate::checks::tests::test_check_boolean_trap ... ok
+test commands::validate::checks::tests::test_check_missing_variables ... ok
+test commands::validate::checks::tests::test_is_placeholder ... ok
+test commands::validate::checks::tests::test_is_weak_secret_key ... ok
+test commands::validate::checks::tests::test_validate_port ... ok
+test commands::validate::checks::tests::test_validate_url ... ok
+test commands::validate::fixer::tests::test_apply_fix_boolean ... ok
+test commands::validate::fixer::tests::test_apply_fix_generates_secret ... ok
+test commands::validate::fixer::tests::test_generate_secret_length ... ok
+test commands::validate::fixer::tests::test_suggest_fix_boolean ... ok
+test commands::validate::fixer::tests::test_suggest_fix_placeholder_secret ... ok
 test core::config::tests::test_create_example ... ok
 test core::config::tests::test_default_config ... ok
 test core::config::tests::test_load_from_toml ... ok
@@ -122,6 +248,33 @@ test core::converter::tests::test_transform_key_lowercase ... ok
 test core::converter::tests::test_transform_key_prefix ... ok
 test core::converter::tests::test_transform_key_uppercase ... ok
 test core::converter::tests::test_transform_value_base64 ... ok
+test core::gitignore::tests::test_append_creates_file_when_missing ... ok
+test core::gitignore::tests::test_append_empty_file_no_leading_blank ... ok
+test core::gitignore::tests::test_append_no_double_blank_when_file_ends_with_double_newline ... ok
+test core::gitignore::tests::test_append_preserves_trailing_newline ... ok
+test core::gitignore::tests::test_append_second_entry_inside_section ... ok
+test core::gitignore::tests::test_append_section_mid_file_inserts_before_blank_line ... ok
+test core::gitignore::tests::test_append_separator_when_file_ends_with_newline ... ok
+test core::gitignore::tests::test_append_to_existing_file_without_section ... ok
+test core::gitignore::tests::test_check_blank_lines_not_false_positive ... ok
+test core::gitignore::tests::test_check_comment_line_is_not_a_match ... ok
+test core::gitignore::tests::test_check_empty_file_is_not_ignored ... ok
+test core::gitignore::tests::test_check_exact_match ... ok
+test core::gitignore::tests::test_check_file_not_found ... ok
+test core::gitignore::tests::test_check_no_match ... ok
+test core::gitignore::tests::test_check_subdirectory_entry ... ok
+test core::gitignore::tests::test_check_whitespace_padded_entry_matches ... ok
+test core::gitignore::tests::test_find_from_nested_subdirectory ... ok
+test core::gitignore::tests::test_find_from_repo_root ... ok
+test core::gitignore::tests::test_find_git_as_file_worktree ... ok
+test core::gitignore::tests::test_find_gitignore_not_required_to_exist ... ok
+test core::gitignore::tests::test_find_no_git_repo ... ok
+test core::gitignore::tests::test_full_workflow_idempotent_via_check ... ok
+test core::gitignore::tests::test_full_workflow_new_repo ... ok
+test core::gitignore::tests::test_relative_path_deeply_nested ... ok
+test core::gitignore::tests::test_relative_path_outside_root_returns_none ... ok
+test core::gitignore::tests::test_relative_path_simple ... ok
+test core::gitignore::tests::test_relative_path_subdirectory ... ok
 test core::parser::tests::test_backtick_quoted ... ok
 test core::parser::tests::test_basic_key_value ... ok
 test core::parser::tests::test_circular_expansion_detected ... ok
@@ -140,6 +293,7 @@ test core::parser::tests::test_export_prefix ... ok
 test core::parser::tests::test_hash_inside_double_quotes_preserved ... ok
 test core::parser::tests::test_inline_comment_disabled ... ok
 test core::parser::tests::test_inline_comment_stripped ... ok
+test core::parser::tests::test_key_order_preserved ... ok
 test core::parser::tests::test_key_starting_with_digit_rejected ... ok
 test core::parser::tests::test_key_with_hyphen_rejected ... ok
 test core::parser::tests::test_key_with_space_rejected ... ok
@@ -166,6 +320,12 @@ test formats::heroku::tests::test_converter_with_app ... ok
 test formats::heroku::tests::test_converter_without_app ... ok
 test formats::heroku::tests::test_default_converter ... ok
 test formats::json::tests::test_json_converter ... ok
+test utils::dotenv_validation::tests::test_count_vars_empty ... ok
+test utils::dotenv_validation::tests::test_count_vars_normal ... ok
+test utils::dotenv_validation::tests::test_looks_like_dotenv_empty ... ok
+test utils::dotenv_validation::tests::test_looks_like_dotenv_rejects_prose ... ok
+test utils::dotenv_validation::tests::test_looks_like_dotenv_tolerates_some_noise ... ok
+test utils::dotenv_validation::tests::test_looks_like_dotenv_valid ... ok
 test utils::fs::tests::test_backup_file_creates_copy ... ok
 test utils::fs::tests::test_human_readable_size_bytes ... ok
 test utils::fs::tests::test_human_readable_size_kilobytes ... ok
@@ -180,6 +340,7 @@ test utils::patterns::tests::test_detect_secret ... ok
 test utils::patterns::tests::test_entropy ... ok
 test utils::patterns::tests::test_github_tokens ... ok
 test utils::patterns::tests::test_is_placeholder ... ok
+test utils::patterns::tests::test_sensitive_detection ... ok
 test utils::patterns::tests::test_stripe_keys ... ok
 test utils::string::tests::test_pluralize_plural ... ok
 test utils::string::tests::test_pluralize_singular ... ok
@@ -197,5 +358,5 @@ test utils::ui::tests::test_progress_bar_length ... ok
 test utils::ui::tests::test_progress_bar_zero ... ok
 test utils::ui::tests::test_should_colorize_respects_no_color ... ok
 
-test result: ok. 132 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 285 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
 

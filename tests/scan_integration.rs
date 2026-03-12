@@ -16,7 +16,7 @@
 //! cargo test --test scan_integration -- --nocapture
 //! ```
 
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use std::fs;
 use tempfile::TempDir;
 
@@ -47,21 +47,15 @@ fn get_stdout(assert: &assert_cmd::assert::Assert) -> String {
 fn test_scan_exit_zero() {
     let temp_dir = setup_test_env("AKIA4OZRMFJ3VREALKEY");
 
-    // ✅ Get output FIRST, then assert on exit code
-    let assert = Command::cargo_bin("evnx")
-        .expect("Failed to find evnx binary")
+    let assert = cargo_bin_cmd!("evnx")
         .current_dir(temp_dir.path())
         .arg("scan")
         .arg("--exit-zero")
         .assert();
 
-    // Get output before consuming assert with code()
     let stdout = get_stdout(&assert);
-
-    // Now assert on exit code (this consumes assert, but we already have output)
     assert_cmd::assert::Assert::code(assert, 0);
 
-    // ✅ Verify output content
     assert!(
         stdout.contains("AWS Access Key"),
         "Expected output to contain 'AWS Access Key', got:\n{}",
@@ -79,8 +73,8 @@ fn test_scan_exit_zero() {
 fn test_scan_without_exit_zero() {
     let temp_dir = setup_test_env("AKIA4OZRMFJ3VREALKEY");
 
-    let assert = Command::cargo_bin("evnx")
-        .expect("Failed to find evnx binary")
+    // No --exit-zero: secrets found → must exit 1
+    let assert = cargo_bin_cmd!("evnx")
         .current_dir(temp_dir.path())
         .arg("scan")
         .assert();
@@ -101,15 +95,14 @@ fn test_scan_no_secrets_found() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let env_file = temp_dir.path().join(".env");
 
-    // Create a file with NO secrets (just safe placeholder values)
+    // Safe placeholder values — no real secrets
     fs::write(
         &env_file,
         "DATABASE_URL=postgresql://localhost/dev\nAPI_KEY=changeme\n",
     )
     .expect("Failed to write test .env file");
 
-    let assert = Command::cargo_bin("evnx")
-        .expect("Failed to find evnx binary")
+    let assert = cargo_bin_cmd!("evnx")
         .current_dir(temp_dir.path())
         .arg("scan")
         .assert();
@@ -130,12 +123,11 @@ fn test_scan_ignore_placeholders() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let env_file = temp_dir.path().join(".env");
 
-    // File with placeholder that should be ignored
+    // Placeholder values that should be skipped by --ignore-placeholders
     fs::write(&env_file, "API_KEY=your_api_key_here\nSECRET=example123\n")
         .expect("Failed to write test .env file");
 
-    let assert = Command::cargo_bin("evnx")
-        .expect("Failed to find evnx binary")
+    let assert = cargo_bin_cmd!("evnx")
         .current_dir(temp_dir.path())
         .arg("scan")
         .arg("--ignore-placeholders")
@@ -144,7 +136,6 @@ fn test_scan_ignore_placeholders() {
     let stdout = get_stdout(&assert);
     assert_cmd::assert::Assert::code(assert, 0);
 
-    // Should not report the placeholder values as secrets
     assert!(
         !stdout.contains("your_api_key_here") || stdout.contains("No secrets detected"),
         "Placeholders should be ignored, got:\n{}",
@@ -157,8 +148,7 @@ fn test_scan_ignore_placeholders() {
 fn test_scan_json_format() {
     let temp_dir = setup_test_env("AKIA4OZRMFJ3VREALKEY");
 
-    let assert = Command::cargo_bin("evnx")
-        .expect("Failed to find evnx binary")
+    let assert = cargo_bin_cmd!("evnx")
         .current_dir(temp_dir.path())
         .arg("scan")
         .arg("--format")
@@ -169,7 +159,6 @@ fn test_scan_json_format() {
     let stdout = get_stdout(&assert);
     assert_cmd::assert::Assert::code(assert, 0);
 
-    // ✅ Parse JSON (stdout should be clean now, but be defensive)
     let json = parse_json_output(&stdout).expect("Output should contain valid JSON");
 
     assert!(json["findings"].is_array());
@@ -196,8 +185,7 @@ fn test_scan_exclude_patterns() {
     fs::write(&excluded_file, "SECRET_KEY=AKIA4OZRMFJ3VREALKEY\n")
         .expect("Failed to write excluded test file");
 
-    let assert = Command::cargo_bin("evnx")
-        .expect("Failed to find evnx binary")
+    let assert = cargo_bin_cmd!("evnx")
         .current_dir(temp_dir.path())
         .arg("scan")
         .arg("--exclude")
@@ -208,7 +196,6 @@ fn test_scan_exclude_patterns() {
     let stdout = get_stdout(&assert);
     assert_cmd::assert::Assert::code(assert, 0);
 
-    // Should find the secret in .env
     assert!(
         stdout.contains(".env:"),
         "Expected to find secret in .env, got:\n{}",
@@ -224,8 +211,7 @@ fn test_scan_sarif_format() {
     fs::write(&env_file, "GITHUB_TOKEN=ghp_1234567890abcdefghijklmnop\n")
         .expect("Failed to write test file");
 
-    let assert = Command::cargo_bin("evnx")
-        .expect("Failed to find evnx binary")
+    let assert = cargo_bin_cmd!("evnx")
         .current_dir(temp_dir.path())
         .arg("scan")
         .arg("--format")
@@ -255,9 +241,8 @@ fn test_scan_sarif_format() {
 fn test_output_format_header_behavior() {
     let temp_dir = setup_test_env("AKIA4OZRMFJ3VREALKEY");
 
-    // Pretty format should have UI header (on stderr)
-    let pretty_assert = Command::cargo_bin("evnx")
-        .expect("Failed to find evnx binary")
+    // Pretty format should emit UI header on stderr
+    let pretty_assert = cargo_bin_cmd!("evnx")
         .current_dir(temp_dir.path())
         .arg("scan")
         .arg("--format")
@@ -267,14 +252,11 @@ fn test_output_format_header_behavior() {
 
     let pretty_stderr = String::from_utf8_lossy(&pretty_assert.get_output().stderr);
 
-    // ✅ Fix: Match the ACTUAL subtitle text used in runner.rs
     assert!(
         pretty_stderr.contains("Checking for exposed secrets"),
         "Pretty format should show header on stderr. Got stderr:\n{}",
         pretty_stderr
     );
-
-    // Also verify the title is present
     assert!(
         pretty_stderr.contains("evnx scan"),
         "Header should contain command title. Got stderr:\n{}",
@@ -282,8 +264,7 @@ fn test_output_format_header_behavior() {
     );
 
     // JSON format should NOT have UI header on stdout
-    let json_assert = Command::cargo_bin("evnx")
-        .expect("Failed to find evnx binary")
+    let json_assert = cargo_bin_cmd!("evnx")
         .current_dir(temp_dir.path())
         .arg("scan")
         .arg("--format")
@@ -292,7 +273,6 @@ fn test_output_format_header_behavior() {
         .assert();
 
     let json_stdout = get_stdout(&json_assert);
-    // JSON should start with { not box characters
     let trimmed = json_stdout.trim_start();
     assert!(
         trimmed.starts_with('{'),

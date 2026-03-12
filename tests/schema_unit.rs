@@ -1,6 +1,5 @@
 // tests/schema_unit.rs - Top of file
 
-mod common;
 //use evnx::schema::{loader, resolver, formatter, query};
 use evnx::schema::query;
 // use evnx::schema::models::{VarCollection, VarSource};

@@ -1,12 +1,37 @@
 //! Integration tests for `evnx add` command.
 #![allow(deprecated)]
-mod common;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
-use common::{fixtures, read_env_example};
 // use common::assertions::*;
+
+fn read_env_example(dir: &std::path::Path) -> anyhow::Result<String> {
+    std::fs::read_to_string(dir.join(".env.example")).map_err(|e| anyhow::anyhow!("{}", e))
+}
+
+fn setup_minimal_project(dir: &std::path::Path) -> anyhow::Result<()> {
+    std::fs::write(
+        dir.join(".env.example"),
+        "# Minimal project\nAPP_NAME=test\n",
+    )?;
+    std::fs::write(dir.join(".env"), "APP_NAME=\n")?;
+    Ok(())
+}
+
+fn setup_postgres_project(dir: &std::path::Path) -> anyhow::Result<()> {
+    std::fs::write(dir.join(".env.example"),
+        "DATABASE_URL=postgresql://user:pass@localhost/prod_db\nDB_HOST=prod-db.example.com\nDB_NAME=production\n")?;
+    Ok(())
+}
+
+const DJANGO_VARS: &[&str] = &[
+    "SECRET_KEY",
+    "DEBUG",
+    "ALLOWED_HOSTS",
+    "DJANGO_SETTINGS_MODULE",
+];
 
 // ─────────────────────────────────────────────────────────────
 // Add Service Tests
@@ -99,7 +124,7 @@ fn add_service_unknown_returns_error() {
 #[test]
 fn add_framework_django_appends_vars() {
     let dir = TempDir::new().unwrap();
-    fixtures::setup_minimal_project(dir.path()).unwrap();
+    setup_minimal_project(dir.path()).unwrap();
 
     Command::cargo_bin("evnx")
         .unwrap()
@@ -117,7 +142,7 @@ fn add_framework_django_appends_vars() {
     let example = read_env_example(dir.path()).unwrap();
 
     // Should have Django vars
-    for var in fixtures::DJANGO_VARS {
+    for var in DJANGO_VARS {
         assert!(
             example.contains(&format!("{}=", var)),
             "Should have {}",
@@ -158,7 +183,7 @@ fn add_framework_unknown_language_error() {
 #[test]
 fn add_blueprint_skips_conflicting_vars() {
     let dir = TempDir::new().unwrap();
-    fixtures::setup_postgres_project(dir.path()).unwrap();
+    setup_postgres_project(dir.path()).unwrap();
 
     // Add T3 blueprint which includes PostgreSQL (has DATABASE_URL)
     Command::cargo_bin("evnx")
@@ -235,7 +260,7 @@ fn add_blueprint_to_empty_project() {
 #[ignore = "requires TTY; run manually with `cargo test -- --ignored`"]
 fn add_custom_interactive() {
     let dir = TempDir::new().unwrap();
-    fixtures::setup_minimal_project(dir.path()).unwrap();
+    setup_minimal_project(dir.path()).unwrap();
 
     // Simulate interactive custom addition
     Command::cargo_bin("evnx")
