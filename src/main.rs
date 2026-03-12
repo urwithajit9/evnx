@@ -174,8 +174,24 @@ fn main() -> Result<()> {
             args.naming_policy,
         ),
 
-        Commands::Template { input, output, env } => {
-            commands::template::run(input, output, env, cli.verbose)
+        // Commands::Template { input, output, env } => {
+        //     commands::template::run(input, output, env, cli.verbose)
+        // }
+        Commands::Template {
+            input,
+            output,
+            env,
+            gitignore,
+            no_gitignore,
+        } => {
+            let mode = if gitignore {
+                commands::template::GitignoreMode::Auto
+            } else if no_gitignore {
+                commands::template::GitignoreMode::Skip
+            } else {
+                commands::template::GitignoreMode::Default
+            };
+            commands::template::run(input, output, env, cli.verbose, mode)
         }
 
         #[cfg(feature = "backup")]

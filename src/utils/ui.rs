@@ -579,6 +579,21 @@ pub fn scanning_file_stderr(file: &std::path::Path) {
     );
 }
 
+/// Print `message` followed by ` [Y/n] `, read a line from stdin, and return
+/// `true` if the user typed `y`, `Y`, or pressed Enter (empty = yes).
+/// Returns `false` for `n`, `N`, or any other input.
+pub fn prompt_yes_no(message: impl std::fmt::Display) -> bool {
+    use std::io::{self, Write};
+    eprint!("{message} [Y/n] ");
+    io::stderr().flush().ok();
+
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input).is_err() {
+        return false;
+    }
+    matches!(input.trim().to_lowercase().as_str(), "" | "y" | "yes")
+}
+
 // ─────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────

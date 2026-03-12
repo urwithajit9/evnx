@@ -37,7 +37,7 @@
 //!
 //!     if let Some(entry) = relative_output_path(git_root, output) {
 //!         let entry_str = entry.to_string_lossy();
-//!         match check_ignored(&gitignore_path, &entry_str) {
+//!         match check_ignored(&gitignore_path, &entry_str).expect("could not read .gitignore") {
 //!             GitignoreStatus::AlreadyIgnored => { /* nothing to do */ }
 //!             _ => {
 //!                 append_entry(&gitignore_path, &entry_str).expect("write failed");
@@ -60,8 +60,7 @@ use std::path::{Path, PathBuf};
 /// This exact string is used both when writing the section and when detecting
 /// whether the section already exists. It must not be changed without a
 /// migration path, as existing `.gitignore` files will contain this literal.
-pub const SECTION_HEADER: &str =
-    "# ── evnx generated ─────────────────────────────────────────";
+pub const SECTION_HEADER: &str = "# ── evnx generated ─────────────────────────────────────────";
 
 /// The explanatory comment written immediately below [`SECTION_HEADER`].
 const SECTION_COMMENT: &str =
@@ -168,10 +167,7 @@ pub fn find_gitignore_path(start: &Path) -> Option<PathBuf> {
 /// ```
 #[must_use]
 pub fn relative_output_path(git_root: &Path, output: &Path) -> Option<PathBuf> {
-    output
-        .strip_prefix(git_root)
-        .ok()
-        .map(Path::to_path_buf)
+    output.strip_prefix(git_root).ok().map(Path::to_path_buf)
 }
 
 /// Check whether `entry` is already present in the `.gitignore` at the given path.
@@ -354,9 +350,7 @@ fn append_new_section(content: &str, entry: &str) -> String {
         "\n\n"
     };
 
-    format!(
-        "{content}{prefix}{SECTION_HEADER}\n{SECTION_COMMENT}\n{entry}\n"
-    )
+    format!("{content}{prefix}{SECTION_HEADER}\n{SECTION_COMMENT}\n{entry}\n")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -654,7 +648,8 @@ mod tests {
         //   node_modules/
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join(".gitignore");
-        let initial = format!(".env\n{SECTION_HEADER}\n{SECTION_COMMENT}\nconfig.toml\n\nnode_modules/\n");
+        let initial =
+            format!(".env\n{SECTION_HEADER}\n{SECTION_COMMENT}\nconfig.toml\n\nnode_modules/\n");
         fs::write(&path, &initial).unwrap();
 
         append_entry(&path, "deploy.yaml").unwrap();
@@ -666,7 +661,10 @@ mod tests {
         // deploy.yaml must be inside the section, before node_modules/
         let deploy_pos = content.find("deploy.yaml").unwrap();
         let modules_pos = content.find("node_modules/").unwrap();
-        assert!(deploy_pos < modules_pos, "deploy.yaml should precede node_modules/");
+        assert!(
+            deploy_pos < modules_pos,
+            "deploy.yaml should precede node_modules/"
+        );
         // Only one section header
         assert_eq!(content.matches(SECTION_HEADER).count(), 1);
     }

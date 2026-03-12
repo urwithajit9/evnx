@@ -488,6 +488,15 @@ Use 'evnx convert' without --to for interactive format selection.
         output: String,
         #[arg(long, default_value = ".env")]
         env: String,
+        /// Automatically add the output file to .gitignore (no prompt).
+        /// Useful in CI scripts. Mutually exclusive with --no-gitignore.
+        #[arg(long, conflicts_with = "no_gitignore")]
+        gitignore: bool,
+
+        /// Skip all .gitignore checks and warnings.
+        /// Use when you manage .gitignore externally. Mutually exclusive with --gitignore.
+        #[arg(long, conflicts_with = "gitignore")]
+        no_gitignore: bool,
     },
 
     /// Create encrypted backup of .env.

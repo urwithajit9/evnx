@@ -1,5 +1,6 @@
 pub mod config;
 pub mod converter;
+pub mod gitignore;
 pub mod parser;
 
 // Re-export commonly used types

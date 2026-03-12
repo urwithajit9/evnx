@@ -89,8 +89,115 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::fs;
 
+use crate::core::gitignore::{self, GitignoreStatus};
 use crate::core::Parser;
 use crate::utils::ui;
+
+// ─────────────────────────────────────────────────────────────
+// Gitignore integration
+// ─────────────────────────────────────────────────────────────
+
+/// Controls how `evnx template` updates `.gitignore` after generating output.
+///
+/// This enum is resolved from CLI flags in `src/cli.rs` before `run()` is
+/// called. TTY detection and user prompting happen here — not in `core/gitignore`.
+pub enum GitignoreMode {
+    /// `--gitignore` flag: write without prompting. Suitable for CI scripts.
+    Auto,
+    /// `--no-gitignore` flag: skip all gitignore logic. No warning emitted.
+    Skip,
+    /// No flag: prompt when running interactively (TTY), warn-only in CI.
+    Default,
+}
+
+/// After a successful template generation, offer to protect the output file.
+///
+/// Behaviour depends on `mode` and whether stdin is a terminal:
+/// - `Auto`: always append to `.gitignore` without prompting.
+/// - `Skip`: do nothing and emit no output.
+/// - `Default` + TTY: prompt the user (`Y/n`).
+/// - `Default` + non-TTY (CI): emit a warning, do not modify anything.
+///
+/// Silently skips if:
+/// - No git repository is found (no `.git` ancestor).
+/// - The output path is outside the repository root.
+/// - The entry is already present in `.gitignore`.
+fn handle_gitignore(output: &str, mode: &GitignoreMode) -> anyhow::Result<()> {
+    use std::path::Path;
+
+    if matches!(mode, GitignoreMode::Skip) {
+        return Ok(());
+    }
+
+    // Locate the git root's .gitignore.
+    let cwd = std::env::current_dir()?;
+    let Some(gitignore_path) = gitignore::find_gitignore_path(&cwd) else {
+        if matches!(mode, GitignoreMode::Auto) {
+            ui::warning("Not a git repository — cannot update .gitignore");
+        }
+        return Ok(());
+    };
+
+    let git_root = gitignore_path
+        .parent()
+        .expect(".gitignore path always has a parent directory");
+
+    // Make output path absolute so strip_prefix works correctly.
+    let output_path = {
+        let p = Path::new(output);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            cwd.join(p)
+        }
+    };
+
+    // Compute the relative entry string for .gitignore.
+    let Some(entry_path) = gitignore::relative_output_path(git_root, &output_path) else {
+        ui::warning(format!(
+            "'{}' is outside the git repository — .gitignore cannot protect it",
+            output
+        ));
+        return Ok(());
+    };
+    let entry = entry_path.to_string_lossy().to_string();
+
+    // Check whether the entry is already present.
+    match gitignore::check_ignored(&gitignore_path, &entry)? {
+        GitignoreStatus::AlreadyIgnored => {
+            ui::success(format!("'{}' is already in .gitignore", entry));
+            return Ok(());
+        }
+        GitignoreStatus::NotIgnored | GitignoreStatus::FileNotFound => {}
+    }
+
+    // Decide whether to write based on mode and TTY.
+    let should_write = match mode {
+        GitignoreMode::Auto => true,
+        GitignoreMode::Skip => false, // unreachable, handled above
+        GitignoreMode::Default => {
+            if atty::is(atty::Stream::Stdin) {
+                ui::prompt_yes_no(format!(
+                    "'{}' may contain secrets — add it to .gitignore?",
+                    entry
+                ))
+            } else {
+                ui::warning(format!(
+                    "'{}' may contain secrets and is not in .gitignore",
+                    entry
+                ));
+                false
+            }
+        }
+    };
+
+    if should_write {
+        gitignore::append_entry(&gitignore_path, &entry)?;
+        ui::success(format!("Added '{}' to .gitignore", entry));
+    }
+
+    Ok(())
+}
 
 // ─────────────────────────────────────────────────────────────
 // Regex Pattern Helpers (avoid format! brace escaping hell)
@@ -186,15 +293,22 @@ fn default_var_pattern(key: &str) -> String {
 /// # Example
 ///
 /// ```no_run
-/// # use evnx::commands::template::run;
+/// # use evnx::commands::template::{run, GitignoreMode};
 /// run(
 ///     "config.yaml.template".to_string(),
 ///     "config.yaml".to_string(),
 ///     ".env.production".to_string(),
 ///     true, // verbose mode
+///  GitignoreMode::Default
 /// ).expect("Template generation failed");
 /// ```
-pub fn run(input: String, output: String, env: String, verbose: bool) -> Result<()> {
+pub fn run(
+    input: String,
+    output: String,
+    env: String,
+    verbose: bool,
+    gitignore_mode: GitignoreMode,
+) -> Result<()> {
     if verbose {
         ui::verbose_stderr("Running template in verbose mode");
     }
@@ -245,7 +359,7 @@ pub fn run(input: String, output: String, env: String, verbose: bool) -> Result<
             if undefined.len() == 1 { "" } else { "s" }
         ));
     }
-
+    handle_gitignore(&output, &gitignore_mode)?;
     Ok(())
 }
 
