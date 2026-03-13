@@ -1,7 +1,7 @@
 /target
 
 venv/
-reports
+/reports/
 
 
 
