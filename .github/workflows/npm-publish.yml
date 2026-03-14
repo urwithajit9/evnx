@@ -17,7 +17,7 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write
   id-token: write  # Required for npm provenance attestation
 
 jobs:
@@ -69,9 +69,9 @@ jobs:
       RELEASE_RUN_ID: ${{ needs.check.outputs.run_id }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4.4.0
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
@@ -80,7 +80,7 @@ jobs:
       # Uses RELEASE_RUN_ID so both automatic and manual triggers point to the
       # correct release run regardless of how this workflow was invoked.
       - name: Download all release artifacts
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v9
         with:
           run_id: ${{ env.RELEASE_RUN_ID }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
