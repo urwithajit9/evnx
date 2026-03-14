@@ -1,10 +1,20 @@
 name: Publish to npm
 
-# Triggers after release.yml completes successfully on a v* tag push.
+# Triggers automatically after release.yml completes on a v* tag push.
+# Can also be triggered manually via workflow_dispatch to recover from failures
+# without cutting a new release tag.
 on:
   workflow_run:
     workflows: ["Release"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'release.yml run ID (the number in the Actions URL for that run)'
+        required: true
+      version:
+        description: 'Version to publish without v prefix (e.g. 0.3.0)'
+        required: true
 
 permissions:
   contents: read
@@ -17,24 +27,35 @@ jobs:
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
       version: ${{ steps.check.outputs.version }}
+      run_id: ${{ steps.check.outputs.run_id }}
     steps:
-      - name: Check if release workflow succeeded and was a tag push
+      - name: Resolve trigger source
         id: check
         run: |
-          CONCLUSION="${{ github.event.workflow_run.conclusion }}"
-          HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
-
-          echo "Upstream conclusion: $CONCLUSION"
-          echo "Head branch/tag: $HEAD_BRANCH"
-
-          if [[ "$CONCLUSION" == "success" && "$HEAD_BRANCH" =~ ^v[0-9] ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "Triggered manually"
             echo "should_run=true" >> $GITHUB_OUTPUT
-            VERSION="${HEAD_BRANCH#v}"
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "Will publish version: $VERSION"
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "run_id=${{ github.event.inputs.run_id }}" >> $GITHUB_OUTPUT
+            echo "Will publish version: ${{ github.event.inputs.version }} from run: ${{ github.event.inputs.run_id }}"
           else
-            echo "should_run=false" >> $GITHUB_OUTPUT
-            echo "Skipping npm publish (conclusion=$CONCLUSION, ref=$HEAD_BRANCH)"
+            CONCLUSION="${{ github.event.workflow_run.conclusion }}"
+            HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
+            RUN_ID="${{ github.event.workflow_run.id }}"
+
+            echo "Upstream conclusion: $CONCLUSION"
+            echo "Head branch/tag: $HEAD_BRANCH"
+            echo "Run ID: $RUN_ID"
+
+            if [[ "$CONCLUSION" == "success" && "$HEAD_BRANCH" =~ ^v[0-9] ]]; then
+              echo "should_run=true" >> $GITHUB_OUTPUT
+              echo "version=${HEAD_BRANCH#v}" >> $GITHUB_OUTPUT
+              echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+              echo "Will publish version: ${HEAD_BRANCH#v}"
+            else
+              echo "should_run=false" >> $GITHUB_OUTPUT
+              echo "Skipping npm publish (conclusion=$CONCLUSION, ref=$HEAD_BRANCH)"
+            fi
           fi
 
   publish:
@@ -45,6 +66,7 @@ jobs:
 
     env:
       VERSION: ${{ needs.check.outputs.version }}
+      RELEASE_RUN_ID: ${{ needs.check.outputs.run_id }}
 
     steps:
       - uses: actions/checkout@v4
@@ -54,11 +76,13 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
 
-      # ── Download artifacts from the completed Release workflow run ──────────
+      # ── Download artifacts from the release.yml run ─────────────────────────
+      # Uses RELEASE_RUN_ID so both automatic and manual triggers point to the
+      # correct release run regardless of how this workflow was invoked.
       - name: Download all release artifacts
         uses: dawidd6/action-download-artifact@v6
         with:
-          run_id: ${{ github.event.workflow_run.id }}
+          run_id: ${{ env.RELEASE_RUN_ID }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           path: downloaded-artifacts/
 
@@ -97,7 +121,7 @@ jobs:
             ls -la "extracted/$npm_name/"
 
             if [[ "$npm_name" == *"win32"* ]]; then
-              # Find the .exe — name may vary, use find to locate it robustly
+              # Use find — robust regardless of what the binary is named inside the tarball
               EXE_FILE=$(find "extracted/$npm_name/" -maxdepth 1 -name "*.exe" | head -1)
               if [[ -z "$EXE_FILE" ]]; then
                 echo "ERROR: No .exe found in extracted/$npm_name/ after extraction"
@@ -106,10 +130,9 @@ jobs:
               echo "Found Windows binary: $EXE_FILE"
               mv "$EXE_FILE" "extracted/$npm_name/evnx.exe"
             else
-              # Find the binary — prefer exact artifact name, fall back to any non-dotfile
+              # Prefer exact artifact name, fall back to first non-dotfile
               BIN_FILE="extracted/$npm_name/${artifact_folder}"
               if [[ ! -f "$BIN_FILE" ]]; then
-                # Fallback: find first executable file that isn't a dot-file
                 BIN_FILE=$(find "extracted/$npm_name/" -maxdepth 1 -type f ! -name ".*" | head -1)
               fi
               if [[ -z "$BIN_FILE" ]]; then
@@ -125,7 +148,7 @@ jobs:
           echo "All extracted binaries:"
           find extracted/ -type f | sort
 
-      # ── Build npm package directory structure ──────────────────────────────
+      # ── Build platform package directory structure ─────────────────────────
       - name: Create platform package structures
         run: |
           PLATFORMS=(
@@ -292,13 +315,11 @@ jobs:
           echo "Wrapper package ready:"
           find npm-publish/evnx -type f | sort
 
-      # ── Inject READMEs — must run AFTER package dirs are created above ──────
+      # ── Inject READMEs — runs AFTER package dirs are created above ──────────
       - name: Inject README files into npm packages
         run: |
-          # Wrapper gets the full repo README
           cp README.md npm-publish/evnx/README.md
 
-          # Platform packages get a minimal redirect stub
           for pkg_dir in npm-publish/packages/*/; do
             pkg_name=$(basename "$pkg_dir")
             cat > "${pkg_dir}README.md" << EOF
