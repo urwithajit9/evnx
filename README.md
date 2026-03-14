@@ -1,233 +1,184 @@
-# evnx CLI
+# evnx
 
 [![CI](https://github.com/urwithajit9/evnx/workflows/CI/badge.svg)](https://github.com/urwithajit9/evnx/actions)
 [![Release](https://img.shields.io/github/v/release/urwithajit9/evnx)](https://github.com/urwithajit9/evnx/releases)
+[![crates.io](https://img.shields.io/crates/v/evnx.svg)](https://crates.io/crates/evnx)
+[![PyPI](https://img.shields.io/pypi/v/evnx.svg)](https://pypi.org/project/evnx/)
+[![npm](https://img.shields.io/npm/v/@evnx/cli.svg)](https://www.npmjs.com/package/@evnx/cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A comprehensive CLI tool for managing `.env` files — validation, secret scanning, format conversion, and migration to cloud secret managers.
+A CLI tool for managing `.env` files — validation, secret scanning, format conversion, and migration to cloud secret managers.
 
-**📚 [Documentation](./docs/GETTING_STARTED.md)** | **🌐 [Website](https://dotenv.space)**
+[Website](https://www.evnx.dev) | [Getting Started](./docs/GETTING_STARTED.md) | [Changelog](./CHANGELOG.md)
+
+---
 
 ## Why evnx?
 
-I built this after accidentally pushing AWS credentials to GitHub in a test file during an Airflow refactor (20 DAGs, 300+ Scrapy spiders). The key was revoked immediately, other services went down, and I had to explain the incident to my development head. That conversation was more painful than any billing alert.
+Accidentally committing secrets to version control is one of the most common and costly developer mistakes. evnx is a local-first tool that catches misconfigurations, detects credential leaks, and converts environment files to the format each deployment target expects — before anything reaches CI or production.
 
-Three years later, I'm still paranoid about secrets management. This tool is the safety net I wish I'd had.
+---
 
-## ✨ Features
+## Installation
 
-All features are **production-ready** and working in v0.1.0!
+### Linux / macOS
 
-### Core Commands (Always Available)
-
-- ✅ **`init`** - Interactive project setup with templates for Python, Node.js, Rust, Go, PHP
-- ✅ **`add`** - Option to add variables to your .env file , custom, blueprint, services
-- ✅ **`validate`** - Comprehensive validation (checks for placeholders, weak secrets, misconfigurations)
-- ✅ **`scan`** - Secret detection using pattern matching and entropy analysis
-- ✅ **`diff`** - Compare `.env` and `.env.example`, show missing/extra variables
-- ✅ **`convert`** - Transform to 14+ formats (JSON, YAML, Docker, Kubernetes, AWS, GCP, Azure, GitHub Actions, and more)
-- ✅ **`sync`** - Keep `.env` and `.env.example` in sync (bidirectional)
-
-### Extended Commands (With Features)
-
-- ✅ **`migrate`** - Direct migration to secret managers (GitHub Actions, AWS Secrets Manager, Doppler, Infisical)
-- ✅ **`doctor`** - Diagnose common setup issues
-- ✅ **`template`** - Generate config files from templates with variable substitution
-- ✅ **`backup`** - Create AES-256-GCM encrypted backups
-- ✅ **`restore`** - Restore from encrypted backups
-
-**Build with all features:**
 ```bash
-cargo build --features full
-# or
-cargo build --all-features
+curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
 ```
 
-## 🚀 Quick Start
+### npm
 
-### Installation
-
-#### macOS / Linux
 ```bash
-curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/install.sh | bash
+npm install -g @evnx/cli
 ```
 
-#### Windows
-**Prerequisites:** Install [Rust](https://rustup.rs/) first.
+### pipx (recommended for Python environments)
+
+```bash
+pipx install evnx
+```
+
+> `pip install evnx` also works but places the binary inside the active virtualenv's `bin/` directory.
+> Use `pipx` to make `evnx` available system-wide without managing a virtualenv manually.
+
+### Cargo
+
+```bash
+cargo install evnx
+# with all optional features
+cargo install evnx --all-features
+```
+
+### Windows
+
+Install [Rust](https://rustup.rs/) first, then:
 
 ```powershell
-# Clone the repository
-git clone https://github.com/urwithajit9/evnx.git
-cd evnx
-
-# Build and install with core features
-cargo install --path .
-
-# Or build with all features
-cargo install --path . --features full
-
-# Verify installation
+cargo install evnx
 evnx --version
 ```
 
-**Note:** Add `%USERPROFILE%\.cargo\bin` to your PATH if not already done during Rust installation.
+### Verify
 
-**Tested on:** Windows 10/11 with PowerShell 5.1+
-
-#### From crates.io
-```bash
-# Install with core features only
-cargo install evnx
-
-# Install with all features
-cargo install evnx --features full
-```
-
-#### Verify Installation
 ```bash
 evnx --version
 evnx --help
 ```
 
-### Basic Usage
+---
 
-```bash
-# 1. Initialize a new project
-evnx init
-
-# 2. Validate your configuration
-evnx validate --strict
-
-# 3. Scan for accidentally committed secrets
-evnx scan
-
-# 4. Compare files
-evnx diff --show-values
-
-# 5. Convert to different formats
-evnx convert --to json > config.json
-evnx convert --to github-actions
-evnx convert --to kubernetes > secret.yaml
-
-# 6. Keep files in sync
-evnx sync --direction forward
-```
-
-## 📖 Documentation
-
-- **[Getting Started Guide](./docs/GETTING_STARTED.md)** - Complete walkthrough with examples
-- **[Use Cases](./docs/USE_CASES.md)** - Real-world scenarios
-- **[CI/CD Integration](./docs/CICD_GUIDE.md)** - GitLab, GitHub Actions, Jenkins
-- **[Architecture](./ARCHITECTURE.md)** - System design and internals
-- **[Contributing](./CONTRIBUTING.md)** - How to contribute
-
-## 🎯 Command Overview
+## Commands
 
 ### `evnx init`
 
-**Interactive project setup** - Generates `.env.example` with sensible defaults.
+Interactive project setup. Creates `.env` and `.env.example` files for your project through a guided TUI.
 
-```bash
-evnx init                                # Interactive mode
+```
+evnx init
 ```
 
-**Supported stacks:** Python, Node.js, Rust, Go, PHP
-**Supported services:** PostgreSQL, Redis, MongoDB, MySQL, RabbitMQ, Elasticsearch, AWS S3, Stripe, SendGrid, OpenAI, and more
+Running `evnx init` launches an interactive menu with three modes:
+
+```
+How do you want to start?
+  Blank      — create empty .env files
+  Blueprint  — use a pre-configured stack (Python, Node.js, Rust, Go, PHP, and more)
+  Architect  — build a custom stack by selecting services interactively
+```
+
+There are no flags required. The interactive flow handles stack and service selection inside the TUI.
+
+---
+
+### `evnx add`
+
+Add variables to an existing `.env` file interactively. Supports custom input, service blueprints, and variable templates.
+
+```bash
+evnx add
+```
 
 ---
 
 ### `evnx validate`
 
-**Comprehensive validation** - Catches misconfigurations before deployment.
+Validates your `.env` file for common misconfigurations before deployment.
 
 ```bash
-evnx validate                            # Pretty output
-evnx validate --strict                   # Fail on warnings
-evnx validate --format json              # JSON output
-evnx validate --format github-actions    # GitHub annotations
+evnx validate                            # pretty output
+evnx validate --strict                   # exit non-zero on warnings
+evnx validate --format json              # machine-readable output
+evnx validate --format github-actions    # inline GitHub annotations
 ```
 
-**Detects:**
-- ❌ Missing required variables
-- ❌ Placeholder values (`YOUR_KEY_HERE`, `CHANGE_ME`)
-- ❌ Boolean string trap (`DEBUG="False"` is truthy!)
-- ❌ Weak `SECRET_KEY` (too short, common patterns)
-- ❌ `localhost` in production
-- ❌ Suspicious port numbers
+Detects: missing required variables, placeholder values (`YOUR_KEY_HERE`, `CHANGE_ME`), the boolean string trap (`DEBUG="False"` is truthy in most runtimes), weak secret keys, localhost in production, and suspicious port numbers.
 
 ---
 
 ### `evnx scan`
 
-**Secret detection** - Find accidentally committed credentials.
+Scans files for accidentally committed credentials using pattern matching and entropy analysis.
 
 ```bash
-evnx scan                                # Scan current directory
-evnx scan --path src/                    # Specific directory
-evnx scan --format sarif                 # SARIF for GitHub Security
-evnx scan --exit-zero                    # Don't fail CI
+evnx scan                         # scan current directory
+evnx scan --path src/             # specific path
+evnx scan --format sarif          # SARIF output for GitHub Security tab
+evnx scan --exit-zero             # warn but do not fail CI
 ```
 
-**Detects 8+ secret types:**
-- AWS Access Keys (`AKIA...`)
-- Stripe API Keys (live & test)
-- GitHub Personal Access Tokens
-- OpenAI API Keys
-- Anthropic API Keys
-- Private Keys (RSA, EC, OpenSSH)
-- High-entropy strings (potential secrets)
-- Generic API keys
-
-**SARIF output** integrates with GitHub Security tab!
+Detects: AWS Access Keys, Stripe keys (live and test), GitHub tokens, OpenAI and Anthropic API keys, RSA/EC/OpenSSH private keys, high-entropy strings, and generic API key patterns.
 
 ---
 
 ### `evnx diff`
 
-**File comparison** - See what's different between environments.
+Compares `.env` and `.env.example` and shows what is missing, extra, or mismatched.
 
 ```bash
-evnx diff                                # Compare .env and .env.example
-evnx diff --show-values                  # Show actual values
-evnx diff --reverse                      # Swap comparison
-evnx diff --format json                  # JSON output
+evnx diff                     # compare .env vs .env.example
+evnx diff --show-values       # include actual values
+evnx diff --reverse           # swap comparison direction
+evnx diff --format json       # JSON output
 ```
 
 ---
 
 ### `evnx convert`
 
-**Format conversion** - Transform to 14+ output formats.
+Converts your `.env` file to 14+ output formats for various deployment targets.
 
 ```bash
-evnx convert --to json                   # Generic JSON
-evnx convert --to yaml                   # Generic YAML
-evnx convert --to shell                  # Shell export script
-evnx convert --to docker-compose         # Docker Compose format
-evnx convert --to kubernetes             # Kubernetes Secret YAML
-evnx convert --to terraform              # Terraform .tfvars
-evnx convert --to github-actions         # GitHub Actions format
-evnx convert --to aws-secrets            # AWS Secrets Manager
-evnx convert --to gcp-secrets            # GCP Secret Manager
-evnx convert --to azure-keyvault         # Azure Key Vault
-evnx convert --to heroku                 # Heroku Config Vars
-evnx convert --to vercel                 # Vercel Environment Variables
-evnx convert --to railway               # Railway JSON
-evnx convert --to doppler                # Doppler format
+evnx convert --to json
+evnx convert --to yaml
+evnx convert --to shell
+evnx convert --to docker-compose
+evnx convert --to kubernetes
+evnx convert --to terraform
+evnx convert --to github-actions
+evnx convert --to aws-secrets
+evnx convert --to gcp-secrets
+evnx convert --to azure-keyvault
+evnx convert --to heroku
+evnx convert --to vercel
+evnx convert --to railway
+evnx convert --to doppler
 ```
 
-**Advanced options:**
+Advanced filtering and transformation:
+
 ```bash
 evnx convert --to json \
-  --output secrets.json \              # Write to file
-  --include "AWS_*" \                  # Filter variables
-  --exclude "*_LOCAL" \                # Exclude patterns
-  --prefix "APP_" \                    # Add prefix
-  --transform uppercase \              # Transform keys
-  --base64                             # Base64-encode values
+  --output secrets.json \
+  --include "AWS_*" \
+  --exclude "*_LOCAL" \
+  --prefix "APP_" \
+  --transform uppercase \
+  --base64
 ```
 
-**Real-world example - Deploy to AWS:**
+Pipe directly to AWS Secrets Manager:
+
 ```bash
 evnx convert --to aws-secrets | \
   aws secretsmanager create-secret \
@@ -239,74 +190,52 @@ evnx convert --to aws-secrets | \
 
 ### `evnx sync`
 
-**Bidirectional sync** - Keep `.env` and `.env.example` aligned.
+Keeps `.env` and `.env.example` aligned, in either direction.
 
 ```bash
 # Forward: .env → .env.example (document what you have)
 evnx sync --direction forward --placeholder
 
-# Reverse: .env.example → .env (generate from template)
+# Reverse: .env.example → .env (generate env from template)
 evnx sync --direction reverse
 ```
 
-**Use cases:**
-- Generate `.env` from `.env.example` in CI/CD
-- Update `.env.example` when adding new variables
-- Maintain documentation
-
 ---
 
-### `evnx migrate` *(Requires `--features migrate`)*
+### `evnx migrate` _(requires `--features migrate`)_
 
-**Cloud migration** - Move secrets directly to secret managers.
+Migrates secrets directly to cloud secret managers.
 
 ```bash
-# GitHub Actions Secrets
-evnx migrate \
-  --from env-file \
-  --to github-actions \
-  --repo owner/repo \
-  --github-token $GITHUB_TOKEN
+# GitHub Actions secrets
+evnx migrate --from env-file --to github-actions \
+  --repo owner/repo --github-token $GITHUB_TOKEN
 
 # AWS Secrets Manager
-evnx migrate \
-  --to aws-secrets-manager \
-  --secret-name prod/myapp/config
+evnx migrate --to aws-secrets-manager --secret-name prod/myapp/config
 
-# Doppler
-evnx migrate \
-  --to doppler \
-  --dry-run  # Preview changes first
+# Doppler (with dry run)
+evnx migrate --to doppler --dry-run
 ```
-
-**Features:**
-- ✅ Conflict detection (skip or overwrite)
-- ✅ Dry-run mode
-- ✅ Progress tracking
-- ✅ Encrypted uploads (GitHub uses libsodium)
 
 ---
 
 ### `evnx doctor`
 
-**Health check** - Diagnose common issues.
+Runs a health check on your environment configuration setup.
 
 ```bash
-evnx doctor                              # Check current directory
+evnx doctor                          # check current directory
 evnx doctor --path /path/to/project
 ```
 
-**Checks:**
-- ✅ `.env` exists and has secure permissions
-- ✅ `.env` is in `.gitignore`
-- ✅ `.env.example` exists and is tracked by Git
-- ✅ Project structure detection (Python, Node.js, Rust, Docker)
+Checks: `.env` exists and has secure permissions, `.env` is in `.gitignore`, `.env.example` is tracked by Git, and project structure detection.
 
 ---
 
 ### `evnx template`
 
-**Template generation** - Dynamic config file creation.
+Generates configuration files from templates using `.env` variable substitution.
 
 ```bash
 evnx template \
@@ -315,110 +244,35 @@ evnx template \
   --env .env
 ```
 
-**Supports filters:**
+Supported inline filters:
+
 ```yaml
-# config.template.yml
 database:
   host: {{DB_HOST}}
   port: {{DB_PORT|int}}
-  ssl: {{DB_SSL|bool}}
+  ssl:  {{DB_SSL|bool}}
   name: {{DB_NAME|upper}}
 ```
 
 ---
 
-### `evnx backup/restore` *(Requires `--features backup`)*
+### `evnx backup` / `evnx restore` _(requires `--features backup`)_
 
-**Encrypted backups** - AES-256-GCM encryption with Argon2 key derivation.
+Creates and restores AES-256-GCM encrypted backups using Argon2 key derivation.
 
 ```bash
-# Create backup
 evnx backup .env --output .env.backup
-
-# Restore
 evnx restore .env.backup --output .env
 ```
 
-**Security:**
-- AES-256-GCM encryption
-- Argon2 password hashing
-- No secrets in plaintext
-
 ---
 
-## ⚠️ Known Issues
-
-### Array/List Value Parsing
-
-evnx currently **does not support** array-like or list-like values in `.env` files. This affects Django and other frameworks that use python-dotenv's extended syntax.
-
-**Will fail:**
-```bash
-# Arrays with brackets
-CORS_ALLOWED=["https://example.com", "https://admin.example.com"]
-
-# Multiline values
-DATABASE_HOSTS="""
-host1.example.com
-host2.example.com
-"""
-
-# JSON values
-CONFIG={"key": "value", "nested": {"data": 123}}
-```
-
-**Workaround:**
-```bash
-# Use comma-separated strings instead
-CORS_ALLOWED=https://example.com,https://admin.example.com
-
-# Or use base64-encoded JSON
-CONFIG_JSON=eyJrZXkiOiJ2YWx1ZSJ9
-
-# Parse in your application code
-# Python example:
-import os
-import json
-cors_allowed = os.getenv("CORS_ALLOWED", "").split(",")
-config = json.loads(base64.b64decode(os.getenv("CONFIG_JSON")))
-```
-
-**Why this limitation?**
-evnx follows the strict `.env` format specification which defines values as simple strings. Django's python-dotenv uses extended parsing that's not compatible with the standard format used by most other tools.
-
-**Tracking:** We're considering adding a `--lenient` or `--extended` flag for compatibility. Follow [Issue #XX](https://github.com/urwithajit9/evnx/issues) for updates.
-
-**Affects:**
-- Django projects using complex ALLOWED_HOSTS or CORS settings
-- Projects with JSON/YAML embedded in .env values
-- Multiline string values
-
-**Does NOT affect:**
-```bash
-# These work fine
-DATABASE_URL=postgres://localhost/db
-API_KEYS=key1,key2,key3           # Simple comma-separated
-ALLOWED_HOSTS=example.com admin.example.com  # Space-separated
-DEBUG=True
-PORT=3000
-```
-
-### Windows-Specific Issues
-
-- File permissions checking is limited on Windows (no Unix permissions)
-- Path handling uses backslashes (handled internally)
-- Some terminal color codes may not display correctly in older CMD (use PowerShell or Windows Terminal)
-
-**These are tracked and will be improved in future releases.**
-
----
-
-## 🔧 CI/CD Integration
+## CI/CD Integration
 
 ### GitHub Actions
 
 ```yaml
-name: Validate Environment
+name: Validate environment
 
 on: [push, pull_request]
 
@@ -430,7 +284,7 @@ jobs:
 
       - name: Install evnx
         run: |
-          curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
 
       - name: Validate configuration
         run: evnx validate --strict --format github-actions
@@ -438,8 +292,8 @@ jobs:
       - name: Scan for secrets
         run: evnx scan --format sarif > scan-results.sarif
 
-      - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v2
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: scan-results.sarif
@@ -453,7 +307,7 @@ validate-env:
   image: alpine:latest
   before_script:
     - apk add --no-cache curl bash
-    - curl -sSL https://install.dotenv.space | bash
+    - curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
   script:
     - evnx validate --strict --format json
     - evnx scan --format sarif > scan.sarif
@@ -462,20 +316,20 @@ validate-env:
       sast: scan.sarif
 ```
 
-### Pre-commit Hook
+### Pre-commit hook
 
 ```yaml
 # .pre-commit-config.yaml
 repos:
   - repo: local
     hooks:
-      - id: dotenv-validate
+      - id: evnx-validate
         name: Validate .env files
         entry: evnx validate --strict
         language: system
         pass_filenames: false
 
-      - id: dotenv-scan
+      - id: evnx-scan
         name: Scan for secrets
         entry: evnx scan --exit-zero
         language: system
@@ -484,9 +338,9 @@ repos:
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-Store preferences in `.evnx.toml`:
+Store defaults in `.evnx.toml` at the project root:
 
 ```toml
 [defaults]
@@ -516,114 +370,69 @@ tf = "terraform"
 
 ---
 
-## 🏗️ Development
+## Known Limitations
+
+**Array and multiline values** — evnx follows the strict `.env` spec where values are simple strings. The following will not parse correctly:
 
 ```bash
-# Clone repository
+# Not supported
+CORS_ALLOWED=["https://example.com", "https://admin.example.com"]
+CONFIG={"key": "value"}
+DATABASE_HOSTS="""
+host1.example.com
+host2.example.com
+"""
+```
+
+Use comma-separated strings and parse them in application code. A `--lenient` flag for extended syntax is under consideration — see [open issues](https://github.com/urwithajit9/evnx/issues).
+
+**Windows** — file permissions checking is limited (no Unix permission model). Terminal color support requires PowerShell or Windows Terminal on older systems.
+
+---
+
+## Development
+
+```bash
 git clone https://github.com/urwithajit9/evnx.git
 cd evnx
 
-# Build (core features only)
-cargo build
-
-# Build with all features
+cargo build                          # core features only
 cargo build --all-features
-
-# Run tests
 cargo test
-
-# Run with features
-cargo run --features migrate -- migrate --help
-cargo run --features backup -- backup --help
-cargo run --all-features -- --help
-
-# Lint and format
 cargo clippy --all-features -- -D warnings
 cargo fmt
 ```
 
-### Feature Flags
+Feature flags:
 
 ```toml
-# Cargo.toml features
 [features]
 default = []
 migrate = ["reqwest", "base64", "indicatif"]
-backup = ["aes-gcm", "argon2", "rand"]
-full = ["migrate", "backup"]
+backup  = ["aes-gcm", "argon2", "rand"]
+full    = ["migrate", "backup"]
 ```
 
-**Why feature flags?**
-- Smaller binary size for basic usage
-- Optional dependencies (reqwest, crypto libraries)
-- Faster compilation during development
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Contributions are welcome in: additional format converters, secret pattern improvements, Windows enhancements, extended `.env` format support, and integration examples.
 
 ---
 
-## 🤝 Contributing
+## License
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-**Areas where help is appreciated:**
-- Additional format converters
-- Secret pattern improvements
-- Windows support enhancements
-- Extended `.env` format support (arrays, multiline values)
-- Documentation improvements
-- Integration examples
-- Translation (i18n)
-
----
-
-## 📜 License
-
-MIT License - see [LICENSE](LICENSE)
+MIT — see [LICENSE](LICENSE).
 
 ---
 
 ## Credits
 
-Built by [Ajit Kumar](https://github.com/urwithajit9) after learning the hard way about secrets management.
+Built by [Ajit Kumar](https://github.com/urwithajit9).
 
-**Inspired by:**
-- Countless developers who've accidentally committed secrets
-- The pain of production incidents caused by misconfiguration
-- The desire for better developer tooling
-
-**Related Projects:**
-- [python-dotenv](https://github.com/theskumar/python-dotenv) - Python implementation
-- [dotenvy](https://github.com/allan2/dotenvy) - Rust dotenv parser
-- [direnv](https://direnv.net/) - Environment switcher
-- [git-secrets](https://github.com/awslabs/git-secrets) - AWS secret scanning
+Related projects: [python-dotenv](https://github.com/theskumar/python-dotenv), [dotenvy](https://github.com/allan2/dotenvy), [direnv](https://direnv.net/), [git-secrets](https://github.com/awslabs/git-secrets).
 
 ---
 
-## 🆘 Support
-
-- 🐛 [Report a bug](https://github.com/urwithajit9/evnx/issues/new?template=bug_report.md)
-- 💡 [Request a feature](https://github.com/urwithajit9/evnx/issues/new?template=feature_request.md)
-- 💬 [Start a discussion](https://github.com/urwithajit9/evnx/discussions)
-- 📧 [Email](mailto:support@dotenv.space)
-
----
-
-## ⭐ Show Your Support
-
-If this tool saved you from a secrets incident or made your life easier, please:
-
-- ⭐ [Star the repository](https://github.com/urwithajit9/evnx)
-- 🐦 [Tweet about it](https://twitter.com/intent/tweet?text=Check%20out%20evnx%20-%20a%20comprehensive%20CLI%20for%20managing%20.env%20files!&url=https://github.com/urwithajit9/evnx)
-- 📝 [Write a blog post](https://github.com/urwithajit9/evnx/discussions)
-- 💬 Tell your teammates
-
-**Your support helps improve the tool for everyone!**
-
----
-
-<div align="center">
-
-**Made with 🦀 Rust and ❤️ by developers who've been there**
-
-[Website](https://dotenv.space) • [Documentation](./docs/GETTING_STARTED.md) • [GitHub](https://github.com/urwithajit9/evnx)
-
-</div>
+[Website](https://www.evnx.dev) | [Issues](https://github.com/urwithajit9/evnx/issues) | [Discussions](https://github.com/urwithajit9/evnx/discussions) | [Email](mailto:support@evnx.dev)
