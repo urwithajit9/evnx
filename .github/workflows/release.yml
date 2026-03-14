@@ -120,24 +120,26 @@ jobs:
 
           ## Installation
 
-          ### Linux (x86_64)
+          ### Linux / macOS (shell script)
           \`\`\`bash
           curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | bash
           \`\`\`
 
-          ### macOS
+          ### npm / Node.js
           \`\`\`bash
-          curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | bash
+          npm install -g @evnx/cli
+          npx @evnx/cli --version
           \`\`\`
 
-          ### From source
+          ### Python (pipx — recommended for CLI tools)
+          \`\`\`bash
+          pipx install evnx
+          \`\`\`
+
+          ### Cargo
           \`\`\`bash
           cargo install evnx
           \`\`\`
-
-          ## What's Changed
-
-          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
 
           ## Checksums
 
@@ -153,6 +155,7 @@ jobs:
           files: release-assets/*
           body_path: release_notes.md
           draft: false
+          generate_release_notes: true      
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
