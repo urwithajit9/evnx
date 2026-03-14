@@ -1,12 +1,12 @@
 [package]
 name        = "evnx"
-version     = "0.2.1"
+version     = "0.3.0"
 edition     = "2021"
 authors     = ["Ajit Kumar <ajitkumar.pu@gmail.com>"]
 description = "A comprehensive CLI tool for managing .env files — validation, secret scanning, and format conversion"
 repository  = "https://github.com/urwithajit9/evnx"
-homepage    = "https://dotenv.space"
-documentation = "https://dotenv.space"
+homepage    = "https://evnx.dev"
+documentation = "https://evnx.dev"
 keywords    = ["env", "dotenv", "secrets", "cli", "devops"]
 categories  = ["command-line-utilities", "development-tools"]
 license     = "MIT"

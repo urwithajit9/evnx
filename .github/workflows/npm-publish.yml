@@ -102,7 +102,7 @@ jobs:
 
             # Rename binary to clean name (evnx or evnx.exe)
             if [[ "$npm_name" == *"win32"* ]]; then
-              mv "extracted/$npm_name/${artifact_folder}.exe" \ \
+              mv "extracted/$npm_name/${artifact_folder}.exe" \ 
                  "extracted/$npm_name/evnx.exe" 2>/dev/null || \
               mv "extracted/$npm_name/"*".exe" \
                  "extracted/$npm_name/evnx.exe"
@@ -117,6 +117,35 @@ jobs:
 
           echo "Extracted binaries:"
           find extracted/ -type f | sort
+
+      - name: Inject README files into npm packages
+        run: |
+          # Wrapper package gets the full repo README
+          cp README.md npm-publish/evnx/README.md || true
+
+          # Platform packages get a minimal redirect README
+          PLATFORM_PKGS=(
+            "evnx-linux-x64"
+            "evnx-linux-arm64"
+            "evnx-darwin-x64"
+            "evnx-darwin-arm64"
+            "evnx-win32-x64"
+          )
+          for pkg in "${PLATFORM_PKGS[@]}"; do
+            mkdir -p "npm-publish/packages/$pkg"
+            cat > "npm-publish/packages/$pkg/README.md" << 'EOF'
+          # @evnx/$pkg
+
+          This is an internal platform-specific binary package for the evnx CLI.
+
+          **Do not install this directly.** Install the main package instead:
+          ```bash
+                    npm install -g @evnx/cli
+          ```
+
+                    See https://www.evnx.dev for documentation.
+                    EOF
+                    done
 
       # ── Build npm package directory structure from templates ───────────────
       - name: Create npm package structures
@@ -151,7 +180,7 @@ jobs:
             "bin": {
               "evnx": "bin/$binary"
             },
-            "files": ["bin/$binary"],
+            "files": ["bin/$binary", "README.md"],
             "license": "MIT",
             "repository": {
               "type": "git",
@@ -265,6 +294,11 @@ jobs:
             "scripts": {
               "postinstall": "node install.js"
             },
+            "files": [
+              "bin/",
+              "install.js",
+              "README.md"
+            ],
             "optionalDependencies": {
               "@evnx/evnx-linux-x64":    "$VERSION",
               "@evnx/evnx-linux-arm64":  "$VERSION",
@@ -358,9 +392,9 @@ jobs:
 
           ### npm / Node.js
           \`\`\`bash
-          npm install -g evnx          # global install
-          npx evnx --version           # zero-install usage
-          npm install --save-dev evnx  # as a project dev dependency
+          npm install -g @evnx/cli          # global install
+          npx @evnx/cli --version           # zero-install usage
+          npm install --save-dev @evnx/cli  # as a project dev dependency
           \`\`\`
           "
 
