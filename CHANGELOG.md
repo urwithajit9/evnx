@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.2] - 2026-03-16
+
+ - fix: add features=["full"] to pyproject.toml [tool.maturin]
+   so PyPI wheel includes migrate, backup, restore commands
+
 ## [0.3.1] - 2026-03-16
 
 Patch release fixing PyPI distribution and Homebrew automation. No changes to
