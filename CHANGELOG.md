@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.4] - 2026-03-16
+
+- fix: switch reqwest to native-tls, ring removed from dependency tree
+
+
 ## [0.3.3] - 2026-03-16
 
 ### Fixed
