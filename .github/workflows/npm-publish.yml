@@ -371,7 +371,7 @@ jobs:
           done
 
       - name: Wait for registry replication
-        run: sleep 15
+        run: sleep 30
 
       - name: Publish wrapper package
         env:
@@ -383,7 +383,24 @@ jobs:
       # ── Smoke test ──────────────────────────────────────────────────────────
       - name: Smoke test installation
         run: |
-          npm install -g @evnx/cli@$VERSION
+          echo "Waiting for registry propagation..."
+          sleep 30
+
+          # Retry up to 5 times with 15s between attempts
+          for i in 1 2 3 4 5; do
+            echo "Attempt $i: npm install -g @evnx/cli@$VERSION"
+            if npm install -g @evnx/cli@$VERSION; then
+              echo "Install succeeded"
+              break
+            fi
+            if [ $i -eq 5 ]; then
+              echo "All attempts failed"
+              exit 1
+            fi
+            echo "Not available yet, waiting 15s..."
+            sleep 15
+          done
+
           evnx --version
           echo "✓ Smoke test passed"
 
