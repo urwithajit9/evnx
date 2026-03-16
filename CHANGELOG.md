@@ -5,7 +5,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [0.3.0] - 2026-03-17
+## [0.3.1] - 2026-03-16
+
+Patch release fixing PyPI distribution and Homebrew automation. No changes to
+the CLI itself — only release infrastructure and documentation.
+
+### Fixed
+
+- PyPI wheels were published without optional features (`migrate`, `backup`,
+  `restore`). All maturin build jobs now include `--features full`, so
+  `pipx install evnx` installs the full command set.
+- `update-homebrew-tap` job in `release.yml` was incorrectly indented as a
+  nested key inside the `release` job. It was never executing. Moved to the
+  correct top-level position under `jobs:`.
+- Homebrew Formula `install` block updated from `Dir["evnx-*"].first` glob to
+  explicit per-platform binary names for reliable installs.
+
+### Added
+
+- Homebrew tap support: `brew install urwithajit9/evnx/evnx`.
+  The `update-homebrew-tap` job in `release.yml` now automatically updates
+  `urwithajit9/homebrew-evnx` with the correct version and SHA256 checksums
+  on every release.
+- Homebrew install instructions added to README and release notes template.
+
+### Changed
+
+- README installation section restructured with per-OS pipx setup instructions
+  covering macOS, Ubuntu/Debian (including the PEP 668 explanation for 22.04+),
+  older Ubuntu (20.04), and Windows.
+- Release notes template updated to include the Homebrew install command.
+
+---
+
+## [0.3.0] - 2026-03-14
 
 This release is a comprehensive refactor. The focus is on command consistency,
 improved test coverage, and breaking changes to several commands that had
@@ -47,6 +80,8 @@ accumulated technical debt from the initial prototype. Users upgrading from
 - Auto-generated "What's Changed" section appended to GitHub releases via
   `generate_release_notes: true`.
 - npm badge and PyPI badge added to README.
+- `workflow_dispatch` added to `npm-publish.yml` for manual recovery without
+  cutting a new release tag.
 
 ---
 
