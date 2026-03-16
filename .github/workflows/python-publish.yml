@@ -49,6 +49,7 @@ jobs:
             --out dist
             --find-interpreter    # picks up all available Python versions
             --strip
+            --features full
           # Uncomment if you need musl (fully static) builds:
           # manylinux: musllinux_1_2
 
@@ -88,6 +89,7 @@ jobs:
             --out dist
             --find-interpreter
             --strip
+            --features full
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -118,6 +120,7 @@ jobs:
             --out dist
             --find-interpreter
             --strip
+            --features full
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4

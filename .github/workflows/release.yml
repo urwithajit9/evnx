@@ -62,8 +62,6 @@ jobs:
 
       - name: Build
         env:
-          # If any transitive dep still pulls openssl, vendor it
-          # (no-op if you've switched to rustls)
           OPENSSL_STATIC: "1"
           OPENSSL_DIR: "/usr"
           PKG_CONFIG_ALLOW_CROSS: "1"
@@ -90,6 +88,7 @@ jobs:
           path: dist/*
           retention-days: 5
 
+  # ── Create GitHub Release ──────────────────────────────────────────────────
   release:
     name: Create Release
     needs: build
@@ -125,10 +124,14 @@ jobs:
           curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | bash
           \`\`\`
 
+          ### Homebrew (macOS and Linux)
+          \`\`\`bash
+          brew install urwithajit9/evnx/evnx
+          \`\`\`
+
           ### npm / Node.js
           \`\`\`bash
           npm install -g @evnx/cli
-          npx @evnx/cli --version
           \`\`\`
 
           ### Python (pipx — recommended for CLI tools)
@@ -155,7 +158,114 @@ jobs:
           files: release-assets/*
           body_path: release_notes.md
           draft: false
-          generate_release_notes: true      
+          generate_release_notes: true
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Update Homebrew tap ────────────────────────────────────────────────────
+  # Runs after the GitHub Release is created so the tarball URLs and SHA256
+  # files are guaranteed to exist before we fetch them.
+  update-homebrew-tap:
+    name: Update Homebrew tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Fetch SHA256 values from release assets
+        id: sha256
+        run: |
+          BASE="https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.VERSION }}"
+
+          SHA_AARCH64_DARWIN=$(curl -fsSL "${BASE}/evnx-aarch64-apple-darwin.tar.gz.sha256" | awk '{print $1}')
+          SHA_X86_64_DARWIN=$(curl -fsSL "${BASE}/evnx-x86_64-apple-darwin.tar.gz.sha256" | awk '{print $1}')
+          SHA_AARCH64_LINUX=$(curl -fsSL "${BASE}/evnx-aarch64-unknown-linux-gnu.tar.gz.sha256" | awk '{print $1}')
+          SHA_X86_64_LINUX=$(curl -fsSL "${BASE}/evnx-x86_64-unknown-linux-musl.tar.gz.sha256" | awk '{print $1}')
+
+          echo "aarch64_darwin=$SHA_AARCH64_DARWIN" >> $GITHUB_OUTPUT
+          echo "x86_64_darwin=$SHA_X86_64_DARWIN" >> $GITHUB_OUTPUT
+          echo "aarch64_linux=$SHA_AARCH64_LINUX" >> $GITHUB_OUTPUT
+          echo "x86_64_linux=$SHA_X86_64_LINUX" >> $GITHUB_OUTPUT
+
+          echo "SHA256 values fetched:"
+          echo "  aarch64-apple-darwin:      $SHA_AARCH64_DARWIN"
+          echo "  x86_64-apple-darwin:       $SHA_X86_64_DARWIN"
+          echo "  aarch64-unknown-linux-gnu: $SHA_AARCH64_LINUX"
+          echo "  x86_64-unknown-linux-musl: $SHA_X86_64_LINUX"
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: urwithajit9/homebrew-evnx
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-evnx
+
+      - name: Update Formula
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          mkdir -p homebrew-evnx/Formula
+
+          cat > homebrew-evnx/Formula/evnx.rb << EOF
+          class Evnx < Formula
+            desc "CLI tool for managing .env files — validation, secret scanning, format conversion"
+            homepage "https://www.evnx.dev"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/urwithajit9/evnx/releases/download/v#{version}/evnx-aarch64-apple-darwin.tar.gz"
+                sha256 "${{ steps.sha256.outputs.aarch64_darwin }}"
+              end
+              on_intel do
+                url "https://github.com/urwithajit9/evnx/releases/download/v#{version}/evnx-x86_64-apple-darwin.tar.gz"
+                sha256 "${{ steps.sha256.outputs.x86_64_darwin }}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/urwithajit9/evnx/releases/download/v#{version}/evnx-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${{ steps.sha256.outputs.aarch64_linux }}"
+              end
+              on_intel do
+                url "https://github.com/urwithajit9/evnx/releases/download/v#{version}/evnx-x86_64-unknown-linux-musl.tar.gz"
+                sha256 "${{ steps.sha256.outputs.x86_64_linux }}"
+              end
+            end
+
+            def install
+              on_macos do
+                on_arm   { bin.install "evnx-aarch64-apple-darwin" => "evnx" }
+                on_intel { bin.install "evnx-x86_64-apple-darwin"  => "evnx" }
+              end
+              on_linux do
+                on_arm   { bin.install "evnx-aarch64-unknown-linux-gnu"  => "evnx" }
+                on_intel { bin.install "evnx-x86_64-unknown-linux-musl"  => "evnx" }
+              end
+            end
+
+            def caveats
+              <<~EOS
+                Run 'evnx --help' to get started.
+                Documentation: https://www.evnx.dev/guides
+              EOS
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/evnx --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push Formula update
+        run: |
+          cd homebrew-evnx
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/evnx.rb
+          git diff --staged --quiet || git commit -m "chore: update evnx to v${{ steps.version.outputs.VERSION }}"
+          git push
