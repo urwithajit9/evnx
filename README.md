@@ -27,6 +27,12 @@ Accidentally committing secrets to version control is one of the most common and
 curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
 ```
 
+### Homebrew (macOS and Linux)
+
+```bash
+brew install urwithajit9/evnx/evnx
+```
+
 ### npm
 
 ```bash
@@ -34,13 +40,52 @@ npm install -g @evnx/cli
 ```
 
 ### pipx (recommended for Python environments)
-
 ```bash
 pipx install evnx
 ```
 
-> `pip install evnx` also works but places the binary inside the active virtualenv's `bin/` directory.
-> Use `pipx` to make `evnx` available system-wide without managing a virtualenv manually.
+pipx installs CLI tools into isolated environments and wires them to your
+system PATH automatically. It is the correct tool for installing Python-
+distributed CLI binaries like evnx.
+
+**Don't have pipx?**
+
+**macOS**
+```bash
+brew install pipx
+pipx ensurepath
+```
+
+**Ubuntu / Debian (Python 3.11+)**
+```bash
+sudo apt install pipx
+pipx ensurepath
+```
+On older Ubuntu (20.04 and below) where `pipx` is not in apt:
+```bash
+pip install --user pipx
+python -m pipx ensurepath
+```
+Note: `pip install evnx` will fail on Ubuntu 22.04+ with an "externally managed
+environment" error (PEP 668). This is intentional — Ubuntu protects the system
+Python. Use pipx instead.
+
+**Windows**
+```powershell
+python -m pip install --user pipx
+python -m pipx ensurepath
+```
+After running `ensurepath`, close and reopen your terminal (a full logout/login
+may be required for PATH changes to take effect), then:
+```powershell
+pipx install evnx
+```
+
+After installing pipx on any platform, restart your terminal and run:
+```bash
+pipx install evnx
+evnx --version
+```
 
 ### Cargo
 
