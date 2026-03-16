@@ -52,6 +52,10 @@ jobs:
             --features full
           # Uncomment if you need musl (fully static) builds:
           # manylinux: musllinux_1_2
+        env:
+          RING_PREGENERATE_ASM: "1"
+          PKG_CONFIG_ALLOW_CROSS: "1"
+
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
