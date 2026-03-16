@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.3] - 2026-03-16
+
+### Fixed
+
+- PyPI aarch64 wheel build failure caused by ring crate assembly
+  cross-compilation error. Added RING_PREGENERATE_ASM=1 env var to
+  maturin linux build job and switched reqwest to rustls-tls-native-roots
+  to avoid ring dependency during cross-compilation.
+- npm smoke test timing increased to handle registry replication delay.
+
 ## [0.3.2] - 2026-03-16
 
  - fix: add features=["full"] to pyproject.toml [tool.maturin]
