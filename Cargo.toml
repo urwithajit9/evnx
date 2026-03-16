@@ -1,6 +1,6 @@
 [package]
 name        = "evnx"
-version     = "0.3.3"
+version     = "0.3.4"
 edition     = "2021"
 authors     = ["Ajit Kumar <ajitkumar.pu@gmail.com>"]
 description = "A comprehensive CLI tool for managing .env files — validation, secret scanning, and format conversion"
@@ -73,8 +73,9 @@ zeroize = { version = "1.7", features = ["derive"] }
 # ── migrate feature ───────────────────────────────────────────────────────────
 # base64 and indicatif are already always-on above, so only reqwest and
 # crypto_box (sealed-box encryption for GitHub) are optional here.
-# replaced "rustls-tls" with "rustls-tls-native-roots" which pulls ring and that was creating cross compilation issues
-reqwest    = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots", "blocking"], optional = true }
+# replaced "rustls-tls" with "rustls-tls-native-roots" which pulls ring and that was creating cross compilation issues, again, native-tls
+#reqwest    = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots", "blocking"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "blocking"], optional = true }
 crypto_box = { version = "0.9",  features = ["std"],                                                      optional = true }
 
 # ── backup feature ────────────────────────────────────────────────────────────
