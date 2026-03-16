@@ -44,6 +44,7 @@ Documentation = "https://github.com/urwithajit9/evnx#readme"
 # The binary is installed into the Python env's bin/ (or Scripts\ on Windows)
 # so `evnx` is available on PATH after `pip install evnx`.
 bindings = "bin"
+features = ["full"]
 
 # Name of the [[bin]] in Cargo.toml to ship.
 # If Cargo.toml has: [[bin]] name = "evnx"  → this must match.
