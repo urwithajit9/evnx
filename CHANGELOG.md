@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.5] - 2026-03-16
+
+### Fixed
+
+- PyPI Linux wheel build matrix reduced to x86_64 only. aarch64 and armv7
+  targets were removed because cross-compilation inside the manylinux Docker
+  container fails when the migrate feature is enabled — reqwest pulls rustls
+  which pulls ring, and ring's ARM assembly fails to compile in the
+  cross-compilation environment. x86_64 builds natively and is unaffected.
+  ARM Linux users can install via the curl script or cargo instead:
+  `curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash`
+  or `cargo install evnx --features full`.
+
 ## [0.3.4] - 2026-03-16
 
 - fix: switch reqwest to native-tls, ring removed from dependency tree

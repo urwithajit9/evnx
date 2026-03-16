@@ -28,8 +28,8 @@ jobs:
       matrix:
         target:
           - x86_64            # standard 64-bit Linux servers / desktops
-          - aarch64           # AWS Graviton, Raspberry Pi 4 (64-bit), etc.
-          - armv7             # Raspberry Pi 3 and older (32-bit ARM)
+          # - aarch64           # AWS Graviton, Raspberry Pi 4 (64-bit), etc.
+          # - armv7             # Raspberry Pi 3 and older (32-bit ARM)
 
     steps:
       - name: Checkout source
