@@ -27,6 +27,7 @@
 pub mod cli;
 pub mod commands;
 pub mod core;
+pub mod docs;
 pub mod formats;
 pub mod schema;
 pub mod utils;

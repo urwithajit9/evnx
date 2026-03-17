@@ -91,8 +91,8 @@ use std::fs;
 
 use crate::core::gitignore::{self, GitignoreStatus};
 use crate::core::Parser;
+use crate::docs;
 use crate::utils::ui;
-
 // ─────────────────────────────────────────────────────────────
 // Gitignore integration
 // ─────────────────────────────────────────────────────────────
@@ -360,6 +360,7 @@ pub fn run(
         ));
     }
     handle_gitignore(&output, &gitignore_mode)?;
+    ui::print_docs_hint(&docs::TEMPLATE);
     Ok(())
 }
 

@@ -83,8 +83,9 @@ use crate::core::{
     converter::{ConvertOptions, Converter, KeyTransform},
     Parser,
 };
+use crate::docs;
 use crate::formats;
-
+use crate::utils::ui;
 // ─────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────
@@ -407,6 +408,8 @@ pub fn run(config: ConvertConfig) -> Result<()> {
 
     // Output result
     write_output(&result, config.output_path.as_deref(), config.verbose)?;
+
+    ui::print_docs_hint(&docs::CONVERT);
 
     Ok(())
 }

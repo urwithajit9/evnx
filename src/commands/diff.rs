@@ -1,3 +1,7 @@
+use crate::core::Parser;
+use crate::docs;
+use crate::utils::patterns;
+use crate::utils::ui;
 /// Diff command - compare .env and .env.example
 ///
 /// Shows missing, extra, and different variables between two env files
@@ -9,11 +13,8 @@ use anyhow::{Context, Result};
 use colored::*;
 use indexmap::IndexMap; // Preserve insertion order
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-
-use crate::core::Parser;
-use crate::utils::patterns; //  Reuse existing sensitive-key detection
-                            // use crate::utils::ui; //   Reuse UI helpers if available
+use std::collections::HashSet; //  Reuse existing sensitive-key detection
+                               // use crate::utils::ui; //   Reuse UI helpers if available
 
 // ─────────────────────────────────────────────────────────────
 // Data Structures (enhanced with redaction + stats)
@@ -102,30 +103,40 @@ pub fn run(
     //  Convert ignore list to HashSet for O(1) lookups
     let ignore_set: HashSet<_> = ignore_keys.into_iter().collect();
 
-    //  Compute diff with filtering + redaction
-    let mut diff = compute_diff(left, right, &ignore_set);
+    // Compute diff with filtering + redaction
+    let mut diff_result = compute_diff(left, right, &ignore_set);
 
-    //  Add statistics if requested (JSON mode)
+    // Add statistics if requested (JSON mode)
     if with_stats && format == "json" {
-        diff.stats = Some(compute_stats(left, right, &diff));
+        diff_result.stats = Some(compute_stats(left, right, &diff_result));
     }
 
     // Route to output formatter
     match format.as_str() {
-        "json" => output_json(&diff)?,
+        "json" => output_json(&diff_result)?,
         "patch" => {
-            //  Interactive mode only applies to patch format
             if interactive {
-                output_patch_interactive(&diff, right, right_name)?;
+                output_patch_interactive(&diff_result, right, right_name)?;
             } else {
-                output_patch(&diff, left, right)?;
+                output_patch(&diff_result, left, right)?;
             }
         }
-        _ => output_pretty(&diff, left, right, left_name, right_name, show_values)?,
+        _ => output_pretty(
+            &diff_result,
+            left,
+            right,
+            left_name,
+            right_name,
+            show_values,
+        )?,
     }
 
-    // Return appropriate exit code for CI/CD
-    Ok(if diff.has_changes() { 1 } else { 0 })
+    let is_human_output = !matches!(format.as_str(), "json" | "patch");
+    if is_human_output {
+        ui::print_docs_hint(&docs::DIFF);
+    }
+
+    Ok(if diff_result.has_changes() { 1 } else { 0 })
 }
 
 // ─────────────────────────────────────────────────────────────

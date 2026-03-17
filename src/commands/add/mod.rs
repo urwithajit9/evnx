@@ -15,7 +15,10 @@ pub mod custom;
 pub mod framework;
 pub mod service;
 pub mod shared;
-use crate::utils::ui::{print_header, print_next_steps};
+use crate::{
+    docs,
+    utils::ui::{print_docs_hint, print_header, print_next_steps},
+};
 
 // use shared::{AppendMode, append_to_env_files};
 
@@ -63,5 +66,6 @@ pub fn run(
             "Use 'evnx add' again to add more variables",
         ]);
     }
+    print_docs_hint(&docs::ADD);
     Ok(())
 }

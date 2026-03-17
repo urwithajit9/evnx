@@ -47,6 +47,7 @@
 //!   to the `backup` command.
 
 // use crate::utils::{looks_like_dotenv, count_dotenv_vars};
+
 use anyhow::{anyhow, Context, Result};
 use colored::*;
 
@@ -79,6 +80,8 @@ pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Resu
     #[cfg(feature = "backup")]
     {
         use crate::commands::backup::decrypt_content;
+        use crate::docs;
+        use crate::utils::ui;
         use dialoguer::{Confirm, Password};
         use std::fs;
         use std::path::Path;
@@ -255,7 +258,7 @@ pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Resu
             );
             println!("  3. Run: evnx validate --env {}", output);
         }
-
+        ui::print_docs_hint(&docs::RESTORE);
         Ok(())
     }
 }

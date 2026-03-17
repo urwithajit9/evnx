@@ -2,6 +2,7 @@
 //!
 //! Uses clap derive macros for type-safe argument handling.
 
+use crate::docs;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 // ─────────────────────────────────────────────────────────────
@@ -266,6 +267,7 @@ pub enum Commands {
     /// • Blank: Create empty .env files (add variables later with `evnx add`)
     /// • Blueprint: Use a pre-configured stack like "T3 Turbo" or "Rust High-Perf"
     /// • Architect: Build your stack step-by-step (language → framework → services → infra)
+    #[command(after_help = docs::INIT.after_help)]
     Init {
         /// Output path for .env files.
         #[arg(long, default_value = ".")]
@@ -283,6 +285,7 @@ pub enum Commands {
     /// • framework: Add vars for a framework (e.g., django)
     /// • blueprint: Add vars from a stack blueprint
     /// • custom: Interactive custom variable addition
+    #[command(after_help = docs::ADD.after_help)]
     Add {
         #[command(subcommand)]
         target: AddTarget,
@@ -297,6 +300,7 @@ pub enum Commands {
     },
 
     /// Check .env against .env.example, find issues.
+    #[command(after_help = docs::VALIDATE.after_help)]
     Validate {
         #[arg(long, default_value = ".env")]
         env: String,
@@ -330,6 +334,7 @@ pub enum Commands {
     },
 
     /// Detect secrets that look real (AWS keys, tokens, etc.).
+    #[command(after_help = docs::SCAN.after_help)]
     Scan {
         #[arg(default_value = ".")]
         path: Vec<String>,
@@ -346,6 +351,7 @@ pub enum Commands {
     },
 
     /// Compare .env vs .env.example — show missing/extra vars.
+    #[command(after_help = docs::DIFF.after_help)]
     Diff {
         #[arg(long, default_value = ".env")]
         env: String,
@@ -404,6 +410,8 @@ Aliases:
   gh-actions → github-actions, compose → docker-compose
 
 Use 'evnx convert' without --to for interactive format selection.
+
+📖  Full guide: https://www.evnx.dev/guides/commands/convert
 ")]
     Convert {
         /// Path to input .env file
@@ -472,15 +480,18 @@ Use 'evnx convert' without --to for interactive format selection.
     ///   evnx migrate --to aws-secrets-manager --secret-name prod/myapp/config
     ///   evnx migrate --to doppler --project myapp --doppler-config dev --dry-run
     #[cfg(feature = "migrate")]
+    #[command(after_help = docs::MIGRATE.after_help)]
     Migrate(Box<MigrateOptions>),
 
     /// Keep .env and .env.example in sync.
+    #[command(after_help = docs::SYNC.after_help)]
     Sync {
         #[command(flatten)]
         args: SyncArgs,
     },
 
     /// Generate config files from templates.
+    #[command(after_help = docs::TEMPLATE.after_help)]
     Template {
         #[arg(long)]
         input: String,
@@ -501,6 +512,7 @@ Use 'evnx convert' without --to for interactive format selection.
 
     /// Create encrypted backup of .env.
     #[cfg(feature = "backup")]
+    #[command(after_help = docs::BACKUP.after_help)]
     Backup {
         #[arg(default_value = ".env")]
         env: String,
@@ -510,6 +522,7 @@ Use 'evnx convert' without --to for interactive format selection.
 
     /// Restore from encrypted backup.
     #[cfg(feature = "backup")]
+    #[command(after_help = docs::RESTORE.after_help)]
     Restore {
         backup: String,
         #[arg(long, default_value = ".env")]
@@ -521,6 +534,7 @@ Use 'evnx convert' without --to for interactive format selection.
 
     /// Diagnose common setup issues.
     #[command(about = "Check .env files, Git config, project structure, and security")]
+    #[command(after_help = docs::DOCTOR.after_help)]
     Doctor {
         /// Project directory to analyze
         #[arg(default_value = ".", index = 1)]
@@ -532,5 +546,6 @@ Use 'evnx convert' without --to for interactive format selection.
     },
 
     /// Generate shell completions.
+    // #[command(after_help = docs::INIT.after_help)]
     Completions { shell: String },
 }

@@ -6,7 +6,10 @@
 //! 3. If Architect: step through language → framework → services → infra
 //! 4. Generate .env.example and .env with deduplicated, categorized variables
 
-use crate::utils::ui::{print_header, print_next_steps};
+use crate::{
+    docs,
+    utils::ui::{print_docs_hint, print_header, print_next_steps},
+};
 use anyhow::Result;
 use colored::*;
 use dialoguer::Select;
@@ -60,6 +63,7 @@ pub fn run(path: String, yes: bool, verbose: bool) -> Result<()> {
     }
 
     print_next_steps_ui();
+    print_docs_hint(&docs::INIT);
     Ok(())
 }
 

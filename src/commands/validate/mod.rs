@@ -19,6 +19,7 @@ use lazy_static::lazy_static;
 use serde_json;
 
 use crate::core::{Parser, ParserConfig};
+use crate::docs;
 use crate::utils::ui;
 
 use self::checks::*;
@@ -290,20 +291,31 @@ pub fn run(
     // ─────────────────────────────────────────
     // Exit Code Handling
     // ─────────────────────────────────────────
-    if !exit_zero && result.summary.errors > 0 {
+    // ✅ Determine hard-exit before printing hint
+    let should_hard_exit = !exit_zero && result.summary.errors > 0;
+
+    if should_hard_exit {
         if format == "pretty" {
             ui::error("Validation failed with errors");
         } else {
             eprintln!("Validation failed: {} error(s)", result.summary.errors);
         }
-        std::process::exit(1);
     } else if result.summary.errors == 0 && result.summary.warnings == 0 {
         if format == "pretty" {
             ui::success("All checks passed ✓");
         }
-        // Silent for machine formats
     } else if result.summary.errors == 0 && format == "pretty" {
         ui::warning(format!("{} warning(s) found", result.summary.warnings));
+    }
+
+    // ✅ Hint only for human-readable output, only when not hard-exiting
+    if !should_hard_exit && format == "pretty" {
+        ui::print_docs_hint(&docs::VALIDATE);
+    }
+
+    // ✅ Hard exit after hint so the hint is visible before process terminates
+    if should_hard_exit {
+        std::process::exit(1);
     }
 
     Ok(())

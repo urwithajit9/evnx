@@ -210,6 +210,31 @@ pub fn print_next_steps(steps: &[&str]) {
     }
 }
 
+/// Print a documentation hint at the end of a command's output.
+///
+/// Renders a consistent, dimmed footer pointing to the command's guide page.
+/// Call this as the **last line** of every command's success path.
+///
+/// ```text
+///   📖 Docs: https://www.evnx.dev/guides/commands/init
+/// ```
+///
+/// # Arguments
+///
+/// * `doc` — The `CommandDoc` entry from `crate::docs`
+///
+/// # Example
+///
+/// ```no_run
+/// # use evnx::utils::ui::print_docs_hint;
+/// # use evnx::docs;
+/// print_docs_hint(&docs::INIT);
+/// ```
+pub fn print_docs_hint(doc: &crate::docs::CommandDoc) {
+    // println!("{}", doc.hint_line().dimmed());
+    eprintln!("{}", doc.hint_line().dimmed());
+}
+
 /// Print a horizontal separator line.
 ///
 /// ```text
