@@ -17,6 +17,7 @@
 
 // Re-export the main entry point so callers use: doctor::run(...)
 pub use runner::run;
+// use crate::{docs, utils::ui};
 
 // Internal modules — not public API yet
 mod runner;

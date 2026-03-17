@@ -60,10 +60,10 @@
 //! - Integrity manifest: store a SHA-256 hash of the plaintext so the restore
 //!   command can verify it was not silently corrupted after writing.
 
-use crate::utils::looks_like_dotenv;
+// use crate::utils::looks_like_dotenv;
+
 use anyhow::{anyhow, Context, Result};
 use colored::*;
-
 /// Entry point for the `backup` subcommand.
 ///
 /// When the `backup` feature is **not** enabled this prints a helpful message
@@ -89,10 +89,14 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
     // ── Full implementation (feature = "backup") ─────────────────────────────
     #[cfg(feature = "backup")]
     {
+        use crate::utils::looks_like_dotenv;
+        use crate::utils::ui;
         use dialoguer::Password;
         use std::fs;
         use std::path::Path;
         use zeroize::Zeroize;
+
+        use crate::docs;
 
         if verbose {
             println!("{}", "Running backup in verbose mode".dimmed());
@@ -125,7 +129,7 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
 
         // Warn — but do not abort — if the file does not look like a .env file.
         // The user might intentionally be backing up a non-standard file.
-        if !looks_like_dotenv(&content) && !crate::utils::looks_like_dotenv(&content) {
+        if !looks_like_dotenv(&content) {
             println!(
                 "{} File does not look like a standard .env file — backing up anyway",
                 "⚠️".yellow()
@@ -204,7 +208,7 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
             output_path, env
         );
         println!("  • Test the restore before deleting the original .env");
-
+        ui::print_docs_hint(&docs::BACKUP);
         Ok(())
     }
 }
@@ -483,6 +487,7 @@ pub struct BackupMetadata {
 mod tests {
     use super::*;
     use crate::utils::dotenv_validation;
+    // use crate::utils::looks_like_dotenv;
 
     // ── looks_like_dotenv ─────────────────────────────────────────────────────
 

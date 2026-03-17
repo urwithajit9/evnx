@@ -62,6 +62,8 @@ pub mod models;
 pub mod output;
 pub mod runner;
 
+use crate::docs;
+use crate::utils::ui;
 pub use detector::{Detection, DetectorRegistry, SecretDetector};
 pub use filters::FileFilter;
 pub use models::{Confidence, Finding, ScanResults};
@@ -104,21 +106,27 @@ pub use runner::{truncate_value, ScanRunner};
 pub fn run(
     paths: Vec<String>,
     exclude: Vec<String>,
-    _pattern: Vec<String>, // Reserved for future custom pattern support
+    _pattern: Vec<String>,
     ignore_placeholders: bool,
     format: String,
     exit_zero: bool,
     verbose: bool,
 ) -> Result<(), anyhow::Error> {
-    // let output_format = OutputFormat::from_str(&format);
     let output_format = format.parse().unwrap_or(OutputFormat::Pretty);
     let runner = ScanRunner::new(&exclude, ignore_placeholders, verbose);
 
-    // Run scan and check if secrets were found
     let secrets_found = runner.run(paths, output_format)?;
 
-    // Handle exit code based on configuration
-    if secrets_found && !exit_zero {
+    // ✅ Decide before acting — mirrors validate's pattern
+    let should_hard_exit = secrets_found && !exit_zero;
+
+    // ✅ Hint only for human output, only when not failing hard
+    if !should_hard_exit && format == "pretty" {
+        ui::print_docs_hint(&docs::SCAN);
+    }
+
+    // ✅ Hard exit last — hint is visible, stdout is flushed
+    if should_hard_exit {
         std::process::exit(1);
     }
 

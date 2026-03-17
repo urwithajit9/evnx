@@ -33,6 +33,7 @@ use std::process::Command;
 
 // Import existing UI utilities from project
 use super::types::*;
+use crate::docs;
 use crate::utils::ui;
 
 // ─────────────────────────────────────────────────────────────
@@ -54,21 +55,26 @@ use crate::utils::ui;
 pub fn run(path: String, verbose: bool) -> Result<()> {
     let project_root = PathBuf::from(&path);
 
-    // Check for JSON output via environment variable (CI/CD friendly)
     let json_output = std::env::var("EVNX_OUTPUT_JSON")
         .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "json"))
         .unwrap_or(false);
 
-    // Check for auto-fix via environment variable
     let auto_fix = std::env::var("EVNX_AUTO_FIX")
         .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true"))
         .unwrap_or(false);
 
-    if json_output {
+    let result = if json_output {
         run_json(&project_root, verbose, auto_fix)
     } else {
         run_text(&project_root, verbose, auto_fix)
+    };
+
+    // Skip hint for JSON output — machine consumers don't want it
+    if result.is_ok() && !json_output {
+        ui::print_docs_hint(&docs::DOCTOR);
     }
+
+    result
 }
 
 // ─────────────────────────────────────────────────────────────

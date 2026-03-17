@@ -32,6 +32,9 @@ use destination::MigrationOptions;
 use filtering::apply_filters;
 use sources::load_secrets;
 
+use crate::docs;
+use crate::utils::ui;
+
 // ─── Args struct ──────────────────────────────────────────────────────────────
 
 /// All CLI flags forwarded from `main.rs` into the migrate command.
@@ -155,7 +158,7 @@ pub fn run(args: MigrateArgs) -> Result<()> {
     if result.failed == 0 {
         dest.print_next_steps();
     }
-
+    ui::print_docs_hint(&docs::MIGRATE);
     Ok(())
 }
 

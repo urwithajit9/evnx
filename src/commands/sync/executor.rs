@@ -12,6 +12,7 @@ use tempfile::NamedTempFile;
 
 use crate::cli::{NamingPolicy, SyncDirection};
 use crate::core::Parser;
+use crate::docs;
 use crate::utils::ui;
 
 use super::models::{PlaceholderConfig, SyncAction, SyncPreview, VarChange};
@@ -78,7 +79,7 @@ pub fn execute(ctx: SyncCtx) -> Result<()> {
 
     check_env_permissions(".env")?;
 
-    match ctx.direction {
+    let result = match ctx.direction {
         SyncDirection::Forward => sync_forward(
             ctx.placeholder,
             ctx.verbose,
@@ -95,7 +96,13 @@ pub fn execute(ctx: SyncCtx) -> Result<()> {
             &config,
             ctx.naming_policy,
         ),
+    };
+    // Only print hint on success — noise-free error output
+    if result.is_ok() {
+        ui::print_docs_hint(&docs::SYNC);
     }
+
+    result
 }
 
 // ─────────────────────────────────────────────────────────────
