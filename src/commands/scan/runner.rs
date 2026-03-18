@@ -283,6 +283,7 @@ impl ScanRunner {
 ///
 /// Shows first 8 and last 5 characters with ellipsis in between.
 /// Never displays the full secret value.
+/// Uses character-based slicing to handle UTF-8 safely.
 ///
 /// # Arguments
 ///
@@ -300,14 +301,19 @@ impl ScanRunner {
 /// assert_eq!(truncated, "AKIA1234...MPLE");
 /// ```
 pub fn truncate_value(value: &str) -> String {
-    if value.len() <= MAX_VISIBLE {
+    // Use chars().count() for character count, not byte count
+    let char_count = value.chars().count();
+
+    if char_count <= MAX_VISIBLE {
         value.to_string()
     } else {
-        format!(
-            "{}...{}",
-            &value[..PREFIX_LEN],
-            &value[value.len() - SUFFIX_LEN..]
-        )
+        // Collect chars to enable safe character-based slicing
+        let chars: Vec<char> = value.chars().collect();
+
+        let prefix: String = chars[..PREFIX_LEN].iter().collect();
+        let suffix: String = chars[char_count - SUFFIX_LEN..].iter().collect();
+
+        format!("{}...{}", prefix, suffix)
     }
 }
 

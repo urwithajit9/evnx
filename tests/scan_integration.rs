@@ -117,16 +117,15 @@ fn test_scan_no_secrets_found() {
     );
 }
 
-/// Test that `--ignore-placeholders` skips placeholder values.
 #[test]
 fn test_scan_ignore_placeholders() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let env_file = temp_dir.path().join(".env");
 
-    // Placeholder values that should be skipped by --ignore-placeholders
     fs::write(&env_file, "API_KEY=your_api_key_here\nSECRET=example123\n")
         .expect("Failed to write test .env file");
 
+    // ✅ Fix: Use cargo_bin_cmd! macro (returns Command)
     let assert = cargo_bin_cmd!("evnx")
         .current_dir(temp_dir.path())
         .arg("scan")
@@ -136,9 +135,16 @@ fn test_scan_ignore_placeholders() {
     let stdout = get_stdout(&assert);
     assert_cmd::assert::Assert::code(assert, 0);
 
+    // Clear assertions
     assert!(
-        !stdout.contains("your_api_key_here") || stdout.contains("No secrets detected"),
-        "Placeholders should be ignored, got:\n{}",
+        stdout.contains("No secrets detected"),
+        "Expected 'No secrets detected' with --ignore-placeholders, got:\n{}",
+        stdout
+    );
+
+    assert!(
+        !stdout.contains("your_api_key_here"),
+        "Placeholder should not appear in output, got:\n{}",
         stdout
     );
 }
