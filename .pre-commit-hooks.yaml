@@ -1,0 +1,50 @@
+- id: evnx-scan
+  name: evnx — Secret Scanner
+  description: Scan .env files for accidentally committed secrets (AWS keys, Stripe, OpenAI, etc.)
+  entry: evnx scan
+  language: system
+  pass_filenames: false
+  stages: [pre-commit]
+  always_run: true
+
+- id: evnx-validate
+  name: evnx — .env Validator
+  description: Validate .env files for placeholders, weak secrets, and misconfigurations
+  entry: evnx validate --strict
+  language: system
+  pass_filenames: false
+  stages: [pre-commit]
+  files: \.env$|\.env\.\w+$
+
+- id: evnx-diff
+  name: evnx — .env Drift Check
+  description: Ensure .env and .env.example are in sync
+  entry: evnx diff
+  language: system
+  pass_filenames: false
+  stages: [pre-commit]
+
+- id: evnx-doctor
+  name: evnx — Setup Doctor
+  description: Check .gitignore includes .env and file permissions are safe
+  entry: evnx doctor
+  language: system
+  pass_filenames: false
+  stages: [pre-commit]
+
+- id: evnx-sync
+  name: evnx — Sync .env.example
+  description: Auto-update .env.example from .env (scrubs values, keeps keys)
+  entry: evnx sync --direction forward --placeholder
+  language: system
+  pass_filenames: false
+  stages: [pre-commit]
+
+# Pre-push variant (heavier checks)
+- id: evnx-scan-strict
+  name: evnx — Strict Secret Scanner (pre-push)
+  description: Strict secret scan with SARIF output before push
+  entry: evnx scan --format sarif
+  language: system
+  pass_filenames: false
+  stages: [pre-push]

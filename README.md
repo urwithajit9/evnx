@@ -366,19 +366,13 @@ validate-env:
 ```yaml
 # .pre-commit-config.yaml
 repos:
-  - repo: local
+  - repo: https://github.com/urwithajit9/evnx
+    rev: v0.3.5   
     hooks:
-      - id: evnx-validate
-        name: Validate .env files
-        entry: evnx validate --strict
-        language: system
-        pass_filenames: false
-
-      - id: evnx-scan
-        name: Scan for secrets
-        entry: evnx scan --exit-zero
-        language: system
-        pass_filenames: false
+      - id: evnx-scan         # Blocks commit if secrets found
+      - id: evnx-validate     # Blocks commit if validation fails
+      - id: evnx-diff         # Warns on .env/.env.example drift
+      - id: evnx-doctor       # Warns if .env is not gitignored
 ```
 
 ---
