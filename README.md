@@ -361,19 +361,33 @@ validate-env:
       sast: scan.sarif
 ```
 
-### Pre-commit hook
+## 🔗 pre-commit / prek Integration
+
+Use evnx as automatic git hooks via [pre-commit](https://pre-commit.com)
+or [prek](https://prek.j178.dev) — **no manual evnx install needed**.
+The binary is compiled and cached automatically on first run.
+
+Add to `.pre-commit-config.yaml`:
 
 ```yaml
-# .pre-commit-config.yaml
+default_install_hook_types: [pre-commit, pre-push]
+
 repos:
   - repo: https://github.com/urwithajit9/evnx
-    rev: v0.3.5   
+    rev: v0.2.0
     hooks:
-      - id: evnx-scan         # Blocks commit if secrets found
-      - id: evnx-validate     # Blocks commit if validation fails
-      - id: evnx-diff         # Warns on .env/.env.example drift
-      - id: evnx-doctor       # Warns if .env is not gitignored
+      - id: evnx-scan        # blocks commit if secrets found
+      - id: evnx-validate    # blocks commit if .env misconfigured
+      - id: evnx-diff        # warns on .env/.env.example drift
+      - id: evnx-scan-push   # strict scan on push
 ```
+
+Then install:
+```bash
+pre-commit install   # or: prek install
+```
+
+That's it. On your next commit, hooks will auto-compile and run.
 
 ---
 
