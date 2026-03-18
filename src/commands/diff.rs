@@ -131,10 +131,8 @@ pub fn run(
         )?,
     }
 
-    let is_human_output = !matches!(format.as_str(), "json" | "patch");
-    if is_human_output {
-        ui::print_docs_hint(&docs::DIFF);
-    }
+    // ✅ Always print — eprintln never pollutes stdout
+    ui::print_docs_hint(&docs::DIFF);
 
     Ok(if diff_result.has_changes() { 1 } else { 0 })
 }

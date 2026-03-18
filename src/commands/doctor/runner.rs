@@ -69,10 +69,8 @@ pub fn run(path: String, verbose: bool) -> Result<()> {
         run_text(&project_root, verbose, auto_fix)
     };
 
-    // Skip hint for JSON output — machine consumers don't want it
-    if result.is_ok() && !json_output {
-        ui::print_docs_hint(&docs::DOCTOR);
-    }
+    // ✅ Always print — eprintln never pollutes stdout
+    ui::print_docs_hint(&docs::DOCTOR);
 
     result
 }

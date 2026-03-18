@@ -117,16 +117,10 @@ pub fn run(
 
     let secrets_found = runner.run(paths, output_format)?;
 
-    // ✅ Decide before acting — mirrors validate's pattern
-    let should_hard_exit = secrets_found && !exit_zero;
+    // Always print — eprintln never pollutes stdout
+    ui::print_docs_hint(&docs::SCAN);
 
-    // ✅ Hint only for human output, only when not failing hard
-    if !should_hard_exit && format == "pretty" {
-        ui::print_docs_hint(&docs::SCAN);
-    }
-
-    // ✅ Hard exit last — hint is visible, stdout is flushed
-    if should_hard_exit {
+    if secrets_found && !exit_zero {
         std::process::exit(1);
     }
 
