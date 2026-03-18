@@ -2,7 +2,7 @@
   name: evnx — Secret Scanner
   description: Scan .env files for accidentally committed secrets (AWS keys, Stripe, OpenAI, etc.)
   entry: evnx scan
-  language: system
+  language: rust
   pass_filenames: false
   stages: [pre-commit]
   always_run: true
@@ -11,7 +11,7 @@
   name: evnx — .env Validator
   description: Validate .env files for placeholders, weak secrets, and misconfigurations
   entry: evnx validate --strict
-  language: system
+  language: rust
   pass_filenames: false
   stages: [pre-commit]
   files: \.env$|\.env\.\w+$
@@ -20,7 +20,7 @@
   name: evnx — .env Drift Check
   description: Ensure .env and .env.example are in sync
   entry: evnx diff
-  language: system
+  language: rust
   pass_filenames: false
   stages: [pre-commit]
 
@@ -28,7 +28,7 @@
   name: evnx — Setup Doctor
   description: Check .gitignore includes .env and file permissions are safe
   entry: evnx doctor
-  language: system
+  language: rust
   pass_filenames: false
   stages: [pre-commit]
 
@@ -36,15 +36,16 @@
   name: evnx — Sync .env.example
   description: Auto-update .env.example from .env (scrubs values, keeps keys)
   entry: evnx sync --direction forward --placeholder
-  language: system
+  language: rust
   pass_filenames: false
   stages: [pre-commit]
 
 # Pre-push variant (heavier checks)
-- id: evnx-scan-strict
+- id: evnx-scan-push
   name: evnx — Strict Secret Scanner (pre-push)
   description: Strict secret scan with SARIF output before push
   entry: evnx scan --format sarif
-  language: system
+  language: rust
   pass_filenames: false
+  always_run: true
   stages: [pre-push]
