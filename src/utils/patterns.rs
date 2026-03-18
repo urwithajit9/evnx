@@ -159,13 +159,25 @@ pub fn is_placeholder(value: &str) -> bool {
         "akiaiosfodnn7example",
         "wjalrxutnfemi/k7mdeng/bpxrficyexamplekey",
         "your_key_here",
+        "your_api_key",
+        "your_api_key_here",
         "your_secret_here",
         "your_token_here",
         "change_me",
         "changeme",
         "replace_me",
         "xxx",
+        "xxxx",
+        "xxxxx",
         "todo",
+        "placeholder",
+        "test",
+        "testing",
+        "dev",
+        "development",
+        "dummy",
+        "fake",
+        "sample",
     ];
 
     if EXACT.iter().any(|p| lower == *p) {
@@ -185,6 +197,64 @@ pub fn is_placeholder(value: &str) -> bool {
 
     if SUBSTRINGS.iter().any(|p| lower.contains(p)) {
         return true;
+    }
+
+    // ✅ NEW: Pattern-based checks for common placeholder formats
+    if is_placeholder_pattern(&lower) {
+        return true;
+    }
+
+    false
+}
+
+/// Helper: Check for common placeholder patterns like example123, test456, dev_key
+fn is_placeholder_pattern(value: &str) -> bool {
+    const BASE_WORDS: &[&str] = &[
+        "example",
+        "test",
+        "testing",
+        "dev",
+        "development",
+        "dummy",
+        "fake",
+        "sample",
+        "placeholder",
+        "todo",
+    ];
+
+    // ✅ Use strip_prefix instead of starts_with + manual slicing
+    for base in BASE_WORDS {
+        if let Some(remainder) = value.strip_prefix(base) {
+            // Allow: empty, digits only, or underscore + anything
+            if remainder.is_empty()
+                || remainder.chars().all(|c| c.is_ascii_digit())
+                || remainder.starts_with('_')
+            {
+                return true;
+            }
+        }
+    }
+
+    // Pattern: your_* variations
+    if value.starts_with("your_") || value.starts_with("your-") {
+        return true;
+    }
+
+    // Pattern: all same character (xxx, *****, ####)
+    if !value.is_empty() {
+        let first = value.chars().next().unwrap();
+        if value.chars().all(|c| c == first) && value.len() >= 3 {
+            return true;
+        }
+    }
+
+    // Pattern: simple alphanumeric placeholder like abc123, def456
+    if value.len() == 6 && value.chars().all(|c| c.is_ascii_alphanumeric()) {
+        let letters: usize = value.chars().filter(|c| c.is_ascii_alphabetic()).count();
+        let digits: usize = value.chars().filter(|c| c.is_ascii_digit()).count();
+        if letters == 3 && digits == 3 {
+            return true;
+        }
     }
 
     false
@@ -380,5 +450,48 @@ mod tests {
         assert!(is_sensitive_key("api_key"));
         assert!(!is_sensitive_key("APP_NAME"));
         assert!(!is_sensitive_key("DEBUG_MODE"));
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_is_placeholder_patterns() {
+            // Base word + digits
+            assert!(is_placeholder("example"));
+            assert!(is_placeholder("example1"));
+            assert!(is_placeholder("example123")); // ✅ This was failing
+            assert!(is_placeholder("example_value"));
+
+            assert!(is_placeholder("test"));
+            assert!(is_placeholder("test123"));
+            assert!(is_placeholder("test_key"));
+
+            assert!(is_placeholder("dev"));
+            assert!(is_placeholder("dev123"));
+            assert!(is_placeholder("dev_key"));
+
+            // your_* patterns
+            assert!(is_placeholder("your_key"));
+            assert!(is_placeholder("your_api_key_here"));
+            assert!(is_placeholder("your-secret"));
+
+            // Repeated characters
+            assert!(is_placeholder("xxx"));
+            assert!(is_placeholder("*****"));
+            assert!(is_placeholder("####"));
+
+            // Simple alphanumeric placeholders
+            assert!(is_placeholder("abc123"));
+            assert!(is_placeholder("xyz789"));
+
+            // NOT placeholders (real secrets should not match)
+            assert!(!is_placeholder("AKIA1234567890EXAMPLE"));
+            assert!(!is_placeholder("ghp_xxxxxxxxxxxxxxxxxxxx"));
+            assert!(!is_placeholder("sk_live_abc123def456ghi789"));
+            assert!(!is_placeholder("My$ecureP@ssw0rd!"));
+            assert!(!is_placeholder("production_api_key_2024"));
+        }
     }
 }
