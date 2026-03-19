@@ -60,10 +60,20 @@
 //! - Integrity manifest: store a SHA-256 hash of the plaintext so the restore
 //!   command can verify it was not silently corrupted after writing.
 
-// use crate::utils::looks_like_dotenv;
+// ── Imports ───────────────────────────────────────────────────────────────────
 
-use anyhow::{anyhow, Context, Result};
+// `Result` is always needed: it appears in every `pub fn` signature regardless
+// of whether the backup feature is compiled in.
+use anyhow::Result;
 use colored::*;
+
+// `anyhow!` and `Context` are only used inside feature-gated code, so we gate
+// the import to avoid an "unused import" warning in non-feature builds.
+#[cfg(feature = "backup")]
+use anyhow::{anyhow, Context};
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+
 /// Entry point for the `backup` subcommand.
 ///
 /// When the `backup` feature is **not** enabled this prints a helpful message
@@ -83,20 +93,19 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
         let _ = (&env, &output, verbose);
         println!("{} Backup feature not enabled", "✗".red());
         println!("Rebuild with: cargo build --features backup");
-        return Ok(());
+        Ok(())
     }
 
     // ── Full implementation (feature = "backup") ─────────────────────────────
     #[cfg(feature = "backup")]
     {
+        use crate::docs;
         use crate::utils::looks_like_dotenv;
         use crate::utils::ui;
         use dialoguer::Password;
         use std::fs;
         use std::path::Path;
         use zeroize::Zeroize;
-
-        use crate::docs;
 
         if verbose {
             println!("{}", "Running backup in verbose mode".dimmed());
@@ -487,7 +496,6 @@ pub struct BackupMetadata {
 mod tests {
     use super::*;
     use crate::utils::dotenv_validation;
-    // use crate::utils::looks_like_dotenv;
 
     // ── looks_like_dotenv ─────────────────────────────────────────────────────
 

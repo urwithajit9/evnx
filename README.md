@@ -40,6 +40,7 @@ npm install -g @evnx/cli
 ```
 
 ### pipx (recommended for Python environments)
+
 ```bash
 pipx install evnx
 ```
@@ -97,17 +98,20 @@ cargo install evnx --all-features
 
 ### Windows
 
-### Scoop (Windows) - Need to finalize
+#### Scoop (user-local, no admin required)
 
-```bash
+```powershell
 scoop bucket add evnx https://github.com/urwithajit9/scoop-evnx
 scoop install evnx
 ```
-### Winget (Windows) - Need to finalize
+
+#### Winget (system-wide)
 
 ```powershell
 winget install urwithajit9.evnx
 ```
+
+#### Cargo (Windows)
 
 Install [Rust](https://rustup.rs/) first, then:
 
@@ -373,10 +377,10 @@ validate-env:
       sast: scan.sarif
 ```
 
-## 🔗 pre-commit / prek Integration
+## pre-commit / prek Integration
 
 Use evnx as automatic git hooks via [pre-commit](https://pre-commit.com)
-or [prek](https://prek.j178.dev) — **no manual evnx install needed**.
+or [prek](https://prek.j178.dev) — no manual evnx install needed.
 The binary is compiled and cached automatically on first run.
 
 Add to `.pre-commit-config.yaml`:
@@ -386,7 +390,7 @@ default_install_hook_types: [pre-commit, pre-push]
 
 repos:
   - repo: https://github.com/urwithajit9/evnx
-    rev: v0.2.0
+    rev: v0.3.6
     hooks:
       - id: evnx-scan        # blocks commit if secrets found
       - id: evnx-validate    # blocks commit if .env misconfigured
