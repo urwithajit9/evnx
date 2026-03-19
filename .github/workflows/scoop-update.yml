@@ -16,7 +16,8 @@ jobs:
         id: sha256
         run: |
           BASE="https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.VERSION }}"
-          SHA=$(curl -fsSL "${BASE}/evnx-x86_64-pc-windows-msvc.tar.gz.sha256" | awk '{print $1}')
+          # FIX: fetch .zip.sha256 (not .tar.gz.sha256) — Scoop uses the ZIP on Windows
+          SHA=$(curl -fsSL "${BASE}/evnx-x86_64-pc-windows-msvc.zip.sha256" | awk '{print $1}')
           echo "sha=$SHA" >> $GITHUB_OUTPUT
 
       - name: Checkout Scoop bucket
@@ -30,7 +31,12 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
           SHA="${{ steps.sha256.outputs.sha }}"
+          mkdir -p scoop-bucket/bucket
 
+          # bin references the actual binary name inside the archive.
+          # The release.yml Package step names the Windows binary
+          # evnx-x86_64-pc-windows-msvc.exe — not evnx.exe — so the manifest
+          # must match, with an alias mapping it to the plain "evnx" command.
           cat > scoop-bucket/bucket/evnx.json << EOF
           {
             "version": "$VERSION",
@@ -40,16 +46,16 @@ jobs:
             "notes": "Run 'evnx --help' to get started. Docs: https://www.evnx.dev/guides",
             "architecture": {
               "64bit": {
-                "url": "https://github.com/urwithajit9/evnx/releases/download/v\$version/evnx-x86_64-pc-windows-msvc.tar.gz",
+                "url": "https://github.com/urwithajit9/evnx/releases/download/v\$version/evnx-x86_64-pc-windows-msvc.zip",
                 "hash": "sha256:$SHA",
-                "bin": [["evnx.exe", "evnx"]]
+                "bin": [["evnx-x86_64-pc-windows-msvc.exe", "evnx"]]
               }
             },
             "checkver": { "github": "https://github.com/urwithajit9/evnx" },
             "autoupdate": {
               "architecture": {
                 "64bit": {
-                  "url": "https://github.com/urwithajit9/evnx/releases/download/v\$version/evnx-x86_64-pc-windows-msvc.tar.gz",
+                  "url": "https://github.com/urwithajit9/evnx/releases/download/v\$version/evnx-x86_64-pc-windows-msvc.zip",
                   "hash": { "url": "\$url.sha256", "find": "^([a-f0-9]+)\\s" }
                 }
               }
@@ -60,8 +66,10 @@ jobs:
       - name: Commit and push
         run: |
           cd scoop-bucket
-          git config user.name "github-actions[bot]"
+          git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add bucket/evnx.json
-          git diff --staged --quiet || git commit -m "chore: update evnx to v${VERSION}"
+          # FIX: use steps output instead of bare $VERSION shell variable,
+          # which is not exported into this step's environment
+          git diff --staged --quiet || git commit -m "chore: update evnx to v${{ steps.version.outputs.VERSION }}"
           git push

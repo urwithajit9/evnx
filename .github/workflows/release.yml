@@ -78,18 +78,17 @@ jobs:
           fi
           cp target/${{ matrix.target }}/release/$BINARY dist/evnx-${{ matrix.target }}${BINARY##evnx}
           cd dist
-          # Create tar.gz
+
+          # Create tar.gz for all targets
           tar -czf evnx-${{ matrix.target }}.tar.gz evnx-${{ matrix.target }}${BINARY##evnx}
           sha256sum evnx-${{ matrix.target }}.tar.gz > evnx-${{ matrix.target }}.tar.gz.sha256
 
-          # Create ZIP for Winget (Windows only)
+          # Create ZIP for Windows (required by Scoop and Winget)
           if [[ "${{ matrix.target }}" == *"windows"* ]]; then
-            # Use PowerShell for ZIP on Windows
             if command -v powershell &> /dev/null; then
               powershell -Command "Compress-Archive -Path 'evnx-${{ matrix.target }}${BINARY##evnx}' -DestinationPath 'evnx-${{ matrix.target }}.zip' -Force"
             else
-              # Fallback: use 7z if available, or skip
-              zip -q evnx-${{ matrix.target }}.zip evnx-${{ matrix.target }}${BINARY##evnx} 2>/dev/null || echo "⚠️ ZIP creation skipped"
+              zip -q evnx-${{ matrix.target }}.zip evnx-${{ matrix.target }}${BINARY##evnx} 2>/dev/null || echo "ZIP creation skipped"
             fi
             sha256sum evnx-${{ matrix.target }}.zip > evnx-${{ matrix.target }}.zip.sha256 2>/dev/null || true
           fi
@@ -117,7 +116,11 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir release-assets
+          # FIX: copy both .tar.gz and .zip artifacts (previously only .tar.gz was copied,
+          # which caused the Scoop and Winget installer URLs to 404 on every release)
           find artifacts -name "*.tar.gz*" -exec cp {} release-assets/ \;
+          find artifacts -name "*.zip*"    -exec cp {} release-assets/ \;
+          echo "Release assets:"
           ls -lh release-assets/
 
       - name: Extract version
@@ -142,12 +145,23 @@ jobs:
           brew install urwithajit9/evnx/evnx
           \`\`\`
 
+          ### Scoop (Windows, user-local)
+          \`\`\`powershell
+          scoop bucket add evnx https://github.com/urwithajit9/scoop-evnx
+          scoop install evnx
+          \`\`\`
+
+          ### Winget (Windows, system-wide)
+          \`\`\`powershell
+          winget install urwithajit9.evnx
+          \`\`\`
+
           ### npm / Node.js
           \`\`\`bash
           npm install -g @evnx/cli
           \`\`\`
 
-          ### Python (pipx — recommended for CLI tools)
+          ### Python (pipx)
           \`\`\`bash
           pipx install evnx
           \`\`\`
@@ -177,8 +191,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── Update Homebrew tap ────────────────────────────────────────────────────
-  # Runs after the GitHub Release is created so the tarball URLs and SHA256
-  # files are guaranteed to exist before we fetch them.
   update-homebrew-tap:
     name: Update Homebrew tap
     needs: release
