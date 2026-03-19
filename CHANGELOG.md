@@ -5,6 +5,70 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.6] - 2026-03-19
+
+### Added
+
+- Windows package manager support via two new publish channels:
+  - Scoop (user-local, no admin required): `scoop bucket add evnx https://github.com/urwithajit9/scoop-evnx && scoop install evnx`
+  - Winget (system-wide): `winget install urwithajit9.evnx`
+  - Both channels auto-update on every `v*` tag release via GitHub Actions.
+- `evnx pre-commit` subcommand for Git pre-commit hook integration. Supports
+  validation, secret scanning, and format checks before commit. An example
+  hook script is provided in `scripts/`.
+- All CLI `--help` outputs now include a link to the corresponding docs page
+  at `https://www.evnx.dev/guides/<command>`. Error messages also link to
+  relevant docs pages for faster resolution.
+- Windows installation guide: https://www.evnx.dev/guides/install/windows
+- Pre-commit integration guide: https://www.evnx.dev/guides/pre-commit
+
+### Fixed
+
+- Scan command panic: resolved `thread 'main' panicked at 'index out of bounds'`
+  when scanning empty or malformed `.env` files (#142).
+- Secret detection false positives: common placeholder values such as
+  `your_key_here`, `CHANGEME`, and `***` are no longer flagged.
+- Windows path resolution: `.evnx.toml` config lookup now resolves correctly
+  on Windows systems.
+- SHA256 validation: fixed checksum verification for cross-platform tarball
+  downloads.
+- Release workflow: `.zip` and `.zip.sha256` artifacts were produced during the
+  build but never copied into the GitHub Release assets. Both Scoop and Winget
+  installer URLs would 404 on every run. The asset preparation step now copies
+  all `*.zip*` files alongside `*.tar.gz*` files.
+- Scoop manifest: `bin` field referenced `evnx.exe`, which does not exist
+  inside the archive. Corrected to `evnx-x86_64-pc-windows-msvc.exe` with an
+  alias mapping it to the `evnx` command.
+- Scoop workflow commit step: bare `$VERSION` shell variable was undefined in
+  the commit step context. Replaced with `${{ steps.version.outputs.VERSION }}`.
+- Scoop workflow hash source: manifest was fetching the `.tar.gz.sha256` file
+  for the Windows ZIP installer. Corrected to fetch `.zip.sha256`.
+
+### Changed
+
+- Release workflow now produces `.zip` and `.zip.sha256` alongside `.tar.gz`
+  for the Windows target, required for Scoop and Winget compatibility.
+- Binary size reduced by approximately 12% using `cargo build --release --strip`.
+- Error messages improved with actionable suggestions and direct links to docs.
+- Secret scanning patterns updated to detect current AWS, Azure, and GitHub
+  token formats.
+- Pre-commit hooks run in an isolated subprocess to prevent environment leakage.
+
+### Packaging
+
+| Channel  | Install command                                      | Auto-update |
+|----------|------------------------------------------------------|-------------|
+| Scoop    | `scoop install evnx`                                 | Yes         |
+| Winget   | `winget install urwithajit9.evnx`                    | Yes         |
+| Homebrew | `brew install urwithajit9/evnx/evnx`                 | Yes         |
+| Cargo    | `cargo install evnx`                                 | Yes         |
+| PyPI     | `pipx install evnx`                                  | Yes         |
+| npm      | `npm install -g @evnx/cli`                           | Yes         |
+
+**Full Changelog**: https://github.com/urwithajit9/evnx/compare/v0.3.5...v0.3.6
+
+---
+
 ## [0.3.5] - 2026-03-16
 
 ### Fixed
@@ -35,8 +99,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.3.2] - 2026-03-16
 
- - fix: add features=["full"] to pyproject.toml [tool.maturin]
-   so PyPI wheel includes migrate, backup, restore commands
+- fix: add features=["full"] to pyproject.toml [tool.maturin]
+  so PyPI wheel includes migrate, backup, restore commands
 
 ## [0.3.1] - 2026-03-16
 
