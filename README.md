@@ -97,6 +97,18 @@ cargo install evnx --all-features
 
 ### Windows
 
+### Scoop (Windows) - Need to finalize
+
+```bash
+scoop bucket add evnx https://github.com/urwithajit9/scoop-evnx
+scoop install evnx
+```
+### Winget (Windows) - Need to finalize
+
+```powershell
+winget install urwithajit9.evnx
+```
+
 Install [Rust](https://rustup.rs/) first, then:
 
 ```powershell

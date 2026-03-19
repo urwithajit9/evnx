@@ -78,8 +78,21 @@ jobs:
           fi
           cp target/${{ matrix.target }}/release/$BINARY dist/evnx-${{ matrix.target }}${BINARY##evnx}
           cd dist
+          # Create tar.gz
           tar -czf evnx-${{ matrix.target }}.tar.gz evnx-${{ matrix.target }}${BINARY##evnx}
           sha256sum evnx-${{ matrix.target }}.tar.gz > evnx-${{ matrix.target }}.tar.gz.sha256
+
+          # Create ZIP for Winget (Windows only)
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            # Use PowerShell for ZIP on Windows
+            if command -v powershell &> /dev/null; then
+              powershell -Command "Compress-Archive -Path 'evnx-${{ matrix.target }}${BINARY##evnx}' -DestinationPath 'evnx-${{ matrix.target }}.zip' -Force"
+            else
+              # Fallback: use 7z if available, or skip
+              zip -q evnx-${{ matrix.target }}.zip evnx-${{ matrix.target }}${BINARY##evnx} 2>/dev/null || echo "⚠️ ZIP creation skipped"
+            fi
+            sha256sum evnx-${{ matrix.target }}.zip > evnx-${{ matrix.target }}.zip.sha256 2>/dev/null || true
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
