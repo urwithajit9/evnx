@@ -48,7 +48,7 @@
 
 // use crate::utils::{looks_like_dotenv, count_dotenv_vars};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::Result;
 use colored::*;
 
 /// Entry point for the `restore` subcommand.
@@ -70,10 +70,11 @@ pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Resu
     {
         // Reference all parameters to silence unused-variable warnings in
         // the non-feature build without renaming them.
-        let _ = (&backup, &output, verbose);
+        let _ = (&backup, &output, verbose, dry_run);
         println!("{} Backup/restore feature not enabled", "✗".red());
         println!("Rebuild with: cargo build --features backup");
-        return Ok(());
+        // return Ok(());
+        Ok(())
     }
 
     // ── Full implementation (feature = "backup") ─────────────────────────────
@@ -82,6 +83,7 @@ pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Resu
         use crate::commands::backup::decrypt_content;
         use crate::docs;
         use crate::utils::ui;
+        use anyhow::{anyhow, Context};
         use dialoguer::{Confirm, Password};
         use std::fs;
         use std::path::Path;
