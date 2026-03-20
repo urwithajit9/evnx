@@ -4,6 +4,62 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [Unreleased]
+
+### Added
+
+- **`evnx restore --inspect`** — decrypt a backup and list variable key
+  names without writing any files. Values are never displayed. Useful for
+  confirming backup contents before a full restore.
+
+- **Non-interactive password input for `evnx restore`** — two new options
+  for CI/CD environments where interactive prompts are not possible:
+  - `--password-file <path>` — read the decryption password from a file.
+  - `EVNX_PASSWORD` environment variable — read and immediately unset.
+  Both options are less secure than the interactive prompt and print a
+  warning to stderr. The interactive prompt remains the default.
+
+- **Argon2id progress spinner** — a live spinner is shown during the
+  key-derivation step of `evnx restore`, which is deliberately slow (~1 s).
+  Suppressed automatically in `--verbose` mode.
+
+- **Structured exit codes for `evnx restore`** — shell scripts can now
+  branch on specific failure modes:
+
+  | Code | Meaning                                          |
+  |------|--------------------------------------------------|
+  | 0    | Success                                          |
+  | 1    | Generic error (IO, encoding, etc.)               |
+  | 2    | Wrong password or corrupt backup                 |
+  | 3    | Backup file not found                            |
+  | 4    | Restore cancelled by user                        |
+  | 5    | Restored to `.restored` fallback (bad content)   |
+  | 6    | evnx-cloud restore not yet available             |
+
+### Changed
+
+- `evnx restore` internal architecture split into focused modules
+  (`core`, `source`, `error`) — pure logic is now independently testable
+  without a terminal. No user-facing behaviour changes.
+
+- `evnx restore --verbose` now emits a diagnostic line at every pipeline
+  stage (source, output path, KDF start, variable count, schema version)
+  instead of a single line at the start.
+
+- Password is now zeroized via a RAII guard on every exit path including
+  `?`-propagated errors and panics. Decrypted content and ciphertext blob
+  are also explicitly zeroized after use.
+
+### Fixed
+
+- `evnx restore <directory>` now reports a clear "not a regular file"
+  error instead of a confusing IO message.
+
+- Metadata block (schema version, original file, created-at, variable
+  count) was duplicated between `--dry-run` and the normal path — now
+  rendered by a single `print_metadata()` helper.
+
+---
 
 ## [0.3.7] - 2026-03-20
 
