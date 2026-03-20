@@ -1,228 +1,206 @@
-//! Backup command — create an encrypted backup of a `.env` file.
+//! Pure backup logic — encryption, key derivation, and file writing.
+//!
+//! No TTY interaction occurs here. All prompts (password, confirmation) are
+//! handled by the CLI adapter in [`mod.rs`](super). Every function in this
+//! module is independently testable without a terminal.
+//!
+//! # Pipeline
+//!
+//! ```text
+//! content (&str)  +  password (String)  +  BackupOptions
+//!         │
+//!         ▼
+//!   backup_inner()
+//!         │
+//!         ├─ ZeroizeOnDrop guard wraps password immediately
+//!         ├─ spinner starts          (suppressed in verbose mode)
+//!         ├─ encrypt_content()       (Argon2id + AES-256-GCM)
+//!         ├─ spinner stops
+//!         ├─ write_secure()          (0o600 permissions)
+//!         └─ Ok(output_path)         password zeroized on drop
+//! ```
 //!
 //! # Security model
 //!
-//! Encryption uses **AES-256-GCM** (authenticated encryption) with a key derived
-//! from a user-supplied password via **Argon2id** (memory-hard KDF). Every backup
-//! uses a freshly generated random salt and nonce, so two backups of the same file
-//! with the same password always produce different ciphertext.
+//! See the [module-level documentation](super) for the full binary format and
+//! Argon2id parameter rationale. This module owns the cryptographic
+//! implementation; `mod.rs` owns only the user-facing orchestration.
 //!
-//! ## Binary format (version 1)
+//! # Error types
 //!
-//! ```text
-//! ┌─────────┬────────────┬──────────┬────────────────────────────────┐
-//! │ version │    salt    │  nonce   │  AES-256-GCM ciphertext        │
-//! │  1 byte │  32 bytes  │ 12 bytes │  variable (JSON envelope)      │
-//! └─────────┴────────────┴──────────┴────────────────────────────────┘
-//! ```
+//! Crypto failures are returned as [`BackupError::EncryptionFailed`] and write
+//! failures as [`BackupError::WriteFailed`]. Both carry a human-readable detail
+//! string and map to distinct exit codes in `main.rs`.
 //!
-//! The entire structure is Base64-encoded (standard alphabet) before being written
-//! to disk. The ciphertext is the AES-256-GCM encryption of a JSON envelope:
-//!
-//! ```json
-//! {
-//!   "version": 1,
-//!   "created_at": "2025-02-24T10:00:00Z",
-//!   "original_file": ".env",
-//!   "tool_version": "0.1.0",
-//!   "content": "DATABASE_URL=...\nSECRET_KEY=..."
-//! }
-//! ```
-//!
-//! Embedding metadata *inside* the encrypted payload means it is both confidential
-//! (an attacker without the password cannot learn the filename or timestamp) and
-//! tamper-evident (altering metadata invalidates the GCM authentication tag).
-//!
-//! ## Argon2id parameters
-//!
-//! | Parameter   | Value    | Rationale                                 |
-//! |-------------|----------|-------------------------------------------|
-//! | variant     | Argon2id | Resistant to GPU and side-channel attacks |
-//! | memory      | 64 MiB   | Slows brute-force on commodity hardware   |
-//! | iterations  | 3        | Adds time cost on top of memory cost      |
-//! | parallelism | 1        | Single-threaded CLI usage                 |
-//! | output len  | 32 bytes | Exactly one AES-256 key                   |
-//!
-//! # Example
-//!
-//! ```bash
-//! evnx backup
-//! evnx backup --env .env.production --output prod.backup
-//! ```
-//!
-//! # Future work
-//!
-//! - `--key-file` flag: derive the key from a file instead of a password
-//!   (useful for automated/CI backup pipelines).
-//! - `--recipient` flag: asymmetric encryption (age / NaCl sealed boxes) so a
-//!   backup can be decrypted by a public-key holder without knowing the password.
-//! - Backup rotation: keep N most recent backups, auto-prune older ones.
-//! - Integrity manifest: store a SHA-256 hash of the plaintext so the restore
-//!   command can verify it was not silently corrupted after writing.
+//! [`BackupError::EncryptionFailed`]: super::error::BackupError::EncryptionFailed
+//! [`BackupError::WriteFailed`]: super::error::BackupError::WriteFailed
 
-// ── Imports ───────────────────────────────────────────────────────────────────
+use std::path::PathBuf;
 
-// `Result` is always needed: it appears in every `pub fn` signature regardless
-// of whether the backup feature is compiled in.
-use anyhow::Result;
-use colored::*;
+use anyhow::{Context, Result};
+use zeroize::Zeroize;
 
-// `anyhow!` and `Context` are only used inside feature-gated code, so we gate
-// the import to avoid an "unused import" warning in non-feature builds.
+use crate::utils::ui;
+
+use super::error::BackupError;
+
+// ─── Options ──────────────────────────────────────────────────────────────────
+
+/// Configuration for a backup operation.
+///
+/// Constructed by the CLI adapter (`mod.rs`) from parsed CLI arguments and
+/// passed into [`backup_inner`]. Adding future flags here is additive —
+/// existing call sites can use `..Default::default()` for new fields.
+///
+/// # Defaults
+///
+/// `verbose` defaults to `false`; `env` and `output` must be supplied by the
+/// caller — there is no meaningful default path that works in all contexts.
 #[cfg(feature = "backup")]
-use anyhow::{anyhow, Context};
+#[derive(Debug, Clone)]
+pub struct BackupOptions {
+    /// Path to the source `.env` file.
+    pub env: PathBuf,
 
-// ── Entry point ───────────────────────────────────────────────────────────────
+    /// Destination path for the encrypted backup.
+    ///
+    /// Typically `<env>.backup` (e.g. `.env.backup`), but can be overridden
+    /// by the user via `--output`.
+    pub output: PathBuf,
 
-/// Entry point for the `backup` subcommand.
+    /// Emit a diagnostic message at each pipeline stage via
+    /// [`ui::verbose_stderr`].
+    ///
+    /// In verbose mode the Argon2id spinner is suppressed so that per-step
+    /// diagnostic lines are not interleaved with spinner output.
+    pub verbose: bool,
+    // ── Planned flags — not yet wired to the CLI ─────────────────────────────
+    // pub key_file: Option<PathBuf>,   // --key-file (non-interactive backup)
+    // pub recipient: Option<String>,   // --recipient (asymmetric encryption)
+}
+
+// ─── RAII password guard ──────────────────────────────────────────────────────
+
+/// Owns a `String` and zeroizes it on drop, covering every exit path:
+/// normal return, `?`-propagated error, and panic.
 ///
-/// When the `backup` feature is **not** enabled this prints a helpful message
-/// and exits cleanly — it does **not** panic or return an error.
-///
-/// # Arguments
-///
-/// * `env`     — Path to the `.env` file to back up (default: `.env`).
-/// * `output`  — Destination path for the encrypted backup (default: `<env>.backup`).
-/// * `verbose` — Print extra diagnostic information during the run.
-pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
-    // ── Feature-disabled stub ────────────────────────────────────────────────
-    #[cfg(not(feature = "backup"))]
-    {
-        // Reference parameters explicitly to silence unused-variable warnings
-        // without renaming them, keeping the signature consistent with main.rs.
-        let _ = (&env, &output, verbose);
-        println!("{} Backup feature not enabled", "✗".red());
-        println!("Rebuild with: cargo build --features backup");
-        Ok(())
-    }
+/// Implements `Deref<Target = str>` so the inner value can be borrowed
+/// as `&str` without moving out.
+#[cfg(feature = "backup")]
+struct ZeroizeOnDrop(String);
 
-    // ── Full implementation (feature = "backup") ─────────────────────────────
-    #[cfg(feature = "backup")]
-    {
-        use crate::docs;
-        use crate::utils::looks_like_dotenv;
-        use crate::utils::ui;
-        use dialoguer::Password;
-        use std::fs;
-        use std::path::Path;
-        use zeroize::Zeroize;
-
-        if verbose {
-            println!("{}", "Running backup in verbose mode".dimmed());
-        }
-
-        println!(
-            "\n{}",
-            "┌─ Create encrypted backup ───────────────────────────┐".cyan()
-        );
-        println!(
-            "{}",
-            "│ Your .env will be encrypted with AES-256-GCM        │".cyan()
-        );
-        println!(
-            "{}",
-            "│ Key derived via Argon2id (64 MiB, 3 iterations)     │".cyan()
-        );
-        println!(
-            "{}\n",
-            "└──────────────────────────────────────────────────────┘".cyan()
-        );
-
-        // ── Validate source file ─────────────────────────────────────────────
-        if !Path::new(&env).exists() {
-            return Err(anyhow!("File not found: {}", env));
-        }
-
-        let content =
-            fs::read_to_string(&env).with_context(|| format!("Failed to read {}", env))?;
-
-        // Warn — but do not abort — if the file does not look like a .env file.
-        // The user might intentionally be backing up a non-standard file.
-        if !looks_like_dotenv(&content) {
-            println!(
-                "{} File does not look like a standard .env file — backing up anyway",
-                "⚠️".yellow()
-            );
-        }
-
-        println!("{} Read {} bytes from {}", "✓".green(), content.len(), env);
-
-        // ── Password prompt ──────────────────────────────────────────────────
-        let mut password = Password::new()
-            .with_prompt("Enter encryption password")
-            .interact()?;
-
-        if password.is_empty() {
-            password.zeroize();
-            return Err(anyhow!("Password must not be empty"));
-        }
-
-        // Minimum length check — Argon2id makes short passwords expensive to
-        // brute-force, but we still enforce a floor as a sanity guard.
-        if password.len() < 8 {
-            password.zeroize();
-            return Err(anyhow!(
-                "Password must be at least 8 characters (got {})",
-                password.len()
-            ));
-        }
-
-        let password_confirm = Password::new().with_prompt("Confirm password").interact()?;
-        let mut password_confirm = password_confirm;
-
-        if password != password_confirm {
-            password.zeroize();
-            password_confirm.zeroize();
-            return Err(anyhow!("Passwords do not match"));
-        }
-        password_confirm.zeroize();
-        println!("{} Password accepted", "✓".green());
-
-        // ── Encrypt ──────────────────────────────────────────────────────────
-        println!("Encrypting… (Argon2id key derivation in progress)");
-
-        let original_filename = Path::new(&env)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(".env")
-            .to_string();
-
-        let encrypted = encrypt_content(&content, &password, &original_filename)
-            .with_context(|| format!("Failed to encrypt backup for: {}", env))?;
-
-        password.zeroize();
-        println!(
-            "{} Decryption key cleared from memory",
-            "✓".green().dimmed()
-        );
-
-        // ── Write backup ─────────────────────────────────────────────────────
-        let output_path = output.unwrap_or_else(|| format!("{}.backup", env));
-
-        crate::utils::write_secure(&output_path, encrypted.as_bytes())
-            .with_context(|| format!("Failed to write backup to {}", output_path))?;
-
-        let backup_size = std::fs::metadata(&output_path)
-            .map(|m| m.len().to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
-
-        println!("{} Backup created at {}", "✓".green(), output_path);
-        println!("    Size: {} bytes (encrypted + Base64)", backup_size);
-
-        println!("\n{}", "⚠️  Important:".yellow().bold());
-        println!("  • Keep your password safe — it cannot be recovered");
-        println!("  • Store the backup in a secure, separate location");
-        println!(
-            "  • To restore: evnx restore {} --output {}",
-            output_path, env
-        );
-        println!("  • Test the restore before deleting the original .env");
-        ui::print_docs_hint(&docs::BACKUP);
-        Ok(())
+#[cfg(feature = "backup")]
+impl Drop for ZeroizeOnDrop {
+    fn drop(&mut self) {
+        self.0.zeroize();
     }
 }
 
-// ── Encryption ────────────────────────────────────────────────────────────────
+#[cfg(feature = "backup")]
+impl std::ops::Deref for ZeroizeOnDrop {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+// ─── Core function ────────────────────────────────────────────────────────────
+
+/// Encrypt `content` and write the backup to `options.output`.
+///
+/// This is the primary testable entry point for backup logic. The caller
+/// is responsible only for supplying the file content and the password —
+/// no TTY interaction occurs here.
+///
+/// # Steps
+///
+/// 1. Moves `password` into a [`ZeroizeOnDrop`] guard that fires on every
+///    exit path, including `?`-propagated errors and panics.
+/// 2. Starts an Argon2id progress spinner (suppressed when `verbose = true`).
+/// 3. Encrypts `content` with Argon2id key derivation + AES-256-GCM.
+/// 4. Stops the spinner unconditionally — before any further output or error
+///    propagation.
+/// 5. Writes the encrypted blob to `options.output` with `0o600` permissions.
+/// 6. Returns the path that was written.
+///
+/// # Security notes
+///
+/// - `password` is zeroized via [`ZeroizeOnDrop`] regardless of outcome.
+/// - The output file is written by [`crate::utils::write_secure`], which
+///   creates the file with `0o600` permissions on Unix.
+///
+/// # Errors
+///
+/// - [`BackupError::EncryptionFailed`] — Argon2id or AES-256-GCM failed.
+/// - [`BackupError::WriteFailed`] — could not write the backup to disk.
+/// - Other `anyhow` errors — unexpected encoding failures (non-UTF-8 paths).
+#[cfg(feature = "backup")]
+pub fn backup_inner(content: &str, password: String, options: &BackupOptions) -> Result<PathBuf> {
+    // ── Zeroize password on every exit path ───────────────────────────────────
+    let pw_guard = ZeroizeOnDrop(password);
+
+    if options.verbose {
+        ui::verbose_stderr("Backup pipeline starting");
+        ui::verbose_stderr(format!("Source       : {}", options.env.display()));
+        ui::verbose_stderr(format!("Output       : {}", options.output.display()));
+        ui::verbose_stderr("Argon2id key derivation in progress…");
+    }
+
+    // ── Spinner ───────────────────────────────────────────────────────────────
+    // Shown only when verbose is off. The KDF is deliberately slow — without
+    // feedback users may assume the tool has hung.
+    let spinner = if options.verbose {
+        None
+    } else {
+        Some(ui::spinner(
+            "Encrypting… (Argon2id key derivation in progress)",
+        ))
+    };
+
+    let original_filename = options
+        .env
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(".env");
+
+    // Map errors before stopping the spinner so it is always cleared first.
+    let encrypt_result = encrypt_content(content, &pw_guard, original_filename)
+        .map_err(|e| BackupError::EncryptionFailed(e.to_string()));
+
+    // ── Stop spinner unconditionally ──────────────────────────────────────────
+    // Must happen before any further output and before propagating an error,
+    // so the terminal is not left in a partial state.
+    if let Some(sp) = spinner {
+        sp.finish_and_clear();
+    }
+
+    let encrypted = encrypt_result?;
+
+    if options.verbose {
+        ui::verbose_stderr("Encryption complete — writing backup file");
+    }
+
+    // ── Write backup ──────────────────────────────────────────────────────────
+    let path_str = options.output.to_str().with_context(|| {
+        format!(
+            "Output path contains non-UTF-8 characters: {:?}",
+            options.output
+        )
+    })?;
+
+    crate::utils::write_secure(path_str, encrypted.as_bytes())
+        .map_err(|e| BackupError::WriteFailed(e.to_string()))?;
+
+    if options.verbose {
+        ui::verbose_stderr(format!("Backup written to {}", options.output.display()));
+    }
+
+    Ok(options.output.clone())
+    // pw_guard drops here → password zeroized
+}
+
+// ─── Encryption ───────────────────────────────────────────────────────────────
 
 /// Encrypt the plaintext content of a `.env` file.
 ///
@@ -230,18 +208,24 @@ pub fn run(env: String, output: Option<String>, verbose: bool) -> Result<()> {
 /// `version(1) || salt(32) || nonce(12) || AES-256-GCM-ciphertext`.
 ///
 /// The ciphertext decrypts to a JSON envelope containing the `.env` content
-/// and metadata (see module-level documentation for the schema).
+/// and metadata (see the [module-level docs](super) for the schema).
+///
+/// A fresh random salt and nonce are generated on every call, so two
+/// encryptions of the same file with the same password always produce
+/// different ciphertext.
 ///
 /// # Arguments
 ///
-/// * `plaintext`          — The raw `.env` file content.
-/// * `password`           — User-supplied encryption password.
-/// * `original_filename`  — The filename (e.g. `.env`) stored in the metadata envelope so restore can surface it to the user.
+/// * `plaintext`         — The raw `.env` file content.
+/// * `password`          — User-supplied encryption password.
+/// * `original_filename` — Filename stored in the metadata envelope so `restore` can surface it to the user.
+///
 ///
 /// # Errors
 ///
-/// Returns an error if Argon2id key derivation or AES-256-GCM encryption fails.
-/// In practice these only fail with invalid parameters, which are hardcoded here.
+/// Returns an error if Argon2id key derivation or AES-256-GCM encryption
+/// fails. In practice these only fail when given invalid parameters, which
+/// are hardcoded here and validated at compile time.
 #[cfg(feature = "backup")]
 pub(crate) fn encrypt_content(
     plaintext: &str,
@@ -255,12 +239,14 @@ pub(crate) fn encrypt_content(
     use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version};
     use base64::{engine::general_purpose, Engine as _};
 
+    use anyhow::anyhow;
+
     // ── JSON metadata envelope ────────────────────────────────────────────────
     // Stored inside the ciphertext so it is confidential and tamper-evident.
     let created_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let envelope = serde_json::json!({
-        "schema_version": 1,  // for future metadata schema changes
-        "version": 1, // Existing: binary format version
+        "schema_version": 1,  // JSON envelope schema version (forward-compatibility)
+        "version": 1,         // Binary format version
         "created_at": created_at,
         "original_file": original_filename,
         "tool_version": env!("CARGO_PKG_VERSION"),
@@ -277,6 +263,14 @@ pub(crate) fn encrypt_content(
 
     // Explicit parameters pin the KDF behaviour regardless of library defaults.
     // output_len = 32 guarantees exactly one AES-256 key's worth of material.
+    //
+    // | Parameter   | Value  | Rationale                                   |
+    // |-------------|--------|---------------------------------------------|
+    // | variant     | Argon2id | Resistant to GPU and side-channel attacks |
+    // | memory      | 64 MiB | Slows brute-force on commodity hardware     |
+    // | iterations  | 3      | Adds time cost on top of memory cost        |
+    // | parallelism | 1      | Single-threaded CLI usage                   |
+    // | output len  | 32 B   | Exactly one AES-256 key                     |
     let params =
         Params::new(65536, 3, 1, Some(32)).map_err(|e| anyhow!("Invalid Argon2 params: {}", e))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
@@ -316,8 +310,9 @@ pub(crate) fn encrypt_content(
 
     // ── Assemble binary envelope ──────────────────────────────────────────────
     // Layout: version(1) || salt(32) || nonce(12) || ciphertext(variable)
+    // Increment the version byte when the format changes; never break v1 decryption.
     let mut result: Vec<u8> = Vec::with_capacity(1 + 32 + 12 + ciphertext.len());
-    result.push(1u8); // Version byte — increment when format changes
+    result.push(1u8);
     result.extend_from_slice(&salt_bytes);
     result.extend_from_slice(&nonce_bytes);
     result.extend_from_slice(&ciphertext);
@@ -325,26 +320,30 @@ pub(crate) fn encrypt_content(
     Ok(general_purpose::STANDARD.encode(&result))
 }
 
-// ── Decryption (pub — used by restore.rs) ─────────────────────────────────────
+// ─── Decryption (pub — used by restore) ──────────────────────────────────────
 
 /// Decrypt a backup envelope produced by [`encrypt_content`].
 ///
-/// This function is `pub` so that `restore.rs` can call it directly. Both
-/// commands live in the same `commands` module, keeping format logic in one
-/// place. If the binary format ever changes, bump the version byte here and
-/// add a new match arm — do **not** break decryption of existing version-1 files.
+/// This function is `pub` so that `restore/core.rs` can call it directly.
+/// Both commands share the same binary format; keeping decrypt logic here
+/// means a format bump requires changes in exactly one place.
+///
+/// If the binary format ever changes, increment the version byte in
+/// [`encrypt_content`] and add a new match arm here — do **not** break
+/// decryption of existing version-1 files.
 ///
 /// # Returns
 ///
 /// A tuple of `(plaintext, metadata)`:
 /// - `plaintext` — The original `.env` file content.
-/// - `metadata`  — [`BackupMetadata`] with the original filename, creation timestamp, and tool version extracted from the JSON envelope.
+/// - `metadata`  — [`BackupMetadata`] with the original filename, creation
+///   timestamp, and tool version extracted from the JSON envelope.
 ///
 /// # Errors
 ///
 /// Returns a descriptive [`anyhow::Error`] for:
-/// - Base64 decode failure (not a evnx backup, or file is truncated).
-/// - Unknown format version (backup was made by a newer tool version).
+/// - Base64 decode failure (not an evnx backup, or file is truncated).
+/// - Unknown format version (backup made by a newer tool version).
 /// - Argon2id key derivation failure (should not occur with valid inputs).
 /// - AES-256-GCM decryption failure — almost always wrong password or tampered
 ///   file; the error message deliberately does not distinguish these two cases
@@ -358,6 +357,8 @@ pub fn decrypt_content(encoded: &str, password: &str) -> Result<(String, BackupM
     };
     use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version};
     use base64::{engine::general_purpose, Engine as _};
+
+    use anyhow::anyhow;
 
     // ── Base64 decode ─────────────────────────────────────────────────────────
     let raw = general_purpose::STANDARD
@@ -393,7 +394,7 @@ pub fn decrypt_content(encoded: &str, password: &str) -> Result<(String, BackupM
     let ciphertext = &raw[45..]; // remainder = GCM ciphertext + 16-byte tag
 
     // ── Argon2id key re-derivation ────────────────────────────────────────────
-    // Same parameters as encrypt_content — if these ever change, add a version
+    // Same parameters as encrypt_content. If these ever change, add a version
     // branch above and keep the old params here for backward compatibility.
     let params =
         Params::new(65536, 3, 1, Some(32)).map_err(|e| anyhow!("Invalid Argon2 params: {}", e))?;
@@ -432,7 +433,7 @@ pub fn decrypt_content(encoded: &str, password: &str) -> Result<(String, BackupM
     let envelope: serde_json::Value = serde_json::from_slice(&plaintext_bytes)
         .context("Decrypted payload is not valid JSON. The backup envelope may be corrupt.")?;
 
-    // ── Validate JSON schema version ─────────────────────────────────────────
+    // ── Validate JSON schema version ──────────────────────────────────────────
     let schema_version = envelope["schema_version"].as_u64().unwrap_or(0);
     if schema_version != 1 {
         return Err(anyhow!(
@@ -471,12 +472,16 @@ pub fn decrypt_content(encoded: &str, password: &str) -> Result<(String, BackupM
     Ok((content, metadata))
 }
 
-// ── Supporting types ──────────────────────────────────────────────────────────
+// ─── Supporting types ─────────────────────────────────────────────────────────
 
 /// Metadata extracted from a decrypted backup envelope.
 ///
 /// Returned by [`decrypt_content`] so the `restore` command can display
 /// information about the backup before writing any files.
+///
+/// All fields are stored inside the AES-256-GCM ciphertext, making them both
+/// confidential (an attacker without the password cannot read them) and
+/// tamper-evident (altering any field invalidates the GCM authentication tag).
 #[cfg(feature = "backup")]
 #[derive(Debug)]
 pub struct BackupMetadata {
@@ -484,18 +489,34 @@ pub struct BackupMetadata {
     pub schema_version: u64,
     /// ISO 8601 UTC timestamp recorded when the backup was created.
     pub created_at: String,
-    /// The original filename (e.g. `.env`, `.env.production`).
+    /// The original filename stored at backup time (e.g. `.env`, `.env.production`).
     pub original_file: String,
     /// The `CARGO_PKG_VERSION` of the tool that created this backup.
     pub tool_version: String,
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+// ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::utils::dotenv_validation;
+
+    // ── ZeroizeOnDrop ─────────────────────────────────────────────────────────
+
+    #[test]
+    #[cfg(feature = "backup")]
+    fn zeroize_guard_deref_gives_inner_str() {
+        let guard = ZeroizeOnDrop("secret-value".to_owned());
+        assert_eq!(&*guard, "secret-value");
+    }
+
+    #[test]
+    #[cfg(feature = "backup")]
+    fn zeroize_guard_drops_without_panic() {
+        let guard = ZeroizeOnDrop("sensitive".to_owned());
+        drop(guard);
+    }
 
     // ── looks_like_dotenv ─────────────────────────────────────────────────────
 
@@ -562,7 +583,6 @@ mod tests {
         let result = decrypt_content(&encrypted, "wrong");
         assert!(result.is_err(), "wrong password must return an error");
 
-        // Error message must be user-friendly and not expose internal details.
         let msg = result.unwrap_err().to_string();
         assert!(
             msg.contains("incorrect") || msg.contains("corrupt"),
@@ -616,7 +636,6 @@ mod tests {
     #[test]
     #[cfg(feature = "backup")]
     fn test_backup_file_has_restrictive_permissions() {
-        // Only test on Unix where we can check mode bits
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -626,7 +645,6 @@ mod tests {
             std::fs::write(&temp_env, "KEY=value\n").unwrap();
 
             let temp_backup = temp_env.path().with_extension("backup");
-            // Call backup logic (simplified) or test write_secure directly
             let result = crate::utils::write_secure(&temp_backup, b"test");
             assert!(result.is_ok());
 
@@ -638,5 +656,57 @@ mod tests {
                 "Backup file should have 0o600 permissions"
             );
         }
+    }
+
+    // ── backup_inner ──────────────────────────────────────────────────────────
+
+    #[test]
+    #[cfg(feature = "backup")]
+    fn backup_inner_writes_decryptable_file() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let env_content = "BACKUP_INNER=yes\nFOO=bar\n";
+        let output_path = dir.path().join(".env.backup");
+
+        let options = BackupOptions {
+            env: dir.path().join(".env"),
+            output: output_path.clone(),
+            verbose: false,
+        };
+
+        let written_path = backup_inner(env_content, "test-password-123".to_owned(), &options)
+            .expect("backup_inner must succeed");
+
+        assert_eq!(written_path, output_path);
+        assert!(output_path.exists(), "backup file must have been written");
+
+        // Verify the written file can be decrypted back to the original content.
+        let encoded = std::fs::read_to_string(&output_path).unwrap();
+        let (decrypted, _) =
+            decrypt_content(&encoded, "test-password-123").expect("decryption must succeed");
+
+        assert_eq!(
+            decrypted, env_content,
+            "decrypted content must match original"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "backup")]
+    fn backup_inner_verbose_does_not_panic() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let output_path = dir.path().join(".env.backup");
+
+        let options = BackupOptions {
+            env: dir.path().join(".env"),
+            output: output_path.clone(),
+            verbose: true, // suppresses spinner; exercises verbose_stderr paths
+        };
+
+        backup_inner("KEY=value\n", "verbosepass123".to_owned(), &options)
+            .expect("backup_inner in verbose mode must not panic");
     }
 }

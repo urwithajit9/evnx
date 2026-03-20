@@ -194,8 +194,21 @@ fn main() -> Result<()> {
             commands::template::run(input, output, env, cli.verbose, mode)
         }
 
+        // #[cfg(feature = "backup")]
+        // Commands::Backup { env, output } => commands::backup::run(env, output, cli.verbose),
         #[cfg(feature = "backup")]
-        Commands::Backup { env, output } => commands::backup::run(env, output, cli.verbose),
+        Commands::Backup { env, output } => match commands::backup::run(env, output, cli.verbose) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                if let Some(be) = e.downcast_ref::<commands::backup::BackupError>() {
+                    if !be.is_silent() {
+                        eprintln!("{} {}", "Error:".on_red().bold(), be);
+                    }
+                    std::process::exit(be.exit_code());
+                }
+                Err(e)
+            }
+        },
 
         // #[cfg(feature = "backup")]
         // Commands::Restore {
