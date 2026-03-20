@@ -619,6 +619,13 @@ pub fn prompt_yes_no(message: impl std::fmt::Display) -> bool {
     matches!(input.trim().to_lowercase().as_str(), "" | "y" | "yes")
 }
 
+pub fn print_key_value(items: &[(&str, &str)]) {
+    let label_width = items.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
+    for (key, value) in items {
+        println!("  {:<width$}: {}", key, value, width = label_width);
+    }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────
