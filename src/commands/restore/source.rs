@@ -148,8 +148,14 @@ impl BackupSource {
     pub fn display_path(&self) -> String {
         match self {
             Self::Local(path) => path.display().to_string(),
-            Self::Cloud { project, backup_id: None } => format!("cloud://{project} (latest)"),
-            Self::Cloud { project, backup_id: Some(id) } => format!("cloud://{project}/{id}"),
+            Self::Cloud {
+                project,
+                backup_id: None,
+            } => format!("cloud://{project} (latest)"),
+            Self::Cloud {
+                project,
+                backup_id: Some(id),
+            } => format!("cloud://{project}/{id}"),
         }
     }
 }
@@ -161,11 +167,9 @@ fn fetch_local(path: &Path) -> Result<String> {
         return Err(RestoreError::FileNotFound(path.display().to_string()).into());
     }
     if !path.is_file() {
-        return Err(RestoreError::FileNotFound(format!(
-            "{} (not a regular file)",
-            path.display()
-        ))
-        .into());
+        return Err(
+            RestoreError::FileNotFound(format!("{} (not a regular file)", path.display())).into(),
+        );
     }
     std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read backup file: {}", path.display()))
@@ -281,12 +285,16 @@ mod tests {
 
     #[test]
     fn local_fetch_missing_file_gives_file_not_found_error() {
-        let result =
-            fetch_local(Path::new("/tmp/does-not-exist-evnx-test-source-xq39.backup"));
+        let result = fetch_local(Path::new(
+            "/tmp/does-not-exist-evnx-test-source-xq39.backup",
+        ));
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            matches!(err.downcast_ref::<RestoreError>(), Some(RestoreError::FileNotFound(_))),
+            matches!(
+                err.downcast_ref::<RestoreError>(),
+                Some(RestoreError::FileNotFound(_))
+            ),
             "expected RestoreError::FileNotFound"
         );
     }
@@ -321,9 +329,6 @@ mod tests {
             ),
             "expected RestoreError::CloudNotAvailable"
         );
-        assert_eq!(
-            err.downcast_ref::<RestoreError>().unwrap().exit_code(),
-            6
-        );
+        assert_eq!(err.downcast_ref::<RestoreError>().unwrap().exit_code(), 6);
     }
 }

@@ -530,6 +530,36 @@ Use 'evnx convert' without --to for interactive format selection.
         /// Decrypt and validate but do not write any files.
         #[arg(long)]
         dry_run: bool,
+        /// List variable names (never values) without writing any files.
+        ///
+        /// Decrypts the backup and prints each key name to stdout.
+        /// Values are never displayed. No files are written and no overwrite
+        /// prompt is shown. Use this to answer "what keys are in this backup?"
+        /// before committing to a full restore.
+        ///
+        /// Example:
+        ///   evnx restore .env.backup --inspect
+        #[arg(long)]
+        inspect: bool,
+
+        /// Read the decryption password from a file instead of prompting.
+        ///
+        /// The file should contain only the password, with an optional
+        /// trailing newline (stripped automatically). Intended for CI/CD
+        /// pipelines where interactive prompts are not possible.
+        ///
+        /// Security: less secure than the interactive prompt. The file path
+        /// may appear in process listings and shell history. Use a secrets
+        /// manager or a tmpfs-backed path (e.g. /run/secrets/) in production.
+        ///
+        /// EVNX_PASSWORD environment variable is also accepted and takes
+        /// lower priority than --password-file.
+        ///
+        /// Examples:
+        ///   evnx restore .env.backup --password-file /run/secrets/evnx-pass
+        ///   EVNX_PASSWORD=mypass evnx restore .env.backup
+        #[arg(long, value_name = "PATH")]
+        password_file: Option<String>,
     },
 
     /// Diagnose common setup issues.

@@ -208,19 +208,28 @@ fn main() -> Result<()> {
             backup,
             output,
             dry_run,
+            inspect,
+            password_file,
         } => {
-            match commands::restore::run(backup, output, cli.verbose, dry_run) {
+            match commands::restore::run(
+                backup,
+                output,
+                cli.verbose,
+                dry_run,
+                inspect,
+                password_file,
+            ) {
                 Ok(()) => Ok(()),
                 Err(e) => {
                     if let Some(re) = e.downcast_ref::<commands::restore::RestoreError>() {
-                        // Cancelled and ValidationFallback already printed their own
-                        // inline explanation — a second error line would be redundant.
+                        // Cancelled and ValidationFallback are silent — they
+                        // already printed a complete inline explanation.
                         if !re.is_silent() {
                             eprintln!("{} {}", "Error:".on_red().bold(), re);
                         }
                         std::process::exit(re.exit_code());
                     }
-                    // Generic anyhow error (IO, UTF-8, etc.) — exit 1 via propagation.
+                    // Generic anyhow error — propagate for default formatting.
                     Err(e)
                 }
             }

@@ -112,10 +112,9 @@ impl RestoreError {
 impl fmt::Display for RestoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::WrongPassword => write!(
-                f,
-                "Wrong password or corrupt backup — decryption failed"
-            ),
+            Self::WrongPassword => {
+                write!(f, "Wrong password or corrupt backup — decryption failed")
+            }
             Self::FileNotFound(path) => write!(f, "Backup file not found: {path}"),
             Self::Cancelled => write!(f, "Restore cancelled — no files were modified"),
             Self::ValidationFallback { fallback_path } => write!(
@@ -142,10 +141,7 @@ mod tests {
     #[test]
     fn exit_codes_are_stable() {
         assert_eq!(RestoreError::WrongPassword.exit_code(), 2);
-        assert_eq!(
-            RestoreError::FileNotFound("f".into()).exit_code(),
-            3
-        );
+        assert_eq!(RestoreError::FileNotFound("f".into()).exit_code(), 3);
         assert_eq!(RestoreError::Cancelled.exit_code(), 4);
         assert_eq!(
             RestoreError::ValidationFallback {
@@ -198,10 +194,7 @@ mod tests {
     fn can_be_stored_in_anyhow_and_downcasted() {
         let err: anyhow::Error = RestoreError::WrongPassword.into();
         let downcasted = err.downcast_ref::<RestoreError>();
-        assert!(
-            downcasted.is_some(),
-            "should downcast back to RestoreError"
-        );
+        assert!(downcasted.is_some(), "should downcast back to RestoreError");
         assert!(matches!(downcasted.unwrap(), RestoreError::WrongPassword));
     }
 
