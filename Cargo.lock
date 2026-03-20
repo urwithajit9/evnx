@@ -552,7 +552,7 @@ dependencies = [
 
 [[package]]
 name = "evnx"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "aes-gcm",
  "anyhow",

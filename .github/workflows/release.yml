@@ -116,8 +116,6 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir release-assets
-          # FIX: copy both .tar.gz and .zip artifacts (previously only .tar.gz was copied,
-          # which caused the Scoop and Winget installer URLs to 404 on every release)
           find artifacts -name "*.tar.gz*" -exec cp {} release-assets/ \;
           find artifacts -name "*.zip*"    -exec cp {} release-assets/ \;
           echo "Release assets:"
@@ -128,7 +126,6 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Generate release notes
-        id: notes
         run: |
           cat > release_notes.md << EOF
           # evnx v${{ steps.version.outputs.VERSION }}
@@ -215,12 +212,6 @@ jobs:
           echo "aarch64_linux=$SHA_AARCH64_LINUX" >> $GITHUB_OUTPUT
           echo "x86_64_linux=$SHA_X86_64_LINUX" >> $GITHUB_OUTPUT
 
-          echo "SHA256 values fetched:"
-          echo "  aarch64-apple-darwin:      $SHA_AARCH64_DARWIN"
-          echo "  x86_64-apple-darwin:       $SHA_X86_64_DARWIN"
-          echo "  aarch64-unknown-linux-gnu: $SHA_AARCH64_LINUX"
-          echo "  x86_64-unknown-linux-musl: $SHA_X86_64_LINUX"
-
       - name: Checkout homebrew tap
         uses: actions/checkout@v4
         with:
@@ -294,3 +285,120 @@ jobs:
           git add Formula/evnx.rb
           git diff --staged --quiet || git commit -m "chore: update evnx to v${{ steps.version.outputs.VERSION }}"
           git push
+
+  # ── Update Scoop bucket ────────────────────────────────────────────────────
+  # This job is intentionally part of release.yml rather than a separate
+  # scoop-update.yml workflow. A GitHub Release created by GITHUB_TOKEN inside
+  # a workflow does not fire the `release: published` event for other workflows,
+  # so a standalone scoop-update.yml triggered by that event would never run.
+  update-scoop-bucket:
+    name: Update Scoop bucket
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Fetch ZIP SHA256 from release assets
+        id: sha256
+        run: |
+          BASE="https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.VERSION }}"
+          SHA=$(curl -fsSL "${BASE}/evnx-x86_64-pc-windows-msvc.zip.sha256" | awk '{print $1}')
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Checkout Scoop bucket
+        uses: actions/checkout@v4
+        with:
+          repository: urwithajit9/scoop-evnx
+          token: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          path: scoop-bucket
+
+      - name: Update manifest
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          SHA="${{ steps.sha256.outputs.sha }}"
+          mkdir -p scoop-bucket/bucket
+
+          # The architecture.url uses ${VERSION} — the actual version number
+          # substituted by this shell step (e.g. "0.3.6").
+          # The autoupdate.url uses \$version — a literal "$version" string
+          # written into the JSON file so Scoop can use it as its own template
+          # variable for future auto-updates via `scoop update`.
+          cat > scoop-bucket/bucket/evnx.json << EOF
+          {
+            "version": "${VERSION}",
+            "description": "CLI tool for managing .env files — validation, secret scanning, format conversion",
+            "homepage": "https://www.evnx.dev",
+            "license": "MIT",
+            "notes": "Run 'evnx --help' to get started. Docs: https://www.evnx.dev/guides",
+            "architecture": {
+              "64bit": {
+                "url": "https://github.com/urwithajit9/evnx/releases/download/v${VERSION}/evnx-x86_64-pc-windows-msvc.zip",
+                "hash": "sha256:${SHA}",
+                "bin": [["evnx-x86_64-pc-windows-msvc.exe", "evnx"]]
+              }
+            },
+            "checkver": { "github": "https://github.com/urwithajit9/evnx" },
+            "autoupdate": {
+              "architecture": {
+                "64bit": {
+                  "url": "https://github.com/urwithajit9/evnx/releases/download/v\$version/evnx-x86_64-pc-windows-msvc.zip",
+                  "hash": { "url": "\$url.sha256", "find": "^([a-f0-9]+)\\s" }
+                }
+              }
+            }
+          }
+          EOF
+
+      - name: Commit and push
+        run: |
+          cd scoop-bucket
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/evnx.json
+          git diff --staged --quiet || git commit -m "chore: update evnx to v${{ steps.version.outputs.VERSION }}"
+          git push
+
+  # ── Publish to Winget ──────────────────────────────────────────────────────
+  # Same reasoning as update-scoop-bucket: runs here rather than in a separate
+  # winget-publish.yml to avoid the GITHUB_TOKEN cascade trigger limitation.
+  publish-winget:
+    name: Publish to Winget
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - name: Extract version
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download wingetcreate
+        run: Invoke-WebRequest -Uri "https://aka.ms/wingetcreate/latest" -OutFile "wingetcreate.exe"
+
+      - name: Submit to winget-pkgs
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGETCREATE_TOKEN }}
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $installerUrl = "https://github.com/urwithajit9/evnx/releases/download/v$version/evnx-x86_64-pc-windows-msvc.zip"
+
+          # FIRST SUBMISSION: creates the package entry in winget-pkgs for the
+          # first time. After the first PR is merged by the winget-pkgs team,
+          # replace this block with the "update" command in the comment below.
+          .\wingetcreate.exe new $installerUrl `
+            --version $version `
+            --publisher "Ajit Kumar" `
+            --license "MIT" `
+            --package-name "evnx" `
+            --short-description "CLI tool for managing .env files — validation, secret scanning, format conversion" `
+            --submit `
+            --token $env:GITHUB_TOKEN
+
+          # SUBSEQUENT RELEASES: comment out the block above and uncomment below.
+          # .\wingetcreate.exe update urwithajit9.evnx `
+          #   --version $version `
+          #   --urls $installerUrl `
+          #   --submit `
+          #   --token $env:GITHUB_TOKEN

@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.7] - 2026-03-20
+
+### Fixed
+
+- Scoop and Winget publish jobs moved from standalone workflow files into
+  `release.yml` as inline jobs. Standalone `release: published` workflows
+  never triggered because GitHub suppresses that event when a release is
+  created by `GITHUB_TOKEN` inside a workflow.
+- Scoop manifest `architecture.url` was writing a literal `$version` string
+  instead of the real version number due to incorrect heredoc escaping.
+  Corrected to use `${VERSION}` in the architecture block and `\$version`
+  only in the autoupdate block where Scoop expects its own template variable.
+
+**Full Changelog**: https://github.com/urwithajit9/evnx/compare/v0.3.6...v0.3.7
+
+---
+
 ## [0.3.6] - 2026-03-19
 
 ### Added
