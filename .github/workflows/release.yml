@@ -387,18 +387,18 @@ jobs:
           # FIRST SUBMISSION: creates the package entry in winget-pkgs for the
           # first time. After the first PR is merged by the winget-pkgs team,
           # replace this block with the "update" command in the comment below.
-          .\wingetcreate.exe new $installerUrl `
-            --version $version `
-            --publisher "Ajit Kumar" `
-            --license "MIT" `
-            --package-name "evnx" `
-            --short-description "CLI tool for managing .env files — validation, secret scanning, format conversion" `
-            --submit `
-            --token $env:GITHUB_TOKEN
-
-          # SUBSEQUENT RELEASES: comment out the block above and uncomment below.
-          # .\wingetcreate.exe update urwithajit9.evnx `
+          # .\wingetcreate.exe new $installerUrl `
           #   --version $version `
-          #   --urls $installerUrl `
+          #   --publisher "Ajit Kumar" `
+          #   --license "MIT" `
+          #   --package-name "evnx" `
+          #   --short-description "CLI tool for managing .env files — validation, secret scanning, format conversion" `
           #   --submit `
           #   --token $env:GITHUB_TOKEN
+
+          # SUBSEQUENT RELEASES: comment out the block above and uncomment below.
+          .\wingetcreate.exe update urwithajit9.evnx `
+            --version $version `
+            --urls $installerUrl `
+            --submit `
+            --token $env:GITHUB_TOKEN
