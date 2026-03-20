@@ -14,11 +14,12 @@
 //!
 //! # Module layout
 //!
-//! | Module   | Responsibility                                     |
-//! |----------|----------------------------------------------------|
-//! | `mod.rs` | CLI adapter — header, prompts, orchestration       |
-//! | `core`   | Pure logic — decrypt, validate, write              |
-//! | `source` | Backup source — local path or cloud reference      |
+//! | Module   | Responsibility                                       |
+//! |----------|------------------------------------------------------|
+//! | `mod.rs` | CLI adapter — header, prompts, orchestration         |
+//! | `core`   | Pure logic — decrypt, validate, write                |
+//! | `source` | Backup source — local path or cloud reference        |
+//! | `error`  | Typed error variants and process exit code mapping   |
 //!
 //! # Safety behaviours
 //!
@@ -39,9 +40,10 @@
 //! ## Validation failure fallback
 //!
 //! When the decrypted content does not pass the `.env` validation heuristic,
-//! the file is written to `<output>.restored` instead of `<output>`. The
-//! user is guided through inspection and manual rename. See
-//! [`core::choose_write_path`](core) for details.
+//! the file is written to `<output>.restored` instead of `<output>`. The user
+//! is guided through inspection and manual rename. The typed error
+//! [`RestoreError::ValidationFallback`] is returned so `main.rs` can use exit
+//! code 5 without printing a redundant error message.
 //!
 //! ## Memory safety
 //!
@@ -49,6 +51,21 @@
 //! the moment it is passed over — it is zeroized on every exit path, including
 //! `?`-propagated errors and panics. The encoded ciphertext blob is explicitly
 //! zeroized in this file after `prepare_restore` returns.
+//!
+//! # Exit codes
+//!
+//! | Code | Meaning                                              |
+//! |------|------------------------------------------------------|
+//! | 0    | Success                                              |
+//! | 1    | Generic error (IO, encoding, etc.)                   |
+//! | 2    | Wrong password or corrupt backup                     |
+//! | 3    | Backup file not found                                |
+//! | 4    | User cancelled overwrite prompt                      |
+//! | 5    | Restored to `.restored` fallback (bad content)       |
+//! | 6    | evnx-cloud restore not yet available                 |
+//!
+//! See [`error::RestoreError`] for the full mapping and `main.rs` for the
+//! dispatch pattern.
 //!
 //! # Examples
 //!
@@ -67,7 +84,15 @@
 pub mod core;
 
 #[cfg(feature = "backup")]
+pub mod error;
+
+#[cfg(feature = "backup")]
 pub mod source;
+
+// Re-export RestoreError at the module root so callers can write
+// `commands::restore::RestoreError` rather than `...::error::RestoreError`.
+#[cfg(feature = "backup")]
+pub use error::RestoreError;
 
 use anyhow::Result;
 
@@ -86,17 +111,25 @@ use anyhow::Result;
 ///   fails `.env` validation, to protect any existing live file.
 /// * `verbose`  — Emit a diagnostic message at each pipeline stage.
 /// * `dry_run`  — Decrypt and validate, but do not write any files.
+///
+/// # Exit codes
+///
+/// This function returns `Ok(())` on success and `Err(...)` on failure.
+/// `main.rs` should downcast the error to [`RestoreError`] to determine
+/// the appropriate `process::exit` code. See the [module-level exit code
+/// table](self) for the full mapping.
 pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Result<()> {
     // ── Feature-disabled stub ─────────────────────────────────────────────────
-    // Both cfg blocks use expression syntax (`Ok(())`) rather than
-    // `return Ok(())` so that whichever block is compiled becomes the tail
-    // expression of the function body — avoiding a type-mismatch from the
-    // implicit `()` that would follow a `return` statement.
+    // Both cfg blocks use expression syntax so that whichever block is compiled
+    // becomes the tail expression of the function body — avoiding the implicit
+    // `()` type mismatch that would follow a `return` statement in the other.
     #[cfg(not(feature = "backup"))]
     {
         let _ = (&backup, &output, verbose, dry_run);
-        println!("{} Backup/restore feature not enabled", "✗".red());
-        println!("Rebuild with: cargo build --features backup");
+        // Avoid importing colored::* at module scope (it would be unused when
+        // the feature IS enabled). Use plain output for the stub message.
+        eprintln!("✗ Backup/restore feature not enabled");
+        eprintln!("Rebuild with: cargo build --features backup");
         Ok(())
     }
 
@@ -108,9 +141,10 @@ pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Resu
         use std::path::PathBuf;
         use zeroize::Zeroize;
 
-        use self::core::{commit_restore, prepare_restore, PrepareResult, RestoreOptions};
-        use self::source::BackupSource;
         use crate::utils::ui;
+        use self::core::{commit_restore, prepare_restore, PrepareResult, RestoreOptions};
+        use self::error::RestoreError;
+        use self::source::BackupSource;
 
         // ── Parse source ──────────────────────────────────────────────────────
         let src = BackupSource::parse(&backup);
@@ -131,23 +165,21 @@ pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Resu
 
         // ── Password prompt ───────────────────────────────────────────────────
         // No echo — the password is never displayed or logged.
-        // We do NOT confirm the password here: a typo simply fails decryption
-        // (safe and reversible), so confirmation would add friction for no gain.
+        // Single prompt without confirmation: a typo here fails decryption
+        // (safe and reversible), so confirmation would only add friction.
         let password = Password::new()
             .with_prompt("Enter decryption password")
             .interact()?;
 
         if password.is_empty() {
-            // Zeroize the encoded blob before returning the error so sensitive
-            // ciphertext does not linger in memory longer than necessary.
+            // Zeroize the ciphertext before returning so it does not linger.
             encoded.zeroize();
             return Err(anyhow!("Password must not be empty"));
         }
 
         // ── Core restore logic ────────────────────────────────────────────────
         // `prepare_restore` takes ownership of `password` and zeroizes it via
-        // a RAII guard — it is cleared on every exit path, including errors
-        // and panics.
+        // a RAII guard — cleared on every exit path, including errors/panics.
         let options = RestoreOptions {
             output: PathBuf::from(&output),
             dry_run,
@@ -156,8 +188,8 @@ pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Resu
 
         let result = prepare_restore(&encoded, password, &options);
 
-        // Zeroize the ciphertext blob now that decryption is complete,
-        // regardless of whether it succeeded or failed.
+        // Zeroize the ciphertext blob unconditionally — whether decryption
+        // succeeded or failed.
         encoded.zeroize();
 
         match result? {
@@ -166,10 +198,10 @@ pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Resu
 
             // ── Normal path: check for overwrite then write ───────────────────
             PrepareResult::Ready(outcome) => {
-                // Overwrite protection — always prompt; there is intentionally
-                // no --force flag.  Overwriting a live .env without confirmation
-                // is too easy to do by accident, and the consequences (lost
-                // credentials) are hard to undo.
+                // Overwrite protection — always prompt; no --force flag.
+                // Overwriting a live .env without confirmation is too easy to
+                // do by accident and the consequences (lost credentials) are
+                // hard to undo.
                 if outcome.write_path.exists() {
                     ui::warning(format!(
                         "Output file already exists: {}",
@@ -183,8 +215,13 @@ pub fn run(backup: String, output: String, verbose: bool, dry_run: bool) -> Resu
 
                     if !overwrite {
                         ui::info("Restore cancelled — no files were modified.");
-                        ui::info("Tip: use --output <path> to restore to a different location.");
-                        return Ok(());
+                        ui::info(
+                            "Tip: use --output <path> to restore to a different location.",
+                        );
+                        // Return a typed error so main.rs uses exit code 4.
+                        // is_silent() = true, so main.rs will not print an
+                        // additional error message.
+                        return Err(RestoreError::Cancelled.into());
                     }
                 }
 

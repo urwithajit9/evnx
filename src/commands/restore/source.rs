@@ -22,7 +22,9 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
+
+use super::error::RestoreError;
 
 // ─── Public type ──────────────────────────────────────────────────────────────
 
@@ -42,8 +44,9 @@ pub enum BackupSource {
     /// A specific ID pins the restore to an exact snapshot.
     ///
     /// **Not yet available** — evnx-cloud integration is planned. Calling
-    /// [`BackupSource::fetch`] on this variant returns a descriptive error
-    /// rather than panicking, so existing code paths are safe to ship.
+    /// [`BackupSource::fetch`] on this variant returns
+    /// [`RestoreError::CloudNotAvailable`] rather than panicking, so existing
+    /// code paths are safe to ship.
     Cloud {
         /// evnx-cloud project identifier (slug or UUID).
         project: String,
@@ -108,9 +111,10 @@ impl BackupSource {
     ///
     /// # Errors
     ///
-    /// - `Local`: file not found, path is not a regular file, or IO error.
-    /// - `Cloud`: always errors with a helpful message until evnx-cloud
-    ///   integration ships.
+    /// - `Local`: [`RestoreError::FileNotFound`] when the path does not exist
+    ///   or is not a regular file; IO errors as plain `anyhow` errors.
+    /// - `Cloud`: always [`RestoreError::CloudNotAvailable`] until the
+    ///   evnx-cloud integration ships.
     pub fn fetch(&self) -> Result<String> {
         match self {
             Self::Local(path) => fetch_local(path),
@@ -144,18 +148,8 @@ impl BackupSource {
     pub fn display_path(&self) -> String {
         match self {
             Self::Local(path) => path.display().to_string(),
-            Self::Cloud {
-                project,
-                backup_id: None,
-            } => {
-                format!("cloud://{project} (latest)")
-            }
-            Self::Cloud {
-                project,
-                backup_id: Some(id),
-            } => {
-                format!("cloud://{project}/{id}")
-            }
+            Self::Cloud { project, backup_id: None } => format!("cloud://{project} (latest)"),
+            Self::Cloud { project, backup_id: Some(id) } => format!("cloud://{project}/{id}"),
         }
     }
 }
@@ -164,10 +158,14 @@ impl BackupSource {
 
 fn fetch_local(path: &Path) -> Result<String> {
     if !path.exists() {
-        return Err(anyhow!("Backup file not found: {}", path.display()));
+        return Err(RestoreError::FileNotFound(path.display().to_string()).into());
     }
     if !path.is_file() {
-        return Err(anyhow!("Path is not a regular file: {}", path.display()));
+        return Err(RestoreError::FileNotFound(format!(
+            "{} (not a regular file)",
+            path.display()
+        ))
+        .into());
     }
     std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read backup file: {}", path.display()))
@@ -190,16 +188,8 @@ fn fetch_local(path: &Path) -> Result<String> {
 /// When implemented, this function will be the *only* place that changes to
 /// add cloud support — no other restore code needs modification.
 fn fetch_cloud(project: &str, backup_id: Option<&str>) -> Result<String> {
-    // Suppress unused-variable warnings until the implementation is added.
     let _ = (project, backup_id);
-
-    Err(anyhow!(
-        "evnx-cloud restore is not yet available in this build.\n\
-         Follow https://evnx.dev/cloud for release updates.\n\
-         \n\
-         To restore from a local backup file:\n\
-           evnx restore <path-to-backup-file>"
-    ))
+    Err(RestoreError::CloudNotAvailable.into())
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -250,7 +240,6 @@ mod tests {
 
     #[test]
     fn parse_cloud_trailing_slash_normalised_to_latest() {
-        // "cloud://proj/" — empty id segment is normalised to None, not Some("").
         assert_eq!(
             BackupSource::parse("cloud://proj/"),
             BackupSource::Cloud {
@@ -291,40 +280,50 @@ mod tests {
     // ── fetch_local validation ────────────────────────────────────────────────
 
     #[test]
-    fn local_fetch_missing_file_gives_clear_error() {
-        let result = fetch_local(Path::new(
-            "/tmp/does-not-exist-evnx-test-source-xq39.backup",
-        ));
+    fn local_fetch_missing_file_gives_file_not_found_error() {
+        let result =
+            fetch_local(Path::new("/tmp/does-not-exist-evnx-test-source-xq39.backup"));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not found"));
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err.downcast_ref::<RestoreError>(), Some(RestoreError::FileNotFound(_))),
+            "expected RestoreError::FileNotFound"
+        );
     }
 
     #[test]
-    fn local_fetch_directory_gives_clear_error() {
-        // Passing a directory path should fail before reaching read_to_string,
-        // giving a message that points the user at the real problem.
+    fn local_fetch_directory_gives_file_not_found_with_not_regular_file_message() {
         let result = fetch_local(Path::new("/tmp"));
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("not a regular file"));
+        let err = result.unwrap_err();
+        let typed = err.downcast_ref::<RestoreError>();
+        assert!(
+            matches!(typed, Some(RestoreError::FileNotFound(_))),
+            "expected RestoreError::FileNotFound"
+        );
+        assert!(
+            typed.unwrap().to_string().contains("not a regular file"),
+            "error message should note it is not a regular file"
+        );
     }
 
     // ── fetch_cloud stub ──────────────────────────────────────────────────────
 
     #[test]
-    fn cloud_fetch_returns_actionable_error() {
+    fn cloud_fetch_returns_cloud_not_available_error() {
         let result = fetch_cloud("myproject", None);
         assert!(result.is_err());
-        let msg = result.unwrap_err().to_string();
+        let err = result.unwrap_err();
         assert!(
-            msg.contains("evnx-cloud restore is not yet available"),
-            "error should explain the feature is unavailable"
+            matches!(
+                err.downcast_ref::<RestoreError>(),
+                Some(RestoreError::CloudNotAvailable)
+            ),
+            "expected RestoreError::CloudNotAvailable"
         );
-        assert!(
-            msg.contains("evnx restore <path-to-backup-file>"),
-            "error should include the local-file workaround"
+        assert_eq!(
+            err.downcast_ref::<RestoreError>().unwrap().exit_code(),
+            6
         );
     }
 }
