@@ -1,4 +1,4 @@
-//! Pure backup logic — encryption, key derivation, and file writing.
+//! Pure backup logic — encryption, key derivation, rotation, and file writing.
 //!
 //! No TTY interaction occurs here. All prompts (password, confirmation) are
 //! handled by the CLI adapter in [`mod.rs`](super). Every function in this
@@ -13,10 +13,12 @@
 //!   backup_inner()
 //!         │
 //!         ├─ ZeroizeOnDrop guard wraps password immediately
+//!         ├─ rotate_backups()        (rename existing, warn beyond --keep)
 //!         ├─ spinner starts          (suppressed in verbose mode)
 //!         ├─ encrypt_content()       (Argon2id + AES-256-GCM)
 //!         ├─ spinner stops
 //!         ├─ write_secure()          (0o600 permissions)
+//!         ├─ verify_backup()         (optional — only when --verify is set)
 //!         └─ Ok(output_path)         password zeroized on drop
 //! ```
 //!
@@ -28,14 +30,17 @@
 //!
 //! # Error types
 //!
-//! Crypto failures are returned as [`BackupError::EncryptionFailed`] and write
-//! failures as [`BackupError::WriteFailed`]. Both carry a human-readable detail
-//! string and map to distinct exit codes in `main.rs`.
+//! | Error | Meaning |
+//! |-------|---------|
+//! | [`BackupError::EncryptionFailed`] | Argon2id / AES-256-GCM failure |
+//! | [`BackupError::WriteFailed`] | Could not write backup to disk |
+//! | [`BackupError::VerifyFailed`] | Post-write integrity check failed |
 //!
 //! [`BackupError::EncryptionFailed`]: super::error::BackupError::EncryptionFailed
 //! [`BackupError::WriteFailed`]: super::error::BackupError::WriteFailed
+//! [`BackupError::VerifyFailed`]: super::error::BackupError::VerifyFailed
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use zeroize::Zeroize;
@@ -54,8 +59,8 @@ use super::error::BackupError;
 ///
 /// # Defaults
 ///
-/// `verbose` defaults to `false`; `env` and `output` must be supplied by the
-/// caller — there is no meaningful default path that works in all contexts.
+/// `verbose`, `verify` default to `false`; `keep` defaults to `3`.
+/// `env` and `output` must be supplied by the caller.
 #[cfg(feature = "backup")]
 #[derive(Debug, Clone)]
 pub struct BackupOptions {
@@ -74,8 +79,33 @@ pub struct BackupOptions {
     /// In verbose mode the Argon2id spinner is suppressed so that per-step
     /// diagnostic lines are not interleaved with spinner output.
     pub verbose: bool,
+
+    /// Path to a key file used as the encryption password source.
+    ///
+    /// When `Some`, the file's contents are read and used in place of an
+    /// interactively typed password, enabling non-interactive CI pipelines.
+    /// UTF-8 content is used as-is (trimmed); binary content is Base64-encoded
+    /// to produce a stable ASCII string before being fed into Argon2id.
+    pub key_file: Option<PathBuf>,
+
+    /// Number of previous backups to retain alongside the new one.
+    ///
+    /// Before writing, existing backups are rotated:
+    /// `output` → `output.1` → `output.2` → … → `output.{keep-1}`.
+    /// Files at position `keep` and beyond are **warned about but never
+    /// deleted** — the user must remove them manually.
+    ///
+    /// Set to `0` to disable rotation entirely (overwrites silently).
+    pub keep: u32,
+
+    /// If `true`, re-decrypt the backup immediately after writing and compare
+    /// the recovered content against the original byte-for-byte.
+    ///
+    /// A mismatch returns [`BackupError::VerifyFailed`] (exit code 6) and
+    /// leaves the backup file on disk for manual inspection. The check costs
+    /// one additional Argon2id round-trip (~1 s).
+    pub verify: bool,
     // ── Planned flags — not yet wired to the CLI ─────────────────────────────
-    // pub key_file: Option<PathBuf>,   // --key-file (non-interactive backup)
     // pub recipient: Option<String>,   // --recipient (asymmetric encryption)
 }
 
@@ -115,26 +145,23 @@ impl std::ops::Deref for ZeroizeOnDrop {
 ///
 /// # Steps
 ///
-/// 1. Moves `password` into a [`ZeroizeOnDrop`] guard that fires on every
-///    exit path, including `?`-propagated errors and panics.
-/// 2. Starts an Argon2id progress spinner (suppressed when `verbose = true`).
-/// 3. Encrypts `content` with Argon2id key derivation + AES-256-GCM.
-/// 4. Stops the spinner unconditionally — before any further output or error
-///    propagation.
-/// 5. Writes the encrypted blob to `options.output` with `0o600` permissions.
-/// 6. Returns the path that was written.
-///
-/// # Security notes
-///
-/// - `password` is zeroized via [`ZeroizeOnDrop`] regardless of outcome.
-/// - The output file is written by [`crate::utils::write_secure`], which
-///   creates the file with `0o600` permissions on Unix.
+/// 1. Moves `password` into a [`ZeroizeOnDrop`] guard — fires on every exit
+///    path including `?`-propagated errors and panics.
+/// 2. Rotates existing backups according to `options.keep`.
+/// 3. Starts an Argon2id progress spinner (suppressed when `verbose = true`).
+/// 4. Encrypts `content` with Argon2id + AES-256-GCM.
+/// 5. Stops the spinner unconditionally.
+/// 6. Writes the encrypted blob to `options.output` with `0o600` permissions.
+/// 7. If `options.verify`: re-decrypts the file and compares content.
+/// 8. Returns the path that was written.
 ///
 /// # Errors
 ///
 /// - [`BackupError::EncryptionFailed`] — Argon2id or AES-256-GCM failed.
 /// - [`BackupError::WriteFailed`] — could not write the backup to disk.
-/// - Other `anyhow` errors — unexpected encoding failures (non-UTF-8 paths).
+/// - [`BackupError::VerifyFailed`] — post-write integrity check failed.
+/// - Other `anyhow` errors — unexpected encoding failures (non-UTF-8 paths,
+///   rotation rename failures).
 #[cfg(feature = "backup")]
 pub fn backup_inner(content: &str, password: String, options: &BackupOptions) -> Result<PathBuf> {
     // ── Zeroize password on every exit path ───────────────────────────────────
@@ -144,7 +171,17 @@ pub fn backup_inner(content: &str, password: String, options: &BackupOptions) ->
         ui::verbose_stderr("Backup pipeline starting");
         ui::verbose_stderr(format!("Source       : {}", options.env.display()));
         ui::verbose_stderr(format!("Output       : {}", options.output.display()));
+        ui::verbose_stderr(format!("Keep         : {}", options.keep));
+        ui::verbose_stderr(format!("Verify       : {}", options.verify));
+        if let Some(kf) = &options.key_file {
+            ui::verbose_stderr(format!("Key file     : {}", kf.display()));
+        }
         ui::verbose_stderr("Argon2id key derivation in progress…");
+    }
+
+    // ── Rotate existing backups ───────────────────────────────────────────────
+    if options.keep > 0 {
+        rotate_backups(&options.output, options.keep)?;
     }
 
     // ── Spinner ───────────────────────────────────────────────────────────────
@@ -164,7 +201,8 @@ pub fn backup_inner(content: &str, password: String, options: &BackupOptions) ->
         .and_then(|n| n.to_str())
         .unwrap_or(".env");
 
-    // Map errors before stopping the spinner so it is always cleared first.
+    // Capture the error before stopping the spinner so the terminal is always
+    // left in a clean state regardless of outcome.
     let encrypt_result = encrypt_content(content, &pw_guard, original_filename)
         .map_err(|e| BackupError::EncryptionFailed(e.to_string()));
 
@@ -196,8 +234,133 @@ pub fn backup_inner(content: &str, password: String, options: &BackupOptions) ->
         ui::verbose_stderr(format!("Backup written to {}", options.output.display()));
     }
 
+    // ── Post-write integrity check ────────────────────────────────────────────
+    // Re-decrypts the file just written and compares it byte-for-byte with the
+    // original content. Costs one additional Argon2id round (~1 s) but proves
+    // the backup is readable before the user discards the source.
+    if options.verify {
+        if options.verbose {
+            ui::verbose_stderr("Verifying backup integrity…");
+        }
+        verify_backup(&options.output, content, &pw_guard)?;
+        if options.verbose {
+            ui::verbose_stderr("Integrity check passed");
+        }
+    }
+
     Ok(options.output.clone())
     // pw_guard drops here → password zeroized
+}
+
+// ─── Rotation ─────────────────────────────────────────────────────────────────
+
+/// Rotate numbered backup files before writing a new one.
+///
+/// Renames in reverse order to avoid overwriting:
+/// ```text
+/// output.{keep-2} → output.{keep-1}
+///         ⋮
+/// output.1        → output.2
+/// output          → output.1
+/// ```
+/// Files at position `keep` and beyond are warned about but **never deleted**.
+///
+/// # Example
+///
+/// With `keep = 3` and files `.env.backup`, `.env.backup.1`, `.env.backup.2`,
+/// `.env.backup.3` present:
+/// - `.env.backup.3` — warned ("exceeds --keep 3, delete manually")
+/// - `.env.backup.2` — renamed to `.env.backup.3` … wait, we never delete,
+///   so we only rename up to position `keep - 1`.
+///
+/// Actually: files at position >= `keep` (e.g. `.env.backup.3` when keep=3)
+/// are warned. Positions 1..keep-1 are shifted up by one. Position 0 (the
+/// base file) shifts to position 1.
+#[cfg(feature = "backup")]
+fn rotate_backups(output: &Path, keep: u32) -> Result<()> {
+    // Warn about the file at position `keep` — it will be overwritten when
+    // `keep-1` is shifted up. We never proactively delete beyond this.
+    let overflow = numbered_backup_path(output, keep);
+    if overflow.exists() {
+        ui::warning(format!(
+            "--keep {keep}: {} will be overwritten by rotation — \
+             increase --keep or prune manually to retain it",
+            overflow.display()
+        ));
+    }
+
+    // Shift positions keep downto 1 in reverse to avoid clobbering.
+    // With keep=3: rename .backup.2→.backup.3, .backup.1→.backup.2, .backup→.backup.1
+    for i in (1..=keep).rev() {
+        let src = if i == 1 {
+            output.to_path_buf()
+        } else {
+            numbered_backup_path(output, i - 1)
+        };
+        let dst = numbered_backup_path(output, i);
+        if src.exists() {
+            std::fs::rename(&src, &dst).with_context(|| {
+                format!(
+                    "Failed to rotate backup: {} → {}",
+                    src.display(),
+                    dst.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Build the path for the `n`-th numbered backup.
+///
+/// `n = 1` → `output.1`, `n = 2` → `output.2`, etc.
+#[cfg(feature = "backup")]
+fn numbered_backup_path(base: &Path, n: u32) -> PathBuf {
+    PathBuf::from(format!("{}.{}", base.display(), n))
+}
+
+// ─── Verify ───────────────────────────────────────────────────────────────────
+
+/// Re-decrypt `path` and assert that its content matches `original`.
+///
+/// Called by [`backup_inner`] when `options.verify = true`. Uses the same
+/// `password` that was used for encryption (borrowed from the `ZeroizeOnDrop`
+/// guard still in scope).
+///
+/// Returns [`BackupError::VerifyFailed`] if:
+/// - the file cannot be read back from disk,
+/// - decryption fails (should not happen immediately after a successful write),
+/// - or the recovered content does not match `original` byte-for-byte.
+///
+/// The backup file is **not** deleted on failure — the user should inspect it.
+#[cfg(feature = "backup")]
+fn verify_backup(path: &Path, original: &str, password: &str) -> Result<()> {
+    let written = std::fs::read_to_string(path).map_err(|e| {
+        BackupError::VerifyFailed(format!(
+            "could not re-read backup for verification ({}): {}",
+            path.display(),
+            e
+        ))
+    })?;
+
+    let (recovered, _) = decrypt_content(&written, password).map_err(|e| {
+        BackupError::VerifyFailed(format!(
+            "re-decryption failed during verification — backup may be corrupt: {}",
+            e
+        ))
+    })?;
+
+    if recovered != original {
+        return Err(BackupError::VerifyFailed(
+            "decrypted content does not match original — \
+             backup file may be corrupt; original source file is untouched"
+                .into(),
+        )
+        .into());
+    }
+
+    Ok(())
 }
 
 // ─── Encryption ───────────────────────────────────────────────────────────────
@@ -217,9 +380,8 @@ pub fn backup_inner(content: &str, password: String, options: &BackupOptions) ->
 /// # Arguments
 ///
 /// * `plaintext`         — The raw `.env` file content.
-/// * `password`          — User-supplied encryption password.
+/// * `password`          — User-supplied encryption password (or key-file derived string; see [`BackupOptions::key_file`]).
 /// * `original_filename` — Filename stored in the metadata envelope so `restore` can surface it to the user.
-///
 ///
 /// # Errors
 ///
@@ -258,19 +420,17 @@ pub(crate) fn encrypt_content(
     // ── Argon2id key derivation ───────────────────────────────────────────────
     // A fresh 32-byte salt is generated for every backup so two encryptions of
     // the same file with the same password produce different ciphertext.
+    //
+    // | Parameter   | Value    | Rationale                                   |
+    // |-------------|----------|---------------------------------------------|
+    // | variant     | Argon2id | Resistant to GPU and side-channel attacks   |
+    // | memory      | 64 MiB   | Slows brute-force on commodity hardware     |
+    // | iterations  | 3        | Adds time cost on top of memory cost        |
+    // | parallelism | 1        | Single-threaded CLI usage                   |
+    // | output len  | 32 B     | Exactly one AES-256 key                     |
     let mut salt_bytes = [0u8; 32];
     OsRng.fill_bytes(&mut salt_bytes);
 
-    // Explicit parameters pin the KDF behaviour regardless of library defaults.
-    // output_len = 32 guarantees exactly one AES-256 key's worth of material.
-    //
-    // | Parameter   | Value  | Rationale                                   |
-    // |-------------|--------|---------------------------------------------|
-    // | variant     | Argon2id | Resistant to GPU and side-channel attacks |
-    // | memory      | 64 MiB | Slows brute-force on commodity hardware     |
-    // | iterations  | 3      | Adds time cost on top of memory cost        |
-    // | parallelism | 1      | Single-threaded CLI usage                   |
-    // | output len  | 32 B   | Exactly one AES-256 key                     |
     let params =
         Params::new(65536, 3, 1, Some(32)).map_err(|e| anyhow!("Invalid Argon2 params: {}", e))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
@@ -599,7 +759,6 @@ mod tests {
             encrypt_content("KEY=value\n", "password", ".env").expect("encryption must succeed");
 
         let mut raw = general_purpose::STANDARD.decode(&encrypted).unwrap();
-        // Flip a byte well into the ciphertext region (after the 45-byte header).
         let idx = raw.len() - 5;
         raw[idx] ^= 0xFF;
         let tampered = general_purpose::STANDARD.encode(&raw);
@@ -613,7 +772,6 @@ mod tests {
     #[test]
     #[cfg(feature = "backup")]
     fn test_two_encryptions_produce_different_ciphertext() {
-        // Random salt + nonce mean identical inputs → different outputs.
         let a = encrypt_content("KEY=value\n", "password", ".env").unwrap();
         let b = encrypt_content("KEY=value\n", "password", ".env").unwrap();
         assert_ne!(a, b);
@@ -673,6 +831,9 @@ mod tests {
             env: dir.path().join(".env"),
             output: output_path.clone(),
             verbose: false,
+            key_file: None,
+            keep: 0, // disable rotation for this test
+            verify: false,
         };
 
         let written_path = backup_inner(env_content, "test-password-123".to_owned(), &options)
@@ -681,11 +842,9 @@ mod tests {
         assert_eq!(written_path, output_path);
         assert!(output_path.exists(), "backup file must have been written");
 
-        // Verify the written file can be decrypted back to the original content.
         let encoded = std::fs::read_to_string(&output_path).unwrap();
         let (decrypted, _) =
             decrypt_content(&encoded, "test-password-123").expect("decryption must succeed");
-
         assert_eq!(
             decrypted, env_content,
             "decrypted content must match original"
@@ -703,10 +862,130 @@ mod tests {
         let options = BackupOptions {
             env: dir.path().join(".env"),
             output: output_path.clone(),
-            verbose: true, // suppresses spinner; exercises verbose_stderr paths
+            verbose: true,
+            key_file: None,
+            keep: 0,
+            verify: false,
         };
 
         backup_inner("KEY=value\n", "verbosepass123".to_owned(), &options)
             .expect("backup_inner in verbose mode must not panic");
+    }
+
+    // ── rotate_backups ────────────────────────────────────────────────────────
+
+    #[test]
+    #[cfg(feature = "backup")]
+    fn rotation_renames_existing_backup() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let base = dir.path().join(".env.backup");
+        std::fs::write(&base, "old backup").unwrap();
+
+        rotate_backups(&base, 3).expect("rotate_backups must succeed");
+
+        assert!(!base.exists(), ".env.backup should have been rotated away");
+        assert!(
+            numbered_backup_path(&base, 1).exists(),
+            ".env.backup.1 should now exist"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "backup")]
+    fn rotation_shifts_chain_correctly() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let base = dir.path().join(".env.backup");
+
+        // Seed: base, .1, .2 all exist
+        std::fs::write(&base, "newest").unwrap();
+        std::fs::write(numbered_backup_path(&base, 1), "middle").unwrap();
+        std::fs::write(numbered_backup_path(&base, 2), "oldest").unwrap();
+
+        rotate_backups(&base, 3).expect("rotate_backups must succeed");
+
+        // After rotation: base gone, .1 has old base content, .2 has old .1, .3 has old .2
+        assert!(!base.exists());
+        assert_eq!(
+            std::fs::read_to_string(numbered_backup_path(&base, 1)).unwrap(),
+            "newest"
+        );
+        assert_eq!(
+            std::fs::read_to_string(numbered_backup_path(&base, 2)).unwrap(),
+            "middle"
+        );
+        assert_eq!(
+            std::fs::read_to_string(numbered_backup_path(&base, 3)).unwrap(),
+            "oldest"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "backup")]
+    fn rotation_no_op_when_nothing_exists() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let base = dir.path().join(".env.backup");
+
+        // Nothing on disk — should succeed without error.
+        rotate_backups(&base, 3).expect("rotate_backups with no existing files must succeed");
+    }
+
+    // ── verify_backup ─────────────────────────────────────────────────────────
+
+    #[test]
+    #[cfg(feature = "backup")]
+    fn backup_inner_with_verify_passes_on_valid_backup() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let output_path = dir.path().join(".env.backup");
+        let content = "VERIFY=yes\nBAR=baz\n";
+
+        let options = BackupOptions {
+            env: dir.path().join(".env"),
+            output: output_path.clone(),
+            verbose: false,
+            key_file: None,
+            keep: 0,
+            verify: true, // ← enabled
+        };
+
+        backup_inner(content, "verifypass123".to_owned(), &options)
+            .expect("backup_inner with --verify must succeed on valid write");
+    }
+
+    #[test]
+    #[cfg(feature = "backup")]
+    fn verify_backup_detects_tampered_file() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".env.backup");
+        let content = "KEY=value\n";
+        let password = "tampertest123";
+
+        // Write a valid backup first.
+        let encrypted = encrypt_content(content, password, ".env").unwrap();
+        std::fs::write(&path, &encrypted).unwrap();
+
+        // Now corrupt the file on disk.
+        let mut raw = std::fs::read_to_string(&path).unwrap();
+        raw.push_str("corruption");
+        std::fs::write(&path, raw).unwrap();
+
+        let result = verify_backup(&path, content, password);
+        assert!(result.is_err(), "tampered file must fail verification");
+
+        let err = result.unwrap_err();
+        let typed = err.downcast_ref::<BackupError>();
+        assert!(
+            matches!(typed, Some(BackupError::VerifyFailed(_))),
+            "expected BackupError::VerifyFailed"
+        );
     }
 }

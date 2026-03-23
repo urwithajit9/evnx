@@ -110,7 +110,17 @@ pub const BACKUP: CommandDoc = CommandDoc {
     command: "backup",
     url: "https://www.evnx.dev/guides/commands/backup",
     description: "AES-256-GCM encrypted backups",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/backup",
+    after_help: "\
+Exit codes:\n\
+  0  Success\n\
+  1  Generic error (IO, unexpected failure)\n\
+  2  Source file not found or not a regular file\n\
+  3  Password confirmation did not match\n\
+  4  Encryption failed\n\
+  5  Failed to write backup file\n\
+  6  Post-write integrity check failed (--verify)\n\
+\n\
+📖  Full guide: https://www.evnx.dev/guides/commands/backup",
 };
 
 pub const RESTORE: CommandDoc = CommandDoc {

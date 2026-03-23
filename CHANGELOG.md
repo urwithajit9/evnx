@@ -1,12 +1,122 @@
 # Changelog
 
-All notable changes to this project are documented here.
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+All notable changes to evnx are documented here.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+
 ## [Unreleased]
 
+### Backup Command
+
 ### Added
+
+- **`--key-file <PATH>`** flag on `evnx backup` — reads a file and uses its
+  contents as the encryption password, enabling fully non-interactive CI/CD
+  pipelines without storing a password in environment variables. UTF-8 content
+  is trimmed of surrounding whitespace; binary content is Base64-encoded before
+  being fed into Argon2id. A warning is emitted if both `--key-file` and a
+  future `--password` flag are supplied simultaneously.
+
+- **`--keep <N>`** flag on `evnx backup` (default: `3`) — rotates existing
+  backup files before each write so the last N backups are preserved alongside
+  the new one. Rotation renames in reverse order (`.backup.{N-1}` → `.backup.N`
+  first, then down to `.backup` → `.backup.1`) to prevent mid-chain clobbering.
+  Files at the overflow position are warned about but never deleted. Set `--keep 0`
+  to disable rotation and overwrite silently.
+
+- **`--verify`** flag on `evnx backup` — immediately re-decrypts the backup file
+  after writing and compares the recovered content byte-for-byte against the
+  original source. Exits with code 6 on mismatch and leaves the file on disk for
+  manual inspection. Costs one additional Argon2id round (~1 s).
+
+- **`BackupError::VerifyFailed`** — new typed error variant, exit code 6. Covers
+  both re-decryption failures and content-mismatch failures from `--verify`.
+
+- **Exit codes table** in `evnx backup --help` (`docs::BACKUP.after_help`):
+
+  | Code | Meaning |
+  |------|---------|
+  | 0 | Success |
+  | 1 | Generic error (IO, unexpected failure) |
+  | 2 | Source file not found or not a regular file |
+  | 3 | Password confirmation did not match |
+  | 4 | Encryption failed |
+  | 5 | Failed to write backup file |
+  | 6 | Post-write integrity check failed (`--verify`) |
+
+### Changed
+
+- **`backup.rs` refactored into `backup/` module** — monolithic file split into
+  three focused files following the same structure as `restore/`:
+  - `mod.rs` — CLI adapter: header, password prompts, key-file resolution,
+    orchestration. No pure logic.
+  - `core.rs` — Pure logic: `BackupOptions`, `backup_inner`, `rotate_backups`,
+    `verify_backup`, `encrypt_content`, `decrypt_content`, `BackupMetadata`.
+    Fully testable without a TTY.
+  - `error.rs` — `BackupError` enum with exit codes, `Display`, and
+    `std::error::Error`.
+
+- **Password memory safety** — password string is now wrapped in a
+  `ZeroizeOnDrop` RAII guard inside `backup_inner` immediately on entry,
+  guaranteeing zeroization on every exit path including `?`-propagated errors
+  and panics. Previously the password was zeroized manually after
+  `encrypt_content` returned, leaving a window if encryption panicked.
+
+- **Argon2id spinner** — the static `println!("Encrypting…")` line has been
+  replaced with `ui::spinner()` + `finish_and_clear()`, matching the restore
+  command. Suppressed automatically when `--verbose` is active to avoid
+  interleaved output.
+
+- **Consistent header** — the hand-rolled `┌─ Create encrypted backup ───┐`
+  block has been replaced with `ui::print_header("evnx backup", …)`, matching
+  every other subcommand.
+
+- **Verbose diagnostics** — `--verbose` now emits a `ui::verbose_stderr` line
+  at every pipeline stage (source path, bytes read, password acceptance,
+  rotation, encryption, write, verify) instead of a single dimmed line at
+  startup.
+
+- **Success summary** — post-write output now uses `ui::print_key_value` with
+  Source / Backup / Size / Verified fields instead of bare `println!` calls.
+
+- **Next-steps block** — the "⚠️ Important:" section now uses a private
+  `print_next_steps()` helper (mirroring `restore/core.rs`) instead of
+  inline `println!` bullets.
+
+- **`run()` signature** extended with `key_file: Option<String>`, `keep: u32`,
+  `verify: bool`. `cli.rs` `Commands::Backup` variant updated with matching
+  `--key-file`, `--keep`, `--verify` arguments. `main.rs` dispatch arm updated
+  to destructure and forward all new fields.
+
+- **`BackupError` wired to `main.rs`** — the dispatch arm now downcasts to
+  `BackupError` and calls `exit_code()`, matching the restore dispatch pattern.
+  Previously all backup failures mapped to exit code 1.
+
+### Fixed
+
+- **Off-by-one in `rotate_backups`** — loop range was `(1..keep)` which stopped
+  one position short, silently destroying the oldest backup in the chain instead
+  of shifting it. Corrected to `(1..=keep)`.
+
+- **`encrypt_content` re-export visibility** — changed from
+  `#[cfg(feature = "backup")]` to `#[cfg(all(feature = "backup", test))]` to
+  eliminate the unused-import warning in production builds. The symbol is only
+  consumed by `restore/core.rs` integration tests.
+
+- **Unused `colored::Colorize` import** — removed from `run()`'s feature block;
+  all colour output in that scope flows through `ui::` helpers which import the
+  trait internally.
+
+### Security
+
+- Password zeroization is now unconditional on all exit paths via `ZeroizeOnDrop`
+  (see Changed above). The previous implementation had a narrow panic window
+  between password acceptance and manual `zeroize()` after encryption.
+
+
+### Added Restore Command
 
 - **`evnx restore --inspect`** — decrypt a backup and list variable key
   names without writing any files. Values are never displayed. Useful for

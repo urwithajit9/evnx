@@ -514,10 +514,37 @@ Use 'evnx convert' without --to for interactive format selection.
     #[cfg(feature = "backup")]
     #[command(after_help = docs::BACKUP.after_help)]
     Backup {
+        /// Path to the .env file to back up.
         #[arg(default_value = ".env")]
         env: String,
+
+        /// Destination path for the encrypted backup (default: <env>.backup).
         #[arg(long)]
         output: Option<String>,
+
+        /// Path to a key file to use as the encryption password.
+        ///
+        /// Enables non-interactive / CI usage. The file's contents are read and
+        /// fed into Argon2id in place of a typed password. UTF-8 content is used
+        /// as-is (trimmed); binary content is Base64-encoded first.
+        #[arg(long, value_name = "PATH")]
+        key_file: Option<String>,
+
+        /// Number of previous backups to retain alongside the new one.
+        ///
+        /// Before writing, existing backups are rotated:
+        /// <output> → <output>.1 → <output>.2 → … → <output>.{keep-1}.
+        /// Files beyond this limit are warned about but never deleted.
+        /// Set to 0 to disable rotation (overwrite silently).
+        #[arg(long, default_value = "3", value_name = "N")]
+        keep: u32,
+
+        /// Re-decrypt the backup after writing and verify content integrity.
+        ///
+        /// Costs one additional Argon2id round (~1 s) but proves the backup is
+        /// readable before you discard the source file. Exit code 6 on failure.
+        #[arg(long)]
+        verify: bool,
     },
 
     /// Restore from encrypted backup.

@@ -197,7 +197,13 @@ fn main() -> Result<()> {
         // #[cfg(feature = "backup")]
         // Commands::Backup { env, output } => commands::backup::run(env, output, cli.verbose),
         #[cfg(feature = "backup")]
-        Commands::Backup { env, output } => match commands::backup::run(env, output, cli.verbose) {
+        Commands::Backup {
+            env,
+            output,
+            key_file,
+            keep,
+            verify,
+        } => match commands::backup::run(env, output, cli.verbose, key_file, keep, verify) {
             Ok(()) => Ok(()),
             Err(e) => {
                 if let Some(be) = e.downcast_ref::<commands::backup::BackupError>() {

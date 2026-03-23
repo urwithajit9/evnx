@@ -13,12 +13,14 @@
 //! | 3 | [`PasswordMismatch`] | Confirmation prompt did not match |
 //! | 4 | [`EncryptionFailed`] | Crypto failure |
 //! | 5 | [`WriteFailed`] | Could not write backup to disk |
+//! | 6 | [`VerifyFailed`] | Post-write integrity check failed |
 //!
 //! [`FileNotFound`]: BackupError::FileNotFound
 //! [`NotAFile`]: BackupError::NotAFile
 //! [`PasswordMismatch`]: BackupError::PasswordMismatch
 //! [`EncryptionFailed`]: BackupError::EncryptionFailed
 //! [`WriteFailed`]: BackupError::WriteFailed
+//! [`VerifyFailed`]: BackupError::VerifyFailed
 
 use std::fmt;
 
@@ -49,6 +51,12 @@ pub enum BackupError {
 
     /// The encrypted backup could not be written to disk. Exit code 5.
     WriteFailed(String),
+
+    /// Post-write integrity check failed: the backup file could not be
+    /// re-decrypted, or the recovered content did not match the original.
+    ///
+    /// The backup file is left on disk so the user can inspect it. Exit code 6.
+    VerifyFailed(String),
 }
 
 impl BackupError {
@@ -59,6 +67,7 @@ impl BackupError {
             Self::PasswordMismatch => 3,
             Self::EncryptionFailed(_) => 4,
             Self::WriteFailed(_) => 5,
+            Self::VerifyFailed(_) => 6,
         }
     }
 
@@ -84,6 +93,7 @@ impl fmt::Display for BackupError {
             Self::PasswordMismatch => write!(f, "Passwords do not match"),
             Self::EncryptionFailed(msg) => write!(f, "Encryption failed: {}", msg),
             Self::WriteFailed(msg) => write!(f, "Failed to write backup file: {}", msg),
+            Self::VerifyFailed(msg) => write!(f, "Backup integrity check failed: {}", msg),
         }
     }
 }
@@ -105,6 +115,7 @@ mod tests {
         assert_eq!(BackupError::PasswordMismatch.exit_code(), 3);
         assert_eq!(BackupError::EncryptionFailed("x".into()).exit_code(), 4);
         assert_eq!(BackupError::WriteFailed("x".into()).exit_code(), 5);
+        assert_eq!(BackupError::VerifyFailed("x".into()).exit_code(), 6);
     }
 
     // ── is_silent is always false ─────────────────────────────────────────────
@@ -116,9 +127,10 @@ mod tests {
         assert!(!BackupError::PasswordMismatch.is_silent());
         assert!(!BackupError::EncryptionFailed("x".into()).is_silent());
         assert!(!BackupError::WriteFailed("x".into()).is_silent());
+        assert!(!BackupError::VerifyFailed("x".into()).is_silent());
     }
 
-    // ── Display messages include the path / detail ─────────────────────────────
+    // ── Display messages include the path / detail ────────────────────────────
 
     #[test]
     fn backup_error_display_includes_path() {
@@ -139,6 +151,12 @@ mod tests {
             msg.contains("permission denied"),
             "Display must include the detail"
         );
+
+        let msg = BackupError::VerifyFailed("content mismatch".into()).to_string();
+        assert!(
+            msg.contains("content mismatch"),
+            "Display must include the detail"
+        );
     }
 
     #[test]
@@ -157,8 +175,18 @@ mod tests {
 
     #[test]
     fn backup_error_is_std_error() {
-        // Compile-time assertion: BackupError must coerce to &dyn std::error::Error.
         let e: &dyn std::error::Error = &BackupError::PasswordMismatch;
         assert!(!e.to_string().is_empty());
+    }
+
+    // ── VerifyFailed exit code is distinct from all others ────────────────────
+
+    #[test]
+    fn verify_failed_exit_code_is_6() {
+        // Ensures no accidental collision if new variants are added between
+        // WriteFailed (5) and VerifyFailed (6).
+        let code = BackupError::VerifyFailed("sha mismatch".into()).exit_code();
+        assert_eq!(code, 6);
+        assert_ne!(code, BackupError::WriteFailed("x".into()).exit_code());
     }
 }
