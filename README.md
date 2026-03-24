@@ -6,6 +6,7 @@
 [![PyPI](https://img.shields.io/pypi/v/evnx.svg)](https://pypi.org/project/evnx/)
 [![npm](https://img.shields.io/npm/v/@evnx/cli.svg)](https://www.npmjs.com/package/@evnx/cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-evnx--action-blue?logo=github)](https://github.com/marketplace/actions/evnx-env-security-validation)
 
 A CLI tool for managing `.env` files — validation, secret scanning, format conversion, and migration to cloud secret managers.
 

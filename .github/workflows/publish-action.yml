@@ -1,0 +1,91 @@
+name: Publish evnx-action to Marketplace
+
+on:
+  push:
+    tags:
+      - "v*.*.*"       # triggers on v0.4.0, v1.0.0, etc.
+
+jobs:
+  publish-action:
+    name: Sync release to evnx-action repo
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout evnx source
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"          # e.g. v0.4.0
+          MAJOR="v$(echo "$TAG" | cut -d. -f1 | tr -d v)"   # e.g. v0
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "major=$MAJOR" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout evnx-action repo
+        uses: actions/checkout@v4
+        with:
+          repository: urwithajit9/evnx-action
+          token: ${{ secrets.EVNX_ACTION_PAT }}
+          path: evnx-action-repo
+
+      # Bump the evnx version comment inside action.yml so the changelog is clear
+      - name: Update version reference in action.yml
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          sed -i "s|evnx-v[0-9]*\.[0-9]*\.[0-9]*|evnx-$TAG|g" evnx-action-repo/action.yml || true
+
+      - name: Commit + push to evnx-action repo
+        working-directory: evnx-action-repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add action.yml
+          git diff --cached --quiet || git commit -m "chore: bump evnx to ${{ steps.version.outputs.tag }}"
+          git push origin main
+
+      # Create the GitHub release on evnx-action — this IS the Marketplace publish
+      - name: Create release on evnx-action
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.EVNX_ACTION_PAT }}
+          script: |
+            const tag   = "${{ steps.version.outputs.tag }}";
+            const major = "${{ steps.version.outputs.major }}";
+
+            // Create (or force-update) the exact release tag
+            await github.rest.repos.createRelease({
+              owner: "urwithajit9",
+              repo:  "evnx-action",
+              tag_name:         tag,
+              target_commitish: "main",
+              name:             `evnx-action ${tag}`,
+              body: `## What's new\n\nUpdated to evnx \`${tag}\`.\n\nSee the [evnx changelog](https://evnx.dev/changelog) for details.`,
+              draft:            false,
+              prerelease:       tag.includes("-"),
+              make_latest:      "true",
+            });
+
+            // Keep the floating major tag (v1) pointing at latest
+            try {
+              await github.rest.git.deleteRef({
+                owner: "urwithajit9",
+                repo:  "evnx-action",
+                ref:   `tags/${major}`,
+              });
+            } catch (_) { /* tag may not exist yet */ }
+
+            await github.rest.git.createRef({
+              owner: "urwithajit9",
+              repo:  "evnx-action",
+              ref:   `refs/tags/${major}`,
+              sha:   (await github.rest.repos.getBranch({
+                owner: "urwithajit9",
+                repo:  "evnx-action",
+                branch: "main",
+              })).data.commit.sha,
+            });
+
+            console.log(`Released evnx-action ${tag} and updated floating tag ${major}`);
