@@ -6,168 +6,61 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
-
-### Backup Command
+## [0.3.8] - 2026-03-30
 
 ### Added
 
-- **`--key-file <PATH>`** flag on `evnx backup` — reads a file and uses its
-  contents as the encryption password, enabling fully non-interactive CI/CD
-  pipelines without storing a password in environment variables. UTF-8 content
-  is trimmed of surrounding whitespace; binary content is Base64-encoded before
-  being fed into Argon2id. A warning is emitted if both `--key-file` and a
-  future `--password` flag are supplied simultaneously.
-
-- **`--keep <N>`** flag on `evnx backup` (default: `3`) — rotates existing
-  backup files before each write so the last N backups are preserved alongside
-  the new one. Rotation renames in reverse order (`.backup.{N-1}` → `.backup.N`
-  first, then down to `.backup` → `.backup.1`) to prevent mid-chain clobbering.
-  Files at the overflow position are warned about but never deleted. Set `--keep 0`
-  to disable rotation and overwrite silently.
-
-- **`--verify`** flag on `evnx backup` — immediately re-decrypts the backup file
-  after writing and compares the recovered content byte-for-byte against the
-  original source. Exits with code 6 on mismatch and leaves the file on disk for
-  manual inspection. Costs one additional Argon2id round (~1 s).
-
-- **`BackupError::VerifyFailed`** — new typed error variant, exit code 6. Covers
-  both re-decryption failures and content-mismatch failures from `--verify`.
-
-- **Exit codes table** in `evnx backup --help` (`docs::BACKUP.after_help`):
-
-  | Code | Meaning |
-  |------|---------|
-  | 0 | Success |
-  | 1 | Generic error (IO, unexpected failure) |
-  | 2 | Source file not found or not a regular file |
-  | 3 | Password confirmation did not match |
-  | 4 | Encryption failed |
-  | 5 | Failed to write backup file |
-  | 6 | Post-write integrity check failed (`--verify`) |
+- `evnx backup --key-file <PATH>` — reads encryption password from a file
+  for fully non-interactive CI/CD pipelines. UTF-8 content is trimmed of
+  surrounding whitespace; binary content is Base64-encoded before Argon2id.
+- `evnx backup --keep <N>` (default: 3) — rotates existing backup files before
+  each write, preserving the last N backups. Set `--keep 0` to disable rotation.
+- `evnx backup --verify` — re-decrypts the backup immediately after writing and
+  compares byte-for-byte against the source. Exits with code 6 on mismatch.
+- `BackupError::VerifyFailed` — new typed error variant, exit code 6.
+- Exit codes table in `evnx backup --help` covering codes 0–6.
+- `evnx restore --inspect` — decrypt a backup and list variable key names
+  without writing any files. Values are never displayed.
+- `evnx restore --password-file <path>` and `EVNX_PASSWORD` environment
+  variable for non-interactive restore in CI/CD environments.
+- Argon2id progress spinner during the key-derivation step of `evnx restore`.
+- Structured exit codes for `evnx restore` covering codes 0–6.
 
 ### Changed
 
-- **`backup.rs` refactored into `backup/` module** — monolithic file split into
-  three focused files following the same structure as `restore/`:
-  - `mod.rs` — CLI adapter: header, password prompts, key-file resolution,
-    orchestration. No pure logic.
-  - `core.rs` — Pure logic: `BackupOptions`, `backup_inner`, `rotate_backups`,
-    `verify_backup`, `encrypt_content`, `decrypt_content`, `BackupMetadata`.
-    Fully testable without a TTY.
-  - `error.rs` — `BackupError` enum with exit codes, `Display`, and
-    `std::error::Error`.
-
-- **Password memory safety** — password string is now wrapped in a
-  `ZeroizeOnDrop` RAII guard inside `backup_inner` immediately on entry,
-  guaranteeing zeroization on every exit path including `?`-propagated errors
-  and panics. Previously the password was zeroized manually after
-  `encrypt_content` returned, leaving a window if encryption panicked.
-
-- **Argon2id spinner** — the static `println!("Encrypting…")` line has been
-  replaced with `ui::spinner()` + `finish_and_clear()`, matching the restore
-  command. Suppressed automatically when `--verbose` is active to avoid
-  interleaved output.
-
-- **Consistent header** — the hand-rolled `┌─ Create encrypted backup ───┐`
-  block has been replaced with `ui::print_header("evnx backup", …)`, matching
-  every other subcommand.
-
-- **Verbose diagnostics** — `--verbose` now emits a `ui::verbose_stderr` line
-  at every pipeline stage (source path, bytes read, password acceptance,
-  rotation, encryption, write, verify) instead of a single dimmed line at
-  startup.
-
-- **Success summary** — post-write output now uses `ui::print_key_value` with
-  Source / Backup / Size / Verified fields instead of bare `println!` calls.
-
-- **Next-steps block** — the "⚠️ Important:" section now uses a private
-  `print_next_steps()` helper (mirroring `restore/core.rs`) instead of
-  inline `println!` bullets.
-
-- **`run()` signature** extended with `key_file: Option<String>`, `keep: u32`,
-  `verify: bool`. `cli.rs` `Commands::Backup` variant updated with matching
-  `--key-file`, `--keep`, `--verify` arguments. `main.rs` dispatch arm updated
-  to destructure and forward all new fields.
-
-- **`BackupError` wired to `main.rs`** — the dispatch arm now downcasts to
-  `BackupError` and calls `exit_code()`, matching the restore dispatch pattern.
-  Previously all backup failures mapped to exit code 1.
+- `backup.rs` refactored into `backup/` module — split into `mod.rs`,
+  `core.rs`, and `error.rs` following the same structure as `restore/`.
+- Password memory safety — password string now wrapped in a `ZeroizeOnDrop`
+  RAII guard inside `backup_inner`, guaranteeing zeroization on all exit paths
+  including `?`-propagated errors and panics.
+- Argon2id spinner replaces static `println!("Encrypting…")` in backup,
+  matching the restore command. Suppressed when `--verbose` is active.
+- `evnx restore` internal architecture split into `core`, `source`, and
+  `error` modules — pure logic is independently testable without a terminal.
+- `evnx restore --verbose` now emits a diagnostic line at every pipeline stage
+  instead of a single line at startup.
+- Password, decrypted content, and ciphertext blob are all zeroized via RAII
+  guard on every exit path including panics.
+- Consistent header and success summary formatting across backup and restore
+  using shared `ui::` helpers.
 
 ### Fixed
 
-- **Off-by-one in `rotate_backups`** — loop range was `(1..keep)` which stopped
-  one position short, silently destroying the oldest backup in the chain instead
-  of shifting it. Corrected to `(1..=keep)`.
-
-- **`encrypt_content` re-export visibility** — changed from
-  `#[cfg(feature = "backup")]` to `#[cfg(all(feature = "backup", test))]` to
-  eliminate the unused-import warning in production builds. The symbol is only
-  consumed by `restore/core.rs` integration tests.
-
-- **Unused `colored::Colorize` import** — removed from `run()`'s feature block;
-  all colour output in that scope flows through `ui::` helpers which import the
-  trait internally.
+- Off-by-one in `rotate_backups` — loop range was `(1..keep)`, stopping one
+  position short and silently destroying the oldest backup. Corrected to
+  `(1..=keep)`.
+- `evnx restore <directory>` now reports a clear "not a regular file" error
+  instead of a confusing IO message.
+- `encrypt_content` re-export visibility corrected to eliminate unused-import
+  warning in production builds.
 
 ### Security
 
-- Password zeroization is now unconditional on all exit paths via `ZeroizeOnDrop`
-  (see Changed above). The previous implementation had a narrow panic window
-  between password acceptance and manual `zeroize()` after encryption.
+- Password zeroization is now unconditional on all exit paths via `ZeroizeOnDrop`.
+  The previous implementation had a narrow panic window between password
+  acceptance and manual `zeroize()` after encryption.
 
-
-### Added Restore Command
-
-- **`evnx restore --inspect`** — decrypt a backup and list variable key
-  names without writing any files. Values are never displayed. Useful for
-  confirming backup contents before a full restore.
-
-- **Non-interactive password input for `evnx restore`** — two new options
-  for CI/CD environments where interactive prompts are not possible:
-  - `--password-file <path>` — read the decryption password from a file.
-  - `EVNX_PASSWORD` environment variable — read and immediately unset.
-  Both options are less secure than the interactive prompt and print a
-  warning to stderr. The interactive prompt remains the default.
-
-- **Argon2id progress spinner** — a live spinner is shown during the
-  key-derivation step of `evnx restore`, which is deliberately slow (~1 s).
-  Suppressed automatically in `--verbose` mode.
-
-- **Structured exit codes for `evnx restore`** — shell scripts can now
-  branch on specific failure modes:
-
-  | Code | Meaning                                          |
-  |------|--------------------------------------------------|
-  | 0    | Success                                          |
-  | 1    | Generic error (IO, encoding, etc.)               |
-  | 2    | Wrong password or corrupt backup                 |
-  | 3    | Backup file not found                            |
-  | 4    | Restore cancelled by user                        |
-  | 5    | Restored to `.restored` fallback (bad content)   |
-  | 6    | evnx-cloud restore not yet available             |
-
-### Changed
-
-- `evnx restore` internal architecture split into focused modules
-  (`core`, `source`, `error`) — pure logic is now independently testable
-  without a terminal. No user-facing behaviour changes.
-
-- `evnx restore --verbose` now emits a diagnostic line at every pipeline
-  stage (source, output path, KDF start, variable count, schema version)
-  instead of a single line at the start.
-
-- Password is now zeroized via a RAII guard on every exit path including
-  `?`-propagated errors and panics. Decrypted content and ciphertext blob
-  are also explicitly zeroized after use.
-
-### Fixed
-
-- `evnx restore <directory>` now reports a clear "not a regular file"
-  error instead of a confusing IO message.
-
-- Metadata block (schema version, original file, created-at, variable
-  count) was duplicated between `--dry-run` and the normal path — now
-  rendered by a single `print_metadata()` helper.
+**Full Changelog**: https://github.com/urwithajit9/evnx/compare/v0.3.7...v0.3.8
 
 ---
 
