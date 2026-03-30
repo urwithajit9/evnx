@@ -19,6 +19,12 @@ A CLI tool for managing `.env` files — validation, secret scanning, format con
 Accidentally committing secrets to version control is one of the most common and costly developer mistakes. evnx is a local-first tool that catches misconfigurations, detects credential leaks, and converts environment files to the format each deployment target expects — before anything reaches CI or production.
 
 ---
+## Testing & playground
+
+→ [urwithajit9/evnx-test](https://github.com/urwithajit9/evnx-test) —
+try evnx in your browser via GitHub Actions, no installation required.
+
+---
 
 ## Installation
 
