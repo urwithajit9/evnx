@@ -236,7 +236,15 @@ pub struct MigrateOptions {
 #[derive(Subcommand, Debug)]
 pub enum CloudCommands {
     /// Show whether this machine is set up for cloud sync.
-    Status,
+    Status {
+        /// Also check that the server is reachable.
+        ///
+        /// Without this, `status` reads local files only and works offline.
+        /// With it, the command exits non-zero when the server cannot be
+        /// reached, so it can be used as a health check in a script.
+        #[arg(long)]
+        ping: bool,
+    },
 }
 
 /// evnx — Manage .env files with validation, secret scanning, and format conversion.

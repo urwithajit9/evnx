@@ -21,7 +21,7 @@
 //! ├── status.rs   `evnx cloud status`
 //! ├── config.rs   ~/.config/evnx/ and server resolution
 //! ├── creds.rs    credential store, file backend at mode 0600
-//! ├── client.rs   HTTP, typed errors, refresh-on-401                 PR 3
+//! ├── client.rs   HTTP, typed errors, refresh-on-401
 //! ├── auth.rs     register / login / logout / status                 PR 4–5
 //! ├── vault.rs    create / list / delete                             PR 6
 //! └── sync.rs     push / pull / history                              PR 7–8
@@ -43,6 +43,7 @@
 //! `cargo install evnx --features cloud` impossible, since `cargo publish` rejects
 //! path deps without a published version.
 
+pub mod client;
 pub mod config;
 pub mod creds;
 pub mod status;
@@ -57,7 +58,7 @@ use anyhow::Result;
 /// so the credential store is always keyed the same way.
 pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool) -> Result<()> {
     match command {
-        CloudCommands::Status => status::run(server_override, verbose),
+        CloudCommands::Status { ping } => status::run(server_override, ping, verbose),
     }
 }
 
