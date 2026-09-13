@@ -610,6 +610,13 @@ Use 'evnx convert' without --to for interactive format selection.
     Cloud {
         #[command(subcommand)]
         command: CloudCommands,
+
+        /// evnx server to talk to. Overrides EVNX_SERVER and config.toml.
+        ///
+        /// Plain http:// is refused for anything but a loopback address, because
+        /// the access and refresh tokens travel in request headers.
+        #[arg(long, value_name = "URL", global = true)]
+        server: Option<String>,
     },
 
     /// Diagnose common setup issues.
