@@ -249,6 +249,32 @@ pub enum AuthCommands {
         #[arg(long)]
         password_stdin: bool,
     },
+
+    /// Sign in to evnx cloud.
+    ///
+    /// Runs the SRP-6a exchange: the password is never sent, and the server has
+    /// to prove it holds your verifier before any session is stored.
+    Login {
+        /// Email address. Prompted for when omitted.
+        #[arg(long, value_name = "EMAIL")]
+        email: Option<String>,
+
+        /// Read the master password from stdin instead of prompting.
+        #[arg(long)]
+        password_stdin: bool,
+    },
+
+    /// Sign out of evnx cloud.
+    ///
+    /// Local credentials are removed even if the server cannot be reached, so
+    /// `logout` on a borrowed machine always clears that disk.
+    Logout,
+
+    /// Show your account as the server sees it.
+    ///
+    /// Makes an authenticated request. For local state without a network call,
+    /// use `evnx cloud status`.
+    Status,
 }
 
 /// Subcommands for `evnx cloud`.

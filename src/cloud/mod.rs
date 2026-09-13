@@ -74,6 +74,12 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
             email,
             password_stdin,
         } => auth::register(server_override, email, password_stdin, verbose),
+        AuthCommands::Login {
+            email,
+            password_stdin,
+        } => auth::login(server_override, email, password_stdin, verbose),
+        AuthCommands::Logout => auth::logout(server_override, verbose),
+        AuthCommands::Status => auth::status(server_override, verbose),
     }
 }
 
