@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    # `feat/**` so the long-lived cloud branch is actually checked. Without it CI
+    # runs only on main, and the whole cloud feature would land unverified.
+    branches: [ main, 'feat/**' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'feat/**' ]
 
 env:
   CARGO_TERM_COLOR: always

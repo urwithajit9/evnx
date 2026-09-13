@@ -227,6 +227,18 @@ pub struct MigrateOptions {
 // Cli: Top-level CLI structure
 // ─────────────────────────────────────────────────────────────
 
+/// Subcommands for `evnx cloud`.
+///
+/// Only `status` exists so far. Push, pull and history arrive with the sync
+/// commands; account and vault management live under `evnx auth` and
+/// `evnx vault` rather than here, matching the server's own route grouping.
+#[cfg(feature = "cloud")]
+#[derive(Subcommand, Debug)]
+pub enum CloudCommands {
+    /// Show whether this machine is set up for cloud sync.
+    Status,
+}
+
 /// evnx — Manage .env files with validation, secret scanning, and format conversion.
 #[derive(Parser)]
 #[command(
@@ -587,6 +599,17 @@ Use 'evnx convert' without --to for interactive format selection.
         ///   EVNX_PASSWORD=mypass evnx restore .env.backup
         #[arg(long, value_name = "PATH")]
         password_file: Option<String>,
+    },
+
+    /// Sync encrypted .env files with evnx cloud.
+    ///
+    /// Secrets are encrypted on this machine before upload. The server stores
+    /// ciphertext and cannot read them.
+    #[cfg(feature = "cloud")]
+    #[command(after_help = docs::CLOUD.after_help)]
+    Cloud {
+        #[command(subcommand)]
+        command: CloudCommands,
     },
 
     /// Diagnose common setup issues.

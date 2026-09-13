@@ -129,3 +129,10 @@ pub const RESTORE: CommandDoc = CommandDoc {
     description: "Restoring from encrypted backups",
     after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/restore",
 };
+
+pub const CLOUD: CommandDoc = CommandDoc {
+    command: "cloud",
+    url: "https://www.evnx.dev/guides/commands/cloud",
+    description: "Zero-knowledge encrypted .env sync",
+    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/cloud",
+};
