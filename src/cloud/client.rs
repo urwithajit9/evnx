@@ -540,7 +540,7 @@ fn transport_reason(e: &reqwest::Error) -> String {
 /// already handles.
 ///
 /// Do not repurpose this for anything that makes a security decision.
-fn jwt_exp(token: &str) -> Option<i64> {
+pub(crate) fn jwt_exp(token: &str) -> Option<i64> {
     use base64::Engine;
 
     let payload = token.split('.').nth(1)?;
