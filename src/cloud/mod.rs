@@ -22,7 +22,7 @@
 //! ├── config.rs   ~/.config/evnx/ and server resolution
 //! ├── creds.rs    credential store, file backend at mode 0600
 //! ├── client.rs   HTTP, typed errors, refresh-on-401
-//! ├── auth.rs     register / login / logout / status                 PR 4–5
+//! ├── auth.rs     register / login / logout / status
 //! ├── vault.rs    create / list / delete                             PR 6
 //! └── sync.rs     push / pull / history                              PR 7–8
 //! ```
@@ -43,12 +43,13 @@
 //! `cargo install evnx --features cloud` impossible, since `cargo publish` rejects
 //! path deps without a published version.
 
+pub mod auth;
 pub mod client;
 pub mod config;
 pub mod creds;
 pub mod status;
 
-use crate::cli::CloudCommands;
+use crate::cli::{AuthCommands, CloudCommands};
 use anyhow::Result;
 
 /// Dispatch an `evnx cloud …` subcommand.
@@ -59,6 +60,20 @@ use anyhow::Result;
 pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool) -> Result<()> {
     match command {
         CloudCommands::Status { ping } => status::run(server_override, ping, verbose),
+    }
+}
+
+/// Dispatch an `evnx auth …` subcommand.
+///
+/// Account management lives under `auth` rather than `cloud` so the command tree
+/// mirrors the server's own route grouping: `/api/v1/auth/*` here, `/vaults/*`
+/// under `evnx vault`, and blob sync under `evnx cloud`.
+pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: bool) -> Result<()> {
+    match command {
+        AuthCommands::Register {
+            email,
+            password_stdin,
+        } => auth::register(server_override, email, password_stdin, verbose),
     }
 }
 

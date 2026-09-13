@@ -255,6 +255,11 @@ fn main() -> Result<()> {
         }
 
         #[cfg(feature = "cloud")]
+        Commands::Auth { command, server } => {
+            evnx::cloud::run_auth(command, server.as_deref(), cli.verbose)
+        }
+
+        #[cfg(feature = "cloud")]
         Commands::Cloud { command, server } => {
             evnx::cloud::run(command, server.as_deref(), cli.verbose)
         }

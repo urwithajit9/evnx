@@ -227,6 +227,30 @@ pub struct MigrateOptions {
 // Cli: Top-level CLI structure
 // ─────────────────────────────────────────────────────────────
 
+/// Subcommands for `evnx auth`.
+#[cfg(feature = "cloud")]
+#[derive(Subcommand, Debug)]
+pub enum AuthCommands {
+    /// Create an evnx cloud account.
+    ///
+    /// Keys are derived on this machine. The master password is never sent —
+    /// the server receives an SRP verifier, two salts, two public keys, and the
+    /// private key sealed under the master key.
+    Register {
+        /// Email address. Prompted for when omitted.
+        #[arg(long, value_name = "EMAIL")]
+        email: Option<String>,
+
+        /// Read the master password from stdin instead of prompting.
+        ///
+        /// For scripts and the end-to-end test harness. The password is taken up
+        /// to the first newline; spaces are kept, because a passphrase may
+        /// contain them.
+        #[arg(long)]
+        password_stdin: bool,
+    },
+}
+
 /// Subcommands for `evnx cloud`.
 ///
 /// Only `status` exists so far. Push, pull and history arrive with the sync
@@ -607,6 +631,18 @@ Use 'evnx convert' without --to for interactive format selection.
         ///   EVNX_PASSWORD=mypass evnx restore .env.backup
         #[arg(long, value_name = "PATH")]
         password_file: Option<String>,
+    },
+
+    /// Manage your evnx cloud account.
+    #[cfg(feature = "cloud")]
+    #[command(after_help = docs::AUTH.after_help)]
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommands,
+
+        /// evnx server to talk to. Overrides EVNX_SERVER and config.toml.
+        #[arg(long, value_name = "URL", global = true)]
+        server: Option<String>,
     },
 
     /// Sync encrypted .env files with evnx cloud.
