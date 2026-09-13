@@ -129,15 +129,15 @@ impl CloudConfig {
     /// is safe to use as the credential-store key.
     pub fn resolve_server(cli_override: Option<&str>) -> Result<String> {
         if let Some(s) = cli_override {
-            return canonical_server(s).context("--server");
+            return canonical_server(s).context("invalid --server value");
         }
         if let Ok(s) = std::env::var(ENV_SERVER) {
             if !s.trim().is_empty() {
-                return canonical_server(&s).context(ENV_SERVER);
+                return canonical_server(&s).with_context(|| format!("invalid {ENV_SERVER} value"));
             }
         }
         if let Some(s) = Self::load()?.server {
-            return canonical_server(&s).context("server in config.toml");
+            return canonical_server(&s).context("invalid `server` in config.toml");
         }
         canonical_server(DEFAULT_SERVER)
     }

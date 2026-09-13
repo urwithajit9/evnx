@@ -136,3 +136,10 @@ pub const CLOUD: CommandDoc = CommandDoc {
     description: "Zero-knowledge encrypted .env sync",
     after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/cloud",
 };
+
+pub const AUTH: CommandDoc = CommandDoc {
+    command: "auth",
+    url: "https://www.evnx.dev/guides/commands/auth",
+    description: "Account registration and sign-in",
+    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/auth",
+};
