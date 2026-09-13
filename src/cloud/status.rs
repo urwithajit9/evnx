@@ -3,15 +3,21 @@
 use anyhow::Result;
 use colored::Colorize;
 
+use super::client::Client;
 use super::config::{self, CloudConfig};
 use super::creds::Store;
 
 /// Print the cloud-sync state for the resolved server.
 ///
-/// Reads only local files and makes no network request, so it stays useful when
-/// the server is unreachable — "am I signed in?" and "can I reach the server?"
-/// are different questions and this one answers the first.
-pub fn run(server_override: Option<&str>, verbose: bool) -> Result<()> {
+/// Without `ping` this reads local files only and makes no network request, so it
+/// stays useful when the server is down — "am I signed in?" and "can I reach the
+/// server?" are different questions, and answering the first should not depend on
+/// the second.
+///
+/// With `ping` it also calls `GET /health` and **returns an error when the server
+/// cannot be reached**, so `evnx cloud status --ping` works as a health check in a
+/// script. The local state is printed either way, before the check runs.
+pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let store = Store::load()?;
     let now = chrono::Utc::now().timestamp();
@@ -62,9 +68,35 @@ pub fn run(server_override: Option<&str>, verbose: bool) -> Result<()> {
         println!("  No network request was made.");
     }
 
-    println!();
-    println!("{}", crate::docs::CLOUD.hint_line());
-    Ok(())
+    if ping {
+        println!();
+        match Client::new(server.clone()).and_then(|c| c.health()) {
+            Ok(health) => {
+                println!(
+                    "  reachable {} (server {} v{})",
+                    "yes".green(),
+                    health.status,
+                    health.version
+                );
+                println!();
+                println!("{}", crate::docs::CLOUD.hint_line());
+                Ok(())
+            }
+            Err(e) => {
+                println!("  reachable {}", "no".red());
+                println!();
+                // Returned rather than merely printed: the exit code is what a
+                // health-check script reads. Re-wrapped as a flat message so the
+                // reason prints on one line instead of as an anyhow chain that
+                // repeats the server URL.
+                Err(anyhow::anyhow!("{e}"))
+            }
+        }
+    } else {
+        println!();
+        println!("{}", crate::docs::CLOUD.hint_line());
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -79,8 +111,8 @@ mod tests {
     #[serial]
     fn status_works_with_no_config_at_all() {
         let _g = ConfigDirGuard::new();
-        run(None, false).unwrap();
-        run(None, true).unwrap();
+        run(None, false, false).unwrap();
+        run(None, false, true).unwrap();
     }
 
     #[test]
@@ -100,15 +132,50 @@ mod tests {
         store.save().unwrap();
 
         // Default server has no session; the localhost one does. Both render.
-        run(None, false).unwrap();
-        run(Some("http://localhost:8099"), true).unwrap();
+        run(None, false, false).unwrap();
+        run(Some("http://localhost:8099"), false, true).unwrap();
     }
 
     #[test]
     #[serial]
     fn an_unusable_server_url_is_an_error_not_a_silent_default() {
         let _g = ConfigDirGuard::new();
-        assert!(run(Some("http://api.evnx.dev"), false).is_err());
-        assert!(run(Some("not-a-url"), false).is_err());
+        assert!(run(Some("http://api.evnx.dev"), false, false).is_err());
+        assert!(run(Some("not-a-url"), false, false).is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn ping_succeeds_against_a_healthy_server() {
+        let _g = ConfigDirGuard::new();
+        let mut server = mockito::Server::new();
+        let m = server
+            .mock("GET", "/health")
+            .with_status(200)
+            .with_body(r#"{"status":"ok","version":"0.1.0"}"#)
+            .create();
+
+        run(Some(&server.url()), true, false).unwrap();
+        m.assert();
+    }
+
+    #[test]
+    #[serial]
+    fn ping_exits_non_zero_when_the_server_is_down() {
+        // The whole point of --ping: a script can rely on the exit code.
+        let _g = ConfigDirGuard::new();
+        let err = run(Some("http://127.0.0.1:1"), true, false).unwrap_err();
+        let rendered = format!("{err:#}");
+        assert!(rendered.contains("could not reach"), "{rendered}");
+        // One line, not an anyhow chain through reqwest and hyper.
+        assert_eq!(rendered.lines().count(), 1, "{rendered}");
+    }
+
+    #[test]
+    #[serial]
+    fn without_ping_a_dead_server_is_not_an_error() {
+        // Local state must still be answerable when the server is unreachable.
+        let _g = ConfigDirGuard::new();
+        run(Some("http://127.0.0.1:1"), false, false).unwrap();
     }
 }
