@@ -76,7 +76,7 @@ impl MigrationDestination for AwsDestination {
             println!("  Secret name : {}", self.secret_name);
             println!("  Secrets     : {}", secrets.len());
             println!("\n  JSON preview (first 300 chars):");
-            println!("  {}", &json.chars().take(300).collect::<String>());
+            println!("  {}", json.chars().take(300).collect::<String>());
             if json.len() > 300 {
                 println!("  … ({} more chars)", json.len() - 300);
             }
