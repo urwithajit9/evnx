@@ -25,6 +25,11 @@
 // ─────────────────────────────────────────────────────────────
 
 pub mod cli;
+// One gate at the declaration rather than a `#[cfg]` on every item inside, which
+// is how `backup` does it (26 of them in core.rs alone). Without the feature the
+// module simply does not exist, so there is nothing to keep in sync.
+#[cfg(feature = "cloud")]
+pub mod cloud;
 pub mod commands;
 pub mod core;
 pub mod docs;

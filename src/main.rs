@@ -254,6 +254,9 @@ fn main() -> Result<()> {
             }
         }
 
+        #[cfg(feature = "cloud")]
+        Commands::Cloud { command } => evnx::cloud::run(command, cli.verbose),
+
         Commands::Doctor { path, verbose } => evnx::commands::doctor::run(path, verbose),
 
         Commands::Completions { shell } => commands::completions::run(shell),
