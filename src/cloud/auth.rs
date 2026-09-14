@@ -382,7 +382,7 @@ fn login_with_password(
                     totp_code: code.trim().to_string(),
                 },
             )
-            .map_err(|e| anyhow!("{e}"))?;
+            .map_err(second_factor_error)?;
         (
             totp.access_token,
             totp.refresh_token,
@@ -557,6 +557,32 @@ pub(crate) fn derive_master_key_for_account(
 #[derive(Deserialize)]
 struct MeSalt {
     argon2_salt: String,
+}
+
+/// Explain a rejected second factor in terms of the step the user is actually on.
+///
+/// The server answers 401 here, and the generic mapping for that is "your session
+/// has expired — run `evnx auth login`", which is nonsense mid-login: it tells
+/// someone to do the thing they are already doing. A wrong code at this point
+/// means the code was wrong, the clock has drifted, or a recovery code has
+/// already been spent.
+fn second_factor_error(e: super::client::ApiError) -> anyhow::Error {
+    use super::client::ApiError;
+    match e {
+        ApiError::Unauthorized => anyhow!(
+            "that second factor was not accepted.\n\
+             \x20 Authenticator codes last 30 seconds — try the next one. If they keep \
+             failing, check this device's clock.\n\
+             \x20 Recovery codes work once each: if you have used this one before, it \
+             is spent."
+        ),
+        ApiError::Locked { message } => anyhow!(
+            "{message}\n\
+             \x20 Too many failed attempts. A recovery code still works during the \
+             lockout if you have one left."
+        ),
+        other => anyhow!("{other}"),
+    }
 }
 
 fn prompt_totp_code() -> Result<String> {
@@ -735,6 +761,34 @@ mod tests {
     }
 
     // ─── login ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn a_rejected_second_factor_does_not_tell_you_to_log_in_again() {
+        // The server answers 401, whose generic mapping is "your session has
+        // expired — run `evnx auth login`". Mid-login that is nonsense: it tells
+        // someone to do the thing they are already doing. Caught live, during the
+        // first test of the recovery-code branch.
+        use crate::cloud::client::ApiError;
+        let err = second_factor_error(ApiError::Unauthorized).to_string();
+        assert!(!err.contains("evnx auth login"), "{err}");
+        assert!(err.contains("30 seconds"), "{err}");
+        assert!(err.contains("clock"), "{err}");
+        assert!(
+            err.contains("once each"),
+            "recovery reuse should be named: {err}"
+        );
+    }
+
+    #[test]
+    fn a_lockout_still_points_at_recovery_codes() {
+        use crate::cloud::client::ApiError;
+        let err = second_factor_error(ApiError::Locked {
+            message: "Account temporarily locked".into(),
+        })
+        .to_string();
+        assert!(err.contains("Account temporarily locked"), "{err}");
+        assert!(err.contains("recovery code"), "{err}");
+    }
 
     #[test]
     fn the_srp_identity_is_normalised_the_same_way_the_server_normalises_email() {

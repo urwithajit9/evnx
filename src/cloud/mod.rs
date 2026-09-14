@@ -48,12 +48,16 @@ pub mod binding;
 pub mod client;
 pub mod config;
 pub mod creds;
+pub mod session;
 pub mod status;
 pub mod sync;
 pub mod token;
+pub mod totp;
 pub mod vault;
 
-use crate::cli::{AuthCommands, CloudCommands, TokenCommands, VaultCommands};
+use crate::cli::{
+    AuthCommands, CloudCommands, SessionCommands, TokenCommands, TotpCommands, VaultCommands,
+};
 use anyhow::Result;
 
 /// Dispatch an `evnx cloud …` subcommand.
@@ -109,6 +113,20 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
         } => auth::login(server_override, email, password_stdin, verbose),
         AuthCommands::Logout => auth::logout(server_override, verbose),
         AuthCommands::Status => auth::status(server_override, verbose),
+        AuthCommands::Totp { command } => match command {
+            TotpCommands::Enable => totp::enable(server_override, verbose),
+            TotpCommands::Disable => totp::disable(server_override, verbose),
+            TotpCommands::RecoveryCodes => totp::regenerate(server_override, verbose),
+        },
+        AuthCommands::Sessions { command } => match command {
+            SessionCommands::List => session::list(server_override, verbose),
+            SessionCommands::Revoke { target, yes } => {
+                session::revoke(server_override, target, yes, verbose)
+            }
+            SessionCommands::RevokeOthers { yes } => {
+                session::revoke_others(server_override, yes, verbose)
+            }
+        },
         AuthCommands::Token { command } => match command {
             TokenCommands::Create {
                 name,

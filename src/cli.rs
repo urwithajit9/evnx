@@ -276,6 +276,18 @@ pub enum AuthCommands {
         command: TokenCommands,
     },
 
+    /// Manage two-factor authentication.
+    Totp {
+        #[command(subcommand)]
+        command: TotpCommands,
+    },
+
+    /// List and revoke active sessions.
+    Sessions {
+        #[command(subcommand)]
+        command: SessionCommands,
+    },
+
     /// Show your account as the server sees it.
     ///
     /// Makes an authenticated request. For local state without a network call,
@@ -316,6 +328,52 @@ pub enum TokenCommands {
         /// Token name or id.
         target: String,
 
+        /// Skip the confirmation prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+}
+
+/// Subcommands for `evnx auth totp`.
+#[cfg(feature = "cloud")]
+#[derive(Subcommand, Debug)]
+pub enum TotpCommands {
+    /// Turn on two-factor authentication.
+    ///
+    /// Shows a QR code to scan, then issues ten single-use recovery codes.
+    /// Save them: the server holds only ciphertext, so a lost authenticator
+    /// with no recovery code is an account nobody can restore.
+    Enable,
+
+    /// Turn two-factor authentication off.
+    ///
+    /// Requires a current code, not just a live session, so a stolen session
+    /// cannot strip the second factor off your account.
+    Disable,
+
+    /// Issue a fresh set of recovery codes, invalidating the old ones.
+    RecoveryCodes,
+}
+
+/// Subcommands for `evnx auth sessions`.
+#[cfg(feature = "cloud")]
+#[derive(Subcommand, Debug)]
+pub enum SessionCommands {
+    /// List active sessions.
+    List,
+
+    /// Revoke one session by id, or by the short form the listing shows.
+    Revoke {
+        /// Session id, or enough of its start to be unambiguous.
+        target: String,
+
+        /// Skip the confirmation prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+
+    /// Revoke every session except this one.
+    RevokeOthers {
         /// Skip the confirmation prompt.
         #[arg(long, short = 'y')]
         yes: bool,
