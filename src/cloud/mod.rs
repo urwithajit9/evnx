@@ -50,9 +50,10 @@ pub mod config;
 pub mod creds;
 pub mod status;
 pub mod sync;
+pub mod token;
 pub mod vault;
 
-use crate::cli::{AuthCommands, CloudCommands, VaultCommands};
+use crate::cli::{AuthCommands, CloudCommands, TokenCommands, VaultCommands};
 use anyhow::Result;
 
 /// Dispatch an `evnx cloud …` subcommand.
@@ -108,6 +109,25 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
         } => auth::login(server_override, email, password_stdin, verbose),
         AuthCommands::Logout => auth::logout(server_override, verbose),
         AuthCommands::Status => auth::status(server_override, verbose),
+        AuthCommands::Token { command } => match command {
+            TokenCommands::Create {
+                name,
+                scope,
+                vault,
+                expires_in_days,
+            } => token::create(
+                server_override,
+                name,
+                scope,
+                vault,
+                expires_in_days,
+                verbose,
+            ),
+            TokenCommands::List => token::list(server_override, verbose),
+            TokenCommands::Revoke { target, yes } => {
+                token::revoke(server_override, target, yes, verbose)
+            }
+        },
     }
 }
 

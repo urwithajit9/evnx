@@ -270,11 +270,56 @@ pub enum AuthCommands {
     /// `logout` on a borrowed machine always clears that disk.
     Logout,
 
+    /// Manage API tokens for CI/CD.
+    Token {
+        #[command(subcommand)]
+        command: TokenCommands,
+    },
+
     /// Show your account as the server sees it.
     ///
     /// Makes an authenticated request. For local state without a network call,
     /// use `evnx cloud status`.
     Status,
+}
+
+/// Subcommands for `evnx auth token`.
+#[cfg(feature = "cloud")]
+#[derive(Subcommand, Debug)]
+pub enum TokenCommands {
+    /// Mint a token. Shown once, then only revocable.
+    ///
+    /// A token authenticates API requests; it does not decrypt. A pipeline also
+    /// needs the master password, so scope the token tightly.
+    Create {
+        /// A name you will recognise later, e.g. "github-actions".
+        name: String,
+
+        /// `read` or `read_write`.
+        #[arg(long, default_value = "read")]
+        scope: String,
+
+        /// Restrict the token to one vault. Strongly recommended for CI.
+        #[arg(long, value_name = "VAULT")]
+        vault: Option<String>,
+
+        /// Expire after this many days. Omit for a token that never expires.
+        #[arg(long, value_name = "DAYS")]
+        expires_in_days: Option<i64>,
+    },
+
+    /// List the account's live tokens.
+    List,
+
+    /// Revoke a token by name or id.
+    Revoke {
+        /// Token name or id.
+        target: String,
+
+        /// Skip the confirmation prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
 }
 
 /// Subcommands for `evnx vault`.

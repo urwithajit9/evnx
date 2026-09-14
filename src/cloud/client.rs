@@ -35,6 +35,14 @@ use std::time::Duration;
 
 use super::creds::{SecretString, Store};
 
+/// Supplies an `evnx_tok_` API token instead of a signed-in session.
+///
+/// For CI, where there is no credential store and no interactive login. When set,
+/// it takes precedence over any stored session — a pipeline should use the
+/// credential it was given, not one that happens to be lying around on a shared
+/// runner.
+pub const ENV_TOKEN: &str = "EVNX_TOKEN";
+
 /// Time allowed to establish a connection.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -215,6 +223,16 @@ struct ServerError {
     code: String,
 }
 
+/// How a client proves who it is.
+enum Credential {
+    /// A signed-in session from the credential store: short access token, rotated
+    /// refresh token, renewed automatically.
+    Session,
+    /// An `evnx_tok_` API token from [`ENV_TOKEN`]. Long-lived, never refreshed —
+    /// it is revoked or it expires.
+    ApiToken(SecretString),
+}
+
 /// A client bound to one server.
 pub struct Client {
     /// Canonical server URL — also the credential-store key.
@@ -223,6 +241,7 @@ pub struct Client {
     /// Loaded once so the permission check and its warning happen once per
     /// command rather than once per request.
     store: RefCell<Store>,
+    credential: Credential,
 }
 
 impl Client {
@@ -246,10 +265,19 @@ impl Client {
             .build()
             .context("building the HTTP client")?;
         let store = Store::load().context("reading the credential store")?;
+
+        // An explicitly supplied token wins over a stored session. On a shared CI
+        // runner the stored session may belong to someone else entirely.
+        let credential = match std::env::var(ENV_TOKEN) {
+            Ok(t) if !t.trim().is_empty() => Credential::ApiToken(SecretString::new(t.trim())),
+            _ => Credential::Session,
+        };
+
         Ok(Client {
             server,
             http,
             store: RefCell::new(store),
+            credential,
         })
     }
 
@@ -258,9 +286,21 @@ impl Client {
         &self.server
     }
 
-    /// Whether there is a stored session for this server.
+    /// Whether this client has a usable credential — a stored session, or an
+    /// API token from the environment.
     pub fn is_signed_in(&self) -> bool {
-        self.store.borrow().session(&self.server).is_some()
+        matches!(self.credential, Credential::ApiToken(_))
+            || self.store.borrow().session(&self.server).is_some()
+    }
+
+    /// Whether the credential is an API token rather than a login.
+    ///
+    /// Commands that manage the account refuse these: the server answers 403 for
+    /// a token on `/auth/tokens` or `/auth/totp/*`, deliberately, so a leaked CI
+    /// token cannot mint a replacement or enrol its own authenticator. Saying so
+    /// before the request makes the reason obvious.
+    pub fn is_api_token(&self) -> bool {
+        matches!(self.credential, Credential::ApiToken(_))
     }
 
     fn url(&self, path: &str) -> String {
@@ -405,6 +445,12 @@ impl Client {
 
     /// The current access token, refreshing first if it is expired or near it.
     fn access_token(&self) -> Result<SecretString, ApiError> {
+        // An API token is sent as-is. It has no expiry the client can see and no
+        // refresh path — it is revoked, or it lapses server-side.
+        if let Credential::ApiToken(t) = &self.credential {
+            return Ok(t.clone());
+        }
+
         let now = chrono::Utc::now().timestamp();
         {
             let store = self.store.borrow();
@@ -433,6 +479,12 @@ impl Client {
     /// revoked the old refresh token by the time this returns, so an unsaved
     /// renewal is a lost session.
     fn refresh(&self) -> Result<(), ApiError> {
+        if self.is_api_token() {
+            // A 401 on an API token means revoked, expired, or wrong — none of
+            // which a refresh could fix. Retrying would just repeat it.
+            return Err(ApiError::Unauthorized);
+        }
+
         let refresh_token = {
             let store = self.store.borrow();
             store

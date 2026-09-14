@@ -180,11 +180,10 @@ pub fn push(
         .map_err(|e| push_error(e, current))?;
 
     println!(
-        "  {} pushed {} to {}/{} as version {}",
+        "  {} pushed {} to {} as version {}",
         "✓".green(),
         file.display(),
-        vault_ref.name,
-        vault_ref.environment,
+        vault_ref.label(),
         pushed.version_num
     );
     if let Some(note) = parse_note {
@@ -237,9 +236,8 @@ pub fn pull(
             let latest = current_version(&client, &vault_ref)?;
             if latest == 0 {
                 return Err(anyhow!(
-                    "{}/{} has no versions yet. Push one with `evnx cloud push`.",
-                    vault_ref.name,
-                    vault_ref.environment
+                    "{} has no versions yet. Push one with `evnx cloud push`.",
+                    vault_ref.label()
                 ));
             }
             latest
@@ -278,13 +276,12 @@ pub fn pull(
     )
     .map_err(|_| {
         anyhow!(
-            "could not decrypt version {version} of {}/{}.\n\
+            "could not decrypt version {version} of {}.\n\
              \x20 Either the master password is wrong, or the server served a different \
              version than it claimed — the version number is authenticated into the \
              ciphertext, so a substituted blob fails here rather than decrypting to \
              stale secrets.",
-            vault_ref.name,
-            vault_ref.environment
+            vault_ref.label()
         )
     })?;
 
@@ -296,10 +293,9 @@ pub fn pull(
         .with_context(|| format!("writing {}", file.display()))?;
 
     println!(
-        "  {} pulled version {version} of {}/{} into {}",
+        "  {} pulled version {version} of {} into {}",
         "✓".green(),
-        vault_ref.name,
-        vault_ref.environment,
+        vault_ref.label(),
         file.display()
     );
     if verbose {
@@ -330,10 +326,7 @@ pub fn history(
         .map_err(|e| anyhow!("{e}"))?;
 
     if listed.versions.is_empty() {
-        println!(
-            "  {}/{} has no versions yet.",
-            vault_ref.name, vault_ref.environment
-        );
+        println!("  {} has no versions yet.", vault_ref.label());
         println!("  Push one with:  {}", "evnx cloud push".cyan());
         return Ok(());
     }
@@ -477,10 +470,9 @@ fn unwrap_vault_key(
         // Opening it needs the X25519 private key, which means decrypting the
         // account keypair first — that arrives with vault sharing.
         return Err(anyhow!(
-            "{}/{} was shared with you, and opening a shared vault is not supported yet.\n\
+            "{} was shared with you, and opening a shared vault is not supported yet.\n\
              \x20 Shared keys are ECDH-wrapped; that path lands with `evnx vault share`.",
-            vault_ref.name,
-            vault_ref.environment
+            vault_ref.label()
         ));
     }
 
@@ -489,9 +481,8 @@ fn unwrap_vault_key(
 
     unwrap_vault_key_with_master_key(&wrapped, master_key).map_err(|_| {
         anyhow!(
-            "could not unwrap the key for {}/{} — the master password is probably wrong.",
-            vault_ref.name,
-            vault_ref.environment
+            "could not unwrap the key for {} — the master password is probably wrong.",
+            vault_ref.label()
         )
     })
 }
