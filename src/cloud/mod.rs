@@ -44,6 +44,7 @@
 //! path deps without a published version.
 
 pub mod auth;
+pub mod binding;
 pub mod client;
 pub mod config;
 pub mod creds;
@@ -81,6 +82,11 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             password_stdin,
             verbose,
         ),
+        CloudCommands::History { vault, limit } => {
+            sync::history(server_override, vault, limit, verbose)
+        }
+        CloudCommands::Link { vault } => sync::link(server_override, vault, verbose),
+        CloudCommands::Unlink => sync::unlink(verbose),
         CloudCommands::Status { ping } => status::run(server_override, ping, verbose),
     }
 }

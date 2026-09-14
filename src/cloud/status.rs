@@ -51,6 +51,29 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
         }
     }
 
+    // Where a bare `evnx cloud push` in this directory would go. Surfaced here
+    // so it is never a guess — a binding can come from a parent directory.
+    match std::env::current_dir()
+        .ok()
+        .and_then(|d| super::binding::read(&d).ok().flatten())
+    {
+        Some(bound) => {
+            println!();
+            println!("  vault     {}", bound.vault.bold());
+            if verbose {
+                println!("  bound by  {}", bound.path.display());
+            }
+        }
+        None if verbose => {
+            println!();
+            println!(
+                "  vault     {} — push and pull need --vault",
+                "not bound".dimmed()
+            );
+        }
+        None => {}
+    }
+
     let others: Vec<&str> = store.servers().filter(|s| *s != server).collect();
     if !others.is_empty() {
         println!();

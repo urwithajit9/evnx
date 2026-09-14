@@ -37,12 +37,40 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use super::auth;
+use super::binding;
 use super::client::{ApiError, Client};
 use super::config::CloudConfig;
 use super::vault::{self, VaultRef};
 
 /// AES-GCM nonce length. The stored blob is `nonce || ciphertext`.
 const NONCE_LEN: usize = 12;
+
+/// Work out which vault a command means.
+///
+/// `--vault` wins; otherwise the directory's binding from `.evnx.toml`. When the
+/// binding is used it is announced, so a push never goes somewhere the person
+/// running it cannot see from the output.
+fn resolve_target(explicit: Option<String>) -> Result<String> {
+    if let Some(v) = explicit {
+        return Ok(v);
+    }
+    let cwd = std::env::current_dir().context("reading the current directory")?;
+    match binding::read(&cwd)? {
+        Some(bound) => {
+            println!(
+                "  using {} from {}",
+                bound.vault.bold(),
+                bound.path.display()
+            );
+            Ok(bound.vault)
+        }
+        None => Err(anyhow!(
+            "no vault given and this directory has no binding.\n\
+             \x20 Pass --vault <name>, or bind the directory once with \
+             `evnx cloud link <name>`."
+        )),
+    }
+}
 
 #[derive(Serialize)]
 struct PushVersionRequest {
@@ -71,6 +99,26 @@ struct LatestVersion {
 }
 
 #[derive(Deserialize)]
+struct VersionList {
+    versions: Vec<VersionSummary>,
+}
+
+#[derive(Deserialize)]
+struct VersionSummary {
+    version_num: i32,
+    key_count: i32,
+    key_names: Vec<String>,
+    blob_size_bytes: i64,
+    pushed_by: String,
+    pushed_at: String,
+}
+
+#[derive(Deserialize)]
+struct MeId {
+    user_id: String,
+}
+
+#[derive(Deserialize)]
 struct MyKey {
     encrypted_vault_key: String,
     /// Present only when this copy was ECDH-wrapped for a recipient — that is,
@@ -82,12 +130,14 @@ struct MyKey {
 #[allow(clippy::too_many_arguments)]
 pub fn push(
     server_override: Option<&str>,
-    vault_target: String,
+    vault_target: Option<String>,
     file: PathBuf,
     password_stdin: bool,
     verbose: bool,
 ) -> Result<()> {
     use evnx_crypto::{b64_encode, encrypt_vault, vault_aad};
+
+    let vault_target = resolve_target(vault_target)?;
 
     // Read before anything else: a missing file should fail instantly, not after
     // a password prompt and a second of Argon2id.
@@ -165,7 +215,7 @@ pub fn push(
 #[allow(clippy::too_many_arguments)]
 pub fn pull(
     server_override: Option<&str>,
-    vault_target: String,
+    vault_target: Option<String>,
     file: PathBuf,
     version: Option<i32>,
     force: bool,
@@ -173,6 +223,8 @@ pub fn pull(
     verbose: bool,
 ) -> Result<()> {
     use evnx_crypto::{decrypt_vault, vault_aad, EncryptedBlob};
+
+    let vault_target = resolve_target(vault_target)?;
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
@@ -255,6 +307,145 @@ pub fn pull(
         println!("  mode      0600");
     }
     Ok(())
+}
+
+/// List a vault's versions, newest first.
+///
+/// Read-only and cheap: no password, no decryption, no blob download. It answers
+/// "what is in here and when did it change" without opening anything.
+pub fn history(
+    server_override: Option<&str>,
+    vault_target: Option<String>,
+    limit: usize,
+    verbose: bool,
+) -> Result<()> {
+    let vault_target = resolve_target(vault_target)?;
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    vault::require_session(&client, &server)?;
+    let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
+
+    let listed: VersionList = client
+        .get(&format!("/api/v1/vaults/{}/versions", vault_ref.id))
+        .map_err(|e| anyhow!("{e}"))?;
+
+    if listed.versions.is_empty() {
+        println!(
+            "  {}/{} has no versions yet.",
+            vault_ref.name, vault_ref.environment
+        );
+        println!("  Push one with:  {}", "evnx cloud push".cyan());
+        return Ok(());
+    }
+
+    // `pushed_by` is a user id and nothing can turn it into a name — the API has
+    // no id-to-email lookup. For a vault you created it is always you, so say so
+    // and fall back to a short id otherwise. Worth revisiting when sharing ships.
+    let me: Option<String> = client
+        .get::<MeId>("/api/v1/auth/me")
+        .ok()
+        .map(|m| m.user_id);
+
+    let mut rows: Vec<&VersionSummary> = listed.versions.iter().collect();
+    rows.sort_by_key(|v| std::cmp::Reverse(v.version_num));
+    let shown = rows.len().min(limit);
+
+    println!(
+        "  {:>7}  {:>4}  {:>7}  {:<10}  {}",
+        "VERSION".bold(),
+        "KEYS".bold(),
+        "SIZE".bold(),
+        "PUSHED BY".bold(),
+        "PUSHED".bold()
+    );
+    for v in rows.iter().take(shown) {
+        let who = match &me {
+            Some(id) if *id == v.pushed_by => "you".to_string(),
+            _ => v.pushed_by.chars().take(8).collect(),
+        };
+        println!(
+            "  {:>7}  {:>4}  {:>7}  {:<10}  {}",
+            v.version_num,
+            v.key_count,
+            human_size(v.blob_size_bytes),
+            who,
+            v.pushed_at
+                .replace('T', " ")
+                .chars()
+                .take(16)
+                .collect::<String>()
+        );
+        if verbose {
+            println!("           keys: {}", v.key_names.join(", "));
+        }
+    }
+
+    if rows.len() > shown {
+        println!(
+            "  … {} older version(s). Use --limit to see more.",
+            rows.len() - shown
+        );
+    }
+    println!();
+    println!(
+        "  Restore one with:  {}",
+        format!("evnx cloud pull --version {}", rows[0].version_num).cyan()
+    );
+    Ok(())
+}
+
+/// Bind this directory to a vault.
+///
+/// The vault is looked up before anything is written, so a typo fails here
+/// rather than at the next push.
+pub fn link(server_override: Option<&str>, vault_target: String, verbose: bool) -> Result<()> {
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    vault::require_session(&client, &server)?;
+    let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
+
+    let cwd = std::env::current_dir().context("reading the current directory")?;
+    let canonical = format!("{}/{}", vault_ref.name, vault_ref.environment);
+    let path = binding::write(&cwd, &canonical)?;
+
+    println!("  {} bound this directory to {canonical}", "✓".green());
+    println!("  written to {}", path.display());
+    println!();
+    println!("  `evnx cloud push` and `pull` now work here without --vault.");
+    println!("  Safe to commit — a vault name is not a secret, and sharing it");
+    println!("  means a teammate's pull lands in the same place.");
+    if verbose {
+        println!("  vault id  {}", vault_ref.id);
+    }
+    Ok(())
+}
+
+/// Remove this directory's binding.
+pub fn unlink(verbose: bool) -> Result<()> {
+    let cwd = std::env::current_dir().context("reading the current directory")?;
+    match binding::clear(&cwd)? {
+        Some(path) => {
+            println!("  {} removed the vault binding", "✓".green());
+            if verbose {
+                println!("  from {}", path.display());
+            }
+        }
+        None => println!("  This directory has no vault binding."),
+    }
+    Ok(())
+}
+
+/// Bytes in a form a person reads at a glance.
+fn human_size(bytes: i64) -> String {
+    const KIB: f64 = 1024.0;
+    let b = bytes as f64;
+    if b < KIB {
+        format!("{bytes} B")
+    } else if b < KIB * KIB {
+        format!("{:.1} KiB", b / KIB)
+    } else {
+        format!("{:.1} MiB", b / (KIB * KIB))
+    }
 }
 
 /// Latest version number, or 0 when the vault has never been pushed to.
@@ -430,6 +621,25 @@ mod tests {
         assert!(decrypt_vault(&blob, &key, &vault_aad("v", 4)).is_err());
         assert!(decrypt_vault(&blob, &key, &vault_aad("other", 3)).is_err());
         assert!(decrypt_vault(&blob, &key, &vault_aad("v", 3)).is_ok());
+    }
+
+    #[test]
+    fn sizes_render_at_a_glance() {
+        assert_eq!(human_size(0), "0 B");
+        assert_eq!(human_size(512), "512 B");
+        assert_eq!(human_size(1024), "1.0 KiB");
+        assert_eq!(human_size(1536), "1.5 KiB");
+        assert_eq!(human_size(2 * 1024 * 1024), "2.0 MiB");
+    }
+
+    #[test]
+    fn an_explicit_vault_beats_any_binding() {
+        // --vault must win even inside a bound directory, or overriding it would
+        // be impossible without editing a file first.
+        assert_eq!(
+            resolve_target(Some("other/staging".into())).unwrap(),
+            "other/staging"
+        );
     }
 
     #[test]

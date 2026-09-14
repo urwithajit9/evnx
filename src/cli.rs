@@ -327,12 +327,14 @@ pub enum CloudCommands {
     /// dashboard can list what a vault holds.
     Push {
         /// Vault to push to: `name`, `name/environment`, or an id.
+        ///
+        /// Optional in a directory bound with `evnx cloud link`.
         // No short form: `-V` collides with clap's auto-generated `--version`,
         // and `-v` is already `--verbose`. The collision is a debug assertion
         // that fires only when the parser is built, so it panics for the user
         // rather than failing the build — see the `cli_definition_is_valid` test.
         #[arg(long, value_name = "VAULT")]
-        vault: String,
+        vault: Option<String>,
 
         /// File to push.
         #[arg(long, short, default_value = ".env")]
@@ -351,12 +353,10 @@ pub enum CloudCommands {
     #[command(disable_version_flag = true)]
     Pull {
         /// Vault to pull from: `name`, `name/environment`, or an id.
-        // No short form: `-V` collides with clap's auto-generated `--version`,
-        // and `-v` is already `--verbose`. The collision is a debug assertion
-        // that fires only when the parser is built, so it panics for the user
-        // rather than failing the build — see the `cli_definition_is_valid` test.
+        ///
+        /// Optional in a directory bound with `evnx cloud link`.
         #[arg(long, value_name = "VAULT")]
-        vault: String,
+        vault: Option<String>,
 
         /// Where to write the decrypted file.
         #[arg(long, short, default_value = ".env")]
@@ -374,6 +374,31 @@ pub enum CloudCommands {
         #[arg(long)]
         password_stdin: bool,
     },
+
+    /// List a vault's versions, newest first.
+    ///
+    /// Read-only: no password, no decryption, no blob download.
+    History {
+        /// Vault to inspect. Optional in a bound directory.
+        #[arg(long, value_name = "VAULT")]
+        vault: Option<String>,
+
+        /// How many versions to show.
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+
+    /// Bind this directory to a vault, so push and pull need no --vault.
+    ///
+    /// Writes `[cloud] vault` into .evnx.toml, preserving everything else in
+    /// the file. Safe to commit: a vault name is not a secret.
+    Link {
+        /// Vault to bind: `name`, `name/environment`, or an id.
+        vault: String,
+    },
+
+    /// Remove this directory's vault binding.
+    Unlink,
 
     /// Show whether this machine is set up for cloud sync.
     Status {
