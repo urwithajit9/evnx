@@ -23,7 +23,7 @@
 //! ├── creds.rs    credential store, file backend at mode 0600
 //! ├── client.rs   HTTP, typed errors, refresh-on-401
 //! ├── auth.rs     register / login / logout / status
-//! ├── vault.rs    create / list / delete                             PR 6
+//! ├── vault.rs    create / list / delete
 //! └── sync.rs     push / pull / history                              PR 7–8
 //! ```
 //!
@@ -48,8 +48,9 @@ pub mod client;
 pub mod config;
 pub mod creds;
 pub mod status;
+pub mod vault;
 
-use crate::cli::{AuthCommands, CloudCommands};
+use crate::cli::{AuthCommands, CloudCommands, VaultCommands};
 use anyhow::Result;
 
 /// Dispatch an `evnx cloud …` subcommand.
@@ -80,6 +81,25 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
         } => auth::login(server_override, email, password_stdin, verbose),
         AuthCommands::Logout => auth::logout(server_override, verbose),
         AuthCommands::Status => auth::status(server_override, verbose),
+    }
+}
+
+/// Dispatch an `evnx vault …` subcommand.
+pub fn run_vault(
+    command: VaultCommands,
+    server_override: Option<&str>,
+    verbose: bool,
+) -> Result<()> {
+    match command {
+        VaultCommands::Create {
+            name,
+            env,
+            password_stdin,
+        } => vault::create(server_override, name, env, password_stdin, verbose),
+        VaultCommands::List => vault::list(server_override, verbose),
+        VaultCommands::Delete { target, yes } => {
+            vault::delete(server_override, target, yes, verbose)
+        }
     }
 }
 

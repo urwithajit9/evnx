@@ -143,3 +143,10 @@ pub const AUTH: CommandDoc = CommandDoc {
     description: "Account registration and sign-in",
     after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/auth",
 };
+
+pub const VAULT: CommandDoc = CommandDoc {
+    command: "vault",
+    url: "https://www.evnx.dev/guides/commands/vault",
+    description: "Creating and managing encrypted vaults",
+    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/vault",
+};
