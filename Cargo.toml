@@ -101,6 +101,11 @@ blake3 = { version = "1", optional = true }
 # config holds their comments and settings evnx does not model; rewriting it from
 # a typed struct would discard both. Already in the graph via `toml`.
 toml_edit = { version = "0.22", optional = true }
+# Renders the TOTP enrolment QR in the terminal. default-features = false keeps
+# it to exactly one crate with no transitive dependencies — the image and svg
+# renderers are not wanted. Without it, enrolling means typing 32 base32
+# characters into a phone by hand.
+qrcode = { version = "0.14", default-features = false, optional = true }
 
 # ── backup feature ────────────────────────────────────────────────────────────
 aes-gcm = { version = "0.10", optional = true }
@@ -136,7 +141,7 @@ serde_json = "1.0"
 default = []
 migrate = ["dep:reqwest", "dep:crypto_box"]
 backup  = ["dep:aes-gcm", "dep:argon2",  "dep:rand"]
-cloud   = ["dep:evnx-crypto", "dep:reqwest", "dep:hex", "dep:blake3", "dep:toml_edit"]
+cloud   = ["dep:evnx-crypto", "dep:reqwest", "dep:hex", "dep:blake3", "dep:toml_edit", "dep:qrcode"]
 # `cloud` is deliberately NOT in `full`, and not enabled in the prebuilt binaries.
 # Adding it would silently change what `full` and `--all-features` mean for people
 # already using them, and hand network-capable code to users who never opted in.
