@@ -29,8 +29,12 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
         None => {
             println!("  status    {}", "not signed in".yellow());
             println!();
-            println!("  No credentials for this server. Sign in with `evnx auth login`,");
-            println!("  which arrives in a later release.");
+            println!("  No credentials for this server.");
+            println!("    {}   create an account", "evnx auth register".cyan());
+            println!(
+                "    {}      sign in on this machine",
+                "evnx auth login".cyan()
+            );
         }
         Some(session) => {
             println!("  account   {}", session.email);

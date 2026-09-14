@@ -1,0 +1,23 @@
+# cargo-audit configuration.
+#
+# cargo-audit scans Cargo.lock, which lists every crate the resolver *could*
+# pick — not the set actually compiled. Before adding anything here, verify with
+# `cargo tree -e normal --features cloud -i <crate>`: an empty result means the
+# crate is never built and the advisory cannot apply.
+#
+# Re-check these whenever the lockfile changes. An ignore that was right once can
+# quietly become wrong when a feature or dependency is added.
+
+[advisories]
+ignore = [
+    # quinn-proto — remote memory exhaustion in QUIC stream reassembly.
+    #
+    # Not in the build graph. QUIC arrives only through reqwest's `http3`
+    # feature, and the cloud feature declares
+    #   reqwest = { default-features = false, features = ["json", "rustls-tls", "blocking"] }
+    # so quinn is never compiled. Verified 2026-09-14 —
+    # `cargo tree -e normal --features cloud -i quinn-proto` prints nothing.
+    #
+    # Remove this the moment http3 is enabled for any reason.
+    "RUSTSEC-2026-0185",
+]

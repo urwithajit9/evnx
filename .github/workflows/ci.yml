@@ -54,6 +54,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-features -- -D warnings
 
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The CLI had no audit job until 2026-09-14, so four live advisories in
+      # rustls-webpki — the TLS stack the cloud feature talks to the API over,
+      # including two certificate name-constraint bypasses — sat unnoticed in the
+      # lockfile. Documented exceptions live in .cargo/audit.toml.
+      - name: cargo audit
+        run: |
+          cargo install cargo-audit --locked --quiet
+          cargo audit
+
   docs:
     name: Documentation
     runs-on: ubuntu-latest

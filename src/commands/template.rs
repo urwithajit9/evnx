@@ -88,6 +88,7 @@ use indexmap::IndexMap;
 use regex::Regex;
 use std::collections::HashSet;
 use std::fs;
+use std::io::IsTerminal;
 
 use crate::core::gitignore::{self, GitignoreStatus};
 use crate::core::Parser;
@@ -176,7 +177,11 @@ fn handle_gitignore(output: &str, mode: &GitignoreMode) -> anyhow::Result<()> {
         GitignoreMode::Auto => true,
         GitignoreMode::Skip => false, // unreachable, handled above
         GitignoreMode::Default => {
-            if atty::is(atty::Stream::Stdin) {
+            // `std::io::IsTerminal`, stable since Rust 1.70, rather than the
+            // `atty` crate — which is unmaintained and carries RUSTSEC-2021-0145
+            // (potential unaligned read). Same behaviour, one fewer dependency,
+            // and one fewer advisory in the shipped binary.
+            if std::io::stdin().is_terminal() {
                 ui::prompt_yes_no(format!(
                     "'{}' may contain secrets — add it to .gitignore?",
                     entry
