@@ -661,6 +661,7 @@ dependencies = [
  "assert_cmd",
  "atty",
  "base64",
+ "blake3",
  "chrono",
  "clap",
  "clap_complete",

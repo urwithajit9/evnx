@@ -56,6 +56,30 @@ struct VaultList {
     vaults: Vec<VaultSummary>,
 }
 
+/// Fetch the vault list and resolve one by name, `name/environment`, or id.
+///
+/// Shared with `evnx cloud push` / `pull`: both have to turn what a person typed
+/// into the id the API uses, and must refuse the same ambiguities.
+pub(crate) fn fetch_and_resolve(client: &Client, target: &str) -> Result<VaultRef> {
+    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
+    let v = resolve(&listed.vaults, target)?;
+    Ok(VaultRef {
+        id: v.id.clone(),
+        name: v.name.clone(),
+        environment: v.environment.clone(),
+    })
+}
+
+/// The identity of one vault, as the sync commands need it.
+#[derive(Debug, Clone)]
+pub(crate) struct VaultRef {
+    /// Canonical id. **This exact string goes into the AAD**, so push and pull
+    /// must both take it from here and never re-format it.
+    pub id: String,
+    pub name: String,
+    pub environment: String,
+}
+
 /// `Debug` is safe here: a summary carries an id, a name, an environment, a role
 /// and counts — no key material and nothing derived from the master password.
 #[derive(Deserialize, Clone, Debug)]
@@ -270,7 +294,7 @@ fn resolve<'a>(vaults: &'a [VaultSummary], target: &str) -> Result<&'a VaultSumm
     }
 }
 
-fn require_session(client: &Client, server: &str) -> Result<()> {
+pub(crate) fn require_session(client: &Client, server: &str) -> Result<()> {
     if client.is_signed_in() {
         return Ok(());
     }

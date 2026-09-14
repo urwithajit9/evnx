@@ -320,6 +320,61 @@ pub enum VaultCommands {
 #[cfg(feature = "cloud")]
 #[derive(Subcommand, Debug)]
 pub enum CloudCommands {
+    /// Encrypt a .env and upload it as a new version.
+    ///
+    /// The file is encrypted here, byte for byte — comments, ordering and
+    /// quoting all survive. Only the key *names* are sent in the clear, so the
+    /// dashboard can list what a vault holds.
+    Push {
+        /// Vault to push to: `name`, `name/environment`, or an id.
+        // No short form: `-V` collides with clap's auto-generated `--version`,
+        // and `-v` is already `--verbose`. The collision is a debug assertion
+        // that fires only when the parser is built, so it panics for the user
+        // rather than failing the build — see the `cli_definition_is_valid` test.
+        #[arg(long, value_name = "VAULT")]
+        vault: String,
+
+        /// File to push.
+        #[arg(long, short, default_value = ".env")]
+        file: std::path::PathBuf,
+
+        /// Read the master password from stdin instead of prompting.
+        #[arg(long)]
+        password_stdin: bool,
+    },
+
+    /// Download a version and decrypt it.
+    ///
+    /// `--version` here means the vault version, so clap's auto-generated
+    /// `--version` is disabled on this subcommand. Use `evnx --version` for the
+    /// program version.
+    #[command(disable_version_flag = true)]
+    Pull {
+        /// Vault to pull from: `name`, `name/environment`, or an id.
+        // No short form: `-V` collides with clap's auto-generated `--version`,
+        // and `-v` is already `--verbose`. The collision is a debug assertion
+        // that fires only when the parser is built, so it panics for the user
+        // rather than failing the build — see the `cli_definition_is_valid` test.
+        #[arg(long, value_name = "VAULT")]
+        vault: String,
+
+        /// Where to write the decrypted file.
+        #[arg(long, short, default_value = ".env")]
+        file: std::path::PathBuf,
+
+        /// Version to pull. Defaults to the latest.
+        #[arg(long, value_name = "N")]
+        version: Option<i32>,
+
+        /// Overwrite the target without asking.
+        #[arg(long)]
+        force: bool,
+
+        /// Read the master password from stdin instead of prompting.
+        #[arg(long)]
+        password_stdin: bool,
+    },
+
     /// Show whether this machine is set up for cloud sync.
     Status {
         /// Also check that the server is reachable.
@@ -752,4 +807,26 @@ Use 'evnx convert' without --to for interactive format selection.
     /// Generate shell completions.
     // #[command(after_help = docs::INIT.after_help)]
     Completions { shell: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    /// Build the entire command tree and run clap's own consistency checks.
+    ///
+    /// clap validates argument definitions with debug assertions that fire when
+    /// the parser is *constructed*, not when the crate is compiled. So a
+    /// duplicated short flag, a bad default, or a conflicting group compiles
+    /// cleanly, passes clippy, passes every other test — and then panics for the
+    /// user on their first invocation.
+    ///
+    /// That is exactly what happened: `--vault -V` collided with clap's
+    /// auto-generated `--version`, and nothing caught it until the command was
+    /// actually run. This test builds the tree so the next one fails here.
+    #[test]
+    fn cli_definition_is_valid() {
+        Cli::command().debug_assert();
+    }
 }

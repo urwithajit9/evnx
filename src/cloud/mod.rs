@@ -24,7 +24,7 @@
 //! ├── client.rs   HTTP, typed errors, refresh-on-401
 //! ├── auth.rs     register / login / logout / status
 //! ├── vault.rs    create / list / delete
-//! └── sync.rs     push / pull / history                              PR 7–8
+//! └── sync.rs     push / pull
 //! ```
 //!
 //! # Why blocking HTTP, not async
@@ -48,6 +48,7 @@ pub mod client;
 pub mod config;
 pub mod creds;
 pub mod status;
+pub mod sync;
 pub mod vault;
 
 use crate::cli::{AuthCommands, CloudCommands, VaultCommands};
@@ -60,6 +61,26 @@ use anyhow::Result;
 /// so the credential store is always keyed the same way.
 pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool) -> Result<()> {
     match command {
+        CloudCommands::Push {
+            vault,
+            file,
+            password_stdin,
+        } => sync::push(server_override, vault, file, password_stdin, verbose),
+        CloudCommands::Pull {
+            vault,
+            file,
+            version,
+            force,
+            password_stdin,
+        } => sync::pull(
+            server_override,
+            vault,
+            file,
+            version,
+            force,
+            password_stdin,
+            verbose,
+        ),
         CloudCommands::Status { ping } => status::run(server_override, ping, verbose),
     }
 }
