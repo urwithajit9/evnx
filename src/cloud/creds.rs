@@ -215,7 +215,7 @@ impl Store {
 ///    rename.
 /// 3. **Durable.** `sync_all` before the rename, so a crash leaves either the old
 ///    file or the new one, never an empty one.
-fn write_atomic_secure(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn write_atomic_secure(path: &Path, bytes: &[u8]) -> Result<()> {
     let dir = path
         .parent()
         .ok_or_else(|| anyhow!("{} has no parent directory", path.display()))?;

@@ -94,6 +94,9 @@ evnx-crypto = { version = "0.1", optional = true }
 # SRP ephemerals and proofs are hex on the wire. Already in the build graph as a
 # dependency of evnx-crypto, so naming it here adds no crates.
 hex = { version = "0.4", optional = true }
+# Transport integrity hash on pushed blobs — the server recomputes and compares.
+# Already in the graph via evnx-crypto, so this adds no crates.
+blake3 = { version = "1", optional = true }
 
 # ── backup feature ────────────────────────────────────────────────────────────
 aes-gcm = { version = "0.10", optional = true }
@@ -129,7 +132,7 @@ serde_json = "1.0"
 default = []
 migrate = ["dep:reqwest", "dep:crypto_box"]
 backup  = ["dep:aes-gcm", "dep:argon2",  "dep:rand"]
-cloud   = ["dep:evnx-crypto", "dep:reqwest", "dep:hex"]
+cloud   = ["dep:evnx-crypto", "dep:reqwest", "dep:hex", "dep:blake3"]
 # `cloud` is deliberately NOT in `full`, and not enabled in the prebuilt binaries.
 # Adding it would silently change what `full` and `--all-features` mean for people
 # already using them, and hand network-capable code to users who never opted in.

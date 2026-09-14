@@ -303,6 +303,47 @@ impl Client {
         self.send_authed(path, |http, url| http.get(url))
     }
 
+    /// Authenticated GET returning raw bytes.
+    ///
+    /// `download_blob` answers `application/octet-stream`, not JSON — the body is
+    /// `nonce(12) || ciphertext`. Going through [`Client::get`] would try to parse
+    /// ciphertext as JSON and fail on the first non-UTF-8 byte.
+    pub fn get_bytes(&self, path: &str) -> Result<Vec<u8>, ApiError> {
+        let token = self.access_token()?;
+        let send = |token: &SecretString| {
+            self.http
+                .get(self.url(path))
+                .bearer_auth(token.expose())
+                .send()
+                .map_err(|e| ApiError::Transport {
+                    server: self.server.clone(),
+                    reason: transport_reason(&e),
+                })
+        };
+
+        let mut resp = send(&token)?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            drop(resp);
+            self.refresh()?;
+            resp = send(&self.access_token()?)?;
+        }
+
+        if !resp.status().is_success() {
+            // Reuse the JSON error mapping: a failure is an error document even
+            // on a binary endpoint.
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            return Err(self.error_from(status, &body, path));
+        }
+
+        resp.bytes()
+            .map(|b| b.to_vec())
+            .map_err(|e| ApiError::Transport {
+                server: self.server.clone(),
+                reason: transport_reason(&e),
+            })
+    }
+
     /// Authenticated POST with a JSON body.
     pub fn post<B: Serialize, T: DeserializeOwned>(
         &self,
@@ -461,7 +502,12 @@ impl Client {
         }
 
         let body = resp.text().unwrap_or_default();
-        let parsed: ServerError = serde_json::from_str(&body).unwrap_or(ServerError {
+        Err(self.error_from(status, &body, path))
+    }
+
+    /// Map a failure status plus its body to a typed error.
+    fn error_from(&self, status: reqwest::StatusCode, body: &str, path: &str) -> ApiError {
+        let parsed: ServerError = serde_json::from_str(body).unwrap_or(ServerError {
             error: String::new(),
             code: String::new(),
         });
@@ -473,7 +519,7 @@ impl Client {
 
         // `code` first: EMAIL_NOT_VERIFIED and FORBIDDEN share status 403, so the
         // status alone cannot tell them apart.
-        Err(match parsed.code.as_str() {
+        match parsed.code.as_str() {
             "UNAUTHORIZED" => ApiError::Unauthorized,
             "EMAIL_NOT_VERIFIED" => ApiError::EmailNotVerified,
             "FORBIDDEN" => ApiError::Forbidden { message },
@@ -506,7 +552,7 @@ impl Client {
                     status: s,
                 },
             },
-        })
+        }
     }
 }
 
