@@ -28,7 +28,7 @@ use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
 use super::auth;
-use super::client::Client;
+use super::client::{ApiError, Client};
 use super::config::CloudConfig;
 
 /// Environments the server accepts. Checked here so a typo costs nothing.
@@ -61,7 +61,33 @@ struct VaultList {
 /// Shared with `evnx cloud push` / `pull`: both have to turn what a person typed
 /// into the id the API uses, and must refuse the same ambiguities.
 pub(crate) fn fetch_and_resolve(client: &Client, target: &str) -> Result<VaultRef> {
-    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
+    // An id needs no lookup — and that is not merely an optimisation. A
+    // vault-scoped API token is refused `GET /vaults` by design: enumerating
+    // vaults is outside what it was issued for. So for CI, passing the id is the
+    // only path that works at all.
+    if looks_like_vault_id(target) {
+        return Ok(VaultRef {
+            id: target.to_string(),
+            name: String::new(),
+            environment: String::new(),
+        });
+    }
+
+    let listed: VaultList = match client.get("/api/v1/vaults") {
+        Ok(l) => l,
+        Err(ApiError::Forbidden { .. }) if client.is_api_token() => {
+            return Err(anyhow!(
+                "a vault-scoped API token cannot list vaults, so {target:?} cannot be \
+                 resolved by name.\n\
+                 \x20 Pass the vault id instead:  --vault <uuid>\n\
+                 \x20 Find it with `evnx vault list --verbose` from a normal login. \
+                 The restriction is deliberate — a token issued for one vault should \
+                 not be able to enumerate the others."
+            ))
+        }
+        Err(e) => return Err(anyhow!("{e}")),
+    };
+
     let v = resolve(&listed.vaults, target)?;
     Ok(VaultRef {
         id: v.id.clone(),
@@ -70,14 +96,43 @@ pub(crate) fn fetch_and_resolve(client: &Client, target: &str) -> Result<VaultRe
     })
 }
 
+/// Whether a string is a hyphenated UUID, and so already a vault id.
+///
+/// Deliberately strict: a loose check that accepted a vault *name* would send the
+/// name straight to the API as an id and produce a 404 instead of the much more
+/// useful "no vault called …".
+pub(crate) fn looks_like_vault_id(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 36
+        && b.iter().enumerate().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => *c == b'-',
+            _ => c.is_ascii_hexdigit(),
+        })
+}
+
 /// The identity of one vault, as the sync commands need it.
 #[derive(Debug, Clone)]
 pub(crate) struct VaultRef {
     /// Canonical id. **This exact string goes into the AAD**, so push and pull
     /// must both take it from here and never re-format it.
     pub id: String,
+    /// Empty when the vault was addressed by id — a vault-scoped token cannot
+    /// list vaults, so there is nothing to look the name up in.
     pub name: String,
+    /// Empty for the same reason as `name`.
     pub environment: String,
+}
+
+impl VaultRef {
+    /// How to refer to this vault in output: `name/environment` when known,
+    /// otherwise the id.
+    pub fn label(&self) -> String {
+        if self.name.is_empty() {
+            self.id.clone()
+        } else {
+            format!("{}/{}", self.name, self.environment)
+        }
+    }
 }
 
 /// `Debug` is safe here: a summary carries an id, a name, an environment, a role
@@ -394,6 +449,44 @@ mod tests {
             resolve(&vaults, "api/staging").unwrap().environment,
             "staging"
         );
+    }
+
+    #[test]
+    fn vault_ids_are_recognised_strictly() {
+        // This decides whether the CLI skips `GET /vaults`. A vault-scoped API
+        // token is refused that route, so the fast path is the only one that
+        // works in CI — but a loose check would send a vault *name* to the API
+        // as an id and turn a helpful "no vault called …" into a bare 404.
+        assert!(looks_like_vault_id("6c26f157-a81c-414c-b9b2-cdb27d3f7606"));
+        for not_an_id in [
+            "app/production",
+            "app",
+            "",
+            "6c26f157a81c414cb9b2cdb27d3f7606",    // unhyphenated
+            "6c26f157-a81c-414c-b9b2-cdb27d3f760", // too short
+            "6c26f157-a81c-414c-b9b2-cdb27d3f76060", // too long
+            "6c26f157-a81c-414c-b9b2-cdb27d3f760g", // not hex
+            "6c26f157_a81c_414c_b9b2_cdb27d3f7606", // wrong separator
+        ] {
+            assert!(!looks_like_vault_id(not_an_id), "{not_an_id:?}");
+        }
+    }
+
+    #[test]
+    fn a_vault_addressed_by_id_labels_itself_with_the_id() {
+        let by_id = VaultRef {
+            id: "6c26f157-a81c-414c-b9b2-cdb27d3f7606".into(),
+            name: String::new(),
+            environment: String::new(),
+        };
+        assert_eq!(by_id.label(), by_id.id);
+
+        let named = VaultRef {
+            id: "x".into(),
+            name: "app".into(),
+            environment: "production".into(),
+        };
+        assert_eq!(named.label(), "app/production");
     }
 
     #[test]
