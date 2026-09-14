@@ -277,6 +277,41 @@ pub enum AuthCommands {
     Status,
 }
 
+/// Subcommands for `evnx vault`.
+#[cfg(feature = "cloud")]
+#[derive(Subcommand, Debug)]
+pub enum VaultCommands {
+    /// Create a vault.
+    ///
+    /// A fresh 256-bit key is generated here and wrapped under your master key
+    /// before it leaves the machine. The server stores only the wrapped form.
+    Create {
+        /// Vault name — letters, digits and hyphens.
+        name: String,
+
+        /// One of: production, staging, development, test.
+        #[arg(long, short, default_value = "development")]
+        env: String,
+
+        /// Read the master password from stdin instead of prompting.
+        #[arg(long)]
+        password_stdin: bool,
+    },
+
+    /// List the vaults you can reach.
+    List,
+
+    /// Delete a vault and every version in it.
+    Delete {
+        /// Vault to delete: `name`, `name/environment`, or an id.
+        target: String,
+
+        /// Skip the confirmation prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+}
+
 /// Subcommands for `evnx cloud`.
 ///
 /// Only `status` exists so far. Push, pull and history arrive with the sync
@@ -665,6 +700,18 @@ Use 'evnx convert' without --to for interactive format selection.
     Auth {
         #[command(subcommand)]
         command: AuthCommands,
+
+        /// evnx server to talk to. Overrides EVNX_SERVER and config.toml.
+        #[arg(long, value_name = "URL", global = true)]
+        server: Option<String>,
+    },
+
+    /// Manage encrypted vaults.
+    #[cfg(feature = "cloud")]
+    #[command(after_help = docs::VAULT.after_help)]
+    Vault {
+        #[command(subcommand)]
+        command: VaultCommands,
 
         /// evnx server to talk to. Overrides EVNX_SERVER and config.toml.
         #[arg(long, value_name = "URL", global = true)]

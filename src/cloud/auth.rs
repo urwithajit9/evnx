@@ -517,6 +517,48 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
     Ok(())
 }
 
+/// Read a master password, from stdin when asked or by prompting otherwise.
+///
+/// Shared with the vault and sync commands: every operation that touches a vault
+/// key needs the master key, and the master key is never cached. Caching it on
+/// disk would put a decryption key next to the ciphertext and undo the point of
+/// the server never holding one.
+pub(crate) fn read_password(from_stdin: bool, prompt: &str) -> Result<Zeroizing<String>> {
+    if from_stdin {
+        read_password_from_stdin()
+    } else {
+        Ok(Zeroizing::new(
+            dialoguer::Password::new()
+                .with_prompt(prompt)
+                .interact()
+                .context("reading the master password")?,
+        ))
+    }
+}
+
+/// Derive this account's master key.
+///
+/// The Argon2id salt lives on the server — it is not a secret, and fetching it
+/// means the CLI does not have to cache anything between commands. `/auth/me`
+/// works before the email is verified, which is deliberate on the server side.
+pub(crate) fn derive_master_key_for_account(
+    client: &Client,
+    password: &Zeroizing<String>,
+) -> Result<evnx_crypto::MasterKey> {
+    use evnx_crypto::{derive_master_key, salt_from_base64};
+
+    let me: MeSalt = client.get("/api/v1/auth/me").map_err(|e| anyhow!("{e}"))?;
+    let salt = salt_from_base64(&me.argon2_salt)
+        .map_err(|e| anyhow!("the server sent an unusable argon2_salt: {e}"))?;
+    derive_master_key(password.as_bytes(), &salt)
+        .map_err(|e| anyhow!("deriving the master key: {e}"))
+}
+
+#[derive(Deserialize)]
+struct MeSalt {
+    argon2_salt: String,
+}
+
 fn prompt_totp_code() -> Result<String> {
     dialoguer::Input::<String>::new()
         .with_prompt("Authenticator code (or a recovery code)")
