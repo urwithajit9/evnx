@@ -1,7 +1,12 @@
 [package]
 name        = "evnx"
-version     = "0.3.8"
+version     = "0.4.0"
 edition     = "2021"
+# Verified by building on it, not assumed: cargo +1.85.0 check passes for the
+# default feature set, --features cloud and --all-features. The floor comes from
+# evnx-crypto (zeroize_derive needs edition2024); it is declared at package level
+# because Cargo has no per-feature MSRV.
+rust-version = "1.85"
 authors     = ["Ajit Kumar <ajitkumar.pu@gmail.com>"]
 description = "A comprehensive CLI tool for managing .env files — validation, secret scanning, and format conversion"
 repository  = "https://github.com/urwithajit9/evnx"
