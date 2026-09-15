@@ -6,6 +6,91 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.0] - 2026-09-15
+
+Zero-knowledge encrypted cloud sync. Push a `.env` to a server that is
+**mathematically unable** to read it, and pull it on any machine or in any
+pipeline.
+
+Everything here is behind `--features cloud`, which is **off by default** and not
+enabled in the prebuilt npm / PyPI / Homebrew / Scoop binaries. `cargo install evnx`
+produces a byte-identical binary to 0.3.8 in behaviour — no existing command
+changed.
+
+### Added
+
+- **`evnx auth`** — `register`, `login`, `logout`, `status`. Authentication is
+  SRP-6a: the password never leaves the machine, and the server must prove it
+  holds your verifier before any session is stored.
+- **`evnx auth totp`** — `enable` (with a scannable QR), `disable`,
+  `recovery-codes`. `disable` and `recovery-codes` require a current second
+  factor rather than a live session, so a stolen session cannot strip 2FA from an
+  account.
+- **`evnx auth sessions`** — `list`, `revoke`, `revoke-others`. Revocation kills
+  the refresh tokens and blocklists the session, so an outstanding access token
+  stops working immediately rather than lingering for its remaining lifetime.
+- **`evnx auth token`** — `create`, `list`, `revoke`. API tokens for CI, scopable
+  to one vault and to read-only. Supplied to the CLI via `EVNX_TOKEN`.
+- **`evnx vault`** — `create`, `list`, `delete`. A vault holds one `.env`,
+  versioned. Its key is generated locally and wrapped under your master key
+  before it leaves the machine.
+- **`evnx cloud`** — `push`, `pull`, `history`, `link`, `unlink`, `status`.
+  `push` encrypts the file's **raw bytes**, so comments, ordering, quoting and
+  whitespace survive a round trip unchanged.
+- **`evnx cloud link`** binds a directory to a vault via `[cloud] vault` in
+  `.evnx.toml`, so `push` and `pull` need no `--vault`. Written with a
+  format-preserving TOML editor: your comments and unrelated settings survive.
+  Safe to commit — a vault name is not a secret, and sharing it means a
+  teammate's pull lands in the same place.
+- **`evnx cloud status --ping`** exits non-zero when the server is unreachable,
+  so it works as a health check. Without `--ping` it reads local files only and
+  works offline.
+- `rust-version = "1.85"` is now declared. Verified by building on it.
+
+### Security
+
+- **Credentials are stored at mode 0600** in `~/.config/evnx/credentials.json`,
+  and the permissions are re-checked on every read — a file found readable by
+  anyone else is tightened, with a warning that the tokens should be treated as
+  exposed.
+- **Plain `http://` is refused** for anything but a loopback address. Access and
+  refresh tokens travel in request headers, and a refresh token lives 30 days.
+- **Nothing that can decrypt a vault is ever written to disk.** The master key,
+  vault keys and the private key are derived in memory, used, and dropped. A
+  stolen `credentials.json` buys an authenticated session, and the API answers it
+  with ciphertext.
+- **No `--password` flag exists**, so a master password cannot reach shell
+  history. Commands prompt, or read `--password-stdin`.
+- Clears five advisories that were live in the dependency tree, four of them in
+  the TLS stack the cloud feature uses: `RUSTSEC-2026-0104`, `-0099`, `-0098`,
+  `-0049` (rustls-webpki) and `RUSTSEC-2026-0285` (rustls). Removes `atty`, which
+  is unmaintained and carried `RUSTSEC-2021-0145`, in favour of
+  `std::io::IsTerminal`.
+- A `cargo audit` job was added to CI. Its absence is why those advisories went
+  unnoticed.
+
+### Changed
+
+- `evnx --features cloud` roughly doubles the binary, 3.6 MiB → 7.2 MiB, and adds
+  ~118 crates. This is why `cloud` is not in `full` and not in the prebuilt
+  binaries.
+
+### Known limitations
+
+- **Vault sharing is not included.** Shared vault keys are wrapped with X25519,
+  which is not post-quantum safe; a hybrid ML-KEM wrap lands before sharing
+  ships. Solo vaults are unaffected — they are wrapped with Argon2id and
+  XChaCha20, which are symmetric throughout.
+- **A previously installed evnx can shadow the cargo one.** A package-manager
+  install often sits earlier in `PATH` than `~/.cargo/bin`, so
+  `cargo install evnx --features cloud` appears to succeed while the old binary
+  still answers. Diagnose with `which -a evnx`.
+- **One `.env` file at a time**, unchanged from 0.3.x: `evnx scan` does not
+  discover `.env.prod`, `.env.production`, `.env.local` or `.env.staging` when
+  scanning a directory. `validate` and `diff` accept them via `--env`.
+
+---
+
 ## [0.3.8] - 2026-03-30
 
 ### Added

@@ -335,6 +335,118 @@ evnx restore .env.backup --output .env
 
 ---
 
+## Cloud sync _(requires `--features cloud`)_
+
+Push your `.env` to the cloud and pull it on any machine or in any pipeline — with
+the server **mathematically unable** to read it.
+
+Encryption and decryption happen on your machine. The server stores ciphertext and
+holds no key that can open it: not with full database access, not with a court
+order, not after a breach.
+
+```bash
+evnx auth register                       # create an account
+evnx auth login                          # sign in on this machine
+evnx vault create app --env production   # a vault holds one .env, versioned
+evnx cloud link app/production           # bind this directory to it
+evnx cloud push                          # encrypt locally, upload ciphertext
+evnx cloud pull                          # download, decrypt, write .env
+```
+
+### Installing with cloud support
+
+Cloud is **off by default** and not included in the prebuilt binaries, so
+`cargo install evnx` and the npm / PyPI / Homebrew / Scoop packages are unchanged.
+To get it you must build from source:
+
+```bash
+cargo install evnx --features cloud
+```
+
+> ⚠️ **If you already installed evnx another way, check which binary you are running.**
+> A package-manager install often sits earlier in `PATH` than `~/.cargo/bin`, so
+> `cargo install` appears to succeed while the old binary still answers — and
+> `evnx vault list` reports *"unrecognized subcommand"*.
+>
+> ```bash
+> which -a evnx     # if ~/.cargo/bin/evnx is not first, that is why
+> ```
+
+### What the server can and cannot see
+
+| Sent to the server | Never sent |
+|---|---|
+| Ciphertext — AES-256-GCM, encrypted before upload | Your `.env` values |
+| Your **key names** (`DATABASE_URL`, `STRIPE_KEY`) so a listing can show what a vault holds | Your master password |
+| An SRP-6a verifier, which proves knowledge of the password without revealing it | Your master key, or any vault key in usable form |
+
+Key names travelling in the clear is a deliberate trade for a usable listing. If a
+name is itself sensitive, do not make it a name.
+
+**There is no password reset.** The server holds only ciphertext, so nobody —
+including us — can recover an account whose master password is lost. Enable a
+second factor and keep your recovery codes:
+
+```bash
+evnx auth totp enable
+```
+
+### Versioning and rollback
+
+Every push is a new version. Nothing is overwritten.
+
+```bash
+evnx cloud history                  # what changed, when, and who pushed it
+evnx cloud pull --version 3         # restore an earlier version
+```
+
+If someone else pushed since you last pulled, your push is refused with a conflict
+rather than silently overwriting them. Pull, re-apply, push again — the version
+number is authenticated into the ciphertext, so the same bytes cannot simply be
+re-sent.
+
+### CI/CD
+
+Mint a token scoped to one vault, read-only:
+
+```bash
+evnx auth token create ci --scope read --vault app/production --expires-in-days 90
+```
+
+Then in the pipeline:
+
+```bash
+export EVNX_TOKEN=evnx_tok_...
+echo "$EVNX_PASSWORD" | evnx cloud pull --vault <VAULT_ID> --password-stdin
+```
+
+Two things to understand:
+
+- **The token authenticates; it does not decrypt.** The master password is still
+  required, and it is the more sensitive of the two. What the token buys is blast
+  radius: scoped to one vault and `read`, it reaches that vault and nothing else.
+- **Use the vault id, not `name/environment`.** A vault-scoped token is refused
+  permission to list vaults — by design — so it cannot resolve a name. Get the id
+  from `evnx vault list --verbose`.
+
+Pipe the password rather than exporting it where you can: an environment variable
+is visible in process listings and tends to end up in logs.
+
+### Self-hosting
+
+`evnx cloud` talks to `https://api.evnx.dev` by default. Point it anywhere:
+
+```bash
+evnx cloud status --server https://evnx.internal.example
+```
+
+or set `EVNX_SERVER`, or `server = "..."` in `~/.config/evnx/config.toml`. The
+server is [open source](https://github.com/urwithajit9/evnx-server) and ships a
+Docker stack. Plain `http://` is refused for anything but a loopback address,
+because tokens travel in request headers.
+
+---
+
 ## CI/CD Integration
 
 ### GitHub Actions
@@ -461,6 +573,8 @@ host2.example.com
 ```
 
 Use comma-separated strings and parse them in application code. A `--lenient` flag for extended syntax is under consideration — see [open issues](https://github.com/urwithajit9/evnx/issues).
+
+**One `.env` file at a time** — evnx works with `.env` and `.env.example`. Variants like `.env.prod`, `.env.production`, `.env.local` and `.env.staging` are **not discovered** by `evnx scan` when scanning a directory; it reports "no secrets detected" without opening them. `evnx validate` and `evnx diff` are unaffected — pass the file explicitly with `--env`. Multi-file support is planned for a future release.
 
 **Windows** — file permissions checking is limited (no Unix permission model). Terminal color support requires PowerShell or Windows Terminal on older systems.
 
