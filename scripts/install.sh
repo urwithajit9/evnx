@@ -68,12 +68,38 @@ TARGET="${ARCH}-${OS}"
 info "Target: $TARGET"
 
 # Get latest version
+#
+# Resolved from the /releases/latest redirect rather than the JSON API, for two
+# reasons:
+#
+#   1. The API is rate-limited to 60 requests/hour per IP when unauthenticated,
+#      which CI runners on shared egress hit routinely.
+#   2. The previous parser broke outright. It ran
+#        grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/'
+#      which relies on the response being pretty-printed, one field per line.
+#      GitHub now returns minified JSON, so grep matched the whole 27 KB body and
+#      sed's greedy .* captured the LAST quoted string in the document —
+#      producing LATEST="mentions_count" and a 404 on every download.
+#
+# The API call is kept as a fallback, with position-independent parsing that works
+# on minified and pretty-printed JSON alike.
 info "Fetching latest release..."
-LATEST=$(curl -fsSL https://api.github.com/repos/$REPO/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+LATEST=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+    "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##')
 
-if [ -z "$LATEST" ]; then
-    error "Failed to fetch latest version"
+if [ -z "$LATEST" ] || [ "$LATEST" = "https://github.com/$REPO/releases" ]; then
+    LATEST=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
+        | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' \
+        | head -1 \
+        | sed -E 's/.*"([^"]+)"$/\1/')
 fi
+
+# A tag must look like a version. Without this the script happily builds a URL
+# from whatever junk it parsed and fails later with a confusing 404.
+case "$LATEST" in
+    v[0-9]*) ;;
+    *) error "Could not resolve the latest release (got: '${LATEST:-empty}')" ;;
+esac
 
 info "Latest version: $LATEST"
 
