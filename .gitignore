@@ -9,3 +9,9 @@ venv/
 .env
 .env.local
 .env.*.local
+
+# Local dependency overrides (e.g. [patch.crates-io] pointing at a sibling
+# checkout of evnx-crypto). Committing one breaks every build without that
+# sibling present, CI included — Cargo always prefers a path and never falls
+# back to the registry. See CLAUDE.md, "Cross-Repo Dependency".
+.cargo/config.toml

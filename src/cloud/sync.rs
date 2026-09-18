@@ -121,9 +121,15 @@ struct MeId {
 #[derive(Deserialize)]
 struct MyKey {
     encrypted_vault_key: String,
-    /// Present only when this copy was ECDH-wrapped for a recipient — that is,
+    /// Present only when this copy was wrapped for you by someone else — that is,
     /// on a vault shared with you. `None` for a vault you created.
     eph_pub_key: Option<String>,
+    /// The ML-KEM-768 half of a shared wrap. Always present alongside
+    /// `eph_pub_key` and always absent without it; the server's
+    /// `vault_members_wrap_is_whole` constraint makes any other pairing
+    /// unstorable.
+    #[serde(default)]
+    mlkem_ciphertext: Option<String>,
 }
 
 /// Encrypt a `.env` and upload it as a new version.
@@ -454,6 +460,17 @@ fn current_version(client: &Client, vault_ref: &VaultRef) -> Result<i32> {
 }
 
 /// Fetch this account's wrapped copy of the vault key and open it.
+///
+/// Two shapes arrive here and the pair of optional fields is what distinguishes
+/// them:
+///
+/// * **your own vault** — neither field. Wrapped under an HKDF subkey of the
+///   master key, symmetric, no key agreement at all.
+/// * **shared with you** — both fields. Wrapped by the hybrid
+///   X25519 + ML-KEM-768 path, which needs the account keypair rather than just
+///   the master key.
+///
+/// Anything else is a malformed row and is refused rather than guessed at.
 fn unwrap_vault_key(
     client: &Client,
     vault_ref: &VaultRef,
@@ -465,23 +482,90 @@ fn unwrap_vault_key(
         .get(&format!("/api/v1/vaults/{}/my-key", vault_ref.id))
         .map_err(|e| anyhow!("{e}"))?;
 
-    if my_key.eph_pub_key.is_some() {
-        // An ephemeral means this copy was ECDH-wrapped for you by someone else.
-        // Opening it needs the X25519 private key, which means decrypting the
-        // account keypair first — that arrives with vault sharing.
-        return Err(anyhow!(
-            "{} was shared with you, and opening a shared vault is not supported yet.\n\
-             \x20 Shared keys are ECDH-wrapped; that path lands with `evnx vault share`.",
+    match (&my_key.eph_pub_key, &my_key.mlkem_ciphertext) {
+        // Shared with us: open it with the hybrid path.
+        (Some(eph), Some(ct)) => unwrap_shared_vault_key(
+            client,
+            vault_ref,
+            master_key,
+            &my_key.encrypted_vault_key,
+            eph,
+            ct,
+        ),
+
+        // Our own copy.
+        (None, None) => {
+            let wrapped = b64_decode(&my_key.encrypted_vault_key, "encrypted_vault_key")
+                .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
+
+            unwrap_vault_key_with_master_key(&wrapped, master_key).map_err(|_| {
+                anyhow!(
+                    "could not unwrap the key for {} — the master password is probably wrong.",
+                    vault_ref.label()
+                )
+            })
+        }
+
+        // ⚠️ Half a wrap. An ephemeral with no ML-KEM ciphertext is a
+        // pre-0.2.0 share: the vault key behind it was wrapped under X25519
+        // alone, which Shor breaks. Refusing is the point — opening it would
+        // mean carrying that exposure forward silently.
+        (Some(_), None) => Err(anyhow!(
+            "{} was shared with you before post-quantum wrapping existed, and the \n\
+             key is wrapped in a way this version will not open.\n\
+             \x20 Ask whoever shared it to run `evnx vault share` again.",
             vault_ref.label()
-        ));
+        )),
+        (None, Some(_)) => Err(anyhow!(
+            "the server sent a malformed key for {} — an ML-KEM ciphertext with no \n\
+             ephemeral public key. Treat this server as untrusted.",
+            vault_ref.label()
+        )),
+    }
+}
+
+/// Open a vault key that was shared with us — hybrid X25519 + ML-KEM-768.
+///
+/// Needs the account keypair, not just the master key, so it fetches and unseals
+/// the Ed25519 seed. Both derived keys come from that one seed.
+fn unwrap_shared_vault_key(
+    client: &Client,
+    vault_ref: &VaultRef,
+    master_key: &evnx_crypto::MasterKey,
+    encrypted_vault_key_b64: &str,
+    eph_pub_key_b64: &str,
+    mlkem_ciphertext_b64: &str,
+) -> Result<evnx_crypto::VaultKey> {
+    use evnx_crypto::{
+        decrypt_private_key, unwrap_vault_key, EncryptedPrivateKey, WrappedVaultKey,
+    };
+
+    #[derive(Deserialize)]
+    struct MeSeed {
+        encrypted_private_key: String,
     }
 
-    let wrapped = b64_decode(&my_key.encrypted_vault_key, "encrypted_vault_key")
-        .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
+    let me: MeSeed = client
+        .get("/api/v1/auth/me")
+        .map_err(|e| anyhow!("fetching your sealed keypair: {e}"))?;
 
-    unwrap_vault_key_with_master_key(&wrapped, master_key).map_err(|_| {
+    let sealed = EncryptedPrivateKey::from_base64(&me.encrypted_private_key)
+        .map_err(|e| anyhow!("the server sent an unusable encrypted_private_key: {e}"))?;
+    let keypair = decrypt_private_key(&sealed, master_key)
+        .map_err(|_| anyhow!("could not open your keypair — the master password is wrong."))?;
+
+    let wrapped = WrappedVaultKey::from_base64(
+        encrypted_vault_key_b64,
+        eph_pub_key_b64,
+        mlkem_ciphertext_b64,
+    )
+    .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
+
+    unwrap_vault_key(&wrapped, &keypair).map_err(|_| {
         anyhow!(
-            "could not unwrap the key for {} — the master password is probably wrong.",
+            "could not open the key for {}.\n\
+             \x20 The wrapped key does not verify. Either it was not wrapped for \n\
+             \x20 this account, or the server altered it.",
             vault_ref.label()
         )
     })
