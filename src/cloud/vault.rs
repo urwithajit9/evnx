@@ -312,6 +312,191 @@ pub fn delete(
     Ok(())
 }
 
+/// What `GET /api/v1/users/{email}/public-key` answers.
+#[derive(Deserialize)]
+struct RecipientKeys {
+    x25519_public_key: String,
+    /// `None` for an account created before post-quantum wrapping existed.
+    #[serde(default)]
+    mlkem_public_key: Option<String>,
+}
+
+#[derive(Serialize)]
+struct AddMemberRequest {
+    user_email: String,
+    role: String,
+    encrypted_vault_key: String,
+    eph_pub_key: String,
+    mlkem_ciphertext: String,
+}
+
+/// Share a vault with another evnx account.
+///
+/// ─── What the server does and does not learn ─────────────────────────────────
+///
+/// It hands over the recipient's public keys and stores the result. It never sees
+/// the vault key, and it cannot grant access itself — the wrap happens here,
+/// under keys only the recipient can reverse.
+///
+/// ─── Why this needs the master password ──────────────────────────────────────
+///
+/// Your own copy of the vault key is sealed under your master key. Re-wrapping it
+/// for someone else means opening it first, and there is no cached copy anywhere
+/// for the same reason the server holds none.
+///
+/// ─── The trust boundary worth naming ─────────────────────────────────────────
+///
+/// ⚠️ The public keys come from the server. A malicious server could substitute
+/// its own and read what you share. The protocol has no third party to check them
+/// against, so this is a genuine limit rather than an oversight: out-of-band
+/// fingerprint verification is the answer, and it is not built yet. Sharing is
+/// still worth doing — the server would have to actively attack you rather than
+/// merely be breached — but "the server cannot read your secrets" becomes "the
+/// server cannot read your secrets passively" the moment you share.
+pub fn share(
+    server_override: Option<&str>,
+    target: String,
+    recipient_email: String,
+    role: String,
+    password_stdin: bool,
+    verbose: bool,
+) -> Result<()> {
+    use evnx_crypto::{unwrap_vault_key_with_master_key, wrap_vault_key_for_user, UserPublicKeys};
+
+    let valid_roles = ["viewer", "developer", "admin"];
+    if !valid_roles.contains(&role.as_str()) {
+        return Err(anyhow!(
+            "role must be one of: {}. Got `{role}`.",
+            valid_roles.join(", ")
+        ));
+    }
+
+    let recipient_email = recipient_email.trim().to_lowercase();
+
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    require_session(&client, &server)?;
+
+    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
+    let vault = resolve(&listed.vaults, &target)?;
+
+    // ── The recipient's keys, before asking for a password ───────────────────
+    //
+    // Deliberately first. If the recipient cannot be shared with, saying so
+    // before prompting for a master password is better than after.
+    let keys: RecipientKeys = client
+        .get(&format!("/api/v1/users/{recipient_email}/public-key"))
+        .map_err(|e| match e {
+            ApiError::NotFound { .. } => anyhow!(
+                "no evnx account for {recipient_email}.\n\
+                 \x20 They need to register first — the vault key is wrapped to their \n\
+                 \x20 public key, so there has to be one."
+            ),
+            other => anyhow!("{other}"),
+        })?;
+
+    // ⚠️ No fallback. An X25519-only wrap would be one Shor opens, and it stays
+    // that way for as long as the row exists — an adversary recording it does not
+    // care that a later version fixed the algorithm.
+    let mlkem_public_key = keys.mlkem_public_key.ok_or_else(|| {
+        anyhow!(
+            "{recipient_email} has no post-quantum sharing key yet.\n\
+             \x20 They need to sign in once with evnx 0.5 or later, or at \n\
+             \x20 app.evnx.dev, which registers it automatically.\n\
+             \x20\n\
+             \x20 Sharing without it would wrap the vault key under X25519 alone, \n\
+             \x20 which a quantum computer breaks — including from a recording made \n\
+             \x20 today."
+        )
+    })?;
+
+    let recipient = UserPublicKeys::from_base64(&keys.x25519_public_key, &mlkem_public_key)
+        .map_err(|e| {
+            anyhow!("the server sent an unusable public key for {recipient_email}: {e}")
+        })?;
+
+    // ── Open our copy, re-wrap for them ──────────────────────────────────────
+    let password = auth::read_password(password_stdin, "Master password")?;
+    let master_key = auth::derive_master_key_for_account(&client, &password)?;
+
+    let my_key: MyWrappedKey = client
+        .get(&format!("/api/v1/vaults/{}/my-key", vault.id))
+        .map_err(|e| anyhow!("{e}"))?;
+
+    if my_key.eph_pub_key.is_some() {
+        // Re-sharing someone else's vault would need the account keypair rather
+        // than the master key. The server also restricts sharing to owners and
+        // admins, so this is mostly belt and braces.
+        return Err(anyhow!(
+            "{}/{} was shared with you rather than created by you, and re-sharing \n\
+             is not supported. Ask the owner to share it directly.",
+            vault.name,
+            vault.environment
+        ));
+    }
+
+    let wrapped_for_me =
+        evnx_crypto::b64_decode(&my_key.encrypted_vault_key, "encrypted_vault_key")
+            .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
+    let vault_key =
+        unwrap_vault_key_with_master_key(&wrapped_for_me, &master_key).map_err(|_| {
+            anyhow!(
+                "could not open the key for {}/{} — the master password is probably wrong.",
+                vault.name,
+                vault.environment
+            )
+        })?;
+
+    let wrapped = wrap_vault_key_for_user(&vault_key, &recipient)
+        .map_err(|e| anyhow!("wrapping the vault key for {recipient_email}: {e}"))?;
+
+    client
+        .post::<_, serde::de::IgnoredAny>(
+            &format!("/api/v1/vaults/{}/members", vault.id),
+            &AddMemberRequest {
+                user_email: recipient_email.clone(),
+                role: role.clone(),
+                encrypted_vault_key: wrapped.encrypted_vault_key_base64(),
+                eph_pub_key: wrapped.eph_pub_key_base64(),
+                mlkem_ciphertext: wrapped.mlkem_ciphertext_base64(),
+            },
+        )
+        .map_err(|e| anyhow!("{e}"))?;
+
+    println!(
+        "  {} shared {}/{} with {recipient_email} as {role}",
+        "✓".green(),
+        vault.name,
+        vault.environment
+    );
+    if verbose {
+        println!("  vault id  {}", vault.id);
+        println!("  key wrap  hybrid X25519 + ML-KEM-768");
+        println!(
+            "  ml-kem ct {} chars",
+            wrapped.mlkem_ciphertext_base64().len()
+        );
+    }
+    println!();
+    println!(
+        "  They can pull it with:  {}",
+        format!(
+            "evnx cloud pull --vault {}/{}",
+            vault.name, vault.environment
+        )
+        .cyan()
+    );
+    Ok(())
+}
+
+/// This account's wrapped copy of a vault key.
+#[derive(Deserialize)]
+struct MyWrappedKey {
+    encrypted_vault_key: String,
+    #[serde(default)]
+    eph_pub_key: Option<String>,
+}
+
 /// Find the vault a user meant.
 ///
 /// Accepts a UUID, a bare `name`, or `name/environment`. A bare name that exists

@@ -9,7 +9,7 @@
 //! |------|------------------------|
 //! | `srp_verifier` | A one-way function of a *separately salted* Argon2id derivation. Proves knowledge of the password without revealing it. |
 //! | `srp_salt`, `argon2_salt` | Salts are public by design; they exist to make precomputation useless. |
-//! | `ed25519_public_key`, `x25519_public_key` | Public halves. |
+//! | `ed25519_public_key`, `x25519_public_key`, `mlkem_public_key` | Public halves. |
 //! | `encrypted_private_key` | The Ed25519 seed sealed under the master key. Opaque without the password. |
 //!
 //! The two salts are deliberately different. Sharing one would mean a stolen SRP
@@ -47,6 +47,12 @@ struct RegisterRequest {
     argon2_salt: String,
     ed25519_public_key: String,
     x25519_public_key: String,
+    /// ML-KEM-768 public key — 1580 base64 characters.
+    ///
+    /// Required since evnx-crypto 0.2. Derived from the same Ed25519 seed as the
+    /// X25519 key, so producing it costs nothing extra, and an account without it
+    /// cannot be shared with at all.
+    mlkem_public_key: String,
     encrypted_private_key: String,
 }
 
@@ -171,6 +177,7 @@ fn build_registration(email: &str, password: &Zeroizing<String>) -> Result<Regis
         argon2_salt: salt_to_base64(&argon2_salt),
         ed25519_public_key: keypair.ed25519_public_base64(),
         x25519_public_key: keypair.x25519_public_base64(),
+        mlkem_public_key: keypair.mlkem_public_base64(),
         encrypted_private_key: encrypted_private_key.to_base64(),
     })
 }
@@ -414,6 +421,17 @@ fn login_with_password(
     );
     store.save()?;
 
+    // One-time F1 migration for accounts created before evnx-crypto 0.2. Runs
+    // after the session is saved on purpose: it needs an authenticated client,
+    // and a failure here must not undo a successful login.
+    //
+    // ⚠️ A FRESH client, not the one above. `Client` loads the credential store
+    // once at construction, so the instance that drove SRP still holds the
+    // snapshot from before this session existed and would report "not signed in".
+    if let Ok(authed) = Client::new(server.to_string()) {
+        backfill_mlkem_key(&authed, password, verbose);
+    }
+
     println!("  {} signed in as {email}", "✓".green());
     if let Some(n) = remaining {
         // Warn while there is still time to act. Running out means the next lost
@@ -557,6 +575,113 @@ pub(crate) fn derive_master_key_for_account(
 #[derive(Deserialize)]
 struct MeSalt {
     argon2_salt: String,
+}
+
+/// What the F1 backfill needs from `/auth/me`.
+#[derive(Deserialize)]
+struct MeForBackfill {
+    argon2_salt: String,
+    encrypted_private_key: String,
+    /// `false` on an account created before evnx-crypto 0.2.
+    ///
+    /// `#[serde(default)]` so this client still works against a server that
+    /// predates the field — it reads as "no key", the backfill runs, and the
+    /// server's 404 on the endpoint is handled below as "nothing to do".
+    #[serde(default)]
+    has_mlkem_key: bool,
+}
+
+#[derive(serde::Serialize)]
+struct BackfillPublicKeysRequest {
+    mlkem_public_key: String,
+}
+
+/// Upload this account's ML-KEM-768 public key if the server does not have it.
+///
+/// ─── Why this runs at login ─────────────────────────────────────────────────
+///
+/// The key is derived from the Ed25519 seed, and only a client holding the master
+/// password can unseal that seed — the server cannot derive it. Login is the one
+/// moment the password is already in hand, so it is the only place this can
+/// happen without prompting for it again.
+///
+/// ─── Why it is conditional ──────────────────────────────────────────────────
+///
+/// Deriving the master key is a second Argon2id pass at 64 MB — roughly as
+/// expensive as the SRP derivation login already pays. Doing it unconditionally
+/// would double every login for a one-time migration. `has_mlkem_key` from
+/// `/auth/me` costs nothing and is false exactly once per account.
+///
+/// ─── Why a failure here is not a failed login ───────────────────────────────
+///
+/// ⚠️ The session is already established and saved by the time this runs. If the
+/// upload fails — old server, network blip, a 409 from a key already present —
+/// the user is signed in and everything except *being shared with* works. Turning
+/// that into a login error would be a strictly worse outcome, so this warns and
+/// returns.
+fn backfill_mlkem_key(client: &Client, password: &Zeroizing<String>, verbose: bool) {
+    use evnx_crypto::{decrypt_private_key, salt_from_base64, EncryptedPrivateKey};
+
+    let me: MeForBackfill = match client.get("/api/v1/auth/me") {
+        Ok(m) => m,
+        Err(e) => {
+            if verbose {
+                println!("  could not check for a post-quantum key: {e}");
+            }
+            return;
+        }
+    };
+
+    if me.has_mlkem_key {
+        return;
+    }
+
+    if verbose {
+        println!("  deriving your post-quantum sharing key (one time)…");
+    }
+
+    let derived = (|| -> Result<String> {
+        let salt =
+            salt_from_base64(&me.argon2_salt).map_err(|e| anyhow!("unusable argon2_salt: {e}"))?;
+        let master_key = evnx_crypto::derive_master_key(password.as_bytes(), &salt)
+            .map_err(|e| anyhow!("deriving the master key: {e}"))?;
+        let sealed = EncryptedPrivateKey::from_base64(&me.encrypted_private_key)
+            .map_err(|e| anyhow!("unusable encrypted_private_key: {e}"))?;
+        let keypair = decrypt_private_key(&sealed, &master_key)
+            .map_err(|e| anyhow!("opening your keypair: {e}"))?;
+        Ok(keypair.mlkem_public_base64())
+    })();
+
+    let mlkem_public_key = match derived {
+        Ok(k) => k,
+        Err(e) => {
+            println!(
+                "  {} could not derive your post-quantum sharing key: {e}",
+                "!".yellow()
+            );
+            return;
+        }
+    };
+
+    match client.put::<_, serde::de::IgnoredAny>(
+        "/api/v1/auth/public-keys",
+        &BackfillPublicKeysRequest { mlkem_public_key },
+    ) {
+        Ok(_) => {
+            if verbose {
+                println!("  post-quantum sharing key registered");
+            }
+        }
+        Err(e) => {
+            // Worth saying out loud: until this succeeds, nobody can share a
+            // vault with this account. Everything else works.
+            println!(
+                "  {} your post-quantum sharing key could not be registered: {e}\n\
+                 \x20 Vaults cannot be shared with you until it is. Signing in again will retry.",
+                "!".yellow()
+            );
+        }
+    }
 }
 
 /// Explain a rejected second factor in terms of the step the user is actually on.

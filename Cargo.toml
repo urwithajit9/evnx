@@ -94,7 +94,7 @@ crypto_box = { version = "0.9",  features = ["std"],                            
 # reqwest is not repeated here: `cloud` reuses the optional dependency the migrate
 # feature already declares above, so there is one HTTP stack in the tree and one
 # set of TLS decisions to maintain.
-evnx-crypto = { version = "0.1", optional = true }
+evnx-crypto = { version = "0.2", optional = true }
 # SRP ephemerals and proofs are hex on the wire. Already in the build graph as a
 # dependency of evnx-crypto, so naming it here adds no crates.
 hex = { version = "0.4", optional = true }

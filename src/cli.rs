@@ -413,6 +413,31 @@ pub enum VaultCommands {
         #[arg(long, short = 'y')]
         yes: bool,
     },
+
+    /// Share a vault with another evnx account.
+    ///
+    /// Your master password opens the vault key on this machine, and it is
+    /// re-wrapped to the recipient's public keys before it leaves. The server
+    /// never sees it unwrapped and cannot grant access itself.
+    ///
+    /// The wrap is hybrid X25519 + ML-KEM-768, so it holds even against an
+    /// adversary recording it today for a quantum computer later.
+    Share {
+        /// Vault to share: `name`, `name/environment`, or an id.
+        target: String,
+
+        /// Email address of the evnx account to share with.
+        #[arg(long)]
+        with: String,
+
+        /// Permission level: viewer, developer, or admin.
+        #[arg(long, default_value = "developer")]
+        role: String,
+
+        /// Read the master password from stdin instead of prompting.
+        #[arg(long)]
+        password_stdin: bool,
+    },
 }
 
 /// Subcommands for `evnx cloud`.

@@ -165,6 +165,12 @@ pub fn run_vault(
         VaultCommands::Delete { target, yes } => {
             vault::delete(server_override, target, yes, verbose)
         }
+        VaultCommands::Share {
+            target,
+            with,
+            role,
+            password_stdin,
+        } => vault::share(server_override, target, with, role, password_stdin, verbose),
     }
 }
 
