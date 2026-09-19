@@ -749,6 +749,8 @@ dependencies = [
 [[package]]
 name = "evnx-crypto"
 version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d27f9a4c65d81452e2e7562502b8ef3d210fa9998979ac2360cbdd294360282"
 dependencies = [
  "aes-gcm",
  "argon2",
