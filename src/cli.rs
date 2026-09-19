@@ -438,6 +438,69 @@ pub enum VaultCommands {
         #[arg(long)]
         password_stdin: bool,
     },
+
+    /// List who can reach a vault.
+    ///
+    /// Shows every member, their role, and whether they hold a post-quantum
+    /// sharing key. Any member can run this — seeing who else holds a key to a
+    /// vault you hold a key to is how you notice a grant that should not be
+    /// there.
+    Members {
+        /// Vault to inspect: `name`, `name/environment`, or an id.
+        target: String,
+    },
+
+    /// Change a member's role.
+    ///
+    /// You can only set a role below your own, and only for someone you already
+    /// outrank — so an admin can move people between viewer and developer, and
+    /// only the owner can make or unmake an admin.
+    Role {
+        /// Vault: `name`, `name/environment`, or an id.
+        target: String,
+
+        /// Email address of the member whose role is changing.
+        #[arg(long)]
+        user: String,
+
+        /// New role: viewer, developer, or admin.
+        #[arg(long)]
+        role: String,
+    },
+
+    /// Revoke a member's access, rotating the vault key.
+    ///
+    /// ⚠️ This re-encrypts every version of the vault under a fresh key and
+    /// re-wraps it for everyone who stays. It is not a quick operation and it is
+    /// not reversible.
+    ///
+    /// What it achieves: the removed member can no longer read anything pushed
+    /// from now on. What it cannot: recall copies of what they could already
+    /// read. Rotate those secrets at their source.
+    Revoke {
+        /// Vault: `name`, `name/environment`, or an id.
+        target: String,
+
+        /// Email address of the member to remove.
+        #[arg(long)]
+        user: String,
+
+        /// Skip the confirmation prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
+
+        /// Remove the member WITHOUT rotating the vault key.
+        ///
+        /// ⚠️ They keep the ability to decrypt every version they already had
+        /// access to, including ones pushed after this. Only use it when you are
+        /// re-keying separately, or when the member never held the key.
+        #[arg(long)]
+        no_rekey: bool,
+
+        /// Read the master password from stdin instead of prompting.
+        #[arg(long)]
+        password_stdin: bool,
+    },
 }
 
 /// Subcommands for `evnx cloud`.
