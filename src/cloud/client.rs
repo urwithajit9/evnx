@@ -416,6 +416,22 @@ impl Client {
         })
     }
 
+    /// Authenticated PATCH with a JSON body.
+    pub fn patch<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T, ApiError> {
+        let json = serde_json::to_vec(body).map_err(|e| ApiError::Malformed {
+            message: format!("could not serialize the request body: {e}"),
+        })?;
+        self.send_authed(path, move |http, url| {
+            http.patch(url)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(json.clone())
+        })
+    }
+
     /// Authenticated DELETE. Discards the body.
     pub fn delete(&self, path: &str) -> Result<(), ApiError> {
         let _: serde::de::IgnoredAny = self.send_authed(path, |http, url| http.delete(url))?;

@@ -31,6 +31,9 @@ use super::auth;
 use super::client::{ApiError, Client};
 use super::config::CloudConfig;
 
+/// AES-GCM nonce length — the prefix every stored blob carries.
+const NONCE_LEN: usize = 12;
+
 /// Environments the server accepts. Checked here so a typo costs nothing.
 pub const ENVIRONMENTS: [&str; 4] = ["production", "staging", "development", "test"];
 
@@ -490,11 +493,17 @@ pub fn share(
 }
 
 /// This account's wrapped copy of a vault key.
+///
+/// The pair of optional fields distinguishes the two shapes: neither means your
+/// own vault (sealed under your master key), both means a share (hybrid X25519 +
+/// ML-KEM). One without the other is malformed.
 #[derive(Deserialize)]
 struct MyWrappedKey {
     encrypted_vault_key: String,
     #[serde(default)]
     eph_pub_key: Option<String>,
+    #[serde(default)]
+    mlkem_ciphertext: Option<String>,
 }
 
 /// Find the vault a user meant.
@@ -700,4 +709,533 @@ mod tests {
         let json = serde_json::to_string(&body).unwrap();
         assert!(!json.contains("eph_pub_key"), "{json}");
     }
+}
+
+// ─── Member management (Phase 3) ──────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct MemberList {
+    members: Vec<MemberSummary>,
+}
+
+#[derive(Deserialize)]
+struct MemberSummary {
+    user_id: String,
+    email: String,
+    role: String,
+    granted_at: String,
+    #[serde(default)]
+    has_mlkem_key: bool,
+    #[serde(default)]
+    is_you: bool,
+}
+
+/// Show who can reach a vault.
+pub fn members(server_override: Option<&str>, target: String, verbose: bool) -> Result<()> {
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    require_session(&client, &server)?;
+
+    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
+    let vault = resolve(&listed.vaults, &target)?;
+
+    let people: MemberList = client
+        .get(&format!("/api/v1/vaults/{}/members", vault.id))
+        .map_err(|e| anyhow!("{e}"))?;
+
+    println!(
+        "  {}/{} — {} member(s)",
+        vault.name.bold(),
+        vault.environment,
+        people.members.len()
+    );
+    println!();
+
+    for m in &people.members {
+        let you = if m.is_you {
+            " (you)".dimmed().to_string()
+        } else {
+            String::new()
+        };
+        println!("  {:<10} {}{}", m.role.cyan(), m.email, you);
+        if verbose {
+            println!("             id      {}", m.user_id);
+            println!("             granted {}", m.granted_at);
+        }
+        // ⚠️ Worth surfacing without being asked: this member cannot be re-wrapped
+        // to, so a revoke-and-rekey will refuse until they sign in once.
+        if !m.has_mlkem_key {
+            println!(
+                "             {}",
+                "no post-quantum key — they must sign in once before the vault can be re-keyed"
+                    .yellow()
+            );
+        }
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct SetRoleRequest {
+    role: String,
+}
+
+/// Change a member's role.
+pub fn set_role(
+    server_override: Option<&str>,
+    target: String,
+    user_email: String,
+    role: String,
+    verbose: bool,
+) -> Result<()> {
+    let valid = ["viewer", "developer", "admin"];
+    if !valid.contains(&role.as_str()) {
+        return Err(anyhow!(
+            "role must be one of: {}. Got `{role}`.\n\
+             \x20 `owner` is not assignable — it is set once, by whoever created the vault.",
+            valid.join(", ")
+        ));
+    }
+    let user_email = user_email.trim().to_lowercase();
+
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    require_session(&client, &server)?;
+
+    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
+    let vault = resolve(&listed.vaults, &target)?;
+
+    let people: MemberList = client
+        .get(&format!("/api/v1/vaults/{}/members", vault.id))
+        .map_err(|e| anyhow!("{e}"))?;
+    let member = people
+        .members
+        .iter()
+        .find(|m| m.email == user_email)
+        .ok_or_else(|| {
+            anyhow!(
+                "{user_email} is not a member of {}/{}.\n\
+                 \x20 `evnx vault members {}` shows who is.",
+                vault.name,
+                vault.environment,
+                target
+            )
+        })?;
+
+    if member.role == role {
+        println!(
+            "  {user_email} is already {role} on {}/{}.",
+            vault.name, vault.environment
+        );
+        return Ok(());
+    }
+
+    client
+        .patch::<_, serde::de::IgnoredAny>(
+            &format!("/api/v1/vaults/{}/members/{}", vault.id, member.user_id),
+            &SetRoleRequest { role: role.clone() },
+        )
+        .map_err(|e| anyhow!("{e}"))?;
+
+    println!(
+        "  {} {user_email} is now {role} on {}/{}",
+        "✓".green(),
+        vault.name,
+        vault.environment
+    );
+    if verbose {
+        println!("  was {}", member.role);
+    }
+    Ok(())
+}
+
+// ─── Revocation with re-key ───────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct RevokeVersionList {
+    versions: Vec<RevokeVersionSummary>,
+}
+
+#[derive(Deserialize)]
+struct RevokeVersionSummary {
+    version_num: i32,
+}
+
+#[derive(Serialize)]
+struct StageBlobRequest {
+    version_num: i32,
+    nonce: String,
+    ciphertext: String,
+    blob_hash: String,
+}
+
+#[derive(Deserialize)]
+struct StagedBlob {
+    version_num: i32,
+    blob_key: String,
+    blob_size_bytes: i32,
+}
+
+#[derive(Serialize)]
+struct RekeyedVersion {
+    version_num: i32,
+    blob_key: String,
+    blob_hash: String,
+    blob_size_bytes: i32,
+}
+
+#[derive(Serialize)]
+struct RekeyedMember {
+    user_id: String,
+    encrypted_vault_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    eph_pub_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mlkem_ciphertext: Option<String>,
+}
+
+#[derive(Serialize)]
+struct RekeyRequest {
+    versions: Vec<RekeyedVersion>,
+    members: Vec<RekeyedMember>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remove_user_id: Option<String>,
+}
+
+/// Remove a member and rotate the vault key.
+///
+/// ─── What this actually does ─────────────────────────────────────────────────
+///
+/// 1. Opens your copy of the current vault key.
+/// 2. Generates a fresh one.
+/// 3. Downloads **every** version, decrypts it, re-encrypts it under the new key
+///    preserving that version's associated data, and stages it on the server.
+/// 4. Wraps the new key for everyone who stays — under your master key for your
+///    own copy, hybrid X25519 + ML-KEM for everyone else's.
+/// 5. Sends one request that swaps all of it and removes the member, atomically.
+///
+/// Nothing changes until step 5. Abandoning halfway leaves staged blobs nothing
+/// references, and a vault that still opens with the old key.
+///
+/// ─── ⚠️ The limit, stated plainly ────────────────────────────────────────────
+///
+/// Rotation stops the removed member reading anything pushed **from now on**. It
+/// cannot recall copies of what they could already read. If they had access to a
+/// secret, treat that secret as theirs and rotate it at its source — the same
+/// advice that applies to a leaked API token, and the step people skip.
+#[allow(clippy::too_many_arguments)]
+pub fn revoke(
+    server_override: Option<&str>,
+    target: String,
+    user_email: String,
+    assume_yes: bool,
+    no_rekey: bool,
+    password_stdin: bool,
+    verbose: bool,
+) -> Result<()> {
+    use evnx_crypto::{
+        b64_encode, blob_hash, reencrypt_vault, unwrap_vault_key, unwrap_vault_key_with_master_key,
+        vault_aad, wrap_vault_key_for_user, wrap_vault_key_with_master_key, EncryptedBlob,
+        UserPublicKeys, VaultKey, WrappedVaultKey,
+    };
+
+    let user_email = user_email.trim().to_lowercase();
+
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    require_session(&client, &server)?;
+
+    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
+    let vault = resolve(&listed.vaults, &target)?;
+    let label = format!("{}/{}", vault.name, vault.environment);
+
+    let people: MemberList = client
+        .get(&format!("/api/v1/vaults/{}/members", vault.id))
+        .map_err(|e| anyhow!("{e}"))?;
+
+    let leaving = people
+        .members
+        .iter()
+        .find(|m| m.email == user_email)
+        .ok_or_else(|| {
+            anyhow!(
+                "{user_email} is not a member of {label}.\n\
+                 \x20 `evnx vault members {target}` shows who is."
+            )
+        })?;
+
+    if leaving.is_you {
+        return Err(anyhow!(
+            "to leave {label} yourself, ask an admin to remove you.\n\
+             \x20 Revoking your own access would mean re-keying a vault you can no \n\
+             \x20 longer open, which cannot work."
+        ));
+    }
+
+    let remaining: Vec<&MemberSummary> = people
+        .members
+        .iter()
+        .filter(|m| m.email != user_email)
+        .collect();
+
+    // ── Refuse early if anyone cannot be re-wrapped ──────────────────────────
+    //
+    // ⚠️ Checked BEFORE any work, and before the password prompt. A member with
+    // no post-quantum key cannot receive the new vault key, and discovering that
+    // after re-encrypting fifty versions would be a wasted operation ending in a
+    // rejected swap.
+    if !no_rekey {
+        let stuck: Vec<&str> = remaining
+            .iter()
+            .filter(|m| !m.has_mlkem_key && !m.is_you)
+            .map(|m| m.email.as_str())
+            .collect();
+        if !stuck.is_empty() {
+            return Err(anyhow!(
+                "these members have no post-quantum sharing key, so the vault key \n\
+                 cannot be re-wrapped for them:\n\
+                 \x20   {}\n\
+                 \x20\n\
+                 \x20 They each need to sign in once with evnx 0.5 or later, or at \n\
+                 \x20 app.evnx.dev. Re-keying without them would lock them out of \n\
+                 \x20 {label} entirely.",
+                stuck.join("\n    ")
+            ));
+        }
+    }
+
+    // ── Confirm ──────────────────────────────────────────────────────────────
+    if !assume_yes {
+        println!("  About to remove {} from {label}.", user_email.bold());
+        if no_rekey {
+            println!(
+                "  {}",
+                "--no-rekey: the vault key is NOT rotated. They keep the ability to".yellow()
+            );
+            println!(
+                "  {}",
+                "decrypt every version they had access to, including future ones.".yellow()
+            );
+        } else {
+            println!("  Every version will be re-encrypted under a fresh key and re-wrapped");
+            println!("  for the {} remaining member(s).", remaining.len());
+            println!();
+            println!(
+                "  {}",
+                "This stops them reading anything pushed from now on. It cannot".yellow()
+            );
+            println!(
+                "  {}",
+                "recall copies of what they could already read — rotate those".yellow()
+            );
+            println!("  {}", "secrets at their source.".yellow());
+        }
+        let ok = dialoguer::Confirm::new()
+            .with_prompt(format!("Remove {user_email} from {label}?"))
+            .default(false)
+            .interact()
+            .context("reading the confirmation")?;
+        if !ok {
+            println!("  Cancelled; nothing was changed.");
+            return Ok(());
+        }
+    }
+
+    // ── The simple path ──────────────────────────────────────────────────────
+    if no_rekey {
+        client
+            .delete(&format!(
+                "/api/v1/vaults/{}/members/{}",
+                vault.id, leaving.user_id
+            ))
+            .map_err(|e| anyhow!("{e}"))?;
+        println!("  {} removed {user_email} from {label}", "✓".green());
+        println!(
+            "  {}",
+            "The vault key was NOT rotated. Rotate the secrets themselves.".yellow()
+        );
+        return Ok(());
+    }
+
+    // ── Open the current key ─────────────────────────────────────────────────
+    let password = auth::read_password(password_stdin, "Master password")?;
+    let master_key = auth::derive_master_key_for_account(&client, &password)?;
+
+    let my_key: MyWrappedKey = client
+        .get(&format!("/api/v1/vaults/{}/my-key", vault.id))
+        .map_err(|e| anyhow!("{e}"))?;
+
+    let old_key = match (&my_key.eph_pub_key, &my_key.mlkem_ciphertext) {
+        (None, None) => {
+            let wrapped =
+                evnx_crypto::b64_decode(&my_key.encrypted_vault_key, "encrypted_vault_key")
+                    .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
+            unwrap_vault_key_with_master_key(&wrapped, &master_key)
+                .map_err(|_| anyhow!("could not open your key for {label} — wrong password?"))?
+        }
+        (Some(eph), Some(ct)) => {
+            let sealed =
+                evnx_crypto::EncryptedPrivateKey::from_base64(&fetch_sealed_private_key(&client)?)
+                    .map_err(|e| {
+                        anyhow!("the server sent an unusable encrypted_private_key: {e}")
+                    })?;
+            let keypair = evnx_crypto::decrypt_private_key(&sealed, &master_key)
+                .map_err(|_| anyhow!("could not open your keypair — wrong password?"))?;
+            let wrapped = WrappedVaultKey::from_base64(&my_key.encrypted_vault_key, eph, ct)
+                .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
+            unwrap_vault_key(&wrapped, &keypair)
+                .map_err(|_| anyhow!("could not open your key for {label}."))?
+        }
+        _ => {
+            return Err(anyhow!(
+                "the server sent a malformed key for {label} — half a wrap. \n\
+                 \x20 Treat this server as untrusted."
+            ))
+        }
+    };
+
+    let new_key = VaultKey::generate();
+
+    // ── Re-encrypt every version ─────────────────────────────────────────────
+    let versions: RevokeVersionList = client
+        .get(&format!("/api/v1/vaults/{}/versions", vault.id))
+        .map_err(|e| anyhow!("{e}"))?;
+
+    let total = versions.versions.len();
+    println!("  Re-encrypting {total} version(s)…");
+
+    let mut staged = Vec::with_capacity(total);
+    for (i, v) in versions.versions.iter().enumerate() {
+        let n = v.version_num;
+        let blob_bytes = client
+            .get_bytes(&format!("/api/v1/vaults/{}/versions/{n}/blob", vault.id))
+            .map_err(|e| anyhow!("fetching version {n}: {e}"))?;
+
+        if blob_bytes.len() <= NONCE_LEN {
+            return Err(anyhow!("version {n} is too short to be a blob"));
+        }
+        let (nonce_bytes, ciphertext) = blob_bytes.split_at(NONCE_LEN);
+        let mut nonce = [0u8; NONCE_LEN];
+        nonce.copy_from_slice(nonce_bytes);
+
+        let old_blob = EncryptedBlob {
+            nonce,
+            ciphertext: ciphertext.to_vec(),
+        };
+
+        // ⚠️ The same AAD on both sides. `vault_aad` binds a blob to
+        // (vault_id, version), so version `n` must stay version `n`'s.
+        let aad = vault_aad(&vault.id, n as u32);
+        let fresh = reencrypt_vault(&old_blob, &old_key, &new_key, &aad)
+            .map_err(|_| anyhow!("could not re-encrypt version {n} — is your key current?"))?;
+
+        let hash = blob_hash(&fresh.ciphertext);
+        let out: StagedBlob = client
+            .post(
+                &format!("/api/v1/vaults/{}/rekey/blobs", vault.id),
+                &StageBlobRequest {
+                    version_num: n,
+                    nonce: b64_encode(&fresh.nonce),
+                    ciphertext: b64_encode(&fresh.ciphertext),
+                    blob_hash: hash.clone(),
+                },
+            )
+            .map_err(|e| anyhow!("staging version {n}: {e}"))?;
+
+        staged.push(RekeyedVersion {
+            version_num: out.version_num,
+            blob_key: out.blob_key,
+            blob_hash: hash,
+            blob_size_bytes: out.blob_size_bytes,
+        });
+
+        if verbose {
+            println!("    version {n} re-encrypted ({}/{})", i + 1, total);
+        }
+    }
+
+    // ── Re-wrap for everyone who stays ───────────────────────────────────────
+    println!("  Re-wrapping for {} member(s)…", remaining.len());
+
+    let mut wraps = Vec::with_capacity(remaining.len());
+    for m in &remaining {
+        if m.is_you {
+            // Our own copy stays sealed under the master key: symmetric, no key
+            // agreement, and the shape a vault creator's copy has always had.
+            let wrapped = wrap_vault_key_with_master_key(&new_key, &master_key)
+                .map_err(|e| anyhow!("wrapping the new key for yourself: {e}"))?;
+            wraps.push(RekeyedMember {
+                user_id: m.user_id.clone(),
+                encrypted_vault_key: b64_encode(&wrapped),
+                eph_pub_key: None,
+                mlkem_ciphertext: None,
+            });
+            continue;
+        }
+
+        let keys: RecipientKeys = client
+            .get(&format!("/api/v1/users/{}/public-key", m.email))
+            .map_err(|e| anyhow!("fetching {}'s public keys: {e}", m.email))?;
+        let mlkem = keys
+            .mlkem_public_key
+            .ok_or_else(|| anyhow!("{} has no post-quantum sharing key", m.email))?;
+        let recipient = UserPublicKeys::from_base64(&keys.x25519_public_key, &mlkem)
+            .map_err(|e| anyhow!("unusable public key for {}: {e}", m.email))?;
+
+        let wrapped = wrap_vault_key_for_user(&new_key, &recipient)
+            .map_err(|e| anyhow!("wrapping the new key for {}: {e}", m.email))?;
+
+        wraps.push(RekeyedMember {
+            user_id: m.user_id.clone(),
+            encrypted_vault_key: wrapped.encrypted_vault_key_base64(),
+            eph_pub_key: Some(wrapped.eph_pub_key_base64()),
+            mlkem_ciphertext: Some(wrapped.mlkem_ciphertext_base64()),
+        });
+    }
+
+    // ── One atomic swap ──────────────────────────────────────────────────────
+    client
+        .post::<_, serde::de::IgnoredAny>(
+            &format!("/api/v1/vaults/{}/rekey", vault.id),
+            &RekeyRequest {
+                versions: staged,
+                members: wraps,
+                remove_user_id: Some(leaving.user_id.clone()),
+            },
+        )
+        .map_err(|e| anyhow!("{e}"))?;
+
+    println!();
+    println!(
+        "  {} removed {user_email} from {label} and rotated the vault key",
+        "✓".green()
+    );
+    println!(
+        "  {total} version(s) re-encrypted, {} member(s) re-wrapped",
+        remaining.len()
+    );
+    println!();
+    println!(
+        "  {}",
+        "They can no longer read anything pushed from now on.".dimmed()
+    );
+    println!(
+        "  {}",
+        "They may still hold copies of what they could already read —".yellow()
+    );
+    println!("  {}", "rotate those secrets at their source.".yellow());
+
+    Ok(())
+}
+
+/// The account's sealed Ed25519 seed, for opening a shared vault key.
+fn fetch_sealed_private_key(client: &Client) -> Result<String> {
+    #[derive(Deserialize)]
+    struct MeSeed {
+        encrypted_private_key: String,
+    }
+    let me: MeSeed = client
+        .get("/api/v1/auth/me")
+        .map_err(|e| anyhow!("fetching your sealed keypair: {e}"))?;
+    Ok(me.encrypted_private_key)
 }

@@ -171,6 +171,25 @@ pub fn run_vault(
             role,
             password_stdin,
         } => vault::share(server_override, target, with, role, password_stdin, verbose),
+        VaultCommands::Members { target } => vault::members(server_override, target, verbose),
+        VaultCommands::Role { target, user, role } => {
+            vault::set_role(server_override, target, user, role, verbose)
+        }
+        VaultCommands::Revoke {
+            target,
+            user,
+            yes,
+            no_rekey,
+            password_stdin,
+        } => vault::revoke(
+            server_override,
+            target,
+            user,
+            yes,
+            no_rekey,
+            password_stdin,
+            verbose,
+        ),
     }
 }
 
