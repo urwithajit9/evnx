@@ -175,6 +175,7 @@ fn main() -> Result<()> {
             cli.verbose,
             args.dry_run,
             args.force,
+            args.check,
             args.template_config.clone(),
             args.naming_policy,
         ),

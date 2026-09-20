@@ -52,8 +52,12 @@ pub(super) struct SyncCtx {
     pub naming_policy: NamingPolicy,
 }
 
-/// Main execution entry point (called from mod.rs)
-pub fn execute(ctx: SyncCtx) -> Result<()> {
+/// Main execution entry point (called from mod.rs).
+///
+/// Returns whether the two files are **out of step** — `true` when variables are
+/// missing from the target, `false` when nothing needs doing. `--check` turns
+/// that into an exit code; every other mode ignores it.
+pub fn execute(ctx: SyncCtx) -> Result<bool> {
     if ctx.verbose {
         println!(
             "{}",
@@ -116,7 +120,7 @@ fn sync_forward(
     force: bool,
     config: &PlaceholderConfig,
     naming_policy: NamingPolicy,
-) -> Result<()> {
+) -> Result<bool> {
     let parser = Parser::default();
 
     if !Path::new(".env").exists() {
@@ -152,7 +156,7 @@ fn sync_forward(
 
     if missing.is_empty() {
         ui::success(".env.example is up to date");
-        return Ok(());
+        return Ok(false);
     }
 
     // Validate naming conventions
@@ -206,11 +210,11 @@ fn sync_forward(
                 variables: preview,
                 warnings: vec![],
             });
-            return Ok(());
+            return Ok(true);
         }
         add_with_placeholders(&missing, &env_file.vars, config)?;
         ui::success(format!("Added {} variables to .env.example", missing.len()));
-        return Ok(());
+        return Ok(true);
     }
 
     // Interactive mode
@@ -237,7 +241,7 @@ fn sync_forward(
                     variables: preview,
                     warnings: vec![],
                 });
-                return Ok(());
+                return Ok(true);
             }
             add_with_placeholders(&missing, &env_file.vars, config)?;
         }
@@ -257,7 +261,7 @@ fn sync_forward(
 
             if !confirm {
                 ui::info("Aborted: values not added");
-                return Ok(());
+                return Ok(true);
             }
 
             log_security_event(
@@ -273,7 +277,7 @@ fn sync_forward(
                     variables: preview,
                     warnings: vec!["⚠️ Actual values would be written (security risk)".into()],
                 });
-                return Ok(());
+                return Ok(true);
             }
             add_with_actual_values(&missing, &env_file.vars)?;
         }
@@ -286,13 +290,13 @@ fn sync_forward(
                     variables: preview,
                     warnings: vec![],
                 });
-                return Ok(());
+                return Ok(true);
             }
             add_interactively(&missing, &env_file.vars, config)?;
         }
         3 => {
             ui::info("No changes made");
-            return Ok(());
+            return Ok(true);
         }
         _ => unreachable!(),
     }
@@ -324,7 +328,7 @@ fn sync_forward(
         "Share changes with your team",
     ]);
 
-    Ok(())
+    Ok(true)
 }
 
 fn handle_new_example_file(
@@ -332,7 +336,7 @@ fn handle_new_example_file(
     use_placeholders: bool,
     dry_run: bool,
     config: &PlaceholderConfig,
-) -> Result<()> {
+) -> Result<bool> {
     let preview = if use_placeholders {
         convert_to_example_preview(vars, config)?
     } else {
@@ -353,7 +357,7 @@ fn handle_new_example_file(
             variables: preview,
             warnings: vec!["New file would be created".into()],
         });
-        return Ok(());
+        return Ok(true);
     }
 
     if use_placeholders {
@@ -367,7 +371,7 @@ fn handle_new_example_file(
         "Review .env.example to ensure placeholders are appropriate",
         "Commit .env.example to Git (never commit .env)",
     ]);
-    Ok(())
+    Ok(true)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -381,7 +385,7 @@ fn sync_reverse(
     force: bool,
     config: &PlaceholderConfig,
     naming_policy: NamingPolicy,
-) -> Result<()> {
+) -> Result<bool> {
     if verbose {
         eprintln!("[DEBUG] Running reverse sync");
     }
@@ -425,7 +429,7 @@ fn sync_reverse(
 
     if missing.is_empty() {
         ui::success(".env is up to date");
-        return Ok(());
+        return Ok(false);
     }
 
     for key in &missing {
@@ -464,11 +468,11 @@ fn sync_reverse(
                 variables: preview,
                 warnings: vec!["Remember to replace placeholders with real values".into()],
             });
-            return Ok(());
+            return Ok(true);
         }
         add_from_example(&missing, &example_file.vars, true)?;
         ui::success(format!("Added {} variables to .env", missing.len()));
-        return Ok(());
+        return Ok(true);
     }
 
     let choices = vec![
@@ -497,15 +501,15 @@ fn sync_reverse(
                     variables: preview,
                     warnings: vec![],
                 });
-                return Ok(());
+                return Ok(true);
             }
             add_from_example_interactive(&missing, &example_file.vars, config)?;
             ui::success("Added selected variables to .env");
-            return Ok(());
+            return Ok(true);
         }
         3 => {
             ui::info("No changes made");
-            return Ok(());
+            return Ok(true);
         }
         _ => unreachable!(),
     };
@@ -522,7 +526,7 @@ fn sync_reverse(
                 vec![]
             },
         });
-        return Ok(());
+        return Ok(true);
     }
 
     add_from_example(&missing, &example_file.vars, use_placeholders)?;
@@ -532,14 +536,14 @@ fn sync_reverse(
         ui::warning("Remember to replace placeholder values with real credentials!");
     }
 
-    Ok(())
+    Ok(true)
 }
 
 fn handle_new_env_file(
     example_vars: &IndexMap<String, String>,
     dry_run: bool,
     config: &PlaceholderConfig,
-) -> Result<()> {
+) -> Result<bool> {
     if dry_run {
         let preview: Vec<VarChange> = example_vars
             .iter()
@@ -556,7 +560,7 @@ fn handle_new_env_file(
             variables: preview,
             warnings: vec!["Replace placeholder values with real credentials!".into()],
         });
-        return Ok(());
+        return Ok(true);
     }
 
     atomic_write(".env", &fs::read_to_string(".env.example")?)?;
@@ -567,7 +571,7 @@ fn handle_new_env_file(
         "Run 'chmod 600 .env' to secure the file",
         "Never commit .env to version control",
     ]);
-    Ok(())
+    Ok(true)
 }
 
 // ─────────────────────────────────────────────────────────────

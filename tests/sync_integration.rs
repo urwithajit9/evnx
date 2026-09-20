@@ -94,6 +94,7 @@ fn test_forward_sync_dry_run_adds_preview() -> Result<()> {
         false,
         true,
         true,
+        false, // check
         None,
         NamingPolicy::Ignore,
     );
@@ -137,6 +138,7 @@ fn dry_run_needs_no_terminal_forward() -> Result<()> {
         false,
         true,  // dry_run
         false, // force — the point of the test
+        false, // check
         None,
         NamingPolicy::Ignore,
     );
@@ -176,6 +178,7 @@ fn dry_run_needs_no_terminal_reverse() -> Result<()> {
         false,
         true,  // dry_run
         false, // force
+        false, // check
         None,
         NamingPolicy::Ignore,
     );
@@ -213,6 +216,7 @@ fn test_reverse_sync_creates_env_with_placeholders() -> Result<()> {
         false,
         false,
         true,
+        false, // check
         None,
         NamingPolicy::Ignore,
     );
@@ -250,6 +254,7 @@ fn test_forward_sync_security_warning_with_actual_values() -> Result<()> {
         false,
         false,
         true,
+        false, // check
         None,
         NamingPolicy::Ignore,
     );
@@ -291,6 +296,7 @@ fn test_sync_with_custom_placeholder_config() -> Result<()> {
         false,
         false,
         true,
+        false,                             // check
         Some(fixture.config_path.clone()), // Absolute path
         NamingPolicy::Ignore,
     );
@@ -326,6 +332,7 @@ fn test_forward_sync_missing_env_file() -> Result<()> {
         false,
         false,
         true,
+        false, // check
         None,
         NamingPolicy::Ignore,
     );
@@ -356,6 +363,7 @@ fn test_reverse_sync_missing_example_file() -> Result<()> {
         false,
         false,
         true,
+        false, // check
         None,
         NamingPolicy::Ignore,
     );
@@ -367,4 +375,109 @@ fn test_reverse_sync_missing_example_file() -> Result<()> {
     assert!(err.contains(".env.example") || err.contains("init"));
 
     Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────
+// `--check` — the CI gate
+// ─────────────────────────────────────────────────────────────
+//
+// These drive the binary rather than `sync::run`, because `--check` reports its
+// verdict with `std::process::exit`, which would take the test harness with it.
+// Each uses its own temp dir and never touches the process cwd, so they need no
+// `#[serial]`.
+
+mod check_flag {
+    use assert_cmd::Command;
+    use predicates::prelude::*;
+    use tempfile::TempDir;
+
+    fn project(env: &str, example: &str) -> TempDir {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join(".env"), env).unwrap();
+        std::fs::write(dir.path().join(".env.example"), example).unwrap();
+        dir
+    }
+
+    #[test]
+    fn check_fails_when_the_template_is_missing_a_variable() {
+        let dir = project("A=1\nNEW=2\n", "A=placeholder\n");
+
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["sync", "--check"])
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Out of sync"));
+
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".env.example")).unwrap(),
+            "A=placeholder\n",
+            "--check must not write anything"
+        );
+    }
+
+    #[test]
+    fn check_passes_when_in_sync() {
+        let dir = project("A=1\nNEW=2\n", "A=placeholder\nNEW=placeholder\n");
+
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["sync", "--check"])
+            .current_dir(dir.path())
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn check_works_in_the_reverse_direction() {
+        let dir = project("A=1\n", "A=placeholder\nONLY_IN_TEMPLATE=x\n");
+
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["sync", "--direction", "reverse", "--check"])
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Out of sync"));
+
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".env")).unwrap(),
+            "A=1\n",
+            "--check must not write anything"
+        );
+    }
+
+    /// `--check` must not need a terminal — that is the whole point of it.
+    #[test]
+    fn check_needs_no_terminal_and_no_force() {
+        let dir = project("A=1\nNEW=2\n", "A=placeholder\n");
+
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["sync", "--check"])
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(
+                predicate::str::contains("Out of sync")
+                    .and(predicate::str::contains("not a terminal").not()),
+            );
+    }
+
+    /// Plain `--dry-run` keeps its contract: preview, always exit 0.
+    ///
+    /// Changing that would break anyone already calling it under `set -e`, which
+    /// is why `--check` is a separate flag rather than new behaviour on --dry-run.
+    #[test]
+    fn plain_dry_run_still_exits_zero_when_out_of_sync() {
+        let dir = project("A=1\nNEW=2\n", "A=placeholder\n");
+
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["sync", "--dry-run"])
+            .current_dir(dir.path())
+            .assert()
+            .success();
+    }
 }
