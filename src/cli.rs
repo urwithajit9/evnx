@@ -85,13 +85,17 @@ pub struct SyncArgs {
     #[arg(long, short = 'n')]
     pub dry_run: bool,
 
-    /// Fail with a non-zero exit when the files are out of step.
+    /// Report whether the files are in step through the exit code.
     ///
-    /// Implies --dry-run: nothing is written. This is the CI gate —
-    /// `evnx sync --check` passes when .env.example already covers .env and
-    /// fails when it does not, the way `prettier --check` does. Plain
-    /// --dry-run previews and always exits 0.
-    #[arg(long)]
+    /// Implies --dry-run: nothing is ever written. This is the CI gate.
+    ///
+    ///   0  in sync
+    ///   1  out of sync — commit the result of `evnx sync`
+    ///   2  error — a file is missing, or will not parse
+    ///
+    /// The three codes follow `diff` and `grep`, so a pipeline can tell a stale
+    /// template from a broken run. Plain --dry-run previews and always exits 0.
+    #[arg(long, verbatim_doc_comment)]
     pub check: bool,
 
     /// Skip interactive prompts (for CI/CD usage)

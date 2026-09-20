@@ -16,20 +16,52 @@ mod security;
 // Re-export public types for external use (if needed)
 pub use models::{PlaceholderConfig, SyncAction, SyncPreview, VarChange};
 
+/// In sync — nothing to do.
+pub const EXIT_IN_SYNC: i32 = 0;
+/// `--check` only: the files are out of step.
+pub const EXIT_OUT_OF_SYNC: i32 = 1;
+/// `--check` only: the command could not reach a verdict.
+pub const EXIT_ERROR: i32 = 2;
+
 /// Public entry point called from main.rs.
 ///
-/// # `--check`
+/// # `--check` and its three exit codes
 ///
-/// `check` implies `dry_run` and turns "the files are out of step" into a
-/// **non-zero exit**, the way `prettier --check`, `cargo fmt --check` and
-/// `git diff --exit-code` do. Without it `sync --dry-run` previews and exits 0
-/// whatever it finds, which is correct for a human looking at the output and
-/// useless as a CI gate — `evnx.dev`'s pipeline recipe is written as
-/// `if ! evnx sync --direction forward --dry-run --force; then …`, a condition
-/// that could never fire.
+/// | code | meaning |
+/// |------|---------|
+/// | `0`  | in sync |
+/// | `1`  | **out of sync** — the assertion failed |
+/// | `2`  | **error** — missing file, parse failure, bad config |
 ///
-/// `--dry-run`'s own exit code is deliberately left alone: it is a preview, and
-/// scripts that already call it should not start failing.
+/// The three states exist because two of them were previously indistinguishable.
+/// `--check` returned `1` for "your template is stale" *and* for "`.env` is
+/// missing" *and* for "the template will not parse", so a CI gate could fail the
+/// build without being able to say which had happened — and
+/// `evnx sync --check || true`, the documented advisory idiom, swallowed genuine
+/// breakage along with the signal it meant to ignore.
+///
+/// `0 / 1 / 2` is the POSIX shape, and the reason `diff` and `grep` both use it:
+///
+/// ```text
+/// diff   same → 0    different → 1    trouble → 2
+/// grep   match → 0   no match  → 1    trouble → 2
+/// ```
+///
+/// ⚠️ **The contract is opt-in.** Without `--check` nothing changes: errors still
+/// propagate to `main` and exit `1` exactly as before, and `--dry-run` still
+/// previews and exits `0` whatever it finds. Terraform draws the same line with
+/// `-detailed-exitcode`, and for the same reason — silently re-numbering the exit
+/// codes of a command people already script would be a breaking change dressed up
+/// as a fix.
+///
+/// # Why `--dry-run` is kept
+///
+/// `--check` and `--dry-run` currently print byte-identical output and differ only
+/// in the exit code, so the case for dropping one is real. Two things keep it:
+/// `--dry-run` has shipped since before v0.4.0 and appears throughout the guides;
+/// and `evnx sync --check || true` cannot distinguish `1` from `2`, so a user who
+/// only wants the preview needs a flag that never reports state through the exit
+/// code at all.
 // 8 flags. `SyncArgs` in `cli.rs` already holds exactly this set, so the tidier
 // signature is to pass that struct — but it would rewrite every call site for no
 // behavioural gain, so it is queued for the v0.5.0 command review instead.
@@ -56,15 +88,29 @@ pub fn run(
         naming_policy,
     };
 
-    let out_of_step = executor::execute(ctx)?;
-
-    if check && out_of_step {
-        eprintln!();
-        eprintln!("✗ Out of sync. Run `evnx sync --direction {direction}` and commit the result.");
-        std::process::exit(1);
+    match executor::execute(ctx) {
+        Ok(out_of_step) => {
+            if check && out_of_step {
+                eprintln!();
+                eprintln!(
+                    "✗ Out of sync. Run `evnx sync --direction {direction}` and commit the result."
+                );
+                std::process::exit(EXIT_OUT_OF_SYNC);
+            }
+            Ok(())
+        }
+        // Under `--check` an error is a *different answer*, not a louder version
+        // of "out of sync" — so it gets its own code and prints here rather than
+        // propagating to `main`, which would collapse it back onto 1.
+        Err(e) => {
+            if check {
+                eprintln!();
+                eprintln!("✗ evnx could not check: {e:#}");
+                std::process::exit(EXIT_ERROR);
+            }
+            Err(e)
+        }
     }
-
-    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────

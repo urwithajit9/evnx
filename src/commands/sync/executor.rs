@@ -142,12 +142,20 @@ fn sync_forward(
     }
 
     let env_file = parser.parse_file(".env").context("Failed to parse .env")?;
-    let example_file = match parser.parse_file(".env.example") {
-        Ok(f) => f,
-        Err(_) => {
-            ui::info(".env.example not found, creating from .env");
-            return handle_new_example_file(&env_file.vars, use_placeholders, dry_run, config);
-        }
+    // ⚠️ "absent" and "will not parse" are different answers.
+    //
+    // This was a single `Err(_) =>` arm, so a `.env.example` that existed but was
+    // corrupt — half-written, bad encoding, an unreadable mode — was announced as
+    // ".env.example not found" and then **overwritten** by a plain `evnx sync`.
+    // The one file in the pair that is meant to be committed, replaced without a
+    // word because it could not be read.
+    let example_file = if Path::new(".env.example").exists() {
+        parser
+            .parse_file(".env.example")
+            .context("Failed to parse .env.example")?
+    } else {
+        ui::info(".env.example not found, creating from .env");
+        return handle_new_example_file(&env_file.vars, use_placeholders, dry_run, config);
     };
 
     let env_keys: HashSet<_> = env_file.vars.keys().collect();
@@ -415,12 +423,12 @@ fn sync_reverse(
         .parse_file(".env.example")
         .context("Failed to parse .env.example")?;
 
-    let env_file = match parser.parse_file(".env") {
-        Ok(f) => f,
-        Err(_) => {
-            ui::info(".env not found, creating from .env.example");
-            return handle_new_env_file(&example_file.vars, dry_run, config);
-        }
+    // Same distinction as in `sync_forward` — see the note there.
+    let env_file = if Path::new(".env").exists() {
+        parser.parse_file(".env").context("Failed to parse .env")?
+    } else {
+        ui::info(".env not found, creating from .env.example");
+        return handle_new_env_file(&example_file.vars, dry_run, config);
     };
 
     let env_keys: HashSet<_> = env_file.vars.keys().collect();
