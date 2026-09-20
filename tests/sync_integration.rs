@@ -89,6 +89,8 @@ fn test_forward_sync_dry_run_adds_preview() -> Result<()> {
 
     // Run sync in temp directory
     let result = sync::run(
+        ".env".to_string(),
+        ".env.example".to_string(),
         SyncDirection::Forward,
         true,
         false,
@@ -133,6 +135,8 @@ fn dry_run_needs_no_terminal_forward() -> Result<()> {
     env::set_current_dir(fixture.temp_dir.path())?;
 
     let result = sync::run(
+        ".env".to_string(),
+        ".env.example".to_string(),
         SyncDirection::Forward,
         true,
         false,
@@ -173,6 +177,8 @@ fn dry_run_needs_no_terminal_reverse() -> Result<()> {
     env::set_current_dir(fixture.temp_dir.path())?;
 
     let result = sync::run(
+        ".env".to_string(),
+        ".env.example".to_string(),
         SyncDirection::Reverse,
         true,
         false,
@@ -211,6 +217,8 @@ fn test_reverse_sync_creates_env_with_placeholders() -> Result<()> {
     env::set_current_dir(fixture.temp_dir.path())?;
 
     let result = sync::run(
+        ".env".to_string(),
+        ".env.example".to_string(),
         SyncDirection::Reverse,
         true,
         false,
@@ -249,6 +257,8 @@ fn test_forward_sync_security_warning_with_actual_values() -> Result<()> {
     env::set_current_dir(fixture.temp_dir.path())?;
 
     let result = sync::run(
+        ".env".to_string(),
+        ".env.example".to_string(),
         SyncDirection::Forward,
         false,
         false,
@@ -291,6 +301,8 @@ fn test_sync_with_custom_placeholder_config() -> Result<()> {
 
     // ✅ Use absolute path for config
     let result = sync::run(
+        ".env".to_string(),
+        ".env.example".to_string(),
         SyncDirection::Forward,
         true,
         false,
@@ -327,6 +339,8 @@ fn test_forward_sync_missing_env_file() -> Result<()> {
     env::set_current_dir(fixture.temp_dir.path())?;
 
     let result = sync::run(
+        ".env".to_string(),
+        ".env.example".to_string(),
         SyncDirection::Forward,
         true,
         false,
@@ -358,6 +372,8 @@ fn test_reverse_sync_missing_example_file() -> Result<()> {
     env::set_current_dir(fixture.temp_dir.path())?;
 
     let result = sync::run(
+        ".env".to_string(),
+        ".env.example".to_string(),
         SyncDirection::Reverse,
         true,
         false,
@@ -611,5 +627,127 @@ mod check_exit_codes {
             .code()
             .unwrap();
         assert_eq!(c, 1, "errors keep their old code unless --check opts in");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// `--env-name` / `--env` / `--example` — sync could address nothing
+// ─────────────────────────────────────────────────────────────
+
+mod file_selection {
+    use assert_cmd::Command;
+    use predicates::prelude::*;
+    use tempfile::TempDir;
+
+    fn project() -> TempDir {
+        let d = TempDir::new().unwrap();
+        std::fs::write(d.path().join(".env.example"), "A=x\n").unwrap();
+        std::fs::write(d.path().join(".env"), "A=dev\n").unwrap();
+        std::fs::write(d.path().join(".env.production"), "A=prod\nPROD_ONLY=1\n").unwrap();
+        d
+    }
+
+    fn code(d: &TempDir, args: &[&str]) -> i32 {
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .arg("sync")
+            .args(args)
+            .current_dir(d.path())
+            .assert()
+            .get_output()
+            .status
+            .code()
+            .unwrap()
+    }
+
+    /// `.env` matches the template, `.env.production` does not. Before this,
+    /// both invocations read `.env` and there was no way to say otherwise.
+    #[test]
+    fn env_name_selects_the_file_that_is_checked() {
+        let d = project();
+        assert_eq!(code(&d, &["--check"]), 0, ".env is in sync");
+        assert_eq!(
+            code(&d, &["--env-name", "production", "--check"]),
+            1,
+            ".env.production has PROD_ONLY, which the template lacks"
+        );
+    }
+
+    #[test]
+    fn a_custom_template_path_is_honoured() {
+        let d = project();
+        std::fs::write(d.path().join("tpl.env"), "A=x\nPROD_ONLY=y\n").unwrap();
+
+        assert_eq!(
+            code(
+                &d,
+                &[
+                    "--env-name",
+                    "production",
+                    "--example",
+                    "tpl.env",
+                    "--check"
+                ]
+            ),
+            0,
+            "tpl.env already covers .env.production"
+        );
+    }
+
+    #[test]
+    fn the_named_environment_is_what_gets_written() {
+        let d = project();
+
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["sync", "--env-name", "production", "--force"])
+            .current_dir(d.path())
+            .assert()
+            .success();
+
+        let tpl = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+        assert!(tpl.contains("PROD_ONLY"), "{tpl}");
+        assert!(
+            tpl.contains(".env.production"),
+            "the provenance comment must name the real source, not .env:\n{tpl}"
+        );
+        // .env was not the source and must be untouched.
+        assert_eq!(
+            std::fs::read_to_string(d.path().join(".env")).unwrap(),
+            "A=dev\n"
+        );
+    }
+
+    #[test]
+    fn a_missing_environment_is_an_error() {
+        let d = project();
+
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["sync", "--env-name", "nope", "--check"])
+            .current_dir(d.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("does not exist"));
+    }
+
+    #[test]
+    fn the_header_names_the_files_in_play() {
+        let d = project();
+
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["sync", "--env-name", "production", "--dry-run"])
+            .current_dir(d.path())
+            .assert()
+            .stdout(predicate::str::contains(".env.production"));
+    }
+
+    #[test]
+    fn defaults_are_unchanged() {
+        let d = project();
+        assert_eq!(code(&d, &["--dry-run"]), 0);
+        // Still reads .env against .env.example with no flags.
+        assert_eq!(code(&d, &["--check"]), 0);
     }
 }

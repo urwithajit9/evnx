@@ -73,6 +73,21 @@ impl std::fmt::Display for SyncDirection {
 /// Keep .env and .env.example in sync.
 #[derive(Args, Debug)]
 pub struct SyncArgs {
+    /// The environment file to sync from (forward) or into (reverse).
+    #[arg(long, default_value = ".env")]
+    pub env: String,
+
+    /// The template to sync into (forward) or from (reverse).
+    #[arg(long, default_value = ".env.example")]
+    pub example: String,
+
+    /// Use `.env.<NAME>` instead of `.env`.
+    ///
+    /// `--env-name production` resolves to `.env.production`. A name whose file
+    /// does not exist is an error listing the environments that do.
+    #[arg(long, value_name = "NAME", conflicts_with = "env")]
+    pub env_name: Option<String>,
+
     /// Direction of sync operation
     #[arg(long, value_enum, default_value_t = SyncDirection::Forward)]
     pub direction: SyncDirection,

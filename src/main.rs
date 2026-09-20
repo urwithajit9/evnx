@@ -177,6 +177,8 @@ fn main() -> Result<()> {
         }),
 
         Commands::Sync { args } => commands::sync::run(
+            evnx::core::env_name::select(Path::new("."), &args.env, args.env_name.as_deref())?,
+            args.example.clone(),
             args.direction,
             args.placeholder,
             cli.verbose,

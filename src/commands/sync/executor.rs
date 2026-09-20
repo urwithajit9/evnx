@@ -28,8 +28,16 @@ fn atomic_write<P: AsRef<Path>>(path: P, content: &str) -> Result<()> {
     temp.as_file().sync_all()?;
     temp.persist(path)?;
 
-    // Set restrictive permissions on .env files
-    if path.file_name() == Some(std::ffi::OsStr::new(".env")) {
+    // Set restrictive permissions on env files.
+    //
+    // This matched the literal name `.env`, so `.env.production` — written by
+    // the very same code path once sync could address it — would have been left
+    // at the default umask while `.env` got 0600.
+    let is_env_file = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with(".env") && !n.contains("example"));
+    if is_env_file {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -41,8 +49,30 @@ fn atomic_write<P: AsRef<Path>>(path: P, content: &str) -> Result<()> {
     Ok(())
 }
 
+/// The two files a sync run operates on.
+///
+/// ⚠️ These were 37 hardcoded `".env"` / `".env.example"` literals spread across
+/// the module, which is why `sync` was the only command with **no** file flags
+/// at all — `.env.production` was simply unreachable, and there was nowhere to
+/// put a path even if you wanted one.
+#[derive(Debug, Clone)]
+pub(super) struct SyncPaths {
+    pub env: PathBuf,
+    pub example: PathBuf,
+}
+
+impl SyncPaths {
+    fn env_str(&self) -> String {
+        self.env.display().to_string()
+    }
+    fn example_str(&self) -> String {
+        self.example.display().to_string()
+    }
+}
+
 /// Internal context struct to reduce parameter passing
 pub(super) struct SyncCtx {
+    pub paths: SyncPaths,
     pub direction: SyncDirection,
     pub placeholder: bool,
     pub verbose: bool,
@@ -77,14 +107,15 @@ pub fn execute(ctx: SyncCtx) -> Result<bool> {
         .unwrap_or_default();
 
     ui::print_header(
-        "Sync .env ↔ .env.example",
+        &format!("Sync {} ↔ {}", ctx.paths.env_str(), ctx.paths.example_str()),
         Some(&format!("Direction: {}", ctx.direction)),
     );
 
-    check_env_permissions(".env")?;
+    check_env_permissions(&ctx.paths.env_str())?;
 
     let result = match ctx.direction {
         SyncDirection::Forward => sync_forward(
+            &ctx.paths,
             ctx.placeholder,
             ctx.verbose,
             ctx.dry_run,
@@ -93,6 +124,7 @@ pub fn execute(ctx: SyncCtx) -> Result<bool> {
             ctx.naming_policy,
         ),
         SyncDirection::Reverse => sync_reverse(
+            &ctx.paths,
             ctx.placeholder,
             ctx.verbose,
             ctx.dry_run,
@@ -114,6 +146,7 @@ pub fn execute(ctx: SyncCtx) -> Result<bool> {
 // ─────────────────────────────────────────────────────────────
 
 fn sync_forward(
+    paths: &SyncPaths,
     use_placeholders: bool,
     verbose: bool,
     dry_run: bool,
@@ -123,7 +156,7 @@ fn sync_forward(
 ) -> Result<bool> {
     let parser = Parser::default();
 
-    if !Path::new(".env").exists() {
+    if !paths.env.exists() {
         ui::error("File not found: .env");
         ui::print_box(
             "💡 Getting Started",
@@ -141,7 +174,9 @@ fn sync_forward(
         anyhow::bail!(".env file not found - run 'evnx init' to get started");
     }
 
-    let env_file = parser.parse_file(".env").context("Failed to parse .env")?;
+    let env_file = parser
+        .parse_file(paths.env_str())
+        .context("Failed to parse .env")?;
     // ⚠️ "absent" and "will not parse" are different answers.
     //
     // This was a single `Err(_) =>` arm, so a `.env.example` that existed but was
@@ -149,13 +184,17 @@ fn sync_forward(
     // ".env.example not found" and then **overwritten** by a plain `evnx sync`.
     // The one file in the pair that is meant to be committed, replaced without a
     // word because it could not be read.
-    let example_file = if Path::new(".env.example").exists() {
+    let example_file = if paths.example.exists() {
         parser
-            .parse_file(".env.example")
-            .context("Failed to parse .env.example")?
+            .parse_file(paths.example_str())
+            .with_context(|| format!("Failed to parse {}", paths.example_str()))?
     } else {
-        ui::info(".env.example not found, creating from .env");
-        return handle_new_example_file(&env_file.vars, use_placeholders, dry_run, config);
+        ui::info(format!(
+            "{} not found, creating from {}",
+            paths.example_str(),
+            paths.env_str()
+        ));
+        return handle_new_example_file(paths, &env_file.vars, use_placeholders, dry_run, config);
     };
 
     let env_keys: HashSet<_> = env_file.vars.keys().collect();
@@ -213,14 +252,14 @@ fn sync_forward(
         let preview = add_with_placeholders_preview(&missing, &env_file.vars, config)?;
         if dry_run {
             print_preview(&SyncPreview {
-                target_file: ".env.example".into(),
+                target_file: paths.example_str(),
                 action: SyncAction::Add,
                 variables: preview,
                 warnings: vec![],
             });
             return Ok(true);
         }
-        add_with_placeholders(&missing, &env_file.vars, config)?;
+        add_with_placeholders(paths, &missing, &env_file.vars, config)?;
         ui::success(format!("Added {} variables to .env.example", missing.len()));
         return Ok(true);
     }
@@ -244,14 +283,14 @@ fn sync_forward(
             let preview = add_with_placeholders_preview(&missing, &env_file.vars, config)?;
             if dry_run {
                 print_preview(&SyncPreview {
-                    target_file: ".env.example".into(),
+                    target_file: paths.example_str(),
                     action: SyncAction::Add,
                     variables: preview,
                     warnings: vec![],
                 });
                 return Ok(true);
             }
-            add_with_placeholders(&missing, &env_file.vars, config)?;
+            add_with_placeholders(paths, &missing, &env_file.vars, config)?;
         }
         1 => {
             ui::print_box(
@@ -280,27 +319,27 @@ fn sync_forward(
             let preview = add_with_actual_values_preview(&missing, &env_file.vars)?;
             if dry_run {
                 print_preview(&SyncPreview {
-                    target_file: ".env.example".into(),
+                    target_file: paths.example_str(),
                     action: SyncAction::Add,
                     variables: preview,
                     warnings: vec!["⚠️ Actual values would be written (security risk)".into()],
                 });
                 return Ok(true);
             }
-            add_with_actual_values(&missing, &env_file.vars)?;
+            add_with_actual_values(paths, &missing, &env_file.vars)?;
         }
         2 => {
             let preview = add_interactively_preview(&missing, &env_file.vars, config)?;
             if dry_run {
                 print_preview(&SyncPreview {
-                    target_file: ".env.example".into(),
+                    target_file: paths.example_str(),
                     action: SyncAction::Add,
                     variables: preview,
                     warnings: vec![],
                 });
                 return Ok(true);
             }
-            add_interactively(&missing, &env_file.vars, config)?;
+            add_interactively(paths, &missing, &env_file.vars, config)?;
         }
         3 => {
             ui::info("No changes made");
@@ -320,9 +359,9 @@ fn sync_forward(
             .default("Additional configuration".to_string())
             .interact_text()?;
 
-        let mut content = fs::read_to_string(".env.example")?;
+        let mut content = fs::read_to_string(&paths.example)?;
         content.push_str(&format!("\n# {}\n", comment));
-        atomic_write(".env.example", &content)?;
+        atomic_write(&paths.example, &content)?;
     }
 
     ui::success(format!(
@@ -340,6 +379,7 @@ fn sync_forward(
 }
 
 fn handle_new_example_file(
+    paths: &SyncPaths,
     vars: &IndexMap<String, String>,
     use_placeholders: bool,
     dry_run: bool,
@@ -360,7 +400,7 @@ fn handle_new_example_file(
 
     if dry_run {
         print_preview(&SyncPreview {
-            target_file: ".env.example".into(),
+            target_file: paths.example_str(),
             action: SyncAction::Add,
             variables: preview,
             warnings: vec!["New file would be created".into()],
@@ -369,9 +409,9 @@ fn handle_new_example_file(
     }
 
     if use_placeholders {
-        convert_to_example(vars, config)?;
+        convert_to_example(paths, vars, config)?;
     } else {
-        atomic_write(".env.example", &fs::read_to_string(".env")?)?;
+        atomic_write(&paths.example, &fs::read_to_string(&paths.env)?)?;
     }
 
     ui::success("Created .env.example");
@@ -387,6 +427,7 @@ fn handle_new_example_file(
 // ─────────────────────────────────────────────────────────────
 
 fn sync_reverse(
+    paths: &SyncPaths,
     _use_placeholders: bool,
     verbose: bool,
     dry_run: bool,
@@ -399,7 +440,7 @@ fn sync_reverse(
     }
     let parser = Parser::default();
 
-    if !Path::new(".env.example").exists() {
+    if !paths.example.exists() {
         ui::error("File not found: .env.example");
         ui::print_box(
             "💡 Getting Started",
@@ -420,15 +461,21 @@ fn sync_reverse(
     }
 
     let example_file = parser
-        .parse_file(".env.example")
-        .context("Failed to parse .env.example")?;
+        .parse_file(paths.example_str())
+        .with_context(|| format!("Failed to parse {}", paths.example_str()))?;
 
     // Same distinction as in `sync_forward` — see the note there.
-    let env_file = if Path::new(".env").exists() {
-        parser.parse_file(".env").context("Failed to parse .env")?
+    let env_file = if paths.env.exists() {
+        parser
+            .parse_file(paths.env_str())
+            .context("Failed to parse .env")?
     } else {
-        ui::info(".env not found, creating from .env.example");
-        return handle_new_env_file(&example_file.vars, dry_run, config);
+        ui::info(format!(
+            "{} not found, creating from {}",
+            paths.env_str(),
+            paths.example_str()
+        ));
+        return handle_new_env_file(paths, &example_file.vars, dry_run, config);
     };
 
     let env_keys: HashSet<_> = env_file.vars.keys().collect();
@@ -471,14 +518,14 @@ fn sync_reverse(
         let preview = add_from_example_preview(&missing, &example_file.vars, true)?;
         if dry_run {
             print_preview(&SyncPreview {
-                target_file: ".env".into(),
+                target_file: paths.env_str(),
                 action: SyncAction::Add,
                 variables: preview,
                 warnings: vec!["Remember to replace placeholders with real values".into()],
             });
             return Ok(true);
         }
-        add_from_example(&missing, &example_file.vars, true)?;
+        add_from_example(paths, &missing, &example_file.vars, true)?;
         ui::success(format!("Added {} variables to .env", missing.len()));
         return Ok(true);
     }
@@ -504,14 +551,14 @@ fn sync_reverse(
                 add_from_example_interactive_preview(&missing, &example_file.vars, config)?;
             if dry_run {
                 print_preview(&SyncPreview {
-                    target_file: ".env".into(),
+                    target_file: paths.env_str(),
                     action: SyncAction::Add,
                     variables: preview,
                     warnings: vec![],
                 });
                 return Ok(true);
             }
-            add_from_example_interactive(&missing, &example_file.vars, config)?;
+            add_from_example_interactive(paths, &missing, &example_file.vars, config)?;
             ui::success("Added selected variables to .env");
             return Ok(true);
         }
@@ -525,7 +572,7 @@ fn sync_reverse(
     let preview = add_from_example_preview(&missing, &example_file.vars, use_placeholders)?;
     if dry_run {
         print_preview(&SyncPreview {
-            target_file: ".env".into(),
+            target_file: paths.env_str(),
             action: SyncAction::Add,
             variables: preview,
             warnings: if use_placeholders {
@@ -537,7 +584,7 @@ fn sync_reverse(
         return Ok(true);
     }
 
-    add_from_example(&missing, &example_file.vars, use_placeholders)?;
+    add_from_example(paths, &missing, &example_file.vars, use_placeholders)?;
     ui::success(format!("Added {} variables to .env", missing.len()));
 
     if use_placeholders {
@@ -548,6 +595,7 @@ fn sync_reverse(
 }
 
 fn handle_new_env_file(
+    paths: &SyncPaths,
     example_vars: &IndexMap<String, String>,
     dry_run: bool,
     config: &PlaceholderConfig,
@@ -563,7 +611,7 @@ fn handle_new_env_file(
             })
             .collect();
         print_preview(&SyncPreview {
-            target_file: ".env".into(),
+            target_file: paths.env_str(),
             action: SyncAction::Add,
             variables: preview,
             warnings: vec!["Replace placeholder values with real credentials!".into()],
@@ -571,7 +619,7 @@ fn handle_new_env_file(
         return Ok(true);
     }
 
-    atomic_write(".env", &fs::read_to_string(".env.example")?)?;
+    atomic_write(&paths.env, &fs::read_to_string(&paths.example)?)?;
     ui::success("Created .env");
     ui::warning("Replace placeholder values with real credentials!");
     ui::print_next_steps(&[
@@ -587,19 +635,20 @@ fn handle_new_env_file(
 // ─────────────────────────────────────────────────────────────
 
 fn add_with_placeholders(
+    paths: &SyncPaths,
     keys: &[&String],
     values: &IndexMap<String, String>,
     config: &PlaceholderConfig,
 ) -> Result<()> {
-    let mut content = fs::read_to_string(".env.example").context("Failed to read .env.example")?;
-    content.push_str("\n# Synced from .env\n");
+    let mut content = fs::read_to_string(&paths.example).context("Failed to read .env.example")?;
+    content.push_str(&format!("\n# Synced from {}\n", paths.env_str()));
 
     for key in keys {
         let placeholder = generate_placeholder(key, values.get(*key), config);
         content.push_str(&format!("{}={}\n", key, placeholder));
     }
 
-    atomic_write(".env.example", &content)?;
+    atomic_write(&paths.example, &content)?;
     Ok(())
 }
 
@@ -622,9 +671,16 @@ fn add_with_placeholders_preview(
         .collect())
 }
 
-fn add_with_actual_values(keys: &[&String], values: &IndexMap<String, String>) -> Result<()> {
-    let mut content = fs::read_to_string(".env.example")?;
-    content.push_str("\n# Synced from .env [⚠️ ACTUAL VALUES]\n");
+fn add_with_actual_values(
+    paths: &SyncPaths,
+    keys: &[&String],
+    values: &IndexMap<String, String>,
+) -> Result<()> {
+    let mut content = fs::read_to_string(&paths.example)?;
+    content.push_str(&format!(
+        "\n# Synced from {} [⚠️ ACTUAL VALUES]\n",
+        paths.env_str()
+    ));
 
     for key in keys {
         if let Some(value) = values.get(*key) {
@@ -632,7 +688,7 @@ fn add_with_actual_values(keys: &[&String], values: &IndexMap<String, String>) -
         }
     }
 
-    atomic_write(".env.example", &content)?;
+    atomic_write(&paths.example, &content)?;
     Ok(())
 }
 
@@ -654,6 +710,7 @@ fn add_with_actual_values_preview(
 }
 
 fn add_interactively(
+    paths: &SyncPaths,
     keys: &[&String],
     values: &IndexMap<String, String>,
     config: &PlaceholderConfig,
@@ -663,8 +720,8 @@ fn add_interactively(
         .items(keys)
         .interact()?;
 
-    let mut content = fs::read_to_string(".env.example")?;
-    content.push_str("\n# Synced from .env\n");
+    let mut content = fs::read_to_string(&paths.example)?;
+    content.push_str(&format!("\n# Synced from {}\n", paths.env_str()));
 
     for &idx in &selected {
         let key = keys[idx];
@@ -672,7 +729,7 @@ fn add_interactively(
         content.push_str(&format!("{}={}\n", key, placeholder));
     }
 
-    atomic_write(".env.example", &content)?;
+    atomic_write(&paths.example, &content)?;
     Ok(())
 }
 
@@ -695,9 +752,13 @@ fn add_interactively_preview(
         .collect())
 }
 
-fn convert_to_example(vars: &IndexMap<String, String>, config: &PlaceholderConfig) -> Result<()> {
+fn convert_to_example(
+    paths: &SyncPaths,
+    vars: &IndexMap<String, String>,
+    config: &PlaceholderConfig,
+) -> Result<()> {
     let mut content = String::new();
-    content.push_str("# Generated from .env\n");
+    content.push_str(&format!("# Generated from {}\n", paths.env_str()));
     content.push_str("# Replace all placeholder values with real credentials\n\n");
 
     for (key, value) in vars {
@@ -705,7 +766,7 @@ fn convert_to_example(vars: &IndexMap<String, String>, config: &PlaceholderConfi
         content.push_str(&format!("{}={}\n", key, placeholder));
     }
 
-    atomic_write(".env.example", &content)?;
+    atomic_write(&paths.example, &content)?;
     Ok(())
 }
 
@@ -732,12 +793,13 @@ fn convert_to_example_preview(
 // ─────────────────────────────────────────────────────────────
 
 fn add_from_example(
+    paths: &SyncPaths,
     keys: &[&String],
     example_vars: &IndexMap<String, String>,
     use_placeholders: bool,
 ) -> Result<()> {
-    let mut content = fs::read_to_string(".env").unwrap_or_default();
-    content.push_str("\n# Synced from .env.example\n");
+    let mut content = fs::read_to_string(&paths.env).unwrap_or_default();
+    content.push_str(&format!("\n# Synced from {}\n", paths.example_str()));
 
     for key in keys {
         let value = if use_placeholders {
@@ -752,7 +814,7 @@ fn add_from_example(
         content.push_str(&format!("{}={}\n", key, value));
     }
 
-    atomic_write(".env", &content)?;
+    atomic_write(&paths.env, &content)?;
     Ok(())
 }
 
@@ -781,6 +843,7 @@ fn add_from_example_preview(
 }
 
 fn add_from_example_interactive(
+    paths: &SyncPaths,
     keys: &[&String],
     example_vars: &IndexMap<String, String>,
     config: &PlaceholderConfig,
@@ -790,8 +853,8 @@ fn add_from_example_interactive(
         .items(keys)
         .interact()?;
 
-    let mut content = fs::read_to_string(".env").unwrap_or_default();
-    content.push_str("\n# Synced from .env.example\n");
+    let mut content = fs::read_to_string(&paths.env).unwrap_or_default();
+    content.push_str(&format!("\n# Synced from {}\n", paths.example_str()));
 
     for &idx in &selected {
         let key = keys[idx];
@@ -799,7 +862,7 @@ fn add_from_example_interactive(
         content.push_str(&format!("{}={}\n", key, placeholder));
     }
 
-    atomic_write(".env", &content)?;
+    atomic_write(&paths.env, &content)?;
     Ok(())
 }
 
