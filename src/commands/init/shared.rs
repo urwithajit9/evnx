@@ -4,8 +4,26 @@ use colored::*;
 use std::fs;
 use std::path::Path;
 
-/// Entries `init` adds to `.gitignore`.
-const GITIGNORE_ENTRIES: &[&str] = &[".env", ".env.local", ".env.*.local"];
+/// Entries `init` adds to `.gitignore`, in this order — the negations must
+/// follow the pattern they carve out of.
+///
+/// ⚠️ This used to be `.env`, `.env.local`, `.env.*.local` — the Next.js
+/// convention, which assumes `.env.production` holds *non-secret defaults* and
+/// so leaves it committable. For a secrets tool that assumption is backwards.
+/// Verified before the change: a fresh `evnx init`, then `git check-ignore`:
+///
+/// ```text
+/// .env             ignored
+/// .env.local       ignored
+/// .env.production  NOT IGNORED   ← and `evnx doctor` reported ✓
+/// .env.staging     NOT IGNORED
+/// .env.test        NOT IGNORED
+/// ```
+///
+/// Ignoring `.env*` wholesale and exempting the template family is both safer
+/// and more durable: it covers `.env.prod`, `.env.dev` and whatever else a
+/// project invents, rather than only the names evnx happens to know.
+const GITIGNORE_ENTRIES: &[&str] = &[".env*", "!.env.example", "!.env.sample", "!.env.template"];
 
 /// How to treat an existing `.env.example`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -176,8 +194,8 @@ mod tests {
         assert!(
             content
                 .lines()
-                .any(|l| l.trim() == ".env" && !l.trim_start().starts_with('#')),
-            "`.env` must be present as a real rule, not only inside a comment:\n{content}"
+                .any(|l| l.trim() == ".env*" && !l.trim_start().starts_with('#')),
+            "`.env*` must be present as a real rule, not only inside a comment:\n{content}"
         );
         assert!(
             content.contains("# Remember: never commit .env"),
@@ -195,6 +213,10 @@ mod tests {
         let second = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
 
         assert_eq!(first, second, "a second run must not duplicate entries");
-        assert_eq!(first.matches("\n.env\n").count().max(1), 1);
+        assert_eq!(
+            first.lines().filter(|l| l.trim() == ".env*").count(),
+            1,
+            "the rule must appear exactly once:\n{first}"
+        );
     }
 }
