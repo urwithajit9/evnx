@@ -169,7 +169,39 @@ impl FileFilter {
             ".env.template",
         ];
 
-        ALWAYS_EXCLUDE.iter().any(|p| path_str.contains(p))
+        if ALWAYS_EXCLUDE.iter().any(|p| path_str.contains(p)) {
+            return true;
+        }
+
+        // `evnx backup` writes a single base64 blob, which the high-entropy
+        // detector reads as a secret. It is ciphertext by construction, so a
+        // finding there is always false. This only matters since `.env*` files
+        // became scannable — before that, `.env.backup` was skipped for having
+        // an unrecognised extension, and the false positive never surfaced.
+        Self::is_evnx_backup(path)
+    }
+
+    /// Is this an `evnx backup` artefact — `.env.backup`, `.env.production.backup`,
+    /// or a rotated `.env.backup.2`?
+    ///
+    /// Deliberately narrow: it matches only files that *this* filter newly admits,
+    /// i.e. ones whose name starts with `.env`. A plain `config.backup` is
+    /// unaffected and stays outside the scanner's reach exactly as before, rather
+    /// than being newly excluded on the strength of its extension.
+    fn is_evnx_backup(path: &Path) -> bool {
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            return false;
+        };
+        if !name.starts_with(".env") {
+            return false;
+        }
+        // Strip a rotation suffix (`.1`, `.2`, …) before looking for `.backup`,
+        // so `.env.backup.2` is recognised as readily as `.env.backup`.
+        let stem = name
+            .rsplit_once('.')
+            .filter(|(_, last)| last.chars().all(|c| c.is_ascii_digit()) && !last.is_empty())
+            .map_or(name, |(head, _)| head);
+        stem.ends_with(".backup")
     }
 
     /// Check if a file is scannable (text-based).
@@ -227,16 +259,18 @@ impl FileFilter {
             }
         }
 
-        // Files without extensions
-        if path.extension().is_none() {
-            if let Some(name) = path.file_name() {
-                let name_str = name.to_string_lossy();
-                if name_str.starts_with(".env")
-                    || name_str == "Dockerfile"
-                    || name_str == "Makefile"
-                {
-                    return true;
-                }
+        // Name-based matches.
+        //
+        // ⚠️ This must NOT sit behind `if path.extension().is_none()`. Rust returns
+        // `Some("production")` from `Path::extension()` for `.env.production` — a
+        // dotfile only has "no extension" when it has no *further* dot — so guarding
+        // on that made this branch unreachable for every dotted variant:
+        // `.env.production`, `.env.local`, `.env.test`, `.env.staging`,
+        // `.env.development`. `evnx scan .` walked straight past the file most
+        // likely to hold production credentials and reported the directory clean.
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with(".env") || name == "Dockerfile" || name == "Makefile" {
+                return true;
             }
         }
 
@@ -286,6 +320,116 @@ mod tests {
         assert!(FileFilter::is_scannable(Path::new(".env")));
         assert!(FileFilter::is_scannable(Path::new("Dockerfile")));
         assert!(FileFilter::is_scannable(Path::new("Makefile")));
+    }
+
+    /// The regression this file exists to prevent.
+    ///
+    /// `Path::extension()` returns `Some("production")` for `.env.production`, so
+    /// an implementation that only consults the file *name* when the extension is
+    /// `None` skips every dotted variant — and a secret scanner that skips
+    /// `.env.production` does not merely miss it, it reports the directory clean.
+    #[test]
+    fn dotted_env_variants_are_scannable() {
+        for name in [
+            ".env",
+            ".env.local",
+            ".env.test",
+            ".env.staging",
+            ".env.production",
+            ".env.development",
+            ".env.production.local",
+        ] {
+            assert!(
+                FileFilter::is_scannable(Path::new(name)),
+                "{name} must be scannable"
+            );
+        }
+    }
+
+    #[test]
+    fn env_template_family_is_still_excluded() {
+        let filter = FileFilter::new(&[]);
+        for name in [".env.example", ".env.sample", ".env.template"] {
+            assert!(
+                filter.should_exclude(Path::new(name)),
+                "{name} must stay excluded"
+            );
+        }
+    }
+
+    /// `evnx backup` output is a single base64 blob that the high-entropy detector
+    /// reads as a secret. It is ciphertext, so the finding is always false.
+    #[test]
+    fn evnx_backups_are_excluded() {
+        let filter = FileFilter::new(&[]);
+        for name in [
+            ".env.backup",
+            ".env.backup.1",
+            ".env.backup.12",
+            ".env.production.backup",
+            ".env.production.backup.3",
+        ] {
+            assert!(
+                filter.should_exclude(Path::new(name)),
+                "{name} is ciphertext and must not be scanned"
+            );
+        }
+
+        // Narrowly scoped: a backup that is not an `.env*` file is left exactly as
+        // it was before this rule existed — unscannable by extension, not newly
+        // excluded by name.
+        assert!(!filter.should_exclude(Path::new("config.backup")));
+        assert!(!FileFilter::is_scannable(Path::new("config.backup")));
+
+        // And `.env` itself is not a backup.
+        assert!(!filter.should_exclude(Path::new(".env")));
+        assert!(!filter.should_exclude(Path::new(".env.production")));
+    }
+
+    /// End-to-end over a real directory: the shape a user actually has.
+    #[test]
+    fn collect_files_picks_up_every_env_variant() {
+        let dir = TempDir::new().unwrap();
+        for name in [
+            ".env",
+            ".env.local",
+            ".env.test",
+            ".env.staging",
+            ".env.production",
+            ".env.development",
+            ".env.example",
+            ".env.backup",
+        ] {
+            fs::write(
+                dir.path().join(name),
+                "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7REALKEY\n",
+            )
+            .unwrap();
+        }
+
+        let filter = FileFilter::new(&[]);
+        let found: Vec<String> = filter
+            .collect_files(&[dir.path().to_string_lossy().to_string()])
+            .unwrap()
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+
+        for name in [
+            ".env",
+            ".env.local",
+            ".env.test",
+            ".env.staging",
+            ".env.production",
+            ".env.development",
+        ] {
+            assert!(
+                found.contains(&name.to_string()),
+                "{name} was not collected"
+            );
+        }
+        assert!(!found.contains(&".env.example".to_string()));
+        assert!(!found.contains(&".env.backup".to_string()));
     }
 
     #[test]
