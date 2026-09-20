@@ -72,6 +72,91 @@ fn resolve_target(explicit: Option<String>) -> Result<String> {
     }
 }
 
+/// How the env file for a push or pull was arrived at, so the command can say so.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum FileChoice {
+    /// `--file <path>`.
+    Explicit,
+    /// `--env-name <name>`.
+    Named,
+    /// `.env.<vault environment>`, because that file exists.
+    MatchedEnvironment,
+    /// Plain `.env`.
+    Default,
+}
+
+impl FileChoice {
+    fn note(self) -> &'static str {
+        match self {
+            FileChoice::Explicit => "--file",
+            FileChoice::Named => "--env-name",
+            FileChoice::MatchedEnvironment => "matched the vault environment",
+            FileChoice::Default => "default",
+        }
+    }
+}
+
+/// Decide which local file a push or pull should use.
+///
+/// ⚠️ Why this exists: `--file` defaulted to `.env` whatever the vault was, so
+/// `evnx cloud push --vault app/production` with a forgotten flag pushed local
+/// development secrets into the production vault — encrypted, versioned, and
+/// shared with everyone holding a key. Nothing said which file it had read.
+///
+/// `vault_env` is empty when the vault was addressed by id, since a vault-scoped
+/// token cannot list vaults; there is nothing to derive from then, so it falls
+/// through to `.env`.
+///
+/// Unlike the local commands, a derived name that does not exist is **not** an
+/// error — most projects genuinely have only `.env`, and refusing would break
+/// the common case. What makes that safe is that the caller reports the choice
+/// every time: a push that names its source cannot silently push the wrong one.
+fn resolve_env_file(
+    dir: &Path,
+    explicit: Option<PathBuf>,
+    env_name: Option<&str>,
+    vault_env: &str,
+) -> Result<(PathBuf, FileChoice)> {
+    if let Some(path) = explicit {
+        return Ok((path, FileChoice::Explicit));
+    }
+
+    if let Some(name) = env_name {
+        return Ok((
+            crate::core::env_name::resolve(dir, Some(name))?,
+            FileChoice::Named,
+        ));
+    }
+
+    if !vault_env.is_empty() {
+        let candidate = dir.join(format!(".env.{vault_env}"));
+        if candidate.is_file() {
+            return Ok((candidate, FileChoice::MatchedEnvironment));
+        }
+    }
+
+    Ok((dir.join(".env"), FileChoice::Default))
+}
+
+/// Print the file a command settled on, and warn when the pairing looks wrong.
+///
+/// The warning case is narrow on purpose: a **production** vault paired with a
+/// plain `.env` that was not asked for by name. That is the shape of "I forgot
+/// the flag", and it is the one that puts development secrets in a production
+/// vault.
+fn report_file(file: &Path, choice: FileChoice, vault_env: &str, action: &str) {
+    println!("  file      {} ({})", file.display(), choice.note());
+
+    if choice == FileChoice::Default && vault_env == "production" {
+        println!(
+            "  {} {} to a production vault from {} — pass --env-name or --file if that is not what you meant",
+            "⚠".yellow(),
+            action,
+            file.display()
+        );
+    }
+}
+
 #[derive(Serialize)]
 struct PushVersionRequest {
     nonce: String,
@@ -137,7 +222,8 @@ struct MyKey {
 pub fn push(
     server_override: Option<&str>,
     vault_target: Option<String>,
-    file: PathBuf,
+    file: Option<PathBuf>,
+    env_name: Option<String>,
     password_stdin: bool,
     verbose: bool,
 ) -> Result<()> {
@@ -145,17 +231,27 @@ pub fn push(
 
     let vault_target = resolve_target(vault_target)?;
 
-    // Read before anything else: a missing file should fail instantly, not after
-    // a password prompt and a second of Argon2id.
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    vault::require_session(&client, &server)?;
+    // The vault has to be resolved before the file can be: which environment it
+    // holds is what `.env.<environment>` is derived from.
+    let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
+
+    let (file, choice) = resolve_env_file(
+        Path::new("."),
+        file,
+        env_name.as_deref(),
+        &vault_ref.environment,
+    )?;
+    report_file(&file, choice, &vault_ref.environment, "pushing");
+
+    // Still read before the password prompt: a missing file should fail
+    // instantly, not after a second of Argon2id.
     let plaintext = std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
     if plaintext.is_empty() {
         return Err(anyhow!("{} is empty; nothing to push", file.display()));
     }
-
-    let server = CloudConfig::resolve_server(server_override)?;
-    let client = Client::new(server.clone())?;
-    vault::require_session(&client, &server)?;
-    let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
     let current = current_version(&client, &vault_ref)?;
     let target_version = current + 1;
@@ -221,7 +317,8 @@ pub fn push(
 pub fn pull(
     server_override: Option<&str>,
     vault_target: Option<String>,
-    file: PathBuf,
+    file: Option<PathBuf>,
+    env_name: Option<String>,
     version: Option<i32>,
     force: bool,
     password_stdin: bool,
@@ -235,6 +332,18 @@ pub fn pull(
     let client = Client::new(server.clone())?;
     vault::require_session(&client, &server)?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
+
+    // ⚠️ On pull the derivation only fires when the file already exists, so a
+    // first pull into a fresh checkout still writes `.env`. That is the right
+    // default: pull must not invent `.env.production` in a project that has no
+    // such convention. Name it explicitly to create one.
+    let (file, choice) = resolve_env_file(
+        Path::new("."),
+        file,
+        env_name.as_deref(),
+        &vault_ref.environment,
+    )?;
+    report_file(&file, choice, &vault_ref.environment, "writing");
 
     let version = match version {
         Some(v) => v,
@@ -729,5 +838,88 @@ mod tests {
         .to_string();
         assert!(err.contains("Remote is at version 5"), "{err}");
         assert!(err.contains("cannot simply be re-sent"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod env_file_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn project(files: &[&str]) -> TempDir {
+        let d = TempDir::new().unwrap();
+        for f in files {
+            std::fs::write(d.path().join(f), "A=1\n").unwrap();
+        }
+        d
+    }
+
+    /// ⚠️ The bug this exists for: `--vault app/production` with a forgotten
+    /// `--file` pushed local development secrets into the production vault.
+    #[test]
+    fn the_vault_environment_picks_the_file() {
+        let d = project(&[".env", ".env.production"]);
+
+        let (path, choice) = resolve_env_file(d.path(), None, None, "production").unwrap();
+
+        assert!(path.ends_with(".env.production"), "{path:?}");
+        assert_eq!(choice, FileChoice::MatchedEnvironment);
+    }
+
+    /// Most projects genuinely have only `.env`; refusing would break the common
+    /// case. What makes it safe is that the caller prints the choice.
+    #[test]
+    fn a_missing_derived_file_falls_back_rather_than_failing() {
+        let d = project(&[".env"]);
+
+        let (path, choice) = resolve_env_file(d.path(), None, None, "production").unwrap();
+
+        assert!(path.ends_with(".env"), "{path:?}");
+        assert_eq!(choice, FileChoice::Default);
+    }
+
+    /// A vault addressed by id has no environment to derive from — a
+    /// vault-scoped token cannot list vaults.
+    #[test]
+    fn an_unknown_environment_derives_nothing() {
+        let d = project(&[".env", ".env.production"]);
+
+        let (path, choice) = resolve_env_file(d.path(), None, None, "").unwrap();
+
+        assert!(path.ends_with(".env"), "{path:?}");
+        assert_eq!(choice, FileChoice::Default);
+    }
+
+    #[test]
+    fn an_explicit_file_always_wins() {
+        let d = project(&[".env", ".env.production"]);
+
+        let (path, choice) = resolve_env_file(
+            d.path(),
+            Some(PathBuf::from("custom.env")),
+            None,
+            "production",
+        )
+        .unwrap();
+
+        assert_eq!(path, PathBuf::from("custom.env"));
+        assert_eq!(choice, FileChoice::Explicit);
+    }
+
+    /// `--env-name` keeps the strict contract of the local commands: a name that
+    /// resolves to nothing is an error, not a fallback. The user named it.
+    #[test]
+    fn an_explicit_name_must_exist() {
+        let d = project(&[".env", ".env.production"]);
+
+        let (path, choice) =
+            resolve_env_file(d.path(), None, Some("production"), "staging").unwrap();
+        assert!(path.ends_with(".env.production"));
+        assert_eq!(choice, FileChoice::Named);
+
+        assert!(
+            resolve_env_file(d.path(), None, Some("nope"), "production").is_err(),
+            "a named environment that does not exist must fail"
+        );
     }
 }
