@@ -748,6 +748,16 @@ pub enum Commands {
         pattern: Vec<String>,
         #[arg(long)]
         ignore_placeholders: bool,
+
+        /// Lowest confidence worth reporting: high, medium or low.
+        ///
+        /// Filters what is reported, counted and exited on — all three describe
+        /// the same set. `--severity high` reports only detections that match a
+        /// known provider format, which is the usual choice for a blocking CI
+        /// gate; the default reports everything.
+        #[arg(long, value_name = "LEVEL", default_value = "low")]
+        severity: String,
+
         #[arg(long, default_value = "pretty")]
         format: String,
         #[arg(long)]

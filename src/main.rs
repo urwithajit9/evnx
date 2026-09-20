@@ -55,6 +55,7 @@ fn main() -> Result<()> {
             exclude,
             pattern,
             ignore_placeholders,
+            severity,
             format,
             exit_zero,
         } => commands::scan::run(
@@ -62,6 +63,7 @@ fn main() -> Result<()> {
             exclude,
             pattern,
             ignore_placeholders,
+            severity,
             format,
             exit_zero,
             cli.verbose,

@@ -293,21 +293,6 @@ pub fn detect_secret(value: &str, key: &str) -> Option<(String, Confidence, Opti
         ));
     }
 
-    // AWS Secret Key is tricky - high false positive rate
-    // Only flag if key name suggests it's AWS-related
-    if AWS_SECRET_KEY.is_match(value)
-        && (key.to_uppercase().contains("AWS") || key.to_uppercase().contains("SECRET"))
-    {
-        let entropy = calculate_entropy(value);
-        if entropy > 4.5 {
-            return Some((
-                "AWS Secret Access Key".to_string(),
-                Confidence::Medium,
-                Some("https://console.aws.amazon.com/iam".to_string()),
-            ));
-        }
-    }
-
     if STRIPE_SECRET_LIVE.is_match(value) {
         return Some((
             "Stripe Secret Key (LIVE)".to_string(),
@@ -350,6 +335,29 @@ pub fn detect_secret(value: &str, key: &str) -> Option<(String, Confidence, Opti
 
     if PRIVATE_KEY.is_match(value) {
         return Some(("Private Key".to_string(), Confidence::High, None));
+    }
+
+    // AWS secret access keys have no distinctive prefix — the pattern is just
+    // "40 base64-ish characters" — so this is gated on the key *name* and on
+    // entropy, and it runs after every provider format that can be recognised
+    // from the value itself.
+    //
+    // ⚠️ The gate used to be `contains("AWS") || contains("SECRET")`. A Stripe
+    // key is 40-ish base64 characters and `STRIPE_SECRET_KEY` contains SECRET,
+    // so it was reported as "AWS Secret Access Key" — with a link to the AWS IAM
+    // console as the place to revoke it. The guard was meant to read "this key
+    // names AWS"; the second arm made it match any secret at all. Running last
+    // is the second half of the fix: a value that *is* recognisable as Stripe or
+    // GitHub is now claimed by that pattern before this one sees it.
+    if AWS_SECRET_KEY.is_match(value) && key.to_uppercase().contains("AWS") {
+        let entropy = calculate_entropy(value);
+        if entropy > 4.5 {
+            return Some((
+                "AWS Secret Access Key".to_string(),
+                Confidence::Medium,
+                Some("https://console.aws.amazon.com/iam".to_string()),
+            ));
+        }
     }
 
     // Generic high-entropy check as fallback

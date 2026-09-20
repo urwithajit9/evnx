@@ -19,7 +19,7 @@
 use super::{
     detector::DetectorRegistry,
     filters::FileFilter,
-    models::{Finding, ScanResults},
+    models::{Confidence, Finding, ScanResults},
     output::{render, OutputFormat},
 };
 use crate::utils::ui;
@@ -60,6 +60,8 @@ pub struct ScanRunner {
     filter: FileFilter,
     ignore_placeholders: bool,
     verbose: bool,
+    /// Lowest confidence worth reporting. `Low` reports everything.
+    min_confidence: Confidence,
 }
 
 impl ScanRunner {
@@ -78,11 +80,28 @@ impl ScanRunner {
     /// let runner = ScanRunner::new(&["*.log".to_string()], false, true);
     /// ```
     pub fn new(exclude: &[String], ignore_placeholders: bool, verbose: bool) -> Self {
+        Self::with_min_confidence(exclude, ignore_placeholders, verbose, Confidence::Low)
+    }
+
+    /// As [`ScanRunner::new`], but reporting only findings at or above
+    /// `min_confidence` — what `--severity` sets.
+    ///
+    /// Filtering happens at the point a finding is recorded rather than at render
+    /// time, so every count, the JSON `summary`, and the process exit code all
+    /// describe the same filtered set. A scanner whose exit code disagreed with
+    /// its own output would be worse than one without the flag.
+    pub fn with_min_confidence(
+        exclude: &[String],
+        ignore_placeholders: bool,
+        verbose: bool,
+        min_confidence: Confidence,
+    ) -> Self {
         Self {
             registry: DetectorRegistry::new(),
             filter: FileFilter::new(exclude),
             ignore_placeholders,
             verbose,
+            min_confidence,
         }
     }
 
@@ -186,7 +205,9 @@ impl ScanRunner {
                     let value = value.trim();
 
                     let location = format!("{}:{} ({})", path.display(), line_num, key);
-                    for detection in self.registry.scan_kv(key, value, &location) {
+                    if let Some(detection) =
+                        Self::best(self.registry.scan_kv(key, value, &location))
+                    {
                         self.add_finding(results, path, line_num, Some(key.to_string()), detection);
                     }
                 }
@@ -194,7 +215,8 @@ impl ScanRunner {
                 // Scan tokens for general text files
                 let location = format!("{}:{}", path.display(), line_num);
                 for token in Self::extract_tokens(line) {
-                    for detection in self.registry.scan_token(&token, &location) {
+                    if let Some(detection) = Self::best(self.registry.scan_token(&token, &location))
+                    {
                         self.add_finding(results, path, line_num, None, detection);
                     }
                 }
@@ -202,6 +224,56 @@ impl ScanRunner {
         }
 
         Ok(())
+    }
+
+    /// One value, one finding.
+    ///
+    /// Every registered detector sees each key/value pair, and more than one can
+    /// match — `STRIPE_SECRET_KEY` fires both the pattern matcher and the
+    /// sensitive-key heuristic. Recording both inflated `secrets_found` (one
+    /// Stripe key reported as two secrets), printed the same line twice, and
+    /// emitted two GitHub annotations for it.
+    ///
+    /// Ranking, in order:
+    ///
+    /// 1. **Carries a remediation URL.** A finding that can say *where to revoke
+    ///    this* is more useful than one that cannot, and only the named provider
+    ///    patterns can. Confidence alone gets this wrong: the sensitive-key
+    ///    heuristic scores `High` on any long value, so it beat the real
+    ///    `AWS Secret Access Key` match — `Medium` on purpose, since that pattern
+    ///    is just "40 base64-ish characters" — and a genuine AWS key was reported
+    ///    as "Sensitive config key" with no link to IAM.
+    /// 2. **Higher confidence.** So `MY_PASSWORD=<long value>`, which matches only
+    ///    the key-aware heuristic and the shapeless high-entropy fallback, keeps
+    ///    the key-aware answer.
+    /// 3. **Earliest detector**, which is `PatternDetector`.
+    ///
+    /// The winner keeps its label and URL but takes the **highest confidence any
+    /// detector reported**. The two are answering different questions: the
+    /// pattern's `Medium` on an AWS secret key expresses doubt about *which
+    /// provider* a shapeless 40-character blob belongs to, not doubt about
+    /// whether it is a secret — and `AWS_SECRET_ACCESS_KEY` as a key name settles
+    /// the second question. Two independent detectors agreeing is stronger
+    /// evidence than either alone.
+    ///
+    /// Without this, deduplication would have quietly narrowed `--severity high`:
+    /// a real AWS secret key would drop to `Medium` and slip under a gate that
+    /// used to catch it through the heuristic's separate `High` finding.
+    fn best(detections: Vec<super::detector::Detection>) -> Option<super::detector::Detection> {
+        fn rank(d: &super::detector::Detection) -> (bool, super::models::Confidence) {
+            (d.action_url.is_some(), d.confidence)
+        }
+
+        let strongest = detections.iter().map(|d| d.confidence).max()?;
+        let mut winner = detections.into_iter().reduce(|best, next| {
+            if rank(&next) > rank(&best) {
+                next
+            } else {
+                best
+            }
+        })?;
+        winner.confidence = strongest;
+        Some(winner)
     }
 
     /// Add a finding to results with proper truncation and filtering.
@@ -225,6 +297,11 @@ impl ScanRunner {
         if self.ignore_placeholders
             && crate::utils::patterns::is_placeholder(&detection.matched_value)
         {
+            return;
+        }
+
+        // Below the --severity threshold: not recorded at all.
+        if detection.confidence < self.min_confidence {
             return;
         }
 

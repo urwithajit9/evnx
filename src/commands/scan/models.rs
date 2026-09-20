@@ -44,6 +44,53 @@ pub enum Confidence {
     Low,
 }
 
+impl Confidence {
+    /// Rank for threshold comparisons — higher means more confident.
+    ///
+    /// Declared explicitly rather than derived. `derive(Ord)` follows *declaration*
+    /// order, which here reads `High, Medium, Low` and would therefore make `High`
+    /// the **smallest** value — a `--severity high` filter that silently kept
+    /// everything. Naming the ranks makes the intent unmissable and survives
+    /// someone reordering the variants.
+    pub fn rank(self) -> u8 {
+        match self {
+            Confidence::Low => 0,
+            Confidence::Medium => 1,
+            Confidence::High => 2,
+        }
+    }
+}
+
+impl PartialOrd for Confidence {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Confidence {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.rank().cmp(&other.rank())
+    }
+}
+
+impl std::str::FromStr for Confidence {
+    type Err = anyhow::Error;
+
+    /// Parses the `--severity` threshold. Unknown values are an **error**, not a
+    /// silent default: a typo in a CI flag must not quietly widen or narrow what
+    /// the scanner reports.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "high" => Ok(Confidence::High),
+            "medium" | "med" => Ok(Confidence::Medium),
+            "low" | "all" => Ok(Confidence::Low),
+            other => Err(anyhow::anyhow!(
+                "unknown severity '{other}' — expected one of: high, medium, low"
+            )),
+        }
+    }
+}
+
 impl std::fmt::Display for Confidence {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -191,6 +238,40 @@ pub struct ScanResults {
     pub high_confidence: usize,
     pub medium_confidence: usize,
     pub low_confidence: usize,
+}
+
+/// Aggregate counts, as a nested object.
+///
+/// `evnx validate` and `evnx doctor` both close their JSON with a `summary`, and
+/// `scan` was the one machine-readable command without one — so a pipeline had to
+/// special-case it. Worse, `evnx.dev` documented `scan` as if it *did* have one:
+/// `jq '.summary.errors + .summary.warnings'` returned `null`, and
+/// `jq -e '.summary.errors == 0'` failed a build that was actually clean.
+///
+/// ⚠️ The fields are **confidence** levels, not severities. A high-confidence
+/// detection means "this really looks like an AWS key", not "this is the worst
+/// problem here" — the two are different questions and the docs conflated them.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Summary {
+    /// Findings reported, after any `--severity` filtering.
+    pub total: usize,
+    pub high: usize,
+    pub medium: usize,
+    pub low: usize,
+    pub files_scanned: usize,
+}
+
+impl ScanResults {
+    /// Aggregate counts for machine-readable output.
+    pub fn summary(&self) -> Summary {
+        Summary {
+            total: self.secrets_found,
+            high: self.high_confidence,
+            medium: self.medium_confidence,
+            low: self.low_confidence,
+            files_scanned: self.files_scanned,
+        }
+    }
 }
 
 impl ScanResults {
