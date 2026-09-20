@@ -556,8 +556,18 @@ pub enum CloudCommands {
         vault: Option<String>,
 
         /// File to push.
-        #[arg(long, short, default_value = ".env")]
-        file: std::path::PathBuf,
+        ///
+        /// Defaults to `.env.<environment>` when the vault names one and that
+        /// file exists — pushing `app/production` picks up `.env.production` —
+        /// and to `.env` otherwise. The file chosen is always printed.
+        #[arg(long, short)]
+        file: Option<std::path::PathBuf>,
+
+        /// Use `.env.<NAME>` instead of the derived or default file.
+        ///
+        /// A name whose file does not exist is an error listing the ones that do.
+        #[arg(long, value_name = "NAME", conflicts_with = "file")]
+        env_name: Option<String>,
 
         /// Read the master password from stdin instead of prompting.
         #[arg(long)]
@@ -578,8 +588,18 @@ pub enum CloudCommands {
         vault: Option<String>,
 
         /// Where to write the decrypted file.
-        #[arg(long, short, default_value = ".env")]
-        file: std::path::PathBuf,
+        ///
+        /// Defaults to `.env.<environment>` when the vault names one and that
+        /// file already exists, and to `.env` otherwise — a first pull into a
+        /// fresh checkout writes `.env`. The file chosen is always printed.
+        #[arg(long, short)]
+        file: Option<std::path::PathBuf>,
+
+        /// Use `.env.<NAME>` instead of the derived or default file.
+        ///
+        /// A name whose file does not exist is an error listing the ones that do.
+        #[arg(long, value_name = "NAME", conflicts_with = "file")]
+        env_name: Option<String>,
 
         /// Version to pull. Defaults to the latest.
         #[arg(long, value_name = "N")]
