@@ -481,3 +481,135 @@ mod check_flag {
             .success();
     }
 }
+
+// ─────────────────────────────────────────────────────────────
+// `--check` exit codes — 0 in sync / 1 out of sync / 2 error
+// ─────────────────────────────────────────────────────────────
+
+mod check_exit_codes {
+    use assert_cmd::Command;
+    use tempfile::TempDir;
+
+    const IN_SYNC: i32 = 0;
+    const OUT_OF_SYNC: i32 = 1;
+    const ERROR: i32 = 2;
+
+    /// Writes only the files named; a `None` means "this file does not exist".
+    fn dir(env: Option<&[u8]>, example: Option<&[u8]>) -> TempDir {
+        let d = TempDir::new().unwrap();
+        if let Some(b) = env {
+            std::fs::write(d.path().join(".env"), b).unwrap();
+        }
+        if let Some(b) = example {
+            std::fs::write(d.path().join(".env.example"), b).unwrap();
+        }
+        d
+    }
+
+    fn check_code(d: &TempDir, extra: &[&str]) -> i32 {
+        let mut cmd = Command::cargo_bin("evnx").unwrap();
+        cmd.arg("sync")
+            .arg("--check")
+            .args(extra)
+            .current_dir(d.path());
+        cmd.assert().get_output().status.code().unwrap()
+    }
+
+    #[test]
+    fn zero_when_in_sync() {
+        let d = dir(Some(b"A=1\n"), Some(b"A=x\n"));
+        assert_eq!(check_code(&d, &[]), IN_SYNC);
+    }
+
+    #[test]
+    fn one_when_a_variable_is_missing_from_the_template() {
+        let d = dir(Some(b"A=1\nNEW=2\n"), Some(b"A=x\n"));
+        assert_eq!(check_code(&d, &[]), OUT_OF_SYNC);
+    }
+
+    /// An absent *target* is not an error — running sync would create it.
+    #[test]
+    fn one_when_the_target_does_not_exist_yet() {
+        let fwd = dir(Some(b"A=1\n"), None);
+        assert_eq!(check_code(&fwd, &[]), OUT_OF_SYNC);
+
+        let rev = dir(None, Some(b"A=x\n"));
+        assert_eq!(check_code(&rev, &["--direction", "reverse"]), OUT_OF_SYNC);
+    }
+
+    /// An absent *source* is an error — there is nothing to sync from, so the
+    /// command cannot reach a verdict at all.
+    #[test]
+    fn two_when_the_source_does_not_exist() {
+        let fwd = dir(None, Some(b"A=x\n"));
+        assert_eq!(check_code(&fwd, &[]), ERROR);
+
+        let rev = dir(Some(b"A=1\n"), None);
+        assert_eq!(check_code(&rev, &["--direction", "reverse"]), ERROR);
+    }
+
+    /// ⚠️ The distinction this whole contract turns on.
+    ///
+    /// A template that exists but will not parse used to be reported as
+    /// ".env.example not found" — the `Err(_)` arm swallowed the difference — so
+    /// `--check` called it *out of sync* (1) and a plain `evnx sync` **overwrote
+    /// it**. It is an error (2), and the file is left alone.
+    #[test]
+    fn two_when_the_template_exists_but_will_not_parse() {
+        let d = dir(Some(b"A=1\n"), Some(b"\x00\x01 not = valid\n"));
+        assert_eq!(check_code(&d, &[]), ERROR);
+    }
+
+    #[test]
+    fn a_corrupt_template_is_never_overwritten() {
+        const CORRUPT: &[u8] = b"\x00\x01 not = valid\n";
+        let d = dir(Some(b"A=1\n"), Some(CORRUPT));
+
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["sync", "--force"])
+            .current_dir(d.path())
+            .assert()
+            .failure();
+
+        assert_eq!(
+            std::fs::read(d.path().join(".env.example")).unwrap(),
+            CORRUPT,
+            "an unreadable .env.example must be reported, never replaced"
+        );
+    }
+
+    /// The contract is opt-in: without `--check`, exit codes are untouched.
+    #[test]
+    fn without_check_nothing_changed() {
+        let d = dir(Some(b"A=1\nNEW=2\n"), Some(b"A=x\n"));
+
+        let code = |args: &[&str]| {
+            Command::cargo_bin("evnx")
+                .unwrap()
+                .arg("sync")
+                .args(args)
+                .current_dir(d.path())
+                .assert()
+                .get_output()
+                .status
+                .code()
+                .unwrap()
+        };
+
+        assert_eq!(code(&["--dry-run"]), 0, "--dry-run previews and exits 0");
+
+        // An error without --check still exits 1 via main, not 2.
+        let broken = dir(None, Some(b"A=x\n"));
+        let c = Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["sync", "--dry-run"])
+            .current_dir(broken.path())
+            .assert()
+            .get_output()
+            .status
+            .code()
+            .unwrap();
+        assert_eq!(c, 1, "errors keep their old code unless --check opts in");
+    }
+}
