@@ -85,6 +85,15 @@ pub struct SyncArgs {
     #[arg(long, short = 'n')]
     pub dry_run: bool,
 
+    /// Fail with a non-zero exit when the files are out of step.
+    ///
+    /// Implies --dry-run: nothing is written. This is the CI gate —
+    /// `evnx sync --check` passes when .env.example already covers .env and
+    /// fails when it does not, the way `prettier --check` does. Plain
+    /// --dry-run previews and always exits 0.
+    #[arg(long)]
+    pub check: bool,
+
     /// Skip interactive prompts (for CI/CD usage)
     #[arg(long, short = 'f')]
     pub force: bool,

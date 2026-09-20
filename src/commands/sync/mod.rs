@@ -16,14 +16,32 @@ mod security;
 // Re-export public types for external use (if needed)
 pub use models::{PlaceholderConfig, SyncAction, SyncPreview, VarChange};
 
-/// Public entry point called from main.rs
-/// Signature unchanged to maintain compatibility with existing CLI wiring
+/// Public entry point called from main.rs.
+///
+/// # `--check`
+///
+/// `check` implies `dry_run` and turns "the files are out of step" into a
+/// **non-zero exit**, the way `prettier --check`, `cargo fmt --check` and
+/// `git diff --exit-code` do. Without it `sync --dry-run` previews and exits 0
+/// whatever it finds, which is correct for a human looking at the output and
+/// useless as a CI gate — `evnx.dev`'s pipeline recipe is written as
+/// `if ! evnx sync --direction forward --dry-run --force; then …`, a condition
+/// that could never fire.
+///
+/// `--dry-run`'s own exit code is deliberately left alone: it is a preview, and
+/// scripts that already call it should not start failing.
+// 8 flags. `SyncArgs` in `cli.rs` already holds exactly this set, so the tidier
+// signature is to pass that struct — but it would rewrite every call site for no
+// behavioural gain, so it is queued for the v0.5.0 command review instead.
+// `validate::run` carries the same allow for the same reason.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     direction: SyncDirection,
     placeholder: bool,
     verbose: bool,
     dry_run: bool,
     force: bool,
+    check: bool,
     template_config: Option<PathBuf>,
     naming_policy: NamingPolicy,
 ) -> Result<()> {
@@ -31,12 +49,22 @@ pub fn run(
         direction,
         placeholder,
         verbose,
-        dry_run,
+        // `--check` is a dry run that reports its verdict through the exit code.
+        dry_run: dry_run || check,
         force,
         template_config,
         naming_policy,
     };
-    executor::execute(ctx)
+
+    let out_of_step = executor::execute(ctx)?;
+
+    if check && out_of_step {
+        eprintln!();
+        eprintln!("✗ Out of sync. Run `evnx sync --direction {direction}` and commit the result.");
+        std::process::exit(1);
+    }
+
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -50,17 +78,22 @@ mod tests {
     // SyncDirection is defined in cli.rs, so test it there instead
     // But if you want to verify the run() function signature compiles:
 
+    /// Pins the public signature so a change to it has to be deliberate.
+    ///
+    /// ⚠️ Updated 2026-09-21: `check: bool` was inserted after `force`. `evnx` is
+    /// published as a library as well as a binary, so this is a breaking change
+    /// for any direct caller — acceptable in 0.x, and the whole point of this
+    /// pin is that it could not happen by accident. Six `bool`s in a row is also
+    /// why the argument list should become `SyncArgs`; see the note on `run`.
     #[test]
     fn test_run_signature_compiles() {
-        // This test just ensures the public API hasn't changed
-        // We can't actually call run() without setting up files,
-        // but we can verify the function exists with expected params
         let _func: fn(
             crate::cli::SyncDirection,
-            bool,
-            bool,
-            bool,
-            bool,
+            bool, // placeholder
+            bool, // verbose
+            bool, // dry_run
+            bool, // force
+            bool, // check
             Option<std::path::PathBuf>,
             crate::cli::NamingPolicy,
         ) -> anyhow::Result<()> = run;
