@@ -85,6 +85,16 @@ pub fn run(
         eprintln!("[verbose] validate: env={}, example={}", env, example);
     }
 
+    // Reject an unknown --format before doing any work. Discovering it after a
+    // full parse-and-check pass wastes the run and buries the message under
+    // output the user did not ask for.
+    if !matches!(
+        format.as_str(),
+        "pretty" | "text" | "json" | "github-actions" | "github"
+    ) {
+        anyhow::bail!("unknown format '{format}' — expected one of: pretty, json, github-actions");
+    }
+
     // Resolve env file path with pattern support (Improvement #2)
     let env_path = resolve_env_path(&env, &pattern)?;
 
@@ -284,8 +294,16 @@ pub fn run(
     // ─────────────────────────────────────────
     match format.as_str() {
         "json" => output_json(&result)?,
-        "github-actions" => output_github_actions(&result, &env_path)?,
-        _ => output_pretty(&result, &env_path, &example)?,
+        "github-actions" | "github" => output_github_actions(&result, &env_path)?,
+        "pretty" | "text" => output_pretty(&result, &env_path, &example)?,
+        // ⚠️ Was `_ => output_pretty(..)`. A typo — or `--format sarif`, which
+        // `scan` supports and `validate` does not — printed human-readable output
+        // and exited as though the requested format had been produced.
+        other => {
+            anyhow::bail!(
+                "unknown format '{other}' — expected one of: pretty, json, github-actions"
+            )
+        }
     }
 
     // ─────────────────────────────────────────

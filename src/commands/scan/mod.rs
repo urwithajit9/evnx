@@ -26,6 +26,7 @@
 //!     vec![],                      // exclude
 //!     vec![],                      // pattern (unused)
 //!     false,                       // ignore_placeholders
+//!     "low".to_string(),           // severity — lowest confidence reported
 //!     "pretty".to_string(),        // format
 //!     false,                       // exit_zero
 //!     false,                       // verbose
@@ -97,23 +98,28 @@ pub use runner::{truncate_value, ScanRunner};
 ///     vec!["./src".to_string()],
 ///     vec!["node_modules".to_string()],
 ///     vec![],
-///     false,
-///     "pretty".to_string(),
-///     false,
-///     false,
+///     false,                   // ignore_placeholders
+///     "low".to_string(),       // severity
+///     "pretty".to_string(),    // format
+///     false,                   // exit_zero
+///     false,                   // verbose
 /// ).unwrap();
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     paths: Vec<String>,
     exclude: Vec<String>,
     _pattern: Vec<String>,
     ignore_placeholders: bool,
+    severity: String,
     format: String,
     exit_zero: bool,
     verbose: bool,
 ) -> Result<(), anyhow::Error> {
-    let output_format = format.parse().unwrap_or(OutputFormat::Pretty);
-    let runner = ScanRunner::new(&exclude, ignore_placeholders, verbose);
+    let min_confidence: Confidence = severity.parse()?;
+    let output_format: OutputFormat = format.parse()?;
+    let runner =
+        ScanRunner::with_min_confidence(&exclude, ignore_placeholders, verbose, min_confidence);
 
     let secrets_found = runner.run(paths, output_format)?;
 
