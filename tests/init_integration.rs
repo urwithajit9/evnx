@@ -440,10 +440,19 @@ fn init_updates_gitignore() {
         gitignore.contains("*.log"),
         "Original content should be preserved"
     );
-    assert!(gitignore.contains(".env\n"), "Should add .env entry");
     assert!(
-        gitignore.contains(".env.local"),
-        "Should add .env.local entry"
+        gitignore.contains("# My project"),
+        "The user's own comments should be preserved"
+    );
+    // Was `.env` + `.env.local`; now one pattern covering every env file, which
+    // is what stops `.env.production` being committable.
+    assert!(
+        gitignore.lines().any(|l| l.trim() == ".env*"),
+        "Should add the .env* rule:\n{gitignore}"
+    );
+    assert!(
+        gitignore.lines().any(|l| l.trim() == "!.env.example"),
+        "Should keep .env.example committable:\n{gitignore}"
     );
 }
 
@@ -517,5 +526,38 @@ fn init_interactive_abort() {
     assert!(
         !dir.path().join(".env.example").exists(),
         "Should not create files when aborted"
+    );
+}
+
+/// `init` used to write `.env`, `.env.local`, `.env.*.local` — the Next.js
+/// convention, which assumes `.env.production` holds non-secret defaults. For a
+/// secrets tool that assumption is backwards, and it left `.env.production`,
+/// `.env.staging` and `.env.test` committable.
+#[test]
+fn init_gitignores_every_env_file_but_not_the_template() {
+    let dir = TempDir::new().unwrap();
+
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .args(["init", "--yes", "--path"])
+        .arg(dir.path())
+        .assert()
+        .success();
+
+    let gitignore = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+    let rules: Vec<&str> = gitignore.lines().map(str::trim).collect();
+
+    assert!(rules.contains(&".env*"), "{gitignore}");
+    for exempt in ["!.env.example", "!.env.sample", "!.env.template"] {
+        assert!(rules.contains(&exempt), "missing {exempt}:\n{gitignore}");
+    }
+
+    // Order is load-bearing: a negation before the pattern it carves out of
+    // does nothing in gitignore.
+    let glob = rules.iter().position(|r| *r == ".env*").unwrap();
+    let negation = rules.iter().position(|r| *r == "!.env.example").unwrap();
+    assert!(
+        glob < negation,
+        "the negation must follow the pattern:\n{gitignore}"
     );
 }

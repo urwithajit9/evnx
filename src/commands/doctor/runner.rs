@@ -217,9 +217,16 @@ impl DiagnosticCheck for EnvFileCheck {
     }
 
     fn run(&self, project_root: &Path, verbose: bool) -> Result<CheckResult> {
-        let env_path = project_root.join(".env");
+        // ⚠️ Every `.env*` file, not only `.env`.
+        //
+        // This check looked at `.env` alone, so a project with `.env.production`
+        // sitting unignored got a green tick — evnx actively reported that the
+        // setup was fine while the file holding production credentials was
+        // committable. Reporting "healthy" over a real exposure is worse than
+        // saying nothing.
+        let env_files = secret_bearing_env_files(project_root);
 
-        if !env_path.exists() {
+        if env_files.is_empty() {
             return Ok(CheckResult {
                 name: self.name().to_string(),
                 description: self.description().to_string(),
@@ -234,26 +241,26 @@ impl DiagnosticCheck for EnvFileCheck {
         let mut details = Vec::new();
         let mut severity = Severity::Ok;
 
-        // Check gitignore status
-        let gitignored = is_gitignored(project_root, ".env")
-            .unwrap_or_else(|_| fallback_gitignore_check(project_root, ".env"));
+        for name in &env_files {
+            let gitignored = is_gitignored(project_root, name)
+                .unwrap_or_else(|_| fallback_gitignore_check(project_root, name));
 
-        if !gitignored {
-            severity = Severity::Error;
-            details.push("❌ .env is NOT in .gitignore (security risk)".into());
-        } else if verbose {
-            details.push("✓ .env is properly ignored by git".into());
-        }
+            if !gitignored {
+                severity = Severity::Error;
+                details.push(format!("❌ {name} is NOT in .gitignore (security risk)"));
+            } else if verbose {
+                details.push(format!("✓ {name} is properly ignored by git"));
+            }
 
-        // Validate syntax
-        match validate_env_syntax(&env_path) {
-            Ok(_) if verbose => details.push("✓ .env syntax is valid".into()),
-            Ok(_) => {}
-            Err(e) => {
-                if severity == Severity::Ok {
-                    severity = Severity::Warning;
+            match validate_env_syntax(&project_root.join(name)) {
+                Ok(_) if verbose => details.push(format!("✓ {name} syntax is valid")),
+                Ok(_) => {}
+                Err(e) => {
+                    if severity == Severity::Ok {
+                        severity = Severity::Warning;
+                    }
+                    details.push(format!("⚠️ {name}: {e}"));
                 }
-                details.push(format!("⚠️ Syntax issues: {}", e));
             }
         }
 
@@ -273,17 +280,49 @@ impl DiagnosticCheck for EnvFileCheck {
     }
 }
 
+/// Every `.env*` in `project_root` that is meant to hold real values.
+///
+/// The `.env.example` / `.env.sample` / `.env.template` family is excluded: those
+/// are supposed to be committed, so "not gitignored" is correct for them. So are
+/// `evnx backup` artefacts, which are ciphertext.
+fn secret_bearing_env_files(project_root: &Path) -> Vec<String> {
+    const TEMPLATES: &[&str] = &[".env.example", ".env.sample", ".env.template"];
+
+    let Ok(entries) = fs::read_dir(project_root) else {
+        return Vec::new();
+    };
+
+    let mut names: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| n.starts_with(".env"))
+        .filter(|n| !TEMPLATES.contains(&n.as_str()))
+        .filter(|n| !n.contains(".backup"))
+        .collect();
+
+    names.sort();
+    names
+}
+
 fn fix_env_gitignore(project_root: &Path, verbose: bool) -> Result<bool> {
     let gitignore_path = project_root.join(".gitignore");
+    let mut changed = false;
 
-    if !is_gitignored(project_root, ".env").unwrap_or(false) {
-        add_to_gitignore(&gitignore_path, ".env")?;
-        if verbose {
-            ui::success("Added .env to .gitignore");
+    // Mirrors what `evnx init` writes — one pattern covering every env file, with
+    // the committable template family carved back out. Adding `.env` alone would
+    // leave `.env.production` exposed, which is the bug this fix exists for.
+    for entry in [".env*", "!.env.example", "!.env.sample", "!.env.template"] {
+        if !is_gitignored(project_root, entry).unwrap_or(false) {
+            add_to_gitignore(&gitignore_path, entry)?;
+            changed = true;
         }
-        return Ok(true);
     }
-    Ok(false)
+
+    if changed && verbose {
+        ui::success("Added .env* to .gitignore (keeping .env.example committable)");
+    }
+    Ok(changed)
 }
 
 /// Check: .env.example existence and Git tracking
@@ -600,6 +639,18 @@ fn fix_file_permissions(project_root: &Path, verbose: bool) -> Result<bool> {
 // Helper Functions
 // ─────────────────────────────────────────────────────────────
 
+/// Ask git whether `filename` is ignored.
+///
+/// ⚠️ `Err` means **git could not answer**, not "not ignored" — the caller falls
+/// back to reading `.gitignore` directly, and collapsing the two makes that
+/// fallback unreachable.
+///
+/// `git check-ignore` exits `0` when the path is ignored, `1` when it is not, and
+/// `128` when there is no repository. This used to return
+/// `Ok(status.success())`, so `128` became `Ok(false)` — "not ignored" — and any
+/// project that was not a git repo had every one of its env files reported as a
+/// security risk. A check that cries wolf on a directory with nothing wrong with
+/// it is one people learn to skip.
 fn is_gitignored(project_root: &Path, filename: &str) -> Result<bool> {
     let output = Command::new("git")
         .args([
@@ -610,24 +661,62 @@ fn is_gitignored(project_root: &Path, filename: &str) -> Result<bool> {
         ])
         .output()
         .context("Failed to execute git check-ignore")?;
-    Ok(output.status.success())
+
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        other => anyhow::bail!(
+            "git check-ignore could not answer for {filename} (exit {})",
+            other.map_or_else(|| "signal".to_string(), |c| c.to_string())
+        ),
+    }
 }
 
+/// Whether `.gitignore` covers `filename`, without shelling out to git.
+///
+/// Used when `git check-ignore` cannot answer — no repository, or git is not
+/// installed. It is a deliberate approximation, but it has to understand the
+/// patterns evnx itself writes, and evnx now writes `.env*` with the template
+/// family negated rather than a literal `.env`. Exact line matching alone would
+/// report a correctly-ignored `.env` as exposed in any non-git directory.
+///
+/// Handles, in gitignore's own precedence order (last match wins):
+/// exact names, a leading `/`, a trailing `*` glob, and `!` negations.
+/// Anything more (`**`, character classes, mid-pattern globs) is left to git.
 fn fallback_gitignore_check(project_root: &Path, filename: &str) -> bool {
     let gitignore_path = project_root.join(".gitignore");
     if !gitignore_path.exists() {
         return false;
     }
 
-    fs::read_to_string(&gitignore_path)
-        .ok()
-        .map(|content| {
-            content
-                .lines()
-                .map(str::trim)
-                .any(|line| line == filename || line.starts_with(&format!("/{}", filename)))
-        })
-        .unwrap_or(false)
+    let Ok(content) = fs::read_to_string(&gitignore_path) else {
+        return false;
+    };
+
+    let mut ignored = false;
+    for line in content.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let (negated, pattern) = match line.strip_prefix('!') {
+            Some(rest) => (true, rest.trim()),
+            None => (false, line),
+        };
+        let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
+
+        let matches = match pattern.strip_suffix('*') {
+            Some(prefix) => filename.starts_with(prefix),
+            None => filename == pattern,
+        };
+
+        // Later rules override earlier ones, which is what makes
+        // `.env*` followed by `!.env.example` work.
+        if matches {
+            ignored = !negated;
+        }
+    }
+    ignored
 }
 
 fn add_to_gitignore(gitignore_path: &Path, pattern: &str) -> Result<()> {
@@ -866,5 +955,125 @@ mod tests {
 
         let parsed: Severity = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, Severity::Warning);
+    }
+}
+
+#[cfg(test)]
+mod env_file_coverage_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn picks_up_every_secret_bearing_env_file() {
+        let dir = TempDir::new().unwrap();
+        for n in [
+            ".env",
+            ".env.local",
+            ".env.production",
+            ".env.staging",
+            ".env.test",
+            ".env.prod",
+        ] {
+            fs::write(dir.path().join(n), "A=1\n").unwrap();
+        }
+
+        let found = secret_bearing_env_files(dir.path());
+        assert_eq!(found.len(), 6, "{found:?}");
+        assert!(found.contains(&".env.production".to_string()));
+        assert!(found.contains(&".env.prod".to_string()));
+    }
+
+    /// The template family is meant to be committed, so "not gitignored" is the
+    /// correct state for it — flagging it would train people to ignore the check.
+    #[test]
+    fn leaves_out_the_template_family_and_backups() {
+        let dir = TempDir::new().unwrap();
+        for n in [
+            ".env",
+            ".env.example",
+            ".env.sample",
+            ".env.template",
+            ".env.backup",
+            ".env.production.backup",
+        ] {
+            fs::write(dir.path().join(n), "A=1\n").unwrap();
+        }
+
+        assert_eq!(
+            secret_bearing_env_files(dir.path()),
+            vec![".env".to_string()]
+        );
+    }
+
+    #[test]
+    fn ignores_directories_and_unrelated_files() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir(dir.path().join(".envoy")).unwrap();
+        fs::write(dir.path().join("README.md"), "x").unwrap();
+        fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+
+        assert_eq!(
+            secret_bearing_env_files(dir.path()),
+            vec![".env".to_string()]
+        );
+    }
+}
+
+#[cfg(test)]
+mod fallback_gitignore_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn with_gitignore(body: &str) -> TempDir {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".gitignore"), body).unwrap();
+        dir
+    }
+
+    #[test]
+    fn understands_the_pattern_evnx_writes() {
+        let dir = with_gitignore(".env*\n!.env.example\n!.env.sample\n!.env.template\n");
+
+        for ignored in [".env", ".env.local", ".env.production", ".env.prod"] {
+            assert!(
+                fallback_gitignore_check(dir.path(), ignored),
+                "{ignored} should be ignored"
+            );
+        }
+        for committable in [".env.example", ".env.sample", ".env.template"] {
+            assert!(
+                !fallback_gitignore_check(dir.path(), committable),
+                "{committable} must stay committable"
+            );
+        }
+    }
+
+    #[test]
+    fn still_handles_plain_and_rooted_names() {
+        let dir = with_gitignore("node_modules/\n.env\n/secrets.txt\n");
+        assert!(fallback_gitignore_check(dir.path(), ".env"));
+        assert!(fallback_gitignore_check(dir.path(), "secrets.txt"));
+        assert!(!fallback_gitignore_check(dir.path(), ".env.production"));
+    }
+
+    /// Last match wins, so a negation cannot be undone by an earlier rule but
+    /// can be by a later one.
+    #[test]
+    fn later_rules_win() {
+        let dir = with_gitignore("!.env.example\n.env*\n");
+        assert!(
+            fallback_gitignore_check(dir.path(), ".env.example"),
+            "a negation before the pattern does not survive it"
+        );
+    }
+
+    #[test]
+    fn comments_and_blanks_are_skipped() {
+        let dir = with_gitignore("# .env\n\n   \n");
+        assert!(
+            !fallback_gitignore_check(dir.path(), ".env"),
+            "a commented mention protects nothing"
+        );
     }
 }

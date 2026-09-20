@@ -73,6 +73,21 @@ impl std::fmt::Display for SyncDirection {
 /// Keep .env and .env.example in sync.
 #[derive(Args, Debug)]
 pub struct SyncArgs {
+    /// The environment file to sync from (forward) or into (reverse).
+    #[arg(long, default_value = ".env")]
+    pub env: String,
+
+    /// The template to sync into (forward) or from (reverse).
+    #[arg(long, default_value = ".env.example")]
+    pub example: String,
+
+    /// Use `.env.<NAME>` instead of `.env`.
+    ///
+    /// `--env-name production` resolves to `.env.production`. A name whose file
+    /// does not exist is an error listing the environments that do.
+    #[arg(long, value_name = "NAME", conflicts_with = "env")]
+    pub env_name: Option<String>,
+
     /// Direction of sync operation
     #[arg(long, value_enum, default_value_t = SyncDirection::Forward)]
     pub direction: SyncDirection,
@@ -709,6 +724,14 @@ pub enum Commands {
         #[arg(long, default_value = ".env")]
         env: String,
 
+        /// Operate on `.env.<NAME>` instead of `.env`.
+        ///
+        /// `--env-name production` resolves to `.env.production`. A name whose
+        /// file does not exist is an error listing the environments that do —
+        /// it never falls back to `.env`.
+        #[arg(long, value_name = "NAME", conflicts_with = "env")]
+        env_name: Option<String>,
+
         #[arg(long, default_value = ".env.example")]
         example: String,
 
@@ -731,10 +754,6 @@ pub enum Commands {
         /// Validate value formats: url, port, email
         #[arg(long)]
         validate_formats: bool,
-
-        /// Environment pattern (.env.production, .env.local, etc.)
-        #[arg(long, short = 'p')]
-        pattern: Option<String>,
     },
 
     /// Detect secrets that look real (AWS keys, tokens, etc.).
@@ -771,6 +790,23 @@ pub enum Commands {
         env: String,
         #[arg(long, default_value = ".env.example")]
         example: String,
+
+        /// Operate on `.env.<NAME>` instead of `.env`.
+        ///
+        /// `--env-name production` resolves to `.env.production`. A name whose
+        /// file does not exist is an error listing the environments that do —
+        /// it never falls back to `.env`.
+        #[arg(long, value_name = "NAME", conflicts_with = "env")]
+        env_name: Option<String>,
+
+        /// Compare against `.env.<NAME>` instead of `.env.example`.
+        ///
+        /// Comparing two real environments is the useful diff —
+        /// `evnx diff --env-name production --against staging`. The default
+        /// compares against the template, where every filled-in value differs by
+        /// construction.
+        #[arg(long, value_name = "NAME", conflicts_with = "example")]
+        against: Option<String>,
         #[arg(long)]
         show_values: bool,
         #[arg(long, default_value = "pretty")]
@@ -831,6 +867,14 @@ Use 'evnx convert' without --to for interactive format selection.
         /// Path to input .env file
         #[arg(long, default_value = ".env", value_name = "PATH")]
         env: String,
+
+        /// Operate on `.env.<NAME>` instead of `.env`.
+        ///
+        /// `--env-name production` resolves to `.env.production`. A name whose
+        /// file does not exist is an error listing the environments that do —
+        /// it never falls back to `.env`.
+        #[arg(long, value_name = "NAME", conflicts_with = "env")]
+        env_name: Option<String>,
 
         /// Target output format (omit for interactive selection)
         ///
@@ -913,6 +957,14 @@ Use 'evnx convert' without --to for interactive format selection.
         output: String,
         #[arg(long, default_value = ".env")]
         env: String,
+
+        /// Operate on `.env.<NAME>` instead of `.env`.
+        ///
+        /// `--env-name production` resolves to `.env.production`. A name whose
+        /// file does not exist is an error listing the environments that do —
+        /// it never falls back to `.env`.
+        #[arg(long, value_name = "NAME", conflicts_with = "env")]
+        env_name: Option<String>,
         /// Automatically add the output file to .gitignore (no prompt).
         /// Useful in CI scripts. Mutually exclusive with --no-gitignore.
         #[arg(long, conflicts_with = "no_gitignore")]
@@ -931,6 +983,13 @@ Use 'evnx convert' without --to for interactive format selection.
         /// Path to the .env file to back up.
         #[arg(default_value = ".env")]
         env: String,
+
+        /// Back up `.env.<NAME>` instead.
+        ///
+        /// `--env-name production` resolves to `.env.production`. A name whose
+        /// file does not exist is an error listing the environments that do.
+        #[arg(long, value_name = "NAME", conflicts_with = "env")]
+        env_name: Option<String>,
 
         /// Destination path for the encrypted backup (default: <env>.backup).
         #[arg(long)]

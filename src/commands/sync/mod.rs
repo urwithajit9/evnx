@@ -68,6 +68,8 @@ pub const EXIT_ERROR: i32 = 2;
 // `validate::run` carries the same allow for the same reason.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
+    env: String,
+    example: String,
     direction: SyncDirection,
     placeholder: bool,
     verbose: bool,
@@ -77,7 +79,13 @@ pub fn run(
     template_config: Option<PathBuf>,
     naming_policy: NamingPolicy,
 ) -> Result<()> {
+    let paths = executor::SyncPaths {
+        env: PathBuf::from(env),
+        example: PathBuf::from(example),
+    };
+
     let ctx = executor::SyncCtx {
+        paths,
         direction,
         placeholder,
         verbose,
@@ -126,6 +134,10 @@ mod tests {
 
     /// Pins the public signature so a change to it has to be deliberate.
     ///
+    /// ⚠️ Updated 2026-09-21 again: `env` and `example` lead the list. `sync` was
+    /// the only command that could not be pointed at a file, so the two paths it
+    /// operates on are now arguments rather than 37 literals in the executor.
+    ///
     /// ⚠️ Updated 2026-09-21: `check: bool` was inserted after `force`. `evnx` is
     /// published as a library as well as a binary, so this is a breaking change
     /// for any direct caller — acceptable in 0.x, and the whole point of this
@@ -134,6 +146,8 @@ mod tests {
     #[test]
     fn test_run_signature_compiles() {
         let _func: fn(
+            String, // env
+            String, // example
             crate::cli::SyncDirection,
             bool, // placeholder
             bool, // verbose

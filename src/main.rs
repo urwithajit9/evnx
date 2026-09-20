@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use colored::Colorize;
+use std::path::Path;
 
 use evnx::cli::{Cli, Commands};
 use evnx::commands;
@@ -29,6 +30,7 @@ fn main() -> Result<()> {
 
         Commands::Validate {
             env,
+            env_name,
             example,
             strict,
             fix,
@@ -36,9 +38,8 @@ fn main() -> Result<()> {
             exit_zero,
             ignore,
             validate_formats,
-            pattern,
         } => commands::validate::run(
-            env,
+            evnx::core::env_name::select(Path::new("."), &env, env_name.as_deref())?,
             example,
             strict,
             fix,
@@ -47,7 +48,6 @@ fn main() -> Result<()> {
             cli.verbose,
             ignore,
             validate_formats,
-            pattern,
         ),
 
         Commands::Scan {
@@ -71,7 +71,9 @@ fn main() -> Result<()> {
 
         Commands::Diff {
             env,
+            env_name,
             example,
+            against,
             show_values,
             format,
             reverse,
@@ -79,9 +81,10 @@ fn main() -> Result<()> {
             with_stats,
             interactive,
         } => {
+            let here = Path::new(".");
             match commands::diff::run(
-                env,
-                example,
+                evnx::core::env_name::select(here, &env, env_name.as_deref())?,
+                evnx::core::env_name::select(here, &example, against.as_deref())?,
                 show_values,
                 format,
                 reverse,
@@ -100,6 +103,7 @@ fn main() -> Result<()> {
 
         Commands::Convert {
             env,
+            env_name,
             to,
             output,
             include,
@@ -125,6 +129,7 @@ fn main() -> Result<()> {
                 }
             });
 
+            let env = evnx::core::env_name::select(Path::new("."), &env, env_name.as_deref())?;
             let config = commands::convert::ConvertConfig::builder()
                 .env(env)
                 .target_format(to)
@@ -172,6 +177,8 @@ fn main() -> Result<()> {
         }),
 
         Commands::Sync { args } => commands::sync::run(
+            evnx::core::env_name::select(Path::new("."), &args.env, args.env_name.as_deref())?,
+            args.example.clone(),
             args.direction,
             args.placeholder,
             cli.verbose,
@@ -189,6 +196,7 @@ fn main() -> Result<()> {
             input,
             output,
             env,
+            env_name,
             gitignore,
             no_gitignore,
         } => {
@@ -199,6 +207,7 @@ fn main() -> Result<()> {
             } else {
                 commands::template::GitignoreMode::Default
             };
+            let env = evnx::core::env_name::select(Path::new("."), &env, env_name.as_deref())?;
             commands::template::run(input, output, env, cli.verbose, mode)
         }
 
@@ -207,11 +216,19 @@ fn main() -> Result<()> {
         #[cfg(feature = "backup")]
         Commands::Backup {
             env,
+            env_name,
             output,
             key_file,
             keep,
             verify,
-        } => match commands::backup::run(env, output, cli.verbose, key_file, keep, verify) {
+        } => match commands::backup::run(
+            evnx::core::env_name::select(Path::new("."), &env, env_name.as_deref())?,
+            output,
+            cli.verbose,
+            key_file,
+            keep,
+            verify,
+        ) {
             Ok(()) => Ok(()),
             Err(e) => {
                 if let Some(be) = e.downcast_ref::<commands::backup::BackupError>() {

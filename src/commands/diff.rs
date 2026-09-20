@@ -72,16 +72,17 @@ pub fn run(
         eprintln!("{}", "🔍 Running diff in verbose mode".dimmed());
     }
 
-    // Only print header for pretty output
+    // Only print header for pretty output.
+    //
+    // The file names were hardcoded here, so `--env-name production --against
+    // staging` announced "Comparing .env ↔ .env.example" and then listed
+    // differences between two entirely different files.
     if format == "pretty" {
-        println!(
-            "\n{}",
-            "┌─ Comparing .env ↔ .env.example ─────────────────────┐".cyan()
-        );
-        println!(
-            "{}\n",
-            "└──────────────────────────────────────────────────────┘".cyan()
-        );
+        let title = format!(" Comparing {env} ↔ {example} ");
+        let rule = "─".repeat(title.chars().count());
+        println!("\n{}", format!("┌{rule}┐").cyan());
+        println!("{}", format!("│{title}│").cyan());
+        println!("{}\n", format!("└{rule}┘").cyan());
     }
 
     let parser = Parser::default();
