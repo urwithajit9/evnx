@@ -70,7 +70,6 @@ pub fn run(
     verbose: bool,
     ignore: Vec<String>,
     validate_formats: bool,
-    pattern: Option<String>,
 ) -> Result<()> {
     // ─────────────────────────────────────────
     // UI: Header (only for pretty output)
@@ -95,8 +94,9 @@ pub fn run(
         anyhow::bail!("unknown format '{format}' — expected one of: pretty, json, github-actions");
     }
 
-    // Resolve env file path with pattern support (Improvement #2)
-    let env_path = resolve_env_path(&env, &pattern)?;
+    // `--env` already carries the resolved path: `--env-name production` is
+    // turned into `.env.production` before the command is called.
+    let env_path = env.clone();
 
     // Build configuration
     let config = ValidationConfig {
@@ -104,7 +104,6 @@ pub fn run(
         fix,
         validate_formats,
         ignore_issues: ignore.into_iter().collect(),
-        env_pattern: pattern,
     };
 
     // Parse files with progress indicator
@@ -331,17 +330,6 @@ pub fn run(
 // ─────────────────────────────────────────────────────────────
 // Helper Functions
 // ─────────────────────────────────────────────────────────────
-
-/// Resolve env file path with pattern support (.env.local, .env.production, etc.)
-fn resolve_env_path(base: &str, pattern: &Option<String>) -> Result<String> {
-    if let Some(pat) = pattern {
-        if pat.starts_with(".env.") {
-            return Ok(pat.clone());
-        }
-        ui::info(format!("Pattern '{}' not recognized, using default", pat));
-    }
-    Ok(base.to_string())
-}
 
 // ─────────────────────────────────────────────────────────────
 // Output Functions (UI Integration)

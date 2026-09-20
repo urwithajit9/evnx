@@ -74,6 +74,6 @@ pub struct ValidationConfig {
     pub strict: bool,
     pub fix: bool,
     pub validate_formats: bool,
+    /// Issue types the caller asked to suppress, from `--ignore`.
     pub ignore_issues: std::collections::HashSet<String>,
-    pub env_pattern: Option<String>,
 }
