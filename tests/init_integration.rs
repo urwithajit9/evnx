@@ -2,12 +2,18 @@
 
 //! Integration tests for `evnx init` command.
 //!
-//! Note: Tests using `--yes` flag will use default selections:
-//! - Mode: Blueprint (index 1, but --yes skips prompt so uses default)
-//! - Blueprint: First in list (index 0, typically supabase_fullstack)
+//! # `--yes` is Blank; a blueprint is named
 //!
-//! For testing specific blueprints or modes, use interactive tests
-//! (marked with #[ignore]) and run manually with --nocapture.
+//! These tests used to drive blueprints through `--yes` and could therefore
+//! assert almost nothing — the blueprint list came out of a `HashMap`, so the
+//! stack chosen changed on every run, and every assertion here had been widened
+//! until it passed for *any* of them ("typically supabase_fullstack").
+//!
+//! `--yes` now means Blank, and `--blueprint <ID>` names a stack explicitly, so
+//! these can assert what they were always trying to: that `t3_modern` produces
+//! Next.js variables and `rust_high_perf` produces Rust ones.
+//!
+//! Architect mode remains interactive-only and its tests stay `#[ignore]`d.
 
 #![allow(deprecated)]
 use assert_cmd::Command;
@@ -42,21 +48,16 @@ fn count_env_vars(content: &str) -> usize {
 fn init_blank_creates_minimal_files() {
     let dir = TempDir::new().unwrap();
 
-    // FIX: --yes skips mode selection, defaults to Blueprint
-    // To test Blank mode, we need a different approach
-    // For now, test that --yes creates files (any mode)
     Command::cargo_bin("evnx")
         .unwrap()
         .arg("init")
         .arg("--yes")
         .arg("--path")
         .arg(dir.path())
-        // REMOVE: .write_stdin("0\n")  // --yes ignores stdin!
         .assert()
         .success()
-        .stdout(predicate::str::contains("Created .env.example"));
+        .stdout(predicate::str::contains("Created empty .env.example"));
 
-    // Verify files created
     assert!(
         dir.path().join(".env.example").exists(),
         ".env.example should exist"
@@ -67,12 +68,128 @@ fn init_blank_creates_minimal_files() {
         ".gitignore should exist"
     );
 
-    // FIX: --yes defaults to Blueprint, so we expect vars (not blank)
+    // Blank means blank: `--yes` must not invent somebody else's stack.
     let example = read_env_example(dir.path()).unwrap();
-    let var_count = count_env_vars(&example);
+    assert_eq!(
+        count_env_vars(&example),
+        0,
+        "--yes must produce an empty scaffold, not a guessed stack:\n{example}"
+    );
+}
+
+/// The regression that `--blueprint` exists to prevent.
+///
+/// `evnx init --yes` in one empty directory produced Laravel, Next.js, Laravel,
+/// Go, Rust and MERN across six runs, because the blueprint list was a `HashMap`
+/// and the non-interactive path took its first entry.
+#[test]
+fn init_yes_is_deterministic() {
+    let mut digests = Vec::new();
+
+    for _ in 0..4 {
+        let dir = TempDir::new().unwrap();
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .arg("init")
+            .arg("--yes")
+            .arg("--path")
+            .arg(dir.path())
+            .assert()
+            .success();
+        digests.push(read_env_example(dir.path()).unwrap());
+    }
+
     assert!(
-        var_count > 0,
-        "Should have variables in --yes mode (defaults to Blueprint)"
+        digests.windows(2).all(|w| w[0] == w[1]),
+        "`evnx init --yes` must produce identical output every run"
+    );
+}
+
+/// Same guarantee for the named-blueprint path.
+#[test]
+fn init_blueprint_is_deterministic() {
+    let mut outputs = Vec::new();
+
+    for _ in 0..4 {
+        let dir = TempDir::new().unwrap();
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["init", "--yes", "--blueprint", "t3_modern", "--path"])
+            .arg(dir.path())
+            .assert()
+            .success();
+        outputs.push(read_env_example(dir.path()).unwrap());
+    }
+
+    assert!(
+        outputs.windows(2).all(|w| w[0] == w[1]),
+        "`--blueprint t3_modern` must produce identical output every run"
+    );
+}
+
+#[test]
+fn init_unknown_blueprint_lists_the_real_ones() {
+    let dir = TempDir::new().unwrap();
+
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .args(["init", "--yes", "--blueprint", "no_such_stack", "--path"])
+        .arg(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Unknown blueprint 'no_such_stack'",
+        ))
+        .stderr(predicate::str::contains("t3_modern"))
+        .stderr(predicate::str::contains("rust_high_perf"));
+
+    assert!(
+        !dir.path().join(".env.example").exists(),
+        "nothing should be written when the blueprint is unknown"
+    );
+}
+
+#[test]
+fn init_yes_refuses_to_overwrite_an_existing_example() {
+    let dir = TempDir::new().unwrap();
+    let example = dir.path().join(".env.example");
+    std::fs::write(&example, "MY_CAREFULLY_WRITTEN_TEMPLATE=1\n").unwrap();
+
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .arg("init")
+        .arg("--yes")
+        .arg("--path")
+        .arg(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--force"));
+
+    assert_eq!(
+        std::fs::read_to_string(&example).unwrap(),
+        "MY_CAREFULLY_WRITTEN_TEMPLATE=1\n",
+        "the existing template must survive"
+    );
+}
+
+#[test]
+fn init_force_replaces_the_example_but_never_the_env() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".env.example"), "OLD=1\n").unwrap();
+    std::fs::write(dir.path().join(".env"), "REAL_SECRET=keepme\n").unwrap();
+
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .args(["init", "--yes", "--force", "--path"])
+        .arg(dir.path())
+        .assert()
+        .success();
+
+    assert!(!read_env_example(dir.path()).unwrap().contains("OLD=1"));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".env")).unwrap(),
+        "REAL_SECRET=keepme\n",
+        ".env holds real values and must never be replaced"
     );
 }
 
@@ -86,12 +203,9 @@ fn init_blank_creates_minimal_files() {
 fn init_blueprint_t3_modern_generates_expected_vars() {
     let dir = TempDir::new().unwrap();
 
-    // --yes defaults to first blueprint (supabase_fullstack based on your output)
     Command::cargo_bin("evnx")
         .unwrap()
-        .arg("init")
-        .arg("--yes")
-        .arg("--path")
+        .args(["init", "--yes", "--blueprint", "t3_modern", "--path"])
         .arg(dir.path())
         .assert()
         .success()
@@ -99,48 +213,33 @@ fn init_blueprint_t3_modern_generates_expected_vars() {
 
     let example = read_env_example(dir.path()).unwrap();
 
-    // Debug output (visible with --nocapture)
-    eprintln!(
-        "\n=== Generated .env.example ===\n{}\n=== END ===\n",
-        example
-    );
+    // Now that the stack is named, assert the stack — not "any blueprint".
+    for var in [
+        "NEXTAUTH_URL",
+        "NEXTAUTH_SECRET",
+        "NEXT_PUBLIC_APP_URL",
+        "DATABASE_URL",
+        "CLERK_SECRET_KEY",
+    ] {
+        assert!(
+            example.contains(var),
+            "t3_modern must define {var}:\n{example}"
+        );
+    }
 
-    // FIX: Check for vars that exist in ANY blueprint (flexible assertions)
-    // Most blueprints have these common patterns:
-    assert!(
-        example.contains("=") && !example.trim().is_empty(),
-        "Should have environment variables"
-    );
-
-    // Check for section organization (all blueprints use this)
     assert!(
         example.contains("# ──"),
         "Should have section headers like '# ── Category ──'"
     );
-
-    // Check for generation footer
     assert!(
         example.contains("# Generated by evnx v"),
         "Should have generation footer"
     );
 
-    // Check for reasonable variable count (blueprints have 10-30 vars)
     let var_count = count_env_vars(&example);
     assert!(
-        var_count >= 5 && var_count <= 50,
-        "Should have 5-50 variables, got {}",
-        var_count
-    );
-
-    // Optional: Check for common var patterns (not specific names)
-    let has_auth =
-        example.contains("SECRET") || example.contains("KEY") || example.contains("TOKEN");
-    let has_connection =
-        example.contains("URL=") || example.contains("HOST=") || example.contains("PORT=");
-
-    assert!(
-        has_auth || has_connection,
-        "Should have auth vars (SECRET/KEY/TOKEN) or connection vars (URL/HOST/PORT)"
+        (5..=50).contains(&var_count),
+        "Should have 5-50 variables, got {var_count}"
     );
 }
 
@@ -148,77 +247,56 @@ fn init_blueprint_t3_modern_generates_expected_vars() {
 fn init_blueprint_rust_high_perf() {
     let dir = TempDir::new().unwrap();
 
-    // --yes picks first blueprint, not rust_high_perf specifically
     Command::cargo_bin("evnx")
         .unwrap()
-        .arg("init")
-        .arg("--yes")
-        .arg("--path")
+        .args(["init", "--yes", "--blueprint", "rust_high_perf", "--path"])
         .arg(dir.path())
         .assert()
         .success();
 
     let example = read_env_example(dir.path()).unwrap();
 
-    // FIX: Use flexible assertions that work for any blueprint
+    for var in ["RUST_LOG", "SOCKET_ADDR", "DATABASE_URL", "REDIS_URL"] {
+        assert!(
+            example.contains(var),
+            "rust_high_perf must define {var}:\n{example}"
+        );
+    }
+    // And must NOT look like the Next.js stack — the assertion the old,
+    // blueprint-is-random version of this test could never make.
+    assert!(
+        !example.contains("NEXTAUTH_URL"),
+        "rust_high_perf must not carry Next.js variables"
+    );
+
     assert!(example.contains("# ──"), "Should have section headers");
-
-    // Should have some variables
-    let var_count = count_env_vars(&example);
-    assert!(
-        var_count >= 5,
-        "Should have at least 5 variables, got {}",
-        var_count
-    );
-
-    // Most blueprints include database or service vars
-    let has_db_or_service = example.contains("DATABASE")
-        || example.contains("URL=")
-        || example.contains("API_")
-        || example.contains("SECRET");
-
-    assert!(
-        has_db_or_service,
-        "Should have database or service-related variables"
-    );
+    assert!(count_env_vars(&example) >= 5);
 }
 
+/// Was an "architect" test driven through `--yes`, which never reached Architect
+/// mode. Recast as what it actually measured: a blueprint that pulls in several
+/// services at once.
 #[test]
-fn init_architect_multiple_services() {
+fn init_blueprint_with_many_services() {
     let dir = TempDir::new().unwrap();
 
-    // --yes defaults to Blueprint mode, not Architect
-    // Test that files are created with some content
     Command::cargo_bin("evnx")
         .unwrap()
-        .arg("init")
-        .arg("--yes")
-        .arg("--path")
+        .args(["init", "--yes", "--blueprint", "go_microservice", "--path"])
         .arg(dir.path())
         .assert()
         .success();
 
     let example = read_env_example(dir.path()).unwrap();
 
-    // FIX: Check for general structure, not specific categories
-    assert!(
-        !example.is_empty(),
-        "Should generate non-empty .env.example"
-    );
-
-    // Should have section markers (any category)
-    assert!(
-        example.contains("# ──") || example.contains("# [ADDED]"),
-        "Should have section markers"
-    );
-
-    // Should have variables
-    let var_count = count_env_vars(&example);
-    assert!(
-        var_count >= 5,
-        "Should have at least 5 variables, got {}",
-        var_count
-    );
+    for var in ["GIN_MODE", "DATABASE_URL", "KAFKA_BROKERS"] {
+        assert!(
+            example.contains(var),
+            "go_microservice must define {var}:\n{example}"
+        );
+    }
+    assert!(example.contains("# ──"), "Should have section markers");
+    assert!(count_env_vars(&example) >= 5);
 }
 
 #[test]
@@ -248,29 +326,38 @@ fn init_blueprint_specific_t3_modern() {
 // Architect Mode Tests
 // ─────────────────────────────────────────────────────────────
 
+/// Also an "architect" test driven through `--yes`. Recast as the Django stack
+/// it was describing, which is now selectable by name.
 #[test]
-fn init_architect_python_django_postgres() {
+fn init_blueprint_django_enterprise() {
     let dir = TempDir::new().unwrap();
 
-    // FIX: --yes uses defaults, doesn't read stdin
-    // Test that --yes creates files with some vars
     Command::cargo_bin("evnx")
         .unwrap()
-        .arg("init")
-        .arg("--yes")
-        .arg("--path")
+        .args([
+            "init",
+            "--yes",
+            "--blueprint",
+            "django_enterprise",
+            "--path",
+        ])
         .arg(dir.path())
-        // REMOVE: .write_stdin("2\n0\n0\n0\n")  // --yes ignores stdin!
         .assert()
         .success();
 
     let example = read_env_example(dir.path()).unwrap();
 
-    // --yes defaults to Blueprint mode, so check for blueprint vars
-    // (Not specifically Django since we can't control selection with --yes)
-    assert!(example.contains("="), "Should have environment variables");
-
-    // Check for section organization
+    for var in [
+        "DJANGO_SETTINGS_MODULE",
+        "SECRET_KEY",
+        "ALLOWED_HOSTS",
+        "DATABASE_URL",
+    ] {
+        assert!(
+            example.contains(var),
+            "django_enterprise must define {var}:\n{example}"
+        );
+    }
     assert!(
         example.contains("# ──") || example.contains("# [ADDED]"),
         "Should have section headers"

@@ -137,7 +137,7 @@ pub fn get_services_grouped() -> Vec<(&'static str, Vec<(&'static str, String)>)
 }
 
 fn extract_service_names(
-    services: &std::collections::HashMap<String, ServiceConfig>,
+    services: &indexmap::IndexMap<String, ServiceConfig>,
 ) -> Vec<(&str, String)> {
     services
         .iter()
