@@ -649,9 +649,24 @@ pub enum Commands {
         #[arg(long, default_value = ".")]
         path: String,
 
-        /// Skip all prompts and use defaults.
+        /// Skip all prompts. Creates blank .env files unless --blueprint names a stack.
         #[arg(short, long)]
         yes: bool,
+
+        /// Generate from a named stack blueprint, e.g. `t3_modern`.
+        ///
+        /// Selects Blueprint mode without prompting. An unknown id is an error
+        /// that lists the valid ones, so this doubles as the way to see them.
+        #[arg(long, value_name = "ID")]
+        blueprint: Option<String>,
+
+        /// Overwrite an existing .env.example.
+        ///
+        /// `.env.example` is normally a tracked, hand-maintained file, so init
+        /// asks before replacing it and refuses outright under --yes. This is how
+        /// a script says it meant to replace it. `.env` is never overwritten.
+        #[arg(long)]
+        force: bool,
     },
 
     /// Add environment variables to existing .env files.

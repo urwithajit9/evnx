@@ -109,6 +109,93 @@ fn test_forward_sync_dry_run_adds_preview() -> Result<()> {
     Ok(())
 }
 
+/// `--dry-run` must not need a terminal.
+///
+/// ⚠️ Note the existing dry-run test above passes `force = true`, which takes the
+/// short-circuit that skips every prompt — so it never exercised the path a user
+/// actually runs. With `force = false` this reached `Select::interact()` and died
+/// with `IO error: not a terminal` before printing anything, which is why every
+/// CI recipe in the docs carries `--dry-run --force`: a pairing that reads as a
+/// contradiction and was only ever a workaround.
+///
+/// The test harness has no TTY, so simply completing is the assertion.
+#[test]
+#[serial]
+fn dry_run_needs_no_terminal_forward() -> Result<()> {
+    use std::env;
+
+    let fixture = SyncTestFixture::new()?;
+    fixture.write_env("NEW_VAR=test_value\nEXISTING=keep")?;
+    fixture.write_example("EXISTING=placeholder")?;
+
+    let original_dir = env::current_dir()?;
+    env::set_current_dir(fixture.temp_dir.path())?;
+
+    let result = sync::run(
+        SyncDirection::Forward,
+        true,
+        false,
+        true,  // dry_run
+        false, // force — the point of the test
+        None,
+        NamingPolicy::Ignore,
+    );
+
+    let _ = env::set_current_dir(&original_dir);
+
+    assert!(
+        result.is_ok(),
+        "`sync --dry-run` must work without a TTY: {:?}",
+        result.err()
+    );
+    assert_eq!(
+        fixture.read_example()?.trim(),
+        "EXISTING=placeholder",
+        "a dry run must not modify anything"
+    );
+
+    Ok(())
+}
+
+/// Same guarantee for `--direction reverse`.
+#[test]
+#[serial]
+fn dry_run_needs_no_terminal_reverse() -> Result<()> {
+    use std::env;
+
+    let fixture = SyncTestFixture::new()?;
+    fixture.write_env("EXISTING=keep")?;
+    fixture.write_example("EXISTING=placeholder\nMISSING_VAR=example")?;
+
+    let original_dir = env::current_dir()?;
+    env::set_current_dir(fixture.temp_dir.path())?;
+
+    let result = sync::run(
+        SyncDirection::Reverse,
+        true,
+        false,
+        true,  // dry_run
+        false, // force
+        None,
+        NamingPolicy::Ignore,
+    );
+
+    let _ = env::set_current_dir(&original_dir);
+
+    assert!(
+        result.is_ok(),
+        "`sync --direction reverse --dry-run` must work without a TTY: {:?}",
+        result.err()
+    );
+    assert_eq!(
+        fixture.read_env()?.trim(),
+        "EXISTING=keep",
+        "a dry run must not modify anything"
+    );
+
+    Ok(())
+}
+
 #[test]
 #[serial]
 fn test_reverse_sync_creates_env_with_placeholders() -> Result<()> {

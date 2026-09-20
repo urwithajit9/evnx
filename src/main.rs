@@ -18,7 +18,12 @@ fn main() -> Result<()> {
 
     // Route to command handler
     match cli.command {
-        Commands::Init { path, yes } => commands::init::run(path, yes, cli.verbose),
+        Commands::Init {
+            path,
+            yes,
+            blueprint,
+            force,
+        } => commands::init::run(path, yes, force, blueprint, cli.verbose),
 
         Commands::Add { target, path, yes } => commands::add::run(target, path, yes, cli.verbose),
 

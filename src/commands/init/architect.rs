@@ -3,14 +3,14 @@ use colored::*;
 use dialoguer::{Confirm, MultiSelect, Select};
 use std::path::Path;
 
-use super::shared::write_env_files;
+use super::shared::{write_env_files, WriteOptions};
 use crate::schema::{formatter, loader, resolver};
 use crate::utils::ui::{info, print_header, print_preview_header, success};
 
 /// Handle Architect mode: step-by-step custom stack building
-pub fn handle(path: String, yes: bool, verbose: bool) -> Result<()> {
+pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
     // Header for Architect mode
-    if !yes {
+    if !opts.yes {
         print_header(
             "Architect Mode",
             Some("Build your custom stack: language → framework → services → infra"),
@@ -28,7 +28,7 @@ pub fn handle(path: String, yes: bool, verbose: bool) -> Result<()> {
         .map(|id| format_language_display(id))
         .collect();
 
-    let lang_idx = if yes {
+    let lang_idx = if opts.yes {
         0
     } else {
         Select::new()
@@ -48,7 +48,7 @@ pub fn handle(path: String, yes: bool, verbose: bool) -> Result<()> {
         .map(|(_, name)| name.to_string())
         .collect();
 
-    let fw_idx = if yes {
+    let fw_idx = if opts.yes {
         0
     } else {
         Select::new()
@@ -70,7 +70,7 @@ pub fn handle(path: String, yes: bool, verbose: bool) -> Result<()> {
         })
         .unzip();
 
-    let selected_svc_indices = if yes {
+    let selected_svc_indices = if opts.yes {
         // Default: select first service from first group
         vec![0]
     } else {
@@ -95,7 +95,7 @@ pub fn handle(path: String, yes: bool, verbose: bool) -> Result<()> {
     let infra_display: Vec<String> = infra_items.iter().map(|(_, d)| d.clone()).collect();
     let infra_ids: Vec<String> = infra_items.iter().map(|(id, _)| id.to_string()).collect();
 
-    let selected_infra_indices = if yes {
+    let selected_infra_indices = if opts.yes {
         vec![] // Default: no infra in non-interactive
     } else {
         MultiSelect::new()
@@ -127,12 +127,12 @@ pub fn handle(path: String, yes: bool, verbose: bool) -> Result<()> {
     )?;
 
     // Show preview
-    if !yes {
+    if !opts.yes {
         print_preview_header();
         println!("{}", formatter::generate_preview(&vars).dimmed());
     }
 
-    if !yes {
+    if !opts.yes {
         let confirm = Confirm::new()
             .with_prompt("Generate .env files with these variables?")
             .default(true)
@@ -149,7 +149,7 @@ pub fn handle(path: String, yes: bool, verbose: bool) -> Result<()> {
     let template_content = formatter::format_env_template(&vars)?;
 
     let output_path = Path::new(&path);
-    write_env_files(output_path, &example_content, &template_content)?;
+    write_env_files(output_path, &example_content, &template_content, opts)?;
 
     // println!(
     //     "{} Created .env.example with {} variables",

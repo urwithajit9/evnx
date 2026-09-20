@@ -20,20 +20,43 @@ mod blank;
 mod blueprint;
 mod shared;
 
-pub use shared::write_env_files;
+pub use shared::{write_env_files, WriteOptions};
 
 /// Main entry point for `evnx init`
-pub fn run(path: String, yes: bool, verbose: bool) -> Result<()> {
+///
+/// # `--yes` means Blank
+///
+/// It used to mean Blueprint, on the reasoning that a populated template is the
+/// friendlier default. Two things make that wrong for a non-interactive run.
+/// It picked `blueprints[0]` out of a `HashMap`, so the stack it chose changed on
+/// every invocation — six runs in one empty directory produced Laravel, Next.js,
+/// Laravel, Go, Rust and MERN. And even made deterministic, guessing *someone
+/// else's* stack in a Python project is a worse failure than writing nothing:
+/// `--yes` is the flag a CI script reaches for, and the only defensible default
+/// for a tool that has not been told the stack is an empty scaffold.
+///
+/// A blueprint is still available non-interactively — by name:
+/// `evnx init --yes --blueprint t3_modern`.
+pub fn run(
+    path: String,
+    yes: bool,
+    force: bool,
+    blueprint: Option<String>,
+    verbose: bool,
+) -> Result<()> {
     if verbose {
         println!("{}", "Running init in verbose mode".dimmed());
     }
 
     print_init_header();
 
-    // Step 1: Select mode
-    let mode = if yes {
-        // Non-interactive: default to Blueprint for best UX
+    let opts = WriteOptions { yes, force };
+
+    // An explicit --blueprint selects the mode; there is nothing left to ask.
+    let mode = if blueprint.is_some() {
         Mode::Blueprint
+    } else if yes {
+        Mode::Blank
     } else {
         let modes = [
             "📄 Blank (create empty .env files)",
@@ -57,9 +80,9 @@ pub fn run(path: String, yes: bool, verbose: bool) -> Result<()> {
 
     // Step 2: Route to handler
     match mode {
-        Mode::Blank => blank::handle(path, yes, verbose)?,
-        Mode::Blueprint => blueprint::handle(path, yes, verbose)?,
-        Mode::Architect => architect::handle(path, yes, verbose)?,
+        Mode::Blank => blank::handle(path, opts, verbose)?,
+        Mode::Blueprint => self::blueprint::handle(path, opts, verbose, blueprint.as_deref())?,
+        Mode::Architect => architect::handle(path, opts, verbose)?,
     }
 
     print_next_steps_ui();

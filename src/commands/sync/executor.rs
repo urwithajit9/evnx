@@ -184,8 +184,20 @@ fn sync_forward(
         ui::warning(warning);
     }
 
-    if force {
-        ui::info("Force mode: using placeholder values and skipping prompts");
+    // ⚠️ `--dry-run` implies non-interactive.
+    //
+    // A preview that stops to ask "Add these to .env.example?" cannot run anywhere
+    // without a terminal, and `sync --dry-run` was therefore dying in CI with
+    // `IO error: not a terminal` before printing anything. `--force` was the only
+    // way through, which is why every CI example in the docs carries the pair —
+    // a combination that reads as a contradiction ("force" plus "change nothing").
+    //
+    // Previewing the recommended default (placeholders) is the honest answer to
+    // "what would this do", since that is option 0 of the prompt being skipped.
+    if force || dry_run {
+        if force && !dry_run {
+            ui::info("Force mode: using placeholder values and skipping prompts");
+        }
         let preview = add_with_placeholders_preview(&missing, &env_file.vars, config)?;
         if dry_run {
             print_preview(&SyncPreview {
@@ -439,8 +451,11 @@ fn sync_reverse(
         ),
     );
 
-    if force {
-        ui::info("Force mode: adding with placeholder values, skipping prompts");
+    // `--dry-run` implies non-interactive — see the note in `sync_forward`.
+    if force || dry_run {
+        if force && !dry_run {
+            ui::info("Force mode: adding with placeholder values, skipping prompts");
+        }
         let preview = add_from_example_preview(&missing, &example_file.vars, true)?;
         if dry_run {
             print_preview(&SyncPreview {
