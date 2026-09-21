@@ -1,7 +1,9 @@
 use crate::core::Parser;
 use crate::docs;
 use crate::utils::patterns;
+use crate::utils::string::pluralize;
 use crate::utils::ui;
+use crate::utils::ui::glyph;
 /// Diff command - compare .env and .env.example
 ///
 /// Shows missing, extra, and different variables between two env files
@@ -354,14 +356,33 @@ fn output_pretty(
         println!();
     }
 
-    println!("{}", "Summary:".bold());
-    println!("  {} missing (add to {})", diff.missing.len(), left_name);
-    println!(
-        "  {} extra (consider removing or adding to {})",
-        diff.extra.len(),
-        right_name
-    );
-    println!("  {} different values", diff.different.len());
+    // One line, only the non-zero counts, matching `scan`, `validate` and
+    // `doctor`. The old block always printed all three even when every one was
+    // zero — "0 missing (add to .env)" is advice about nothing.
+    let mut parts = Vec::new();
+    if !diff.missing.is_empty() {
+        parts.push(format!("{} missing from {left_name}", diff.missing.len()));
+    }
+    if !diff.extra.is_empty() {
+        parts.push(format!("{} not in {right_name}", diff.extra.len()));
+    }
+    if !diff.different.is_empty() {
+        parts.push(pluralize(
+            diff.different.len(),
+            "different value",
+            "different values",
+        ));
+    }
+    if parts.is_empty() {
+        println!(
+            "  {}  {} and {} agree",
+            glyph::OK.green(),
+            left_name,
+            right_name
+        );
+    } else {
+        println!("  {}", parts.join("  ·  ").bold());
+    }
 
     //  Show stats in pretty mode if available
     if let Some(stats) = &diff.stats {
@@ -471,7 +492,10 @@ fn output_patch_interactive(
             };
             println!("  {} {}={}", icon, key, val);
         }
-        println!("\n💡 Tip: Save output and apply with: patch -p1 < changes.patch");
+        println!(
+            "\n  {}  save it and apply with: patch -p1 < changes.patch",
+            glyph::ARROW.dimmed()
+        );
     } else {
         println!("\n{}", "· No changes applied".dimmed());
     }

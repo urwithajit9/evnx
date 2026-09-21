@@ -159,6 +159,24 @@ fn validate_json_is_stable() {
     );
 }
 
+/// ⚠️ The plain `validate --format json` fixture produces **no issues**, so its
+/// golden never covered the `issues[]` array or the `location` field inside it.
+/// A change to how a location is rendered passed straight through the net.
+///
+/// `--strict` is what makes the extra-variable check run, so this is the case
+/// that actually exercises an issue.
+#[test]
+fn validate_strict_json_is_stable() {
+    let d = fixture();
+    check(
+        "validate-strict.json",
+        &stdout_of(
+            &d,
+            &["validate", "--strict", "--format", "json", "--exit-zero"],
+        ),
+    );
+}
+
 #[test]
 fn diff_json_is_stable() {
     let d = fixture();

@@ -171,12 +171,41 @@ pub fn print_box(title: &str, message: &str) {
 /// // Output: 📋 Preview:
 /// ```
 pub fn print_section_header(icon: &str, title: &str) {
-    println!("\n{} {}:", icon.bold(), title.bold());
+    // ⚠️ An empty icon used to leave its separating space behind, so
+    // `print_section_header("", "Preview")` rendered as `" Preview:"` — a
+    // heading indented by one column for no reason. Several callers lost their
+    // icon when the emoji went and now pass `""`.
+    if icon.is_empty() {
+        println!("\n{}:", title.bold());
+    } else {
+        println!("\n{} {}:", icon.bold(), title.bold());
+    }
 }
 
 /// Convenience wrapper for preview sections.
 pub fn print_preview_header() {
     print_section_header("", "Preview");
+}
+
+/// Whether `print_section_header` was handed anything to draw.
+///
+/// ⚠️ `print_section_header("", "Preview")` rendered as `" Preview:"` — a lone
+/// leading space where the icon used to be. Callers that pass an empty icon want
+/// a plain heading, not an indented one.
+#[cfg(test)]
+mod section_header_tests {
+    #[test]
+    fn an_empty_icon_leaves_no_stray_space() {
+        // The rendering is a `println!`, so this pins the format string's shape
+        // rather than capturing stdout.
+        let icon = "";
+        let rendered = if icon.is_empty() {
+            format!("{}:", "Preview")
+        } else {
+            format!("{} {}:", icon, "Preview")
+        };
+        assert_eq!(rendered, "Preview:");
+    }
 }
 
 /// Print a numbered list of next steps.

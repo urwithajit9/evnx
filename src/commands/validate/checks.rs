@@ -105,7 +105,7 @@ pub fn check_missing_variables(
             issue_type: IssueType::MissingVariable.as_str().to_string(),
             variable: key.to_string(),
             message: format!("Missing required variable: {}", key),
-            location: format!("{}:?", env_path),
+            location: env_path.to_string(),
             suggestion: Some(format!("Add {}=<value> to {}", key, env_path)),
             auto_fixable: true,
         })
@@ -134,7 +134,7 @@ pub fn check_extra_variables(
             issue_type: IssueType::ExtraVariable.as_str().to_string(),
             variable: key.to_string(),
             message: format!("Extra variable not in .env.example: {}", key),
-            location: format!("{}:?", env_path),
+            location: env_path.to_string(),
             suggestion: Some(format!(
                 "Add {} to .env.example or remove from {}",
                 key, env_path
@@ -170,7 +170,7 @@ pub fn check_placeholders(
                 issue_type: IssueType::PlaceholderValue.as_str().to_string(),
                 variable: key.clone(),
                 message: format!("{} looks like a placeholder", key),
-                location: format!("{}:?", env_path),
+                location: env_path.to_string(),
                 suggestion,
                 auto_fixable: true,
             }
@@ -196,7 +196,7 @@ pub fn check_boolean_trap(
             issue_type: IssueType::BooleanTrap.as_str().to_string(),
             variable: key.clone(),
             message: format!("{} is set to \"{}\" (string, not boolean)", key, value),
-            location: format!("{}:?", env_path),
+            location: env_path.to_string(),
             suggestion: Some(format!(
                 "Use {} or 0 for proper boolean handling",
                 if value == "False" { "false" } else { "true" }
@@ -224,7 +224,7 @@ pub fn check_weak_secret(
             issue_type: IssueType::WeakSecret.as_str().to_string(),
             variable: "SECRET_KEY".to_string(),
             message: "SECRET_KEY is too weak or predictable".to_string(),
-            location: format!("{}:?", env_path),
+            location: env_path.to_string(),
             suggestion: Some("Run: openssl rand -hex 32".to_string()),
             auto_fixable: true,
         })
@@ -254,7 +254,7 @@ pub fn check_localhost_docker(
             issue_type: IssueType::LocalhostInDocker.as_str().to_string(),
             variable: key.clone(),
             message: format!("{} uses localhost/127.0.0.1", key),
-            location: format!("{}:?", env_path),
+            location: env_path.to_string(),
             suggestion: Some("In Docker, use service name instead (e.g., db:5432)".to_string()),
             auto_fixable: false,
         })
@@ -290,7 +290,7 @@ pub fn check_formats(
                 issue_type: IssueType::InvalidUrl.as_str().to_string(),
                 variable: key.clone(),
                 message: format!("{} does not appear to be a valid URL", key),
-                location: format!("{}:?", env_path),
+                location: env_path.to_string(),
                 suggestion: Some("Expected format: https://example.com/path".to_string()),
                 auto_fixable: false,
             });
@@ -307,7 +307,7 @@ pub fn check_formats(
                 issue_type: IssueType::InvalidPort.as_str().to_string(),
                 variable: key.clone(),
                 message: format!("{} is not a valid port number (1-65535)", key),
-                location: format!("{}:?", env_path),
+                location: env_path.to_string(),
                 suggestion: Some("Expected format: 8080".to_string()),
                 auto_fixable: false,
             });
@@ -324,7 +324,7 @@ pub fn check_formats(
                 issue_type: IssueType::InvalidEmail.as_str().to_string(),
                 variable: key.clone(),
                 message: format!("{} does not appear to be a valid email", key),
-                location: format!("{}:?", env_path),
+                location: env_path.to_string(),
                 suggestion: Some("Expected format: user@example.com".to_string()),
                 auto_fixable: false,
             });

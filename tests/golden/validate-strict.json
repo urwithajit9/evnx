@@ -1,0 +1,23 @@
+{
+  "status": "passed",
+  "required_present": 3,
+  "required_total": 3,
+  "issues": [
+    {
+      "severity": "warning",
+      "type": "extra_variable",
+      "variable": "EXTRA",
+      "message": "Extra variable not in .env.example: EXTRA",
+      "location": ".env",
+      "suggestion": "Add EXTRA to .env.example or remove from .env",
+      "auto_fixable": false
+    }
+  ],
+  "fixed": [],
+  "summary": {
+    "errors": 0,
+    "warnings": 1,
+    "style": 0,
+    "fixed_count": 0
+  }
+}
