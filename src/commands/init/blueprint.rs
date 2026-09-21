@@ -4,7 +4,7 @@ use dialoguer::Select;
 use std::path::Path;
 
 use super::shared::{write_env_files, WriteOptions};
-use crate::schema::{formatter, loader, resolver};
+use crate::schema::{component, formatter, loader};
 use crate::utils::ui::{print_header, print_preview_header, success};
 
 /// Handle Blueprint mode: use `requested` when given, otherwise ask.
@@ -89,9 +89,24 @@ pub fn handle(
         );
     }
 
-    // Resolve variables
-    let vars =
-        resolver::resolve_blueprint(blueprint).context("Failed to resolve blueprint variables")?;
+    // ⚠️ Resolved through the component catalogue, not `resolve_blueprint`.
+    //
+    // A blueprint *is* a component list — `t3_modern` is
+    // `nextjs, postgresql, clerk, aws_s3, stripe, github_actions, vercel` — and
+    // routing it through the same path makes that structural rather than merely
+    // true. `schema::component::tests::a_blueprint_is_exactly_its_component_list`
+    // asserts the two agree for every blueprint.
+    //
+    // It also closes a fail-open: `resolve_blueprint` used `if let Some(…)` with
+    // no `else`, so a typo in `schema.json` silently dropped that component's
+    // variables. Here an unresolvable name is an error.
+    let mut names = vec![blueprint.components.framework.clone()];
+    names.extend(blueprint.components.services.iter().cloned());
+    names.extend(blueprint.components.infrastructure.iter().cloned());
+
+    let vars = component::resolve(&names).with_context(|| {
+        format!("Blueprint '{selected_id}' references a component that is not in the schema")
+    })?;
 
     // Show preview
     // println!("\n{}", "📋 Preview:".bold());

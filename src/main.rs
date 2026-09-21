@@ -59,8 +59,18 @@ fn main() -> Result<()> {
             path,
             yes,
             blueprint,
+            with,
+            list_components,
             force,
-        } => commands::init::run(path, yes, force, blueprint, cli.verbose),
+        } => commands::init::run(
+            path,
+            yes,
+            force,
+            blueprint,
+            with,
+            list_components,
+            cli.verbose,
+        ),
 
         Commands::Add { target, path, yes } => commands::add::run(target, path, yes, cli.verbose),
 

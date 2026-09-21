@@ -561,3 +561,146 @@ fn init_gitignores_every_env_file_but_not_the_template() {
         "the negation must follow the pattern:\n{gitignore}"
     );
 }
+
+// ─────────────────────────────────────────────────────────────
+// --with: naming the components directly
+// ─────────────────────────────────────────────────────────────
+
+/// ⚠️ The claim that makes `--with` a refactor and not a second code path: a
+/// blueprint is a component list, so both routes must produce the same file
+/// byte for byte. If this ever fails, blueprints have stopped being aliases.
+#[test]
+fn a_blueprint_and_its_component_list_generate_the_same_file() {
+    let by_blueprint = TempDir::new().unwrap();
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .current_dir(by_blueprint.path())
+        .args(["init", "--blueprint", "t3_modern", "--yes"])
+        .assert()
+        .success();
+
+    let by_components = TempDir::new().unwrap();
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .current_dir(by_components.path())
+        .args([
+            "init",
+            "--with",
+            "nextjs,postgresql,clerk,aws_s3,stripe,github_actions,vercel",
+            "--yes",
+        ])
+        .assert()
+        .success();
+
+    let a = std::fs::read_to_string(by_blueprint.path().join(".env.example")).unwrap();
+    let b = std::fs::read_to_string(by_components.path().join(".env.example")).unwrap();
+    assert_eq!(a, b, "t3_modern and its component list diverge");
+    assert!(a.len() > 200, "suspiciously small output: {a}");
+}
+
+/// The combination no blueprint expresses, which is why `--with` exists.
+#[test]
+fn components_no_blueprint_offers_can_be_combined() {
+    let d = TempDir::new().unwrap();
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .current_dir(d.path())
+        .args(["init", "--with", "django,kafka,clerk", "--yes"])
+        .assert()
+        .success();
+
+    let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+    assert!(example.contains("KAFKA"), "{example}");
+    assert!(example.contains("CLERK"), "{example}");
+}
+
+/// Repeatable as well as comma-separated.
+#[test]
+fn with_accepts_repeats_and_commas_alike() {
+    let combined = TempDir::new().unwrap();
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .current_dir(combined.path())
+        .args(["init", "--with", "postgresql,redis", "--yes"])
+        .assert()
+        .success();
+
+    let repeated = TempDir::new().unwrap();
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .current_dir(repeated.path())
+        .args(["init", "--with", "postgresql", "--with", "redis", "--yes"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(combined.path().join(".env.example")).unwrap(),
+        std::fs::read_to_string(repeated.path().join(".env.example")).unwrap()
+    );
+}
+
+/// ⚠️ An unknown name must fail *before* anything is written — not after a
+/// preview has implied it worked.
+#[test]
+fn an_unknown_component_writes_nothing() {
+    let d = TempDir::new().unwrap();
+
+    let assert = Command::cargo_bin("evnx")
+        .unwrap()
+        .current_dir(d.path())
+        .args(["init", "--with", "postgresql,nope", "--yes"])
+        .assert()
+        .failure();
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(stderr.contains("unknown component 'nope'"), "{stderr}");
+    assert!(
+        !d.path().join(".env.example").exists(),
+        "a refused run must leave no .env.example behind"
+    );
+}
+
+/// The error points at this, so it has to work with no project and no prompt.
+#[test]
+fn list_components_needs_no_project() {
+    let d = TempDir::new().unwrap();
+    let assert = Command::cargo_bin("evnx")
+        .unwrap()
+        .current_dir(d.path())
+        .args(["init", "--list-components"])
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    for expected in ["nextjs", "postgresql", "stripe", "FRAMEWORK", "SERVICE"] {
+        assert!(
+            stdout.contains(expected),
+            "{expected} missing from:\n{stdout}"
+        );
+    }
+    assert!(
+        !d.path().join(".env.example").exists(),
+        "listing must not touch the project"
+    );
+}
+
+/// `--with` and `--blueprint` answer the same question two ways; giving both is
+/// an error rather than a silent preference.
+#[test]
+fn with_and_blueprint_conflict() {
+    let d = TempDir::new().unwrap();
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .current_dir(d.path())
+        .args([
+            "init",
+            "--with",
+            "nextjs",
+            "--blueprint",
+            "t3_modern",
+            "--yes",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}

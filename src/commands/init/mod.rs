@@ -18,6 +18,7 @@ use dialoguer::Select;
 mod architect;
 mod blank;
 mod blueprint;
+mod components;
 mod shared;
 
 pub use shared::{write_env_files, WriteOptions};
@@ -37,13 +38,24 @@ pub use shared::{write_env_files, WriteOptions};
 ///
 /// A blueprint is still available non-interactively — by name:
 /// `evnx init --yes --blueprint t3_modern`.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     path: String,
     yes: bool,
     force: bool,
     blueprint: Option<String>,
+    with: Vec<String>,
+    list_components: bool,
     verbose: bool,
 ) -> Result<()> {
+    // ⚠️ Before the header and before any project is touched. Listing is a
+    // question about evnx, not about this directory — it has to work with no
+    // project, no prompt and no side effects, because it is what the "unknown
+    // component" error tells people to run.
+    if list_components {
+        return components::list();
+    }
+
     if verbose {
         println!("{}", "Running init in verbose mode".dimmed());
     }
@@ -52,8 +64,10 @@ pub fn run(
 
     let opts = WriteOptions { yes, force };
 
-    // An explicit --blueprint selects the mode; there is nothing left to ask.
-    let mode = if blueprint.is_some() {
+    // An explicit --with or --blueprint selects the mode; nothing left to ask.
+    let mode = if !with.is_empty() {
+        Mode::Components
+    } else if blueprint.is_some() {
         Mode::Blueprint
     } else if yes {
         Mode::Blank
@@ -81,6 +95,7 @@ pub fn run(
     // Step 2: Route to handler
     match mode {
         Mode::Blank => blank::handle(path, opts, verbose)?,
+        Mode::Components => components::handle(path, opts, verbose, &with)?,
         Mode::Blueprint => self::blueprint::handle(path, opts, verbose, blueprint.as_deref())?,
         Mode::Architect => architect::handle(path, opts, verbose)?,
     }
@@ -93,6 +108,9 @@ pub fn run(
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Mode {
     Blank,
+    /// An explicit component list: `--with nextjs,postgresql`.
+    Components,
+    /// A named stack, which is a shorthand for a component list.
     Blueprint,
     Architect,
 }

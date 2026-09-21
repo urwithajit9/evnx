@@ -706,8 +706,27 @@ pub enum Commands {
         ///
         /// Selects Blueprint mode without prompting. An unknown id is an error
         /// that lists the valid ones, so this doubles as the way to see them.
-        #[arg(long, value_name = "ID")]
+        ///
+        /// A blueprint is a shorthand for a component list — `t3_modern` is
+        /// `--with nextjs,postgresql,clerk,aws_s3,stripe,github_actions,vercel`.
+        #[arg(long, value_name = "ID", conflicts_with = "with")]
         blueprint: Option<String>,
+
+        /// Name the components directly, e.g. `--with nextjs,postgresql,stripe`.
+        ///
+        /// Ten fixed blueprints cannot span the stacks people have — "Django +
+        /// Kafka + Clerk" needed someone to add a `django_kafka_clerk` stack
+        /// before it could be expressed. This names the pieces instead.
+        ///
+        /// Repeatable and comma-separated: `--with a,b --with c` is the same as
+        /// `--with a,b,c`. An unknown name is an error that suggests near
+        /// matches; `--list-components` prints them all.
+        #[arg(long, value_name = "LIST", value_delimiter = ',', num_args = 1..)]
+        with: Vec<String>,
+
+        /// Print every component `--with` accepts, and exit.
+        #[arg(long, conflicts_with_all = ["with", "blueprint", "yes"])]
+        list_components: bool,
 
         /// Overwrite an existing .env.example.
         ///
