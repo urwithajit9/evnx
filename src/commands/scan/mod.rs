@@ -65,13 +65,19 @@ pub mod runner;
 
 use crate::docs;
 use crate::utils::ui;
+use colored::Colorize;
 pub use detector::{Detection, DetectorRegistry, SecretDetector};
 pub use filters::FileFilter;
 pub use models::{Confidence, Finding, ScanResults};
 pub use output::{render, OutputFormat};
 pub use runner::{truncate_value, ScanRunner};
 
-// In commands/scan/mod.rs
+/// Nothing at or above `--severity`.
+pub const EXIT_CLEAN: i32 = 0;
+/// Secrets found.
+pub const EXIT_FOUND: i32 = 1;
+/// The scan could not be completed, so there is no verdict.
+pub const EXIT_ERROR: i32 = 2;
 
 /// Run the scan command (CLI entry point).
 ///
@@ -85,9 +91,21 @@ pub use runner::{truncate_value, ScanRunner};
 /// * `exit_zero` - Always exit 0 (for CI pipelines)
 /// * `verbose` - Enable verbose output
 ///
-/// # Returns
+/// # Exit codes
 ///
-/// Ok(()) on success. May exit with code 1 if secrets found (unless exit_zero=true).
+/// | code | meaning |
+/// |------|---------|
+/// | 0 | clean — nothing at or above `--severity` |
+/// | 1 | secrets found (suppressed by `--exit-zero`) |
+/// | 2 | the scan could not be completed |
+///
+/// ⚠️ **2 is not a louder 1.** "I found nothing" and "I could not look" are
+/// different answers, and collapsing them is what let `evnx scan ./typo` report
+/// success. A CI gate written as `evnx scan .` still fails on either, but one
+/// written to branch on the code can now tell a finding from a broken setup.
+///
+/// `--exit-zero` suppresses 1 only. Trouble still exits 2: the flag means "do
+/// not fail my build over findings", not "never tell me the scan was impossible".
 ///
 /// # Example
 ///
@@ -116,18 +134,32 @@ pub fn run(
     exit_zero: bool,
     verbose: bool,
 ) -> Result<(), anyhow::Error> {
-    let min_confidence: Confidence = severity.parse()?;
-    let output_format: OutputFormat = format.parse()?;
-    let runner =
-        ScanRunner::with_min_confidence(&exclude, ignore_placeholders, verbose, min_confidence);
+    // Trouble prints here and exits 2 rather than propagating to `main`, which
+    // would format it as a generic error and collapse it onto 1 — the code that
+    // already means "secrets found".
+    let scan = || -> Result<bool, anyhow::Error> {
+        let min_confidence: Confidence = severity.parse()?;
+        let output_format: OutputFormat = format.parse()?;
+        let runner =
+            ScanRunner::with_min_confidence(&exclude, ignore_placeholders, verbose, min_confidence);
+        runner.run(paths, output_format)
+    };
 
-    let secrets_found = runner.run(paths, output_format)?;
+    let secrets_found = match scan() {
+        Ok(found) => found,
+        Err(e) => {
+            eprintln!("{} {:#}", "Error:".on_red().bold(), e);
+            eprintln!();
+            eprintln!("No verdict: evnx did not scan anything. This is not a clean result.");
+            std::process::exit(EXIT_ERROR);
+        }
+    };
 
     // Always print — eprintln never pollutes stdout
     ui::print_docs_hint(&docs::SCAN);
 
     if secrets_found && !exit_zero {
-        std::process::exit(1);
+        std::process::exit(EXIT_FOUND);
     }
 
     Ok(())

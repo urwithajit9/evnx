@@ -671,3 +671,130 @@ fn corroborated_findings_keep_the_higher_confidence() {
         .assert()
         .failure();
 }
+
+// ─────────────────────────────────────────────────────────────
+// Exit code 2 — "I could not look" is not "I found nothing"
+// ─────────────────────────────────────────────────────────────
+
+/// ⚠️ The fail-open this fixes: `evnx scan ./typo` printed
+/// "✓ No secrets detected" and exited 0. A renamed directory or an empty
+/// variable in a CI `working-directory` turned the gate into a no-op that
+/// reported success.
+#[test]
+fn a_path_that_does_not_exist_is_trouble_not_a_clean_result() {
+    let dir = TempDir::new().unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "./definitely-not-here"])
+        .assert()
+        .code(2);
+
+    let stdout = get_stdout(&assert);
+    assert!(
+        !stdout.contains("No secrets detected"),
+        "a scan that never happened must not claim to be clean: {stdout}"
+    );
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(stderr.contains("does not exist"), "{stderr}");
+    assert!(stderr.contains("No verdict"), "{stderr}");
+}
+
+/// `--exit-zero` means "do not fail my build over findings", not "never tell me
+/// the scan was impossible". It suppresses 1 and leaves 2 alone.
+#[test]
+fn exit_zero_suppresses_findings_but_not_trouble() {
+    let found = setup_test_env("AKIA4OZRMFJ3VREALKEY");
+    cargo_bin_cmd!("evnx")
+        .current_dir(found.path())
+        .args(["scan", ".", "--exit-zero"])
+        .assert()
+        .code(0);
+
+    let dir = TempDir::new().unwrap();
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "./definitely-not-here", "--exit-zero"])
+        .assert()
+        .code(2);
+}
+
+/// Every bad path is named in one run, rather than one per invocation.
+#[test]
+fn all_unscannable_paths_are_reported_together() {
+    let dir = TempDir::new().unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "./nope-a", "./nope-b"])
+        .assert()
+        .code(2);
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(stderr.contains("./nope-a"), "{stderr}");
+    assert!(stderr.contains("./nope-b"), "{stderr}");
+    assert!(stderr.contains("2 of the 2"), "{stderr}");
+}
+
+/// The three codes stay distinct: a real directory that is simply clean is still
+/// 0, and findings are still 1.
+#[test]
+fn the_three_exit_codes_are_distinct() {
+    let clean = TempDir::new().unwrap();
+    fs::write(clean.path().join(".env"), "DEBUG=true\n").unwrap();
+    cargo_bin_cmd!("evnx")
+        .current_dir(clean.path())
+        .args(["scan", "."])
+        .assert()
+        .code(0);
+
+    let found = setup_test_env("AKIA4OZRMFJ3VREALKEY");
+    cargo_bin_cmd!("evnx")
+        .current_dir(found.path())
+        .args(["scan", "."])
+        .assert()
+        .code(1);
+}
+
+// ─────────────────────────────────────────────────────────────
+// --exclude globs match the way they are written
+// ─────────────────────────────────────────────────────────────
+
+/// ⚠️ `glob::Pattern` anchors at both ends, and paths are walked with a `./`
+/// prefix — so `"fixtures/**"` and `"*.log"`, the two forms people actually
+/// write, matched nothing at all and did so silently.
+#[test]
+fn exclude_globs_match_the_forms_people_write() {
+    fn project() -> TempDir {
+        let d = TempDir::new().unwrap();
+        fs::create_dir_all(d.path().join("fixtures")).unwrap();
+        fs::write(d.path().join(".env"), "AWS=AKIA4OZRMFJ3VREALKEY\n").unwrap();
+        fs::write(d.path().join("fixtures/.env"), "AWS=AKIA4OZRMFJ3VREALKEY\n").unwrap();
+        d
+    }
+
+    // Each of these must exclude fixtures/.env, leaving only the root finding.
+    for pattern in ["fixtures/**", "./fixtures/**", "*fixtures*", "fixtures"] {
+        let d = project();
+        let assert = cargo_bin_cmd!("evnx")
+            .current_dir(d.path())
+            .args(["scan", ".", "--exclude", pattern, "--exit-zero"])
+            .assert()
+            .success();
+
+        let stdout = get_stdout(&assert);
+        assert!(
+            !stdout.contains("fixtures"),
+            "{pattern:?} must exclude fixtures/.env: {stdout}"
+        );
+    }
+
+    // A filename glob reaches both files, so nothing is left to find.
+    let d = project();
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", ".", "--exclude", "*.env"])
+        .assert()
+        .code(0);
+}
