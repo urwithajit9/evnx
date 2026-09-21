@@ -61,6 +61,7 @@ fn main() -> Result<()> {
             blueprint,
             with,
             list_components,
+            detect,
             force,
         } => commands::init::run(
             path,
@@ -69,6 +70,7 @@ fn main() -> Result<()> {
             blueprint,
             with,
             list_components,
+            detect,
             cli.verbose,
         ),
 

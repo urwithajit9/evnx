@@ -728,6 +728,18 @@ pub enum Commands {
         #[arg(long, conflicts_with_all = ["with", "blueprint", "yes"])]
         list_components: bool,
 
+        /// Accept what the project declares, without asking.
+        ///
+        /// Run interactively with no flags, `init` reads `package.json`,
+        /// `docker-compose.yml` and friends and proposes what it finds. This is
+        /// how a script says yes to that proposal.
+        ///
+        /// ⚠️ Detection is a heuristic — a `stripe` dependency in a test fixture
+        /// looks exactly like one in a checkout flow. Prefer `--with` where the
+        /// answer is known; this is for bootstrapping a project you trust.
+        #[arg(long, conflicts_with_all = ["with", "blueprint", "yes"])]
+        detect: bool,
+
         /// Overwrite an existing .env.example.
         ///
         /// `.env.example` is normally a tracked, hand-maintained file, so init
