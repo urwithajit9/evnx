@@ -9,6 +9,20 @@ use evnx::cli::{Cli, Commands};
 use evnx::commands;
 use evnx::core::converter::KeyTransform;
 
+/// `[sync] naming_policy` arrives as a string; map it to the enum clap parses.
+///
+/// An unrecognised value yields `None`, so it falls through to the built-in
+/// default — and `core::config` has already warned that the key is not
+/// understood, so it is reported rather than silently ignored.
+fn parse_naming_policy(value: &str) -> Option<evnx::cli::NamingPolicy> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "warn" => Some(evnx::cli::NamingPolicy::Warn),
+        "error" => Some(evnx::cli::NamingPolicy::Error),
+        "ignore" => Some(evnx::cli::NamingPolicy::Ignore),
+        _ => None,
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -16,6 +30,28 @@ fn main() -> Result<()> {
     if cli.no_color {
         colored::control::set_override(false);
     }
+
+    // Project policy from `.evnx.toml`, loaded once and applied per command
+    // below. Precedence is config < flag throughout: see `core::config::pick`.
+    //
+    // ⚠️ Announced rather than applied silently. `[scan] severity` and
+    // `[scan] exclude` can weaken what the scanner reports, and the file is
+    // committed — so one commit could otherwise narrow scanning for everyone who
+    // clones the repository with nothing on the command line to show it.
+    // ⚠️ An **absolute** directory, not `Path::new(".")`. `find` walks upward with
+    // `Path::parent`, and `".".parent()` is `""` rather than the parent directory
+    // — so a relative start makes the walk inert and the file is found only in
+    // the working directory. `cloud::sync` and `cloud::status` already pass
+    // `current_dir()` for this reason.
+    let here = std::env::current_dir().context("reading the current directory")?;
+    let loaded = evnx::core::config::load(&here)?;
+    if let Some(source) = &loaded.source {
+        evnx::utils::ui::config_banner(source, &loaded.config.security_overrides(), cli.quiet);
+    }
+    for warning in &loaded.warnings {
+        evnx::utils::ui::config_warning(warning, cli.quiet);
+    }
+    let cfg = loaded.config;
 
     // Route to command handler
     match cli.command {
@@ -39,15 +75,24 @@ fn main() -> Result<()> {
             ignore,
             validate_formats,
         } => commands::validate::run(
-            evnx::core::env_name::select(Path::new("."), &env, env_name.as_deref())?,
-            example,
-            strict,
+            evnx::core::env_name::select(
+                Path::new("."),
+                env.as_deref(),
+                env_name.as_deref(),
+                cfg.defaults.env_name.as_deref(),
+            )?,
+            evnx::core::config::pick(
+                example,
+                cfg.defaults.example.clone(),
+                ".env.example".to_string(),
+            ),
+            evnx::core::config::any(strict, cfg.validate.strict),
             fix,
             format,
             exit_zero,
             cli.verbose,
-            ignore,
-            validate_formats,
+            evnx::core::config::extend(ignore, cfg.validate.ignore),
+            evnx::core::config::any(validate_formats, cfg.validate.validate_formats),
         ),
 
         Commands::Scan {
@@ -60,10 +105,10 @@ fn main() -> Result<()> {
             exit_zero,
         } => commands::scan::run(
             path,
-            exclude,
+            evnx::core::config::extend(exclude, cfg.scan.exclude),
             pattern,
-            ignore_placeholders,
-            severity,
+            evnx::core::config::any(ignore_placeholders, cfg.scan.ignore_placeholders),
+            evnx::core::config::pick(severity, cfg.scan.severity, "low".to_string()),
             format,
             exit_zero,
             cli.verbose,
@@ -83,13 +128,31 @@ fn main() -> Result<()> {
         } => {
             let here = Path::new(".");
             match commands::diff::run(
-                evnx::core::env_name::select(here, &env, env_name.as_deref())?,
-                evnx::core::env_name::select(here, &example, against.as_deref())?,
+                evnx::core::env_name::select(
+                    here,
+                    env.as_deref(),
+                    env_name.as_deref(),
+                    cfg.defaults.env_name.as_deref(),
+                )?,
+                // The right-hand side: --example, then --against as a name,
+                // then [defaults] example. `env_name` is not consulted here —
+                // it names the *left* side.
+                match (&example, &against) {
+                    (Some(path), _) => path.clone(),
+                    (None, Some(_)) => {
+                        evnx::core::env_name::select(here, None, against.as_deref(), None)?
+                    }
+                    (None, None) => cfg
+                        .defaults
+                        .example
+                        .clone()
+                        .unwrap_or_else(|| ".env.example".to_string()),
+                },
                 show_values,
                 format,
                 reverse,
                 cli.verbose,
-                ignore_keys,
+                evnx::core::config::extend(ignore_keys, cfg.diff.ignore_keys),
                 with_stats,
                 interactive,
             ) {
@@ -129,7 +192,12 @@ fn main() -> Result<()> {
                 }
             });
 
-            let env = evnx::core::env_name::select(Path::new("."), &env, env_name.as_deref())?;
+            let env = evnx::core::env_name::select(
+                Path::new("."),
+                env.as_deref(),
+                env_name.as_deref(),
+                cfg.defaults.env_name.as_deref(),
+            )?;
             let config = commands::convert::ConvertConfig::builder()
                 .env(env)
                 .target_format(to)
@@ -177,8 +245,17 @@ fn main() -> Result<()> {
         }),
 
         Commands::Sync { args } => commands::sync::run(
-            evnx::core::env_name::select(Path::new("."), &args.env, args.env_name.as_deref())?,
-            args.example.clone(),
+            evnx::core::env_name::select(
+                Path::new("."),
+                args.env.as_deref(),
+                args.env_name.as_deref(),
+                cfg.defaults.env_name.as_deref(),
+            )?,
+            evnx::core::config::pick(
+                args.example.clone(),
+                cfg.defaults.example.clone(),
+                ".env.example".to_string(),
+            ),
             args.direction,
             args.placeholder,
             cli.verbose,
@@ -186,7 +263,14 @@ fn main() -> Result<()> {
             args.force,
             args.check,
             args.template_config.clone(),
-            args.naming_policy,
+            evnx::core::config::pick(
+                args.naming_policy,
+                cfg.sync
+                    .naming_policy
+                    .as_deref()
+                    .and_then(parse_naming_policy),
+                evnx::cli::NamingPolicy::Warn,
+            ),
         ),
 
         // Commands::Template { input, output, env } => {
@@ -207,7 +291,12 @@ fn main() -> Result<()> {
             } else {
                 commands::template::GitignoreMode::Default
             };
-            let env = evnx::core::env_name::select(Path::new("."), &env, env_name.as_deref())?;
+            let env = evnx::core::env_name::select(
+                Path::new("."),
+                env.as_deref(),
+                env_name.as_deref(),
+                cfg.defaults.env_name.as_deref(),
+            )?;
             commands::template::run(input, output, env, cli.verbose, mode)
         }
 
@@ -222,11 +311,16 @@ fn main() -> Result<()> {
             keep,
             verify,
         } => match commands::backup::run(
-            evnx::core::env_name::select(Path::new("."), &env, env_name.as_deref())?,
+            evnx::core::env_name::select(
+                Path::new("."),
+                env.as_deref(),
+                env_name.as_deref(),
+                cfg.defaults.env_name.as_deref(),
+            )?,
             output,
             cli.verbose,
             key_file,
-            keep,
+            evnx::core::config::pick(keep, cfg.backup.keep, 3),
             verify,
         ) {
             Ok(()) => Ok(()),

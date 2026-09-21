@@ -688,3 +688,84 @@ mod tests {
         }
     }
 }
+
+/// Announce the `.evnx.toml` a run is operating under.
+///
+/// ⚠️ Why this is not optional. `[scan] severity` and `[scan] exclude` can
+/// *weaken* what the scanner reports, and the file is committed — so one commit
+/// can quietly narrow scanning for everyone who clones the repository, with
+/// nothing on the command line to show it. That is the same fail-open shape this
+/// CLI has spent several releases removing.
+///
+/// Configurability is not the problem; silence is. A team genuinely needs to
+/// exclude its fixtures. So the file is allowed to change the default and
+/// **obliged to say so**.
+///
+/// Always stderr, never stdout, so `evnx convert --to json > out.json` stays
+/// machine-readable. Suppressed by `--quiet`.
+pub fn config_banner(path: &std::path::Path, overrides: &[String], quiet: bool) {
+    if quiet {
+        return;
+    }
+    let detail = if overrides.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", overrides.join(", "))
+    };
+    eprintln!(
+        "{}",
+        format!("  config    {}{}", short_path(path), detail).dimmed()
+    );
+}
+
+/// A committed config's path, shortened for a line printed on every run.
+///
+/// The loader resolves an absolute path, which is unambiguous but too long to
+/// put in front of every command. Relative to the working directory it reads as
+/// `.evnx.toml` at the project root and `../../.evnx.toml` from a package — and
+/// the second of those says something worth knowing, that the policy came from
+/// above rather than from here.
+///
+/// Falls back to the absolute path when the two share no prefix.
+fn short_path(path: &std::path::Path) -> String {
+    // `current_dir` is already absolute and already symlink-resolved by `getcwd`,
+    // and the path being shortened came from a walk rooted at it — so the two
+    // share a prefix without any further resolution. Canonicalizing again would
+    // only reintroduce the macOS `/var` vs `/private/var` mismatch.
+    let Ok(cwd) = std::env::current_dir() else {
+        return path.display().to_string();
+    };
+
+    if let Ok(rest) = path.strip_prefix(&cwd) {
+        return rest.display().to_string();
+    }
+
+    // Above the working directory: count the levels up to the shared ancestor.
+    let mut ancestor = cwd.as_path();
+    let mut ups = 0;
+    while let Some(parent) = ancestor.parent() {
+        ancestor = parent;
+        ups += 1;
+        if let Ok(rest) = path.strip_prefix(ancestor) {
+            let mut out = String::new();
+            for _ in 0..ups {
+                out.push_str("../");
+            }
+            out.push_str(&rest.display().to_string());
+            return out;
+        }
+    }
+    path.display().to_string()
+}
+
+/// Report a key the config file carries that this version does not understand.
+///
+/// A warning rather than an error: the file is committed and teams run mixed
+/// versions, so a config written for a later evnx must not break an earlier one.
+/// Naming the key is what keeps a typo from being silent.
+pub fn config_warning(message: &str, quiet: bool) {
+    if quiet {
+        return;
+    }
+    eprintln!("{} {}", "⚠".yellow(), message.dimmed());
+}
