@@ -86,7 +86,10 @@ fn add_service_unknown_returns_error() {
         .arg("--yes")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("Unknown service"));
+        // The message now comes from the shared catalogue, so it suggests near
+        // matches and points at --list-components rather than at this
+        // subcommand's --help.
+        .stderr(predicate::str::contains("unknown component"));
 }
 
 // #[test]
@@ -328,9 +331,17 @@ fn workflow_init_then_add_service() {
         example.contains("DATABASE_URL="),
         "Should have added PostgreSQL vars"
     );
+    // ⚠️ `add` writes the same section header `init` does. It used to write
+    // `# [ADDED] Database` into the same file `init` had written
+    // `# ── Database ──` into, so one `.env.example` carried two formats
+    // depending on which verb put each block there.
     assert!(
-        example.contains("# [ADDED] Database"),
-        "Should have [ADDED] marker"
+        example.contains("# ── Database ──"),
+        "add should write init's section header:\n{example}"
+    );
+    assert!(
+        !example.contains("[ADDED]"),
+        "the [ADDED] marker should be gone:\n{example}"
     );
 }
 
