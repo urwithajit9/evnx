@@ -50,6 +50,7 @@
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -750,4 +751,113 @@ mod tests {
             "entry should appear exactly once when check is used correctly"
         );
     }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Is a file ignored?
+// ─────────────────────────────────────────────────────────────
+
+/// The `.gitignore` lines evnx writes to protect env files.
+///
+/// ⚠️ One definition. This list lived in `init::shared` and again, inline, in
+/// `doctor`'s auto-fix, and `add` had neither — which is how `evnx add` came to
+/// append to a `.env` in a repository that would commit it, without a word.
+///
+/// The negations must follow `.env*`, because gitignore resolves last-match-wins
+/// and a negation placed above the pattern it carves out of does nothing.
+pub const ENV_ENTRIES: &[&str] = &[".env*", "!.env.example", "!.env.sample", "!.env.template"];
+
+/// Whether git would ignore `filename` under `project_root`.
+///
+/// ⚠️ Not [`check_ignored`], which compares `.gitignore` lines for exact string
+/// equality. That is right for "did *we* write this entry" and wrong for "is
+/// this file protected": against the `.env*` that `evnx init` writes, asking it
+/// about `.env` returns `NotIgnored`, so a caller would warn about every project
+/// evnx itself had set up correctly.
+///
+/// Asks git, which is the authority, and falls back to reading `.gitignore` when
+/// git cannot answer — no repository, or git not installed.
+pub fn env_file_is_protected(project_root: &Path, filename: &str) -> bool {
+    is_gitignored(project_root, filename)
+        .unwrap_or_else(|_| fallback_gitignore_check(project_root, filename))
+}
+
+/// Ask git whether `filename` is ignored.
+///
+/// ⚠️ `Err` means **git could not answer**, not "not ignored" — the caller falls
+/// back to reading `.gitignore` directly, and collapsing the two makes that
+/// fallback unreachable.
+///
+/// `git check-ignore` exits `0` when the path is ignored, `1` when it is not, and
+/// `128` when there is no repository. This used to return
+/// `Ok(status.success())`, so `128` became `Ok(false)` — "not ignored" — and any
+/// project that was not a git repo had every one of its env files reported as a
+/// security risk. A check that cries wolf on a directory with nothing wrong with
+/// it is one people learn to skip.
+pub fn is_gitignored(project_root: &Path, filename: &str) -> Result<bool> {
+    let output = Command::new("git")
+        .args([
+            "-C",
+            project_root.to_string_lossy().as_ref(),
+            "check-ignore",
+            filename,
+        ])
+        .output()
+        .context("Failed to execute git check-ignore")?;
+
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        other => anyhow::bail!(
+            "git check-ignore could not answer for {filename} (exit {})",
+            other.map_or_else(|| "signal".to_string(), |c| c.to_string())
+        ),
+    }
+}
+
+/// Whether `.gitignore` covers `filename`, without shelling out to git.
+///
+/// Used when `git check-ignore` cannot answer — no repository, or git is not
+/// installed. It is a deliberate approximation, but it has to understand the
+/// patterns evnx itself writes, and evnx now writes `.env*` with the template
+/// family negated rather than a literal `.env`. Exact line matching alone would
+/// report a correctly-ignored `.env` as exposed in any non-git directory.
+///
+/// Handles, in gitignore's own precedence order (last match wins):
+/// exact names, a leading `/`, a trailing `*` glob, and `!` negations.
+/// Anything more (`**`, character classes, mid-pattern globs) is left to git.
+pub fn fallback_gitignore_check(project_root: &Path, filename: &str) -> bool {
+    let gitignore_path = project_root.join(".gitignore");
+    if !gitignore_path.exists() {
+        return false;
+    }
+
+    let Ok(content) = fs::read_to_string(&gitignore_path) else {
+        return false;
+    };
+
+    let mut ignored = false;
+    for line in content.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let (negated, pattern) = match line.strip_prefix('!') {
+            Some(rest) => (true, rest.trim()),
+            None => (false, line),
+        };
+        let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
+
+        let matches = match pattern.strip_suffix('*') {
+            Some(prefix) => filename.starts_with(prefix),
+            None => filename == pattern,
+        };
+
+        // Later rules override earlier ones, which is what makes
+        // `.env*` followed by `!.env.example` work.
+        if matches {
+            ignored = !negated;
+        }
+    }
+    ignored
 }

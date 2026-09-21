@@ -376,3 +376,84 @@ fn workflow_init_then_add_service() {
 //     assert!(example.contains("# [ADDED] Payments"), "Should have Payments section");
 //     assert!(example.contains("# [ADDED] Monitoring"), "Should have Monitoring section");
 // }
+
+// ─────────────────────────────────────────────────────────────
+// .gitignore: add writes to .env, so it has to look
+// ─────────────────────────────────────────────────────────────
+
+/// ⚠️ The gap this closes. `evnx add` appends to `.env` and never looked at
+/// `.gitignore`, so in an unprotected repository evnx itself added lines to a
+/// file holding live credentials, on its way into a commit, without a word.
+#[test]
+fn add_warns_when_env_is_committable() {
+    let dir = TempDir::new().unwrap();
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(dir.path())
+        .status()
+        .unwrap();
+    std::fs::write(dir.path().join(".env"), "SECRET=live_value\n").unwrap();
+
+    let assert = Command::cargo_bin("evnx")
+        .unwrap()
+        .args(["add", "service", "postgresql", "--yes", "--path"])
+        .arg(dir.path())
+        .assert()
+        .success();
+
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(out.contains(".gitignore"), "no warning:\n{out}");
+    assert!(out.contains("doctor --fix"), "no remedy offered:\n{out}");
+}
+
+/// ⚠️ And it must stay quiet when the file *is* protected — including by the
+/// `.env*` that `evnx init` writes. An exact-match check would warn on every
+/// project evnx set up correctly, and a warning people learn to ignore is one
+/// they will ignore when it matters.
+#[test]
+fn add_is_quiet_when_env_is_already_ignored() {
+    for gitignore in [".env*\n!.env.example\n", ".env\n"] {
+        let dir = TempDir::new().unwrap();
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        std::fs::write(dir.path().join(".env"), "SECRET=x\n").unwrap();
+        std::fs::write(dir.path().join(".gitignore"), gitignore).unwrap();
+
+        let assert = Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["add", "service", "postgresql", "--yes", "--path"])
+            .arg(dir.path())
+            .assert()
+            .success();
+
+        let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+        assert!(
+            !out.contains("not covered by .gitignore"),
+            "warned despite {gitignore:?}:\n{out}"
+        );
+    }
+}
+
+/// No `.env` means nothing was written to, so nothing to warn about.
+#[test]
+fn add_says_nothing_when_there_is_no_env_file() {
+    let dir = TempDir::new().unwrap();
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(dir.path())
+        .status()
+        .unwrap();
+
+    let assert = Command::cargo_bin("evnx")
+        .unwrap()
+        .args(["add", "service", "postgresql", "--yes", "--path"])
+        .arg(dir.path())
+        .assert()
+        .success();
+
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(!out.contains("not covered by .gitignore"), "{out}");
+}

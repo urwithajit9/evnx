@@ -1,7 +1,6 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::*;
 use dialoguer::Confirm;
-use std::fs;
 use std::path::Path;
 
 use crate::schema::{component, formatter};
@@ -51,53 +50,22 @@ pub fn handle(service_id: &str, path: &str, yes: bool, _verbose: bool) -> Result
     // 5. Format as addition
     let addition = formatter::format_addition(&vars)?;
 
-    // 6. Append to .env.example
-    let example_path = Path::new(path).join(".env.example");
+    // ⚠️ Through `append_to_env_files`, like `add framework`, `add custom` and
+    // `add blueprint` already do. This subcommand carried its own copy of the
+    // same logic — which is why it silently missed the `.gitignore` check that
+    // lives there, and would have kept missing anything else added to it.
+    super::shared::append_to_env_files(
+        Path::new(path),
+        &addition,
+        super::shared::AppendMode::WithConflictWarning,
+        _verbose,
+    )?;
 
-    if example_path.exists() {
-        let existing =
-            fs::read_to_string(&example_path).context("Failed to read existing .env.example")?;
-
-        let updated = format!("{}\n{}", existing.trim_end(), addition);
-        fs::write(&example_path, updated).context("Failed to write updated .env.example")?;
-
-        println!(
-            "{} Appended {} variables to .env.example",
-            "✓".green(),
-            vars.vars.len()
-        );
-    } else {
-        // Create new file if doesn't exist
-        fs::write(&example_path, addition.trim()).context("Failed to create .env.example")?;
-        // println!("{} Created .env.example with {} variables", "✓".green(), vars.vars.len());
-        success(format!(
-            "Added {} variables for {}",
-            vars.vars.len(),
-            display_name
-        ));
-    }
-
-    // 7. Also update .env if it exists
-    let env_path = Path::new(path).join(".env");
-    if env_path.exists() {
-        let existing = fs::read_to_string(&env_path)?;
-        // Add TODO comment for new vars
-        let todo_addition = addition
-            .lines()
-            .map(|line| {
-                if line.starts_with('#') || line.trim().is_empty() {
-                    line.to_string()
-                } else {
-                    format!("# TODO: {}  # <-- Fill in real value", line)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let updated = format!("{}\n\n{}", existing.trim_end(), todo_addition);
-        fs::write(&env_path, updated)?;
-        println!("{} Updated .env with TODO placeholders", "✓".green());
-    }
+    success(format!(
+        "Added {} variables for {}",
+        vars.vars.len(),
+        display_name
+    ));
 
     Ok(())
 }
