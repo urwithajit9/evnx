@@ -21,6 +21,7 @@ mod blueprint;
 mod components;
 mod detect;
 mod shared;
+mod source;
 
 pub use shared::{write_env_files, WriteOptions};
 
@@ -48,6 +49,7 @@ pub fn run(
     with: Vec<String>,
     list_components: bool,
     detect_flag: bool,
+    from_source: bool,
     verbose: bool,
 ) -> Result<()> {
     // ⚠️ Before the header and before any project is touched. Listing is a
@@ -56,6 +58,14 @@ pub fn run(
     // component" error tells people to run.
     if list_components {
         return components::list();
+    }
+
+    // Source scanning answers a different question from the rest of `init`: not
+    // "what stack is this?" but "what does this code read?". It runs before the
+    // mode selection because it replaces it entirely.
+    if from_source {
+        print_init_header();
+        return components::handle_from_source(path, WriteOptions { yes, force }, verbose);
     }
 
     if verbose {

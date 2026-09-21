@@ -839,3 +839,107 @@ fn an_undetectable_project_still_gets_the_blank_path() {
         .success()
         .stdout(predicate::str::contains("Created empty .env.example"));
 }
+
+// ─────────────────────────────────────────────────────────────
+// --from-source: what the code actually reads
+// ─────────────────────────────────────────────────────────────
+
+fn sourced_project() -> TempDir {
+    let d = TempDir::new().unwrap();
+    std::fs::create_dir_all(d.path().join("src")).unwrap();
+    std::fs::write(
+        d.path().join("src/config.rs"),
+        "let a = required_var!(\"DATABASE_URL\");\nlet b = required_var!(\"JWT_SECRET\");\n",
+    )
+    .unwrap();
+    d
+}
+
+#[test]
+fn from_source_builds_a_template_from_the_code() {
+    let d = sourced_project();
+
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .args(["init", "--from-source", "--yes", "--path"])
+        .arg(d.path())
+        .assert()
+        .success();
+
+    let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+    assert!(example.contains("DATABASE_URL"), "{example}");
+    assert!(example.contains("JWT_SECRET"), "{example}");
+}
+
+/// ⚠️ The regression this exists to prevent. `--from-source` writes the
+/// variables a template is *missing*, so emitting them as a whole file deletes
+/// everything it already had. The first version did exactly that, turning a
+/// 21-variable `.env.example` into a 5-variable one.
+#[test]
+fn from_source_appends_and_never_replaces() {
+    let d = sourced_project();
+    std::fs::write(
+        d.path().join(".env.example"),
+        "# hand written\nDATABASE_URL=postgres://localhost\nKEPT_BY_HAND=yes\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .args(["init", "--from-source", "--yes", "--path"])
+        .arg(d.path())
+        .assert()
+        .success();
+
+    let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+    assert!(
+        example.contains("KEPT_BY_HAND"),
+        "an existing entry was destroyed:\n{example}"
+    );
+    assert!(
+        example.contains("DATABASE_URL"),
+        "an existing entry was destroyed:\n{example}"
+    );
+    assert!(
+        example.contains("JWT_SECRET"),
+        "the new one is missing:\n{example}"
+    );
+}
+
+/// Running it twice must not duplicate anything.
+#[test]
+fn from_source_is_idempotent() {
+    let d = sourced_project();
+
+    for _ in 0..2 {
+        Command::cargo_bin("evnx")
+            .unwrap()
+            .args(["init", "--from-source", "--yes", "--path"])
+            .arg(d.path())
+            .assert()
+            .success();
+    }
+
+    let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+    assert_eq!(
+        example.matches("JWT_SECRET=").count(),
+        1,
+        "duplicated on the second run:\n{example}"
+    );
+}
+
+/// A project with nothing to find says so rather than writing an empty file.
+#[test]
+fn from_source_on_an_empty_project_writes_nothing() {
+    let d = TempDir::new().unwrap();
+
+    Command::cargo_bin("evnx")
+        .unwrap()
+        .args(["init", "--from-source", "--yes", "--path"])
+        .arg(d.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no environment variables found"));
+
+    assert!(!d.path().join(".env.example").exists());
+}

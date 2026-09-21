@@ -195,6 +195,57 @@ pub fn resolve(ids: &[String]) -> Result<VarCollection> {
     Ok(collection)
 }
 
+/// Which component, if any, declares this variable.
+///
+/// Used by `--from-source`: a name the code reads may be one the catalogue
+/// already knows, in which case its description, default and category come for
+/// free and the generated file stays annotated instead of bare `KEY=` lines.
+pub fn declaring(var_name: &str) -> Result<Option<Component>> {
+    let schema = schema()?;
+
+    for (lang_id, lang) in &schema.languages {
+        for (fw_id, fw) in &lang.frameworks {
+            if fw.vars.iter().any(|v| v == var_name) {
+                return Ok(Some(Component {
+                    id: fw_id.clone(),
+                    display_name: fw.display_name.clone().unwrap_or_else(|| fw_id.clone()),
+                    kind: Kind::Framework,
+                    group: lang_id.clone(),
+                }));
+            }
+        }
+    }
+
+    for (category, services) in service_categories(schema) {
+        for (svc_id, svc) in services {
+            if svc.vars.iter().any(|v| v == var_name) {
+                return Ok(Some(Component {
+                    id: svc_id.clone(),
+                    display_name: svc.display_name.clone().unwrap_or_else(|| svc_id.clone()),
+                    kind: Kind::Service,
+                    group: category.to_string(),
+                }));
+            }
+        }
+    }
+
+    for (infra_id, infra) in &schema.infrastructure {
+        if infra.vars.iter().any(|v| v == var_name) {
+            return Ok(Some(Component {
+                id: infra_id.clone(),
+                display_name: infra
+                    .display_name
+                    .clone()
+                    .unwrap_or_else(|| infra_id.clone()),
+                kind: Kind::Infrastructure,
+                group: "infrastructure".to_string(),
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
 /// An error that answers "then what should I have typed?".
 ///
 /// A bare "unknown component" sends someone to the docs for a name that is one

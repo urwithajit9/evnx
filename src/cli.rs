@@ -740,6 +740,18 @@ pub enum Commands {
         #[arg(long, conflicts_with_all = ["with", "blueprint", "yes"])]
         detect: bool,
 
+        /// Build the template from the variables the code actually reads.
+        ///
+        /// Scans the project's source and compares it to `.env.example`, so it
+        /// finds both what is missing and what is declared but named nowhere —
+        /// the second being something no other evnx command can tell you, since
+        /// they all treat `.env.example` as the definition of "required".
+        ///
+        /// ⚠️ A heuristic. Variables consumed entirely inside a library, and
+        /// dynamic access like `process.env[key]`, are invisible in principle.
+        #[arg(long, conflicts_with_all = ["with", "blueprint", "detect", "list_components"])]
+        from_source: bool,
+
         /// Overwrite an existing .env.example.
         ///
         /// `.env.example` is normally a tracked, hand-maintained file, so init
