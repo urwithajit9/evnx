@@ -4,9 +4,14 @@ on:
   push:
     # `feat/**` so the long-lived cloud branch is actually checked. Without it CI
     # runs only on main, and the whole cloud feature would land unverified.
-    branches: [ main, 'feat/**' ]
+    #
+    # `fix/**` added 2026-09-21: every branch in the v0.5.0 command-review release
+    # was named `fix/…`, so none of them got CI on push — only once a PR opened.
+    # Not a hole, but the signal arrived later than intended, and a branch pushed
+    # without a PR got nothing at all.
+    branches: [ main, 'feat/**', 'fix/**' ]
   pull_request:
-    branches: [ main, 'feat/**' ]
+    branches: [ main, 'feat/**', 'fix/**' ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -53,6 +58,24 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-features -- -D warnings
+
+  benches:
+    name: Benchmarks compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # ⚠️ `--no-run` builds them and stops. Benchmark *timings* from a shared
+      # runner are noise — neighbours on the box move them more than a code change
+      # does — so measuring here would produce numbers nobody could act on.
+      #
+      # What this catches is the failure benches actually had: `cli_benchmarks.rs`
+      # referenced `dotenv_space`, the crate's pre-rename name, and `criterion` was
+      # never declared. It sat broken across the rename and a `HashMap`→`IndexMap`
+      # change because nothing in CI built it: `cargo test` skips benches, and the
+      # clippy step runs `--all-features` without `--all-targets`.
+      - run: cargo bench --all-features --no-run
 
   audit:
     name: Security audit

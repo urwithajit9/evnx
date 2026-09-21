@@ -1,9 +1,24 @@
-/// Benchmarks for evnx (formely dotenv-space) CLI
-///
-/// Run with: cargo bench
+//! Benchmarks for the evnx CLI's hot paths: parsing, secret detection, entropy,
+//! and conversion.
+//!
+//! Run with `cargo bench`.
+//!
+//! ⚠️ These had never compiled. The file referenced `dotenv_space` — the crate's
+//! name before it was renamed to `evnx` — and `criterion` was not a dependency at
+//! all, so `cargo bench` failed on a missing crate before it reached the rename.
+//! CI never noticed because its clippy step runs `--all-features` without
+//! `--all-targets`, and `cargo test` does not build benches.
+//!
+//! So every number these would have produced is hypothetical: there is no
+//! historical baseline to compare against, and the first run establishes one.
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use evnx::core::{Parser, ParserConfig};
-use std::collections::HashMap;
+// ⚠️ `IndexMap`, not `HashMap`. The converter moved to `IndexMap` when `init`'s
+// non-determinism was fixed — a `HashMap`'s iteration order is randomised per
+// process, so JSON output changed between runs. The benches still said `HashMap`
+// because nothing compiled them.
+use indexmap::IndexMap;
 
 // Sample .env content for benchmarking
 const SMALL_ENV: &str = r#"
@@ -112,9 +127,10 @@ NESTED=${FULL_URL}/nested
 "#;
 
     c.bench_function("parser_no_expansion", |b| {
-        let mut config = ParserConfig::default();
-        config.allow_expansion = false;
-        let parser = Parser::new(config);
+        let parser = Parser::new(ParserConfig {
+            allow_expansion: false,
+            ..Default::default()
+        });
         b.iter(|| {
             parser.parse_content(black_box(content)).unwrap();
         });
@@ -126,7 +142,7 @@ NESTED=${FULL_URL}/nested
 // ============================================================================
 
 fn bench_secret_detection(c: &mut Criterion) {
-    use dotenv_space::utils::patterns::detect_secret;
+    use evnx::utils::patterns::detect_secret;
 
     let test_cases = vec![
         ("AWS_KEY", "AKIA4OZRMFJ3VREALKEY"),
@@ -145,7 +161,7 @@ fn bench_secret_detection(c: &mut Criterion) {
 }
 
 fn bench_entropy_calculation(c: &mut Criterion) {
-    use dotenv_space::utils::patterns::calculate_entropy;
+    use evnx::utils::patterns::calculate_entropy;
 
     let test_strings = vec!["aaaaaaa", "abcdefg", "a1b2c3d4e5f6g7h8", "aB3$xY9!zQ2#mK7"];
 
@@ -163,10 +179,10 @@ fn bench_entropy_calculation(c: &mut Criterion) {
 // ============================================================================
 
 fn bench_convert_to_json(c: &mut Criterion) {
-    use dotenv_space::core::converter::{ConvertOptions, Converter};
-    use dotenv_space::formats::json::JsonConverter;
+    use evnx::core::converter::{ConvertOptions, Converter};
+    use evnx::formats::json::JsonConverter;
 
-    let mut vars = HashMap::new();
+    let mut vars = IndexMap::new();
     for i in 0..50 {
         vars.insert(format!("KEY_{}", i), format!("value_{}", i));
     }
@@ -183,10 +199,10 @@ fn bench_convert_to_json(c: &mut Criterion) {
 }
 
 fn bench_convert_with_filtering(c: &mut Criterion) {
-    use dotenv_space::core::converter::{ConvertOptions, Converter};
-    use dotenv_space::formats::json::JsonConverter;
+    use evnx::core::converter::{ConvertOptions, Converter};
+    use evnx::formats::json::JsonConverter;
 
-    let mut vars = HashMap::new();
+    let mut vars = IndexMap::new();
     for i in 0..50 {
         vars.insert(format!("AWS_{}", i), format!("value_{}", i));
         vars.insert(format!("DB_{}", i), format!("value_{}", i));
@@ -194,8 +210,10 @@ fn bench_convert_with_filtering(c: &mut Criterion) {
 
     c.bench_function("convert_with_filtering", |b| {
         let converter = JsonConverter;
-        let mut options = ConvertOptions::default();
-        options.include_pattern = Some("AWS_*".to_string());
+        let options = ConvertOptions {
+            include_pattern: Some("AWS_*".to_string()),
+            ..Default::default()
+        };
         b.iter(|| {
             converter
                 .convert(black_box(&vars), black_box(&options))
