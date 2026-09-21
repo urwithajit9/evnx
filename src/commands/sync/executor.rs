@@ -62,10 +62,13 @@ pub(super) struct SyncPaths {
 }
 
 impl SyncPaths {
-    fn env_str(&self) -> String {
+    // `pub(super)` rather than private: the JSON `--check` path in `mod.rs`
+    // names both files in its report, and duplicating two one-line formatters
+    // to keep them private would be the wrong trade.
+    pub(super) fn env_str(&self) -> String {
         self.env.display().to_string()
     }
-    fn example_str(&self) -> String {
+    pub(super) fn example_str(&self) -> String {
         self.example.display().to_string()
     }
 }

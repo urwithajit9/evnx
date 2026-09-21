@@ -197,6 +197,17 @@ fn validate_strict_json_is_stable() {
     );
 }
 
+/// `sync --check --format json` — the only machine-readable surface that reports
+/// *what* drifted rather than only that something did.
+#[test]
+fn sync_check_json_is_stable() {
+    let d = fixture();
+    check(
+        "sync-check.json",
+        &stdout_of(&d, &["sync", "--check", "--format", "json"]),
+    );
+}
+
 #[test]
 fn diff_json_is_stable() {
     let d = fixture();
