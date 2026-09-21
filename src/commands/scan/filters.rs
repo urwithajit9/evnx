@@ -97,6 +97,9 @@ impl FileFilter {
     /// Returns error if a path cannot be read (permissions, etc.)
     pub fn collect_files(&self, paths: &[String]) -> Result<Vec<PathBuf>> {
         let mut files = Vec::new();
+        // ⚠️ Collected rather than bailed on immediately, so `evnx scan a b c`
+        // names every bad path in one run instead of one per invocation.
+        let mut unreadable = Vec::new();
 
         for path_str in paths {
             let path = Path::new(path_str);
@@ -119,7 +122,38 @@ impl FileFilter {
                         files.push(entry_path.to_path_buf());
                     }
                 }
+            } else {
+                // ⚠️ Neither a file nor a directory. Previously this branch did
+                // not exist, so a path that could not be scanned was skipped in
+                // silence and the run finished with "✓ No secrets detected" and
+                // exit 0 — a scanner reporting success over ground it never
+                // looked at. A mistyped path in CI turned the gate into a no-op
+                // that passed.
+                unreadable.push(path_str.clone());
             }
+        }
+
+        if !unreadable.is_empty() {
+            let detail = unreadable
+                .iter()
+                .map(|p| {
+                    // `exists` distinguishes a typo from a path that is there
+                    // but cannot be scanned — a broken symlink, a socket, a
+                    // directory that denies traversal.
+                    if Path::new(p).exists() {
+                        format!("  {p} (not a regular file or directory)")
+                    } else {
+                        format!("  {p} (does not exist)")
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            anyhow::bail!(
+                "cannot scan {} of the {} path(s) given:\n{detail}",
+                unreadable.len(),
+                paths.len()
+            );
         }
 
         Ok(files)
@@ -140,13 +174,35 @@ impl FileFilter {
     /// 1. Glob patterns (compiled at initialization)
     /// 2. Substring patterns (simple contains check)
     /// 3. Always-excluded patterns (hardcoded)
+    ///
+    /// ⚠️ A glob is matched against **three** spellings of the same path: as
+    /// walked (`./fixtures/.env`), with a leading `./` removed
+    /// (`fixtures/.env`), and the file name alone (`.env`). `glob::Pattern`
+    /// anchors at both ends, so matching only the first meant `"fixtures/**"`
+    /// and `"*.log"` — the two forms people actually write — matched nothing at
+    /// all, silently. A pattern that appears to be doing something and is not is
+    /// the same trap `.evnx.toml` was in.
+    ///
+    /// The union is deliberately a union rather than a replacement: every
+    /// pattern that worked before still works, so no project's exclusions change
+    /// meaning on upgrade.
     pub fn should_exclude(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
 
         // Check compiled glob patterns
-        for glob in &self.compiled_globs {
-            if glob.matches(&path_str) {
-                return true;
+        if !self.compiled_globs.is_empty() {
+            let relative = path_str.strip_prefix("./").unwrap_or(&path_str);
+            let file_name = path.file_name().map(|n| n.to_string_lossy());
+
+            for glob in &self.compiled_globs {
+                if glob.matches(&path_str) || glob.matches(relative) {
+                    return true;
+                }
+                if let Some(name) = &file_name {
+                    if glob.matches(name) {
+                        return true;
+                    }
+                }
             }
         }
 
