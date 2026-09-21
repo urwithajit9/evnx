@@ -218,17 +218,13 @@ fn handle_gitignore(output: &str, mode: &GitignoreMode) -> anyhow::Result<()> {
 ///
 /// ```
 fn shell_var_pattern(key: &str) -> String {
-    let escaped = regex::escape(key);
-    // Breakdown of format string "\\$\\{{{}\\}}":
-    //   \\   → \
-    //   $    → $
-    //   \\   → \
-    //   {{   → {   (escaped brace in format! macro)
-    //   {}   → <escaped key> (placeholder)
-    //   \\   → \
-    //   }}   → }   (escaped brace in format! macro)
-    // Produces: \$\{KEY\}  which matches the literal text: ${KEY}
-    format!("\\$\\{{{}\\}}", escaped)
+    // Produces: \$\{\s*KEY\s*\}  which matches `${KEY}` and `${ KEY }`.
+    //
+    // ⚠️ The `\s*` is the fix for a silent-wrong-answer bug: without it,
+    // `${ PORT }` matched nothing and was written to the output file verbatim,
+    // with a zero exit code. Whitespace inside a placeholder is how most people
+    // write one, so the failure was common and invisible.
+    format!("\\$\\{{\\s*{}\\s*\\}}", regex::escape(key))
 }
 
 /// Build regex pattern to match `{{VAR}}` style references.
@@ -241,8 +237,8 @@ fn shell_var_pattern(key: &str) -> String {
 /// // pattern == r"\{\{MY_VAR\}\}" as a regex string
 /// ```
 fn template_var_pattern(key: &str) -> String {
-    let escaped = regex::escape(key);
-    format!("\\{{\\{{{}\\}}\\}}", escaped)
+    // Matches `{{KEY}}` and `{{ KEY }}` alike — see `shell_var_pattern`.
+    format!("\\{{\\{{\\s*{}\\s*\\}}\\}}", regex::escape(key))
 }
 
 /// Build regex pattern to match `{{VAR|filter}}` style references.
@@ -257,10 +253,14 @@ fn template_var_pattern(key: &str) -> String {
 /// // pattern == r"\{\{ENV\|upper\}\}" as a regex string
 /// ```
 fn filter_var_pattern(key: &str, filter: &str) -> String {
+    // `filter` arrives with its leading pipe (`"|upper"`). The pipe is split out
+    // so whitespace can be allowed around it: `{{ ENV | upper }}` is the form
+    // people write, and it previously matched nothing.
+    let name = filter.strip_prefix('|').unwrap_or(filter);
     format!(
-        "\\{{\\{{{}{}\\}}\\}}",
+        "\\{{\\{{\\s*{}\\s*\\|\\s*{}\\s*\\}}\\}}",
         regex::escape(key),
-        regex::escape(filter)
+        regex::escape(name)
     )
 }
 
@@ -268,7 +268,21 @@ fn filter_var_pattern(key: &str, filter: &str) -> String {
 ///
 /// The capture group extracts the default value for substitution.
 fn default_var_pattern(key: &str) -> String {
-    format!("\\{{\\{{{}\\|default:([^}}]*)\\}}\\}}", regex::escape(key))
+    format!(
+        "\\{{\\{{\\s*{}\\s*\\|\\s*default:\\s*([^}}]*?)\\s*\\}}\\}}",
+        regex::escape(key)
+    )
+}
+
+/// Match **any** `{{ NAME|default:VALUE }}`, whatever `NAME` is.
+///
+/// ⚠️ Every other pattern here is built from a key that is already in the
+/// environment, which made `|default:` exactly backwards: the fallback fired
+/// only when the variable existed — the one case it is not needed — and a
+/// genuinely missing variable rendered `{{NOPE|default:1234}}` into the output
+/// file. This pattern is keyed on nothing, so it can see the absent case.
+fn any_default_pattern() -> &'static str {
+    r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\|\s*default:\s*([^}]*?)\s*\}\}"
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -289,11 +303,16 @@ fn default_var_pattern(key: &str) -> String {
 /// * `output` - Path where the generated config will be written
 /// * `env` - Path to the `.env` file containing variable definitions
 /// * `verbose` - Enable detailed progress output to stderr
+/// * `strict` - Refuse to write when a placeholder has no value
 ///
 /// # Returns
 ///
 /// * `Ok(())` on success
 /// * `Err(anyhow::Error)` with contextual message on failure
+///
+/// ⚠️ Under `strict`, the refusal happens **before** the output file is written.
+/// An unresolved `{{DATABASE_URL}}` does not stay a template once written — it
+/// becomes a config file some other program reads as a literal host name.
 ///
 /// # Example
 ///
@@ -303,9 +322,11 @@ fn default_var_pattern(key: &str) -> String {
 ///     "config.yaml.template".to_string(),
 ///     "config.yaml".to_string(),
 ///     ".env.production".to_string(),
-///     true, // verbose mode
-///  GitignoreMode::Default
-/// ).expect("Template generation failed");
+///     true, // verbose
+///     GitignoreMode::Default,
+///     true, // strict
+/// )
+/// .expect("Template generation failed");
 /// ```
 pub fn run(
     input: String,
@@ -313,6 +334,7 @@ pub fn run(
     env: String,
     verbose: bool,
     gitignore_mode: GitignoreMode,
+    strict: bool,
 ) -> Result<()> {
     if verbose {
         ui::verbose_stderr("Running template in verbose mode");
@@ -347,6 +369,24 @@ pub fn run(
         ));
     }
 
+    // ⚠️ Refuse *before* writing. An unresolved `{{DATABASE_URL}}` does not stay
+    // a template once it is written — it becomes a config file that some other
+    // program reads as a literal host name. Writing the file and then reporting
+    // the problem leaves the broken artefact on disk for whatever runs next.
+    if strict && !undefined.is_empty() {
+        anyhow::bail!(
+            "{} variable{} referenced in {input} {} no value in {env}: {}\n\n\
+             Define {} there, or give {} a fallback with {{{{NAME|default:value}}}}.\n\
+             Nothing was written to {output}.",
+            undefined.len(),
+            if undefined.len() == 1 { "" } else { "s" },
+            if undefined.len() == 1 { "has" } else { "have" },
+            undefined.join(", "),
+            if undefined.len() == 1 { "it" } else { "them" },
+            if undefined.len() == 1 { "it" } else { "each" },
+        );
+    }
+
     // Process template
     let result = process_template(&template_content, &env_file.vars)
         .context("Failed to process template substitutions")?;
@@ -359,9 +399,14 @@ pub fn run(
 
     if !undefined.is_empty() {
         ui::info(format!(
-            "Tip: Define {} undefined variable{} to avoid runtime issues",
+            "{} placeholder{} left unresolved and written through literally. \
+             Use --strict to make this an error.",
             undefined.len(),
-            if undefined.len() == 1 { "" } else { "s" }
+            if undefined.len() == 1 {
+                " was"
+            } else {
+                "s were"
+            }
         ));
     }
     handle_gitignore(&output, &gitignore_mode)?;
@@ -424,7 +469,24 @@ pub fn process_template(template: &str, vars: &IndexMap<String, String>) -> Resu
     // Step 2: Simple variable substitution for remaining unfiltered references
     result = process_simple_substitution(&result, vars);
 
+    // Step 3: Any `|default:` still standing names a variable that is not in the
+    // environment at all, so steps 1 and 2 — which iterate over the variables
+    // that *are* — could not have seen it. That is the whole purpose of a
+    // default, and until this step it was the one case that did not work.
+    result = apply_absent_defaults(&result);
+
     Ok(result)
+}
+
+/// Resolve `{{ NAME|default:VALUE }}` for names with no value in the environment.
+///
+/// Runs last, so a variable that *does* have a value has already won — a default
+/// is a fallback, never an override.
+fn apply_absent_defaults(template: &str) -> String {
+    let Ok(re) = Regex::new(any_default_pattern()) else {
+        return template.to_string();
+    };
+    re.replace_all(template, "$2").to_string()
 }
 
 /// Apply simple variable substitution patterns: `${VAR}`, `{{VAR}}`, `$VAR`.
@@ -635,19 +697,30 @@ pub fn detect_undefined_vars(template: &str, vars: &IndexMap<String, String>) ->
     // - ${VAR}: shell-style with braces
     // - {{VAR}} or {{VAR|filter}}: template-style with optional filter
     // - $VAR: simple prefix style with word boundary
+    // ⚠️ `\s*` throughout. Without it this agreed with the substituter's blind
+    // spot — `{{ PORT }}` was neither substituted nor reported, so the one signal
+    // that something was wrong was silent for exactly the forms that failed.
+    //
+    // Group 3 captures the filter chunk so a `|default:` can be recognised: a
+    // placeholder with a fallback is resolved, not undefined.
     let re = Regex::new(
-        r"(?:\$\{([A-Za-z_][A-Za-z0-9_]*)\})|(?:\{\{([A-Za-z_][A-Za-z0-9_]*)(?:\|[^}]+)?\}\})|(?:\$([A-Za-z_][A-Za-z0-9_]*))\b"
+        r"(?:\$\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\})|(?:\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*(\|[^}]*)?\}\})|(?:\$([A-Za-z_][A-Za-z0-9_]*))\b"
     ).expect("Variable detection regex is valid");
 
     let mut undefined = Vec::new();
     let mut seen = HashSet::new();
 
     for caps in re.captures_iter(template) {
-        // Variable name could be in capture group 1, 2, or 3 depending on pattern style
+        // A `|default:` supplies a value, so the variable is not undefined.
+        if caps.get(3).is_some_and(|f| f.as_str().contains("default:")) {
+            continue;
+        }
+
+        // Variable name could be in capture group 1, 2, or 4 depending on style
         let var_name = caps
             .get(1)
             .or_else(|| caps.get(2))
-            .or_else(|| caps.get(3))
+            .or_else(|| caps.get(4))
             .map(|m| m.as_str().to_string());
 
         if let Some(name) = var_name {
@@ -670,21 +743,37 @@ pub fn detect_undefined_vars(template: &str, vars: &IndexMap<String, String>) ->
 mod tests {
     use super::*;
 
+    /// Assert what a pattern *matches*, never its source text.
+    ///
+    /// ⚠️ These tests used to compare the generated regex string literally, which
+    /// pinned the implementation rather than the behaviour — and pinned it to a
+    /// version that could not match `{{ VAR }}`. A test that fails when the bug is
+    /// fixed is worse than no test.
+    fn matches(pattern: &str, haystack: &str) -> bool {
+        Regex::new(pattern)
+            .expect("valid pattern")
+            .is_match(haystack)
+    }
+
     #[test]
     fn test_pattern_helpers() {
-        // shell_var_pattern: should produce \$\{KEY\}
-        assert_eq!(shell_var_pattern("MY_VAR"), r"\$\{MY_VAR\}");
+        assert!(matches(&shell_var_pattern("MY_VAR"), "${MY_VAR}"));
+        assert!(matches(&template_var_pattern("MY_VAR"), "{{MY_VAR}}"));
+        assert!(matches(&filter_var_pattern("KEY", "|bool"), "{{KEY|bool}}"));
+        assert!(matches(&default_var_pattern("OPT"), "{{OPT|default:x}}"));
+    }
 
-        // template_var_pattern: should produce \{\{KEY\}\}
-        assert_eq!(template_var_pattern("MY_VAR"), r"\{\{MY_VAR\}\}");
-
-        // filter_var_pattern: filter arg includes the leading pipe.
-        // Passing "|bool" → regex::escape("|bool") = "\|bool"
-        // Result: \{\{KEY\|bool\}\}
-        assert_eq!(filter_var_pattern("KEY", "|bool"), r"\{\{KEY\|bool\}\}");
-
-        // default_var_pattern: should produce \{\{KEY\|default:([^}]*)\}\}
-        assert_eq!(default_var_pattern("OPT"), r"\{\{OPT\|default:([^}]*)\}\}");
+    /// Whitespace inside a placeholder is how most people write one, and every
+    /// one of these forms rendered literally into the output file before v0.5.0.
+    #[test]
+    fn whitespace_inside_a_placeholder_is_tolerated() {
+        assert!(matches(&shell_var_pattern("V"), "${ V }"));
+        assert!(matches(&template_var_pattern("V"), "{{ V }}"));
+        assert!(matches(
+            &filter_var_pattern("V", "|upper"),
+            "{{ V | upper }}"
+        ));
+        assert!(matches(&default_var_pattern("V"), "{{ V | default:x }}"));
     }
 
     #[test]
@@ -894,31 +983,51 @@ mod tests {
         assert_eq!(result, "1 2 3");
     }
 
-    // Test the helper functions themselves
     #[test]
     fn test_shell_var_pattern() {
-        assert_eq!(shell_var_pattern("MY_VAR"), r"\$\{MY_VAR\}");
-        assert_eq!(shell_var_pattern("VAR.WITH.DOTS"), r"\$\{VAR\.WITH\.DOTS\}");
+        assert!(matches(&shell_var_pattern("MY_VAR"), "${MY_VAR}"));
+        assert!(matches(&shell_var_pattern("MY_VAR"), "${ MY_VAR }"));
+        // A dot is a regex metacharacter and must stay escaped.
+        assert!(matches(
+            &shell_var_pattern("VAR.WITH.DOTS"),
+            "${VAR.WITH.DOTS}"
+        ));
+        assert!(!matches(
+            &shell_var_pattern("VAR.WITH.DOTS"),
+            "${VARxWITHyDOTS}"
+        ));
     }
 
     #[test]
     fn test_template_var_pattern() {
-        assert_eq!(template_var_pattern("MY_VAR"), r"\{\{MY_VAR\}\}");
-        assert_eq!(
-            template_var_pattern("VAR.WITH.DOTS"),
-            r"\{\{VAR\.WITH\.DOTS\}\}"
-        );
+        assert!(matches(&template_var_pattern("MY_VAR"), "{{MY_VAR}}"));
+        assert!(matches(&template_var_pattern("MY_VAR"), "{{ MY_VAR }}"));
+        assert!(matches(
+            &template_var_pattern("VAR.WITH.DOTS"),
+            "{{VAR.WITH.DOTS}}"
+        ));
+        assert!(!matches(
+            &template_var_pattern("VAR.WITH.DOTS"),
+            "{{VARxWITHyDOTS}}"
+        ));
+        // Must not swallow a neighbouring name.
+        assert!(!matches(&template_var_pattern("PORT"), "{{PORTAL}}"));
     }
 
     #[test]
     fn test_filter_var_pattern() {
-        // filter arg must include the leading pipe character.
-        // regex::escape("|upper") = "\|upper" → pattern: \{\{MY_VAR\|upper\}\}
-        assert_eq!(
-            filter_var_pattern("MY_VAR", "|upper"),
-            r"\{\{MY_VAR\|upper\}\}"
-        );
-        // regex::escape("|bool") = "\|bool" → pattern: \{\{KEY\|bool\}\}
-        assert_eq!(filter_var_pattern("KEY", "|bool"), r"\{\{KEY\|bool\}\}");
+        for form in [
+            "{{MY_VAR|upper}}",
+            "{{ MY_VAR | upper }}",
+            "{{MY_VAR |upper}}",
+        ] {
+            assert!(
+                matches(&filter_var_pattern("MY_VAR", "|upper"), form),
+                "{form} should match"
+            );
+        }
+        assert!(matches(&filter_var_pattern("KEY", "|bool"), "{{KEY|bool}}"));
+        // A different filter must not match.
+        assert!(!matches(&filter_var_pattern("KEY", "|bool"), "{{KEY|int}}"));
     }
 }

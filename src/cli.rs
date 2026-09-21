@@ -997,6 +997,18 @@ Use 'evnx convert' without --to for interactive format selection.
         /// Use when you manage .gitignore externally. Mutually exclusive with --gitignore.
         #[arg(long, conflicts_with = "gitignore")]
         no_gitignore: bool,
+
+        /// Refuse to write when a placeholder has no value.
+        ///
+        /// Without it an unresolved `{{DATABASE_URL}}` is copied through
+        /// literally and the command exits 0 — the generated file then holds the
+        /// placeholder text where a value should be, and whatever reads it next
+        /// treats that as the setting.
+        ///
+        /// Give a variable a fallback with `{{NAME|default:value}}` to keep it
+        /// optional under --strict.
+        #[arg(long)]
+        strict: bool,
     },
 
     /// Create encrypted backup of .env.
