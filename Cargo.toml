@@ -133,8 +133,19 @@ assert_cmd         = "2"
 predicates         = "3"
 serde_json         = "1.0"
 tempfile           = "3"
+# Benchmark harness. A dev-dependency, so it never reaches the shipped binary.
+# `benches/cli_benchmarks.rs` referenced it for a long time without it being
+# declared, which is half of why the benches had never compiled.
+criterion          = { version = "0.5", features = ["html_reports"] }
+
 pretty_assertions  = "1"
 serial_test        = "3.0"
+
+# ⚠️ `harness = false` is required: criterion supplies its own `main`, and
+# without this cargo links the default libtest harness and the benches do not run.
+[[bench]]
+name = "cli_benchmarks"
+harness = false
 
 [build-dependencies]
 serde_json = "1.0"
