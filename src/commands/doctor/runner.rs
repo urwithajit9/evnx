@@ -34,7 +34,9 @@ use std::process::Command;
 // Import existing UI utilities from project
 use super::types::*;
 use crate::docs;
+use crate::utils::string::pluralize;
 use crate::utils::ui;
+use crate::utils::ui::glyph;
 
 // ─────────────────────────────────────────────────────────────
 // Main Entry Point
@@ -292,7 +294,7 @@ impl DiagnosticCheck for EnvFileCheck {
 
             if !gitignored {
                 severity = Severity::Error;
-                details.push(format!("❌ {name} is NOT in .gitignore (security risk)"));
+                details.push(format!("✗ {name} is NOT in .gitignore (security risk)"));
             } else if verbose {
                 details.push(format!("✓ {name} is properly ignored by git"));
             }
@@ -304,7 +306,7 @@ impl DiagnosticCheck for EnvFileCheck {
                     if severity == Severity::Ok {
                         severity = Severity::Warning;
                     }
-                    details.push(format!("⚠️ {name}: {e}"));
+                    details.push(format!("! {name}: {e}"));
                 }
             }
         }
@@ -469,30 +471,30 @@ impl DiagnosticCheck for ProjectStructureCheck {
                 details.push(format!("✓ Detected Python project ({})", project_type));
                 if project_type.contains("requirements") {
                     if !check_requirements_txt_has_dotenv(project_root)? {
-                        details.push("⚠️ python-dotenv not in requirements.txt".into());
+                        details.push("! python-dotenv not in requirements.txt".into());
                         warnings += 1;
                     } else if verbose {
                         details.push("✓ python-dotenv dependency found".into());
                     }
                 } else if !check_pyproject_has_dotenv(project_root)? && verbose {
-                    details.push("ℹ️ Consider adding python-dotenv or pydantic-settings".into());
+                    details.push("· Consider adding python-dotenv or pydantic-settings".into());
                 }
             } else if project_type == "Node.js" {
                 details.push("✓ Detected Node.js project".into());
                 if verbose && !check_package_json_has_dotenv(project_root)? {
-                    details.push("ℹ️ Consider adding 'dotenv' package".into());
+                    details.push("· Consider adding 'dotenv' package".into());
                 }
             } else if project_type == "Rust" {
                 details.push("✓ Detected Rust project".into());
                 if verbose && !check_cargo_has_dotenv(project_root)? {
-                    details.push("ℹ️ Consider adding 'dotenvy' crate".into());
+                    details.push("· Consider adding 'dotenvy' crate".into());
                 }
             } else {
                 details.push(format!("✓ Detected {} project", project_type));
             }
             severity = Severity::Ok;
         } else {
-            details.push("ℹ️ No recognized project configuration".into());
+            details.push("· No recognized project configuration".into());
             if verbose {
                 details.push("Supported: requirements.txt, pyproject.toml, Pipfile, poetry.lock, package.json, Cargo.toml, go.mod, composer.json".into());
             }
@@ -884,17 +886,29 @@ fn check_cargo_has_dotenv(project_root: &Path) -> Result<bool> {
 ///
 /// Since ui.rs doesn't have print_check_item, we use direct println with colored output
 fn print_check_result_text(result: &CheckResult, verbose: bool) {
-    // Use colored output directly since ui module doesn't have check item function
+    // ⚠️ `description`, not `name`. `name` is the struct key — `env_file`,
+    // `project_structure`, `docker_config` — and printing it asked the reader to
+    // know evnx's internals to read evnx's report. The human string was on the
+    // same struct the whole time; only the JSON wants the key.
     println!(
-        "  {} {}",
+        "  {}  {}",
         result.severity.colored_icon(),
-        result.name.bold()
+        result.description.bold()
     );
 
     if verbose || result.severity != Severity::Ok {
         if let Some(ref details) = result.details {
+            // ⚠️ A detail line that repeats its check's status drops the marker.
+            //
+            // Detail lines are per-item — `env_file` emits one per `.env*` file
+            // — so their glyph is real information when items differ. In
+            // non-verbose output only the failures are listed, so every line
+            // carries the same glyph the check line already carried, and the
+            // reader sees `✗` twice for one fact.
+            let own = result.severity.icon();
             for line in details.lines() {
-                println!("    {}", line.dimmed());
+                let text = line.strip_prefix(&format!("{own} ")).unwrap_or(line);
+                println!("     {}", text.dimmed());
             }
         }
     }
@@ -902,51 +916,63 @@ fn print_check_result_text(result: &CheckResult, verbose: bool) {
 }
 
 fn print_summary_text(summary: &Summary) {
-    println!("\n{}", "Summary:".bold());
-
+    // One line, only what is non-zero. A "Summary:" heading over two numbers and
+    // an "Overall health:" line restating those same two numbers is three lines
+    // of scaffolding around one fact.
+    let mut parts = Vec::new();
     if summary.errors > 0 {
-        println!(
-            "  🚨 {} critical issue{}",
-            summary.errors,
-            if summary.errors > 1 { "s" } else { "" }
+        parts.push(
+            pluralize(summary.errors, "error", "errors")
+                .red()
+                .to_string(),
         );
     }
     if summary.warnings > 0 {
-        println!(
-            "  ⚠️  {} warning{}",
-            summary.warnings,
-            if summary.warnings > 1 { "s" } else { "" }
+        parts.push(
+            pluralize(summary.warnings, "warning", "warnings")
+                .yellow()
+                .to_string(),
         );
     }
     if summary.passed > 0 {
-        println!("  ✓ {} checks passed", summary.passed.to_string().green());
+        parts.push(
+            pluralize(summary.passed, "check passed", "checks passed")
+                .green()
+                .to_string(),
+        );
     }
 
-    let health = if summary.errors == 0 && summary.warnings == 0 {
-        "✓ Excellent".green()
-    } else if summary.errors == 0 {
-        "⚠️ Needs attention".yellow()
+    if parts.is_empty() {
+        println!("  {}  nothing to report", glyph::INFO.dimmed());
     } else {
-        "🚨 Action required".red()
-    };
-    println!("\nOverall health: {}", health);
+        println!("  {}", parts.join("  ·  "));
+    }
 }
 
 fn print_recommendations_text(checks: &[CheckResult], auto_fix_enabled: bool) {
     let fixable: Vec<_> = checks.iter().filter(|c| c.fixable && !c.fixed).collect();
 
     if !fixable.is_empty() {
-        // Use existing UI section header
-        ui::print_section_header("🔧", "Recommendations");
-
+        println!();
         if auto_fix_enabled {
-            ui::success("Auto-fix mode was enabled - issues attempted");
+            // `--fix` ran and these are what it could not repair.
+            println!(
+                "  {}  {}",
+                glyph::WARN.yellow(),
+                "--fix could not repair these:".bold()
+            );
         } else {
-            ui::info("Run `evnx doctor --fix` to repair what can be repaired");
+            println!(
+                "  {}  {} {}",
+                glyph::ARROW.dimmed(),
+                pluralize(fixable.len(), "issue", "issues").bold(),
+                "evnx doctor --fix can repair:".bold()
+            );
         }
-        println!("  Or manually address the following:");
         for check in fixable {
-            println!("    • {} ({})", check.name, check.description);
+            // The description, again — not `env_file (Validate .env file …)`,
+            // which put the struct key first and the readable half in brackets.
+            println!("     {}  {}", glyph::INFO.dimmed(), check.description);
         }
     }
 }

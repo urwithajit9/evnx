@@ -1,0 +1,54 @@
+{
+  "project_path": ".",
+  "checks": [
+    {
+      "name": "env_file",
+      "description": "Validate .env file existence, security, and syntax",
+      "severity": "error",
+      "details": "✗ .env is NOT in .gitignore (security risk)",
+      "fixable": true,
+      "fixed": false
+    },
+    {
+      "name": "env_example",
+      "description": "Check .env.example exists and is Git-tracked",
+      "severity": "warning",
+      "details": ".env.example is not tracked in Git — run: git add .env.example",
+      "fixable": false,
+      "fixed": false
+    },
+    {
+      "name": "project_structure",
+      "description": "Detect project type and validate dependencies",
+      "severity": "info",
+      "details": "· No recognized project configuration",
+      "fixable": false,
+      "fixed": false
+    },
+    {
+      "name": "docker_config",
+      "description": "Check for Docker configuration files",
+      "severity": "info",
+      "details": "No Docker configuration detected",
+      "fixable": false,
+      "fixed": false
+    },
+    {
+      "name": "file_permissions",
+      "description": "Check file permissions for sensitive files",
+      "severity": "warning",
+      "details": "Permissions: 664 (recommended: 600)",
+      "fixable": true,
+      "fixed": false
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "errors": 1,
+    "warnings": 2,
+    "passed": 0,
+    "info": 2,
+    "fixable": 2
+  },
+  "timestamp": "<normalised>"
+}

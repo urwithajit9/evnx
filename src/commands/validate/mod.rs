@@ -20,7 +20,9 @@ use serde_json;
 
 use crate::core::{Parser, ParserConfig};
 use crate::docs;
+use crate::utils::string::pluralize;
 use crate::utils::ui;
+use crate::utils::ui::glyph;
 
 use self::checks::*;
 use self::fixer::*;
@@ -310,12 +312,13 @@ pub fn run(
     // ─────────────────────────────────────────
     if result.summary.errors == 0 && result.summary.warnings == 0 {
         if format == "pretty" {
-            ui::success("All checks passed ✓");
+            ui::success("All checks passed");
         }
-    } else if result.summary.errors == 0 && format == "pretty" {
-        ui::warning(format!("{} warning(s) found", result.summary.warnings));
     } else if !exit_zero && result.summary.errors > 0 {
-        eprintln!("Validation failed: {} error(s)", result.summary.errors);
+        eprintln!(
+            "Validation failed: {}",
+            pluralize(result.summary.errors, "error", "errors")
+        );
     }
 
     // ✅ Always print — eprintln never pollutes stdout, always before process::exit
@@ -336,10 +339,11 @@ pub fn run(
 // ─────────────────────────────────────────────────────────────
 
 fn output_pretty(result: &ValidationResult, _env_path: &str, _example_path: &str) -> Result<()> {
-    ui::print_preview_header();
-
+    // ⚠️ No "Preview:" heading. It was printed unconditionally, so a clean run
+    // showed a section title with nothing beneath it — and once its emoji was
+    // removed it rendered as a lone indented space.
     if result.fixed.is_empty() && result.issues.is_empty() {
-        ui::success("All required variables present ✓");
+        ui::success("All required variables present");
         return Ok(());
     }
 
@@ -364,47 +368,59 @@ fn output_pretty(result: &ValidationResult, _env_path: &str, _example_path: &str
 
     // Show issues
     if !result.issues.is_empty() {
-        ui::print_section_header("⚠️", "Issues Found");
-
-        for (i, issue) in result.issues.iter().enumerate() {
-            let icon = match issue.severity.as_str() {
-                "error" => "🚨",
-                "warning" => "⚠️",
-                _ => "ℹ️",
+        for issue in &result.issues {
+            let mark = match issue.severity.as_str() {
+                "error" => glyph::FAIL.red(),
+                "warning" => glyph::WARN.yellow(),
+                _ => glyph::INFO.dimmed(),
             };
 
-            println!(
-                "  {}. {} {}",
-                (i + 1).to_string().bold(),
-                icon,
-                issue.message
-            );
+            // The location leads the detail line rather than trailing it behind a
+            // 📍, so every issue's file:line sits in one column.
+            println!("  {}  {}", mark, issue.message);
+            println!("     {}", issue.location.dimmed());
 
             if let Some(suggestion) = &issue.suggestion {
-                println!("     {} {}", "→".dimmed(), suggestion.dimmed());
+                println!("     {}  {}", glyph::ARROW.dimmed(), suggestion.dimmed());
             }
             if issue.auto_fixable {
                 println!(
-                    "     {} {}",
-                    "💡".dimmed(),
-                    "Auto-fixable with --fix".dimmed()
+                    "     {}  {}",
+                    glyph::INFO.dimmed(),
+                    "fixable with --fix".dimmed()
                 );
             }
-            println!("     {} {}", "📍".dimmed(), issue.location.dimmed());
             println!();
         }
     }
 
-    // Summary box
-    ui::print_box(
-        "Summary",
-        &format!(
-            "Errors: {}  |  Warnings: {}  |  Fixed: {}",
-            result.summary.errors.to_string().red(),
-            result.summary.warnings.to_string().yellow(),
-            result.summary.fixed_count.to_string().green()
-        ),
-    );
+    // One line, only the non-zero counts — a three-line box around three numbers
+    // of which two are usually zero is scaffolding, not information.
+    let mut parts = Vec::new();
+    if result.summary.errors > 0 {
+        parts.push(
+            pluralize(result.summary.errors, "error", "errors")
+                .red()
+                .to_string(),
+        );
+    }
+    if result.summary.warnings > 0 {
+        parts.push(
+            pluralize(result.summary.warnings, "warning", "warnings")
+                .yellow()
+                .to_string(),
+        );
+    }
+    if result.summary.fixed_count > 0 {
+        parts.push(
+            pluralize(result.summary.fixed_count, "fixed", "fixed")
+                .green()
+                .to_string(),
+        );
+    }
+    if !parts.is_empty() {
+        println!("  {}", parts.join("  ·  "));
+    }
 
     // Next steps if there are errors
     if result.summary.errors > 0 {

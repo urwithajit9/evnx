@@ -49,7 +49,7 @@ impl MigrationDestination for HerokuDestination {
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
         println!("\n{} Heroku Config Vars migration", "🟣".cyan());
-        println!("{} Requires Heroku CLI", "ℹ️".cyan());
+        println!("{} Requires Heroku CLI", "·".cyan());
         println!("  Install: https://devcenter.heroku.com/articles/heroku-cli");
 
         if opts.dry_run {

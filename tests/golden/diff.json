@@ -1,0 +1,23 @@
+{
+  "missing": [],
+  "extra": [
+    "EXTRA"
+  ],
+  "different": [
+    {
+      "key": "DB_HOST",
+      "example_value": "",
+      "env_value": "localhost"
+    },
+    {
+      "key": "AWS_KEY",
+      "example_value": "",
+      "env_value": "AKIA4OZRMFJ3VREALKEY"
+    },
+    {
+      "key": "PORT",
+      "example_value": "",
+      "env_value": "8080"
+    }
+  ]
+}

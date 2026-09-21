@@ -16,7 +16,12 @@
 //! ```
 
 use super::models::{Confidence, ScanResults};
+use crate::utils::string::pluralize;
 use crate::utils::ui;
+use crate::utils::ui::glyph;
+
+/// Column the confidence level is right-aligned against.
+const WIDTH: usize = 44;
 use anyhow::Result;
 use colored::*;
 use std::path::PathBuf;
@@ -135,91 +140,89 @@ pub fn render(results: &ScanResults, format: OutputFormat, files: &[PathBuf]) ->
 /// * `results` - Scan results to render
 /// * `files` - List of scanned files for summary
 fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
-    // File summary using ui patterns
     if !files.is_empty() {
-        let file_list = files
+        let shown = files
             .iter()
             .take(3)
             .map(|f| f.display().to_string())
             .collect::<Vec<_>>()
             .join(", ");
-
-        println!("Scanning: {}", file_list.dimmed());
-        if files.len() > 3 {
-            println!("  ... and {} more files", files.len() - 3);
-        }
-        println!();
+        let rest = files.len().saturating_sub(3);
+        let suffix = if rest > 0 {
+            format!(" and {}", pluralize(rest, "other file", "other files"))
+        } else {
+            String::new()
+        };
+        println!("  scanning {}{}\n", shown.dimmed(), suffix.dimmed());
     }
 
     if results.secrets_found == 0 {
-        ui::success("No secrets detected");
-        println!("\nScanned {} files", results.files_scanned);
+        println!("  {}  No secrets detected", glyph::OK.green());
+        println!(
+            "\n  {}",
+            pluralize(results.files_scanned, "file scanned", "files scanned").dimmed()
+        );
         return Ok(());
     }
 
-    // Use colored output matching ui.rs style
-    println!(
-        "{} Found {} potential secrets\n",
-        "✗".red(),
-        results.secrets_found.to_string().red()
-    );
-
-    ui::print_section_header("🔍", "Secrets detected");
-
-    for (i, finding) in results.findings.iter().enumerate() {
-        let icon = match finding.confidence {
-            Confidence::High => "🚨",
-            Confidence::Medium => "⚠️ ",
-            Confidence::Low => "ℹ️ ",
+    // ⚠️ Every finding starts with its glyph at the same column, and every field
+    // under it is indented past that glyph. The remediation note used to be
+    // printed by `ui::warning`, which writes at column 0 — so a line that belongs
+    // to one finding appeared to belong to none.
+    for finding in &results.findings {
+        let (mark, level) = match finding.confidence {
+            Confidence::High => (glyph::FAIL.red(), "high".red()),
+            Confidence::Medium => (glyph::WARN.yellow(), "medium".yellow()),
+            Confidence::Low => (glyph::INFO.dimmed(), "low".dimmed()),
         };
 
+        // Confidence right-aligned against a fixed column, so the levels form a
+        // column of their own however long the pattern name is.
+        let name = finding.pattern.bold().to_string();
+        // `.max(2)` so a pattern name longer than the column still gets a gap
+        // before its level, rather than running straight into it.
+        let pad = WIDTH.saturating_sub(finding.pattern.chars().count()).max(2);
+        println!("  {mark}  {name}{:pad$}{level}", "", pad = pad);
+
         println!(
-            "  {}. {} {} ({} confidence)",
-            i + 1,
-            icon,
-            finding.pattern.bold(),
-            finding.confidence
+            "     {}  {}",
+            finding.location.dimmed(),
+            finding.value_preview
         );
-        println!("     Pattern: {}", finding.pattern);
-        println!("     Value: {}", finding.value_preview.dimmed());
-        println!("     Location: {}", finding.location);
 
         if finding.confidence == Confidence::High {
-            ui::warning("This looks like a real secret, not a placeholder.");
+            println!(
+                "     {}  {}",
+                glyph::WARN.yellow(),
+                "matches a live key format, not a placeholder".dimmed()
+            );
         }
-
         if let Some(url) = &finding.action_url {
-            println!("     Action: Revoke immediately at {}", url.cyan());
+            println!("     {}  revoke at {}", glyph::ARROW.dimmed(), url.cyan());
         }
         println!();
     }
 
-    // Summary section
-    ui::print_section_header("📊", "Summary");
-    println!(
-        "  🚨 {} high-confidence secrets",
-        results.high_confidence.to_string().red()
-    );
-    println!(
-        "  ⚠️  {} medium-confidence secrets",
-        results.medium_confidence.to_string().yellow()
-    );
-    if results.low_confidence > 0 {
-        println!("  ℹ️  {} low-confidence detections", results.low_confidence);
+    // One line, and only the counts that are non-zero — "0 medium-confidence
+    // secrets" is noise, and "1 secrets" was simply wrong.
+    let mut parts = vec![pluralize(results.secrets_found, "finding", "findings")];
+    if results.high_confidence > 0 {
+        parts.push(format!("{} high", results.high_confidence));
     }
-
-    println!(
-        "\n  {}",
-        "Recommendation: These should NOT be committed to Git."
-            .yellow()
-            .bold()
-    );
+    if results.medium_confidence > 0 {
+        parts.push(format!("{} medium", results.medium_confidence));
+    }
+    if results.low_confidence > 0 {
+        parts.push(format!("{} low", results.low_confidence));
+    }
+    println!("  {}", parts.join("  ·  ").bold());
 
     if results.has_critical_findings() {
+        println!();
         ui::print_next_steps(&[
-            "Revoke/rotate all keys immediately",
-            "Run: git filter-repo --path .env --invert-paths",
-            "Force push (after team coordination)",
+            "Revoke or rotate the keys above — assume they are compromised",
+            "Remove them from history: git filter-repo --path .env --invert-paths",
+            "Force push, after coordinating with everyone who has a clone",
         ]);
     }
 

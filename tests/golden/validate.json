@@ -1,0 +1,13 @@
+{
+  "status": "passed",
+  "required_present": 3,
+  "required_total": 3,
+  "issues": [],
+  "fixed": [],
+  "summary": {
+    "errors": 0,
+    "warnings": 0,
+    "style": 0,
+    "fixed_count": 0
+  }
+}

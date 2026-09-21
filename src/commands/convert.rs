@@ -490,7 +490,7 @@ fn select_format_interactive(verbose: bool) -> Result<String> {
         .to_string();
 
     if verbose {
-        eprintln!("{}", format!("✅ Selected format: {}", format).dimmed());
+        eprintln!("{}", format!("✓ Selected format: {}", format).dimmed());
     }
 
     Ok(format)

@@ -27,7 +27,7 @@ impl CommandDoc {
     ///
     /// Output: `  📖 Docs: https://www.evnx.dev/guides/commands/init`
     pub fn hint_line(&self) -> String {
-        format!("  📖 Docs: {}", self.url)
+        format!("  Docs: {}", self.url)
     }
 }
 
@@ -40,70 +40,70 @@ pub const INIT: CommandDoc = CommandDoc {
     command: "init",
     url: "https://www.evnx.dev/guides/commands/init",
     description: "Project setup, stacks, and service presets",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/init",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/init",
 };
 
 pub const ADD: CommandDoc = CommandDoc {
     command: "add",
     url: "https://www.evnx.dev/guides/commands/add",
     description: "Adding variables interactively or from blueprints",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/add",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/add",
 };
 
 pub const VALIDATE: CommandDoc = CommandDoc {
     command: "validate",
     url: "https://www.evnx.dev/guides/commands/validate",
     description: "Validation rules, CI flags, and strict mode",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/validate",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/validate",
 };
 
 pub const SCAN: CommandDoc = CommandDoc {
     command: "scan",
     url: "https://www.evnx.dev/guides/commands/scan",
     description: "Secret detection patterns and entropy analysis",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/scan",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/scan",
 };
 
 pub const DIFF: CommandDoc = CommandDoc {
     command: "diff",
     url: "https://www.evnx.dev/guides/commands/diff",
     description: "Comparing .env vs .env.example",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/diff",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/diff",
 };
 
 pub const CONVERT: CommandDoc = CommandDoc {
     command: "convert",
     url: "https://www.evnx.dev/guides/commands/convert",
     description: "All 14 output formats and filtering options",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/convert",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/convert",
 };
 
 pub const SYNC: CommandDoc = CommandDoc {
     command: "sync",
     url: "https://www.evnx.dev/guides/commands/sync",
     description: "Keeping .env and .env.example in sync",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/sync",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/sync",
 };
 
 pub const MIGRATE: CommandDoc = CommandDoc {
     command: "migrate",
     url: "https://www.evnx.dev/guides/commands/migrate",
     description: "Migrating secrets to cloud managers",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/migrate",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/migrate",
 };
 
 pub const DOCTOR: CommandDoc = CommandDoc {
     command: "doctor",
     url: "https://www.evnx.dev/guides/commands/doctor",
     description: "Diagnosing setup and gitignore issues",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/doctor",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/doctor",
 };
 
 pub const TEMPLATE: CommandDoc = CommandDoc {
     command: "template",
     url: "https://www.evnx.dev/guides/commands/template",
     description: "Generating config files from templates",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/template",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/template",
 };
 
 pub const BACKUP: CommandDoc = CommandDoc {
@@ -127,26 +127,26 @@ pub const RESTORE: CommandDoc = CommandDoc {
     command: "restore",
     url: "https://www.evnx.dev/guides/commands/restore",
     description: "Restoring from encrypted backups",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/restore",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/restore",
 };
 
 pub const CLOUD: CommandDoc = CommandDoc {
     command: "cloud",
     url: "https://www.evnx.dev/guides/commands/cloud",
     description: "Zero-knowledge encrypted .env sync",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/cloud",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/cloud",
 };
 
 pub const AUTH: CommandDoc = CommandDoc {
     command: "auth",
     url: "https://www.evnx.dev/guides/commands/auth",
     description: "Account registration and sign-in",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/auth",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/auth",
 };
 
 pub const VAULT: CommandDoc = CommandDoc {
     command: "vault",
     url: "https://www.evnx.dev/guides/commands/vault",
     description: "Creating and managing encrypted vaults",
-    after_help: "📖  Full guide: https://www.evnx.dev/guides/commands/vault",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/vault",
 };

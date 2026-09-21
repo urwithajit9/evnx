@@ -324,7 +324,7 @@ fn read_key_file(path: &std::path::Path) -> anyhow::Result<String> {
 fn print_next_steps(backup_path: &std::path::Path, env_path: &str) {
     use colored::Colorize;
 
-    println!("\n{}", "⚠️  Important:".yellow().bold());
+    println!("\n{}", "! Important:".yellow().bold());
     println!("  • Keep your password (or key file) safe — it cannot be recovered");
     println!("  • Store the backup in a secure, separate location");
     println!(

@@ -150,7 +150,7 @@ fn report_file(file: &Path, choice: FileChoice, vault_env: &str, action: &str) {
     if choice == FileChoice::Default && vault_env == "production" {
         println!(
             "  {} {} to a production vault from {} — pass --env-name or --file if that is not what you meant",
-            "⚠".yellow(),
+            "!".yellow(),
             action,
             file.display()
         );

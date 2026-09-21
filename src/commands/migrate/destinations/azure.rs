@@ -52,7 +52,7 @@ impl MigrationDestination for AzureDestination {
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
         println!("\n{} Azure Key Vault migration", "☁️".cyan());
-        println!("{} Requires Azure CLI (`az`)", "ℹ️".cyan());
+        println!("{} Requires Azure CLI (`az`)", "·".cyan());
         println!("  Install: https://learn.microsoft.com/cli/azure/install-azure-cli");
 
         if opts.dry_run {

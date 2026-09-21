@@ -56,7 +56,7 @@ pub fn handle(
         .context("Failed to resolve framework variables")?;
 
     // 4. Show preview
-    println!("\n{}", "📋 Preview:".bold());
+    println!("\n{}", "Preview:".bold());
     println!("{}", formatter::generate_preview(&vars).dimmed());
 
     // 5. Confirm (unless --yes)

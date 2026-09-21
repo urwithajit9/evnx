@@ -369,7 +369,7 @@ fn print_inspect(content: &str) {
     let keys = extract_key_names(content);
 
     ui::print_section_header(
-        "📋",
+        "",
         "Variables in this backup (names only — values never shown)",
     );
 

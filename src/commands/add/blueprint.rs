@@ -42,7 +42,7 @@ pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) 
     };
 
     // 4. Show preview with conflict warnings
-    println!("\n{}", "📋 Preview:".bold());
+    println!("\n{}", "Preview:".bold());
     println!("{}", formatter::generate_preview(&vars).dimmed());
 
     if !conflicts.is_empty() {
@@ -112,7 +112,7 @@ pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) 
     if !conflicts.is_empty() {
         println!(
             "{} Skipped {} conflicting variables (preserved existing values)",
-            "ℹ".blue(),
+            "·".blue(),
             conflicts.len()
         );
     }

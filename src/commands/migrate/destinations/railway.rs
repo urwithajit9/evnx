@@ -37,7 +37,7 @@ impl MigrationDestination for RailwayDestination {
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
         println!("\n{} Railway migration", "🚂".cyan());
-        println!("{} Requires Railway CLI", "ℹ️".cyan());
+        println!("{} Requires Railway CLI", "·".cyan());
         println!("  Install: npm install -g @railway/cli");
 
         if opts.dry_run {

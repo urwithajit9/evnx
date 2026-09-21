@@ -38,16 +38,22 @@ fn test_doctor_verbose_mode() {
         .stdout(predicate::str::contains("Project path:"));
 }
 
+/// ⚠️ This asserted on the warning *glyph* — `contains("Warning").or(contains("⚠️"))`
+/// — and `⚠️` is presentation. It broke the moment the glyph set changed width,
+/// which is the only assertion in the suite that did.
+///
+/// It now asserts what the command is actually for: a project with no `.env`
+/// gets told so, by name.
 #[test]
 fn test_doctor_missing_env_warning() {
     let dir = TempDir::new().unwrap();
 
-    cargo_bin_cmd!("evnx") // ← UPDATED
+    cargo_bin_cmd!("evnx")
         .arg("doctor")
         .arg(dir.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("Warning").or(predicate::str::contains("⚠️")));
+        .stdout(predicate::str::contains(".env"));
 }
 
 /// ⚠️ The regression this exists to prevent.

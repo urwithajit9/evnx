@@ -1,0 +1,1 @@
+::error file=./.env,line=2,title=Secret detected (high)::AWS_KEY matches AWS Access Key. Rotate it at https://console.aws.amazon.com/iam

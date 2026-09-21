@@ -1,0 +1,24 @@
+{
+  "files_scanned": 1,
+  "secrets_found": 1,
+  "findings": [
+    {
+      "pattern": "AWS Access Key",
+      "confidence": "high",
+      "value_preview": "AKIA…LKEY",
+      "location": "./.env:2 (AWS_KEY)",
+      "variable": "AWS_KEY",
+      "action_url": "https://console.aws.amazon.com/iam"
+    }
+  ],
+  "high_confidence": 1,
+  "medium_confidence": 0,
+  "low_confidence": 0,
+  "summary": {
+    "total": 1,
+    "high": 1,
+    "medium": 0,
+    "low": 0,
+    "files_scanned": 1
+  }
+}
