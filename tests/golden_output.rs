@@ -30,14 +30,34 @@ use tempfile::TempDir;
 
 /// A fixture with one high-confidence secret, one drifted key and one extra, so
 /// every surface has something to say.
+///
+/// ⚠️ `.env`'s mode is set explicitly. `fs::write` creates a file at
+/// `0666 & !umask`, so it lands at 664 on a machine with umask 002 and 644 on
+/// one with umask 022 — and `doctor` reports that mode in its JSON. The first
+/// version of this fixture left it to the umask and passed locally while failing
+/// in CI, which is exactly the class of difference a golden file is supposed to
+/// make impossible.
+///
+/// 0644 rather than 0600 on purpose: it keeps the permissions check in its
+/// warning state, so the golden covers that branch rather than the clean one.
 fn fixture() -> TempDir {
     let d = TempDir::new().unwrap();
+    let env = d.path().join(".env");
     fs::write(
-        d.path().join(".env"),
+        &env,
         "DB_HOST=localhost\nAWS_KEY=AKIA4OZRMFJ3VREALKEY\nEXTRA=1\nPORT=8080\n",
     )
     .unwrap();
     fs::write(d.path().join(".env.example"), "DB_HOST=\nAWS_KEY=\nPORT=\n").unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&env).unwrap().permissions();
+        perms.set_mode(0o644);
+        fs::set_permissions(&env, perms).unwrap();
+    }
+
     d
 }
 

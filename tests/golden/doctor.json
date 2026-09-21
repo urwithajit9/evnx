@@ -37,7 +37,7 @@
       "name": "file_permissions",
       "description": "Check file permissions for sensitive files",
       "severity": "warning",
-      "details": "Permissions: 664 (recommended: 600)",
+      "details": "Permissions: 644 (recommended: 600)",
       "fixable": true,
       "fixed": false
     }
