@@ -241,7 +241,14 @@ pub fn find(start: &Path) -> Option<PathBuf> {
     // examine the working directory and stop, silently finding nothing above it.
     // `main.rs` passed `"."` and this went unnoticed because every unit test here
     // supplies an absolute `TempDir`.
-    let absolute = std::fs::canonicalize(start).ok();
+    //
+    // ⚠️ `absolute`, **not** `canonicalize`: this is a lexical operation that does
+    // not resolve symlinks. On macOS `/var` is a symlink to `/private/var`, so
+    // canonicalizing a `TempDir` path rewrites it and the returned path stops
+    // matching the one the caller asked about. That failed CI on macOS while
+    // passing on Linux, where `/tmp` is a real directory. It also means a
+    // directory that does not exist is still answered for, rather than erroring.
+    let absolute = std::path::absolute(start).ok();
     let mut dir = absolute.as_deref().or(Some(start));
     while let Some(d) = dir {
         let candidate = d.join(PROJECT_FILE);
@@ -454,6 +461,35 @@ vault = "my-api/production"
         // But a config *at* the repository root is still found.
         write(&inner, "[scan]\nseverity = \"low\"\n");
         assert_eq!(find(&inner), Some(inner.join(PROJECT_FILE)));
+    }
+
+    /// ⚠️ The path handed back must be the one the caller asked about.
+    ///
+    /// Reproduces on any platform the shape macOS has natively: `/var` is a
+    /// symlink to `/private/var`, so a `TempDir` there has two valid spellings.
+    /// `find` resolving symlinks would return the other one, and the returned
+    /// path would stop matching what the caller passed in — which is exactly how
+    /// this failed CI on macOS while passing on Linux.
+    #[test]
+    fn the_returned_path_keeps_the_callers_spelling_through_a_symlink() {
+        let dir = TempDir::new().unwrap();
+        let real = dir.path().join("real");
+        fs::create_dir_all(real.join("a/b")).unwrap();
+        write(&real, "[scan]\nseverity = \"high\"\n");
+
+        let link = dir.path().join("link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&real, &link).unwrap();
+
+        // Asked about via the symlink, answered about via the symlink.
+        let found = find(&link.join("a/b")).expect("should walk up");
+        assert_eq!(
+            found,
+            link.join(PROJECT_FILE),
+            "find must not rewrite the caller's path through the symlink"
+        );
     }
 
     /// Bare `evnx.toml` is not accepted: two spellings needs a precedence rule

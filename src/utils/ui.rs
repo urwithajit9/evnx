@@ -728,10 +728,11 @@ pub fn config_banner(path: &std::path::Path, overrides: &[String], quiet: bool) 
 ///
 /// Falls back to the absolute path when the two share no prefix.
 fn short_path(path: &std::path::Path) -> String {
+    // `current_dir` is already absolute and already symlink-resolved by `getcwd`,
+    // and the path being shortened came from a walk rooted at it — so the two
+    // share a prefix without any further resolution. Canonicalizing again would
+    // only reintroduce the macOS `/var` vs `/private/var` mismatch.
     let Ok(cwd) = std::env::current_dir() else {
-        return path.display().to_string();
-    };
-    let Ok(cwd) = std::fs::canonicalize(&cwd) else {
         return path.display().to_string();
     };
 
