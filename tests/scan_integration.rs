@@ -61,9 +61,17 @@ fn test_scan_exit_zero() {
         "Expected output to contain 'AWS Access Key', got:\n{}",
         stdout
     );
+    // The confidence level is reported; `(high confidence)` became a right-aligned
+    // `high` so the levels form a column. Asserting the level, not its phrasing.
     assert!(
-        stdout.contains("high confidence"),
-        "Expected output to contain 'high confidence', got:\n{}",
+        stdout.contains("high"),
+        "Expected the confidence level in the output, got:\n{}",
+        stdout
+    );
+    // And the finding carries where it is and a masked value, not the secret.
+    assert!(
+        stdout.contains("AWS_ACCESS_KEY_ID") && !stdout.contains("AKIA4OZRMFJ3VREALKEY"),
+        "Expected the variable named and the value masked, got:\n{}",
         stdout
     );
 }
