@@ -30,27 +30,19 @@ use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 
 /// File that carries the binding.
-pub const CONFIG_FILE: &str = ".evnx.toml";
+///
+/// Re-exported from `core::config` rather than redeclared: one filename, one
+/// definition.
+pub use crate::core::config::PROJECT_FILE as CONFIG_FILE;
 
 /// Locate the `.evnx.toml` that governs `start`, if any.
 ///
-/// Walks upward, stopping once a directory containing `.git` has been examined —
-/// the project boundary. Returns `None` rather than reaching `$HOME`.
+/// Delegates to `core::config::find`, which adopted this module's rule wholesale:
+/// walk upward, stop once a directory containing `.git` has been examined, never
+/// reach `$HOME`. Kept as a named function here because the cloud commands read
+/// better for it.
 pub fn find_config(start: &Path) -> Option<PathBuf> {
-    let mut dir = Some(start);
-    while let Some(d) = dir {
-        let candidate = d.join(CONFIG_FILE);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        // Check for the boundary *after* looking in this directory, so a repo
-        // root holding the config is still found.
-        if d.join(".git").exists() {
-            return None;
-        }
-        dir = d.parent();
-    }
-    None
+    crate::core::config::find(start)
 }
 
 /// The bound vault for `start`, if one is recorded.
@@ -62,17 +54,12 @@ pub fn read(start: &Path) -> Result<Option<Bound>> {
     let Some(path) = find_config(start) else {
         return Ok(None);
     };
-    let text =
-        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let doc: toml_edit::DocumentMut = text
-        .parse()
-        .with_context(|| format!("parsing {}", path.display()))?;
 
-    let Some(vault) = doc
-        .get("cloud")
-        .and_then(|c| c.get("vault"))
-        .and_then(|v| v.as_str())
-    else {
+    // ⚠️ Reads go through the shared loader; **writes** stay on `toml_edit`
+    // below. A user's `.evnx.toml` holds their comments, their key order, and
+    // settings this version knows nothing about — a deserialise-mutate-
+    // reserialise round trip would quietly discard all three.
+    let Some(vault) = crate::core::config::load_file(&path)?.config.cloud.vault else {
         return Ok(None);
     };
 
@@ -90,7 +77,10 @@ pub fn read(start: &Path) -> Result<Option<Bound>> {
     }))
 }
 
-/// A binding and the file it came from.
+/// A binding that was found.
+///
+/// `Debug` is safe: a vault name is not a secret, which is the whole reason this
+/// lives in a committed file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bound {
     /// Vault spelling as written — `name` or `name/environment`.
