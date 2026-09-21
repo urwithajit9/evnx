@@ -714,8 +714,47 @@ pub fn config_banner(path: &std::path::Path, overrides: &[String], quiet: bool) 
     };
     eprintln!(
         "{}",
-        format!("  config    {}{}", path.display(), detail).dimmed()
+        format!("  config    {}{}", short_path(path), detail).dimmed()
     );
+}
+
+/// A committed config's path, shortened for a line printed on every run.
+///
+/// The loader resolves an absolute path, which is unambiguous but too long to
+/// put in front of every command. Relative to the working directory it reads as
+/// `.evnx.toml` at the project root and `../../.evnx.toml` from a package — and
+/// the second of those says something worth knowing, that the policy came from
+/// above rather than from here.
+///
+/// Falls back to the absolute path when the two share no prefix.
+fn short_path(path: &std::path::Path) -> String {
+    let Ok(cwd) = std::env::current_dir() else {
+        return path.display().to_string();
+    };
+    let Ok(cwd) = std::fs::canonicalize(&cwd) else {
+        return path.display().to_string();
+    };
+
+    if let Ok(rest) = path.strip_prefix(&cwd) {
+        return rest.display().to_string();
+    }
+
+    // Above the working directory: count the levels up to the shared ancestor.
+    let mut ancestor = cwd.as_path();
+    let mut ups = 0;
+    while let Some(parent) = ancestor.parent() {
+        ancestor = parent;
+        ups += 1;
+        if let Ok(rest) = path.strip_prefix(ancestor) {
+            let mut out = String::new();
+            for _ in 0..ups {
+                out.push_str("../");
+            }
+            out.push_str(&rest.display().to_string());
+            return out;
+        }
+    }
+    path.display().to_string()
 }
 
 /// Report a key the config file carries that this version does not understand.

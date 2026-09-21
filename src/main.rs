@@ -38,7 +38,13 @@ fn main() -> Result<()> {
     // `[scan] exclude` can weaken what the scanner reports, and the file is
     // committed — so one commit could otherwise narrow scanning for everyone who
     // clones the repository with nothing on the command line to show it.
-    let loaded = evnx::core::config::load(Path::new("."))?;
+    // ⚠️ An **absolute** directory, not `Path::new(".")`. `find` walks upward with
+    // `Path::parent`, and `".".parent()` is `""` rather than the parent directory
+    // — so a relative start makes the walk inert and the file is found only in
+    // the working directory. `cloud::sync` and `cloud::status` already pass
+    // `current_dir()` for this reason.
+    let here = std::env::current_dir().context("reading the current directory")?;
+    let loaded = evnx::core::config::load(&here)?;
     if let Some(source) = &loaded.source {
         evnx::utils::ui::config_banner(source, &loaded.config.security_overrides(), cli.quiet);
     }

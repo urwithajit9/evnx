@@ -151,3 +151,72 @@ fn a_malformed_config_stops_the_run() {
         .failure()
         .stderr(predicate::str::contains(".evnx.toml"));
 }
+
+/// ⚠️ The config must be found from a **subdirectory** of the project.
+///
+/// `find` walks upward with `Path::parent`, and `Path::new(".").parent()` is
+/// `""` rather than the parent directory — so passing a relative start makes the
+/// walk inert and the file is found only in the working directory. `main.rs` did
+/// exactly that, and every unit test missed it by supplying an absolute
+/// `TempDir` path.
+#[test]
+fn config_is_found_from_a_subdirectory() {
+    let d = project("[validate]\nstrict = true\n");
+    let nested = d.path().join("packages").join("api");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join(".env"), "A=1\nEXTRA_ONLY_HERE=2\n").unwrap();
+    fs::write(nested.join(".env.example"), "A=x\n").unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(&nested)
+        .args(["validate", "--exit-zero"])
+        .assert()
+        .stdout(predicate::str::contains("EXTRA_ONLY_HERE"));
+}
+
+/// The project boundary still holds: a config above the repository root is not
+/// this project's policy, however far the walk would otherwise reach.
+#[test]
+fn a_config_outside_the_repository_is_not_used() {
+    let outer = TempDir::new().unwrap();
+    fs::write(
+        outer.path().join(".evnx.toml"),
+        "[validate]\nstrict = true\n",
+    )
+    .unwrap();
+
+    let repo = outer.path().join("repo");
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::write(repo.join(".env"), "A=1\nEXTRA_ONLY_HERE=2\n").unwrap();
+    fs::write(repo.join(".env.example"), "A=x\n").unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(&repo)
+        .args(["validate", "--exit-zero"])
+        .assert()
+        .stdout(predicate::str::contains("EXTRA_ONLY_HERE").not());
+}
+
+/// The banner is printed on every run, so it stays short: the loader resolves an
+/// absolute path, and what gets shown is relative to the working directory.
+/// From a package that reads `../../.evnx.toml`, which says the policy came from
+/// above rather than from here.
+#[test]
+fn the_banner_shows_where_the_config_came_from() {
+    let d = project("[scan]\nseverity = \"high\"\n");
+    let nested = d.path().join("packages").join("api");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join(".env"), "A=1\n").unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["validate", "--exit-zero"])
+        .assert()
+        .stderr(predicate::str::contains("config    .evnx.toml"));
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(&nested)
+        .args(["validate", "--exit-zero"])
+        .assert()
+        .stderr(predicate::str::contains("config    ../../.evnx.toml"));
+}

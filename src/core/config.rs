@@ -236,7 +236,13 @@ pub struct Loaded {
 /// examined** — the project boundary — so a parent repository's policy cannot
 /// leak into a nested one, and `$HOME` is never reached.
 pub fn find(start: &Path) -> Option<PathBuf> {
-    let mut dir = Some(start);
+    // ⚠️ Absolute first. The walk is `Path::parent`, and `Path::new(".").parent()`
+    // is `""` — not the parent directory — so a relative start makes the loop
+    // examine the working directory and stop, silently finding nothing above it.
+    // `main.rs` passed `"."` and this went unnoticed because every unit test here
+    // supplies an absolute `TempDir`.
+    let absolute = std::fs::canonicalize(start).ok();
+    let mut dir = absolute.as_deref().or(Some(start));
     while let Some(d) = dir {
         let candidate = d.join(PROJECT_FILE);
         if candidate.is_file() {
