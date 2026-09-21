@@ -4,7 +4,7 @@ use dialoguer::Confirm;
 use std::fs;
 use std::path::Path;
 
-use crate::schema::{formatter, loader, resolver};
+use crate::schema::{component, formatter};
 use crate::utils::ui::{print_header, print_preview_header, success};
 
 /// Handle `evnx add service <service_id>`
@@ -15,15 +15,14 @@ pub fn handle(service_id: &str, path: &str, yes: bool, _verbose: bool) -> Result
             Some(&format!("Adding variables for '{}'", service_id)),
         );
     }
-    // 1. Find service in schema
-    let (_, service) = loader::find_service(service_id).context(format!(
-        "Unknown service: '{}'. Run 'evnx add service --help' for options.",
-        service_id
-    ))?;
-
-    // 2. Resolve to variables
-    let vars = resolver::resolve_service(service_id, service)
-        .context("Failed to resolve service variables")?;
+    // ⚠️ Through the shared catalogue, so `evnx add service postgresql` and
+    // `evnx init --with postgresql` resolve the same component by the same name.
+    // The unknown-name error comes with suggestions and points at
+    // `--list-components`, instead of at this subcommand's --help.
+    let vars = component::resolve(&[service_id.to_string()])?;
+    let display_name = component::find(service_id)?
+        .map(|c| c.display_name)
+        .unwrap_or_else(|| service_id.to_string());
 
     // 3. Show preview
     // println!("\n{}", "📋 Preview:".bold());
@@ -74,7 +73,7 @@ pub fn handle(service_id: &str, path: &str, yes: bool, _verbose: bool) -> Result
         success(format!(
             "Added {} variables for {}",
             vars.vars.len(),
-            service.display_name.as_deref().unwrap_or(service_id)
+            display_name
         ));
     }
 

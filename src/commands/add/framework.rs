@@ -6,7 +6,7 @@ use dialoguer::Confirm;
 use std::path::Path;
 
 use super::shared::{append_to_env_files, AppendMode};
-use crate::schema::{formatter, loader, resolver};
+use crate::schema::{component, formatter, loader};
 
 /// Handle framework addition
 pub fn handle(
@@ -51,9 +51,11 @@ pub fn handle(
         );
     }
 
-    // 3. Resolve to variables
-    let vars = resolver::resolve_framework(language_id, framework_id, framework)
-        .context("Failed to resolve framework variables")?;
+    // ⚠️ Through the shared catalogue, like `add service` and `init --with`.
+    // Framework ids are globally unique, so `--language` is now redundant for
+    // resolution — it is still validated above, which keeps the existing error
+    // for a framework that belongs to a different language.
+    let vars = component::resolve(&[framework_id.to_string()])?;
 
     // 4. Show preview
     println!("\n{}", "Preview:".bold());
