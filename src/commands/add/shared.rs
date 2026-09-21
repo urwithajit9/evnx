@@ -6,6 +6,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::schema::models::VarCollection;
+use crate::utils::ui;
+use crate::utils::ui::glyph;
 
 /// How to handle conflicts when appending
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -128,6 +130,8 @@ pub fn append_to_env_files(
         let updated = format!("{}\n\n{}", existing.trim_end(), todo_addition);
         fs::write(&env_path, updated)?;
 
+        warn_if_env_is_committable(output_path);
+
         if verbose {
             println!(
                 "{} Updated {} with TODO placeholders",
@@ -217,4 +221,36 @@ mod tests {
         assert!(line.contains("API_KEY=sk_test_xxx"));
         assert!(line.contains("(required)"));
     }
+}
+
+/// Say something when the `.env` we just wrote to would be committed.
+///
+/// ⚠️ `evnx add` appends to `.env` and, until now, never looked at
+/// `.gitignore`. In a repository with no protection that meant evnx itself
+/// adding lines to a file holding live credentials, on its way into a commit,
+/// silently. `init` writes the entries; `doctor --fix` writes them; `add` did
+/// not even check.
+///
+/// It warns rather than writing. `add` runs in a project that already exists,
+/// where a `.gitignore` is somebody's considered file — editing it unasked is
+/// the kind of help that makes a tool hard to trust near a repository. `init`
+/// writing it is different: there was nothing there to respect.
+///
+/// The check asks git, so the `.env*` that `evnx init` writes counts as
+/// protection. An exact-match check would warn on every project evnx itself set
+/// up correctly, which is worse than not warning at all — a warning people learn
+/// to ignore is one they will ignore when it matters.
+fn warn_if_env_is_committable(project_root: &Path) {
+    use crate::core::gitignore;
+
+    if gitignore::env_file_is_protected(project_root, ".env") {
+        return;
+    }
+
+    ui::warning(".env is not covered by .gitignore — it can be committed");
+    println!(
+        "     {}  {}",
+        glyph::ARROW.dimmed(),
+        "evnx doctor --fix".cyan()
+    );
 }

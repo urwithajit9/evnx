@@ -23,7 +23,7 @@ use std::path::Path;
 /// Ignoring `.env*` wholesale and exempting the template family is both safer
 /// and more durable: it covers `.env.prod`, `.env.dev` and whatever else a
 /// project invents, rather than only the names evnx happens to know.
-const GITIGNORE_ENTRIES: &[&str] = &[".env*", "!.env.example", "!.env.sample", "!.env.template"];
+use crate::core::gitignore::ENV_ENTRIES as GITIGNORE_ENTRIES;
 
 /// How to treat an existing `.env.example`.
 #[derive(Debug, Clone, Copy, PartialEq)]
