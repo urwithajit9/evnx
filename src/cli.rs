@@ -1135,6 +1135,33 @@ Use 'evnx convert' without --to for interactive format selection.
         #[arg(default_value = ".", index = 1)]
         path: String,
 
+        /// Project directory to analyze (same as the positional argument).
+        ///
+        /// Accepted because the documentation used this form for a long time
+        /// before the positional existed in print. Giving both is an error
+        /// rather than a silent preference.
+        #[arg(long = "path", value_name = "PATH", conflicts_with = "path")]
+        project_path: Option<String>,
+
+        /// Repair what can be repaired, instead of only reporting it.
+        ///
+        /// Fixes are conservative and local: `.gitignore` gains the `.env*`
+        /// entries `evnx init` writes, and a world-readable `.env` is chmod'd to
+        /// 0600. Nothing is deleted, nothing is committed, and no file holding
+        /// secrets is edited.
+        ///
+        /// ⚠️ `EVNX_AUTO_FIX=1` does the same thing and still works. Either
+        /// saying yes is enough — a flag can turn repair on, never off.
+        #[arg(long)]
+        fix: bool,
+
+        /// Count warnings as problems, so they affect the exit code.
+        ///
+        /// Without it, warnings are reported and exit 0 — a missing
+        /// `.env.example` should not fail a build that never asked it to.
+        #[arg(long)]
+        strict: bool,
+
         /// Show detailed diagnostic output
         #[arg(short, long)]
         verbose: bool,

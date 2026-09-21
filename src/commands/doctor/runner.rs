@@ -49,24 +49,57 @@ use crate::utils::ui;
 /// # Returns
 /// * `Ok(())` on success, `Err` on IO or parsing failures
 ///
+/// # Exit codes
+///
+/// | code | meaning |
+/// |------|---------|
+/// | 0 | healthy — no errors, and no warnings under `--strict` |
+/// | 1 | problems found |
+/// | 2 | doctor could not run |
+///
+/// ⚠️ **2 is not a louder 1**, the same distinction `scan` and `sync --check`
+/// make. A directory that cannot be read and a directory that is merely unhealthy
+/// are different answers, and a CI step that treats them alike will one day pass
+/// because the checkout was empty.
+///
+/// Warnings exit 0 unless `--strict` is given. A missing `.env.example` is worth
+/// saying and is not worth failing a build that never asked about it.
+///
 /// # Environment Variables
 /// * `EVNX_OUTPUT_JSON=1` - Output JSON instead of text
-/// * `EVNX_AUTO_FIX=1` - Attempt to auto-fix detected issues
-pub fn run(path: String, verbose: bool) -> Result<()> {
+/// * `EVNX_AUTO_FIX=1` - Same as `--fix`, kept because it shipped first
+pub fn run(path: String, verbose: bool, fix: bool, strict: bool) -> Result<()> {
     let project_root = PathBuf::from(&path);
+
+    // ⚠️ Checked before anything else. Diagnosing a directory that is not there
+    // would otherwise report "no .env file" — a finding about the project rather
+    // than about the path, which is the shape of fail-open `scan` just had fixed.
+    if !project_root.is_dir() {
+        eprintln!(
+            "{} {} is not a directory evnx can read",
+            "Error:".on_red().bold(),
+            project_root.display()
+        );
+        eprintln!();
+        eprintln!("No verdict: doctor examined nothing. This is not a clean result.");
+        std::process::exit(EXIT_ERROR);
+    }
 
     let json_output = std::env::var("EVNX_OUTPUT_JSON")
         .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "json"))
         .unwrap_or(false);
 
-    let auto_fix = std::env::var("EVNX_AUTO_FIX")
-        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true"))
-        .unwrap_or(false);
+    // Either source saying yes is enough. `EVNX_AUTO_FIX` shipped first and is
+    // documented, so it keeps working; a flag can turn repair on, never off.
+    let auto_fix = fix
+        || std::env::var("EVNX_AUTO_FIX")
+            .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true"))
+            .unwrap_or(false);
 
     let result = if json_output {
-        run_json(&project_root, verbose, auto_fix)
+        run_json(&project_root, verbose, auto_fix, strict)
     } else {
-        run_text(&project_root, verbose, auto_fix)
+        run_text(&project_root, verbose, auto_fix, strict)
     };
 
     // ✅ Always print — eprintln never pollutes stdout
@@ -75,11 +108,25 @@ pub fn run(path: String, verbose: bool) -> Result<()> {
     result
 }
 
+/// Healthy — no errors, and no warnings under `--strict`.
+pub const EXIT_HEALTHY: i32 = 0;
+/// Problems found.
+pub const EXIT_PROBLEMS: i32 = 1;
+/// Doctor could not run, so there is no verdict.
+pub const EXIT_ERROR: i32 = 2;
+
+/// Whether the report should be treated as a failure.
+///
+/// Split out so text and JSON modes cannot drift apart on the one thing CI reads.
+fn is_failure(summary: &Summary, strict: bool) -> bool {
+    summary.errors > 0 || (strict && summary.warnings > 0)
+}
+
 // ─────────────────────────────────────────────────────────────
 // Text Output Mode (uses existing ui:: functions)
 // ─────────────────────────────────────────────────────────────
 
-fn run_text(project_root: &Path, verbose: bool, auto_fix: bool) -> Result<()> {
+fn run_text(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) -> Result<()> {
     // Use existing UI header function (requires subtitle param)
     ui::print_header("evnx doctor", Some("Diagnosing environment setup"));
 
@@ -128,9 +175,8 @@ fn run_text(project_root: &Path, verbose: bool, auto_fix: bool) -> Result<()> {
         print_recommendations_text(&report.checks, auto_fix);
     }
 
-    // Exit with error code for CI/CD if critical issues exist
-    if report.summary.errors > 0 {
-        std::process::exit(1);
+    if is_failure(&report.summary, strict) {
+        std::process::exit(EXIT_PROBLEMS);
     }
 
     Ok(())
@@ -140,7 +186,7 @@ fn run_text(project_root: &Path, verbose: bool, auto_fix: bool) -> Result<()> {
 // JSON Output Mode (for CI/CD integration)
 // ─────────────────────────────────────────────────────────────
 
-fn run_json(project_root: &Path, verbose: bool, auto_fix: bool) -> Result<()> {
+fn run_json(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) -> Result<()> {
     let mut report = DiagnosticReport {
         project_path: project_root.to_string_lossy().to_string(),
         checks: Vec::new(),
@@ -171,9 +217,8 @@ fn run_json(project_root: &Path, verbose: bool, auto_fix: bool) -> Result<()> {
         serde_json::to_string_pretty(&report).context("Failed to serialize diagnostic report")?;
     println!("{}", json);
 
-    // Exit with error code for CI/CD if critical issues exist
-    if report.summary.errors > 0 {
-        std::process::exit(1);
+    if is_failure(&report.summary, strict) {
+        std::process::exit(EXIT_PROBLEMS);
     }
 
     Ok(())
@@ -368,10 +413,21 @@ impl DiagnosticCheck for EnvExampleCheck {
                 name: self.name().to_string(),
                 description: self.description().to_string(),
                 severity: Severity::Warning,
-                details: Some(".env.example is NOT tracked in Git (recommended)".into()),
-                fixable: true,
+                // ⚠️ Not `fixable`. It was, with a `fix_action` that only printed
+                // advice and returned `Ok(false)` — so the summary counted a fix
+                // that could never happen. Harmless while auto-fix was an
+                // undocumented environment variable; a lie once `--fix` is a flag
+                // someone runs expecting the count to go down.
+                //
+                // Staging a file is also not doctor's call. `git add` puts
+                // content in the next commit, and a tool that does that
+                // unasked is one you stop trusting near a repository.
+                details: Some(
+                    ".env.example is not tracked in Git — run: git add .env.example".into(),
+                ),
+                fixable: false,
                 fixed: false,
-                fix_action: Some(fix_track_env_example),
+                fix_action: None,
             })
         } else {
             Ok(CheckResult {
@@ -389,14 +445,6 @@ impl DiagnosticCheck for EnvExampleCheck {
             })
         }
     }
-}
-
-fn fix_track_env_example(_project_root: &Path, verbose: bool) -> Result<bool> {
-    // Note: We can't actually git add from here without user confirmation
-    if verbose {
-        ui::info("To track .env.example: git add .env.example && git commit -m 'Add env template'");
-    }
-    Ok(false) // Requires manual git command
 }
 
 /// Check: Project type detection and dependency validation
@@ -894,7 +942,7 @@ fn print_recommendations_text(checks: &[CheckResult], auto_fix_enabled: bool) {
         if auto_fix_enabled {
             ui::success("Auto-fix mode was enabled - issues attempted");
         } else {
-            ui::info("Run with EVNX_AUTO_FIX=1 to auto-correct issues");
+            ui::info("Run `evnx doctor --fix` to repair what can be repaired");
         }
         println!("  Or manually address the following:");
         for check in fixable {

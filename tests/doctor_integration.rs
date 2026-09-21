@@ -123,3 +123,180 @@ fn auto_fix_covers_every_env_file_and_keeps_the_example_committable() {
         .assert()
         .stdout(predicate::str::contains("NOT in .gitignore").not());
 }
+
+// ─────────────────────────────────────────────────────────────
+// --fix, --path, --strict, and the 0/1/2 exit contract
+// ─────────────────────────────────────────────────────────────
+
+/// A project whose `.env` is neither gitignored nor mode 0600 — two errors that
+/// `--fix` can genuinely repair.
+fn unhealthy_project() -> TempDir {
+    let d = TempDir::new().unwrap();
+    fs::create_dir_all(d.path().join(".git")).unwrap();
+    fs::write(d.path().join(".env"), "AWS=AKIA4OZRMFJ3VREALKEY\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut p = fs::metadata(d.path().join(".env")).unwrap().permissions();
+        p.set_mode(0o644);
+        fs::set_permissions(d.path().join(".env"), p).unwrap();
+    }
+    d
+}
+
+/// ⚠️ The capability existed behind `EVNX_AUTO_FIX=1` and no flag reached it, so
+/// the docs kept inventing one — `--fix`, `--check-config`, `--fail-on-warning`,
+/// `--check-example-only` all appeared in published guides.
+#[test]
+fn fix_repairs_what_it_reports() {
+    let d = unhealthy_project();
+
+    cargo_bin_cmd!("evnx")
+        .arg("doctor")
+        .arg(d.path())
+        .assert()
+        .code(1);
+
+    cargo_bin_cmd!("evnx")
+        .arg("doctor")
+        .arg(d.path())
+        .arg("--fix")
+        .assert()
+        .success();
+
+    let gitignore = fs::read_to_string(d.path().join(".gitignore")).unwrap();
+    assert!(gitignore.contains(".env*"), "{gitignore}");
+    assert!(gitignore.contains("!.env.example"), "{gitignore}");
+
+    // And the project is now healthy without --fix.
+    cargo_bin_cmd!("evnx")
+        .arg("doctor")
+        .arg(d.path())
+        .assert()
+        .success();
+}
+
+/// `EVNX_AUTO_FIX=1` shipped first and is documented; the flag does not replace it.
+#[test]
+fn the_environment_variable_still_works() {
+    let d = unhealthy_project();
+
+    cargo_bin_cmd!("evnx")
+        .arg("doctor")
+        .arg(d.path())
+        .env("EVNX_AUTO_FIX", "1")
+        .assert()
+        .success();
+
+    assert!(fs::read_to_string(d.path().join(".gitignore"))
+        .unwrap()
+        .contains(".env*"));
+}
+
+/// Warnings are reported and exit 0; `--strict` is what makes them count.
+#[test]
+fn strict_is_what_makes_a_warning_fail() {
+    let d = TempDir::new().unwrap();
+    fs::create_dir_all(d.path().join(".git")).unwrap();
+    fs::write(d.path().join(".env"), "A=1\n").unwrap();
+    fs::write(d.path().join(".gitignore"), ".env*\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut p = fs::metadata(d.path().join(".env")).unwrap().permissions();
+        p.set_mode(0o600);
+        fs::set_permissions(d.path().join(".env"), p).unwrap();
+    }
+
+    // No .env.example — a warning, not an error.
+    cargo_bin_cmd!("evnx")
+        .arg("doctor")
+        .arg(d.path())
+        .assert()
+        .code(0);
+
+    cargo_bin_cmd!("evnx")
+        .arg("doctor")
+        .arg(d.path())
+        .arg("--strict")
+        .assert()
+        .code(1);
+}
+
+/// ⚠️ 2 is not a louder 1. Diagnosing a directory that is not there would
+/// otherwise report "no .env file" — a finding about the project rather than
+/// about the path, which is how a CI step passes on an empty checkout.
+#[test]
+fn a_missing_directory_is_trouble_not_a_verdict() {
+    let d = TempDir::new().unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .arg("doctor")
+        .arg(d.path().join("not-here"))
+        .assert()
+        .code(2);
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(stderr.contains("No verdict"), "{stderr}");
+}
+
+/// The documented spelling, which was never accepted.
+#[test]
+fn path_is_accepted_as_a_flag_and_conflicts_with_the_positional() {
+    let d = unhealthy_project();
+
+    cargo_bin_cmd!("evnx")
+        .args(["doctor", "--path"])
+        .arg(d.path())
+        .arg("--fix")
+        .assert()
+        .success();
+
+    // Giving both is an error rather than a silent preference.
+    cargo_bin_cmd!("evnx")
+        .arg("doctor")
+        .arg(d.path())
+        .arg("--path")
+        .arg(d.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+/// ⚠️ `env_example`'s "not tracked" branch was `fixable: true` with a fix action
+/// that only printed advice and returned false. The summary counted a repair that
+/// could never happen — invisible while auto-fix was an undocumented environment
+/// variable, a lie once `--fix` is a flag someone runs expecting the count to drop.
+#[test]
+fn nothing_is_reported_fixable_unless_it_can_actually_be_fixed() {
+    let d = TempDir::new().unwrap();
+    fs::create_dir_all(d.path().join(".git")).unwrap();
+    fs::write(d.path().join(".env"), "A=1\n").unwrap();
+    fs::write(d.path().join(".gitignore"), ".env*\n").unwrap();
+    // Present, but never `git add`ed.
+    fs::write(d.path().join(".env.example"), "A=\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .arg("doctor")
+        .arg(d.path())
+        .arg("--fix")
+        .env("EVNX_OUTPUT_JSON", "1")
+        .assert();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+
+    assert_eq!(
+        report["summary"]["fixable"], 0,
+        "after --fix nothing may still be counted as fixable: {stdout}"
+    );
+    for check in report["checks"].as_array().unwrap() {
+        if check["fixable"] == true {
+            assert_eq!(
+                check["fixed"], true,
+                "{} says fixable but was not fixed",
+                check["name"]
+            );
+        }
+    }
+}

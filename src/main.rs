@@ -388,7 +388,20 @@ fn main() -> Result<()> {
             evnx::cloud::run(command, server.as_deref(), cli.verbose)
         }
 
-        Commands::Doctor { path, verbose } => evnx::commands::doctor::run(path, verbose),
+        Commands::Doctor {
+            path,
+            project_path,
+            fix,
+            strict,
+            verbose,
+        } => evnx::commands::doctor::run(
+            project_path.unwrap_or(path),
+            verbose,
+            // Either saying yes is enough: a flag can turn repair on, never off,
+            // which is the same rule `.evnx.toml` booleans follow.
+            fix,
+            strict,
+        ),
 
         Commands::Completions { shell } => commands::completions::run(shell),
     }
