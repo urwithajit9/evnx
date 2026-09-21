@@ -6,17 +6,22 @@
 //! use evnx::commands::doctor::run;
 //!
 //! fn main() -> Result<()> {
-//!     run("./my-app".into(), true)?;
+//!     // path, verbose, fix, strict
+//!     run("./my-app".into(), true, false, false)?;
 //!     Ok(())
 //! }
 //! ```
 //!
+//! # Exit codes
+//! - `0` healthy · `1` problems found · `2` doctor could not run
+//!
 //! # Environment Variables
 //! - `EVNX_OUTPUT_JSON=1` — Output results as JSON (for CI/CD)
-//! - `EVNX_AUTO_FIX=1` — Attempt to auto-fix detected issues
+//! - `EVNX_AUTO_FIX=1` — Same as `--fix`, kept because it shipped first
 
 // Re-export the main entry point so callers use: doctor::run(...)
 pub use runner::run;
+pub use runner::{EXIT_ERROR, EXIT_HEALTHY, EXIT_PROBLEMS};
 // use crate::{docs, utils::ui};
 
 // Internal modules — not public API yet
