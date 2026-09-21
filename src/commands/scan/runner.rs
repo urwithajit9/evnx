@@ -27,12 +27,17 @@ use anyhow::Result;
 // use colored::*;
 use std::path::Path;
 
-/// Maximum visible characters in secret preview
-const PREFIX_LEN: usize = 8;
-/// Suffix length for secret preview
-const SUFFIX_LEN: usize = 5;
-/// Maximum total visible characters
-const MAX_VISIBLE: usize = 20;
+/// Characters shown at each end of a masked secret.
+const VISIBLE_EDGE: usize = 4;
+
+/// Below this length no characters are shown at all — four of eight would be
+/// half the secret.
+///
+/// ⚠️ There used to be a `MAX_VISIBLE = 20` here, under which a value was shown
+/// whole. An AWS access key ID is exactly 20 characters, so the threshold
+/// perfectly exempted the format the scanner detects most often. Length is not a
+/// safety property; a short secret is not a less secret one.
+const MIN_MASKABLE: usize = 8;
 
 /// Main orchestrator for secret scanning operations.
 ///
@@ -358,60 +363,113 @@ impl ScanRunner {
 
 /// Truncate a value for safe display.
 ///
-/// Shows first 8 and last 5 characters with ellipsis in between.
-/// Never displays the full secret value.
-/// Uses character-based slicing to handle UTF-8 safely.
+/// ⚠️ **Masks by policy, never by length.** This used to return the value
+/// unchanged when it was `<= MAX_VISIBLE` (20) characters — and an AWS access key
+/// ID is `AKIA` plus sixteen characters, **exactly 20**. So the single
+/// most-detected credential format was printed in full, into terminal scrollback
+/// and, through `scan --format json`, into CI artefacts.
 ///
-/// # Arguments
+/// # What is shown, and why so little
 ///
-/// * `value` - The secret value to truncate
+/// At most four leading and four trailing characters, and never more than half
+/// the value. The preview exists so you can *recognise* which secret was found —
+/// `AKIA…LKEY` is plainly an AWS key — not so you can verify it. The finding
+/// already prints the variable name and the file and line, which is what actually
+/// identifies it; the value adds recognition, not identity.
 ///
-/// # Returns
-///
-/// Truncated string safe for display.
+/// A value under [`MIN_MASKABLE`] characters shows no characters at all. Four of
+/// eight is half a secret; there is no prefix short enough to be safe on a short
+/// value, so it reports the length instead.
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// # use evnx::commands::scan::runner::truncate_value;
-/// let truncated = truncate_value("AKIA1234567890EXAMPLE");
-/// assert_eq!(truncated, "AKIA1234...MPLE");
+/// assert_eq!(truncate_value("AKIA4OZRMFJ3VREALKEY"), "AKIA…LKEY");
+/// assert_eq!(truncate_value("tiny"), "<4 chars>");
 /// ```
 pub fn truncate_value(value: &str) -> String {
-    // Use chars().count() for character count, not byte count
-    let char_count = value.chars().count();
+    let chars: Vec<char> = value.chars().collect();
+    let n = chars.len();
 
-    if char_count <= MAX_VISIBLE {
-        value.to_string()
-    } else {
-        // Collect chars to enable safe character-based slicing
-        let chars: Vec<char> = value.chars().collect();
-
-        let prefix: String = chars[..PREFIX_LEN].iter().collect();
-        let suffix: String = chars[char_count - SUFFIX_LEN..].iter().collect();
-
-        format!("{}...{}", prefix, suffix)
+    if n < MIN_MASKABLE {
+        // Nothing can be revealed safely, so reveal nothing.
+        return format!("<{n} chars>");
     }
+
+    // Never more than a quarter from each end, so at most half the value.
+    let keep = VISIBLE_EDGE.min(n / 4);
+    if keep == 0 {
+        return format!("<{n} chars>");
+    }
+
+    let prefix: String = chars[..keep].iter().collect();
+    let suffix: String = chars[n - keep..].iter().collect();
+    format!("{prefix}…{suffix}")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// ⚠️ These two tests asserted the bug. `truncate_value("short") == "short"`
+    /// and `truncate_value("exactly20characters!")` returning its input whole
+    /// were written as the specification, so the suite passed for as long as the
+    /// scanner printed AWS keys in full.
     #[test]
-    fn test_truncate_value_short() {
-        assert_eq!(truncate_value("short"), "short");
+    fn no_detected_value_is_ever_shown_whole() {
+        for secret in [
+            "AKIA4OZRMFJ3VREALKEY",                          // 20 — the bug
+            "exactly20characters!",                          // 20 — the old test's own case
+            "short",                                         // 5
+            "sk_live_51Habc123def456",                       // 24
+            "this_is_a_very_long_secret_key_value_12345678", // 45
+        ] {
+            let masked = truncate_value(secret);
+            assert!(
+                !masked.contains(secret),
+                "{secret} was shown whole as {masked}"
+            );
+        }
+    }
+
+    /// Enough to recognise the provider, never enough to use.
+    #[test]
+    fn a_mask_keeps_the_shape_and_drops_the_secret() {
+        assert_eq!(truncate_value("AKIA4OZRMFJ3VREALKEY"), "AKIA…LKEY");
         assert_eq!(
-            truncate_value("exactly20characters!"),
-            "exactly20characters!"
+            truncate_value("this_is_a_very_long_secret_key_value_12345678"),
+            "this…5678"
         );
     }
 
+    /// Below `MIN_MASKABLE` there is no prefix short enough to be safe, so the
+    /// length is reported instead of any characters.
     #[test]
-    fn test_truncate_value_long() {
-        let result = truncate_value("this_is_a_very_long_secret_key_value_12345678");
-        assert_eq!(result, "this_is_...45678");
-        assert!(result.len() <= MAX_VISIBLE + 3); // +3 for "..."
+    fn a_short_value_reveals_nothing_at_all() {
+        assert_eq!(truncate_value("short"), "<5 chars>");
+        assert_eq!(truncate_value("tiny"), "<4 chars>");
+        assert_eq!(truncate_value(""), "<0 chars>");
+    }
+
+    /// Never more than half the value, whatever its length.
+    #[test]
+    fn at_most_half_the_characters_survive() {
+        for n in 8..64 {
+            let secret: String = std::iter::repeat_n('x', n).collect();
+            let shown = truncate_value(&secret)
+                .chars()
+                .filter(|c| *c == 'x')
+                .count();
+            assert!(shown * 2 <= n, "{n}-char value revealed {shown} characters");
+        }
+    }
+
+    /// Multi-byte input must not panic on a character boundary.
+    #[test]
+    fn masking_is_utf8_safe() {
+        let masked = truncate_value("🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑");
+        assert!(masked.contains('…'), "{masked}");
     }
 
     #[test]

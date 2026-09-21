@@ -5,7 +5,7 @@
     {
       "pattern": "AWS Access Key",
       "confidence": "high",
-      "value_preview": "AKIA4OZRMFJ3VREALKEY",
+      "value_preview": "AKIA…LKEY",
       "location": "./.env:2 (AWS_KEY)",
       "variable": "AWS_KEY",
       "action_url": "https://console.aws.amazon.com/iam"
