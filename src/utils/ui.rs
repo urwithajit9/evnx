@@ -93,23 +93,15 @@ pub const MAX_BOX_WIDTH: usize = 80;
 /// print_header("evnx init", Some("Set up environment variables"));
 /// ```
 pub fn print_header(title: &str, subtitle: Option<&str>) {
-    let width = calculate_box_width(title, subtitle);
-    let border = "─".repeat(width - 4);
-
-    // Top border with title
-    println!(
-        "\n{}",
-        format!("┌─ {} {}┐", title, "─".repeat(width - 4 - title.len())).cyan()
-    );
-
-    // Subtitle line (if provided)
-    if let Some(sub) = subtitle {
-        let padded = pad_or_truncate(sub, width - 4);
-        println!("{}", format!("│ {} │", padded).cyan());
-    }
-
-    // Bottom border
-    println!("{}\n", format!("└─{}─┘", border).cyan());
+    // The user typed the command; a three-line box repeating it back says
+    // nothing. One dim line gives the same context at a fifth of the height.
+    // ⚠️ The full `evnx scan`, not `scan`. In a CI log among other tools' output
+    // the bare verb is ambiguous, and the five characters cost nothing.
+    let line = match subtitle {
+        Some(sub) => format!("\n  {}  {}\n", title.bold(), sub.dimmed()),
+        None => format!("\n  {}\n", title.bold()),
+    };
+    println!("{}", line);
 }
 
 /// Print a simple boxed message (for sub-sections or alerts).
@@ -137,9 +129,19 @@ pub fn print_box(title: &str, message: &str) {
     let width = calculate_box_width(title, Some(message));
     let border = "─".repeat(width - 4);
 
+    // ⚠️ `width - 5`, not `width - 4`. The top row is
+    // `┌` + `─` + ` ` + title + ` ` + fill + `┐` = fill + title.len() + 5, while
+    // the body and bottom are `width`. With `width - 4` the top came out one
+    // column wider than the box beneath it — visible in every summary this
+    // printed, and in every command header until the header stopped being a box.
     println!(
         "\n{}",
-        format!("┌─ {} {}┐", title, "─".repeat(width - 4 - title.len())).cyan()
+        format!(
+            "┌─ {} {}┐",
+            title,
+            "─".repeat((width - 5).saturating_sub(title.len()))
+        )
+        .cyan()
     );
 
     for line in message.lines() {
@@ -174,7 +176,7 @@ pub fn print_section_header(icon: &str, title: &str) {
 
 /// Convenience wrapper for preview sections.
 pub fn print_preview_header() {
-    print_section_header("📋", "Preview");
+    print_section_header("", "Preview");
 }
 
 /// Print a numbered list of next steps.
@@ -263,13 +265,43 @@ pub fn print_progress(message: &str) {
 // Status Messages
 // ─────────────────────────────────────────────────────────────
 
+/// The status glyphs, defined once.
+///
+/// ⚠️ **Every glyph here is exactly one terminal column.** The set they replace
+/// was not: `✓` (U+2713) and `✗` (U+2717) are one column, while `⚠️` and `ℹ️`
+/// carry a U+FE0F variation selector that makes them two. A status list mixing
+/// them can never form a column, however carefully the padding is computed.
+///
+/// It was worse than a fixed offset. `⚠` appeared in the source in two byte
+/// forms — nineteen times with the variation selector and twice without — so two
+/// lines that looked identical in the editor rendered at different widths.
+///
+/// # Why no emoji
+///
+/// Emoji width is a terminal-and-font question, not a Unicode one: the same
+/// codepoint is one column in some terminals and two in others, so no care taken
+/// here makes an emoji-aligned column reliable everywhere. `✓ ✗ ! · →` carry the
+/// same meaning in one predictable cell.
+pub mod glyph {
+    /// Success — created, written, passed.
+    pub const OK: &str = "✓";
+    /// Failure — an error, or a check that did not pass.
+    pub const FAIL: &str = "✗";
+    /// Warning — worth knowing, not worth stopping for.
+    pub const WARN: &str = "!";
+    /// Neutral detail, subordinate to the line above it.
+    pub const INFO: &str = "·";
+    /// "becomes", or a remediation step.
+    pub const ARROW: &str = "→";
+}
+
 /// Print a green success message with checkmark.
 ///
 /// ```text
 /// ✓ Created .env.example with 15 variables
 /// ```
 pub fn success(message: impl AsRef<str>) {
-    println!("{} {}", "✓".green(), message.as_ref()); // Change: message: &str → message: impl AsRef<str> allows both &str and String
+    println!("{} {}", glyph::OK.green(), message.as_ref());
 }
 
 /// Print a red error message with cross.
@@ -278,7 +310,7 @@ pub fn success(message: impl AsRef<str>) {
 /// ✗ Failed to parse schema.json
 /// ```
 pub fn error(message: impl AsRef<str>) {
-    println!("{} {}", "✗".red(), message.as_ref().red());
+    println!("{} {}", glyph::FAIL.red(), message.as_ref().red());
 }
 
 /// Print a yellow warning message with alert icon.
@@ -287,7 +319,7 @@ pub fn error(message: impl AsRef<str>) {
 /// ⚠️  Conflicting variables will be skipped
 /// ```
 pub fn warning(message: impl AsRef<str>) {
-    println!("{} {}", "⚠️".yellow(), message.as_ref().yellow());
+    println!("{} {}", glyph::WARN.yellow(), message.as_ref().yellow());
 }
 
 /// Print a cyan info message with info icon.
@@ -296,7 +328,7 @@ pub fn warning(message: impl AsRef<str>) {
 /// ℹ️  Tip: Run 'evnx validate' to check configuration
 /// ```
 pub fn info(message: impl AsRef<str>) {
-    println!("{} {}", "ℹ️".cyan(), message.as_ref().dimmed());
+    println!("{} {}", glyph::INFO.dimmed(), message.as_ref().dimmed());
 }
 
 /// Print a bold important notice.
@@ -546,23 +578,15 @@ where
 /// print_header_stderr("evnx scan", Some("Checking for exposed secrets"));
 /// ```
 pub fn print_header_stderr(title: &str, subtitle: Option<&str>) {
-    let width = calculate_box_width(title, subtitle);
-    let border = "─".repeat(width - 4);
-
-    // Top border with title
-    eprintln!(
-        "\n{}",
-        format!("┌─ {} {}┐", title, "─".repeat(width - 4 - title.len())).cyan()
-    );
-
-    // Subtitle line (if provided)
-    if let Some(sub) = subtitle {
-        let padded = pad_or_truncate(sub, width - 4);
-        eprintln!("{}", format!("│ {} │", padded).cyan());
-    }
-
-    // Bottom border
-    eprintln!("{}\n", format!("└─{}─┘", border).cyan());
+    // The user typed the command; a three-line box repeating it back says
+    // nothing. One dim line gives the same context at a fifth of the height.
+    // ⚠️ The full `evnx scan`, not `scan`. In a CI log among other tools' output
+    // the bare verb is ambiguous, and the five characters cost nothing.
+    let line = match subtitle {
+        Some(sub) => format!("\n  {}  {}\n", title.bold(), sub.dimmed()),
+        None => format!("\n  {}\n", title.bold()),
+    };
+    eprintln!("{}", line);
 }
 
 /// Print verbose progress message to stderr.
@@ -767,5 +791,5 @@ pub fn config_warning(message: &str, quiet: bool) {
     if quiet {
         return;
     }
-    eprintln!("{} {}", "⚠".yellow(), message.dimmed());
+    eprintln!("{} {}", glyph::WARN.yellow(), message.dimmed());
 }

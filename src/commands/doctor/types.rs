@@ -27,8 +27,8 @@ impl Severity {
     pub fn icon(self) -> &'static str {
         match self {
             Severity::Error => "✗",
-            Severity::Warning => "⚠️",
-            Severity::Info => "ℹ️",
+            Severity::Warning => "!",
+            Severity::Info => "·",
             Severity::Ok => "✓",
         }
     }

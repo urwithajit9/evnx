@@ -41,7 +41,7 @@ impl MigrationDestination for DopplerDestination {
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
         println!("\n{} Doppler migration", "🔐".cyan());
-        println!("{} Requires Doppler CLI", "ℹ️".cyan());
+        println!("{} Requires Doppler CLI", "·".cyan());
         println!("  Install: https://docs.doppler.com/docs/cli");
 
         if opts.dry_run {

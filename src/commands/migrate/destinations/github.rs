@@ -130,7 +130,7 @@ impl MigrationDestination for GitHubDestination {
         }
 
         if opts.dry_run {
-            println!("\n{} Dry-run — no changes made.", "ℹ️".cyan());
+            println!("\n{} Dry-run — no changes made.", "·".cyan());
             return Ok(MigrationResult {
                 uploaded: 0,
                 skipped: to_skip.len(),
@@ -144,7 +144,7 @@ impl MigrationDestination for GitHubDestination {
             .default(true)
             .interact()?
         {
-            println!("{} Migration cancelled.", "ℹ️".cyan());
+            println!("{} Migration cancelled.", "·".cyan());
             return Ok(MigrationResult::default());
         }
 

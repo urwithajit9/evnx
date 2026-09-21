@@ -40,7 +40,7 @@ impl MigrationDestination for VercelDestination {
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
         println!("\n{} Vercel environment variable migration", "▲".cyan());
-        println!("{} Requires Vercel CLI", "ℹ️".cyan());
+        println!("{} Requires Vercel CLI", "·".cyan());
         println!("  Install: npm install -g vercel");
 
         if opts.dry_run {

@@ -292,7 +292,7 @@ impl DiagnosticCheck for EnvFileCheck {
 
             if !gitignored {
                 severity = Severity::Error;
-                details.push(format!("❌ {name} is NOT in .gitignore (security risk)"));
+                details.push(format!("✗ {name} is NOT in .gitignore (security risk)"));
             } else if verbose {
                 details.push(format!("✓ {name} is properly ignored by git"));
             }
@@ -304,7 +304,7 @@ impl DiagnosticCheck for EnvFileCheck {
                     if severity == Severity::Ok {
                         severity = Severity::Warning;
                     }
-                    details.push(format!("⚠️ {name}: {e}"));
+                    details.push(format!("! {name}: {e}"));
                 }
             }
         }
@@ -469,30 +469,30 @@ impl DiagnosticCheck for ProjectStructureCheck {
                 details.push(format!("✓ Detected Python project ({})", project_type));
                 if project_type.contains("requirements") {
                     if !check_requirements_txt_has_dotenv(project_root)? {
-                        details.push("⚠️ python-dotenv not in requirements.txt".into());
+                        details.push("! python-dotenv not in requirements.txt".into());
                         warnings += 1;
                     } else if verbose {
                         details.push("✓ python-dotenv dependency found".into());
                     }
                 } else if !check_pyproject_has_dotenv(project_root)? && verbose {
-                    details.push("ℹ️ Consider adding python-dotenv or pydantic-settings".into());
+                    details.push("· Consider adding python-dotenv or pydantic-settings".into());
                 }
             } else if project_type == "Node.js" {
                 details.push("✓ Detected Node.js project".into());
                 if verbose && !check_package_json_has_dotenv(project_root)? {
-                    details.push("ℹ️ Consider adding 'dotenv' package".into());
+                    details.push("· Consider adding 'dotenv' package".into());
                 }
             } else if project_type == "Rust" {
                 details.push("✓ Detected Rust project".into());
                 if verbose && !check_cargo_has_dotenv(project_root)? {
-                    details.push("ℹ️ Consider adding 'dotenvy' crate".into());
+                    details.push("· Consider adding 'dotenvy' crate".into());
                 }
             } else {
                 details.push(format!("✓ Detected {} project", project_type));
             }
             severity = Severity::Ok;
         } else {
-            details.push("ℹ️ No recognized project configuration".into());
+            details.push("· No recognized project configuration".into());
             if verbose {
                 details.push("Supported: requirements.txt, pyproject.toml, Pipfile, poetry.lock, package.json, Cargo.toml, go.mod, composer.json".into());
             }
@@ -906,14 +906,14 @@ fn print_summary_text(summary: &Summary) {
 
     if summary.errors > 0 {
         println!(
-            "  🚨 {} critical issue{}",
+            "  ✗ {} critical issue{}",
             summary.errors,
             if summary.errors > 1 { "s" } else { "" }
         );
     }
     if summary.warnings > 0 {
         println!(
-            "  ⚠️  {} warning{}",
+            "  ! {} warning{}",
             summary.warnings,
             if summary.warnings > 1 { "s" } else { "" }
         );
@@ -925,9 +925,9 @@ fn print_summary_text(summary: &Summary) {
     let health = if summary.errors == 0 && summary.warnings == 0 {
         "✓ Excellent".green()
     } else if summary.errors == 0 {
-        "⚠️ Needs attention".yellow()
+        "! Needs attention".yellow()
     } else {
-        "🚨 Action required".red()
+        "✗ Action required".red()
     };
     println!("\nOverall health: {}", health);
 }

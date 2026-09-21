@@ -164,13 +164,13 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
         results.secrets_found.to_string().red()
     );
 
-    ui::print_section_header("🔍", "Secrets detected");
+    ui::print_section_header("", "Secrets detected");
 
     for (i, finding) in results.findings.iter().enumerate() {
         let icon = match finding.confidence {
-            Confidence::High => "🚨",
-            Confidence::Medium => "⚠️ ",
-            Confidence::Low => "ℹ️ ",
+            Confidence::High => "✗",
+            Confidence::Medium => "!",
+            Confidence::Low => "·",
         };
 
         println!(
@@ -195,17 +195,17 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
     }
 
     // Summary section
-    ui::print_section_header("📊", "Summary");
+    ui::print_section_header("", "Summary");
     println!(
-        "  🚨 {} high-confidence secrets",
+        "  ✗ {} high-confidence secrets",
         results.high_confidence.to_string().red()
     );
     println!(
-        "  ⚠️  {} medium-confidence secrets",
+        "  ! {} medium-confidence secrets",
         results.medium_confidence.to_string().yellow()
     );
     if results.low_confidence > 0 {
-        println!("  ℹ️  {} low-confidence detections", results.low_confidence);
+        println!("  · {} low-confidence detections", results.low_confidence);
     }
 
     println!(

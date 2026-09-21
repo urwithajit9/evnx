@@ -364,13 +364,13 @@ fn output_pretty(result: &ValidationResult, _env_path: &str, _example_path: &str
 
     // Show issues
     if !result.issues.is_empty() {
-        ui::print_section_header("⚠️", "Issues Found");
+        ui::print_section_header("!", "Issues Found");
 
         for (i, issue) in result.issues.iter().enumerate() {
             let icon = match issue.severity.as_str() {
-                "error" => "🚨",
-                "warning" => "⚠️",
-                _ => "ℹ️",
+                "error" => "✗",
+                "warning" => "!",
+                _ => "·",
             };
 
             println!(

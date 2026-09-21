@@ -69,7 +69,7 @@ pub fn run(
 ) -> Result<i32> {
     //  CHANGED: Return exit code
     if verbose {
-        eprintln!("{}", "🔍 Running diff in verbose mode".dimmed());
+        eprintln!("{}", "Running diff in verbose mode".dimmed());
     }
 
     // Only print header for pretty output.
@@ -78,11 +78,9 @@ pub fn run(
     // staging` announced "Comparing .env ↔ .env.example" and then listed
     // differences between two entirely different files.
     if format == "pretty" {
-        let title = format!(" Comparing {env} ↔ {example} ");
-        let rule = "─".repeat(title.chars().count());
-        println!("\n{}", format!("┌{rule}┐").cyan());
-        println!("{}", format!("│{title}│").cyan());
-        println!("{}\n", format!("└{rule}┘").cyan());
+        // The last hand-rolled box in the CLI. `ui::print_header` gives the same
+        // context in one line and keeps `diff` consistent with everything else.
+        ui::print_header("evnx diff", Some(&format!("{env} ↔ {example}")));
     }
 
     let parser = Parser::default();
@@ -464,7 +462,7 @@ fn output_patch_interactive(
 
     // Summary of applied changes
     if !applied.is_empty() {
-        println!("\n{}", "📋 Applied changes:".bold());
+        println!("\n{}", "Applied changes:".bold());
         for (op, key, val) in &applied {
             let icon = match op {
                 '+' => "+".green(),
@@ -475,7 +473,7 @@ fn output_patch_interactive(
         }
         println!("\n💡 Tip: Save output and apply with: patch -p1 < changes.patch");
     } else {
-        println!("\n{}", "ℹ️  No changes applied".dimmed());
+        println!("\n{}", "· No changes applied".dimmed());
     }
 
     Ok(())

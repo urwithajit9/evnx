@@ -182,11 +182,7 @@ fn main() -> Result<()> {
                 "snake_case" => Some(KeyTransform::SnakeCase),
                 unknown => {
                     if cli.verbose {
-                        eprintln!(
-                            "{} Invalid transform '{}', ignoring",
-                            "⚠️".yellow(),
-                            unknown
-                        );
+                        eprintln!("{} Invalid transform '{}', ignoring", "!".yellow(), unknown);
                     }
                     None
                 }

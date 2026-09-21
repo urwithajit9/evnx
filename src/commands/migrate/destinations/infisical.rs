@@ -44,7 +44,7 @@ impl MigrationDestination for InfisicalDestination {
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
         println!("\n{} Infisical migration", "🔒".cyan());
-        println!("{} Requires Infisical CLI", "ℹ️".cyan());
+        println!("{} Requires Infisical CLI", "·".cyan());
         println!("  Install: https://infisical.com/docs/cli/overview");
 
         if opts.dry_run {

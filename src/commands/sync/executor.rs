@@ -267,7 +267,7 @@ fn sync_forward(
     // Interactive mode
     let choices = vec![
         "Yes, add with placeholder values (recommended)",
-        "Yes, add with actual values ⚠️ SECURITY RISK",
+        "Yes, add with actual values ! SECURITY RISK",
         "Let me choose individually",
         "No, skip",
     ];
@@ -294,7 +294,7 @@ fn sync_forward(
         }
         1 => {
             ui::print_box(
-                "⚠️  SECURITY WARNING",
+                "! SECURITY WARNING",
                 "Adding actual values to .env.example may expose secrets if \
                  this file is committed to version control.\n\n\
                  Only proceed if you are certain .env.example is gitignored \
@@ -322,7 +322,7 @@ fn sync_forward(
                     target_file: paths.example_str(),
                     action: SyncAction::Add,
                     variables: preview,
-                    warnings: vec!["⚠️ Actual values would be written (security risk)".into()],
+                    warnings: vec!["! Actual values would be written (security risk)".into()],
                 });
                 return Ok(true);
             }
@@ -678,7 +678,7 @@ fn add_with_actual_values(
 ) -> Result<()> {
     let mut content = fs::read_to_string(&paths.example)?;
     content.push_str(&format!(
-        "\n# Synced from {} [⚠️ ACTUAL VALUES]\n",
+        "\n# Synced from {} [! ACTUAL VALUES]\n",
         paths.env_str()
     ));
 
@@ -905,7 +905,7 @@ fn print_preview(preview: &SyncPreview) {
         println!("{}", "  No changes".dimmed());
     } else {
         for var in &preview.variables {
-            let marker = if var.is_placeholder { "🔒" } else { "⚠️" };
+            let marker = if var.is_placeholder { "🔒" } else { "!" };
             println!(
                 "  {} {} = {}",
                 marker,

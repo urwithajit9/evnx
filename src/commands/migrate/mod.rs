@@ -98,7 +98,7 @@ pub fn run(args: MigrateArgs) -> Result<()> {
     );
 
     if raw.is_empty() {
-        println!("{} No secrets found to migrate.", "⚠️".yellow());
+        println!("{} No secrets found to migrate.", "!".yellow());
         return Ok(());
     }
 
@@ -114,7 +114,7 @@ pub fn run(args: MigrateArgs) -> Result<()> {
     if secrets.len() != raw.len() {
         println!(
             "{} After filtering: {} of {} secrets remain.",
-            "ℹ️".cyan(),
+            "·".cyan(),
             secrets.len(),
             raw.len()
         );
@@ -123,7 +123,7 @@ pub fn run(args: MigrateArgs) -> Result<()> {
     if secrets.is_empty() {
         println!(
             "{} All secrets were filtered out — nothing to migrate.",
-            "⚠️".yellow()
+            "!".yellow()
         );
         return Ok(());
     }
