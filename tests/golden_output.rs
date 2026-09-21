@@ -278,6 +278,38 @@ fn diff_summary_total_is_zero_only_when_identical() {
     assert_eq!(report["summary"]["total"], 0, "{out}");
 }
 
+/// ⚠️ `details` is a machine-readable field whose `severity` sibling already
+/// says whether the check passed. A glyph in there was presentation inside data,
+/// and a consumer had to strip it before showing the text anywhere.
+///
+/// Per-item markers survive: a detail line whose marker *differs* from the
+/// check's is saying something the check-level severity does not.
+#[test]
+fn doctor_json_details_carry_no_redundant_glyph() {
+    let d = fixture();
+    let out = stdout_with_env(&d, &["doctor"], "EVNX_OUTPUT_JSON", "1");
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+
+    for check in report["checks"].as_array().unwrap() {
+        let Some(details) = check["details"].as_str() else {
+            continue;
+        };
+        let own = match check["severity"].as_str().unwrap() {
+            "error" => "✗ ",
+            "warning" => "! ",
+            "info" => "· ",
+            _ => "✓ ",
+        };
+        for line in details.lines() {
+            assert!(
+                !line.starts_with(own),
+                "{} repeats its own severity in details: {line:?}",
+                check["name"]
+            );
+        }
+    }
+}
+
 /// The property behind all of the above: nothing decorative may reach stdout.
 /// A banner on the data channel is how a `| jq` recipe starts failing.
 #[test]
