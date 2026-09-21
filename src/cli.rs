@@ -74,12 +74,12 @@ impl std::fmt::Display for SyncDirection {
 #[derive(Args, Debug)]
 pub struct SyncArgs {
     /// The environment file to sync from (forward) or into (reverse).
-    #[arg(long, default_value = ".env")]
-    pub env: String,
+    #[arg(long)]
+    pub env: Option<String>,
 
     /// The template to sync into (forward) or from (reverse).
-    #[arg(long, default_value = ".env.example")]
-    pub example: String,
+    #[arg(long)]
+    pub example: Option<String>,
 
     /// Use `.env.<NAME>` instead of `.env`.
     ///
@@ -122,8 +122,9 @@ pub struct SyncArgs {
     pub template_config: Option<std::path::PathBuf>,
 
     /// Warn on non-standard env var naming (default: warn)
-    #[arg(long, value_enum, default_value_t = NamingPolicy::Warn)]
-    pub naming_policy: NamingPolicy,
+    /// Defaults to `warn`, or `[sync] naming_policy` from `.evnx.toml`.
+    #[arg(long, value_enum)]
+    pub naming_policy: Option<NamingPolicy>,
 }
 
 /// Policy for handling non-standard environment variable names
@@ -741,8 +742,8 @@ pub enum Commands {
     /// Check .env against .env.example, find issues.
     #[command(after_help = docs::VALIDATE.after_help)]
     Validate {
-        #[arg(long, default_value = ".env")]
-        env: String,
+        #[arg(long)]
+        env: Option<String>,
 
         /// Operate on `.env.<NAME>` instead of `.env`.
         ///
@@ -752,8 +753,8 @@ pub enum Commands {
         #[arg(long, value_name = "NAME", conflicts_with = "env")]
         env_name: Option<String>,
 
-        #[arg(long, default_value = ".env.example")]
-        example: String,
+        #[arg(long)]
+        example: Option<String>,
 
         #[arg(long)]
         strict: bool,
@@ -794,8 +795,10 @@ pub enum Commands {
         /// the same set. `--severity high` reports only detections that match a
         /// known provider format, which is the usual choice for a blocking CI
         /// gate; the default reports everything.
-        #[arg(long, value_name = "LEVEL", default_value = "low")]
-        severity: String,
+        /// Defaults to `low` (report everything), or `[scan] severity` from
+        /// `.evnx.toml` when that is set.
+        #[arg(long, value_name = "LEVEL")]
+        severity: Option<String>,
 
         #[arg(long, default_value = "pretty")]
         format: String,
@@ -806,10 +809,10 @@ pub enum Commands {
     /// Compare .env vs .env.example — show missing/extra vars.
     #[command(after_help = docs::DIFF.after_help)]
     Diff {
-        #[arg(long, default_value = ".env")]
-        env: String,
-        #[arg(long, default_value = ".env.example")]
-        example: String,
+        #[arg(long)]
+        env: Option<String>,
+        #[arg(long)]
+        example: Option<String>,
 
         /// Operate on `.env.<NAME>` instead of `.env`.
         ///
@@ -885,8 +888,8 @@ Use 'evnx convert' without --to for interactive format selection.
 ")]
     Convert {
         /// Path to input .env file
-        #[arg(long, default_value = ".env", value_name = "PATH")]
-        env: String,
+        #[arg(long, value_name = "PATH")]
+        env: Option<String>,
 
         /// Operate on `.env.<NAME>` instead of `.env`.
         ///
@@ -975,8 +978,8 @@ Use 'evnx convert' without --to for interactive format selection.
         input: String,
         #[arg(long)]
         output: String,
-        #[arg(long, default_value = ".env")]
-        env: String,
+        #[arg(long)]
+        env: Option<String>,
 
         /// Operate on `.env.<NAME>` instead of `.env`.
         ///
@@ -1001,8 +1004,7 @@ Use 'evnx convert' without --to for interactive format selection.
     #[command(after_help = docs::BACKUP.after_help)]
     Backup {
         /// Path to the .env file to back up.
-        #[arg(default_value = ".env")]
-        env: String,
+        env: Option<String>,
 
         /// Back up `.env.<NAME>` instead.
         ///
@@ -1029,8 +1031,9 @@ Use 'evnx convert' without --to for interactive format selection.
         /// <output> → <output>.1 → <output>.2 → … → <output>.{keep-1}.
         /// Files beyond this limit are warned about but never deleted.
         /// Set to 0 to disable rotation (overwrite silently).
-        #[arg(long, default_value = "3", value_name = "N")]
-        keep: u32,
+        /// Defaults to `3`, or `[backup] keep` from `.evnx.toml`.
+        #[arg(long, value_name = "N")]
+        keep: Option<u32>,
 
         /// Re-decrypt the backup after writing and verify content integrity.
         ///

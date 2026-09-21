@@ -81,15 +81,31 @@ pub fn resolve(dir: &Path, name: Option<&str>) -> Result<PathBuf> {
 
 /// Choose between an explicit path and a named environment.
 ///
-/// Commands keep taking a single path, so this is the one place the two flags
-/// meet. `--env` and `--env-name` are declared `conflicts_with` each other in the
-/// CLI, so only one can arrive; if that ever changes, the name wins and the
-/// explicit path is ignored — which is why they conflict rather than layer.
-pub fn select(dir: &Path, explicit: &str, name: Option<&str>) -> Result<String> {
-    match name {
-        Some(_) => Ok(resolve(dir, name)?.to_string_lossy().into_owned()),
-        None => Ok(explicit.to_owned()),
+/// The one place `--env`, `--env-name` and `[defaults] env_name` meet, in that
+/// order of precedence.
+///
+/// ⚠️ `explicit` is `Option` rather than a defaulted `String` for the same reason
+/// the other flags became `Option`: with a clap `default_value`, "the user typed
+/// `--env .env`" and "the user typed nothing" arrive as the same string. Config
+/// would then beat an explicit flag — which it did, until a test caught
+/// `convert --env .env` reading `.env.production` because `[defaults] env_name`
+/// was set.
+pub fn select(
+    dir: &Path,
+    explicit: Option<&str>,
+    name: Option<&str>,
+    configured: Option<&str>,
+) -> Result<String> {
+    if let Some(path) = explicit {
+        return Ok(path.to_owned());
     }
+    if name.is_some() {
+        return Ok(resolve(dir, name)?.to_string_lossy().into_owned());
+    }
+    if configured.is_some() {
+        return Ok(resolve(dir, configured)?.to_string_lossy().into_owned());
+    }
+    Ok(DEFAULT_FILE.to_owned())
 }
 
 /// Every `.env.<something>` present in `dir` that holds real values.
@@ -248,22 +264,50 @@ mod tests {
     fn select_prefers_the_named_environment() {
         let dir = project(&[".env", ".env.production"]);
 
-        // No name: the explicit path is passed straight through, untouched.
-        assert_eq!(select(dir.path(), ".env", None).unwrap(), ".env");
+        // Nothing given: the default file.
+        assert_eq!(select(dir.path(), None, None, None).unwrap(), ".env");
+        // An explicit path is passed straight through.
         assert_eq!(
-            select(dir.path(), "custom.env", None).unwrap(),
+            select(dir.path(), Some("custom.env"), None, None).unwrap(),
             "custom.env"
         );
-
-        // A name resolves, and keeps the directory it was resolved in.
-        let picked = select(dir.path(), ".env", Some("production")).unwrap();
+        // A name resolves, keeping the directory it was resolved in.
+        let picked = select(dir.path(), None, Some("production"), None).unwrap();
         assert!(picked.ends_with(".env.production"), "{picked}");
     }
 
+    /// ⚠️ Precedence: an explicit `--env` beats a configured environment.
+    ///
+    /// This failed before `explicit` became `Option`. With a clap
+    /// `default_value`, "the user typed `--env .env`" and "the user typed
+    /// nothing" arrive as the same string — so in a project with
+    /// `[defaults] env_name = "production"`, `convert --env .env` read
+    /// `.env.production`.
+    #[test]
+    fn an_explicit_path_beats_a_configured_environment() {
+        let dir = project(&[".env", ".env.production"]);
+
+        assert_eq!(
+            select(dir.path(), Some(".env"), None, Some("production")).unwrap(),
+            ".env"
+        );
+    }
+
+    #[test]
+    fn a_configured_environment_applies_when_no_flag_was_given() {
+        let dir = project(&[".env", ".env.production"]);
+
+        let picked = select(dir.path(), None, None, Some("production")).unwrap();
+        assert!(picked.ends_with(".env.production"), "{picked}");
+    }
+
+    /// A configured name that resolves to nothing fails loudly, exactly as a
+    /// typed one does — the project asked for it.
     #[test]
     fn select_propagates_a_bad_name() {
         let dir = project(&[".env"]);
-        assert!(select(dir.path(), ".env", Some("nope")).is_err());
+        assert!(select(dir.path(), None, Some("nope"), None).is_err());
+        assert!(select(dir.path(), None, None, Some("nope")).is_err());
     }
 
     #[test]

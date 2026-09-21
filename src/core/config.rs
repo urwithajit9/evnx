@@ -183,6 +183,43 @@ impl Config {
     }
 }
 
+/// Combine a flag with a config value and a built-in default.
+///
+/// **Precedence: flag > config > default.** The flag is `Option` precisely so
+/// this can tell "the user asked for the default" from "the user asked for
+/// nothing" — with a clap `default_value` the two are the same string and the
+/// config could never take effect.
+pub fn pick<T: Clone>(flag: Option<T>, configured: Option<T>, fallback: T) -> T {
+    flag.or(configured).unwrap_or(fallback)
+}
+
+/// Combine a boolean flag with a config value.
+///
+/// ⚠️ Either saying `true` wins, which means a flag can **tighten** what config
+/// set but never loosen it. That is deliberate rather than a limitation of clap:
+/// there is no `--no-strict`, so "off" is indistinguishable from "unspecified",
+/// and resolving the ambiguity toward the stricter reading is the safe direction
+/// for a tool whose booleans are all guards.
+pub fn any(flag: bool, configured: Option<bool>) -> bool {
+    flag || configured.unwrap_or(false)
+}
+
+/// Append configured entries to whatever the flag supplied.
+///
+/// Lists are additive rather than replaced: `[scan] exclude` is the project's
+/// standing exclusions and `--exclude` is this run's, and a flag silently
+/// dropping the project's list would be a surprising way to widen a scan.
+pub fn extend(mut flag: Vec<String>, configured: Option<Vec<String>>) -> Vec<String> {
+    if let Some(extra) = configured {
+        for item in extra {
+            if !flag.contains(&item) {
+                flag.push(item);
+            }
+        }
+    }
+    flag
+}
+
 /// A config file that was found, parsed, and whatever could not be understood.
 #[derive(Debug, Clone, Default)]
 pub struct Loaded {
@@ -454,5 +491,48 @@ vault = "my-api/production"
             .config
             .security_overrides()
             .is_empty());
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use super::*;
+
+    #[test]
+    fn a_flag_beats_config_which_beats_the_default() {
+        assert_eq!(pick(Some("flag"), Some("config"), "default"), "flag");
+        assert_eq!(pick(None, Some("config"), "default"), "config");
+        assert_eq!(pick(None, None, "default"), "default");
+    }
+
+    /// ⚠️ The reason the flags became `Option`. With a clap `default_value`,
+    /// "the user typed --severity low" and "the user typed nothing" arrive as the
+    /// same string, so config could never apply.
+    #[test]
+    fn asking_for_the_default_explicitly_still_beats_config() {
+        assert_eq!(pick(Some("low"), Some("high"), "low"), "low");
+    }
+
+    #[test]
+    fn a_boolean_flag_tightens_but_never_loosens() {
+        assert!(any(true, Some(false)), "the flag can turn it on");
+        assert!(any(false, Some(true)), "config can turn it on");
+        assert!(any(true, None));
+        assert!(!any(false, Some(false)));
+        assert!(!any(false, None));
+    }
+
+    #[test]
+    fn lists_combine_without_duplicating() {
+        let got = extend(
+            vec!["a".into(), "b".into()],
+            Some(vec!["b".into(), "c".into()]),
+        );
+        assert_eq!(got, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn an_absent_list_leaves_the_flag_alone() {
+        assert_eq!(extend(vec!["a".into()], None), vec!["a"]);
     }
 }

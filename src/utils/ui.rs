@@ -688,3 +688,44 @@ mod tests {
         }
     }
 }
+
+/// Announce the `.evnx.toml` a run is operating under.
+///
+/// ⚠️ Why this is not optional. `[scan] severity` and `[scan] exclude` can
+/// *weaken* what the scanner reports, and the file is committed — so one commit
+/// can quietly narrow scanning for everyone who clones the repository, with
+/// nothing on the command line to show it. That is the same fail-open shape this
+/// CLI has spent several releases removing.
+///
+/// Configurability is not the problem; silence is. A team genuinely needs to
+/// exclude its fixtures. So the file is allowed to change the default and
+/// **obliged to say so**.
+///
+/// Always stderr, never stdout, so `evnx convert --to json > out.json` stays
+/// machine-readable. Suppressed by `--quiet`.
+pub fn config_banner(path: &std::path::Path, overrides: &[String], quiet: bool) {
+    if quiet {
+        return;
+    }
+    let detail = if overrides.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", overrides.join(", "))
+    };
+    eprintln!(
+        "{}",
+        format!("  config    {}{}", path.display(), detail).dimmed()
+    );
+}
+
+/// Report a key the config file carries that this version does not understand.
+///
+/// A warning rather than an error: the file is committed and teams run mixed
+/// versions, so a config written for a later evnx must not break an earlier one.
+/// Naming the key is what keeps a typo from being silent.
+pub fn config_warning(message: &str, quiet: bool) {
+    if quiet {
+        return;
+    }
+    eprintln!("{} {}", "⚠".yellow(), message.dimmed());
+}
