@@ -5,7 +5,7 @@
       "name": "env_file",
       "description": "Validate .env file existence, security, and syntax",
       "severity": "error",
-      "details": "✗ .env is NOT in .gitignore (security risk)",
+      "details": ".env is NOT in .gitignore (security risk)",
       "fixable": true,
       "fixed": false
     },
@@ -21,7 +21,7 @@
       "name": "project_structure",
       "description": "Detect project type and validate dependencies",
       "severity": "info",
-      "details": "· No recognized project configuration",
+      "details": "No recognized project configuration",
       "fixable": false,
       "fixed": false
     },

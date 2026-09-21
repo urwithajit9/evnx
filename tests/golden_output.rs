@@ -197,6 +197,17 @@ fn validate_strict_json_is_stable() {
     );
 }
 
+/// `sync --check --format json` — the only machine-readable surface that reports
+/// *what* drifted rather than only that something did.
+#[test]
+fn sync_check_json_is_stable() {
+    let d = fixture();
+    check(
+        "sync-check.json",
+        &stdout_of(&d, &["sync", "--check", "--format", "json"]),
+    );
+}
+
 #[test]
 fn diff_json_is_stable() {
     let d = fixture();
@@ -224,6 +235,79 @@ fn doctor_json_is_stable() {
         "doctor.json",
         &stdout_with_env(&d, &["doctor"], "EVNX_OUTPUT_JSON", "1"),
     );
+}
+
+/// ⚠️ The summary is derived, so it cannot disagree with the arrays beside it —
+/// and this is what says so. A stored count would be a second source of truth
+/// that only goes wrong when someone forgets to update it.
+#[test]
+fn diff_summary_agrees_with_its_arrays() {
+    let d = fixture();
+    let out = stdout_of(&d, &["diff", "--format", "json"]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+
+    let len = |k: &str| report[k].as_array().map(|a| a.len()).unwrap_or(0);
+    for key in ["missing", "extra", "different"] {
+        assert_eq!(
+            report["summary"][key].as_u64().unwrap() as usize,
+            len(key),
+            "summary.{key} disagrees with {key}[]:\n{out}"
+        );
+    }
+    assert_eq!(
+        report["summary"]["total"].as_u64().unwrap() as usize,
+        len("missing") + len("extra") + len("different"),
+        "summary.total is not the sum:\n{out}"
+    );
+}
+
+/// `jq -e '.summary.total == 0'` is the gate this exists for, and it reads the
+/// same way as `scan`'s.
+#[test]
+fn diff_summary_total_is_zero_only_when_identical() {
+    let differing = fixture();
+    let out = stdout_of(&differing, &["diff", "--format", "json"]);
+    let report: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_ne!(report["summary"]["total"], 0);
+
+    let same = TempDir::new().unwrap();
+    fs::write(same.path().join(".env"), "A=1\n").unwrap();
+    fs::write(same.path().join(".env.example"), "A=1\n").unwrap();
+    let out = stdout_of(&same, &["diff", "--format", "json"]);
+    let report: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(report["summary"]["total"], 0, "{out}");
+}
+
+/// ⚠️ `details` is a machine-readable field whose `severity` sibling already
+/// says whether the check passed. A glyph in there was presentation inside data,
+/// and a consumer had to strip it before showing the text anywhere.
+///
+/// Per-item markers survive: a detail line whose marker *differs* from the
+/// check's is saying something the check-level severity does not.
+#[test]
+fn doctor_json_details_carry_no_redundant_glyph() {
+    let d = fixture();
+    let out = stdout_with_env(&d, &["doctor"], "EVNX_OUTPUT_JSON", "1");
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+
+    for check in report["checks"].as_array().unwrap() {
+        let Some(details) = check["details"].as_str() else {
+            continue;
+        };
+        let own = match check["severity"].as_str().unwrap() {
+            "error" => "✗ ",
+            "warning" => "! ",
+            "info" => "· ",
+            _ => "✓ ",
+        };
+        for line in details.lines() {
+            assert!(
+                !line.starts_with(own),
+                "{} repeats its own severity in details: {line:?}",
+                check["name"]
+            );
+        }
+    }
 }
 
 /// The property behind all of the above: nothing decorative may reach stdout.

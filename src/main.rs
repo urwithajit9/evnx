@@ -272,6 +272,7 @@ fn main() -> Result<()> {
             args.dry_run,
             args.force,
             args.check,
+            args.format.clone(),
             args.template_config.clone(),
             evnx::core::config::pick(
                 args.naming_policy,

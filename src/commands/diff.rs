@@ -393,9 +393,46 @@ fn output_pretty(
     Ok(())
 }
 
+/// The counts, alongside the arrays they describe.
+///
+/// ⚠️ Derived at output time rather than stored on `DiffResult`. A stored count
+/// is a second source of truth that can disagree with the array beside it, and
+/// the only way it can ever be wrong is if someone forgets to update it.
+///
+/// `total` is what a CI gate tests — `jq -e '.summary.total == 0'` — and it
+/// matches `scan`'s `summary.total` so the two read the same way.
+#[derive(Serialize)]
+struct DiffSummary {
+    missing: usize,
+    extra: usize,
+    different: usize,
+    total: usize,
+}
+
+/// `DiffResult` plus its summary.
+///
+/// A wrapper rather than a field on `DiffResult`, because the struct is also the
+/// pretty renderer's input and does not otherwise need to know about JSON.
+#[derive(Serialize)]
+struct JsonReport<'a> {
+    #[serde(flatten)]
+    diff: &'a DiffResult,
+    summary: DiffSummary,
+}
+
 fn output_json(diff: &DiffResult) -> Result<()> {
-    let json = serde_json::to_string_pretty(diff)?;
-    println!("{}", json);
+    // Additive: `missing`, `extra`, `different` and `stats` keep their places,
+    // so a consumer reading them is unaffected.
+    let report = JsonReport {
+        diff,
+        summary: DiffSummary {
+            missing: diff.missing.len(),
+            extra: diff.extra.len(),
+            different: diff.different.len(),
+            total: diff.missing.len() + diff.extra.len() + diff.different.len(),
+        },
+    };
+    println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
 

@@ -117,6 +117,28 @@ pub const EXIT_PROBLEMS: i32 = 1;
 /// Doctor could not run, so there is no verdict.
 pub const EXIT_ERROR: i32 = 2;
 
+/// Drop a detail line's marker when it only repeats the check's own severity.
+///
+/// ⚠️ Applied once, before either renderer sees the result — so the terminal and
+/// the JSON agree, and `details` is prose in both.
+///
+/// Detail lines are per-item: `env_file` emits one per `.env*` file, so a line
+/// whose marker *differs* from the check's is saying something the check-level
+/// severity does not, and keeps it. A line that repeats it is saying the same
+/// thing twice — in the terminal that rendered as `✗` on two consecutive lines,
+/// and in the JSON it put a presentation glyph inside a machine-readable field
+/// whose `severity` sibling already carried the answer.
+fn normalise_details(result: &mut CheckResult) {
+    let own = format!("{} ", result.severity.icon());
+    if let Some(details) = &result.details {
+        let cleaned: Vec<&str> = details
+            .lines()
+            .map(|line| line.strip_prefix(&own).unwrap_or(line))
+            .collect();
+        result.details = Some(cleaned.join("\n"));
+    }
+}
+
 /// Whether the report should be treated as a failure.
 ///
 /// Split out so text and JSON modes cannot drift apart on the one thing CI reads.
@@ -162,6 +184,7 @@ fn run_text(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) ->
             }
         }
 
+        normalise_details(&mut result);
         report.summary.add(&result);
         report.checks.push(result.clone());
 
@@ -210,6 +233,7 @@ fn run_json(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) ->
             }
         }
 
+        normalise_details(&mut result);
         report.summary.add(&result);
         report.checks.push(result);
     }
@@ -898,17 +922,10 @@ fn print_check_result_text(result: &CheckResult, verbose: bool) {
 
     if verbose || result.severity != Severity::Ok {
         if let Some(ref details) = result.details {
-            // ⚠️ A detail line that repeats its check's status drops the marker.
-            //
-            // Detail lines are per-item — `env_file` emits one per `.env*` file
-            // — so their glyph is real information when items differ. In
-            // non-verbose output only the failures are listed, so every line
-            // carries the same glyph the check line already carried, and the
-            // reader sees `✗` twice for one fact.
-            let own = result.severity.icon();
+            // Markers that repeat the check's own severity were already
+            // dropped by `normalise_details`, so this only prints.
             for line in details.lines() {
-                let text = line.strip_prefix(&format!("{own} ")).unwrap_or(line);
-                println!("     {}", text.dimmed());
+                println!("     {}", line.dimmed());
             }
         }
     }

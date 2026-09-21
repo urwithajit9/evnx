@@ -113,6 +113,20 @@ pub struct SyncArgs {
     #[arg(long, verbatim_doc_comment)]
     pub check: bool,
 
+    /// Output format for `--check`: `pretty` (default) or `json`.
+    ///
+    /// ⚠️ `json` requires `--check`, because without it `sync` edits files and a
+    /// machine-readable report of an edit already made is worth less than the
+    /// edit. The report says *what* drifted — until now the only answer a
+    /// pipeline could get was the exit code.
+    #[arg(
+        long,
+        value_name = "FORMAT",
+        default_value = "pretty",
+        requires = "check"
+    )]
+    pub format: String,
+
     /// Skip interactive prompts (for CI/CD usage)
     #[arg(long, short = 'f')]
     pub force: bool,

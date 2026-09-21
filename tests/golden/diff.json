@@ -19,5 +19,11 @@
       "example_value": "",
       "env_value": "8080"
     }
-  ]
+  ],
+  "summary": {
+    "missing": 0,
+    "extra": 1,
+    "different": 3,
+    "total": 4
+  }
 }

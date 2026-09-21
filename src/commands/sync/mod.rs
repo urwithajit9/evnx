@@ -3,7 +3,7 @@
 //! This module provides the public API for the sync command.
 //! Internal implementation is organized into submodules for maintainability.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 use crate::cli::{NamingPolicy, SyncDirection};
@@ -76,6 +76,7 @@ pub fn run(
     dry_run: bool,
     force: bool,
     check: bool,
+    format: String,
     template_config: Option<PathBuf>,
     naming_policy: NamingPolicy,
 ) -> Result<()> {
@@ -83,6 +84,25 @@ pub fn run(
         env: PathBuf::from(env),
         example: PathBuf::from(example),
     };
+
+    // ⚠️ `--format json` is accepted only with `--check`. Without it `sync`
+    // edits files, and a machine-readable report of an edit already made is
+    // worth less than the edit — clap enforces the pairing, this is the
+    // behaviour behind it.
+    if format == "json" {
+        // ⚠️ The same three codes the pretty path uses, and for the same reason:
+        // under `--check` an error is a *different answer*, not a louder "out of
+        // sync". Propagating the `Err` would exit 1, and a pipeline branching on
+        // the code would read an unparseable template as drift.
+        return match check_as_json(&paths, direction) {
+            Ok(false) => Ok(()),
+            Ok(true) => std::process::exit(EXIT_OUT_OF_SYNC),
+            Err(e) => {
+                eprintln!("evnx could not check: {e:#}");
+                std::process::exit(EXIT_ERROR);
+            }
+        };
+    }
 
     let ctx = executor::SyncCtx {
         paths,
@@ -138,24 +158,110 @@ mod tests {
     /// the only command that could not be pointed at a file, so the two paths it
     /// operates on are now arguments rather than 37 literals in the executor.
     ///
-    /// ⚠️ Updated 2026-09-21: `check: bool` was inserted after `force`. `evnx` is
-    /// published as a library as well as a binary, so this is a breaking change
-    /// for any direct caller — acceptable in 0.x, and the whole point of this
-    /// pin is that it could not happen by accident. Six `bool`s in a row is also
-    /// why the argument list should become `SyncArgs`; see the note on `run`.
+    /// ⚠️ Updated 2026-09-21 twice. First `check: bool` was inserted after
+    /// `force`; then `format: String` after `check`. `evnx` is published as a
+    /// library as well as a binary, so each is a breaking change for a direct
+    /// caller — acceptable in 0.x, and the whole point of this pin is that it
+    /// cannot happen by accident. Six `bool`s in a row is also why the argument
+    /// list should become `SyncArgs`; see the note on `run`.
     #[test]
     fn test_run_signature_compiles() {
         let _func: fn(
             String, // env
             String, // example
             crate::cli::SyncDirection,
-            bool, // placeholder
-            bool, // verbose
-            bool, // dry_run
-            bool, // force
-            bool, // check
+            bool,   // placeholder
+            bool,   // verbose
+            bool,   // dry_run
+            bool,   // force
+            bool,   // check
+            String, // format
             Option<std::path::PathBuf>,
             crate::cli::NamingPolicy,
         ) -> anyhow::Result<()> = run;
     }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Machine-readable --check
+// ─────────────────────────────────────────────────────────────
+
+/// What `--check --format json` reports.
+///
+/// ⚠️ Read-only, and deliberately separate from the write paths. `sync` without
+/// `--check` edits files; nothing pipes a file-writing command into `jq`, and
+/// threading a preview back out of `sync_forward` / `sync_reverse` would mean
+/// restructuring both for output nobody consumes.
+///
+/// The shape answers the question a CI gate asks — *what* drifted, not just that
+/// something did. Until now the only answer available was the exit code.
+#[derive(serde::Serialize)]
+struct CheckReport {
+    in_sync: bool,
+    direction: &'static str,
+    env: String,
+    example: String,
+    /// Keys the target is missing, sorted so the output is stable between runs.
+    missing: Vec<String>,
+    summary: CheckSummary,
+}
+
+#[derive(serde::Serialize)]
+struct CheckSummary {
+    missing: usize,
+}
+
+/// Compute the drift and print it as JSON. Returns whether the files are in sync.
+///
+/// ⚠️ A file that will not parse is an error, not "nothing missing". Reporting
+/// `in_sync: true` over a template evnx could not read is the fail-open this
+/// release has spent its time removing.
+fn check_as_json(paths: &executor::SyncPaths, direction: SyncDirection) -> Result<bool> {
+    use crate::core::Parser;
+
+    let parser = Parser::default();
+    let env = parser
+        .parse_file(&paths.env)
+        .with_context(|| format!("Failed to parse {}", paths.env_str()))?;
+
+    // A missing template means everything is missing from it, which is a real
+    // answer rather than an error — `sync` itself would create it.
+    let example_vars = if paths.example.exists() {
+        parser
+            .parse_file(&paths.example)
+            .with_context(|| format!("Failed to parse {}", paths.example_str()))?
+            .vars
+    } else {
+        Default::default()
+    };
+
+    let (source, target) = match direction {
+        SyncDirection::Forward => (&env.vars, &example_vars),
+        SyncDirection::Reverse => (&example_vars, &env.vars),
+    };
+
+    let mut missing: Vec<String> = source
+        .keys()
+        .filter(|k| !target.contains_key(*k))
+        .cloned()
+        .collect();
+    missing.sort();
+
+    let report = CheckReport {
+        in_sync: missing.is_empty(),
+        direction: match direction {
+            SyncDirection::Forward => "forward",
+            SyncDirection::Reverse => "reverse",
+        },
+        env: paths.env_str(),
+        example: paths.example_str(),
+        summary: CheckSummary {
+            missing: missing.len(),
+        },
+        missing,
+    };
+
+    // stdout, and nothing else on it — the property the golden tests pin.
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(!report.in_sync)
 }

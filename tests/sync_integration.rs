@@ -2,6 +2,7 @@
 //! These tests create real temp files and test end-to-end behavior.
 
 use anyhow::Result;
+use assert_cmd::cargo::cargo_bin_cmd;
 use evnx::cli::{NamingPolicy, SyncDirection};
 use evnx::commands::sync;
 use serial_test::serial;
@@ -97,6 +98,7 @@ fn test_forward_sync_dry_run_adds_preview() -> Result<()> {
         true,
         true,
         false, // check
+        "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
     );
@@ -143,6 +145,7 @@ fn dry_run_needs_no_terminal_forward() -> Result<()> {
         true,  // dry_run
         false, // force — the point of the test
         false, // check
+        "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
     );
@@ -185,6 +188,7 @@ fn dry_run_needs_no_terminal_reverse() -> Result<()> {
         true,  // dry_run
         false, // force
         false, // check
+        "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
     );
@@ -225,6 +229,7 @@ fn test_reverse_sync_creates_env_with_placeholders() -> Result<()> {
         false,
         true,
         false, // check
+        "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
     );
@@ -265,6 +270,7 @@ fn test_forward_sync_security_warning_with_actual_values() -> Result<()> {
         false,
         true,
         false, // check
+        "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
     );
@@ -308,7 +314,8 @@ fn test_sync_with_custom_placeholder_config() -> Result<()> {
         false,
         false,
         true,
-        false,                             // check
+        false, // check
+        "pretty".to_string(),
         Some(fixture.config_path.clone()), // Absolute path
         NamingPolicy::Ignore,
     );
@@ -347,6 +354,7 @@ fn test_forward_sync_missing_env_file() -> Result<()> {
         false,
         true,
         false, // check
+        "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
     );
@@ -380,6 +388,7 @@ fn test_reverse_sync_missing_example_file() -> Result<()> {
         false,
         true,
         false, // check
+        "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
     );
@@ -750,4 +759,110 @@ mod file_selection {
         // Still reads .env against .env.example with no flags.
         assert_eq!(code(&d, &["--check"]), 0);
     }
+}
+
+// ─────────────────────────────────────────────────────────────
+// --check --format json
+// ─────────────────────────────────────────────────────────────
+
+/// ⚠️ The gap this closes: until now a pipeline could learn *that* the template
+/// was stale, from the exit code, and nothing about *what* was stale.
+#[test]
+fn check_json_reports_which_keys_drifted() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".env"), "A=1\nB=2\nC=3\n").unwrap();
+    std::fs::write(dir.path().join(".env.example"), "A=\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["sync", "--check", "--format", "json"])
+        .assert()
+        .code(1);
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+
+    assert_eq!(report["in_sync"], false);
+    assert_eq!(report["summary"]["missing"], 2);
+    let missing: Vec<&str> = report["missing"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(missing, vec!["B", "C"], "sorted, so output is stable");
+}
+
+#[test]
+fn check_json_says_so_when_in_sync() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+    std::fs::write(dir.path().join(".env.example"), "A=\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["sync", "--check", "--format", "json"])
+        .assert()
+        .code(0);
+
+    let report: serde_json::Value =
+        serde_json::from_slice(&assert.get_output().stdout).expect("valid JSON");
+    assert_eq!(report["in_sync"], true);
+    assert_eq!(report["summary"]["missing"], 0);
+}
+
+/// ⚠️ An unreadable template is exit 2, not 1. Under `--check` an error is a
+/// different answer from "out of sync", and a pipeline branching on the code
+/// would otherwise treat a broken file as drift.
+#[test]
+fn check_json_distinguishes_trouble_from_drift() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+    std::fs::write(dir.path().join(".env.example"), "this is not = valid\n").unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["sync", "--check", "--format", "json"])
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn check_json_follows_the_direction() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+    std::fs::write(dir.path().join(".env.example"), "A=\nONLY_IN_TEMPLATE=\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args([
+            "sync",
+            "--check",
+            "--format",
+            "json",
+            "--direction",
+            "reverse",
+        ])
+        .assert()
+        .code(1);
+
+    let report: serde_json::Value =
+        serde_json::from_slice(&assert.get_output().stdout).expect("valid JSON");
+    assert_eq!(report["direction"], "reverse");
+    assert_eq!(report["missing"][0], "ONLY_IN_TEMPLATE");
+}
+
+/// `--format json` without `--check` is refused: `sync` edits files, and a
+/// machine-readable report of an edit already made is worth less than the edit.
+#[test]
+fn json_requires_check() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["sync", "--format", "json"])
+        .assert()
+        .failure()
+        .stderr(predicates::prelude::predicate::str::contains("--check"));
 }

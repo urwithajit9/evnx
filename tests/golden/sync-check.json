@@ -1,0 +1,12 @@
+{
+  "in_sync": false,
+  "direction": "forward",
+  "env": ".env",
+  "example": ".env.example",
+  "missing": [
+    "EXTRA"
+  ],
+  "summary": {
+    "missing": 1
+  }
+}
