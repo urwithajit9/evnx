@@ -62,6 +62,7 @@ fn main() -> Result<()> {
             with,
             list_components,
             detect,
+            from_source,
             force,
         } => commands::init::run(
             path,
@@ -71,6 +72,7 @@ fn main() -> Result<()> {
             with,
             list_components,
             detect,
+            from_source,
             cli.verbose,
         ),
 
