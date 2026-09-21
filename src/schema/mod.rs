@@ -1,5 +1,6 @@
 //! Schema module: reusable infrastructure for all commands.
 
+pub mod component;
 pub mod formatter;
 pub mod loader;
 pub mod models;
@@ -7,6 +8,7 @@ pub mod query;
 pub mod resolver;
 
 // Re-export commonly used types
+pub use component::{catalogue, Component, Kind};
 pub use formatter::{format_addition, format_env_example, format_env_template, generate_preview};
 pub use loader::{
     find_framework, find_service, get_frameworks_for_language, get_services_grouped,
