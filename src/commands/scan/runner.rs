@@ -101,8 +101,27 @@ impl ScanRunner {
         verbose: bool,
         min_confidence: Confidence,
     ) -> Self {
+        Self::with_spec(
+            exclude,
+            ignore_placeholders,
+            verbose,
+            min_confidence,
+            Default::default(),
+        )
+    }
+
+    /// As [`ScanRunner::with_min_confidence`], plus the project's declared
+    /// contract — `secret = true` reports a credential the heuristics cannot
+    /// name, and `secret = false` retracts a guess the project has looked at.
+    pub fn with_spec(
+        exclude: &[String],
+        ignore_placeholders: bool,
+        verbose: bool,
+        min_confidence: Confidence,
+        spec: crate::core::spec::Spec,
+    ) -> Self {
         Self {
-            registry: DetectorRegistry::new(),
+            registry: DetectorRegistry::new().with_spec(spec),
             filter: FileFilter::new(exclude),
             ignore_placeholders,
             verbose,

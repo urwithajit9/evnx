@@ -127,6 +127,7 @@ fn main() -> Result<()> {
             format,
             exit_zero,
             cli.verbose,
+            cfg.vars.clone(),
         ),
 
         Commands::Diff {
