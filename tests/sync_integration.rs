@@ -866,3 +866,67 @@ fn json_requires_check() {
         .failure()
         .stderr(predicates::prelude::predicate::str::contains("--check"));
 }
+
+// ─── Creating .env.example must not copy real values ─────────────────────────
+
+/// ⚠️ The regression this guards: until v0.5.0, the **first** `evnx sync` in a
+/// project — the one every getting-started guide tells you to run — created
+/// `.env.example` by copying `.env` verbatim, secrets included, then advised
+/// committing it.
+///
+/// The placeholder-versus-actual prompt existed, but only on the path that adds
+/// variables to an example file that *already* exists. The create path had no
+/// guard at all, and `evnx scan` does not read `.env.example`, so nothing
+/// downstream noticed either.
+#[test]
+fn creating_the_example_file_does_not_copy_real_values() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join(".env"),
+        "APP_NAME=demo\nAPI_KEY=sk_live_SUPER_SECRET\nDATABASE_URL=postgres://u:pw@h/d\n",
+    )
+    .unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["sync"])
+        .assert()
+        .success();
+
+    let example = std::fs::read_to_string(dir.path().join(".env.example")).unwrap();
+
+    assert!(
+        !example.contains("sk_live_SUPER_SECRET"),
+        ".env.example holds the real API key:\n{example}"
+    );
+    assert!(
+        !example.contains("postgres://u:pw@h/d"),
+        ".env.example holds the real database URL:\n{example}"
+    );
+    // The keys must still be there — that is the file's whole purpose.
+    for key in ["APP_NAME", "API_KEY", "DATABASE_URL"] {
+        assert!(example.contains(key), "{key} missing from:\n{example}");
+    }
+}
+
+/// The same guarantee under the two flags that already implied it, so a future
+/// change cannot fix the default and quietly regress these.
+#[test]
+fn creating_the_example_file_is_safe_under_placeholder_and_force() {
+    for flag in ["--placeholder", "--force"] {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join(".env"), "API_KEY=sk_live_SUPER_SECRET\n").unwrap();
+
+        cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(["sync", flag])
+            .assert()
+            .success();
+
+        let example = std::fs::read_to_string(dir.path().join(".env.example")).unwrap();
+        assert!(
+            !example.contains("sk_live_SUPER_SECRET"),
+            "{flag} leaked the key:\n{example}"
+        );
+    }
+}
