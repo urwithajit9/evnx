@@ -480,7 +480,7 @@ fn secret_false_retracts_a_name_based_finding() {
 #[test]
 fn secret_false_cannot_silence_a_live_key_in_the_value() {
     let d = scan_project(
-        "STRIPE_SECRET_KEY=sk_live_4eC39HqLyjWDarjtT1zdp7dc\n",
+        "STRIPE_SECRET_KEY=sk_live_51Habcdefghijklmnopqrstuvwxyz123456\n",
         "[vars.STRIPE_SECRET_KEY]\nsecret = false\n",
     );
 

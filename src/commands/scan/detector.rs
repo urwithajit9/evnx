@@ -211,7 +211,7 @@ pub trait SecretDetector: Send + Sync {
     ///
     /// ⚠️ This decides whether a project's `secret = false` can retract the
     /// finding. A declaration says what a variable is *for*; it cannot make
-    /// `sk_live_4eC39Hq…` not a live Stripe key. So a value-based detector
+    /// `sk_live_51Habcdef…` not a live Stripe key. So a value-based detector
     /// outranks the declaration, and a name-based one does not.
     ///
     /// Without the distinction, one line in a committed `.evnx.toml` would
@@ -370,7 +370,7 @@ impl DetectorRegistry {
         // said so, which retracts a guess made from its **name**.
         //
         // ⚠️ It does not retract a match on the **value**. `secret = false` on a
-        // variable holding `sk_live_4eC39Hq…` still reports the Stripe key,
+        // variable holding `sk_live_51Habcdef…` still reports the Stripe key,
         // because no statement about what a variable is for can make its
         // contents stop being a live credential — and `.evnx.toml` is committed,
         // so a single wrong line would otherwise silence it for everyone who
