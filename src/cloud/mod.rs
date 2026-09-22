@@ -48,6 +48,7 @@ pub mod binding;
 pub mod client;
 pub mod config;
 pub mod creds;
+pub mod run;
 pub mod session;
 pub mod status;
 pub mod sync;
@@ -96,6 +97,19 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             force,
             password_stdin,
             verbose,
+        ),
+        CloudCommands::Run {
+            vault,
+            version,
+            password_stdin,
+            command,
+        } => run::run(
+            server_override,
+            vault,
+            version,
+            password_stdin,
+            verbose,
+            command,
         ),
         CloudCommands::History { vault, limit } => {
             sync::history(server_override, vault, limit, verbose)
