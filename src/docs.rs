@@ -43,6 +43,13 @@ pub const INIT: CommandDoc = CommandDoc {
     after_help: "Full guide: https://www.evnx.dev/guides/commands/init",
 };
 
+pub const SPEC: CommandDoc = CommandDoc {
+    command: "spec",
+    url: "https://www.evnx.dev/guides/commands/spec",
+    description: "Declare what each variable is: required, format, secret",
+    after_help: "Full guide: https://www.evnx.dev/guides/commands/spec",
+};
+
 pub const ADD: CommandDoc = CommandDoc {
     command: "add",
     url: "https://www.evnx.dev/guides/commands/add",

@@ -7,6 +7,7 @@ pub mod init;
 pub mod migrate;
 pub mod restore;
 pub mod scan;
+pub mod spec;
 pub mod sync;
 pub mod template;
 pub mod validate;
