@@ -154,7 +154,7 @@ pub fn run(args: MigrateArgs) -> Result<()> {
     let dest = destinations::get_destination(&destination, &args)?;
     let result = dest.migrate(&secrets, &opts)?;
 
-    result.print_summary();
+    result.print_summary(dest.kind());
     if result.failed == 0 {
         dest.print_next_steps();
     }
@@ -165,17 +165,14 @@ pub fn run(args: MigrateArgs) -> Result<()> {
 // ─── Private helpers ─────────────────────────────────────────────────────────
 
 fn print_banner() {
-    println!(
-        "\n{}",
-        "┌─ Migrate secrets to a new system ───────────────────┐".cyan()
-    );
-    println!(
-        "{}",
-        "│ Move from .env to cloud secret managers             │".cyan()
-    );
-    println!(
-        "{}\n",
-        "└──────────────────────────────────────────────────────┘".cyan()
+    // ⚠️ This was three hand-typed box-drawing literals, and the bottom border
+    // was one column longer than the other two — 56 against 55. It escaped the
+    // v0.5.0 header pass because it never called `print_box`, so fixing that
+    // helper's arithmetic did not reach it. `migrate` was the last command
+    // still drawing a box at all.
+    ui::print_header(
+        "evnx migrate",
+        Some("Generate destination commands from your .env"),
     );
 }
 

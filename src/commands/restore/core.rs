@@ -446,7 +446,7 @@ fn print_metadata(metadata: &crate::commands::backup::BackupMetadata, content: &
     let tool_ver = format!("evnx v{}", metadata.tool_version);
     let var_count = crate::utils::count_dotenv_vars(content).to_string();
 
-    ui::print_section_header("📦", "Backup information");
+    ui::print_section_header("", "Backup information");
     ui::print_key_value(&[
         ("Schema version", &schema),
         ("Original file", &metadata.original_file),

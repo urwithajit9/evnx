@@ -22,12 +22,43 @@ pub struct MigrationResult {
     pub errors: Vec<String>,
 }
 
+/// Whether a destination performs the transfer itself, or writes out the
+/// commands for the operator to run.
+///
+/// ⚠️ This exists because the summary line used to lie. Eight of the nine
+/// destinations never contact the platform at all — they print
+/// `aws secretsmanager create-secret …` or `doppler secrets set …` for you to
+/// run — and every one of them still reported `✓ N uploaded`. A count of
+/// secrets that were *not* uploaded, labelled "uploaded", is the kind of thing
+/// somebody acts on by deleting their `.env`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DestinationKind {
+    /// evnx talks to the platform and the secrets are there when it returns.
+    Uploads,
+    /// evnx prints commands. Nothing has left the machine.
+    EmitsCommands,
+}
+
 impl MigrationResult {
     /// Pretty-print the summary table.
-    pub fn print_summary(&self) {
+    ///
+    /// `kind` decides the wording, because "uploaded" is only true for a
+    /// destination that actually uploaded.
+    pub fn print_summary(&self, kind: DestinationKind) {
         use colored::Colorize;
         println!("\n{}", "Summary:".bold());
-        println!("  ✓  {} uploaded", self.uploaded);
+        match kind {
+            DestinationKind::Uploads => {
+                println!("  ✓  {} uploaded", self.uploaded);
+            }
+            DestinationKind::EmitsCommands => {
+                println!("  ✓  {} command(s) generated", self.uploaded);
+                println!(
+                    "     {}",
+                    "nothing has been uploaded — run the commands above".yellow()
+                );
+            }
+        }
         if self.skipped > 0 {
             println!("  ⊘  {} skipped", self.skipped);
         }
@@ -132,6 +163,16 @@ pub struct MigrationOptions {
 pub trait MigrationDestination {
     /// Short display name shown in progress messages.
     fn name(&self) -> &str;
+
+    /// Does this destination upload, or print commands?
+    ///
+    /// ⚠️ Defaults to `EmitsCommands`, which is both the majority (eight of
+    /// nine) and the safe direction to be wrong in: a destination that forgets
+    /// to override this under-claims rather than reporting an upload that never
+    /// happened.
+    fn kind(&self) -> DestinationKind {
+        DestinationKind::EmitsCommands
+    }
 
     /// Perform (or simulate) the migration.
     ///

@@ -13,7 +13,6 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use dialoguer::Input;
 use indexmap::IndexMap;
 
 use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult};
@@ -28,17 +27,6 @@ impl AzureDestination {
     pub fn new(vault_name: String) -> Self {
         Self { vault_name }
     }
-
-    /// Interactive constructor — prompts only when `vault_name` is `None`.
-    pub fn interactive(vault_name: Option<String>) -> Result<Self> {
-        let name = match vault_name {
-            Some(n) => n,
-            None => Input::new()
-                .with_prompt("Azure Key Vault name")
-                .interact_text()?,
-        };
-        Ok(Self::new(name))
-    }
 }
 
 impl MigrationDestination for AzureDestination {
@@ -51,7 +39,10 @@ impl MigrationDestination for AzureDestination {
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!("\n{} Azure Key Vault migration", "☁️".cyan());
+        println!(
+            "\n{} Azure Key Vault migration",
+            crate::utils::ui::glyph::INFO.cyan()
+        );
         println!("{} Requires Azure CLI (`az`)", "·".cyan());
         println!("  Install: https://learn.microsoft.com/cli/azure/install-azure-cli");
 

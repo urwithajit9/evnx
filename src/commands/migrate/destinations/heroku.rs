@@ -11,7 +11,6 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use dialoguer::Input;
 use indexmap::IndexMap;
 
 use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult};
@@ -25,17 +24,6 @@ impl HerokuDestination {
     pub fn new(app: String) -> Self {
         Self { app }
     }
-
-    /// Interactive constructor — prompts only when `app` is `None`.
-    pub fn interactive(app: Option<String>) -> Result<Self> {
-        let app_name = match app {
-            Some(a) => a,
-            None => Input::new()
-                .with_prompt("Heroku app name")
-                .interact_text()?,
-        };
-        Ok(Self::new(app_name))
-    }
 }
 
 impl MigrationDestination for HerokuDestination {
@@ -48,7 +36,10 @@ impl MigrationDestination for HerokuDestination {
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!("\n{} Heroku Config Vars migration", "🟣".cyan());
+        println!(
+            "\n{} Heroku Config Vars migration",
+            crate::utils::ui::glyph::INFO.cyan()
+        );
         println!("{} Requires Heroku CLI", "·".cyan());
         println!("  Install: https://devcenter.heroku.com/articles/heroku-cli");
 

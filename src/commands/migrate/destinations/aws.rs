@@ -13,7 +13,6 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use dialoguer::Input;
 use indexmap::IndexMap;
 
 use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult};
@@ -34,19 +33,6 @@ impl AwsDestination {
             profile,
         }
     }
-
-    /// Interactive constructor — prompts for the secret name only when
-    /// `secret_name` is `None`. Called exclusively from `destinations::get()`.
-    pub fn interactive(secret_name: Option<String>, profile: Option<String>) -> Result<Self> {
-        let name = match secret_name {
-            Some(n) => n,
-            None => Input::new()
-                .with_prompt("Secret name (e.g. prod/myapp/config)")
-                .with_initial_text("prod/myapp/config")
-                .interact_text()?,
-        };
-        Ok(Self::new(name, profile))
-    }
 }
 
 impl MigrationDestination for AwsDestination {
@@ -59,7 +45,10 @@ impl MigrationDestination for AwsDestination {
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!("\n{} AWS Secrets Manager migration", "☁️".cyan());
+        println!(
+            "\n{} AWS Secrets Manager migration",
+            crate::utils::ui::glyph::INFO.cyan()
+        );
 
         let json = serde_json::to_string_pretty(secrets)?;
         let profile_flag = self
@@ -119,6 +108,7 @@ impl MigrationDestination for AwsDestination {
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::destination::DestinationKind;
     use super::*;
 
     fn make_secrets() -> IndexMap<String, String> {
@@ -141,8 +131,13 @@ mod tests {
         assert_eq!(result.uploaded, 0);
     }
 
+    /// ⚠️ Named `test_live_run_returns_uploaded` until v0.5.0, which was the
+    /// same confusion the summary line had: this destination does not upload.
+    /// A "live" run prints two `aws secretsmanager` commands and contacts
+    /// nothing. The count is of commands generated, which is why `kind()` is
+    /// `EmitsCommands` and the summary no longer says "uploaded".
     #[test]
-    fn test_live_run_returns_uploaded() {
+    fn test_live_run_generates_one_command_per_secret() {
         let dest = AwsDestination::new("prod/test".into(), Some("my-profile".into()));
         let opts = MigrationOptions {
             dry_run: false,
@@ -150,5 +145,6 @@ mod tests {
         };
         let result = dest.migrate(&make_secrets(), &opts).unwrap();
         assert_eq!(result.uploaded, 2);
+        assert_eq!(dest.kind(), DestinationKind::EmitsCommands);
     }
 }

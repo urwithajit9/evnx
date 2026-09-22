@@ -80,8 +80,13 @@ pub fn run(
     // staging` announced "Comparing .env ↔ .env.example" and then listed
     // differences between two entirely different files.
     if format == "pretty" {
-        // The last hand-rolled box in the CLI. `ui::print_header` gives the same
-        // context in one line and keeps `diff` consistent with everything else.
+        // `ui::print_header` gives the same context in one line and keeps `diff`
+        // consistent with everything else.
+        //
+        // ⚠️ This comment used to claim diff held "the last hand-rolled box in
+        // the CLI". It did not: `migrate` kept its own, built from three string
+        // literals rather than `print_box`, which is exactly why a sweep of the
+        // helper missed it. Removed in the same pass as this note.
         ui::print_header("evnx diff", Some(&format!("{env} ↔ {example}")));
     }
 
@@ -472,7 +477,7 @@ fn output_patch_interactive(
 ) -> Result<()> {
     use std::io::{self, Write};
 
-    println!("\n{}", "🔧 Interactive Merge Mode".bold());
+    println!("\n{}", "Interactive merge".bold());
     println!("Prompts: (y)es, (n)o, (s)kip rest\n");
 
     let mut applied = Vec::new();
@@ -500,7 +505,7 @@ fn output_patch_interactive(
     // Handle different values
     for item in &diff.different {
         print!(
-            "✏️  Update {}?\n   - {}\n   + {}? [y/n/s]: ",
+            "Update {}?\n   - {}\n   + {}? [y/n/s]: ",
             item.key, item.env_value, item.example_value
         );
         io::stdout().flush()?;

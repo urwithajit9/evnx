@@ -349,7 +349,7 @@ fn output_pretty(result: &ValidationResult, _env_path: &str, _example_path: &str
 
     // Show applied fixes first
     if !result.fixed.is_empty() {
-        ui::print_section_header("🔧", "Applied Fixes");
+        ui::print_section_header("", "Applied fixes");
         for fix in &result.fixed {
             let old = fix
                 .old_value

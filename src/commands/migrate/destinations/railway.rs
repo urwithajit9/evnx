@@ -36,7 +36,10 @@ impl MigrationDestination for RailwayDestination {
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!("\n{} Railway migration", "🚂".cyan());
+        println!(
+            "\n{} Railway migration",
+            crate::utils::ui::glyph::INFO.cyan()
+        );
         println!("{} Requires Railway CLI", "·".cyan());
         println!("  Install: npm install -g @railway/cli");
 
