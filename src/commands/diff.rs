@@ -485,7 +485,7 @@ fn output_patch_interactive(
     // Handle missing keys
     for key in &diff.missing {
         if let Some(val) = right.get(key) {
-            print!("➕ Add {}={}? [y/n/s]: ", key, val);
+            print!("Add {}={}? [y/n/s]: ", key, val);
             io::stdout().flush()?;
 
             let mut input = String::new();
