@@ -39,7 +39,10 @@ impl MigrationDestination for VercelDestination {
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!("\n{} Vercel environment variable migration", "▲".cyan());
+        println!(
+            "\n{} Vercel environment variable migration",
+            crate::utils::ui::glyph::INFO.cyan()
+        );
         println!(
             "{} Requires Vercel CLI",
             crate::utils::ui::glyph::INFO.cyan()
