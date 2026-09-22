@@ -43,14 +43,14 @@ use super::config::CloudConfig;
 use super::vault::{self, VaultRef};
 
 /// AES-GCM nonce length. The stored blob is `nonce || ciphertext`.
-const NONCE_LEN: usize = 12;
+pub(crate) const NONCE_LEN: usize = 12;
 
 /// Work out which vault a command means.
 ///
 /// `--vault` wins; otherwise the directory's binding from `.evnx.toml`. When the
 /// binding is used it is announced, so a push never goes somewhere the person
 /// running it cannot see from the output.
-fn resolve_target(explicit: Option<String>) -> Result<String> {
+pub(crate) fn resolve_target(explicit: Option<String>) -> Result<String> {
     if let Some(v) = explicit {
         return Ok(v);
     }
@@ -560,7 +560,7 @@ fn human_size(bytes: i64) -> String {
 ///
 /// The server answers 404 for a vault with no versions, which is not an error
 /// here — it is the starting state.
-fn current_version(client: &Client, vault_ref: &VaultRef) -> Result<i32> {
+pub(crate) fn current_version(client: &Client, vault_ref: &VaultRef) -> Result<i32> {
     match client.get::<LatestVersion>(&format!("/api/v1/vaults/{}/versions/latest", vault_ref.id)) {
         Ok(v) => Ok(v.version_num),
         Err(ApiError::NotFound { .. }) => Ok(0),
@@ -580,7 +580,7 @@ fn current_version(client: &Client, vault_ref: &VaultRef) -> Result<i32> {
 ///   the master key.
 ///
 /// Anything else is a malformed row and is refused rather than guessed at.
-fn unwrap_vault_key(
+pub(crate) fn unwrap_vault_key(
     client: &Client,
     vault_ref: &VaultRef,
     master_key: &evnx_crypto::MasterKey,

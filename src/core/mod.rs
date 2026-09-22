@@ -2,6 +2,7 @@ pub mod config;
 pub mod converter;
 pub mod env_name;
 pub mod gitignore;
+pub mod glob;
 pub mod parser;
 pub mod spec;
 

@@ -629,6 +629,73 @@ pub enum CloudCommands {
         password_stdin: bool,
     },
 
+    /// Run a command with a vault's variables in its environment.
+    ///
+    /// The secrets are decrypted in memory and handed to the child process.
+    /// Nothing is written to disk, nothing enters your shell history, and
+    /// nothing appears in `ps` — values travel in the environment block, never
+    /// in the argument vector.
+    ///
+    /// ⚠️ This removes the plaintext *file*, not the master password. The vault
+    /// key is wrapped under your master key, so decryption needs it wherever
+    /// this runs; in CI, feed it with --password-stdin.
+    ///
+    /// The command runs directly, not through a shell. For a pipeline or a
+    /// shell builtin, ask for one: `-- sh -c 'a | b'`.
+    ///
+    /// `--version` here means the vault version, so clap's auto-generated
+    /// `--version` is disabled on this subcommand, as it is on `pull`. Use
+    /// `evnx --version` for the program version.
+    #[command(disable_version_flag = true)]
+    Run {
+        /// Vault to read: `name`, `name/environment`, or an id.
+        ///
+        /// Optional in a directory bound with `evnx cloud link`.
+        #[arg(long, value_name = "VAULT")]
+        vault: Option<String>,
+
+        /// Version to inject. Defaults to the latest.
+        #[arg(long, value_name = "N")]
+        version: Option<i32>,
+
+        /// Inject only variables whose name matches one of these globs.
+        ///
+        /// Example: --include "DB_*,AWS_*"
+        ///
+        /// Least privilege for a subprocess: a build step that needs only
+        /// `NEXT_PUBLIC_*` has no reason to be handed your database password.
+        #[arg(long, value_delimiter = ',', value_name = "GLOB")]
+        include: Option<Vec<String>>,
+
+        /// Skip variables whose name matches one of these globs.
+        ///
+        /// Example: --exclude "*_LOCAL,*_TEST"
+        ///
+        /// Applied after --include, so a name matching both is skipped.
+        #[arg(long, value_delimiter = ',', value_name = "GLOB")]
+        exclude: Option<Vec<String>>,
+
+        /// Read the master password from stdin instead of prompting.
+        ///
+        /// Only the first line is consumed; the child inherits the rest of
+        /// stdin.
+        #[arg(long)]
+        password_stdin: bool,
+
+        /// The command to run, after `--`.
+        ///
+        /// `last = true` makes the separator mandatory, so a flag meant for the
+        /// child — `-- npm run build --prod` — cannot be mistaken for one of
+        /// evnx's own.
+        #[arg(
+            last = true,
+            required = true,
+            allow_hyphen_values = true,
+            value_name = "COMMAND"
+        )]
+        command: Vec<String>,
+    },
+
     /// List a vault's versions, newest first.
     ///
     /// Read-only: no password, no decryption, no blob download.

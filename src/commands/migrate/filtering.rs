@@ -88,33 +88,10 @@ pub fn apply_filters(
     result
 }
 
-/// Minimal glob matching supporting `*` (any sequence of chars) and `?`
-/// (any single char). Case-sensitive.
-///
-/// This avoids a dependency on the `glob` crate for the common `PREFIX_*`
-/// pattern used in .env key filtering.
-pub fn glob_match(pattern: &str, text: &str) -> bool {
-    glob_match_inner(pattern.as_bytes(), text.as_bytes())
-}
-
-fn glob_match_inner(pattern: &[u8], text: &[u8]) -> bool {
-    match (pattern.first(), text.first()) {
-        (None, None) => true,
-        (Some(b'*'), _) => {
-            // Try consuming zero or more characters from text
-            if glob_match_inner(&pattern[1..], text) {
-                return true;
-            }
-            if !text.is_empty() {
-                return glob_match_inner(pattern, &text[1..]);
-            }
-            false
-        }
-        (Some(b'?'), Some(_)) => glob_match_inner(&pattern[1..], &text[1..]),
-        (Some(p), Some(t)) if p == t => glob_match_inner(&pattern[1..], &text[1..]),
-        _ => false,
-    }
-}
+// ⚠️ Moved to `core::glob` so `cloud::run` can use the same matcher. A cloud
+// command reaching into a migrate command for a string utility is the wrong
+// shape, and a copy would have made three implementations in one crate.
+pub use crate::core::glob::glob_match;
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
