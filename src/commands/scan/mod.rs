@@ -30,6 +30,7 @@
 //!     "pretty".to_string(),        // format
 //!     false,                       // exit_zero
 //!     false,                       // verbose
+//!     Default::default(),          // spec — empty means heuristics only
 //! ).unwrap();
 //! ```
 //!
@@ -121,6 +122,7 @@ pub const EXIT_ERROR: i32 = 2;
 ///     "pretty".to_string(),    // format
 ///     false,                   // exit_zero
 ///     false,                   // verbose
+///     Default::default(),      // spec — `[vars]` from .evnx.toml, if any
 /// ).unwrap();
 /// ```
 #[allow(clippy::too_many_arguments)]
@@ -133,6 +135,7 @@ pub fn run(
     format: String,
     exit_zero: bool,
     verbose: bool,
+    spec: crate::core::spec::Spec,
 ) -> Result<(), anyhow::Error> {
     // Trouble prints here and exits 2 rather than propagating to `main`, which
     // would format it as a generic error and collapse it onto 1 — the code that
@@ -140,8 +143,13 @@ pub fn run(
     let scan = || -> Result<bool, anyhow::Error> {
         let min_confidence: Confidence = severity.parse()?;
         let output_format: OutputFormat = format.parse()?;
-        let runner =
-            ScanRunner::with_min_confidence(&exclude, ignore_placeholders, verbose, min_confidence);
+        let runner = ScanRunner::with_spec(
+            &exclude,
+            ignore_placeholders,
+            verbose,
+            min_confidence,
+            spec.clone(),
+        );
         runner.run(paths, output_format)
     };
 

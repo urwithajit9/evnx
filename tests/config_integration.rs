@@ -400,3 +400,111 @@ fn every_named_format_is_accepted_by_the_parser() {
             .success();
     }
 }
+
+// ─── [vars] secret — slice 4 of Proposal D ──────────────────────────────────
+
+fn scan_project(env: &str, config: &str) -> TempDir {
+    let d = TempDir::new().unwrap();
+    fs::write(d.path().join(".env"), env).unwrap();
+    if !config.is_empty() {
+        fs::write(d.path().join(".evnx.toml"), config).unwrap();
+    }
+    d
+}
+
+/// ⚠️ The false negative the heuristics cannot reach. A real credential whose
+/// name gives nothing away — no SECRET, no KEY, no recognisable value prefix —
+/// scans clean and exits 0. Declaring it is the only way to say so.
+#[test]
+fn a_declared_secret_is_reported_even_when_nothing_recognises_it() {
+    let env = "TENANT_A=9f3a7c21b85e4d0fa62c\n";
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(scan_project(env, "").path())
+        .args(["scan", "."])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No secrets detected"));
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(scan_project(env, "[vars.TENANT_A]\nsecret = true\n").path())
+        .args(["scan", "."])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("Declared secret"))
+        .stdout(predicate::str::contains("TENANT_A"));
+}
+
+/// A declaration says the variable holds a secret, not that every string in it
+/// is one. Flagging an empty or placeholder value would train people to ignore
+/// the scanner.
+#[test]
+fn a_declared_secret_that_is_empty_or_a_placeholder_is_not_reported() {
+    for value in ["", "YOUR_KEY_HERE", "changeme"] {
+        cargo_bin_cmd!("evnx")
+            .current_dir(
+                scan_project(
+                    &format!("TENANT_A={value}\n"),
+                    "[vars.TENANT_A]\nsecret = true\n",
+                )
+                .path(),
+            )
+            .args(["scan", "."])
+            .assert()
+            .success();
+    }
+}
+
+/// `secret = false` retracts a guess made from the variable's NAME.
+#[test]
+fn secret_false_retracts_a_name_based_finding() {
+    let env = "INTERNAL_SECRET=a-long-looking-config-value-not-a-key\n";
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(scan_project(env, "").path())
+        .args(["scan", "."])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("INTERNAL_SECRET"));
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(scan_project(env, "[vars.INTERNAL_SECRET]\nsecret = false\n").path())
+        .args(["scan", "."])
+        .assert()
+        .success();
+}
+
+/// ⚠️ The safety property. `.evnx.toml` is committed, so if a declaration could
+/// retract a match on the VALUE, one wrong line would silence a live credential
+/// for everyone who clones the repository. It cannot.
+#[test]
+fn secret_false_cannot_silence_a_live_key_in_the_value() {
+    let d = scan_project(
+        "STRIPE_SECRET_KEY=sk_live_4eC39HqLyjWDarjtT1zdp7dc\n",
+        "[vars.STRIPE_SECRET_KEY]\nsecret = false\n",
+    );
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", "."])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("Stripe"));
+}
+
+/// Loosening scanning from a committed file is announced, as `scan.exclude`
+/// already is.
+///
+/// ⚠️ On **stderr**, not stdout — `nothing_about_config_reaches_stdout` above
+/// pins that, so a `--format json` consumer never has the banner spliced into
+/// the document it is parsing.
+#[test]
+fn secret_false_is_announced_as_a_security_override() {
+    let d = scan_project("A=1\n", "[vars.A]\nsecret = false\n");
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", "."])
+        .assert()
+        .stderr(predicate::str::contains("vars.secret=false on 1"));
+}

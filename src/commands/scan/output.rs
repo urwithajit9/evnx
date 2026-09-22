@@ -190,7 +190,16 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
             finding.value_preview
         );
 
-        if finding.confidence == Confidence::High {
+        // ⚠️ Two different reasons a finding is high-confidence, and they need
+        // different sentences. A pattern match really did recognise a live key
+        // format; a declared secret matched nothing — the project said so.
+        if finding.pattern == super::detector::DECLARED_SECRET {
+            println!(
+                "     {}  {}",
+                glyph::INFO.dimmed(),
+                "declared `secret = true` in .evnx.toml".dimmed()
+            );
+        } else if finding.confidence == Confidence::High {
             println!(
                 "     {}  {}",
                 glyph::WARN.yellow(),

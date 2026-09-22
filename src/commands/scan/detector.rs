@@ -206,6 +206,20 @@ pub trait SecretDetector: Send + Sync {
     /// `Some(Detection)` if a secret is found, `None` otherwise.
     fn scan_kv(&self, key: &str, value: &str, location: &str) -> Option<Detection>;
 
+    /// Does this detector reach its verdict from the **value**, or from the
+    /// variable's name?
+    ///
+    /// ⚠️ This decides whether a project's `secret = false` can retract the
+    /// finding. A declaration says what a variable is *for*; it cannot make
+    /// `sk_live_4eC39Hq…` not a live Stripe key. So a value-based detector
+    /// outranks the declaration, and a name-based one does not.
+    ///
+    /// Without the distinction, one line in a committed `.evnx.toml` would
+    /// silence a real credential for everyone who clones the repository.
+    fn judges_value(&self) -> bool {
+        true
+    }
+
     /// Scan a raw token for secrets.
     ///
     /// Used for general text files where key-value structure isn't present.
@@ -237,8 +251,40 @@ pub trait SecretDetector: Send + Sync {
 ///     println!("Found: {}", detection.pattern);
 /// }
 /// ```
+/// The pattern name used when the spec, not a heuristic, is what flagged a
+/// variable.
+///
+/// ⚠️ Shared with `output.rs`, which suppresses "matches a live key format" for
+/// it — a declared secret matched no format, and saying otherwise would be a
+/// confident false claim in the one place people go to decide whether a finding
+/// is real.
+pub const DECLARED_SECRET: &str = "Declared secret";
+
+/// Would reporting this value help anyone?
+///
+/// An empty value is not a leak, and neither is an obvious placeholder. A
+/// declaration says "this variable holds a secret", not "every string ever
+/// found here is one" — flagging `API_KEY=` because the spec declares it would
+/// train people to ignore the scanner.
+fn value_is_worth_reporting(value: &str) -> bool {
+    let v = value.trim();
+    if v.is_empty() {
+        return false;
+    }
+    let upper = v.to_ascii_uppercase();
+    !(upper.starts_with("YOUR_")
+        || upper.starts_with("<")
+        || upper == "CHANGEME"
+        || upper == "TODO"
+        || upper.contains("PLACEHOLDER")
+        || upper.contains("EXAMPLE"))
+}
+
 pub struct DetectorRegistry {
     detectors: Vec<Box<dyn SecretDetector>>,
+    /// The project's declared contract, when it has one. Empty otherwise, which
+    /// means every heuristic behaves exactly as it did before specs existed.
+    spec: crate::core::spec::Spec,
 }
 
 impl DetectorRegistry {
@@ -258,12 +304,22 @@ impl DetectorRegistry {
     pub fn new() -> Self {
         let mut registry = Self {
             detectors: Vec::new(),
+            spec: Default::default(),
         };
         // Register default detectors
         registry.register(PatternDetector);
         registry.register(ConfigKeyDetector);
         // Future: registry.register(EntropyDetector::default());
         registry
+    }
+
+    /// Give the registry the project's declared contract.
+    ///
+    /// An empty spec — which is every project that has not written one — leaves
+    /// every heuristic behaving exactly as it did before.
+    pub fn with_spec(mut self, spec: crate::core::spec::Spec) -> Self {
+        self.spec = spec;
+        self
     }
 
     /// Register a new detector with the registry.
@@ -300,10 +356,52 @@ impl DetectorRegistry {
     ///
     /// Vector of all detections (may be empty if no secrets found).
     pub fn scan_kv(&self, key: &str, value: &str, location: &str) -> Vec<Detection> {
-        self.detectors
+        // ⚠️ A declaration is authority, not another guess, which is why the
+        // spec is consulted here rather than registered as one more detector.
+        //
+        // A detector can only *add* a finding — there is no way for one to
+        // retract another's — so `secret = false` could not be expressed as one
+        // at all. And putting the positive half somewhere else would split the
+        // spec's meaning across two places, where a future `--only-detector`
+        // flag could silently disable a declaration the project made.
+        let declared = self.spec.get(key).and_then(|v| v.secret);
+
+        // Declared not a secret: the project has looked at this variable and
+        // said so, which retracts a guess made from its **name**.
+        //
+        // ⚠️ It does not retract a match on the **value**. `secret = false` on a
+        // variable holding `sk_live_4eC39Hq…` still reports the Stripe key,
+        // because no statement about what a variable is for can make its
+        // contents stop being a live credential — and `.evnx.toml` is committed,
+        // so a single wrong line would otherwise silence it for everyone who
+        // clones the repository.
+        let suppress_name_based = declared == Some(false);
+
+        let mut found: Vec<Detection> = self
+            .detectors
             .iter()
+            .filter(|d| !(suppress_name_based && !d.judges_value()))
             .filter_map(|d| d.scan_kv(key, value, location))
-            .collect()
+            .collect();
+
+        if suppress_name_based {
+            return found;
+        }
+
+        // Declared a secret and nothing recognised it — which is the case the
+        // heuristics cannot reach. `TENANT_A=9f3a7c21b85e4d0fa62c` is a real
+        // credential with a name that gives nothing away, and before this it
+        // scanned clean.
+        if found.is_empty() && declared == Some(true) && value_is_worth_reporting(value) {
+            found.push(Detection {
+                pattern: DECLARED_SECRET.to_string(),
+                confidence: Confidence::High,
+                action_url: None,
+                matched_value: value.to_string(),
+            });
+        }
+
+        found
     }
 
     /// Scan a raw token through all registered detectors.
@@ -379,6 +477,13 @@ pub struct ConfigKeyDetector;
 impl SecretDetector for ConfigKeyDetector {
     fn name(&self) -> &str {
         "config-key-matcher"
+    }
+
+    /// Name-based: it flags `INTERNAL_SECRET` because of what it is called, not
+    /// because of what it holds. That is exactly the guess a project should be
+    /// able to retract with `secret = false`.
+    fn judges_value(&self) -> bool {
+        false
     }
 
     fn applies_to(&self, path: &Path) -> bool {

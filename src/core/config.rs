@@ -166,6 +166,19 @@ impl Config {
         if self.scan.ignore_placeholders == Some(true) {
             out.push("scan.ignore_placeholders=true".to_string());
         }
+        // ⚠️ `secret = false` retracts a name-based finding, and this file is
+        // committed — so one line silences a warning for everyone who clones.
+        // It cannot retract a match on the value (see `SecretDetector::
+        // judges_value`), but it is still a deliberate loosening and belongs in
+        // the same announcement as `scan.exclude`.
+        let silenced = self
+            .vars
+            .values()
+            .filter(|v| v.secret == Some(false))
+            .count();
+        if silenced > 0 {
+            out.push(format!("vars.secret=false on {silenced} variable(s)"));
+        }
         out
     }
 
