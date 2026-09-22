@@ -83,6 +83,11 @@ pub(super) struct SyncCtx {
     pub force: bool,
     pub template_config: Option<PathBuf>,
     pub naming_policy: NamingPolicy,
+    /// The project's declared contract, when it has one.
+    ///
+    /// ⚠️ Used by the reverse direction only. Forward sync makes the template
+    /// match `.env`, and a spec has no values to contribute to that.
+    pub spec: crate::core::spec::Spec,
 }
 
 /// Main execution entry point (called from mod.rs).
@@ -142,6 +147,7 @@ pub fn execute(ctx: SyncCtx) -> Result<bool> {
             ctx.force,
             &config,
             ctx.naming_policy,
+            &ctx.spec,
         ),
     };
     // Only print hint on success — noise-free error output
@@ -497,6 +503,7 @@ fn handle_new_example_file(
 // Reverse Sync: .env.example → .env
 // ─────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn sync_reverse(
     paths: &SyncPaths,
     _use_placeholders: bool,
@@ -505,6 +512,7 @@ fn sync_reverse(
     force: bool,
     config: &PlaceholderConfig,
     naming_policy: NamingPolicy,
+    spec: &crate::core::spec::Spec,
 ) -> Result<bool> {
     if verbose {
         eprintln!("[DEBUG] Running reverse sync");
@@ -549,9 +557,28 @@ fn sync_reverse(
         return handle_new_env_file(paths, &example_file.vars, dry_run, config);
     };
 
-    let env_keys: HashSet<_> = env_file.vars.keys().collect();
-    let example_keys: HashSet<_> = example_file.vars.keys().collect();
-    let missing: Vec<_> = example_keys.difference(&env_keys).cloned().collect();
+    // ⚠️ The template is not the only thing that declares a variable.
+    //
+    // Before this, `evnx validate` would report a spec-declared variable as
+    // missing while `evnx sync --direction reverse` said ".env is up to date" —
+    // two commands contradicting each other about the same variable in the same
+    // project. A contract that `validate` enforces and `sync` cannot satisfy is
+    // half a feature.
+    //
+    // Only variables that are **required** and **apply to this file** are added.
+    // An optional one being absent is permitted by the contract, so inventing a
+    // placeholder for it would be work the project did not ask for.
+    let env_path_owned = paths.env_str();
+    let env_label = crate::core::env_name::name_of(&env_path_owned);
+    let mut declared: Vec<String> = example_file.vars.keys().cloned().collect();
+    for (name, var) in spec {
+        if var.is_required() && var.applies_to(env_label) && !declared.contains(name) {
+            declared.push(name.clone());
+        }
+    }
+
+    let env_keys: HashSet<&String> = env_file.vars.keys().collect();
+    let missing: Vec<&String> = declared.iter().filter(|k| !env_keys.contains(*k)).collect();
 
     if missing.is_empty() {
         ui::success(".env is up to date");
@@ -870,7 +897,11 @@ fn add_from_example(
     use_placeholders: bool,
 ) -> Result<()> {
     let mut content = fs::read_to_string(&paths.env).unwrap_or_default();
-    content.push_str(&format!("\n# Synced from {}\n", paths.example_str()));
+    // ⚠️ Not "Synced from .env.example". Since the contract became a source,
+    // a variable reaching `.env` here may have been declared in `[vars]` and
+    // never appear in the template at all — naming the template would put a
+    // false statement in a file the user reads.
+    content.push_str("\n# Added by evnx sync\n");
 
     for key in keys {
         let value = if use_placeholders {

@@ -10,6 +10,7 @@
 //! is for).
 
 pub mod infer;
+pub mod writeback;
 
 use anyhow::{bail, Context, Result};
 use std::collections::BTreeMap;

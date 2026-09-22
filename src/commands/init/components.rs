@@ -335,6 +335,7 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
             &addition,
             crate::commands::add::shared::AppendMode::SkipConflicts,
             verbose,
+            &vars,
         )?;
     } else {
         let example_content = formatter::format_env_example(&vars, true)?;

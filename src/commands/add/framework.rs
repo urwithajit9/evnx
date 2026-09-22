@@ -92,6 +92,7 @@ pub fn handle(
         &content,
         AppendMode::WithConflictWarning,
         verbose,
+        &vars,
     )?;
 
     println!(

@@ -508,3 +508,156 @@ fn secret_false_is_announced_as_a_security_override() {
         .assert()
         .stderr(predicate::str::contains("vars.secret=false on 1"));
 }
+
+// ─── Slice 5 — keeping the contract current ─────────────────────────────────
+
+/// 5a. ⚠️ The drift this closes. Before it, adopting a spec and then adding
+/// anything left the contract describing a project that no longer existed:
+/// `evnx add service redis` wrote REDIS_PASSWORD to .env.example, nothing
+/// reached [vars], and `evnx validate` still said "All checks passed".
+#[test]
+fn add_records_new_variables_in_the_contract() {
+    let d = TempDir::new().unwrap();
+    fs::write(d.path().join(".env"), "EXISTING=1\n").unwrap();
+    fs::write(d.path().join(".env.example"), "EXISTING=\n").unwrap();
+    fs::write(
+        d.path().join(".evnx.toml"),
+        "[vars.EXISTING]\nrequired = true\n",
+    )
+    .unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["add", "service", "redis", "--yes"])
+        .assert()
+        .success();
+
+    let spec = fs::read_to_string(d.path().join(".evnx.toml")).unwrap();
+    assert!(spec.contains("[vars.REDIS_PASSWORD]"), "{spec}");
+    // The same inference `spec init` uses, so an entry does not depend on which
+    // command introduced it.
+    assert!(
+        spec.contains("secret = true"),
+        "password not declared secret:\n{spec}"
+    );
+    assert!(
+        spec.contains("format = \"port\""),
+        "port not inferred:\n{spec}"
+    );
+}
+
+/// A project that never opted in is left alone, and not nagged about a feature
+/// it has not adopted.
+#[test]
+fn add_says_nothing_about_the_contract_when_there_is_no_config() {
+    let d = TempDir::new().unwrap();
+    fs::write(d.path().join(".env"), "A=1\n").unwrap();
+    fs::write(d.path().join(".env.example"), "A=\n").unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["add", "service", "redis", "--yes"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("[vars]").not());
+
+    assert!(
+        !d.path().join(".evnx.toml").exists(),
+        "a config was created uninvited"
+    );
+}
+
+/// A config without a contract has opted into the file, so pointing at
+/// `evnx spec init` is an answer rather than an advertisement — on stderr, and
+/// never fatal.
+#[test]
+fn add_points_at_spec_init_when_the_config_has_no_vars() {
+    let d = TempDir::new().unwrap();
+    fs::write(d.path().join(".env"), "A=1\n").unwrap();
+    fs::write(d.path().join(".env.example"), "A=\n").unwrap();
+    fs::write(d.path().join(".evnx.toml"), "[scan]\nseverity = \"high\"\n").unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["add", "service", "postgresql", "--yes"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("no [vars] section"))
+        .stderr(predicate::str::contains("evnx spec init"));
+}
+
+/// 5b. ⚠️ Two commands used to contradict each other about the same variable:
+/// `validate` reported it missing while `sync --direction reverse` said ".env is
+/// up to date", because the spec was not a source.
+#[test]
+fn sync_reverse_adds_what_the_contract_declares() {
+    let d = TempDir::new().unwrap();
+    fs::write(d.path().join(".env"), "EXISTING=1\n").unwrap();
+    fs::write(d.path().join(".env.example"), "EXISTING=\n").unwrap();
+    fs::write(
+        d.path().join(".evnx.toml"),
+        "[vars.EXISTING]\n[vars.ONLY_IN_SPEC]\nrequired = true\n[vars.OPTIONAL_ONE]\nrequired = false\n",
+    )
+    .unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["sync", "--direction", "reverse", "--force"])
+        .assert()
+        .success();
+
+    let env = fs::read_to_string(d.path().join(".env")).unwrap();
+    assert!(
+        env.contains("ONLY_IN_SPEC"),
+        "declared variable not added:\n{env}"
+    );
+    // An optional variable being absent is permitted by the contract, so
+    // inventing a placeholder for it would be work nobody asked for.
+    assert!(
+        !env.contains("OPTIONAL_ONE"),
+        "optional variable added:\n{env}"
+    );
+}
+
+/// `environments` narrows it here too — the same rule `validate` applies.
+#[test]
+fn sync_reverse_respects_the_environments_a_variable_applies_to() {
+    let d = TempDir::new().unwrap();
+    fs::write(d.path().join(".env"), "BASE=1\n").unwrap();
+    fs::write(d.path().join(".env.production"), "BASE=1\n").unwrap();
+    fs::write(d.path().join(".env.example"), "BASE=\n").unwrap();
+    fs::write(
+        d.path().join(".evnx.toml"),
+        "[vars.BASE]\n[vars.PROD_ONLY]\nenvironments = [\"production\"]\n",
+    )
+    .unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["sync", "--direction", "reverse", "--force"])
+        .assert()
+        .success();
+    let base = fs::read_to_string(d.path().join(".env")).unwrap();
+    assert!(
+        !base.contains("PROD_ONLY"),
+        "production-only leaked into .env:\n{base}"
+    );
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args([
+            "sync",
+            "--direction",
+            "reverse",
+            "--force",
+            "--env-name",
+            "production",
+        ])
+        .assert()
+        .success();
+    let prod = fs::read_to_string(d.path().join(".env.production")).unwrap();
+    assert!(
+        prod.contains("PROD_ONLY"),
+        "not added to production:\n{prod}"
+    );
+}

@@ -79,6 +79,7 @@ pub fn run(
     format: String,
     template_config: Option<PathBuf>,
     naming_policy: NamingPolicy,
+    spec: crate::core::spec::Spec,
 ) -> Result<()> {
     let paths = executor::SyncPaths {
         env: PathBuf::from(env),
@@ -114,6 +115,7 @@ pub fn run(
         force,
         template_config,
         naming_policy,
+        spec,
     };
 
     match executor::execute(ctx) {
@@ -154,6 +156,10 @@ mod tests {
 
     /// Pins the public signature so a change to it has to be deliberate.
     ///
+    /// ⚠️ Updated again for the spec: `[vars]` is now a source for the reverse
+    /// direction, so `run` takes it. This pin is the reason that change had to
+    /// be deliberate rather than discovered by a library consumer.
+    ///
     /// ⚠️ Updated 2026-09-21 again: `env` and `example` lead the list. `sync` was
     /// the only command that could not be pointed at a file, so the two paths it
     /// operates on are now arguments rather than 37 literals in the executor.
@@ -178,6 +184,7 @@ mod tests {
             String, // format
             Option<std::path::PathBuf>,
             crate::cli::NamingPolicy,
+            crate::core::spec::Spec,
         ) -> anyhow::Result<()> = run;
     }
 }

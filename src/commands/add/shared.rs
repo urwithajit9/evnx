@@ -70,6 +70,7 @@ pub fn append_to_env_files(
     addition: &str,
     mode: AppendMode,
     verbose: bool,
+    vars: &VarCollection,
 ) -> Result<()> {
     let example_path = output_path.join(".env.example");
     let env_path = output_path.join(".env");
@@ -139,6 +140,20 @@ pub fn append_to_env_files(
                 env_path.display()
             );
         }
+    }
+
+    // ⚠️ Here rather than in each caller, for the reason `add service`'s comment
+    // already gives: this subcommand carried its own copy of the write logic and
+    // so silently missed the `.gitignore` check that lives here. Anything added
+    // to this function reaches every `add` subcommand and `init` at once.
+    //
+    // A failure to record the contract must not fail the write that already
+    // happened — the variables are on disk either way, and an `evnx add` that
+    // reported an error after succeeding would be worse than one that says it
+    // could not update the spec.
+    match crate::commands::spec::writeback::record(output_path, vars) {
+        Ok(outcome) => crate::commands::spec::writeback::report(&outcome, verbose),
+        Err(e) => eprintln!("  could not update [vars]: {e:#}"),
     }
 
     Ok(())

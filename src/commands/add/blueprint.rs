@@ -99,7 +99,13 @@ pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) 
     let content = format!("{}{}", header, addition);
 
     // 7. Append to files (skip conflicts mode)
-    append_to_env_files(output_path, &content, AppendMode::SkipConflicts, verbose)?;
+    append_to_env_files(
+        output_path,
+        &content,
+        AppendMode::SkipConflicts,
+        verbose,
+        &filtered_vars,
+    )?;
 
     let added_count = filtered_vars.vars.len();
     println!(
