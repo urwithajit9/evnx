@@ -1236,6 +1236,16 @@ Use 'evnx convert' without --to for interactive format selection.
         verbose: bool,
     },
 
+    /// Declare what each variable is: required, format, secret.
+    ///
+    /// Writes `[vars.*]` into `.evnx.toml` — the contract `.env.example` cannot
+    /// express. A project with no spec behaves exactly as it does today.
+    #[command(after_help = docs::SPEC.after_help)]
+    Spec {
+        #[command(subcommand)]
+        action: SpecAction,
+    },
+
     /// Generate shell completions.
     // #[command(after_help = docs::INIT.after_help)]
     Completions { shell: String },
@@ -1261,4 +1271,36 @@ mod tests {
     fn cli_definition_is_valid() {
         Cli::command().debug_assert();
     }
+}
+
+/// `evnx spec` subcommands.
+#[derive(Subcommand, Debug)]
+pub enum SpecAction {
+    /// Generate a first spec from this project, or from named components.
+    Init {
+        /// Build from the component catalogue instead of the project's files.
+        ///
+        /// Example: --with django,postgres,redis
+        #[arg(long, value_delimiter = ',')]
+        with: Option<Vec<String>>,
+
+        /// The environment file to read sample values from.
+        #[arg(long, default_value = ".env")]
+        env: String,
+
+        /// The template that decides which variables are in the contract.
+        #[arg(long, default_value = ".env.example")]
+        example: String,
+
+        /// Print the generated block instead of writing it.
+        #[arg(long)]
+        stdout: bool,
+
+        /// Append even when `.evnx.toml` already has a `[vars]` section.
+        ///
+        /// ⚠️ The result will need merging by hand: TOML refuses a file that
+        /// declares the same table twice.
+        #[arg(long)]
+        force: bool,
+    },
 }

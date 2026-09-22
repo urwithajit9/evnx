@@ -220,3 +220,183 @@ fn the_banner_shows_where_the_config_came_from() {
         .assert()
         .stderr(predicate::str::contains("config    ../../.evnx.toml"));
 }
+
+// ─── [vars] — the variable contract (slice 1: parsed, not yet applied) ───────
+
+/// ⚠️ This test asserted the **opposite** until slice 3.
+///
+/// While `[vars]` was parsed and unread, `OPTIONAL_THING` was reported missing
+/// even though the spec declares `required = false`, because `validate` counted
+/// `.env.example` and the template cannot say "optional". That assertion was
+/// written to flip, and this is the flip: the contract is now load-bearing.
+#[test]
+fn an_optional_variable_is_no_longer_reported_missing() {
+    let d = TempDir::new().unwrap();
+    fs::write(
+        d.path().join(".env"),
+        "DATABASE_URL=postgres://h/d
+",
+    )
+    .unwrap();
+    fs::write(
+        d.path().join(".env.example"),
+        "DATABASE_URL=
+OPTIONAL_THING=
+",
+    )
+    .unwrap();
+    fs::write(
+        d.path().join(".evnx.toml"),
+        r#"
+[vars.DATABASE_URL]
+required = true
+format   = "url"
+secret   = true
+
+[vars.OPTIONAL_THING]
+required = false
+format   = "bool"
+"#,
+    )
+    .unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["validate"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("OPTIONAL_THING").not());
+}
+
+/// A project with no `[vars]` keeps the template-driven behaviour exactly.
+#[test]
+fn without_a_spec_the_template_still_decides() {
+    let d = TempDir::new().unwrap();
+    fs::write(
+        d.path().join(".env"),
+        "A=1
+",
+    )
+    .unwrap();
+    fs::write(
+        d.path().join(".env.example"),
+        "A=
+MISSING_ONE=
+",
+    )
+    .unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["validate"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("MISSING_ONE"));
+}
+
+/// A declared format is enforced, and the message says what was expected.
+#[test]
+fn a_declared_format_is_enforced() {
+    let d = TempDir::new().unwrap();
+    fs::write(
+        d.path().join(".env"),
+        "PORT=not-a-port
+",
+    )
+    .unwrap();
+    fs::write(
+        d.path().join(".env.example"),
+        "PORT=
+",
+    )
+    .unwrap();
+    fs::write(
+        d.path().join(".evnx.toml"),
+        "[vars.PORT]\nformat = \"port\"\n",
+    )
+    .unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["validate"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("PORT is not a port between"));
+}
+
+/// `environments` narrows the contract to the file actually being checked.
+#[test]
+fn an_environment_scoped_variable_only_applies_there() {
+    let d = TempDir::new().unwrap();
+    fs::write(
+        d.path().join(".env"),
+        "BASE=1
+",
+    )
+    .unwrap();
+    fs::write(
+        d.path().join(".env.staging"),
+        "BASE=1
+",
+    )
+    .unwrap();
+    fs::write(
+        d.path().join(".env.production"),
+        "BASE=1
+",
+    )
+    .unwrap();
+    fs::write(
+        d.path().join(".env.example"),
+        "BASE=
+",
+    )
+    .unwrap();
+    fs::write(
+        d.path().join(".evnx.toml"),
+        "[vars.BASE]\n[vars.PROD_ONLY]\nenvironments = [\"production\"]\n",
+    )
+    .unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["validate", "--env-name", "staging"])
+        .assert()
+        .success();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["validate", "--env-name", "production"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("PROD_ONLY"));
+}
+
+/// ⚠️ A regex that will not compile is refused when the config is read, not the
+/// first time a value happens to be checked against it. A contract that cannot
+/// be applied is broken whether or not anyone has tripped over it.
+#[test]
+fn a_spec_with_a_broken_regex_is_refused_at_load() {
+    let d = project("[vars.A]\nformat = \"([unclosed\"\n");
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["validate"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("regex"));
+}
+
+/// Named formats are accepted; the list is the one `--validate-formats` already
+/// implements, so the spec exposes existing behaviour rather than new checks.
+#[test]
+fn every_named_format_is_accepted_by_the_parser() {
+    for name in ["url", "int", "port", "bool", "email"] {
+        let d = project(&format!("[vars.A]\nformat = \"{name}\"\n"));
+        cargo_bin_cmd!("evnx")
+            .current_dir(d.path())
+            .args(["validate", "--exit-zero"])
+            .assert()
+            .success();
+    }
+}

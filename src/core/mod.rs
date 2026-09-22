@@ -3,6 +3,7 @@ pub mod converter;
 pub mod env_name;
 pub mod gitignore;
 pub mod parser;
+pub mod spec;
 
 // Re-export commonly used types
 pub use config::Config;

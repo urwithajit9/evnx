@@ -5,7 +5,7 @@ use clap::Parser;
 use colored::Colorize;
 use std::path::Path;
 
-use evnx::cli::{Cli, Commands};
+use evnx::cli::{Cli, Commands, SpecAction};
 use evnx::commands;
 use evnx::core::converter::KeyTransform;
 
@@ -107,6 +107,7 @@ fn main() -> Result<()> {
             cli.verbose,
             evnx::core::config::extend(ignore, cfg.validate.ignore),
             evnx::core::config::any(validate_formats, cfg.validate.validate_formats),
+            cfg.vars.clone(),
         ),
 
         Commands::Scan {
@@ -414,6 +415,16 @@ fn main() -> Result<()> {
             fix,
             strict,
         ),
+
+        Commands::Spec { action } => match action {
+            SpecAction::Init {
+                with,
+                env,
+                example,
+                stdout,
+                force,
+            } => commands::spec::run(with, env, example, stdout, force, cli.verbose),
+        },
 
         Commands::Completions { shell } => commands::completions::run(shell),
     }

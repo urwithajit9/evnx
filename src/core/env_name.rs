@@ -325,3 +325,60 @@ mod tests {
         assert_eq!(available(dir.path()), vec!["production", "test"]);
     }
 }
+
+/// The environment name a resolved path refers to, if any.
+///
+/// `.env.production` → `Some("production")`, and the plain `.env` → `None`
+/// because it is not an environment: it is the base file every declared
+/// variable applies to.
+///
+/// ⚠️ Derived from the path that will actually be read, not from the flag that
+/// asked for it. `--env-name production` and `--env .env.production` are the
+/// same run, and a spec's `environments` list has to treat them that way.
+pub fn name_of(path: &str) -> Option<&str> {
+    let file = std::path::Path::new(path).file_name()?.to_str()?;
+    let rest = file.strip_prefix(".env.")?;
+    // `.env.example` and `.env.local.bak` are not environments anyone declares
+    // rules for; an empty remainder is not a name at all.
+    if rest.is_empty() || rest == "example" || rest == "sample" || rest == "template" {
+        return None;
+    }
+    // Re-borrow from `path` so the lifetime is the caller's.
+    let at = path.len() - rest.len();
+    Some(&path[at..])
+}
+
+#[cfg(test)]
+mod name_of_tests {
+    use super::name_of;
+
+    #[test]
+    fn a_dotted_suffix_is_the_environment_name() {
+        assert_eq!(name_of(".env.production"), Some("production"));
+        assert_eq!(name_of("./.env.staging"), Some("staging"));
+        assert_eq!(name_of("/srv/app/.env.local"), Some("local"));
+    }
+
+    /// The base file is not an environment — a spec's `environments` list must
+    /// not exclude anything from it.
+    #[test]
+    fn the_plain_env_file_has_no_name() {
+        assert_eq!(name_of(".env"), None);
+        assert_eq!(name_of("./.env"), None);
+        assert_eq!(name_of("/srv/app/.env"), None);
+    }
+
+    /// Templates are not environments either.
+    #[test]
+    fn templates_are_not_environments() {
+        assert_eq!(name_of(".env.example"), None);
+        assert_eq!(name_of(".env.sample"), None);
+        assert_eq!(name_of(".env.template"), None);
+    }
+
+    #[test]
+    fn a_path_that_is_not_an_env_file_has_no_name() {
+        assert_eq!(name_of("config.toml"), None);
+        assert_eq!(name_of(""), None);
+    }
+}

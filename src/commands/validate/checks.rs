@@ -411,3 +411,223 @@ mod tests {
         assert!(issues[0].message.contains("string, not boolean"));
     }
 }
+
+// ─────────────────────────────────────────────────────────────
+// Spec-aware checks — slice 3 of Proposal D
+//
+// ⚠️ These run **instead of** `check_missing_variables` when the project
+// declares a `[vars]` contract, not alongside it. Both answer "what is
+// required", and the template's answer is the one the spec exists to replace:
+// `.env.example` cannot say optional, so every line in it counts.
+// ─────────────────────────────────────────────────────────────
+
+use crate::core::spec::Spec;
+
+/// Variables the spec declares required, applicable to this environment, and
+/// absent from the file being checked.
+pub fn check_spec_required(
+    env_vars: &IndexMap<String, String>,
+    spec: &Spec,
+    env_name: Option<&str>,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if ignore.contains(IssueType::MissingVariable.as_str()) {
+        return Vec::new();
+    }
+
+    crate::core::spec::missing_required(spec, |k| env_vars.contains_key(k), env_name)
+        .into_iter()
+        .map(|key| Issue {
+            severity: "error".to_string(),
+            issue_type: IssueType::MissingVariable.as_str().to_string(),
+            variable: key.to_string(),
+            message: format!("Missing required variable: {key}"),
+            location: env_path.to_string(),
+            suggestion: Some(match spec.get(key).and_then(|v| v.description.as_deref()) {
+                // The spec already says what the variable is for, so the
+                // suggestion can say it too rather than repeating the name.
+                Some(d) => format!("Add {key}=<value> to {env_path} — {d}"),
+                None => format!("Add {key}=<value> to {env_path}"),
+            }),
+            auto_fixable: true,
+        })
+        .collect()
+}
+
+/// Values that do not match the format their `[vars]` entry declares.
+///
+/// ⚠️ An empty value is not reported here. It is either a missing variable —
+/// which `check_spec_required` already covers — or a deliberate blank, and
+/// reporting the same fact twice under two names makes a report harder to act
+/// on, not more thorough.
+pub fn check_spec_format(
+    env_vars: &IndexMap<String, String>,
+    spec: &Spec,
+    env_name: Option<&str>,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if ignore.contains(IssueType::FormatMismatch.as_str()) {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    for (key, value) in env_vars {
+        let Some(declared) = spec.get(key) else {
+            continue;
+        };
+        if !declared.applies_to(env_name) {
+            continue;
+        }
+        let Some(format) = &declared.format else {
+            continue;
+        };
+        if value.trim().is_empty() || format.matches(value.trim()) {
+            continue;
+        }
+
+        out.push(Issue {
+            severity: "error".to_string(),
+            issue_type: IssueType::FormatMismatch.as_str().to_string(),
+            variable: key.clone(),
+            message: format!("{key} is not {}", format.describe()),
+            location: env_path.to_string(),
+            suggestion: Some(format!("Fix the value, or relax `format` in [vars.{key}]")),
+            // ⚠️ Not auto-fixable, and must not become so. evnx knows the value
+            // is wrong; it has no idea what the right one is.
+            auto_fixable: false,
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod spec_check_tests {
+    use super::*;
+    use crate::core::spec::Spec;
+
+    fn spec(src: &str) -> Spec {
+        #[derive(serde::Deserialize)]
+        struct W {
+            #[serde(default)]
+            vars: Spec,
+        }
+        toml::from_str::<W>(src).expect("valid spec").vars
+    }
+
+    fn env(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn an_optional_variable_is_not_reported_missing() {
+        let s = spec("[vars.NEEDED]\n[vars.OPTIONAL]\nrequired = false\n");
+        let issues = check_spec_required(&env(&[]), &s, None, ".env", &HashSet::new());
+        let names: Vec<&str> = issues.iter().map(|i| i.variable.as_str()).collect();
+        assert_eq!(names, ["NEEDED"]);
+    }
+
+    #[test]
+    fn a_production_only_variable_is_ignored_in_staging() {
+        let s = spec("[vars.PROD_KEY]\nenvironments = [\"production\"]\n");
+        assert!(check_spec_required(
+            &env(&[]),
+            &s,
+            Some("staging"),
+            ".env.staging",
+            &HashSet::new()
+        )
+        .is_empty());
+        assert_eq!(
+            check_spec_required(
+                &env(&[]),
+                &s,
+                Some("production"),
+                ".env.production",
+                &HashSet::new()
+            )
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_description_reaches_the_suggestion() {
+        let s = spec("[vars.DATABASE_URL]\ndescription = \"Primary Postgres\"\n");
+        let issues = check_spec_required(&env(&[]), &s, None, ".env", &HashSet::new());
+        assert!(issues[0]
+            .suggestion
+            .as_ref()
+            .unwrap()
+            .contains("Primary Postgres"));
+    }
+
+    #[test]
+    fn a_value_that_does_not_match_its_format_is_reported() {
+        let s = spec("[vars.PORT]\nformat = \"port\"\n[vars.DATABASE_URL]\nformat = \"url\"\n");
+        let issues = check_spec_format(
+            &env(&[("PORT", "not-a-port"), ("DATABASE_URL", "postgres://h/d")]),
+            &s,
+            None,
+            ".env",
+            &HashSet::new(),
+        );
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].variable, "PORT");
+        assert!(
+            issues[0].message.contains("port between"),
+            "{}",
+            issues[0].message
+        );
+    }
+
+    /// Already reported as missing; saying it twice under a second name makes
+    /// the report harder to act on.
+    #[test]
+    fn an_empty_value_is_not_also_a_format_error() {
+        let s = spec("[vars.PORT]\nformat = \"port\"\n");
+        assert!(
+            check_spec_format(&env(&[("PORT", "")]), &s, None, ".env", &HashSet::new()).is_empty()
+        );
+        assert!(
+            check_spec_format(&env(&[("PORT", "   ")]), &s, None, ".env", &HashSet::new())
+                .is_empty()
+        );
+    }
+
+    /// evnx knows the value is wrong and has no idea what the right one is.
+    #[test]
+    fn a_format_mismatch_is_never_auto_fixable() {
+        let s = spec("[vars.PORT]\nformat = \"port\"\n");
+        let issues = check_spec_format(&env(&[("PORT", "x")]), &s, None, ".env", &HashSet::new());
+        assert!(!issues[0].auto_fixable);
+    }
+
+    #[test]
+    fn a_variable_absent_from_the_spec_is_left_alone() {
+        let s = spec("[vars.KNOWN]\nformat = \"int\"\n");
+        assert!(check_spec_format(
+            &env(&[("UNDECLARED", "anything at all")]),
+            &s,
+            None,
+            ".env",
+            &HashSet::new()
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn both_checks_honour_ignore() {
+        let s = spec("[vars.PORT]\nformat = \"port\"\n");
+        let ig: HashSet<String> = ["missing_variable", "format_mismatch"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(check_spec_required(&env(&[]), &s, None, ".env", &ig).is_empty());
+        assert!(check_spec_format(&env(&[("PORT", "x")]), &s, None, ".env", &ig).is_empty());
+    }
+}
