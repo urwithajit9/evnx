@@ -6,7 +6,7 @@ use dialoguer::{Confirm, Input, MultiSelect, Select};
 use indexmap::IndexMap;
 use std::collections::HashSet;
 use std::fs;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
@@ -205,7 +205,14 @@ fn sync_forward(
             paths.example_str(),
             paths.env_str()
         ));
-        return handle_new_example_file(paths, &env_file.vars, use_placeholders, dry_run, config);
+        return handle_new_example_file(
+            paths,
+            &env_file.vars,
+            use_placeholders,
+            force,
+            dry_run,
+            config,
+        );
     };
 
     let env_keys: HashSet<_> = env_file.vars.keys().collect();
@@ -389,13 +396,54 @@ fn sync_forward(
     Ok(true)
 }
 
+/// Create `.env.example` when it does not exist yet.
+///
+/// ⚠️ **Placeholders are the default here, and that is a v0.5.0 change.**
+///
+/// This path used to copy `.env` **verbatim** unless `--placeholder` was passed
+/// — real secrets and all — then print "Created .env.example", then advise
+/// committing it. The placeholder-versus-actual prompt, whose second option is
+/// labelled a security risk, only guarded the *other* path: adding variables to
+/// an example file that already existed.
+///
+/// So the guard covered every case except the first `evnx sync` in a new
+/// project, which is the one a getting-started guide tells you to run, and the
+/// one where `.env` is most likely to hold the values you just pasted in.
+/// `evnx scan` does not read `.env.example`, so nothing downstream caught it
+/// either.
+///
+/// The choice is still offered when someone is at a terminal to make it. Without
+/// one, it resolves to placeholders and says so, rather than silently picking
+/// the unsafe branch.
 fn handle_new_example_file(
     paths: &SyncPaths,
     vars: &IndexMap<String, String>,
     use_placeholders: bool,
+    force: bool,
     dry_run: bool,
     config: &PlaceholderConfig,
 ) -> Result<bool> {
+    let use_placeholders = if use_placeholders || force {
+        true
+    } else if std::io::stdin().is_terminal() {
+        let choices = [
+            "Placeholder values (recommended — safe to commit)",
+            "Actual values copied from .env  ! SECURITY RISK",
+        ];
+        Select::new()
+            .with_prompt(format!("Create {} with", paths.example_str()))
+            .items(&choices)
+            .default(0)
+            .interact()?
+            == 0
+    } else {
+        ui::info(format!(
+            "no terminal: creating {} with placeholder values",
+            paths.example_str()
+        ));
+        true
+    };
+
     let preview = if use_placeholders {
         convert_to_example_preview(vars, config)?
     } else {
@@ -425,11 +473,23 @@ fn handle_new_example_file(
         atomic_write(&paths.example, &fs::read_to_string(&paths.env)?)?;
     }
 
-    ui::success("Created .env.example");
-    ui::print_next_steps(&[
-        "Review .env.example to ensure placeholders are appropriate",
-        "Commit .env.example to Git (never commit .env)",
-    ]);
+    ui::success(format!("Created {}", paths.example_str()));
+    if use_placeholders {
+        ui::print_next_steps(&[
+            "Review .env.example to ensure the placeholders are appropriate",
+            "Commit .env.example to Git (never commit .env)",
+        ]);
+    } else {
+        // ⚠️ Do not tell someone to commit a file that holds their real values.
+        ui::warning(format!(
+            "{} holds the ACTUAL values from .env, not placeholders",
+            paths.example_str()
+        ));
+        ui::print_next_steps(&[
+            "Replace the values before committing — this file is not safe to commit as written",
+            "Or re-create it with `evnx sync --placeholder`",
+        ]);
+    }
     Ok(true)
 }
 
