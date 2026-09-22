@@ -18,6 +18,7 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<()> {
     info("Enter variables one at a time. Empty name to finish.");
 
     let mut additions = Vec::new();
+    let mut collected = crate::schema::models::VarCollection::default();
 
     loop {
         // Prompt for variable name
@@ -100,7 +101,22 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<()> {
             lines.push("  # (required)".to_string());
         }
 
-        additions.push((lines.join("\n"), name.trim().to_string(), category));
+        additions.push((lines.join("\n"), name.trim().to_string(), category.clone()));
+
+        // ⚠️ Built alongside the text rather than parsed back out of it. `custom`
+        // is the one `add` subcommand with no `VarCollection` of its own — it
+        // renders straight to lines — and the spec write-back needs the same
+        // structure every other subcommand already has.
+        collected.vars.insert(
+            name.trim().to_string(),
+            crate::schema::models::VarMetadata {
+                example_value: example.clone(),
+                description: description.clone(),
+                category,
+                required,
+                source: crate::schema::models::VarSource::BlueprintOverride,
+            },
+        );
 
         if !yes {
             let continue_adding = Confirm::new()
@@ -174,6 +190,7 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<()> {
         &content,
         super::shared::AppendMode::WithConflictWarning,
         verbose,
+        &collected,
     )?;
 
     // println!(

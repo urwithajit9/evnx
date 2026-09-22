@@ -59,6 +59,7 @@ pub fn handle(service_id: &str, path: &str, yes: bool, _verbose: bool) -> Result
         &addition,
         super::shared::AppendMode::WithConflictWarning,
         _verbose,
+        &vars,
     )?;
 
     success(format!(

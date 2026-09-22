@@ -101,6 +101,7 @@ fn test_forward_sync_dry_run_adds_preview() -> Result<()> {
         "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
+        Default::default(),
     );
 
     // ✅ Restore directory IMMEDIATELY (before fixture drops and deletes temp dir)
@@ -148,6 +149,7 @@ fn dry_run_needs_no_terminal_forward() -> Result<()> {
         "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
+        Default::default(),
     );
 
     let _ = env::set_current_dir(&original_dir);
@@ -191,6 +193,7 @@ fn dry_run_needs_no_terminal_reverse() -> Result<()> {
         "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
+        Default::default(),
     );
 
     let _ = env::set_current_dir(&original_dir);
@@ -232,6 +235,7 @@ fn test_reverse_sync_creates_env_with_placeholders() -> Result<()> {
         "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
+        Default::default(),
     );
 
     // Restore BEFORE fixture drops
@@ -273,6 +277,7 @@ fn test_forward_sync_security_warning_with_actual_values() -> Result<()> {
         "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
+        Default::default(),
     );
 
     let _ = env::set_current_dir(&original_dir);
@@ -318,6 +323,7 @@ fn test_sync_with_custom_placeholder_config() -> Result<()> {
         "pretty".to_string(),
         Some(fixture.config_path.clone()), // Absolute path
         NamingPolicy::Ignore,
+        Default::default(),
     );
 
     let _ = env::set_current_dir(&original_dir);
@@ -357,6 +363,7 @@ fn test_forward_sync_missing_env_file() -> Result<()> {
         "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
+        Default::default(),
     );
 
     let _ = env::set_current_dir(&original_dir);
@@ -391,6 +398,7 @@ fn test_reverse_sync_missing_example_file() -> Result<()> {
         "pretty".to_string(),
         None,
         NamingPolicy::Ignore,
+        Default::default(),
     );
 
     let _ = env::set_current_dir(&original_dir);

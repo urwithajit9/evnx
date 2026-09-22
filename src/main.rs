@@ -284,6 +284,7 @@ fn main() -> Result<()> {
                     .and_then(parse_naming_policy),
                 evnx::cli::NamingPolicy::Warn,
             ),
+            cfg.vars.clone(),
         ),
 
         // Commands::Template { input, output, env } => {
