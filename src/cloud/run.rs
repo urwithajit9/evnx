@@ -49,6 +49,8 @@ pub fn run(
     server_override: Option<&str>,
     vault_target: Option<String>,
     version: Option<i32>,
+    include: Option<Vec<String>>,
+    exclude: Option<Vec<String>>,
     password_stdin: bool,
     verbose: bool,
     command: Vec<String>,
@@ -134,11 +136,45 @@ pub fn run(
     let mut env_vars = parse_env(&plaintext)?;
     plaintext.zeroize();
 
+    // ── Narrow to what the child actually needs ─────────────────────────────
+    //
+    // ⚠️ Filtered here, *after* the buffer is gone and *before* anything is
+    // handed over. A variable excluded by these flags is never written into the
+    // child's environment at all — it is not passed and then unset.
+    let before = env_vars.len();
+    let mut skipped: Vec<String> = Vec::new();
+    env_vars.retain(|name, _| {
+        let keep = crate::core::glob::admits(name, include.as_deref(), exclude.as_deref());
+        if !keep {
+            skipped.push(name.clone());
+        }
+        keep
+    });
+
+    // ⚠️ A filter that matches nothing is almost always a typo, and silently
+    // running a deploy with zero secrets is the kind of success that is worse
+    // than a failure. `migrate` has the same shape and exits 0; this does not.
+    if env_vars.is_empty() && before > 0 {
+        return Err(anyhow!(
+            "--include/--exclude left nothing to inject — all {before} variable(s) were \
+             filtered out.\n\
+             \x20 Check the patterns: they are case-sensitive globs matched against \
+             variable names."
+        ));
+    }
+
     if env_vars.is_empty() {
         ui::warning(format!(
             "{} version {version} holds no variables — running anyway",
             vault_ref.label()
         ));
+    } else if !skipped.is_empty() {
+        // Names only, and on stderr, so it does not pollute a piped stdout.
+        eprintln!(
+            "  {} {} of {before} variable(s) filtered out",
+            "·".cyan(),
+            skipped.len()
+        );
     }
 
     if verbose {
@@ -349,5 +385,70 @@ mod tests {
     fn a_missing_command_is_reported_as_not_found() {
         let err = spawn_with_env("evnx-no-such-binary-xyz", &[], &IndexMap::new()).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    // ─── --include / --exclude, through the real injection ──────────────────
+    //
+    // The filtering itself is `core::glob`'s, tested there. These check the
+    // thing that matters here: a filtered-out variable never reaches the child.
+
+    fn filtered(
+        all: &[(&str, &str)],
+        include: Option<&[String]>,
+        exclude: Option<&[String]>,
+    ) -> IndexMap<String, String> {
+        let mut m = vars(all);
+        m.retain(|name, _| crate::core::glob::admits(name, include, exclude));
+        m
+    }
+
+    fn pats(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn an_excluded_variable_is_absent_from_the_child() {
+        let inc = pats(&["DB_*"]);
+        let env = filtered(
+            &[("DB_URL", "kept"), ("STRIPE_KEY", "sk_live_dropped")],
+            Some(&inc),
+            None,
+        );
+
+        // Exits 0 only when DB_URL is present and STRIPE_KEY is genuinely unset
+        // — not merely empty, which a naive implementation would leave behind.
+        let status = spawn_with_env(
+            "sh",
+            &sh(r#"[ "$DB_URL" = "kept" ] || exit 2
+                   [ -z "${STRIPE_KEY+set}" ] || exit 3
+                   exit 0"#),
+            &env,
+        )
+        .unwrap();
+        match status.code() {
+            Some(0) => {}
+            Some(2) => panic!("the included variable did not reach the child"),
+            Some(3) => panic!("the excluded variable was still passed to the child"),
+            other => panic!("unexpected status {other:?}"),
+        }
+    }
+
+    #[test]
+    fn exclude_wins_over_include_at_the_injection_point() {
+        let inc = pats(&["APP_*"]);
+        let exc = pats(&["*_LOCAL"]);
+        let env = filtered(
+            &[("APP_NAME", "kept"), ("APP_DB_LOCAL", "dropped")],
+            Some(&inc),
+            Some(&exc),
+        );
+        assert_eq!(env.len(), 1);
+        assert!(env.contains_key("APP_NAME"));
+    }
+
+    #[test]
+    fn no_filters_injects_everything() {
+        let env = filtered(&[("A", "1"), ("B", "2")], None, None);
+        assert_eq!(env.len(), 2);
     }
 }

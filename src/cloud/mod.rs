@@ -101,12 +101,16 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
         CloudCommands::Run {
             vault,
             version,
+            include,
+            exclude,
             password_stdin,
             command,
         } => run::run(
             server_override,
             vault,
             version,
+            include,
+            exclude,
             password_stdin,
             verbose,
             command,

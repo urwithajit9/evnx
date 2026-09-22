@@ -658,6 +658,23 @@ pub enum CloudCommands {
         #[arg(long, value_name = "N")]
         version: Option<i32>,
 
+        /// Inject only variables whose name matches one of these globs.
+        ///
+        /// Example: --include "DB_*,AWS_*"
+        ///
+        /// Least privilege for a subprocess: a build step that needs only
+        /// `NEXT_PUBLIC_*` has no reason to be handed your database password.
+        #[arg(long, value_delimiter = ',', value_name = "GLOB")]
+        include: Option<Vec<String>>,
+
+        /// Skip variables whose name matches one of these globs.
+        ///
+        /// Example: --exclude "*_LOCAL,*_TEST"
+        ///
+        /// Applied after --include, so a name matching both is skipped.
+        #[arg(long, value_delimiter = ',', value_name = "GLOB")]
+        exclude: Option<Vec<String>>,
+
         /// Read the master password from stdin instead of prompting.
         ///
         /// Only the first line is consumed; the child inherits the rest of
