@@ -30,7 +30,10 @@ impl MigrationDestination for GcpDestination {
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!("\n{} GCP Secret Manager migration", "☁️".cyan());
+        println!(
+            "\n{} GCP Secret Manager migration",
+            crate::utils::ui::glyph::INFO.cyan()
+        );
 
         if opts.dry_run {
             println!(

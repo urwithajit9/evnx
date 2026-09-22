@@ -40,7 +40,10 @@ impl MigrationDestination for DopplerDestination {
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!("\n{} Doppler migration", "🔐".cyan());
+        println!(
+            "\n{} Doppler migration",
+            crate::utils::ui::glyph::INFO.cyan()
+        );
         println!("{} Requires Doppler CLI", "·".cyan());
         println!("  Install: https://docs.doppler.com/docs/cli");
 

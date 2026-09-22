@@ -12,7 +12,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
-use dialoguer::{Confirm, Input, Password};
+use dialoguer::Confirm;
 use indexmap::IndexMap;
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -20,7 +20,9 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult};
+use super::super::destination::{
+    DestinationKind, MigrationDestination, MigrationOptions, MigrationResult,
+};
 
 // ─── Destination struct ───────────────────────────────────────────────────────
 
@@ -36,40 +38,6 @@ impl GitHubDestination {
     pub fn new(repository: String, token: String) -> Self {
         Self { repository, token }
     }
-
-    /// Interactive constructor — prompts for any missing values.
-    pub fn interactive(repo: Option<String>, token: Option<String>) -> Result<Self> {
-        let repository = repo
-            .or_else(|| {
-                Input::new()
-                    .with_prompt("GitHub repository (owner/repo)")
-                    .interact_text()
-                    .ok()
-            })
-            .ok_or_else(|| anyhow!("Repository is required"))?;
-
-        if !repository.contains('/') {
-            return Err(anyhow!(
-                "Repository must be 'owner/repo', got: {}",
-                repository
-            ));
-        }
-
-        let github_token = token
-            .or_else(|| std::env::var("GITHUB_TOKEN").ok())
-            .or_else(|| {
-                Password::new()
-                    .with_prompt("GitHub Personal Access Token")
-                    .interact()
-                    .ok()
-            })
-            .ok_or_else(|| anyhow!("GitHub token is required"))?;
-
-        Ok(Self {
-            repository,
-            token: github_token,
-        })
-    }
 }
 
 // ─── Trait implementation ─────────────────────────────────────────────────────
@@ -79,12 +47,22 @@ impl MigrationDestination for GitHubDestination {
         "GitHub Actions"
     }
 
+    // The only destination that actually transfers anything: it PUTs each
+    // secret to api.github.com. Every other one prints commands, which is why
+    // `EmitsCommands` is the trait's default.
+    fn kind(&self) -> DestinationKind {
+        DestinationKind::Uploads
+    }
+
     fn migrate(
         &self,
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!("\n{} Migrating to GitHub Actions Secrets…", "🚀".cyan());
+        println!(
+            "\n{} Migrating to GitHub Actions Secrets…",
+            crate::utils::ui::glyph::INFO.cyan()
+        );
 
         // ── Fetch existing secrets (skip in dry-run to avoid network calls) ──
         let existing: Vec<String> = if !opts.dry_run {

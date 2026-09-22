@@ -43,7 +43,10 @@ impl MigrationDestination for InfisicalDestination {
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!("\n{} Infisical migration", "🔒".cyan());
+        println!(
+            "\n{} Infisical migration",
+            crate::utils::ui::glyph::INFO.cyan()
+        );
         println!("{} Requires Infisical CLI", "·".cyan());
         println!("  Install: https://infisical.com/docs/cli/overview");
 
