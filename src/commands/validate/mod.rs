@@ -72,6 +72,7 @@ pub fn run(
     verbose: bool,
     ignore: Vec<String>,
     validate_formats: bool,
+    spec: crate::core::spec::Spec,
 ) -> Result<()> {
     // ─────────────────────────────────────────
     // UI: Header (only for pretty output)
@@ -140,12 +141,34 @@ pub fn run(
     // ─────────────────────────────────────────
     let mut issues = Vec::new();
 
-    issues.extend(check_missing_variables(
-        &env_file.vars,
-        &example_file.vars,
-        &env_path,
-        &config.ignore_issues,
-    ));
+    // ⚠️ The spec replaces the template as the source of requiredness when the
+    // project declares one. Running both would report the same variable twice,
+    // and would keep the behaviour the spec exists to fix: `.env.example` has no
+    // way to say "optional", so every line in it counts as required.
+    let env_label = crate::core::env_name::name_of(&env_path);
+    if spec.is_empty() {
+        issues.extend(check_missing_variables(
+            &env_file.vars,
+            &example_file.vars,
+            &env_path,
+            &config.ignore_issues,
+        ));
+    } else {
+        issues.extend(checks::check_spec_required(
+            &env_file.vars,
+            &spec,
+            env_label,
+            &env_path,
+            &config.ignore_issues,
+        ));
+        issues.extend(checks::check_spec_format(
+            &env_file.vars,
+            &spec,
+            env_label,
+            &env_path,
+            &config.ignore_issues,
+        ));
+    }
 
     issues.extend(check_extra_variables(
         &env_file.vars,
@@ -278,8 +301,10 @@ pub fn run(
         } else {
             "passed".to_string()
         },
-        required_present: env_vars.len().min(example_file.vars.len()),
-        required_total: example_file.vars.len(),
+        // With a contract, "required" means what the contract says — not how
+        // many lines the template happens to have.
+        required_present: required_present(&spec, &env_vars, env_label, &example_file.vars),
+        required_total: required_total(&spec, env_label, &example_file.vars),
         issues,
         fixed: fixes_applied,
         summary: Summary {
@@ -468,3 +493,36 @@ fn output_github_actions(result: &ValidationResult, env_path: &str) -> Result<()
 // ─────────────────────────────────────────────────────────────
 
 pub use types::{FixApplied, Issue, IssueType, Summary, ValidationConfig, ValidationResult};
+
+/// How many required variables the contract declares for this environment.
+///
+/// Falls back to the template's length, which is what `validate` counted before
+/// there was a spec to ask.
+fn required_total(
+    spec: &crate::core::spec::Spec,
+    env_name: Option<&str>,
+    example_vars: &indexmap::IndexMap<String, String>,
+) -> usize {
+    if spec.is_empty() {
+        return example_vars.len();
+    }
+    spec.values()
+        .filter(|v| v.is_required() && v.applies_to(env_name))
+        .count()
+}
+
+/// How many of those are actually present.
+fn required_present(
+    spec: &crate::core::spec::Spec,
+    env_vars: &indexmap::IndexMap<String, String>,
+    env_name: Option<&str>,
+    example_vars: &indexmap::IndexMap<String, String>,
+) -> usize {
+    if spec.is_empty() {
+        return env_vars.len().min(example_vars.len());
+    }
+    spec.iter()
+        .filter(|(_, v)| v.is_required() && v.applies_to(env_name))
+        .filter(|(k, _)| env_vars.contains_key(*k))
+        .count()
+}

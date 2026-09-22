@@ -107,6 +107,7 @@ fn main() -> Result<()> {
             cli.verbose,
             evnx::core::config::extend(ignore, cfg.validate.ignore),
             evnx::core::config::any(validate_formats, cfg.validate.validate_formats),
+            cfg.vars.clone(),
         ),
 
         Commands::Scan {

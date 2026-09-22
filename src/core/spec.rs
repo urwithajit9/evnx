@@ -170,13 +170,21 @@ impl VarSpec {
 
     /// Does this variable apply when operating on `env`?
     ///
-    /// A spec with no `environments` applies everywhere. `env` is `None` for the
-    /// plain `.env`, which every declared variable applies to — restricting the
-    /// base file to a named environment would be a contradiction.
+    /// A spec with no `environments` applies everywhere. One that names them
+    /// applies **only** there, including against the plain `.env`, which is
+    /// `None`.
+    ///
+    /// ⚠️ That last case was the other way round at first, on the reasoning that
+    /// "the base file is not an environment, so nothing is excluded from it". An
+    /// end-to-end walkthrough killed it: a variable declared
+    /// `environments = ["production"]` was then reported missing from a
+    /// developer's local `.env`, which is the one thing the field exists to
+    /// prevent. Declaring a variable production-only has to mean it is not
+    /// wanted anywhere else, or it says nothing at all.
     pub fn applies_to(&self, env: Option<&str>) -> bool {
         match (&self.environments, env) {
             (None, _) => true,
-            (Some(_), None) => true,
+            (Some(_), None) => false,
             (Some(list), Some(name)) => list.iter().any(|e| e == name),
         }
     }
@@ -305,9 +313,12 @@ mod tests {
         );
         assert!(s["PROD_ONLY"].applies_to(Some("production")));
         assert!(!s["PROD_ONLY"].applies_to(Some("staging")));
-        // The base `.env` is not an environment, so nothing is excluded from it.
-        assert!(s["PROD_ONLY"].applies_to(None));
+        // ⚠️ And not against the plain `.env` either. A production-only variable
+        // reported missing from a developer's local file is the failure this
+        // field exists to prevent.
+        assert!(!s["PROD_ONLY"].applies_to(None));
         assert!(s["EVERYWHERE"].applies_to(Some("anything")));
+        assert!(s["EVERYWHERE"].applies_to(None));
     }
 
     #[test]

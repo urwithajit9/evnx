@@ -13,6 +13,8 @@ pub enum IssueType {
     InvalidUrl,
     InvalidPort,
     InvalidEmail,
+    /// A value that does not match the format its `[vars]` entry declares.
+    FormatMismatch,
 }
 
 impl IssueType {
@@ -27,6 +29,7 @@ impl IssueType {
             IssueType::InvalidUrl => "invalid_url",
             IssueType::InvalidPort => "invalid_port",
             IssueType::InvalidEmail => "invalid_email",
+            IssueType::FormatMismatch => "format_mismatch",
         }
     }
 }
