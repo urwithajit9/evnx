@@ -168,7 +168,7 @@ pub fn format_addition(vars: &VarCollection) -> Result<String> {
 
 /// Generate preview summary for interactive confirmation
 pub fn generate_preview(vars: &VarCollection) -> String {
-    let mut lines = vec![format!("📦 {} variables", vars.vars.len())];
+    let mut lines = vec![format!("{} variables", vars.vars.len())];
 
     // Count by source
     let mut by_source: HashMap<&str, usize> = HashMap::new();

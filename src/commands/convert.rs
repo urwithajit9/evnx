@@ -353,7 +353,12 @@ pub fn run(config: ConvertConfig) -> Result<()> {
     if config.verbose {
         eprintln!(
             "{}",
-            format!("🔄 Running convert in verbose mode: {}", config.env_path).dimmed()
+            format!(
+                "{} Running convert in verbose mode: {}",
+                ui::glyph::INFO,
+                config.env_path
+            )
+            .dimmed()
         );
     }
 
@@ -372,7 +377,8 @@ pub fn run(config: ConvertConfig) -> Result<()> {
         eprintln!(
             "{}",
             format!(
-                "📦 Loaded {} variables from {}",
+                "{} Loaded {} variables from {}",
+                ui::glyph::INFO,
                 env_file.vars.len(),
                 config.env_path
             )
@@ -397,7 +403,12 @@ pub fn run(config: ConvertConfig) -> Result<()> {
     if config.verbose {
         eprintln!(
             "{}",
-            format!("⚙️  Converting to {} format...", converter.name()).dimmed()
+            format!(
+                "{} Converting to {} format…",
+                ui::glyph::INFO,
+                converter.name()
+            )
+            .dimmed()
         );
     }
 
@@ -435,7 +446,10 @@ pub fn run(config: ConvertConfig) -> Result<()> {
 /// - Blocks waiting for user input via terminal UI
 fn select_format_interactive(verbose: bool) -> Result<String> {
     if verbose {
-        eprintln!("{}", "🎯 Launching interactive format selector".dimmed());
+        eprintln!(
+            "{}",
+            format!("{} Launching interactive format selector", ui::glyph::INFO).dimmed()
+        );
     }
 
     println!(
@@ -610,7 +624,10 @@ fn write_output(content: &str, output_path: Option<&str>, verbose: bool) -> Resu
                 .with_context(|| format!("Failed to write output to '{}'", path))?;
             if verbose {
                 eprintln!("{}", "✓ Converted successfully".green());
-                eprintln!("{}", format!("📄 Output written to: {}", path).dimmed());
+                eprintln!(
+                    "{}",
+                    format!("{} Output written to: {}", ui::glyph::OK, path).dimmed()
+                );
             } else {
                 println!("{} Converted successfully", "✓".green());
                 println!("Output written to: {}", path);

@@ -109,9 +109,17 @@ pub fn execute(ctx: SyncCtx) -> Result<bool> {
         .transpose()?
         .unwrap_or_default();
 
+    // ⚠️ The title is the command, not a sentence about it. `sync` was the one
+    // command whose header did not start with `evnx …`, so in a CI log among
+    // other tools' output it read as a stray line rather than as evnx speaking.
     ui::print_header(
-        &format!("Sync {} ↔ {}", ctx.paths.env_str(), ctx.paths.example_str()),
-        Some(&format!("Direction: {}", ctx.direction)),
+        "evnx sync",
+        Some(&format!(
+            "{} ↔ {}  ({})",
+            ctx.paths.env_str(),
+            ctx.paths.example_str(),
+            ctx.direction
+        )),
     );
 
     check_env_permissions(&ctx.paths.env_str())?;
@@ -162,7 +170,7 @@ fn sync_forward(
     if !paths.env.exists() {
         ui::error("File not found: .env");
         ui::print_box(
-            "💡 Getting Started",
+            "Getting started",
             "It looks like this project hasn't been initialized yet.\n\n\
              To create .env and .env.example files, run:\n\n\
              $ evnx init\n\n\
@@ -446,7 +454,7 @@ fn sync_reverse(
     if !paths.example.exists() {
         ui::error("File not found: .env.example");
         ui::print_box(
-            "💡 Getting Started",
+            "Getting started",
             "The template file .env.example is missing.\n\n\
              To create it, either:\n\n\
              1. Run 'evnx init' to generate from a blueprint, OR\n\
@@ -908,7 +916,14 @@ fn print_preview(preview: &SyncPreview) {
         println!("{}", "  No changes".dimmed());
     } else {
         for var in &preview.variables {
-            let marker = if var.is_placeholder { "🔒" } else { "!" };
+            // ⚠️ Both arms must be one column wide. This was "🔒" against "!",
+            // which is 2 columns against 1 — so every placeholder row pushed its
+            // key one column right of every non-placeholder row, in the same list.
+            let marker = if var.is_placeholder {
+                ui::glyph::INFO
+            } else {
+                ui::glyph::WARN
+            };
             println!(
                 "  {} {} = {}",
                 marker,

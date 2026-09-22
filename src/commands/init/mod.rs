@@ -105,9 +105,9 @@ pub fn run(
         Mode::Blank
     } else {
         let modes = [
-            "📄 Blank (create empty .env files)",
-            "🔷 Blueprint (use pre-configured stack)",
-            "🏗️  Architect (build custom stack)",
+            "Blank      — create empty .env files",
+            "Blueprint  — use a pre-configured stack",
+            "Architect  — build a custom stack",
         ];
 
         let selection = Select::new()
