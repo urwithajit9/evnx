@@ -452,17 +452,19 @@ fn select_format_interactive(verbose: bool) -> Result<String> {
         );
     }
 
-    println!(
-        "\n{}",
-        "┌─ Convert environment variables ─────────────────────┐".cyan()
-    );
-    println!(
-        "{}",
-        "│ Transform .env into different formats               │".cyan()
-    );
-    println!(
-        "{}\n",
-        "└──────────────────────────────────────────────────────┘".cyan()
+    // ⚠️ This was three hand-typed box-drawing literals with the bottom border
+    // one column longer than the other two — 56 against 55, the same off-by-one
+    // `migrate` had, and for the same reason: typed by hand rather than measured
+    // by `print_box`.
+    //
+    // It also outlived the claim. A comment in `migrate/mod.rs` called that one
+    // "the last command still drawing a box at all", and `diff.rs` said the same
+    // of itself before that. Both were wrong, because a literal box is invisible
+    // to a search for the helper that draws boxes. This one was found by a doc
+    // sample that reproduced its output.
+    ui::print_header(
+        "evnx convert",
+        Some("Transform .env into different formats"),
     );
 
     let formats = vec![
