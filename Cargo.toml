@@ -83,7 +83,12 @@ zeroize = { version = "1.7", features = ["derive"] }
 # reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls-vendored", "blocking"], optional = true }
 # Cargo.toml — back to rustls, ring is no longer in the tree
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"], optional = true }
-crypto_box = { version = "0.9",  features = ["std"],                                                      optional = true }
+# ⚠️ `seal` is not optional decoration — it is the whole point. It provides
+# `PublicKey::seal`, libsodium's crypto_box_seal, which is the format the GitHub
+# Actions secrets API requires. Without it this crate was a dependency nothing
+# called, while `encrypt_for_github` base64-encoded the plaintext instead.
+# It costs one transitive crate, `blake2`, for the sealed box's derived nonce.
+crypto_box = { version = "0.9",  features = ["std", "seal"],                                              optional = true }
 
 # ── cloud feature ─────────────────────────────────────────────────────────────
 # Zero-knowledge primitives, the same published crate evnx-server links against so

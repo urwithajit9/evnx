@@ -588,6 +588,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "16182b4f39a82ec8a6851155cc4c0cda3065bb1db33651726a29e1951de0f009"
 dependencies = [
  "aead",
+ "blake2",
  "crypto_secretbox",
  "curve25519-dalek",
  "salsa20",
