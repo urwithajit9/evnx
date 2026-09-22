@@ -168,8 +168,12 @@ fn print_banner() {
     // ⚠️ This was three hand-typed box-drawing literals, and the bottom border
     // was one column longer than the other two — 56 against 55. It escaped the
     // v0.5.0 header pass because it never called `print_box`, so fixing that
-    // helper's arithmetic did not reach it. `migrate` was the last command
-    // still drawing a box at all.
+    // helper's arithmetic did not reach it.
+    //
+    // ⚠️ This comment claimed `migrate` was "the last command still drawing a
+    // box at all". It was not — `convert`'s interactive format selector had an
+    // identical one, with the identical off-by-one. Both were invisible to a
+    // search for `print_box`, which is what made the claim easy to make twice.
     ui::print_header(
         "evnx migrate",
         Some("Generate destination commands from your .env"),
