@@ -220,3 +220,76 @@ fn the_banner_shows_where_the_config_came_from() {
         .assert()
         .stderr(predicate::str::contains("config    ../../.evnx.toml"));
 }
+
+// ─── [vars] — the variable contract (slice 1: parsed, not yet applied) ───────
+
+/// A spec loads without disturbing anything.
+///
+/// ⚠️ This is the property that makes slice 1 safe to ship on its own: the
+/// section is read into `Config::vars` and **no command consults it yet**. The
+/// assertion below is deliberately about the *old* behaviour continuing —
+/// `OPTIONAL_THING` is declared `required = false` and `validate` still reports
+/// it, because `validate` still counts `.env.example`.
+///
+/// When slice 3 lands, this test flips, and that flip is the evidence the
+/// contract became load-bearing.
+#[test]
+fn a_spec_parses_and_does_not_change_behaviour_yet() {
+    let d = TempDir::new().unwrap();
+    fs::write(d.path().join(".env"), "DATABASE_URL=postgres://h/d\n").unwrap();
+    fs::write(
+        d.path().join(".env.example"),
+        "DATABASE_URL=\nOPTIONAL_THING=\n",
+    )
+    .unwrap();
+    fs::write(
+        d.path().join(".evnx.toml"),
+        r#"
+[vars.DATABASE_URL]
+required = true
+format   = "url"
+secret   = true
+
+[vars.OPTIONAL_THING]
+required = false
+format   = "bool"
+"#,
+    )
+    .unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["validate"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("OPTIONAL_THING"));
+}
+
+/// ⚠️ A regex that will not compile is refused when the config is read, not the
+/// first time a value happens to be checked against it. A contract that cannot
+/// be applied is broken whether or not anyone has tripped over it.
+#[test]
+fn a_spec_with_a_broken_regex_is_refused_at_load() {
+    let d = project("[vars.A]\nformat = \"([unclosed\"\n");
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["validate"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("regex"));
+}
+
+/// Named formats are accepted; the list is the one `--validate-formats` already
+/// implements, so the spec exposes existing behaviour rather than new checks.
+#[test]
+fn every_named_format_is_accepted_by_the_parser() {
+    for name in ["url", "int", "port", "bool", "email"] {
+        let d = project(&format!("[vars.A]\nformat = \"{name}\"\n"));
+        cargo_bin_cmd!("evnx")
+            .current_dir(d.path())
+            .args(["validate", "--exit-zero"])
+            .assert()
+            .success();
+    }
+}

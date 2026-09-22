@@ -136,6 +136,12 @@ pub struct Config {
     pub backup: BackupPolicy,
     #[serde(default)]
     pub cloud: CloudPolicy,
+    /// The variable contract — see [`crate::core::spec`].
+    ///
+    /// ⚠️ Optional, and must stay optional. Every project today has no `[vars]`
+    /// section, and an absent spec means the previous behaviour exactly.
+    #[serde(default)]
+    pub vars: crate::core::spec::Spec,
     #[serde(flatten)]
     extra: Extra,
 }
