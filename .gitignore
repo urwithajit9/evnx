@@ -15,3 +15,6 @@ venv/
 # sibling present, CI included — Cargo always prefers a path and never falls
 # back to the registry. See CLAUDE.md, "Cross-Repo Dependency".
 .cargo/config.toml
+
+# Prebuilt binaries staged for the container image (see Dockerfile).
+evnx-bin-*

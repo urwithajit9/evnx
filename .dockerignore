@@ -1,0 +1,4 @@
+# The image copies one pre-built binary in. Nothing else belongs in the context,
+# and sending `target/` would mean shipping gigabytes to the daemon.
+*
+!evnx-bin-*
