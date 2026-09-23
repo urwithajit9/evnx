@@ -67,6 +67,9 @@ pub struct ScanRunner {
     verbose: bool,
     /// Lowest confidence worth reporting. `Low` reports everything.
     min_confidence: Confidence,
+    /// How many custom patterns are active, for verbose output. The patterns
+    /// themselves live in the registry.
+    custom_patterns: usize,
 }
 
 impl ScanRunner {
@@ -120,12 +123,40 @@ impl ScanRunner {
         min_confidence: Confidence,
         spec: crate::core::spec::Spec,
     ) -> Self {
+        Self::with_spec_and_patterns(
+            exclude,
+            ignore_placeholders,
+            verbose,
+            min_confidence,
+            spec,
+            super::patternset::PatternSet::empty(),
+        )
+    }
+
+    /// As [`ScanRunner::with_spec`], plus the formats this project declared
+    /// itself — `--pattern` and `[[scan.patterns]]`, already compiled.
+    ///
+    /// The set is compiled by the caller rather than here so that a bad
+    /// expression fails before the scan starts, with nothing printed that could
+    /// be read as a result. See `scan::run`.
+    pub fn with_spec_and_patterns(
+        exclude: &[String],
+        ignore_placeholders: bool,
+        verbose: bool,
+        min_confidence: Confidence,
+        spec: crate::core::spec::Spec,
+        patterns: super::patternset::PatternSet,
+    ) -> Self {
+        let custom_patterns = patterns.len();
         Self {
-            registry: DetectorRegistry::new().with_spec(spec),
+            registry: DetectorRegistry::new()
+                .with_spec(spec)
+                .with_patterns(patterns),
             filter: FileFilter::new(exclude),
             ignore_placeholders,
             verbose,
             min_confidence,
+            custom_patterns,
         }
     }
 
@@ -172,6 +203,9 @@ impl ScanRunner {
 
         if self.verbose {
             ui::verbose_stderr(format!("Scanning {} files...", paths.len()));
+            if self.custom_patterns > 0 {
+                ui::verbose_stderr(format!("{} custom pattern(s) active", self.custom_patterns));
+            }
         }
 
         let files = self.filter.collect_files(&paths)?;
@@ -244,6 +278,18 @@ impl ScanRunner {
                         self.add_finding(results, path, line_num, None, detection);
                     }
                 }
+
+                // ...and the whole line to anything that needs it, which today
+                // is custom patterns only.
+                //
+                // ⚠️ Not folded into `best`. A line is not one value: two
+                // unrelated credentials on one line are two findings, whereas
+                // two detectors describing one value are one. `extract_tokens`
+                // also drops anything 20 characters or shorter, so a declared
+                // format shorter than that is reachable only from here.
+                for detection in self.registry.scan_line(line, &location) {
+                    self.add_finding(results, path, line_num, None, detection);
+                }
             }
         }
 
@@ -270,7 +316,10 @@ impl ScanRunner {
     /// 2. **Higher confidence.** So `MY_PASSWORD=<long value>`, which matches only
     ///    the key-aware heuristic and the shapeless high-entropy fallback, keeps
     ///    the key-aware answer.
-    /// 3. **Earliest detector**, which is `PatternDetector`.
+    /// 3. **Earliest detector**, which is `CustomPatternDetector` when the
+    ///    project declared patterns and `PatternDetector` otherwise. A rule the
+    ///    project wrote itself outranks a built-in heuristic that reached the
+    ///    same confidence, because it carries a name someone chose.
     ///
     /// The winner keeps its label and URL but takes the **highest confidence any
     /// detector reported**. The two are answering different questions: the

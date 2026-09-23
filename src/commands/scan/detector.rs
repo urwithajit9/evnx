@@ -234,6 +234,23 @@ pub trait SecretDetector: Send + Sync {
     ///
     /// `Some(Detection)` if a secret is found, `None` otherwise.
     fn scan_token(&self, token: &str, location: &str) -> Option<Detection>;
+
+    /// Scan a whole line, for detectors that a token cannot reach.
+    ///
+    /// ⚠️ This exists because [`ScanRunner::extract_tokens`] splits a line on
+    /// `=`, `:`, quotes and whitespace and then **keeps only tokens longer than
+    /// 20 characters**. That floor is right for the entropy-shaped heuristics it
+    /// was written for, and wrong for anything that knows exactly what it is
+    /// looking for: a custom pattern for a 14-character internal token would
+    /// match nothing in a `.ts` file and the scan would report clean.
+    ///
+    /// Returns a `Vec` because one line can carry several unrelated secrets,
+    /// unlike a single value where one finding is the answer.
+    ///
+    /// [`ScanRunner::extract_tokens`]: super::runner::ScanRunner
+    fn scan_line(&self, _line: &str, _location: &str) -> Vec<Detection> {
+        Vec::new()
+    }
 }
 
 /// Registry that manages all active secret detectors.
@@ -319,6 +336,30 @@ impl DetectorRegistry {
     /// every heuristic behaving exactly as it did before.
     pub fn with_spec(mut self, spec: crate::core::spec::Spec) -> Self {
         self.spec = spec;
+        self
+    }
+
+    /// Give the registry this project's own secret formats.
+    ///
+    /// ⚠️ Registered **first**, which decides ties in [`ScanRunner::best`]. A
+    /// value matching a declared rule reports under that rule's name rather than
+    /// as `Sensitive config key: ACME_TOKEN` — someone who wrote
+    /// `ACME-[A-Z0-9]{32}` asked to be told about Acme keys, and a generic
+    /// heuristic answering in its place is a worse answer to the same question.
+    ///
+    /// It does **not** displace the built-in provider patterns, because
+    /// `best` ranks a remediation URL above detector order: a real AWS key is
+    /// still reported as an AWS key, with the link to IAM.
+    ///
+    /// An empty set registers nothing, so a project without patterns pays
+    /// nothing — not even a `Vec` lookup per value.
+    ///
+    /// [`ScanRunner::best`]: super::runner::ScanRunner
+    pub fn with_patterns(mut self, patterns: super::patternset::PatternSet) -> Self {
+        if !patterns.is_empty() {
+            self.detectors
+                .insert(0, Box::new(CustomPatternDetector::new(patterns)));
+        }
         self
     }
 
@@ -421,6 +462,23 @@ impl DetectorRegistry {
         self.detectors
             .iter()
             .filter_map(|d| d.scan_token(token, location))
+            .collect()
+    }
+
+    /// Scan a whole line through every detector that answers to one.
+    ///
+    /// Only custom patterns do today. The built-in detectors take the default
+    /// empty implementation, so this costs one virtual call per detector per
+    /// line and allocates nothing when no rules are declared.
+    ///
+    /// The spec is **not** consulted here. A declaration names a variable, and
+    /// a line of TypeScript has no variable to name — reaching into
+    /// `DECLARED_SECRET` from a context with no key would mean guessing which
+    /// declaration a bare string belongs to.
+    pub fn scan_line(&self, line: &str, location: &str) -> Vec<Detection> {
+        self.detectors
+            .iter()
+            .flat_map(|d| d.scan_line(line, location))
             .collect()
     }
 
@@ -531,6 +589,68 @@ impl SecretDetector for ConfigKeyDetector {
 
     fn scan_token(&self, _token: &str, _location: &str) -> Option<Detection> {
         None // Key-aware detection only
+    }
+}
+
+/// Detects the formats this project declared, via `--pattern` or
+/// `[[scan.patterns]]`.
+///
+/// See [`patternset`](super::patternset) for why the matching is a single
+/// `RegexSet` pass rather than a loop over the rules.
+pub struct CustomPatternDetector {
+    patterns: super::patternset::PatternSet,
+}
+
+impl CustomPatternDetector {
+    pub fn new(patterns: super::patternset::PatternSet) -> Self {
+        Self { patterns }
+    }
+}
+
+impl From<super::patternset::PatternMatch> for Detection {
+    fn from(found: super::patternset::PatternMatch) -> Self {
+        Detection {
+            pattern: found.name,
+            confidence: found.confidence,
+            action_url: found.url,
+            matched_value: found.value,
+        }
+    }
+}
+
+impl SecretDetector for CustomPatternDetector {
+    fn name(&self) -> &str {
+        "custom-pattern"
+    }
+
+    /// The expression is tested against the **value**, so `secret = false`
+    /// cannot retract it — the same rule the built-in provider patterns follow.
+    /// A project that no longer wants a rule deletes the rule.
+    fn judges_value(&self) -> bool {
+        true
+    }
+
+    fn scan_kv(&self, _key: &str, value: &str, _location: &str) -> Option<Detection> {
+        self.patterns.strongest(value).map(Into::into)
+    }
+
+    /// Always `None` — custom patterns answer [`scan_line`] instead, which sees
+    /// the text before `extract_tokens` applies its 20-character floor.
+    ///
+    /// Answering both would report the same match twice for any token long
+    /// enough to survive that floor.
+    ///
+    /// [`scan_line`]: SecretDetector::scan_line
+    fn scan_token(&self, _token: &str, _location: &str) -> Option<Detection> {
+        None
+    }
+
+    fn scan_line(&self, line: &str, _location: &str) -> Vec<Detection> {
+        self.patterns
+            .find_all(line)
+            .into_iter()
+            .map(Into::into)
+            .collect()
     }
 }
 
