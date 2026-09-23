@@ -92,14 +92,16 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<()> {
         };
 
         // Format as .env line
+        // Same shape as `shared::format_var_line`: the marker belongs above the
+        // variable, not on a detached line after it.
         let mut lines = Vec::new();
-        if let Some(desc) = &description {
-            lines.push(format!("# {}", desc));
+        match (&description, required) {
+            (Some(desc), true) => lines.push(format!("# {} (required)", desc)),
+            (Some(desc), false) => lines.push(format!("# {}", desc)),
+            (None, true) => lines.push("# (required)".to_string()),
+            (None, false) => {}
         }
         lines.push(format!("{}={}", name.trim(), example));
-        if required {
-            lines.push("  # (required)".to_string());
-        }
 
         additions.push((lines.join("\n"), name.trim().to_string(), category.clone()));
 

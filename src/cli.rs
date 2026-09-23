@@ -1314,6 +1314,19 @@ Use 'evnx convert' without --to for interactive format selection.
         #[arg(long)]
         strict: bool,
 
+        /// Output format: `pretty` or `json`.
+        ///
+        /// ⚠️ `EVNX_OUTPUT_JSON=1` does the same thing and still works. It
+        /// shipped first and is documented, but an environment variable is not a
+        /// discoverable surface — which is how `--fix` came to be documented into
+        /// existence before it existed. The flag wins when both are given.
+        ///
+        /// Unknown values are an error, not a silent fall back to `pretty`: a
+        /// typo in a CI step must not quietly turn a JSON contract into prose
+        /// that the next `jq` in the pipeline cannot read.
+        #[arg(long, value_name = "FORMAT")]
+        format: Option<String>,
+
         /// Show detailed diagnostic output
         #[arg(short, long)]
         verbose: bool,

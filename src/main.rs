@@ -44,7 +44,23 @@ fn main() -> Result<()> {
     // the working directory. `cloud::sync` and `cloud::status` already pass
     // `current_dir()` for this reason.
     let here = std::env::current_dir().context("reading the current directory")?;
-    let loaded = evnx::core::config::load(&here)?;
+    // ⚠️ Not `?`. A `.evnx.toml` that will not parse is "evnx could not run",
+    // and `?` would surface it through `main`'s `Result` as exit **1** — which
+    // for `scan` is the code that means *secrets found*, and for `sync --check`
+    // means *drifted*. A malformed config would have read as a finding.
+    //
+    // 2 is the code every command with a three-value contract already uses for
+    // "no verdict", so a broken config reports the same thing everywhere rather
+    // than impersonating whatever failure that command happens to number 1.
+    let loaded = match evnx::core::config::load(&here) {
+        Ok(loaded) => loaded,
+        Err(e) => {
+            eprintln!("{} {:#}", "Error:".on_red().bold(), e);
+            eprintln!();
+            eprintln!("No verdict: evnx did not run. This is not a clean result.");
+            std::process::exit(2);
+        }
+    };
     if let Some(source) = &loaded.source {
         evnx::utils::ui::config_banner(source, &loaded.config.security_overrides(), cli.quiet);
     }
@@ -410,6 +426,7 @@ fn main() -> Result<()> {
             project_path,
             fix,
             strict,
+            format,
             verbose,
         } => evnx::commands::doctor::run(
             project_path.unwrap_or(path),
@@ -418,6 +435,7 @@ fn main() -> Result<()> {
             // which is the same rule `.evnx.toml` booleans follow.
             fix,
             strict,
+            format,
         ),
 
         Commands::Spec { action } => match action {

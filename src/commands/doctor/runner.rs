@@ -69,9 +69,15 @@ use crate::utils::ui::glyph;
 /// saying and is not worth failing a build that never asked about it.
 ///
 /// # Environment Variables
-/// * `EVNX_OUTPUT_JSON=1` - Output JSON instead of text
+/// * `EVNX_OUTPUT_JSON=1` - Same as `--format json`, kept because it shipped first
 /// * `EVNX_AUTO_FIX=1` - Same as `--fix`, kept because it shipped first
-pub fn run(path: String, verbose: bool, fix: bool, strict: bool) -> Result<()> {
+pub fn run(
+    path: String,
+    verbose: bool,
+    fix: bool,
+    strict: bool,
+    format: Option<String>,
+) -> Result<()> {
     let project_root = PathBuf::from(&path);
 
     // ⚠️ Checked before anything else. Diagnosing a directory that is not there
@@ -88,9 +94,29 @@ pub fn run(path: String, verbose: bool, fix: bool, strict: bool) -> Result<()> {
         std::process::exit(EXIT_ERROR);
     }
 
-    let json_output = std::env::var("EVNX_OUTPUT_JSON")
-        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "json"))
-        .unwrap_or(false);
+    // ⚠️ Precedence, not "either wins" — unlike `fix` below. A format is a
+    // choice between two answers rather than a guard, so an explicit
+    // `--format pretty` must be able to override `EVNX_OUTPUT_JSON=1` exported
+    // by a CI image. `Option<String>` is what makes "asked for pretty"
+    // distinguishable from "did not ask".
+    let json_output = match format.as_deref() {
+        Some(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "json" => true,
+            "pretty" | "text" => false,
+            other => {
+                eprintln!(
+                    "{} unknown format '{other}' — expected one of: pretty, json",
+                    "Error:".on_red().bold()
+                );
+                eprintln!();
+                eprintln!("No verdict: doctor examined nothing. This is not a clean result.");
+                std::process::exit(EXIT_ERROR);
+            }
+        },
+        None => std::env::var("EVNX_OUTPUT_JSON")
+            .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "json"))
+            .unwrap_or(false),
+    };
 
     // Either source saying yes is enough. `EVNX_AUTO_FIX` shipped first and is
     // documented, so it keeps working; a flag can turn repair on, never off.

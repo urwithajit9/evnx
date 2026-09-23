@@ -661,3 +661,52 @@ fn sync_reverse_respects_the_environments_a_variable_applies_to() {
         "not added to production:\n{prod}"
     );
 }
+
+// ── A config that will not parse is "could not run", not a finding ──────────
+
+/// ⚠️ This exited **1** before v0.5.0, because `main` propagated the error
+/// through its `Result` and Rust's default `Termination` numbers that 1.
+///
+/// For `scan`, 1 is the code that means *secrets found*. For `sync --check` it
+/// means *drifted*. So a malformed `.evnx.toml` impersonated a finding in every
+/// command that has a three-value contract — and in CI, a typo in a committed
+/// config would have read as a real result.
+#[test]
+fn a_config_that_will_not_parse_exits_2_everywhere() {
+    for broken in [
+        "[scan\nseverity = \n",              // syntax error
+        "[[scan.patterns]]\nname = \"x\"\n", // missing the required `regex`
+    ] {
+        let d = project(broken);
+        for args in [
+            vec!["scan", "."],
+            vec!["validate"],
+            vec!["diff"],
+            vec!["sync", "--check"],
+        ] {
+            let assert = cargo_bin_cmd!("evnx")
+                .current_dir(d.path())
+                .args(&args)
+                .assert()
+                .code(2);
+            let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+            assert!(
+                stderr.contains("No verdict"),
+                "`evnx {}` on a broken config must not read as a result: {stderr}",
+                args.join(" ")
+            );
+        }
+    }
+}
+
+/// The complement: a config that parses must not be turned into an error by the
+/// handling above.
+#[test]
+fn a_valid_config_still_runs() {
+    let d = project("[scan]\nseverity = \"high\"\n");
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", ".", "--exit-zero"])
+        .assert()
+        .code(0);
+}

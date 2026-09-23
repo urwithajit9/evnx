@@ -98,7 +98,15 @@ pub fn append_to_env_files(
         }
     } else {
         // Create new file
-        fs::write(&example_path, addition.trim()).context("Failed to create .env.example")?;
+        // ⚠️ `trim_start`, not `trim`. The trailing newline is not decoration:
+        // a text file that does not end with one makes `cat a b` join the last
+        // line of the first file to the first line of the second, and many
+        // tools that read `.env` line by line drop the final variable.
+        fs::write(
+            &example_path,
+            format!("{}\n", addition.trim_start().trim_end()),
+        )
+        .context("Failed to create .env.example")?;
 
         if verbose {
             println!("{} Created {}", "[DEBUG]".dimmed(), example_path.display());
@@ -128,7 +136,9 @@ pub fn append_to_env_files(
             .collect::<Vec<_>>()
             .join("\n");
 
-        let updated = format!("{}\n\n{}", existing.trim_end(), todo_addition);
+        // `todo_addition` was rebuilt with `lines().join("\n")`, which drops the
+        // trailing newline the addition arrived with — so it is put back here.
+        let updated = format!("{}\n\n{}\n", existing.trim_end(), todo_addition.trim_end());
         fs::write(&env_path, updated)?;
 
         warn_if_env_is_committable(output_path);
@@ -169,15 +179,22 @@ pub fn format_var_line(
 ) -> String {
     let mut lines = Vec::new();
 
-    if let Some(desc) = description {
-        lines.push(format!("# {}", desc));
+    // ⚠️ The marker goes **above** the variable, folded into its description.
+    //
+    // It used to be pushed as a line of its own *after* the assignment, which
+    // left `  # (required)` floating between two unrelated variables — visibly
+    // detached from the one it described. Appending it to the assignment instead
+    // is no better: the caller wraps that line as
+    // `# TODO: NAME=value  # <-- Fill in real value`, so the marker would land
+    // as a second `#` comment inside the first.
+    match (description, required) {
+        (Some(desc), true) => lines.push(format!("# {} (required)", desc)),
+        (Some(desc), false) => lines.push(format!("# {}", desc)),
+        (None, true) => lines.push("# (required)".to_string()),
+        (None, false) => {}
     }
 
     lines.push(format!("{}={}", name, example_value));
-
-    if required {
-        lines.push("  # (required)".to_string());
-    }
 
     lines.join("\n")
 }

@@ -306,3 +306,82 @@ fn nothing_is_reported_fixable_unless_it_can_actually_be_fixed() {
         }
     }
 }
+
+// ── --format, and the environment variable it replaces ──────────────────────
+//
+// `EVNX_OUTPUT_JSON` shipped first and still works. It is not a discoverable
+// surface, though — which is exactly how `--fix` came to be documented into
+// existence years before it existed, and why the published guides invented
+// `--check-config`, `--fail-on-warning` and three others that never parsed.
+
+fn healthy_project() -> TempDir {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "FOO=bar\n").unwrap();
+    fs::write(dir.path().join(".env.example"), "FOO=\n").unwrap();
+    fs::write(dir.path().join(".gitignore"), ".env\n").unwrap();
+    dir
+}
+
+#[test]
+fn format_json_produces_the_same_document_as_the_env_var() {
+    let dir = healthy_project();
+
+    let by_flag = cargo_bin_cmd!("evnx")
+        .args(["doctor", "--format", "json"])
+        .arg(dir.path())
+        .assert();
+    let by_env = cargo_bin_cmd!("evnx")
+        .arg("doctor")
+        .arg(dir.path())
+        .env("EVNX_OUTPUT_JSON", "1")
+        .assert();
+
+    let flag_json: serde_json::Value =
+        serde_json::from_slice(&by_flag.get_output().stdout).expect("--format json is JSON");
+    let env_json: serde_json::Value =
+        serde_json::from_slice(&by_env.get_output().stdout).expect("EVNX_OUTPUT_JSON is JSON");
+
+    assert_eq!(
+        flag_json["checks"], env_json["checks"],
+        "the flag and the variable must not drift apart"
+    );
+}
+
+/// ⚠️ Precedence, not "either wins" — unlike `--fix` / `EVNX_AUTO_FIX`, which
+/// are guards where either saying yes is the safe reading.
+///
+/// A format is a choice between two answers, so an explicit `--format pretty`
+/// has to be able to override an `EVNX_OUTPUT_JSON=1` exported by a CI image.
+#[test]
+fn an_explicit_format_overrides_the_environment_variable() {
+    let dir = healthy_project();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .args(["doctor", "--format", "pretty"])
+        .arg(dir.path())
+        .env("EVNX_OUTPUT_JSON", "1")
+        .assert();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        serde_json::from_str::<serde_json::Value>(&stdout).is_err(),
+        "--format pretty must not emit JSON: {stdout}"
+    );
+}
+
+/// A typo in a CI step must not quietly turn a JSON contract into prose that the
+/// next `jq` in the pipeline cannot read.
+#[test]
+fn an_unknown_format_exits_2_rather_than_falling_back() {
+    let dir = healthy_project();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .args(["doctor", "--format", "yaml"])
+        .arg(dir.path())
+        .assert()
+        .code(2);
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(stderr.contains("unknown format"), "{stderr}");
+    assert!(stderr.contains("No verdict"), "{stderr}");
+}
