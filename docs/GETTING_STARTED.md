@@ -212,12 +212,18 @@ Sample output:
 
 Detected patterns include: AWS access keys, Stripe live and test keys, GitHub personal access tokens, OpenAI and Anthropic API keys, RSA/EC/OpenSSH private keys, high-entropy strings, and generic API key patterns.
 
-**Exit codes:** `evnx scan` exits with code `1` if errors are found — use this to block CI pipelines. Use `--exit-zero` to always exit `0` for advisory-only checks.
+**Exit codes:** `0` clean, `1` secrets found, `2` the scan could not be completed —
+a path that does not exist, an unreadable file, a `--pattern` that will not compile.
 
-Scan a specific directory:
+⚠️ **`2` is not a louder `1`.** "I found nothing" and "I could not look" are different
+answers, and collapsing them is what let `evnx scan ./typo` report success on older
+versions. `--exit-zero` suppresses `1` only; trouble still exits `2`, because the flag
+means "do not fail my build over findings", not "never tell me the scan was impossible".
+
+Scan specific paths — positional and repeatable:
 
 ```bash
-evnx scan --path src/
+evnx scan src/ config/
 ```
 
 Output as SARIF (for GitHub Security tab):
@@ -363,10 +369,11 @@ evnx sync --direction forward --placeholder
 evnx sync --direction reverse
 ```
 
-Generate `.env.example` from your existing `.env`:
+Generate `.env.example` from your existing `.env` — the forward direction creates it if it
+is missing:
 
 ```bash
-evnx sync --generate-example
+evnx sync --direction forward
 
 cat .env.example
 # APP_NAME=
@@ -393,7 +400,7 @@ repos:
     hooks:
       - id: evnx-scan
         name: Scan for secrets
-        entry: evnx scan --exit-code
+        entry: evnx scan
         language: system
         files: '\.env'
         pass_filenames: false
@@ -416,7 +423,7 @@ pre-commit install
 ```bash
 cat > .git/hooks/pre-commit << 'EOF'
 #!/bin/bash
-evnx scan --exit-code
+evnx scan
 if [ $? -ne 0 ]; then
   echo "evnx: secrets detected — commit blocked."
   exit 1
@@ -486,7 +493,7 @@ RUN cargo install evnx
 
 COPY .env .env
 RUN evnx validate --strict \
- && evnx scan --exit-code
+ && evnx scan
 ```
 
 ---
@@ -497,29 +504,32 @@ Store project-level defaults in `.evnx.toml` at the project root:
 
 ```toml
 [defaults]
-env_file = ".env"
-example_file = ".env.example"
-verbose = false
-
-[validate]
-strict = true
-auto_fix = false
-format = "pretty"
+env_name = "production"        # which .env.<name> commands operate on
+example  = ".env.template"     # the template path, if not .env.example
 
 [scan]
+severity            = "high"        # "high" | "medium" | "low"
+exclude             = ["fixtures"]
 ignore_placeholders = true
-exclude_patterns = ["*.example", "*.sample", "*.template"]
-format = "pretty"
 
-[convert]
-default_format = "json"
-base64 = false
+[validate]
+strict           = true
+validate_formats = true
 
-[aliases]
-gh = "github-actions"
-k8s = "kubernetes"
-tf = "terraform"
+[sync]
+naming_policy = "warn"
+
+# What each variable *is* — read by validate, scan and sync.
+[vars]
+PORT       = { format = "port", description = "HTTP listen port" }
+STRIPE_KEY = { secret = true, environments = ["production"] }
 ```
+
+Precedence is **flag > config > default**, and lists combine rather than replace.
+
+⚠️ **On v0.4.x and earlier this file did nothing** — the loader existed and nothing called
+it. Keys named in older copies of this page (`env_file`, `auto_fix`, `exclude_patterns`,
+`[convert]`, `[aliases]`) were never read by anything and do not exist.
 
 Full reference: [evnx.dev/guides/reference/configuration-file](https://www.evnx.dev/guides/reference/configuration-file)
 
