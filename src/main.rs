@@ -23,6 +23,37 @@ fn parse_naming_policy(value: &str) -> Option<evnx::cli::NamingPolicy> {
     }
 }
 
+/// Resolve which `.env.<name>` a command operates on, or exit 2.
+///
+/// ⚠️ **Not `?`**, for the same reason `config::load` below is not. A
+/// `--env-name` that names a file which does not exist is "evnx could not run",
+/// and `?` surfaces that through `main`'s `Result` as exit **1** — which
+/// `validate` uses to mean *invalid*, `diff` to mean *differences found*, and
+/// `sync --check` to mean *drifted*.
+///
+/// So a typo in a CI flag reported a finding rather than a broken setup, and the
+/// pipeline branched on it as though the answer were real. `scan` is unaffected
+/// only because it has no `--env-name` to mistype.
+///
+/// 2 is what every command with a three-value contract already uses for "no
+/// verdict", so the answer is the same whichever command was asked.
+fn resolve_env(
+    dir: &Path,
+    env: Option<&str>,
+    env_name: Option<&str>,
+    configured: Option<&str>,
+) -> String {
+    match evnx::core::env_name::select(dir, env, env_name, configured) {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("{} {:#}", "Error:".on_red().bold(), e);
+            eprintln!();
+            eprintln!("No verdict: evnx did not run. This is not a clean result.");
+            std::process::exit(2);
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -70,7 +101,8 @@ fn main() -> Result<()> {
     let cfg = loaded.config;
 
     // Route to command handler
-    match cli.command {
+    // ⚠️ Bound, not returned. See the exit-code handling at the end of `main`.
+    let outcome = match cli.command {
         Commands::Init {
             path,
             yes,
@@ -105,12 +137,12 @@ fn main() -> Result<()> {
             ignore,
             validate_formats,
         } => commands::validate::run(
-            evnx::core::env_name::select(
+            resolve_env(
                 Path::new("."),
                 env.as_deref(),
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
-            )?,
+            ),
             evnx::core::config::pick(
                 example,
                 cfg.defaults.example.clone(),
@@ -162,20 +194,18 @@ fn main() -> Result<()> {
         } => {
             let here = Path::new(".");
             match commands::diff::run(
-                evnx::core::env_name::select(
+                resolve_env(
                     here,
                     env.as_deref(),
                     env_name.as_deref(),
                     cfg.defaults.env_name.as_deref(),
-                )?,
+                ),
                 // The right-hand side: --example, then --against as a name,
                 // then [defaults] example. `env_name` is not consulted here —
                 // it names the *left* side.
                 match (&example, &against) {
                     (Some(path), _) => path.clone(),
-                    (None, Some(_)) => {
-                        evnx::core::env_name::select(here, None, against.as_deref(), None)?
-                    }
+                    (None, Some(_)) => resolve_env(here, None, against.as_deref(), None),
                     (None, None) => cfg
                         .defaults
                         .example
@@ -222,12 +252,12 @@ fn main() -> Result<()> {
                 }
             });
 
-            let env = evnx::core::env_name::select(
+            let env = resolve_env(
                 Path::new("."),
                 env.as_deref(),
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
-            )?;
+            );
             let config = commands::convert::ConvertConfig::builder()
                 .env(env)
                 .target_format(to)
@@ -275,12 +305,12 @@ fn main() -> Result<()> {
         }),
 
         Commands::Sync { args } => commands::sync::run(
-            evnx::core::env_name::select(
+            resolve_env(
                 Path::new("."),
                 args.env.as_deref(),
                 args.env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
-            )?,
+            ),
             evnx::core::config::pick(
                 args.example.clone(),
                 cfg.defaults.example.clone(),
@@ -324,12 +354,12 @@ fn main() -> Result<()> {
             } else {
                 commands::template::GitignoreMode::Default
             };
-            let env = evnx::core::env_name::select(
+            let env = resolve_env(
                 Path::new("."),
                 env.as_deref(),
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
-            )?;
+            );
             commands::template::run(input, output, env, cli.verbose, mode, strict)
         }
 
@@ -344,12 +374,12 @@ fn main() -> Result<()> {
             keep,
             verify,
         } => match commands::backup::run(
-            evnx::core::env_name::select(
+            resolve_env(
                 Path::new("."),
                 env.as_deref(),
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
-            )?,
+            ),
             output,
             cli.verbose,
             key_file,
@@ -449,5 +479,29 @@ fn main() -> Result<()> {
         },
 
         Commands::Completions { shell } => commands::completions::run(shell),
+    };
+
+    // ⚠️ An error is exit **2**, not 1.
+    //
+    // `scan`, `diff`, `doctor` and `sync --check` already document 2 as "could
+    // not run, so there is no verdict", and 1 as a real finding — *secrets
+    // found*, *differences*, *unhealthy*, *drifted*. Returning the command's
+    // `Result` from `main` gave Rust's default `Termination`, which numbers any
+    // error 1, so `evnx validate --env ./missing.env` reported **validation
+    // failed** for a file it never opened.
+    //
+    // `diff` and `sync` were already wrapped individually and are unaffected;
+    // this catches `validate`, `convert` and `template`, and anything added
+    // later, by default rather than by remembering.
+    //
+    // Commands that exit on their own — `scan`, `doctor`, `backup`, `restore`
+    // and the findings path in `validate` — never reach here.
+    if let Err(e) = outcome {
+        eprintln!("{} {:#}", "Error:".on_red().bold(), e);
+        eprintln!();
+        eprintln!("No verdict: evnx did not finish. This is not a clean result.");
+        std::process::exit(2);
     }
+
+    Ok(())
 }

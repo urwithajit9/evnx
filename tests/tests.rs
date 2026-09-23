@@ -611,7 +611,9 @@ fn test_convert_interactive_mode() {
         .args(&["convert"])
         .current_dir(dir.path())
         .assert()
-        .code(1); // Expected to fail since TUI can't run in test environment
+        // 2 since v0.5.0, and more accurate: there is no terminal to prompt on,
+        // so convert could not run. It did not convert anything badly.
+        .code(2);
 }
 
 #[test]

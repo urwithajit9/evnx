@@ -14,10 +14,28 @@ use crate::utils::ui::{info, warning};
 /// Handle blueprint addition
 pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) -> Result<()> {
     // 1. Find blueprint
-    let blueprint = loader::get_blueprint(blueprint_id).context(format!(
-        "Unknown blueprint: '{}'. Run 'evnx init' to see available blueprints.",
-        blueprint_id
-    ))?;
+    //
+    // ⚠️ The list is printed here rather than pointing at another command.
+    // This used to say "Run 'evnx init' to see available blueprints" — which
+    // sends you to an *interactive* prompt, so the advice is unusable in the
+    // scripts and CI steps where `--yes` is given. `evnx init --blueprint`
+    // already answers an unknown id by listing them; the same error deserves
+    // the same quality of answer from whichever command produced it.
+    let blueprint = match loader::get_blueprint(blueprint_id) {
+        Some(found) => found,
+        None => {
+            let available = loader::list_blueprints();
+            return Err(anyhow::anyhow!(
+                "Unknown blueprint '{}'.\n\nAvailable blueprints:\n{}",
+                blueprint_id,
+                available
+                    .iter()
+                    .map(|(bid, name)| format!("  {bid:<22} {name}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ));
+        }
+    };
 
     if verbose {
         println!(

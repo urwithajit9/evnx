@@ -632,7 +632,17 @@ mod check_exit_codes {
 
         assert_eq!(code(&["--dry-run"]), 0, "--dry-run previews and exits 0");
 
-        // An error without --check still exits 1 via main, not 2.
+        // ⚠️ Changed in v0.5.0. This asserted 1 — "errors keep their old code
+        // unless --check opts in" — because when --check gained its 0/1/2
+        // contract the change was scoped to --check alone, to avoid churn for
+        // anyone already running plain `sync`.
+        //
+        // main now exits 2 for any command that returns an error, so the same
+        // answer comes back whichever command was asked. Nothing is lost here:
+        // plain `sync` writes files and has no *finding* meaning competing for
+        // 1, unlike `--check`'s "drifted". The command that made the uniform
+        // rule necessary is `validate`, where 1 means *validation failed* and an
+        // unreadable file was reporting one.
         let broken = dir(None, Some(b"A=x\n"));
         let c = Command::cargo_bin("evnx")
             .unwrap()
@@ -643,7 +653,7 @@ mod check_exit_codes {
             .status
             .code()
             .unwrap();
-        assert_eq!(c, 1, "errors keep their old code unless --check opts in");
+        assert_eq!(c, 2, "an error is 'could not run', in every command");
     }
 }
 
