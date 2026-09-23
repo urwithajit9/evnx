@@ -4,7 +4,6 @@
 use assert_cmd::cargo::cargo_bin_cmd; // ✅ Updated import
                                       // use assert_cmd::prelude::*;
 use predicates::prelude::*;
-use serde_json;
 use std::fs;
 use tempfile::TempDir;
 
@@ -46,7 +45,7 @@ fn create_env(dir: &TempDir, content: &str) -> std::path::PathBuf {
 #[test]
 fn test_init_help() {
     cargo_bin_cmd!("evnx") // ✅ Updated: use macro instead of deprecated method
-        .args(&["init", "--help"])
+        .args(["init", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Interactive project setup"));
@@ -85,7 +84,7 @@ fn test_init_help() {
 #[test]
 fn test_validate_help() {
     cargo_bin_cmd!("evnx")
-        .args(&["validate", "--help"])
+        .args(["validate", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Check .env against .env.example"));
@@ -139,7 +138,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
     );
 
     let output = cargo_bin_cmd!("evnx")
-        .args(&["validate", "--format", "json"])
+        .args(["validate", "--format", "json"])
         .current_dir(dir.path())
         .output()
         .expect("Failed to execute command");
@@ -184,7 +183,7 @@ fn test_json_output_no_ui_decorations() {
     create_env(&dir, "VALID_VAR=test_value\n");
 
     let output = cargo_bin_cmd!("evnx")
-        .args(&["validate", "--format", "json"])
+        .args(["validate", "--format", "json"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -231,7 +230,7 @@ fn test_json_output_passing_validation() {
     std::fs::write(dir.path().join(".env"), "VALID_VAR=test_value\n").unwrap();
 
     let output = cargo_bin_cmd!("evnx")
-        .args(&["validate", "--format", "json"])
+        .args(["validate", "--format", "json"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -277,7 +276,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 #[test]
 fn test_scan_help() {
     cargo_bin_cmd!("evnx")
-        .args(&["scan", "--help"])
+        .args(["scan", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Detect secrets"));
@@ -339,7 +338,7 @@ fn test_scan_exit_zero() {
     create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
 
     cargo_bin_cmd!("evnx")
-        .args(&["scan", "--exit-zero"])
+        .args(["scan", "--exit-zero"])
         .current_dir(dir.path())
         .assert()
         .success();
@@ -352,7 +351,7 @@ fn test_scan_exit_zero() {
 #[test]
 fn test_diff_help() {
     cargo_bin_cmd!("evnx")
-        .args(&["diff", "--help"])
+        .args(["diff", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Compare .env vs .env.example"));
@@ -428,7 +427,7 @@ SECRET_KEY=test
 #[test]
 fn test_convert_help() {
     cargo_bin_cmd!("evnx")
-        .args(&["convert", "--help"])
+        .args(["convert", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -448,7 +447,7 @@ KEY2=value2
     );
 
     let output = cargo_bin_cmd!("evnx")
-        .args(&["convert", "--to", "json"])
+        .args(["convert", "--to", "json"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -464,7 +463,7 @@ fn test_convert_to_github_actions() {
     create_env(&dir, r#"SECRET_KEY=abc123"#);
 
     cargo_bin_cmd!("evnx")
-        .args(&["convert", "--to", "github-actions"])
+        .args(["convert", "--to", "github-actions"])
         .current_dir(dir.path())
         .assert()
         .success()
@@ -484,7 +483,7 @@ AWS_SECRET=val3
     );
 
     let output = cargo_bin_cmd!("evnx")
-        .args(&["convert", "--to", "json", "--include", "AWS_*"])
+        .args(["convert", "--to", "json", "--include", "AWS_*"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -501,7 +500,7 @@ fn test_convert_with_transform() {
     create_env(&dir, r#"DATABASE_URL=test"#);
 
     let output = cargo_bin_cmd!("evnx")
-        .args(&["convert", "--to", "json", "--transform", "lowercase"])
+        .args(["convert", "--to", "json", "--transform", "lowercase"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -543,19 +542,19 @@ fn test_workflow_convert_multiple_formats() {
     create_env(&dir, r#"KEY=value"#);
 
     cargo_bin_cmd!("evnx")
-        .args(&["convert", "--to", "json"])
+        .args(["convert", "--to", "json"])
         .current_dir(dir.path())
         .assert()
         .success();
 
     cargo_bin_cmd!("evnx")
-        .args(&["convert", "--to", "yaml"])
+        .args(["convert", "--to", "yaml"])
         .current_dir(dir.path())
         .assert()
         .success();
 
     cargo_bin_cmd!("evnx")
-        .args(&["convert", "--to", "shell"])
+        .args(["convert", "--to", "shell"])
         .current_dir(dir.path())
         .assert()
         .success()
@@ -592,7 +591,7 @@ fn test_verbose_flag() {
     create_env(&dir, r#"KEY=value"#);
 
     cargo_bin_cmd!("evnx")
-        .args(&["convert", "--to", "json", "--verbose"])
+        .args(["convert", "--to", "json", "--verbose"])
         .current_dir(dir.path())
         .assert()
         .success()
@@ -608,7 +607,7 @@ fn test_convert_interactive_mode() {
     create_env(&dir, r#"KEY=value"#);
 
     cargo_bin_cmd!("evnx")
-        .args(&["convert"])
+        .args(["convert"])
         .current_dir(dir.path())
         .assert()
         // 2 since v0.5.0, and more accurate: there is no terminal to prompt on,
@@ -622,7 +621,7 @@ fn test_convert_invalid_transform() {
     create_env(&dir, r#"KEY=value"#);
 
     cargo_bin_cmd!("evnx")
-        .args(&["convert", "--to", "json", "--transform", "invalid_mode"])
+        .args(["convert", "--to", "json", "--transform", "invalid_mode"])
         .current_dir(dir.path())
         .assert()
         .success(); // Should succeed with warning, not fail
@@ -631,7 +630,7 @@ fn test_convert_invalid_transform() {
 #[test]
 fn test_convert_file_not_found() {
     cargo_bin_cmd!("evnx")
-        .args(&["convert", "--to", "json", "--env", "/nonexistent/.env"])
+        .args(["convert", "--to", "json", "--env", "/nonexistent/.env"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Input file not found"));
@@ -644,7 +643,7 @@ fn test_convert_with_output_file() {
     let output_path = dir.path().join("output.json");
 
     cargo_bin_cmd!("evnx")
-        .args(&[
+        .args([
             "convert",
             "--to",
             "json",
@@ -679,7 +678,7 @@ fn test_convert_invalid_format() {
     create_env(&dir, r#"KEY=value"#);
 
     cargo_bin_cmd!("evnx")
-        .args(&["convert", "--to", "invalid-format"])
+        .args(["convert", "--to", "invalid-format"])
         .current_dir(dir.path())
         .assert()
         .failure()

@@ -73,7 +73,7 @@ fn test_blueprint_components_exist() {
 
         // Test that blueprint actually resolves to variables
         let vars = resolver::resolve_blueprint(blueprint)
-            .expect(&format!("Blueprint '{}' should resolve", stack_id));
+            .unwrap_or_else(|_| panic!("Blueprint '{}' should resolve", stack_id));
 
         assert!(
             !vars.vars.is_empty(),

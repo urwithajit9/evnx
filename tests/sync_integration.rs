@@ -420,7 +420,7 @@ fn test_reverse_sync_missing_example_file() -> Result<()> {
 // `#[serial]`.
 
 mod check_flag {
-    use assert_cmd::Command;
+    use assert_cmd::cargo::cargo_bin_cmd;
     use predicates::prelude::*;
     use tempfile::TempDir;
 
@@ -435,8 +435,7 @@ mod check_flag {
     fn check_fails_when_the_template_is_missing_a_variable() {
         let dir = project("A=1\nNEW=2\n", "A=placeholder\n");
 
-        Command::cargo_bin("evnx")
-            .unwrap()
+        cargo_bin_cmd!("evnx")
             .args(["sync", "--check"])
             .current_dir(dir.path())
             .assert()
@@ -454,8 +453,7 @@ mod check_flag {
     fn check_passes_when_in_sync() {
         let dir = project("A=1\nNEW=2\n", "A=placeholder\nNEW=placeholder\n");
 
-        Command::cargo_bin("evnx")
-            .unwrap()
+        cargo_bin_cmd!("evnx")
             .args(["sync", "--check"])
             .current_dir(dir.path())
             .assert()
@@ -466,8 +464,7 @@ mod check_flag {
     fn check_works_in_the_reverse_direction() {
         let dir = project("A=1\n", "A=placeholder\nONLY_IN_TEMPLATE=x\n");
 
-        Command::cargo_bin("evnx")
-            .unwrap()
+        cargo_bin_cmd!("evnx")
             .args(["sync", "--direction", "reverse", "--check"])
             .current_dir(dir.path())
             .assert()
@@ -486,8 +483,7 @@ mod check_flag {
     fn check_needs_no_terminal_and_no_force() {
         let dir = project("A=1\nNEW=2\n", "A=placeholder\n");
 
-        Command::cargo_bin("evnx")
-            .unwrap()
+        cargo_bin_cmd!("evnx")
             .args(["sync", "--check"])
             .current_dir(dir.path())
             .assert()
@@ -506,8 +502,7 @@ mod check_flag {
     fn plain_dry_run_still_exits_zero_when_out_of_sync() {
         let dir = project("A=1\nNEW=2\n", "A=placeholder\n");
 
-        Command::cargo_bin("evnx")
-            .unwrap()
+        cargo_bin_cmd!("evnx")
             .args(["sync", "--dry-run"])
             .current_dir(dir.path())
             .assert()
@@ -520,7 +515,7 @@ mod check_flag {
 // ─────────────────────────────────────────────────────────────
 
 mod check_exit_codes {
-    use assert_cmd::Command;
+    use assert_cmd::cargo::cargo_bin_cmd;
     use tempfile::TempDir;
 
     const IN_SYNC: i32 = 0;
@@ -540,7 +535,7 @@ mod check_exit_codes {
     }
 
     fn check_code(d: &TempDir, extra: &[&str]) -> i32 {
-        let mut cmd = Command::cargo_bin("evnx").unwrap();
+        let mut cmd = cargo_bin_cmd!("evnx");
         cmd.arg("sync")
             .arg("--check")
             .args(extra)
@@ -598,8 +593,7 @@ mod check_exit_codes {
         const CORRUPT: &[u8] = b"\x00\x01 not = valid\n";
         let d = dir(Some(b"A=1\n"), Some(CORRUPT));
 
-        Command::cargo_bin("evnx")
-            .unwrap()
+        cargo_bin_cmd!("evnx")
             .args(["sync", "--force"])
             .current_dir(d.path())
             .assert()
@@ -618,8 +612,7 @@ mod check_exit_codes {
         let d = dir(Some(b"A=1\nNEW=2\n"), Some(b"A=x\n"));
 
         let code = |args: &[&str]| {
-            Command::cargo_bin("evnx")
-                .unwrap()
+            cargo_bin_cmd!("evnx")
                 .arg("sync")
                 .args(args)
                 .current_dir(d.path())
@@ -644,8 +637,7 @@ mod check_exit_codes {
         // rule necessary is `validate`, where 1 means *validation failed* and an
         // unreadable file was reporting one.
         let broken = dir(None, Some(b"A=x\n"));
-        let c = Command::cargo_bin("evnx")
-            .unwrap()
+        let c = cargo_bin_cmd!("evnx")
             .args(["sync", "--dry-run"])
             .current_dir(broken.path())
             .assert()
@@ -662,7 +654,7 @@ mod check_exit_codes {
 // ─────────────────────────────────────────────────────────────
 
 mod file_selection {
-    use assert_cmd::Command;
+    use assert_cmd::cargo::cargo_bin_cmd;
     use predicates::prelude::*;
     use tempfile::TempDir;
 
@@ -675,8 +667,7 @@ mod file_selection {
     }
 
     fn code(d: &TempDir, args: &[&str]) -> i32 {
-        Command::cargo_bin("evnx")
-            .unwrap()
+        cargo_bin_cmd!("evnx")
             .arg("sync")
             .args(args)
             .current_dir(d.path())
@@ -725,8 +716,7 @@ mod file_selection {
     fn the_named_environment_is_what_gets_written() {
         let d = project();
 
-        Command::cargo_bin("evnx")
-            .unwrap()
+        cargo_bin_cmd!("evnx")
             .args(["sync", "--env-name", "production", "--force"])
             .current_dir(d.path())
             .assert()
@@ -749,8 +739,7 @@ mod file_selection {
     fn a_missing_environment_is_an_error() {
         let d = project();
 
-        Command::cargo_bin("evnx")
-            .unwrap()
+        cargo_bin_cmd!("evnx")
             .args(["sync", "--env-name", "nope", "--check"])
             .current_dir(d.path())
             .assert()
@@ -762,8 +751,7 @@ mod file_selection {
     fn the_header_names_the_files_in_play() {
         let d = project();
 
-        Command::cargo_bin("evnx")
-            .unwrap()
+        cargo_bin_cmd!("evnx")
             .args(["sync", "--env-name", "production", "--dry-run"])
             .current_dir(d.path())
             .assert()

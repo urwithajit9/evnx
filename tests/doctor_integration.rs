@@ -106,7 +106,9 @@ fn auto_fix_covers_every_env_file_and_keeps_the_example_committable() {
     fs::write(dir.path().join(".env"), "A=1\n").unwrap();
     fs::write(dir.path().join(".env.production"), "DATABASE_URL=x\n").unwrap();
 
-    cargo_bin_cmd!("evnx")
+    // The exit code is not what this test is about — it reads .gitignore below.
+    // Bound rather than dropped, because Assert is #[must_use].
+    let _ = cargo_bin_cmd!("evnx")
         .arg("doctor")
         .arg(dir.path())
         .env("EVNX_AUTO_FIX", "1")

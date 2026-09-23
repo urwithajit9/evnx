@@ -460,8 +460,9 @@ mod tests {
         assert!(!is_sensitive_key("DEBUG_MODE"));
     }
 
-    #[cfg(test)]
-    mod tests {
+    // Named for what it covers rather than `tests` again — a `mod tests` inside
+    // `mod tests` says nothing about its contents and reads as a mistake.
+    mod placeholder_patterns {
         use super::*;
 
         #[test]

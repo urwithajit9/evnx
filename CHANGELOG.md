@@ -64,7 +64,14 @@ These are the reason to upgrade rather than wait.
 - `evnx template` refuses unresolved placeholders under `--strict`; `{{ VAR }}`
   with spaces and `|default:` both work.
 - `evnx init` and `doctor` cover every env file, not just `.env`.
+- `evnx add blueprint <unknown>` lists the blueprints instead of saying "run
+  `evnx init`" — an interactive prompt, and so unusable in the scripts where
+  `--yes` is passed. `evnx init --blueprint <unknown>` already listed them.
+- `evnx add` no longer writes an orphaned `  # (required)` line detached from
+  the variable it describes, and the files it writes end with a newline.
 - Benchmarks compile again; `install.sh` no longer depends on JSON formatting.
+- CI lints `--all-targets`, so test code is checked too. It was not before, and
+  an `Assert` whose result was dropped — asserting nothing — sat unnoticed.
 
 ### Changed
 
@@ -72,6 +79,18 @@ These are the reason to upgrade rather than wait.
   argument. Use `--env-name`.
 - **`evnx scan` exit codes are now 0 / 1 / 2.** `2` means the scan could not be
   completed, and is not a louder `1`. `--exit-zero` suppresses `1` only.
+- ⚠️ **An error is now exit `2` in every command, not `1`.** `scan`, `diff`,
+  `doctor` and `sync --check` already used `2` for "could not run, so there is
+  no verdict". Everything else inherited Rust's default, which numbers any error
+  `1` — the code `validate` uses for *invalid*, `diff` for *differences found*
+  and `sync --check` for *drifted*. So `evnx validate --env ./missing.env`
+  reported **validation failed** for a file it never opened, and a typo'd
+  `--env-name` did the same in `validate`, `diff`, `sync`, `convert`, `template`
+  and `backup`. A malformed `.evnx.toml` did it in every command at once.
+  **Findings are unchanged:** a real validation error is still `1`, differences
+  still `1`, a secret still `1`, success still `0`.
+- `evnx doctor` gained `--format`; `EVNX_OUTPUT_JSON=1` still works and the flag
+  wins when both are given.
 
 ---
 

@@ -22,7 +22,7 @@ use tempfile::TempDir;
 
 fn parse_json_output(stdout: &str) -> Result<serde_json::Value, serde_json::Error> {
     // Find the first '{' or '[' which should start the JSON
-    let json_start = stdout.find(|c| c == '{' || c == '[').unwrap_or(0);
+    let json_start = stdout.find(['{', '[']).unwrap_or(0);
     serde_json::from_str(&stdout[json_start..])
 }
 
@@ -176,7 +176,7 @@ fn test_scan_json_format() {
     let json = parse_json_output(&stdout).expect("Output should contain valid JSON");
 
     assert!(json["findings"].is_array());
-    assert!(json["findings"].as_array().unwrap().len() > 0);
+    assert!(!json["findings"].as_array().unwrap().is_empty());
 
     if let Some(first) = json["findings"].as_array().and_then(|a| a.first()) {
         assert!(first["pattern"].is_string());

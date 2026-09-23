@@ -1,7 +1,6 @@
 //! Integration tests for `evnx add` command.
-#![allow(deprecated)]
 
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
@@ -76,8 +75,7 @@ const DJANGO_VARS: &[&str] = &[
 fn add_service_unknown_returns_error() {
     let dir = TempDir::new().unwrap();
 
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("add")
         .arg("service")
         .arg("nonexistent_service_xyz")
@@ -129,8 +127,7 @@ fn add_framework_django_appends_vars() {
     let dir = TempDir::new().unwrap();
     setup_minimal_project(dir.path()).unwrap();
 
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("add")
         .arg("framework")
         .arg("--language")
@@ -164,8 +161,7 @@ fn add_framework_django_appends_vars() {
 fn add_framework_unknown_language_error() {
     let dir = TempDir::new().unwrap();
 
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("add")
         .arg("framework")
         .arg("--language")
@@ -189,8 +185,7 @@ fn add_blueprint_skips_conflicting_vars() {
     setup_postgres_project(dir.path()).unwrap();
 
     // Add T3 blueprint which includes PostgreSQL (has DATABASE_URL)
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("add")
         .arg("blueprint")
         .arg("t3_modern")
@@ -226,8 +221,7 @@ fn add_blueprint_skips_conflicting_vars() {
 fn add_blueprint_to_empty_project() {
     let dir = TempDir::new().unwrap();
 
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("add")
         .arg("blueprint")
         .arg("rust_high_perf")
@@ -266,8 +260,7 @@ fn add_custom_interactive() {
     setup_minimal_project(dir.path()).unwrap();
 
     // Simulate interactive custom addition
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("add")
         .arg("custom")
         .arg("--path")
@@ -302,8 +295,7 @@ fn workflow_init_then_add_service() {
     let dir = TempDir::new().unwrap();
 
     // Step 1: Init with Blank mode
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("init")
         .arg("--yes")
         .arg("--path")
@@ -313,8 +305,7 @@ fn workflow_init_then_add_service() {
         .success();
 
     // Step 2: Add PostgreSQL service
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .arg("add")
         .arg("service")
         .arg("postgresql")
@@ -394,8 +385,7 @@ fn add_warns_when_env_is_committable() {
         .unwrap();
     std::fs::write(dir.path().join(".env"), "SECRET=live_value\n").unwrap();
 
-    let assert = Command::cargo_bin("evnx")
-        .unwrap()
+    let assert = cargo_bin_cmd!("evnx")
         .args(["add", "service", "postgresql", "--yes", "--path"])
         .arg(dir.path())
         .assert()
@@ -422,8 +412,7 @@ fn add_is_quiet_when_env_is_already_ignored() {
         std::fs::write(dir.path().join(".env"), "SECRET=x\n").unwrap();
         std::fs::write(dir.path().join(".gitignore"), gitignore).unwrap();
 
-        let assert = Command::cargo_bin("evnx")
-            .unwrap()
+        let assert = cargo_bin_cmd!("evnx")
             .args(["add", "service", "postgresql", "--yes", "--path"])
             .arg(dir.path())
             .assert()
@@ -447,8 +436,7 @@ fn add_says_nothing_when_there_is_no_env_file() {
         .status()
         .unwrap();
 
-    let assert = Command::cargo_bin("evnx")
-        .unwrap()
+    let assert = cargo_bin_cmd!("evnx")
         .args(["add", "service", "postgresql", "--yes", "--path"])
         .arg(dir.path())
         .assert()
@@ -477,8 +465,7 @@ fn a_required_marker_sits_above_the_variable_it_describes() {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join(".env"), "A=1\n").unwrap();
 
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
         .args(["add", "service", "postgresql", "--yes"])
         .assert()
@@ -518,8 +505,7 @@ fn the_files_add_writes_end_with_a_newline() {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join(".env"), "A=1\n").unwrap();
 
-    Command::cargo_bin("evnx")
-        .unwrap()
+    cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
         .args(["add", "service", "postgresql", "--yes"])
         .assert()

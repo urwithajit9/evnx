@@ -170,6 +170,11 @@ mod tests {
     /// caller — acceptable in 0.x, and the whole point of this pin is that it
     /// cannot happen by accident. Six `bool`s in a row is also why the argument
     /// list should become `SyncArgs`; see the note on `run`.
+    // ⚠️ `allow`, not a type alias. The complex type *is* the test: writing the
+    // signature out in full, one commented argument per line, is what makes a
+    // reordering visible in the diff. Hiding it behind an alias would move the
+    // thing being pinned somewhere the reviewer does not look.
+    #[allow(clippy::type_complexity)]
     #[test]
     fn test_run_signature_compiles() {
         let _func: fn(
