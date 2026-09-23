@@ -98,7 +98,15 @@ pub fn append_to_env_files(
         }
     } else {
         // Create new file
-        fs::write(&example_path, addition.trim()).context("Failed to create .env.example")?;
+        // ⚠️ `trim_start`, not `trim`. The trailing newline is not decoration:
+        // a text file that does not end with one makes `cat a b` join the last
+        // line of the first file to the first line of the second, and many
+        // tools that read `.env` line by line drop the final variable.
+        fs::write(
+            &example_path,
+            format!("{}\n", addition.trim_start().trim_end()),
+        )
+        .context("Failed to create .env.example")?;
 
         if verbose {
             println!("{} Created {}", "[DEBUG]".dimmed(), example_path.display());
@@ -128,7 +136,9 @@ pub fn append_to_env_files(
             .collect::<Vec<_>>()
             .join("\n");
 
-        let updated = format!("{}\n\n{}", existing.trim_end(), todo_addition);
+        // `todo_addition` was rebuilt with `lines().join("\n")`, which drops the
+        // trailing newline the addition arrived with — so it is put back here.
+        let updated = format!("{}\n\n{}\n", existing.trim_end(), todo_addition.trim_end());
         fs::write(&env_path, updated)?;
 
         warn_if_env_is_committable(output_path);
@@ -169,17 +179,56 @@ pub fn format_var_line(
 ) -> String {
     let mut lines = Vec::new();
 
-    if let Some(desc) = description {
-        lines.push(format!("# {}", desc));
+    // ⚠️ The marker goes **above** the variable, folded into its description.
+    //
+    // It used to be pushed as a line of its own *after* the assignment, which
+    // left `  # (required)` floating between two unrelated variables — visibly
+    // detached from the one it described. Appending it to the assignment instead
+    // is no better: the caller wraps that line as
+    // `# TODO: NAME=value  # <-- Fill in real value`, so the marker would land
+    // as a second `#` comment inside the first.
+    match (description, required) {
+        (Some(desc), true) => lines.push(format!("# {} (required)", desc)),
+        (Some(desc), false) => lines.push(format!("# {}", desc)),
+        (None, true) => lines.push("# (required)".to_string()),
+        (None, false) => {}
     }
 
     lines.push(format!("{}={}", name, example_value));
 
-    if required {
-        lines.push("  # (required)".to_string());
+    lines.join("\n")
+}
+
+/// Say something when the `.env` we just wrote to would be committed.
+///
+/// ⚠️ `evnx add` appends to `.env` and, until now, never looked at
+/// `.gitignore`. In a repository with no protection that meant evnx itself
+/// adding lines to a file holding live credentials, on its way into a commit,
+/// silently. `init` writes the entries; `doctor --fix` writes them; `add` did
+/// not even check.
+///
+/// It warns rather than writing. `add` runs in a project that already exists,
+/// where a `.gitignore` is somebody's considered file — editing it unasked is
+/// the kind of help that makes a tool hard to trust near a repository. `init`
+/// writing it is different: there was nothing there to respect.
+///
+/// The check asks git, so the `.env*` that `evnx init` writes counts as
+/// protection. An exact-match check would warn on every project evnx itself set
+/// up correctly, which is worse than not warning at all — a warning people learn
+/// to ignore is one they will ignore when it matters.
+fn warn_if_env_is_committable(project_root: &Path) {
+    use crate::core::gitignore;
+
+    if gitignore::env_file_is_protected(project_root, ".env") {
+        return;
     }
 
-    lines.join("\n")
+    ui::warning(".env is not covered by .gitignore — it can be committed");
+    println!(
+        "     {}  {}",
+        glyph::ARROW.dimmed(),
+        "evnx doctor --fix".cyan()
+    );
 }
 
 #[cfg(test)]
@@ -236,36 +285,4 @@ mod tests {
         assert!(line.contains("API_KEY=sk_test_xxx"));
         assert!(line.contains("(required)"));
     }
-}
-
-/// Say something when the `.env` we just wrote to would be committed.
-///
-/// ⚠️ `evnx add` appends to `.env` and, until now, never looked at
-/// `.gitignore`. In a repository with no protection that meant evnx itself
-/// adding lines to a file holding live credentials, on its way into a commit,
-/// silently. `init` writes the entries; `doctor --fix` writes them; `add` did
-/// not even check.
-///
-/// It warns rather than writing. `add` runs in a project that already exists,
-/// where a `.gitignore` is somebody's considered file — editing it unasked is
-/// the kind of help that makes a tool hard to trust near a repository. `init`
-/// writing it is different: there was nothing there to respect.
-///
-/// The check asks git, so the `.env*` that `evnx init` writes counts as
-/// protection. An exact-match check would warn on every project evnx itself set
-/// up correctly, which is worse than not warning at all — a warning people learn
-/// to ignore is one they will ignore when it matters.
-fn warn_if_env_is_committable(project_root: &Path) {
-    use crate::core::gitignore;
-
-    if gitignore::env_file_is_protected(project_root, ".env") {
-        return;
-    }
-
-    ui::warning(".env is not covered by .gitignore — it can be committed");
-    println!(
-        "     {}  {}",
-        glyph::ARROW.dimmed(),
-        "evnx doctor --fix".cyan()
-    );
 }

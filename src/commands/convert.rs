@@ -575,7 +575,10 @@ fn get_converter(format: &str) -> Result<Box<dyn Converter>> {
             eprintln!("{}", "Supported formats:".bold());
             eprintln!();
             print_format_help();
-            std::process::exit(1);
+            // 2, not 1: convert was asked for something it cannot produce, so
+            // there is no output — the same "could not run" every other command
+            // reports with 2. Nothing here converted anything badly.
+            std::process::exit(2);
         }
     }
 }
@@ -697,9 +700,11 @@ mod tests {
 
     #[test]
     fn test_build_options_clone() {
-        let mut opts = ConvertOptions::default();
-        opts.prefix = Some("TEST_".to_string());
-        opts.base64 = true;
+        let opts = ConvertOptions {
+            prefix: Some("TEST_".to_string()),
+            base64: true,
+            ..Default::default()
+        };
 
         let config = ConvertConfig {
             options: opts,
@@ -829,9 +834,11 @@ mod tests {
     #[test]
     fn test_key_transform_integration() {
         // Integration test: verify options transform keys correctly
-        let mut options = ConvertOptions::default();
-        options.prefix = Some("APP_".to_string());
-        options.transform = Some(KeyTransform::Uppercase);
+        let options = ConvertOptions {
+            prefix: Some("APP_".to_string()),
+            transform: Some(KeyTransform::Uppercase),
+            ..Default::default()
+        };
 
         let original = "database_url";
         let transformed = options.transform_key(original);
@@ -845,8 +852,10 @@ mod tests {
         vars.insert("DB_KEY".to_string(), "db_val".to_string());
         vars.insert("APP_URL".to_string(), "app_val".to_string());
 
-        let mut options = ConvertOptions::default();
-        options.include_pattern = Some("AWS_*".to_string());
+        let options = ConvertOptions {
+            include_pattern: Some("AWS_*".to_string()),
+            ..Default::default()
+        };
 
         let filtered = options.filter_vars(&vars);
         assert_eq!(filtered.len(), 1);

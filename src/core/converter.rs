@@ -271,8 +271,10 @@ mod tests {
         vars.insert("AWS_KEY".to_string(), "value1".to_string());
         vars.insert("DB_KEY".to_string(), "value2".to_string());
 
-        let mut opts = ConvertOptions::default();
-        opts.include_pattern = Some("AWS_*".to_string());
+        let opts = ConvertOptions {
+            include_pattern: Some("AWS_*".to_string()),
+            ..Default::default()
+        };
         let filtered = opts.filter_vars(&vars);
 
         assert_eq!(filtered.len(), 1);
@@ -286,8 +288,10 @@ mod tests {
         vars.insert("KEY1".to_string(), "value1".to_string());
         vars.insert("KEY2_LOCAL".to_string(), "value2".to_string());
 
-        let mut opts = ConvertOptions::default();
-        opts.exclude_pattern = Some("*_LOCAL".to_string());
+        let opts = ConvertOptions {
+            exclude_pattern: Some("*_LOCAL".to_string()),
+            ..Default::default()
+        };
         let filtered = opts.filter_vars(&vars);
 
         assert_eq!(filtered.len(), 1);
@@ -297,32 +301,40 @@ mod tests {
 
     #[test]
     fn test_transform_key_prefix() {
-        let mut opts = ConvertOptions::default();
-        opts.prefix = Some("APP_".to_string());
+        let opts = ConvertOptions {
+            prefix: Some("APP_".to_string()),
+            ..Default::default()
+        };
 
         assert_eq!(opts.transform_key("DATABASE_URL"), "APP_DATABASE_URL");
     }
 
     #[test]
     fn test_transform_key_uppercase() {
-        let mut opts = ConvertOptions::default();
-        opts.transform = Some(KeyTransform::Uppercase);
+        let opts = ConvertOptions {
+            transform: Some(KeyTransform::Uppercase),
+            ..Default::default()
+        };
 
         assert_eq!(opts.transform_key("database_url"), "DATABASE_URL");
     }
 
     #[test]
     fn test_transform_key_lowercase() {
-        let mut opts = ConvertOptions::default();
-        opts.transform = Some(KeyTransform::Lowercase);
+        let opts = ConvertOptions {
+            transform: Some(KeyTransform::Lowercase),
+            ..Default::default()
+        };
 
         assert_eq!(opts.transform_key("DATABASE_URL"), "database_url");
     }
 
     #[test]
     fn test_transform_value_base64() {
-        let mut opts = ConvertOptions::default();
-        opts.base64 = true;
+        let opts = ConvertOptions {
+            base64: true,
+            ..Default::default()
+        };
 
         let result = opts.transform_value("hello");
         assert_eq!(result, "aGVsbG8="); // base64("hello")

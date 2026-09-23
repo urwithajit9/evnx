@@ -1,6 +1,6 @@
 [package]
 name        = "evnx"
-version     = "0.4.0"
+version     = "0.5.0"
 edition     = "2021"
 # Verified by building on it, not assumed: cargo +1.85.0 check passes for the
 # default feature set, --features cloud and --all-features. The floor comes from
@@ -162,9 +162,17 @@ default = []
 migrate = ["dep:reqwest", "dep:crypto_box"]
 backup  = ["dep:aes-gcm", "dep:argon2",  "dep:rand"]
 cloud   = ["dep:evnx-crypto", "dep:reqwest", "dep:hex", "dep:blake3", "dep:toml_edit", "dep:qrcode"]
-# `cloud` is deliberately NOT in `full`, and not enabled in the prebuilt binaries.
-# Adding it would silently change what `full` and `--all-features` mean for people
-# already using them, and hand network-capable code to users who never opted in.
+# `cloud` is deliberately NOT in `full`: adding it would silently change what
+# `full` means for people already using that flag.
+#
+# ⚠️ It IS in the prebuilt binaries. An earlier version of this comment said the
+# opposite, and the README repeated it. `release.yml` builds every target with
+# `--all-features`, which enables every feature in this table — membership in
+# `full` is irrelevant to it. Verified against the shipped artefact: the v0.4.0
+# musl tarball lists `auth`, `vault` and `cloud` in `--help`.
+#
+# `cargo install` is the one channel that does not, because it compiles from
+# source with `default = []`.
 full    = ["migrate", "backup"]
 
 # ─── Build profiles ──────────────────────────────────────────────────────────

@@ -21,6 +21,12 @@ jobs:
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
+          # Added for the container image: arm64 Linux needs a *static* binary
+          # to run on Alpine, and the gnu build above is dynamically linked.
+          # It also gives arm64 Linux users a musl tarball, which they did not
+          # have before.
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
           - target: x86_64-apple-darwin
             os: macos-latest
           - target: aarch64-apple-darwin
@@ -55,7 +61,7 @@ jobs:
           EOF
 
       - name: Install musl tools
-        if: matrix.target == 'x86_64-unknown-linux-musl'
+        if: contains(matrix.target, 'musl')
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
@@ -165,8 +171,12 @@ jobs:
 
           ### Cargo
           \`\`\`bash
-          cargo install evnx
+          cargo install evnx --all-features
           \`\`\`
+          > \`cargo install\` compiles from source with \`default = []\`, so plain
+          > \`cargo install evnx\` gives you a binary **without** the \`auth\`,
+          > \`vault\` and \`cloud\` commands. Every other channel above ships them
+          > already — the binaries are built with \`--all-features\`.
 
           ## Checksums
 
@@ -186,6 +196,66 @@ jobs:
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Container image ────────────────────────────────────────────────────────
+  #
+  # ⚠️ This does NOT build evnx. It packages the same static musl binaries the
+  # matrix above already produced, so `docker run evnx --version` and a
+  # downloaded tarball are byte for byte the same program. Building here would
+  # mean two toolchains and two sets of flags to keep honest — the same reason
+  # evnx-server's image is built in CI and never on the box.
+  docker:
+    name: Publish container image
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Download the static binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: evnx-*-unknown-linux-musl
+          path: musl
+
+      - name: Lay out one binary per architecture
+        run: |
+          set -euo pipefail
+          cp musl/evnx-x86_64-unknown-linux-musl/evnx-x86_64-unknown-linux-musl  evnx-bin-amd64
+          cp musl/evnx-aarch64-unknown-linux-musl/evnx-aarch64-unknown-linux-musl evnx-bin-arm64
+          chmod +x evnx-bin-amd64 evnx-bin-arm64
+          file evnx-bin-amd64 evnx-bin-arm64
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The Dockerfile COPYs `evnx-bin-${TARGETARCH}`, which buildx sets per
+      # platform, so one build produces both images under one manifest.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/urwithajit9/evnx:${{ steps.version.outputs.VERSION }}
+            ghcr.io/urwithajit9/evnx:latest
+          provenance: true
+          sbom: true
 
   # ── Update Homebrew tap ────────────────────────────────────────────────────
   update-homebrew-tap:

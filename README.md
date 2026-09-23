@@ -164,8 +164,34 @@ There are no flags required. The interactive flow handles stack and service sele
 Add variables to an existing `.env` file interactively. Supports custom input, service blueprints, and variable templates.
 
 ```bash
-evnx add
+evnx add                          # interactive
+evnx add service postgresql       # a known service, non-interactively
+evnx add framework nextjs
 ```
+
+---
+
+### `evnx spec`
+
+Declares what each variable **is** — something `.env.example` cannot express. Written
+into `[vars]` in `.evnx.toml`, and read by `validate`, `scan` and `sync`.
+
+```bash
+evnx spec init                    # infer the contract from files you already have
+```
+
+```toml
+[vars]
+PORT = { format = "port", description = "HTTP listen port" }
+
+[vars.TENANT_A]
+secret = true                     # scan reports it; no heuristic could
+environments = ["production"]     # required in production only
+```
+
+`secret = true` reports a credential whose name gives nothing away. `secret = false`
+retracts a guess made from a variable's **name** — but never a match on its **value**,
+so a variable holding `sk_live_…` is still reported however it is declared.
 
 ---
 
@@ -189,13 +215,17 @@ Detects: missing required variables, placeholder values (`YOUR_KEY_HERE`, `CHANG
 Scans files for accidentally committed credentials using pattern matching and entropy analysis.
 
 ```bash
-evnx scan                         # scan current directory
-evnx scan --path src/             # specific path
-evnx scan --format sarif          # SARIF output for GitHub Security tab
-evnx scan --exit-zero             # warn but do not fail CI
+evnx scan                              # scan current directory, recursively
+evnx scan src/ config/                 # specific paths (positional, repeatable)
+evnx scan --severity high              # only what evnx is confident about
+evnx scan --pattern 'ACME-[A-Z0-9]{32}'  # your own secret format
+evnx scan --format sarif               # SARIF for the GitHub Security tab
+evnx scan --exit-zero                  # warn but do not fail CI
 ```
 
-Detects: AWS Access Keys, Stripe keys (live and test), GitHub tokens, OpenAI and Anthropic API keys, RSA/EC/OpenSSH private keys, high-entropy strings, and generic API key patterns.
+Detects: AWS Access Keys, Stripe keys (live and test), GitHub tokens, OpenAI and Anthropic API keys, RSA/EC/OpenSSH private keys, high-entropy strings, and generic API key patterns — plus any format you declare with `--pattern` or `[[scan.patterns]]`.
+
+**Exit codes are `0` clean, `1` secrets found, `2` the scan could not be completed.** `2` is not a louder `1`: "I found nothing" and "I could not look" are different answers. `--exit-zero` suppresses `1` only.
 
 ---
 
@@ -335,6 +365,24 @@ evnx restore .env.backup --output .env
 
 ---
 
+## Working with multiple environments
+
+`--env-name` resolves `.env.<name>` across `validate`, `scan`, `diff`, `sync`, `convert`,
+`backup` and `template`:
+
+```bash
+evnx validate --env-name production            # operates on .env.production
+evnx diff --env-name production --against staging
+```
+
+A name whose file does not exist is an error listing the ones that do — it never quietly
+falls back to `.env`. Set a project default with `[defaults] env_name` in `.evnx.toml`.
+
+Comparing two real environments is the useful diff; the default compares against the
+template, where every filled-in value differs by construction.
+
+---
+
 ## Cloud sync _(requires `--features cloud`)_
 
 Push your `.env` to the cloud and pull it on any machine or in any pipeline — with
@@ -355,9 +403,12 @@ evnx cloud pull                          # download, decrypt, write .env
 
 ### Installing with cloud support
 
-Cloud is **off by default** and not included in the prebuilt binaries, so
-`cargo install evnx` and the npm / PyPI / Homebrew / Scoop packages are unchanged.
-To get it you must build from source:
+**The prebuilt binaries already include the cloud commands.** npm, PyPI, Homebrew,
+Scoop, winget and the GitHub Release are all built with `--all-features`, so if you
+installed evnx any of those ways, `evnx cloud --help` already works.
+
+`cargo install` is the one exception, because it compiles from source with
+`default = []`:
 
 ```bash
 cargo install evnx --features cloud
@@ -404,6 +455,46 @@ If someone else pushed since you last pulled, your push is refused with a confli
 rather than silently overwriting them. Pull, re-apply, push again — the version
 number is authenticated into the ciphertext, so the same bytes cannot simply be
 re-sent.
+
+### Running a command without writing a file
+
+```bash
+evnx cloud run --vault app/production -- ./deploy.sh
+evnx cloud run --include 'NEXT_PUBLIC_*' -- npm run build
+```
+
+Decrypts in memory and hands the variables to the child process. Nothing on disk,
+nothing in shell history, and **nothing in `ps`** — values travel in the environment
+block, never the argument vector. The child's exit code comes back unchanged, so a
+pipeline can branch on it.
+
+`--include` / `--exclude` narrow what the child sees; a filter that matches nothing is
+an error rather than a silent run with zero secrets.
+
+⚠️ This removes the plaintext *file*, not the master password. The vault key is wrapped
+under your master key, so decryption needs it wherever the command runs. In CI, feed it
+with `--password-stdin`.
+
+### Sharing with a team
+
+```bash
+evnx vault share app/production --with teammate@example.com --role developer
+evnx vault members app/production
+evnx vault role app/production --user teammate@example.com --role viewer
+evnx vault revoke app/production --user teammate@example.com
+```
+
+The vault key is wrapped for the recipient with a **hybrid X25519 + ML-KEM-768** scheme,
+so a share is not opened by a future quantum computer harvesting today's traffic. There is
+no X25519-only path; sharing with an account that has no ML-KEM key on file is refused
+rather than downgraded.
+
+Revocation re-keys the vault, so a removed member cannot open versions pushed after they
+left.
+
+⚠️ The recipient's public keys come from the server. Out-of-band fingerprint verification
+is not built, so "the server cannot read your secrets" becomes "…cannot read them
+*passively*" the moment you share.
 
 ### CI/CD
 
@@ -532,29 +623,57 @@ Store defaults in `.evnx.toml` at the project root:
 
 ```toml
 [defaults]
-env_file = ".env"
-example_file = ".env.example"
-verbose = false
-
-[validate]
-strict = true
-auto_fix = false
-format = "pretty"
+env_name = "production"        # which .env.<name> commands operate on
+example  = ".env.template"     # the template path, if not .env.example
 
 [scan]
+severity            = "high"        # "high" | "medium" | "low"
+exclude             = ["fixtures"]  # paths this project never scans
 ignore_placeholders = true
-exclude_patterns = ["*.example", "*.sample", "*.template"]
-format = "pretty"
 
-[convert]
-default_format = "json"
-base64 = false
+# Your own secret formats, beyond the built-in ones. Repeat per rule.
+[[scan.patterns]]
+name  = "Acme API key"
+regex = "ACME-[A-Z0-9]{32}"
 
-[aliases]
-gh = "github-actions"
-k8s = "kubernetes"
-tf = "terraform"
+[validate]
+strict           = true
+validate_formats = true
+ignore           = ["boolean_trap"]
+
+[sync]
+naming_policy = "warn"         # "warn" | "error" | "ignore"
+
+[diff]
+ignore_keys = ["BUILD_ID"]
+
+[backup]
+keep = 3
+
+[cloud]
+vault = "my-app/production"    # written by `evnx cloud link`
+
+# What each variable *is* — read by validate, scan and sync.
+[vars]
+PORT       = { format = "port", description = "HTTP listen port" }
+STRIPE_KEY = { secret = true, environments = ["production"] }
 ```
+
+A setting belongs here if it is true of the **project** and would otherwise be repeated
+on every invocation. It does not if it expresses what *this* invocation should do — which
+is why `[scan] severity` is configurable and `--exit-zero` is not.
+
+Precedence is **flag > config > default**. Lists combine rather than replace, so
+`--exclude dist` scans with `dist` *and* the project's excludes. Settings that can weaken
+scanning are announced on every run. Unknown keys warn and never fail, so a file written
+for a later evnx keeps working on an earlier one.
+
+Full reference: <https://www.evnx.dev/guides/reference/configuration-file>
+
+⚠️ **On v0.4.x and earlier this file did nothing.** The loader existed and nothing called
+it, so a project with `[validate] strict = true` validated non-strictly and said nothing.
+Keys named in older copies of this README — `env_file`, `auto_fix`, `exclude_patterns`,
+`[convert]`, `[aliases]` — were never read by anything and do not exist.
 
 ---
 
@@ -574,7 +693,14 @@ host2.example.com
 
 Use comma-separated strings and parse them in application code. A `--lenient` flag for extended syntax is under consideration — see [open issues](https://github.com/urwithajit9/evnx/issues).
 
-**One `.env` file at a time** — evnx works with `.env` and `.env.example`. Variants like `.env.prod`, `.env.production`, `.env.local` and `.env.staging` are **not discovered** by `evnx scan` when scanning a directory; it reports "no secrets detected" without opening them. `evnx validate` and `evnx diff` are unaffected — pass the file explicitly with `--env`. Multi-file support is planned for a future release.
+**Multiple environments are supported as of v0.5.0.** `evnx scan` reads every `.env`
+variant it walks past, and `--env-name production` resolves to `.env.production` across
+`validate`, `scan`, `diff`, `sync`, `convert`, `backup` and `template`.
+
+⚠️ Before v0.5.0, `evnx scan` silently skipped `.env.production`, `.env.local`,
+`.env.staging` and every other dotted variant, and reported "no secrets detected" without
+opening them. If you relied on `evnx scan` as a gate on an earlier version, it never saw
+the file most likely to hold production credentials.
 
 **Windows** — file permissions checking is limited (no Unix permission model). Terminal color support requires PowerShell or Windows Terminal on older systems.
 

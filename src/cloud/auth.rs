@@ -1204,7 +1204,7 @@ mod tests {
             server.url(),
             Session {
                 email: "a@example.com".into(),
-                access_token: SecretString::new(&jwt_with_exp(4_000_000_000)),
+                access_token: SecretString::new(jwt_with_exp(4_000_000_000)),
                 access_expires_at: 4_000_000_000,
                 refresh_token: SecretString::new("r"),
             },

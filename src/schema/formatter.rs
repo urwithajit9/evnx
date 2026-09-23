@@ -60,13 +60,26 @@ fn format_sections(vars: &VarCollection) -> String {
             sorted.sort_by_key(|(name, _)| *name);
 
             for (name, meta) in sorted {
-                if let Some(desc) = &meta.description {
-                    content.push_str(&format!("# {}\n", desc));
+                // ⚠️ The required marker goes **above** the variable, folded into
+                // its description.
+                //
+                // It used to be written as a line of its own *after* the
+                // assignment, which left `  # (required)` floating between two
+                // unrelated variables with nothing to say which one it described.
+                // Appending it to the assignment instead is no better: `add`
+                // wraps that line as `# TODO: NAME=value  # <-- Fill in real
+                // value`, so the marker would land as a second `#` comment
+                // inside the first.
+                //
+                // Shared by `init` and `add`, so both change together — which is
+                // the point of them sharing a renderer.
+                match (&meta.description, meta.required) {
+                    (Some(desc), true) => content.push_str(&format!("# {} (required)\n", desc)),
+                    (Some(desc), false) => content.push_str(&format!("# {}\n", desc)),
+                    (None, true) => content.push_str("# (required)\n"),
+                    (None, false) => {}
                 }
                 content.push_str(&format!("{}={}\n", name, meta.example_value));
-                if meta.required {
-                    content.push_str("  # (required)\n");
-                }
             }
         }
         content.push('\n');

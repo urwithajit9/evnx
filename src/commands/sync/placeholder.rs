@@ -221,8 +221,10 @@ mod tests {
 
     #[test]
     fn test_is_placeholder_value_with_custom_config() {
-        let mut config = PlaceholderConfig::default();
-        config.default = "CUSTOM_PLACEHOLDER".to_string();
+        let config = PlaceholderConfig {
+            default: "CUSTOM_PLACEHOLDER".to_string(),
+            ..Default::default()
+        };
 
         assert!(is_placeholder_value("CUSTOM_PLACEHOLDER", &config));
         // ✅ FIXED: "YOUR_VALUE_HERE" still matches because of .contains("YOUR_") check

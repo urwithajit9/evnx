@@ -819,7 +819,9 @@ mod tests {
         signed_in(&server.url(), 4_000_000_000).save().unwrap();
         let client = Client::new(server.url()).unwrap();
 
-        let cases: &[(u16, &str, fn(&ApiError) -> bool)] = &[
+        // (status, machine code, what the mapped error should be)
+        type Case = (u16, &'static str, fn(&ApiError) -> bool);
+        let cases: &[Case] = &[
             (423, "LOCKED", |e| matches!(e, ApiError::Locked { .. })),
             (404, "NOT_FOUND", |e| matches!(e, ApiError::NotFound { .. })),
             (409, "CONFLICT", |e| matches!(e, ApiError::Conflict { .. })),
