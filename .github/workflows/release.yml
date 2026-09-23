@@ -165,8 +165,12 @@ jobs:
 
           ### Cargo
           \`\`\`bash
-          cargo install evnx
+          cargo install evnx --all-features
           \`\`\`
+          > \`cargo install\` compiles from source with \`default = []\`, so plain
+          > \`cargo install evnx\` gives you a binary **without** the \`auth\`,
+          > \`vault\` and \`cloud\` commands. Every other channel above ships them
+          > already — the binaries are built with \`--all-features\`.
 
           ## Checksums
 

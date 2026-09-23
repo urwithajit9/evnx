@@ -101,3 +101,23 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --no-deps --all-features
+
+  package:
+    name: crates.io package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # ⚠️ Publishing to crates.io is manual and irreversible — a version can be
+      # yanked but never unpublished, and the number can never be reused. So the
+      # failure mode worth preventing is discovering a packaging problem *during*
+      # the release.
+      #
+      # `--dry-run` packages the crate and builds it from the resulting tarball,
+      # which contains only the files `cargo package` includes. A file that is
+      # gitignored, or excluded by `[package] include`, compiles locally and
+      # fails here — which is the whole point of running it on every PR rather
+      # than once at the tag.
+      - name: cargo publish --dry-run
+        run: cargo publish --dry-run --all-features

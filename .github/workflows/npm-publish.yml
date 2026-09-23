@@ -366,8 +366,24 @@ jobs:
           for pkg_dir in npm-publish/packages/*/; do
             pkg_name=$(node -p "require('./${pkg_dir}package.json').name")
             echo "Publishing $pkg_name..."
-            (cd "$pkg_dir" && npm publish --access public --provenance) || \
-            echo "⚠ $pkg_name already published, skipping"
+            # ⚠️ Only a version conflict is survivable. `|| echo` used to catch
+            # *any* non-zero exit and turn it into a green step — which is how
+            # v0.4.0 reported success while publishing nothing: the npm token had
+            # expired, and npm answers an unauthorised publish to an existing
+            # package with **404, not 403**, so the failure read like a missing
+            # package and the `||` swallowed it.
+            if out=$(cd "$pkg_dir" && npm publish --access public --provenance 2>&1); then
+              echo "$out"
+              echo "✓ $pkg_name published"
+            else
+              echo "$out"
+              if grep -qi "previously published versions\|EPUBLISHCONFLICT" <<<"$out"; then
+                echo "⚠ $pkg_name is already at this version, skipping"
+              else
+                echo "::error::$pkg_name failed to publish — see the output above"
+                exit 1
+              fi
+            fi
           done
 
       - name: Wait for registry replication
