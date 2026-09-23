@@ -10,6 +10,7 @@
 //! mod.rs          → Public API (backward compatible run() function)
 //! runner.rs       → Orchestration logic
 //! detector.rs     → Detection strategies (trait + implementations)
+//! patternset.rs   → Custom patterns: --pattern and [[scan.patterns]]
 //! filters.rs      → File collection and filtering
 //! output.rs       → Output formatters (pretty/json/sarif)
 //! models.rs       → Data structures (Finding, ScanResults)
@@ -24,7 +25,7 @@
 //! scan::run(
 //!     vec!["./src".to_string()],  // paths
 //!     vec![],                      // exclude
-//!     vec![],                      // pattern (unused)
+//!     vec![],                      // custom patterns — none
 //!     false,                       // ignore_placeholders
 //!     "low".to_string(),           // severity — lowest confidence reported
 //!     "pretty".to_string(),        // format
@@ -62,6 +63,7 @@ pub mod detector;
 pub mod filters;
 pub mod models;
 pub mod output;
+pub mod patternset;
 pub mod runner;
 
 use crate::docs;
@@ -71,6 +73,7 @@ pub use detector::{Detection, DetectorRegistry, SecretDetector};
 pub use filters::FileFilter;
 pub use models::{Confidence, Finding, ScanResults};
 pub use output::{render, OutputFormat};
+pub use patternset::{PatternMatch, PatternSet};
 pub use runner::{truncate_value, ScanRunner};
 
 /// Nothing at or above `--severity`.
@@ -86,7 +89,9 @@ pub const EXIT_ERROR: i32 = 2;
 ///
 /// * `paths` - Paths to scan (files or directories)
 /// * `exclude` - Exclusion patterns (glob or substring)
-/// * `_pattern` - Custom patterns (currently unused, reserved for future)
+/// * `patterns` - Secret formats this project declared: `--pattern` merged with
+///   `[[scan.patterns]]` from `.evnx.toml`. See
+///   [`patternset::merge`](self::patternset::merge)
 /// * `ignore_placeholders` - Skip placeholder values
 /// * `format` - Output format (pretty/json/sarif)
 /// * `exit_zero` - Always exit 0 (for CI pipelines)
@@ -108,6 +113,11 @@ pub const EXIT_ERROR: i32 = 2;
 /// `--exit-zero` suppresses 1 only. Trouble still exits 2: the flag means "do
 /// not fail my build over findings", not "never tell me the scan was impossible".
 ///
+/// ⚠️ **A custom pattern that does not compile is trouble, not a clean scan.**
+/// `--pattern '('` exits 2 and says so. A scanner that shrugged off a broken
+/// rule and printed "no secrets found" would be reporting a result for a search
+/// it never ran — and in CI that reads as a pass.
+///
 /// # Example
 ///
 /// ```no_run
@@ -116,7 +126,7 @@ pub const EXIT_ERROR: i32 = 2;
 /// scan::run(
 ///     vec!["./src".to_string()],
 ///     vec!["node_modules".to_string()],
-///     vec![],
+///     vec![],                  // custom patterns — none
 ///     false,                   // ignore_placeholders
 ///     "low".to_string(),       // severity
 ///     "pretty".to_string(),    // format
@@ -129,7 +139,7 @@ pub const EXIT_ERROR: i32 = 2;
 pub fn run(
     paths: Vec<String>,
     exclude: Vec<String>,
-    _pattern: Vec<String>,
+    patterns: Vec<crate::core::config::PatternRule>,
     ignore_placeholders: bool,
     severity: String,
     format: String,
@@ -143,12 +153,16 @@ pub fn run(
     let scan = || -> Result<bool, anyhow::Error> {
         let min_confidence: Confidence = severity.parse()?;
         let output_format: OutputFormat = format.parse()?;
-        let runner = ScanRunner::with_spec(
+        // Compiled before anything is printed, so a broken expression cannot be
+        // mistaken for a finished scan.
+        let compiled = PatternSet::compile(&patterns)?;
+        let runner = ScanRunner::with_spec_and_patterns(
             &exclude,
             ignore_placeholders,
             verbose,
             min_confidence,
             spec.clone(),
+            compiled,
         );
         runner.run(paths, output_format)
     };

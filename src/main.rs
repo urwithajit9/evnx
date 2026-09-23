@@ -121,7 +121,9 @@ fn main() -> Result<()> {
         } => commands::scan::run(
             path,
             evnx::core::config::extend(exclude, cfg.scan.exclude),
-            pattern,
+            // Additive, like `exclude` above: `--pattern` is this run's rule and
+            // `[[scan.patterns]]` is the project's standing set.
+            commands::scan::patternset::merge(pattern, cfg.scan.patterns),
             evnx::core::config::any(ignore_placeholders, cfg.scan.ignore_placeholders),
             evnx::core::config::pick(severity, cfg.scan.severity, "low".to_string()),
             format,

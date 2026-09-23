@@ -908,16 +908,32 @@ pub enum Commands {
         path: Vec<String>,
         #[arg(long, default_value = ".env.example")]
         exclude: Vec<String>,
-        #[arg(long)]
+
+        /// Also report values matching this regular expression. Repeatable.
+        ///
+        /// For the formats evnx does not ship with — an internal token, a
+        /// vendor key shape. `--pattern 'ACME-[A-Z0-9]{32}'` reports matches as
+        /// `Custom pattern 1`, numbered in the order the flags are given.
+        ///
+        /// It takes an expression and nothing else. For a name that means
+        /// something, and for a rule the whole team scans with, declare it under
+        /// `[[scan.patterns]]` in `.evnx.toml` instead; both sets apply
+        /// together.
+        ///
+        /// An expression that does not compile exits 2 — no verdict — rather
+        /// than reporting a clean scan it never ran.
+        #[arg(long, value_name = "REGEX")]
         pattern: Vec<String>,
+
         #[arg(long)]
         ignore_placeholders: bool,
 
         /// Lowest confidence worth reporting: high, medium or low.
         ///
         /// Filters what is reported, counted and exited on — all three describe
-        /// the same set. `--severity high` reports only detections that match a
-        /// known provider format, which is the usual choice for a blocking CI
+        /// the same set. `--severity high` reports only detections that matched
+        /// a format — a provider's, or one this project declared under
+        /// `[[scan.patterns]]` — which is the usual choice for a blocking CI
         /// gate; the default reports everything.
         /// Defaults to `low` (report everything), or `[scan] severity` from
         /// `.evnx.toml` when that is set.

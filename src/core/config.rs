@@ -55,6 +55,63 @@ pub struct Defaults {
     extra: Extra,
 }
 
+/// One secret format this project recognises that evnx does not ship with.
+///
+/// The built-in detectors know AWS, Stripe, GitHub and the rest. This is how a
+/// team adds the format only it knows about — an internal token, a vendor key
+/// shape — and has every clone of the repository scan for it.
+///
+/// ```toml
+/// [[scan.patterns]]
+/// name = "Acme API key"
+/// regex = "ACME-[A-Z0-9]{32}"
+/// confidence = "high"                        # optional, defaults to high
+/// url = "https://acme.example/settings/keys" # optional: where to revoke it
+/// ```
+///
+/// `name` and `regex` are required. The expression is compiled by the scan
+/// command rather than here, so a typo in a scan-only rule does not stop
+/// `evnx convert` — see `commands::scan::patternset::PatternSet::compile`,
+/// which turns a bad expression into exit 2 rather than a clean scan.
+///
+/// ⚠️ This is deliberately different from `[vars] format`, which **is**
+/// compiled at load: those expressions decide what `validate` does, so a broken
+/// one there is a broken contract rather than a broken search.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct PatternRule {
+    /// What to call it in output, and in the SARIF rule id.
+    pub name: String,
+    /// The expression. Anchored by the author if they want it anchored.
+    pub regex: String,
+    /// `high`, `medium` or `low`. Unset means high — you wrote the rule.
+    pub confidence: Option<String>,
+    /// Where to go and revoke a match, when there is such a place.
+    pub url: Option<String>,
+    #[serde(flatten)]
+    extra: Extra,
+}
+
+impl PatternRule {
+    /// A rule from a bare `--pattern` expression, named by position.
+    ///
+    /// `--pattern` takes an expression and nothing else. `NAME=REGEX` was
+    /// considered and rejected: `=` is legal inside a character class, so
+    /// `[A-Za-z0-9+/=]{40}` — an AWS-shaped pattern — would split into a
+    /// nonsense name and a broken expression. Any rule that resolves that
+    /// ambiguity is a rule someone has to remember.
+    ///
+    /// The cost is a positional name that moves if the flags are reordered,
+    /// which is the nudge toward declaring the rule in `.evnx.toml` when the
+    /// name needs to mean something.
+    pub fn anonymous(position: usize, regex: String) -> Self {
+        Self {
+            name: format!("Custom pattern {position}"),
+            regex,
+            ..Default::default()
+        }
+    }
+}
+
 /// ⚠️ Both `severity` and `exclude` can *weaken* what the scanner reports, and
 /// this file is committed — so a change here affects everyone who clones the
 /// repository, with nothing on the command line to show it.
@@ -70,6 +127,14 @@ pub struct ScanPolicy {
     pub exclude: Option<Vec<String>>,
     /// Skip values that look like filler.
     pub ignore_placeholders: Option<bool>,
+    /// Secret formats this project recognises beyond the built-in ones.
+    ///
+    /// ⚠️ Absent from [`Config::security_overrides`] on purpose. `severity` and
+    /// `exclude` are announced because they *weaken* what the scanner reports;
+    /// a pattern can only add a finding, so a committed rule makes the scan
+    /// stricter for everyone who clones the repository. There is nothing to
+    /// warn about in that direction.
+    pub patterns: Option<Vec<PatternRule>>,
     #[serde(flatten)]
     extra: Extra,
 }
@@ -196,6 +261,12 @@ impl Config {
         ];
         for (name, extra) in sections {
             out.extend(extra.keys().map(|k| format!("{name}.{k}")));
+        }
+        // An array of tables has no `extra` of its own to walk, so each entry
+        // reports its own unknown keys. A misspelled *required* key never
+        // reaches here — serde refuses the file outright with "missing field".
+        for (i, rule) in self.scan.patterns.iter().flatten().enumerate() {
+            out.extend(rule.extra.keys().map(|k| format!("scan.patterns[{i}].{k}")));
         }
         out.sort();
         out

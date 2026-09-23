@@ -806,3 +806,321 @@ fn exclude_globs_match_the_forms_people_write() {
         .assert()
         .code(0);
 }
+
+// ── Custom patterns: --pattern and [[scan.patterns]] ─────────────────────────
+//
+// Every test below was first run by hand against a real build. They exist so
+// the behaviour cannot regress silently — `--pattern` spent a release being
+// accepted by the parser and doing nothing, which is exactly the failure a
+// suite that only tests the built-in detectors cannot see.
+
+/// An internal credential with a name that gives nothing away.
+///
+/// Deliberately **not** a real provider format: the point is that no built-in
+/// detector can recognise it, and that a project can declare it and have it
+/// found anyway.
+const ACME_KEY: &str = "ACME-7F3A9C21B85E4D0FA62C1D8B04E7A539";
+const ACME_REGEX: &str = "ACME-[A-Z0-9]{32}";
+
+fn project(files: &[(&str, &str)]) -> TempDir {
+    let dir = TempDir::new().expect("temp dir");
+    for (name, body) in files {
+        let path = dir.path().join(name);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("mkdir");
+        }
+        fs::write(&path, body).expect("write");
+    }
+    dir
+}
+
+/// The gap custom patterns exist to close: a live credential whose name is
+/// `TENANT_A` matches no built-in pattern and trips no name heuristic, so before
+/// this it scanned clean.
+#[test]
+fn a_custom_pattern_finds_what_no_builtin_detector_can() {
+    let d = project(&[(".env", &format!("TENANT_A={ACME_KEY}\n"))]);
+
+    // Without the rule: nothing.
+    let clean = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", "."])
+        .assert()
+        .code(0);
+    assert!(
+        !get_stdout(&clean).contains("TENANT_A"),
+        "the built-in detectors are not expected to know this format"
+    );
+
+    // With it: found.
+    let found = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", ".", "--pattern", ACME_REGEX])
+        .assert()
+        .code(1);
+    assert!(get_stdout(&found).contains("TENANT_A"));
+}
+
+/// A rule the project wrote itself outranks a heuristic that only read the
+/// variable's name, so the finding says what the value *is*.
+#[test]
+fn a_custom_pattern_outranks_the_name_based_heuristic() {
+    let d = project(&[(".env", &format!("ACME_TOKEN={ACME_KEY}\n"))]);
+
+    let named = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args([
+            "scan",
+            ".",
+            "--format",
+            "json",
+            "--pattern",
+            ACME_REGEX,
+            "--exit-zero",
+        ])
+        .assert()
+        .code(0);
+    let json = parse_json_output(&get_stdout(&named)).expect("json");
+    let patterns: Vec<&str> = json["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["pattern"].as_str().unwrap())
+        .collect();
+
+    assert_eq!(patterns, vec!["Custom pattern 1"]);
+    assert!(
+        !patterns.iter().any(|p| p.contains("Sensitive config key")),
+        "the name heuristic should not answer in the custom rule's place: {patterns:?}"
+    );
+}
+
+/// ⚠️ The other half of that precedence. A custom rule must **not** displace a
+/// built-in provider match, because only the built-ins know where to revoke a
+/// key — and a finding that can say "revoke it here" is worth more than one
+/// that cannot.
+#[test]
+fn a_builtin_with_a_remediation_url_still_wins() {
+    let d = project(&[(".env", "AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY\n")]);
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args([
+            "scan",
+            ".",
+            "--format",
+            "json",
+            "--pattern",
+            "AKIA[0-9A-Z]{16}",
+            "--exit-zero",
+        ])
+        .assert()
+        .code(0);
+    let json = parse_json_output(&get_stdout(&assert)).expect("json");
+    let finding = &json["findings"][0];
+
+    assert_eq!(finding["pattern"], "AWS Access Key");
+    assert_eq!(
+        finding["action_url"], "https://console.aws.amazon.com/iam",
+        "the IAM link must survive a custom rule matching the same value"
+    );
+}
+
+/// `secret = false` retracts a guess made from a variable's **name**. A custom
+/// pattern read the value, so it stands — no line in a committed `.evnx.toml`
+/// can declare a matching credential to be something else.
+#[test]
+fn secret_false_cannot_retract_a_custom_pattern() {
+    let d = project(&[
+        (".env", &format!("INTERNAL_HANDLE={ACME_KEY}\n")),
+        (
+            ".evnx.toml",
+            &format!(
+                "[[scan.patterns]]\nname = \"Acme API key\"\nregex = \"{ACME_REGEX}\"\n\n\
+                 [vars]\nINTERNAL_HANDLE = {{ secret = false }}\n"
+            ),
+        ),
+    ]);
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", ".env", "--format", "json", "--exit-zero"])
+        .assert()
+        .code(0);
+    let json = parse_json_output(&get_stdout(&assert)).expect("json");
+    assert_eq!(json["findings"][0]["pattern"], "Acme API key");
+}
+
+/// ⚠️ The reason `scan_line` exists.
+///
+/// `extract_tokens` keeps only tokens longer than 20 characters, so in a `.ts`
+/// file a declared 9-character format would match nothing and the scan would
+/// report clean. Custom patterns see the whole line instead.
+#[test]
+fn a_custom_pattern_shorter_than_the_token_floor_is_still_found() {
+    let d = project(&[("src/client.ts", "const ring = \"RING-4821\";\n")]);
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", "./src"])
+        .assert()
+        .code(0); // nothing built in knows it
+
+    let found = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", "./src", "--pattern", "RING-[0-9]{4}"])
+        .assert()
+        .code(1);
+    assert!(get_stdout(&found).contains("client.ts"));
+}
+
+/// ⚠️ A rule that does not compile is trouble, not a clean scan.
+///
+/// Exit 0 here would mean CI reads a search that never ran as a pass.
+#[test]
+fn a_pattern_that_does_not_compile_exits_2_not_0() {
+    let d = project(&[(".env", &format!("TENANT_A={ACME_KEY}\n"))]);
+
+    for bad in ["(", "[z-a]"] {
+        let assert = cargo_bin_cmd!("evnx")
+            .current_dir(d.path())
+            .args(["scan", ".", "--pattern", bad])
+            .assert()
+            .code(2);
+        let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+        assert!(
+            stderr.contains("No verdict"),
+            "a broken rule must not read as a result: {stderr}"
+        );
+    }
+}
+
+/// `--exit-zero` means "do not fail my build over findings", not "never tell me
+/// the scan was impossible".
+#[test]
+fn exit_zero_does_not_suppress_a_broken_pattern() {
+    let d = project(&[(".env", &format!("TENANT_A={ACME_KEY}\n"))]);
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", ".", "--exit-zero", "--pattern", "("])
+        .assert()
+        .code(2);
+}
+
+/// A pattern matching the empty string matches everywhere, which would report
+/// every line in the project as a secret.
+#[test]
+fn a_pattern_matching_everything_is_refused() {
+    let d = project(&[(".env", &format!("TENANT_A={ACME_KEY}\n"))]);
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", ".", "--pattern", ".*"])
+        .assert()
+        .code(2);
+    assert!(String::from_utf8_lossy(&assert.get_output().stderr).contains("empty string"));
+}
+
+/// The durable form: rules in `.evnx.toml` apply with nothing on the command
+/// line, carry the name the project chose, and honour a declared confidence.
+#[test]
+fn project_rules_apply_with_no_flags() {
+    let d = project(&[
+        (".env", &format!("TENANT_A={ACME_KEY}\n")),
+        ("src/client.ts", "const ring = \"RING-4821\";\n"),
+        (
+            ".evnx.toml",
+            &format!(
+                "[[scan.patterns]]\nname = \"Acme API key\"\n\
+                 regex = \"{ACME_REGEX}\"\nurl = \"https://acme.example/keys\"\n\n\
+                 [[scan.patterns]]\nname = \"Ring handle\"\n\
+                 regex = \"RING-[0-9]{{4}}\"\nconfidence = \"medium\"\n"
+            ),
+        ),
+    ]);
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", ".env", "./src", "--format", "json", "--exit-zero"])
+        .assert()
+        .code(0);
+    let json = parse_json_output(&get_stdout(&assert)).expect("json");
+
+    assert_eq!(json["summary"]["high"], 1);
+    assert_eq!(json["summary"]["medium"], 1);
+
+    let acme = json["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["pattern"] == "Acme API key")
+        .expect("the declared rule should report under its own name");
+    assert_eq!(acme["action_url"], "https://acme.example/keys");
+}
+
+/// A declared `confidence` must reach `--severity`, or the flag would silently
+/// report on a set the summary and exit code disagree with.
+#[test]
+fn a_declared_confidence_reaches_the_severity_gate() {
+    let d = project(&[
+        ("src/client.ts", "const ring = \"RING-4821\";\n"),
+        (
+            ".evnx.toml",
+            "[[scan.patterns]]\nname = \"Ring handle\"\n\
+             regex = \"RING-[0-9]{4}\"\nconfidence = \"medium\"\n",
+        ),
+    ]);
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", "./src"])
+        .assert()
+        .code(1);
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", "./src", "--severity", "high"])
+        .assert()
+        .code(0);
+}
+
+/// Additive, like `--exclude`: a flag adds this run's rule without dropping the
+/// project's standing set.
+#[test]
+fn a_flag_and_the_project_rules_apply_together() {
+    let d = project(&[
+        (
+            ".env",
+            &format!("TENANT_A={ACME_KEY}\nAWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY\n"),
+        ),
+        (
+            ".evnx.toml",
+            &format!("[[scan.patterns]]\nname = \"Acme API key\"\nregex = \"{ACME_REGEX}\"\n"),
+        ),
+    ]);
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args([
+            "scan",
+            ".env",
+            "--format",
+            "json",
+            "--pattern",
+            "AKIA[0-9A-Z]{16}",
+            "--exit-zero",
+        ])
+        .assert()
+        .code(0);
+    let json = parse_json_output(&get_stdout(&assert)).expect("json");
+    let mut patterns: Vec<&str> = json["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["pattern"].as_str().unwrap())
+        .collect();
+    patterns.sort_unstable();
+
+    assert_eq!(patterns, vec!["AWS Access Key", "Acme API key"]);
+}
