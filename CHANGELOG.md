@@ -6,6 +6,75 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.0] - 2026-09-24
+
+The command-review release. Every command was run against a real build and
+compared with its published guide; where the two disagreed, one of them was
+wrong and got fixed. 31 pull requests (#29–#59).
+
+**Full write-up: [docs/releases/v0.5.0.md](docs/releases/v0.5.0.md).** Entries
+below are one line each; the detail, including how each was found, is there.
+
+### Security
+
+⚠️ **Four commands reported success while doing nothing, or the wrong thing.**
+These are the reason to upgrade rather than wait.
+
+- **`evnx migrate --to github` never encrypted anything.** It base64-encoded the
+  plaintext and posted it as `encrypted_value`. Now a real libsodium sealed box.
+  **Rotate any secret pushed to GitHub by an earlier version.**
+- **`evnx sync` wrote real values into `.env.example`** when creating one, then
+  advised committing it. Placeholders are now the default.
+- **`evnx scan` never read `.env.production`** — or any dotted variant. A
+  directory with `.env` and `.env.production` scanned only the first and reported
+  a completed scan.
+- **`evnx scan <unwalkable path>` printed "✓ No secrets detected"** and exited 0.
+
+### Added
+
+- **`evnx spec`** — a `[vars]` contract saying what each variable *is*: required,
+  secret, its format, which environments need it. Read by `validate`, `scan` and
+  `sync`. `evnx spec init` infers it from the files you already have.
+- **`evnx cloud run -- <cmd>`** — decrypt a vault into a subprocess. Nothing on
+  disk, nothing in shell history, nothing in `ps`. `--include`/`--exclude` narrow
+  what the child sees; the child's exit code comes back unchanged.
+- **`evnx vault share`, `members`, `role`, `revoke`** — team access, wrapped with
+  hybrid X25519 + ML-KEM-768. Revocation re-keys the vault.
+- **`evnx scan --pattern` and `[[scan.patterns]]`** — your own secret formats,
+  matched in one `RegexSet` pass so declaring rules stays close to free.
+- **`.evnx.toml` is now read.** The loader existed and nothing called it.
+  Precedence is flag > config > default; lists combine; settings that weaken
+  scanning are announced on every run.
+- **`--env-name production`** across `validate`, `scan`, `diff`, `sync`,
+  `convert`, `backup` and `template`. `diff --env-name production --against
+  staging` compares two real environments.
+- **`evnx sync --check`** — a CI gate with 0/1/2 exit codes, and `--format json`.
+- **`evnx doctor --fix`, `--path`, `--strict`** — the auto-fix had worked since
+  doctor shipped, reachable only via `EVNX_AUTO_FIX=1`.
+- **`evnx init --detect`, `--from-source`, `--with`, `--list-components`** —
+  `--from-source` builds the template from what the code actually reads.
+- `evnx scan --severity`, a `summary` object in `scan --format json`, and golden
+  files pinning every machine-readable output.
+
+### Fixed
+
+- `evnx migrate` no longer claims `✓ N uploaded` for the eight destinations that
+  only print commands. `--dry-run` runs headless.
+- `evnx add` warns when the `.env` it wrote to is not covered by `.gitignore`.
+- `evnx template` refuses unresolved placeholders under `--strict`; `{{ VAR }}`
+  with spaces and `|default:` both work.
+- `evnx init` and `doctor` cover every env file, not just `.env`.
+- Benchmarks compile again; `install.sh` no longer depends on JSON formatting.
+
+### Changed
+
+- **`evnx validate --pattern` was removed** — its implementation was a discarded
+  argument. Use `--env-name`.
+- **`evnx scan` exit codes are now 0 / 1 / 2.** `2` means the scan could not be
+  completed, and is not a louder `1`. `--exit-zero` suppresses `1` only.
+
+---
+
 ## [0.4.0] - 2026-09-15
 
 Zero-knowledge encrypted cloud sync. Push a `.env` to a server that is
