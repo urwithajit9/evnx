@@ -515,10 +515,19 @@ fn f11_migrate_without_a_destination_refuses_rather_than_guessing() {
         "the error should list what is available: {stderr}"
     );
 
-    // Naming one still works.
+    // Naming one still works — with its identifier. ⚠️ `--repo` became required
+    // under --dry-run in the second review pass, because it is printed into the
+    // command evnx tells the user to run; this test used to omit it.
     cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
-        .args(["migrate", "--to", "github-actions", "--dry-run"])
+        .args([
+            "migrate",
+            "--to",
+            "github-actions",
+            "--repo",
+            "o/r",
+            "--dry-run",
+        ])
         .assert()
         .code(0);
 }
@@ -579,7 +588,26 @@ fn f16_every_flag_has_help_text() {
     for args in commands {
         let assert = cargo_bin_cmd!("evnx").args(*args).arg("--help").assert();
         let help = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
-        let lines: Vec<&str> = help.lines().collect();
+
+        // ⚠️ Stop at the end of `Options:`. Anything below it is `after_help`,
+        // which for `convert` holds shell examples whose continuation lines
+        // *begin* with a flag:
+        //
+        // ```text
+        //   evnx convert \
+        //     --to kubernetes \
+        //     --include "PROD_*" \
+        // ```
+        //
+        // Scanning those, this test read `--to` as a flag declared with no
+        // description and reported four documented flags as undocumented
+        // (2026-09-24). The bug was in the test, not the binary.
+        let options = help.rsplit("Options:").next().unwrap_or(&help);
+        let options = match options.find("\nExamples:") {
+            Some(end) => &options[..end],
+            None => options,
+        };
+        let lines: Vec<&str> = options.lines().collect();
 
         for (i, line) in lines.iter().enumerate() {
             let trimmed = line.trim_start();
@@ -634,4 +662,428 @@ fn f16_format_names_the_formats_it_accepts() {
             );
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Second pass — from the fix review of 2026-09-24 (fix_version_1.md)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// ⚠️ **A secret was printed that existed nowhere.**
+///
+/// `SECRET_KEY=CHANGE_ME` trips both the placeholder check and the weak-secret
+/// check. Each queued its own fix and each called `generate_secure_secret()`, so
+/// two different 256-bit values were generated, **both printed in the report**,
+/// and only the second reached the file.
+///
+/// Someone copying the first into a dashboard or a password manager held a
+/// credential that appeared nowhere in their `.env`, and would debug an
+/// authentication failure with no visible cause. It also reported "2 fixed" for
+/// one repaired variable.
+#[test]
+fn validate_fix_repairs_each_variable_once() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env.example"), "SECRET_KEY=\n").unwrap();
+    fs::write(dir.path().join(".env"), "SECRET_KEY=CHANGE_ME\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--fix"])
+        .assert()
+        .code(0);
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+
+    let reported: Vec<&str> = out.lines().filter(|l| l.contains("SECRET_KEY:")).collect();
+    assert_eq!(
+        reported.len(),
+        1,
+        "one variable must produce one fix, got {}:\n{out}",
+        reported.len()
+    );
+
+    // Every value printed must be the value that landed.
+    let landed = fs::read_to_string(dir.path().join(".env")).unwrap();
+    let value = landed
+        .trim()
+        .strip_prefix("SECRET_KEY=")
+        .expect("SECRET_KEY should be set");
+    assert!(
+        reported[0].contains(value),
+        "the report printed a secret that is not in the file.\n  reported: {}\n  landed:   {value}",
+        reported[0]
+    );
+}
+
+/// ⚠️ F9, as actually filed — against `validate`, not `scan`.
+///
+/// Each finding emitted **two** annotations (message, then suggestion), both
+/// anchored to `line=1`. GitHub caps annotations at 10 per step, so five missing
+/// variables exhausted the budget and the rest were dropped — on the command
+/// whose job is to list what is missing.
+#[test]
+fn f9_validate_github_format_is_one_annotation_per_finding() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+    fs::write(
+        dir.path().join(".env.example"),
+        "A=\nSENTRY_DSN=\nOPENAI_API_KEY=\nSTRIPE_KEY=\n",
+    )
+    .unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--format", "github", "--exit-zero"])
+        .assert()
+        .code(0);
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let annotations: Vec<&str> = out.lines().filter(|l| l.starts_with("::")).collect();
+
+    assert_eq!(
+        annotations.len(),
+        3,
+        "three missing variables should be three annotations, got {}:\n{out}",
+        annotations.len()
+    );
+    // The suggestion travels inside the message rather than as its own line.
+    assert!(
+        annotations.iter().all(|a| a.contains("%0ASuggestion:")),
+        "the suggestion should be folded into the message:\n{out}"
+    );
+}
+
+/// An issue about a line that exists should point at that line, not at line 1.
+#[test]
+fn f9_annotations_point_at_the_real_line() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "# comment\n# another\nA=1\nAPI_KEY=changeme\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join(".env.example"), "A=\nAPI_KEY=\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--format", "github", "--exit-zero"])
+        .assert()
+        .code(0);
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+
+    assert!(
+        out.contains("line=4"),
+        "API_KEY is on line 4 of .env:\n{out}"
+    );
+}
+
+/// ⚠️ F11, as actually filed. `--dry-run` printed
+/// `heroku config --app <--heroku-app not set>` — an internal placeholder inside
+/// the command it tells the user to run — and exited 0.
+#[test]
+fn f11_dry_run_needs_the_identifier_it_would_print() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["migrate", "--to", "heroku", "--dry-run"])
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(stderr.contains("--heroku-app"), "{stderr}");
+
+    // Given the name, the preview works.
+    let ok = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args([
+            "migrate",
+            "--to",
+            "heroku",
+            "--heroku-app",
+            "my-app",
+            "--dry-run",
+        ])
+        .assert()
+        .code(0);
+    let out = String::from_utf8_lossy(&ok.get_output().stdout).to_string();
+    assert!(out.contains("my-app"), "{out}");
+    assert!(
+        !out.contains("not set"),
+        "a placeholder leaked into the preview:\n{out}"
+    );
+
+    // ⚠️ A *credential* is different: --dry-run uploads nothing, so it must
+    // still work without one. This is what PR #51 fixed and must not regress.
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args([
+            "migrate",
+            "--to",
+            "github-actions",
+            "--repo",
+            "o/r",
+            "--dry-run",
+        ])
+        .assert()
+        .code(0);
+}
+
+/// ⚠️ F2's remaining leg. `init` wrote `your_next_public_api_url_value` into a
+/// URL-typed key, which `--validate-formats` then rejected — three of the
+/// stack's four URL keys had URL-shaped examples and one did not.
+#[test]
+fn f2_init_writes_url_shaped_values_for_url_keys() {
+    let dir = project();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["init", "--yes", "--with", "nextjs,postgresql"])
+        .assert()
+        .success();
+
+    let example = fs::read_to_string(dir.path().join(".env.example")).unwrap();
+    for line in example.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.starts_with('#') {
+            continue;
+        }
+        if key.ends_with("_URL") || key.ends_with("_URI") || key.ends_with("_ENDPOINT") {
+            assert!(
+                value.contains("://"),
+                "{key} is URL-typed but its example is {value:?}"
+            );
+        }
+    }
+}
+
+// ── F18 — a finding must not claim more than the detector checked ───────────
+
+/// ⚠️ `scan` printed "matches a live key format, not a placeholder" under
+/// **every** high-confidence finding, including ones reached purely by the
+/// variable's *name*. So `NEXTAUTH_SECRET=dev-not-a-real-secret` was reported
+/// as a value matching a live key format — about a value that says it is not
+/// one, and that no detector had read.
+///
+/// The claim is load-bearing: it is what tells a user to drop everything and
+/// rotate. Attaching it to a name match trains people to ignore it.
+#[test]
+fn f18_name_based_findings_do_not_claim_the_value_matched() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "NEXTAUTH_SECRET=dev-not-a-real-secret\n\
+         GITHUB_TOKEN=ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .arg("scan")
+        .arg("--no-color")
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    // Both are still findings — this is about wording, not suppression.
+    assert!(text.contains("NEXTAUTH_SECRET"), "{text}");
+    assert!(text.contains("GitHub Token"), "{text}");
+
+    // The real token earned the claim.
+    assert!(
+        text.contains("matches a live key format"),
+        "a genuine ghp_ match must still say so:\n{text}"
+    );
+
+    // The name match did not. Locate the line that follows each finding.
+    let lines: Vec<&str> = text.lines().collect();
+    let idx = lines
+        .iter()
+        .position(|l| l.contains("NEXTAUTH_SECRET") && l.contains(".env:"))
+        .unwrap_or_else(|| panic!("no location line for NEXTAUTH_SECRET:\n{text}"));
+    let note = lines[idx + 1];
+    assert!(
+        !note.contains("matches a live key format"),
+        "a name-based finding must not claim the value matched a format:\n  {note}"
+    );
+    assert!(
+        note.contains("flagged by variable name"),
+        "it must say what actually happened instead:\n  {note}"
+    );
+}
+
+// ── F7 — backup and restore must accept the same password, both ways ────────
+
+/// ⚠️ `backup` ignored `EVNX_PASSWORD` while `restore` honoured it, so the two
+/// halves of one pipeline disagreed about how a passphrase arrives. The
+/// consequence was concrete: a scheduled backup had no way to supply one except
+/// writing it to disk, while the restore it fed needed no file at all.
+#[test]
+fn f7_evnx_password_drives_a_backup_with_no_file_on_disk() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "API_KEY=sk-live-abc123\n").unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .env("EVNX_PASSWORD", "correct-horse-battery-staple")
+        .args(["backup", "--output", "a.backup"])
+        .assert()
+        .success();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .env("EVNX_PASSWORD", "correct-horse-battery-staple")
+        .args(["restore", "a.backup", "--output", "out.env"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(dir.path().join("out.env")).unwrap(),
+        "API_KEY=sk-live-abc123\n"
+    );
+}
+
+/// ⚠️ The deeper half of F7, and the reason the flag aliases could not be added
+/// on their own. `backup --key-file` Base64-encodes a **binary** key file before
+/// Argon2id; `restore --password-file` read the same file with `read_to_string`
+/// and stripped a trailing newline. So one file produced two different
+/// passwords, and the only symptom was a backup that would not open.
+///
+/// Aliasing the two spellings without unifying the reader would have made that
+/// trap easier to reach, not harder — the flag names would finally match while
+/// the behaviour still did not.
+#[test]
+fn f7_one_key_file_round_trips_under_either_flag_spelling() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "API_KEY=sk-live-abc123\n").unwrap();
+
+    // Bytes that are deliberately not valid UTF-8, the case `read_to_string`
+    // could not read at all.
+    fs::write(
+        dir.path().join("binary.key"),
+        [0xf0, 0x9f, 0x00, 0xff, 0xfe],
+    )
+    .unwrap();
+
+    // Crossed on purpose: backup gets restore's spelling and vice versa.
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args([
+            "backup",
+            "--password-file",
+            "binary.key",
+            "--output",
+            "b.backup",
+        ])
+        .assert()
+        .success();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args([
+            "restore",
+            "b.backup",
+            "--key-file",
+            "binary.key",
+            "--output",
+            "out.env",
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(dir.path().join("out.env")).unwrap(),
+        "API_KEY=sk-live-abc123\n"
+    );
+}
+
+// ── F12 — a dry run must not report that anything happened ─────────────────
+
+/// ⚠️ `migrate --dry-run` printed `✓ 0 command(s) generated` while printing the
+/// commands, then followed it with the destination's real next steps —
+/// "verify secrets were set", "redeploy your project". Both halves described a
+/// migration that had not occurred.
+#[test]
+fn f12_dry_run_does_not_claim_anything_was_done() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "API_KEY=abc\nDB_URL=postgres://u:p@h/d\nPORT=3000\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["migrate", "--to", "vercel", "--dry-run", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        text.contains("nothing was uploaded"),
+        "the summary must say nothing happened:\n{text}"
+    );
+    assert!(
+        !text.contains("were set"),
+        "a dry run must not tell the user to verify secrets it never set:\n{text}"
+    );
+    assert!(
+        !text.contains("Redeploy") && !text.contains("redeploy"),
+        "nor to redeploy for a migration that did not happen:\n{text}"
+    );
+    assert!(
+        text.contains("Re-run without --dry-run"),
+        "it must say what the actual next step is:\n{text}"
+    );
+    // The count must reflect the three secrets, not zero.
+    assert!(
+        text.contains("3 secret(s) previewed"),
+        "the count must match what was previewed:\n{text}"
+    );
+}
+
+// ── F14 — help examples must be runnable, not rendered Markdown ─────────────
+
+/// ⚠️ `convert`'s examples lived in a doc comment inside a ```` ```text ````
+/// fence. clap prints doc comments verbatim, so the fence markers and the shell
+/// line-continuation backslashes were rendered literally and the whole block
+/// collapsed onto one line — the one place in the CLI where copying an example
+/// could not work.
+#[test]
+fn f14_convert_help_examples_are_copy_pasteable() {
+    let out = cargo_bin_cmd!("evnx")
+        .args(["convert", "--help"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        !text.contains("```"),
+        "a Markdown fence must never reach the terminal:\n{text}"
+    );
+
+    // The last "Examples:" is the `after_help` block; the earlier ones belong
+    // to individual flag doc comments.
+    let examples = text
+        .rsplit("Examples:")
+        .next()
+        .expect("convert --help must carry an examples block");
+
+    // The multi-line example must still be multi-line: a continuation backslash
+    // is only correct at end of line. Mid-line means the block was collapsed.
+    for line in examples.lines() {
+        let line = line.trim_end();
+        if let Some(pos) = line.find('\\') {
+            assert_eq!(
+                pos,
+                line.len() - 1,
+                "a continuation backslash mid-line means the block collapsed:\n  {line}"
+            );
+        }
+    }
+
+    assert!(
+        examples.contains("  evnx convert --to json"),
+        "the simplest example must appear as a runnable line:\n{examples}"
+    );
 }

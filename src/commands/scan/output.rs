@@ -190,14 +190,25 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
             finding.value_preview
         );
 
-        // ⚠️ Two different reasons a finding is high-confidence, and they need
-        // different sentences. A pattern match really did recognise a live key
-        // format; a declared secret matched nothing — the project said so.
+        // ⚠️ Three different reasons a finding is here, and they need three
+        // different sentences. Saying "matches a live key format" for all of
+        // them is a claim about the *value* that two of the three never made.
+        //
+        // Reported (F18, 2026-09-24): `NEXTAUTH_SECRET=dev-not-a-real-secret`
+        // printed "matches a live key format, not a placeholder" — about a
+        // value that is literally the word placeholder. Nothing had read it;
+        // the variable's *name* is what matched.
         if finding.pattern == super::detector::DECLARED_SECRET {
             println!(
                 "     {}  {}",
                 glyph::INFO.dimmed(),
                 "declared `secret = true` in .evnx.toml".dimmed()
+            );
+        } else if !finding.judged_value {
+            println!(
+                "     {}  {}",
+                glyph::INFO.dimmed(),
+                "flagged by variable name — the value was not checked".dimmed()
             );
         } else if finding.confidence == Confidence::High {
             println!(

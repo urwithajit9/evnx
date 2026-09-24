@@ -9,6 +9,36 @@ use super::models::{
     VarMetadata, VarSource,
 };
 
+/// The placeholder for a variable the schema gives no example for.
+///
+/// ⚠️ This was always `your_{name}_value`, which is fine for an opaque string
+/// and wrong for a typed one. `evnx init --with nextjs` wrote
+/// `NEXT_PUBLIC_API_URL=your_next_public_api_url_value`, and
+/// `evnx validate --validate-formats` then reported *"does not appear to be a
+/// valid URL"* — evnx rejecting a file evnx had just written.
+///
+/// Three of that stack's four URL keys had explicit examples and one did not, so
+/// the inconsistency was inside `init` itself. Keying the shape off the name
+/// fixes the whole class rather than the one variable that happened to be
+/// reported.
+///
+/// The values stay recognisably fake — `example.com` is reserved by RFC 2606 for
+/// exactly this — so `scan` and `validate` still treat them as placeholders.
+fn placeholder_for(var_name: &str) -> String {
+    let upper = var_name.to_uppercase();
+    let ends_with = |suffix: &str| upper.ends_with(suffix);
+
+    if ends_with("_URL") || ends_with("_URI") || ends_with("_ENDPOINT") {
+        "https://example.com".to_string()
+    } else if ends_with("_PORT") {
+        "8080".to_string()
+    } else if ends_with("_EMAIL") || upper == "EMAIL" {
+        "you@example.com".to_string()
+    } else {
+        format!("your_{}_value", var_name.to_lowercase())
+    }
+}
+
 /// Resolve a blueprint into a collection of environment variables
 pub fn resolve_blueprint(blueprint: &StackBlueprint) -> Result<VarCollection> {
     let schema = schema()?;
@@ -103,7 +133,7 @@ pub fn add_framework_vars(
                     .defaults
                     .get(var_name)
                     .cloned()
-                    .unwrap_or_else(|| format!("your_{}_value", var_name.to_lowercase())),
+                    .unwrap_or_else(|| placeholder_for(var_name)),
                 description: fw.descriptions.get(var_name).cloned(),
                 category: fw.categories.get(var_name).cloned().or_else(|| {
                     // Infer category from var name patterns
@@ -132,7 +162,7 @@ pub fn add_service_vars(collection: &mut VarCollection, service_id: &str, svc: &
                     .defaults
                     .get(var_name)
                     .cloned()
-                    .unwrap_or_else(|| format!("your_{}_value", var_name.to_lowercase())),
+                    .unwrap_or_else(|| placeholder_for(var_name)),
                 description: svc.descriptions.get(var_name).cloned(),
                 category: category.clone(),
                 required: svc.required.contains(var_name),
@@ -161,7 +191,7 @@ pub fn add_infra_vars(
                     .defaults
                     .get(var_name)
                     .cloned()
-                    .unwrap_or_else(|| format!("your_{}_value", var_name.to_lowercase())),
+                    .unwrap_or_else(|| placeholder_for(var_name)),
                 description: infra.descriptions.get(var_name).cloned(),
                 category: category.clone(),
                 required: false,

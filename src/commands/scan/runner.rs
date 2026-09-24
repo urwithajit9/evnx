@@ -378,6 +378,7 @@ impl ScanRunner {
             return;
         }
 
+        let judged_value = detection.judged_value;
         let finding = Finding::new(
             detection.pattern,
             detection.confidence,
@@ -389,7 +390,8 @@ impl ScanRunner {
             },
             variable,
             detection.action_url,
-        );
+        )
+        .judged_value(judged_value);
 
         results.add_finding(finding);
     }

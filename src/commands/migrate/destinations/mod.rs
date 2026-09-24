@@ -36,6 +36,24 @@ pub use crate::commands::migrate::destination::MigrationDestination;
 
 use crate::commands::migrate::MigrateArgs;
 
+/// What a missing argument costs, which decides what `--dry-run` may do without
+/// it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArgKind {
+    /// Names the thing being written to — a Heroku app, a secret name, a repo.
+    ///
+    /// ⚠️ These are **printed into the commands evnx tells the user to run**, so
+    /// a placeholder does not merely look untidy: `--dry-run` without
+    /// `--heroku-app` emitted
+    /// `heroku config --app <--heroku-app not set>` and exited 0. Someone
+    /// pasting that gets an error with no obvious cause.
+    Identifier,
+    /// A credential. Never printed, and never needed by `--dry-run`, which
+    /// uploads nothing — so a placeholder here costs nothing and keeping it is
+    /// what lets `--dry-run` work on a machine with no credentials at all.
+    Credential,
+}
+
 /// Resolve a destination identifier that may come from a flag, a prompt, or
 /// neither.
 ///
@@ -49,8 +67,9 @@ use crate::commands::migrate::MigrateArgs;
 /// The order matters:
 ///
 /// 1. A flag was given — use it, whatever else is true.
-/// 2. `--dry-run` — nothing will be created, so a placeholder is enough to
-///    preview which variables would go where.
+/// 2. `--dry-run` **and a credential** — nothing will be uploaded, so a
+///    placeholder costs nothing. An *identifier* still has to be real: it gets
+///    printed into the command evnx tells the user to run. See [`ArgKind`].
 /// 3. A terminal — ask.
 /// 4. Otherwise — fail naming the exact flag, rather than reporting the
 ///    absence of a terminal as though that were the problem.
@@ -59,14 +78,48 @@ pub(crate) fn resolve_arg(
     flag: &str,
     prompt: &str,
     dry_run: bool,
+    kind: ArgKind,
+) -> Result<String> {
+    resolve_arg_with(
+        value,
+        flag,
+        prompt,
+        dry_run,
+        kind,
+        std::io::stdin().is_terminal(),
+    )
+}
+
+/// The logic, with the terminal decision handed in.
+///
+/// ⚠️ `resolve_arg` reads `stdin().is_terminal()`, which is ambient process
+/// state — so the tests below inherited whatever the invoking shell happened to
+/// provide. Under `cargo test` run from a terminal that is *true*, and
+/// `interact_text()` sat waiting for someone to type, hanging the suite. In CI
+/// stdin is `/dev/null`, so the same tests passed. A test whose result depends
+/// on how it was launched is a test that reports nothing.
+pub(crate) fn resolve_arg_with(
+    value: Option<String>,
+    flag: &str,
+    prompt: &str,
+    dry_run: bool,
+    kind: ArgKind,
+    interactive: bool,
 ) -> Result<String> {
     if let Some(v) = value {
         return Ok(v);
     }
-    if dry_run {
+    if dry_run && kind == ArgKind::Credential {
         return Ok(format!("<{flag} not set>"));
     }
-    if std::io::stdin().is_terminal() {
+    if dry_run {
+        return Err(anyhow!(
+            "{prompt} is required for this destination. Pass `{flag}`.\n\
+             \x20 --dry-run still needs it: without it evnx would print a command\n\
+             \x20 with a placeholder where the name should be."
+        ));
+    }
+    if interactive {
         return Ok(dialoguer::Input::new()
             .with_prompt(prompt)
             .interact_text()?);
@@ -91,6 +144,7 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                     "--repo",
                     "GitHub repository (owner/repo)",
                     args.dry_run,
+                    ArgKind::Identifier,
                 )?;
                 // ⚠️ `GITHUB_TOKEN` stays ahead of the prompt. Inside a GitHub
                 // Actions job that variable is already set, and this is the one
@@ -103,6 +157,7 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                     "--github-token",
                     "GitHub personal access token",
                     args.dry_run,
+                    ArgKind::Credential,
                 )?;
                 Ok(Box::new(github::GitHubDestination::new(repo, token)))
             }
@@ -124,6 +179,7 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 "--secret-name",
                 "AWS secret name (e.g. prod/myapp/config)",
                 args.dry_run,
+                ArgKind::Identifier,
             )?;
             Ok(Box::new(aws::AwsDestination::new(
                 name,
@@ -145,6 +201,7 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 "--vault-name",
                 "Azure Key Vault name",
                 args.dry_run,
+                ArgKind::Identifier,
             )?;
             Ok(Box::new(azure::AzureDestination::new(name)))
         }
@@ -159,6 +216,7 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 "--heroku-app",
                 "Heroku app name",
                 args.dry_run,
+                ArgKind::Identifier,
             )?;
             Ok(Box::new(heroku::HerokuDestination::new(app)))
         }
@@ -315,7 +373,15 @@ mod tests {
     /// A flag beats everything else, including `--dry-run`'s placeholder.
     #[test]
     fn resolve_arg_prefers_the_flag() {
-        let got = resolve_arg(Some("prod/app".into()), "--secret-name", "Secret", true).unwrap();
+        let got = resolve_arg_with(
+            Some("prod/app".into()),
+            "--secret-name",
+            "Secret",
+            true,
+            ArgKind::Identifier,
+            false,
+        )
+        .unwrap();
         assert_eq!(got, "prod/app");
     }
 
@@ -323,9 +389,37 @@ mod tests {
     /// a `dialoguer` prompt inside the destination's constructor and die with
     /// `IO error: not a terminal`, so the flag meant for CI could not run in CI.
     #[test]
-    fn resolve_arg_under_dry_run_never_prompts() {
-        let got = resolve_arg(None, "--secret-name", "Secret", true).unwrap();
-        assert_eq!(got, "<--secret-name not set>");
+    fn resolve_arg_under_dry_run_never_prompts_for_a_credential() {
+        let got = resolve_arg_with(
+            None,
+            "--github-token",
+            "Token",
+            true,
+            ArgKind::Credential,
+            false,
+        )
+        .unwrap();
+        assert_eq!(got, "<--github-token not set>");
+    }
+
+    /// ⚠️ An **identifier** is different: it is printed into the command evnx
+    /// tells the user to run. `evnx migrate --to heroku --dry-run` without
+    /// `--heroku-app` used to emit
+    /// `heroku config --app <--heroku-app not set>` and exit 0, so someone
+    /// pasting the preview got an error with no visible cause.
+    #[test]
+    fn resolve_arg_under_dry_run_still_needs_an_identifier() {
+        let err = resolve_arg_with(
+            None,
+            "--heroku-app",
+            "Heroku app name",
+            true,
+            ArgKind::Identifier,
+            false,
+        )
+        .expect_err("a dry run cannot print a command it does not know");
+        let msg = err.to_string();
+        assert!(msg.contains("--heroku-app"), "flag not named: {msg}");
     }
 
     /// Not a terminal and not a dry run: fail, but name the flag. The old error
@@ -333,9 +427,21 @@ mod tests {
     /// what the caller has to do about it.
     #[test]
     fn resolve_arg_headless_error_names_the_flag() {
-        // The test harness runs without a tty, which is exactly the case here.
-        let err = resolve_arg(None, "--vault-name", "Azure Key Vault name", false)
-            .expect_err("should refuse without a tty");
+        // ⚠️ `interactive: false` is passed explicitly. This used to call
+        // `resolve_arg`, whose comment claimed "the test harness runs without a
+        // tty" — which is true in CI and false when `cargo test` is run from a
+        // terminal. In that case it reached `interact_text()` and **hung the
+        // whole suite** waiting for someone to type. Ambient process state is
+        // not a fixture.
+        let err = resolve_arg_with(
+            None,
+            "--vault-name",
+            "Azure Key Vault name",
+            false,
+            ArgKind::Identifier,
+            false,
+        )
+        .expect_err("should refuse without a tty");
         let msg = err.to_string();
         assert!(msg.contains("--vault-name"), "flag not named: {msg}");
         assert!(

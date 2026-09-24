@@ -55,6 +55,7 @@
 //!                 confidence: Confidence::High,
 //!                 action_url: None,
 //!                 matched_value: value.to_string(),
+//!                 ..Default::default()
 //!             })
 //!         } else {
 //!             None
@@ -98,8 +99,22 @@ use std::path::Path;
 /// Contains the full matched value (truncation happens later for display).
 /// This allows detectors to return complete information while the runner
 /// handles safe display formatting.
+/// ⚠️ Build one with `..Default::default()`. [`judged_value`](Detection::judged_value)
+/// is set by [`DetectorRegistry`] from the detector's own
+/// [`SecretDetector::judges_value`], so a value written here is overwritten —
+/// and a detector author should not have to fill a field that is ignored.
 #[derive(Debug, Clone)]
 pub struct Detection {
+    /// Did the detector reach this by reading the **value**, or the variable's
+    /// name?
+    ///
+    /// ⚠️ Set by [`DetectorRegistry`] from the detector's own
+    /// [`SecretDetector::judges_value`], not by each detector — one place that
+    /// already knows which detector spoke.
+    ///
+    /// Only the wording depends on it: a name-based finding must not claim the
+    /// value "matches a live key format", because nothing checked the value.
+    pub judged_value: bool,
     /// Name of the detected pattern
     pub pattern: String,
     /// Confidence level of the detection
@@ -108,6 +123,20 @@ pub struct Detection {
     pub action_url: Option<String>,
     /// The full matched value (will be truncated for display)
     pub matched_value: String,
+}
+
+impl Default for Detection {
+    fn default() -> Self {
+        Self {
+            // A detector that returns a `Detection` at all looked at
+            // *something*; the registry corrects this for the name-based ones.
+            judged_value: true,
+            pattern: String::new(),
+            confidence: Confidence::Low,
+            action_url: None,
+            matched_value: String::new(),
+        }
+    }
 }
 
 /// Trait for secret detection strategies.
@@ -148,6 +177,7 @@ pub struct Detection {
 ///                 confidence: Confidence::Medium,
 ///                 action_url: None,
 ///                 matched_value: value.to_string(),
+///                 ..Default::default()
 ///             })
 ///         } else {
 ///             None
@@ -422,7 +452,12 @@ impl DetectorRegistry {
             .detectors
             .iter()
             .filter(|d| !(suppress_name_based && !d.judges_value()))
-            .filter_map(|d| d.scan_kv(key, value, location))
+            .filter_map(|d| {
+                d.scan_kv(key, value, location).map(|mut found| {
+                    found.judged_value = d.judges_value();
+                    found
+                })
+            })
             .collect();
 
         if suppress_name_based {
@@ -435,6 +470,8 @@ impl DetectorRegistry {
         // scanned clean.
         if found.is_empty() && declared == Some(true) && value_is_worth_reporting(value) {
             found.push(Detection {
+                // The project declared it; nothing looked at the value.
+                judged_value: false,
                 pattern: DECLARED_SECRET.to_string(),
                 confidence: Confidence::High,
                 action_url: None,
@@ -511,6 +548,7 @@ impl SecretDetector for PatternDetector {
 
     fn scan_kv(&self, key: &str, value: &str, _location: &str) -> Option<Detection> {
         patterns::detect_secret(value, key).map(|(pattern, confidence, action_url)| Detection {
+            judged_value: true,
             pattern: pattern.clone(),
             confidence: confidence.into(), // Convert patterns::Confidence → models::Confidence
             action_url,
@@ -520,6 +558,7 @@ impl SecretDetector for PatternDetector {
 
     fn scan_token(&self, token: &str, _location: &str) -> Option<Detection> {
         patterns::detect_secret(token, "").map(|(pattern, confidence, action_url)| Detection {
+            judged_value: true,
             pattern: pattern.clone(),
             confidence: confidence.into(), // Convert patterns::Confidence → models::Confidence
             action_url,
@@ -572,6 +611,7 @@ impl SecretDetector for ConfigKeyDetector {
             }
 
             Some(Detection {
+                judged_value: true,
                 pattern: format!("Sensitive config key: {}", key),
                 // Lower confidence for short values (more likely to be false positive)
                 confidence: if value.len() < 16 {
@@ -610,6 +650,7 @@ impl CustomPatternDetector {
 impl From<super::patternset::PatternMatch> for Detection {
     fn from(found: super::patternset::PatternMatch) -> Self {
         Detection {
+            judged_value: true,
             pattern: found.name,
             confidence: found.confidence,
             action_url: found.url,
@@ -694,6 +735,7 @@ mod tests {
     #[test]
     fn test_detection_struct() {
         let detection = Detection {
+            judged_value: true,
             pattern: "Test Pattern".to_string(),
             confidence: Confidence::High,
             action_url: Some("https://example.com".to_string()),

@@ -1056,24 +1056,27 @@ pub enum Commands {
     /// Supports 14+ formats including JSON, YAML, cloud configs,
     /// CI/CD variables, and infrastructure-as-code.
     ///
-    /// # Examples
     ///
-    /// ```text
-    /// # Basic JSON conversion
-    /// evnx convert --to json
-    ///
-    /// # Kubernetes secret with transformations
-    /// evnx convert \
-    ///   --to kubernetes \
-    ///   --include "PROD_*" \
-    ///   --prefix "MYAPP_" \
-    ///   --transform uppercase \
-    ///   --output k8s-secret.yaml
-    ///
-    /// # Interactive mode (opens format selector)
-    /// evnx convert
-    /// ```
+    /// ⚠️ The examples live in `after_help` below, not here. clap strips the
+    /// markdown fence and collapses newlines in a doc comment, so a fenced block
+    /// renders as one unusable line with the backslash continuations inline and
+    /// the fence markers still visible. `after_help` is passed through verbatim.
     #[command(after_help = "\
+Examples:
+  # Basic JSON conversion
+  evnx convert --to json
+
+  # Kubernetes secret with transformations
+  evnx convert \\
+    --to kubernetes \\
+    --include \"PROD_*\" \\
+    --prefix \"MYAPP_\" \\
+    --transform uppercase \\
+    --output k8s-secret.yaml
+
+  # Interactive mode (opens the format selector)
+  evnx convert
+
 Supported formats:
   Generic:        json, yaml, shell
   Cloud:          aws-secrets, gcp-secrets, azure-keyvault
@@ -1251,7 +1254,15 @@ Use 'evnx convert' without --to for interactive format selection.
         /// Enables non-interactive / CI usage. The file's contents are read and
         /// fed into Argon2id in place of a typed password. UTF-8 content is used
         /// as-is (trimmed); binary content is Base64-encoded first.
-        #[arg(long, value_name = "PATH")]
+        ///
+        /// Also accepted as --password-file, which is what `evnx restore` calls
+        /// the same thing. EVNX_PASSWORD is honoured too, at lower priority,
+        /// so a scheduled backup needs no passphrase on disk.
+        ///
+        /// Examples:
+        ///   evnx backup --key-file /run/secrets/evnx-pass
+        ///   EVNX_PASSWORD=$PASS evnx backup
+        #[arg(long, value_name = "PATH", visible_alias = "password-file")]
         key_file: Option<String>,
 
         /// Number of previous backups to retain alongside the new one.
@@ -1307,10 +1318,14 @@ Use 'evnx convert' without --to for interactive format selection.
         /// EVNX_PASSWORD environment variable is also accepted and takes
         /// lower priority than --password-file.
         ///
+        /// Also accepted as --key-file, which is what `evnx backup` calls the
+        /// same thing. Either spelling reads the file identically on both
+        /// sides, so one file round-trips.
+        ///
         /// Examples:
         ///   evnx restore .env.backup --password-file /run/secrets/evnx-pass
         ///   EVNX_PASSWORD=mypass evnx restore .env.backup
-        #[arg(long, value_name = "PATH")]
+        #[arg(long, value_name = "PATH", visible_alias = "key-file")]
         password_file: Option<String>,
     },
 

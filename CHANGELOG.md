@@ -82,6 +82,30 @@ before acting. Write-up and verification in `evnx-devrel-review/`.
 - **Fourteen flags had no help text at all**, including `--format` on `validate`
   and `scan` — the two flags that make evnx usable in CI, neither naming `json`,
   `sarif` or `github`. The prose already existed, accurately, in the guides.
+- **`backup` and `restore` disagreed about how a passphrase arrives.** `restore`
+  honoured `EVNX_PASSWORD`; `backup` ignored it, so a scheduled backup had no way
+  to supply one except writing it to disk — while the restore it fed needed no
+  file at all. `backup` now accepts it, and each command accepts the other's flag
+  spelling (`--key-file` / `--password-file`).
+- **One key file could produce two different passwords.** `backup --key-file`
+  Base64-encodes a binary key file before Argon2id; `restore --password-file`
+  read the same file as UTF-8 and stripped a trailing newline. A binary key file
+  therefore wrote a backup that could not be opened with the file that wrote it,
+  and the only symptom was a failed decryption. Both sides now use one reader.
+- **`evnx scan` claimed a value matched a live key format when nothing had read
+  the value.** Every high-confidence finding carried "matches a live key format,
+  not a placeholder", including ones reached purely by the variable's *name* —
+  so `NEXTAUTH_SECRET=dev-not-a-real-secret` was reported as a live key. That
+  line is what tells someone to drop everything and rotate; attaching it to a
+  name match teaches people to ignore it. Name-based findings now say so.
+- **`migrate --dry-run` reported a migration that had not happened.** The summary
+  said `✓ 0 command(s) generated` while printing the commands, then followed it
+  with "verify secrets were set" and "redeploy your project". It now reports what
+  it previewed and points at the run that would apply it.
+- **`convert --help` printed its examples as unusable Markdown** — a fenced block
+  in a doc comment, which clap renders verbatim, so the fence markers and the
+  shell line-continuations landed inline on one collapsed line. The one place in
+  the CLI where copying an example could not work.
 
 ### Added
 

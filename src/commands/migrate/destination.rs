@@ -44,9 +44,39 @@ impl MigrationResult {
     ///
     /// `kind` decides the wording, because "uploaded" is only true for a
     /// destination that actually uploaded.
-    pub fn print_summary(&self, kind: DestinationKind) {
+    pub fn print_summary(&self, kind: DestinationKind, dry_run: bool) {
         use colored::Colorize;
         println!("\n{}", "Summary:".bold());
+
+        // ⚠️ A dry run neither generates nor skips.
+        //
+        // Destinations report a preview as `skipped: secrets.len()`, because
+        // nothing was uploaded — so the summary read
+        //
+        //     ✓  0 command(s) generated
+        //        nothing has been uploaded — run the commands above
+        //     ⊘  3 skipped
+        //
+        // directly beneath the three commands it had just printed. "0
+        // generated … run the commands above" cannot both be true, and the
+        // three were rendered rather than skipped. The honesty fix that removed
+        // the false `✓ N uploaded` did not reach these counters.
+        if dry_run {
+            let covered = self.uploaded + self.skipped;
+            println!("  ·  {covered} secret(s) previewed");
+            println!(
+                "     {}",
+                "dry run — nothing was uploaded and nothing was written".yellow()
+            );
+            if self.failed > 0 {
+                println!("  ✗  {} would fail", self.failed);
+                for e in &self.errors {
+                    println!("      • {}", e);
+                }
+            }
+            return;
+        }
+
         match kind {
             DestinationKind::Uploads => {
                 println!("  ✓  {} uploaded", self.uploaded);

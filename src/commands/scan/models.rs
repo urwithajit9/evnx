@@ -17,6 +17,8 @@
 //!     location: ".env:15 (AWS_ACCESS_KEY_ID)".to_string(),
 //!     variable: Some("AWS_ACCESS_KEY_ID".to_string()),
 //!     action_url: Some("https://console.aws.amazon.com/iam".to_string()),
+//!     // An `AKIA` prefix is a value match, so the report may say so.
+//!     judged_value: true,
 //! };
 //!
 //! let mut results = ScanResults::new(100);
@@ -157,6 +159,21 @@ pub struct Finding {
     pub location: String,
     pub variable: Option<String>,
     pub action_url: Option<String>,
+    /// Did a detector read the **value**, or only the variable's name?
+    ///
+    /// ⚠️ `#[serde(skip)]` on purpose. This exists to word one line of terminal
+    /// output honestly; putting it in `--format json` would widen a contract
+    /// that CI scripts parse, for a distinction the `pattern` field already
+    /// implies. Defaults to `true` so the many test constructors keep meaning
+    /// "a real value matched".
+    #[serde(skip, default = "judged_value_default")]
+    pub judged_value: bool,
+}
+
+/// `#[serde(skip)]` would otherwise deserialize to `false` and make every
+/// round-tripped finding claim its value was never checked.
+fn judged_value_default() -> bool {
+    true
 }
 
 /// Custom serializer for Confidence to output as string in JSON
@@ -168,6 +185,18 @@ where
 }
 
 impl Finding {
+    /// Record that this finding came from the variable's **name**, with the
+    /// value unexamined.
+    ///
+    /// Builder-style rather than a seventh parameter to [`Finding::new`]:
+    /// exactly one caller in the whole crate knows the answer, and the other
+    /// thirteen construction sites are tests that mean the default.
+    #[must_use]
+    pub fn judged_value(mut self, judged: bool) -> Self {
+        self.judged_value = judged;
+        self
+    }
+
     /// Create a new Finding with all required fields.
     ///
     /// # Arguments
@@ -207,6 +236,7 @@ impl Finding {
             location: location.into(),
             variable,
             action_url,
+            judged_value: true,
         }
     }
 }

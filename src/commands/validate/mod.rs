@@ -283,6 +283,33 @@ pub fn run(
             }
         }
 
+        // ⚠️ One repair per variable.
+        //
+        // `SECRET_KEY=CHANGE_ME` trips both the placeholder check and the
+        // weak-secret check, and each queued its own fix. Both called
+        // `generate_secure_secret()`, so **two different 256-bit secrets were
+        // generated, both printed in the report, and only the second reached the
+        // file**. A user who copied the first into a dashboard or a password
+        // manager held a credential that appeared nowhere in their `.env`, and
+        // would debug an authentication failure with no visible cause.
+        //
+        // It also reported "2 fixed" for one repaired variable, and burned two
+        // CSPRNG draws for one value.
+        //
+        // First wins: the checks run in a fixed order, so this is deterministic.
+        let mut already_fixed: Vec<String> = Vec::new();
+        let fixes_to_apply: Vec<_> = fixes_to_apply
+            .into_iter()
+            .filter(|(key, _, _)| {
+                if already_fixed.contains(key) {
+                    false
+                } else {
+                    already_fixed.push(key.clone());
+                    true
+                }
+            })
+            .collect();
+
         // Apply all collected fixes
         for (key, old_val, action) in fixes_to_apply {
             if let Some(fix) = apply_fix(&key, &old_val, &action, &mut env_vars) {
@@ -483,25 +510,60 @@ fn output_json(result: &ValidationResult) -> Result<()> {
     Ok(())
 }
 
+/// Which line of `.env` assigns `key`, if any.
+///
+/// A *missing* variable has no line by definition, so those stay on line 1.
+/// Everything else — a placeholder, a weak secret, a boolean trap — is about a
+/// line that exists, and pointing at it is the whole value of an annotation.
+fn line_of(content: &str, key: &str) -> usize {
+    content
+        .lines()
+        .enumerate()
+        .find(|(_, line)| {
+            let t = line.trim();
+            let t = t.strip_prefix("export ").unwrap_or(t);
+            t.split_once('=').is_some_and(|(k, _)| k.trim() == key)
+        })
+        .map_or(1, |(idx, _)| idx + 1)
+}
+
+/// ⚠️ **One annotation per finding, not two.**
+///
+/// The message and the suggestion were printed as separate annotations, both
+/// anchored to `line=1`. GitHub caps annotations at 10 per step and 50 per run,
+/// so five missing variables exhausted the step's budget and the rest were
+/// dropped silently — on the command whose job is to list what is missing.
+///
+/// `%0A` is how a newline travels inside a workflow command; GitHub renders it
+/// as a line break in the annotation body.
 fn output_github_actions(result: &ValidationResult, env_path: &str) -> Result<()> {
+    let content = std::fs::read_to_string(env_path).unwrap_or_default();
+
     for issue in &result.issues {
         let level = match issue.severity.as_str() {
             "error" => "error",
             "warning" => "warning",
             _ => "notice",
         };
-        println!("::{} file={},line=1::{}", level, env_path, issue.message);
-        if let Some(suggestion) = &issue.suggestion {
-            println!(
-                "::{} file={},line=1::Suggestion: {}",
-                level, env_path, suggestion
-            );
-        }
+        let body = match &issue.suggestion {
+            Some(s) => format!("{}%0ASuggestion: {}", issue.message, s),
+            None => issue.message.clone(),
+        };
+        println!(
+            "::{} file={},line={}::{}",
+            level,
+            env_path,
+            line_of(&content, &issue.variable),
+            body
+        );
     }
     for fix in &result.fixed {
         println!(
-            "::notice file={},line=1::Fixed: {} → {}",
-            env_path, fix.variable, fix.action
+            "::notice file={},line={}::Fixed: {} → {}",
+            env_path,
+            line_of(&content, &fix.variable),
+            fix.variable,
+            fix.action
         );
     }
     Ok(())
