@@ -515,10 +515,19 @@ fn f11_migrate_without_a_destination_refuses_rather_than_guessing() {
         "the error should list what is available: {stderr}"
     );
 
-    // Naming one still works.
+    // Naming one still works — with its identifier. ⚠️ `--repo` became required
+    // under --dry-run in the second review pass, because it is printed into the
+    // command evnx tells the user to run; this test used to omit it.
     cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
-        .args(["migrate", "--to", "github-actions", "--dry-run"])
+        .args([
+            "migrate",
+            "--to",
+            "github-actions",
+            "--repo",
+            "o/r",
+            "--dry-run",
+        ])
         .assert()
         .code(0);
 }
@@ -631,6 +640,199 @@ fn f16_format_names_the_formats_it_accepts() {
             assert!(
                 help.contains(value),
                 "`evnx {command} --help` never mentions `{value}`"
+            );
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Second pass — from the fix review of 2026-09-24 (fix_version_1.md)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// ⚠️ **A secret was printed that existed nowhere.**
+///
+/// `SECRET_KEY=CHANGE_ME` trips both the placeholder check and the weak-secret
+/// check. Each queued its own fix and each called `generate_secure_secret()`, so
+/// two different 256-bit values were generated, **both printed in the report**,
+/// and only the second reached the file.
+///
+/// Someone copying the first into a dashboard or a password manager held a
+/// credential that appeared nowhere in their `.env`, and would debug an
+/// authentication failure with no visible cause. It also reported "2 fixed" for
+/// one repaired variable.
+#[test]
+fn validate_fix_repairs_each_variable_once() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env.example"), "SECRET_KEY=\n").unwrap();
+    fs::write(dir.path().join(".env"), "SECRET_KEY=CHANGE_ME\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--fix"])
+        .assert()
+        .code(0);
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+
+    let reported: Vec<&str> = out.lines().filter(|l| l.contains("SECRET_KEY:")).collect();
+    assert_eq!(
+        reported.len(),
+        1,
+        "one variable must produce one fix, got {}:\n{out}",
+        reported.len()
+    );
+
+    // Every value printed must be the value that landed.
+    let landed = fs::read_to_string(dir.path().join(".env")).unwrap();
+    let value = landed
+        .trim()
+        .strip_prefix("SECRET_KEY=")
+        .expect("SECRET_KEY should be set");
+    assert!(
+        reported[0].contains(value),
+        "the report printed a secret that is not in the file.\n  reported: {}\n  landed:   {value}",
+        reported[0]
+    );
+}
+
+/// ⚠️ F9, as actually filed — against `validate`, not `scan`.
+///
+/// Each finding emitted **two** annotations (message, then suggestion), both
+/// anchored to `line=1`. GitHub caps annotations at 10 per step, so five missing
+/// variables exhausted the budget and the rest were dropped — on the command
+/// whose job is to list what is missing.
+#[test]
+fn f9_validate_github_format_is_one_annotation_per_finding() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+    fs::write(
+        dir.path().join(".env.example"),
+        "A=\nSENTRY_DSN=\nOPENAI_API_KEY=\nSTRIPE_KEY=\n",
+    )
+    .unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--format", "github", "--exit-zero"])
+        .assert()
+        .code(0);
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let annotations: Vec<&str> = out.lines().filter(|l| l.starts_with("::")).collect();
+
+    assert_eq!(
+        annotations.len(),
+        3,
+        "three missing variables should be three annotations, got {}:\n{out}",
+        annotations.len()
+    );
+    // The suggestion travels inside the message rather than as its own line.
+    assert!(
+        annotations.iter().all(|a| a.contains("%0ASuggestion:")),
+        "the suggestion should be folded into the message:\n{out}"
+    );
+}
+
+/// An issue about a line that exists should point at that line, not at line 1.
+#[test]
+fn f9_annotations_point_at_the_real_line() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "# comment\n# another\nA=1\nAPI_KEY=changeme\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join(".env.example"), "A=\nAPI_KEY=\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--format", "github", "--exit-zero"])
+        .assert()
+        .code(0);
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+
+    assert!(
+        out.contains("line=4"),
+        "API_KEY is on line 4 of .env:\n{out}"
+    );
+}
+
+/// ⚠️ F11, as actually filed. `--dry-run` printed
+/// `heroku config --app <--heroku-app not set>` — an internal placeholder inside
+/// the command it tells the user to run — and exited 0.
+#[test]
+fn f11_dry_run_needs_the_identifier_it_would_print() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["migrate", "--to", "heroku", "--dry-run"])
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(stderr.contains("--heroku-app"), "{stderr}");
+
+    // Given the name, the preview works.
+    let ok = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args([
+            "migrate",
+            "--to",
+            "heroku",
+            "--heroku-app",
+            "my-app",
+            "--dry-run",
+        ])
+        .assert()
+        .code(0);
+    let out = String::from_utf8_lossy(&ok.get_output().stdout).to_string();
+    assert!(out.contains("my-app"), "{out}");
+    assert!(
+        !out.contains("not set"),
+        "a placeholder leaked into the preview:\n{out}"
+    );
+
+    // ⚠️ A *credential* is different: --dry-run uploads nothing, so it must
+    // still work without one. This is what PR #51 fixed and must not regress.
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args([
+            "migrate",
+            "--to",
+            "github-actions",
+            "--repo",
+            "o/r",
+            "--dry-run",
+        ])
+        .assert()
+        .code(0);
+}
+
+/// ⚠️ F2's remaining leg. `init` wrote `your_next_public_api_url_value` into a
+/// URL-typed key, which `--validate-formats` then rejected — three of the
+/// stack's four URL keys had URL-shaped examples and one did not.
+#[test]
+fn f2_init_writes_url_shaped_values_for_url_keys() {
+    let dir = project();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["init", "--yes", "--with", "nextjs,postgresql"])
+        .assert()
+        .success();
+
+    let example = fs::read_to_string(dir.path().join(".env.example")).unwrap();
+    for line in example.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.starts_with('#') {
+            continue;
+        }
+        if key.ends_with("_URL") || key.ends_with("_URI") || key.ends_with("_ENDPOINT") {
+            assert!(
+                value.contains("://"),
+                "{key} is URL-typed but its example is {value:?}"
             );
         }
     }

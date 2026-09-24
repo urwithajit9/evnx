@@ -502,7 +502,27 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
         return Ok(());
     }
 
-    let me: MeResponse = client.get("/api/v1/auth/me").map_err(|e| anyhow!("{e}"))?;
+    // ⚠️ An expired session is a **state to report**, not a failure to run.
+    //
+    // This used to propagate the error, so `evnx auth status` exited 2 when the
+    // session had lapsed while exiting 0 when there were no credentials at
+    // all — the strictly healthier state answering worse. A status command that
+    // cannot be asked "are we signed in?" without failing is not a status
+    // command, and `evnx cloud status` now sends people here to find out.
+    //
+    // Anything else — no network, a 500, a malformed body — is still an error,
+    // because then the answer is genuinely unknown rather than "no".
+    let me: MeResponse = match client.get("/api/v1/auth/me") {
+        Ok(me) => me,
+        Err(crate::cloud::client::ApiError::Unauthorized) => {
+            println!("{}", "evnx account".bold());
+            println!("  server    {server}");
+            println!("  status    {}", "session expired".yellow());
+            println!("  Run `evnx auth login` to sign in again.");
+            return Ok(());
+        }
+        Err(e) => return Err(anyhow!("{e}")),
+    };
 
     println!("{}", "evnx account".bold());
     println!("  server    {server}");
