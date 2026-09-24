@@ -256,11 +256,12 @@ fn resolve_password(password_file: Option<&str>, verbose: bool) -> anyhow::Resul
             ui::verbose_stderr(format!("Password source: --password-file {path}"));
         }
 
-        let raw = std::fs::read_to_string(path)
-            .map_err(|e| anyhow::anyhow!("Failed to read password file '{}': {}", path, e))?;
-
-        // Strip a single trailing newline — editors commonly add one.
-        let pw = raw.trim_end_matches('\n').trim_end_matches('\r').to_owned();
+        // ⚠️ The same reader `backup --key-file` uses, not a local one. It
+        // decides what string Argon2id sees, so a second implementation here
+        // means a file that encrypts a backup cannot always decrypt it — which
+        // is what happened before 2026-09-24 for binary key files and for any
+        // file with leading or trailing whitespace (F7).
+        let pw = crate::commands::backup::read_key_file(std::path::Path::new(path))?;
         return Ok(pw);
     }
 

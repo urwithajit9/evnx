@@ -181,7 +181,13 @@ pub fn run(
         }
 
         // ── Resolve password source ───────────────────────────────────────────
-        // Two paths: key-file (non-interactive, for CI) or interactive prompts.
+        // Three paths, highest priority first: key-file, EVNX_PASSWORD, then
+        // the interactive prompt. The same order `restore` uses, deliberately.
+        //
+        // ⚠️ EVNX_PASSWORD was added 2026-09-24 (F7). Without it `restore`
+        // accepted the variable and `backup` did not, so a scheduled backup had
+        // no way to supply a passphrase except writing it to disk — while the
+        // restore half of the same pipeline needed no file at all.
         //
         // Note: if a --password flag is added in future, add a mutual-exclusion
         // warning here: `if key_file.is_some() && password_flag.is_some() { warn }`.
@@ -205,6 +211,27 @@ pub fn run(
                 ui::verbose_stderr(format!("Key file     : {} ({} bytes)", kf, pw.len()));
             }
             ui::info("Using key file for encryption (non-interactive mode)");
+            pw
+        } else if let Ok(pw) = std::env::var("EVNX_PASSWORD") {
+            // ── EVNX_PASSWORD path ────────────────────────────────────────────
+            if pw.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "EVNX_PASSWORD is set but empty.\n\n\
+                     An empty passphrase would encrypt the backup behind nothing. \
+                     Unset it to be prompted, or give it a value."
+                ));
+            }
+            ui::warning(
+                "Reading password from EVNX_PASSWORD environment variable.\n  \
+                 Less secure than interactive prompt — avoid in shared environments.",
+            );
+            if verbose {
+                ui::verbose_stderr("Password source: EVNX_PASSWORD env var");
+            }
+            // Best-effort removal: reduces the window in which a child process
+            // inherits it. It cannot unsee what the shell, a process monitor or
+            // a CI log already captured.
+            std::env::remove_var("EVNX_PASSWORD");
             pw
         } else {
             // ── Interactive prompt path ───────────────────────────────────────
@@ -299,8 +326,17 @@ pub fn run(
 /// Base64-encoded to produce a stable ASCII string before being fed into
 /// Argon2id — both paths go through the same KDF, so key length beyond the
 /// Argon2id input limit is handled automatically.
+///
+/// ⚠️ **`restore` must call this too, not its own reader.** It is the only
+/// thing that makes a key file symmetric: whatever string this returns is what
+/// Argon2id saw at backup time, so it is the only string that can open the
+/// archive. `restore` used to read its `--password-file` with
+/// `read_to_string` + strip-trailing-newline, which differs here for a binary
+/// key file (an error instead of the Base64) and for any file with leading or
+/// trailing whitespace. Both sides now derive the password identically — see
+/// F7 in `evnx-devrel-review/`.
 #[cfg(feature = "backup")]
-fn read_key_file(path: &std::path::Path) -> anyhow::Result<String> {
+pub(crate) fn read_key_file(path: &std::path::Path) -> anyhow::Result<String> {
     use base64::{engine::general_purpose, Engine as _};
 
     let bytes = std::fs::read(path)

@@ -157,8 +157,15 @@ pub fn run(args: MigrateArgs) -> Result<()> {
     let dest = destinations::get_destination(&destination, &args)?;
     let result = dest.migrate(&secrets, &opts)?;
 
-    result.print_summary(dest.kind());
-    if result.failed == 0 {
+    result.print_summary(dest.kind(), args.dry_run);
+    if args.dry_run {
+        // ⚠️ Deliberately *not* `print_next_steps()`. Every destination's next
+        // steps are written for a migration that happened — "verify secrets
+        // were set", "redeploy your project" — and printing them directly under
+        // "nothing was uploaded" contradicts the line above them (F12).
+        println!("\nNext step:");
+        println!("  Re-run without --dry-run to apply this.");
+    } else if result.failed == 0 {
         dest.print_next_steps();
     }
     ui::print_docs_hint(&docs::MIGRATE);
