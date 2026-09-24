@@ -13,7 +13,7 @@ pub mod types;
 use std::path::Path;
 use std::sync::Mutex;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::Colorize;
 use lazy_static::lazy_static;
 use serde_json;
@@ -117,12 +117,16 @@ pub fn run(
         ..ParserConfig::default()
     });
 
-    let example_file = parser
-        .parse_file(&example)
-        .with_context(|| format!("Failed to parse {}", example))?;
-    let env_file = parser
-        .parse_file(&env_path)
-        .with_context(|| format!("Failed to parse {}", env_path))?;
+    let example_file = parser.parse_file_or_hint(
+        &example,
+        "validate compares .env against it, so it needs one. Create it with \
+         `evnx sync` (from your .env) or `evnx init`, or point at another file \
+         with --example.",
+    )?;
+    let env_file = parser.parse_file_or_hint(
+        &env_path,
+        "Create it with `evnx init`, or point at another file with --env.",
+    )?;
 
     pb.finish_with_message("Files parsed ✓");
 
@@ -268,16 +272,18 @@ pub fn run(
             }
         }
 
-        // Weak secret
-        if let Some(issue) = issues
-            .iter()
-            .find(|i| i.issue_type == IssueType::WeakSecret.as_str())
-        {
-            if issue.auto_fixable {
-                if let Some(val) = env_vars.get("SECRET_KEY") {
-                    let action = suggest_fix("SECRET_KEY", val, &IssueType::WeakSecret);
+        // Weak secrets
+        //
+        // ⚠️ This was `.find(...)` followed by `env_vars.get("SECRET_KEY")` —
+        // the same hardcoded name N2 found in the *check*. So it repaired at
+        // most one variable per run, and always looked up SECRET_KEY no matter
+        // which variable the issue was actually about.
+        for issue in &issues {
+            if issue.issue_type == IssueType::WeakSecret.as_str() && issue.auto_fixable {
+                if let Some(val) = env_vars.get(&issue.variable) {
+                    let action = suggest_fix(&issue.variable, val, &IssueType::WeakSecret);
                     if !matches!(action, FixAction::Skip) {
-                        fixes_to_apply.push(("SECRET_KEY".to_string(), val.clone(), action));
+                        fixes_to_apply.push((issue.variable.clone(), val.clone(), action));
                     }
                 }
             }
@@ -433,6 +439,16 @@ fn output_pretty(result: &ValidationResult, _env_path: &str, _example_path: &str
                 old.dimmed(),
                 fix.new_value.green()
             );
+            // ⚠️ Adding a missing key is half a repair: the key exists, the
+            // value does not. Without this line the report reads as evnx
+            // contradicting itself — "Applied fixes: B → your_value_here"
+            // directly above "✗ B looks like a placeholder".
+            if checks::is_placeholder(&fix.new_value) {
+                println!(
+                    "    {}",
+                    "a placeholder — evnx cannot invent this value, so fill it in".dimmed()
+                );
+            }
         }
         println!();
     }

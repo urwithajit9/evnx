@@ -26,12 +26,27 @@ lazy_static! {
 // Helper Predicates
 // ─────────────────────────────────────────────────────────────
 
+/// ⚠️ This is **not** [`crate::utils::patterns::is_placeholder`], and the
+/// difference is deliberate: the two have opposite failure modes. There, a
+/// placeholder verdict *suppresses* a scan finding, so over-matching hides a
+/// real secret. Here it *raises* an error, so over-matching invents one — which
+/// is why this list stays conservative and omits `test`, `dev` and `sample`.
+/// `ENVIRONMENT=development` is a real value, not a placeholder.
+///
+/// ⚠️ Two definitions of one idea is still the shape that produced F1's URL bug.
+/// Reconciling them needs the **key** as well as the value (`API_KEY=dev` is a
+/// placeholder; `ENVIRONMENT=dev` is not), which is a design change, not a list
+/// merge. Tracked separately rather than rushed in before a tag.
 pub fn is_placeholder(value: &str) -> bool {
     let lower = value.to_lowercase();
     let placeholders = [
-        "your_key_here",
-        "your_secret_here",
-        "your_token_here",
+        // ⚠️ `your_` as a prefix, not the three exact spellings that used to be
+        // here. `evnx init` generates `your_<name>_value` — so evnx wrote a
+        // placeholder its own validator did not recognise, and a fresh
+        // `init --with nextjs,postgresql` produced a DB_PASSWORD and a
+        // NEXTAUTH_SECRET that `validate` passed without a word (N1, 2026-09-24).
+        "your_",
+        "your-",
         "change_me",
         "changeme",
         "replace_me",
@@ -46,15 +61,57 @@ pub fn is_placeholder(value: &str) -> bool {
     placeholders.iter().any(|p| lower.contains(p)) || value.is_empty()
 }
 
-pub fn is_weak_secret_key(key: &str) -> bool {
-    if key.len() < 32 {
+/// `name` chooses the length floor; `value` is what gets judged.
+///
+/// ⚠️ The floor is **not** one number. 32 characters is the right bar for a
+/// framework signing key — Django's `SECRET_KEY`, Flask's, NextAuth's — and it
+/// is what this check was written for. Applied to every credential-shaped
+/// variable it is simply wrong: an AWS access key **ID** is 20 characters by
+/// specification, so `AWS_KEY=AKIA4OZRMFJ3VREALKEY` came back "too weak or
+/// predictable", which is both false and noisy. Below 16 characters nothing is
+/// a serious credential, so that is the general bar.
+pub fn is_weak_secret_key(name: &str, key: &str) -> bool {
+    let floor = if is_signing_key(name) { 32 } else { 16 };
+    if key.len() < floor {
         return true;
     }
+
+    // ⚠️ A long, uniformly hex/base64 value is a generated token, and the word
+    // list below must not be applied to it. `1234` and `abcd` are ordinary hex,
+    // so a random 64-character secret contains one roughly once in 500 — which
+    // made `validate --fix` occasionally generate a secret that `validate` then
+    // called weak. Rare, silent, and exactly the "evnx must pass its own
+    // output" class. `password1234password1234password1234` is not uniform, so
+    // it stays weak.
+    if looks_generated(key) {
+        return false;
+    }
+
     let weak = [
         "secret", "password", "dev", "test", "1234", "abcd", "changeme", "example",
     ];
     let lower = key.to_lowercase();
     weak.iter().any(|w| lower.contains(w))
+}
+
+/// Is this a framework signing key, where 32 characters is the documented bar?
+fn is_signing_key(name: &str) -> bool {
+    let upper = name.to_uppercase();
+    upper == "SECRET_KEY" || upper.ends_with("_SECRET_KEY") || upper == "NEXTAUTH_SECRET"
+}
+
+/// Is this the shape of a machine-generated token rather than a typed one?
+fn looks_generated(value: &str) -> bool {
+    let all_hex = value.chars().all(|c| c.is_ascii_hexdigit());
+    let all_b64 = value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '-' | '_' | '='));
+    // Base64 of anything real mixes cases; requiring that keeps lowercase words
+    // like `supersecretpassword` out.
+    let mixed_case = value.chars().any(|c| c.is_ascii_uppercase())
+        && value.chars().any(|c| c.is_ascii_lowercase());
+    let has_digit = value.chars().any(|c| c.is_ascii_digit());
+    all_hex && has_digit || (all_b64 && mixed_case && has_digit)
 }
 
 pub fn validate_url(value: &str) -> bool {
@@ -233,7 +290,7 @@ pub fn check_placeholders(
     env_vars
         .iter()
         .filter(|(_, v)| is_placeholder(v))
-        .map(|(key, _value)| {
+        .map(|(key, _value): (&String, &String)| {
             let suggestion = match key.as_str() {
                 "SECRET_KEY" => Some("Run: openssl rand -hex 32".to_string()),
                 k if k.contains("AWS") => Some("Get from AWS Console".to_string()),
@@ -248,7 +305,16 @@ pub fn check_placeholders(
                 message: format!("{} looks like a placeholder", key),
                 location: env_path.to_string(),
                 suggestion,
-                auto_fixable: true,
+                // ⚠️ Ask the fixer rather than asserting. A placeholder in
+                // `DB_NAME` has no value evnx can supply, and claiming
+                // "fixable with --fix" for it sends the user to a command that
+                // will leave the line as it found it.
+                auto_fixable: crate::commands::validate::fixer::suggest_fix(
+                    key,
+                    _value,
+                    &IssueType::PlaceholderValue,
+                )
+                .is_actionable(),
             }
         })
         .collect()
@@ -292,20 +358,38 @@ pub fn check_weak_secret(
         return Vec::new();
     }
 
+    // ⚠️ Every secret-shaped key, not the literal `SECRET_KEY`. This was
+    // `env_vars.get("SECRET_KEY")` — one hardcoded lookup — so `JWT_SECRET=123`,
+    // `SESSION_SECRET=weak` and `DB_PASSWORD=dev` all validated clean while the
+    // identically-worthless `SECRET_KEY=123` was an error (N2, 2026-09-24).
+    // `is_weak_secret_key` always took any key; only the call site was narrow.
     env_vars
-        .get("SECRET_KEY")
-        .filter(|key| is_weak_secret_key(key))
-        .map(|_| Issue {
+        .iter()
+        .filter(|(name, _)| is_secret_shaped(name))
+        .filter(|(name, value)| is_weak_secret_key(name, value))
+        .map(|(name, _)| Issue {
             severity: "error".to_string(),
             issue_type: IssueType::WeakSecret.as_str().to_string(),
-            variable: "SECRET_KEY".to_string(),
-            message: "SECRET_KEY is too weak or predictable".to_string(),
+            variable: name.clone(),
+            message: format!("{name} is too weak or predictable"),
             location: env_path.to_string(),
             suggestion: Some("Run: openssl rand -hex 32".to_string()),
             auto_fixable: true,
         })
-        .into_iter()
         .collect()
+}
+
+/// Does this variable's **name** say it holds a credential?
+///
+/// Suffix-anchored rather than `contains`, so `SECRET_KEY` and `JWT_SECRET`
+/// match while `SECRET_KEY_ROTATION_DAYS` — a number, not a secret — does not.
+pub fn is_secret_shaped(name: &str) -> bool {
+    const SUFFIXES: &[&str] = &["_SECRET", "_KEY", "_PASSWORD", "_TOKEN", "_PASSWD"];
+    let upper = name.to_uppercase();
+    upper == "SECRET_KEY"
+        || upper == "PASSWORD"
+        || upper == "SECRET"
+        || SUFFIXES.iter().any(|s| upper.ends_with(s))
 }
 
 /// Check 6: localhost in Docker context
@@ -428,9 +512,18 @@ mod tests {
 
     #[test]
     fn test_is_weak_secret_key() {
-        assert!(is_weak_secret_key("short"));
-        assert!(is_weak_secret_key("this-is-a-test-secret-key"));
+        assert!(is_weak_secret_key("SECRET_KEY", "short"));
+        assert!(is_weak_secret_key(
+            "SECRET_KEY",
+            "this-is-a-test-secret-key"
+        ));
+        // A signing key holds itself to 32; every other credential to 16, so an
+        // AWS access key ID at its specified 20 characters is not weak.
+        assert!(!is_weak_secret_key("AWS_KEY", "AKIA4OZRMFJ3VREALKEY"));
+        assert!(is_weak_secret_key("SECRET_KEY", "AKIA4OZRMFJ3VREALKEY"));
+        assert!(is_weak_secret_key("AWS_KEY", "short"));
         assert!(!is_weak_secret_key(
+            "SECRET_KEY",
             "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"
         ));
     }

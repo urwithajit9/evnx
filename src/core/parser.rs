@@ -87,10 +87,39 @@ use thiserror::Error;
 ///     .parse_file(&env)
 ///     .with_context(|| format!("Failed to parse {}", env))?;
 /// ```
+/// Is `key` a legal environment-variable name — `[A-Za-z_][A-Za-z0-9_]*`?
+///
+/// ⚠️ Exists so commands that **write** `.env` files can apply the same rule the
+/// parser applies when reading them. `evnx add custom` took a name straight from
+/// the prompt with no check, so typing `NODE_VERSION=22` produced the line
+/// `# TODO: NODE_VERSION=22=22`, which this parser then refuses. A tool must not
+/// be able to write a file it cannot read.
+pub fn is_valid_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 #[derive(Debug, Error)]
 pub enum ParseError {
-    /// The file could not be read from disk.
-    #[error("Failed to read file: {0}")]
+    /// The file is not there at all.
+    ///
+    /// ⚠️ Separate from [`ParseError::FileReadError`] on purpose. A missing file
+    /// used to arrive as "Failed to parse X: Failed to read file: No such file
+    /// or directory", which sends the reader looking for a syntax error in a
+    /// file that does not exist (issue #12).
+    #[error("{path} does not exist")]
+    FileNotFound { path: String },
+
+    /// The file exists but could not be read — permissions, a directory, I/O.
+    ///
+    /// ⚠️ The message does **not** interpolate the source. thiserror's `#[from]`
+    /// already sets `source()`, and anyhow prints the chain, so `{0}` here
+    /// printed the OS error twice in a row.
+    #[error("could not be read")]
     FileReadError(#[from] std::io::Error),
 
     /// A line did not contain a `=` separator (and is not a comment or blank).
@@ -272,12 +301,33 @@ impl Parser {
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn parse_file<P: AsRef<Path>>(&self, path: P) -> ParseResult<EnvFile> {
-        let content = fs::read_to_string(path.as_ref())?;
+        let content = fs::read_to_string(path.as_ref()).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                ParseError::FileNotFound {
+                    path: path.as_ref().display().to_string(),
+                }
+            } else {
+                ParseError::FileReadError(e)
+            }
+        })?;
         let source = path.as_ref().to_string_lossy().into_owned();
         let vars = self.parse_content(&content)?;
         Ok(EnvFile {
             vars,
             source: Some(source),
+        })
+    }
+
+    /// Parse a file, and say the right thing when it is not there.
+    ///
+    /// [`Parser::parse_file`] returns a structured error; every caller then
+    /// wrapped it in `"Failed to parse {path}"`, which is a lie for a file that
+    /// does not exist. This keeps that context for real parse failures and
+    /// replaces it with `hint` — what to run to create the file — otherwise.
+    pub fn parse_file_or_hint(&self, path: &str, hint: &str) -> anyhow::Result<EnvFile> {
+        self.parse_file(path).map_err(|e| match e {
+            ParseError::FileNotFound { .. } => anyhow::anyhow!("{e}\n\n{hint}"),
+            other => anyhow::Error::from(other).context(format!("Failed to parse {path}")),
         })
     }
 
@@ -409,6 +459,17 @@ impl Parser {
     ///
     /// A digit first is still refused: `1FOO` is not a name a shell can export.
     fn validate_key(&self, key: &str, line_num: usize) -> ParseResult<()> {
+        if !is_valid_key(key) {
+            return Err(ParseError::InvalidKey {
+                line: line_num,
+                key: key.to_string(),
+            });
+        }
+        self.validate_key_strict(key, line_num)
+    }
+
+    /// Strict mode only: the rest of the original check.
+    fn validate_key_strict(&self, key: &str, line_num: usize) -> ParseResult<()> {
         if key.is_empty() {
             return Err(ParseError::InvalidKey {
                 line: line_num,

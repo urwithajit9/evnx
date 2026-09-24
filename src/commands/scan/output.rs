@@ -331,15 +331,28 @@ fn render_github(results: &ScanResults) -> Result<()> {
         };
         let (file, line) = split_location(&f.location);
 
-        let what = f
-            .variable
-            .as_deref()
-            .map(|v| format!("{v} matches {}", f.pattern))
-            .unwrap_or_else(|| format!("{} detected", f.pattern));
+        // ⚠️ The same split as the terminal output (F18). "matches" and
+        // "Rotate this credential" are claims about the *value*, and a
+        // name-based finding never read one — so a NEXTAUTH_SECRET holding the
+        // literal text `dev-not-a-real-secret` told CI to rotate a live key.
+        // The wording has to soften here too, or the audience most likely to
+        // automate on it is the one audience that cannot tell the two apart.
+        let what = match (f.variable.as_deref(), f.judged_value) {
+            (Some(v), true) => format!("{v} matches {}", f.pattern),
+            (Some(v), false) => format!("{v} is named like a secret ({})", f.pattern),
+            (None, _) => format!("{} detected", f.pattern),
+        };
 
-        let message = match &f.action_url {
-            Some(url) => format!("{what}. Rotate it at {url}"),
-            None => format!("{what}. Rotate this credential at its source"),
+        let message = if f.judged_value {
+            match &f.action_url {
+                Some(url) => format!("{what}. Rotate it at {url}"),
+                None => format!("{what}. Rotate this credential at its source"),
+            }
+        } else {
+            format!(
+                "{what}. The value was not checked against a known key format \
+                 — confirm before rotating"
+            )
         };
 
         println!(

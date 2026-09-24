@@ -222,7 +222,13 @@ fn main() -> Result<()> {
             ) {
                 Ok(exit_code) => std::process::exit(exit_code),
                 Err(e) => {
-                    eprintln!("{} {}", "Error:".on_red().bold(), e);
+                    // ⚠️ `{:#}`, like every other anyhow site here. With `{}`
+                    // only the outermost context printed, so `diff` reported
+                    // "Failed to parse .env.example" and dropped the
+                    // "Invalid format at line 1: missing '=' separator" that
+                    // says what to actually fix. The two sites below print a
+                    // downcast BackupError/RestoreError, where `{}` is right.
+                    eprintln!("{} {:#}", "Error:".on_red().bold(), e);
                     std::process::exit(2);
                 }
             }

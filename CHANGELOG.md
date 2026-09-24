@@ -107,6 +107,85 @@ before acting. Write-up and verification in `evnx-devrel-review/`.
   shell line-continuations landed inline on one collapsed line. The one place in
   the CLI where copying an example could not work.
 
+### Fixed — validate's blind spots
+
+⚠️ **`evnx validate` said nothing about the credentials `evnx init` had just
+generated.** Two independent gaps, and together they meant a fresh
+`evnx init --with nextjs,postgresql` followed by the documented
+`cp .env.example .env` produced a `DB_PASSWORD` and a `NEXTAUTH_SECRET` still
+holding placeholders — and `validate` passed it without a word. A forgotten
+password reaching production is the single thing this command exists to prevent.
+
+- **The placeholder list did not know evnx's own placeholders.** `init` writes
+  `your_<name>_value`; the list held `your_key_here`, `your_secret_here` and
+  `your_token_here` — the suffix is `_here`, not `_value`. Now any `your_*`.
+- **The weak-secret check only ever looked at one variable.** It was
+  `env_vars.get("SECRET_KEY")` — a single hardcoded lookup — so `JWT_SECRET=123`,
+  `SESSION_SECRET=weak` and `DB_PASSWORD=dev` all validated clean. Now every
+  credential-shaped name. The length floor is split by role: 32 characters for a
+  framework signing key, 16 for everything else, because an AWS access key **ID**
+  is 20 characters by specification and is not weak.
+- **A generated secret could be called weak by the command that generated it.**
+  `1234` and `abcd` are ordinary hex, so roughly one run in 500 produced a
+  64-character secret containing one. A uniformly hex or base64 value is now
+  exempt from the word list.
+- **`validate --fix` reported a placeholder as a completed repair.** Adding a
+  missing key can only insert `your_value_here`; the key exists, the value does
+  not. It now says so rather than printing the fix directly above the finding
+  that contradicts it.
+- **`--fix` swapped one placeholder for a vaguer one and called it a fix.**
+  Recognising `your_*` meant `--fix` began "repairing"
+  `DB_NAME=your_db_name_value` into `DB_NAME=your_value_here` — discarding the
+  only hint the line carried, and reporting it directly above the finding it had
+  not resolved. evnx can invent a secret, a URL, an email and a port; it cannot
+  invent a database name, and no longer offers to.
+- **`--fix` repaired at most one weak secret per run, and only if it was called
+  `SECRET_KEY`.** The fixer carried the same hardcoded lookup as the check.
+  `DB_PASSWORD` and `API_TOKEN` are now treated as credentials too, so `--fix`
+  generates real values for them instead of declining.
+
+### Fixed — reported issues
+
+- **A file that is absent is no longer reported as a file that failed to parse**
+  ([#12](https://github.com/urwithajit9/evnx/issues/12)). `evnx diff` with no
+  `.env.example` said *"Failed to parse .env.example"*, sending you after a
+  syntax error in a file that does not exist; `validate` printed the OS error
+  twice on top of that. Both now name the file and say how to create it. A file
+  that really is malformed still reports the line — which `diff` had been
+  dropping, because it printed its error without the cause chain.
+- **`evnx migrate` no longer reports a migration that did not happen**
+  ([#13](https://github.com/urwithajit9/evnx/issues/13)). An empty source exited
+  `0` with no docs link, and named the source *kind* (`env-file`) rather than the
+  file — so it could not distinguish an empty file from the wrong directory.
+  Both it and a filter that matches nothing are now errors, as they already were
+  in `evnx cloud run`.
+- **`--skip-existing` and `--overwrite` are refused where they cannot work.**
+  Eight of nine destinations only print commands, so they cannot know what
+  already exists at the destination; they accepted both flags in silence.
+  `--to github-actions` is the one that uploads, and honours them — its dry run
+  now also counts what it previewed instead of reporting zero.
+- **`evnx add custom` can no longer write a file evnx cannot read**
+  ([#10](https://github.com/urwithajit9/evnx/issues/10), item 4). The variable
+  name came straight from the prompt unvalidated, so entering `NODE_VERSION=22`
+  wrote `# TODO: NODE_VERSION=22=22`. The parser had always refused such a key;
+  it was never asked. Entering a name with `=` now suggests the name you meant.
+- **`scan`'s machine formats made the claim its terminal output had stopped
+  making.** `--format json` returned identical fields for a name match and a
+  value match, and `--format github` still said *"matches"* and *"Rotate this
+  credential"* for a finding reached purely by the variable's name. JSON gains
+  `matched_by: "value" | "name"` (additive — no existing consumer breaks) and the
+  annotation now says the value went unchecked.
+- Generated `.env` files no longer carry two leading spaces on their
+  `# (required)` comments — the one ragged edge in otherwise column-aligned
+  output.
+
+⚠️ **Behaviour changes worth knowing before you upgrade CI:**
+
+- `evnx validate` now flags unfilled `your_*` placeholders and weak secrets in
+  any credential-shaped variable. A `.env` that passed before may now fail —
+  which is the point, but it is a change.
+- `evnx migrate` exits `2` instead of `0` when there is nothing to migrate.
+
 ### Added
 
 - **`evnx spec`** — a `[vars]` contract saying what each variable *is*: required,

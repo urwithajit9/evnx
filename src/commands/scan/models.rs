@@ -161,12 +161,17 @@ pub struct Finding {
     pub action_url: Option<String>,
     /// Did a detector read the **value**, or only the variable's name?
     ///
-    /// ⚠️ `#[serde(skip)]` on purpose. This exists to word one line of terminal
-    /// output honestly; putting it in `--format json` would widen a contract
-    /// that CI scripts parse, for a distinction the `pattern` field already
-    /// implies. Defaults to `true` so the many test constructors keep meaning
-    /// "a real value matched".
-    #[serde(skip, default = "judged_value_default")]
+    /// Serialized as `matched_by: "value" | "name"`. Defaults to `true`, so the
+    /// many test constructors keep meaning "a real value matched".
+    ///
+    /// ⚠️ This was `#[serde(skip)]` when F18 first landed, on the reasoning that
+    /// the distinction only affected one line of terminal output and that
+    /// widening a contract CI scripts parse was not worth it. That was wrong in
+    /// the one direction that matters: CI is the audience most likely to
+    /// automate on "is this a real leak?", and it was the audience that could
+    /// not tell. Adding a field is additive — no existing consumer breaks.
+    #[serde(rename = "matched_by", serialize_with = "serialize_matched_by")]
+    #[serde(default = "judged_value_default")]
     pub judged_value: bool,
 }
 
@@ -174,6 +179,15 @@ pub struct Finding {
 /// round-tripped finding claim its value was never checked.
 fn judged_value_default() -> bool {
     true
+}
+
+/// `true`/`false` says nothing to someone reading the JSON; `value`/`name` says
+/// exactly what the scanner looked at.
+fn serialize_matched_by<S>(judged: &bool, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(if *judged { "value" } else { "name" })
 }
 
 /// Custom serializer for Confidence to output as string in JSON
