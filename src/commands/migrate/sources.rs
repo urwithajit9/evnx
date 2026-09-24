@@ -7,7 +7,7 @@
 //! | `env-file`      | Parse a `.env` file via `crate::core::Parser` |
 //! | `environment`   | Read from current process environment vars |
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use indexmap::IndexMap;
 
 use crate::core::Parser;
@@ -27,9 +27,10 @@ pub fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<IndexMap<
     match source {
         "env-file" | "env" => {
             let parser = Parser::default();
-            let env_file = parser
-                .parse_file(file)
-                .with_context(|| format!("Failed to parse '{}'", file))?;
+            let env_file = parser.parse_file_or_hint(
+                file,
+                "Create it with `evnx init`, or point at another file with --env.",
+            )?;
             Ok(env_file.vars)
         }
         "environment" => {

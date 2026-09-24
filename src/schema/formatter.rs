@@ -153,7 +153,10 @@ pub fn format_env_template(vars: &VarCollection) -> Result<String> {
                 // Add TODO comment for .env file
                 content.push_str(&format!("# TODO: {}={}\n", name, meta.example_value));
                 if meta.required {
-                    content.push_str("  # (required - must be set)\n");
+                    // ⚠️ No leading spaces. Every other line in a generated
+                    // `.env` starts at column 0; this one was indented two, the
+                    // single ragged edge in the output (N3).
+                    content.push_str("# (required - must be set)\n");
                 }
             }
         }

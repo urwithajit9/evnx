@@ -28,7 +28,7 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use dialoguer::Select;
 
-use destination::MigrationOptions;
+use destination::{DestinationKind, MigrationOptions};
 use filtering::apply_filters;
 use sources::load_secrets;
 
@@ -101,8 +101,24 @@ pub fn run(args: MigrateArgs) -> Result<()> {
     );
 
     if raw.is_empty() {
-        println!("{} No secrets found to migrate.", "!".yellow());
-        return Ok(());
+        // ⚠️ Not `Ok(())`. This returned 0 and printed no docs link, so a
+        // migrate that moved nothing reported the same success as one that
+        // moved everything — and the user's transcript in issue #13 is exactly
+        // this branch. Naming the source is the part that distinguishes "the
+        // file really is empty" from "I am in the wrong directory".
+        ui::print_docs_hint(&docs::MIGRATE);
+        // `source` is the source *kind* ("env-file"); the path is what the
+        // user needs in order to see they are in the wrong directory.
+        let what = if source == "environment" {
+            "the process environment".to_string()
+        } else {
+            args.source_file.clone()
+        };
+        anyhow::bail!(
+            "{what} holds no variables, so there is nothing to migrate.\n\n\
+             Check you are in the right directory, or point at another file \
+             with --env. `evnx validate` will confirm what evnx can read."
+        );
     }
 
     // ── Apply filters / transforms ────────────────────────────────────────
@@ -124,11 +140,18 @@ pub fn run(args: MigrateArgs) -> Result<()> {
     }
 
     if secrets.is_empty() {
-        println!(
-            "{} All secrets were filtered out — nothing to migrate.",
-            "!".yellow()
+        // Same rule, and the same one `evnx cloud run` already follows: a
+        // filter that matches nothing is a mistake in the filter, not a run
+        // with zero secrets that happened to succeed.
+        ui::print_docs_hint(&docs::MIGRATE);
+        anyhow::bail!(
+            "every one of the {} variable(s) in {} was filtered out, so \
+             there is nothing to migrate.\n\n\
+             Check --include / --exclude: a pattern that matches nothing leaves \
+             the destination untouched.",
+            raw.len(),
+            args.source_file
         );
-        return Ok(());
     }
 
     // ── Build shared options ──────────────────────────────────────────────
@@ -155,6 +178,29 @@ pub fn run(args: MigrateArgs) -> Result<()> {
 
     // ── Dispatch to destination registry ─────────────────────────────────
     let dest = destinations::get_destination(&destination, &args)?;
+
+    // ⚠️ `--skip-existing` and `--overwrite` are about secrets that already
+    // exist at the destination, which only a destination evnx actually talks to
+    // can know. The other eight print commands for you to run, and accepted
+    // both flags in silence — no warning, no effect, exit 0 (F10, flagged in
+    // three consecutive reviews). Refusing is better than a warning: a flag
+    // that cannot work should not look like it did.
+    if dest.kind() == DestinationKind::EmitsCommands && (args.skip_existing || args.overwrite) {
+        let which = match (args.skip_existing, args.overwrite) {
+            (true, true) => "--skip-existing and --overwrite",
+            (true, false) => "--skip-existing",
+            _ => "--overwrite",
+        };
+        anyhow::bail!(
+            "{which} cannot apply to `{destination}`.\n\n\
+             evnx does not contact {destination} — it prints the commands for \
+             you to run, so it cannot see which secrets are already there. \
+             Drop the flag, or pass the platform's own equivalent to the \
+             printed command.\n\n\
+             Only `--to github-actions` uploads, and it honours both."
+        );
+    }
+
     let result = dest.migrate(&secrets, &opts)?;
 
     result.print_summary(dest.kind(), args.dry_run);

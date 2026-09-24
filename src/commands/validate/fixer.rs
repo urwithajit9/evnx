@@ -26,6 +26,16 @@ pub enum FixAction {
     Skip,
 }
 
+impl FixAction {
+    /// Would applying this actually change anything for the better?
+    ///
+    /// Drives `Issue::auto_fixable`, so the report never offers `--fix` for
+    /// something `--fix` will decline to touch.
+    pub fn is_actionable(&self) -> bool {
+        !matches!(self, FixAction::Skip)
+    }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Fix Suggestion Logic
 // ─────────────────────────────────────────────────────────────
@@ -33,7 +43,10 @@ pub enum FixAction {
 pub fn suggest_fix(key: &str, value: &str, issue_type: &IssueType) -> FixAction {
     match issue_type {
         IssueType::PlaceholderValue => {
-            if key.to_uppercase().contains("SECRET") || key.to_uppercase().contains("KEY") {
+            // ⚠️ The same rule the weak-secret check uses, so `DB_PASSWORD`
+            // and `API_TOKEN` are treated like `SECRET_KEY` rather than falling
+            // through to "evnx cannot invent this".
+            if super::checks::is_secret_shaped(key) {
                 FixAction::GenerateSecret
             } else if key.contains("URL") {
                 FixAction::ReplacePlaceholder("https://example.com".to_string())
@@ -42,7 +55,17 @@ pub fn suggest_fix(key: &str, value: &str, issue_type: &IssueType) -> FixAction 
             } else if key.contains("PORT") {
                 FixAction::ReplacePlaceholder("8080".to_string())
             } else {
-                FixAction::ReplacePlaceholder("your_value_here".to_string())
+                // ⚠️ Not `your_value_here`. For a secret, a URL, an email or a
+                // port there is a right answer evnx can supply; for `DB_NAME`
+                // there is not, and substituting one placeholder for a *less
+                // informative* one is a no-op that reports itself as a repair:
+                //
+                //   • DB_NAME: "your_db_name_value" → your_value_here
+                //   ✗  DB_NAME looks like a placeholder
+                //
+                // It also discards the only hint the line carried about what
+                // the variable is for.
+                FixAction::Skip
             }
         }
         IssueType::BooleanTrap => {
@@ -55,12 +78,11 @@ pub fn suggest_fix(key: &str, value: &str, issue_type: &IssueType) -> FixAction 
         }
         IssueType::WeakSecret => FixAction::GenerateSecret,
         IssueType::MissingVariable => {
-            let default =
-                if key.to_uppercase().contains("SECRET") || key.to_uppercase().contains("KEY") {
-                    "CHANGE_ME_SECURE_32_CHARS_MIN"
-                } else {
-                    "your_value_here"
-                };
+            let default = if super::checks::is_secret_shaped(key) {
+                "CHANGE_ME_SECURE_32_CHARS_MIN"
+            } else {
+                "your_value_here"
+            };
             FixAction::AddMissing(default.to_string())
         }
         _ => FixAction::Skip,

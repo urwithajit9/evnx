@@ -31,6 +31,29 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<()> {
             break;
         }
 
+        // ⚠️ Check before writing. `add` had no validation at all, so typing
+        // `NODE_VERSION=22` at this prompt wrote `# TODO: NODE_VERSION=22=22`
+        // — a line evnx's own parser refuses to read (issue #10, item 4).
+        // Re-prompt rather than abort: the user is mid-loop and has already
+        // entered other variables.
+        let name = name.trim().to_string();
+        if !crate::core::parser::is_valid_key(&name) {
+            if name.contains('=') {
+                // By far the most likely slip, and the one in the issue.
+                let (key, _) = name.split_once('=').expect("contains checked");
+                crate::utils::ui::warning(format!(
+                    "Enter the name on its own — the value is the next prompt.\n                       Did you mean {}?",
+                    key.trim()
+                ));
+            } else {
+                crate::utils::ui::warning(format!(
+                    "`{name}` is not a valid variable name.\n                       Names start with a letter or underscore and contain only \
+                     letters, digits and underscores."
+                ));
+            }
+            continue;
+        }
+
         // Prompt for example value
         let example: String = Input::new()
             .with_prompt("Example/placeholder value")

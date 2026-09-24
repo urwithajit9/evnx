@@ -80,17 +80,51 @@ fn f20_init_writes_a_file_that_can_be_appended_to() {
 /// so it repaired everything and then exited 1 — reporting the problems it had
 /// just removed. `evnx validate --fix && deploy` never reached `deploy`, while
 /// the next plain `validate` exited 0.
+///
+/// ⚠️ The fixture changed on 2026-09-24. It used a **missing** variable, which
+/// `--fix` can only fill with `your_value_here` — and once N1 taught `validate`
+/// to recognise its own `your_*` placeholders, that correctly became a finding.
+/// The old fixture therefore asserted that a config holding an unfilled
+/// placeholder was valid. The property F21 guards is the *recount*, so the
+/// fixture now uses repairs that genuinely complete.
 #[test]
 fn f21_validate_fix_exits_0_when_it_fixed_everything() {
     let dir = TempDir::new().unwrap();
-    fs::write(dir.path().join(".env"), "A=1\n").unwrap();
-    fs::write(dir.path().join(".env.example"), "A=\nB=\n").unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "SECRET_KEY=CHANGE_ME\nDEBUG=True\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join(".env.example"), "SECRET_KEY=\nDEBUG=\n").unwrap();
 
     cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
         .args(["validate", "--fix"])
         .assert()
         .code(0);
+
+    // A repair that can only insert a placeholder is **not** a completed fix,
+    // and must not report one. `--fix` adds the key, which is useful; the value
+    // is still missing, which is the user's to supply.
+    let dir3 = TempDir::new().unwrap();
+    fs::write(dir3.path().join(".env"), "A=1\n").unwrap();
+    fs::write(dir3.path().join(".env.example"), "A=\nB=\n").unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir3.path())
+        .args(["validate", "--fix", "--no-color"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a variable left holding `your_value_here` is not valid config"
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("evnx cannot invent this value"),
+        "the report must not read as a contradiction — \
+         `B → your_value_here` above `B looks like a placeholder`:\n{text}"
+    );
 
     // And the complement: a problem `--fix` cannot repair must still be 1, or
     // the guard above would have been satisfiable by never failing.
@@ -1086,4 +1120,550 @@ fn f14_convert_help_examples_are_copy_pasteable() {
         examples.contains("  evnx convert --to json"),
         "the simplest example must appear as a runnable line:\n{examples}"
     );
+}
+
+// ── N1 — validate must recognise the placeholders evnx itself writes ────────
+
+/// ⚠️ `evnx init` generates `your_<name>_value`. `validate`'s placeholder list
+/// held `your_key_here`, `your_secret_here` and `your_token_here` — the suffix
+/// is `_here`, not `_value` — so none of them matched.
+///
+/// The consequence was the sharpest form of "evnx must pass its own output"
+/// found so far: `evnx init --with nextjs,postgresql` then the documented
+/// `cp .env.example .env` produced a `DB_PASSWORD` and a `NEXTAUTH_SECRET`
+/// still holding placeholders, and `evnx validate` said **nothing about
+/// either**. A forgotten password reaching production is the single thing this
+/// command exists to prevent.
+#[test]
+fn n1_what_init_generates_does_not_pass_validate_unfilled() {
+    let dir = project();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["init", "--yes", "--with", "nextjs,postgresql"])
+        .assert()
+        .success();
+
+    // The documented next step.
+    fs::copy(dir.path().join(".env.example"), dir.path().join(".env")).unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a generated .env full of unfilled credentials must not validate clean:\n{text}"
+    );
+    for var in ["DB_PASSWORD", "NEXTAUTH_SECRET"] {
+        assert!(
+            text.contains(&format!("{var} looks like a placeholder")),
+            "{var} still holds a generated placeholder and must be named as one \
+             — not merely mentioned, which N2's weak-secret check would also do:\n{text}"
+        );
+    }
+
+    // A placeholder too long to trip the 32-character weak-secret floor, so
+    // only the placeholder rule can catch it.
+    let long = TempDir::new().unwrap();
+    fs::write(
+        long.path().join(".env"),
+        "ANALYTICS_WRITE_KEY=your_analytics_write_key_value_goes_right_here\n",
+    )
+    .unwrap();
+    fs::write(long.path().join(".env.example"), "ANALYTICS_WRITE_KEY=\n").unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(long.path())
+        .args(["validate", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("ANALYTICS_WRITE_KEY looks like a placeholder"),
+        "a long `your_*_value` is still a placeholder:\n{text}"
+    );
+}
+
+/// The complement: the broadened rule must not start calling real values
+/// placeholders. `your_` is distinctive; `development` is not.
+#[test]
+fn n1_real_values_are_not_called_placeholders() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "ENVIRONMENT=development\nREGION=us-east-1\nTEAM=platform\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join(".env.example"),
+        "ENVIRONMENT=\nREGION=\nTEAM=\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !text.contains("looks like a placeholder"),
+        "ordinary values must not be flagged:\n{text}"
+    );
+}
+
+// ── N2 — the weak-secret check applied to one hardcoded name ────────────────
+
+/// ⚠️ `check_weak_secret` was `env_vars.get("SECRET_KEY")` — a single literal
+/// lookup — so `JWT_SECRET=weak`, `SESSION_SECRET=123` and `DB_PASSWORD=dev`
+/// all validated clean while the identically worthless `SECRET_KEY=weak` was an
+/// error. `is_weak_secret_key` always accepted any key; only the call site was
+/// narrow.
+#[test]
+fn n2_every_secret_shaped_variable_is_checked_for_weakness() {
+    for name in [
+        "SECRET_KEY",
+        "JWT_SECRET",
+        "API_SECRET",
+        "SESSION_SECRET",
+        "DB_PASSWORD",
+        "GITHUB_TOKEN",
+    ] {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".env"), format!("{name}=weak\n")).unwrap();
+        fs::write(dir.path().join(".env.example"), format!("{name}=\n")).unwrap();
+
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(["validate", "--no-color"])
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            text.contains("too weak or predictable"),
+            "{name}=weak must be reported:\n{text}"
+        );
+    }
+}
+
+/// The complement, twice over: a name that merely *contains* a secret word but
+/// holds a number, and a genuinely generated secret, must both stay silent.
+#[test]
+fn n2_does_not_flag_non_secrets_or_generated_secrets() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        // 64 hex characters containing `1234` — the shape `validate --fix`
+        // generates, and one it used to call weak roughly once in 500 runs.
+        "SECRET_KEY_ROTATION_DAYS=30\n\
+         SECRET_KEY=09c15d5e87c2b45f1234b58733f7f0d35ae4bc8a0c0c8218f31da3e012546bb0\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join(".env.example"),
+        "SECRET_KEY_ROTATION_DAYS=\nSECRET_KEY=\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !text.contains("too weak"),
+        "neither a rotation-period number nor a generated secret is weak:\n{text}"
+    );
+}
+
+// ── #12 — a file that is absent is not a file that failed to parse ─────────
+
+/// ⚠️ GitHub issue #12, open since March. `evnx diff` with no `.env.example`
+/// reported *"Failed to parse .env.example"*, which sends you looking for a
+/// syntax error in a file that does not exist. `validate` was worse: it printed
+/// the OS error twice, because the error's own message interpolated the source
+/// that anyhow then printed again.
+#[test]
+fn i12_a_missing_file_is_reported_as_missing() {
+    for cmd in ["diff", "validate"] {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args([cmd, "--no-color"])
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+
+        assert!(
+            err.contains(".env.example does not exist"),
+            "{cmd} must say the file is missing:\n{err}"
+        );
+        assert!(
+            !err.contains("Failed to parse"),
+            "{cmd} must not call an absent file unparseable:\n{err}"
+        );
+        assert!(
+            err.contains("evnx sync") || err.contains("evnx init"),
+            "{cmd} must say how to create it:\n{err}"
+        );
+        assert_eq!(
+            err.matches("No such file or directory").count(),
+            0,
+            "the raw OS error should not surface at all now:\n{err}"
+        );
+    }
+}
+
+/// The complement, and the one that would otherwise be silently lost: a file
+/// that really is malformed must still say so — **with the line number**.
+///
+/// ⚠️ `diff` printed its error with `{}` rather than anyhow's `{:#}`, so only
+/// the outermost context survived: "Failed to parse .env.example", with the
+/// "Invalid format at line 1: missing '=' separator" that says what to fix
+/// dropped. Four of the seven error sites in `main.rs` shared the bug; the
+/// other three print a downcast Backup/RestoreError, where `{}` is correct.
+#[test]
+fn i12_an_unparseable_file_still_names_the_line() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+    fs::write(dir.path().join(".env.example"), "this is not valid\n").unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["diff", "--no-color"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+
+    assert!(err.contains("Failed to parse"), "{err}");
+    assert!(
+        err.contains("line 1"),
+        "the cause must survive to the terminal, not just the context:\n{err}"
+    );
+}
+
+// ── #13 / F10 — migrate must not report a migration that did not happen ────
+
+/// ⚠️ GitHub issue #13. The zero-secrets branch returned `Ok(())` before the
+/// docs hint, so a migrate that moved nothing exited 0 and printed no link —
+/// which is exactly the transcript in the issue. It also named the *source
+/// kind* (`env-file`) rather than the file, so it could not tell "the file is
+/// empty" from "I am in the wrong directory".
+#[test]
+fn i13_a_migration_that_moved_nothing_is_not_a_success() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "").unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["migrate", "--to", "vercel", "--dry-run", "--no-color"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(out.status.code(), Some(2), "stderr:\n{err}");
+    assert!(
+        err.contains(".env holds no variables"),
+        "it must name the file, not the source kind:\n{err}"
+    );
+    // `print_docs_hint` writes to stderr, alongside the error it accompanies.
+    assert!(
+        err.contains("guides/commands/migrate"),
+        "the docs link is what issue #13 is about:\n{err}"
+    );
+}
+
+/// The same rule for a filter that matches nothing — which is already how
+/// `evnx cloud run` behaves, so the two now agree.
+#[test]
+fn i13_a_filter_that_matches_nothing_is_an_error() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "A=1\nB=2\n").unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args([
+            "migrate",
+            "--to",
+            "vercel",
+            "--include",
+            "NOPE_*",
+            "--dry-run",
+            "--no-color",
+        ])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(out.status.code(), Some(2), "stderr:\n{err}");
+    assert!(err.contains("filtered out"), "{err}");
+    assert!(err.contains(".env"), "it must name the file:\n{err}");
+}
+
+/// ⚠️ F10, flagged in three consecutive reviews and fixed in none.
+/// `--skip-existing` and `--overwrite` are about secrets already present at the
+/// destination, which only a destination evnx actually talks to can know. The
+/// eight that merely print commands accepted both in silence — no warning, no
+/// effect, exit 0.
+#[test]
+fn f10_flags_that_cannot_work_are_refused_not_ignored() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args([
+            "migrate",
+            "--to",
+            "doppler",
+            "--project",
+            "p",
+            "--dry-run",
+            "--skip-existing",
+            "--no-color",
+        ])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "stdout+stderr:\n{err}");
+    assert!(err.contains("--skip-existing"), "{err}");
+    assert!(
+        err.contains("github-actions"),
+        "it must say which destination does honour it:\n{err}"
+    );
+
+    // The control: the one destination that uploads still takes them, and its
+    // dry run counts what it previewed rather than reporting zero.
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args([
+            "migrate",
+            "--to",
+            "github-actions",
+            "--repo",
+            "o/r",
+            "--dry-run",
+            "--skip-existing",
+            "--no-color",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("1 secret(s) previewed"),
+        "the ninth destination's dry run reported 0 while previewing 1:\n{text}"
+    );
+}
+
+// ── #10.4 — a writer must not produce what the reader refuses ──────────────
+
+/// ⚠️ GitHub issue #10, item 4. `evnx add custom` took the variable name
+/// straight from the prompt with no validation, so entering `NODE_VERSION=22`
+/// wrote `# TODO: NODE_VERSION=22=22`. The parser has always refused such a
+/// key — it was simply never asked. `evnx` could write a file `evnx` could not
+/// read.
+#[test]
+fn i10_4_the_key_rule_is_shared_between_reader_and_writer() {
+    use evnx::core::parser::is_valid_key;
+
+    // The issue's input, and the shapes around it.
+    assert!(!is_valid_key("NODE_VERSION=22"), "the reported bug");
+    assert!(!is_valid_key("2FAST"), "a leading digit");
+    assert!(!is_valid_key("HAS SPACE"));
+    assert!(!is_valid_key("HAS-DASH"));
+    assert!(!is_valid_key(""));
+
+    assert!(is_valid_key("NODE_VERSION"));
+    assert!(
+        is_valid_key("_PRIVATE"),
+        "POSIX allows a leading underscore"
+    );
+    assert!(is_valid_key("A1"));
+}
+
+/// N3 — every line of a generated `.env` starts at column 0.
+#[test]
+fn n3_generated_files_have_no_stray_indentation() {
+    let dir = project();
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["init", "--yes", "--with", "postgresql"])
+        .assert()
+        .success();
+
+    for name in [".env", ".env.example"] {
+        let body = fs::read_to_string(dir.path().join(name)).unwrap();
+        for (i, line) in body.lines().enumerate() {
+            assert!(
+                !line.starts_with(' '),
+                "{name}:{} is indented: {line:?}",
+                i + 1
+            );
+        }
+    }
+}
+
+// ── F18, part two — the machine formats over-claimed too ───────────────────
+
+/// ⚠️ F18 reached the terminal and stopped there. `scan --format json` returned
+/// identical field sets for a value match and a name match, and
+/// `--format github` still said *"matches"* and *"Rotate this credential"* for
+/// a finding reached purely by name. CI is the audience most likely to automate
+/// on "is this a real leak?", and it was the audience that could not tell.
+#[test]
+fn f18_machine_formats_distinguish_name_from_value() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "NEXTAUTH_SECRET=dev-not-a-real-secret\nAWS_KEY=AKIAIOSFODNN7EXAMPLQ\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "--format", "json"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let by: std::collections::HashMap<&str, &str> = json["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["variable"].as_str().unwrap(),
+                f["matched_by"]
+                    .as_str()
+                    .expect("matched_by must be present"),
+            )
+        })
+        .collect();
+    assert_eq!(by.get("NEXTAUTH_SECRET"), Some(&"name"));
+    assert_eq!(by.get("AWS_KEY"), Some(&"value"));
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "--format", "github"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    let name_line = text
+        .lines()
+        .find(|l| l.contains("NEXTAUTH_SECRET"))
+        .expect("an annotation for the name match");
+    assert!(
+        !name_line.contains("Rotate"),
+        "a name match must not order a rotation:\n{name_line}"
+    );
+    assert!(
+        name_line.contains("not checked"),
+        "it must say the value went unread:\n{name_line}"
+    );
+
+    let value_line = text
+        .lines()
+        .find(|l| l.contains("AWS_KEY"))
+        .expect("an annotation for the value match");
+    assert!(
+        value_line.contains("Rotate it at"),
+        "a real key match must still say rotate:\n{value_line}"
+    );
+}
+
+// ── --fix must repair what it can and decline what it cannot ───────────────
+
+/// ⚠️ Surfaced by N1: once `validate` recognised `your_*_value`, `--fix`
+/// started "repairing" `DB_NAME=your_db_name_value` into
+/// `DB_NAME=your_value_here` — one placeholder for a **less informative** one,
+/// reported as a fix, directly above the finding it did not resolve. It also
+/// discarded the only hint the line carried about the variable's purpose.
+///
+/// evnx can invent a secret, a URL, an email and a port. It cannot invent a
+/// database name, so it must not offer to.
+#[test]
+fn fix_declines_what_it_cannot_invent_and_says_so() {
+    let dir = project();
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["init", "--yes", "--with", "postgresql"])
+        .assert()
+        .success();
+    fs::copy(dir.path().join(".env.example"), dir.path().join(".env")).unwrap();
+
+    let before = fs::read_to_string(dir.path().join(".env")).unwrap();
+    assert!(before.contains("DB_NAME=your_db_name_value"), "{before}");
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--fix", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    let after = fs::read_to_string(dir.path().join(".env")).unwrap();
+
+    assert!(
+        after.contains("DB_NAME=your_db_name_value"),
+        "a placeholder evnx cannot replace must be left intact:\n{after}"
+    );
+    assert!(
+        !text.contains("your_value_here"),
+        "swapping one placeholder for a vaguer one is not a fix:\n{text}"
+    );
+    assert!(
+        !text.contains("DB_NAME") || !text.contains("• DB_NAME"),
+        "DB_NAME must not be listed among the applied fixes:\n{text}"
+    );
+
+    // The complement: the credential in the same file *is* repaired.
+    let pw = after
+        .lines()
+        .find(|l| l.starts_with("DB_PASSWORD="))
+        .expect("DB_PASSWORD line");
+    assert!(
+        !pw.contains("your_"),
+        "a password is something evnx can generate:\n{pw}"
+    );
+}
+
+/// ⚠️ The fixer carried N2's bug as well: `.find(...)` took the first
+/// weak-secret issue and then looked up `env_vars.get("SECRET_KEY")` regardless
+/// of which variable it was about — so at most one was repaired per run, and
+/// only if it happened to be named `SECRET_KEY`.
+#[test]
+fn fix_repairs_every_weak_secret_not_just_the_first() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "JWT_SECRET=weak\nSESSION_SECRET=weak\nDB_PASSWORD=weak\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join(".env.example"),
+        "JWT_SECRET=\nSESSION_SECRET=\nDB_PASSWORD=\n",
+    )
+    .unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--fix", "--no-color"])
+        .assert()
+        .code(0);
+
+    let after = fs::read_to_string(dir.path().join(".env")).unwrap();
+    for name in ["JWT_SECRET", "SESSION_SECRET", "DB_PASSWORD"] {
+        let line = after
+            .lines()
+            .find(|l| l.starts_with(&format!("{name}=")))
+            .unwrap_or_else(|| panic!("{name} missing:\n{after}"));
+        let value = line.split_once('=').unwrap().1;
+        assert!(value.len() >= 32, "{name} was not regenerated: {line}");
+    }
 }

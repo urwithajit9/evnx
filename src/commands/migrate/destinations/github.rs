@@ -150,7 +150,13 @@ impl MigrationDestination for GitHubDestination {
             println!("\n{} Dry-run — no changes made.", "·".cyan());
             return Ok(MigrationResult {
                 uploaded: 0,
-                skipped: to_skip.len(),
+                // ⚠️ `to_upload` counts too. A dry run skips the "which secrets
+                // already exist" request, so `existing` is empty and everything
+                // lands in `to_upload` — leaving this at 0 and the summary
+                // reading "0 secret(s) previewed" directly under a preview of N.
+                // F12 fixed the wording for the eight command-emitting
+                // destinations; this is the ninth.
+                skipped: to_upload.len() + to_skip.len(),
                 ..Default::default()
             });
         }

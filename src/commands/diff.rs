@@ -11,7 +11,7 @@ use crate::utils::ui::glyph;
 ///  Features: Exit codes for CI/CD, auto-redaction of sensitive values
 ///  Features: Key order preservation, --ignore-keys filtering
 /// Features: JSON statistics, interactive merge mode
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::*;
 use indexmap::IndexMap; // Preserve insertion order
 use serde::{Deserialize, Serialize};
@@ -92,13 +92,17 @@ pub fn run(
 
     let parser = Parser::default();
 
-    let env_file = parser
-        .parse_file(&env)
-        .with_context(|| format!("Failed to parse {}", env))?;
+    let env_file = parser.parse_file_or_hint(
+        &env,
+        "Create it with `evnx init`, or point at another file with --env.",
+    )?;
 
-    let example_file = parser
-        .parse_file(&example)
-        .with_context(|| format!("Failed to parse {}", example))?;
+    let example_file = parser.parse_file_or_hint(
+        &example,
+        "Create it from your .env with `evnx sync`, or point at another file \
+         with --example. `evnx diff --against staging` compares two real \
+         environments instead of a template.",
+    )?;
 
     let (left, right, left_name, right_name) = if reverse {
         (&example_file.vars, &env_file.vars, &example, &env)
