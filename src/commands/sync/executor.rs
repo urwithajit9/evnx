@@ -234,6 +234,26 @@ fn sync_forward(
         .collect();
 
     if missing.is_empty() {
+        // ⚠️ "Up to date" is true but incurious when the source is empty and
+        // the template is not. That is the shape of issue #15: a blank `.env`
+        // beside a populated `.env.example` is far more likely a mistake — a
+        // truncated file, the wrong directory, a failed secret fetch — than a
+        // steady state. sync has nothing to copy, so it correctly changes
+        // nothing; it should still say why it did nothing.
+        if env_file.vars.is_empty() && !example_file.vars.is_empty() {
+            ui::warning(format!(
+                "{} has no variables, while {} has {}. Nothing was copied.",
+                paths.env_str(),
+                paths.example_str(),
+                example_file.vars.len(),
+            ));
+            ui::info(format!(
+                "If that is unexpected, check you are in the right directory. \
+To fill {} from the template instead, run `evnx sync --direction reverse`.",
+                paths.env_str(),
+            ));
+            return Ok(false);
+        }
         ui::success(".env.example is up to date");
         return Ok(false);
     }

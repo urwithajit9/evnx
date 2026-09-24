@@ -113,32 +113,30 @@ pub fn append_to_env_files(
         }
     }
 
-    // Handle .env (add TODO placeholders)
+    // Handle .env
+    //
+    // ⚠️ The addition goes in **as written**. Every assignment used to be
+    // rewritten as `# TODO: NAME=value  # <-- Fill in real value`, so `add`
+    // reported "6 variables" while the parser saw zero and `evnx validate`,
+    // run immediately after, called all six missing:
+    //
+    //   $ evnx add service postgresql
+    //     6 variables
+    //   $ evnx validate
+    //     ✗  Missing required variable: DATABASE_URL     ... and five more
+    //
+    // Two evnx commands contradicting each other in consecutive steps. The
+    // variables carry placeholder values, which `validate` reports as
+    // placeholders — a finding the user can act on, unlike "missing".
     if env_path.exists() {
         let existing = fs::read_to_string(&env_path)?;
 
-        // Convert addition to TODO format
-        let todo_addition = addition
-            .lines()
-            .map(|line| {
-                // Preserve comments and section headers
-                if line.trim().is_empty() || line.trim().starts_with('#') || line.contains("──")
-                {
-                    line.to_string()
-                } else if let Some(eq_pos) = line.find('=') {
-                    let _key = &line[..eq_pos];
-                    let _value = &line[eq_pos + 1..];
-                    format!("# TODO: {}  # <-- Fill in real value", line)
-                } else {
-                    line.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        // `todo_addition` was rebuilt with `lines().join("\n")`, which drops the
-        // trailing newline the addition arrived with — so it is put back here.
-        let updated = format!("{}\n\n{}\n", existing.trim_end(), todo_addition.trim_end());
+        let body = addition.trim();
+        let updated = if existing.trim().is_empty() {
+            format!("{body}\n")
+        } else {
+            format!("{}\n\n{body}\n", existing.trim_end())
+        };
         fs::write(&env_path, updated)?;
 
         warn_if_env_is_committable(output_path);
