@@ -191,3 +191,90 @@ fn f1_a_real_non_url_is_still_reported() {
 
     assert!(out.contains("valid URL"), "expected a complaint:\n{out}");
 }
+
+// ── F3/F4 — doctor and the core parser must agree ───────────────────────────
+
+/// ⚠️ `doctor` carries its own line-syntax regex, separate from `core::Parser`.
+/// It omitted the optional `export` prefix, so `export FOO=bar` — which the
+/// parser documents as supported and strips at `parser.rs:385` — was reported
+/// as *"invalid syntax"* while `evnx validate` on the same file found zero
+/// errors.
+///
+/// The duplication cannot simply be deleted: the parser stops at its first
+/// error and `doctor` must report every bad line. So this test is what keeps
+/// the two honest — it runs both over the same corpus and requires the same
+/// verdict.
+#[test]
+fn doctor_agrees_with_the_parser_about_what_is_valid() {
+    use evnx::core::Parser;
+
+    // (line, is it valid?)
+    let corpus = [
+        ("KEY=value", true),
+        ("export KEY=value", true),
+        ("export   KEY=value", true),
+        ("# a comment", true),
+        ("   # indented comment", true),
+        ("", true),
+        ("   ", true),
+        ("KEY=", true),
+        ("  KEY  =  value", true),
+        ("_UNDERSCORE_START=1", true),
+        ("not-a-line", false),
+        ("KEY value", false),
+    ];
+
+    let parser = Parser::default();
+
+    for (line, expected_valid) in corpus {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".gitignore"), ".env*\n").unwrap();
+        fs::write(dir.path().join(".env"), format!("{line}\n")).unwrap();
+
+        let assert = cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(["doctor"])
+            .assert();
+        let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+        let doctor_ok = !out.contains("invalid syntax");
+
+        let parser_ok = parser.parse_content(&format!("{line}\n")).is_ok();
+
+        assert_eq!(
+            doctor_ok,
+            parser_ok,
+            "doctor and the parser disagree about {line:?} — doctor says {}, parser says {}",
+            if doctor_ok { "valid" } else { "invalid" },
+            if parser_ok { "valid" } else { "invalid" },
+        );
+        assert_eq!(
+            doctor_ok,
+            expected_valid,
+            "{line:?} should be {}",
+            if expected_valid { "valid" } else { "invalid" }
+        );
+    }
+}
+
+/// ⚠️ `validate_env_syntax` returned on the first bad line, so a file with three
+/// problems took three `doctor` runs to diagnose.
+#[test]
+fn f4_doctor_reports_every_bad_line_not_just_the_first() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".gitignore"), ".env*\n").unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "GOOD=1\n!!bad one\nALSO_GOOD=2\n@@bad two\n# fine\n%%bad three\n",
+    )
+    .unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["doctor"])
+        .assert();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+
+    for line in ["Line 2", "Line 4", "Line 6"] {
+        assert!(out.contains(line), "{line} was not reported:\n{out}");
+    }
+}

@@ -756,25 +756,49 @@ fn add_to_gitignore(gitignore_path: &Path, pattern: &str) -> Result<()> {
     Ok(())
 }
 
+/// Is every line of this file something `core::Parser` will accept?
+///
+/// ⚠️ **This must agree with the parser, and it did not.** The pattern omitted
+/// the optional `export` prefix, so `export FOO=bar` — which the parser's own
+/// documentation lists as supported and which it strips at `parser.rs:385` —
+/// was reported as *"invalid syntax"*. The same file passed `evnx validate`
+/// with zero errors. A user was told their `.env` was broken by one command and
+/// fine by another.
+///
+/// The duplication is deliberate rather than accidental: the parser stops at its
+/// first error, and `doctor` needs to report every bad line at once. What stops
+/// the two drifting again is `doctor_agrees_with_the_parser` in
+/// `tests/devrel_review.rs`, which runs both over the same corpus.
+///
+/// ⚠️ It also returned on the first bad line, so a file with three problems was
+/// three `doctor --fix` runs to diagnose. All of them are reported now.
 fn validate_env_syntax(path: &Path) -> Result<()> {
     let content =
         fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
 
-    let line_re = Regex::new(r"^(?:\s*$|\s*#.*|\s*[A-Za-z_][A-Za-z0-9_]*\s*=.*)$")
+    let line_re = Regex::new(r"^(?:\s*$|\s*#.*|\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=.*)$")
         .context("Invalid regex pattern")?;
 
-    for (idx, line) in content.lines().enumerate() {
-        if !line_re.is_match(line) {
+    let bad: Vec<String> = content
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| !line_re.is_match(line))
+        .map(|(idx, line)| {
             let snippet = line.chars().take(50).collect::<String>();
-            return Err(anyhow::anyhow!(
+            format!(
                 "Line {}: invalid syntax '{}{}'",
                 idx + 1,
                 snippet,
-                if line.len() > 50 { "..." } else { "" }
-            ));
-        }
+                if line.chars().count() > 50 { "..." } else { "" }
+            )
+        })
+        .collect();
+
+    if bad.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(bad.join("; ")))
     }
-    Ok(())
 }
 
 fn detect_project_type(project_root: &Path) -> Option<String> {
