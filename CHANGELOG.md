@@ -17,7 +17,17 @@ below are one line each; the detail, including how each was found, is there.
 
 ### Security
 
-⚠️ **Four commands reported success while doing nothing, or the wrong thing.**
+⚠️ **`evnx validate --fix` generated predictable secrets and called them
+secure.** `generate_secure_secret` returned `SystemTime::now().as_nanos()`
+XORed with a constant, under a comment reading *"replace with crypto RNG in
+production"*. 48 of the 64 hex characters were always `0`, and three runs
+seconds apart differed only in their last few — roughly 25 bits, of *time*
+rather than randomness, searchable by anyone who knew the day. Now 32 bytes
+from the OS CSPRNG via `getrandom`.
+
+**If `evnx validate --fix` ever generated a `SECRET_KEY` for you, rotate it.**
+
+⚠️ **Five commands reported success while doing nothing, or the wrong thing.**
 These are the reason to upgrade rather than wait.
 
 - **`evnx migrate --to github` never encrypted anything.** It base64-encoded the
@@ -29,6 +39,49 @@ These are the reason to upgrade rather than wait.
   directory with `.env` and `.env.production` scanned only the first and reported
   a completed scan.
 - **`evnx scan <unwalkable path>` printed "✓ No secrets detected"** and exited 0.
+- **`evnx migrate` with no `--to` guessed.** With no terminal it silently picked
+  the **first** destination in the list and exited 0, printing a plan for
+  somewhere the user had never chosen.
+
+### Fixed — from the DevRel review of 2026-09-24
+
+Every command re-checked against every guide, each claim verified independently
+before acting. Write-up and verification in `evnx-devrel-review/`.
+
+- **`evnx init` wrote a `.env.example` that could not be appended to.** No
+  trailing newline, so the next line fused onto the final comment and the
+  variable silently disappeared. `evnx add` was immune, which is why it
+  survived — evnx's own documented next step hid it.
+- **`evnx validate --fix` exited 1 after fixing everything.** It counted the
+  issues found on entry and never recounted, so `validate --fix && deploy`
+  never reached `deploy`, while the next plain `validate` exited 0.
+- **`--validate-formats` rejected every non-HTTP URL.** `postgresql://`,
+  `redis://` and `amqp://` were all "not a valid URL" — including the
+  `DATABASE_URL` that `evnx init --with postgresql` had just written. There
+  were two URL definitions in one binary; there is now one.
+- **`doctor` called `export FOO=bar` invalid** while the parser accepted it,
+  and reported only the first bad line. Both fixed — plus a third disagreement
+  the new cross-check found on its first run: the parser refused a leading
+  underscore, which POSIX allows.
+- **Findings came out in a different order every run** — `HashSet::difference`
+  with Rust's randomised hasher. `sync` had the same bug, and there it *writes*
+  that order into `.env.example`, so two developers syncing one file produced
+  two different files.
+- **A key written twice vanished in silence.** Last-wins is kept; the silence
+  is not. `validate` now names the lines and says which one takes effect.
+- **SARIF put the variable name inside the `ruleId`**, so every new variable was
+  a new rule to GitHub and no dismissal ever stuck. Adds `rules[]` with help
+  links and `partialFingerprints`, so an alert survives a line moving above it.
+- **`completions` answered an unusable argument with 1**, bypassing the
+  centralised exit-code mapping. Now 2, like everything else.
+- **`convert --help` was backwards about kubernetes** — it respects `--base64`,
+  emitting `stringData:` without it.
+- **`cloud status` promised a token renewal it had no way to verify**,
+  contradicting `evnx auth status` on the same machine.
+- **`init --detect` conflicted with `--yes`**, which it already implies.
+- **Fourteen flags had no help text at all**, including `--format` on `validate`
+  and `scan` — the two flags that make evnx usable in CI, neither naming `json`,
+  `sarif` or `github`. The prose already existed, accurately, in the guides.
 
 ### Added
 

@@ -24,7 +24,7 @@ pub mod destinations; // per-platform modules + registry
 pub mod filtering; // include/exclude/prefix transforms
 pub mod sources; // load_secrets()
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
 use dialoguer::Select;
 
@@ -84,7 +84,10 @@ pub fn run(args: MigrateArgs) -> Result<()> {
 
     // ── Resolve source and destination ────────────────────────────────────
     let source = args.from.clone().unwrap_or_else(select_source);
-    let destination = args.to.clone().unwrap_or_else(select_destination);
+    let destination = match args.to.clone() {
+        Some(d) => d,
+        None => select_destination()?,
+    };
 
     // ── Load secrets from source ──────────────────────────────────────────
     let raw = load_secrets(&source, &args.source_file, args.verbose)?;
@@ -202,14 +205,39 @@ fn select_source() -> String {
 
 /// Interactive destination picker — delegates to the registry so new
 /// destinations appear automatically once added to `destinations/mod.rs`.
-fn select_destination() -> String {
+/// Ask which destination, or refuse.
+///
+/// ⚠️ This used to end `.interact().unwrap_or(0)`. With no terminal —
+/// every CI runner — `interact()` fails and `unwrap_or(0)` **silently selected
+/// the first destination in the list**. So `evnx migrate --dry-run` with no
+/// `--to` printed a plan for somewhere the user had never chosen and exited 0.
+///
+/// A missing required argument is "could not run", not "pick something".
+fn select_destination() -> Result<String> {
+    use std::io::IsTerminal;
+
     let options = destinations::available_destinations();
+
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "--to is required when there is no terminal to ask.\n\n\
+             \x20 Pass one explicitly:\n\
+             \x20   evnx migrate --to <DESTINATION>\n\n\
+             \x20 Available: {}",
+            options
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
     let labels: Vec<&str> = options.iter().map(|(_, l)| *l).collect();
     let idx = Select::new()
         .with_prompt("What are you migrating to?")
         .items(&labels)
         .default(0)
         .interact()
-        .unwrap_or(0);
-    options[idx].0.to_string()
+        .context("choosing a migration destination")?;
+    Ok(options[idx].0.to_string())
 }

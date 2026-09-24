@@ -8,7 +8,6 @@
 // use std::collections::HashMap;
 use indexmap::IndexMap;
 use std::fs;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 
@@ -72,18 +71,45 @@ pub fn suggest_fix(key: &str, value: &str, issue_type: &IssueType) -> FixAction 
 // Secure Secret Generation
 // ─────────────────────────────────────────────────────────────
 
-/// Generate a secure-ish random secret (32 bytes = 64 hex chars)
+/// Generate a secret: 32 bytes from the operating system's CSPRNG, as 64 hex
+/// characters.
 ///
-/// For production, consider using the `rand` or `openssl` crate instead.
+/// ⚠️ **Until 2026-09-24 this was the clock.** The body read:
+///
+/// ```text
+/// let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+/// format!("{:064x}", seed ^ 0x5DEECE66D)
+/// ```
+///
+/// with a comment saying "Simple time-based entropy for demo; replace with
+/// crypto RNG in production". It was not replaced. A `u128` of nanoseconds
+/// occupies about 61 bits, so 48 of the 64 hex characters were always `0`, and
+/// three runs seconds apart differed only in their last few:
+///
+/// ```text
+/// 000000000000000000000000000000000000000000000000 18d81d26b81a8f18
+/// 000000000000000000000000000000000000000000000000 18d81d26b6d438e2
+/// 000000000000000000000000000000000000000000000000 18d81d26b760501b
+/// ```
+///
+/// That is roughly 25 bits of *time*, not randomness. Anyone who knew the day a
+/// project ran `evnx validate --fix` could search the whole space in seconds —
+/// and evnx printed "Generated secure secret" over it.
+///
+/// `getrandom` reads the OS CSPRNG directly: `getrandom` on Linux, `BCryptGen…`
+/// on Windows, `getentropy` on macOS.
+///
+/// # Panics
+///
+/// If the OS cannot supply randomness. That is not a condition to paper over
+/// with a fallback: a silent downgrade to a weaker source is exactly the bug
+/// this replaced, and a secret nobody can generate is better than one everybody
+/// can guess.
 pub fn generate_secure_secret() -> String {
-    // Simple time-based entropy for demo; replace with crypto RNG in production
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-
-    // XOR with a constant and format as hex
-    format!("{:064x}", seed ^ 0x5DEECE66D)
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes)
+        .expect("the operating system could not supply randomness for a new secret");
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -225,6 +251,50 @@ mod tests {
         assert_eq!(fix.variable, "SECRET_KEY");
         assert_eq!(fix.new_value.len(), 64); // 32 bytes = 64 hex chars
         assert_eq!(env.get("SECRET_KEY"), Some(&fix.new_value));
+    }
+
+    /// ⚠️ The test above passed for two years against a generator that returned
+    /// the clock. `len() == 64` was true of
+    /// `000000000000000000000000000000000000000000000000 18d81d26b81a8f18`
+    /// as well, so the assertion checked the *shape* and never the property the
+    /// function exists for.
+    ///
+    /// These check the property. A time-based generator fails all three.
+    #[test]
+    fn a_generated_secret_is_actually_random() {
+        let secrets: Vec<String> = (0..16).map(|_| generate_secure_secret()).collect();
+
+        // 1. Distinct. A clock read twice in the same nanosecond repeats.
+        let unique: std::collections::HashSet<&String> = secrets.iter().collect();
+        assert_eq!(unique.len(), secrets.len(), "generated secrets repeated");
+
+        // 2. No shared prefix. This is what actually caught the old generator:
+        //    consecutive timestamps agreed on their first ~58 characters.
+        let first = &secrets[0];
+        for other in &secrets[1..] {
+            let shared = first
+                .chars()
+                .zip(other.chars())
+                .take_while(|(a, b)| a == b)
+                .count();
+            assert!(
+                shared < 8,
+                "two secrets share {shared} leading characters — this is a counter, not randomness:\n  {first}\n  {other}"
+            );
+        }
+
+        // 3. Not dominated by one character. The old value was 75% zeros.
+        for secret in &secrets {
+            let zeros = secret.chars().filter(|c| *c == '0').count();
+            assert!(
+                zeros < 32,
+                "{zeros} of 64 characters are '0' — the high bytes are not being filled: {secret}"
+            );
+            assert!(
+                secret.chars().all(|c| c.is_ascii_hexdigit()),
+                "not hex: {secret}"
+            );
+        }
     }
 
     #[test]

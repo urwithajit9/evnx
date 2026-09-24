@@ -16,8 +16,6 @@ use super::types::{Issue, IssueType};
 // ─────────────────────────────────────────────────────────────
 
 lazy_static! {
-    pub static ref URL_REGEX: Regex =
-        Regex::new(r"^https?://[^\s/$.?#].[^\s]*$").expect("URL regex is valid");
     pub static ref PORT_REGEX: Regex = Regex::new(r"^\d{1,5}$").expect("Port regex is valid");
     pub static ref EMAIL_REGEX: Regex =
         Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
@@ -60,7 +58,9 @@ pub fn is_weak_secret_key(key: &str) -> bool {
 }
 
 pub fn validate_url(value: &str) -> bool {
-    URL_REGEX.is_match(value)
+    // One definition, shared with `[vars] format = "url"`. See the note on
+    // `core::spec::is_url` for why this is not a regex here any more.
+    crate::core::spec::is_url(value)
 }
 
 /// Validate that a value is a valid port number (1-65535)
@@ -95,11 +95,23 @@ pub fn check_missing_variables(
         return Vec::new();
     }
 
-    let example_keys: HashSet<_> = example_vars.keys().collect();
+    // ⚠️ Iterate the **IndexMap**, not a HashSet difference.
+    //
+    // `HashSet::difference` yields hash order, and Rust seeds its hasher
+    // randomly per process — so this reported the same missing variables in a
+    // different order on every run. Five consecutive runs over the same file
+    // produced five orderings. That makes the output undiffable, breaks any
+    // golden-file test that covers more than one finding, and makes a human ask
+    // what changed when nothing did.
+    //
+    // `example_vars` is an IndexMap and already holds the order the variables
+    // appear in `.env.example` — which is also the order the reader is looking
+    // at while they fix them.
     let env_keys: HashSet<_> = env_vars.keys().collect();
 
-    example_keys
-        .difference(&env_keys)
+    example_vars
+        .keys()
+        .filter(|key| !env_keys.contains(key))
         .map(|key| Issue {
             severity: "error".to_string(),
             issue_type: IssueType::MissingVariable.as_str().to_string(),
@@ -108,6 +120,69 @@ pub fn check_missing_variables(
             location: env_path.to_string(),
             suggestion: Some(format!("Add {}=<value> to {}", key, env_path)),
             auto_fixable: true,
+        })
+        .collect()
+}
+
+/// Check: the same key assigned twice in one file.
+///
+/// ⚠️ **The parser cannot report this and never could.** It builds an
+/// `IndexMap`, and `insert` overwrites — so `API_KEY=first` followed by
+/// `API_KEY=second` silently becomes `second`, and the first value is gone
+/// before any check sees the file. Neither `validate` nor `doctor` said a word.
+///
+/// Last-wins is a defensible parsing rule and is what dotenv implementations
+/// generally do; evnx keeps it. What is not defensible is silence. A key written
+/// twice in a `.env` is almost always a merge artefact or a copy-paste, and the
+/// value the author expects is usually the first one.
+///
+/// This reads the file rather than the parsed map, because by the time there is
+/// a map the evidence is gone.
+pub fn check_duplicate_keys(content: &str, env_path: &str, ignore: &HashSet<String>) -> Vec<Issue> {
+    if ignore.contains(IssueType::DuplicateKey.as_str()) {
+        return Vec::new();
+    }
+
+    // key -> the line numbers it is assigned on, in file order.
+    let mut seen: IndexMap<String, Vec<usize>> = IndexMap::new();
+
+    for (idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let without_export = trimmed.strip_prefix("export ").unwrap_or(trimmed);
+        if let Some((key, _)) = without_export.split_once('=') {
+            let key = key.trim();
+            if !key.is_empty() {
+                seen.entry(key.to_string()).or_default().push(idx + 1);
+            }
+        }
+    }
+
+    seen.into_iter()
+        .filter(|(_, lines)| lines.len() > 1)
+        .map(|(key, lines)| {
+            let last = *lines.last().expect("filtered on len > 1");
+            let places = lines
+                .iter()
+                .map(|l| l.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            Issue {
+                severity: "warning".to_string(),
+                issue_type: IssueType::DuplicateKey.as_str().to_string(),
+                variable: key.clone(),
+                message: format!(
+                    "{key} is assigned {} times (lines {places}) — only line {last} takes effect",
+                    lines.len()
+                ),
+                location: env_path.to_string(),
+                suggestion: Some(format!(
+                    "Remove the earlier assignments of {key}, or rename them if they were meant to differ"
+                )),
+                auto_fixable: false,
+            }
         })
         .collect()
 }
@@ -124,11 +199,12 @@ pub fn check_extra_variables(
         return Vec::new();
     }
 
+    // Ordered for the same reason as `check_missing_variables` above.
     let example_keys: HashSet<_> = example_vars.keys().collect();
-    let env_keys: HashSet<_> = env_vars.keys().collect();
 
-    env_keys
-        .difference(&example_keys)
+    env_vars
+        .keys()
+        .filter(|key| !example_keys.contains(key))
         .map(|key| Issue {
             severity: "warning".to_string(),
             issue_type: IssueType::ExtraVariable.as_str().to_string(),
@@ -363,8 +439,23 @@ mod tests {
     fn test_validate_url() {
         assert!(validate_url("https://example.com"));
         assert!(validate_url("http://localhost:8080/path"));
+
+        // ⚠️ These are the reason this changed. Every one is a value evnx
+        // itself writes or a user will certainly have, and every one was
+        // rejected as "not a valid URL" before 2026-09-24.
+        assert!(validate_url("postgresql://user:pw@localhost:5432/db"));
+        assert!(validate_url("redis://localhost:6379"));
+        assert!(validate_url("amqp://guest@localhost"));
+        assert!(validate_url("mongodb+srv://cluster.example.net/db"));
+        assert!(validate_url("s3://bucket/key"));
+        // ⚠️ This line used to assert `!validate_url(...)`, pinning the bug.
+        assert!(validate_url("ftp://example.com"));
+
         assert!(!validate_url("not-a-url"));
-        assert!(!validate_url("ftp://example.com"));
+        assert!(!validate_url("://no-scheme"));
+        assert!(!validate_url("http://"), "an empty authority is not a URL");
+        assert!(!validate_url("1http://x"), "a scheme starts with a letter");
+        assert!(!validate_url("http://has space/x"));
     }
 
     #[test]

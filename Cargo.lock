@@ -834,6 +834,7 @@ dependencies = [
  "dirs",
  "dotenvy",
  "evnx-crypto",
+ "getrandom 0.3.4",
  "glob",
  "hex",
  "indexmap",

@@ -342,6 +342,31 @@ fn render_github(results: &ScanResults) -> Result<()> {
     Ok(())
 }
 
+/// The stable identifier for the *kind* of finding, not the instance.
+///
+/// ⚠️ This used to be the whole display name, so a finding from the key-name
+/// heuristic produced
+/// `secret/sensitive-config-key:-acme_internal_token` — **the variable name
+/// inside the rule id**. Every new variable was therefore a new rule to GitHub,
+/// which means the rules list grows without bound, a dismissed alert never stays
+/// dismissed, and two runs of the same scan share no rules at all.
+///
+/// The display name carries the instance after a colon; the class is what comes
+/// before it.
+fn rule_id(pattern: &str) -> String {
+    let class = pattern.split(':').next().unwrap_or(pattern).trim();
+    format!(
+        "secret/{}",
+        class
+            .to_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect::<String>()
+            .trim_matches('-')
+            .replace("--", "-")
+    )
+}
+
 /// Render results in SARIF format for GitHub Code Scanning.
 ///
 /// SARIF (Static Analysis Results Interchange Format) is a standard
@@ -357,6 +382,37 @@ fn render_github(results: &ScanResults) -> Result<()> {
 /// - [SARIF Specification](https://docs.oasis-open.org/sarif/sarif/v2.1.0/)
 /// - [GitHub Code Scanning](https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/sarif-support-for-code-scanning)
 fn render_sarif(results: &ScanResults) -> Result<()> {
+    // ⚠️ `rules[]` was absent entirely. Without it GitHub has no name, no
+    // description and no help link for an alert — the Security tab shows a bare
+    // id. Collected in first-seen order so the document is reproducible.
+    let mut rules: Vec<serde_json::Value> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+
+    for f in &results.findings {
+        let id = rule_id(&f.pattern);
+        if seen.contains(&id) {
+            continue;
+        }
+        seen.push(id.clone());
+        let class = f.pattern.split(':').next().unwrap_or(&f.pattern).trim();
+        rules.push(serde_json::json!({
+            "id": id,
+            "name": class.replace(' ', ""),
+            "shortDescription": { "text": class },
+            "fullDescription": {
+                "text": format!("evnx scan matched {class} in a file that may be committed.")
+            },
+            "helpUri": "https://www.evnx.dev/guides/commands/scan",
+            "defaultConfiguration": {
+                "level": match f.confidence {
+                    Confidence::High => "error",
+                    Confidence::Medium => "warning",
+                    Confidence::Low => "note",
+                }
+            }
+        }));
+    }
+
     let sarif_results: Vec<serde_json::Value> = results
         .findings
         .iter()
@@ -368,18 +424,40 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
             };
 
             let (file, line) = split_location(&f.location);
+            let id = rule_id(&f.pattern);
 
-            serde_json::json!({
-                "ruleId": format!("secret/{}", f.pattern.to_lowercase().replace(' ', "-")),
+            // ⚠️ Without a fingerprint GitHub tracks an alert by its line
+            // number, so inserting a line above a secret closes the old alert
+            // and opens a new one — losing any dismissal or comment on it.
+            // Deliberately readable rather than hashed: it is the identity of
+            // the finding, and someone debugging why two alerts did not merge
+            // should be able to see why.
+            let fingerprint = match &f.variable {
+                Some(v) => format!("{file}::{v}::{id}"),
+                None => format!("{file}::{}::{id}", f.value_preview),
+            };
+
+            let mut result = serde_json::json!({
+                "ruleId": id,
                 "level": level,
-                "message": { "text": format!("{} detected", f.pattern) },
+                "message": { "text": match &f.variable {
+                    Some(v) => format!("{} detected in {v}", f.pattern.split(':').next().unwrap_or(&f.pattern).trim()),
+                    None => format!("{} detected", f.pattern),
+                }},
+                "partialFingerprints": { "evnxSecretV1": fingerprint },
                 "locations": [{
                     "physicalLocation": {
                         "artifactLocation": { "uri": file },
                         "region": { "startLine": line }
                     }
                 }]
-            })
+            });
+
+            // Where to revoke it, when the pattern knows.
+            if let Some(url) = &f.action_url {
+                result["hostedViewerUri"] = serde_json::json!(url);
+            }
+            result
         })
         .collect();
 
@@ -390,7 +468,9 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
             "tool": {
                 "driver": {
                     "name": "evnx scan",
-                    "version": env!("CARGO_PKG_VERSION")
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "informationUri": "https://www.evnx.dev/guides/commands/scan",
+                    "rules": rules
                 }
             },
             "results": sarif_results

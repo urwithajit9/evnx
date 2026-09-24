@@ -97,8 +97,8 @@ pub enum ParseError {
     #[error("Invalid format at line {line}: {message}")]
     InvalidFormat { line: usize, message: String },
 
-    /// A key contains characters outside `[A-Za-z][A-Za-z0-9_]*`.
-    #[error("Invalid key at line {line}: '{key}' (keys must match [A-Za-z][A-Za-z0-9_]*)")]
+    /// A key contains characters outside `[A-Za-z_][A-Za-z0-9_]*`.
+    #[error("Invalid key at line {line}: '{key}' (keys must match [A-Za-z_][A-Za-z0-9_]*)")]
     InvalidKey { line: usize, key: String },
 
     /// A `${VAR}` or `$VAR` reference names a variable that was not defined
@@ -397,8 +397,17 @@ impl Parser {
         Ok((key, raw))
     }
 
-    /// Enforce key naming rules: `[A-Za-z][A-Za-z0-9_]*`, and uppercase-only
+    /// Enforce key naming rules: `[A-Za-z_][A-Za-z0-9_]*`, and uppercase-only
     /// when [`ParserConfig::strict`] is set.
+    ///
+    /// ⚠️ **A leading underscore is allowed**, and was not until 2026-09-24.
+    /// `_INTERNAL=1` is a valid environment variable name in POSIX shells and in
+    /// every mainstream dotenv library, and `evnx doctor` already accepted it —
+    /// so the parser was the stricter of two disagreeing definitions inside one
+    /// binary. Found by `doctor_agrees_with_the_parser_about_what_is_valid` on
+    /// its first run.
+    ///
+    /// A digit first is still refused: `1FOO` is not a name a shell can export.
     fn validate_key(&self, key: &str, line_num: usize) -> ParseResult<()> {
         if key.is_empty() {
             return Err(ParseError::InvalidKey {
@@ -409,9 +418,9 @@ impl Parser {
 
         let mut chars = key.chars();
 
-        // First character must be a letter.
+        // First character: a letter or an underscore, never a digit.
         match chars.next() {
-            Some(c) if c.is_ascii_alphabetic() => {}
+            Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
             _ => {
                 return Err(ParseError::InvalidKey {
                     line: line_num,

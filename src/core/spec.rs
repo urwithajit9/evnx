@@ -73,6 +73,43 @@ impl PartialEq for Format {
     }
 }
 
+/// Is `value` a URL, by the only definition evnx has?
+///
+/// A scheme as RFC 3986 defines one — a letter followed by letters, digits,
+/// `+`, `-` or `.` — then `://`, then a non-empty authority, and no whitespace
+/// anywhere.
+///
+/// ⚠️ **Any scheme, not just http and https.** `validate --validate-formats`
+/// used `^https?://…` and so rejected every `DATABASE_URL=postgresql://…`,
+/// `REDIS_URL=redis://…` and `AMQP_URL=amqp://…` in existence — including the
+/// ones `evnx init --with postgresql` had just written itself. A tool cannot
+/// generate a file its own validator rejects.
+///
+/// ⚠️ **One definition, called from both places.** `Format::Url` and
+/// `checks::validate_url` used to disagree: the spec accepted any scheme and
+/// `--validate-formats` did not, so the same value passed or failed depending
+/// on which flag you used. Two checks that mean the same thing are two checks
+/// that will diverge.
+///
+/// Schemes without an authority — `mailto:`, `urn:` — are deliberately not
+/// accepted. In a `.env`, a value called a URL is one something connects to.
+pub fn is_url(value: &str) -> bool {
+    let Some((scheme, rest)) = value.split_once("://") else {
+        return false;
+    };
+    let scheme_ok = {
+        let mut chars = scheme.chars();
+        matches!(chars.next(), Some(c) if c.is_ascii_alphabetic())
+            && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    };
+    let authority_ok = rest
+        .split(['/', '?', '#'])
+        .next()
+        .is_some_and(|a| !a.is_empty());
+
+    scheme_ok && authority_ok && !value.chars().any(char::is_whitespace)
+}
+
 impl Format {
     /// Parse the TOML string form.
     ///
@@ -101,7 +138,7 @@ impl Format {
     /// Does `value` satisfy this format?
     pub fn matches(&self, value: &str) -> bool {
         match self {
-            Format::Url => value.contains("://") && !value.contains(' '),
+            Format::Url => is_url(value),
             Format::Int => value.parse::<i64>().is_ok(),
             Format::Port => matches!(value.parse::<u32>(), Ok(p) if (1..=65535).contains(&p)),
             Format::Bool => matches!(

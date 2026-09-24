@@ -43,13 +43,26 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
                 println!("  status    {}", "signed in".green());
                 println!("  token     valid for another {mins}m");
             } else {
-                // Not an error: the refresh token is the long-lived one, and the
-                // next command renews the access token without asking for a
-                // password. Saying "expired" here would read as "signed out".
+                // ⚠️ "will try to", not "will". This said "renewed automatically
+                // on the next command", which is a promise this command cannot
+                // keep: `Session` stores no expiry for the refresh token, so
+                // reading local files cannot tell whether the 30-day token is
+                // still good. A user whose refresh token had lapsed was told
+                // here that everything was fine and by `evnx auth status` — the
+                // command that actually asks the server — that their session had
+                // expired and they must log in again.
+                //
+                // Still not an error: the access token expiring is the normal
+                // state between commands, and saying "expired" alone would read
+                // as "signed out". The renewal is just not guaranteed.
                 println!("  status    {}", "signed in".green());
                 println!(
-                    "  token     {} — renewed automatically on the next command",
-                    "expired".dimmed()
+                    "  token     {} — the next command will try to renew it",
+                    "access token expired".dimmed()
+                );
+                println!(
+                    "  {}",
+                    "run `evnx auth status` to confirm with the server".dimmed()
                 );
             }
         }

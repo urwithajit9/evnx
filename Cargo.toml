@@ -121,6 +121,17 @@ aes-gcm = { version = "0.10", optional = true }
 argon2  = { version = "0.5",  optional = true }
 rand    = { version = "0.10", optional = true }
 
+# ⚠️ NOT optional, and not decoration. `evnx validate --fix` generates a
+# SECRET_KEY, and until 2026-09-24 it did so from `SystemTime::now().as_nanos()`
+# XORed with a constant — announced as "Generated secure secret". Three runs
+# seconds apart shared their first 58 of 64 characters, because the value was
+# the clock. `validate` is a default-feature command, so the CSPRNG has to be
+# here rather than behind `backup` alongside `rand`.
+#
+# getrandom over rand: this needs OS randomness and nothing else — no
+# distributions, no generator traits, no second RNG to keep seeded.
+getrandom = "0.3"
+
 # ─── Dev / build dependencies ─────────────────────────────────────────────────
 
 [dev-dependencies]
