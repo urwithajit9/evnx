@@ -871,6 +871,9 @@ pub enum Commands {
     /// Check .env against .env.example, find issues.
     #[command(after_help = docs::VALIDATE.after_help)]
     Validate {
+        /// Path to the environment file to check.
+        ///
+        /// Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
         #[arg(long)]
         env: Option<String>,
 
@@ -882,18 +885,41 @@ pub enum Commands {
         #[arg(long, value_name = "NAME", conflicts_with = "env")]
         env_name: Option<String>,
 
+        /// The template to compare against.
+        ///
+        /// Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`.
         #[arg(long)]
         example: Option<String>,
 
+        /// Also report variables that are present but not declared.
+        ///
+        /// Measured against `.env.example`, or against `[vars]` when the project
+        /// has a contract. Without it, an undeclared variable is not mentioned.
         #[arg(long)]
         strict: bool,
 
+        /// Repair what can be repaired, instead of only reporting it.
+        ///
+        /// Fills missing variables, replaces placeholder values, corrects
+        /// boolean traps and generates a real secret for a weak `SECRET_KEY`.
+        /// Only `.env` is written; the template is never touched.
         #[arg(long)]
         fix: bool,
 
+        /// Output format: `pretty`, `json` or `github-actions`.
+        ///
+        /// `json` is the machine-readable form, with a `summary` object for
+        /// `jq`. `github-actions` emits `::error` annotations that appear
+        /// inline on a pull request. An unrecognised value is an error.
         #[arg(long, default_value = "pretty")]
         format: String,
 
+        /// Always exit 0, even when problems are found.
+        ///
+        /// For a step that should report without failing the build. It
+        /// suppresses the *findings* exit code only — a file that cannot be read
+        /// still exits 2, because "I found nothing" and "I could not look" are
+        /// different answers.
         #[arg(long)]
         exit_zero: bool,
 
@@ -930,6 +956,11 @@ pub enum Commands {
         #[arg(long, value_name = "REGEX")]
         pattern: Vec<String>,
 
+        /// Skip values evnx recognises as filler.
+        ///
+        /// `changeme`, `your_api_key_here`, `xxx` and similar. Useful on a first
+        /// run over a template-heavy repository; prefer `--severity high` if the
+        /// goal is simply less noise.
         #[arg(long)]
         ignore_placeholders: bool,
 
@@ -945,8 +976,20 @@ pub enum Commands {
         #[arg(long, value_name = "LEVEL")]
         severity: Option<String>,
 
+        /// Output format: `pretty`, `json`, `sarif` or `github`.
+        ///
+        /// `sarif` uploads to GitHub's Security tab; `github` emits `::error`
+        /// annotations inline on a pull request; `json` carries a `summary`
+        /// object for `jq`. An unrecognised value is an error, not a silent
+        /// fall back to `pretty`.
         #[arg(long, default_value = "pretty")]
         format: String,
+
+        /// Always exit 0, even when secrets are found.
+        ///
+        /// ⚠️ Suppresses exit 1 only. A scan that could not run still exits 2 —
+        /// the flag means "do not fail my build over findings", not "never tell
+        /// me the scan was impossible".
         #[arg(long)]
         exit_zero: bool,
     },
@@ -954,8 +997,17 @@ pub enum Commands {
     /// Compare .env vs .env.example — show missing/extra vars.
     #[command(after_help = docs::DIFF.after_help)]
     Diff {
+        /// The environment file on the left of the comparison.
+        ///
+        /// Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
         #[arg(long)]
         env: Option<String>,
+
+        /// The file on the right of the comparison.
+        ///
+        /// Defaults to `.env.example`. Comparing against a template shows every
+        /// filled-in value as different by construction — `--against` compares
+        /// two real environments instead.
         #[arg(long)]
         example: Option<String>,
 
@@ -975,10 +1027,17 @@ pub enum Commands {
         /// construction.
         #[arg(long, value_name = "NAME", conflicts_with = "example")]
         against: Option<String>,
+        /// Print the values, not just which keys differ.
+        ///
+        /// ⚠️ This puts secrets on your terminal and into its scrollback, and
+        /// into any CI log the command runs in.
         #[arg(long)]
         show_values: bool,
+
+        /// Output format: `pretty`, `json` or `patch`.
         #[arg(long, default_value = "pretty")]
         format: String,
+        /// Swap the two sides: compare the example against the environment.
         #[arg(long)]
         reverse: bool,
         /// Ignore these keys (comma-separated) — useful for env-specific vars
@@ -1123,10 +1182,19 @@ Use 'evnx convert' without --to for interactive format selection.
     /// Generate config files from templates.
     #[command(after_help = docs::TEMPLATE.after_help)]
     Template {
+        /// The template to render. `{{ VAR }}` and `${VAR}` are substituted.
         #[arg(long)]
         input: String,
+
+        /// Where to write the rendered file.
+        ///
+        /// ⚠️ The result usually contains real values — see `--gitignore`.
         #[arg(long)]
         output: String,
+
+        /// The environment file to take values from.
+        ///
+        /// Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
         #[arg(long)]
         env: Option<String>,
 

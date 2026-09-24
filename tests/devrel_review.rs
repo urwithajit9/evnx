@@ -542,3 +542,96 @@ fn f19_detect_and_yes_are_not_in_conflict() {
 
     assert!(dir.path().join(".env.example").exists());
 }
+
+// ── F16 — a flag with no description is a flag nobody can use ───────────────
+
+/// ⚠️ Fourteen flags across `validate`, `scan`, `diff` and `template` had **no
+/// help text at all** — including `--format` on the two commands that make evnx
+/// usable in CI, which never named `json`, `sarif` or `github`.
+///
+/// The prose already existed, accurately, in the guides on evnx.dev. It just
+/// was not in the binary, so `evnx validate --help` was less useful than a web
+/// search. This keeps it there.
+#[test]
+fn f16_every_flag_has_help_text() {
+    let commands: &[&[&str]] = &[
+        &["validate"],
+        &["scan"],
+        &["diff"],
+        &["sync"],
+        &["convert"],
+        &["template"],
+        &["init"],
+        &["add"],
+        &["doctor"],
+        &["backup"],
+        &["restore"],
+        &["migrate"],
+        &["spec", "init"],
+        &["completions"],
+    ];
+
+    // Global flags are described once on the root command.
+    const GLOBAL: &[&str] = &["--no-color", "--help", "--version", "--verbose", "--quiet"];
+
+    let mut undocumented: Vec<String> = Vec::new();
+
+    for args in commands {
+        let assert = cargo_bin_cmd!("evnx").args(*args).arg("--help").assert();
+        let help = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+        let lines: Vec<&str> = help.lines().collect();
+
+        for (i, line) in lines.iter().enumerate() {
+            let trimmed = line.trim_start();
+            let Some(flag) = trimmed
+                .split_whitespace()
+                .find(|w| w.starts_with("--") && w.len() > 2)
+            else {
+                continue;
+            };
+            if !trimmed.starts_with('-') {
+                continue;
+            }
+            let flag = flag.trim_end_matches(',');
+            if GLOBAL.contains(&flag) {
+                continue;
+            }
+
+            // The description is the next non-blank line. If that is another
+            // flag, this one has none.
+            let next = lines[i + 1..]
+                .iter()
+                .find(|l| !l.trim().is_empty())
+                .copied()
+                .unwrap_or("");
+            if next.trim_start().starts_with('-') && next.trim_start().contains("--") {
+                undocumented.push(format!("{} {}", args.join(" "), flag));
+            }
+        }
+    }
+
+    assert!(
+        undocumented.is_empty(),
+        "flags with no help text:\n  {}",
+        undocumented.join("\n  ")
+    );
+}
+
+/// `--format` is the flag that makes evnx usable in CI, and neither `validate`
+/// nor `scan` named its values.
+#[test]
+fn f16_format_names_the_formats_it_accepts() {
+    for (command, expected) in [
+        ("validate", vec!["json", "github-actions"]),
+        ("scan", vec!["json", "sarif", "github"]),
+    ] {
+        let assert = cargo_bin_cmd!("evnx").args([command, "--help"]).assert();
+        let help = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+        for value in expected {
+            assert!(
+                help.contains(value),
+                "`evnx {command} --help` never mentions `{value}`"
+            );
+        }
+    }
+}
