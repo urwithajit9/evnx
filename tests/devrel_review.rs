@@ -144,3 +144,50 @@ fn completions_still_generates_for_a_known_shell() {
         );
     }
 }
+
+// ── F1/F2 — evnx must not reject the files evnx writes ──────────────────────
+
+/// ⚠️ `--validate-formats` used `^https?://…`, so every `postgresql://`,
+/// `redis://` and `amqp://` value was *"not a valid URL"* — including the
+/// `DATABASE_URL` that `evnx init --with postgresql` had just written.
+///
+/// This is the review's structural finding in its clearest form: a tool that
+/// generates a file its own validator rejects sends the user in a circle.
+#[test]
+fn f2_what_init_writes_passes_validate() {
+    let dir = project();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["init", "--yes", "--with", "postgresql,redis"])
+        .assert()
+        .success();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--validate-formats", "--exit-zero"])
+        .assert();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+
+    assert!(
+        !out.contains("valid URL"),
+        "evnx rejected a URL it wrote itself:\n{out}"
+    );
+}
+
+/// The complement: a value that genuinely is not a URL must still be reported,
+/// or the fix above would have been "accept everything".
+#[test]
+fn f1_a_real_non_url_is_still_reported() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "API_URL=not-a-url\n").unwrap();
+    fs::write(dir.path().join(".env.example"), "API_URL=\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--validate-formats", "--exit-zero"])
+        .assert();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+
+    assert!(out.contains("valid URL"), "expected a complaint:\n{out}");
+}

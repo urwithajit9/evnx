@@ -16,8 +16,6 @@ use super::types::{Issue, IssueType};
 // ─────────────────────────────────────────────────────────────
 
 lazy_static! {
-    pub static ref URL_REGEX: Regex =
-        Regex::new(r"^https?://[^\s/$.?#].[^\s]*$").expect("URL regex is valid");
     pub static ref PORT_REGEX: Regex = Regex::new(r"^\d{1,5}$").expect("Port regex is valid");
     pub static ref EMAIL_REGEX: Regex =
         Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
@@ -60,7 +58,9 @@ pub fn is_weak_secret_key(key: &str) -> bool {
 }
 
 pub fn validate_url(value: &str) -> bool {
-    URL_REGEX.is_match(value)
+    // One definition, shared with `[vars] format = "url"`. See the note on
+    // `core::spec::is_url` for why this is not a regex here any more.
+    crate::core::spec::is_url(value)
 }
 
 /// Validate that a value is a valid port number (1-65535)
@@ -363,8 +363,23 @@ mod tests {
     fn test_validate_url() {
         assert!(validate_url("https://example.com"));
         assert!(validate_url("http://localhost:8080/path"));
+
+        // ⚠️ These are the reason this changed. Every one is a value evnx
+        // itself writes or a user will certainly have, and every one was
+        // rejected as "not a valid URL" before 2026-09-24.
+        assert!(validate_url("postgresql://user:pw@localhost:5432/db"));
+        assert!(validate_url("redis://localhost:6379"));
+        assert!(validate_url("amqp://guest@localhost"));
+        assert!(validate_url("mongodb+srv://cluster.example.net/db"));
+        assert!(validate_url("s3://bucket/key"));
+        // ⚠️ This line used to assert `!validate_url(...)`, pinning the bug.
+        assert!(validate_url("ftp://example.com"));
+
         assert!(!validate_url("not-a-url"));
-        assert!(!validate_url("ftp://example.com"));
+        assert!(!validate_url("://no-scheme"));
+        assert!(!validate_url("http://"), "an empty authority is not a URL");
+        assert!(!validate_url("1http://x"), "a scheme starts with a letter");
+        assert!(!validate_url("http://has space/x"));
     }
 
     #[test]
