@@ -76,42 +76,39 @@ pub fn is_weak_secret_key(name: &str, key: &str) -> bool {
         return true;
     }
 
-    // ⚠️ A long, uniformly hex/base64 value is a generated token, and the word
-    // list below must not be applied to it. `1234` and `abcd` are ordinary hex,
-    // so a random 64-character secret contains one roughly once in 500 — which
-    // made `validate --fix` occasionally generate a secret that `validate` then
-    // called weak. Rare, silent, and exactly the "evnx must pass its own
-    // output" class. `password1234password1234password1234` is not uniform, so
-    // it stays weak.
-    if looks_generated(key) {
-        return false;
-    }
-
+    // ⚠️ A weak word is evidence only when it makes up a meaningful part of
+    // the value. `abcd` inside a 62-character SendGrid key is a coincidence,
+    // not a weakness — and the advice attached to the finding ("Run: openssl
+    // rand -hex 32") tells you to replace a working credential with a random
+    // string, which is the one piece of actively harmful guidance evnx could
+    // give.
+    //
+    // This replaced a charset heuristic that exempted values which were
+    // uniformly hex or base64. That was fragile in two ways, both found within
+    // a day: its separator set knew `+/=-_` but not `.`, so dotted provider
+    // tokens (SendGrid, JWT, Auth0, Firebase) fell through; and it required a
+    // digit, so a real key that happened to have none fell through as well.
+    // Length ratio needs neither charset nor separator knowledge.
+    //
+    //   "abcd"     in a 62-char token   →  4 * 5 <  62  → not weak
+    //   "password" in "password1234password1234password1234" (36) → 40 >= 36 → weak
+    //   "secret"   in "supersecretvalue" (16)                     → 30 >= 16 → weak
+    //
+    // It also subsumes what the charset rule was added for: no weak word is
+    // longer than 8 characters, so none can ever reach a fifth of a generated
+    // 64-character secret.
     let weak = [
         "secret", "password", "dev", "test", "1234", "abcd", "changeme", "example",
     ];
     let lower = key.to_lowercase();
-    weak.iter().any(|w| lower.contains(w))
+    weak.iter()
+        .any(|w| lower.contains(w) && w.len() * 5 >= key.len())
 }
 
 /// Is this a framework signing key, where 32 characters is the documented bar?
 fn is_signing_key(name: &str) -> bool {
     let upper = name.to_uppercase();
     upper == "SECRET_KEY" || upper.ends_with("_SECRET_KEY") || upper == "NEXTAUTH_SECRET"
-}
-
-/// Is this the shape of a machine-generated token rather than a typed one?
-fn looks_generated(value: &str) -> bool {
-    let all_hex = value.chars().all(|c| c.is_ascii_hexdigit());
-    let all_b64 = value
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '-' | '_' | '='));
-    // Base64 of anything real mixes cases; requiring that keeps lowercase words
-    // like `supersecretpassword` out.
-    let mixed_case = value.chars().any(|c| c.is_ascii_uppercase())
-        && value.chars().any(|c| c.is_ascii_lowercase());
-    let has_digit = value.chars().any(|c| c.is_ascii_digit());
-    all_hex && has_digit || (all_b64 && mixed_case && has_digit)
 }
 
 pub fn validate_url(value: &str) -> bool {
@@ -522,6 +519,29 @@ mod tests {
         assert!(!is_weak_secret_key("AWS_KEY", "AKIA4OZRMFJ3VREALKEY"));
         assert!(is_weak_secret_key("SECRET_KEY", "AKIA4OZRMFJ3VREALKEY"));
         assert!(is_weak_secret_key("AWS_KEY", "short"));
+
+        // A long provider token is not weak because it happens to contain a
+        // word from the list. Separator and digits must both be irrelevant —
+        // the first attempt at this keyed on charset and needed a digit, so a
+        // real SendGrid key (which has none) still came back weak.
+        for sep in ["", ".", "-", "_", "/", "+", "="] {
+            for tail in [
+                "1234WxYzZzYyXxWwVvUuTtSsRrQq",
+                "WxYzZzYyXxWwVvUuTtSsRrQqPpOo",
+            ] {
+                let value = format!("SG{sep}abcdEfGhIjKlMnOpQrStUv{tail}");
+                assert!(
+                    !is_weak_secret_key("SENDGRID_API_KEY", &value),
+                    "separator {sep:?} / tail {tail:?} must not change the verdict"
+                );
+            }
+        }
+        // …but a weak word that dominates a short value still counts.
+        assert!(is_weak_secret_key("DB_PASSWORD", "supersecretvalue"));
+        assert!(is_weak_secret_key(
+            "SECRET_KEY",
+            "password1234password1234password1234"
+        ));
         assert!(!is_weak_secret_key(
             "SECRET_KEY",
             "a7b9c4d1e8f2g5h3i6j0k9l8m7n6o5p4q3r2s1t0"

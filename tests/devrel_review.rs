@@ -1868,3 +1868,54 @@ fn c_sync_does_not_warn_when_there_is_nothing_odd() {
         assert!(text.contains("up to date"), "{text}");
     }
 }
+
+/// ⚠️ Introduced by the weak-secret widening in #63, found the day after.
+///
+/// The exemption that stops a generated hex secret flagging itself is keyed on
+/// charset uniformity, and its separator set covered standard base64 (`+/=`)
+/// and base64url (`-_`) but **not the dot**. So a dotted provider token that
+/// happened to contain a word from the weak list was reported weak, while the
+/// identical string with any other separator was not.
+///
+/// The probability per key is low. What makes it worth a test is the advice:
+/// *"Run: openssl rand -hex 32"* tells you to replace a working SendGrid or
+/// Firebase credential with a random string. Every other finding evnx emits is
+/// safe to act on, and dotted tokens are a convention — JWT, SendGrid, Auth0 —
+/// not an accident.
+#[test]
+fn a_dotted_provider_token_is_not_weak() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "SENDGRID_API_KEY=SG.abcdEfGhIjKlMnOpQrStUv.WxYzZzYyXxWwVvUuTtSsRrQqPpOoNnMmLlKk\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join(".env.example"), "SENDGRID_API_KEY=\n").unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !text.contains("too weak"),
+        "a real provider key must not be called weak — the suggested fix would \
+         break the integration:\n{text}"
+    );
+
+    // And a genuinely weak dotted value is still caught, so this is an
+    // exemption for generated-looking tokens, not for dots.
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "DB_PASSWORD=my.password.hunter2\n").unwrap();
+    fs::write(dir.path().join(".env.example"), "DB_PASSWORD=\n").unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--no-color"])
+        .output()
+        .unwrap();
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("too weak"),
+        "a weak dotted password must still be caught"
+    );
+}

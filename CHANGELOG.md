@@ -174,6 +174,15 @@ actually needs attention: `DB_NAME looks like a placeholder`.
   `--direction reverse`. Still exit `0` — a notice, not a failure.
 - `evnx add` writing into an empty `.env` no longer opens the file with three
   blank lines.
+- **A real provider key is no longer called weak.** The weak-word list was a
+  plain substring match, so `abcd` occurring inside a 62-character SendGrid key
+  reported *"too weak or predictable"* — with the advice *"Run: openssl rand
+  -hex 32"*, which would replace a working credential with a random string. A
+  weak word now has to make up at least a fifth of the value to count. This
+  replaced a charset heuristic added in the same release, which was fragile in
+  two ways found within a day of each other: it knew the separators `+/=-_` but
+  not `.`, and it required a digit, so dotted tokens and digit-free keys both
+  fell through.
 
 ### Fixed — reported issues
 
