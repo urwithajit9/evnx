@@ -28,9 +28,15 @@ pub mod completions {
             "zsh" => Shell::Zsh,
             "fish" => Shell::Fish,
             "powershell" => Shell::PowerShell,
-            _ => {
-                eprintln!("Unsupported shell: {}", shell);
-                std::process::exit(1);
+            // ⚠️ `Err`, not `process::exit(1)`. Exiting here bypassed the
+            // centralised mapping in `main`, which numbers any command error 2 —
+            // so `completions` was the one command that answered an unusable
+            // argument with 1, the code every other command reserves for a real
+            // finding.
+            other => {
+                anyhow::bail!(
+                    "unsupported shell '{other}' — expected one of: bash, zsh, fish, powershell"
+                );
             }
         };
 

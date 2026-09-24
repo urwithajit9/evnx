@@ -139,76 +139,80 @@ pub fn run(
     // ─────────────────────────────────────────
     // Run All Validation Checks (pure functions)
     // ─────────────────────────────────────────
-    let mut issues = Vec::new();
-
-    // ⚠️ The spec replaces the template as the source of requiredness when the
-    // project declares one. Running both would report the same variable twice,
-    // and would keep the behaviour the spec exists to fix: `.env.example` has no
-    // way to say "optional", so every line in it counts as required.
     let env_label = crate::core::env_name::name_of(&env_path);
-    if spec.is_empty() {
-        issues.extend(check_missing_variables(
-            &env_file.vars,
+
+    // ⚠️ A closure, so the checks can be run **again** after `--fix`.
+    //
+    // The summary used to count this first pass and never recount, so
+    // `validate --fix` repaired every issue and then exited 1 — reporting the
+    // problems it had just removed. `evnx validate --fix && deploy` therefore
+    // never reached `deploy`, and the next plain `validate` exited 0.
+    //
+    // Recounting by re-running the same checks, rather than by subtracting the
+    // fixes that were applied, is what keeps the two from drifting: a fix that
+    // does not actually resolve its issue stays visible.
+    let collect_issues = |vars: &indexmap::IndexMap<String, String>| -> Vec<Issue> {
+        let mut issues = Vec::new();
+
+        // ⚠️ The spec replaces the template as the source of requiredness when the
+        // project declares one. Running both would report the same variable twice,
+        // and would keep the behaviour the spec exists to fix: `.env.example` has no
+        // way to say "optional", so every line in it counts as required.
+        if spec.is_empty() {
+            issues.extend(check_missing_variables(
+                vars,
+                &example_file.vars,
+                &env_path,
+                &config.ignore_issues,
+            ));
+        } else {
+            issues.extend(checks::check_spec_required(
+                vars,
+                &spec,
+                env_label,
+                &env_path,
+                &config.ignore_issues,
+            ));
+            issues.extend(checks::check_spec_format(
+                vars,
+                &spec,
+                env_label,
+                &env_path,
+                &config.ignore_issues,
+            ));
+        }
+
+        issues.extend(check_extra_variables(
+            vars,
             &example_file.vars,
             &env_path,
+            config.strict,
             &config.ignore_issues,
         ));
-    } else {
-        issues.extend(checks::check_spec_required(
-            &env_file.vars,
-            &spec,
-            env_label,
+
+        issues.extend(check_placeholders(vars, &env_path, &config.ignore_issues));
+
+        issues.extend(check_boolean_trap(vars, &env_path, &config.ignore_issues));
+
+        issues.extend(check_weak_secret(vars, &env_path, &config.ignore_issues));
+
+        issues.extend(check_localhost_docker(
+            vars,
             &env_path,
+            has_docker_context(),
             &config.ignore_issues,
         ));
-        issues.extend(checks::check_spec_format(
-            &env_file.vars,
-            &spec,
-            env_label,
+
+        issues.extend(check_formats(
+            vars,
             &env_path,
+            config.validate_formats,
             &config.ignore_issues,
         ));
-    }
+        issues
+    };
 
-    issues.extend(check_extra_variables(
-        &env_file.vars,
-        &example_file.vars,
-        &env_path,
-        config.strict,
-        &config.ignore_issues,
-    ));
-
-    issues.extend(check_placeholders(
-        &env_file.vars,
-        &env_path,
-        &config.ignore_issues,
-    ));
-
-    issues.extend(check_boolean_trap(
-        &env_file.vars,
-        &env_path,
-        &config.ignore_issues,
-    ));
-
-    issues.extend(check_weak_secret(
-        &env_file.vars,
-        &env_path,
-        &config.ignore_issues,
-    ));
-
-    issues.extend(check_localhost_docker(
-        &env_file.vars,
-        &env_path,
-        has_docker_context(),
-        &config.ignore_issues,
-    ));
-
-    issues.extend(check_formats(
-        &env_file.vars,
-        &env_path,
-        config.validate_formats,
-        &config.ignore_issues,
-    ));
+    let mut issues = collect_issues(&env_file.vars);
 
     // ─────────────────────────────────────────
     // Apply Fixes if Requested (Improvement #1)
@@ -284,6 +288,12 @@ pub fn run(
             let original = std::fs::read_to_string(&env_path).unwrap_or_default();
             write_fixed_file(&env_path, &env_vars, &original)?;
             ui::success(format!("Saved fixes to {}", env_path));
+
+            // ⚠️ Recount against the file as it now stands, not as it arrived.
+            // Everything below — the summary, the rendered output and the exit
+            // code — reads `issues`, so without this `--fix` reports the very
+            // problems it just repaired and exits 1.
+            issues = collect_issues(&env_vars);
         }
     }
 
