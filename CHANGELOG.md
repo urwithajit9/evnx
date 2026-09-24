@@ -144,6 +144,37 @@ password reaching production is the single thing this command exists to prevent.
   `DB_PASSWORD` and `API_TOKEN` are now treated as credentials too, so `--fix`
   generates real values for them instead of declining.
 
+### Fixed — the generated `.env` is now readable by evnx
+
+⚠️ **`evnx init` told you to run `evnx validate`, and doing so reported every
+variable missing.** `init` wrote `.env` with every assignment commented out as
+`# TODO: DB_HOST=localhost`, while `.env.example` held the same variables
+active — so the parser saw nothing in the file `init` had just created:
+
+```
+3. Run 'evnx validate' to check configuration     <-- init's own next step
+
+✗  Missing required variable: DATABASE_URL
+✗  Missing required variable: DB_HOST
+... all six                                        exit 1
+```
+
+It also made `init`'s first instruction — *"Edit .env and replace placeholder
+values"* — untrue, since there were no values in `.env` to replace. `.env` and
+`.env.example` now carry the same assignments, and `validate` reports what
+actually needs attention: `DB_NAME looks like a placeholder`.
+
+- **`evnx add` reported variables the parser could not see.** Same cause:
+  `add service postgresql` printed "Added 6 variables", wrote six `# TODO:`
+  comments, and `validate` — run immediately after — called all six missing. Two
+  commands contradicting each other in consecutive steps.
+- **`evnx sync` no longer just says "up to date" when the source is empty.** A
+  blank `.env` beside a populated `.env.example` is more likely a truncated file
+  or the wrong directory than a steady state, so it now says so and points at
+  `--direction reverse`. Still exit `0` — a notice, not a failure.
+- `evnx add` writing into an empty `.env` no longer opens the file with three
+  blank lines.
+
 ### Fixed — reported issues
 
 - **A file that is absent is no longer reported as a file that failed to parse**

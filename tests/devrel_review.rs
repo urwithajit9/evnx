@@ -1667,3 +1667,204 @@ fn fix_repairs_every_weak_secret_not_just_the_first() {
         assert!(value.len() >= 32, "{name} was not regenerated: {line}");
     }
 }
+
+// ── A — init's own closing instruction must succeed ────────────────────────
+
+/// ⚠️ `evnx init` ends with *"3. Run 'evnx validate' to check configuration"*,
+/// and doing exactly that on the project it had just created reported **every
+/// variable missing**:
+///
+/// ```text
+/// ✗  Missing required variable: DATABASE_URL
+/// ✗  Missing required variable: DB_HOST
+/// ... all six                                  exit 1
+/// ```
+///
+/// `init` wrote `.env` with every assignment commented out as `# TODO:`, so the
+/// parser saw nothing, while `.env.example` held the same variables active. Its
+/// first instruction — "Edit .env and replace placeholder values" — was untrue
+/// for the same reason: there were no values in `.env` to replace.
+///
+/// This is the first thing a new user does, and it made two evnx commands
+/// contradict each other in consecutive steps.
+#[test]
+fn a_init_writes_an_env_its_own_next_step_can_read() {
+    let dir = project();
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["init", "--yes", "--with", "postgresql"])
+        .assert()
+        .success();
+
+    let env = fs::read_to_string(dir.path().join(".env")).unwrap();
+    let active = env
+        .lines()
+        .filter(|l| {
+            l.split_once('=')
+                .is_some_and(|(k, _)| !k.trim_start().starts_with('#'))
+        })
+        .count();
+    assert!(
+        active >= 5,
+        "the .env init writes must contain assignments the parser can see, found {active}:\n{env}"
+    );
+    assert!(
+        !env.contains("# TODO:"),
+        "a commented-out assignment is invisible to every other evnx command:\n{env}"
+    );
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    // The point is not that validate passes — unfilled placeholders *should*
+    // fail. It is that it reports something the user can act on.
+    assert!(
+        !text.contains("Missing required variable"),
+        "init just wrote these; validate must not call them missing:\n{text}"
+    );
+    assert!(
+        text.contains("looks like a placeholder"),
+        "it must name what still needs a real value:\n{text}"
+    );
+}
+
+/// `.env` and `.env.example` must agree about the variables they declare.
+/// They held the same data in two formats — one readable, one not.
+#[test]
+fn a_env_and_example_declare_the_same_variables() {
+    let dir = project();
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["init", "--yes", "--with", "nextjs,postgresql"])
+        .assert()
+        .success();
+
+    let keys = |name: &str| -> Vec<String> {
+        fs::read_to_string(dir.path().join(name))
+            .unwrap()
+            .lines()
+            .filter_map(|l| l.split_once('='))
+            .map(|(k, _)| k.trim().to_string())
+            .filter(|k| !k.starts_with('#') && !k.is_empty())
+            .collect()
+    };
+    let mut env = keys(".env");
+    let mut example = keys(".env.example");
+    env.sort();
+    example.sort();
+    assert_eq!(
+        env, example,
+        ".env and .env.example must declare the same keys"
+    );
+}
+
+// ── B — add must not report variables the parser cannot see ────────────────
+
+/// ⚠️ `evnx add service postgresql` printed "Added 6 variables", wrote all six
+/// as `# TODO:` comments, and `evnx validate` — run immediately after — called
+/// all six missing. The issue that reported this (#10 item 1) framed it as
+/// cosmetic noise about trailing comments. It was not cosmetic.
+#[test]
+fn b_add_writes_variables_the_parser_can_see() {
+    let dir = project();
+    fs::write(dir.path().join(".env"), "").unwrap();
+    fs::write(dir.path().join(".env.example"), "").unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["add", "service", "postgresql", "--yes"])
+        .assert()
+        .success();
+
+    let env = fs::read_to_string(dir.path().join(".env")).unwrap();
+    let active = env
+        .lines()
+        .filter(|l| {
+            l.split_once('=')
+                .is_some_and(|(k, _)| !k.trim_start().starts_with('#'))
+        })
+        .count();
+    assert!(
+        active >= 5,
+        "add reported variables; the parser must see them too, found {active}:\n{env}"
+    );
+    assert!(!env.contains("# TODO:"), "{env}");
+
+    // No leading blank lines: writing into an empty .env used to emit three.
+    assert!(
+        !env.starts_with('\n'),
+        "the file must not open with blank lines:\n{env:?}"
+    );
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !text.contains("Missing required variable"),
+        "add just added these; validate must not call them missing:\n{text}"
+    );
+}
+
+// ── C — sync must say why it did nothing ──────────────────────────────────
+
+/// The unfinished half of issue #15. The destructive behaviour was fixed; the
+/// warning the reporter also asked for was never built. "Up to date" is true
+/// but incurious when the source is empty and the template is not — that is far
+/// more likely a truncated file or the wrong directory than a steady state.
+#[test]
+fn c_sync_says_why_it_copied_nothing_from_a_blank_env() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "").unwrap();
+    fs::write(dir.path().join(".env.example"), "A=\nB=\nC=\n").unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["sync", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        text.contains("has no variables"),
+        "it must say the source was empty:\n{text}"
+    );
+    assert!(
+        text.contains("--direction reverse"),
+        "and point at the command that would fill it:\n{text}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "this is a notice, not a failure"
+    );
+}
+
+/// Both controls: an ordinary in-step pair, and two empty files, must stay
+/// quiet. A warning that fires on the normal case is worse than none.
+#[test]
+fn c_sync_does_not_warn_when_there_is_nothing_odd() {
+    for (env, example) in [("A=1\nB=2\n", "A=\nB=\n"), ("", "")] {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".env"), env).unwrap();
+        fs::write(dir.path().join(".env.example"), example).unwrap();
+
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(["sync", "--no-color"])
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !text.contains("has no variables"),
+            "no warning is due here (env={env:?}):\n{text}"
+        );
+        assert!(text.contains("up to date"), "{text}");
+    }
+}
