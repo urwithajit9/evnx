@@ -278,3 +278,141 @@ fn f4_doctor_reports_every_bad_line_not_just_the_first() {
         assert!(out.contains(line), "{line} was not reported:\n{out}");
     }
 }
+
+// ── F6 — the same input must produce the same output ────────────────────────
+
+/// ⚠️ `check_missing_variables` and `check_extra_variables` built two
+/// `HashSet`s and reported `difference()`. Rust seeds its hasher randomly per
+/// process, so five consecutive runs over one file gave five orderings.
+///
+/// That makes output undiffable, defeats any golden file covering more than one
+/// finding, and makes a reader ask what changed when nothing did.
+///
+/// ⚠️ The existing golden fixtures could not catch this: none has more than one
+/// missing variable, and one item cannot be out of order. This uses five.
+#[test]
+fn f6_validate_reports_findings_in_a_stable_order() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env.example"), "A=\nB=\nC=\nD=\nE=\n").unwrap();
+    fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+
+    let order = |_| -> String {
+        let assert = cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(["validate", "--format", "json", "--exit-zero"])
+            .assert();
+        let v: serde_json::Value =
+            serde_json::from_slice(&assert.get_output().stdout).expect("json");
+        v["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["variable"].as_str().unwrap_or("?").to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+
+    let first = order(0);
+    for run in 1..8 {
+        assert_eq!(
+            order(run),
+            first,
+            "run {run} reported a different order; the first was {first}"
+        );
+    }
+
+    // And it is the order of `.env.example`, which is the file the reader has
+    // open — not merely *an* order.
+    assert_eq!(first, "B,C,D,E");
+}
+
+/// `sync` writes this order into `.env.example`, so a random one meant two
+/// developers syncing the same `.env` produced two different files.
+#[test]
+fn f6_sync_writes_variables_in_the_order_they_appear() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "ZULU=1\nYANKEE=2\nXRAY=3\nWHISKEY=4\n",
+    )
+    .unwrap();
+
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..5 {
+        let _ = fs::remove_file(dir.path().join(".env.example"));
+        cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(["sync", "--direction", "forward", "--placeholder"])
+            .assert()
+            .success();
+        let body = fs::read_to_string(dir.path().join(".env.example")).unwrap();
+        let order: Vec<&str> = body
+            .lines()
+            .filter_map(|l| l.split('=').next())
+            .filter(|k| !k.trim().is_empty() && !k.starts_with('#'))
+            .collect();
+        seen.insert(order.join(","));
+    }
+
+    assert_eq!(seen.len(), 1, "sync wrote more than one ordering: {seen:?}");
+    assert_eq!(
+        seen.into_iter().next().unwrap(),
+        "ZULU,YANKEE,XRAY,WHISKEY",
+        "the order should be the one in .env"
+    );
+}
+
+// ── F5 — a key written twice must not vanish in silence ─────────────────────
+
+/// ⚠️ The parser builds an `IndexMap`, and `insert` overwrites — so
+/// `API_KEY=first` followed by `API_KEY=second` silently became `second` and
+/// nothing reported it. Last-wins is kept, because that is what dotenv
+/// implementations do; the silence is what changed.
+#[test]
+fn f5_duplicate_keys_are_reported() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "API_KEY=first\nOTHER=x\nAPI_KEY=second\nexport OTHER=y\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join(".env.example"), "API_KEY=\nOTHER=\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--exit-zero"])
+        .assert();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+
+    assert!(out.contains("API_KEY is assigned 2 times"), "{out}");
+    assert!(
+        out.contains("lines 1, 3"),
+        "the report should name where: {out}"
+    );
+    // `export OTHER=y` is the same variable as `OTHER=x`.
+    assert!(out.contains("OTHER is assigned 2 times"), "{out}");
+
+    // Parsing is unchanged: the last assignment still wins.
+    let converted = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["convert", "--to", "json"])
+        .assert()
+        .success();
+    let v: serde_json::Value = serde_json::from_slice(&converted.get_output().stdout).unwrap();
+    assert_eq!(v["API_KEY"], "second");
+    assert_eq!(v["OTHER"], "y");
+}
+
+#[test]
+fn f5_a_file_without_duplicates_is_silent() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "A=1\nB=2\n").unwrap();
+    fs::write(dir.path().join(".env.example"), "A=\nB=\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate"])
+        .assert();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(!out.contains("assigned"), "false positive:\n{out}");
+}

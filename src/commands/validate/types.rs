@@ -15,6 +15,8 @@ pub enum IssueType {
     InvalidEmail,
     /// A value that does not match the format its `[vars]` entry declares.
     FormatMismatch,
+    /// The same key assigned more than once in one file.
+    DuplicateKey,
 }
 
 impl IssueType {
@@ -26,6 +28,7 @@ impl IssueType {
             IssueType::BooleanTrap => "boolean_trap",
             IssueType::WeakSecret => "weak_secret",
             IssueType::LocalhostInDocker => "localhost_in_docker",
+            IssueType::DuplicateKey => "duplicate_key",
             IssueType::InvalidUrl => "invalid_url",
             IssueType::InvalidPort => "invalid_port",
             IssueType::InvalidEmail => "invalid_email",

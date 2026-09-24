@@ -140,6 +140,7 @@ pub fn run(
     // Run All Validation Checks (pure functions)
     // ─────────────────────────────────────────
     let env_label = crate::core::env_name::name_of(&env_path);
+    let raw_env_content = std::fs::read_to_string(&env_path).unwrap_or_default();
 
     // ⚠️ A closure, so the checks can be run **again** after `--fix`.
     //
@@ -187,6 +188,14 @@ pub fn run(
             &example_file.vars,
             &env_path,
             config.strict,
+            &config.ignore_issues,
+        ));
+
+        // Reads the file, not the parsed map: `insert` has already discarded
+        // the evidence by the time `vars` exists.
+        issues.extend(check_duplicate_keys(
+            &raw_env_content,
+            &env_path,
             &config.ignore_issues,
         ));
 

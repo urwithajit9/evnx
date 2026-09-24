@@ -221,9 +221,17 @@ fn sync_forward(
         );
     };
 
-    let env_keys: HashSet<_> = env_file.vars.keys().collect();
+    // ⚠️ Ordered by the source file, not by hash. `HashSet::difference` yields
+    // hash order and Rust seeds its hasher randomly per process, so the same
+    // `.env` produced a different ordering on every run — and `sync` *writes*
+    // this order into `.env.example`, so two developers syncing the same file
+    // got two different diffs against each other.
     let example_keys: HashSet<_> = example_file.vars.keys().collect();
-    let missing: Vec<_> = env_keys.difference(&example_keys).cloned().collect();
+    let missing: Vec<_> = env_file
+        .vars
+        .keys()
+        .filter(|key| !example_keys.contains(key))
+        .collect();
 
     if missing.is_empty() {
         ui::success(".env.example is up to date");
