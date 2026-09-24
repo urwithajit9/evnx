@@ -416,3 +416,129 @@ fn f5_a_file_without_duplicates_is_silent() {
     let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     assert!(!out.contains("assigned"), "false positive:\n{out}");
 }
+
+// ── F8 — SARIF that GitHub can actually track ───────────────────────────────
+
+/// ⚠️ The `ruleId` was the whole display name, so the key-name heuristic
+/// produced `secret/sensitive-config-key:-acme_internal_token` — **the variable
+/// name inside the rule id**. Every new variable was a new rule to GitHub, so
+/// the rules list grew without bound, a dismissed alert never stayed dismissed,
+/// and two runs of the same scan shared no rules at all.
+///
+/// There was also no `rules[]` (GitHub shows a bare id with no help link) and no
+/// fingerprints (alerts are tracked by line number, so inserting a line above a
+/// secret closes one alert and opens another).
+#[test]
+fn f8_sarif_rule_ids_identify_the_kind_not_the_instance() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY\n\
+         ACME_INTERNAL_TOKEN=a-long-configuration-value-here\n\
+         OTHER_SECRET_THING=another-long-configuration-value\n",
+    )
+    .unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--format", "sarif", "--exit-zero"])
+        .assert()
+        .code(0);
+    let doc: serde_json::Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    let run = &doc["runs"][0];
+
+    let rule_ids: Vec<&str> = run["tool"]["driver"]["rules"]
+        .as_array()
+        .expect("rules[] must exist — GitHub has no rule metadata without it")
+        .iter()
+        .map(|r| r["id"].as_str().unwrap())
+        .collect();
+
+    for id in &rule_ids {
+        assert!(
+            !id.contains("acme") && !id.contains("other_secret"),
+            "a variable name leaked into a rule id: {id}"
+        );
+    }
+
+    // Two findings of the same kind share one rule.
+    let results = run["results"].as_array().unwrap();
+    assert_eq!(results.len(), 3, "expected three findings");
+    assert!(
+        rule_ids.len() < results.len(),
+        "three findings produced {} rules — ids are still per-instance: {rule_ids:?}",
+        rule_ids.len()
+    );
+
+    // Every rule carries a help link.
+    for rule in run["tool"]["driver"]["rules"].as_array().unwrap() {
+        assert!(rule["helpUri"].is_string(), "rule without helpUri: {rule}");
+    }
+
+    // Every result carries a fingerprint, and they are distinct.
+    let prints: Vec<&str> = results
+        .iter()
+        .map(|r| {
+            r["partialFingerprints"]["evnxSecretV1"]
+                .as_str()
+                .expect("every result needs a fingerprint")
+        })
+        .collect();
+    let unique: std::collections::HashSet<&&str> = prints.iter().collect();
+    assert_eq!(
+        unique.len(),
+        prints.len(),
+        "fingerprints collided: {prints:?}"
+    );
+}
+
+// ── F11 — a missing required argument is not a licence to guess ─────────────
+
+/// ⚠️ `select_destination` ended `.interact().unwrap_or(0)`. With no terminal —
+/// every CI runner — it **silently selected the first destination in the list**,
+/// so `evnx migrate --dry-run` printed a plan for somewhere the user had never
+/// chosen and exited 0.
+#[test]
+fn f11_migrate_without_a_destination_refuses_rather_than_guessing() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["migrate", "--dry-run"])
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(stderr.contains("--to is required"), "{stderr}");
+    assert!(
+        stderr.contains("github-actions"),
+        "the error should list what is available: {stderr}"
+    );
+
+    // Naming one still works.
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["migrate", "--to", "github-actions", "--dry-run"])
+        .assert()
+        .code(0);
+}
+
+// ── F19 — --detect already implies --yes ────────────────────────────────────
+
+#[test]
+fn f19_detect_and_yes_are_not_in_conflict() {
+    let dir = project();
+    fs::write(
+        dir.path().join("package.json"),
+        r#"{"dependencies":{"next":"14"}}"#,
+    )
+    .unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["init", "--detect", "--yes"])
+        .assert()
+        .code(0);
+
+    assert!(dir.path().join(".env.example").exists());
+}

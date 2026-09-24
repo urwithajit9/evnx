@@ -4,6 +4,7 @@
     {
       "results": [
         {
+          "hostedViewerUri": "https://console.aws.amazon.com/iam",
           "level": "error",
           "locations": [
             {
@@ -18,14 +19,34 @@
             }
           ],
           "message": {
-            "text": "AWS Access Key detected"
+            "text": "AWS Access Key detected in AWS_KEY"
+          },
+          "partialFingerprints": {
+            "evnxSecretV1": "./.env::AWS_KEY::secret/aws-access-key"
           },
           "ruleId": "secret/aws-access-key"
         }
       ],
       "tool": {
         "driver": {
+          "informationUri": "https://www.evnx.dev/guides/commands/scan",
           "name": "evnx scan",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "evnx scan matched AWS Access Key in a file that may be committed."
+              },
+              "helpUri": "https://www.evnx.dev/guides/commands/scan",
+              "id": "secret/aws-access-key",
+              "name": "AWSAccessKey",
+              "shortDescription": {
+                "text": "AWS Access Key"
+              }
+            }
+          ],
           "version": "<version>"
         }
       }

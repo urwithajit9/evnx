@@ -818,7 +818,12 @@ pub enum Commands {
         /// ⚠️ Detection is a heuristic — a `stripe` dependency in a test fixture
         /// looks exactly like one in a checkout flow. Prefer `--with` where the
         /// answer is known; this is for bootstrapping a project you trust.
-        #[arg(long, conflicts_with_all = ["with", "blueprint", "yes"])]
+        // ⚠️ No longer conflicts with `--yes`. `--detect` already implies it —
+        // `init/mod.rs` passes `yes: yes || detect_flag`, because accepting the
+        // proposal without asking is what detection is for. Rejecting the
+        // combination meant a CI script that passes `--yes` out of habit got an
+        // argument error for asking twice for the same thing.
+        #[arg(long, conflicts_with_all = ["with", "blueprint"])]
         detect: bool,
 
         /// Build the template from the variables the code actually reads.
@@ -1065,10 +1070,14 @@ Use 'evnx convert' without --to for interactive format selection.
         #[arg(long, value_name = "PATTERN")]
         exclude: Option<String>,
 
-        /// Base64-encode all values before output
+        /// Base64-encode all values before output.
         ///
-        /// Note: Some formats (e.g., kubernetes) always base64-encode
-        /// regardless of this flag
+        /// For `kubernetes` this chooses the field: with the flag values are
+        /// base64 under `data:`; without it they are literal under
+        /// `stringData:`, which Kubernetes encodes itself on apply.
+        ///
+        /// ⚠️ This said "Some formats (e.g., kubernetes) always base64-encode
+        /// regardless of this flag", which was exactly backwards.
         #[arg(long)]
         base64: bool,
 
