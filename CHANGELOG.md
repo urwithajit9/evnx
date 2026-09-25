@@ -6,6 +6,54 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.2] - 2026-09-25
+
+**Still release engineering. No source has changed since 0.5.0.**
+
+### Why this exists
+
+0.5.1's fix for the aarch64-musl build introduced a second one. The build step
+branched with a shell conditional:
+
+```sh
+if [ "$TARGET" = "aarch64-unknown-linux-musl" ]; then cross build ...; else cargo build ...; fi
+```
+
+The Windows runner defaults to PowerShell, which parsed it as a syntax error:
+
+```
+ParserError: Missing '(' after 'if' in if statement.
+```
+
+The `Package` step immediately below has carried `shell: bash` for exactly this
+reason, so the precedent was already in the file.
+
+### Fixed
+
+- The build is now **two steps with `if:` expressions** rather than one step with
+  a shell conditional. A GitHub `if:` needs no shell, so it cannot break this way
+  on any runner.
+- **`fail-fast: false`** on the target matrix. The Windows failure cancelled the
+  other six builds, so a tag that broke on one platform said nothing about the
+  rest — and `release.yml` can only be exercised by tagging. Information per
+  attempt is worth more here than runner minutes.
+
+### Version history, since three patches look alarming
+
+| Version | crates.io / PyPI | npm, Homebrew, Scoop, winget, GHCR |
+|---|---|---|
+| 0.5.0 | published | blocked — aarch64-musl had no C toolchain |
+| 0.5.1 | published | blocked — the fix for that broke Windows |
+| 0.5.2 | published | **the one to use** |
+
+⚠️ **0.5.0, 0.5.1 and 0.5.2 are the same code.** If you already have 0.5.0 or
+0.5.1 from crates.io or PyPI, nothing is wrong with it and there is nothing to
+do. The other five channels go straight from 0.4.0 to 0.5.2.
+
+Each version exists because crates.io and PyPI publish from workflows separate
+from the binary build, so they succeeded while the binary build failed — and a
+published version number can never be reused.
+
 ## [0.5.1] - 2026-09-25
 
 **A release-engineering fix. No code changed between 0.5.0 and 0.5.1.**
