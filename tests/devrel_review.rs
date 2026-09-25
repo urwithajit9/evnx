@@ -1933,3 +1933,46 @@ fn a_dotted_provider_token_is_not_weak() {
         "a weak dotted password must still be caught"
     );
 }
+
+// ── a build missing features must say so ───────────────────────────────────
+
+/// ⚠️ `backup`, `restore`, `migrate`, `auth`, `vault` and `cloud` are
+/// `#[cfg]`-gated out of the `Commands` enum, so a default build answers
+/// `evnx backup` with clap's bare "unrecognized subcommand" and no hint.
+///
+/// Each of those modules contains a "feature not enabled" stub written for
+/// exactly this case — and all of them are unreachable, because there is no
+/// enum variant left to dispatch to. The one message that would help was
+/// written, committed, and dead.
+///
+/// It matters because `cargo install evnx` is the only channel that builds with
+/// `default = []`, and it is the canonical one; every prebuilt binary ships
+/// `--all-features`.
+#[test]
+#[cfg(not(all(feature = "backup", feature = "migrate", feature = "cloud")))]
+fn a_build_missing_features_says_which_and_how() {
+    let out = cargo_bin_cmd!("evnx").arg("--help").output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        text.contains("Not built into this binary"),
+        "a partial build must name what is missing:\n{text}"
+    );
+    assert!(
+        text.contains("--all-features"),
+        "and how to get it:\n{text}"
+    );
+}
+
+/// The complement: a complete build must not carry the notice. It would be
+/// wrong on every prebuilt binary, which is all of them.
+#[test]
+#[cfg(all(feature = "backup", feature = "migrate", feature = "cloud"))]
+fn a_complete_build_carries_no_missing_feature_notice() {
+    let out = cargo_bin_cmd!("evnx").arg("--help").output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !text.contains("Not built into this binary"),
+        "nothing is missing from this build:\n{text}"
+    );
+}
