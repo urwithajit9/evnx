@@ -132,7 +132,7 @@ pub fn run(
         use colored::Colorize;
         println!("{} Backup feature not enabled", "✗".red());
         println!("Rebuild with: cargo build --features backup");
-        return Ok(());
+        Ok(())
     }
 
     // ── Full implementation (feature = "backup") ──────────────────────────────

@@ -18,6 +18,12 @@
 //! A test that spans commands has to live somewhere that belongs to none of
 //! them.
 
+//! ⚠️ Tests that drive `migrate` or `backup` carry a `#[cfg(feature = …)]`.
+//! Those subcommands do not exist in a `default = []` build, so without the
+//! gate a plain `cargo test` fails with "unrecognized subcommand 'migrate'" —
+//! eight times. CI runs `--all-features` and was green throughout, which is
+//! exactly why it went unnoticed until the pre-release sweep.
+
 use assert_cmd::cargo::cargo_bin_cmd;
 use std::fs;
 use tempfile::TempDir;
@@ -533,6 +539,7 @@ fn f8_sarif_rule_ids_identify_the_kind_not_the_instance() {
 /// so `evnx migrate --dry-run` printed a plan for somewhere the user had never
 /// chosen and exited 0.
 #[test]
+#[cfg(feature = "migrate")]
 fn f11_migrate_without_a_destination_refuses_rather_than_guessing() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join(".env"), "A=1\n").unwrap();
@@ -812,6 +819,7 @@ fn f9_annotations_point_at_the_real_line() {
 /// `heroku config --app <--heroku-app not set>` — an internal placeholder inside
 /// the command it tells the user to run — and exited 0.
 #[test]
+#[cfg(feature = "migrate")]
 fn f11_dry_run_needs_the_identifier_it_would_print() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join(".env"), "A=1\n").unwrap();
@@ -953,6 +961,7 @@ fn f18_name_based_findings_do_not_claim_the_value_matched() {
 /// consequence was concrete: a scheduled backup had no way to supply one except
 /// writing it to disk, while the restore it fed needed no file at all.
 #[test]
+#[cfg(feature = "backup")]
 fn f7_evnx_password_drives_a_backup_with_no_file_on_disk() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join(".env"), "API_KEY=sk-live-abc123\n").unwrap();
@@ -987,6 +996,7 @@ fn f7_evnx_password_drives_a_backup_with_no_file_on_disk() {
 /// trap easier to reach, not harder — the flag names would finally match while
 /// the behaviour still did not.
 #[test]
+#[cfg(feature = "backup")]
 fn f7_one_key_file_round_trips_under_either_flag_spelling() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join(".env"), "API_KEY=sk-live-abc123\n").unwrap();
@@ -1038,6 +1048,7 @@ fn f7_one_key_file_round_trips_under_either_flag_spelling() {
 /// "verify secrets were set", "redeploy your project". Both halves described a
 /// migration that had not occurred.
 #[test]
+#[cfg(feature = "migrate")]
 fn f12_dry_run_does_not_claim_anything_was_done() {
     let dir = TempDir::new().unwrap();
     fs::write(
@@ -1357,6 +1368,7 @@ fn i12_an_unparseable_file_still_names_the_line() {
 /// kind* (`env-file`) rather than the file, so it could not tell "the file is
 /// empty" from "I am in the wrong directory".
 #[test]
+#[cfg(feature = "migrate")]
 fn i13_a_migration_that_moved_nothing_is_not_a_success() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join(".env"), "").unwrap();
@@ -1383,6 +1395,7 @@ fn i13_a_migration_that_moved_nothing_is_not_a_success() {
 /// The same rule for a filter that matches nothing — which is already how
 /// `evnx cloud run` behaves, so the two now agree.
 #[test]
+#[cfg(feature = "migrate")]
 fn i13_a_filter_that_matches_nothing_is_an_error() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join(".env"), "A=1\nB=2\n").unwrap();
@@ -1413,6 +1426,7 @@ fn i13_a_filter_that_matches_nothing_is_an_error() {
 /// eight that merely print commands accepted both in silence — no warning, no
 /// effect, exit 0.
 #[test]
+#[cfg(feature = "migrate")]
 fn f10_flags_that_cannot_work_are_refused_not_ignored() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join(".env"), "A=1\n").unwrap();

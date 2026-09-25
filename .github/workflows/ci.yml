@@ -64,6 +64,12 @@ jobs:
       # dropped, goes unnoticed. A dropped `Assert` asserts nothing.
       - run: cargo clippy --all-features --all-targets -- -D warnings
 
+      # ⚠️ Default features too. `cargo install evnx` — the canonical install
+      # path — builds with `default = []`, and CI linted only `--all-features`,
+      # so that configuration went unchecked. It had accumulated six unused
+      # imports and two clippy errors by v0.5.0, none of them visible here.
+      - run: cargo clippy --all-targets -- -D warnings
+
   benches:
     name: Benchmarks compile
     runs-on: ubuntu-latest

@@ -600,7 +600,7 @@ default_install_hook_types: [pre-commit, pre-push]
 
 repos:
   - repo: https://github.com/urwithajit9/evnx
-    rev: v0.3.6
+    rev: v0.5.0
     hooks:
       - id: evnx-scan        # blocks commit if secrets found
       - id: evnx-validate    # blocks commit if .env misconfigured
