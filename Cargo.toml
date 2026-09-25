@@ -1,6 +1,6 @@
 [package]
 name        = "evnx"
-version     = "0.5.1"
+version     = "0.5.2"
 edition     = "2021"
 # Verified by building on it, not assumed: cargo +1.85.0 check passes for the
 # default feature set, --features cloud and --all-features. The floor comes from

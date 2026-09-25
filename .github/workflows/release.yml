@@ -13,6 +13,12 @@ jobs:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
+      # ⚠️ One target must not cancel the rest. With the default `fail-fast`,
+      # the Windows failure above cancelled all six other builds, so a tag that
+      # broke on one platform told us nothing about the other six — and the
+      # release can only be exercised by tagging. Maximum information per
+      # attempt matters more here than saving runner minutes.
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -83,18 +89,28 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-musl'
         run: cargo install cross --locked --version 0.2.5
 
+      - name: Build (cross)
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: cross build --release --all-features --target ${{ matrix.target }}
+
+      # ⚠️ Two steps with `if:`, never one step with a shell conditional. The
+      # first attempt at this branched inside `run:` with bash, and the Windows
+      # runner defaults to PowerShell:
+      #
+      #   ParserError: Missing '(' after 'if' in if statement.
+      #
+      # It failed the Windows target, and `fail-fast` then cancelled the other
+      # six — so the tag produced no binaries at all. The Package step below has
+      # carried `shell: bash` for exactly this reason. A GitHub `if:` expression
+      # needs no shell, so it cannot regress this way on any runner.
       - name: Build
+        if: matrix.target != 'aarch64-unknown-linux-musl'
         env:
           OPENSSL_STATIC: "1"
           OPENSSL_DIR: "/usr"
           PKG_CONFIG_ALLOW_CROSS: "1"
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        run: |
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
-            cross build --release --all-features --target ${{ matrix.target }}
-          else
-            cargo build --release --all-features --target ${{ matrix.target }}
-          fi
+        run: cargo build --release --all-features --target ${{ matrix.target }}
 
       - name: Package
         shell: bash
