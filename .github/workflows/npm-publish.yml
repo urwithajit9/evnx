@@ -79,12 +79,25 @@ jobs:
       # ── Download artifacts from the release.yml run ─────────────────────────
       # Uses RELEASE_RUN_ID so both automatic and manual triggers point to the
       # correct release run regardless of how this workflow was invoked.
-      - name: Download all release artifacts
+      # ⚠️ `name` is not optional here, even though every artifact in the run
+      # used to be one we wanted. `docker/build-push-action` uploads a build
+      # record of its own — `urwithajit9~evnx~BOLW5I.dockerbuild` — which is not
+      # a plain zip, so the unfiltered download killed the v0.5.2 npm publish:
+      #
+      #   ==> Extracting: urwithajit9~evnx~BOLW5I.dockerbuild.zip
+      #   Error: ADM-ZIP: Invalid or unsupported zip format. No END header found
+      #
+      # The binary artifacts are all `evnx-<target>`, so anchoring on that
+      # prefix keeps this step independent of whatever other jobs choose to
+      # upload later.
+      - name: Download the binary artifacts
         uses: dawidd6/action-download-artifact@v9
         with:
           run_id: ${{ env.RELEASE_RUN_ID }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           path: downloaded-artifacts/
+          name: ^evnx-
+          name_is_regexp: true
 
       - name: Show downloaded artifacts
         run: find downloaded-artifacts/ -type f | sort
