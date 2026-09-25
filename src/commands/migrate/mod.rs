@@ -117,7 +117,7 @@ pub fn run(args: MigrateArgs) -> Result<()> {
         anyhow::bail!(
             "{what} holds no variables, so there is nothing to migrate.\n\n\
              Check you are in the right directory, or point at another file \
-             with --env. `evnx validate` will confirm what evnx can read."
+             with --source-file. `evnx validate` will confirm what evnx can read."
         );
     }
 
