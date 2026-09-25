@@ -6,7 +6,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.5.0] - 2026-09-24
+## [0.5.0] - 2026-09-25
 
 The command-review release. Every command was run against a real build and
 compared with its published guide; where the two disagreed, one of them was

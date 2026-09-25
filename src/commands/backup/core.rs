@@ -40,13 +40,18 @@
 //! [`BackupError::WriteFailed`]: super::error::BackupError::WriteFailed
 //! [`BackupError::VerifyFailed`]: super::error::BackupError::VerifyFailed
 
+#[cfg(feature = "backup")]
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "backup")]
 use anyhow::{Context, Result};
+#[cfg(feature = "backup")]
 use zeroize::Zeroize;
 
+#[cfg(feature = "backup")]
 use crate::utils::ui;
 
+#[cfg(feature = "backup")]
 use super::error::BackupError;
 
 // ─── Options ──────────────────────────────────────────────────────────────────
@@ -657,7 +662,7 @@ pub struct BackupMetadata {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, feature = "backup"))]
 mod tests {
     use super::*;
     use crate::utils::dotenv_validation;
