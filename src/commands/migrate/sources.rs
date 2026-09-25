@@ -29,7 +29,7 @@ pub fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<IndexMap<
             let parser = Parser::default();
             let env_file = parser.parse_file_or_hint(
                 file,
-                "Create it with `evnx init`, or point at another file with --env.",
+                "Create it with `evnx init`, or point at another file with --source-file.",
             )?;
             Ok(env_file.vars)
         }
