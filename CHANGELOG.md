@@ -6,6 +6,41 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.1] - 2026-09-25
+
+**A release-engineering fix. No code changed between 0.5.0 and 0.5.1.**
+
+### Why this exists
+
+v0.5.0's tag build failed on `aarch64-unknown-linux-musl`:
+
+```
+error occurred in cc-rs: failed to find tool "aarch64-linux-musl-gcc"
+```
+
+`musl-tools` provides `musl-gcc` for x86_64 only. It does not provide the
+aarch64 musl cross compiler, and `ring` — pulled in by rustls via reqwest, so
+present in every `--all-features` build — runs a build script that needs a C
+compiler for the target. The target was new in v0.5.0 and had never built.
+
+Every other job in `release.yml` declares `needs: build`, so one broken target
+took the GitHub Release, the container image, Homebrew, Scoop, winget and npm
+down with it. **crates.io and PyPI publish from separate workflows and were
+unaffected** — which is why 0.5.0 exists on those two and nowhere else.
+
+⚠️ **If you installed 0.5.0 from crates.io or PyPI, nothing is wrong with it.**
+0.5.1 is the same code. Every other channel goes straight from 0.4.0 to 0.5.1.
+
+### Fixed
+
+- `aarch64-unknown-linux-musl` now builds through `cross`, which runs in a
+  container that already carries the toolchain — less brittle than fetching one
+  from a third-party host.
+- **CI now compiles the release targets.** It previously built none of the
+  seven, so a target that could not compile was discoverable only by pushing a
+  tag — at which point it blocks five channels. The two musl targets are built
+  on every PR, since they are the ones that cross-compile with a C toolchain.
+
 ## [0.5.0] - 2026-09-25
 
 The command-review release. Every command was run against a real build and

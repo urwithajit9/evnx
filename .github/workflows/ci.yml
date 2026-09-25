@@ -88,6 +88,30 @@ jobs:
       # clippy step runs `--all-features` without `--all-targets`.
       - run: cargo bench --all-features --no-run
 
+  # ⚠️ CI built **none** of release.yml's seven targets until v0.5.0, so a
+  # target that could not compile was discoverable only by pushing a tag — and
+  # at that point every job in release.yml `needs:` the build, so one broken
+  # target took the GitHub Release, the container image, Homebrew, Scoop, winget
+  # and npm with it. That is exactly what happened to v0.5.0.
+  #
+  # Only the two musl targets are built here: they are the ones that cross-
+  # compile with a C toolchain (`ring` needs one), which is where the breakage
+  # was. The apple and windows targets need their own runners and are covered by
+  # the release build itself.
+  cross-targets:
+    name: Release targets compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --all-features --target x86_64-unknown-linux-musl
+      - run: cargo install cross --locked --version 0.2.5
+      - run: cross build --release --all-features --target aarch64-unknown-linux-musl
+
   audit:
     name: Security audit
     runs-on: ubuntu-latest

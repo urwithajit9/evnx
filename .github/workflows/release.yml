@@ -66,13 +66,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
+      # ⚠️ `musl-tools` provides `musl-gcc` for **x86_64 only**. It does not
+      # provide `aarch64-linux-musl-gcc`, and `ring` — pulled in by rustls via
+      # reqwest, so present in every `--all-features` build — runs a build
+      # script that needs a C compiler for the target. v0.5.0's tag failed here:
+      #
+      #   error occurred in cc-rs: failed to find tool "aarch64-linux-musl-gcc"
+      #
+      # and because every other job in this file `needs:` the build, one target
+      # took the GitHub Release, the container image, Homebrew, Scoop, winget
+      # and npm down with it.
+      #
+      # `cross` runs the build in a container that already has the toolchain,
+      # which is less brittle than fetching one from a third-party host.
+      - name: Install cross
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: cargo install cross --locked --version 0.2.5
+
       - name: Build
         env:
           OPENSSL_STATIC: "1"
           OPENSSL_DIR: "/usr"
           PKG_CONFIG_ALLOW_CROSS: "1"
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        run: cargo build --release --all-features --target ${{ matrix.target }}
+        run: |
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+            cross build --release --all-features --target ${{ matrix.target }}
+          else
+            cargo build --release --all-features --target ${{ matrix.target }}
+          fi
 
       - name: Package
         shell: bash
