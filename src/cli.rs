@@ -743,6 +743,31 @@ pub enum CloudCommands {
     propagate_version = true,
     arg_required_else_help = true
 )]
+// ⚠️ Shown only by a build that is actually missing something, so the prebuilt
+// binaries — which are all `--all-features` — never carry it.
+//
+// `backup`, `restore`, `migrate`, `auth`, `vault` and `cloud` are `#[cfg]`-gated
+// out of the `Commands` enum, so a default build answers `evnx backup` with
+// clap's bare "unrecognized subcommand" and no hint at all. Each command module
+// contains a "feature not enabled" stub written for exactly this case, and all
+// three are unreachable: there is no variant left to dispatch to.
+//
+// It matters because `cargo install evnx` is the only channel that builds with
+// `default = []`, and it is the canonical one.
+#[cfg_attr(
+    not(all(feature = "backup", feature = "migrate", feature = "cloud")),
+    command(after_help = "\
+Not built into this binary:
+  backup, restore        cargo install evnx --features backup
+  migrate                cargo install evnx --features migrate
+  auth, vault, cloud     cargo install evnx --features cloud
+
+`cargo install evnx` compiles with no features. For all of them at once:
+  cargo install evnx --all-features
+
+Every prebuilt binary — Homebrew, Scoop, winget, npm, PyPI and the GitHub
+Release — already includes all of them.")
+)]
 pub struct Cli {
     /// Subcommand to execute.
     #[command(subcommand)]

@@ -174,6 +174,14 @@ actually needs attention: `DB_NAME looks like a placeholder`.
   `--direction reverse`. Still exit `0` — a notice, not a failure.
 - `evnx add` writing into an empty `.env` no longer opens the file with three
   blank lines.
+- **A build missing features now says which, and how to get them.** `backup`,
+  `restore`, `migrate`, `auth`, `vault` and `cloud` are compiled out of the
+  command list when their feature is off, so `evnx backup` answered with clap's
+  bare *"unrecognized subcommand"*. Each module contained a "feature not enabled"
+  hint written for exactly this case, and all of them were unreachable — there
+  was no command left to dispatch to. `evnx --help` now names what is missing.
+  Only `cargo install evnx` is affected: every prebuilt binary ships
+  `--all-features`.
 - **A real provider key is no longer called weak.** The weak-word list was a
   plain substring match, so `abcd` occurring inside a 62-character SendGrid key
   reported *"too weak or predictable"* — with the advice *"Run: openssl rand
