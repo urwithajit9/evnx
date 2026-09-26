@@ -154,5 +154,38 @@ jobs:
       # gitignored, or excluded by `[package] include`, compiles locally and
       # fails here — which is the whole point of running it on every PR rather
       # than once at the tag.
+      # ⚠️ The crate must not carry environment files. `.env.backup` — a real
+      # encrypted backup artifact — and `.envx/placeholders.json` were committed
+      # in March 2026 and shipped to crates.io in 0.5.0, 0.5.1 and 0.5.2, because
+      # this repository's own .gitignore used the narrow `.env`/`.env.local`
+      # convention that `evnx init` had already moved away from.
+      #
+      # A published version cannot be altered, so the only thing left is making
+      # sure it does not happen again. Checked before the dry run, so a failure
+      # names the cause rather than surfacing as a packaging error.
+      - name: no environment files in the crate
+        run: |
+          set -euo pipefail
+          # ⚠️ The list is captured before it is searched, and cargo's exit
+          # status is checked. Piping it straight into `grep` swallowed the
+          # status, so `cargo package` failing for any reason — a dirty tree is
+          # enough — produced an empty list that read as a clean one. A guard
+          # that passes when it could not run is the bug it exists to catch.
+          if ! files=$(cargo package --list --all-features); then
+            echo "::error::cargo package --list failed; cannot verify the crate contents"
+            exit 1
+          fi
+          if [ -z "$files" ]; then
+            echo "::error::cargo package --list returned nothing; refusing to call that clean"
+            exit 1
+          fi
+          leaked=$(printf '%s\n' "$files" | grep -E '^\.env|(^|/)\.envx/' || true)
+          if [ -n "$leaked" ]; then
+            echo "::error::these would ship to crates.io:"
+            printf '%s\n' "$leaked"
+            exit 1
+          fi
+          echo "checked $(printf '%s\n' "$files" | wc -l) packaged files; no .env* or .envx/"
+
       - name: cargo publish --dry-run
         run: cargo publish --dry-run --all-features
