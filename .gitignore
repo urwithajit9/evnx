@@ -5,10 +5,26 @@ venv/
 
 
 
-# Environment files
-.env
-.env.local
-.env.*.local
+# Environment files — the same entries `evnx init` writes.
+# See src/core/gitignore.rs, ENV_ENTRIES.
+#
+# ⚠️ This was `.env`, `.env.local`, `.env.*.local` — the Next.js convention,
+# which leaves `.env.production`, `.env.staging`, `.env.test` and anything else
+# a project invents committable. `evnx init` stopped writing that in v0.5.0 for
+# exactly that reason, and the tool's own repository kept it: that is how
+# `.env.backup` came to be committed here, and shipped to crates.io in 0.5.0,
+# 0.5.1 and 0.5.2.
+.env*
+!.env.example
+!.env.sample
+!.env.template
+
+# An orphaned prototype of the `sync --template-config` placeholder map, added
+# with sync in #5 and never read since — nothing in src/ looks in `.envx/`.
+# Note the spelling: `.envx`, not the real `.evnx.toml`, which is probably why it
+# went unnoticed. `.env*` above would cover it, but the reason is different and
+# worth stating.
+.envx/
 
 # Local dependency overrides (e.g. [patch.crates-io] pointing at a sibling
 # checkout of evnx-crypto). Committing one breaks every build without that
