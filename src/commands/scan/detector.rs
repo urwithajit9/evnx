@@ -339,7 +339,7 @@ impl DetectorRegistry {
     ///
     /// # Default Detectors
     ///
-    /// - [`PatternDetector`] - Regex-based pattern matching (always registered)
+    /// - [`HeuristicDetector`] - name-gated and entropy checks (always registered)
     ///
     /// # Adding Custom Detectors
     ///
@@ -354,7 +354,7 @@ impl DetectorRegistry {
             spec: Default::default(),
         };
         // Register default detectors
-        registry.register(PatternDetector);
+        registry.register(HeuristicDetector);
         registry.register(ConfigKeyDetector);
         // Future: registry.register(EntropyDetector::default());
         registry
@@ -377,18 +377,22 @@ impl DetectorRegistry {
     /// `ACME-[A-Z0-9]{32}` asked to be told about Acme keys, and a generic
     /// heuristic answering in its place is a worse answer to the same question.
     ///
-    /// It does **not** displace the built-in provider patterns, because
-    /// `best` ranks a remediation URL above detector order: a real AWS key is
-    /// still reported as an AWS key, with the link to IAM.
+    /// ⚠️ This set now holds the **built-in** rules as well as the project's.
+    /// `merge` seeds `builtin_rules()` beneath `[[scan.patterns]]` and
+    /// `--pattern`, so there is one engine, one `RegexSet` pass, and one
+    /// precedence rule rather than a hand-written `if` chain beside it.
     ///
-    /// An empty set registers nothing, so a project without patterns pays
-    /// nothing — not even a `Vec` lookup per value.
+    /// Only the name-gated and entropy checks stay separate, in
+    /// [`HeuristicDetector`], because neither can be expressed as a rule.
+    ///
+    /// An empty set registers nothing, which now means only
+    /// `scan.builtins = false` with no project rules of its own.
     ///
     /// [`ScanRunner::best`]: super::runner::ScanRunner
     pub fn with_patterns(mut self, patterns: super::patternset::PatternSet) -> Self {
         if !patterns.is_empty() {
             self.detectors
-                .insert(0, Box::new(CustomPatternDetector::new(patterns)));
+                .insert(0, Box::new(RuleDetector::new(patterns)));
         }
         self
     }
@@ -539,28 +543,40 @@ impl Default for DetectorRegistry {
 /// known secret formats (API keys, tokens, credentials, etc.).
 ///
 /// This is the primary detector and is always registered by default.
-pub struct PatternDetector;
+/// The two checks that cannot be expressed as a rule.
+///
+/// ⚠️ This was `PatternDetector`, and it wrapped a hand-written `if` chain of
+/// every provider regex. Those are [`crate::utils::patterns::builtin_rules`] now
+/// and run through the same `PatternSet` as `[[scan.patterns]]`, so the chain was
+/// doing the same work twice — and doing it worse, because a chain of
+/// `is_match` calls only ever saw tokens over 20 characters.
+///
+/// What remains needs something a pattern does not have: the AWS secret key
+/// needs the *variable's name*, and the entropy fallback needs a threshold.
+/// Neither implements `scan_line`, deliberately — see
+/// [`crate::utils::patterns::detect_heuristic`].
+pub struct HeuristicDetector;
 
-impl SecretDetector for PatternDetector {
+impl SecretDetector for HeuristicDetector {
     fn name(&self) -> &str {
-        "pattern-matcher"
+        "heuristics"
     }
 
     fn scan_kv(&self, key: &str, value: &str, _location: &str) -> Option<Detection> {
-        patterns::detect_secret(value, key).map(|(pattern, confidence, action_url)| Detection {
+        patterns::detect_heuristic(value, key).map(|(pattern, confidence, action_url)| Detection {
             judged_value: true,
             pattern: pattern.clone(),
-            confidence: confidence.into(), // Convert patterns::Confidence → models::Confidence
+            confidence: confidence.into(),
             action_url,
             matched_value: value.to_string(),
         })
     }
 
     fn scan_token(&self, token: &str, _location: &str) -> Option<Detection> {
-        patterns::detect_secret(token, "").map(|(pattern, confidence, action_url)| Detection {
+        patterns::detect_heuristic(token, "").map(|(pattern, confidence, action_url)| Detection {
             judged_value: true,
             pattern: pattern.clone(),
-            confidence: confidence.into(), // Convert patterns::Confidence → models::Confidence
+            confidence: confidence.into(),
             action_url,
             matched_value: token.to_string(),
         })
@@ -637,11 +653,11 @@ impl SecretDetector for ConfigKeyDetector {
 ///
 /// See [`patternset`](super::patternset) for why the matching is a single
 /// `RegexSet` pass rather than a loop over the rules.
-pub struct CustomPatternDetector {
+pub struct RuleDetector {
     patterns: super::patternset::PatternSet,
 }
 
-impl CustomPatternDetector {
+impl RuleDetector {
     pub fn new(patterns: super::patternset::PatternSet) -> Self {
         Self { patterns }
     }
@@ -659,7 +675,7 @@ impl From<super::patternset::PatternMatch> for Detection {
     }
 }
 
-impl SecretDetector for CustomPatternDetector {
+impl SecretDetector for RuleDetector {
     fn name(&self) -> &str {
         "custom-pattern"
     }
@@ -719,15 +735,15 @@ mod tests {
     fn test_registry_register() {
         let mut registry = DetectorRegistry::new();
         let initial_count = registry.detector_count();
-        registry.register(PatternDetector); // Register again for test
-                                            // ✅ Test that count increased by 1
+        registry.register(HeuristicDetector); // Register again for test
+                                              // ✅ Test that count increased by 1
         assert_eq!(registry.detector_count(), initial_count + 1);
     }
 
     #[test]
-    fn test_pattern_detector_name() {
-        let detector = PatternDetector;
-        assert_eq!(detector.name(), "pattern-matcher");
+    fn test_heuristic_detector_name() {
+        let detector = HeuristicDetector;
+        assert_eq!(detector.name(), "heuristics");
     }
 
     // Note: Full detection tests depend on utils::patterns implementation

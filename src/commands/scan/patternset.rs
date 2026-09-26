@@ -252,8 +252,31 @@ impl PatternSet {
     /// `runner::best` — so when several rules claim the same value the most
     /// confident wins, and ties keep the order they were declared in.
     pub fn strongest(&self, haystack: &str) -> Option<PatternMatch> {
+        // ⚠️ Confidence first, then **longest match**. Before the built-ins
+        // became rules, collisions were resolved by the source order of an `if`
+        // chain — implicit, and it went wrong: a permissive `sk-` rule for
+        // OpenAI was checked before Anthropic's, so `sk-ant-api03-…` was
+        // reported as an OpenAI key and sent you to the wrong dashboard to
+        // revoke it.
+        //
+        // Longest-match is how a lexer settles the same question, and it needs
+        // no configuration: `sk-ant-api03-…` matches more characters under
+        // Anthropic's rule than under a looser one, so the specific rule wins
+        // whatever order they were declared in. Ties beyond that fall to
+        // declaration order, which is the local-first order `merge` produces.
         self.find_all(haystack).into_iter().reduce(|best, next| {
-            if next.confidence > best.confidence {
+            // ⚠️ `url.is_some()` is part of the rank, and omitting it regressed
+            // a real case the suite caught: a user's `--pattern` that happens to
+            // match an AWS key claimed the finding and reported it as "Custom
+            // pattern 1" with **no link to IAM**. Custom rules default to high
+            // confidence, so confidence alone could not separate them, and
+            // `merge` puts local rules first — so declaration order handed it to
+            // the one that could not say where to revoke.
+            //
+            // Confidence stays primary: a high-confidence match must not lose to
+            // a low-confidence one merely for carrying a URL.
+            let rank = |m: &PatternMatch| (m.confidence, m.url.is_some(), m.value.len());
+            if rank(&next) > rank(&best) {
                 next
             } else {
                 best
@@ -277,7 +300,12 @@ impl Default for PatternSet {
 /// Flags come first so an ad-hoc rule outranks a configured one on the same
 /// value, and duplicates by expression are dropped — passing `--pattern` for
 /// something already declared should not report it twice.
-pub fn merge(flags: Vec<String>, configured: Option<Vec<PatternRule>>) -> Vec<PatternRule> {
+pub fn merge(
+    flags: Vec<String>,
+    configured: Option<Vec<PatternRule>>,
+    builtins: bool,
+    disable: Option<Vec<String>>,
+) -> Vec<PatternRule> {
     let mut out: Vec<PatternRule> = flags
         .into_iter()
         .enumerate()
@@ -289,7 +317,40 @@ pub fn merge(flags: Vec<String>, configured: Option<Vec<PatternRule>>) -> Vec<Pa
             out.push(rule);
         }
     }
-    out
+
+    // ⚠️ Built-ins come **last**, and that is what makes a project able to
+    // re-rate one. A rule declared in `[[scan.patterns]]` with the same name
+    // wins, because `dedup_by_name` below keeps the first of each name and the
+    // project's rules were pushed first.
+    if builtins {
+        let off: Vec<String> = disable
+            .unwrap_or_default()
+            .into_iter()
+            .map(|n| n.to_lowercase())
+            .collect();
+        for rule in crate::utils::patterns::builtin_rules() {
+            if off.iter().any(|d| *d == rule.name.to_lowercase()) {
+                continue;
+            }
+            out.push(rule);
+        }
+    }
+
+    dedup_by_name(out)
+}
+
+/// Keep the first rule of each name.
+///
+/// Names reach SARIF as rule ids, so two rules sharing one would collapse two
+/// distinct findings into one alert. Order decides the winner, and the order is
+/// `--pattern` → `[[scan.patterns]]` → built-ins, so the more local declaration
+/// always takes precedence.
+fn dedup_by_name(rules: Vec<PatternRule>) -> Vec<PatternRule> {
+    let mut seen = std::collections::HashSet::new();
+    rules
+        .into_iter()
+        .filter(|r| seen.insert(r.name.to_lowercase()))
+        .collect()
 }
 
 #[cfg(test)]
@@ -424,6 +485,8 @@ mod tests {
         let merged = merge(
             vec![r"ACME-[0-9]{4}".to_string()],
             Some(vec![rule("Project rule", r"BETA-[0-9]{4}")]),
+            false,
+            None,
         );
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].name, "Custom pattern 1");
@@ -435,6 +498,8 @@ mod tests {
         let merged = merge(
             vec![r"BETA-[0-9]{4}".to_string()],
             Some(vec![rule("Project rule", r"BETA-[0-9]{4}")]),
+            false,
+            None,
         );
         assert_eq!(
             merged.len(),
@@ -448,6 +513,8 @@ mod tests {
     fn flags_are_numbered_in_the_order_given() {
         let merged = merge(
             vec!["ACME-[0-9]{4}".to_string(), "BETA-[0-9]{4}".to_string()],
+            None,
+            false,
             None,
         );
         assert_eq!(merged[0].name, "Custom pattern 1");

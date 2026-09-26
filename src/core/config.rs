@@ -103,6 +103,27 @@ impl PatternRule {
     /// The cost is a positional name that moves if the flags are reordered,
     /// which is the nudge toward declaring the rule in `.evnx.toml` when the
     /// name needs to mean something.
+    /// A rule evnx ships with.
+    ///
+    /// ⚠️ Built-in detectors are the **same type** as `[[scan.patterns]]`, on
+    /// purpose. They used to be a hand-written `if` chain in `utils::patterns`,
+    /// which made them strictly weaker than a rule a user could write: custom
+    /// rules are matched against whole lines, built-ins only against tokens
+    /// longer than 20 characters — so `-----BEGIN RSA PRIVATE KEY-----`, a
+    /// phrase that can never be one token, was undetectable in any file.
+    ///
+    /// One type means one engine, one precedence rule, and a user can disable
+    /// or re-rate anything evnx ships.
+    pub fn builtin(name: &str, regex: &str, confidence: &str, url: Option<&str>) -> Self {
+        Self {
+            name: name.to_string(),
+            regex: regex.to_string(),
+            confidence: Some(confidence.to_string()),
+            url: url.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
     pub fn anonymous(position: usize, regex: String) -> Self {
         Self {
             name: format!("Custom pattern {position}"),
@@ -127,6 +148,18 @@ pub struct ScanPolicy {
     pub exclude: Option<Vec<String>>,
     /// Skip values that look like filler.
     pub ignore_placeholders: Option<bool>,
+    /// Built-in detectors this project does not want, by name.
+    ///
+    /// ⚠️ This *weakens* scanning, so it is listed by
+    /// [`Config::security_overrides`] and announced on every run that loads a
+    /// config. A team with fixtures that trip a provider pattern has a real need
+    /// for it; doing it silently would not be acceptable.
+    pub disable: Option<Vec<String>>,
+    /// Set `false` to scan with **only** this project's rules.
+    ///
+    /// For a team that scans for its own internal token formats and finds the
+    /// shipped provider patterns noisy. Also announced as a security override.
+    pub builtins: Option<bool>,
     /// Secret formats this project recognises beyond the built-in ones.
     ///
     /// ⚠️ Absent from [`Config::security_overrides`] on purpose. `severity` and
@@ -230,6 +263,19 @@ impl Config {
         }
         if self.scan.ignore_placeholders == Some(true) {
             out.push("scan.ignore_placeholders=true".to_string());
+        }
+        // ⚠️ Both of these switch off detectors evnx ships, which is the most
+        // direct way this file can weaken a scan. `builtins = false` turns off
+        // every provider pattern at once, so it is announced even though it is
+        // one line.
+        match self.scan.disable.as_deref() {
+            Some(names) if !names.is_empty() => {
+                out.push(format!("scan.disable={} built-in rule(s)", names.len()));
+            }
+            _ => {}
+        }
+        if self.scan.builtins == Some(false) {
+            out.push("scan.builtins=false (no built-in rules)".to_string());
         }
         // ⚠️ `secret = false` retracts a name-based finding, and this file is
         // committed — so one line silences a warning for everyone who clones.

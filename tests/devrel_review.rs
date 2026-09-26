@@ -2164,3 +2164,174 @@ fn pr1_neighbouring_key_formats_are_not_misattributed() {
         );
     }
 }
+
+// ── T2 — built-in detectors are rules, on one engine ───────────────────────
+
+/// ⚠️ The private-key detector could not fire in any file that was not a `.env`.
+///
+/// Built-ins were a hand-written `if` chain of `Regex::is_match`, reachable only
+/// through `extract_tokens`, which splits on whitespace and keeps tokens longer
+/// than 20 characters. `-----BEGIN RSA PRIVATE KEY-----` is a phrase: it splits
+/// into `-----BEGIN`, `RSA`, `PRIVATE`, `KEY-----`, every piece too short. No
+/// token survived, so the regex never ran — in exactly the files private keys
+/// live in.
+///
+/// Custom `[[scan.patterns]]` were never affected, because they go through
+/// `PatternSet` and are matched against whole lines. That asymmetry — a rule a
+/// user writes being stronger than one evnx ships — is what made the built-ins
+/// rules too.
+#[test]
+fn t2_private_keys_are_found_in_ordinary_files() {
+    for header in [
+        "-----BEGIN PRIVATE KEY-----",
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "-----BEGIN EC PRIVATE KEY-----",
+        "-----BEGIN OPENSSH PRIVATE KEY-----",
+        "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+    ] {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("id_rsa"),
+            format!("{header}\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSj\n"),
+        )
+        .unwrap();
+
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(["scan", "id_rsa", "--severity", "high", "--no-color"])
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            text.contains("Private Key"),
+            "{header} must be detected:\n{text}"
+        );
+        assert_eq!(out.status.code(), Some(1), "and must fail a CI gate");
+    }
+}
+
+/// The control. A public key and a certificate are not private keys, and the
+/// widened header pattern must not claim them.
+#[test]
+fn t2_public_keys_and_certificates_are_not_private_keys() {
+    for header in ["-----BEGIN PUBLIC KEY-----", "-----BEGIN CERTIFICATE-----"] {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("f.pem"), format!("{header}\nMIIBIjANBg\n")).unwrap();
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(["scan", "f.pem", "--no-color"])
+            .output()
+            .unwrap();
+        assert!(
+            !String::from_utf8_lossy(&out.stdout).contains("Private Key"),
+            "{header} is not a private key"
+        );
+    }
+}
+
+/// ⚠️ Collisions used to be settled by the source order of an `if` chain, which
+/// is how `sk-ant-…` came to be reported as an OpenAI key — with the wrong
+/// dashboard to revoke at. Longest-match plus the remediation URL replaces that
+/// with something that does not depend on declaration order.
+#[test]
+fn t2_the_more_specific_rule_wins_whatever_the_order() {
+    let dir = TempDir::new().unwrap();
+    // A user rule broad enough to swallow an AWS key, declared *first*.
+    fs::write(
+        dir.path().join(".evnx.toml"),
+        "[[scan.patterns]]\nname = \"Broad blob\"\nregex = \"AKIA[0-9A-Z]{10,}\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("AWS Access Key"),
+        "the rule that can name where to revoke must win:\n{text}"
+    );
+    assert!(
+        text.contains("console.aws.amazon.com"),
+        "and the finding must keep the remediation link:\n{text}"
+    );
+}
+
+/// A project can switch off a shipped rule it finds noisy — and evnx says so.
+#[test]
+fn t2_a_project_can_disable_a_builtin_and_it_is_announced() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".evnx.toml"),
+        "[scan]\ndisable = [\"Stripe Secret Key (test)\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "A=sk_test_51Habcdefghijklmnopqrstuvwxyz123456\n\
+         B=sk_live_51Habcdefghijklmnopqrstuvwxyz123456\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--no-color"])
+        .output()
+        .unwrap();
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !all.contains("Stripe Secret Key (test)"),
+        "the disabled rule must not fire:\n{all}"
+    );
+    assert!(
+        all.contains("Stripe Secret Key (LIVE)"),
+        "and the others must be untouched:\n{all}"
+    );
+    // ⚠️ Turning a detector off weakens the scan, and this file is committed.
+    assert!(
+        all.contains("scan.disable"),
+        "a weakening must be announced, not silent:\n{all}"
+    );
+}
+
+/// `builtins = false` for a team that only wants its own formats — announced for
+/// the same reason, and more loudly, because it switches off everything at once.
+#[test]
+fn t2_builtins_can_be_turned_off_entirely() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".evnx.toml"),
+        "[scan]\nbuiltins = false\n\n[[scan.patterns]]\nname = \"Acme token\"\nregex = \"ACME-[A-Z0-9]{10}\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("app.py"),
+        "a=\"ACME-AB12CD34EF\"\nb=\"sk_live_51Habcdefghijklmnopqrstuvwxyz123456\"\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "app.py", "--no-color"])
+        .output()
+        .unwrap();
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(all.contains("Acme token"), "{all}");
+    assert!(!all.contains("Stripe"), "no built-in rule may fire:\n{all}");
+    assert!(all.contains("scan.builtins=false"), "{all}");
+}
