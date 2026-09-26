@@ -1,3 +1,4 @@
+use crate::core::config::PatternRule;
 /// Secret pattern detection for scanning .env files
 ///
 /// This module contains regex patterns and entropy calculation for detecting
@@ -5,15 +6,6 @@
 /// from AWS, Stripe, GitHub, OpenAI, and other major services.
 use lazy_static::lazy_static;
 use regex::Regex;
-
-/// A detected secret pattern
-#[derive(Debug, Clone)]
-pub struct SecretPattern {
-    pub name: String,
-    pub pattern: String,
-    pub confidence: Confidence,
-    pub action_url: Option<String>,
-}
 
 /// Confidence level for secret detection
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,106 +26,94 @@ impl std::fmt::Display for Confidence {
 }
 
 lazy_static! {
-    /// AWS Access Key ID pattern
-    pub static ref AWS_ACCESS_KEY: Regex = Regex::new(r"AKIA[0-9A-Z]{16}").unwrap();
-
-    /// AWS Secret Access Key pattern (40 chars base64-like)
+    /// AWS Secret Access Key — the one regex that is **not** a rule.
+    ///
+    /// ⚠️ Every other provider pattern moved into [`builtin_rules`]. This one
+    /// cannot: its shape is just 40 base64 characters, so on its own it matches
+    /// any 40-character token. It is only a finding when the variable's *name*
+    /// says AWS and the value's entropy is high, which a `PatternRule` has no way
+    /// to express — see [`detect_heuristic`].
+    ///
+    /// The others were deleted rather than kept beside the rules. Keeping both
+    /// would have rebuilt the duplication this change removed: two copies of one
+    /// pattern, with unit tests asserting the copy production no longer reads.
     pub static ref AWS_SECRET_KEY: Regex = Regex::new(r"[0-9a-zA-Z/+=]{40}").unwrap();
-
-    /// Stripe Secret Key (live)
-    pub static ref STRIPE_SECRET_LIVE: Regex = Regex::new(r"sk_live_[0-9a-zA-Z]{24,}").unwrap();
-
-    /// Stripe Secret Key (test)
-    pub static ref STRIPE_SECRET_TEST: Regex = Regex::new(r"sk_test_[0-9a-zA-Z]{24,}").unwrap();
-
-    /// GitHub Personal Access Token
-    pub static ref GITHUB_PAT: Regex = Regex::new(r"\bghp_[A-Za-z0-9]{36,40}\b").unwrap();
-
-    /// GitHub OAuth Token
-    pub static ref GITHUB_OAUTH: Regex = Regex::new(r"\bgho_[A-Za-z0-9]{36,40}\b").unwrap();
-
-    /// GitHub App Token
-    pub static ref GITHUB_APP: Regex = Regex::new(r"\b(ghu|ghs)_[A-Za-z0-9]{36,40}\b").unwrap();
-
-    /// OpenAI API Key
-    pub static ref OPENAI_API_KEY: Regex =
-        Regex::new(r"sk-(?:proj-[0-9a-zA-Z_-]{40,}|[0-9a-zA-Z]{48})").unwrap();
-
-    /// Anthropic API Key
-    pub static ref ANTHROPIC_API_KEY: Regex = Regex::new(r"sk-ant-api[0-9]{2}-[0-9a-zA-Z\-_]{95}").unwrap();
-
-    /// Generic API key pattern (high entropy)
-    pub static ref GENERIC_API_KEY: Regex = Regex::new(r#"api[_-]?key['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{32,})['\"]?"#).unwrap();
-
-    /// Private Key Header
-    pub static ref PRIVATE_KEY: Regex = Regex::new(r"-----BEGIN [A-Z ]+ PRIVATE KEY-----").unwrap();
 }
 
-/// Get all secret patterns
-pub fn get_patterns() -> Vec<SecretPattern> {
+/// The detectors evnx ships, as ordinary [`PatternRule`]s.
+///
+/// ⚠️ These were a hand-written `if` chain of `Regex::is_match` calls, and a
+/// duplicate `SecretPattern` table that nothing ever read. Two consequences:
+///
+/// * **Built-ins were weaker than user rules.** `[[scan.patterns]]` goes through
+///   `PatternSet` and is matched against whole lines; the chain only ever saw
+///   tokens longer than 20 characters. `-----BEGIN RSA PRIVATE KEY-----` is a
+///   phrase, never one token, so the private-key detector could not fire in any
+///   file — including the `.pem` files private keys live in.
+/// * **Collisions were resolved by source order.** Anthropic was checked after
+///   OpenAI, so a permissive OpenAI pattern silently claimed `sk-ant-…` keys and
+///   named the wrong provider to revoke at.
+///
+/// As data they share one engine, one precedence rule, and the config surface
+/// that lets a project disable or re-rate any of them.
+///
+/// Two checks are deliberately **not** here, because neither is a pattern:
+/// the AWS secret key (gated on the variable's *name* plus entropy, since its
+/// shape is just 40 base64 characters) and the generic high-entropy fallback.
+/// Both live in [`detect_heuristic`] and stay token-scoped — running an entropy
+/// threshold over whole lines would flag every minified bundle.
+pub fn builtin_rules() -> Vec<PatternRule> {
     vec![
-        SecretPattern {
-            name: "AWS Access Key".to_string(),
-            pattern: r"AKIA[0-9A-Z]{16}".to_string(),
-            confidence: Confidence::High,
-            action_url: Some("https://console.aws.amazon.com/iam".to_string()),
-        },
-        SecretPattern {
-            name: "Stripe Secret Key (Live)".to_string(),
-            pattern: r"sk_live_[0-9a-zA-Z]{24,}".to_string(),
-            confidence: Confidence::High,
-            action_url: Some("https://dashboard.stripe.com/apikeys".to_string()),
-        },
-        SecretPattern {
-            name: "Stripe Secret Key (Test)".to_string(),
-            pattern: r"sk_test_[0-9a-zA-Z]{24,}".to_string(),
-            confidence: Confidence::Medium,
-            action_url: Some("https://dashboard.stripe.com/apikeys".to_string()),
-        },
-        SecretPattern {
-            name: "GitHub Personal Access Token".to_string(),
-            pattern: r"ghp_[0-9a-zA-Z]{36}".to_string(),
-            confidence: Confidence::High,
-            action_url: Some("https://github.com/settings/tokens".to_string()),
-        },
-        SecretPattern {
-            name: "GitHub OAuth Token".to_string(),
-            pattern: r"gho_[0-9a-zA-Z]{36}".to_string(),
-            confidence: Confidence::High,
-            action_url: Some("https://github.com/settings/tokens".to_string()),
-        },
-        SecretPattern {
-            name: "OpenAI API Key".to_string(),
-            // ⚠️ `sk-proj-` is OpenAI's default for new keys and could never
-            // match here: the prefix carries hyphens, which `[0-9a-zA-Z]`
-            // excludes, and project keys run well past 48 characters. Such a
-            // key fell through to the generic entropy detector at **low**
-            // severity, so `evnx scan app.py --severity high` — an ordinary CI
-            // gate — exited 0 on a live key. The legacy 48-character form
-            // matched correctly and still does.
-            // ⚠️ Two exclusive branches, not an optional `proj-`. Anthropic
-            // keys also begin `sk-`, so `sk-(?:proj-)?[0-9a-zA-Z_-]{40,}`
-            // swallowed `sk-ant-api03-…` and reported it as an OpenAI key —
-            // sending you to the wrong provider to rotate it. Requiring either
-            // the literal `proj-` prefix or the legacy form's 48 characters
-            // with **no hyphens** separates them without a lookahead, which
-            // Rust's `regex` does not have.
-            pattern: r"sk-(?:proj-[0-9a-zA-Z_-]{40,}|[0-9a-zA-Z]{48})".to_string(),
-            confidence: Confidence::High,
-            action_url: Some("https://platform.openai.com/api-keys".to_string()),
-        },
-        SecretPattern {
-            name: "Anthropic API Key".to_string(),
-            pattern: r"sk-ant-api[0-9]{2}-[0-9a-zA-Z\-_]{95}".to_string(),
-            confidence: Confidence::High,
-            action_url: Some("https://console.anthropic.com/settings/keys".to_string()),
-        },
-        SecretPattern {
-            name: "Private Key".to_string(),
-            pattern: r"-----BEGIN [A-Z ]+ PRIVATE KEY-----".to_string(),
-            confidence: Confidence::High,
-            action_url: None,
-        },
+        PatternRule::builtin(
+            "AWS Access Key",
+            r"AKIA[0-9A-Z]{16}",
+            "high",
+            Some("https://console.aws.amazon.com/iam"),
+        ),
+        PatternRule::builtin(
+            "Stripe Secret Key (LIVE)",
+            r"sk_live_[0-9a-zA-Z]{24,}",
+            "high",
+            Some("https://dashboard.stripe.com/apikeys"),
+        ),
+        PatternRule::builtin(
+            "Stripe Secret Key (test)",
+            r"sk_test_[0-9a-zA-Z]{24,}",
+            "medium",
+            Some("https://dashboard.stripe.com/apikeys"),
+        ),
+        // The three GitHub forms were three regexes behind one `||`; as data
+        // they are one alternation with one name, which is what the output said
+        // all along.
+        PatternRule::builtin(
+            "GitHub Token",
+            r"\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9]{36,40}\b",
+            "high",
+            Some("https://github.com/settings/tokens"),
+        ),
+        // ⚠️ Two exclusive branches, not `(?:proj-)?`. Anthropic keys also begin
+        // `sk-`, and a permissive form swallowed them.
+        PatternRule::builtin(
+            "OpenAI API Key",
+            r"sk-(?:proj-[0-9a-zA-Z_-]{40,}|[0-9a-zA-Z]{48})",
+            "high",
+            Some("https://platform.openai.com/api-keys"),
+        ),
+        PatternRule::builtin(
+            "Anthropic API Key",
+            r"sk-ant-api[0-9]{2}-[0-9a-zA-Z\-_]{95}",
+            "high",
+            Some("https://console.anthropic.com/settings/keys"),
+        ),
+        // ⚠️ `[A-Z ]*`, not `[A-Z ]+ `. PKCS#8 writes a bare
+        // `-----BEGIN PRIVATE KEY-----` with no algorithm — OpenSSL's default
+        // since 3.0 — which the old form could not match.
+        PatternRule::builtin(
+            "Private Key",
+            r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----",
+            "high",
+            None,
+        ),
     ]
 }
 
@@ -293,77 +273,31 @@ pub fn is_sensitive_key(key: &str) -> bool {
 /// Detect if a value matches any secret pattern
 ///
 /// Returns (pattern_name, confidence) if a match is found
-pub fn detect_secret(value: &str, key: &str) -> Option<(String, Confidence, Option<String>)> {
-    // Skip obvious placeholders
+/// The two checks that are **not** patterns.
+///
+/// ⚠️ Everything recognisable from the value alone now lives in
+/// [`builtin_rules`] and runs through `PatternSet`. What is left cannot:
+///
+/// * **AWS secret access key** has no distinctive prefix — its shape is just 40
+///   base64 characters — so it is gated on the variable's *name* containing AWS
+///   and on entropy. As a bare pattern it matched any 40-character token.
+///
+///   The gate used to read `contains("AWS") || contains("SECRET")`, and a Stripe
+///   key is 40-ish base64 characters inside `STRIPE_SECRET_KEY`, so it was
+///   reported as an AWS key with a link to the IAM console. The `||` was the bug;
+///   the other half of the fix is that this runs *after* every rule that can
+///   name the provider, which `ScanRunner::best` now enforces by ranking a
+///   remediation URL above one without.
+///
+/// * **Generic high entropy** is a last resort with no URL and low confidence.
+///
+/// ⚠️ Neither is offered to `scan_line`. An entropy threshold over whole lines
+/// would flag every minified bundle and every base64 blob in a lockfile.
+pub fn detect_heuristic(value: &str, key: &str) -> Option<(String, Confidence, Option<String>)> {
     if is_placeholder(value) {
         return None;
     }
 
-    // Check specific patterns
-    if AWS_ACCESS_KEY.is_match(value) {
-        return Some((
-            "AWS Access Key".to_string(),
-            Confidence::High,
-            Some("https://console.aws.amazon.com/iam".to_string()),
-        ));
-    }
-
-    if STRIPE_SECRET_LIVE.is_match(value) {
-        return Some((
-            "Stripe Secret Key (LIVE)".to_string(),
-            Confidence::High,
-            Some("https://dashboard.stripe.com/apikeys".to_string()),
-        ));
-    }
-
-    if STRIPE_SECRET_TEST.is_match(value) {
-        return Some((
-            "Stripe Secret Key (test)".to_string(),
-            Confidence::Medium,
-            Some("https://dashboard.stripe.com/apikeys".to_string()),
-        ));
-    }
-
-    if GITHUB_PAT.is_match(value) || GITHUB_OAUTH.is_match(value) || GITHUB_APP.is_match(value) {
-        return Some((
-            "GitHub Token".to_string(),
-            Confidence::High,
-            Some("https://github.com/settings/tokens".to_string()),
-        ));
-    }
-
-    if OPENAI_API_KEY.is_match(value) {
-        return Some((
-            "OpenAI API Key".to_string(),
-            Confidence::High,
-            Some("https://platform.openai.com/api-keys".to_string()),
-        ));
-    }
-
-    if ANTHROPIC_API_KEY.is_match(value) {
-        return Some((
-            "Anthropic API Key".to_string(),
-            Confidence::High,
-            Some("https://console.anthropic.com/settings/keys".to_string()),
-        ));
-    }
-
-    if PRIVATE_KEY.is_match(value) {
-        return Some(("Private Key".to_string(), Confidence::High, None));
-    }
-
-    // AWS secret access keys have no distinctive prefix — the pattern is just
-    // "40 base64-ish characters" — so this is gated on the key *name* and on
-    // entropy, and it runs after every provider format that can be recognised
-    // from the value itself.
-    //
-    // ⚠️ The gate used to be `contains("AWS") || contains("SECRET")`. A Stripe
-    // key is 40-ish base64 characters and `STRIPE_SECRET_KEY` contains SECRET,
-    // so it was reported as "AWS Secret Access Key" — with a link to the AWS IAM
-    // console as the place to revoke it. The guard was meant to read "this key
-    // names AWS"; the second arm made it match any secret at all. Running last
-    // is the second half of the fix: a value that *is* recognisable as Stripe or
-    // GitHub is now claimed by that pattern before this one sees it.
     if AWS_SECRET_KEY.is_match(value) && key.to_uppercase().contains("AWS") {
         let entropy = calculate_entropy(value);
         if entropy > 4.5 {
@@ -375,7 +309,6 @@ pub fn detect_secret(value: &str, key: &str) -> Option<(String, Confidence, Opti
         }
     }
 
-    // Generic high-entropy check as fallback
     if value.len() >= 32 {
         let entropy = calculate_entropy(value);
         if entropy > 4.8 {
@@ -393,31 +326,6 @@ pub fn detect_secret(value: &str, key: &str) -> Option<(String, Confidence, Opti
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_aws_access_key() {
-        assert!(AWS_ACCESS_KEY.is_match("AKIAIOSFODNN7EXAMPLE"));
-        assert!(!AWS_ACCESS_KEY.is_match("not-an-aws-key"));
-    }
-
-    #[test]
-    fn test_stripe_keys() {
-        assert!(STRIPE_SECRET_LIVE.is_match("sk_live_51Habcdefghijklmnopqrstuvwxyz123456"));
-        assert!(STRIPE_SECRET_TEST.is_match("sk_test_51Habcdefghijklmnopqrstuvwxyz123456"));
-        assert!(!STRIPE_SECRET_LIVE.is_match("sk_test_something"));
-    }
-
-    #[test]
-    fn test_github_tokens() {
-        assert!(GITHUB_PAT.is_match("ghp_1234567890abcdefghijklmnopqrstuvwxyzABCD"));
-
-        assert!(GITHUB_OAUTH.is_match("gho_1234567890abcdefghijklmnopqrstuvwxyzABCD"));
-
-        assert!(GITHUB_APP.is_match("ghu_1234567890abcdefghijklmnopqrstuvwxyzABCD"));
-
-        assert!(!GITHUB_PAT.is_match("ghp_short"));
-        assert!(!GITHUB_PAT.is_match("not_a_token"));
-    }
 
     #[test]
     fn test_entropy() {
@@ -441,30 +349,63 @@ mod tests {
         assert!(!is_placeholder("postgresql://localhost:5432/db"));
     }
 
+    /// ⚠️ Rewritten when the provider patterns became [`builtin_rules`]. It used
+    /// to call `detect_secret` directly, which no longer knows about them — and
+    /// asserting against a function production does not use is how a suite keeps
+    /// passing while the product breaks. This compiles the built-ins the same way
+    /// `evnx scan` does.
     #[test]
-    fn test_detect_secret() {
-        // AWS Access Key
-        let result = detect_secret("AKIAIOSFODNN7EXAMPLE", "AWS_ACCESS_KEY_ID");
-        assert!(result.is_none()); // It's a placeholder
+    fn builtin_rules_recognise_the_providers_they_name() {
+        use crate::commands::scan::patternset::PatternSet;
+        let set = PatternSet::compile(&builtin_rules()).expect("built-ins must compile");
 
-        let result = detect_secret("AKIA4OZRMFJ3VEXAMPLE", "AWS_ACCESS_KEY_ID");
-        assert!(result.is_some());
-        if let Some((name, conf, _)) = result {
-            assert_eq!(name, "AWS Access Key");
-            assert_eq!(conf, Confidence::High);
+        for (value, expected) in [
+            ("AKIA4OZRMFJ3VREALKEY", "AWS Access Key"),
+            (
+                "sk_live_51H1234567890abcdefghijk",
+                "Stripe Secret Key (LIVE)",
+            ),
+            (
+                "sk_test_51H1234567890abcdefghijk",
+                "Stripe Secret Key (test)",
+            ),
+            ("ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8", "GitHub Token"),
+            ("-----BEGIN PRIVATE KEY-----", "Private Key"),
+            ("-----BEGIN RSA PRIVATE KEY-----", "Private Key"),
+        ] {
+            let m = set
+                .strongest(value)
+                .unwrap_or_else(|| panic!("{value} must match a built-in rule"));
+            assert_eq!(m.name, expected, "for {value}");
         }
 
-        // Stripe Live Key
-        let result = detect_secret("sk_live_51H1234567890abcdefghijk", "STRIPE_SECRET_KEY");
-        assert!(result.is_some());
-        if let Some((name, conf, _)) = result {
-            assert_eq!(name, "Stripe Secret Key (LIVE)");
-            assert_eq!(conf, Confidence::High);
+        // A placeholder and an ordinary value must match nothing.
+        for value in ["localhost", "postgresql://localhost:5432/db"] {
+            assert!(set.strongest(value).is_none(), "{value} is not a secret");
         }
+    }
 
-        // Not a secret
-        let result = detect_secret("localhost", "DATABASE_HOST");
-        assert!(result.is_none());
+    /// The heuristics keep their own test, because they are what is left.
+    #[test]
+    fn heuristics_need_the_variable_name() {
+        // 40 base64 characters is only an AWS secret when the name says AWS.
+        // ⚠️ Not AWS's documented sample key: it contains "EXAMPLE", which
+        // `is_placeholder` rejects before any check runs, so a test using it
+        // would pass for the wrong reason.
+        let aws = "wJ9lrXUtnFEMI/K7MDzNG/bPxRfiCY4tQm8vHs2K";
+        assert!(detect_heuristic(aws, "AWS_SECRET_ACCESS_KEY").is_some());
+        let under_other_name = detect_heuristic(aws, "SOME_BLOB");
+        assert!(
+            under_other_name.is_none()
+                || under_other_name
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .starts_with("High-entropy"),
+            "without an AWS name it is at most a high-entropy string"
+        );
+
+        assert!(detect_heuristic("localhost", "DATABASE_HOST").is_none());
     }
 
     #[test]

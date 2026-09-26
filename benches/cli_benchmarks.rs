@@ -142,7 +142,12 @@ NESTED=${FULL_URL}/nested
 // ============================================================================
 
 fn bench_secret_detection(c: &mut Criterion) {
-    use evnx::utils::patterns::detect_secret;
+    // ⚠️ Measures the rule engine, not the removed `detect_secret` chain. The
+    // provider patterns are `builtin_rules()` now and run through one RegexSet
+    // pass, which is the thing worth timing.
+    use evnx::commands::scan::patternset::PatternSet;
+    use evnx::utils::patterns::builtin_rules;
+    let set = PatternSet::compile(&builtin_rules()).expect("built-ins compile");
 
     let test_cases = vec![
         ("AWS_KEY", "AKIA4OZRMFJ3VREALKEY"),
@@ -154,7 +159,8 @@ fn bench_secret_detection(c: &mut Criterion) {
     c.bench_function("secret_detection", |b| {
         b.iter(|| {
             for (key, value) in &test_cases {
-                detect_secret(black_box(value), black_box(key));
+                let _ = set.strongest(black_box(value));
+                let _ = black_box(key);
             }
         });
     });

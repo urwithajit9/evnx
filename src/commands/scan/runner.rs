@@ -342,7 +342,7 @@ impl ScanRunner {
     /// 2. **Higher confidence.** So `MY_PASSWORD=<long value>`, which matches only
     ///    the key-aware heuristic and the shapeless high-entropy fallback, keeps
     ///    the key-aware answer.
-    /// 3. **Earliest detector**, which is `CustomPatternDetector` when the
+    /// 3. **Earliest detector**, which is `RuleDetector` when the
     ///    project declared patterns and `PatternDetector` otherwise. A rule the
     ///    project wrote itself outranks a built-in heuristic that reached the
     ///    same confidence, because it carries a name someone chose.
