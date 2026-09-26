@@ -798,13 +798,22 @@ fn exclude_globs_match_the_forms_people_write() {
         );
     }
 
-    // A filename glob reaches both files, so nothing is left to find.
+    // A filename glob reaches both files, so nothing is left to scan.
+    //
+    // ⚠️ This expected `0` until 2026-09-26. It now expects **2**, and the
+    // change strengthens the assertion rather than weakening it: exit 2 can
+    // only happen if the glob matched *everything*, whereas 0 was also what a
+    // glob matching nothing produced. A scan that examined no files is no
+    // longer reported as clean — the same rule `migrate` and `cloud run`
+    // already follow for a filter that matches nothing.
     let d = project();
-    cargo_bin_cmd!("evnx")
+    let out = cargo_bin_cmd!("evnx")
         .current_dir(d.path())
         .args(["scan", ".", "--exclude", "*.env"])
-        .assert()
-        .code(0);
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("nothing was scanned"));
 }
 
 // ── Custom patterns: --pattern and [[scan.patterns]] ─────────────────────────

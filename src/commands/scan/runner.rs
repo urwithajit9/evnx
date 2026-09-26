@@ -210,6 +210,32 @@ impl ScanRunner {
 
         let files = self.filter.collect_files(&paths)?;
 
+        // ⚠️ A scan that examined nothing is not a clean scan.
+        //
+        // `collect_files` already refuses a path that does not exist. This is
+        // the other way to end up with an empty list: every candidate was
+        // filtered out. Left alone, the run printed
+        //
+        //     ✓  No secrets detected
+        //     0 files scanned
+        //
+        // and exited 0 — which is what CI reads. The count was on screen and
+        // the exit code contradicted it.
+        //
+        // Exit 2, not 1: nothing was found because nothing was looked at, which
+        // is "could not run" rather than "ran and found nothing". A `--severity`
+        // threshold that hides every finding is a different case and still 0.
+        if files.is_empty() {
+            anyhow::bail!(
+                "nothing was scanned — every path given was filtered out.\n\n\
+                 Directory walks skip .git, node_modules, target, dist and build \
+                 by default. Name a file directly to scan it regardless, or widen \
+                 the walk with --include.\n\n\
+                 Paths given: {}",
+                paths.join(", ")
+            );
+        }
+
         if self.verbose {
             ui::verbose_stderr(format!("Found {} files to scan", files.len()));
         }

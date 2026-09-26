@@ -56,7 +56,8 @@ lazy_static! {
     pub static ref GITHUB_APP: Regex = Regex::new(r"\b(ghu|ghs)_[A-Za-z0-9]{36,40}\b").unwrap();
 
     /// OpenAI API Key
-    pub static ref OPENAI_API_KEY: Regex = Regex::new(r"sk-[0-9a-zA-Z]{48}").unwrap();
+    pub static ref OPENAI_API_KEY: Regex =
+        Regex::new(r"sk-(?:proj-[0-9a-zA-Z_-]{40,}|[0-9a-zA-Z]{48})").unwrap();
 
     /// Anthropic API Key
     pub static ref ANTHROPIC_API_KEY: Regex = Regex::new(r"sk-ant-api[0-9]{2}-[0-9a-zA-Z\-_]{95}").unwrap();
@@ -103,7 +104,21 @@ pub fn get_patterns() -> Vec<SecretPattern> {
         },
         SecretPattern {
             name: "OpenAI API Key".to_string(),
-            pattern: r"sk-[0-9a-zA-Z]{48}".to_string(),
+            // ⚠️ `sk-proj-` is OpenAI's default for new keys and could never
+            // match here: the prefix carries hyphens, which `[0-9a-zA-Z]`
+            // excludes, and project keys run well past 48 characters. Such a
+            // key fell through to the generic entropy detector at **low**
+            // severity, so `evnx scan app.py --severity high` — an ordinary CI
+            // gate — exited 0 on a live key. The legacy 48-character form
+            // matched correctly and still does.
+            // ⚠️ Two exclusive branches, not an optional `proj-`. Anthropic
+            // keys also begin `sk-`, so `sk-(?:proj-)?[0-9a-zA-Z_-]{40,}`
+            // swallowed `sk-ant-api03-…` and reported it as an OpenAI key —
+            // sending you to the wrong provider to rotate it. Requiring either
+            // the literal `proj-` prefix or the legacy form's 48 characters
+            // with **no hyphens** separates them without a lookahead, which
+            // Rust's `regex` does not have.
+            pattern: r"sk-(?:proj-[0-9a-zA-Z_-]{40,}|[0-9a-zA-Z]{48})".to_string(),
             confidence: Confidence::High,
             action_url: Some("https://platform.openai.com/api-keys".to_string()),
         },
