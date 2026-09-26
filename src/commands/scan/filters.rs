@@ -105,9 +105,27 @@ impl FileFilter {
             let path = Path::new(path_str);
 
             if path.is_file() {
-                if !self.should_exclude(path) && Self::is_scannable(path) {
-                    files.push(path.to_path_buf());
-                }
+                // ⚠️ A path the user **named** is always scanned. Neither the
+                // default exclusions nor the extension allowlist apply to it.
+                //
+                // They used to. `dist/`, `build/`, `node_modules/` and `target/`
+                // are excluded by default, so naming a file inside one was
+                // silently dropped — and the run then finished with
+                //
+                //     ✓  No secrets detected
+                //     0 files scanned
+                //
+                // and exit 0, on a file holding a live key. A CI gate pointed at
+                // a build artifact passed. `--exclude ''` did not override it,
+                // because the defaults are not the `--exclude` list.
+                //
+                // The extension allowlist had the same effect for anything it
+                // does not know — `evnx scan key.pem` scanned nothing and called
+                // it clean.
+                //
+                // Exclusions exist to keep a *directory walk* from reading a
+                // million vendored files. They are not a veto over an argument.
+                files.push(path.to_path_buf());
             } else if path.is_dir() {
                 for entry in WalkDir::new(path)
                     .follow_links(false)

@@ -1976,3 +1976,191 @@ fn a_complete_build_carries_no_missing_feature_notice() {
         "nothing is missing from this build:\n{text}"
     );
 }
+
+// ── S1 — a scan that examined nothing is not a clean scan ──────────────────
+
+/// ⚠️ `dist/`, `build/`, `node_modules/` and `target/` are skipped by default.
+/// Naming a file **inside** one was silently dropped, and the run then reported
+///
+/// ```text
+/// ✓  No secrets detected
+/// 0 files scanned
+/// ```
+///
+/// with exit `0` — on a file holding a live key. A CI gate pointed at a build
+/// artifact passed. `--exclude ''` did not override it, because the defaults are
+/// not the `--exclude` list.
+///
+/// Exclusions exist to stop a directory *walk* reading a million vendored
+/// files. They were never meant to veto an argument the user typed.
+#[test]
+fn s1_an_explicitly_named_file_is_always_scanned() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir(dir.path().join("dist")).unwrap();
+    fs::write(
+        dir.path().join("dist/bundle.js"),
+        "const k=\"sk_live_51QwErTyUiOpAsDfGhJkLzXcVbNm1234567890\";\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "dist/bundle.js", "--severity", "high", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a CI gate must not pass on a live key inside dist/:\n{text}"
+    );
+    assert!(text.contains("Stripe"), "{text}");
+    assert!(!text.contains("No secrets detected"), "{text}");
+}
+
+/// The same rule for the extension allowlist: `evnx scan key.pem` used to scan
+/// nothing and call it clean, because `pem` is not in `SCANNABLE_EXTENSIONS`.
+#[test]
+fn s1_an_explicitly_named_file_ignores_the_extension_allowlist() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("creds.pem"),
+        "token=sk_live_51QwErTyUiOpAsDfGhJkLzXcVbNm1234567890\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "creds.pem", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !text.contains("0 files scanned"),
+        "a named file must be read whatever its extension:\n{text}"
+    );
+}
+
+/// The general rule behind both: nothing scanned is never a clean result.
+/// Exit `2` — "could not run" — rather than `1`, because nothing was found on
+/// account of nothing being looked at.
+#[test]
+fn s1_a_scan_that_filtered_everything_is_not_success() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir(dir.path().join("node_modules")).unwrap();
+    fs::write(
+        dir.path().join("node_modules/dep.js"),
+        "const k=\"sk_live_51ZZZZZZZZZZZZZZZZZZZZZZZZZZ0987654321\";\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "node_modules", "--no-color"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(out.status.code(), Some(2), "stderr:\n{err}");
+    assert!(err.contains("nothing was scanned"), "{err}");
+    assert!(
+        err.contains("Name a file directly"),
+        "it must say how to scan it anyway:\n{err}"
+    );
+}
+
+/// The control. A directory walk must still skip the default exclusions —
+/// otherwise the fix above would have traded a false pass for reading every
+/// vendored file in the tree.
+#[test]
+fn s1_a_directory_walk_still_skips_the_defaults() {
+    let dir = project();
+    fs::create_dir(dir.path().join("dist")).unwrap();
+    fs::write(dir.path().join("dist/bundle.js"), "const k=\"x\";\n").unwrap();
+    fs::write(dir.path().join(".env"), "API_KEY=hello\n").unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".", "--no-color", "--verbose"])
+        .output()
+        .unwrap();
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !all.contains("dist/bundle.js"),
+        "a walk must not descend into dist/:\n{all}"
+    );
+}
+
+// ── PR-1 — the OpenAI detector could not match a project key ───────────────
+
+/// ⚠️ `sk-proj-` is OpenAI's default for new keys, and the pattern was
+/// `sk-[0-9a-zA-Z]{48}`: the prefix carries hyphens, which the class excludes,
+/// and project keys run past 48 characters. Such a key fell through to the
+/// generic entropy detector at **low** severity, so
+/// `evnx scan app.py --severity high` — an ordinary CI gate — exited `0` on a
+/// live key.
+#[test]
+fn pr1_an_openai_project_key_is_detected() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("app.py"),
+        "client = OpenAI(api_key=\"sk-proj-Ab3Kd9LmQp4xZvR8nT1wYc7JhG2fEs5UiOpAsDfGhJkLzXcVbNmKqFY\")\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "app.py", "--severity", "high", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a CI gate must catch it:\n{text}"
+    );
+    assert!(text.contains("OpenAI API Key"), "{text}");
+}
+
+/// ⚠️ The control that shaped the fix. Anthropic keys also begin `sk-`, so a
+/// permissive `sk-(?:proj-)?[0-9a-zA-Z_-]{40,}` swallowed `sk-ant-api03-…` and
+/// reported it as an **OpenAI** key — sending you to the wrong provider to
+/// rotate it. The two branches are mutually exclusive for this reason.
+#[test]
+fn pr1_neighbouring_key_formats_are_not_misattributed() {
+    let cases = [
+        // (filename, contents, expected finding)
+        (
+            "anth.py",
+            format!(
+                "k=\"sk-ant-api03-{}\"\n",
+                "aB3xK9mQ2pL7vT4wY8nR5jF1".repeat(4)
+            ),
+            "Anthropic API Key",
+        ),
+        (
+            "legacy.py",
+            format!("k=\"sk-{}\"\n", "aB3xK9mQ2pL7vT4wY8nR5jF1".repeat(2)),
+            "OpenAI API Key",
+        ),
+    ];
+    for (name, body, expected) in cases {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(name), &body).unwrap();
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(["scan", name, "--no-color"])
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            text.contains(expected),
+            "{name} must report {expected}:\n{text}"
+        );
+    }
+}
