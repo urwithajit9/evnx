@@ -47,15 +47,38 @@ jobs:
             echo "Head branch/tag: $HEAD_BRANCH"
             echo "Run ID: $RUN_ID"
 
-            if [[ "$CONCLUSION" == "success" && "$HEAD_BRANCH" =~ ^v[0-9] ]]; then
-              echo "should_run=true" >> $GITHUB_OUTPUT
-              echo "version=${HEAD_BRANCH#v}" >> $GITHUB_OUTPUT
-              echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
-              echo "Will publish version: ${HEAD_BRANCH#v}"
-            else
+            # Not a version tag: nothing was expected to publish, so this is a
+            # quiet green skip. release.yml only triggers on `v*`, so this branch
+            # should be unreachable; it stays as a guard rather than an assertion.
+            if [[ ! "$HEAD_BRANCH" =~ ^v[0-9] ]]; then
               echo "should_run=false" >> $GITHUB_OUTPUT
-              echo "Skipping npm publish (conclusion=$CONCLUSION, ref=$HEAD_BRANCH)"
+              echo "Not a version tag (ref=$HEAD_BRANCH) — nothing to publish"
+              exit 0
             fi
+
+            # ⚠️ A failed upstream release is a FAILURE here, not a skip.
+            #
+            # `workflow_run` fires whatever the upstream concluded, and this used
+            # to skip quietly — but a skipped job leaves the workflow **green**.
+            # That is how v0.4.0 was believed published: release.yml failed, this
+            # workflow fired, skipped, and reported a green check next to it. The
+            # npm token had also expired, and npm answers an unauthorised publish
+            # to an existing package with 404, so even the eventual real error
+            # read like a missing package.
+            #
+            # A real tag whose release failed is worth a red mark. Recovery is
+            # the workflow_dispatch input, which is why it exists.
+            if [[ "$CONCLUSION" != "success" ]]; then
+              echo "::error::Release run for $HEAD_BRANCH concluded '$CONCLUSION' — refusing to publish to npm"
+              echo "Nothing was published. Fix the release, then re-run this workflow"
+              echo "manually with run_id=$RUN_ID and version=${HEAD_BRANCH#v}."
+              exit 1
+            fi
+
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "version=${HEAD_BRANCH#v}" >> $GITHUB_OUTPUT
+            echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+            echo "Will publish version: ${HEAD_BRANCH#v}"
           fi
 
   publish:
@@ -399,8 +422,28 @@ jobs:
             fi
           done
 
-      - name: Wait for registry replication
-        run: sleep 30
+      # ── Confirm the platform packages before the wrapper points at them ────
+      # ⚠️ This was `sleep 30`, and a fixed sleep cannot tell whether anything
+      # arrived. It matters more than it looks:
+      #
+      # The wrapper pins EXACT versions of all five platform packages, and it
+      # pins them as `optionalDependencies` — which npm **skips without failing**
+      # when one cannot be resolved. So a platform package that did not publish
+      # produces a perfectly successful `npm install -g @evnx/cli` and a binary
+      # that is simply missing at runtime, on that one architecture. The smoke
+      # test runs on linux-x64 and can never see the other four.
+      #
+      # Reading the registry back also makes the loop above's "already at this
+      # version, skipping" safe on a manual re-run: what is verified is the end
+      # state, not whether this particular run did the publishing.
+      - name: Await platform packages in the registry
+        run: |
+          set -euo pipefail
+          for pkg in evnx-linux-x64 evnx-linux-arm64 evnx-darwin-x64 \
+                     evnx-darwin-arm64 evnx-win32-x64; do
+            ./scripts/npm-await.sh version "@evnx/$pkg" "$VERSION" 300
+          done
+          echo "✓ all five platform packages resolve at $VERSION"
 
       - name: Publish wrapper package
         env:
@@ -409,29 +452,45 @@ jobs:
           (cd npm-publish/evnx && npm publish --access public --provenance)
           echo "✓ Published @evnx/cli@$VERSION"
 
-      # ── Smoke test ──────────────────────────────────────────────────────────
-      - name: Smoke test installation
+      # ── Verify the registry, then install ──────────────────────────────────
+      # ⚠️ The old version used `npm install -g` as the availability probe and
+      # retried it five times over a 90-second budget. Two consequences:
+      #
+      #   * 90 seconds is not enough for npm's asynchronous pipeline. v0.5.2
+      #     published correctly to all six packages and went red here anyway.
+      #   * A failed install could not be told apart from "not propagated yet",
+      #     so the failure never said which had happened.
+      #
+      # Now the registry is polled directly — cheap, and it answers exactly one
+      # question — and the install runs once, after the answer is yes. A failure
+      # therefore names which half broke.
+      - name: Verify the registry and install
         run: |
-          echo "Waiting for registry propagation..."
-          sleep 30
+          set -euo pipefail
 
-          # Retry up to 5 times with 15s between attempts
-          for i in 1 2 3 4 5; do
-            echo "Attempt $i: npm install -g @evnx/cli@$VERSION"
-            if npm install -g @evnx/cli@$VERSION; then
-              echo "Install succeeded"
-              break
-            fi
-            if [ $i -eq 5 ]; then
-              echo "All attempts failed"
-              exit 1
-            fi
-            echo "Not available yet, waiting 15s..."
-            sleep 15
-          done
+          # 1. The exact version must be resolvable.
+          ./scripts/npm-await.sh version @evnx/cli "$VERSION" 300
 
-          evnx --version
-          echo "✓ Smoke test passed"
+          # 2. ⚠️ And `latest` must point at it. The old smoke test installed
+          #    `@evnx/cli@$VERSION` — pinned — so it passed even when the tag
+          #    still pointed at the previous release, which is precisely what a
+          #    plain `npm install -g @evnx/cli` hands every user. Nothing in this
+          #    workflow could observe that before.
+          ./scripts/npm-await.sh dist-tag @evnx/cli latest "$VERSION" 180
+
+          # 3. One install, now that the registry is known to be ready.
+          npm install -g "@evnx/cli@$VERSION"
+
+          # 4. Assert what it prints. The old step ran `evnx --version` and threw
+          #    the output away, so any binary that started would have passed.
+          #    Matched on a word boundary so 0.5.30 cannot satisfy 0.5.3.
+          got=$(evnx --version)
+          echo "evnx --version → $got"
+          if ! grep -qE "(^| )${VERSION//./\\.}( |\$)" <<<"$got"; then
+            echo "::error::installed @evnx/cli@$VERSION but the binary reports: $got"
+            exit 1
+          fi
+          echo "✓ @evnx/cli@$VERSION installs, is the 'latest' tag, and reports $VERSION"
 
       # ── Append npm note to the GitHub Release ──────────────────────────────
       - name: Add npm install note to GitHub Release
