@@ -96,7 +96,7 @@ done
 CLAIM_IDS=(N1 C11 C12 F1 C18 PTB4 C19 C14 K8S C6 I66)
 claim_kind() {
     case "$1" in
-        F1|I66) echo gap ;;
+        I66)    echo gap ;;
         *)      echo behaviour ;;
     esac
 }
@@ -105,7 +105,7 @@ claim_text() {
     N1)   echo "--format accepts both 'github' and 'github-actions' on validate and scan, but each command's error lists only its own spelling" ;;
     C11)  echo "init has a non-interactive surface: --list-components, --detect, --with, --from-source, --blueprint, --yes" ;;
     C12)  echo "spec init infers a contract from .env and writes .evnx.toml with required/secret per variable" ;;
-    F1)   echo "no public-prefix warning: a VITE_-prefixed secret is reported as an ordinary secret, with nothing said about browser exposure" ;;
+    F1)   echo "a secret behind a build-time public prefix is high confidence, names what inlines it, and the remedy leads with renaming rather than rewriting git history" ;;
     C18)  echo "multi-line values are supported: a two-line quoted value validates clean and round-trips through convert --to json" ;;
     PTB4) echo "a Symfony-style layout works through .evnx.toml [defaults]: .env.local is the env, .env is the example" ;;
     C19)  echo "the 0/1/2 contract holds: a missing env file is 2 with a message naming that file; an unknown convert target is 2" ;;
@@ -317,13 +317,28 @@ if begin F1; then
     key="sk_test_$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
     printf 'VITE_STRIPE_SECRET_KEY=%s\n' "$key" > .env.test
 
-    run "$EVNX" scan .env.test
-    want_rc 1                      # the secret itself IS found
-    want_out 'Stripe'
-    # …but nothing connects the VITE_ prefix to browser exposure.
-    want_not_out 'public'
-    want_not_out 'browser'
-    want_not_out 'bundle'
+    run "$EVNX" scan .env.test --no-color
+    want_rc 1
+    want_out 'Stripe'              # the provider is still named, so you know where to revoke
+    want_out 'inlined into the client bundle'
+    want_out 'Vite'                # …and what does the inlining
+    want_out 'rename to STRIPE_SECRET_KEY'
+
+    # ⚠️ The assertion that matters. `git filter-repo` may still be offered —
+    # a public-prefixed key is often committed too — but it must not come
+    # before the rename, because on its own it contains nothing: the value is
+    # already in every bundle that shipped.
+    steps=$OUT
+    case "$steps" in
+      *'Rename the public-prefixed'*) ;;
+      *) note_fail 'the next steps must lead with renaming' ;;
+    esac
+    if grep -q 'filter-repo' <<<"$steps"; then
+        first=$(grep -n 'Rename the public-prefixed' <<<"$steps" | head -1 | cut -d: -f1)
+        hist=$(grep -n 'filter-repo' <<<"$steps" | head -1 | cut -d: -f1)
+        [ -n "$first" ] && [ "$first" -lt "$hist" ] \
+            || note_fail 'history rewriting is offered before the rename'
+    fi
     settle
 fi
 

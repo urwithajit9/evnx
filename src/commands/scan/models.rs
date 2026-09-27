@@ -19,6 +19,9 @@
 //!     action_url: Some("https://console.aws.amazon.com/iam".to_string()),
 //!     // An `AKIA` prefix is a value match, so the report may say so.
 //!     judged_value: true,
+//!     // `Some("VITE_")` when the name carries a build-time public prefix, which
+//!     // changes the remedy: the variable has to be renamed, not just rotated.
+//!     public_prefix: None,
 //! };
 //!
 //! let mut results = ScanResults::new(100);
@@ -173,6 +176,17 @@ pub struct Finding {
     #[serde(rename = "matched_by", serialize_with = "serialize_matched_by")]
     #[serde(default = "judged_value_default")]
     pub judged_value: bool,
+
+    /// The build-time prefix that publishes this variable, if its name carries
+    /// one — `"NEXT_PUBLIC_"`, `"VITE_"` and friends.
+    ///
+    /// Serialized so a CI script can act on the distinction that matters most
+    /// here: a secret behind one of these is **already served to every visitor**,
+    /// so rotating it is necessary but not sufficient, and scrubbing git history
+    /// achieves nothing. `None` for every ordinary variable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub public_prefix: Option<String>,
 }
 
 /// `#[serde(skip)]` would otherwise deserialize to `false` and make every
@@ -208,6 +222,16 @@ impl Finding {
     #[must_use]
     pub fn judged_value(mut self, judged: bool) -> Self {
         self.judged_value = judged;
+        self
+    }
+
+    /// Record the build-time prefix that publishes this variable.
+    ///
+    /// Builder-style for the same reason as [`Finding::judged_value`]: one caller
+    /// knows, and every other construction site means `None`.
+    #[must_use]
+    pub fn public_prefix(mut self, prefix: Option<String>) -> Self {
+        self.public_prefix = prefix;
         self
     }
 
@@ -251,6 +275,7 @@ impl Finding {
             variable,
             action_url,
             judged_value: true,
+            public_prefix: None,
         }
     }
 }
