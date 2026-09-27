@@ -323,6 +323,14 @@ impl FileFilter {
             "config",
             "ini",
             "properties",
+            // ⚠️ A notebook is JSON, and identical content was scanned as
+            // `.json` and ignored as `.ipynb` — a filter problem, not a parsing
+            // one. Notebooks are where ML work keeps keys, and a key often
+            // appears **twice**: once in a `source` cell and again in an
+            // `outputs` cell where it was echoed. Both are found now, because
+            // the detectors are content-based and only the extension was
+            // stopping them.
+            "ipynb",
         ];
 
         // Check extension

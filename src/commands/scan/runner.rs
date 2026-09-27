@@ -399,6 +399,43 @@ impl ScanRunner {
             return;
         }
 
+        // ── A secret behind a build-time public prefix ────────────────────────
+        //
+        // ⚠️ This must run **before** the `--severity` filter below, not after.
+        // The case it exists for is a low-confidence value behind
+        // `NEXT_PUBLIC_`: filtering first would discard it at `--severity
+        // medium` and leave nothing to escalate.
+        //
+        // Escalation is the smaller half of this. Verified against the real
+        // detectors: a Stripe key behind `VITE_` and a long value behind
+        // `NEXT_PUBLIC_TOKEN` are **already** high, so what was actually wrong
+        // is the advice — see `output::print_next_steps`, which told the reader
+        // to rewrite git history for a key that is compiled into every bundle
+        // they have already shipped.
+        // ⚠️ NOT gated on `judged_value`. The first version was, and it excluded
+        // the clearest case there is: `NEXT_PUBLIC_TOKEN` is a name-only match,
+        // so it was skipped — a variable whose name says "token" and whose prefix
+        // says "published". `judged_value` governs whether we may claim something
+        // about the *value* ("matches a live key format"); the prefix is a fact
+        // about the *name*, which is exactly what a name-only match has.
+        let public = variable
+            .as_deref()
+            .and_then(crate::utils::patterns::public_prefix);
+
+        let mut detection = detection;
+        if public.is_some() {
+            detection.confidence = match detection.action_url {
+                // A named provider format — this is a real key, and the prefix
+                // means it is already public. Nothing about it is low risk.
+                Some(_) => Confidence::High,
+                // Shape alone. It may be a deliberately publishable key (a
+                // PostHog or Sentry DSN is meant to ship), so `Medium` rather
+                // than `High`: enough to be seen and read, not enough to fail a
+                // `--severity high` gate on something that may be fine.
+                None => detection.confidence.max(Confidence::Medium),
+            };
+        }
+
         // Below the --severity threshold: not recorded at all.
         if detection.confidence < self.min_confidence {
             return;
@@ -417,7 +454,8 @@ impl ScanRunner {
             variable,
             detection.action_url,
         )
-        .judged_value(judged_value);
+        .judged_value(judged_value)
+        .public_prefix(public.map(|(prefix, _)| prefix.to_string()));
 
         results.add_finding(finding);
     }

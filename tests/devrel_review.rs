@@ -2366,3 +2366,245 @@ fn t2_builtins_can_be_turned_off_entirely() {
     assert!(!all.contains("Stripe"), "no built-in rule may fire:\n{all}");
     assert!(all.contains("scan.builtins=false"), "{all}");
 }
+
+// ── G1.1 — a secret behind a build-time public prefix ───────────────────────
+//
+// ⚠️ `scan` did not merely omit this, it gave the **wrong remedy**. A Stripe key
+// behind `VITE_` was reported correctly as high confidence and then followed by
+// "Remove them from history: git filter-repo" and "Force push" — work that
+// contains nothing, because the value is compiled into every bundle already
+// served. Someone following it literally would rewrite history and believe they
+// were done.
+
+/// The prefix fact reaches the machine-readable output, so a CI script can tell
+/// "leaked" from "published".
+#[test]
+fn g11_public_prefix_is_reported_in_json() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "VITE_STRIPE_SECRET_KEY=sk_test_51Habcdefghijklmnopqrstuvwxyz123456\n\
+         STRIPE_SECRET_KEY=sk_test_51Habcdefghijklmnopqrstuvwxyz123456\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--format", "json"])
+        .output()
+        .unwrap();
+    let json = String::from_utf8_lossy(&out.stdout).to_string();
+
+    assert!(
+        json.contains("\"public_prefix\": \"VITE_\""),
+        "the prefixed variable must carry it:\n{json}"
+    );
+    // ⚠️ Exactly one. The field is absent for an ordinary variable rather than
+    // null, so a consumer testing presence is not misled by the control line.
+    assert_eq!(
+        json.matches("\"public_prefix\"").count(),
+        1,
+        "an unprefixed variable must not carry the field:\n{json}"
+    );
+}
+
+/// The whole point: the advice changes.
+#[test]
+fn g11_the_remedy_names_the_bundle_not_git_history() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "VITE_STRIPE_SECRET_KEY=sk_test_51Habcdefghijklmnopqrstuvwxyz123456\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--no-color"])
+        .output()
+        .unwrap();
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    assert!(
+        all.contains("inlined into the client bundle"),
+        "the consequence must be stated:\n{all}"
+    );
+    assert!(
+        all.contains("Vite"),
+        "and it must name what does the inlining:\n{all}"
+    );
+    // The prefix-stripped name is the actionable part.
+    assert!(
+        all.contains("rename to STRIPE_SECRET_KEY"),
+        "the rename target must be spelled out:\n{all}"
+    );
+    // ⚠️ The load-bearing assertion. `git filter-repo` may still appear — a
+    // public-prefixed key is often committed as well — but it must no longer be
+    // step 1 dressed up as containment.
+    let renamed_first = all.find("Rename the public-prefixed");
+    let history = all.find("filter-repo");
+    assert!(
+        renamed_first.is_some(),
+        "renaming must lead the next steps:\n{all}"
+    );
+    assert!(
+        history.is_none() || renamed_first < history,
+        "history rewriting must not be offered before the rename:\n{all}"
+    );
+}
+
+/// A low-confidence value behind a public prefix is raised to Medium — and the
+/// escalation has to happen **before** `--severity` filters, or there is nothing
+/// left to raise.
+#[test]
+fn g11_escalation_survives_a_severity_filter() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "NEXT_PUBLIC_ANALYTICS=phc9aZqWsXeDcRfVtGbYhNujMiKoLpQdEfGh\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--severity", "medium", "--format", "json"])
+        .output()
+        .unwrap();
+    let json = String::from_utf8_lossy(&out.stdout).to_string();
+
+    assert!(
+        json.contains("\"public_prefix\": \"NEXT_PUBLIC_\""),
+        "a `--severity medium` gate must still see it:\n{json}"
+    );
+    assert!(
+        json.contains("\"confidence\": \"medium\""),
+        "raised to medium, not high — the value may be a publishable key:\n{json}"
+    );
+}
+
+/// ⚠️ A name-only match is the clearest case of all, and the first version of
+/// this feature excluded it: the check was gated on `judged_value`, so
+/// `NEXT_PUBLIC_TOKEN` — a name that says "token" behind a prefix that says
+/// "published" — was skipped. `judged_value` governs claims about the *value*;
+/// the prefix is a fact about the *name*.
+#[test]
+fn g11_a_name_only_match_still_carries_the_prefix() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "NEXT_PUBLIC_TOKEN=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAx7Qw9fKmN2vLpQ\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--format", "json"])
+        .output()
+        .unwrap();
+    let json = String::from_utf8_lossy(&out.stdout).to_string();
+
+    assert!(
+        json.contains("\"public_prefix\": \"NEXT_PUBLIC_\""),
+        "a name-based finding carries the prefix too:\n{json}"
+    );
+}
+
+/// ⚠️ Escalation must only ever *raise an existing finding*, never create one.
+/// `PUBLIC_` is on the prefix list, and `PUBLIC_KEY` is an ordinary name for
+/// something meant to be public — so this is what keeps the list safe to widen.
+#[test]
+fn g11_a_public_prefix_never_invents_a_finding() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "PUBLIC_KEY=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAx7Qw9fKmN2vLpQ\n\
+         NEXT_PUBLIC_API_URL=https://api.example.com/v1\n\
+         NEXT_PUBLIC_SITE_NAME=Acme\n\
+         VITE_PORT=8080\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--severity", "low"])
+        .output()
+        .unwrap();
+    let all = String::from_utf8_lossy(&out.stdout).to_string();
+
+    assert!(
+        all.contains("No secrets detected"),
+        "nothing here is a secret, prefix or not:\n{all}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "and the exit code must stay clean:\n{all}"
+    );
+}
+
+// ── NEW-2 — notebooks were excluded by extension ────────────────────────────
+
+/// ⚠️ Identical JSON was scanned as `.json` and ignored as `.ipynb`: a filter
+/// problem, not a parsing one. Notebooks are where ML work keeps keys, and a key
+/// often appears **twice** — once in a `source` cell and again in an `outputs`
+/// cell where it was echoed.
+#[test]
+fn new2_a_notebook_is_scanned() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("nb.ipynb"),
+        r#"{"cells":[
+ {"cell_type":"code","source":["k='sk_live_51Habcdefghijklmnopqrstuvwxyz123456'\n"],"outputs":[]},
+ {"cell_type":"code","source":["print(k)\n"],"outputs":[{"text":["sk_live_51Habcdefghijklmnopqrstuvwxyz123456\n"]}]}
+],"metadata":{},"nbformat":4}
+"#,
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "nb.ipynb", "--no-color"])
+        .output()
+        .unwrap();
+    let all = String::from_utf8_lossy(&out.stdout).to_string();
+
+    assert!(
+        all.contains("Stripe Secret Key (LIVE)"),
+        "the key in the notebook must be found:\n{all}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "and it must be a finding, not a clean run:\n{all}"
+    );
+}
+
+/// A notebook with nothing in it scans clean rather than erroring — the
+/// acceptance criterion that stops the fix from being "report every notebook".
+#[test]
+fn new2_a_clean_notebook_is_clean() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("nb.ipynb"),
+        r#"{"cells":[{"cell_type":"code","source":["print(1 + 1)\n"],"outputs":[]}],"metadata":{},"nbformat":4}
+"#,
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "nb.ipynb", "--no-color"])
+        .output()
+        .unwrap();
+    let all = String::from_utf8_lossy(&out.stdout).to_string();
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "a notebook with no secrets is clean, not an error:\n{all}"
+    );
+}

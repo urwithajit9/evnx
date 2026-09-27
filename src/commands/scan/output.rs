@@ -217,6 +217,50 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
                 "matches a live key format, not a placeholder".dimmed()
             );
         }
+        // ⚠️ Printed before the revoke link on purpose. For a variable the
+        // bundler publishes, revoking is not the first thing to do and is not
+        // sufficient on its own — the value is already in every build that has
+        // shipped, so the name has to change too.
+        if let Some(prefix) = &finding.public_prefix {
+            let what = crate::utils::patterns::public_prefix(prefix)
+                .map(|(_, tool)| tool)
+                .unwrap_or("your bundler");
+            println!(
+                "     {}  {}",
+                glyph::WARN.yellow(),
+                format!(
+                    "{prefix} is inlined into the client bundle by {what} — anyone \
+                     who loads your site can read this"
+                )
+                .yellow()
+            );
+            if let Some(var) = &finding.variable {
+                let server_side = var
+                    .strip_prefix(prefix)
+                    .filter(|rest| !rest.is_empty())
+                    .unwrap_or(var.as_str());
+                // ⚠️ Hedged when nothing recognised the value's format. Analytics
+                // and error-reporting keys — a PostHog key, a Sentry DSN — are
+                // *designed* to ship in the bundle, and evnx cannot tell one from
+                // an unrecognised 32-character token. Telling someone to move a
+                // key server-side when it is meant to be public would be as wrong
+                // as staying silent about one that is not.
+                if finding.action_url.is_some() {
+                    println!(
+                        "     {}  rename to {} and read it server-side",
+                        glyph::ARROW.dimmed(),
+                        server_side.cyan()
+                    );
+                } else {
+                    println!(
+                        "     {}  if this is not meant to be public, rename it to {} \
+                         and read it server-side",
+                        glyph::ARROW.dimmed(),
+                        server_side.cyan()
+                    );
+                }
+            }
+        }
         if let Some(url) = &finding.action_url {
             println!("     {}  revoke at {}", glyph::ARROW.dimmed(), url.cyan());
         }
@@ -239,11 +283,29 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
 
     if results.has_critical_findings() {
         println!();
-        ui::print_next_steps(&[
-            "Revoke or rotate the keys above — assume they are compromised",
-            "Remove them from history: git filter-repo --path .env --invert-paths",
-            "Force push, after coordinating with everyone who has a clone",
-        ]);
+
+        // ⚠️ The steps below used to be unconditional, and for a variable behind
+        // a build-time public prefix two of the three were wrong. Scrubbing git
+        // history and force-pushing contains nothing when the value has been
+        // compiled into every bundle already served — it is work that produces a
+        // feeling of containment and no containment. Someone following it
+        // literally would rewrite history and believe they were done.
+        if results.findings.iter().any(|f| f.public_prefix.is_some()) {
+            ui::print_next_steps(&[
+                "Rename the public-prefixed variables above and read them server-side \
+                 — while the name carries the prefix, every build republishes the value",
+                "Revoke and reissue those keys — they have been readable by every \
+                 visitor to your site, so treat them as public, not merely leaked",
+                "Then, for anything that was ALSO committed: git filter-repo --path .env \
+                 --invert-paths, and force push after coordinating with everyone who has a clone",
+            ]);
+        } else {
+            ui::print_next_steps(&[
+                "Revoke or rotate the keys above — assume they are compromised",
+                "Remove them from history: git filter-repo --path .env --invert-paths",
+                "Force push, after coordinating with everyone who has a clone",
+            ]);
+        }
     }
 
     Ok(())
@@ -343,7 +405,7 @@ fn render_github(results: &ScanResults) -> Result<()> {
             (None, _) => format!("{} detected", f.pattern),
         };
 
-        let message = if f.judged_value {
+        let mut message = if f.judged_value {
             match &f.action_url {
                 Some(url) => format!("{what}. Rotate it at {url}"),
                 None => format!("{what}. Rotate this credential at its source"),
@@ -354,6 +416,18 @@ fn render_github(results: &ScanResults) -> Result<()> {
                  — confirm before rotating"
             )
         };
+
+        // ⚠️ The annotation is what a reviewer actually reads on the pull
+        // request, so the fact that changes the required action belongs in it.
+        // "Rotate it" alone is incomplete advice for a variable the bundler
+        // publishes: the name has to change too, or the next build republishes
+        // the replacement.
+        if let Some(prefix) = &f.public_prefix {
+            message.push_str(&format!(
+                " — and rename it: {prefix} is inlined into the client bundle, \
+                 so rotating alone republishes the new value"
+            ));
+        }
 
         println!(
             "::{level} file={},line={},title={}::{}",

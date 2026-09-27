@@ -254,6 +254,48 @@ fn is_placeholder_pattern(value: &str) -> bool {
 
     false
 }
+/// Build-time prefixes that inline a variable into the **client bundle**.
+///
+/// Each entry is `(prefix, what inlines it)`. The second field is there so a
+/// finding can name the thing the reader has to go and change, rather than
+/// describing evnx's own rule.
+///
+/// ⚠️ This is deliberately a short, conservative list of prefixes whose *whole
+/// purpose* is public exposure. It is not a framework-detection system — that is
+/// a larger piece of work (G1.2) and it is not needed to answer the question
+/// this list exists for: "is this name one the bundler publishes?"
+///
+/// Longest first, so a future entry cannot be shadowed by a shorter one that
+/// happens to be its suffix-prefix.
+pub const PUBLIC_PREFIXES: &[(&str, &str)] = &[
+    ("NEXT_PUBLIC_", "Next.js"),
+    ("NUXT_PUBLIC_", "Nuxt"),
+    ("EXPO_PUBLIC_", "Expo"),
+    ("REACT_APP_", "Create React App"),
+    ("STORYBOOK_", "Storybook"),
+    ("GATSBY_", "Gatsby"),
+    ("VUE_APP_", "Vue CLI"),
+    ("VITE_", "Vite"),
+    ("PUBLIC_", "SvelteKit and Astro"),
+];
+
+/// The build-time prefix on `name`, and what inlines it.
+///
+/// ⚠️ `PUBLIC_` is in the list even though `PUBLIC_KEY` is a perfectly ordinary
+/// name for something meant to be public. That is safe because this only ever
+/// *escalates a finding that already exists*: it never creates one. Verified
+/// against the real detectors — `PUBLIC_KEY=<base64 public key>` and
+/// `NEXT_PUBLIC_API_URL=https://…` both produce no finding at all, so there is
+/// nothing for this to escalate.
+#[must_use]
+pub fn public_prefix(name: &str) -> Option<(&'static str, &'static str)> {
+    let upper = name.to_uppercase();
+    PUBLIC_PREFIXES
+        .iter()
+        .find(|(prefix, _)| upper.starts_with(prefix))
+        .copied()
+}
+
 #[must_use]
 pub fn is_sensitive_key(key: &str) -> bool {
     const PATTERNS: &[&str] = &[

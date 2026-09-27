@@ -470,7 +470,13 @@ pub enum VaultCommands {
         target: String,
 
         /// Email address of the evnx account to share with.
-        #[arg(long)]
+        ///
+        /// ⚠️ `--user` is accepted too. `share` took `--with` while `revoke` and
+        /// `role` took `--user` for the same thing — the member's email — so
+        /// whichever you learned first was wrong half the time. Both work
+        /// everywhere now; neither is deprecated, because there is no reason to
+        /// break the muscle memory of anyone who learned either one.
+        #[arg(long, visible_alias = "user")]
         with: String,
 
         /// Permission level: viewer, developer, or admin.
@@ -503,7 +509,9 @@ pub enum VaultCommands {
         target: String,
 
         /// Email address of the member whose role is changing.
-        #[arg(long)]
+        ///
+        /// `--with` is accepted too — see `vault share`.
+        #[arg(long, visible_alias = "with")]
         user: String,
 
         /// New role: viewer, developer, or admin.
@@ -525,7 +533,9 @@ pub enum VaultCommands {
         target: String,
 
         /// Email address of the member to remove.
-        #[arg(long)]
+        ///
+        /// `--with` is accepted too — see `vault share`.
+        #[arg(long, visible_alias = "with")]
         user: String,
 
         /// Skip the confirmation prompt.

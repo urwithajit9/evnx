@@ -8,6 +8,38 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A secret behind a build-time public prefix is now called what it is.** `scan`
+  reported a Stripe key in `VITE_STRIPE_SECRET_KEY` correctly as high confidence,
+  then told you to `git filter-repo` and force push — work that contains nothing,
+  because the value is compiled into every bundle already served. Someone
+  following it literally would rewrite history and believe they were done.
+
+  A finding whose variable carries `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_`,
+  `EXPO_PUBLIC_`, `NUXT_PUBLIC_`, `GATSBY_`, `VUE_APP_`, `STORYBOOK_` or
+  `PUBLIC_` now says which tool inlines it, names the prefix-stripped variable to
+  rename it to, and leads the next steps with renaming rather than history
+  rewriting. The prefix is in the JSON as `public_prefix`, so CI can tell
+  "leaked" from "published".
+
+  Severity is raised where it was wrong: a known provider format behind a public
+  prefix is **high**, and a value recognised only by shape is raised to
+  **medium** — enough to be seen, not enough to fail a `--severity high` gate on
+  an analytics key that is meant to ship. ⚠️ Escalation only ever raises a
+  finding that already exists, so `PUBLIC_KEY=<a public key>` and
+  `NEXT_PUBLIC_API_URL=<a url>` are still not findings at all.
+
+- **`.ipynb` files are scanned.** Identical JSON was scanned as `.json` and
+  ignored as `.ipynb` — a filter, not a parser. Notebooks are where ML work keeps
+  keys, and a key often appears twice: once in a `source` cell and again in an
+  `outputs` cell where it was echoed.
+
+- **`vault share`, `vault revoke` and `vault role` accept both `--with` and
+  `--user`.** `share` took `--with` while the other two took `--user` for the
+  same thing, so whichever you learned first was wrong half the time. Neither is
+  deprecated.
+
 ### Fixed
 
 - **An escaped `\"` no longer ends a multiline value.** `Parser::is_closed_quote`
