@@ -6,7 +6,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.6.0] - 2026-09-27
+
+**The first release since 0.5.0 that contains new code.** 0.5.1 and 0.5.2 were
+release engineering; ten pull requests have landed since.
+
+### Why this is 0.6.0 and not 0.5.3
+
+Two changes alter behaviour rather than only adding to it, and in `0.x` semver
+puts a compatibility change in the minor position:
+
+- Escape sequences in a **multiline** double-quoted value are now interpreted,
+  matching what a single-line value always did. A multiline value containing a
+  backslash changes meaning. See *Changed* below.
+- A value recognised only by its shape, behind a build-time public prefix, is
+  raised from `low` to `medium`. A `--severity medium` gate that passed can now
+  fail. See *Added* below.
+
+Neither is large, and no correct program depended on either — but both are the
+kind of change someone should read a version number and expect.
 
 ### Added
 
@@ -21,7 +39,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `PUBLIC_` now says which tool inlines it, names the prefix-stripped variable to
   rename it to, and leads the next steps with renaming rather than history
   rewriting. The prefix is in the JSON as `public_prefix`, so CI can tell
-  "leaked" from "published".
+  "leaked" from "published". (#78)
 
   Severity is raised where it was wrong: a known provider format behind a public
   prefix is **high**, and a value recognised only by shape is raised to
@@ -33,14 +51,83 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`.ipynb` files are scanned.** Identical JSON was scanned as `.json` and
   ignored as `.ipynb` — a filter, not a parser. Notebooks are where ML work keeps
   keys, and a key often appears twice: once in a `source` cell and again in an
-  `outputs` cell where it was echoed.
+  `outputs` cell where it was echoed. (#78)
 
 - **`vault share`, `vault revoke` and `vault role` accept both `--with` and
   `--user`.** `share` took `--with` while the other two took `--user` for the
   same thing, so whichever you learned first was wrong half the time. Neither is
-  deprecated.
+  deprecated. (#78)
+
+- **`scripts/verify-claims.sh`** — documented claims about evnx are now checked by
+  running it. Each claim has a stable id and a verdict of `CONFIRMED`, `REFUTED`
+  or `SKIP`, and the exit status mirrors evnx's own contract: `0` all confirmed,
+  `1` something refuted, `2` could not run. "No claims ran" is `2`, because a
+  verification script that exits 0 when it verified nothing is the bug it exists
+  to catch. (#74)
 
 ### Fixed
+
+- **`evnx scan` no longer reports a clean result for a scan that examined nothing.**
+  `dist/`, `build/`, `node_modules/` and `target/` are skipped on a directory
+  walk, and naming a file inside one was silently dropped — so a CI gate pointed
+  at a build artifact printed `✓ No secrets detected`, `0 files scanned` and exit
+  `0`, on a file holding a live Stripe key. The extension allowlist did the same
+  to anything it did not recognise: `evnx scan key.pem` scanned nothing and called
+  it clean.
+
+  Two changes, the second being the general one: **a path you name is always
+  scanned** — the default exclusions and the allowlist exist to stop a directory
+  walk reading a million vendored files, and were never a veto over an argument —
+  and **zero files scanned is never success**, now exit `2`, because nothing was
+  found *and* nothing was looked at. (#71)
+
+- **The private-key detector could not fire outside a `.env` file.**
+  `-----BEGIN RSA PRIVATE KEY-----` and its four siblings went undetected in every
+  source and `.pem` file. `extract_tokens` splits on whitespace and keeps only
+  tokens longer than 20 characters, and the header splits into `-----BEGIN`,
+  `RSA`, `PRIVATE`, `KEY-----` — every piece too short to survive. Undetectable in
+  exactly the files private keys live in.
+
+  Fixed by making the built-in detectors **rules on the same engine as custom
+  ones**, matched against whole lines through `PatternSet`. Custom
+  `[[scan.patterns]]` were never affected, so a rule a user wrote was strictly
+  stronger than one evnx shipped — that was the real defect. A dead
+  `get_patterns()` table of ~20 detectors, which nothing called while a
+  hand-written `Regex::is_match` chain did the work, is gone with it. (#72)
+
+- **`evnx migrate`'s missing-file hint named `--env`, a flag it does not have.**
+  It is `--source-file`. (#70)
+
+- **The crate no longer ships environment files.** `.env.backup` and
+  `.envx/placeholders.json` were committed in March 2026 and shipped to crates.io
+  in 0.5.0, 0.5.1 and 0.5.2, because this repository's own `.gitignore` used the
+  narrow `.env`/`.env.local` convention that `evnx init` had already moved away
+  from. The repo now uses the entries `evnx init` writes, and CI fails if
+  `cargo package --list` contains either path. Published versions cannot be
+  altered; this stops it recurring. (#73)
+
+- **npm publishing downloaded every artifact in the release run, not just the
+  binaries.** `docker/build-push-action` uploads a build record of its own — a
+  `.dockerbuild` blob that is not a plain zip — and unzipping it killed the 0.5.2
+  npm publish with `ADM-ZIP: Invalid or unsupported zip format`. Two earlier
+  failed tags had hidden it, because the docker job only produced one once the
+  release got that far. Filtered to `^evnx-`. (#69)
+
+- **npm publishing now reads the registry back instead of trusting the publish
+  step.** `npm publish` returning 0 means the tarball was accepted — not that the
+  version resolves, and not that the `latest` dist-tag moved. The smoke test also
+  gave up after 90 seconds, so 0.5.2 published correctly to all six packages and
+  went red anyway.
+
+  The registry is now polled with a 300-second budget and the install runs once,
+  after it is known to be there. Three things are newly checked: that `latest`
+  actually points at the new version (the test installed a pinned version, so a
+  stale tag was invisible), that **all five platform packages** resolve — they are
+  `optionalDependencies`, which npm skips without failing, so a missing one gave a
+  clean install and a binary absent at runtime on that architecture — and that
+  `evnx --version` prints what was published. A failed upstream release is also a
+  failure here rather than a silent skip, which used to leave a green check beside
+  a red release. (#75)
 
 - **An escaped `\"` no longer ends a multiline value.** `Parser::is_closed_quote`
   tested `ends_with('"')`, so for `B="line1 \"q\"` the final character *was* a
@@ -53,7 +140,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The same bug had a second site: the continuation branch used
   `strip_suffix(ml_quote)`, so a value could survive its opening line and then be
   cut short by a continuation line ending in `\"`. Both now go through one shared
-  function, along with `evnx doctor` — see below.
+  function, along with `evnx doctor` — see below. (#77)
 
 - **`evnx doctor` no longer reports the continuation lines of a multiline value as
   `invalid syntax`.** It checked `.env` syntax line by line, with no notion of a
@@ -64,7 +151,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   `doctor` also now reports a quoted value whose quote never closes. The
   line-based check could not represent that at all, so it called such a file clean
-  while `validate` failed on it — the same disagreement in the opposite direction.
+  while `validate` failed on it — the same disagreement in the opposite direction. (#77)
 
 ### Changed
 
@@ -77,7 +164,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **This changes existing values.** A multiline double-quoted value containing a
   backslash now resolves it. PEM keys, certificates and base64 blobs contain no
   backslashes and are unaffected; a multiline JSON value with `\n` or `\"` inside
-  it is not. Use single quotes for literal content.
+  it is not. Use single quotes for literal content. (#77)
+
+### Documentation
+
+- **The README said multiline and array values "will not parse correctly".** Two
+  of its three examples parse fine, and multiline values have worked all along —
+  the claim came from a verification step that read an exit code without reading
+  the message: it wrote a two-line value, ran `evnx validate --env .env.ml`, got
+  exit `2` and recorded a parse error. The `2` was `.env.example does not exist`;
+  validate never parsed the file.
+
+  The claim had spread into the planning material, where it became a roadmap item
+  proposing "parser support for quoted multi-line values" — work to build a
+  feature that already existed. It also meant the README contradicted the docs
+  site, where `concepts-migrate-intro.mdx` correctly said multi-line values are
+  handled. Rewritten from what the binary actually does. (#76)
 
 ## [0.5.2] - 2026-09-25
 
