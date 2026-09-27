@@ -679,19 +679,62 @@ Keys named in older copies of this README — `env_file`, `auto_fix`, `exclude_p
 
 ## Known Limitations
 
-**Array and multiline values** — evnx follows the strict `.env` spec where values are simple strings. The following will not parse correctly:
+⚠️ **Corrected 2026-09-27.** This section said multiline and array values "will not
+parse correctly" and gave three examples. Two of the three parse fine, and
+multiline values have been supported all along — the parser accepts a quoted value
+that spans lines and `convert` round-trips the newlines intact. The wrong claim
+was repeated into several planning documents and nearly produced work to build a
+feature that already existed.
+
+**Multiline values work.** A value whose opening quote is not closed on the same
+line continues onto the next, with either quote style:
 
 ```bash
-# Not supported
-CORS_ALLOWED=["https://example.com", "https://admin.example.com"]
-CONFIG={"key": "value"}
-DATABASE_HOSTS="""
-host1.example.com
-host2.example.com
-"""
+PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDGxYz1
+-----END PRIVATE KEY-----"
+NEXT_VAR=parsing continues normally after it
 ```
 
-Use comma-separated strings and parse them in application code. A `--lenient` flag for extended syntax is under consideration — see [open issues](https://github.com/urwithajit9/evnx/issues).
+`evnx convert --to json` gives `"-----BEGIN PRIVATE KEY-----\nMIIEvQ…\n-----END PRIVATE KEY-----"`,
+and `evnx scan` reports it as a private key. Single quotes span lines too, without
+unescaping.
+
+**Values stay strings.** evnx follows the strict `.env` spec, so JSON and arrays are
+preserved exactly but never interpreted:
+
+```bash
+CORS_ALLOWED=["https://example.com", "https://admin.example.com"]   # parses — as a string
+CONFIG={"key": "value"}                                             # parses — as a string
+```
+
+Both are preserved character-for-character. Parse them in your application code,
+as you would with any other `.env` loader.
+
+**Two things genuinely do not work:**
+
+```bash
+# 1. Triple-quoted / heredoc style
+DATABASE_HOSTS="""
+host1.example.com
+"""
+
+# 2. An escaped \" inside a value that spans lines
+MESSAGE="he said \"hello\"
+and left"
+```
+
+The first is not `.env` syntax in any dialect evnx targets. The second is a bug:
+the check for a closing quote does not notice that the trailing `"` is escaped, so
+it treats the value as finished and the next line as a stray entry. An escaped
+`\"` in a **single-line** value is fine — `A="say \"hi\" there"` parses correctly.
+
+**`evnx doctor` disagrees with the parser here.** It checks syntax line by line, so
+it reports each continuation line of a multiline value as `invalid syntax` while
+`validate`, `convert` and `scan` all accept the same file. Believe the parser; the
+`doctor` warning is a false positive.
+
+A `--lenient` flag for extended syntax is under consideration — see [open issues](https://github.com/urwithajit9/evnx/issues).
 
 **Multiple environments are supported as of v0.5.0.** `evnx scan` reads every `.env`
 variant it walks past, and `--env-name production` resolves to `.env.production` across
