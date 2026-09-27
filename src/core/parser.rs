@@ -362,11 +362,34 @@ impl Parser {
             if let Some(ref key) = ml_key.clone() {
                 let trimmed_end = raw_line.trim_end();
 
-                if let Some(before_close) = trimmed_end.strip_suffix(ml_quote) {
+                // ⚠️ `strip_suffix(ml_quote)` here, which closed the value on an
+                // escaped `\"` exactly as `is_closed_quote` did on the opening
+                // line. The bug had two sites; a value could survive its first
+                // line and then be cut short by a continuation line ending in
+                // `\"`.
+                if let Some(before_close) = closes_multiline(trimmed_end, ml_quote) {
                     // Closing quote found — finalise the value.
                     ml_value.push('\n');
                     ml_value.push_str(before_close);
-                    vars.insert(key.clone(), ml_value.clone());
+
+                    // ⚠️ The accumulated value used to be inserted raw, so a
+                    // double-quoted value that spanned lines kept its
+                    // backslashes while the identical value on one line had them
+                    // resolved: `"x\ty"` gave a tab, `"x\ty` + `z"` gave a
+                    // literal backslash and `t`. Same quote character, different
+                    // escape rules depending on the line count — and it made
+                    // `\"` inexpressible in a multiline value, which is the
+                    // other half of B5.
+                    //
+                    // `unescape_double` only rewrites backslash sequences, so
+                    // the real newlines pushed above are untouched and PEM keys
+                    // (which contain no backslashes) are unaffected.
+                    let finished = if ml_quote == '"' {
+                        self.unescape_double(&ml_value)
+                    } else {
+                        ml_value.clone()
+                    };
+                    vars.insert(key.clone(), finished);
                     ml_key = None;
                     ml_value.clear();
                 } else {
@@ -390,9 +413,9 @@ impl Parser {
             self.validate_key(&key, line_num)?;
 
             // ── Value parsing ─────────────────────────────────────────────────
-            match self.classify_quote(&raw_value) {
-                // Quoted value — check for multiline
-                Some(q) if self.config.allow_multiline && !self.is_closed_quote(&raw_value, q) => {
+            match opens_multiline(&raw_value) {
+                // An opening quote with no closing quote on this line.
+                Some(q) if self.config.allow_multiline => {
                     // Opening quote but no closing quote on this line.
                     ml_key = Some(key);
                     // Strip the opening quote from the accumulated content.
@@ -512,22 +535,6 @@ impl Parser {
     }
 
     // ── Private: value parsing ────────────────────────────────────────────────
-
-    /// Return the opening quote character if `raw` starts with `"`, `'`,
-    /// or `` ` ``, otherwise `None`.
-    fn classify_quote(&self, raw: &str) -> Option<char> {
-        match raw.trim_start().chars().next() {
-            Some(c @ ('"' | '\'' | '`')) => Some(c),
-            _ => None,
-        }
-    }
-
-    /// Return `true` if `raw` is a properly closed quoted string (same quote
-    /// at start and end, and length >= 2).
-    fn is_closed_quote(&self, raw: &str, q: char) -> bool {
-        let t = raw.trim();
-        t.len() >= 2 && t.starts_with(q) && t.ends_with(q)
-    }
 
     /// Parse a raw value string into its final form.
     ///
@@ -745,6 +752,86 @@ impl Parser {
     }
 }
 
+// ── Multiline quote tracking ──────────────────────────────────────────────────
+//
+// These are free functions rather than `Parser` methods because `evnx doctor`
+// needs them too, and duplicating them is what produced the bug they fix.
+//
+// ⚠️ `doctor` checks `.env` syntax line by line so it can report every bad line
+// at once, which the parser cannot do — it stops at its first error. That
+// duplication is deliberate, but it must not extend to *deciding where a value
+// ends*. It did, and `doctor` reported every continuation line of a valid
+// multiline value as `invalid syntax` while `validate`, `convert` and `scan`
+// accepted the same file.
+
+/// Does `s` end with a `q` that actually closes a quoted value?
+///
+/// ⚠️ The check used to be a bare `ends_with(q)`, and that is the whole of bug
+/// B5. For the value `"line1 \"q\"` the final character *is* `"` — the trailing
+/// quote of an escaped `\"` — so the parser concluded the value had closed and
+/// treated the next line as a stray entry:
+///
+/// ```text
+/// B="line1 \"q\"
+/// line2"
+/// → Invalid format at line 2: missing '=' separator
+/// ```
+///
+/// Only double-quoted values interpret backslash escapes; `'` and backtick
+/// values are literal, so for those a trailing quote always closes. For `"` the
+/// quote closes when the run of backslashes immediately before it has even
+/// length: `\"` is an escaped quote, `\\"` is an escaped backslash followed by a
+/// real closing quote.
+fn ends_with_closing_quote(s: &str, q: char) -> bool {
+    let Some(body) = s.strip_suffix(q) else {
+        return false;
+    };
+    if q != '"' {
+        return true;
+    }
+    body.chars().rev().take_while(|&c| c == '\\').count() % 2 == 0
+}
+
+/// The quote character a multiline value is opened with, if `raw_value` opens one.
+///
+/// `None` means the value is complete on its line — either unquoted, or quoted
+/// and closed.
+pub fn opens_multiline(raw_value: &str) -> Option<char> {
+    let q = match raw_value.trim_start().chars().next() {
+        Some(c @ ('"' | '\'' | '`')) => c,
+        _ => return None,
+    };
+    let t = raw_value.trim();
+    // A lone quote character opens a value with nothing after it, so it cannot
+    // also be the closing quote.
+    if t.len() > q.len_utf8() && ends_with_closing_quote(t, q) {
+        None
+    } else {
+        Some(q)
+    }
+}
+
+/// As [`opens_multiline`], but taking a whole `KEY=VALUE` line.
+///
+/// Exists so `doctor` does not have to re-implement splitting on `=` and
+/// stripping `export`.
+pub fn line_opens_multiline(line: &str) -> Option<char> {
+    let line = line.trim();
+    let line = line
+        .strip_prefix("export")
+        .map(|s| s.trim_start())
+        .unwrap_or(line);
+    let eq = line.find('=')?;
+    opens_multiline(&line[eq + 1..])
+}
+
+/// The content of `line` before the quote that closes a multiline value opened
+/// with `q`, or `None` if this line does not close it.
+pub fn closes_multiline(line: &str, q: char) -> Option<&str> {
+    let trimmed = line.trim_end();
+    ends_with_closing_quote(trimmed, q).then(|| &trimmed[..trimmed.len() - q.len_utf8()])
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -891,6 +978,63 @@ mod tests {
         let content = "KEY=\"line one\nline two\nline three\"";
         let vars = p.parse_content(content).unwrap();
         assert_eq!(vars["KEY"], "line one\nline two\nline three");
+    }
+
+    /// B5. An escaped `\"` inside a value that spans lines used to end the value,
+    /// because the closing-quote check was a bare `ends_with('"')` and the final
+    /// character of `"line1 \"q\"` *is* a quote. The next line then became a
+    /// stray entry: `Invalid format at line 2: missing '=' separator`.
+    #[test]
+    fn escaped_quote_does_not_end_a_multiline_value() {
+        let p = Parser::default();
+        let vars = p
+            .parse_content("B=\"line1 \\\"q\\\"\nline2\"\nAFTER=ok\n")
+            .unwrap();
+        assert_eq!(vars["B"], "line1 \"q\"\nline2");
+        // Parsing must continue past it — the original symptom was the *next*
+        // line being misread, not the value itself.
+        assert_eq!(vars["AFTER"], "ok");
+    }
+
+    /// The same value, on one line and across two, must mean the same thing.
+    ///
+    /// ⚠️ It did not. The multiline branch inserted its accumulated text directly
+    /// and never reached `parse_value`, so `"x\ty"` produced a tab on one line and
+    /// a literal backslash-`t` across two — and `\"` was inexpressible in a
+    /// multiline value at all, which is the other half of B5.
+    #[test]
+    fn escape_sequences_mean_the_same_across_lines() {
+        let p = Parser::default();
+
+        let one = p.parse_content("V=\"x\\ty and \\\"q\\\"\"\n").unwrap();
+        let two = p.parse_content("V=\"x\\ty and \\\"q\\\"\nz\"\n").unwrap();
+
+        assert_eq!(one["V"], "x\ty and \"q\"");
+        assert_eq!(two["V"], "x\ty and \"q\"\nz");
+        // The spanning value is the single-line one plus a newline and `z`.
+        assert_eq!(two["V"], format!("{}\nz", one["V"]));
+    }
+
+    /// Single quotes are literal by definition, so a backslash inside them
+    /// survives verbatim whether or not the value spans lines. This is the escape
+    /// hatch the README points at for content that must not be unescaped.
+    #[test]
+    fn single_quoted_multiline_stays_literal() {
+        let p = Parser::default();
+        let vars = p.parse_content("S='a\\nb\nsecond'\n").unwrap();
+        // A literal backslash and `n`, then a real newline from the line break.
+        assert_eq!(vars["S"], "a\\nb\nsecond");
+    }
+
+    /// A PEM key is the common case and contains no backslashes, so the escape
+    /// change above must leave it byte-identical.
+    #[test]
+    fn pem_key_is_unaffected_by_escape_handling() {
+        let p = Parser::default();
+        let pem = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADAN\n-----END PRIVATE KEY-----";
+        let vars = p.parse_content(&format!("P=\"{pem}\"\nNEXT=1\n")).unwrap();
+        assert_eq!(vars["P"], pem);
+        assert_eq!(vars["NEXT"], "1");
     }
 
     #[test]

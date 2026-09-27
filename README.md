@@ -711,28 +711,32 @@ CONFIG={"key": "value"}                                             # parses —
 Both are preserved character-for-character. Parse them in your application code,
 as you would with any other `.env` loader.
 
-**Two things genuinely do not work:**
+**Escape sequences work the same whether or not the value spans lines.** In a
+double-quoted value `\n`, `\t`, `\\`, `\"` and `\'` are interpreted; single-quoted
+and backtick values are literal. So an escaped quote is fine in either shape:
 
 ```bash
-# 1. Triple-quoted / heredoc style
-DATABASE_HOSTS="""
-host1.example.com
-"""
-
-# 2. An escaped \" inside a value that spans lines
-MESSAGE="he said \"hello\"
+ONE_LINE="he said \"hello\""
+SPANNING="he said \"hello\"
 and left"
 ```
 
-The first is not `.env` syntax in any dialect evnx targets. The second is a bug:
-the check for a closing quote does not notice that the trailing `"` is escaped, so
-it treats the value as finished and the next line as a stray entry. An escaped
-`\"` in a **single-line** value is fine — `A="say \"hi\" there"` parses correctly.
+⚠️ **This changed — see the CHANGELOG for the version.** The second form used to be
+a parse error, and a double-quoted value that spanned lines kept its backslashes
+instead of resolving them, so `"x\ty"` gave a tab on one line but a literal
+backslash and `t` across two. If you relied on backslashes surviving verbatim
+inside a multiline double-quoted value, switch it to single quotes, which are
+literal by definition.
 
-**`evnx doctor` disagrees with the parser here.** It checks syntax line by line, so
-it reports each continuation line of a multiline value as `invalid syntax` while
-`validate`, `convert` and `scan` all accept the same file. Believe the parser; the
-`doctor` warning is a false positive.
+**One thing genuinely does not work** — triple-quoted / heredoc style, which is
+not `.env` syntax in any dialect evnx targets:
+
+```bash
+# not supported
+DATABASE_HOSTS="""
+host1.example.com
+"""
+```
 
 A `--lenient` flag for extended syntax is under consideration — see [open issues](https://github.com/urwithajit9/evnx/issues).
 
