@@ -248,50 +248,81 @@ fn f1_a_real_non_url_is_still_reported() {
 fn doctor_agrees_with_the_parser_about_what_is_valid() {
     use evnx::core::Parser;
 
-    // (line, is it valid?)
-    let corpus = [
-        ("KEY=value", true),
-        ("export KEY=value", true),
-        ("export   KEY=value", true),
-        ("# a comment", true),
-        ("   # indented comment", true),
-        ("", true),
-        ("   ", true),
-        ("KEY=", true),
-        ("  KEY  =  value", true),
-        ("_UNDERSCORE_START=1", true),
-        ("not-a-line", false),
-        ("KEY value", false),
+    // (name, WHOLE FILE contents, is it valid?)
+    //
+    // ⚠️ These are whole files. The corpus was a list of single lines, each
+    // written out as `format!("{line}\n")` — so a value spanning lines was
+    // **unrepresentable**, and this test, whose entire purpose is to stop the two
+    // from drifting, structurally could not see B6: `doctor` reported every
+    // continuation line of a valid multiline value as `invalid syntax` while
+    // `validate`, `convert` and `scan` accepted the same file. Add new cases as
+    // file contents, never as bare lines.
+    let corpus: &[(&str, &str, bool)] = &[
+        ("plain", "KEY=value\n", true),
+        ("export prefix", "export KEY=value\n", true),
+        ("export padded", "export   KEY=value\n", true),
+        ("comment", "# a comment\n", true),
+        ("indented comment", "   # indented comment\n", true),
+        ("empty", "\n", true),
+        ("whitespace only", "   \n", true),
+        ("empty value", "KEY=\n", true),
+        ("padded key and value", "  KEY  =  value\n", true),
+        ("leading underscore", "_UNDERSCORE_START=1\n", true),
+        ("not a line", "not-a-line\n", false),
+        ("missing separator", "KEY value\n", false),
+        // ── B6: values that span lines ──
+        ("multiline double-quoted", "P=\"a\nb\"\n", true),
+        ("multiline single-quoted", "P='a\nb'\n", true),
+        ("multiline backtick", "P=`a\nb`\n", true),
+        (
+            "PEM followed by another entry",
+            "P=\"-----BEGIN PRIVATE KEY-----\nMIIEvQIBADAN\n-----END PRIVATE KEY-----\"\nNEXT=1\n",
+            true,
+        ),
+        ("quote never closed", "P=\"never closed\n", false),
+        (
+            "malformed line after a multiline value closes",
+            "P=\"a\nb\"\nnot-a-line\n",
+            false,
+        ),
+        // ── B5: an escaped quote must not end the value ──
+        (
+            "escaped quote spanning lines",
+            "P=\"a \\\"q\\\"\nb\"\n",
+            true,
+        ),
+        ("escaped quote on one line", "P=\"say \\\"hi\\\"\"\n", true),
     ];
 
     let parser = Parser::default();
 
-    for (line, expected_valid) in corpus {
+    for (name, content, expected_valid) in corpus {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join(".gitignore"), ".env*\n").unwrap();
-        fs::write(dir.path().join(".env"), format!("{line}\n")).unwrap();
+        fs::write(dir.path().join(".env"), content).unwrap();
 
         let assert = cargo_bin_cmd!("evnx")
             .current_dir(dir.path())
             .args(["doctor"])
             .assert();
         let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
-        let doctor_ok = !out.contains("invalid syntax");
+        // ⚠️ Both messages. Checking only "invalid syntax" would read the
+        // unterminated-value complaint as a pass.
+        let doctor_ok = !out.contains("invalid syntax") && !out.contains("unterminated");
 
-        let parser_ok = parser.parse_content(&format!("{line}\n")).is_ok();
+        let parser_ok = parser.parse_content(content).is_ok();
 
         assert_eq!(
-            doctor_ok,
-            parser_ok,
-            "doctor and the parser disagree about {line:?} — doctor says {}, parser says {}",
+            doctor_ok, parser_ok,
+            "doctor and the parser disagree about {name:?} ({content:?}) — doctor says {}, parser says {}",
             if doctor_ok { "valid" } else { "invalid" },
             if parser_ok { "valid" } else { "invalid" },
         );
         assert_eq!(
             doctor_ok,
-            expected_valid,
-            "{line:?} should be {}",
-            if expected_valid { "valid" } else { "invalid" }
+            *expected_valid,
+            "{name:?} should be {}",
+            if *expected_valid { "valid" } else { "invalid" }
         );
     }
 }

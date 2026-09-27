@@ -6,6 +6,47 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **An escaped `\"` no longer ends a multiline value.** `Parser::is_closed_quote`
+  tested `ends_with('"')`, so for `B="line1 \"q\"` the final character *was* a
+  quote — the trailing one of an escaped `\"` — and the parser concluded the value
+  had closed, reporting `Invalid format at line 2: missing '=' separator` on the
+  continuation line. The check now requires the run of backslashes before the
+  closing quote to be of even length. Single-quoted and backtick values are
+  literal and were never affected.
+
+  The same bug had a second site: the continuation branch used
+  `strip_suffix(ml_quote)`, so a value could survive its opening line and then be
+  cut short by a continuation line ending in `\"`. Both now go through one shared
+  function, along with `evnx doctor` — see below.
+
+- **`evnx doctor` no longer reports the continuation lines of a multiline value as
+  `invalid syntax`.** It checked `.env` syntax line by line, with no notion of a
+  value spanning lines, so a PEM key produced two or three complaints about a file
+  that `validate`, `convert` and `scan` all accepted. It now tracks the open quote
+  using the parser's own helpers, so the two cannot disagree about where a value
+  ends.
+
+  `doctor` also now reports a quoted value whose quote never closes. The
+  line-based check could not represent that at all, so it called such a file clean
+  while `validate` failed on it — the same disagreement in the opposite direction.
+
+### Changed
+
+- ⚠️ **Escape sequences in a multiline double-quoted value are now interpreted,
+  matching the single-line behaviour.** The accumulated value was inserted raw, so
+  `"x\ty"` produced a tab on one line but a literal backslash and `t` across two —
+  the same quote character with different escape rules depending on the line count,
+  which also made `\"` inexpressible in a multiline value at all.
+
+  **This changes existing values.** A multiline double-quoted value containing a
+  backslash now resolves it. PEM keys, certificates and base64 blobs contain no
+  backslashes and are unaffected; a multiline JSON value with `\n` or `\"` inside
+  it is not. Use single quotes for literal content.
+
 ## [0.5.2] - 2026-09-25
 
 **Still release engineering. No source has changed since 0.5.0.**

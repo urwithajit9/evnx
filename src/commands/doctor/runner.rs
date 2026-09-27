@@ -772,27 +772,63 @@ fn add_to_gitignore(gitignore_path: &Path, pattern: &str) -> Result<()> {
 ///
 /// ⚠️ It also returned on the first bad line, so a file with three problems was
 /// three `doctor --fix` runs to diagnose. All of them are reported now.
+///
+/// ⚠️ **And it was line-based with no notion of a value spanning lines**, so
+/// every continuation line of a valid multiline value was reported as
+/// `invalid syntax` — a PEM key produced two or three complaints about a file
+/// that `validate`, `convert` and `scan` all accepted. That was bug B6. The
+/// multiline state is now tracked with the parser's own `closes_multiline` and
+/// `line_opens_multiline`, so the two cannot disagree about where a value ends.
 fn validate_env_syntax(path: &Path) -> Result<()> {
+    use crate::core::parser::{closes_multiline, line_opens_multiline};
+
     let content =
         fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
 
     let line_re = Regex::new(r"^(?:\s*$|\s*#.*|\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=.*)$")
         .context("Invalid regex pattern")?;
 
-    let bad: Vec<String> = content
-        .lines()
-        .enumerate()
-        .filter(|(_, line)| !line_re.is_match(line))
-        .map(|(idx, line)| {
+    let mut bad: Vec<String> = Vec::new();
+    // The quote a multiline value is open under, and the line it opened on.
+    let mut open: Option<(char, usize)> = None;
+
+    for (idx, line) in content.lines().enumerate() {
+        let line_num = idx + 1;
+
+        // Inside a multiline value, the following lines are value *content*.
+        // They are not entries and cannot be malformed ones.
+        if let Some((q, _)) = open {
+            if closes_multiline(line, q).is_some() {
+                open = None;
+            }
+            continue;
+        }
+
+        if !line_re.is_match(line) {
             let snippet = line.chars().take(50).collect::<String>();
-            format!(
+            bad.push(format!(
                 "Line {}: invalid syntax '{}{}'",
-                idx + 1,
+                line_num,
                 snippet,
                 if line.chars().count() > 50 { "..." } else { "" }
-            )
-        })
-        .collect();
+            ));
+            continue;
+        }
+
+        open = line_opens_multiline(line).map(|q| (q, line_num));
+    }
+
+    // A value whose quote never closes is a genuine error — the parser reports
+    // `UnterminatedString` for it. The old line-based check could not represent
+    // this at all, so `doctor` called such a file clean while `validate` failed
+    // on it: the same disagreement as B6, in the opposite direction.
+    if let Some((q, line_num)) = open {
+        bad.push(format!(
+            "Line {}: unterminated {} value — the quote is never closed",
+            line_num,
+            if q == '"' { "double-quoted" } else { "quoted" }
+        ));
+    }
 
     if bad.is_empty() {
         Ok(())
