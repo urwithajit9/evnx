@@ -171,8 +171,44 @@ jobs:
 
       - name: Generate release notes
         run: |
-          cat > release_notes.md << EOF
-          # evnx v${{ steps.version.outputs.VERSION }}
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.VERSION }}"
+
+          # ⚠️ The release body used to be installation instructions and nothing
+          # else, so anything written *about* a release never reached the page
+          # people actually land on. `docs/releases/v0.5.0.md` carried a notice
+          # telling anyone who had run `evnx validate --fix` to rotate the secret
+          # it generated — 25 bits of time rather than randomness, announced as
+          # "Generated secure secret" — and nothing published it. The body is
+          # built here, and this step read no file. The notice went unread across
+          # three releases.
+          #
+          # The CHANGELOG is now the single source of truth for what a release
+          # says: everything between `## [VERSION]` and the next `## [` heading is
+          # lifted verbatim, and it goes **above** the installation instructions,
+          # because a reader who needs to rotate a credential should not have to
+          # scroll past seven package managers to find out.
+          #
+          # String matching rather than a regex, so a version containing `.` is
+          # compared literally and there is no escaping to get wrong.
+          if awk -v v="$VERSION" '
+                index($0, "## [" v "]") == 1 { f = 1; next }
+                f && index($0, "## [") == 1  { exit }
+                f                            { print }
+              ' CHANGELOG.md > changelog_section.md && [ -s changelog_section.md ]; then
+            echo "using the CHANGELOG section for $VERSION"
+          else
+            # ⚠️ A warning, not a failure. A missing heading must not block a
+            # release that is otherwise ready, and the install instructions on
+            # their own are still a usable body — which is what every release
+            # before this one shipped.
+            echo "::warning::no CHANGELOG section for $VERSION — the release body will carry installation instructions only"
+            : > changelog_section.md
+          fi
+
+          { printf '# evnx v%s\n\n' "$VERSION"; cat changelog_section.md; } > release_notes.md
+
+          cat >> release_notes.md << EOF
 
           ## Installation
 

@@ -11,6 +11,30 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 **The first release since 0.5.0 that contains new code.** 0.5.1 and 0.5.2 were
 release engineering; ten pull requests have landed since.
 
+### Security — a notice carried forward
+
+⚠️ **Anyone who ran `evnx validate --fix` on v0.4.x or earlier should rotate the
+secret it generated.** The value was derived from roughly 25 bits of *time*
+rather than randomness — 48 of its 64 hexadecimal characters were always `0` —
+and the output announced it as "Generated secure secret", so there was nothing to
+suggest it needed replacing. Where such a value ended up as a session-signing key
+or a JWT secret, it is guessable by anyone who knows approximately when it was
+generated.
+
+⚠️ **Anyone who ran `evnx migrate --to github` on a version before 0.5.0 should
+rotate everything it uploaded, at the source.** Values were base64-encoded rather
+than encrypted: the function was named `encrypt_for_github` and the payload went
+into a field called `encrypted_value`, so both the code and the wire format
+described encryption that had not happened.
+
+Both were fixed in 0.5.0. This notice is repeated here because it was written
+into `docs/releases/v0.5.0.md` and nothing published that file — the release body
+was generated from a template that read no file at all, so the notice went unread
+across three releases. That is fixed in this release too; see *Fixed* below.
+
+Affected packages, all `< 0.5.0`: `crates.io/evnx`, `PyPI/evnx`, `npm/@evnx/cli`.
+See the repository's security advisories for ranges and remediation.
+
 ### Why this is 0.6.0 and not 0.5.3
 
 Two changes alter behaviour rather than only adding to it, and in `0.x` semver
@@ -66,6 +90,19 @@ kind of change someone should read a version number and expect.
   to catch. (#74)
 
 ### Fixed
+
+- **The GitHub Release body now carries this changelog.** `release.yml` generated
+  the body from an inline template — installation instructions for the seven
+  channels, and nothing about the release itself — so anything written *about* a
+  version never reached the page people land on. The rotation notice above lived
+  in `docs/releases/v0.5.0.md`, which no workflow reads, and went unread across
+  three releases as a result.
+
+  The section between `## [VERSION]` and the next heading is now lifted from
+  `CHANGELOG.md` and placed **above** the installation instructions, so a reader
+  who needs to rotate a credential does not have to scroll past seven package
+  managers to learn it. A missing heading warns rather than failing the release,
+  and the body falls back to installation instructions alone.
 
 - **`evnx scan` no longer reports a clean result for a scan that examined nothing.**
   `dist/`, `build/`, `node_modules/` and `target/` are skipped on a directory
