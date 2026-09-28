@@ -794,6 +794,123 @@ struct MeResponse {
     totp_enabled: bool,
 }
 
+/// Delete the account, and everything only this account can reach.
+///
+/// ─── Why this cannot be a `--yes` flag ───────────────────────────────────────
+///
+/// ⚠️ The confirmation is the account's own email, **typed**. A boolean flag that
+/// deletes an account is one shell-history recall away from doing it, and the
+/// server enforces the typed form anyway — a client that skipped it would be the
+/// client that deletes by accident.
+///
+/// It is honestly a guard against mistakes rather than attackers: anyone running
+/// this already knows their own address. The 2FA code below is the security
+/// control, and it is why an API token cannot reach this endpoint at all.
+///
+/// ─── What survives ───────────────────────────────────────────────────────────
+///
+/// Audit events stay, with their `user_id` nulled — the log keeps *that* an
+/// account was deleted, not *whose*. Versions pushed to other people's vaults
+/// stay too, with the pusher forgotten. Deleting your account must not delete
+/// someone else's history.
+pub fn delete_account(
+    server_override: Option<&str>,
+    confirm_stdin: bool,
+    verbose: bool,
+) -> Result<()> {
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    super::vault::require_session(&client, &server)?;
+
+    // Read the account first, so the prompt can name it and the 2FA question is
+    // asked only when it applies. It is also the last chance to discover an
+    // expired session before asking someone to type their address.
+    let me: MeResponse = client
+        .get("/api/v1/auth/me")
+        .map_err(|e| anyhow!("could not read the account: {e}"))?;
+
+    println!();
+    println!("  {}", "This deletes your evnx account.".red().bold());
+    println!("  account   {}", me.email);
+    println!(
+        "  {}",
+        "Sessions, API tokens, 2FA and every vault you are the only member of go \
+         with it — ciphertext included. There is no undo."
+            .dimmed()
+    );
+    println!(
+        "  {}",
+        "Vaults you share with other people will block this, and be named.".dimmed()
+    );
+    println!();
+
+    let typed = if confirm_stdin {
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_line(&mut buf)
+            .context("reading the confirmation from stdin")?;
+        buf.trim().to_string()
+    } else {
+        dialoguer::Input::<String>::new()
+            .with_prompt(format!("  Type {} to confirm", me.email))
+            .interact_text()
+            .context("reading the confirmation")?
+    };
+
+    // Checked here as well as on the server so a mistyped address costs a
+    // re-prompt rather than a round trip and a 422.
+    if normalize_email(&typed) != normalize_email(&me.email) {
+        println!(
+            "  {}",
+            "That is not the account's email. Nothing was deleted.".yellow()
+        );
+        return Ok(());
+    }
+
+    let totp_code = if me.totp_enabled {
+        Some(
+            dialoguer::Input::<String>::new()
+                .with_prompt("  2FA code (or a recovery code)")
+                .interact_text()
+                .context("reading the 2FA code")?,
+        )
+    } else {
+        None
+    };
+
+    let mut body = serde_json::json!({ "confirm_email": typed });
+    if let Some(code) = totp_code {
+        body["totp_code"] = serde_json::Value::String(code.trim().to_string());
+    }
+
+    match client.delete_with_body("/api/v1/auth/account", &body) {
+        Ok(()) => {}
+        // ⚠️ Surfaced as prose, not a status code. A 409 here means named vaults
+        // are in the way and the message says which — reducing it to "conflict"
+        // would strand someone with no idea what to do next.
+        Err(e) => return Err(anyhow!("{e}")),
+    }
+
+    // The session is dead server-side; leaving the file would make the next
+    // command fail confusingly against an account that no longer exists.
+    let mut store = Store::load()?;
+    store.remove_session(&server);
+    store.save()?;
+
+    println!();
+    println!("  {} account deleted", "✓".green());
+    println!(
+        "  {}",
+        "Local credentials removed. Any secrets that were in those vaults should \
+         be rotated at their source if anyone else ever held them."
+            .dimmed()
+    );
+    if verbose {
+        println!("  server: {server}");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

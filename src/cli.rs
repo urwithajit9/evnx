@@ -336,6 +336,31 @@ pub enum AuthCommands {
     /// Makes an authenticated request. For local state without a network call,
     /// use `evnx cloud status`.
     Status,
+
+    /// Delete your account and everything only you can reach.
+    ///
+    /// ⚠️ **Irreversible, and it is not a logout.** The account, its sessions,
+    /// its API tokens, its 2FA enrolment and every vault you are the only member
+    /// of are destroyed, ciphertext included. There is no undo and no support
+    /// path back — the server never held anything that could rebuild them.
+    ///
+    /// Vaults you own that other people are members of **block the deletion**,
+    /// and are named when they do. Deleting the account would delete those vaults
+    /// and everyone else's access with them, so the choice is left to you: remove
+    /// the other members, or delete the vaults.
+    ///
+    /// Your email must be typed back to confirm, and a 2FA code is required when
+    /// 2FA is enabled.
+    DeleteAccount {
+        /// Read the confirmation email from stdin instead of prompting.
+        ///
+        /// For the rare scripted case. ⚠️ There is no `--yes`: a flag that
+        /// deletes an account is one typo in a shell history away from doing it,
+        /// and the whole point of the typed confirmation is that it cannot be
+        /// supplied by accident.
+        #[arg(long)]
+        confirm_stdin: bool,
+    },
 }
 
 /// Subcommands for `evnx auth token`.
