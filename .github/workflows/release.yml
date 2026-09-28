@@ -344,6 +344,10 @@ jobs:
       - name: Fetch SHA256 values from release assets
         id: sha256
         run: |
+          # Same reason as the Scoop job's fetch step: without pipefail the exit
+          # status of `curl | awk` is awk's, so a 404 yields an empty SHA and a
+          # green step — and the formula is then published with `sha256 ""`.
+          set -o pipefail
           BASE="https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.VERSION }}"
 
           SHA_AARCH64_DARWIN=$(curl -fsSL "${BASE}/evnx-aarch64-apple-darwin.tar.gz.sha256" | awk '{print $1}')
@@ -447,6 +451,12 @@ jobs:
       - name: Fetch ZIP SHA256 from release assets
         id: sha256
         run: |
+          # ⚠️ pipefail matters here. This workflow declares no `defaults.run.shell`,
+          # so steps get `bash -e` WITHOUT it, and the exit status of
+          # `curl | awk` is awk's. A 404 or a network failure would leave SHA
+          # empty, the step would still succeed, and the manifest would be
+          # published with "hash": "sha256:" — which every install then fails on.
+          set -o pipefail
           BASE="https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.VERSION }}"
           SHA=$(curl -fsSL "${BASE}/evnx-x86_64-pc-windows-msvc.zip.sha256" | awk '{print $1}')
           echo "sha=$SHA" >> $GITHUB_OUTPUT
@@ -469,6 +479,19 @@ jobs:
           # The autoupdate.url uses \$version — a literal "$version" string
           # written into the JSON file so Scoop can use it as its own template
           # variable for future auto-updates via `scoop update`.
+          #
+          # ⚠️ The heredoc below is UNQUOTED — it has to be, or ${VERSION} and
+          # ${SHA} would not substitute. That means the shell also eats one level
+          # of backslash on the way to the file, and a JSON string needs a
+          # backslash of its own to carry a literal one. So a regex `\s` must be
+          # written here as FOUR backslashes:
+          #
+          #     \\\\s  →  (shell)  →  \\s  →  (JSON)  →  \s
+          #
+          # It was written as two until D8, which reached the file as `\s` — not
+          # a JSON escape sequence, so the manifest was not valid JSON. It
+          # shipped that way on every release from e96bdb4 to 0.6.0 because
+          # nothing parsed the result. The step after this one now does.
           cat > scoop-bucket/bucket/evnx.json << EOF
           {
             "version": "${VERSION}",
@@ -488,12 +511,47 @@ jobs:
               "architecture": {
                 "64bit": {
                   "url": "https://github.com/urwithajit9/evnx/releases/download/v\$version/evnx-x86_64-pc-windows-msvc.zip",
-                  "hash": { "url": "\$url.sha256", "find": "^([a-f0-9]+)\\s" }
+                  "hash": { "url": "\$url.sha256", "find": "^([a-f0-9]+)\\\\s" }
                 }
               }
             }
           }
           EOF
+
+      # ── The gate that was missing ────────────────────────────────────────
+      # D8 shipped an invalid manifest on every release from e96bdb4 to 0.6.0,
+      # and the reason it survived that long is that nothing between the heredoc
+      # and `git push` ever looked at the result.
+      #
+      # Scoop reads a manifest with `ConvertFrom-Json -ErrorAction Stop` and, when
+      # that throws, warns and returns $null (ScoopInstaller/Scoop lib/manifest.ps1,
+      # `parse_json`). So a malformed manifest is not a degraded install — there is
+      # no manifest at all.
+      - name: Validate the manifest before publishing it
+        run: |
+          set -o pipefail
+          MANIFEST=scoop-bucket/bucket/evnx.json
+          fail() { echo "::error file=${MANIFEST}::$1"; exit 1; }
+
+          jq empty "$MANIFEST" || fail "not valid JSON"
+
+          # Assert the DECODED value, not merely that the file parses. Too many
+          # backslashes also parses — it just means something different.
+          FIND=$(jq -r '.autoupdate.architecture."64bit".hash.find' "$MANIFEST")
+          [ "$FIND" = '^([a-f0-9]+)\s' ] \
+            || fail "autoupdate hash.find is '${FIND}', expected '^([a-f0-9]+)\s'"
+
+          # Catches an empty SHA from the fetch step, which would otherwise be
+          # published as a well-formed manifest that no install can satisfy.
+          HASH=$(jq -r '.architecture."64bit".hash' "$MANIFEST")
+          printf '%s' "$HASH" | grep -Eq '^sha256:[a-f0-9]{64}$' \
+            || fail "hash is '${HASH}', expected sha256:<64 hex>"
+
+          GOT_VERSION=$(jq -r .version "$MANIFEST")
+          [ "$GOT_VERSION" = "${{ steps.version.outputs.VERSION }}" ] \
+            || fail "version is '${GOT_VERSION}', expected '${{ steps.version.outputs.VERSION }}'"
+
+          echo "manifest ok — v${GOT_VERSION}, ${HASH}"
 
       - name: Commit and push
         run: |
