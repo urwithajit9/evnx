@@ -438,6 +438,25 @@ impl Client {
         Ok(())
     }
 
+    /// Authenticated DELETE carrying a JSON body.
+    ///
+    /// ⚠️ A body on DELETE is legal but unusual, and some intermediaries drop it.
+    /// That is tolerable here only because of which way it fails: the one endpoint
+    /// using it requires a typed confirmation in that body, so a stripped body
+    /// means the server **refuses** rather than deletes. A silent success would
+    /// not be acceptable; a refusal is.
+    pub fn delete_with_body<B: Serialize>(&self, path: &str, body: &B) -> Result<(), ApiError> {
+        let json = serde_json::to_vec(body).map_err(|e| ApiError::Malformed {
+            message: format!("could not serialize the request body: {e}"),
+        })?;
+        let _: serde::de::IgnoredAny = self.send_authed(path, move |http, url| {
+            http.delete(url)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(json.clone())
+        })?;
+        Ok(())
+    }
+
     /// Send with a bearer token, refreshing once if the server says 401.
     ///
     /// Takes a builder closure rather than a `RequestBuilder` because the request

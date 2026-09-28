@@ -141,6 +141,9 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
         } => auth::login(server_override, email, password_stdin, verbose),
         AuthCommands::Logout => auth::logout(server_override, verbose),
         AuthCommands::Status => auth::status(server_override, verbose),
+        AuthCommands::DeleteAccount { confirm_stdin } => {
+            auth::delete_account(server_override, confirm_stdin, verbose)
+        }
         AuthCommands::Totp { command } => match command {
             TotpCommands::Enable => totp::enable(server_override, verbose),
             TotpCommands::Disable => totp::disable(server_override, verbose),
