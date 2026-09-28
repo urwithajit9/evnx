@@ -290,12 +290,46 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
         // compiled into every bundle already served — it is work that produces a
         // feeling of containment and no containment. Someone following it
         // literally would rewrite history and believe they were done.
-        if results.findings.iter().any(|f| f.public_prefix.is_some()) {
+        let public: Vec<_> = results
+            .findings
+            .iter()
+            .filter(|f| f.public_prefix.is_some())
+            .collect();
+
+        // ⚠️ And the *second* version of these steps was wrong in the other
+        // direction, which is why this branches again.
+        //
+        // "Revoke and reissue those keys" was unconditional, so a Supabase anon
+        // key behind `NEXT_PUBLIC_` — a credential designed to ship in the
+        // browser and protected by row-level security, not by secrecy — was met
+        // with "treat them as public, not merely leaked". It *is* public. The
+        // per-finding line already hedges for exactly this case; the footer
+        // asserted over the top of it, one line later.
+        //
+        // The discriminator is the same one the per-finding hedge uses: a named
+        // provider format carries an `action_url`, shape alone does not.
+        let any_named_provider = public.iter().any(|f| f.action_url.is_some());
+
+        if !public.is_empty() && any_named_provider {
             ui::print_next_steps(&[
                 "Rename the public-prefixed variables above and read them server-side \
                  — while the name carries the prefix, every build republishes the value",
                 "Revoke and reissue those keys — they have been readable by every \
                  visitor to your site, so treat them as public, not merely leaked",
+                "Then, for anything that was ALSO committed: git filter-repo --path .env \
+                 --invert-paths, and force push after coordinating with everyone who has a clone",
+            ]);
+        } else if !public.is_empty() {
+            // Nothing matched a known provider format, so evnx cannot tell a
+            // deliberately publishable key from an unrecognised secret. Say that,
+            // rather than prescribing a rotation that may be pointless work.
+            ui::print_next_steps(&[
+                "Check whether these are meant to be public — analytics and \
+                 error-reporting keys are designed to ship in the bundle, and \
+                 evnx cannot tell those from a secret it does not recognise",
+                "If one is NOT meant to be public, rename it to drop the prefix and \
+                 read it server-side, then revoke and reissue it — it has been \
+                 readable by every visitor to your site",
                 "Then, for anything that was ALSO committed: git filter-repo --path .env \
                  --invert-paths, and force push after coordinating with everyone who has a clone",
             ]);
