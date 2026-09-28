@@ -508,9 +508,21 @@ impl DetectorRegistry {
 
     /// Scan a whole line through every detector that answers to one.
     ///
-    /// Only custom patterns do today. The built-in detectors take the default
-    /// empty implementation, so this costs one virtual call per detector per
-    /// line and allocates nothing when no rules are declared.
+    /// ⚠️ This said "Only custom patterns do today". That stopped being true when
+    /// `PatternDetector` was dissolved and the built-in provider regexes moved
+    /// into the same [`PatternSet`](super::patternset::PatternSet) as
+    /// `[[scan.patterns]]`. They reach a non-`.env` file through **this** method
+    /// and no other, because `RuleDetector::scan_token` returns `None` so as not
+    /// to report its own match twice.
+    ///
+    /// That matters because the entropy heuristic is the mirror image — it
+    /// answers `scan_token` and not this — so the two describe the same value by
+    /// two routes that never meet. Reconciling them is
+    /// `ScanRunner::one_finding_per_value`, and believing the old comment is what
+    /// made D5 invisible on a read.
+    ///
+    /// `HeuristicDetector` and `ConfigKeyDetector` do take the default empty
+    /// implementation, so this costs one virtual call each per line.
     ///
     /// The spec is **not** consulted here. A declaration names a variable, and
     /// a line of TypeScript has no variable to name — reaching into

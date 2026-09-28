@@ -1133,3 +1133,133 @@ fn a_flag_and_the_project_rules_apply_together() {
 
     assert_eq!(patterns, vec!["AWS Access Key", "Acme API key"]);
 }
+
+// ─── D5 — one value, one finding, in source files too ────────────────────────
+//
+// A non-`.env` line is scanned by two paths that see different strings: the
+// entropy heuristic reaches it only through `scan_token`, the provider patterns
+// only through `scan_line`. Each was internally consistent and nothing
+// reconciled them, so one Stripe key in a `.py` was two findings — one `high`
+// and one `low` — and the same key twice in a `.json` was four.
+//
+// ⚠️ None of this had a test. The only non-`.env` fixture in this file is a
+// 9-character custom format, which is below `extract_tokens`' 20-character floor
+// and so never reaches the token path at all.
+
+/// A live key long enough to survive the token floor **and** trip the entropy
+/// heuristic. Both are required to reproduce D5: a shorter or lower-entropy
+/// value is found by one path only and never duplicated.
+const STRIPE_LIVE: &str = "sk_live_51HabcdefghijklmnopqrstuvwxyzABCDEFGH1234";
+
+fn scan_json(dir: &TempDir, target: &str) -> serde_json::Value {
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args([
+            "scan",
+            target,
+            "--severity",
+            "low",
+            "--format",
+            "json",
+            "--exit-zero",
+        ])
+        .assert()
+        .code(0);
+    parse_json_output(&get_stdout(&assert)).expect("json")
+}
+
+#[test]
+fn d5_one_key_in_a_source_file_is_one_finding() {
+    let d = project(&[(
+        "app.py",
+        &format!("STRIPE_SECRET_KEY = \"{STRIPE_LIVE}\"\n"),
+    )]);
+    let json = scan_json(&d, "app.py");
+
+    assert_eq!(json["secrets_found"], 1, "{json:#}");
+    // The counts CI gates on, not just the list length. Before this the same key
+    // was one `high` AND one `low`.
+    assert_eq!(json["high_confidence"], 1, "{json:#}");
+    assert_eq!(json["low_confidence"], 0, "{json:#}");
+    // And the surviving answer must be the useful one — the named provider,
+    // which carries a revocation URL, not "high-entropy string".
+    assert_eq!(json["findings"][0]["pattern"], "Stripe Secret Key (LIVE)");
+    assert!(
+        json["findings"][0]["action_url"].is_string(),
+        "the merged finding must keep the revocation link: {json:#}"
+    );
+}
+
+#[test]
+fn d5_the_same_key_on_two_lines_is_two_findings_not_four() {
+    let d = project(&[(
+        "conf.json",
+        &format!("{{\n  \"a\": \"{STRIPE_LIVE}\",\n  \"b\": \"{STRIPE_LIVE}\"\n}}\n"),
+    )]);
+    let json = scan_json(&d, "conf.json");
+
+    // Two occurrences are genuinely two findings — dedup is per line, per value,
+    // and must not collapse a key that really does appear twice.
+    assert_eq!(json["secrets_found"], 2, "{json:#}");
+    assert_eq!(json["high_confidence"], 2, "{json:#}");
+}
+
+/// ⚠️ The case that rules out comparing values for equality.
+///
+/// `extract_tokens` splits on whitespace, `=`, `:` and quotes — not on `-` — so
+/// the token is `prefix-sk_live_…-suffix` while the pattern matched only
+/// `sk_live_…`. The two paths disagree about where the value ends, which is the
+/// normal case in real source, and equality would leave it duplicated.
+#[test]
+fn d5_a_credential_padded_by_punctuation_still_collapses() {
+    let d = project(&[("app.py", &format!("u = \"prefix-{STRIPE_LIVE}-suffix\"\n"))]);
+    let json = scan_json(&d, "app.py");
+
+    assert_eq!(json["secrets_found"], 1, "{json:#}");
+    assert_eq!(json["findings"][0]["pattern"], "Stripe Secret Key (LIVE)");
+}
+
+/// The other half of the property: merging by containment must not merge two
+/// credentials that merely share a line.
+#[test]
+fn d5_two_different_keys_on_one_line_stay_two_findings() {
+    let d = project(&[(
+        "app.py",
+        &format!("pair = [\"{STRIPE_LIVE}\", \"AKIA4OZRMFJ3VREALKEY\"]\n"),
+    )]);
+    let json = scan_json(&d, "app.py");
+
+    assert_eq!(json["secrets_found"], 2, "{json:#}");
+    let names: Vec<&str> = json["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["pattern"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"Stripe Secret Key (LIVE)"), "{names:?}");
+    assert!(names.contains(&"AWS Access Key"), "{names:?}");
+}
+
+/// ⚠️ An AWS access key is `AKIA` plus sixteen characters — **exactly 20** — so
+/// `extract_tokens`' `len() > 20` filter drops it and `scan_line` is the only
+/// path that can find it. D5 rewired how both paths' results are combined, and
+/// the most-detected credential format in the world depends on one of them.
+#[test]
+fn d5_a_key_reachable_only_from_the_line_path_is_still_found() {
+    let d = project(&[("app.py", "aws = \"AKIA4OZRMFJ3VREALKEY\"\n")]);
+    let json = scan_json(&d, "app.py");
+
+    assert_eq!(json["secrets_found"], 1, "{json:#}");
+    assert_eq!(json["findings"][0]["pattern"], "AWS Access Key");
+}
+
+/// A `.env` file goes through `scan_kv`, which `best` already settled. D5 must
+/// not have disturbed it.
+#[test]
+fn d5_the_env_path_is_unchanged() {
+    let d = project(&[(".env", &format!("STRIPE_SECRET_KEY={STRIPE_LIVE}\n"))]);
+    let json = scan_json(&d, ".env");
+
+    assert_eq!(json["secrets_found"], 1, "{json:#}");
+    assert_eq!(json["findings"][0]["pattern"], "Stripe Secret Key (LIVE)");
+}
