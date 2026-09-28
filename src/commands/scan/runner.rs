@@ -296,24 +296,28 @@ impl ScanRunner {
                     }
                 }
             } else {
-                // Scan tokens for general text files
+                // Scan tokens for general text files.
                 let location = format!("{}:{}", path.display(), line_num);
+                let mut detections: Vec<super::detector::Detection> = Vec::new();
+
                 for token in Self::extract_tokens(line) {
-                    if let Some(detection) = Self::best(self.registry.scan_token(&token, &location))
-                    {
-                        self.add_finding(results, path, line_num, None, detection);
-                    }
+                    detections.extend(self.registry.scan_token(&token, &location));
                 }
 
-                // ...and the whole line to anything that needs it, which today
-                // is custom patterns only.
+                // ...and the whole line, for what a token cannot carry.
                 //
-                // ⚠️ Not folded into `best`. A line is not one value: two
-                // unrelated credentials on one line are two findings, whereas
-                // two detectors describing one value are one. `extract_tokens`
-                // also drops anything 20 characters or shorter, so a declared
-                // format shorter than that is reachable only from here.
-                for detection in self.registry.scan_line(line, &location) {
+                // ⚠️ A line is not one value. Two unrelated credentials on one
+                // line are two findings, whereas two detectors describing one
+                // value are one — so these are reconciled by *value* below, not
+                // collapsed into a single answer per line.
+                //
+                // `extract_tokens` also drops anything 20 characters or shorter,
+                // so a format shorter than that is reachable only from here. An
+                // AWS access key is `AKIA` plus sixteen characters — exactly 20
+                // — and so arrives by this path alone.
+                detections.extend(self.registry.scan_line(line, &location));
+
+                for detection in Self::one_finding_per_value(detections) {
                     self.add_finding(results, path, line_num, None, detection);
                 }
             }
@@ -373,6 +377,83 @@ impl ScanRunner {
         })?;
         winner.confidence = strongest;
         Some(winner)
+    }
+
+    /// Reconcile a line's detections by the value each one is about.
+    ///
+    /// [`best`](Self::best) settles *one* set of detections about *one* value.
+    /// That is all a `.env` line needs, because `scan_kv` hands every detector
+    /// the same value and there is one answer to pick. A line of source is not
+    /// like that: it is scanned twice, by two paths that see different strings,
+    /// and neither could see the other's result.
+    ///
+    /// So one Stripe key in a `.py` file was reported twice:
+    ///
+    /// ```text
+    ///   ·  High-entropy string (possible secret)       low
+    ///   ✗  Stripe Secret Key (LIVE)                    high
+    /// ```
+    ///
+    /// The entropy heuristic reaches a non-`.env` file only through
+    /// `scan_token`, and the provider patterns reach it only through
+    /// `scan_line` — `RuleDetector::scan_token` returns `None` on purpose, so
+    /// that it does not report its own match twice. Each path was internally
+    /// consistent; nothing reconciled them with each other. One key counted as
+    /// two secrets, and as one `high` **and** one `low` in the severity totals
+    /// that `--severity` gates and CI reads.
+    ///
+    /// # Why containment rather than equality
+    ///
+    /// The two paths do not agree on where the value ends. `extract_tokens`
+    /// splits on whitespace, `=`, `:` and quotes — not on `-`, `{`, `)` or `,`
+    /// — so the token is often the credential plus whatever surrounds it, while
+    /// the pattern matched only the credential:
+    ///
+    /// ```text
+    /// c = "prefix-sk_live_51Habc…1234-suffix"
+    ///     token   prefix-sk_live_51Habc…1234-suffix
+    ///     pattern         sk_live_51Habc…1234
+    /// ```
+    ///
+    /// Equality collapses the quoted case and leaves that one duplicated, which
+    /// is the shape real code is full of. Two detections about the same line
+    /// where one value contains the other are one finding, and `best` then keeps
+    /// the specific answer — the named provider with its revocation URL, over
+    /// "high-entropy string".
+    ///
+    /// ⚠️ **An empty `matched_value` is compared by equality only.** Every string
+    /// contains `""`, so a detection that recorded no value would otherwise
+    /// swallow every other finding on its line.
+    ///
+    /// Two genuinely different credentials on one line stay two findings:
+    /// neither value contains the other.
+    ///
+    /// Order is the order values were first seen, so output stays stable —
+    /// grouping through a `HashMap` would reorder findings between runs of the
+    /// same scan.
+    fn one_finding_per_value(
+        detections: Vec<super::detector::Detection>,
+    ) -> Vec<super::detector::Detection> {
+        /// Do these two detections describe the same value?
+        fn same_value(a: &str, b: &str) -> bool {
+            if a.is_empty() || b.is_empty() {
+                return a == b;
+            }
+            a.contains(b) || b.contains(a)
+        }
+
+        let mut groups: Vec<Vec<super::detector::Detection>> = Vec::new();
+        for detection in detections {
+            match groups
+                .iter_mut()
+                .find(|g| same_value(&g[0].matched_value, &detection.matched_value))
+            {
+                Some(group) => group.push(detection),
+                None => groups.push(vec![detection]),
+            }
+        }
+
+        groups.into_iter().filter_map(Self::best).collect()
     }
 
     /// Add a finding to results with proper truncation and filtering.
