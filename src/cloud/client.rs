@@ -106,7 +106,13 @@ pub enum ApiError {
     /// 423 `LOCKED`.
     #[error("{message}")]
     Locked {
-        /// The server's message, which says how long the lock lasts.
+        /// The server's message.
+        ///
+        /// ⚠️ This said "which says how long the lock lasts". It does not: the
+        /// server answers `AccountLocked` with the three words "Account
+        /// temporarily locked" and no duration, for both the TOTP and the SRP
+        /// lockout. A caller that wants to tell the user the lock will lift has
+        /// to say so itself — see `auth::sign_in_error`.
         message: String,
     },
 

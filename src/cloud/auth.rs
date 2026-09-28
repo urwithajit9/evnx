@@ -359,7 +359,7 @@ fn login_with_password(
                 client_proof: hex::encode(&proof.client_proof),
             },
         )
-        .map_err(|e| anyhow!("{e}"))?;
+        .map_err(sign_in_error)?;
 
     // ── Step 3: make the server prove itself, before trusting anything ───────
     let server_proof =
@@ -711,6 +711,46 @@ fn backfill_mlkem_key(client: &Client, password: &Zeroizing<String>, verbose: bo
 /// someone to do the thing they are already doing. A wrong code at this point
 /// means the code was wrong, the clock has drifted, or a recovery code has
 /// already been spent.
+/// Translate a failed `/srp/verify` into something that makes sense during a login.
+///
+/// [`ApiError::Unauthorized`]'s own message is *"your session has expired. Run
+/// `evnx auth login` to sign in again"*, which is right nearly everywhere — a 401
+/// on a vault command does mean the session died. During `auth login` it is
+/// nonsense twice over: there was no session to expire, and it tells the user to
+/// run the command they are already running.
+///
+/// # Why it cannot say which half was wrong
+///
+/// The server answers a rejected proof with 401 `UNAUTHORIZED` whether the
+/// address has no account or the password is wrong, and `/srp/init` before it
+/// returns a **fabricated** salt and verifier for an unknown address rather than
+/// a 404. That is deliberate: a login must not become a way to discover who is
+/// registered. So the client genuinely does not know, and saying "no such
+/// account" would be both a guess and a leak. The message names both
+/// possibilities and points at the likelier one.
+fn sign_in_error(e: super::client::ApiError) -> anyhow::Error {
+    use super::client::ApiError;
+    match e {
+        ApiError::Unauthorized => anyhow!(
+            "that email address and master password were not accepted.\n\
+             \x20 Check the address for a typo first: that is the more common \
+             mistake.\n\
+             \x20 evnx cannot tell you which of the two was wrong — the server \
+             deliberately answers an unknown address exactly as it answers a bad \
+             password.\n\
+             \x20 There is no password reset: the master password is what your \
+             vaults are encrypted under, and evnx never receives it."
+        ),
+        ApiError::Locked { message } => anyhow!(
+            "{message}\n\
+             \x20 Too many failed sign-in attempts for this account. The lock \
+             clears by itself — wait, then try again.\n\
+             \x20 Nothing was changed, and your vaults are untouched."
+        ),
+        other => anyhow!("{other}"),
+    }
+}
+
 fn second_factor_error(e: super::client::ApiError) -> anyhow::Error {
     use super::client::ApiError;
     match e {
@@ -1052,6 +1092,43 @@ mod tests {
         assert!(err.contains("recovery code"), "{err}");
     }
 
+    /// D6. The same bug as `a_rejected_second_factor_does_not_tell_you_to_log_in_again`,
+    /// in the branch two calls above it: that one was fixed when it was found and
+    /// the password branch was left mapping 401 to "your session has expired".
+    #[test]
+    fn a_rejected_password_does_not_tell_you_to_log_in_again() {
+        use crate::cloud::client::ApiError;
+        let err = sign_in_error(ApiError::Unauthorized).to_string();
+
+        // The whole defect, in one line: there was no session, and the advice is
+        // to run the command that is already running.
+        assert!(!err.contains("session has expired"), "{err}");
+        assert!(!err.contains("evnx auth login"), "{err}");
+
+        assert!(err.contains("email address and master password"), "{err}");
+        // Both possibilities named, neither confirmed — the server answers the
+        // same way for an unknown address and a bad password, on purpose.
+        assert!(err.contains("unknown address"), "{err}");
+        assert!(err.contains("typo"), "{err}");
+        // A master password is not resettable, and someone who has genuinely lost
+        // it should learn that here rather than after a support round trip.
+        assert!(err.contains("no password reset"), "{err}");
+    }
+
+    #[test]
+    fn a_sign_in_lockout_says_what_to_do_and_what_was_not_touched() {
+        use crate::cloud::client::ApiError;
+        let err = sign_in_error(ApiError::Locked {
+            message: "Account temporarily locked".into(),
+        })
+        .to_string();
+        assert!(err.contains("Account temporarily locked"), "{err}");
+        // The server's own message is those three words and nothing else — no
+        // duration, no cause — so on its own it does not say the lock will lift.
+        assert!(err.contains("clears by itself"), "{err}");
+        assert!(!err.contains("evnx auth login"), "{err}");
+    }
+
     #[test]
     fn the_srp_identity_is_normalised_the_same_way_the_server_normalises_email() {
         // The email is the SRP *identity*, mixed into the verifier by this client
@@ -1119,32 +1196,54 @@ mod tests {
             })
             .create();
 
+        // Run the server half of SRP over a request, yielding M2 when the client's
+        // proof checks out and `None` when it does not.
+        //
+        // ⚠️ mockito builds the status and the body from **separate** callbacks,
+        // and they must not disagree about whether the login succeeded. Both call
+        // this, and `process_reply` is deterministic given the server's private
+        // ephemeral `b`, so they cannot.
+        fn m2_for(b: &[u8], v: &[u8], a: &[u8], req: &mockito::Request) -> Option<Vec<u8>> {
+            let body: serde_json::Value = serde_json::from_slice(req.body().unwrap()).unwrap();
+            let m1 = hex::decode(body["client_proof"].as_str().unwrap()).unwrap();
+            let vf = SrpServer::<Sha256>::new(&G_2048)
+                .process_reply(b, v, a)
+                .expect("mock server: process_reply");
+            vf.verify_client(&m1).ok()?;
+            Some(vf.proof().to_vec())
+        }
+
+        let a_for_status = Arc::clone(&a_pub);
         let a_for_verify = Arc::clone(&a_pub);
-        let v_for_verify = v.clone();
+        let (b_for_status, b_for_verify) = (b.clone(), b);
+        let (v_for_status, v_for_verify) = (v.clone(), v);
         let verify = server
             .mock("POST", "/api/v1/auth/srp/verify")
-            .with_status(200)
+            // The real server answers a bad M1 with 401 `UNAUTHORIZED`, so the
+            // mock must too.
+            //
+            // ⚠️ This was a flat `.with_status(200)` until D6, while the body
+            // switched to an error document — and the comment beside it claimed a
+            // wrong password "produces a 401". It produced a 200 carrying an error
+            // body, which the client reads as an unparseable success. So the
+            // wrong-password test was asserting against `Malformed`, and the 401
+            // mapping that a real failed login takes had no test at all.
+            .with_status_code_from_request(move |req| {
+                let a = a_for_status.lock().unwrap().clone();
+                if m2_for(&b_for_status, &v_for_status, &a, req).is_some() {
+                    200
+                } else {
+                    401
+                }
+            })
             .with_body_from_request(move |req| {
-                let body: serde_json::Value =
-                    serde_json::from_slice(req.body().unwrap()).unwrap();
-                let m1 = hex::decode(body["client_proof"].as_str().unwrap()).unwrap();
                 let a = a_for_verify.lock().unwrap().clone();
 
-                let vf = SrpServer::<Sha256>::new(&G_2048)
-                    .process_reply(&b, &v_for_verify, &a)
-                    .expect("mock server: process_reply");
-
-                // The real server refuses here on a bad M1; the mock mirrors that
-                // so a wrong password produces a 401 rather than a bogus success.
-                if vf.verify_client(&m1).is_err() {
+                let Some(m2) = m2_for(&b_for_verify, &v_for_verify, &a, req) else {
                     return br#"{"error":"Authentication failed","code":"UNAUTHORIZED"}"#.to_vec();
-                }
-
-                let m2 = if tamper_m2 {
-                    vec![9u8; vf.proof().len()]
-                } else {
-                    vf.proof().to_vec()
                 };
+
+                let m2 = if tamper_m2 { vec![9u8; m2.len()] } else { m2 };
 
                 format!(
                     r#"{{"server_proof":"{}","requires_totp":false,"access_token":"{}","refresh_token":"refresh-xyz"}}"#,
@@ -1194,9 +1293,28 @@ mod tests {
             "a@example.com",
             &pw("not the real passphrase"),
             false,
-        );
-        assert!(err.is_err());
+        )
+        .unwrap_err();
         assert!(Store::load().unwrap().session(&server.url()).is_none());
+
+        // ⚠️ Until D6 this test asserted only `is_err()`, and the mock answered a
+        // bad proof with **200** carrying an error document — so the error it got
+        // was `Malformed`, "could not read the server's response". The 401 path
+        // that a real rejected login takes was never reached here, which is how
+        // the expired-session message survived in this branch.
+        //
+        // This asserts through the whole login rather than on `sign_in_error`
+        // directly, because the unit test above passes just as well when the
+        // mapper is never wired to the request.
+        let msg = format!("{err:#}");
+        assert!(
+            !msg.contains("session has expired"),
+            "a rejected password is not an expired session: {msg}"
+        );
+        assert!(
+            msg.contains("email address and master password"),
+            "the login failure must name both possibilities: {msg}"
+        );
     }
 
     #[test]
