@@ -195,7 +195,7 @@ pub fn normalize_email(email: &str) -> String {
     email.trim().to_lowercase()
 }
 
-fn prompt_email() -> Result<String> {
+pub(crate) fn prompt_email() -> Result<String> {
     dialoguer::Input::<String>::new()
         .with_prompt("Email")
         .interact_text()
@@ -203,7 +203,7 @@ fn prompt_email() -> Result<String> {
 }
 
 /// Ask for the password twice, without echoing it.
-fn prompt_new_password() -> Result<Zeroizing<String>> {
+pub(crate) fn prompt_new_password() -> Result<Zeroizing<String>> {
     let pw = dialoguer::Password::new()
         .with_prompt("Master password")
         .with_confirmation("Confirm master password", "The passwords did not match")
@@ -254,7 +254,7 @@ fn validate_email(email: &str) -> Result<()> {
 }
 
 /// Refuse a master password too short to survive an offline attack.
-fn check_password_strength(password: &Zeroizing<String>) -> Result<()> {
+pub(crate) fn check_password_strength(password: &Zeroizing<String>) -> Result<()> {
     let len = password.chars().count();
     if len < MIN_PASSWORD_LEN {
         return Err(anyhow!(
@@ -770,7 +770,7 @@ fn second_factor_error(e: super::client::ApiError) -> anyhow::Error {
     }
 }
 
-fn prompt_totp_code() -> Result<String> {
+pub(crate) fn prompt_totp_code() -> Result<String> {
     dialoguer::Input::<String>::new()
         .with_prompt("Authenticator code (or a recovery code)")
         .interact_text()
