@@ -68,6 +68,7 @@
 //! | Tests                  | `parse_content`    | None — method name preserved |
 
 use indexmap::IndexMap;
+use std::collections::HashSet;
 // use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -268,6 +269,28 @@ impl Default for Parser {
     }
 }
 
+/// Marks a `$` that came from `\$` and must not be expanded.
+///
+/// U+FDD0 is a Unicode **noncharacter**: permanently reserved, never assigned, and
+/// not valid in interchange — so it cannot appear in a `.env` anyone wrote. It exists
+/// only between `unescape_double` and `expand_value`, and `strip_markers` removes any
+/// that survive, so it never reaches a caller.
+const LITERAL_DOLLAR: char = '\u{FDD0}';
+
+/// Remove any [`LITERAL_DOLLAR`] marker.
+///
+/// Called on every path out of the parser, including the ones that cannot contain
+/// one, so that no combination of settings can hand a caller an internal marker.
+/// `expansion_enabled = false` is exactly such a path: it never runs `expand_value`,
+/// which is what normally consumes them.
+fn strip_markers(s: &str) -> String {
+    if s.contains(LITERAL_DOLLAR) {
+        s.replace(LITERAL_DOLLAR, "")
+    } else {
+        s.to_string()
+    }
+}
+
 impl Parser {
     /// Create a parser with a custom [`ParserConfig`].
     pub fn new(config: ParserConfig) -> Self {
@@ -348,6 +371,10 @@ impl Parser {
     /// ```
     pub fn parse_content(&self, content: &str) -> ParseResult<IndexMap<String, String>> {
         let mut vars: IndexMap<String, String> = IndexMap::new();
+        // Keys written in a form that promises to be literal — single quotes or
+        // backticks. Tracked separately because the quote characters are gone by the
+        // time `expand_all` runs over the assembled map.
+        let mut literal_keys: HashSet<String> = HashSet::new();
 
         // Multiline accumulation state.
         let mut ml_key: Option<String> = None;
@@ -384,9 +411,14 @@ impl Parser {
                     // `unescape_double` only rewrites backslash sequences, so
                     // the real newlines pushed above are untouched and PEM keys
                     // (which contain no backslashes) are unaffected.
+                    // ⚠️ The same split as the single-line case, and for the same
+                    // reason: a multiline single-quoted value is literal in every
+                    // respect, escapes and expansion alike. A PEM key wrapped in
+                    // single quotes now means exactly its bytes.
                     let finished = if ml_quote == '"' {
                         self.unescape_double(&ml_value)
                     } else {
+                        literal_keys.insert(key.clone());
                         ml_value.clone()
                     };
                     vars.insert(key.clone(), finished);
@@ -424,7 +456,10 @@ impl Parser {
                     ml_start_line = line_num;
                 }
                 _ => {
-                    let value = self.parse_value(&raw_value, line_num)?;
+                    let (value, is_literal) = self.parse_value(&raw_value, line_num)?;
+                    if is_literal {
+                        literal_keys.insert(key.clone());
+                    }
                     vars.insert(key, value);
                 }
             }
@@ -440,7 +475,16 @@ impl Parser {
 
         // ── Variable expansion ────────────────────────────────────────────────
         if self.config.allow_expansion {
-            self.expand_all(&mut vars)?;
+            self.expand_all(&mut vars, &literal_keys)?;
+        } else {
+            // ⚠️ `expand_all` is what normally consumes the `\$` markers, so with
+            // expansion off nothing would — and `"\$B"` would come back holding a
+            // U+FDD0 noncharacter. Found by reading this branch rather than by a
+            // test, because no CLI flag reaches it today; `allow_expansion` is a
+            // library setting, so a consumer of the crate could.
+            for value in vars.values_mut() {
+                *value = strip_markers(value);
+            }
         }
 
         Ok(vars)
@@ -541,13 +585,19 @@ impl Parser {
     /// Dispatch order:
     /// 1. Empty → empty string.
     /// 2. Double-quoted → unescape escape sequences.
-    /// 3. Single-quoted / backtick → literal (no unescaping).
+    /// 3. Single-quoted / backtick → literal: no unescaping, and since v0.7.0 no
+    ///    expansion either.
     /// 4. Unquoted → strip inline comment, optionally trim.
-    fn parse_value(&self, raw: &str, line_num: usize) -> ParseResult<String> {
+    ///
+    /// Returns the value **and whether the form was literal**. That second half is
+    /// what lets `expand_all` leave single quotes alone: expansion runs over the
+    /// assembled map, long after the quote characters are gone, so the form has to be
+    /// carried forward or it is lost.
+    fn parse_value(&self, raw: &str, line_num: usize) -> ParseResult<(String, bool)> {
         let raw = raw.trim_start(); // leading whitespace after `=` is never significant
 
         if raw.is_empty() {
-            return Ok(String::new());
+            return Ok((String::new(), false));
         }
 
         let first = raw.chars().next().unwrap(); // safe: checked is_empty above
@@ -558,15 +608,16 @@ impl Parser {
                     return Err(ParseError::UnterminatedString { line: line_num });
                 }
                 let inner = &raw[1..raw.len() - 1];
-                Ok(self.unescape_double(inner))
+                Ok((self.unescape_double(inner), false))
             }
 
             '\'' | '`' => {
                 if !raw.ends_with(first) || raw.len() < 2 {
                     return Err(ParseError::UnterminatedString { line: line_num });
                 }
-                // Single-quoted and backtick-quoted: literal content, no escaping.
-                Ok(raw[1..raw.len() - 1].to_string())
+                // Single-quoted and backtick-quoted: literal content — no escaping,
+                // and since v0.7.0 no expansion either. One rule instead of two.
+                Ok((raw[1..raw.len() - 1].to_string(), true))
             }
 
             _ => {
@@ -582,10 +633,13 @@ impl Parser {
                     raw.trim_end()
                 };
 
+                // Unquoted still expands. It has no escape mechanism either, but
+                // it also makes no literal promise — single quotes are the form that
+                // does, and now keeps it.
                 if self.config.trim_values {
-                    Ok(val.trim().to_string())
+                    Ok((val.trim().to_string(), false))
                 } else {
-                    Ok(val.to_string())
+                    Ok((val.to_string(), false))
                 }
             }
         }
@@ -611,6 +665,23 @@ impl Parser {
                 Some('\\') => result.push('\\'),
                 Some('"') => result.push('"'),
                 Some('\'') => result.push('\''),
+                // ⚠️ `\$` means a literal dollar, and it has to be *marked* rather
+                // than simply emitted.
+                //
+                // Expansion runs later, over the assembled map, so by then a `$`
+                // that came from `\$` and one that was always bare look identical —
+                // and worse, `\\$` (a literal backslash before a real expansion)
+                // unescapes to `\$` too. Emitting a plain `$` here would make those
+                // three cases indistinguishable and would regress `"\\$B"`, which
+                // correctly yields a backslash followed by B's value today.
+                //
+                // So the marker travels with it and `expand_value` consumes it. It
+                // is a Unicode noncharacter, permanently reserved and never valid in
+                // interchange, so it cannot collide with real data.
+                Some('$') => {
+                    result.push(LITERAL_DOLLAR);
+                    result.push('$');
+                }
                 Some(c) => {
                     result.push('\\');
                     result.push(c);
@@ -627,16 +698,40 @@ impl Parser {
     ///
     /// Each value is expanded independently. Circular references and undefined
     /// variables produce structured errors.
-    fn expand_all(&self, vars: &mut IndexMap<String, String>) -> ParseResult<()> {
+    /// Expand every value that is not written in a literal form.
+    ///
+    /// ⚠️ `literal` names the keys written in single quotes or backticks, and
+    /// skipping them is a **behaviour change**: expansion used to run in every
+    /// quoting form, so `'cost $B'` substituted `B`'s value where a shell, `dotenv`,
+    /// `python-dotenv` and `godotenv` all leave it alone.
+    ///
+    /// That was the deeper half of the problem. Those forms are already literal for
+    /// backslash escapes, so "single quotes are literal" was true of one thing and
+    /// false of another — which is not a rule anyone can hold in their head. It also
+    /// left a secret containing `$` with **no** way to be written: `\$` did not work
+    /// either, and still does not in these forms, because there is no unescape pass
+    /// to interpret it. Now there does not need to be one.
+    fn expand_all(
+        &self,
+        vars: &mut IndexMap<String, String>,
+        literal: &HashSet<String>,
+    ) -> ParseResult<()> {
         // Snapshot keys to avoid borrow conflicts while mutating the map.
         let keys: Vec<String> = vars.keys().cloned().collect();
         let mut expanded: IndexMap<String, String> = IndexMap::with_capacity(vars.len());
 
         for key in &keys {
             let value = vars[key].clone();
+            if literal.contains(key) {
+                // ⚠️ Still stripped. A single-quoted value never goes through
+                // `unescape_double`, so it holds no marker — but stripping
+                // unconditionally means no path can leak one to a caller.
+                expanded.insert(key.clone(), strip_markers(&value));
+                continue;
+            }
             let mut stack: Vec<String> = Vec::new();
             let result = self.expand_value(&value, vars, &mut stack, 0, 0)?;
-            expanded.insert(key.clone(), result);
+            expanded.insert(key.clone(), strip_markers(&result));
         }
 
         *vars = expanded;
@@ -671,6 +766,16 @@ impl Parser {
         let mut chars = value.chars().peekable();
 
         while let Some(ch) = chars.next() {
+            // A marked `$` was written `\$`. Emit the dollar, drop the marker, and
+            // do not look at what follows — that is the whole point of the escape.
+            if ch == LITERAL_DOLLAR {
+                if chars.peek() == Some(&'$') {
+                    chars.next();
+                    result.push('$');
+                }
+                continue;
+            }
+
             if ch != '$' {
                 result.push(ch);
                 continue;
@@ -837,6 +942,115 @@ pub fn closes_multiline(line: &str, q: char) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ─── D16: a value containing `$` can be written ──────────────────────────
+    //
+    // Expansion used to run in every quoting form and there was no escape, so a
+    // generated secret containing `${...}` made the file fail to parse and one
+    // containing `$NAME`, where NAME was also a key, was silently replaced — with
+    // another of your secrets, and with no error.
+
+    fn parse_one(content: &str) -> IndexMap<String, String> {
+        Parser::default().parse_content(content).expect("parses")
+    }
+
+    /// The headline: single quotes are now literal for `$`, as they already were
+    /// for backslashes. One rule instead of two.
+    #[test]
+    fn single_quotes_do_not_expand() {
+        let vars = parse_one("B=world\nA='cost $B'\nC=`cost $B`\n");
+        assert_eq!(vars["A"], "cost $B");
+        assert_eq!(vars["C"], "cost $B", "backticks too");
+    }
+
+    /// ⚠️ The failure that had no workaround. A token containing `${...}` used to
+    /// make the **whole file** fail to parse, with no way to write it.
+    #[test]
+    fn a_braced_reference_in_single_quotes_is_not_an_undefined_variable() {
+        let vars = parse_one("TOKEN='pa${SOMETHING}ss'\n");
+        assert_eq!(vars["TOKEN"], "pa${SOMETHING}ss");
+    }
+
+    /// ⚠️ The quieter failure, and the worse one: no error, and the value that
+    /// replaced it is another of your secrets.
+    #[test]
+    fn a_name_that_collides_with_a_key_is_no_longer_substituted() {
+        let vars = parse_one("DB_PASS=hunter2\nAPI_KEY='prefix$DB_PASS'\n");
+        assert_eq!(vars["API_KEY"], "prefix$DB_PASS");
+        assert!(
+            !vars["API_KEY"].contains("hunter2"),
+            "leaked another secret"
+        );
+    }
+
+    #[test]
+    fn double_quoted_and_unquoted_still_expand() {
+        let vars = parse_one("B=world\nA=\"cost $B\"\nC=cost $B\n");
+        assert_eq!(vars["A"], "cost world");
+        assert_eq!(vars["C"], "cost world");
+    }
+
+    /// `\$` is a literal dollar in a double-quoted value, so expansion can be kept
+    /// for the rest of the string.
+    #[test]
+    fn an_escaped_dollar_is_literal() {
+        let vars = parse_one("B=world\nA=\"\\$B costs $B\"\n");
+        assert_eq!(vars["A"], "$B costs world");
+    }
+
+    /// ⚠️ The case the marker exists for, and the reason `\$` could not simply emit
+    /// a `$`.
+    ///
+    /// `unescape_double` turns `\\` into `\` and would have turned `\$` into `$`,
+    /// making "literal dollar" and "literal backslash before a real expansion"
+    /// indistinguishable by the time expansion ran. This asserts the second still
+    /// works, which a naive fix would have broken.
+    #[test]
+    fn a_backslash_before_a_real_expansion_still_expands() {
+        let vars = parse_one("B=world\nA=\"path\\\\$B\"\n");
+        assert_eq!(vars["A"], "path\\world");
+    }
+
+    /// The internal marker must never reach a caller, by any path.
+    #[test]
+    fn the_literal_dollar_marker_never_escapes() {
+        for content in [
+            "B=w\nA=\"\\$B\"\n",
+            "A='\\$B'\n",
+            "A=\"\\$\"\n",
+            "B=w\nA=\"\\$B and $B and \\$B\"\n",
+        ] {
+            for (k, v) in parse_one(content) {
+                assert!(
+                    !v.contains(LITERAL_DOLLAR),
+                    "{k} leaked the marker from {content:?}: {v:?}"
+                );
+            }
+        }
+    }
+
+    /// ⚠️ The path `expand_all` does not cover. With expansion disabled nothing
+    /// consumes the markers, so the strip has to be unconditional.
+    #[test]
+    fn the_marker_is_stripped_even_with_expansion_disabled() {
+        let parser = Parser::new(ParserConfig {
+            allow_expansion: false,
+            ..Default::default()
+        });
+        let vars = parser
+            .parse_content("B=world\nA=\"\\$B\"\n")
+            .expect("parses");
+        assert!(!vars["A"].contains(LITERAL_DOLLAR), "{:?}", vars["A"]);
+        assert_eq!(vars["A"], "$B");
+    }
+
+    /// A multiline single-quoted value is literal in every respect — escapes and
+    /// expansion alike.
+    #[test]
+    fn a_multiline_single_quoted_value_is_fully_literal() {
+        let vars = parse_one("B=world\nA='line $B\nsecond \\t line'\n");
+        assert_eq!(vars["A"], "line $B\nsecond \\t line");
+    }
 
     // ── Basic parsing ─────────────────────────────────────────────────────────
 
