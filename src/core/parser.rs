@@ -375,6 +375,14 @@ impl Parser {
         // backticks. Tracked separately because the quote characters are gone by the
         // time `expand_all` runs over the assembled map.
         let mut literal_keys: HashSet<String> = HashSet::new();
+        // Where each key was written.
+        //
+        // ⚠️ Same reason as `literal_keys`: expansion is a separate pass over the
+        // assembled map, so it has no line to report unless one is carried to it. It
+        // reported **line 0** for every undefined variable — not a line in any file,
+        // so it pointed at nothing, in exactly the case where it matters: a large
+        // `.env` that suddenly will not parse.
+        let mut key_lines: IndexMap<String, usize> = IndexMap::new();
 
         // Multiline accumulation state.
         let mut ml_key: Option<String> = None;
@@ -421,6 +429,7 @@ impl Parser {
                         literal_keys.insert(key.clone());
                         ml_value.clone()
                     };
+                    key_lines.insert(key.clone(), ml_start_line);
                     vars.insert(key.clone(), finished);
                     ml_key = None;
                     ml_value.clear();
@@ -460,6 +469,7 @@ impl Parser {
                     if is_literal {
                         literal_keys.insert(key.clone());
                     }
+                    key_lines.insert(key.clone(), line_num);
                     vars.insert(key, value);
                 }
             }
@@ -475,7 +485,7 @@ impl Parser {
 
         // ── Variable expansion ────────────────────────────────────────────────
         if self.config.allow_expansion {
-            self.expand_all(&mut vars, &literal_keys)?;
+            self.expand_all(&mut vars, &literal_keys, &key_lines)?;
         } else {
             // ⚠️ `expand_all` is what normally consumes the `\$` markers, so with
             // expansion off nothing would — and `"\$B"` would come back holding a
@@ -715,6 +725,7 @@ impl Parser {
         &self,
         vars: &mut IndexMap<String, String>,
         literal: &HashSet<String>,
+        lines: &IndexMap<String, usize>,
     ) -> ParseResult<()> {
         // Snapshot keys to avoid borrow conflicts while mutating the map.
         let keys: Vec<String> = vars.keys().cloned().collect();
@@ -730,7 +741,11 @@ impl Parser {
                 continue;
             }
             let mut stack: Vec<String> = Vec::new();
-            let result = self.expand_value(&value, vars, &mut stack, 0, 0)?;
+            // ⚠️ The line of the key being expanded, not of the key that defines
+            // the missing variable — which may not exist anywhere. "`${NOPE}` is not
+            // defined" is only actionable if it names where you wrote it.
+            let line = lines.get(key).copied().unwrap_or(0);
+            let result = self.expand_value(&value, vars, &mut stack, 0, line)?;
             expanded.insert(key.clone(), strip_markers(&result));
         }
 
@@ -1042,6 +1057,41 @@ mod tests {
             .expect("parses");
         assert!(!vars["A"].contains(LITERAL_DOLLAR), "{:?}", vars["A"]);
         assert_eq!(vars["A"], "$B");
+    }
+
+    // ─── D17: expansion errors name a real line ──────────────────────────────
+
+    fn expect_err(content: &str) -> String {
+        Parser::default()
+            .parse_content(content)
+            .expect_err("should fail")
+            .to_string()
+    }
+
+    /// ⚠️ It said **line 0** for every one of these — not a line in any file, so it
+    /// pointed at nothing, in exactly the case where it matters: a large `.env` that
+    /// suddenly will not parse.
+    #[test]
+    fn an_undefined_variable_names_the_line_it_was_written_on() {
+        let err = expect_err("A=one\nB=two\nC=hello ${NOPE}\n");
+        assert!(err.contains("line 3"), "{err}");
+        assert!(!err.contains("line 0"), "{err}");
+    }
+
+    /// A multiline value is reported at the line where it **opened**, matching how
+    /// an unterminated string is reported — one rule for "where is this value".
+    #[test]
+    fn a_multiline_value_reports_the_line_it_opened_on() {
+        let err = expect_err("A=one\nC=\"hello\n${NOPE}\"\n");
+        assert!(err.contains("line 2"), "{err}");
+    }
+
+    /// The circular-expansion error shared the same hardcoded zero.
+    #[test]
+    fn a_circular_reference_names_a_line_too() {
+        let err = expect_err("A=${B}\nB=${A}\n");
+        assert!(err.contains("line 1"), "{err}");
+        assert!(!err.contains("line 0"), "{err}");
     }
 
     /// A multiline single-quoted value is literal in every respect — escapes and
