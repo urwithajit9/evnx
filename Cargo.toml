@@ -176,9 +176,19 @@ all-features = true
 
 [features]
 default = []
-migrate = ["dep:reqwest", "dep:crypto_box"]
+# An HTTP stack, and nothing else. Implied by `migrate` and `cloud`, which both
+# needed reqwest already, and separately enableable so that
+# `cargo install evnx --features net` buys `evnx update --check` without pulling
+# in the whole cloud surface.
+#
+# ⚠️ The point of naming it is that `default = []` genuinely means **no network
+# code compiled in**. `evnx scan`, `validate`, `sync` and `diff` are then provably
+# offline rather than offline by convention, which is what makes them usable in an
+# air-gapped build or a CI job with egress rules.
+net     = ["dep:reqwest"]
+migrate = ["net", "dep:crypto_box"]
 backup  = ["dep:aes-gcm", "dep:argon2",  "dep:rand"]
-cloud   = ["dep:evnx-crypto", "dep:reqwest", "dep:hex", "dep:blake3", "dep:toml_edit", "dep:qrcode"]
+cloud   = ["net", "dep:evnx-crypto", "dep:hex", "dep:blake3", "dep:toml_edit", "dep:qrcode"]
 # `cloud` is deliberately NOT in `full`: adding it would silently change what
 # `full` means for people already using that flag.
 #

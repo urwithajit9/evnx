@@ -1497,6 +1497,27 @@ Use 'evnx convert' without --to for interactive format selection.
     /// Generate shell completions.
     // #[command(after_help = docs::INIT.after_help)]
     Completions { shell: String },
+
+    /// Show how to upgrade, and optionally whether a newer release exists.
+    ///
+    /// Without `--check` this contacts nothing: it reads the path of the running
+    /// binary to work out which of the nine install channels put it there, and
+    /// prints that channel's upgrade command.
+    ///
+    /// ⚠️ evnx never replaces its own binary. Nine package managers ship it, and a
+    /// self-updating binary fights whichever one owns the file — Homebrew and
+    /// winget would then report a version they did not install.
+    Update {
+        /// Ask api.github.com for the latest release.
+        ///
+        /// The only network request this command makes, and it is made only when
+        /// you pass this flag. Nothing is sent but the request itself.
+        ///
+        /// Needs a build with network support (`cloud`, `migrate` or `net`); a bare
+        /// `cargo install evnx` has none, and says so.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[cfg(test)]
