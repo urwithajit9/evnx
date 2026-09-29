@@ -114,6 +114,30 @@ pub fn builtin_rules() -> Vec<PatternRule> {
             "high",
             None,
         ),
+        // ⚠️ The gap every other rule here left open, and the most common thing
+        // in a `.env` after an API key.
+        //
+        // `DATABASE_URL=postgresql://admin:s3cr3t@db.prod…` scanned **clean**
+        // before this, and structurally so: every rule above is a provider prefix
+        // and a connection string has none, the sensitive-key heuristic keys off
+        // names containing `secret`/`token`/`key` and `DATABASE_URL` has none of
+        // them, and the entropy fallback scores a whole URL below threshold.
+        // Verified by scanning one. Filed as D15.
+        //
+        // The classes exclude `/`, `?` and `#`, so the userinfo match cannot run
+        // past the authority into a path — `https://host/users/me@example.com` is
+        // an ordinary URL, not a credential. Requiring a `:` before the `@` means
+        // `postgresql://reader@host/db` is read as a bare username, which is a
+        // name and not a secret.
+        //
+        // No `action_url`: there is no single provider to send anyone to. The
+        // place to rotate a database password is the database.
+        PatternRule::builtin(
+            "Credentials in a connection string",
+            r"[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/?#@]+:[^\s/?#@]+@[^\s/?#]+",
+            "high",
+            None,
+        ),
     ]
 }
 
@@ -142,49 +166,6 @@ pub fn calculate_entropy(s: &str) -> f64 {
     }
 
     entropy
-}
-
-/// The `user:password` embedded in a URL, if it carries one.
-///
-/// ```text
-/// postgresql://admin:s3cr3t@db.example.com:5432/main  ->  Some("admin:s3cr3t")
-/// redis://localhost:6379/0                            ->  None
-/// postgresql://reader@db.example.com/main             ->  None  (no password)
-/// ```
-///
-/// ⚠️ **Nothing in `evnx scan` detects this today**, which is worth knowing
-/// before relying on it: a `DATABASE_URL` holding a live database password is
-/// among the most common things in a `.env`, and every built-in rule misses it —
-/// the seven provider patterns are all prefix formats, and the sensitive-key
-/// heuristic keys off names containing `secret`/`token`/`key`, which
-/// `DATABASE_URL` does not. Verified by scanning one.
-///
-/// It lives here, beside the other detectors, rather than inside its one caller,
-/// because wiring it into [`builtin_rules`] is the right fix and is a one-line
-/// change from here. That is deliberately **not** done in the same pass: adding a
-/// built-in rule changes what `evnx scan` reports for everybody, including in
-/// CI, and that deserves its own decision.
-///
-/// A username with no password is not treated as a credential — `reader@host` in
-/// a connection string is a name, not a secret.
-pub fn url_embedded_credentials(value: &str) -> Option<&str> {
-    let after_scheme = value.split_once("://")?.1;
-
-    // The authority ends at the first `/`, `?` or `#`; an `@` beyond that
-    // belongs to the path and is not userinfo.
-    let authority_end = after_scheme
-        .find(['/', '?', '#'])
-        .unwrap_or(after_scheme.len());
-    let authority = &after_scheme[..authority_end];
-
-    // Last `@`, because a password may legitimately contain one.
-    let userinfo = &authority[..authority.rfind('@')?];
-
-    let (_user, password) = userinfo.split_once(':')?;
-    if password.is_empty() {
-        return None;
-    }
-    Some(userinfo)
 }
 
 /// Check if a value looks like a placeholder (not a real secret)
@@ -440,47 +421,40 @@ mod tests {
     /// passing while the product breaks. This compiles the built-ins the same way
     /// `evnx scan` does.
     #[test]
-    fn url_embedded_credentials_finds_a_password_and_only_a_password() {
-        // The case that motivated it: a DATABASE_URL nobody else flags.
-        assert_eq!(
-            url_embedded_credentials("postgresql://admin:s3cr3t@db.example.com:5432/main"),
-            Some("admin:s3cr3t")
-        );
-        assert_eq!(
-            url_embedded_credentials("mongodb+srv://u:p@cluster0.mongodb.net/test"),
-            Some("u:p")
-        );
-        // A password may contain `@`, so the LAST one delimits the userinfo.
-        assert_eq!(
-            url_embedded_credentials("postgres://u:p@ss@host/db"),
-            Some("u:p@ss")
-        );
+    fn the_connection_string_rule_catches_a_password_and_only_a_password() {
+        use crate::commands::scan::patternset::PatternSet;
+        let set = PatternSet::compile(&builtin_rules()).expect("built-ins must compile");
+        let hit = |v: &str| {
+            set.strongest(v)
+                .map(|m| m.name == "Credentials in a connection string")
+                .unwrap_or(false)
+        };
+
+        // ⚠️ The case that motivated the rule: a DATABASE_URL nothing else flags.
+        assert!(hit("postgresql://admin:s3cr3t@db.example.com:5432/main"));
+        assert!(hit("mongodb+srv://u:p@cluster0.mongodb.net/test"));
+        assert!(hit("amqp://guest:guest@rabbit:5672/"));
+        assert!(hit("mysql://root:toor@127.0.0.1:3306/app"));
+        // A password may contain `@`. The rule delimits it differently from a
+        // strict URL parser, which does not matter — it still matches.
+        assert!(hit("postgres://u:p@ss@host/db"));
 
         // No credentials at all.
-        assert_eq!(url_embedded_credentials("redis://localhost:6379/0"), None);
-        assert_eq!(url_embedded_credentials("https://api.example.com/v1"), None);
-        assert_eq!(url_embedded_credentials("not-a-url-at-all"), None);
+        assert!(!hit("redis://localhost:6379/0"));
+        assert!(!hit("postgresql://localhost:5432/db"));
+        assert!(!hit("https://api.example.com/v1"));
+        assert!(!hit("not-a-url-at-all"));
+        assert!(!hit("mailto:someone@example.com"));
+        assert!(!hit("postgres://u:p"));
 
-        // A username without a password is a name, not a secret.
-        assert_eq!(
-            url_embedded_credentials("postgresql://reader@db.example.com/main"),
-            None
-        );
-        assert_eq!(
-            url_embedded_credentials("postgresql://reader:@db.example.com/main"),
-            None
-        );
+        // A username with no password is a name, not a secret.
+        assert!(!hit("postgresql://reader@db.example.com/main"));
 
-        // ⚠️ An `@` after the authority belongs to the path. Treating it as
-        // userinfo would report a credential in an ordinary URL.
-        assert_eq!(
-            url_embedded_credentials("https://api.example.com/users/me@example.com"),
-            None
-        );
-        assert_eq!(
-            url_embedded_credentials("https://api.example.com/?to=a@b.com"),
-            None
-        );
+        // ⚠️ An `@` past the authority belongs to the path or query. Matching it
+        // would report a credential in an ordinary URL — which is why the
+        // character classes exclude `/`, `?` and `#`.
+        assert!(!hit("https://api.example.com/users/me@example.com"));
+        assert!(!hit("https://api.example.com/?to=a@b.com"));
     }
 
     #[test]
