@@ -1,22 +1,68 @@
 //! Data models for the sync command.
 
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-/// Configuration for custom placeholder templates
+/// Configuration for custom placeholder templates.
+///
+/// Loaded from the JSON file named by `--template-config`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaceholderConfig {
-    /// Pattern-to-placeholder mappings (regex pattern → placeholder string)
+    /// Declared for editor tooling; evnx does not read it.
+    ///
+    /// Present as a field rather than ignored silently because the published
+    /// example config carries it, and serde drops unknown keys without a word —
+    /// so an operator has no way to tell "accepted and unused" from "misspelled
+    /// and dropped". Round-tripping it also means `Serialize` does not delete it
+    /// from a file evnx rewrites.
+    #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
+
+    /// A human-readable note. Same reasoning as [`schema`](Self::schema).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Pattern-to-placeholder mappings (regex pattern → placeholder string).
+    ///
+    /// ⚠️ **An `IndexMap`, not a `HashMap`, and that is load-bearing.** More than
+    /// one pattern can match one key, and a `HashMap` iterates in an order that
+    /// Rust randomises per process — so the winner changed between runs of the
+    /// same command, and the winner is written into `.env.example`, a committed
+    /// file. Eight identical runs produced four different answers.
+    ///
+    /// Declaration order is the last tie-break in
+    /// [`generate_placeholder`](super::placeholder::generate_placeholder), which
+    /// needs the order the file was written in.
     #[serde(default)]
-    pub patterns: HashMap<String, String>,
+    pub patterns: IndexMap<String, String>,
 
     /// Default placeholder for unmatched keys
     #[serde(default = "default_placeholder")]
     pub default: String,
 
-    /// Keys that should always use actual values (use with extreme caution)
+    /// Keys whose **real value** is written to the template instead of a
+    /// placeholder.
+    ///
+    /// For the part of a `.env` that is configuration rather than credentials —
+    /// `APP_NAME`, `LOG_LEVEL`, `ENVIRONMENT` — where the actual value is the
+    /// useful example and `YOUR_VALUE_HERE` is strictly worse. It also makes
+    /// `sync --reverse` deliver working defaults to a teammate's `.env`.
+    ///
+    /// ⚠️ **Guarded, not trusted.** A listed key whose value looks like a
+    /// credential fails the sync by name rather than being copied — see
+    /// [`check_allow_actual`](super::executor::check_allow_actual). Without that
+    /// this field is a documented way to commit a live secret.
     #[serde(default)]
     pub allow_actual: Vec<String>,
+
+    /// Documented in `sync-configuration.mdx`, and **not implemented here.**
+    ///
+    /// Naming policy is real, but it is set by `--naming-policy` or `[sync]
+    /// naming_policy` in `.evnx.toml`, not by this file. Kept as a field so
+    /// [`PlaceholderConfig::from_path`] can say so, instead of serde discarding
+    /// it and the operator believing a policy is in force that is not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub naming_convention: Option<serde_json::Value>,
 }
 
 fn default_placeholder() -> String {
@@ -24,21 +70,65 @@ fn default_placeholder() -> String {
 }
 
 impl PlaceholderConfig {
-    /// Load configuration from a JSON file
+    /// Load configuration from a JSON file.
+    ///
+    /// # Errors
+    ///
+    /// The file cannot be read or is not valid JSON, or a key of `patterns` is
+    /// not a valid regular expression.
+    ///
+    /// ⚠️ That last one used to be silent. `generate_placeholder` compiled each
+    /// pattern with `if let Ok(re)`, so an expression with an unbalanced
+    /// parenthesis was **skipped**, the key fell through to `default`, and the
+    /// operator got a template that looked fine and did not follow their rules.
+    /// `evnx scan` already refuses to run an uncompilable `--pattern` for the
+    /// same reason; this brings the two into line.
     pub fn from_path<P: AsRef<std::path::Path>>(path: P) -> anyhow::Result<Self> {
+        let path = path.as_ref();
         let content = std::fs::read_to_string(path)
             .map_err(|e| anyhow::anyhow!("Failed to read placeholder config file: {}", e))?;
-        serde_json::from_str(&content)
-            .map_err(|e| anyhow::anyhow!("Failed to parse placeholder config as JSON: {}", e))
+        let config: Self = serde_json::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse placeholder config as JSON: {}", e))?;
+        config.validate(path)?;
+        Ok(config)
+    }
+
+    /// Reject what would otherwise fail silently, and say what is ignored.
+    fn validate(&self, path: &std::path::Path) -> anyhow::Result<()> {
+        for pattern in self.patterns.keys() {
+            regex::Regex::new(&format!("(?i){}", pattern)).map_err(|e| {
+                anyhow::anyhow!(
+                    "{} declares a placeholder pattern that is not a valid regular \
+                     expression: {pattern:?}\n  {e}\n  \
+                     Nothing was written. Fix the pattern, or remove it.",
+                    path.display()
+                )
+            })?;
+        }
+
+        // A warning rather than an error: the field is in the published example,
+        // so refusing it would fail every config copied from the docs.
+        if self.naming_convention.is_some() {
+            crate::utils::ui::warning(format!(
+                "{} sets `naming_convention`, which evnx does not read from this \
+                 file. Use --naming-policy, or [sync] naming_policy in .evnx.toml.",
+                path.display()
+            ));
+        }
+
+        Ok(())
     }
 }
 
 impl Default for PlaceholderConfig {
     fn default() -> Self {
         Self {
-            patterns: HashMap::new(),
+            schema: None,
+            description: None,
+            patterns: IndexMap::new(),
             default: String::from("YOUR_VALUE_HERE"),
             allow_actual: Vec::new(),
+            naming_convention: None,
         }
     }
 }
@@ -87,9 +177,10 @@ mod tests {
     #[test]
     fn test_placeholder_config_serialization() {
         let config = PlaceholderConfig {
-            patterns: HashMap::from([("API_.*".to_string(), "api-key".to_string())]),
+            patterns: IndexMap::from([("API_.*".to_string(), "api-key".to_string())]),
             default: "custom".to_string(),
             allow_actual: vec!["PUBLIC_KEY".to_string()],
+            ..Default::default()
         };
 
         let json = serde_json::to_string(&config).unwrap();
