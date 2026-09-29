@@ -162,6 +162,94 @@ pub fn execute(ctx: SyncCtx) -> Result<bool> {
 // Forward Sync: .env → .env.example
 // ─────────────────────────────────────────────────────────────
 
+/// Refuse the sync if any `allow_actual` key holds something that looks like a
+/// credential.
+///
+/// # Why this exists at all
+///
+/// `allow_actual` writes a **real value** into `.env.example`, a file whose whole
+/// purpose is to be committed. That is the right thing for the configuration half
+/// of a `.env` — `APP_NAME`, `LOG_LEVEL`, `ENVIRONMENT` — where the real value is
+/// the useful example and where `sync --reverse` then hands a teammate working
+/// defaults. It is a disaster for the other half, and one mistyped entry is the
+/// whole difference.
+///
+/// So the field is honoured, and the mistake is made unrepresentable instead of
+/// discouraged. A tool whose reason to exist is keeping secrets out of places
+/// they should not be cannot ship a documented setting whose misuse commits a
+/// live credential.
+///
+/// # Why it runs here
+///
+/// Before the first write and before the preview, so the answer is all-or-nothing
+/// and names **every** offending key at once. Failing per key as the template is
+/// generated would leave a half-written file and make the operator run the
+/// command once per mistake.
+///
+/// # What counts as a credential
+///
+/// The same detectors `evnx scan` uses, so the two commands cannot disagree about
+/// one value — plus [`url_embedded_credentials`], because the single most likely
+/// dangerous entry here is a `DATABASE_URL`, and **no built-in scan rule catches
+/// a connection string's password.** Verified by scanning one.
+///
+/// [`url_embedded_credentials`]: crate::utils::patterns::url_embedded_credentials
+pub fn check_allow_actual(
+    config: &PlaceholderConfig,
+    env_vars: &IndexMap<String, String>,
+) -> Result<()> {
+    if config.allow_actual.is_empty() {
+        return Ok(());
+    }
+
+    let registry = crate::commands::scan::DetectorRegistry::new();
+    let mut refused: Vec<(String, String)> = Vec::new();
+
+    for key in &config.allow_actual {
+        // A key listed but absent from .env is not an error: a shared config
+        // naturally covers keys a given project does not set.
+        let Some(value) = env_vars.get(key) else {
+            continue;
+        };
+
+        if let Some(userinfo) = crate::utils::patterns::url_embedded_credentials(value) {
+            // ⚠️ The userinfo itself is NOT put in the message — it is the
+            // password. Say only that there is one.
+            let _ = userinfo;
+            refused.push((key.clone(), "a password embedded in a URL".to_string()));
+            continue;
+        }
+
+        // The strongest verdict, not the first: `scan_kv` runs every detector
+        // and more than one can answer for a single value.
+        if let Some(detection) = registry
+            .scan_kv(key, value, "allow_actual")
+            .into_iter()
+            .max_by_key(|d| d.confidence)
+        {
+            refused.push((key.clone(), detection.pattern));
+        }
+    }
+
+    if refused.is_empty() {
+        return Ok(());
+    }
+
+    let mut message = String::from(
+        "`allow_actual` would copy a real credential into .env.example, which is a \
+         committed file. Nothing was written.\n",
+    );
+    for (key, why) in &refused {
+        message.push_str(&format!("\n  {key} — {why}"));
+    }
+    message.push_str(
+        "\n\n  `allow_actual` is for configuration whose real value is the useful \
+         example — APP_NAME, LOG_LEVEL, ENVIRONMENT.\n  \
+         Remove these keys from it and they will be written as placeholders.",
+    );
+    anyhow::bail!(message)
+}
+
 fn sync_forward(
     paths: &SyncPaths,
     use_placeholders: bool,
@@ -194,6 +282,9 @@ fn sync_forward(
     let env_file = parser
         .parse_file(paths.env_str())
         .context("Failed to parse .env")?;
+
+    // Before anything is written, and before any of it is printed.
+    check_allow_actual(config, &env_file.vars)?;
     // ⚠️ "absent" and "will not parse" are different answers.
     //
     // This was a single `Err(_) =>` arm, so a `.env.example` that existed but was

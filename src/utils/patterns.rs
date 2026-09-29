@@ -144,6 +144,49 @@ pub fn calculate_entropy(s: &str) -> f64 {
     entropy
 }
 
+/// The `user:password` embedded in a URL, if it carries one.
+///
+/// ```text
+/// postgresql://admin:s3cr3t@db.example.com:5432/main  ->  Some("admin:s3cr3t")
+/// redis://localhost:6379/0                            ->  None
+/// postgresql://reader@db.example.com/main             ->  None  (no password)
+/// ```
+///
+/// ⚠️ **Nothing in `evnx scan` detects this today**, which is worth knowing
+/// before relying on it: a `DATABASE_URL` holding a live database password is
+/// among the most common things in a `.env`, and every built-in rule misses it —
+/// the seven provider patterns are all prefix formats, and the sensitive-key
+/// heuristic keys off names containing `secret`/`token`/`key`, which
+/// `DATABASE_URL` does not. Verified by scanning one.
+///
+/// It lives here, beside the other detectors, rather than inside its one caller,
+/// because wiring it into [`builtin_rules`] is the right fix and is a one-line
+/// change from here. That is deliberately **not** done in the same pass: adding a
+/// built-in rule changes what `evnx scan` reports for everybody, including in
+/// CI, and that deserves its own decision.
+///
+/// A username with no password is not treated as a credential — `reader@host` in
+/// a connection string is a name, not a secret.
+pub fn url_embedded_credentials(value: &str) -> Option<&str> {
+    let after_scheme = value.split_once("://")?.1;
+
+    // The authority ends at the first `/`, `?` or `#`; an `@` beyond that
+    // belongs to the path and is not userinfo.
+    let authority_end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    let authority = &after_scheme[..authority_end];
+
+    // Last `@`, because a password may legitimately contain one.
+    let userinfo = &authority[..authority.rfind('@')?];
+
+    let (_user, password) = userinfo.split_once(':')?;
+    if password.is_empty() {
+        return None;
+    }
+    Some(userinfo)
+}
+
 /// Check if a value looks like a placeholder (not a real secret)
 pub fn is_placeholder(value: &str) -> bool {
     let v = value.trim();
@@ -396,6 +439,50 @@ mod tests {
     /// asserting against a function production does not use is how a suite keeps
     /// passing while the product breaks. This compiles the built-ins the same way
     /// `evnx scan` does.
+    #[test]
+    fn url_embedded_credentials_finds_a_password_and_only_a_password() {
+        // The case that motivated it: a DATABASE_URL nobody else flags.
+        assert_eq!(
+            url_embedded_credentials("postgresql://admin:s3cr3t@db.example.com:5432/main"),
+            Some("admin:s3cr3t")
+        );
+        assert_eq!(
+            url_embedded_credentials("mongodb+srv://u:p@cluster0.mongodb.net/test"),
+            Some("u:p")
+        );
+        // A password may contain `@`, so the LAST one delimits the userinfo.
+        assert_eq!(
+            url_embedded_credentials("postgres://u:p@ss@host/db"),
+            Some("u:p@ss")
+        );
+
+        // No credentials at all.
+        assert_eq!(url_embedded_credentials("redis://localhost:6379/0"), None);
+        assert_eq!(url_embedded_credentials("https://api.example.com/v1"), None);
+        assert_eq!(url_embedded_credentials("not-a-url-at-all"), None);
+
+        // A username without a password is a name, not a secret.
+        assert_eq!(
+            url_embedded_credentials("postgresql://reader@db.example.com/main"),
+            None
+        );
+        assert_eq!(
+            url_embedded_credentials("postgresql://reader:@db.example.com/main"),
+            None
+        );
+
+        // ⚠️ An `@` after the authority belongs to the path. Treating it as
+        // userinfo would report a credential in an ordinary URL.
+        assert_eq!(
+            url_embedded_credentials("https://api.example.com/users/me@example.com"),
+            None
+        );
+        assert_eq!(
+            url_embedded_credentials("https://api.example.com/?to=a@b.com"),
+            None
+        );
+    }
+
     #[test]
     fn builtin_rules_recognise_the_providers_they_name() {
         use crate::commands::scan::patternset::PatternSet;

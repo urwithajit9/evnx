@@ -936,3 +936,218 @@ fn creating_the_example_file_is_safe_under_placeholder_and_force() {
         );
     }
 }
+
+// ─── D1 / D2 — deterministic placeholders, and allow_actual ──────────────────
+
+/// A config where four patterns all match one key, which is what made the winner
+/// depend on `HashMap` iteration order.
+const OVERLAPPING: &str = r#"{
+  "patterns": {
+    "SECRET": "<any-secret>",
+    "_KEY$": "<any-key>",
+    "^STRIPE_": "<stripe-thing>",
+    "STRIPE_SECRET_KEY": "<the-exact-key>"
+  },
+  "default": "YOUR_VALUE_HERE"
+}"#;
+
+/// ⚠️ **This must run the binary repeatedly, not call a function in a loop.**
+///
+/// Rust seeds `HashMap`'s hasher once per *process*, so the original bug was
+/// invisible within a single test run however many times it iterated — every call
+/// in one process agreed with itself. It only showed up across separate
+/// invocations, which is also how a user meets it: `evnx sync` today and again
+/// tomorrow, writing a different `.env.example` each time into a committed file.
+#[test]
+#[serial]
+fn d1_repeated_syncs_of_one_env_produce_one_answer() -> Result<()> {
+    let f = SyncTestFixture::new()?;
+    f.write_config(OVERLAPPING)?;
+
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..8 {
+        let _ = fs::remove_file(&f.example_path);
+        f.write_env("STRIPE_SECRET_KEY=sk_live_realvalue123456789\n")?;
+
+        cargo_bin_cmd!("evnx")
+            .current_dir(f.temp_dir.path())
+            .args(["sync", "--template-config", "placeholders.json", "--force"])
+            .assert()
+            .code(0);
+
+        seen.insert(f.read_example()?);
+    }
+
+    assert_eq!(
+        seen.len(),
+        1,
+        "eight identical syncs produced {} different templates:\n{:#?}",
+        seen.len(),
+        seen
+    );
+    // And the winner is the rule, not an accident: the exact key match.
+    assert!(
+        seen.iter().next().unwrap().contains("<the-exact-key>"),
+        "an exact key match must beat every regex:\n{:#?}",
+        seen
+    );
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn d2_allow_actual_writes_configuration_values_through() -> Result<()> {
+    let f = SyncTestFixture::new()?;
+    f.write_config(
+        r#"{
+          "patterns": { ".*_API_KEY$": "sk_demo_XXXX" },
+          "default": "REPLACE_IN_PRODUCTION",
+          "allow_actual": ["APP_NAME", "LOG_LEVEL"]
+        }"#,
+    )?;
+    f.write_env("APP_NAME=trustlabel\nLOG_LEVEL=debug\nSTRIPE_API_KEY=sk_live_realkey1234\n")?;
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(f.temp_dir.path())
+        .args(["sync", "--template-config", "placeholders.json", "--force"])
+        .assert()
+        .code(0);
+
+    let example = f.read_example()?;
+    // The documented promise: the real value, because for these keys it *is* the
+    // useful example.
+    assert!(example.contains("APP_NAME=trustlabel"), "{example}");
+    assert!(example.contains("LOG_LEVEL=debug"), "{example}");
+    // And a key that was not listed is still a placeholder.
+    assert!(example.contains("STRIPE_API_KEY=sk_demo_XXXX"), "{example}");
+    assert!(!example.contains("sk_live_realkey1234"), "{example}");
+    Ok(())
+}
+
+/// The guard that makes `allow_actual` safe to have at all.
+#[test]
+#[serial]
+fn d2_a_credential_in_allow_actual_fails_the_sync_and_writes_nothing() -> Result<()> {
+    let f = SyncTestFixture::new()?;
+    f.write_config(
+        r#"{
+          "allow_actual": ["APP_NAME", "DATABASE_URL", "JWT_SECRET"]
+        }"#,
+    )?;
+    f.write_env(
+        "APP_NAME=trustlabel\n\
+         DATABASE_URL=postgresql://admin:s3cr3tp4ss@db.prod.example.com:5432/main\n\
+         JWT_SECRET=8f3a9c21b85e4d0fa62c1d8b04e7a539cc71e2\n",
+    )?;
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(f.temp_dir.path())
+        .args(["sync", "--template-config", "placeholders.json", "--force"])
+        .assert()
+        .code(2);
+
+    let out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&assert.get_output().stdout),
+        String::from_utf8_lossy(&assert.get_output().stderr)
+    );
+
+    // Every offending key named, in one run — not one failure per attempt.
+    assert!(out.contains("DATABASE_URL"), "{out}");
+    assert!(out.contains("JWT_SECRET"), "{out}");
+    // ⚠️ And the password itself must never be echoed back.
+    assert!(
+        !out.contains("s3cr3tp4ss"),
+        "the message leaked the password:\n{out}"
+    );
+    assert!(
+        !out.contains("8f3a9c21b85e4d0fa62c1d8b04e7a539cc71e2"),
+        "the message leaked the secret:\n{out}"
+    );
+
+    assert!(
+        !f.example_path.exists(),
+        "the template must not be written when the guard refuses"
+    );
+    Ok(())
+}
+
+/// ⚠️ `DATABASE_URL` is the reason the guard cannot rely on the scan detectors
+/// alone: **no built-in scan rule catches a connection string's password.** If
+/// this ever starts passing because `evnx scan` grew that rule, the extra check
+/// becomes redundant rather than wrong — but until then it is load-bearing.
+#[test]
+#[serial]
+fn d2_the_scan_detectors_alone_would_miss_a_connection_string() -> Result<()> {
+    let f = SyncTestFixture::new()?;
+    f.write_env("DATABASE_URL=postgresql://admin:s3cr3tp4ss@db.prod.example.com:5432/main\n")?;
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(f.temp_dir.path())
+        .args(["scan", ".env", "--severity", "low"])
+        .assert()
+        .code(0); // 0 == nothing found
+
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn a_template_pattern_that_does_not_compile_is_refused_at_load() -> Result<()> {
+    let f = SyncTestFixture::new()?;
+    f.write_config(r#"{ "patterns": { "API_(": "x" } }"#)?;
+    f.write_env("API_KEY=sk_live_realkey1234\n")?;
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(f.temp_dir.path())
+        .args(["sync", "--template-config", "placeholders.json", "--force"])
+        .assert()
+        .code(2);
+
+    let out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&assert.get_output().stdout),
+        String::from_utf8_lossy(&assert.get_output().stderr)
+    );
+    // It must name the pattern. Silently skipping it produced a template that
+    // looked right and did not follow the project's rules.
+    assert!(out.contains("API_("), "{out}");
+    assert!(
+        !f.example_path.exists(),
+        "nothing should be written when the config is rejected"
+    );
+    Ok(())
+}
+
+/// `naming_convention` is in the published example and is not read from this
+/// file. A warning, not an error — refusing it would fail every config copied
+/// from the docs — but silence would let an operator believe a policy is in force
+/// that is not.
+#[test]
+#[serial]
+fn naming_convention_in_the_template_config_says_it_is_not_read() -> Result<()> {
+    let f = SyncTestFixture::new()?;
+    f.write_config(
+        r#"{
+          "$schema": "https://evnx.dev/schemas/placeholders.v1.json",
+          "description": "Team conventions",
+          "naming_convention": { "style": "SCREAMING_SNAKE_CASE" }
+        }"#,
+    )?;
+    f.write_env("APP_NAME=trustlabel\n")?;
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(f.temp_dir.path())
+        .args(["sync", "--template-config", "placeholders.json", "--force"])
+        .assert()
+        .code(0); // $schema and description are accepted silently; the sync works
+
+    let out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&assert.get_output().stdout),
+        String::from_utf8_lossy(&assert.get_output().stderr)
+    );
+    assert!(out.contains("naming_convention"), "{out}");
+    assert!(out.contains("--naming-policy"), "{out}");
+    Ok(())
+}
