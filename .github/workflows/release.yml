@@ -425,6 +425,43 @@ jobs:
           end
           EOF
 
+      # ── The gate the Scoop job already has ───────────────────────────────
+      #
+      # D8 shipped an invalid Scoop manifest on every release for five releases
+      # because nothing between the heredoc and `git push` ever looked at the
+      # result. This job has the same shape — a heredoc, then a push — and had the
+      # same gap. Filed as D14 when the Scoop one was fixed.
+      #
+      # ⚠️ A Homebrew formula is Ruby, so a syntax error is not a parse warning at
+      # install time: `brew install evnx` fails outright for everyone on macOS until
+      # the next release. `ruby -c` costs nothing and catches it here.
+      - name: Validate the formula before publishing it
+        run: |
+          set -o pipefail
+          FORMULA=homebrew-evnx/Formula/evnx.rb
+          fail() { echo "::error file=${FORMULA}::$1"; exit 1; }
+
+          ruby -c "$FORMULA" > /dev/null || fail "not valid Ruby"
+
+          # ⚠️ Catches an empty SHA from the fetch step, which without pipefail used
+          # to be a green step and a formula nobody could install: Homebrew compares
+          # the checksum and refuses on a mismatch, and "" matches nothing.
+          empty=$(grep -c 'sha256 ""' "$FORMULA" || true)
+          [ "$empty" -eq 0 ] || fail "$empty sha256 field(s) are empty"
+
+          # Every sha256 present must actually be a digest rather than something
+          # shaped like one.
+          while read -r digest; do
+            printf '%s' "$digest" | grep -Eq '^[a-f0-9]{64}$' \
+              || fail "sha256 $digest is not 64 hex characters"
+          done < <(grep -oE 'sha256 "[a-f0-9]*"' "$FORMULA" | sed 's/sha256 "//; s/"//')
+
+          GOT_VERSION=$(grep -oE 'version "[^"]+"' "$FORMULA" | head -1 | sed 's/version "//; s/"//')
+          [ "$GOT_VERSION" = "${{ steps.version.outputs.VERSION }}" ] \
+            || fail "version is '${GOT_VERSION}', expected '${{ steps.version.outputs.VERSION }}'"
+
+          echo "formula ok — v${GOT_VERSION}, $(grep -c 'sha256 "' "$FORMULA") checksums"
+
       - name: Commit and push Formula update
         run: |
           cd homebrew-evnx
