@@ -1072,21 +1072,34 @@ fn d2_a_credential_in_allow_actual_fails_the_sync_and_writes_nothing() -> Result
     Ok(())
 }
 
-/// ⚠️ `DATABASE_URL` is the reason the guard cannot rely on the scan detectors
-/// alone: **no built-in scan rule catches a connection string's password.** If
-/// this ever starts passing because `evnx scan` grew that rule, the extra check
-/// becomes redundant rather than wrong — but until then it is load-bearing.
+/// ⚠️ **This test used to assert the opposite**, and the flip is the point.
+///
+/// It was written to record a gap: `DATABASE_URL=postgresql://admin:…@host/db`
+/// scanned clean, so the `allow_actual` guard carried its own URL check because the
+/// scan detectors could not be relied on. D15 added
+/// `Credentials in a connection string` to `builtin_rules`, the guard's separate
+/// check was removed, and this now asserts the rule exists — so the guard's
+/// coverage of the case it most needs is pinned to the rule rather than to a second
+/// implementation that could drift from it.
 #[test]
 #[serial]
-fn d2_the_scan_detectors_alone_would_miss_a_connection_string() -> Result<()> {
+fn d15_the_scan_detectors_catch_a_connection_string_password() -> Result<()> {
     let f = SyncTestFixture::new()?;
     f.write_env("DATABASE_URL=postgresql://admin:s3cr3tp4ss@db.prod.example.com:5432/main\n")?;
 
-    cargo_bin_cmd!("evnx")
+    let assert = cargo_bin_cmd!("evnx")
         .current_dir(f.temp_dir.path())
-        .args(["scan", ".env", "--severity", "low"])
+        .args(["scan", ".env", "--severity", "high", "--no-color"])
         .assert()
-        .code(0); // 0 == nothing found
+        .code(1); // 1 == a high-severity finding, which is what CI gates on
+
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(out.contains("Credentials in a connection string"), "{out}");
+    // ⚠️ The password must never be echoed back, even in a finding about it.
+    assert!(
+        !out.contains("s3cr3tp4ss"),
+        "the finding leaked the password:\n{out}"
+    );
 
     Ok(())
 }

@@ -189,11 +189,13 @@ pub fn execute(ctx: SyncCtx) -> Result<bool> {
 /// # What counts as a credential
 ///
 /// The same detectors `evnx scan` uses, so the two commands cannot disagree about
-/// one value — plus [`url_embedded_credentials`], because the single most likely
-/// dangerous entry here is a `DATABASE_URL`, and **no built-in scan rule catches
-/// a connection string's password.** Verified by scanning one.
+/// one value.
 ///
-/// [`url_embedded_credentials`]: crate::utils::patterns::url_embedded_credentials
+/// ⚠️ That was not enough when this was written: the most likely dangerous entry
+/// here is a `DATABASE_URL`, and **no built-in rule caught a connection string's
+/// password**, so this carried its own check. D15 added the rule, so the check was
+/// removed rather than left as a second implementation of one idea — two of those
+/// drifting apart is the shape of half the defects in this codebase.
 pub fn check_allow_actual(
     config: &PlaceholderConfig,
     env_vars: &IndexMap<String, String>,
@@ -202,7 +204,22 @@ pub fn check_allow_actual(
         return Ok(());
     }
 
-    let registry = crate::commands::scan::DetectorRegistry::new();
+    // ⚠️ `DetectorRegistry::new()` alone is NOT the same set `evnx scan` uses.
+    //
+    // It registers the two heuristics and nothing else; `RuleDetector`, which
+    // holds the built-in provider patterns *and* any `[[scan.patterns]]`, is added
+    // by `with_patterns`. Without it this guard was relying on the entropy
+    // fallback and on names containing `secret`/`token`/`key` — enough for
+    // `sk_live_…` under any name, because that is high-entropy, but **not** enough
+    // for a connection string, whose entropy over the whole URL is low and whose
+    // name (`DATABASE_URL`) contains no sensitive word.
+    //
+    // Found by adding the connection-string rule and watching this guard fail to
+    // pick it up.
+    let patterns =
+        crate::commands::scan::PatternSet::compile(&crate::utils::patterns::builtin_rules())
+            .map_err(|e| anyhow::anyhow!("the built-in secret patterns failed to compile: {e}"))?;
+    let registry = crate::commands::scan::DetectorRegistry::new().with_patterns(patterns);
     let mut refused: Vec<(String, String)> = Vec::new();
 
     for key in &config.allow_actual {
@@ -211,14 +228,6 @@ pub fn check_allow_actual(
         let Some(value) = env_vars.get(key) else {
             continue;
         };
-
-        if let Some(userinfo) = crate::utils::patterns::url_embedded_credentials(value) {
-            // ⚠️ The userinfo itself is NOT put in the message — it is the
-            // password. Say only that there is one.
-            let _ = userinfo;
-            refused.push((key.clone(), "a password embedded in a URL".to_string()));
-            continue;
-        }
 
         // The strongest verdict, not the first: `scan_kv` runs every detector
         // and more than one can answer for a single value.
