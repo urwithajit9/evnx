@@ -337,6 +337,67 @@ pub enum AuthCommands {
     /// use `evnx cloud status`.
     Status,
 
+    /// Change your master password.
+    ///
+    /// ⚠️ **Not a settings toggle.** The master key is derived from the password,
+    /// so changing it re-derives the key and every vault key wrapped under it is
+    /// re-wrapped here, on this machine, in the same command. The server receives
+    /// a new verifier and a set of blobs it cannot read.
+    ///
+    /// What it does: signs out every other device; re-wraps the vault keys you
+    /// hold under your own master key. What it does not: touch vaults shared
+    /// *with* you (those are wrapped to your keypair, which this re-seals rather
+    /// than replaces), and it does not re-key a vault — a former member who kept
+    /// a key is unaffected. That is `evnx vault rekey`.
+    ///
+    /// ⚠️ **API tokens keep working, but CI breaks.** A token authenticates; it
+    /// does not decrypt. Any pipeline holding your master password as a secret
+    /// fails until that secret is updated.
+    ///
+    /// Before sending anything this writes the previous wraps to a 0600 file in
+    /// your config directory, and afterwards confirms every key still opens.
+    RotateMasterPassword {
+        /// Read both passwords from stdin: the current one on the first line,
+        /// the new one on the second.
+        ///
+        /// For scripts and the end-to-end harness. Each is taken up to its
+        /// newline; spaces are kept, because a passphrase may contain them.
+        /// Implies `--yes`, since there is nobody to prompt.
+        #[arg(long)]
+        password_stdin: bool,
+
+        /// The current password is believed to be in someone else's hands.
+        ///
+        /// Keeps **no undo**: the change takes effect immediately and cannot be
+        /// reversed. Without this an undo stays available for a window, by
+        /// proving the old password — which is exactly what you do not want when
+        /// the old password is the thing that leaked.
+        #[arg(long)]
+        compromised: bool,
+
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+    },
+
+    /// Undo a master password change, by proving the previous password.
+    ///
+    /// Does **not** need a session — whoever needs this is whoever the change
+    /// locked out, and a session is exactly what they do not have. The only
+    /// credential it asks for is the old master password.
+    ///
+    /// Only available for a window after the change, and only when the change
+    /// kept one: `--compromised` keeps none.
+    UndoPasswordChange {
+        /// Email address. Taken from the stored session, or prompted for.
+        #[arg(long, value_name = "EMAIL")]
+        email: Option<String>,
+
+        /// Read the previous master password from stdin instead of prompting.
+        #[arg(long)]
+        password_stdin: bool,
+    },
+
     /// Delete your account and everything only you can reach.
     ///
     /// ⚠️ **Irreversible, and it is not a logout.** The account, its sessions,
@@ -1536,6 +1597,57 @@ mod tests {
     /// That is exactly what happened: `--vault -V` collided with clap's
     /// auto-generated `--version`, and nothing caught it until the command was
     /// actually run. This test builds the tree so the next one fails here.
+    /// Every command describes itself, and no two siblings describe themselves
+    /// the same way.
+    ///
+    /// ⚠️ This exists because of a real mistake that every other gate missed. A
+    /// variant was inserted between a doc comment and the variant that comment
+    /// belonged to, so `rotate-master-password` inherited "Delete your account
+    /// and everything only you can reach" and `delete-account` was left blank.
+    /// It compiled, passed clippy, passed 663 tests and `debug_assert()` — and
+    /// `evnx auth --help` told people the wrong thing about the most destructive
+    /// command in the tool. Nothing but running it would have shown it, so this
+    /// runs it.
+    #[test]
+    fn every_command_describes_itself_distinctly() {
+        fn walk(cmd: &clap::Command, path: &str) {
+            let mut seen: std::collections::HashMap<String, String> = Default::default();
+            for sub in cmd.get_subcommands() {
+                let name = sub.get_name();
+                let here = if path.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{path} {name}")
+                };
+
+                // `help` is clap's own, and carries no description of ours.
+                if name == "help" {
+                    continue;
+                }
+
+                let about = sub
+                    .get_about()
+                    .map(|a| a.to_string())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                assert!(
+                    !about.is_empty(),
+                    "`evnx {here}` has no description — a doc comment is probably \
+                     attached to the wrong variant"
+                );
+                if let Some(other) = seen.insert(about.clone(), here.clone()) {
+                    panic!(
+                        "`evnx {here}` and `evnx {other}` share a description ({about:?}), \
+                         which means one of them has the other's doc comment"
+                    );
+                }
+                walk(sub, &here);
+            }
+        }
+        walk(&Cli::command(), "");
+    }
+
     #[test]
     fn cli_definition_is_valid() {
         Cli::command().debug_assert();

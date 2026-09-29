@@ -48,6 +48,7 @@ pub mod binding;
 pub mod client;
 pub mod config;
 pub mod creds;
+pub mod rotate;
 pub mod run;
 pub mod session;
 pub mod status;
@@ -144,6 +145,15 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
         AuthCommands::DeleteAccount { confirm_stdin } => {
             auth::delete_account(server_override, confirm_stdin, verbose)
         }
+        AuthCommands::RotateMasterPassword {
+            password_stdin,
+            compromised,
+            yes,
+        } => rotate::rotate(server_override, password_stdin, compromised, yes, verbose),
+        AuthCommands::UndoPasswordChange {
+            email,
+            password_stdin,
+        } => rotate::undo(server_override, email, password_stdin, verbose),
         AuthCommands::Totp { command } => match command {
             TotpCommands::Enable => totp::enable(server_override, verbose),
             TotpCommands::Disable => totp::disable(server_override, verbose),
