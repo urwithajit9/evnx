@@ -490,6 +490,7 @@ fn main() -> Result<()> {
         },
 
         Commands::Completions { shell } => commands::completions::run(shell),
+        Commands::Update { check } => commands::update::run(check),
     };
 
     // ⚠️ An error is exit **2**, not 1.

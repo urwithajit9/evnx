@@ -10,6 +10,7 @@ pub mod scan;
 pub mod spec;
 pub mod sync;
 pub mod template;
+pub mod update;
 pub mod validate;
 
 pub use add::run as run_add;
