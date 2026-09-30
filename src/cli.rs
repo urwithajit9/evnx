@@ -348,7 +348,8 @@ pub enum AuthCommands {
     /// hold under your own master key. What it does not: touch vaults shared
     /// *with* you (those are wrapped to your keypair, which this re-seals rather
     /// than replaces), and it does not re-key a vault — a former member who kept
-    /// a key is unaffected. That is `evnx vault rekey`.
+    /// a key is unaffected. Rotating a vault key is what `evnx vault revoke`
+    /// does when it removes someone; there is no standalone re-key command.
     ///
     /// ⚠️ **API tokens keep working, but CI breaks.** A token authenticates; it
     /// does not decrypt. Any pipeline holding your master password as a secret
@@ -803,6 +804,38 @@ pub enum CloudCommands {
         /// How many versions to show.
         #[arg(long, default_value_t = 20)]
         limit: usize,
+    },
+
+    /// Delete one version of a vault, and its encrypted blob.
+    ///
+    /// ⚠️ Permanent. The blob is removed from storage and the server has never
+    /// held anything that could rebuild it.
+    ///
+    /// **The latest version cannot be deleted.** `evnx cloud pull` and `evnx
+    /// cloud run` fetch it, so removing it would silently change what every
+    /// consumer of the vault receives. Push a newer version first, or delete the
+    /// whole vault.
+    ///
+    /// Needs admin on the vault: a developer can push new versions but not
+    /// remove old ones. Use `evnx cloud history` to see what a vault holds.
+    DeleteVersion {
+        /// Version number to delete, as `evnx cloud history` shows it.
+        ///
+        /// ⚠️ Named `version_num` rather than `version` on purpose: clap derives an
+        /// argument name from the field, and `version` collides with the
+        /// auto-generated `--version` flag. `value_name` keeps the help reading
+        /// `<VERSION>`. Caught by `cli_definition_is_valid`, which exists because
+        /// this same collision once shipped and only appeared at runtime.
+        #[arg(value_name = "VERSION")]
+        version_num: i32,
+
+        /// Vault to act on. Optional in a bound directory.
+        #[arg(long, value_name = "VAULT")]
+        vault: Option<String>,
+
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
     },
 
     /// Bind this directory to a vault, so push and pull need no --vault.
