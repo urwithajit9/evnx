@@ -923,3 +923,124 @@ mod env_file_tests {
         );
     }
 }
+
+// ─── Deleting a version ───────────────────────────────────────────────────────
+
+/// Remove one version of a vault.
+///
+/// ⚠️ This exists because the server's version quota refuses a push with *"Delete
+/// an older version to make room"*, and for a while there was no way to do that —
+/// no endpoint, no command. An error that advises an impossible action is worse
+/// than one admitting there is nothing to be done, because it sends people looking
+/// for a door that is not there.
+///
+/// The latest version cannot be deleted, by the server and by the check below.
+/// `cloud pull` and `cloud run` fetch the latest, so removing it would silently
+/// change what every consumer of the vault receives — the next deploy would pick up
+/// older secrets with nobody having asked. The check here is a courtesy that saves
+/// a round trip; the server is what enforces it.
+pub fn delete_version(
+    server_override: Option<&str>,
+    vault_target: Option<String>,
+    version_num: i32,
+    yes: bool,
+    verbose: bool,
+) -> Result<()> {
+    let vault_target = resolve_target(vault_target)?;
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    vault::require_session(&client, &server)?;
+    let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
+
+    let listed: VersionList = client
+        .get(&format!("/api/v1/vaults/{}/versions", vault_ref.id))
+        .map_err(|e| anyhow!("{e}"))?;
+
+    let latest = listed
+        .versions
+        .iter()
+        .map(|v| v.version_num)
+        .max()
+        .ok_or_else(|| anyhow!("{} has no versions to delete.", vault_ref.label()))?;
+
+    let target = listed
+        .versions
+        .iter()
+        .find(|v| v.version_num == version_num)
+        .ok_or_else(|| {
+            anyhow!(
+                "{} has no version {version_num}. Run `evnx cloud history --vault {}` \
+                 to see what it does have.",
+                vault_ref.label(),
+                vault_ref.label()
+            )
+        })?;
+
+    if version_num == latest {
+        return Err(anyhow!(
+            "version {version_num} is the latest version of {}, and deleting it would \
+             change what `evnx cloud pull` and `evnx cloud run` return without anyone \
+             asking for that.\n\
+             \x20 Push a newer version first, or delete the whole vault with `evnx vault \
+             delete`. Nothing has been changed.",
+            vault_ref.label()
+        ));
+    }
+
+    println!();
+    println!("  {}", "This deletes one version, permanently.".yellow());
+    println!("  vault     {}", vault_ref.label());
+    println!("  version   {version_num}");
+    println!(
+        "  contents  {} key(s), {}, pushed {}",
+        target.key_count,
+        human_size(target.blob_size_bytes),
+        target.pushed_at
+    );
+    println!(
+        "  {}",
+        "The encrypted blob is removed from storage. The server never held anything \
+         that could rebuild it, so there is no undo."
+            .dimmed()
+    );
+    println!();
+
+    if !yes
+        && !dialoguer::Confirm::new()
+            .with_prompt(format!("  Delete version {version_num}"))
+            .default(false)
+            .interact()
+            .context("reading the confirmation")?
+    {
+        println!("  Nothing was deleted.");
+        return Ok(());
+    }
+
+    client
+        .delete(&format!(
+            "/api/v1/vaults/{}/versions/{version_num}",
+            vault_ref.id
+        ))
+        .map_err(delete_version_error)?;
+
+    println!("  {} deleted version {version_num}", "✓".green());
+    if verbose {
+        println!("  latest is still {latest}");
+    }
+    Ok(())
+}
+
+/// Explain a refusal in terms of the thing that was refused.
+fn delete_version_error(e: super::client::ApiError) -> anyhow::Error {
+    use super::client::ApiError;
+    match e {
+        // The server checks the role; a developer can push but not remove history.
+        ApiError::Forbidden { message } => anyhow!(
+            "{message}\n\
+             \x20 Deleting a version needs admin on the vault. A developer can push \
+             new versions but not remove old ones."
+        ),
+        ApiError::Conflict { message } => anyhow!("{message}"),
+        other => anyhow!("{other}"),
+    }
+}

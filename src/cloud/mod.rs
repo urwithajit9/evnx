@@ -119,6 +119,11 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
         CloudCommands::History { vault, limit } => {
             sync::history(server_override, vault, limit, verbose)
         }
+        CloudCommands::DeleteVersion {
+            version_num,
+            vault,
+            yes,
+        } => sync::delete_version(server_override, vault, version_num, yes, verbose),
         CloudCommands::Link { vault } => sync::link(server_override, vault, verbose),
         CloudCommands::Unlink => sync::unlink(verbose),
         CloudCommands::Status { ping } => status::run(server_override, ping, verbose),
