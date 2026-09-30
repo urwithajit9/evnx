@@ -6,6 +6,260 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.7.0] - 2026-09-30
+
+**Thirteen pull requests, and a cloud account is now fully self-service.** A master
+password can be changed and the change undone, an account can be deleted, and a
+version can be removed from a vault's history — three things the server could
+already do and nothing could reach.
+
+### Why this is 0.7.0 and not 0.6.1
+
+Three changes alter behaviour rather than only adding to it, and in `0.x` semver
+puts a compatibility change in the minor position:
+
+- **Single-quoted values no longer expand.** `'${FOO}'` was substituted; it is now
+  literal, matching shell, dotenv, python-dotenv and godotenv. A file relying on
+  expansion inside single quotes **changes meaning with no error**, because both
+  forms parse. See *Changed*.
+- **A password inside a connection string is now a finding.** A repository whose
+  `DATABASE_URL` carries credentials now fails `evnx scan --severity high` where it
+  passed. See *Added*.
+- **`allow_actual` now does something.** It was parsed and read by nothing; it is
+  implemented, and refuses the whole sync with exit 2 when a listed value looks
+  like a credential. See *Added*.
+
+One build-level change worth knowing: a new `net` feature gates the HTTP stack, so
+`default = []` now means **no network code is compiled in at all** — `scan`,
+`validate`, `sync` and `diff` are provably offline rather than offline by
+convention. `migrate` and `cloud` both imply `net`, so no existing feature
+selection changes meaning.
+
+### Added
+
+- **`evnx auth rotate-master-password` — change your master password.** The master
+  key is derived from the password, so changing it re-derives the key and re-wraps
+  every vault key under it, on your machine, in the same command. The server
+  receives a new verifier and a set of blobs it cannot read.
+
+  ⚠️ **The server cannot tell a correct rotation from random bytes.** That is the
+  guarantee, not a gap — it can check a payload is complete, never that it is
+  correct. So verification is mandatory rather than a flag: the re-sealed keypair
+  is re-opened and its public keys asserted unchanged, every new wrap is unwrapped
+  with the new master key and compared byte-for-byte with the key it came from, and
+  the wraps and keys are checked to be the same length and in the same order — they
+  are zipped, and an order that drifted would wrap each vault with its neighbour's
+  key and still verify pairwise. All of it happens before a byte is sent, so a
+  failure can say the account is untouched and mean it.
+
+  Before acting it says how many keys move, how many shared-to-you vaults are
+  unaffected, that every other device will be signed out, and how many API tokens
+  exist. Tokens keep working — a token authenticates, it does not decrypt — but any
+  CI holding the master password as a secret fails until that secret is updated.
+  It does **not** re-key a vault, so a former member who kept a key is unaffected. (#92)
+
+- **`evnx auth undo-password-change` — and it takes no session, deliberately.**
+  Whoever needs it is whoever the change locked out, and a session is exactly what
+  they do not have. Zero knowledge means the server can never be the recovery path,
+  so the old wraps are written to a `0600` file in the config directory before the
+  request: ciphertext, useless without the old password, and a complete offline
+  undo that does not depend on the server keeping anything. The server's own
+  snapshot window is the second way back. A wrong password and an address with
+  nothing to undo answer identically, so the command cannot be used to discover who
+  has an account. (#92)
+
+- **`evnx auth delete-account`.** Prompts with the account named, takes the typed
+  email back, asks for a 2FA code only when 2FA is enabled, and clears the local
+  credential file afterwards. There is deliberately no `--yes`: a boolean flag that
+  deletes an account is one shell-history recall away from doing it.
+  `--confirm-stdin` covers the scripted case and still has to carry the address. A
+  409 is surfaced as the server's own prose, naming the vaults that block the
+  deletion, because reducing that to "conflict" strands someone with no idea what
+  to do next. (#81)
+
+- **`evnx cloud delete-version`.** The client half of the quota remedy — the
+  server's quota refusal has started telling people to remove old versions, and
+  nothing could. Shows the version, its key count, size and push date before
+  asking, because "delete version 3" is not enough information to consent to.
+  `--yes` skips the prompt. The latest version is refused here as well as on the
+  server: `pull` and `run` fetch the latest, so removing it would change what every
+  consumer of the vault gets without anyone asking for that. (#93)
+
+- **`evnx update` — how to upgrade, and whether to.** evnx ships through nine
+  channels and none of them ever told anyone a release had happened. It detects how
+  the running binary was installed and prints that channel's upgrade command;
+  `--check` asks GitHub Releases whether a newer release exists.
+
+  Two deliberate limitations. **Nothing runs unless asked** — no command makes a
+  network request on its own, which is what keeps evnx usable air-gapped and in CI
+  with egress rules, and that is worth more than an upgrade nag. And **nothing
+  self-replaces**: nine package managers ship evnx, and a binary that overwrites
+  itself fights whichever one owns the file. An unrecognised install path prints
+  every command rather than guessing, because `brew upgrade` against a binary
+  Homebrew never installed fails unhelpfully. `--check` reads GitHub Releases
+  because the tag is the only source true by construction — crates.io is published
+  by hand, npm publishes on `workflow_run`, winget merges on Microsoft's schedule —
+  and the output says so every time it reports a newer version. (#88)
+
+- **`scan` detects a password embedded in a connection string.**
+  `DATABASE_URL=postgresql://admin:s3cr3t@db.prod.example.com:5432/main` scanned
+  clean, exit 0. The miss was structural: the provider patterns are all prefix
+  formats and a connection string has no prefix, the sensitive-key heuristic keys
+  off names containing `secret`/`token`/`key` and `DATABASE_URL` has none of them,
+  and the entropy fallback scores a whole URL below threshold. A live database
+  password in `DATABASE_URL` is among the most common things in a `.env`.
+
+  The character classes exclude `/`, `?` and `#` so a match cannot run past the
+  authority into a path — `https://host/users/me@example.com` is an ordinary URL —
+  and a colon is required before the `@`, so `postgresql://reader@host/db` reads as
+  a bare username. No `action_url`: the place to rotate a database password is the
+  database. (#87)
+
+- **`sync`'s `allow_actual` is implemented, and guarded.** It was documented with a
+  schema-table row and read by nothing. Refusing it outright would hard-fail every
+  config copied from that page, and the documented example uses it only for
+  non-secret keys — `APP_NAME`, `ENVIRONMENT`, `LOG_LEVEL` — where the real value
+  is the better example and `sync --reverse` then hands a teammate working
+  defaults. So it works, and `check_allow_actual` refuses the whole sync before the
+  first write, naming every offending key at once with exit 2, when a listed value
+  looks like a credential.
+
+  ⚠️ The guard was built on `DetectorRegistry::new()`, which is **not** the set
+  `scan` uses: `new()` registers the two heuristics only, and the built-in patterns
+  arrive via `with_patterns`, which only the `scan` command called. So it was
+  relying on entropy and on sensitive names — enough for `sk_live_…`, not enough
+  for a connection string. Found by adding the rule above and watching the guard
+  fail to pick it up. It now uses `with_patterns(builtin_rules())`, which is what
+  its doc comment already claimed. (#86)
+
+### Fixed
+
+- **A rejected login said "your session has expired".** `evnx auth login` with an
+  address that has no account reported "your session has expired. Run
+  `evnx auth login` to sign in again" — nonsense twice over, since there was no
+  session and it names the command already running. It cannot say "no such
+  account": `/srp/init` answers an unknown address with 200 and a fabricated salt
+  and verifier, so `/srp/verify` rejects the proof with the same 401 a wrong
+  password gets, and the client genuinely does not know. The message now names both
+  possibilities, points at the likelier one, and says there is no password reset.
+
+  The test that should have caught this had never reached the code: it asserted
+  only `is_err()`, and the mock pinned the status at 200 while switching the body
+  to an error document, so the client read an unparseable success. The status now
+  comes from the same deterministic function of the exchange as the body, so the
+  two cannot disagree. (#83)
+
+- **One credential in a source file counted as two secrets.** A Stripe key in a
+  `.py` reported twice — "High-entropy string" low and "Stripe Secret Key (LIVE)"
+  high, same value, same line — so `--severity` gates and CI totals saw one high
+  *and* one low. The same key in a `.json` gave four. A non-`.env` line is scanned
+  by two paths that see different strings, and nothing reconciled them with each
+  other. Now reconciled per line, by value, using containment rather than equality:
+  the two paths disagree about where a value ends, so equality collapses the neatly
+  quoted case and leaves `prefix-sk_live_…-suffix` duplicated, which is the shape
+  real code is full of. Two different credentials on one line still stay two
+  findings, and order is first-seen so output is stable between runs. (#85)
+
+- **`scan` told you to rotate a key that is meant to be public.** The footer added
+  in 0.6.0 said "revoke and reissue those keys — they have been readable by every
+  visitor to your site, so treat them as public, not merely leaked",
+  unconditionally. A Supabase **anon key** behind `NEXT_PUBLIC_` is designed to ship
+  in the browser and is protected by row-level security, not by secrecy: it **is**
+  public, and reissuing it is pointless work. The per-finding line already hedged
+  for exactly this case — "if this is not meant to be public, rename it to …" — and
+  the footer asserted over the top of it one line later.
+
+  The footer now branches on the same discriminator the per-finding hedge uses: a
+  named provider format carries an `action_url`, shape alone does not. With no
+  recognised provider among the public-prefixed findings it says evnx cannot tell a
+  publishable analytics key from an unrecognised secret, and asks the reader to
+  check before rotating. With one, the wording is unchanged — a Stripe key behind
+  `VITE_` is not ambiguous. Both branches still lead with renaming, which is right
+  either way, and the unprefixed path is untouched. Found by running `scan` on a
+  real Next.js project rather than a fixture. (#82)
+
+- **`sync` produced a git diff on a project whose `.env` had not changed.**
+  `generate_placeholder` iterated a `HashMap` and returned the first match, and
+  more than one pattern usually matches a key — `STRIPE_SECRET_KEY` matches
+  `SECRET`, `_KEY$` and `^STRIPE_` at once. Rust randomises `HashMap` iteration per
+  process, so the winner changed between runs and was written into `.env.example`, a
+  committed file. Eight identical runs produced four different answers. Order is now
+  exact key match, then longest pattern, then declaration order; every rung is
+  total, so the answer depends on the config file and the key and nothing else. The
+  test runs the binary eight times rather than looping in-process, because the
+  hasher is seeded once per process and the bug was invisible within a single
+  run. (#86)
+
+- **An uncompilable `sync` pattern was silently skipped**, so the key fell through
+  to the default and the template looked fine while ignoring the project's rules.
+  Now refused at load time, naming the pattern. `$schema` and `description` were
+  silently dropped by serde, so an operator could not tell accepted from
+  misspelled. `naming_convention` is documented in the sync config but read from
+  `--naming-policy`, and now warns rather than vanishing. And
+  `is_placeholder_value` ignored `config.patterns`, so a project whose convention
+  is `<set-me>` had all of its own placeholders reported as real values in the
+  dry-run preview. (#86)
+
+- **Every expansion error reported "line 0"** — not a line in any file, in exactly
+  the case where a line number is what you need: a large `.env` that suddenly will
+  not parse. Expansion is a separate pass over the assembled map, run after the
+  whole file is parsed, which is what makes a forward reference work; by then the
+  line numbers were gone. The parser now records where each key was written and
+  hands that to the pass. It reports the line of the key being expanded rather than
+  of the missing variable, which frequently does not exist anywhere. The
+  circular-expansion error shared the same hardcoded zero and is fixed with it. (#91)
+
+- **The published Scoop manifest was invalid JSON on every release since
+  `e96bdb4`.** `"find": "^([a-f0-9]+)\s"` — `\s` is not a JSON escape. The heredoc
+  that writes the manifest is unquoted, which it must be for `${VERSION}` to
+  substitute, so the shell ate one level of backslash and two arrived as one. It
+  needs four. Confirmed in the wild, not reasoned about: the published 0.6.0
+  manifest is rejected by both `jq` and `python -m json.tool`. Scoop's `parse_json`
+  uses `ConvertFrom-Json -ErrorAction Stop` and returns `$null` on a throw, so on a
+  strict parser there was no manifest at all; a lenient parser leaves
+  `^([a-f0-9]+)s`, which does not match the real `.sha256` because the hex run is
+  followed by a space. Both outcomes are broken.
+
+  The escape is one character; the gate is the fix. A new step asserts valid JSON,
+  the decoded `find` value, a `sha256:<64 hex>` hash and the version before
+  anything is pushed — decoded values, because over-escaping also parses, it just
+  means something else. This survived five releases because nothing between the
+  heredoc and `git push` ever looked at the result. (#84)
+
+- **A 404 while fetching a checksum published `"hash": "sha256:"`.** The release
+  workflow declares no `defaults.run.shell`, so steps run under `bash -e` without
+  `pipefail`, and the exit status of `curl | awk` is `awk`'s. Reproduced against a
+  real 404: exit 0 without `pipefail`, 22 with it. Fixed in the Scoop job and in
+  the Homebrew job, which had the same pattern across four assignments. (#84)
+
+- **Nothing validated the Homebrew formula before pushing it.** Same shape as the
+  Scoop gap, and worse: a formula is Ruby, so an invalid one means `brew install
+  evnx` fails outright for every macOS user until the next release. Now checks
+  `ruby -c`, that no `sha256` is empty, that every `sha256` is 64 hex characters,
+  and that the version matches the tag. Verified by parsing the step out of the YAML
+  and running it against four sabotages — an empty `sha256`, a six-character one, a
+  wrong version, and invalid Ruby — each of which it caught. (#89)
+
+### Changed
+
+- **A secret containing a dollar sign can now be written.** A token containing
+  `${...}` made the whole file fail to parse; one containing `$NAME`, where `NAME`
+  was also a key, was **silently replaced** — substituting one of your secrets into
+  another, with no error. Neither `\$` nor `$$` nor single quotes prevented it.
+
+  Two halves. **Single quotes and backticks no longer expand**: they are literal in
+  every respect now, matching shell, dotenv, python-dotenv and godotenv, and
+  turning "literal for backslashes but not for dollars" into one rule people can
+  hold. Whatever is between single quotes is the value. And **`\$` is a literal
+  dollar in a double-quoted value**, so expansion can be kept for the rest of the
+  string.
+
+  ⚠️ **Breaking, and silently so**: a file relying on expansion inside single
+  quotes changes meaning with no error, because both forms parse. Nothing in the
+  suite asserted the old behaviour — all 1039 tests passed before the new ones were
+  added — which reassures about internal reliance and warns that no test would have
+  caught it either way. (#90)
+
 ## [0.6.0] - 2026-09-27
 
 **The first release since 0.5.0 that contains new code.** 0.5.1 and 0.5.2 were
