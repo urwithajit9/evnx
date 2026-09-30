@@ -2608,3 +2608,123 @@ fn new2_a_clean_notebook_is_clean() {
         "a notebook with no secrets is clean, not an error:\n{all}"
     );
 }
+
+// ── D9 — the public-prefix footer must hedge when the value may be public ────
+//
+// ⚠️ G1.1 fixed a footer that gave confident wrong advice, and introduced a
+// second one. "Revoke and reissue those keys — treat them as public, not merely
+// leaked" was unconditional, so a Supabase anon key behind NEXT_PUBLIC_ — a
+// credential *designed* to ship in the browser — was met with a rotation
+// instruction it does not need. The per-finding line already hedged; the footer
+// asserted over the top of it one line later.
+
+/// Shape alone, so evnx cannot tell a publishable key from an unknown secret.
+#[test]
+fn d9_a_shape_only_public_finding_hedges_in_the_footer() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        // A realistic Supabase anon key: a JWT long enough to trip the entropy
+        // heuristic, under a name with no sensitive word in it, so nothing
+        // matches a known provider format and the footer must hedge.
+        "NEXT_PUBLIC_ANALYTICS=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoIn0.9fRoQ2xZ\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--severity", "low", "--no-color"])
+        .output()
+        .unwrap();
+    let all = String::from_utf8_lossy(&out.stdout).to_string();
+
+    assert!(
+        all.contains("Check whether these are meant to be public"),
+        "the footer must hedge when nothing matched a known provider:\n{all}"
+    );
+    // ⚠️ The exact sentence that was wrong. It asserts the key has leaked.
+    assert!(
+        !all.contains("so treat them as public, not merely leaked"),
+        "the assertive wording must not appear for a shape-only finding:\n{all}"
+    );
+}
+
+/// A named provider format is not ambiguous — a Stripe key is never meant to be
+/// public, so the footer must keep saying so.
+#[test]
+fn d9_a_named_provider_behind_a_prefix_still_asserts() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "VITE_STRIPE_SECRET_KEY=sk_live_51Habcdefghijklmnopqrstuvwxyz123456\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--no-color"])
+        .output()
+        .unwrap();
+    let all = String::from_utf8_lossy(&out.stdout).to_string();
+
+    assert!(
+        all.contains("Revoke and reissue those keys"),
+        "a recognised provider format must still be told to rotate:\n{all}"
+    );
+    assert!(
+        !all.contains("Check whether these are meant to be public"),
+        "and must not be hedged:\n{all}"
+    );
+}
+
+/// ⚠️ Mixed: one ambiguous, one certain. The certain one decides — hedging a file
+/// that contains a live Stripe key would be the original bug returning.
+#[test]
+fn d9_one_certain_finding_removes_the_hedge_for_the_whole_footer() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "NEXT_PUBLIC_ANALYTICS=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoIn0.9fRoQ2xZ\n\
+         VITE_STRIPE_SECRET_KEY=sk_live_51Habcdefghijklmnopqrstuvwxyz123456\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--severity", "low", "--no-color"])
+        .output()
+        .unwrap();
+    let all = String::from_utf8_lossy(&out.stdout).to_string();
+
+    assert!(
+        all.contains("Revoke and reissue those keys"),
+        "a live Stripe key in the file must not be softened:\n{all}"
+    );
+}
+
+/// The unprefixed path is untouched by any of this.
+#[test]
+fn d9_a_finding_with_no_public_prefix_keeps_the_original_footer() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "STRIPE_SECRET_KEY=sk_live_51Habcdefghijklmnopqrstuvwxyz123456\n",
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".env", "--no-color"])
+        .output()
+        .unwrap();
+    let all = String::from_utf8_lossy(&out.stdout).to_string();
+
+    assert!(
+        all.contains("Revoke or rotate the keys above"),
+        "an ordinary leak keeps the ordinary advice:\n{all}"
+    );
+    assert!(
+        !all.contains("public-prefixed"),
+        "and says nothing about prefixes:\n{all}"
+    );
+}
