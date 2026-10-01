@@ -552,7 +552,110 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
         println!("  Vault commands stay unavailable until you open the verification");
         println!("  link sent to {}.", me.email);
     }
+
+    // ── Plan and usage ───────────────────────────────────────────────────────
+    //
+    // ⚠️ Best-effort. A server too old to have `/auth/usage` 404s, and that must
+    // not turn a working `status` into a failure — this block is additive
+    // information, not the answer the command exists to give. Printed after the
+    // account block for the same reason: if it is missing, nothing above it
+    // changes.
+    if let Ok(u) = client.get::<UsageResponse>("/api/v1/auth/usage") {
+        print_usage(&u);
+    }
+
     Ok(())
+}
+
+/// `GET /auth/usage`. See the server's `routes::usage` for how each is counted.
+#[derive(Deserialize)]
+pub(crate) struct UsageResponse {
+    pub plan: String,
+    pub vaults: UsageCount,
+    pub api_tokens: UsageCount,
+    pub versions_per_vault: VersionUsage,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UsageCount {
+    pub used: i64,
+    /// `None` means unlimited — absence rather than a sentinel, because a very
+    /// large number is indistinguishable from a misconfiguration.
+    pub limit: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct VersionUsage {
+    pub limit: Option<i64>,
+    pub vaults: Vec<VaultVersionUsage>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct VaultVersionUsage {
+    pub name: String,
+    pub environment: String,
+    pub used: i64,
+}
+
+/// Render one `used / limit` pair.
+///
+/// ⚠️ **`used == limit` is FULL, not nearly full.** The server refuses at
+/// `count >= limit`, so at three of three the next create is already rejected.
+/// Rendering that as a neutral "3 / 3" would read as one remaining to anyone
+/// used to progress bars, which is why it is coloured and labelled.
+pub(crate) fn usage_line(used: i64, limit: Option<i64>) -> String {
+    match limit {
+        None => format!("{used} (unlimited)"),
+        Some(l) if used >= l => format!("{} — full", format!("{used} / {l}").red()),
+        // One slot left is the moment a warning is still actionable; at the
+        // limit it is too late to be advice.
+        Some(l) if used + 1 >= l => format!("{}", format!("{used} / {l}").yellow()),
+        Some(l) => format!("{used} / {l}"),
+    }
+}
+
+fn print_usage(u: &UsageResponse) {
+    println!();
+    println!("{} ({})", "plan".bold(), u.plan);
+    println!(
+        "  vaults      {}",
+        usage_line(u.vaults.used, u.vaults.limit)
+    );
+    println!(
+        "  API tokens  {}",
+        usage_line(u.api_tokens.used, u.api_tokens.limit)
+    );
+
+    // Per vault, because that is the shape of the limit — a total would be a
+    // number corresponding to no limit anyone can hit.
+    if let Some(limit) = u.versions_per_vault.limit {
+        let at_risk: Vec<&VaultVersionUsage> = u
+            .versions_per_vault
+            .vaults
+            .iter()
+            .filter(|v| v.used + 1 >= limit)
+            .collect();
+        println!("  versions    {limit} per vault");
+        if !at_risk.is_empty() {
+            println!();
+            for v in at_risk {
+                println!(
+                    "  {} {}/{} is at {}",
+                    "!".yellow(),
+                    v.name,
+                    v.environment,
+                    usage_line(v.used, Some(limit))
+                );
+            }
+            println!(
+                "  {}",
+                "`evnx cloud history` lists them; `evnx cloud delete-version` removes one."
+                    .dimmed()
+            );
+        }
+    } else {
+        println!("  versions    unlimited per vault");
+    }
 }
 
 /// Read a master password, from stdin when asked or by prompting otherwise.
@@ -1119,6 +1222,37 @@ mod tests {
 
     /// Dated, so running it twice does not silently replace the earlier file —
     /// and so the name still means something months later in a Downloads folder.
+    /// ⚠️ The semantics the whole display hangs on. `check_*_limit` refuses at
+    /// `count >= limit`, so three of three means the next one is ALREADY
+    /// rejected — not that one remains. Rendering it as a neutral "3 / 3" would
+    /// read as one left to anyone used to progress bars.
+    #[test]
+    fn being_at_the_limit_reads_as_full_not_as_one_remaining() {
+        let full = usage_line(3, Some(3));
+        assert!(
+            full.contains("full"),
+            "at the limit the line must say so, got {full:?}"
+        );
+        // Over the limit can happen if a limit is lowered under an existing
+        // account; it is still full, not a negative remainder.
+        assert!(usage_line(5, Some(3)).contains("full"));
+
+        let room = usage_line(1, Some(3));
+        assert!(
+            !room.contains("full"),
+            "1 of 3 must not say full, got {room:?}"
+        );
+    }
+
+    /// Unlimited is absence, not a sentinel — a very large number would be
+    /// indistinguishable from a misconfiguration.
+    #[test]
+    fn an_absent_limit_renders_as_unlimited() {
+        let l = usage_line(42, None);
+        assert!(l.contains("42") && l.contains("unlimited"), "{l:?}");
+        assert!(!l.contains("full"));
+    }
+
     #[test]
     fn the_default_export_filename_carries_the_date() {
         assert_eq!(
