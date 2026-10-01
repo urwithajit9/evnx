@@ -951,6 +951,144 @@ pub fn delete_account(
     Ok(())
 }
 
+/// Default file name when `--output` is not given.
+///
+/// Dated rather than fixed, so running it twice a month apart does not silently
+/// replace the earlier one — and so the file still means something when it turns
+/// up in a Downloads folder later.
+pub(crate) fn default_export_filename(today: &str) -> String {
+    format!("evnx-export-{today}.json")
+}
+
+/// Download everything the server holds about this account, as JSON.
+///
+/// ─── What this is for ────────────────────────────────────────────────────────
+///
+/// GDPR Article 20, and the other half of `evnx auth delete-account`: being able
+/// to take your data with you before erasing it. Article 20 covers what the
+/// controller holds, which for evnx is metadata plus opaque ciphertext.
+///
+/// ⚠️ **The secrets are not in it and cannot be.** The server has never held a
+/// master password, a master key, a vault key, or a plaintext value, so there is
+/// nothing on its side to decrypt them with. The file itself says so and names
+/// `evnx cloud pull`, because a reader who finds no values needs to learn why
+/// from the artefact rather than from a guide they may never find.
+///
+/// ─── Why it is written 0600 ──────────────────────────────────────────────────
+///
+/// No secret value appears in it, but it is not a file to leave world-readable:
+/// it carries every vault name, every co-member's email address, and the
+/// variable NAMES of every version — which describe the shape of a system even
+/// without its contents. The credentials file is 0600 for a weaker reason than
+/// this one.
+pub fn export(
+    server_override: Option<&str>,
+    output: Option<std::path::PathBuf>,
+    force: bool,
+    verbose: bool,
+) -> Result<()> {
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    super::vault::require_session(&client, &server)?;
+
+    let path = output.unwrap_or_else(|| {
+        std::path::PathBuf::from(default_export_filename(
+            &chrono::Local::now().format("%Y-%m-%d").to_string(),
+        ))
+    });
+
+    // ⚠️ Checked before the request, not after. Refusing once the body is in
+    // memory would mean spending the round trip to then throw the answer away,
+    // and — worse — a reader could reasonably assume a file had been written.
+    if path.exists() && !force {
+        return Err(anyhow!(
+            "{} already exists. Pass --force to overwrite it, or -o to write \n\
+             \x20 somewhere else.",
+            path.display()
+        ));
+    }
+
+    // Taken as a `Value` rather than a typed struct on purpose: this is a
+    // verbatim copy of what the server holds, and a struct here would silently
+    // drop any field the server adds later — turning "everything we hold" into
+    // "everything this binary happened to know about". That is the one promise
+    // the command makes.
+    let body: serde_json::Value = client
+        .get("/api/v1/auth/account/export")
+        .map_err(|e| anyhow!("could not fetch the export: {e}"))?;
+
+    let pretty = serde_json::to_string_pretty(&body).context("formatting the export")?;
+
+    write_export_file(&path, pretty.as_bytes())?;
+
+    let vaults = body["vaults"].as_array().map_or(0, |v| v.len());
+    let tokens = body["api_tokens"].as_array().map_or(0, |v| v.len());
+    let events = body["audit_events"].as_array().map_or(0, |v| v.len());
+
+    println!();
+    println!(
+        "  {} wrote {}",
+        "✓".green(),
+        path.display().to_string().bold()
+    );
+    println!("  {vaults} vault(s), {tokens} API token(s), {events} audit event(s)");
+    println!();
+    println!(
+        "  {}",
+        "Your secrets are NOT in this file — the server has never held them.".yellow()
+    );
+    println!(
+        "  {}",
+        "Run `evnx cloud pull` in each project to get the values themselves.".yellow()
+    );
+    println!();
+    println!(
+        "  {}",
+        "It does describe the shape of your setup: vault names, variable names,".dimmed()
+    );
+    println!(
+        "  {}",
+        "and the email of everyone you share with. Written 0600 for that reason.".dimmed()
+    );
+    if body["audit_events_truncated"] == serde_json::Value::Bool(true) {
+        println!();
+        println!(
+            "  {}",
+            "⚠ The activity trail was truncated at the server's limit — older".yellow()
+        );
+        println!("  {}", "events exist but are not in this file.".yellow());
+    }
+    if verbose {
+        println!();
+        println!("  server: {server}");
+    }
+    Ok(())
+}
+
+/// Write the export, owner-only where the platform expresses that.
+fn write_export_file(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+
+    let mut f =
+        std::fs::File::create(path).with_context(|| format!("creating {}", path.display()))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Set before the bytes are written, so there is no instant in which the
+        // file exists with the process umask's permissions and real content in
+        // it. The same ordering `creds.rs` uses.
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("restricting {} to 0600", path.display()))?;
+    }
+
+    f.write_all(bytes)
+        .with_context(|| format!("writing {}", path.display()))?;
+    f.sync_all()
+        .with_context(|| format!("flushing {}", path.display()))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -977,6 +1115,37 @@ mod tests {
         assert!(check_password_strength(&pw(&"🔑".repeat(12))).is_ok());
         assert!(check_password_strength(&pw(&"é".repeat(11))).is_err());
         assert!(check_password_strength(&pw(&"é".repeat(12))).is_ok());
+    }
+
+    /// Dated, so running it twice does not silently replace the earlier file —
+    /// and so the name still means something months later in a Downloads folder.
+    #[test]
+    fn the_default_export_filename_carries_the_date() {
+        assert_eq!(
+            default_export_filename("2026-10-01"),
+            "evnx-export-2026-10-01.json"
+        );
+    }
+
+    /// ⚠️ No secret value is in the export, but it carries every vault name,
+    /// every co-member's email, and the variable NAMES of every version — the
+    /// shape of a system without its contents. World-readable is the wrong
+    /// default for that.
+    #[cfg(unix)]
+    #[test]
+    fn the_export_file_is_written_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("export.json");
+
+        write_export_file(&path, b"{\"hello\": \"world\"}").unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "export was written {mode:o}, expected 600");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"hello\": \"world\"}"
+        );
     }
 
     #[test]

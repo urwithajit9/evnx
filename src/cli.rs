@@ -399,6 +399,33 @@ pub enum AuthCommands {
         password_stdin: bool,
     },
 
+    /// Download everything the server holds about your account, as JSON.
+    ///
+    /// Which vaults exist, who can reach them, what each version contained by
+    /// variable NAME, your API tokens by name and scope, and your activity.
+    ///
+    /// ⚠️ **Your secrets are not in it, and cannot be.** They are encrypted on
+    /// your machine under a key derived from your master password, and the
+    /// server has never held that password, that key, or any plaintext value.
+    /// To get the secrets themselves, run `evnx cloud pull` for each vault. The
+    /// file says this too, so it is still clear months later.
+    ///
+    /// Nothing that could be used as a credential is included — not your SRP
+    /// verifier, not your 2FA secret, not your API token values.
+    ///
+    /// ⚠️ The file still describes the SHAPE of your configuration: variable
+    /// names, vault names, and the email of everyone you share with. Treat it
+    /// as sensitive even though no secret value appears in it.
+    Export {
+        /// Where to write it. Defaults to `evnx-export-<date>.json` here.
+        #[arg(long, short = 'o', value_name = "PATH")]
+        output: Option<std::path::PathBuf>,
+
+        /// Overwrite the file if it already exists.
+        #[arg(long)]
+        force: bool,
+    },
+
     /// Delete your account and everything only you can reach.
     ///
     /// ⚠️ **Irreversible, and it is not a logout.** The account, its sessions,
