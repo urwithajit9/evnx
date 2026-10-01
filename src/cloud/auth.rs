@@ -1059,11 +1059,18 @@ pub fn delete_account(
 /// Dated rather than fixed, so running it twice a month apart does not silently
 /// replace the earlier one — and so the file still means something when it turns
 /// up in a Downloads folder later.
-pub(crate) fn default_export_filename(today: &str) -> String {
-    format!("evnx-export-{today}.json")
+pub(crate) fn default_data_filename(today: &str) -> String {
+    format!("evnx-account-data-{today}.json")
 }
 
 /// Download everything the server holds about this account, as JSON.
+///
+/// ⚠️ **Named `download-data`, not `export`, deliberately.** `evnx cloud export`
+/// is planned as the anti-lock-in escape hatch and writes every vault's secrets
+/// **decrypted** to disk. Two commands called `export` with opposite risk
+/// profiles would be a trap: the lesson learned here — "export holds no
+/// secrets" — is exactly the wrong thing to carry to that one. The HTTP route is
+/// still `/auth/account/export`, which nobody types.
 ///
 /// ─── What this is for ────────────────────────────────────────────────────────
 ///
@@ -1084,7 +1091,7 @@ pub(crate) fn default_export_filename(today: &str) -> String {
 /// variable NAMES of every version — which describe the shape of a system even
 /// without its contents. The credentials file is 0600 for a weaker reason than
 /// this one.
-pub fn export(
+pub fn download_data(
     server_override: Option<&str>,
     output: Option<std::path::PathBuf>,
     force: bool,
@@ -1095,7 +1102,7 @@ pub fn export(
     super::vault::require_session(&client, &server)?;
 
     let path = output.unwrap_or_else(|| {
-        std::path::PathBuf::from(default_export_filename(
+        std::path::PathBuf::from(default_data_filename(
             &chrono::Local::now().format("%Y-%m-%d").to_string(),
         ))
     });
@@ -1122,7 +1129,7 @@ pub fn export(
 
     let pretty = serde_json::to_string_pretty(&body).context("formatting the export")?;
 
-    write_export_file(&path, pretty.as_bytes())?;
+    write_data_file(&path, pretty.as_bytes())?;
 
     let vaults = body["vaults"].as_array().map_or(0, |v| v.len());
     let tokens = body["api_tokens"].as_array().map_or(0, |v| v.len());
@@ -1169,7 +1176,7 @@ pub fn export(
 }
 
 /// Write the export, owner-only where the platform expresses that.
-fn write_export_file(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
+fn write_data_file(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
 
     let mut f =
@@ -1254,10 +1261,10 @@ mod tests {
     }
 
     #[test]
-    fn the_default_export_filename_carries_the_date() {
+    fn the_default_data_filename_carries_the_date() {
         assert_eq!(
-            default_export_filename("2026-10-01"),
-            "evnx-export-2026-10-01.json"
+            default_data_filename("2026-10-01"),
+            "evnx-account-data-2026-10-01.json"
         );
     }
 
@@ -1267,15 +1274,15 @@ mod tests {
     /// default for that.
     #[cfg(unix)]
     #[test]
-    fn the_export_file_is_written_owner_only() {
+    fn the_data_file_is_written_owner_only() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("export.json");
 
-        write_export_file(&path, b"{\"hello\": \"world\"}").unwrap();
+        write_data_file(&path, b"{\"hello\": \"world\"}").unwrap();
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600, "export was written {mode:o}, expected 600");
+        assert_eq!(mode, 0o600, "the file was written {mode:o}, expected 600");
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             "{\"hello\": \"world\"}"

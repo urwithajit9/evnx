@@ -150,8 +150,8 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
         AuthCommands::DeleteAccount { confirm_stdin } => {
             auth::delete_account(server_override, confirm_stdin, verbose)
         }
-        AuthCommands::Export { output, force } => {
-            auth::export(server_override, output, force, verbose)
+        AuthCommands::DownloadData { output, force } => {
+            auth::download_data(server_override, output, force, verbose)
         }
         AuthCommands::RotateMasterPassword {
             password_stdin,

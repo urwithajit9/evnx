@@ -416,8 +416,14 @@ pub enum AuthCommands {
     /// ⚠️ The file still describes the SHAPE of your configuration: variable
     /// names, vault names, and the email of everyone you share with. Treat it
     /// as sensitive even though no secret value appears in it.
-    Export {
-        /// Where to write it. Defaults to `evnx-export-<date>.json` here.
+    ///
+    /// ⚠️ Deliberately NOT called `export`. `evnx cloud export` is planned as the
+    /// anti-lock-in escape hatch — it writes every vault's secrets, DECRYPTED, to
+    /// disk. Two commands named `export` with opposite risk profiles would mean
+    /// anyone who learned "export holds no secrets" here carried that belief to
+    /// the one that writes plaintext credentials.
+    DownloadData {
+        /// Where to write it. Defaults to `evnx-account-data-<date>.json` here.
         #[arg(long, short = 'o', value_name = "PATH")]
         output: Option<std::path::PathBuf>,
 
