@@ -103,6 +103,36 @@ impl ConvertOptions {
     }
 }
 
+/// End converted output with exactly one newline.
+///
+/// # Why this exists, and why it is shared
+///
+/// A [`Converter`] returns a `String` and makes its own choice about a trailing
+/// newline: the JSON-shaped ones end without, the line-oriented ones end with.
+/// That left `convert` with two bugs at once, because its two write paths each
+/// applied a different rule on top:
+///
+/// ```text
+///                   converter ends \n?   stdout (println!)   --output (fs::write)
+///   json, vercel …         no            one \n   ✅          none     ❌  D22
+///   yaml, shell …         yes            two \n   ❌  D23      one \n   ✅
+/// ```
+///
+/// So `convert --to json > a` and `convert --to json -o b` produced different
+/// bytes — **all 29 format spellings differed** — and 22 of them printed a
+/// trailing blank line. Neither is a property anyone chose; both fall out of
+/// which function happened to do the writing.
+///
+/// Normalising here fixes both at once and puts the decision in one place
+/// rather than in fourteen converters. ⚠️ Add a format and it inherits this —
+/// which is the point.
+pub fn newline_terminated(mut s: String) -> String {
+    if !s.ends_with('\n') {
+        s.push('\n');
+    }
+    s
+}
+
 /// Converter trait for format conversion
 pub trait Converter {
     /// Convert environment variables to the target format

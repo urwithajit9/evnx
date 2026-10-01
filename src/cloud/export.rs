@@ -232,27 +232,11 @@ pub fn export(
     Ok(())
 }
 
-/// End a converted file with a newline, the way a text file should end.
-///
-/// ⚠️ **This exists because `convert` disagrees with itself.** Writing to stdout
-/// goes through `println!`, so the output ends in a newline; writing the same
-/// content with `-o <file>` goes through `fs::write`, so it does not. The two
-/// produce different bytes for the same conversion, which is a defect in
-/// `convert` rather than something to copy — fixing it there changes the output
-/// of a released command, so it is filed separately.
-///
-/// Export follows the stdout form: it is the one people see, the one they
-/// compare against, and the one that makes a well-formed file. A JSON or YAML
-/// file with no final newline is the shape every diff tool complains about.
-///
-/// The verbatim path — no `--to` — never comes through here. Those bytes are
-/// what was pushed and must not gain a byte they did not have.
-fn newline_terminated(mut s: String) -> String {
-    if !s.ends_with('\n') {
-        s.push('\n');
-    }
-    s
-}
+// `newline_terminated` moved to `core::converter`, beside the trait whose
+// output it normalises. It was defined here first, to avoid changing the bytes
+// of a released command in the same PR that proved `convert` unchanged — see
+// D22 and D23. `convert` now shares it, so the two cannot drift.
+use crate::core::converter::newline_terminated;
 
 /// The per-vault directory name, safe to put on a filesystem.
 ///
