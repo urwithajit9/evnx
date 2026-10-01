@@ -236,6 +236,11 @@ pub fn run_vault(
             password_stdin,
             verbose,
         ),
+        VaultCommands::Rekey {
+            target,
+            yes,
+            password_stdin,
+        } => vault::rekey(server_override, target, yes, password_stdin, verbose),
     }
 }
 

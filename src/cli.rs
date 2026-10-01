@@ -641,6 +641,34 @@ pub enum VaultCommands {
         #[arg(long)]
         password_stdin: bool,
     },
+
+    /// Rotate a vault's key without removing anyone.
+    ///
+    /// Re-encrypts every version under a fresh key and re-wraps it for every
+    /// current member. Nobody loses access and nobody is signed out — members
+    /// pick up the new key on their next command.
+    ///
+    /// Use it when a key may have been exposed but the team has not changed: a
+    /// lost laptop with a signed-in CLI, a compromised CI runner that held the
+    /// master password, an account breach where the person stays.
+    ///
+    /// ⚠️ This fixes the future, not the past. Anyone who could already read a
+    /// version may still hold a copy of it, and no rotation recalls that. Rotate
+    /// those secrets at their source.
+    ///
+    /// Removing a member rotates the key too — that is `vault revoke`.
+    Rekey {
+        /// Vault: `name`, `name/environment`, or an id.
+        target: String,
+
+        /// Skip the confirmation prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
+
+        /// Read the master password from stdin instead of prompting.
+        #[arg(long)]
+        password_stdin: bool,
+    },
 }
 
 /// Subcommands for `evnx cloud`.
