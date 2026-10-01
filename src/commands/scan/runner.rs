@@ -266,6 +266,34 @@ impl ScanRunner {
     /// # Returns
     ///
     /// Ok(()) on success. Skips files that can't be read as text.
+    /// Scan a `.env` through the shared parser.
+    ///
+    /// `Some(())` when the file parsed and was scanned; `None` when it did not
+    /// parse, leaving the caller to fall back to raw line scanning.
+    ///
+    /// ⚠️ The line reported for a multiline value is the line it **opened** on,
+    /// matching `EnvFile::lines` and the convention parse errors already use.
+    /// Pointing at the fragment that happened to match would send someone to the
+    /// middle of a PEM block rather than to the assignment they need to edit.
+    fn scan_env_parsed(&self, path: &Path, content: &str, results: &mut ScanResults) -> Option<()> {
+        use crate::core::parser::{Parser, ParserConfig};
+
+        let parser = Parser::new(ParserConfig {
+            allow_expansion: false,
+            ..Default::default()
+        });
+        let (vars, lines) = parser.parse_content_located(content).ok()?;
+
+        for (key, value) in &vars {
+            let line_num = lines.get(key).copied().unwrap_or(1);
+            let location = format!("{}:{} ({})", path.display(), line_num, key);
+            if let Some(detection) = Self::best(self.registry.scan_kv(key, value, &location)) {
+                self.add_finding(results, path, line_num, Some(key.clone()), detection);
+            }
+        }
+        Some(())
+    }
+
     fn scan_file(&self, path: &Path, results: &mut ScanResults) -> Result<()> {
         let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
@@ -273,6 +301,37 @@ impl ScanRunner {
         };
 
         let is_env = path.to_string_lossy().contains(".env");
+
+        // ── `.env`: the real parser, not a second implementation ─────────────
+        //
+        // ⚠️ This used to split every line on `=` itself. A continuation line of
+        // a multiline value has no `=`, so it was skipped entirely — and a PEM
+        // private key, the most common multiline value there is, scanned clean
+        // with exit 0. `scan.mdx` lists "private keys accidentally pasted as
+        // values" as something this catches. D21.
+        //
+        // `core::parser` already handles multiline, quoting and `export`, and
+        // eleven other modules use it. Three settings matter here:
+        //
+        // * `allow_expansion: false` — a scanner wants the literal text. With
+        //   expansion on, `$OTHER` would be substituted, which can both hide a
+        //   secret written literally and invent one that is not in the file.
+        // * `allow_inline_comments: true` — `A=secret # note` yields `secret`,
+        //   which is the value that would reach a program.
+        // * `strict: false` — a lowercase key is still worth scanning.
+        if is_env {
+            if let Some(()) = self.scan_env_parsed(path, &content, results) {
+                return Ok(());
+            }
+            // Fell through: the file does not parse. Carry on into the raw loop
+            // below, which is what this command did for every `.env` before D21.
+            //
+            // ⚠️ Deliberately a fallback rather than an error. A malformed `.env`
+            // is exactly where a half-pasted secret lives, and the baseline
+            // showed the old path *does* find one in a file with an unterminated
+            // quote. Refusing to scan it would trade a silent miss for a louder
+            // one.
+        }
 
         for (line_num, line) in content.lines().enumerate() {
             let line_num = line_num + 1;
@@ -283,7 +342,7 @@ impl ScanRunner {
             }
 
             if is_env {
-                // Parse as key=value for .env files
+                // Reached only when the file failed to parse — see above.
                 if let Some((key, value)) = line.split_once('=') {
                     let key = key.trim().trim_start_matches("export").trim();
                     let value = value.trim();

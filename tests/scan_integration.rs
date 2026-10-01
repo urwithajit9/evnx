@@ -1263,3 +1263,154 @@ fn d5_the_env_path_is_unchanged() {
     assert_eq!(json["secrets_found"], 1, "{json:#}");
     assert_eq!(json["findings"][0]["pattern"], "Stripe Secret Key (LIVE)");
 }
+
+// ─── D21: a secret inside a multiline value ──────────────────────────────────
+//
+// ⚠️ `scan` used to split every `.env` line on `=` itself. A continuation line
+// of a multiline value has none, so it was skipped — and a PEM private key, the
+// most common multiline value there is, scanned CLEAN with exit 0.
+//
+// `scan.mdx` lists "private keys accidentally pasted as values" as something
+// this command catches, and sells it as a pre-commit and CI gate. The failure
+// was therefore the worst available shape: not an error, but a pass.
+//
+// ⚠️ These assert `--severity high`, the documented CI gate. A finding that is
+// reported but does not fail the gate would leave the published recipe broken.
+
+const LIVE_STRIPE_KEY: &str = "sk_live_51H8xQ2eZvKYlo2CabcdefghijklmnopQ";
+
+fn scan_env_with(contents: &str) -> (i32, String) {
+    let dir = TempDir::new().expect("temp dir");
+    fs::write(dir.path().join(".env"), contents).expect("write .env");
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .arg("scan")
+        .arg("--severity")
+        .arg("high")
+        .assert();
+    let stdout = get_stdout(&assert);
+    let code = assert.get_output().status.code().unwrap_or(-1);
+    (code, stdout)
+}
+
+/// The defect, in the shape the docs invite: a PEM block holding a live key.
+#[test]
+fn a_secret_inside_a_double_quoted_multiline_value_is_found() {
+    let (code, out) = scan_env_with(&format!(
+        "CERT=\"-----BEGIN KEY-----\n{LIVE_STRIPE_KEY}\n-----END KEY-----\"\n"
+    ));
+    assert_eq!(code, 1, "the CI gate must fail, got:\n{out}");
+    assert!(out.contains("Stripe"), "got:\n{out}");
+    assert!(
+        out.contains("CERT"),
+        "the finding must name the key it is in, got:\n{out}"
+    );
+}
+
+/// Single quotes are literal but still multiline — the same miss.
+#[test]
+fn a_secret_inside_a_single_quoted_multiline_value_is_found() {
+    let (code, out) = scan_env_with(&format!(
+        "CERT='-----BEGIN-----\n{LIVE_STRIPE_KEY}\n-----END-----'\n"
+    ));
+    assert_eq!(code, 1, "the CI gate must fail, got:\n{out}");
+    assert!(out.contains("Stripe"), "got:\n{out}");
+}
+
+/// ⚠️ A malformed `.env` must still be scanned, not refused.
+///
+/// The shared parser rejects an unterminated quote. If `scan` simply handed the
+/// file to it and gave up on an error, this secret — which the old raw path DID
+/// find — would start being missed. A half-pasted value in a broken file is
+/// precisely where a secret hides, so the fallback is the point, not a detail.
+#[test]
+fn a_malformed_env_is_still_scanned_rather_than_skipped() {
+    let (code, out) = scan_env_with(&format!("A=\"{LIVE_STRIPE_KEY}\nB=other\n"));
+    assert_eq!(
+        code, 1,
+        "a file the parser cannot read must fall back to raw scanning, got:\n{out}"
+    );
+    assert!(out.contains("Stripe"), "got:\n{out}");
+}
+
+/// The line reported is where the value OPENED, not where the fragment matched.
+/// Sending someone to the middle of a PEM block instead of to the assignment is
+/// the difference between a usable report and a puzzle.
+#[test]
+fn a_multiline_finding_points_at_the_line_the_value_opened_on() {
+    let dir = TempDir::new().expect("temp dir");
+    fs::write(
+        dir.path().join(".env"),
+        format!("FIRST=ok\nCERT=\"-----BEGIN-----\n{LIVE_STRIPE_KEY}\n-----END-----\"\n"),
+    )
+    .expect("write .env");
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .arg("scan")
+        .arg("--format")
+        .arg("json")
+        .assert();
+    let v = parse_json_output(&get_stdout(&assert)).expect("json");
+    let f = v["findings"]
+        .as_array()
+        .and_then(|a| a.iter().find(|f| f["variable"] == "CERT"))
+        .expect("a finding for CERT");
+    assert!(
+        f["location"].as_str().unwrap_or_default().contains(":2"),
+        "expected the opening line (2), got {}",
+        f["location"]
+    );
+}
+
+/// ⚠️ Values must not be expanded before scanning. With expansion on, `$B` would
+/// be substituted — which can both hide a secret written literally and invent
+/// one that is not in the file. The scanner wants the text as written.
+#[test]
+fn values_are_scanned_literally_not_expanded() {
+    let dir = TempDir::new().expect("temp dir");
+    fs::write(
+        dir.path().join(".env"),
+        format!("B={LIVE_STRIPE_KEY}\nA=$B\n"),
+    )
+    .expect("write .env");
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .arg("scan")
+        .arg("--format")
+        .arg("json")
+        .assert();
+    let v = parse_json_output(&get_stdout(&assert)).expect("json");
+    let findings = v["findings"].as_array().expect("findings");
+
+    assert!(
+        findings.iter().any(|f| f["variable"] == "B"),
+        "the literal secret must be reported"
+    );
+    assert!(
+        !findings.iter().any(|f| f["variable"] == "A"),
+        "`A=$B` holds no secret of its own; expanding it invents a second finding"
+    );
+}
+
+/// The ordinary forms must be unaffected. 13 of 15 characterisation cases were
+/// byte-identical before and after the parser swap; these are the common ones.
+#[test]
+fn the_single_line_forms_still_behave_as_before() {
+    for (label, body) in [
+        ("plain", format!("A={LIVE_STRIPE_KEY}\n")),
+        ("double-quoted", format!("A=\"{LIVE_STRIPE_KEY}\"\n")),
+        ("single-quoted", format!("A='{LIVE_STRIPE_KEY}'\n")),
+        ("export prefix", format!("export A={LIVE_STRIPE_KEY}\n")),
+        ("inline comment", format!("A={LIVE_STRIPE_KEY} # prod\n")),
+        ("equals in value", format!("A={LIVE_STRIPE_KEY}=pad\n")),
+    ] {
+        let (code, out) = scan_env_with(&body);
+        assert_eq!(code, 1, "{label} should still be caught, got:\n{out}");
+    }
+
+    // And a clean file is still clean.
+    let (code, _) = scan_env_with("FOO=bar\nBAZ=1\n");
+    assert_eq!(code, 0, "a clean file must not start failing");
+}

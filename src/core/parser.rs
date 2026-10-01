@@ -172,6 +172,19 @@ pub struct EnvFile {
     /// Changed from `String` (old) to `Option<String>` (new) — callers that
     /// only access `env_file.vars` are unaffected.
     pub source: Option<String>,
+
+    /// The 1-based line each key was written on.
+    ///
+    /// ⚠️ For a **multiline** value this is the line the value *opened* on, not
+    /// the line a given fragment sits on — the same convention parse errors
+    /// already use. A consumer reporting a position for a PEM block should say
+    /// where the block starts, because that is where someone edits.
+    ///
+    /// Tracked internally since the expansion-error fix; exposed so `scan` can
+    /// report `file:line (KEY)` without re-implementing `.env` parsing. That
+    /// second implementation is what let a secret inside a multiline value go
+    /// unreported — see `DEFECTS-FOUND.md` D21.
+    pub lines: IndexMap<String, usize>,
 }
 
 // ── Configuration ─────────────────────────────────────────────────────────────
@@ -334,10 +347,11 @@ impl Parser {
             }
         })?;
         let source = path.as_ref().to_string_lossy().into_owned();
-        let vars = self.parse_content(&content)?;
+        let (vars, lines) = self.parse_content_located(&content)?;
         Ok(EnvFile {
             vars,
             source: Some(source),
+            lines,
         })
     }
 
@@ -369,7 +383,10 @@ impl Parser {
     /// assert_eq!(vars["KEY"], "value");
     /// # Ok::<(), evnx::core::parser::ParseError>(())
     /// ```
-    pub fn parse_content(&self, content: &str) -> ParseResult<IndexMap<String, String>> {
+    pub fn parse_content_located(
+        &self,
+        content: &str,
+    ) -> ParseResult<(IndexMap<String, String>, IndexMap<String, usize>)> {
         let mut vars: IndexMap<String, String> = IndexMap::new();
         // Keys written in a form that promises to be literal — single quotes or
         // backticks. Tracked separately because the quote characters are gone by the
@@ -497,7 +514,17 @@ impl Parser {
             }
         }
 
-        Ok(vars)
+        Ok((vars, key_lines))
+    }
+
+    /// Parse `content` into variables, discarding the line map.
+    ///
+    /// The shape 51 call sites already use. [`Parser::parse_content_located`]
+    /// is the same work and also returns where each key was written — needed by
+    /// anything that reports a position, which until D21 meant `scan` kept its
+    /// own `.env` splitting instead.
+    pub fn parse_content(&self, content: &str) -> ParseResult<IndexMap<String, String>> {
+        self.parse_content_located(content).map(|(vars, _)| vars)
     }
 
     // ── Private: line parsing ─────────────────────────────────────────────────
@@ -971,6 +998,20 @@ mod tests {
 
     /// The headline: single quotes are now literal for `$`, as they already were
     /// for backslashes. One rule instead of two.
+    #[test]
+    fn d21_unterminated_quote_is_rejected_so_the_fallback_is_live() {
+        let content = "A=\"sk_live_51H8xQ2eZvKYlo2CabcdefghijklmnopQ\nB=other\n";
+        let r = Parser::new(ParserConfig {
+            allow_expansion: false,
+            ..Default::default()
+        })
+        .parse_content_located(content);
+        assert!(
+            r.is_err(),
+            "the parser accepted an unterminated quote — the scan fallback would be dead code"
+        );
+    }
+
     #[test]
     fn single_quotes_do_not_expand() {
         let vars = parse_one("B=world\nA='cost $B'\nC=`cost $B`\n");
