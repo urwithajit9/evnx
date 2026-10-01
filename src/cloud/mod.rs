@@ -48,6 +48,7 @@ pub mod binding;
 pub mod client;
 pub mod config;
 pub mod creds;
+pub mod device;
 pub mod export;
 pub mod rotate;
 pub mod run;
@@ -59,7 +60,8 @@ pub mod totp;
 pub mod vault;
 
 use crate::cli::{
-    AuthCommands, CloudCommands, SessionCommands, TokenCommands, TotpCommands, VaultCommands,
+    AuthCommands, CloudCommands, DeviceCommands, SessionCommands, TokenCommands, TotpCommands,
+    VaultCommands,
 };
 use anyhow::Result;
 
@@ -184,6 +186,12 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
             TotpCommands::Enable => totp::enable(server_override, verbose),
             TotpCommands::Disable => totp::disable(server_override, verbose),
             TotpCommands::RecoveryCodes => totp::regenerate(server_override, verbose),
+        },
+        AuthCommands::Devices { command } => match command {
+            DeviceCommands::List => device::list(server_override, verbose),
+            DeviceCommands::Disavow { device_id, yes } => {
+                device::disavow(server_override, device_id, yes, verbose)
+            }
         },
         AuthCommands::Sessions { command } => match command {
             SessionCommands::List => session::list(server_override, verbose),
