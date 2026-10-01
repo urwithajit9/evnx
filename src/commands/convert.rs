@@ -551,6 +551,14 @@ fn print_format_help() {
 /// * `Ok(())` on successful write
 /// * `Err(anyhow::Error)` on I/O failure
 fn write_output(content: &str, output_path: Option<&str>, verbose: bool) -> Result<()> {
+    // ⚠️ Both paths go through the same normalisation, which is the whole fix.
+    // They used to disagree: `fs::write` added nothing and `println!` added a
+    // newline, so every format produced different bytes depending on whether
+    // `--output` was passed (D22), and the formats whose converter already ends
+    // in a newline gained a second one on stdout (D23).
+    let content = crate::core::converter::newline_terminated(content.to_string());
+    let content = content.as_str();
+
     match output_path {
         Some(path) => {
             fs::write(path, content)
@@ -567,8 +575,9 @@ fn write_output(content: &str, output_path: Option<&str>, verbose: bool) -> Resu
             }
         }
         None => {
-            // Output to stdout
-            println!("{}", content);
+            // `print!`, not `println!` — `content` is already newline-terminated
+            // above, and this is the line that produced D23's blank line.
+            print!("{content}");
             if verbose {
                 eprintln!("{}", "✓ Output written to stdout".dimmed());
             }
@@ -700,6 +709,75 @@ mod tests {
         let written = fs::read_to_string(&output_path)?;
         assert_eq!(written, content);
         Ok(())
+    }
+
+    /// D22: a file must end with a newline even when the converter did not.
+    ///
+    /// The JSON-shaped converters return a String with no trailing newline, and
+    /// `fs::write` added none — so `convert --to json -o f.json` wrote a file
+    /// that no diff tool, and some parsers, would accept as whole.
+    #[test]
+    fn a_file_always_ends_with_a_newline() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let path = tmp.path().join("out.json");
+
+        write_output("{\"A\":\"1\"}", Some(path.to_str().unwrap()), false)?;
+
+        let written = fs::read_to_string(&path)?;
+        assert_eq!(written, "{\"A\":\"1\"}\n");
+        Ok(())
+    }
+
+    /// D23: and it must not gain a second one when the converter supplied it.
+    #[test]
+    fn a_file_does_not_gain_a_blank_line() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let path = tmp.path().join("out.yaml");
+
+        write_output("A: '1'\n", Some(path.to_str().unwrap()), false)?;
+
+        let written = fs::read_to_string(&path)?;
+        assert_eq!(written, "A: '1'\n", "a trailing blank line came back");
+        Ok(())
+    }
+
+    /// The property the two defects were really about: **one** rule, applied to
+    /// every format, whichever converter produced it.
+    ///
+    /// ⚠️ This asserts on the normalisation rather than on `write_output`'s
+    /// stdout, which cannot be captured here. The stdout path calls `print!` on
+    /// the same normalised string, so the two agree by construction — a reader
+    /// changing one must change the other.
+    #[test]
+    fn every_format_normalises_to_exactly_one_trailing_newline() {
+        use crate::core::converter::newline_terminated;
+        let vars: IndexMap<String, String> =
+            [("A".to_string(), "1".to_string())].into_iter().collect();
+
+        for name in [
+            "json",
+            "yaml",
+            "shell",
+            "aws-secrets",
+            "gcp-secrets",
+            "azure-keyvault",
+            "github-actions",
+            "docker-compose",
+            "kubernetes",
+            "terraform",
+            "doppler",
+            "heroku",
+            "vercel",
+            "railway",
+        ] {
+            let raw = formats::get_converter(name)
+                .unwrap()
+                .convert(&vars, &ConvertOptions::default())
+                .unwrap();
+            let out = newline_terminated(raw);
+            assert!(out.ends_with('\n'), "{name}: no trailing newline");
+            assert!(!out.ends_with("\n\n"), "{name}: trailing blank line");
+        }
     }
 
     #[test]
