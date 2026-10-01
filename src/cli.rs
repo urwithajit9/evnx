@@ -331,6 +331,21 @@ pub enum AuthCommands {
         command: SessionCommands,
     },
 
+    /// Networks and browsers this account has signed in from.
+    ///
+    /// ⚠️ Not the same as `sessions`. A session is a live credential you can
+    /// revoke; a device is somewhere you have signed in from, which may have no
+    /// session left at all.
+    ///
+    /// ⚠️ There is no location in this. evnx stores a keyed hash of the client
+    /// address and the user agent, never the values, so it cannot tell where
+    /// you were — a device that looks new can simply be a phone that
+    /// reconnected.
+    Devices {
+        #[command(subcommand)]
+        command: DeviceCommands,
+    },
+
     /// Show your account as the server sees it.
     ///
     /// Makes an authenticated request. For local state without a network call,
@@ -537,6 +552,28 @@ pub enum SessionCommands {
 
     /// Revoke every session except this one.
     RevokeOthers {
+        /// Skip the confirmation prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+}
+
+/// Subcommands for `evnx auth devices`.
+#[cfg(feature = "cloud")]
+#[derive(Subcommand, Debug)]
+pub enum DeviceCommands {
+    /// List the networks and browsers this account has signed in from.
+    List,
+
+    /// Report that a device was not you.
+    ///
+    /// Records the judgement, signs out **every** session including this one,
+    /// and tells you to change your master password — which is the part that
+    /// actually protects your vaults.
+    Disavow {
+        /// Device id, from `evnx auth devices list`.
+        device_id: String,
+
         /// Skip the confirmation prompt.
         #[arg(long, short = 'y')]
         yes: bool,
