@@ -80,7 +80,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::core::{
-    converter::{ConvertOptions, Converter, KeyTransform},
+    converter::{ConvertOptions, KeyTransform},
     Parser,
 };
 use crate::docs;
@@ -392,13 +392,26 @@ pub fn run(config: ConvertConfig) -> Result<()> {
         None => select_format_interactive(config.verbose)?,
     };
 
-    // Get the appropriate converter
-    let converter = get_converter(&format_name).with_context(|| {
-        format!(
-            "Failed to initialize converter for format: '{}'",
-            format_name
-        )
-    })?;
+    // Get the appropriate converter.
+    //
+    // ⚠️ The exit lives here, not in the dispatch. `formats::get_converter` now
+    // returns an error so that `cloud export` can reach the same 14 formats
+    // without a library function ending the process underneath it — but
+    // `convert`'s own contract is unchanged: unknown format, this help, exit 2.
+    let converter = match formats::get_converter(&format_name) {
+        Ok(c) => c,
+        Err(_) => {
+            eprintln!("{} Unknown format: {}", "✗".red(), format_name);
+            eprintln!();
+            eprintln!("{}", "Supported formats:".bold());
+            eprintln!();
+            print_format_help();
+            // 2, not 1: convert was asked for something it cannot produce, so
+            // there is no output — the same "could not run" every other command
+            // reports with 2. Nothing here converted anything badly.
+            std::process::exit(2);
+        }
+    };
 
     if config.verbose {
         eprintln!(
@@ -512,102 +525,17 @@ fn select_format_interactive(verbose: bool) -> Result<String> {
     Ok(format)
 }
 
-/// Get a converter instance for the specified format name.
-///
-/// Supports format aliases (e.g., "k8s" → "kubernetes", "tf" → "terraform").
-///
-/// # Arguments
-///
-/// * `format` - The format name or alias (case-insensitive matching)
-///
-/// # Returns
-///
-/// * `Ok(Box<dyn Converter>)` - Initialized converter instance
-/// * `Err(anyhow::Error)` - If format is unrecognized, with helpful error message
-///
-/// # Example
-///
-/// ```no_run
-/// # // This function is internal; example shows conceptual usage
-/// # // let converter = get_converter("json")?;
-/// # // assert_eq!(converter.name(), "json");
-/// ```
-fn get_converter(format: &str) -> Result<Box<dyn Converter>> {
-    match format.to_lowercase().as_str() {
-        // Generic formats
-        "json" => Ok(Box::new(formats::JsonConverter)),
-        "yaml" | "yml" => Ok(Box::new(formats::YamlConverter)),
-        "shell" | "bash" | "export" => Ok(Box::new(formats::ShellExportConverter)),
-
-        // Cloud providers
-        "aws" | "aws-secrets" | "aws-secrets-manager" => Ok(Box::new(formats::AwsSecretsConverter)),
-        "gcp" | "gcp-secrets" | "gcp-secret-manager" => {
-            Ok(Box::new(formats::GcpSecretConverter::default()))
-        }
-        "azure" | "azure-keyvault" | "azure-key-vault" => {
-            Ok(Box::new(formats::AzureKeyVaultConverter::default()))
-        }
-
-        // CI/CD platforms
-        "github" | "github-actions" | "gh-actions" => {
-            Ok(Box::new(formats::GitHubActionsConverter::default()))
-        }
-
-        // Container platforms
-        "docker" | "docker-compose" | "compose" => Ok(Box::new(formats::DockerComposeConverter)),
-        "kubernetes" | "k8s" | "kubectl" => {
-            Ok(Box::new(formats::KubernetesSecretConverter::default()))
-        }
-
-        // Infrastructure as Code
-        "terraform" | "tfvars" | "tf" => Ok(Box::new(formats::TerraformConverter)),
-
-        // Secret management platforms
-        "doppler" => Ok(Box::new(formats::DopplerConverter)),
-        "heroku" => Ok(Box::new(formats::HerokuConfigConverter::default())),
-        "vercel" => Ok(Box::new(formats::VercelEnvConverter)),
-        "railway" => Ok(Box::new(formats::RailwayConverter)),
-
-        // Unknown format - provide helpful error
-        unknown => {
-            eprintln!("{} Unknown format: {}", "✗".red(), unknown);
-            eprintln!();
-            eprintln!("{}", "Supported formats:".bold());
-            eprintln!();
-            print_format_help();
-            // 2, not 1: convert was asked for something it cannot produce, so
-            // there is no output — the same "could not run" every other command
-            // reports with 2. Nothing here converted anything badly.
-            std::process::exit(2);
-        }
-    }
-}
+// `get_converter` moved to `crate::formats` so `cloud export` can reach the same
+// format dispatch. See `formats::get_converter` — including why it now returns
+// an error where this copy called `std::process::exit(2)`.
 
 /// Print formatted help for supported formats.
 ///
-/// Called when an unknown format is specified.
+/// Called when an unknown format is specified. Delegates to
+/// [`crate::formats::format_help`] so a format added to the dispatch shows up
+/// here without a second edit.
 fn print_format_help() {
-    eprintln!("  {}", "Generic:".yellow());
-    eprintln!("    json, yaml, shell");
-    eprintln!();
-    eprintln!("  {}", "Cloud providers:".yellow());
-    eprintln!("    aws-secrets, gcp-secrets, azure-keyvault");
-    eprintln!();
-    eprintln!("  {}", "CI/CD:".yellow());
-    eprintln!("    github-actions");
-    eprintln!();
-    eprintln!("  {}", "Containers:".yellow());
-    eprintln!("    docker-compose, kubernetes");
-    eprintln!();
-    eprintln!("  {}", "Infrastructure:".yellow());
-    eprintln!("    terraform");
-    eprintln!();
-    eprintln!("  {}", "Secret managers:".yellow());
-    eprintln!("    doppler, heroku, vercel, railway");
-    eprintln!();
-    eprintln!("  {}", "Aliases:".dimmed());
-    eprintln!("    k8s → kubernetes, tf → terraform, yml → yaml");
-    eprintln!("    gh-actions → github-actions, compose → docker-compose");
+    formats::format_help();
 }
 
 /// Write conversion result to stdout or file.
@@ -749,66 +677,9 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_get_converter_known_formats() {
-        let formats = vec![
-            "json",
-            "yaml",
-            "yml",
-            "shell",
-            "aws-secrets",
-            "gcp-secrets",
-            "azure-keyvault",
-            "github-actions",
-            "docker-compose",
-            "kubernetes",
-            "k8s",
-            "terraform",
-            "tf",
-            "doppler",
-            "heroku",
-            "vercel",
-            "railway",
-        ];
-
-        for fmt in formats {
-            let result = get_converter(fmt);
-            assert!(result.is_ok(), "Failed for format: {}", fmt);
-            let converter = result.unwrap();
-            let expected = match fmt {
-                "yml" => "yaml",
-                "bash" | "export" => "shell",
-                "aws" | "aws-secrets-manager" => "aws-secrets",
-                "gcp" | "gcp-secret-manager" => "gcp-secrets",
-                "azure" | "azure-key-vault" => "azure-keyvault",
-                "github" | "gh-actions" => "github-actions",
-                "docker" | "compose" => "docker-compose",
-                "k8s" | "kubectl" => "kubernetes",
-                "tfvars" | "tf" => "terraform",
-                _ => fmt,
-            };
-            assert_eq!(converter.name(), expected);
-        }
-    }
-
-    #[test]
-    fn test_get_converter_aliases() {
-        // Test that aliases resolve to same converter name
-        let alias_pairs = vec![
-            ("yaml", "yaml"),
-            ("yml", "yaml"),
-            ("shell", "shell"),
-            ("bash", "shell"),
-            ("aws", "aws-secrets"),
-            ("k8s", "kubernetes"),
-            ("tf", "terraform"),
-        ];
-
-        for (alias, expected) in alias_pairs {
-            let converter = get_converter(alias).unwrap();
-            assert_eq!(converter.name(), expected);
-        }
-    }
+    // The dispatch tests moved with the dispatch, to `formats::registry_tests`.
+    // They grew in the move: every alias is now asserted, and so is the unknown
+    // arm, which could not be tested here because it exited the process.
 
     #[test]
     fn test_write_output_to_stdout() -> Result<()> {

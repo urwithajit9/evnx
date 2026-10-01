@@ -257,7 +257,11 @@ fn spawn_with_env(
 }
 
 /// Parse `KEY=value` lines, reusing the parser every other command uses.
-fn parse_env(plaintext: &[u8]) -> Result<IndexMap<String, String>> {
+///
+/// `pub(crate)` so `cloud export` parses a pulled version exactly the way `cloud
+/// run` does. Two copies of "bytes to variables" inside one module is how `scan`
+/// came to miss a secret in a multiline value (D21) — one parser, one answer.
+pub(crate) fn parse_env(plaintext: &[u8]) -> Result<IndexMap<String, String>> {
     let text = std::str::from_utf8(plaintext)
         .context("the vault's contents are not UTF-8, so they cannot be parsed into variables")?;
     crate::core::parser::Parser::new(Default::default())

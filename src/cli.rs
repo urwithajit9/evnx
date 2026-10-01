@@ -911,6 +911,66 @@ pub enum CloudCommands {
     /// Remove this directory's vault binding.
     Unlink,
 
+    /// Write a vault's secrets to a directory, decrypted — the way out.
+    ///
+    /// ⚠️ This is the one evnx command whose purpose is to put plaintext
+    /// secrets on a filesystem. Everything else works to avoid that: `cloud
+    /// pull` writes a single file and asks first, and `cloud run` writes none
+    /// at all. Use this to leave, to archive, or to prove you can — not as part
+    /// of a pipeline.
+    ///
+    /// With no --to the files are the bytes that were pushed, verbatim:
+    /// comments, ordering and quoting all survive, because that is how they
+    /// were encrypted. --to converts instead, through the same 14 formats
+    /// `evnx convert` offers, and a conversion keeps only keys and values.
+    ///
+    /// ⚠️ Not the same as `evnx auth download-data`, which writes account
+    /// metadata and contains no secrets at all.
+    Export {
+        /// Vault to export: `name`, `name/environment`, or an id.
+        ///
+        /// Optional in a directory bound with `evnx cloud link`.
+        #[arg(long, value_name = "VAULT")]
+        vault: Option<String>,
+
+        /// Directory to write into. Defaults to ./evnx-export
+        ///
+        /// A per-vault subdirectory is created inside it, so exporting two
+        /// vaults into one place does not mix them up.
+        ///
+        /// ⚠️ Point this outside your working tree. An export inside a
+        /// repository is one `git add .` away from being committed.
+        #[arg(long, short, value_name = "DIR")]
+        output: Option<std::path::PathBuf>,
+
+        /// Export every version, not just the latest.
+        ///
+        /// Files are named by version — v1.env, v2.env — and manifest.json
+        /// records which one was current.
+        #[arg(long)]
+        all_versions: bool,
+
+        /// Convert to one of `evnx convert`'s formats instead of writing the
+        /// file as it was pushed.
+        ///
+        /// Supported: json, yaml, shell, aws-secrets, gcp-secrets,
+        /// azure-keyvault, github-actions, docker-compose, kubernetes,
+        /// terraform, doppler, heroku, vercel, railway
+        #[arg(long, value_name = "FORMAT")]
+        to: Option<String>,
+
+        /// Overwrite a directory that already holds an export.
+        ///
+        /// Without it a non-empty directory is refused before the master
+        /// password is asked for, so the refusal costs nothing.
+        #[arg(long)]
+        force: bool,
+
+        /// Read the master password from stdin instead of prompting.
+        #[arg(long)]
+        password_stdin: bool,
+    },
+
     /// Show whether this machine is set up for cloud sync.
     Status {
         /// Also check that the server is reachable.
