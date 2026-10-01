@@ -709,6 +709,44 @@ mod tests {
         let json = serde_json::to_string(&body).unwrap();
         assert!(!json.contains("eph_pub_key"), "{json}");
     }
+
+    /// ⚠️ The wire property a standalone re-key depends on, and the reason
+    /// `rotate_vault_key` takes `remove_user_id` as an `Option` rather than two
+    /// code paths.
+    ///
+    /// `remove_user_id` is what turns a rotation into a revocation: the server
+    /// deletes that member inside the same transaction that swaps the key. When
+    /// nobody is leaving, the field must be **absent** — the server declares it
+    /// `#[serde(default)] Option<Uuid>` and branches on `if let Some(..)`, so an
+    /// absent field is a pure rotation.
+    #[test]
+    fn a_rekey_with_nobody_leaving_omits_remove_user_id() {
+        let rotate_only = RekeyRequest {
+            versions: vec![],
+            members: vec![],
+            remove_user_id: None,
+        };
+        let json = serde_json::to_string(&rotate_only).unwrap();
+        assert!(
+            !json.contains("remove_user_id"),
+            "a rotation with nobody leaving must not name a member to remove: {json}"
+        );
+
+        // And a revocation still carries it, or removal would silently stop
+        // happening — the failure this would hide is a member who keeps a usable
+        // key after the UI says they were removed.
+        let revocation = RekeyRequest {
+            versions: vec![],
+            members: vec![],
+            remove_user_id: Some("11111111-2222-3333-4444-555555555555".into()),
+        };
+        let json = serde_json::to_string(&revocation).unwrap();
+        assert!(json.contains("remove_user_id"), "{json}");
+        assert!(
+            json.contains("11111111-2222-3333-4444-555555555555"),
+            "{json}"
+        );
+    }
 }
 
 // ─── Member management (Phase 3) ──────────────────────────────────────────────
@@ -933,12 +971,6 @@ pub fn revoke(
     password_stdin: bool,
     verbose: bool,
 ) -> Result<()> {
-    use evnx_crypto::{
-        b64_encode, blob_hash, reencrypt_vault, unwrap_vault_key, unwrap_vault_key_with_master_key,
-        vault_aad, wrap_vault_key_for_user, wrap_vault_key_with_master_key, EncryptedBlob,
-        UserPublicKeys, VaultKey, WrappedVaultKey,
-    };
-
     let user_email = user_email.trim().to_lowercase();
 
     let server = CloudConfig::resolve_server(server_override)?;
@@ -1057,9 +1089,105 @@ pub fn revoke(
         return Ok(());
     }
 
-    // ── Open the current key ─────────────────────────────────────────────────
+    // ── Rotate ───────────────────────────────────────────────────────────────
+    //
+    // The rotation itself lives in `rotate_vault_key` so that `evnx vault rekey`
+    // can do the same thing without removing anyone. `remove_user_id` is what makes
+    // this a revocation: the server deletes that member inside the same transaction
+    // that swaps the key, so there is no window where they are still a member of a
+    // vault whose key has already moved, nor one where they are gone but it has not.
     let password = auth::read_password(password_stdin, "Master password")?;
     let master_key = auth::derive_master_key_for_account(&client, &password)?;
+
+    let total = rotate_vault_key(
+        &client,
+        vault,
+        &label,
+        &master_key,
+        &remaining,
+        Some(&leaving.user_id),
+        verbose,
+    )?;
+
+    println!();
+    println!(
+        "  {} removed {user_email} from {label} and rotated the vault key",
+        "✓".green()
+    );
+    println!(
+        "  {total} version(s) re-encrypted, {} member(s) re-wrapped",
+        remaining.len()
+    );
+    println!();
+    println!(
+        "  {}",
+        "They can no longer read anything pushed from now on.".dimmed()
+    );
+    println!(
+        "  {}",
+        "They may still hold copies of what they could already read —".yellow()
+    );
+    println!("  {}", "rotate those secrets at their source.".yellow());
+
+    Ok(())
+}
+
+/// Rotate a vault's key: re-encrypt every version under a fresh one, re-wrap it for
+/// everyone named, and swap the whole lot in a single request.
+///
+/// Returns the number of versions re-encrypted, so the caller can word its own
+/// summary — `revoke` and `rekey` report the same work for different reasons.
+///
+/// ## Why this is a function and not the tail of `revoke`
+///
+/// Rotating a vault key and removing a member are separate acts that happened to
+/// ship together. Removal needs rotation — otherwise a former member keeps a usable
+/// key — but rotation does not need removal, and the cases that call for it most
+/// have nobody leaving: a lost laptop, a compromised CI runner, an account breach
+/// where the person stays on the team.
+///
+/// `remove_user_id` is the only thing that makes a rotation a revocation. The server
+/// deletes that member inside the same transaction that swaps the key, so there is
+/// no window in which they are still a member of a vault whose key has moved, nor
+/// one in which they are gone but it has not.
+///
+/// ## What callers must do first
+///
+/// ⚠️ **Check `has_mlkem_key` on everyone in `wrap_for` before calling.** A member
+/// without one cannot receive the new key, the server rejects a payload that does
+/// not cover every member, and discovering that *after* re-encrypting fifty versions
+/// wastes the whole operation. Both callers check up front, before the password
+/// prompt.
+///
+/// ## What it cannot do
+///
+/// ⚠️ Rotation fixes the future, not the past. Anyone who could already read a
+/// version may hold a copy of the plaintext, and no server-side operation recalls
+/// that. Callers must say so rather than implying a rotation reaches backwards.
+///
+/// ## Why two requests
+///
+/// Each version becomes one new blob. Sending them inline would be simpler, but
+/// `MAX_REQUEST_SIZE_KB` defaults to 64 KB and a single version can approach it, so
+/// a vault with any history would be unrotatable. Blobs are staged one at a time,
+/// then **one** request swaps all the metadata atomically. Staged blobs that are
+/// never committed are orphans in object storage — wasted bytes, not a correctness
+/// problem, and unreachable because nothing references them.
+#[allow(clippy::too_many_arguments)]
+fn rotate_vault_key(
+    client: &Client,
+    vault: &VaultSummary,
+    label: &str,
+    master_key: &evnx_crypto::MasterKey,
+    wrap_for: &[&MemberSummary],
+    remove_user_id: Option<&str>,
+    verbose: bool,
+) -> Result<usize> {
+    use evnx_crypto::{
+        b64_encode, blob_hash, reencrypt_vault, unwrap_vault_key, unwrap_vault_key_with_master_key,
+        vault_aad, wrap_vault_key_for_user, wrap_vault_key_with_master_key, EncryptedBlob,
+        UserPublicKeys, VaultKey, WrappedVaultKey,
+    };
 
     let my_key: MyWrappedKey = client
         .get(&format!("/api/v1/vaults/{}/my-key", vault.id))
@@ -1070,16 +1198,15 @@ pub fn revoke(
             let wrapped =
                 evnx_crypto::b64_decode(&my_key.encrypted_vault_key, "encrypted_vault_key")
                     .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
-            unwrap_vault_key_with_master_key(&wrapped, &master_key)
+            unwrap_vault_key_with_master_key(&wrapped, master_key)
                 .map_err(|_| anyhow!("could not open your key for {label} — wrong password?"))?
         }
         (Some(eph), Some(ct)) => {
-            let sealed =
-                evnx_crypto::EncryptedPrivateKey::from_base64(&fetch_sealed_private_key(&client)?)
-                    .map_err(|e| {
-                        anyhow!("the server sent an unusable encrypted_private_key: {e}")
-                    })?;
-            let keypair = evnx_crypto::decrypt_private_key(&sealed, &master_key)
+            let sealed = evnx_crypto::EncryptedPrivateKey::from_base64(&fetch_sealed_private_key(
+                client,
+            )?)
+            .map_err(|e| anyhow!("the server sent an unusable encrypted_private_key: {e}"))?;
+            let keypair = evnx_crypto::decrypt_private_key(&sealed, master_key)
                 .map_err(|_| anyhow!("could not open your keypair — wrong password?"))?;
             let wrapped = WrappedVaultKey::from_base64(&my_key.encrypted_vault_key, eph, ct)
                 .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
@@ -1155,14 +1282,14 @@ pub fn revoke(
     }
 
     // ── Re-wrap for everyone who stays ───────────────────────────────────────
-    println!("  Re-wrapping for {} member(s)…", remaining.len());
+    println!("  Re-wrapping for {} member(s)…", wrap_for.len());
 
-    let mut wraps = Vec::with_capacity(remaining.len());
-    for m in &remaining {
+    let mut wraps = Vec::with_capacity(wrap_for.len());
+    for m in wrap_for {
         if m.is_you {
             // Our own copy stays sealed under the master key: symmetric, no key
             // agreement, and the shape a vault creator's copy has always had.
-            let wrapped = wrap_vault_key_with_master_key(&new_key, &master_key)
+            let wrapped = wrap_vault_key_with_master_key(&new_key, master_key)
                 .map_err(|e| anyhow!("wrapping the new key for yourself: {e}"))?;
             wraps.push(RekeyedMember {
                 user_id: m.user_id.clone(),
@@ -1200,32 +1327,12 @@ pub fn revoke(
             &RekeyRequest {
                 versions: staged,
                 members: wraps,
-                remove_user_id: Some(leaving.user_id.clone()),
+                remove_user_id: remove_user_id.map(str::to_owned),
             },
         )
         .map_err(|e| anyhow!("{e}"))?;
 
-    println!();
-    println!(
-        "  {} removed {user_email} from {label} and rotated the vault key",
-        "✓".green()
-    );
-    println!(
-        "  {total} version(s) re-encrypted, {} member(s) re-wrapped",
-        remaining.len()
-    );
-    println!();
-    println!(
-        "  {}",
-        "They can no longer read anything pushed from now on.".dimmed()
-    );
-    println!(
-        "  {}",
-        "They may still hold copies of what they could already read —".yellow()
-    );
-    println!("  {}", "rotate those secrets at their source.".yellow());
-
-    Ok(())
+    Ok(total)
 }
 
 /// The account's sealed Ed25519 seed, for opening a shared vault key.
