@@ -747,6 +747,59 @@ mod tests {
             "{json}"
         );
     }
+
+    fn member(email: &str, pq: bool, you: bool) -> MemberSummary {
+        MemberSummary {
+            user_id: format!("uid-{email}"),
+            email: email.into(),
+            role: "developer".into(),
+            granted_at: "2026-10-01T00:00:00Z".into(),
+            has_mlkem_key: pq,
+            is_you: you,
+        }
+    }
+
+    /// ⚠️ A re-key must refuse rather than quietly dropping someone.
+    ///
+    /// The server requires the payload to cover every member exactly once, so a
+    /// member left out is a member removed. Silently revoking access while
+    /// rotating is the precise failure `vault revoke` exists to make loud — and
+    /// whoever runs a rotation under pressure is the least likely to notice.
+    #[test]
+    fn a_member_without_a_post_quantum_key_is_named_not_skipped() {
+        let a = member("has-key@example.com", true, false);
+        let b = member("needs-signin@example.com", false, false);
+        let all = vec![&a, &b];
+
+        assert_eq!(
+            members_without_pq_key(&all),
+            vec!["needs-signin@example.com"],
+            "the member who cannot be re-wrapped must be reported by name"
+        );
+    }
+
+    /// ⚠️ Your own copy is sealed under your master key with no key agreement, so
+    /// it needs no ML-KEM key. Counting yourself would refuse every re-key run by
+    /// an account that predates F1 — including a solo vault with no sharing in it
+    /// at all, which is the most common vault there is.
+    #[test]
+    fn your_own_missing_pq_key_does_not_block_a_rekey() {
+        let me = member("me@example.com", false, true);
+        let all = vec![&me];
+        assert!(
+            members_without_pq_key(&all).is_empty(),
+            "a solo vault owner with no ML-KEM key must still be able to re-key"
+        );
+    }
+
+    /// Everyone ready is the common case and must not produce a spurious refusal.
+    #[test]
+    fn a_fully_equipped_vault_blocks_nobody() {
+        let a = member("a@example.com", true, true);
+        let b = member("b@example.com", true, false);
+        let all = vec![&a, &b];
+        assert!(members_without_pq_key(&all).is_empty());
+    }
 }
 
 // ─── Member management (Phase 3) ──────────────────────────────────────────────
@@ -1017,11 +1070,7 @@ pub fn revoke(
     // after re-encrypting fifty versions would be a wasted operation ending in a
     // rejected swap.
     if !no_rekey {
-        let stuck: Vec<&str> = remaining
-            .iter()
-            .filter(|m| !m.has_mlkem_key && !m.is_you)
-            .map(|m| m.email.as_str())
-            .collect();
+        let stuck = members_without_pq_key(&remaining);
         if !stuck.is_empty() {
             return Err(anyhow!(
                 "these members have no post-quantum sharing key, so the vault key \n\
@@ -1126,6 +1175,174 @@ pub fn revoke(
     println!(
         "  {}",
         "They may still hold copies of what they could already read —".yellow()
+    );
+    println!("  {}", "rotate those secrets at their source.".yellow());
+
+    Ok(())
+}
+
+/// Members who cannot receive a re-wrapped vault key, by email.
+///
+/// A share is wrapped with hybrid X25519 + ML-KEM-768, so a recipient needs a
+/// post-quantum public key on file. Accounts that registered before F1 upload one
+/// on their next sign-in, which means this clears itself — but only when that
+/// person actually signs in.
+///
+/// ⚠️ **`is_you` is excluded, and that is not an oversight.** Your own copy is
+/// sealed under your master key with no key agreement at all — the creator's wrap
+/// has always been symmetric — so it needs no ML-KEM key. Including yourself here
+/// would refuse every re-key performed by an account that happens to predate F1,
+/// including solo vaults that have no sharing in them whatsoever.
+///
+/// Both callers check this **before** prompting for a password and before any
+/// work: the server rejects a payload that does not cover every member, and
+/// discovering that after re-encrypting fifty versions wastes the operation.
+fn members_without_pq_key<'a>(members: &[&'a MemberSummary]) -> Vec<&'a str> {
+    members
+        .iter()
+        .filter(|m| !m.has_mlkem_key && !m.is_you)
+        .map(|m| m.email.as_str())
+        .collect()
+}
+
+/// Rotate a vault's key without removing anyone.
+///
+/// ─── Why this exists separately from `revoke` ────────────────────────────────
+///
+/// Removing a member has to rotate the key, or they keep a usable copy. Rotating
+/// does **not** have to remove anyone — and the situations that call for it most
+/// have nobody leaving: a lost laptop with a signed-in CLI, a CI runner that held
+/// the master password, an account breach where the person stays on the team.
+///
+/// Before this command the only way to rotate was to remove a member and add them
+/// back, which is both a worse audit trail and a window in which they genuinely
+/// had no access.
+///
+/// ─── What it does not do ─────────────────────────────────────────────────────
+///
+/// ⚠️ It fixes the future, not the past. Anyone who could already read a version
+/// may hold a copy of the plaintext, and no server-side operation recalls that.
+/// The output says so, rather than leaving it to the docs — it is the same step
+/// people skip with a leaked API token: **rotate the secrets themselves.**
+///
+/// It also does not sign anyone out. Members re-fetch their wrapped key on the
+/// next command, so a rotation is invisible to them apart from the audit trail.
+pub fn rekey(
+    server_override: Option<&str>,
+    target: String,
+    assume_yes: bool,
+    password_stdin: bool,
+    verbose: bool,
+) -> Result<()> {
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    require_session(&client, &server)?;
+
+    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
+    let vault = resolve(&listed.vaults, &target)?;
+    let label = format!("{}/{}", vault.name, vault.environment);
+
+    let people: MemberList = client
+        .get(&format!("/api/v1/vaults/{}/members", vault.id))
+        .map_err(|e| anyhow!("{e}"))?;
+
+    // Everyone stays. The server requires the payload cover every member exactly
+    // once, so this list IS the contract — a member missed here would be dropped.
+    let everyone: Vec<&MemberSummary> = people.members.iter().collect();
+
+    // ── Refuse early if anyone cannot be re-wrapped ──────────────────────────
+    //
+    // ⚠️ Checked BEFORE the password prompt and before any work, matching
+    // `revoke`. A member with no post-quantum key cannot receive the new vault
+    // key, the server rejects a payload that does not cover every member, and
+    // finding out after re-encrypting fifty versions wastes the whole operation.
+    //
+    // ⚠️ It refuses rather than dropping them. Silently revoking someone while
+    // rotating would be the exact failure `vault revoke` exists to make loud —
+    // and the person running this under pressure is the least able to notice.
+    let stuck = members_without_pq_key(&everyone);
+    if !stuck.is_empty() {
+        return Err(anyhow!(
+            "these members have no post-quantum sharing key, so the vault key \n\
+             cannot be re-wrapped for them:\n\
+             \x20   {}\n\
+             \x20\n\
+             \x20 They each need to sign in once with evnx 0.5 or later, or at \n\
+             \x20 app.evnx.dev. Re-keying without them would lock them out of \n\
+             \x20 {label} entirely.\n\
+             \x20\n\
+             \x20 If someone should no longer have access, remove them with \n\
+             \x20 `evnx vault revoke {target} --user <email>`, which rotates the \n\
+             \x20 key as part of the same operation.",
+            stuck.join("\n    ")
+        ));
+    }
+
+    // ── Confirm ──────────────────────────────────────────────────────────────
+    if !assume_yes {
+        println!("  About to rotate the key for {}.", label.bold());
+        println!(
+            "  {} version(s) will be re-encrypted and re-wrapped for {} member(s).",
+            vault.version_count,
+            everyone.len()
+        );
+        println!("  Nobody loses access, and nobody is signed out.");
+        println!();
+        println!(
+            "  {}",
+            "This stops anyone holding only the OLD key from reading what is".yellow()
+        );
+        println!(
+            "  {}",
+            "pushed from now on. It cannot recall copies of what they could".yellow()
+        );
+        println!(
+            "  {}",
+            "already read — rotate those secrets at their source.".yellow()
+        );
+        let ok = dialoguer::Confirm::new()
+            .with_prompt(format!("Rotate the key for {label}?"))
+            .default(false)
+            .interact()
+            .context("reading the confirmation")?;
+        if !ok {
+            println!("  Cancelled; nothing was changed.");
+            return Ok(());
+        }
+    }
+
+    let password = auth::read_password(password_stdin, "Master password")?;
+    let master_key = auth::derive_master_key_for_account(&client, &password)?;
+
+    // `None` — nobody is being removed, which is the whole difference from
+    // `revoke`. The field is omitted from the request entirely, and the server
+    // treats an absent `remove_user_id` as a pure rotation.
+    let total = rotate_vault_key(
+        &client,
+        vault,
+        &label,
+        &master_key,
+        &everyone,
+        None,
+        verbose,
+    )?;
+
+    println!();
+    println!("  {} rotated the key for {label}", "\u{2713}".green());
+    println!(
+        "  {total} version(s) re-encrypted, {} member(s) re-wrapped",
+        everyone.len()
+    );
+    println!();
+    println!(
+        "  {}",
+        "Members keep access and stay signed in — they pick up the new key".dimmed()
+    );
+    println!("  {}", "on their next command.".dimmed());
+    println!();
+    println!(
+        "  {}",
+        "Anyone who could already read a version may still hold a copy —".yellow()
     );
     println!("  {}", "rotate those secrets at their source.".yellow());
 
