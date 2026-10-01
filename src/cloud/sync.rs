@@ -184,18 +184,18 @@ struct LatestVersion {
 }
 
 #[derive(Deserialize)]
-struct VersionList {
-    versions: Vec<VersionSummary>,
+pub(crate) struct VersionList {
+    pub versions: Vec<VersionSummary>,
 }
 
 #[derive(Deserialize)]
-struct VersionSummary {
-    version_num: i32,
-    key_count: i32,
-    key_names: Vec<String>,
-    blob_size_bytes: i64,
-    pushed_by: String,
-    pushed_at: String,
+pub(crate) struct VersionSummary {
+    pub version_num: i32,
+    pub key_count: i32,
+    pub key_names: Vec<String>,
+    pub blob_size_bytes: i64,
+    pub pushed_by: String,
+    pub pushed_at: String,
 }
 
 #[derive(Deserialize)]
@@ -324,8 +324,6 @@ pub fn pull(
     password_stdin: bool,
     verbose: bool,
 ) -> Result<()> {
-    use evnx_crypto::{decrypt_vault, vault_aad, EncryptedBlob};
-
     let vault_target = resolve_target(vault_target)?;
 
     let server = CloudConfig::resolve_server(server_override)?;
@@ -359,46 +357,17 @@ pub fn pull(
         }
     };
 
-    let blob_bytes = client
-        .get_bytes(&format!(
-            "/api/v1/vaults/{}/versions/{version}/blob",
-            vault_ref.id
-        ))
-        .map_err(|e| anyhow!("{e}"))?;
-
-    if blob_bytes.len() <= NONCE_LEN {
-        return Err(anyhow!(
-            "the server returned {} bytes, too short to be a blob",
-            blob_bytes.len()
-        ));
-    }
-    let (nonce_bytes, ciphertext) = blob_bytes.split_at(NONCE_LEN);
-    let mut nonce = [0u8; NONCE_LEN];
-    nonce.copy_from_slice(nonce_bytes);
+    // ⚠️ The blob is fetched **before** the password is asked for, and that
+    // ordering is deliberate: a version that does not exist should answer 404
+    // rather than waste the typing. The split into two functions below is what
+    // lets the order survive the extraction.
+    let blob = fetch_blob(&client, &vault_ref, version)?;
 
     let password = auth::read_password(password_stdin, "Master password")?;
     let master_key = auth::derive_master_key_for_account(&client, &password)?;
     let vault_key = unwrap_vault_key(&client, &vault_ref, &master_key)?;
 
-    let aad = vault_aad(&vault_ref.id, version as u32);
-    let plaintext = decrypt_vault(
-        &EncryptedBlob {
-            nonce,
-            ciphertext: ciphertext.to_vec(),
-        },
-        &vault_key,
-        &aad,
-    )
-    .map_err(|_| {
-        anyhow!(
-            "could not decrypt version {version} of {}.\n\
-             \x20 Either the master password is wrong, or the server served a different \
-             version than it claimed — the version number is authenticated into the \
-             ciphertext, so a substituted blob fails here rather than decrypting to \
-             stale secrets.",
-            vault_ref.label()
-        )
-    })?;
+    let plaintext = decrypt_version(&blob, &vault_ref, version, &vault_key)?;
 
     if !force && !confirm_overwrite(&file, &plaintext)? {
         return Ok(());
@@ -420,6 +389,79 @@ pub fn pull(
     Ok(())
 }
 
+/// Every version of a vault, in whatever order the server returned them.
+///
+/// Read-only and cheap — metadata only, no blobs and no key. `history` and
+/// `export` both go through here so "what versions exist" has one answer.
+pub(crate) fn list_versions(client: &Client, vault_ref: &VaultRef) -> Result<Vec<VersionSummary>> {
+    let listed: VersionList = client
+        .get(&format!("/api/v1/vaults/{}/versions", vault_ref.id))
+        .map_err(|e| anyhow!("{e}"))?;
+    Ok(listed.versions)
+}
+
+/// Download one version's blob and split off its nonce.
+///
+/// No key is needed and none is touched: this is ciphertext in and ciphertext
+/// out. Keeping the download separate from [`decrypt_version`] is what lets
+/// `pull` fetch before it asks for a password — and what lets `cloud export`
+/// open the vault key **once** and then walk every version.
+pub(crate) fn fetch_blob(
+    client: &Client,
+    vault_ref: &VaultRef,
+    version: i32,
+) -> Result<evnx_crypto::EncryptedBlob> {
+    let blob_bytes = client
+        .get_bytes(&format!(
+            "/api/v1/vaults/{}/versions/{version}/blob",
+            vault_ref.id
+        ))
+        .map_err(|e| anyhow!("{e}"))?;
+
+    if blob_bytes.len() <= NONCE_LEN {
+        return Err(anyhow!(
+            "the server returned {} bytes, too short to be a blob",
+            blob_bytes.len()
+        ));
+    }
+    let (nonce_bytes, ciphertext) = blob_bytes.split_at(NONCE_LEN);
+    let mut nonce = [0u8; NONCE_LEN];
+    nonce.copy_from_slice(nonce_bytes);
+
+    Ok(evnx_crypto::EncryptedBlob {
+        nonce,
+        ciphertext: ciphertext.to_vec(),
+    })
+}
+
+/// Decrypt a blob that was fetched as `version` of `vault_ref`.
+///
+/// ⚠️ **`version` must be the number the blob was fetched under.** It goes into
+/// the AAD, so passing the wrong one does not decrypt to the wrong secrets — it
+/// fails. That is the property worth preserving in any caller that loops: an
+/// off-by-one pairing version *n*'s ciphertext with *n+1*'s AAD is caught here
+/// rather than producing a plausible-looking file.
+pub(crate) fn decrypt_version(
+    blob: &evnx_crypto::EncryptedBlob,
+    vault_ref: &VaultRef,
+    version: i32,
+    vault_key: &evnx_crypto::VaultKey,
+) -> Result<Vec<u8>> {
+    use evnx_crypto::{decrypt_vault, vault_aad};
+
+    let aad = vault_aad(&vault_ref.id, version as u32);
+    decrypt_vault(blob, vault_key, &aad).map_err(|_| {
+        anyhow!(
+            "could not decrypt version {version} of {}.\n\
+             \x20 Either the master password is wrong, or the server served a different \
+             version than it claimed — the version number is authenticated into the \
+             ciphertext, so a substituted blob fails here rather than decrypting to \
+             stale secrets.",
+            vault_ref.label()
+        )
+    })
+}
+
 /// List a vault's versions, newest first.
 ///
 /// Read-only and cheap: no password, no decryption, no blob download. It answers
@@ -436,11 +478,9 @@ pub fn history(
     vault::require_session(&client, &server)?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
-    let listed: VersionList = client
-        .get(&format!("/api/v1/vaults/{}/versions", vault_ref.id))
-        .map_err(|e| anyhow!("{e}"))?;
+    let versions = list_versions(&client, &vault_ref)?;
 
-    if listed.versions.is_empty() {
+    if versions.is_empty() {
         println!("  {} has no versions yet.", vault_ref.label());
         println!("  Push one with:  {}", "evnx cloud push".cyan());
         return Ok(());
@@ -454,7 +494,7 @@ pub fn history(
         .ok()
         .map(|m| m.user_id);
 
-    let mut rows: Vec<&VersionSummary> = listed.versions.iter().collect();
+    let mut rows: Vec<&VersionSummary> = versions.iter().collect();
     rows.sort_by_key(|v| std::cmp::Reverse(v.version_num));
     let shown = rows.len().min(limit);
 

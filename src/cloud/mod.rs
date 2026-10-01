@@ -48,6 +48,7 @@ pub mod binding;
 pub mod client;
 pub mod config;
 pub mod creds;
+pub mod export;
 pub mod rotate;
 pub mod run;
 pub mod session;
@@ -126,6 +127,23 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
         } => sync::delete_version(server_override, vault, version_num, yes, verbose),
         CloudCommands::Link { vault } => sync::link(server_override, vault, verbose),
         CloudCommands::Unlink => sync::unlink(verbose),
+        CloudCommands::Export {
+            vault,
+            output,
+            all_versions,
+            to,
+            force,
+            password_stdin,
+        } => export::export(
+            server_override,
+            vault,
+            output,
+            all_versions,
+            to,
+            force,
+            password_stdin,
+            verbose,
+        ),
         CloudCommands::Status { ping } => status::run(server_override, ping, verbose),
     }
 }
