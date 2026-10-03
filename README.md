@@ -668,7 +668,7 @@ Precedence is **flag > config > default**. Lists combine rather than replace, so
 scanning are announced on every run. Unknown keys warn and never fail, so a file written
 for a later evnx keeps working on an earlier one.
 
-Full reference: <https://www.evnx.dev/guides/reference/configuration-file>
+Full reference: <https://docs.evnx.dev/cli/reference/configuration-file>
 
 ⚠️ **On v0.4.x and earlier this file did nothing.** The loader existed and nothing called
 it, so a project with `[validate] strict = true` validated non-strictly and said nothing.

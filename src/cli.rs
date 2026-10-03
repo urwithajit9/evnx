@@ -1403,7 +1403,7 @@ Aliases:
 
 Use 'evnx convert' without --to for interactive format selection.
 
-📖  Full guide: https://www.evnx.dev/guides/commands/convert
+📖  Full guide: https://docs.evnx.dev/cli/commands/convert
 ")]
     Convert {
         /// Path to input .env file

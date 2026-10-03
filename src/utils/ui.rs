@@ -247,7 +247,7 @@ pub fn print_next_steps(steps: &[&str]) {
 /// Call this as the **last line** of every command's success path.
 ///
 /// ```text
-///   📖 Docs: https://www.evnx.dev/guides/commands/init
+///   📖 Docs: https://docs.evnx.dev/cli/commands/init
 /// ```
 ///
 /// # Arguments
