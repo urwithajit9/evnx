@@ -1417,8 +1417,14 @@ fn i13_a_migration_that_moved_nothing_is_not_a_success() {
         "it must name the file, not the source kind:\n{err}"
     );
     // `print_docs_hint` writes to stderr, alongside the error it accompanies.
+    //
+    // ⚠️ Asserted against `docs::MIGRATE.url` rather than a literal path. This
+    // read `guides/commands/migrate` and broke when the guides moved host — a
+    // true failure about nothing issue #13 cares about, which is whether the
+    // hint is printed at all. The host is pinned by the tests in `docs.rs`,
+    // and belongs there; here it is only "this links to migrate's guide".
     assert!(
-        err.contains("guides/commands/migrate"),
+        err.contains(evnx::docs::MIGRATE.url),
         "the docs link is what issue #13 is about:\n{err}"
     );
 }

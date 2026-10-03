@@ -531,7 +531,7 @@ Precedence is **flag > config > default**, and lists combine rather than replace
 it. Keys named in older copies of this page (`env_file`, `auto_fix`, `exclude_patterns`,
 `[convert]`, `[aliases]`) were never read by anything and do not exist.
 
-Full reference: [evnx.dev/guides/reference/configuration-file](https://www.evnx.dev/guides/reference/configuration-file)
+Full reference: [evnx.dev/guides/reference/configuration-file](https://docs.evnx.dev/cli/reference/configuration-file)
 
 ---
 
@@ -539,15 +539,15 @@ Full reference: [evnx.dev/guides/reference/configuration-file](https://www.evnx.
 
 | Topic | Link |
 |---|---|
-| All command guides | [evnx.dev/guides](https://www.evnx.dev/guides) |
-| evnx init in depth | [evnx.dev/guides/commands/init](https://www.evnx.dev/guides/commands/init) |
-| evnx add in depth | [evnx.dev/guides/commands/add](https://www.evnx.dev/guides/commands/add) |
-| Prevent secret leaks | [evnx.dev/guides/use-cases/prevent-secret-leaks](https://www.evnx.dev/guides/use-cases/prevent-secret-leaks) |
-| GitHub Actions integration | [evnx.dev/guides/integrations/github-actions](https://www.evnx.dev/guides/integrations/github-actions) |
-| Migrate to AWS Secrets Manager | [evnx.dev/guides/use-cases/use-cases-aws](https://www.evnx.dev/guides/use-cases/use-cases-aws) |
-| Team collaboration with sync | [evnx.dev/guides/use-cases/team-collaboration](https://www.evnx.dev/guides/use-cases/team-collaboration) |
-| .evnx.toml reference | [evnx.dev/guides/reference/configuration-file](https://www.evnx.dev/guides/reference/configuration-file) |
-| Security model | [evnx.dev/guides/reference/concepts-security-model](https://www.evnx.dev/guides/reference/concepts-security-model) |
+| All command guides | [evnx.dev/guides](https://docs.evnx.dev/cli) |
+| evnx init in depth | [evnx.dev/guides/commands/init](https://docs.evnx.dev/cli/commands/init) |
+| evnx add in depth | [evnx.dev/guides/commands/add](https://docs.evnx.dev/cli/commands/add) |
+| Prevent secret leaks | [evnx.dev/guides/use-cases/prevent-secret-leaks](https://docs.evnx.dev/cli/use-cases/prevent-secret-leaks) |
+| GitHub Actions integration | [evnx.dev/guides/integrations/github-actions](https://docs.evnx.dev/cli/integrations/github-actions) |
+| Migrate to AWS Secrets Manager | [evnx.dev/guides/use-cases/use-cases-aws](https://docs.evnx.dev/cli/use-cases/use-cases-aws) |
+| Team collaboration with sync | [evnx.dev/guides/use-cases/team-collaboration](https://docs.evnx.dev/cli/use-cases/team-collaboration) |
+| .evnx.toml reference | [evnx.dev/guides/reference/configuration-file](https://docs.evnx.dev/cli/reference/configuration-file) |
+| Security model | [evnx.dev/guides/reference/concepts-security-model](https://docs.evnx.dev/cli/reference/concepts-security-model) |
 | Changelog | [CHANGELOG.md](../CHANGELOG.md) |
 
 ---

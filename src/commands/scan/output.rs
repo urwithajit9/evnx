@@ -534,7 +534,7 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
             "fullDescription": {
                 "text": format!("evnx scan matched {class} in a file that may be committed.")
             },
-            "helpUri": "https://www.evnx.dev/guides/commands/scan",
+            "helpUri": "https://docs.evnx.dev/cli/commands/scan",
             "defaultConfiguration": {
                 "level": match f.confidence {
                     Confidence::High => "error",
@@ -601,7 +601,7 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
                 "driver": {
                     "name": "evnx scan",
                     "version": env!("CARGO_PKG_VERSION"),
-                    "informationUri": "https://www.evnx.dev/guides/commands/scan",
+                    "informationUri": "https://docs.evnx.dev/cli/commands/scan",
                     "rules": rules
                 }
             },

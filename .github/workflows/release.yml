@@ -415,7 +415,7 @@ jobs:
             def caveats
               <<~EOS
                 Run 'evnx --help' to get started.
-                Documentation: https://www.evnx.dev/guides
+                Documentation: https://docs.evnx.dev/cli
               EOS
             end
 
@@ -535,7 +535,7 @@ jobs:
             "description": "CLI tool for managing .env files — validation, secret scanning, format conversion",
             "homepage": "https://www.evnx.dev",
             "license": "MIT",
-            "notes": "Run 'evnx --help' to get started. Docs: https://www.evnx.dev/guides",
+            "notes": "Run 'evnx --help' to get started. Docs: https://docs.evnx.dev/cli",
             "architecture": {
               "64bit": {
                 "url": "https://github.com/urwithajit9/evnx/releases/download/v${VERSION}/evnx-x86_64-pc-windows-msvc.zip",
