@@ -6,6 +6,228 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.0] - 2026-10-03
+
+**Nine pull requests, and the answer to "what happens when we want to leave?" is
+now a command.** `evnx cloud export` writes every version of a vault to disk,
+decrypted — the escape hatch that was previously a script you had to write
+yourself. Alongside it: a vault key can be rotated without removing anyone, an
+account can list where it has been signed in from, and `evnx scan` now finds a
+secret pasted inside a multiline value, which it has been missing since the
+beginning.
+
+### Why this is 0.8.0 and not 0.7.1
+
+Two changes alter the output of commands that already shipped, and in `0.x` semver
+puts a compatibility change in the minor position:
+
+- **A secret inside a multiline value is now a finding.** A repository with a live
+  key inside a PEM block scanned clean, exit 0; it now fails
+  `evnx scan --severity high` where it passed. Same class as the
+  connection-string rule in 0.7.0. See *Fixed*.
+- **`evnx convert` writes different bytes than it used to — by one.** Every one of
+  the 29 format spellings produced different output on stdout than with
+  `--output`, and 22 of them printed a trailing blank line. Both are fixed, which
+  means a CI job diffing `convert` output will see a one-byte trailing-whitespace
+  change once. No converted value changes. See *Fixed*.
+
+⚠️ **`evnx auth devices` needs a server that has `GET /auth/devices`.** `api.evnx.dev`
+has had it since 2026-10-02; a self-hosted deployment needs evnx-server at the
+commit that adds it. Nothing else here requires a server change — `vault rekey`
+reuses the re-key endpoint `vault revoke` already called, and `auth status` treats
+a 404 from `/auth/usage` as "this server is older" rather than as a failure.
+
+### Added
+
+- **`evnx cloud export` — the way out.** Writes every version of a vault to disk,
+  decrypted, with a manifest naming which one was current. The question a team asks
+  before adopting a secrets vault is what happens when they want to leave, and an
+  escape hatch nobody can demonstrate is not believed.
+
+  ⚠️ **This is the one evnx command whose purpose is to put plaintext secrets on a
+  filesystem.** `pull` writes one file and asks first; `run` writes none at all.
+  Files land `0600` inside a `0700` directory, which protects them from other users
+  on the machine and from nothing else — and the command says so rather than
+  leaving it to the docs.
+
+  With no `--to` the files are the exact bytes that were pushed: comments, ordering,
+  quoting and multiline values all survive, because `push` encrypts the file
+  verbatim. `--to` converts through the same fourteen formats `evnx convert` offers
+  and keeps only keys and values. Three refusals land **before** the master password
+  is asked for and before a single blob is fetched — an unusable `--to`, a non-empty
+  output directory, and a vault with no versions — because a refusal that arrives
+  after minutes of decryption teaches people to pass `--force` by reflex.
+
+  Verified against a live server: three versions pushed and exported byte-identical,
+  including a multiline PEM private key, and again through the hybrid
+  X25519 + ML-KEM-768 wrap from a second account — the path a solo vault never
+  exercises. (#101)
+
+- **`evnx vault rekey` — rotate a key without removing anyone.** Rotating a vault key
+  and removing a member are separate acts that happened to ship together. Removal
+  needs rotation, or a former member keeps a usable key; rotation does not need
+  removal, and the cases that call for it most have nobody leaving — a lost laptop
+  with a signed-in CLI, a CI runner that held `EVNX_PASSWORD`, an account breach
+  where the person stays on the team. Until now the only way to rotate was
+  `vault revoke` followed by `vault share`: a worse audit trail, and a window in
+  which that person genuinely had no access.
+
+  ⚠️ **A member with no post-quantum sharing key refuses the rotation and is named**,
+  rather than being skipped. The server requires the payload to cover every member
+  exactly once, so a member left out is a member *removed* — and silently revoking
+  someone mid-rotation is the precise failure `vault revoke` exists to make loud.
+
+  The output says what a rotation does **not** do: anyone who could already read a
+  version may still hold a copy, and no rotation recalls that. It also says nobody
+  is signed out, because a rotation that looked like it logged the team out would be
+  reached for less often than it should be. (#95, #96)
+
+- **`evnx auth devices list` and `evnx auth devices disavow`.** A device is a network
+  and browser the account has signed in from. The server identifies one by a keyed
+  BLAKE3 digest of the client address and user agent, so repeat sign-ins collapse
+  into one row without anything being stored that could name a machine.
+
+  ⚠️ **There is no location in any of this and there cannot be.** A hash cannot be
+  geolocated — no city, no country, no impossible travel. Those need a raw IP and
+  evnx deliberately never stores one. The listing says so in as many words, because
+  a device that looks new is very often a phone that reconnected, and the
+  alternative is people acting on a threat that is not there. A test scans the
+  module's own printed strings for location words, so a later copy edit cannot
+  quietly introduce a claim the architecture cannot support.
+
+  ⚠️ **Not the same as `evnx auth sessions`,** and the help text for both now says so.
+  A session is a live credential you can revoke; a device is somewhere you have
+  signed in from, which may have no session left at all. `disavow` confirms by
+  default, because it ends every session on the account including the one running
+  the command — and it does not stop at "done": revoking sessions does not protect a
+  vault, so it points at `evnx auth rotate-master-password` as the next step. An API
+  token is refused with an explanation, because a leaked CI token must not be able
+  to enumerate where its owner signs in from. (#103)
+
+- **`evnx auth download-data` — take your data with you.** GDPR Article 20, and the
+  other half of `evnx auth delete-account`: being able to take a copy before erasing
+  the account. Writes which vaults exist, who can reach them, each version by
+  variable **name**, API tokens by name and scope, and this account's own activity.
+
+  ⚠️ **The secrets are not in it and cannot be,** and the command says so twice — in
+  `--help` and after a successful download. The server has never held a master
+  password, a master key, a vault key or a plaintext value, so there is nothing on
+  its side to decrypt with. An export that *did* contain secrets would mean the
+  server could read them, so the absence is the product working. The output names
+  `evnx cloud pull` as the way to get values.
+
+  The file is written `0600`, permissions set before the bytes so there is no instant
+  where it exists with real content under the process umask. No secret value is in
+  it, but it carries every vault name, every co-member's email and the variable names
+  of every version — the shape of a system without its contents, which is plenty for
+  someone deciding what to attack. The body is taken as untyped JSON on purpose: a
+  struct would silently drop any field the server adds later, turning "everything we
+  hold" into "everything this binary knew about". (#97)
+
+- **`evnx auth status` shows your plan and usage.** `status` already answered "is this
+  credential good?"; it now also answers "how much of my plan am I using?" — which
+  was previously answerable only by being refused.
+
+  ⚠️ **`used == limit` renders as full, not as one remaining.** The server refuses at
+  `count >= limit`, so three of three means the next create is already rejected, and
+  a neutral "3 / 3" reads as one left to anyone used to progress bars. One slot
+  remaining is warned in yellow — the last moment a warning is still actionable.
+  Versions are listed per vault and only for vaults at or near their cap, because
+  printing every count would bury the two that matter. (#98)
+
+### Changed
+
+- **`evnx auth export` is `evnx auth download-data`.** Renamed before it ever shipped,
+  so no published binary has the old name and nothing breaks.
+
+  ⚠️ **The collision this avoids was a safety problem, not a tidiness one.**
+  `evnx cloud export` writes every secret, decrypted, to disk. `evnx auth export`
+  writes account metadata and explicitly no secrets. Two commands named `export`
+  with opposite risk profiles: someone who learns here that "an export holds no
+  secrets" carries that belief to the one that writes plaintext credentials.
+  `cloud export` keeps the word because that is what it means everywhere else —
+  Doppler, Infisical and 1Password all use "export" for getting secrets out — so the
+  metadata command is the one to move. `download-data` also matches the dashboard
+  button, which already said "Download your data". The default filename moves with
+  it: `evnx-account-data-<date>.json`. (#99)
+
+- **Every documentation URL the binary prints now points at `docs.evnx.dev`.** The
+  guides moved to their own host and all 33 URLs in `src/docs.rs` kept pointing at
+  `evnx.dev/guides/*`, as did the SARIF `helpUri` that `scan` writes into GitHub
+  code scanning results, the README line that crates.io, npm and PyPI all render,
+  and the release-notes text.
+
+  ⚠️ **Nothing was broken, which is why nothing caught it.** Every one of those URLs
+  301s to the right page, so a reader never noticed and no check failed — the stale
+  host was simply compiled into every published binary. `docs.rs` now carries tests
+  that pin the host, reject a trailing slash (`docs.evnx.dev` 308s those away, the
+  opposite of `app.evnx.dev`), require each `after_help` to link to its own command's
+  guide, and read the file's own source so a command added later cannot sit outside
+  all of them by being left out of the list.
+
+### Fixed
+
+- **`evnx scan` missed a secret inside a multiline value.** A `.env` holding a live
+  Stripe key inside a PEM block reported "No secrets detected", exit 0. The identical
+  bytes saved as `.txt` were caught.
+
+  ⚠️ **The `.env` path was the only one that missed it, and it is the path that
+  matters.** The published guide sells this command as a pre-commit and CI gate and
+  lists "private keys accidentally pasted as values" as something it catches — and a
+  private key pasted as a value *is* a multiline PEM block. The guide named the
+  failing case as a feature.
+
+  The cause was a second implementation: `scan` was the one command that re-read
+  `.env` itself, splitting every line on `=`, and a continuation line has no `=` so
+  it was skipped entirely. `core::parser` has handled multiline since the beginning
+  and eleven other modules use it. `scan` now parses through the shared parser, so
+  the duplicate is gone rather than patched. ⚠️ A file that does not parse falls back
+  to the old raw scan rather than being skipped — the old path *does* find a secret
+  in a file with an unterminated quote, and a half-pasted value in a broken `.env` is
+  exactly where a secret hides.
+
+  Characterised across 15 `.env` shapes before and after: exactly two lines of that
+  table changed, both of them the bug. (#100)
+
+- **`evnx convert` wrote different bytes to stdout than to `--output`.** Not for some
+  formats — for all 29 spellings, every time, with the file always exactly one byte
+  shorter. And 22 of the 29 printed a trailing blank line.
+
+  One bug seen from two sides: a converter decides for itself whether to end in a
+  newline, and each write path then applied a different rule on top. Neither column
+  was a decision anyone made; both fell out of which function happened to do the
+  writing. Normalised in one place, beside the trait whose output it normalises, and
+  applied on both paths — add a format and it inherits this.
+
+  ⚠️ **The golden test had enshrined the bug.** `tests/golden/convert.yaml` was
+  generated from the buggy output and then asserted as correct, so a test was holding
+  it in place. Worth remembering whenever a golden file is created: it locks in
+  whatever was true that day, including what was wrong. (#102)
+
+- **A vault named `..` could write outside `--output`.** Found while building
+  `cloud export`: a vault named `..` with an empty environment sanitised to exactly
+  `..`, and joining that onto the output path writes to its parent. A vault name is
+  user-supplied and the server does not constrain it. (#101)
+
+### Internal
+
+- `rotate_vault_key` is extracted from `vault revoke`, which was 305 lines with the
+  rotation inlined in its tail, so `rekey` adds no duplicate of it. `remove_user_id`
+  is the only thing that makes a rotation a revocation, and the server already
+  declared it optional — so a standalone re-key needed no server change at all. (#95)
+- `get_converter` moves from `commands/convert.rs` into `formats` and returns an error
+  instead of calling `std::process::exit(2)`. The exit is why it could not be reused:
+  a library function cannot end the process under a caller mid-way through a long
+  job, and no test could ever reach the unknown-format arm, because exiting takes the
+  harness with it. `convert` still exits 2, at its own call site, with byte-identical
+  output. (#101)
+- `pull` splits into `fetch_blob` + `decrypt_version`, kept as two functions so
+  pull's existing order survives — it fetches before prompting, so a version that
+  does not exist answers 404 rather than wasting the typing. (#101)
+- `core::parser` gains `EnvFile::lines` and `parse_content_located`, exposing the
+  key-to-line map it already tracked internally. Additive: `parse_content` keeps its
+  signature for all 51 existing call sites. (#100)
+
 ## [0.7.0] - 2026-09-30
 
 **Thirteen pull requests, and a cloud account is now fully self-service.** A master
