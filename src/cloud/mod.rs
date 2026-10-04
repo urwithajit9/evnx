@@ -50,6 +50,7 @@ pub mod config;
 pub mod creds;
 pub mod device;
 pub mod export;
+pub mod org;
 pub mod rotate;
 pub mod run;
 pub mod session;
@@ -60,8 +61,8 @@ pub mod totp;
 pub mod vault;
 
 use crate::cli::{
-    AuthCommands, CloudCommands, DeviceCommands, SessionCommands, TokenCommands, TotpCommands,
-    VaultCommands,
+    AuthCommands, CloudCommands, DeviceCommands, OrgCommands, SessionCommands, TokenCommands,
+    TotpCommands, VaultCommands,
 };
 use anyhow::Result;
 
@@ -221,6 +222,71 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
                 token::revoke(server_override, target, yes, verbose)
             }
         },
+    }
+}
+
+/// Dispatch an `evnx org …` subcommand.
+///
+/// ⛔ Nothing here can grant access to a vault — see [`org`] for why that is
+/// structural rather than a policy these handlers enforce.
+pub fn run_org(command: OrgCommands, server_override: Option<&str>, verbose: bool) -> Result<()> {
+    match command {
+        OrgCommands::Create { name, slug } => org::create(server_override, &name, &slug, verbose),
+        OrgCommands::List => org::list(server_override, verbose),
+        OrgCommands::Members { org: which } => {
+            org::members(server_override, which.as_deref(), verbose)
+        }
+        OrgCommands::Invite {
+            email,
+            role,
+            org: which,
+        } => org::invite(
+            server_override,
+            &email,
+            role.as_deref(),
+            which.as_deref(),
+            verbose,
+        ),
+        OrgCommands::Invites { org: which } => {
+            org::invites(server_override, which.as_deref(), verbose)
+        }
+        OrgCommands::Uninvite {
+            invite_id,
+            org: which,
+        } => org::uninvite(server_override, &invite_id, which.as_deref(), verbose),
+        OrgCommands::Accept { token } => org::accept(server_override, &token, verbose),
+        OrgCommands::Billing { org: which } => {
+            org::billing(server_override, which.as_deref(), verbose)
+        }
+        OrgCommands::Seats {
+            set,
+            unlimited,
+            org: which,
+        } => org::seats(server_override, set, unlimited, which.as_deref(), verbose),
+        OrgCommands::Assign { who, org: which } => {
+            org::assign(server_override, &who, which.as_deref(), verbose)
+        }
+        OrgCommands::Release { who, org: which } => {
+            org::release(server_override, &who, which.as_deref(), verbose)
+        }
+        OrgCommands::Role {
+            who,
+            set,
+            org: which,
+        } => org::set_role(server_override, &who, &set, which.as_deref(), verbose),
+        OrgCommands::Remove {
+            who,
+            yes,
+            org: which,
+        } => org::remove(server_override, &who, yes, which.as_deref(), verbose),
+        OrgCommands::Delete {
+            force,
+            yes,
+            org: which,
+        } => org::delete(server_override, force, yes, which.as_deref(), verbose),
+        OrgCommands::Leave { yes, org: which } => {
+            org::leave(server_override, yes, which.as_deref(), verbose)
+        }
     }
 }
 
