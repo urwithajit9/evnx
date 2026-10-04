@@ -271,6 +271,191 @@ pub struct MigrateOptions {
 // ─────────────────────────────────────────────────────────────
 
 /// Subcommands for `evnx auth`.
+/// Organisations — billing and a directory.
+///
+/// ⛔ **An organisation does not give anyone access to a vault.** It owns a plan
+/// and a set of seats; a seat holder gets that plan's limits. The server cannot
+/// wrap a vault key, so no membership, role or seat can grant vault access —
+/// sharing is `evnx vault share`, done by someone who holds the key.
+#[cfg(feature = "cloud")]
+#[derive(Subcommand, Debug)]
+pub enum OrgCommands {
+    /// Create an organisation. You become its owner.
+    ///
+    /// You hold no seat at first, deliberately: a seat can only be held in one
+    /// organisation at a time, and a new organisation is on the free plan, so a
+    /// seat would change nothing until billing is set up.
+    Create {
+        /// Display name, e.g. "Acme Corp".
+        name: String,
+
+        /// Short handle used by `--org`, e.g. `acme`. Lowercase letters, digits
+        /// and hyphens.
+        #[arg(long, value_name = "SLUG")]
+        slug: String,
+    },
+
+    /// List the organisations this account belongs to.
+    List,
+
+    /// Who is in an organisation, and who holds a seat.
+    Members {
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+
+    /// Invite someone by email.
+    ///
+    /// ⚠️ They will not gain access to any vault. The invitation decides which
+    /// plan's limits apply to them once an administrator assigns a seat.
+    Invite {
+        /// Email address to invite.
+        email: String,
+
+        /// `member` (default) or `admin`. ⚠️ `owner` cannot be granted — an
+        /// organisation has exactly one, set when it is created.
+        #[arg(long, value_name = "ROLE")]
+        role: Option<String>,
+
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+
+    /// Invitations sent but not yet redeemed.
+    Invites {
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+
+    /// Withdraw an invitation.
+    Uninvite {
+        /// Invitation id, from `evnx org invites`.
+        invite_id: String,
+
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+
+    /// Redeem an invitation token.
+    ///
+    /// Takes no `--org`: the token names the organisation, and you are not a
+    /// member yet. Only the invited address can redeem it.
+    Accept {
+        /// The `evnx_inv_…` token from the invitation.
+        token: String,
+    },
+
+    /// What this organisation is on, and until when.
+    ///
+    /// ⚠️ Read-only. Changing a plan, a seat count or a payment method happens in
+    /// the browser — a card form does not belong in a terminal, and Paddle is
+    /// the merchant of record for the transaction either way. This answers the
+    /// question a terminal is actually the right place for: *why are my limits
+    /// what they are?*
+    Billing {
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+
+    /// Show or set how many seats are purchased.
+    ///
+    /// Bare, it shows. ⚠️ Setting the count is owner-only — it is what an invoice
+    /// is computed from.
+    Seats {
+        /// Set the purchased seat count.
+        #[arg(long, value_name = "N")]
+        set: Option<i64>,
+
+        /// No seat limit.
+        #[arg(long)]
+        unlimited: bool,
+
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+
+    /// Give someone a seat.
+    ///
+    /// ⚠️ A seat is a plan change: their limits become this organisation's.
+    Assign {
+        /// Email address, or user id.
+        who: String,
+
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+
+    /// Take a seat back.
+    ///
+    /// ⚠️ Their limits drop to their own plan. Nothing is deleted — a vault over
+    /// the new limit stays readable, and the next push to it is refused.
+    Release {
+        /// Email address, or user id.
+        who: String,
+
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+
+    /// Change someone's role.
+    Role {
+        /// Email address, or user id.
+        who: String,
+
+        /// `member` or `admin`.
+        #[arg(long, value_name = "ROLE")]
+        set: String,
+
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+
+    /// Remove someone from an organisation.
+    Remove {
+        /// Email address, or user id.
+        who: String,
+
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+
+    /// Delete an organisation.
+    ///
+    /// ⚠️ Every seat holder drops back to their own plan. No vault is touched and
+    /// nothing anyone already pulled is recalled.
+    ///
+    /// Owner-only. This is also the release valve for account deletion, which is
+    /// blocked while you own an organisation.
+    Delete {
+        /// Delete even though seats are assigned.
+        #[arg(long)]
+        force: bool,
+
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+
+    /// Leave an organisation.
+    ///
+    /// An owner cannot leave their own — transfer ownership or delete it.
+    Leave {
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+
+        #[arg(long, value_name = "SLUG")]
+        org: Option<String>,
+    },
+}
+
 #[cfg(feature = "cloud")]
 #[derive(Subcommand, Debug)]
 pub enum AuthCommands {
@@ -1647,6 +1832,22 @@ Use 'evnx convert' without --to for interactive format selection.
     Auth {
         #[command(subcommand)]
         command: AuthCommands,
+
+        /// evnx server to talk to. Overrides EVNX_SERVER and config.toml.
+        #[arg(long, value_name = "URL", global = true)]
+        server: Option<String>,
+    },
+
+    /// Manage organisations — billing and a directory.
+    ///
+    /// ⛔ An organisation does **not** give anyone access to a vault. It owns a
+    /// plan and a set of seats; a seat decides which plan's limits apply to the
+    /// holder. Sharing a vault is `evnx vault share`, and only someone who holds
+    /// the key can do it.
+    #[cfg(feature = "cloud")]
+    Org {
+        #[command(subcommand)]
+        command: OrgCommands,
 
         /// evnx server to talk to. Overrides EVNX_SERVER and config.toml.
         #[arg(long, value_name = "URL", global = true)]
