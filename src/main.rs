@@ -494,7 +494,7 @@ fn main() -> Result<()> {
             } => commands::spec::run(with, env, example, stdout, force, cli.verbose),
         },
 
-        Commands::Surface { compact } => commands::surface::run(compact),
+        Commands::Surface { json, compact } => commands::surface::run(json, compact),
         Commands::Completions { shell } => commands::completions::run(shell),
         Commands::Update { check } => commands::update::run(check),
     };

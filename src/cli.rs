@@ -1948,23 +1948,26 @@ Use 'evnx convert' without --to for interactive format selection.
         action: SpecAction,
     },
 
-    /// The whole command tree as JSON, for tooling.
+    /// Every command this build has, and which features it was compiled with.
     ///
-    /// ⚠️ Hidden on purpose. This is a build-time interface for the
-    /// documentation pipeline and the app's command tour, not a feature —
-    /// every visible command is a promise to keep it working in that shape,
-    /// and this one is versioned by `schema` so it can change freely.
+    /// ⚠️ "This build" is the point. `cloud`, `migrate` and `backup` are
+    /// optional features, so two binaries of the same version can have very
+    /// different command sets — and nothing else tells you which one you have.
+    /// PyPI shipped five releases with no cloud commands at all and nobody
+    /// noticed, because every check anyone ran read `--version` and stopped.
     ///
-    /// ⓘ `hide` removes it from `--help` only. `clap_complete` still emits it,
-    /// so it tab-completes; that is known, not an oversight.
-    ///
-    /// ⚠️ The output describes THIS build. `cloud`, `migrate` and `backup` are
-    /// optional, so a `default = []` binary emits a smaller surface. The
-    /// `features` field says which were compiled in, and a consumer that
-    /// ignores it will read a feature-gated command as a documentation error.
-    #[command(hide = true)]
+    /// ⓘ Named `commands`; `surface` still works, because tooling calls it that.
+    #[command(name = "commands", visible_alias = "surface", after_help = docs::COMMANDS.after_help)]
     Surface {
-        /// One line instead of indented JSON.
+        /// The whole command tree as JSON, for tooling.
+        ///
+        /// Versioned by a `schema` field, so the shape can change without
+        /// breaking anyone. The plain output carries no such promise — do not
+        /// parse it.
+        #[arg(long)]
+        json: bool,
+
+        /// One line instead of indented JSON. Requires `--json`.
         #[arg(long)]
         compact: bool,
     },

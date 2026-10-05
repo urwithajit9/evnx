@@ -175,6 +175,13 @@ pub const ORG: CommandDoc = CommandDoc {
     after_help: "Full guide: https://docs.evnx.dev/cli/commands/org",
 };
 
+pub const COMMANDS: CommandDoc = CommandDoc {
+    command: "commands",
+    url: "https://docs.evnx.dev/cli/commands/commands",
+    description: "What this build can do, and which features it has",
+    after_help: "Full guide: https://docs.evnx.dev/cli/commands/commands",
+};
+
 /// Every `CommandDoc` in this file.
 ///
 /// Hand-maintained, which is a risk — so
@@ -187,7 +194,7 @@ pub const ORG: CommandDoc = CommandDoc {
 /// exists to stop.
 pub const ALL: &[&CommandDoc] = &[
     &INIT, &SPEC, &ADD, &VALIDATE, &SCAN, &DIFF, &CONVERT, &SYNC, &MIGRATE, &DOCTOR, &TEMPLATE,
-    &BACKUP, &RESTORE, &CLOUD, &AUTH, &VAULT, &ORG,
+    &BACKUP, &RESTORE, &CLOUD, &AUTH, &VAULT, &ORG, &COMMANDS,
 ];
 
 /// The documentation URL for a top-level command, if it has one.
