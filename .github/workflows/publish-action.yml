@@ -31,11 +31,31 @@ jobs:
           token: ${{ secrets.EVNX_ACTION_PAT }}
           path: evnx-action-repo
 
-      # Bump the evnx version comment inside action.yml so the changelog is clear
+      # ⚠️ This step has never changed anything, and `|| true` is why nobody knew.
+      #
+      # Verified 2026-10-05 against urwithajit9/evnx-action@main: the pattern
+      # `evnx-vX.Y.Z` appears nowhere in that file. sed exits 0 on "no match", the
+      # `|| true` would have swallowed a real failure too, and the commit step
+      # below is `git diff --cached --quiet || git commit` — so a no-op produces a
+      # green run indistinguishable from a successful bump.
+      #
+      # It is kept rather than deleted because the action may grow a pinned
+      # version later, and it now SAYS what it did. A missing bump is not worth
+      # failing a release over — the action defaults to `version: latest` and
+      # resolves at runtime, so nothing there goes stale — but it is worth seeing
+      # in the log.
       - name: Update version reference in action.yml
         run: |
+          set -uo pipefail
           TAG="${{ steps.version.outputs.tag }}"
-          sed -i "s|evnx-v[0-9]*\.[0-9]*\.[0-9]*|evnx-$TAG|g" evnx-action-repo/action.yml || true
+          before=$(sha256sum evnx-action-repo/action.yml | cut -d' ' -f1)
+          sed -i "s|evnx-v[0-9]*\.[0-9]*\.[0-9]*|evnx-$TAG|g" evnx-action-repo/action.yml
+          after=$(sha256sum evnx-action-repo/action.yml | cut -d' ' -f1)
+          if [ "$before" = "$after" ]; then
+            echo "::notice::action.yml carries no evnx-vX.Y.Z reference, so nothing was bumped. This is expected today — the action resolves the version at runtime."
+          else
+            echo "✓ bumped the evnx version reference to $TAG"
+          fi
 
       - name: Commit + push to evnx-action repo
         working-directory: evnx-action-repo

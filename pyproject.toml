@@ -7,7 +7,7 @@ name = "evnx"
 # Keep this in sync with version in Cargo.toml — maturin reads it from there at build time.
 # You still declare it here for PyPI metadata; maturin enforces they match.
 dynamic = ["version"]
-description = "evnx — blazing-fast environment variable manager and inspector built in Rust"
+description = "Manage .env files — validate, scan for secrets, convert formats, and sync them end-to-end encrypted"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }

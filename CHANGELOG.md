@@ -6,6 +6,136 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.9.0] - 2026-10-05
+
+**One pull request, and the thing it adds is money.** `evnx org` creates an
+organisation, invites people into it, and assigns seats — and a seat is what makes
+a paid plan's limits apply to somebody. With the server side deployed, a team can
+now buy a plan and see their limits change.
+
+### ⛔ The one thing to understand before using it
+
+**An organisation does not give anyone access to a vault.** It owns a plan and a
+set of seats; a seat decides which plan's *limits* apply to its holder. That is
+the whole feature.
+
+The server has never been able to wrap a vault key — the zero-knowledge guarantee
+is that it holds only ciphertext — so there is no mechanism by which membership
+could produce access, and no column in the schema that could express it. Sharing
+stays a deliberate act by someone who already holds the key:
+
+```bash
+evnx vault share app/production --with colleague@example.com --role developer
+```
+
+`evnx org invite` says this in its own output, not only in the guide. "I added
+them to the org, why can't they see the vault?" is the first question this feature
+will produce, and a guide is read once while output is read at the moment the
+wrong assumption forms.
+
+### ⚠️ This needs a server that has the organisation endpoints
+
+`api.evnx.dev` has had them since 2026-10-05, with migrations 010–012 applied. A
+self-hosted deployment needs evnx-server at that commit or later; against an older
+one, `evnx org` returns 404 from every subcommand.
+
+Nothing else in this release touches the server.
+
+### Why this is 0.9.0 and not 0.8.1
+
+Fifteen new subcommands under a new top-level `org`, behind the existing `cloud`
+feature. In `0.x` semver puts new functionality in the minor position. Nothing
+that already shipped changes behaviour, and no output format moves — so unlike
+0.8.0, there is no compatibility note to read.
+
+### Added
+
+- **`evnx org` — organisations, seats, and what the plan is.** Fifteen
+  subcommands:
+
+  ```bash
+  evnx org create "Acme Corp" --slug acme
+  evnx org list · members · invite · invites · uninvite · accept
+  evnx org seats · billing · assign · release · role · remove · leave · delete
+  ```
+
+  Every one takes `--org <slug>`. You can omit it when you belong to exactly one
+  organisation; with several, omitting it is an error that **lists them rather
+  than guessing** — picking wrong here bills the wrong company.
+
+  ⚠️ **Organisation commands need a real sign-in.** An `evnx_tok_` API token is
+  refused with 403: inviting people and assigning seats changes what the account
+  is billed, so it takes a login rather than a CI credential. Same reasoning as
+  `evnx auth token`.
+
+- **A seat is a plan change for somebody who is not at the keyboard.**
+  `evnx org assign` and `evnx org release` move another person's limits, and both
+  name whose and to what. Without that they watch their quota move with no
+  explanation, and the person who caused it never knew they had.
+
+  ⚠️ Releasing a seat can leave someone **over** their new limit. Nothing is
+  deleted and nothing becomes unreadable — a vault over the limit stays readable
+  and exportable, and the next *push* to it is what gets refused. Over-quota and
+  readable is the only humane state, and it was chosen deliberately rather than
+  discovered.
+
+- **`evnx org billing` — what the organisation is on, and until when.**
+
+  ```
+    acme — team plan
+    seats 7 / 10
+    renews 2026-11-03
+  ```
+
+  Read-only. Buying a plan, changing the seat count and updating a card happen at
+  [app.evnx.dev/billing](https://app.evnx.dev/billing/) — a card form does not
+  belong in a terminal, and the payment provider is the merchant of record for the
+  transaction either way. What a terminal *is* the right place for is the question
+  this answers: why are my limits what they are, and is that about to change?
+
+  ⚠️ **"ends" and "renews" are the same date and the opposite event.** A cancelled
+  subscription keeps running to the end of the period already paid for, so the
+  provider reports it as *active* with a pending change attached. Reading the
+  status alone would print `renews 2026-11-03` for a plan that ends on 2026-11-03
+  — and the natural response to seeing that is to cancel again through your bank.
+  Both states are distinguished:
+
+  ```
+    renews 2026-11-03                  ← it will be charged again
+    ! this plan ENDS on 2026-11-03     ← it will not
+  ```
+
+  A failed payment prints *"your limits have not changed yet"*. The "yet" is
+  load-bearing: without it people assume they are already locked out and stop
+  working.
+
+- **One seat per person, by construction.** A seat can be held in exactly one
+  organisation at a time, and the database makes a second one unstorable.
+  Directory membership is unconstrained, so a contractor at two companies is
+  representable — two entries, one seat. Without that rule, "which plan applies to
+  this account?" has no well-defined answer, and anyone with an enterprise
+  organisation could raise the limits of every account they invited.
+
+- **`evnx org seats --set` asks before it tries.** Once a subscription exists the
+  seat count is what the invoice is computed from, so the server refuses the local
+  route. The CLI checks first and names the next step rather than surfacing a
+  rejection.
+
+- **Roles have no peers.** You may only act on a rank you outrank, so an admin
+  cannot create another admin, and `owner` cannot be granted at all — an
+  organisation has exactly one, set at creation, never handed out by a forwardable
+  invitation link.
+
+### Documentation
+
+- [`evnx org`](https://docs.evnx.dev/cli/commands/org) and
+  [Billing](https://docs.evnx.dev/cli/reference/billing-and-plans) are published.
+  Both were written during development and held unlisted until the commands they
+  describe shipped — a published guide for a command nobody has is worse than no
+  guide.
+
+---
+
 ## [0.8.0] - 2026-10-03
 
 **Nine pull requests, and the answer to "what happens when we want to leave?" is

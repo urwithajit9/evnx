@@ -374,7 +374,7 @@ jobs:
 
           cat > homebrew-evnx/Formula/evnx.rb << EOF
           class Evnx < Formula
-            desc "CLI tool for managing .env files — validation, secret scanning, format conversion"
+            desc "Manage .env files — validate, scan for secrets, convert formats, and sync them end-to-end encrypted"
             homepage "https://www.evnx.dev"
             version "${VERSION}"
             license "MIT"
@@ -532,7 +532,7 @@ jobs:
           cat > scoop-bucket/bucket/evnx.json << EOF
           {
             "version": "${VERSION}",
-            "description": "CLI tool for managing .env files — validation, secret scanning, format conversion",
+            "description": "Manage .env files — validate, scan for secrets, convert formats, and sync them end-to-end encrypted",
             "homepage": "https://www.evnx.dev",
             "license": "MIT",
             "notes": "Run 'evnx --help' to get started. Docs: https://docs.evnx.dev/cli",
@@ -631,7 +631,7 @@ jobs:
           #   --publisher "Ajit Kumar" `
           #   --license "MIT" `
           #   --package-name "evnx" `
-          #   --short-description "CLI tool for managing .env files — validation, secret scanning, format conversion" `
+          #   --short-description "Manage .env files — validate, scan for secrets, convert formats, and sync them end-to-end encrypted" `
           #   --submit `
           #   --token $env:GITHUB_TOKEN
 

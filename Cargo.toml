@@ -1,6 +1,6 @@
 [package]
 name        = "evnx"
-version     = "0.8.0"
+version     = "0.9.0"
 edition     = "2021"
 # Verified by building on it, not assumed: cargo +1.85.0 check passes for the
 # default feature set, --features cloud and --all-features. The floor comes from
@@ -8,10 +8,10 @@ edition     = "2021"
 # because Cargo has no per-feature MSRV.
 rust-version = "1.85"
 authors     = ["Ajit Kumar <ajitkumar.pu@gmail.com>"]
-description = "A comprehensive CLI tool for managing .env files — validation, secret scanning, and format conversion"
+description = "Manage .env files — validate, scan for secrets, convert formats, and sync them end-to-end encrypted"
 repository  = "https://github.com/urwithajit9/evnx"
 homepage    = "https://evnx.dev"
-documentation = "https://evnx.dev"
+documentation = "https://docs.evnx.dev/cli"
 keywords    = ["env", "dotenv", "secrets", "cli", "devops"]
 categories  = ["command-line-utilities", "development-tools"]
 license     = "MIT"
