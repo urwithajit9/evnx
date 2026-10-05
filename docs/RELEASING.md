@@ -120,12 +120,24 @@ git push origin vX.Y.Z
 ⚠️ **A green workflow run is not evidence that anything published.** Each of
 these has produced a green run while publishing nothing:
 
+⚠️ **Check the command surface, not just `--version`.** Every release check this
+project has ever run read the version string and stopped. That is how PyPI
+shipped five releases with no cloud commands without anyone noticing: the binary
+reported the right version and was missing a third of its features.
+
+```bash
+# for each channel's artefact:
+"$BIN" --version
+"$BIN" cloud --help >/dev/null && echo "cloud ok" || echo "⚠️ CLOUD MISSING"
+"$BIN" org   --help >/dev/null && echo "org ok"   || echo "⚠️ ORG MISSING"
+```
+
 | Channel | Check | The trap |
 |---|---|---|
 | GitHub Release | 16 assets + checksums | |
 | **npm** | `npm view @evnx/cli version` | `npm-publish.yml` fires on `release.yml` *completing* — including when it **fails**, where it correctly skips and still reports green. A green npm run means nothing; read the registry. |
 | **crates.io** | `cargo publish` — **manual** | Nothing automates it and nothing reminds you. evnx-crypto 0.1.1 and 0.1.2 exist as git tags and npm releases only, because this step was skipped twice. |
-| PyPI | install the wheel and run the binary | |
+| PyPI | install the wheel and run the binary — **and check `cloud --help`** | ⚠️ Built with `--features full` until 0.9.0, and `full` excludes `cloud`. Five releases of wheels had no `auth`, `vault`, `cloud` or `org`. Fixed to `--all-features`; **verify it on the first release after 0.9.0.** |
 | Homebrew / Scoop | formula and manifest bumped | |
 | ghcr.io | new digest, not the old one | |
 | **winget** | a PR against microsoft/winget-pkgs | Validation has blocked this package twice. See below. |

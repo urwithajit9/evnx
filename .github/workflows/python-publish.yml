@@ -49,7 +49,18 @@ jobs:
             --out dist
             --find-interpreter    # picks up all available Python versions
             --strip
-            --features full
+            # ⚠️ --all-features, NOT --features full.
+            #
+            # `full = ["migrate", "backup"]` and `cloud` is deliberately not in
+            # it, so every wheel PyPI has ever published shipped WITHOUT the
+            # cloud commands — verified against the 0.4.0, 0.8.0 and 0.9.0
+            # wheels on 2026-10-05, all of which lack `auth`, `vault`, `cloud`
+            # and `org`. `release.yml` has always used --all-features, which is
+            # why every other channel has them and only this one did not.
+            #
+            # Nothing caught it because the release checks read `--version` and
+            # never looked at the command surface.
+            --all-features
           # Uncomment if you need musl (fully static) builds:
           # manylinux: musllinux_1_2
         # env:
@@ -93,7 +104,18 @@ jobs:
             --out dist
             --find-interpreter
             --strip
-            --features full
+            # ⚠️ --all-features, NOT --features full.
+            #
+            # `full = ["migrate", "backup"]` and `cloud` is deliberately not in
+            # it, so every wheel PyPI has ever published shipped WITHOUT the
+            # cloud commands — verified against the 0.4.0, 0.8.0 and 0.9.0
+            # wheels on 2026-10-05, all of which lack `auth`, `vault`, `cloud`
+            # and `org`. `release.yml` has always used --all-features, which is
+            # why every other channel has them and only this one did not.
+            #
+            # Nothing caught it because the release checks read `--version` and
+            # never looked at the command surface.
+            --all-features
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -124,7 +146,18 @@ jobs:
             --out dist
             --find-interpreter
             --strip
-            --features full
+            # ⚠️ --all-features, NOT --features full.
+            #
+            # `full = ["migrate", "backup"]` and `cloud` is deliberately not in
+            # it, so every wheel PyPI has ever published shipped WITHOUT the
+            # cloud commands — verified against the 0.4.0, 0.8.0 and 0.9.0
+            # wheels on 2026-10-05, all of which lack `auth`, `vault`, `cloud`
+            # and `org`. `release.yml` has always used --all-features, which is
+            # why every other channel has them and only this one did not.
+            #
+            # Nothing caught it because the release checks read `--version` and
+            # never looked at the command surface.
+            --all-features
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4

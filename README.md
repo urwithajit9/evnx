@@ -405,12 +405,21 @@ evnx cloud pull                          # download, decrypt, write .env
 
 ### Installing with cloud support
 
-**The prebuilt binaries already include the cloud commands.** npm, PyPI, Homebrew,
+**Most prebuilt binaries already include the cloud commands.** npm, Homebrew,
 Scoop, winget and the GitHub Release are all built with `--all-features`, so if you
 installed evnx any of those ways, `evnx cloud --help` already works.
 
-`cargo install` is the one exception, because it compiles from source with
-`default = []`:
+> ⚠️ **PyPI is the exception, and it is a bug.** Every wheel up to and including
+> **0.9.0** was built with `--features full`, and `cloud` is deliberately not in
+> `full` — so `pip install evnx` and `pipx install evnx` give you a binary with no
+> `auth`, `vault`, `cloud` or `org` at all. Verified against the 0.4.0, 0.8.0 and
+> 0.9.0 wheels.
+>
+> The workflow is fixed and the next release carries the cloud commands on PyPI.
+> Until then, install from any other channel if you need them.
+
+`cargo install` is the other exception, by design, because it compiles from source
+with `default = []`:
 
 ```bash
 cargo install evnx --features cloud
