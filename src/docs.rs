@@ -168,6 +168,13 @@ pub const VAULT: CommandDoc = CommandDoc {
     after_help: "Full guide: https://docs.evnx.dev/cli/commands/vault",
 };
 
+pub const ORG: CommandDoc = CommandDoc {
+    command: "org",
+    url: "https://docs.evnx.dev/cli/commands/org",
+    description: "Organisations: a plan, a directory, and seats",
+    after_help: "Full guide: https://docs.evnx.dev/cli/commands/org",
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,7 +186,7 @@ mod tests {
     /// declarations in this file's own source and fails if the two disagree.
     const ALL: &[&CommandDoc] = &[
         &INIT, &SPEC, &ADD, &VALIDATE, &SCAN, &DIFF, &CONVERT, &SYNC, &MIGRATE, &DOCTOR, &TEMPLATE,
-        &BACKUP, &RESTORE, &CLOUD, &AUTH, &VAULT,
+        &BACKUP, &RESTORE, &CLOUD, &AUTH, &VAULT, &ORG,
     ];
 
     /// ⚠️ The test P6 needed and did not have.

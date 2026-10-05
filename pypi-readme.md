@@ -1,6 +1,7 @@
 # evnx
 
-> ⚡ A blazing-fast environment variable manager and inspector — built in Rust.
+> ⚡ Manage `.env` files — validate, scan for secrets, convert formats, and sync them
+> end-to-end encrypted. Built in Rust.
 
 [![Crates.io](https://img.shields.io/crates/v/evnx.svg)](https://crates.io/crates/evnx)
 [![PyPI version](https://img.shields.io/pypi/v/evnx.svg)](https://pypi.org/project/evnx/)

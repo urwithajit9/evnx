@@ -1,6 +1,6 @@
 # Getting Started with evnx
 
-evnx is a CLI for managing `.env` files — validation, secret scanning, format conversion, and migration to cloud secret managers. This guide covers installation through your first complete workflow.
+evnx is a CLI for managing `.env` files — validation, secret scanning, format conversion, and migration to cloud secret managers. It also syncs them end-to-end encrypted. This guide covers installation through your first complete workflow.
 
 Full documentation and guides are available at [evnx.dev](https://www.evnx.dev).
 

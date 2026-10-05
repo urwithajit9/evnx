@@ -1845,6 +1845,7 @@ Use 'evnx convert' without --to for interactive format selection.
     /// holder. Sharing a vault is `evnx vault share`, and only someone who holds
     /// the key can do it.
     #[cfg(feature = "cloud")]
+    #[command(after_help = docs::ORG.after_help)]
     Org {
         #[command(subcommand)]
         command: OrgCommands,

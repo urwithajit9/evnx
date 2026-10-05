@@ -8,7 +8,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-evnx--action-blue?logo=github)](https://github.com/marketplace/actions/evnx-env-security-validation)
 
-A CLI tool for managing `.env` files — validation, secret scanning, format conversion, and migration to cloud secret managers.
+A CLI tool for managing `.env` files — validation, secret scanning, format conversion, and
+migration to cloud secret managers. It also syncs them end-to-end encrypted, so the server
+stores only ciphertext it cannot read.
 
 [Website](https://www.evnx.dev) | [Getting Started](./docs/GETTING_STARTED.md) | [Changelog](./CHANGELOG.md)
 
@@ -495,6 +497,39 @@ left.
 ⚠️ The recipient's public keys come from the server. Out-of-band fingerprint verification
 is not built, so "the server cannot read your secrets" becomes "…cannot read them
 *passively*" the moment you share.
+
+### Organisations and plans
+
+An organisation owns a **plan** and a set of **seats**. Whoever holds a seat gets
+that plan's limits — more vaults, more versions, more API tokens.
+
+```bash
+evnx org create "Acme Corp" --slug acme
+evnx org invite colleague@example.com --role member
+evnx org assign colleague@example.com      # their limits become the org's
+evnx org billing                           # what the plan is, and until when
+```
+
+> ⛔ **An organisation does not give anyone access to a vault.** It is a plan and a
+> directory, and that is the whole feature. The server cannot wrap a vault key —
+> that is the guarantee, not a gap in it — so no membership, role or seat can
+> produce access. Sharing is `evnx vault share`, by someone who holds the key.
+
+A seat can be held in exactly one organisation at a time; directory membership is
+unconstrained, so a contractor at two companies is two entries and one seat.
+
+Releasing a seat drops that person back to their own plan, which can leave them
+**over** the new limit. Nothing is deleted and nothing becomes unreadable — a
+vault over the limit stays readable and exportable, and the next *push* to it is
+what gets refused.
+
+`evnx org billing` is read-only. Plans, seat counts and payment methods are
+changed at [app.evnx.dev/billing](https://app.evnx.dev/billing/), because a card
+form does not belong in a terminal.
+
+⚠️ Organisation commands need a real sign-in — an `evnx_tok_` API token is
+refused, because inviting people and assigning seats changes what the account is
+billed.
 
 ### CI/CD
 

@@ -307,7 +307,7 @@ jobs:
           {
             "name": "@evnx/cli",
             "version": "$VERSION",
-            "description": "CLI tool for managing .env files — validation, secret scanning, format conversion",
+            "description": "Manage .env files — validate, scan for secrets, convert formats, and sync them end-to-end encrypted",
             "keywords": ["dotenv", "env", "secrets", "cli", "security", "devtools", "environment"],
             "author": "Ajit Kumar <support@evnx.dev>",
             "license": "MIT",
