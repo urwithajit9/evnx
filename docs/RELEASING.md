@@ -130,6 +130,19 @@ these has produced a green run while publishing nothing:
 | ghcr.io | new digest, not the old one | |
 | **winget** | a PR against microsoft/winget-pkgs | Validation has blocked this package twice. See below. |
 
+⚠️ **Checking crates.io needs a `User-Agent`.** Their API refuses an anonymous
+request and answers with HTML, so a naive `curl | python3 -c 'json.load(...)'`
+dies with a decode error that reads exactly like the crate is missing. It is not:
+
+```bash
+curl -s -H "User-Agent: evnx-release-check (urwithajit9)" \
+  https://crates.io/api/v1/crates/evnx \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['crate']['max_version'])"
+```
+
+Cost ten confusing minutes during 0.9.0, on a release that had in fact published
+correctly.
+
 ⚠️ **Do not probe a release with `npx -y @evnx/cli@X.Y.Z --version` on a machine
 that has evnx installed.** A package-manager install earlier in `PATH` answers
 instead, and the output looks like a broken release. Probe the artefact:
