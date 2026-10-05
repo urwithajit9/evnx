@@ -27,25 +27,32 @@
 //! documentation check must compare against a surface emitted by a binary built
 //! the way the docs assume — which, for evnx.dev, means `--all-features`.
 //!
-//! # ⚠️ Hidden, deliberately
+//! # ⚠️ It answers a question users actually have
 //!
-//! This is a build-time interface for the documentation pipeline and the app's
-//! command tour, not a feature. Two reasons it is not in `--help`:
+//! This was hidden when it was written, on the grounds that it was a build
+//! interface. That was wrong, and the week it shipped proved it: **PyPI had been
+//! publishing wheels with no cloud commands since 0.4.0** — five releases — and
+//! nobody noticed, because every check anyone ran read `--version` and stopped.
 //!
-//! 1. Chain 6's onboarding is gated on the CLI's user-facing surface settling.
-//!    Adding a visible command moves that goalpost for something no user needs.
-//! 2. Every visible command is a promise to keep it working in that shape. The
-//!    JSON below is versioned by `schema` precisely so it can change without
-//!    being a breaking change to anybody's workflow.
+//! A user holding that wheel had no way to ask the binary what it could do.
+//! `--help` lists what this build has, but says nothing about what is *missing*
+//! or why, and `which -a evnx` tells you which binary answers, not what is in
+//! it.
 //!
-//! ⚠️ **`hide` keeps it out of `--help` and nothing else.** Verified against a
-//! real build: `evnx completions bash` still emits `surface` in its word list,
-//! because `clap_complete` walks every subcommand regardless of the flag. So it
-//! does tab-complete, and an earlier version of this comment claimed otherwise.
+//! So `evnx commands` is a feature:
 //!
-//! That is acceptable — `--help` is the surface people read, and `schema` is
-//! what protects the shape — but it is not the same as invisible, and saying so
-//! would be the kind of claim this file exists to stop making.
+//! * **plain output** names the version, the compiled features, and every
+//!   command, grouped
+//! * ⚠️ **it says when `cloud` is absent**, and what to do about it — the one
+//!   case where "my build is missing things" is invisible otherwise
+//! * `--json` is the machine payload the documentation pipeline and the app's
+//!   command tour consume
+//!
+//! `surface` remains as an alias, because scripts already call it by that name.
+//!
+//! ⚠️ The JSON is versioned by `schema` so its shape can change without that
+//! being a breaking change to anybody's workflow. The **human** output carries
+//! no such promise and is not something to parse.
 
 use crate::cli::Cli;
 use anyhow::Result;
@@ -232,26 +239,122 @@ fn enabled_features() -> Vec<&'static str> {
     f
 }
 
-pub fn run(compact: bool) -> Result<()> {
+fn build_surface() -> Surface {
     let cmd = Cli::command();
     let mut commands = Vec::new();
     walk(&cmd, &[], &mut commands);
-
-    let surface = Surface {
+    Surface {
         schema: SCHEMA,
         evnx_version: env!("CARGO_PKG_VERSION"),
         features: enabled_features(),
         commands,
+    }
+}
+
+/// Which top-level commands need an account.
+///
+/// ⚠️ Four names, not a second copy of the command list. It exists only to
+/// split the printed output in two, and anything not named here is printed
+/// under "on your machine" — so a new cloud command is mis-grouped at worst,
+/// never missing.
+const NEEDS_ACCOUNT: &[&str] = &["auth", "vault", "org", "cloud"];
+
+fn print_human(s: &Surface) {
+    println!();
+    println!("  evnx {}", s.evnx_version);
+
+    // ⚠️ The line that would have saved five releases of broken PyPI wheels.
+    if s.features.is_empty() {
+        println!("  built with no optional features");
+    } else {
+        println!("  built with: {}", s.features.join(", "));
+    }
+    println!();
+
+    let roots: Vec<&CommandNode> = s
+        .commands
+        .iter()
+        .filter(|c| c.path.len() == 1 && !c.hidden)
+        .collect();
+    let width = roots.iter().map(|c| c.name.len()).max().unwrap_or(8);
+
+    let print_group = |title: &str, want_account: bool| {
+        let group: Vec<&&CommandNode> = roots
+            .iter()
+            .filter(|c| NEEDS_ACCOUNT.contains(&c.name.as_str()) == want_account)
+            .collect();
+        if group.is_empty() {
+            return;
+        }
+        println!("  {title}");
+        for c in group {
+            println!(
+                "    {:width$}  {}",
+                c.name,
+                c.about.as_deref().unwrap_or(""),
+                width = width
+            );
+        }
+        println!();
     };
+
+    print_group("On this machine", false);
+    print_group("With an evnx account", true);
+
+    // ⛔ The case that is otherwise invisible. A binary without `cloud` does not
+    // merely hide those commands — it never had them, and nothing in `--help`
+    // distinguishes "this tool cannot sync" from "I have not found it yet".
+    if !s.features.contains(&"cloud") {
+        // ⚠️ Printed here rather than through `ui::warning`, which starts at
+        // column 0 and would break the two-space indent every other line in
+        // this output uses. A warning that looks like a layout bug gets read as
+        // one.
+        use colored::Colorize;
+        println!(
+            "  {} This build has NO cloud commands — no auth, vault, cloud or org.",
+            "!".yellow().bold()
+        );
+        println!("    It was compiled without the `cloud` feature. Every prebuilt");
+        println!("    binary except PyPI's carries them; `pip install evnx` did not,");
+        println!("    up to and including 0.9.0.");
+        println!();
+        println!("    Reinstall from another channel, or build with:");
+        println!("      cargo install evnx --features cloud");
+        println!();
+    }
+
+    let total = s.commands.iter().filter(|c| !c.hidden).count();
+    println!("  {total} commands. `evnx <command> --help` for any of them.");
+    println!("  `evnx commands --json` emits the whole tree, for tooling.");
+    println!();
+    // ⚠️ `docs::BASE_URL`, not a literal. Thirty-three URLs in this binary once
+    // pointed at a host that had moved, and kept working via a 301 — so nothing
+    // failed and nothing warned. One constant is what stops that recurring.
+    println!("  Guides: {}", crate::docs::BASE_URL);
+    println!();
+}
+
+pub fn run(json: bool, compact: bool) -> Result<()> {
+    let surface = build_surface();
+
+    if !json {
+        // ⚠️ `--compact` without `--json` is a mistake worth naming rather than
+        // ignoring: somebody expects machine output and would get prose.
+        if compact {
+            anyhow::bail!("--compact only applies to --json output");
+        }
+        print_human(&surface);
+        return Ok(());
+    }
 
     // Pretty by default: the output is committed to another repository and read
     // in diffs, where one line of 40 KB is unreviewable.
-    let json = if compact {
+    let out = if compact {
         serde_json::to_string(&surface)?
     } else {
         serde_json::to_string_pretty(&surface)?
     };
-    println!("{json}");
+    println!("{out}");
     Ok(())
 }
 
@@ -421,21 +524,38 @@ mod tests {
             );
         }
 
-        // Hidden commands have none either.
-        let me = s.iter().find(|n| n.path == ["surface"]).unwrap();
-        assert_eq!(me.docs_url, None);
+        // ⚠️ A command with no `CommandDoc` gets `None`, not a URL composed
+        // from its name. `completions` is visible and has a guide on the site,
+        // but no entry in `docs::ALL` — composing one would be right by luck
+        // here and a 404 for the next command that ships before its guide.
+        let completions = s.iter().find(|n| n.path == ["completions"]).unwrap();
+        assert_eq!(
+            completions.docs_url, None,
+            "a command absent from docs::ALL must not get an invented URL"
+        );
+
+        // And one that IS in the registry carries exactly that string.
+        let me = s.iter().find(|n| n.path == ["commands"]).unwrap();
+        assert_eq!(me.docs_url, Some(crate::docs::COMMANDS.url));
     }
 
-    /// It describes itself, and says it is hidden. A consumer filtering on
-    /// `hidden` is the intended way to leave it out of a tour.
+    /// It describes itself, and is visible — it was hidden when written, and
+    /// the week it shipped showed why that was wrong: PyPI had been publishing
+    /// cloud-less wheels for five releases and no user could ask the binary
+    /// what it had.
     #[test]
-    fn the_emitter_reports_itself_as_hidden() {
+    fn the_emitter_describes_itself_and_is_visible() {
         let s = surface();
         let me = s
             .iter()
-            .find(|n| n.path == ["surface"])
-            .expect("`surface` is missing from its own output");
-        assert!(me.hidden, "`surface` should be hidden from --help");
+            .find(|n| n.path == ["commands"])
+            .expect("`commands` is missing from its own output");
+        assert!(!me.hidden, "`commands` is a feature now, not a build hook");
+        assert!(
+            me.visible_aliases.iter().any(|a| a == "surface"),
+            "`surface` must keep working — tooling calls it that: {:?}",
+            me.visible_aliases
+        );
     }
 
     /// Serialising must not panic, and must produce the keys consumers read.
