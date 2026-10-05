@@ -240,7 +240,18 @@ fn enabled_features() -> Vec<&'static str> {
 }
 
 fn build_surface() -> Surface {
-    let cmd = Cli::command();
+    // ⚠️ `.build()` is not optional, and leaving it out under-reported the CLI.
+    //
+    // Clap propagates `global = true` arguments to subcommands and fills in
+    // `num_args` during `build()`. Without it, `evnx add service` emitted ZERO
+    // arguments while `--help` showed `--path` and `--yes` — so the
+    // documentation check built on this reported eleven correct examples in the
+    // guides as errors.
+    //
+    // Found by 5.4 checking 5.1, which is the arrangement working: a generated
+    // artefact nobody cross-checks is just a confident list.
+    let mut cmd = Cli::command();
+    cmd.build();
     let mut commands = Vec::new();
     walk(&cmd, &[], &mut commands);
     Surface {
@@ -363,7 +374,8 @@ mod tests {
     use super::*;
 
     fn surface() -> Vec<CommandNode> {
-        let cmd = Cli::command();
+        let mut cmd = Cli::command();
+        cmd.build();
         let mut out = Vec::new();
         walk(&cmd, &[], &mut out);
         out
@@ -378,7 +390,8 @@ mod tests {
     /// in the output.
     #[test]
     fn every_top_level_command_is_emitted() {
-        let cmd = Cli::command();
+        let mut cmd = Cli::command();
+        cmd.build();
         let expected: Vec<String> = cmd
             .get_subcommands()
             .filter(|s| s.get_name() != "help")
@@ -561,7 +574,8 @@ mod tests {
     /// Serialising must not panic, and must produce the keys consumers read.
     #[test]
     fn the_payload_serialises_with_the_documented_keys() {
-        let cmd = Cli::command();
+        let mut cmd = Cli::command();
+        cmd.build();
         let mut commands = Vec::new();
         walk(&cmd, &[], &mut commands);
         let json = serde_json::to_string(&Surface {
