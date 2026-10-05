@@ -1948,6 +1948,27 @@ Use 'evnx convert' without --to for interactive format selection.
         action: SpecAction,
     },
 
+    /// The whole command tree as JSON, for tooling.
+    ///
+    /// ⚠️ Hidden on purpose. This is a build-time interface for the
+    /// documentation pipeline and the app's command tour, not a feature —
+    /// every visible command is a promise to keep it working in that shape,
+    /// and this one is versioned by `schema` so it can change freely.
+    ///
+    /// ⓘ `hide` removes it from `--help` only. `clap_complete` still emits it,
+    /// so it tab-completes; that is known, not an oversight.
+    ///
+    /// ⚠️ The output describes THIS build. `cloud`, `migrate` and `backup` are
+    /// optional, so a `default = []` binary emits a smaller surface. The
+    /// `features` field says which were compiled in, and a consumer that
+    /// ignores it will read a feature-gated command as a documentation error.
+    #[command(hide = true)]
+    Surface {
+        /// One line instead of indented JSON.
+        #[arg(long)]
+        compact: bool,
+    },
+
     /// Generate shell completions.
     // #[command(after_help = docs::INIT.after_help)]
     Completions { shell: String },

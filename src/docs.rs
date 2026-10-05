@@ -175,19 +175,34 @@ pub const ORG: CommandDoc = CommandDoc {
     after_help: "Full guide: https://docs.evnx.dev/cli/commands/org",
 };
 
+/// Every `CommandDoc` in this file.
+///
+/// Hand-maintained, which is a risk — so
+/// `the_list_above_covers_every_command_doc_in_this_file` counts the
+/// declarations in this file's own source and fails if the two disagree.
+///
+/// ⚠️ Not test-only. `evnx surface` reads it so the documentation URL the tour
+/// links to is the **same string** the binary prints in `--help`. Two lists
+/// would be two things to keep in step, which is the failure this whole area
+/// exists to stop.
+pub const ALL: &[&CommandDoc] = &[
+    &INIT, &SPEC, &ADD, &VALIDATE, &SCAN, &DIFF, &CONVERT, &SYNC, &MIGRATE, &DOCTOR, &TEMPLATE,
+    &BACKUP, &RESTORE, &CLOUD, &AUTH, &VAULT, &ORG,
+];
+
+/// The documentation URL for a top-level command, if it has one.
+///
+/// ⚠️ `None` is a real answer, not a gap to paper over: `surface` is hidden and
+/// `completions` and `update` have guides but no `CommandDoc`. A caller that
+/// invented a URL from the command name would produce a 404 the moment a
+/// command shipped before its guide did.
+pub fn url_for(command: &str) -> Option<&'static str> {
+    ALL.iter().find(|d| d.command == command).map(|d| d.url)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Every `CommandDoc` in this file.
-    ///
-    /// Hand-maintained, which is a risk — so
-    /// `the_list_above_covers_every_command_doc_in_this_file` counts the
-    /// declarations in this file's own source and fails if the two disagree.
-    const ALL: &[&CommandDoc] = &[
-        &INIT, &SPEC, &ADD, &VALIDATE, &SCAN, &DIFF, &CONVERT, &SYNC, &MIGRATE, &DOCTOR, &TEMPLATE,
-        &BACKUP, &RESTORE, &CLOUD, &AUTH, &VAULT, &ORG,
-    ];
 
     /// ⚠️ The test P6 needed and did not have.
     ///
