@@ -43,6 +43,7 @@
 //! `cargo install evnx --features cloud` impossible, since `cargo publish` rejects
 //! path deps without a published version.
 
+pub mod audit;
 pub mod auth;
 pub mod binding;
 pub mod client;
@@ -120,6 +121,12 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             verbose,
             command,
         ),
+        CloudCommands::Diff { vault, from, to } => {
+            sync::diff(server_override, vault, from, to, verbose)
+        }
+        CloudCommands::Audit { vault, last, event } => {
+            audit::run(server_override, vault, &last, event, verbose)
+        }
         CloudCommands::History { vault, limit } => {
             sync::history(server_override, vault, limit, verbose)
         }

@@ -34,6 +34,7 @@
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::auth;
@@ -193,6 +194,15 @@ pub(crate) struct VersionSummary {
     pub version_num: i32,
     pub key_count: i32,
     pub key_names: Vec<String>,
+    /// BLAKE3 of the ciphertext.
+    ///
+    /// ⚠️ This is what lets `cloud diff` say "same keys, contents differ"
+    /// without being able to say *how* they differ. The server has never held a
+    /// value, so two versions where only a value was rotated have identical
+    /// `key_names` — and reporting "no changes" there would be a lie the user
+    /// could not catch. The hash makes the difference visible while leaking
+    /// nothing: it is a digest of ciphertext, not of plaintext.
+    pub blob_hash: String,
     pub blob_size_bytes: i64,
     pub pushed_by: String,
     pub pushed_at: String,
@@ -1083,4 +1093,176 @@ fn delete_version_error(e: super::client::ApiError) -> anyhow::Error {
         ApiError::Conflict { message } => anyhow!("{message}"),
         other => anyhow!("{other}"),
     }
+}
+
+// ─── cloud diff ──────────────────────────────────────────────────────────────
+
+/// What changed between two versions of a vault — **key names only**.
+///
+/// ─── ⚠️ What this command can and cannot tell you ───────────────────────────
+///
+/// The server has never held a value. `vault_versions.key_names` is the entire
+/// basis for this comparison, so:
+///
+///   * a key that appeared or disappeared is **visible**;
+///   * a key whose *value* changed is **invisible** by name alone.
+///
+/// Rotating `DATABASE_URL` and changing nothing else produces two versions with
+/// identical key sets. Reporting "no changes" there would be the worst kind of
+/// wrong — confidently incorrect about the thing the user asked. So when the
+/// names match, the **blob hashes** are compared and the answer becomes "the
+/// same keys, with different contents", which is true, useful, and still leaks
+/// nothing: a BLAKE3 digest of ciphertext says only *that* bytes differ.
+///
+/// ⚠️ **This is deliberately not `evnx diff`'s vocabulary.** The local command
+/// compares a `.env` against a template and uses `+` for *missing from .env*.
+/// Here `+` means *added in the newer version* — the opposite direction. Two
+/// commands whose `+` disagreed would be a trap, so this one always prints the
+/// direction it is reading (`v5 → v7`) above the list, and never borrows the
+/// local command's `~` marker, which it has no way to compute.
+///
+/// Costs one request. No blob is downloaded, nothing is decrypted, and the
+/// master password is never needed — the same reason `cloud history` does not
+/// ask for one.
+pub fn diff(
+    server_override: Option<&str>,
+    vault_target: Option<String>,
+    from: Option<i32>,
+    to: Option<i32>,
+    verbose: bool,
+) -> Result<()> {
+    let vault_target = resolve_target(vault_target)?;
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    vault::require_session(&client, &server)?;
+    let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
+
+    let mut versions = list_versions(&client, &vault_ref)?;
+    versions.sort_by_key(|v| v.version_num);
+
+    if versions.len() < 2 {
+        println!(
+            "  {} has {} version{} — there is nothing to compare.",
+            vault_ref.label(),
+            versions.len(),
+            if versions.len() == 1 { "" } else { "s" }
+        );
+        if versions.len() == 1 {
+            println!("  Push another with:  {}", "evnx cloud push".cyan());
+        }
+        return Ok(());
+    }
+
+    // Defaults compare the two newest, which is the question people actually
+    // have: "what did that last push change?"
+    let newest = versions[versions.len() - 1].version_num;
+    let previous = versions[versions.len() - 2].version_num;
+    let from_num = from.unwrap_or(previous);
+    let to_num = to.unwrap_or(newest);
+
+    let pick = |n: i32| -> Result<&VersionSummary> {
+        versions.iter().find(|v| v.version_num == n).ok_or_else(|| {
+            let have: Vec<String> = versions.iter().map(|v| v.version_num.to_string()).collect();
+            anyhow!(
+                "{} has no version {n}. It has: {}",
+                vault_ref.label(),
+                have.join(", ")
+            )
+        })
+    };
+    let a = pick(from_num)?;
+    let b = pick(to_num)?;
+
+    if from_num == to_num {
+        return Err(anyhow!(
+            "--from and --to are both v{from_num}; there is nothing to compare"
+        ));
+    }
+
+    let before: BTreeSet<&str> = a.key_names.iter().map(String::as_str).collect();
+    let after: BTreeSet<&str> = b.key_names.iter().map(String::as_str).collect();
+
+    let added: Vec<&str> = after.difference(&before).copied().collect();
+    let removed: Vec<&str> = before.difference(&after).copied().collect();
+
+    // ⚠️ Direction is stated, not implied. `+` means "added in v{to}" here and
+    // "missing from .env" in `evnx diff`, and the header is what keeps the two
+    // from being confused.
+    println!();
+    println!(
+        "  {}  {}   v{} → v{}",
+        "evnx cloud diff".bold(),
+        vault_ref.label(),
+        from_num,
+        to_num
+    );
+    println!();
+
+    if added.is_empty() && removed.is_empty() {
+        if a.blob_hash == b.blob_hash {
+            println!("  Identical. Same keys, same contents.");
+        } else {
+            // The case that makes this command honest rather than reassuring.
+            println!("  {}", "Same keys — but the contents differ.".yellow());
+            println!();
+            println!(
+                "  Both versions hold the same {} key{}, so something changed inside a",
+                b.key_count,
+                if b.key_count == 1 { "" } else { "s" }
+            );
+            println!("  value. evnx cannot tell you which: the server stores key names and");
+            println!("  ciphertext, never a value, so there is nothing here to compare.");
+            println!();
+            println!("  To see it, pull both and diff them locally — on your machine, where the",);
+            println!("  values exist:");
+            println!(
+                "      {}",
+                format!(
+                    "evnx cloud export --vault {} --all-versions --output ./versions",
+                    vault_ref.label()
+                )
+                .cyan()
+            );
+        }
+    } else {
+        for k in &added {
+            println!("  {} {}", "+".green().bold(), k.green());
+        }
+        for k in &removed {
+            println!("  {} {}", "-".red().bold(), k.red());
+        }
+        println!();
+        println!(
+            "  {} added  ·  {} removed  ·  {} unchanged",
+            added.len(),
+            removed.len(),
+            before.intersection(&after).count()
+        );
+
+        // ⚠️ Said even when names changed. A push that both adds a key and
+        // rotates another would otherwise look like it only added one.
+        if a.blob_hash != b.blob_hash && !before.intersection(&after).count().eq(&0) {
+            println!();
+            println!(
+                "  {}",
+                "Values may also have changed in the keys both versions share —".dimmed()
+            );
+            println!("  {}", "evnx cannot see values, so it cannot say.".dimmed());
+        }
+    }
+
+    if verbose {
+        println!();
+        println!(
+            "  v{}  {} keys  pushed {}",
+            from_num, a.key_count, a.pushed_at
+        );
+        println!(
+            "  v{}  {} keys  pushed {}",
+            to_num, b.key_count, b.pushed_at
+        );
+    }
+
+    println!("{}", crate::docs::CLOUD.hint_line());
+    Ok(())
 }

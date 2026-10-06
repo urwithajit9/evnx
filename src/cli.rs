@@ -1089,6 +1089,65 @@ pub enum CloudCommands {
         limit: usize,
     },
 
+    /// What changed between two versions — key names only, never values.
+    ///
+    /// ⚠️ **`+` here means "added in the newer version"**, which is the opposite
+    /// of `evnx diff`, where `+` means "missing from .env". The direction is
+    /// printed above the list so the two cannot be confused.
+    ///
+    /// Defaults to the two newest versions, which is usually the question:
+    /// what did that last push change?
+    ///
+    /// ⚠️ **A changed value is invisible to this command.** The server holds key
+    /// names and ciphertext and has never held a value, so rotating a secret
+    /// without renaming it produces two versions with identical key sets. When
+    /// that happens the blob hashes are compared and the answer says so, rather
+    /// than reporting "no changes".
+    ///
+    /// Read-only: one request, no blob download, no password.
+    Diff {
+        /// Vault to inspect. Optional in a bound directory.
+        #[arg(long, value_name = "VAULT")]
+        vault: Option<String>,
+
+        /// Older version number. Defaults to the second-newest.
+        #[arg(long, value_name = "N")]
+        from: Option<i32>,
+
+        /// Newer version number. Defaults to the newest.
+        #[arg(long, value_name = "N")]
+        to: Option<i32>,
+    },
+
+    /// Who did what to a vault, newest first.
+    ///
+    /// Pushes, pulls, member changes, re-keys and token creation. Any member can
+    /// read it — the trail is how a team notices something it did not expect.
+    ///
+    /// ⚠️ **`--last` filters what the server already returned**, and the server
+    /// trims by plan first. On a plan with seven days of visibility,
+    /// `--last 30d` still shows seven; the output says so rather than implying
+    /// the vault was quiet.
+    ///
+    /// ⚠️ Retention is a **visibility** limit, not deletion. The events table is
+    /// append-only and nothing prunes it; the plan decides how far back the API
+    /// will show.
+    ///
+    /// Read-only: no password, no decryption.
+    Audit {
+        /// Vault to inspect. Optional in a bound directory.
+        #[arg(long, value_name = "VAULT")]
+        vault: Option<String>,
+
+        /// How far back to show: `7d`, `30d`, or `all`.
+        #[arg(long, value_name = "WINDOW", default_value = "all")]
+        last: String,
+
+        /// Show only this event type, e.g. `pull`.
+        #[arg(long, value_name = "TYPE")]
+        event: Option<String>,
+    },
+
     /// Delete one version of a vault, and its encrypted blob.
     ///
     /// ⚠️ Permanent. The blob is removed from storage and the server has never
