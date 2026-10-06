@@ -1095,6 +1095,52 @@ fn delete_version_error(e: super::client::ApiError) -> anyhow::Error {
     }
 }
 
+// ─── key-name comparison, shared by `diff` and `watch` ───────────────────────
+
+/// What changed between two versions' key sets.
+///
+/// ⚠️ **Names only.** The server has never held a value, so this cannot report
+/// that a secret was rotated — `changed_contents` is the nearest honest answer,
+/// and it comes from the blob hash rather than from anything about the content.
+pub(crate) struct KeyDelta {
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub unchanged: usize,
+    /// Same key names, different ciphertext: a value moved and we cannot say which.
+    pub changed_contents: bool,
+}
+
+pub(crate) fn key_delta(before: &VersionSummary, after: &VersionSummary) -> KeyDelta {
+    let b: BTreeSet<&str> = before.key_names.iter().map(String::as_str).collect();
+    let a: BTreeSet<&str> = after.key_names.iter().map(String::as_str).collect();
+    KeyDelta {
+        added: a.difference(&b).map(|s| (*s).to_string()).collect(),
+        removed: b.difference(&a).map(|s| (*s).to_string()).collect(),
+        unchanged: b.intersection(&a).count(),
+        changed_contents: before.blob_hash != after.blob_hash,
+    }
+}
+
+/// `+A, +B, -C` — one line, for a notification rather than a report.
+pub(crate) fn key_delta_line(d: &KeyDelta) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for k in &d.added {
+        parts.push(format!("+{k}"));
+    }
+    for k in &d.removed {
+        parts.push(format!("-{k}"));
+    }
+    if parts.is_empty() {
+        // ⚠️ Never "no changes" — the names matching does not mean nothing moved.
+        return if d.changed_contents {
+            "same keys, different contents".to_string()
+        } else {
+            "identical".to_string()
+        };
+    }
+    parts.join(", ")
+}
+
 // ─── cloud diff ──────────────────────────────────────────────────────────────
 
 /// What changed between two versions of a vault — **key names only**.
@@ -1179,11 +1225,12 @@ pub fn diff(
         ));
     }
 
-    let before: BTreeSet<&str> = a.key_names.iter().map(String::as_str).collect();
-    let after: BTreeSet<&str> = b.key_names.iter().map(String::as_str).collect();
-
-    let added: Vec<&str> = after.difference(&before).copied().collect();
-    let removed: Vec<&str> = before.difference(&after).copied().collect();
+    // ⚠️ Through the shared helper, not a second copy. `watch` reports the same
+    // comparison in one line, and two implementations of "what changed" would
+    // eventually disagree about an edge case in exactly the place that matters.
+    let delta = key_delta(a, b);
+    let added = &delta.added;
+    let removed = &delta.removed;
 
     // ⚠️ Direction is stated, not implied. `+` means "added in v{to}" here and
     // "missing from .env" in `evnx diff`, and the header is what keeps the two
@@ -1225,10 +1272,10 @@ pub fn diff(
             );
         }
     } else {
-        for k in &added {
+        for k in added {
             println!("  {} {}", "+".green().bold(), k.green());
         }
-        for k in &removed {
+        for k in removed {
             println!("  {} {}", "-".red().bold(), k.red());
         }
         println!();
@@ -1236,12 +1283,12 @@ pub fn diff(
             "  {} added  ·  {} removed  ·  {} unchanged",
             added.len(),
             removed.len(),
-            before.intersection(&after).count()
+            delta.unchanged
         );
 
         // ⚠️ Said even when names changed. A push that both adds a key and
         // rotates another would otherwise look like it only added one.
-        if a.blob_hash != b.blob_hash && !before.intersection(&after).count().eq(&0) {
+        if delta.changed_contents && delta.unchanged > 0 {
             println!();
             println!(
                 "  {}",
