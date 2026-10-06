@@ -1089,6 +1089,32 @@ pub enum CloudCommands {
         limit: usize,
     },
 
+    /// Watch a vault and report when someone pushes a new version.
+    ///
+    /// Runs in the foreground until Ctrl-C, like `tail -f`.
+    ///
+    /// ⚠️ **It never pulls.** Two reasons: overwriting your `.env` because a
+    /// teammate pushed would destroy local edits with no undo, and pulling needs
+    /// the master password — a watcher that auto-pulled would hold the vault key
+    /// in memory for hours. Taking a change stays a deliberate `evnx cloud pull`.
+    ///
+    /// Polls metadata only: no password, no decryption, no blob download. What
+    /// it buys you is finding out a teammate changed a secret **before** your
+    /// next deploy picks it up silently.
+    Watch {
+        /// Vault to watch. Optional in a bound directory.
+        #[arg(long, value_name = "VAULT")]
+        vault: Option<String>,
+
+        /// Seconds between polls. Minimum 5.
+        #[arg(long, value_name = "SECONDS", default_value_t = 15)]
+        interval: u64,
+
+        /// Check once and exit instead of looping. For scripts and tests.
+        #[arg(long)]
+        once: bool,
+    },
+
     /// What changed between two versions — key names only, never values.
     ///
     /// ⚠️ **`+` here means "added in the newer version"**, which is the opposite
