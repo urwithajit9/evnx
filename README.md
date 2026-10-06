@@ -842,4 +842,4 @@ Related projects: [python-dotenv](https://github.com/theskumar/python-dotenv), [
 
 ---
 
-[Website](https://www.evnx.dev) | [Issues](https://github.com/urwithajit9/evnx/issues) | [Discussions](https://github.com/urwithajit9/evnx/discussions) | [Email](mailto:support@evnx.dev)
+[Website](https://www.evnx.dev) | [Issues](https://github.com/urwithajit9/evnx/issues) | [Discussions](https://github.com/urwithajit9/evnx/discussions) | [Support](mailto:support@evnx.dev) | [Security](SECURITY.md)
