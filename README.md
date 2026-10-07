@@ -10,7 +10,8 @@
 
 A CLI tool for managing `.env` files — validation, secret scanning, format conversion, and
 migration to cloud secret managers. It also syncs them end-to-end encrypted, so the server
-stores only ciphertext it cannot read.
+stores only ciphertext it cannot read — with a limit worth knowing before you rely
+on it, in [Cloud sync](#cloud-sync-requires---features-cloud).
 
 [Website](https://www.evnx.dev) | [Getting Started](./docs/GETTING_STARTED.md) | [Changelog](./CHANGELOG.md)
 
@@ -387,12 +388,26 @@ template, where every filled-in value differs by construction.
 
 ## Cloud sync _(requires `--features cloud`)_
 
-Push your `.env` to the cloud and pull it on any machine or in any pipeline — with
-the server **mathematically unable** to read it.
+Push your `.env` to the cloud and pull it on any machine or in any pipeline.
+Encryption and decryption happen on your machine; the server stores ciphertext and
+holds no key that can open it.
 
-Encryption and decryption happen on your machine. The server stores ciphertext and
-holds no key that can open it: not with full database access, not with a court
-order, not after a breach.
+**What that guarantees:** what is already stored stays closed. A database dump, a
+court order against stored data, a passive observer — none of them yield
+plaintext, because the key never leaves your machine.
+
+⛔ **What it does not guarantee: safety from a server that has been taken over.**
+The client decides how to unwrap a vault key from fields the *server* sends, so an
+attacker with database write access can present a key they chose and read what you
+push **next** — including for a vault you never shared. Fixing it needs signed
+wraps and locally pinned identities, which are not built.
+
+⚠️ **Cloud sync is therefore beta.** Do not put secrets there that you could not
+rotate. The rest of evnx — validate, scan, diff, sync, convert, migrate — runs
+entirely offline and is not affected.
+
+ⓘ This README previously said "not after a breach". That was wrong, and the
+correction is tracked in [`SECURITY.md`](./SECURITY.md#what-the-threat-model-actually-claims).
 
 ```bash
 evnx auth register                       # create an account
@@ -503,9 +518,14 @@ rather than downgraded.
 Revocation re-keys the vault, so a removed member cannot open versions pushed after they
 left.
 
-⚠️ The recipient's public keys come from the server. Out-of-band fingerprint verification
-is not built, so "the server cannot read your secrets" becomes "…cannot read them
-*passively*" the moment you share.
+⚠️ The recipient's public keys come from the server, and out-of-band fingerprint
+verification is not built — so a hostile server can substitute its own and read
+what you share.
+
+⛔ This is **not** limited to sharing. Nothing local records which vaults you own,
+so the client cannot tell a genuine share from a fabricated one; the same
+substitution works on a vault you created and never shared. See
+[`SECURITY.md`](./SECURITY.md#what-the-threat-model-actually-claims).
 
 ### Organisations and plans
 

@@ -342,6 +342,37 @@ does not.
 nothing to the build — it was already compiled in through `console`,
 `indicatif` and `dialoguer`.
 
+### ⚠️ The cloud guarantee was overstated — corrected
+
+The README said the server holds no key that can open your data "not with full
+database access, not with a court order, **not after a breach**". The last one
+does not hold.
+
+`unwrap_vault_key` decides how to open a vault key from two fields the *server*
+sends: both absent means "your own copy, under your master key", both present
+means "shared with you, under the hybrid wrap". The hybrid wrap is not
+authenticated to a sender and needs only the recipient's public keys, which the
+server already holds. Nothing local records which vaults you own, so the client
+cannot tell a genuine share from a fabricated one.
+
+So an attacker with database write access can set those fields on a vault **you
+created and never shared**, to a wrap of a key they chose, and read what you push
+next.
+
+**What still holds**, and is what the claim should have said: data already stored
+stays closed. A database dump, a court order against stored data, a passive
+observer — none of them yield plaintext, because the key never leaves your
+machine. What a compromised server can influence is what *future* pushes are
+encrypted under.
+
+⚠️ `SECURITY.md` already carried this limit but scoped it to "the moment you
+share". That was too narrow for the same reason: the client cannot tell. Both
+documents now say the same thing, and cloud sync is labelled **beta**.
+
+ⓘ No code change. This is the claim catching up with the code — the fix needs
+signed wraps plus locally pinned identities, and a server change. The offline
+commands are unaffected.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
@@ -1575,6 +1606,12 @@ actually needs attention: `DB_NAME looks like a placeholder`.
 ---
 
 ## [0.4.0] - 2026-09-15
+
+> ⚠️ **Corrected 2026-10-08.** "Mathematically unable to read it" below is
+> overstated, and the sentence is left as published rather than rewritten.
+> A server that can write its own database can choose the key your *next* push
+> is encrypted under — the client decides how to unwrap from fields the server
+> sends. What is already stored still stays closed. See `SECURITY.md`.
 
 Zero-knowledge encrypted cloud sync. Push a `.env` to a server that is
 **mathematically unable** to read it, and pull it on any machine or in any

@@ -43,11 +43,33 @@ documented rather than oversights:
   path — the database refuses to store half a wrap.
 - **Each version's ciphertext is bound to its version number**, so a server
   cannot replay an old version as the current one.
-- ⚠️ **A recipient's public keys come from the server.** A malicious server could
-  substitute its own and read what you subsequently share. There is no third
-  party to check them against and out-of-band fingerprint verification is not
-  built, so "the server cannot read your secrets" is "…cannot read them
-  *passively*" the moment you share. This is known and documented, not a finding.
+- ⛔ **A server that can write its own database can choose your vault key.**
+  The client decides how to unwrap a vault key from two fields the *server*
+  sends — `eph_pub_key` and `mlkem_ciphertext`. Both absent means "your own
+  copy, wrapped under your master key"; both present means "shared with you,
+  wrapped by the hybrid path". The hybrid wrap is not authenticated to a sender
+  and needs only the recipient's public keys, which the server already holds.
+
+  So an attacker with database write access can set those two fields on a vault
+  **you created and never shared**, to a wrap of a key they chose. Your next
+  `cloud push` encrypts under that key, and they can read it.
+
+  ⚠️ This limit was previously described here as applying "the moment you
+  share". That was too narrow: nothing local records which vaults you own, so
+  the client cannot tell a genuine share from a fabricated one. It applies to
+  every vault.
+
+  **What still holds:** the server cannot read what is already stored — the
+  ciphertext at rest and the wrapped keys stay closed. What it can do is
+  influence what *future* pushes are encrypted under. A passive observer,
+  a database dump, a court order against stored data: all still fail.
+
+  **Fixing it needs** signed wraps plus locally pinned identities, and a server
+  change. Until then, treat cloud sync as **beta** and do not put secrets there
+  that you could not rotate.
+
+- ⚠️ **A recipient's public keys come from the server**, with no out-of-band
+  fingerprint check — the same root cause as above, seen from the sharing side.
 - ⚠️ **A lost master password cannot be recovered.** That is the design, not a
   bug.
 
