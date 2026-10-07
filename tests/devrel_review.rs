@@ -1688,6 +1688,13 @@ fn fix_declines_what_it_cannot_invent_and_says_so() {
 /// weak-secret issue and then looked up `env_vars.get("SECRET_KEY")` regardless
 /// of which variable it was about — so at most one was repaired per run, and
 /// only if it happened to be named `SECRET_KEY`.
+///
+/// ⚠️ **Rewritten 2026-10-07 (S1).** This test used to run a bare `--fix` and
+/// assert that all three values were replaced. That is no longer what a bare
+/// `--fix` does, and the reason is the point of S1: these are *real values*,
+/// and `--fix` cannot tell them from placeholders. The property the test exists
+/// for — **every** weak secret, not just the first — is unchanged and is now
+/// asserted behind `--rotate-weak-secrets`, with the default checked below it.
 #[test]
 fn fix_repairs_every_weak_secret_not_just_the_first() {
     let dir = TempDir::new().unwrap();
@@ -1704,7 +1711,7 @@ fn fix_repairs_every_weak_secret_not_just_the_first() {
 
     cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
-        .args(["validate", "--fix", "--no-color"])
+        .args(["validate", "--fix", "--rotate-weak-secrets", "--no-color"])
         .assert()
         .code(0);
 
@@ -1717,6 +1724,85 @@ fn fix_repairs_every_weak_secret_not_just_the_first() {
         let value = line.split_once('=').unwrap().1;
         assert!(value.len() >= 32, "{name} was not regenerated: {line}");
     }
+}
+
+/// ⛔ **S1.** A bare `--fix` must leave a real credential exactly as it found
+/// it, keep the original aside, and still *report* the finding — rather than
+/// overwriting the value and printing `✓ All checks passed` over it.
+///
+/// The value it used to destroy:
+///
+/// ```text
+/// DATABASE_PASSWORD="p@ss word#1"  →  DATABASE_PASSWORD=ad0da713…c508
+/// ```
+#[test]
+fn fix_does_not_overwrite_a_real_credential() {
+    let dir = TempDir::new().unwrap();
+    let env = dir.path().join(".env");
+    let original = "# production\n\
+                    DATABASE_PASSWORD=\"p@ss word#1\"\n\
+                    QUOTED=\"has spaces and #hash\"\n\
+                    NOTE=value # trailing comment\n\
+                    DEBUG=True\n";
+    fs::write(&env, original).unwrap();
+    fs::write(
+        dir.path().join(".env.example"),
+        "DATABASE_PASSWORD=\nQUOTED=\nNOTE=\nDEBUG=\n",
+    )
+    .unwrap();
+
+    // Exits 1: the weak secret is still an error. It is simply not evnx's to
+    // replace.
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--fix", "--no-color"])
+        .assert()
+        .code(1);
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+
+    let after = fs::read_to_string(&env).unwrap();
+
+    // 1. The credential is untouched, and nowhere does evnx echo it.
+    assert!(
+        after.contains("DATABASE_PASSWORD=\"p@ss word#1\""),
+        "the credential was altered:\n{after}"
+    );
+    assert!(
+        !stdout.contains("p@ss word#1"),
+        "the old credential was printed to stdout:\n{stdout}"
+    );
+
+    // 2. Lines that were not fixed are byte-identical. The quoted value is the
+    //    one that mattered: unquoted, `sh` cannot parse it and a dotenv parser
+    //    truncates it at ` #`.
+    assert!(
+        after.contains("QUOTED=\"has spaces and #hash\""),
+        "quotes were stripped from an untouched line:\n{after}"
+    );
+    assert!(
+        after.contains("NOTE=value # trailing comment"),
+        "a trailing comment was dropped from an untouched line:\n{after}"
+    );
+
+    // 3. The one thing it *was* asked to fix, was fixed.
+    assert!(
+        after.contains("DEBUG=true"),
+        "the boolean trap was not fixed:\n{after}"
+    );
+
+    // 4. The original is recoverable.
+    assert_eq!(
+        fs::read_to_string(dir.path().join(".env.bak")).unwrap(),
+        original,
+        ".env.bak is not the original file"
+    );
+
+    // 5. The report names the flag that would do it, so the capability is
+    //    discoverable rather than removed.
+    assert!(
+        stdout.contains("--rotate-weak-secrets"),
+        "the report does not say how to rotate it deliberately:\n{stdout}"
+    );
 }
 
 // ── A — init's own closing instruction must succeed ────────────────────────

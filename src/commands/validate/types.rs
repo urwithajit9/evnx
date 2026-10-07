@@ -53,7 +53,22 @@ pub struct Issue {
 pub struct FixApplied {
     pub variable: String,
     pub action: String,
+    /// The value that was replaced — **only when printing it is harmless**.
+    ///
+    /// `None` with `old_value_withheld == false` means there was no previous
+    /// value: the variable was added, not repaired.
     pub old_value: Option<String>,
+    /// `true` when there *was* a previous value and evnx declined to repeat it.
+    ///
+    /// ⛔ The redaction lives on the struct rather than in the pretty printer
+    /// because `--format json` serialises this type verbatim. A printer-side
+    /// mask would have left `evnx validate --fix --rotate-weak-secrets
+    /// --format json` piping the old credential into whatever read it.
+    ///
+    /// The replaced value is in `.env.bak`, which is the right place for it:
+    /// one file, 0600, not a terminal scrollback or a CI log.
+    #[serde(default)]
+    pub old_value_withheld: bool,
     pub new_value: String,
 }
 
@@ -79,6 +94,12 @@ pub struct ValidationResult {
 pub struct ValidationConfig {
     pub strict: bool,
     pub fix: bool,
+    /// `--rotate-weak-secrets`: let `--fix` replace a weak secret that holds a
+    /// **real value**, not only a placeholder.
+    ///
+    /// ⛔ Off by default, and that default is the whole of S1. See the flag's
+    /// own documentation in `cli.rs`.
+    pub rotate_weak_secrets: bool,
     pub validate_formats: bool,
     /// Issue types the caller asked to suppress, from `--ignore`.
     pub ignore_issues: std::collections::HashSet<String>,

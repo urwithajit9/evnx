@@ -1482,11 +1482,37 @@ pub enum Commands {
 
         /// Repair what can be repaired, instead of only reporting it.
         ///
-        /// Fills missing variables, replaces placeholder values, corrects
-        /// boolean traps and generates a real secret for a weak `SECRET_KEY`.
-        /// Only `.env` is written; the template is never touched.
+        /// Fills missing variables, replaces placeholder values and corrects
+        /// boolean traps. Only `.env` is written, the template is never touched,
+        /// and the original is kept beside it as `.env.bak`.
+        ///
+        /// ⛔ **It will not overwrite a value that is not a placeholder.** A
+        /// weak secret with a real value behind it is reported and left alone —
+        /// see `--rotate-weak-secrets`.
         #[arg(long)]
         fix: bool,
+
+        /// With `--fix`, also replace weak secrets that hold a **real value**.
+        ///
+        /// ⛔ **This destroys credentials, and that is what it is for.** Until
+        /// 2026-10-07 `--fix` did it unasked:
+        ///
+        /// ```text
+        /// DATABASE_PASSWORD="p@ss word#1"  →  DATABASE_PASSWORD=ad0da713…c508
+        ///   ✓ All checks passed
+        /// ```
+        ///
+        /// The check behind it judges length and wording. It cannot tell a
+        /// placeholder nobody filled in from the real password, short because
+        /// someone chose a short one — and the second is the common case,
+        /// because shortness is what trips it. Whether anything *else* holds
+        /// the credential is not a fact in the file, so evnx cannot decide it;
+        /// you can.
+        ///
+        /// Rotate at the provider first. A new value here that the provider
+        /// does not have is an outage, not a repair.
+        #[arg(long, requires = "fix")]
+        rotate_weak_secrets: bool,
 
         /// Output format: `pretty`, `json` or `github-actions`.
         ///

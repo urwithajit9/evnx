@@ -310,6 +310,9 @@ pub fn check_placeholders(
                     key,
                     _value,
                     &IssueType::PlaceholderValue,
+                    // A placeholder is not a credential, so the weak-secret
+                    // policy has nothing to say about it either way.
+                    crate::commands::validate::fixer::WeakSecretPolicy::PlaceholdersOnly,
                 )
                 .is_actionable(),
             }
@@ -350,6 +353,7 @@ pub fn check_weak_secret(
     env_vars: &IndexMap<String, String>,
     env_path: &str,
     ignore: &HashSet<String>,
+    weak_secrets: crate::commands::validate::fixer::WeakSecretPolicy,
 ) -> Vec<Issue> {
     if ignore.contains(IssueType::WeakSecret.as_str()) {
         return Vec::new();
@@ -364,14 +368,46 @@ pub fn check_weak_secret(
         .iter()
         .filter(|(name, _)| is_secret_shaped(name))
         .filter(|(name, value)| is_weak_secret_key(name, value))
-        .map(|(name, _)| Issue {
+        .map(|(name, value)| Issue {
             severity: "error".to_string(),
             issue_type: IssueType::WeakSecret.as_str().to_string(),
             variable: name.clone(),
             message: format!("{name} is too weak or predictable"),
             location: env_path.to_string(),
-            suggestion: Some("Run: openssl rand -hex 32".to_string()),
-            auto_fixable: true,
+            // ⚠️ Two different sentences, because there are two different
+            // actions. When the value is a placeholder — or the person has
+            // asked for rotation outright — `--fix` will do it and the advice
+            // is the one-liner. When there is a *real credential* behind it and
+            // nobody asked, the action is to rotate it **where it is issued**
+            // first; a new value evnx invents that the provider does not have
+            // is an outage, not a repair. `--fix` deliberately declines that
+            // case — see `fixer::suggest_fix`.
+            suggestion: Some(
+                if is_placeholder(value)
+                    || weak_secrets == crate::commands::validate::fixer::WeakSecretPolicy::Rotate
+                {
+                    "Run: openssl rand -hex 32".to_string()
+                } else {
+                    format!(
+                        "Rotate {name} where it is issued, then replace it here. \
+                         `--fix` will not: it cannot tell a real credential from an \
+                         unfilled placeholder. Pass --fix --rotate-weak-secrets if \
+                         nothing else holds this value"
+                    )
+                },
+            ),
+            // ⛔ Not `true`. This said `true` for every finding while
+            // `suggest_fix` returned an unconditional `GenerateSecret`, so the
+            // report advertised `--fix` over working credentials and `--fix`
+            // obliged. The two must agree, so ask the fixer rather than
+            // asserting — the same shape `check_placeholders` already uses.
+            auto_fixable: crate::commands::validate::fixer::suggest_fix(
+                name,
+                value,
+                &IssueType::WeakSecret,
+                weak_secrets,
+            )
+            .is_actionable(),
         })
         .collect()
 }

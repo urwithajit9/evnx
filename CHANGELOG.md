@@ -8,67 +8,64 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### ⛔ Security — `diff --format json` printed secret values
+### ⛔ Security — `validate --fix` overwrote working credentials
 
-The defect the GitHub Action leaked through. The action is forced to use
-`--format json`, because `diff`'s exit code is unusable for CI.
+A user read the source and reported six defects. Four were real. This is the
+first of them.
 
-`DiffItem` held the raw value **and** a redacted copy, and serde serialised the
-struct — so the human output picked the mask and the JSON output picked the
-secret:
+`evnx validate --fix` replaced a **real** credential with random hex, printed
+the one it replaced to stdout, wrote no backup, and reported `✓ All checks
+passed`:
 
-```console
-$ evnx diff --format json | jq '.different[0]'
-{
-  "key": "DB_PASSWORD",
-  "example_value": "example_pw",
-  "env_value": "HUNTER2_live",      ← the live password
-  "env_value_redacted": "HU***"
-}
+```text
+DATABASE_PASSWORD="p@ss word#1"  →  DATABASE_PASSWORD=ad0da713…c508
+  • DATABASE_PASSWORD: "p@ss word#1" → ad0da713…
+  ✓ All checks passed                                            exit 0
 ```
 
-`--show-values` was inert in both directions: `pretty` masked regardless of it,
-`json` leaked regardless of it.
+It also rewrote **every** line in the file for a single repair, because it
+looked each key up in the whole parsed map rather than in the set of fixes. So
+quoting, trailing comments and `export ` prefixes were lost — and the first of
+those is not cosmetic:
 
-Three more defects turned up while reproducing that one:
+```text
+QUOTED="has spaces and #hash"   →   QUOTED=has spaces and #hash
 
-- **`diff` panicked on a non-ASCII secret.** The mask was
-  `format!("{}***", &v[..v.len().min(2)])`, and byte 2 is not a character
-  boundary when the value starts with a 3-byte character. `DB_PASSWORD=日本語`
-  exited **101**.
-- **`--show-values` printed sensitive values from the `missing` and `extra`
-  sections completely unredacted.** The redaction lookup searched `different`
-  for a mask — and a key present on only one side is never in `different`, so
-  the lookup always missed and the raw fallback always won.
-- **`diff` and `validate` disagreed about what a secret is.** `STRIPE_KEY`,
-  `ENCRYPTION_KEY` and `SIGNING_KEY` were credential-shaped to `validate` and
-  not sensitive to `diff`, because `is_sensitive_key` matched `API_KEY` and
-  `PRIVATE_KEY` as substrings but had no `*_KEY` suffix rule.
+$ . ./.env
+./.env: line 1: spaces: command not found
+$ echo "[$QUOTED]"
+[]
+```
 
 **What changed**
 
-- One function, `disclose`, decides what may be shown, and all three output
-  sections call it. The report and the human output can no longer disagree,
-  which is how they came to.
-- The mask is a fixed `***` with **no prefix of the real value**. `sk***`
-  identified the issuer; the key name beside it already said more. This also
-  removes the slicing, so the panic is gone by construction.
-- `is_sensitive_key` gained a `*_KEY` / `*_SECRET` / `*_PASSWORD` / `*_TOKEN`
-  suffix rule. Deliberately broader than `validate`'s rule — masking a rotation
-  interval costs a line of information, printing a signing key costs the key.
-- ⓘ `--format patch` still emits real values, because a patch exists to be
-  applied and a masked one would write `***` into the file. It is reachable
-  only by asking for it: `pretty` is the default and the Action forces `json`.
+- `--fix` repairs a weak secret **only when the value is a placeholder**. The
+  check judges length and wording; it cannot tell a placeholder nobody filled
+  in from the real password, short because someone chose a short one — and the
+  second is the common case, because shortness is what trips it. The finding
+  still fires, with advice to rotate the credential where it is issued.
+- **`--rotate-weak-secrets`** (new) does it deliberately, for when nothing
+  outside the file holds the value.
+- A line whose key was not repaired is **copied byte for byte**.
+- A value evnx writes is quoted when it would not survive being read back, and
+  a value containing a line break is refused rather than truncated.
+- **`.env.bak`** is written before anything is touched, and never clobbers an
+  earlier one (`.env.bak`, `.env.bak.2`, …).
+- The replaced value is withheld for a credential-shaped variable that held a
+  real value — in the struct, not the printer, because `--format json`
+  serialises it. `old_value_withheld: true` distinguishes "withheld" from "the
+  variable was added".
 
 ### ⚠️ Breaking
 
-**`diff --format json` changed shape.** `DiffItem` now carries `example_value`
-and `env_value` as nullable, holding only what is safe to print, plus
-`values_redacted: bool`. The `example_value_redacted` and `env_value_redacted`
-fields are **gone** — holding the raw value beside the mask was the defect,
-since every consumer had to know to prefer the second and the JSON formatter did
-not. Read `values_redacted` to tell a mask from a literal, and `null` to tell a
-withheld value from an absent key.
+**`validate --fix` on a project with a short real credential now exits 1 where
+it exited 0.** The finding is no longer silently resolved — it was exiting 0 by
+destroying the thing it was reporting. Pass `--rotate-weak-secrets` for the old
+behaviour, or `--exit-zero` if the exit code is what your pipeline depends on.
+
+**`FixApplied` gained `old_value_withheld`** in `--format json`, and
+`old_value` is now `null` for a withheld value. Additive; a reader that ignores
+unknown fields is unaffected.
 
 ---
 
