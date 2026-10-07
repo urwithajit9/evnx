@@ -134,6 +134,14 @@ getrandom = "0.3"
 
 # ─── Dev / build dependencies ─────────────────────────────────────────────────
 
+# ⓘ Unix only, and it adds nothing to the build: libc is already compiled in
+# through `console` / `indicatif` / `dialoguer`. Declared directly so
+# `utils::file_permissions` can pass `O_NOFOLLOW` to `open(2)` — without it,
+# `write_secure` follows a symlink where a `.env` was expected and writes the
+# decrypted secrets wherever it points.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 # Local HTTP server for the cloud client's tests. A dev-dependency, so it never
 # reaches the shipped binary or a user's tree — it lets the tests produce the

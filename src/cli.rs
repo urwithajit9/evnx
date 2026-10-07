@@ -219,8 +219,21 @@ pub struct MigrateOptions {
     #[arg(long)]
     pub repo: Option<String>,
 
+    // ⛔ `hide_env_values` is not optional here, and this note is a `//` comment
+    // rather than a `///` one **on purpose**: clap renders doc comments into
+    // `--help`, so an explanation that quotes the leak reproduces it.
+    //
+    // By default clap prints the *current value* of an `env =` fallback. With
+    // GITHUB_TOKEN exported — which is exactly how CI runs — `evnx migrate
+    // --help` printed `[env: GITHUB_TOKEN=<the real token>]`. With this set it
+    // prints `[env: GITHUB_TOKEN]`, so the variable stays discoverable and its
+    // value does not.
+    //
+    // ⚠️ Passing the token as `--github-token` also puts it in argv, visible in
+    // `ps` and in shell history. The env var is the better path; the one-line
+    // help below says so and stays short because clap shows it to users.
     /// GitHub Personal Access Token (or set GITHUB_TOKEN env var)
-    #[arg(long, env = "GITHUB_TOKEN")]
+    #[arg(long, env = "GITHUB_TOKEN", hide_env_values = true)]
     pub github_token: Option<String>,
 
     // ── AWS Secrets Manager ───────────────────────────────────────────────────

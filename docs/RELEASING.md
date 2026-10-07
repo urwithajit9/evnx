@@ -80,6 +80,33 @@ output of a command that already shipped is a compatibility change, which is als
 a minor bump — 0.8.0 was 0.8.0 rather than 0.7.1 for exactly that reason, and the
 entry says so. Write that reasoning down; somebody will ask.
 
+⛔ **Two branches both adding to `## [Unreleased]` always conflict, and the
+resolution is to keep BOTH `###` sections.**
+
+Every branch inserts its entry at the same anchor, so any branch cut before
+another one merges will conflict on this file. Taking either side whole is
+silently wrong and **no test catches it** — a dropped changelog entry breaks
+nothing, so CI stays green and the release note is simply missing a fix.
+
+That is not hypothetical. `fix(diff): --format json printed secret values`
+(#117) merged with its code intact and its entry gone: the branch was updated
+from a `main` that already had #116's entry, the merge commit resolved the
+conflict by taking `main`'s copy whole, and the squash carried that onto `main`.
+It took #118 to put it back, and it was found by comparing blob hashes rather
+than by anything failing.
+
+Two habits avoid it entirely:
+
+* **Cut branches from an up-to-date `main`.** The conflict only exists when a
+  branch predates another's merge.
+* **When it happens anyway, merge the sections — never pick a side.** Both
+  `###` headings belong under the one `## [Unreleased]`.
+
+ⓘ If parallel branches ever become normal here, the structural fix is one file
+per change in a `changelog.d/` directory, concatenated at release time, so two
+branches never touch the same file. Not worth the tooling while work is
+sequential — but this is the problem it solves.
+
 ### 5 · README, if the surface changed
 
 The README enumerates commands. A new top-level command that is not there is a

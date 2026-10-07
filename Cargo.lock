@@ -840,6 +840,7 @@ dependencies = [
  "indexmap",
  "indicatif",
  "lazy_static",
+ "libc",
  "mockito",
  "predicates",
  "pretty_assertions",

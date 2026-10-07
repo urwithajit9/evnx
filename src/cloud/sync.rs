@@ -394,7 +394,13 @@ pub fn pull(
     );
     if verbose {
         println!("  bytes     {} plaintext", plaintext.len());
-        println!("  mode      0600");
+        // ⚠️ Not the literal "0600". Nothing sets a mode on Windows, where
+        // `write_secure` is a plain `fs::write`, so printing it there is a
+        // reassurance that is simply false.
+        println!(
+            "  mode      {}",
+            crate::utils::file_permissions::describe_permissions()
+        );
     }
     Ok(())
 }

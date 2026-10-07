@@ -303,6 +303,45 @@ either alone would have changed nothing.
 with or without the feature. That is why five releases went green over a wheel
 missing its headline feature.
 
+### ⛔ Secrets written world-readable, and `--help` printing the token
+
+Two small leaks from the external review, both reaching real credentials.
+
+**`write_secure` applied `0600` only when it created the file.** `.mode()` on
+`OpenOptions` is consulted on creation and ignored otherwise, so writing over an
+existing file kept that file's permissions:
+
+```text
+new file                → 600
+pre-existing file at    → 644 (before)
+after write_secure      → 644   ⛔ secrets world-readable
+via symlink → target is → 644   ⛔ wrote through the symlink
+```
+
+Restoring a backup over a `.env` that already exists is the normal case, not the
+edge case — so the decrypted secrets were readable by every account on the
+machine, under messages that said "written 0600".
+
+`set_permissions` now runs **after** opening, which applies to the file that is
+open rather than only to one being created. `O_NOFOLLOW` makes a symlink where a
+`.env` was expected an error rather than a write to wherever it points.
+
+**"0600" was printed on Windows, where nothing sets a mode.** The Windows branch
+of `write_secure` is a plain `fs::write`, while `cloud/sync.rs` and
+`cloud/export.rs` printed the literal string regardless of platform. Both now
+say what actually happened — "mode 0600" on unix, "inherited from the parent
+directory" elsewhere.
+
+**`--help` printed the GitHub token.** clap prints the current value of an
+`env =` fallback by default, so with `GITHUB_TOKEN` exported — which is how CI
+runs — `evnx migrate --help` printed `[env: GITHUB_TOKEN=<the real token>]`.
+It now prints `[env: GITHUB_TOKEN]`: the variable stays discoverable, its value
+does not.
+
+ⓘ `libc` is a new direct dependency, unix-only, for `O_NOFOLLOW`. It adds
+nothing to the build — it was already compiled in through `console`,
+`indicatif` and `dialoguer`.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
