@@ -38,27 +38,108 @@ lazy_static! {
 /// placeholder; `ENVIRONMENT=dev` is not), which is a design change, not a list
 /// merge. Tracked separately rather than rushed in before a tag.
 pub fn is_placeholder(value: &str) -> bool {
-    let lower = value.to_lowercase();
-    let placeholders = [
-        // ⚠️ `your_` as a prefix, not the three exact spellings that used to be
-        // here. `evnx init` generates `your_<name>_value` — so evnx wrote a
-        // placeholder its own validator did not recognise, and a fresh
-        // `init --with nextjs,postgresql` produced a DB_PASSWORD and a
-        // NEXTAUTH_SECRET that `validate` passed without a word (N1, 2026-09-24).
+    let v = value.trim();
+    if v.is_empty() {
+        return true;
+    }
+    let lower = v.to_lowercase();
+
+    // ⛔ **Anchored, not `contains`.** Every pattern below was a substring
+    // test, and `--fix` acts on this verdict by overwriting the value:
+    //
+    // ```text
+    // DB_PASSWORD=Tr0ub4dor<3horse        → 1784af0cb441c772…     matched on `<`
+    // DATABASE_URL=postgres://u:pw@db/todos → https://example.com   matched on `todo`
+    // ```
+    //
+    // Both are real values. The first is a passphrase in the style every
+    // password guide recommends; the second is a to-do app's database. `<`,
+    // `>`, `example`, `todo` and `xxx` all appear inside values people actually
+    // hold, and a substring test cannot tell that from a value nobody filled
+    // in.
+    //
+    // ⚠️ This was reported, fixed for the *weak-secret* path, and left here —
+    // so the data loss closed by the weak-secret gate stayed reachable through
+    // the placeholder path, which is the same `--fix` writing the same random
+    // hex over the same credential.
+
+    // `<anything>` — the **whole** value bracketed, which is how a template
+    // marks a hole. `a<b` is not one.
+    if v.len() >= 2 && v.starts_with('<') && v.ends_with('>') {
+        return true;
+    }
+
+    // The word a generator writes, at the **start** of the value.
+    // `evnx init` emits `your_<name>_value`, so the prefix form is load-bearing.
+    const STARTS_WITH: &[&str] = &[
         "your_",
         "your-",
+        "your ",
+        "yourdomain",
+        "youremail",
         "change_me",
+        "change-me",
         "changeme",
         "replace_me",
-        "example",
-        "xxx",
-        "todo",
+        "replace-me",
+        "replaceme",
         "generate-with",
+        "generate_with",
         "placeholder",
-        "<",
-        ">",
+        "todo",
+        "tbd",
+        "fixme",
+        "xxx",
+        "insert_",
+        "insert-",
     ];
-    placeholders.iter().any(|p| lower.contains(p)) || value.is_empty()
+    if STARTS_WITH.iter().any(|p| lower.starts_with(p)) {
+        return true;
+    }
+
+    // The **whole** value is the word.
+    const EXACT: &[&str] = &[
+        "example",
+        "placeholder",
+        "changeme",
+        "change_me",
+        "todo",
+        "tbd",
+        "fixme",
+        "none",
+        "null",
+        "undefined",
+        "value",
+    ];
+    if EXACT.contains(&lower.as_str()) {
+        return true;
+    }
+
+    // ⓘ A host under one of RFC 2606's reserved documentation domains. These
+    // exist precisely so documentation can name a host nobody owns, so a value
+    // pointing at one is a hole by definition — `https://api.example.com/v1`
+    // is, and `postgres://u:pw@db/example_db` is not.
+    const DOC_HOSTS: &[&str] = &["example.com", "example.org", "example.net", "example.edu"];
+    if let Some(after_scheme) = lower.split("://").nth(1) {
+        let host = after_scheme
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .rsplit('@')
+            .next()
+            .unwrap_or("")
+            .split(':')
+            .next()
+            .unwrap_or("");
+        if DOC_HOSTS
+            .iter()
+            .any(|d| host == *d || host.ends_with(&format!(".{d}")))
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// `name` chooses the length floor; `value` is what gets judged.
@@ -541,6 +622,83 @@ mod tests {
         assert!(is_placeholder("changeme"));
         assert!(!is_placeholder("sk_live_abc123"));
         assert!(is_placeholder("")); // empty is placeholder
+    }
+
+    /// ⛔ **Real values that `--fix` overwrote.**
+    ///
+    /// Every pattern was a substring test, and `--fix` acts on this verdict by
+    /// replacing the value. These three were all destroyed:
+    ///
+    /// ```text
+    /// DB_PASSWORD=Tr0ub4dor<3horse          → random hex        (matched `<`)
+    /// DATABASE_URL=postgres://u:pw@db/todos → https://example.com (matched `todo`)
+    /// MAIL_FROM=ops@acme.example.corp       → user@example.com    (matched `example`)
+    /// ```
+    #[test]
+    fn a_real_value_is_not_a_placeholder() {
+        for value in [
+            "Tr0ub4dor<3horse",             // a passphrase, as every guide suggests
+            "postgres://u:pw@db/todos",     // a to-do app's database
+            "ops@acme.example.corp",        // a real sender under a real domain
+            "example.internal.corp",        // a real internal host
+            "postgres://u:p@db/example_db", // a database literally called example_db
+            "a<b",                          // a comparison in a value
+            "2>&1",                         // shell redirection
+            "my_todo_list_key",             // `todo` in the middle
+            "Sup3rS3cretPassw0rd",
+        ] {
+            assert!(
+                !is_placeholder(value),
+                "{value:?} is a real value and was called a placeholder"
+            );
+        }
+    }
+
+    /// The complement: everything a template or generator actually writes must
+    /// still be caught, or `validate` stops doing its job.
+    #[test]
+    fn a_genuine_placeholder_is_still_detected() {
+        for value in [
+            "",
+            "   ",
+            "your_api_key_value", // what `evnx init` emits
+            "YOUR_KEY_HERE",
+            "your-secret",
+            "CHANGE_ME",
+            "changeme",
+            "replace_me_please",
+            "<replace-with-token>",
+            "<>",
+            "placeholder",
+            "TODO",
+            "tbd",
+            "FIXME",
+            "xxx",
+            "xxxxxxxx",
+            "example",
+            "none",
+            "null",
+            // RFC 2606 reserved documentation domains: a host nobody owns.
+            "https://api.example.com/v1",
+            "https://example.org",
+            "postgres://u:p@db.example.net:5432/app",
+        ] {
+            assert!(
+                is_placeholder(value),
+                "{value:?} is a placeholder and was not detected"
+            );
+        }
+    }
+
+    /// ⚠️ `<` and `>` only count when they wrap the **whole** value. A template
+    /// marks a hole as `<name>`; a passphrase just contains a bracket.
+    #[test]
+    fn brackets_count_only_when_they_wrap_the_whole_value() {
+        assert!(is_placeholder("<your-key>"));
+        assert!(!is_placeholder("<partial"));
+        assert!(!is_placeholder("trailing>"));
+        assert!(!is_placeholder("a<b>c"));
+        assert!(!is_placeholder("<"));
     }
 
     #[test]

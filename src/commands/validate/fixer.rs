@@ -70,13 +70,31 @@ pub fn suggest_fix(
             // through to "evnx cannot invent this".
             if super::checks::is_secret_shaped(key) {
                 FixAction::GenerateSecret
-            } else if key.contains("URL") {
-                FixAction::ReplacePlaceholder("https://example.com".to_string())
-            } else if key.contains("EMAIL") || key.contains("MAIL") {
-                FixAction::ReplacePlaceholder("user@example.com".to_string())
             } else if key.contains("PORT") {
+                // `8080` is a **working default**, not a stand-in — a port is
+                // not a credential and the value is immediately usable.
                 FixAction::ReplacePlaceholder("8080".to_string())
             } else {
+                // ⛔ **URL and EMAIL used to be replaced here**, with
+                // `https://example.com` and `user@example.com`. Both are
+                // removed, for the reason the `DB_NAME` note below already
+                // gives: substituting one placeholder for a *less informative*
+                // one is a no-op that reports itself as a repair.
+                //
+                // It was worse than a no-op for a URL. `DATABASE_URL` is matched
+                // by `contains("URL")`, so a postgres connection string was
+                // replaced with an **https** one — a value that is wrong in its
+                // scheme, its host and its credentials, written over the only
+                // line that said what the database was:
+                //
+                // ```text
+                // DATABASE_URL=postgres://u:pw@db/todos → https://example.com
+                // ```
+                //
+                // ⚠️ That particular case reached a real value because
+                // `is_placeholder` matched `todo` as a substring, which is
+                // fixed. But `https://example.com` would still be the wrong
+                // repair for a genuine `your_database_url`, so the branch goes.
                 // ⚠️ Not `your_value_here`. For a secret, a URL, an email or a
                 // port there is a right answer evnx can supply; for `DB_NAME`
                 // there is not, and substituting one placeholder for a *less
