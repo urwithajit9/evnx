@@ -207,7 +207,11 @@ pub fn export(
     );
     println!(
         "  {}",
-        "  Written 0600 in a 0700 directory, but that protects them only from".yellow()
+        format!(
+            "  Written {} in a 0700 directory, but that protects them only from",
+            crate::utils::file_permissions::describe_permissions()
+        )
+        .yellow()
     );
     println!(
         "  {}",
