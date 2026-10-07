@@ -351,6 +351,23 @@ impl FileFilter {
         // `.env.development`. `evnx scan .` walked straight past the file most
         // likely to hold production credentials and reported the directory clean.
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            // ⚠️ An editor's swap file is named `.env.swp` and is **binary**, so
+            // `.env*` selects it. That was harmless while an unreadable file was
+            // silently skipped; now that one fails the scan, a `.env` left open
+            // in vim would fail CI.
+            //
+            // Excluded by extension rather than by "looks binary", because the
+            // decision belongs here: these files are transient editor state, and
+            // scanning them was never the intent.
+            //
+            // ⛔ **Not `.bak` and not `~`.** `evnx validate --fix` writes
+            // `.env.bak` itself, and an editor's `.env~` is plain text — both
+            // hold the same secrets as the file they copy, so both must stay
+            // scannable. Only the binary swap formats are dropped.
+            const EDITOR_SWAP: &[&str] = &[".swp", ".swo", ".swn", ".swm", ".swl"];
+            if EDITOR_SWAP.iter().any(|e| name.ends_with(e)) {
+                return false;
+            }
             if name.starts_with(".env") || name == "Dockerfile" || name == "Makefile" {
                 return true;
             }
@@ -365,6 +382,26 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    /// ⚠️ `.env.swp` is binary editor state and `.env*` selects it, so once an
+    /// unreadable file started failing the scan, a `.env` open in vim would
+    /// fail CI. `.env.bak` and `.env~` must stay in: they hold the same secrets
+    /// as the file they copy, and `evnx validate --fix` writes the first one.
+    #[test]
+    fn editor_swap_files_are_not_scanned_but_backups_are() {
+        for skip in [".env.swp", ".env.swo", ".env.swn", "secrets.env.swp"] {
+            assert!(
+                !FileFilter::is_scannable(Path::new(skip)),
+                "{skip} should not be scanned"
+            );
+        }
+        for keep in [".env.bak", ".env.bak.2", ".env~", ".env", ".env.production"] {
+            assert!(
+                FileFilter::is_scannable(Path::new(keep)),
+                "{keep} must still be scanned"
+            );
+        }
+    }
 
     #[test]
     fn test_file_filter_new() {

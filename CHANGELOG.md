@@ -108,6 +108,63 @@ Three more defects turned up while reproducing that one:
   applied and a masked one would write `***` into the file. It is reachable
   only by asking for it: `pretty` is the default and the Action forces `json`.
 
+### ⛔ Security — `scan` reported a clean bill of health on files it never read
+
+A `.env` saved as UTF-16 — which is what a Windows editor produces when you
+pick "Unicode" — scanned clean:
+
+```console
+$ evnx scan
+  ✓  No secrets detected
+     1 file scanned
+$ echo $?
+0
+```
+
+over a live Stripe key. Verified against the released 0.9.0 binary:
+
+```text
+                  before          after
+UTF-8             found=1 exit=1  found=1 exit=1
+UTF-16 + BOM      found=0 exit=0  found=1 exit=1
+UTF-16LE no BOM   found=0 exit=0  found=1 exit=1
+UTF-16BE no BOM   found=0 exit=0  found=1 exit=1
+```
+
+**Two different routes to the same false all-clear**, which is why fixing one
+is not enough:
+
+- **With a byte-order mark**, `read_to_string` fails — `0xFF` is not valid
+  UTF-8 — and the error arm was `Err(_) => return Ok(())`, a comment-labelled
+  "Skip binary/unreadable files".
+- **Without one it succeeds.** UTF-16LE ASCII *is* valid UTF-8: every byte is
+  either an ASCII character or `0x00`, and `0x00` is a legal UTF-8 code unit.
+  The scanner received `"S\0T\0R\0I\0P\0E\0"` and genuinely found nothing
+  in it.
+
+And `1 file scanned` was a lie independent of either: the count came from
+`files.len()`, the number of files *found*, set before any was opened.
+
+**What changed**
+
+- UTF-16 is **decoded and scanned**, at both endiannesses, with or without a
+  BOM. A UTF-8 BOM is stripped rather than left to become part of the first
+  key's name.
+- A file this command selected and could not read is **reported, named, and
+  given a reason**, counted in `summary.files_unreadable`, and **exits 1**.
+  "I could not read it" must not share an exit code with "it is clean".
+- `summary.files_scanned` counts files actually read.
+- Editor swap files (`.swp`, `.swo`, `.swn`, `.swm`, `.swl`) are no longer
+  selected. `.env*` matched `.env.swp`, which is binary — so without this, a
+  `.env` left open in vim would fail CI. ⓘ **Not** `.env.bak` or `.env~`: those
+  hold the same secrets as the file they copy, and `evnx validate --fix` writes
+  the first one.
+
+ⓘ This is the third appearance of one shape — `is_scannable` skipping
+`.env.production` (task 23), `validate --fix` reporting "All checks passed" over
+a credential it had destroyed, and this. A tool that reports success for work it
+did not do is worse than one that fails.
+
 ### ⚠️ Breaking
 
 **`diff --format json` changed shape.** `DiffItem` now carries `example_value`

@@ -301,7 +301,19 @@ impl Finding {
 /// ```
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScanResults {
+    /// Files actually read and searched.
+    ///
+    /// ⚠️ This used to be set from `files.len()` before any file was opened, so
+    /// it reported "1 file scanned" about a file the scanner could not decode
+    /// and had silently skipped. It is now incremented per file that was really
+    /// read; anything that was not lands in `unreadable`.
     pub files_scanned: usize,
+    /// Files this scan selected and then could not read.
+    ///
+    /// ⛔ **Not an empty list to ignore.** A secret scanner that cannot read a
+    /// file has not cleared it, and saying nothing is the failure mode that made
+    /// task 23 and this defect the same bug twice.
+    pub unreadable: Vec<UnreadableFile>,
     pub secrets_found: usize,
     pub findings: Vec<Finding>,
     pub high_confidence: usize,
@@ -328,6 +340,19 @@ pub struct Summary {
     pub medium: usize,
     pub low: usize,
     pub files_scanned: usize,
+    /// Files that were selected and could not be read.
+    ///
+    /// ⚠️ A pipeline asserting `summary.total == 0` is asserting "no secrets
+    /// were found", which is not "there are no secrets" when this is non-zero.
+    /// Gate on both.
+    pub files_unreadable: usize,
+}
+
+/// A file the scan selected and could not read.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UnreadableFile {
+    pub path: String,
+    pub reason: String,
 }
 
 impl ScanResults {
@@ -339,6 +364,7 @@ impl ScanResults {
             medium: self.medium_confidence,
             low: self.low_confidence,
             files_scanned: self.files_scanned,
+            files_unreadable: self.unreadable.len(),
         }
     }
 }
@@ -361,6 +387,7 @@ impl ScanResults {
     pub fn new(files_scanned: usize) -> Self {
         Self {
             files_scanned,
+            unreadable: Vec::new(),
             secrets_found: 0,
             findings: Vec::new(),
             high_confidence: 0,

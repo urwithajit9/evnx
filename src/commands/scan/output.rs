@@ -156,12 +156,25 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
         println!("  scanning {}{}\n", shown.dimmed(), suffix.dimmed());
     }
 
+    // ⛔ Before the all-clear, because an unread file makes the all-clear false.
+    //
+    // `✓ No secrets detected` over a file the scanner could not open is the
+    // worst output this command can produce: it is the answer someone gates a
+    // deploy on. Printed first so it cannot be read as a footnote to a pass.
+    render_unreadable(results);
+
     if results.secrets_found == 0 {
-        println!("  {}  No secrets detected", glyph::OK.green());
-        println!(
-            "\n  {}",
-            pluralize(results.files_scanned, "file scanned", "files scanned").dimmed()
-        );
+        if results.unreadable.is_empty() {
+            println!("  {}  No secrets detected", glyph::OK.green());
+        } else {
+            // Not a tick. Nothing was found, and that is not the same as clean.
+            println!(
+                "  {}  No secrets detected {}",
+                glyph::WARN.yellow(),
+                "in the files that could be read".dimmed()
+            );
+        }
+        println!("\n  {}", files_line(results).dimmed());
         return Ok(());
     }
 
@@ -709,5 +722,45 @@ mod github_tests {
             assert_eq!(gh_escape("a\nb", is_property), "a%0Ab");
             assert_eq!(gh_escape("a\r\nb", is_property), "a%0D%0Ab");
         }
+    }
+}
+
+/// The files this scan selected and could not read.
+///
+/// ⚠️ Named rather than counted. "1 file could not be read" sends someone
+/// looking; the path and the reason tell them what to do, and the reason is
+/// usually "it is UTF-16", which is a one-line fix in their editor.
+fn render_unreadable(results: &ScanResults) {
+    if results.unreadable.is_empty() {
+        return;
+    }
+    println!(
+        "  {}  {}",
+        glyph::FAIL.red(),
+        pluralize(
+            results.unreadable.len(),
+            "file could not be read, so it was NOT scanned",
+            "files could not be read, so they were NOT scanned"
+        )
+        .bold()
+    );
+    for f in &results.unreadable {
+        println!("     {}  {}", f.path.dimmed(), f.reason.dimmed());
+    }
+    println!(
+        "     {}  {}",
+        glyph::ARROW.dimmed(),
+        "re-save as UTF-8 and scan again — a file that was not read is not clean".dimmed()
+    );
+    println!();
+}
+
+/// `N files scanned`, plus the ones that were not.
+fn files_line(results: &ScanResults) -> String {
+    let scanned = pluralize(results.files_scanned, "file scanned", "files scanned");
+    if results.unreadable.is_empty() {
+        scanned
+    } else {
+        format!("{scanned}  ·  {} unreadable", results.unreadable.len())
     }
 }

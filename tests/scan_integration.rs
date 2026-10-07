@@ -1414,3 +1414,167 @@ fn the_single_line_forms_still_behave_as_before() {
     let (code, _) = scan_env_with("FOO=bar\nBAZ=1\n");
     assert_eq!(code, 0, "a clean file must not start failing");
 }
+
+// ─────────────────────────────────────────────────────────────
+// S3 — a file that was not read must not be reported as clean
+// ─────────────────────────────────────────────────────────────
+
+/// ⛔ **A `.env` saved as UTF-16 scanned clean with exit 0.**
+///
+/// Verified against the released 0.9.0 binary before the fix:
+///
+/// ```text
+/// utf8           found=1 exit=1      ← the control
+/// utf16 + BOM    found=0 exit=0      ⛔
+/// utf16le no BOM found=0 exit=0      ⛔
+/// utf16be no BOM found=0 exit=0      ⛔
+/// ```
+///
+/// This is an end-to-end test rather than a unit test of the decoder, because
+/// what was broken was the *reported outcome* — the count, the message and the
+/// exit code — and a decoder test cannot see any of those.
+#[test]
+fn a_utf16_env_file_is_scanned_not_silently_skipped() {
+    let secret = "STRIPE_SECRET_KEY=sk_live_51H8xQ2eZvKYlo2CpR4mN7bV9\n";
+
+    let variants: Vec<(&str, Vec<u8>)> = vec![
+        ("bom-le", {
+            let mut b = vec![0xFF, 0xFE];
+            secret
+                .encode_utf16()
+                .for_each(|u| b.extend_from_slice(&u.to_le_bytes()));
+            b
+        }),
+        ("no-bom-le", {
+            let mut b = Vec::new();
+            secret
+                .encode_utf16()
+                .for_each(|u| b.extend_from_slice(&u.to_le_bytes()));
+            b
+        }),
+        ("no-bom-be", {
+            let mut b = Vec::new();
+            secret
+                .encode_utf16()
+                .for_each(|u| b.extend_from_slice(&u.to_be_bytes()));
+            b
+        }),
+    ];
+
+    for (label, bytes) in variants {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".env"), &bytes).unwrap();
+
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(["scan", "--format", "json"])
+            .output()
+            .unwrap();
+        let json: serde_json::Value =
+            serde_json::from_slice(&out.stdout).expect("scan emitted valid JSON");
+
+        assert_eq!(
+            json["summary"]["total"].as_u64(),
+            Some(1),
+            "{label}: the secret was not found — stdout: {}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "{label}: exited 0 over a live key"
+        );
+    }
+}
+
+/// ⛔ The general rule. `files_scanned` came from `files.len()` — the number of
+/// files *found*, set before any was opened — so `1 file scanned` was printed
+/// about a file that was never read.
+#[test]
+fn an_unreadable_file_is_reported_and_not_counted_as_scanned() {
+    let dir = TempDir::new().unwrap();
+    // NUL bytes, and not UTF-16 at either parity.
+    fs::write(
+        dir.path().join(".env"),
+        [0x00u8, 0xFF, 0x13, 0x37, 0x00, 0x01],
+    )
+    .unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "--format", "json"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+
+    assert_eq!(
+        json["summary"]["files_scanned"].as_u64(),
+        Some(0),
+        "a file that was not read was counted as scanned"
+    );
+    assert_eq!(json["summary"]["files_unreadable"].as_u64(), Some(1));
+    assert!(
+        json["unreadable"][0]["reason"].is_string(),
+        "the reason must be reported, not just the count"
+    );
+    // "I could not read it" must not share an exit code with "it is clean".
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "exited 0 without reading the file"
+    );
+
+    // And the human output must say so rather than printing a tick.
+    let pretty = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "--no-color"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&pretty.stdout);
+    assert!(
+        text.contains("NOT scanned"),
+        "the human output did not say the file was unread:\n{text}"
+    );
+}
+
+/// ⚠️ `.env.swp` is binary editor state, and `.env*` selects it — so once an
+/// unreadable file started failing the scan, a `.env` open in vim failed CI.
+/// `.env.bak`, which `evnx validate --fix` writes, must stay scannable.
+#[test]
+fn a_vim_swap_file_does_not_fail_the_scan() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "SAFE=1\n").unwrap();
+    fs::write(dir.path().join(".env.swp"), b"b0VIM 8.2\x00\x00\x00\x00").unwrap();
+
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "--format", "json"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        json["summary"]["files_unreadable"].as_u64(),
+        Some(0),
+        "a vim swap file was reported as unreadable: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert_eq!(out.status.code(), Some(0));
+
+    // The complement: a backup holds the same secrets and is still scanned.
+    fs::write(
+        dir.path().join(".env.bak"),
+        "STRIPE_SECRET_KEY=sk_live_51H8xQ2eZvKYlo2CpR4mN7bV9\n",
+    )
+    .unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "--format", "json"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        json["summary"]["total"].as_u64(),
+        Some(1),
+        "the .env.bak that `validate --fix` writes was not scanned"
+    );
+}

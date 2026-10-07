@@ -1,5 +1,6 @@
 {
   "files_scanned": 1,
+  "unreadable": [],
   "secrets_found": 1,
   "findings": [
     {
@@ -20,6 +21,7 @@
     "high": 1,
     "medium": 0,
     "low": 0,
-    "files_scanned": 1
+    "files_scanned": 1,
+    "files_unreadable": 0
   }
 }
