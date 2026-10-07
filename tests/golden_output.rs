@@ -208,10 +208,82 @@ fn sync_check_json_is_stable() {
     );
 }
 
+/// ⛔ **This golden file used to contain a secret, as expected output.**
+///
+/// ```json
+/// { "key": "AWS_KEY", "env_value": "AKIA4OZRMFJ3VREALKEY" }
+/// ```
+///
+/// So the test that exists to catch changes to a machine-readable surface was
+/// instead holding the leak in place: regenerating it would have been reported
+/// as a deliberate decision, and leaving it asserted that `diff --format json`
+/// *should* print credentials. Nothing distinguishes the two in a golden file,
+/// which is why the assertion below it exists.
 #[test]
 fn diff_json_is_stable() {
     let d = fixture();
     check("diff.json", &stdout_of(&d, &["diff", "--format", "json"]));
+}
+
+/// The property the golden file cannot assert on its own: whatever that output
+/// becomes, **no value from the fixture may appear in it**.
+///
+/// A golden file records one snapshot. This records the rule, so a future change
+/// that reintroduces a raw value fails here rather than being regenerated into
+/// the snapshot.
+#[test]
+fn diff_json_contains_no_value_from_the_fixture() {
+    let d = fixture();
+    let env = fs::read_to_string(d.path().join(".env")).expect(".env fixture");
+
+    for format in [
+        vec!["diff", "--format", "json"],
+        vec!["diff", "--format", "json", "--show-values"],
+    ] {
+        let out = stdout_of(&d, &format);
+        for line in env.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            let (key, value) = (key.trim(), value.trim().trim_matches('"'));
+            // A value only counts as leaked if it is distinctive. `8080` and
+            // `localhost` are not secrets and `--show-values` is allowed to
+            // print them; a short or empty value would match by accident.
+            if value.len() < 12 || !crate_is_sensitive(key) {
+                continue;
+            }
+            assert!(
+                !out.contains(value),
+                "`evnx {}` printed the value of {key} from the fixture",
+                format.join(" ")
+            );
+        }
+    }
+}
+
+/// The same name rule `diff` applies, duplicated here on purpose: a test that
+/// imports the predicate it is checking passes whenever the predicate is wrong.
+fn crate_is_sensitive(key: &str) -> bool {
+    let u = key.to_uppercase();
+    [
+        "PASSWORD",
+        "PASSWD",
+        "SECRET",
+        "TOKEN",
+        "API_KEY",
+        "PRIVATE_KEY",
+        "AUTH",
+        "CREDENTIAL",
+    ]
+    .iter()
+    .any(|p| u.contains(p))
+        || ["_KEY", "_SECRET", "_PASSWORD", "_TOKEN", "_PASSWD"]
+            .iter()
+            .any(|s| u.ends_with(s))
 }
 
 /// `convert`'s stdout *is* the artefact — it gets redirected into a file that

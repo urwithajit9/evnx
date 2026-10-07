@@ -6,6 +6,72 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### ⛔ Security — `diff --format json` printed secret values
+
+The defect the GitHub Action leaked through. The action is forced to use
+`--format json`, because `diff`'s exit code is unusable for CI.
+
+`DiffItem` held the raw value **and** a redacted copy, and serde serialised the
+struct — so the human output picked the mask and the JSON output picked the
+secret:
+
+```console
+$ evnx diff --format json | jq '.different[0]'
+{
+  "key": "DB_PASSWORD",
+  "example_value": "example_pw",
+  "env_value": "HUNTER2_live",      ← the live password
+  "env_value_redacted": "HU***"
+}
+```
+
+`--show-values` was inert in both directions: `pretty` masked regardless of it,
+`json` leaked regardless of it.
+
+Three more defects turned up while reproducing that one:
+
+- **`diff` panicked on a non-ASCII secret.** The mask was
+  `format!("{}***", &v[..v.len().min(2)])`, and byte 2 is not a character
+  boundary when the value starts with a 3-byte character. `DB_PASSWORD=日本語`
+  exited **101**.
+- **`--show-values` printed sensitive values from the `missing` and `extra`
+  sections completely unredacted.** The redaction lookup searched `different`
+  for a mask — and a key present on only one side is never in `different`, so
+  the lookup always missed and the raw fallback always won.
+- **`diff` and `validate` disagreed about what a secret is.** `STRIPE_KEY`,
+  `ENCRYPTION_KEY` and `SIGNING_KEY` were credential-shaped to `validate` and
+  not sensitive to `diff`, because `is_sensitive_key` matched `API_KEY` and
+  `PRIVATE_KEY` as substrings but had no `*_KEY` suffix rule.
+
+**What changed**
+
+- One function, `disclose`, decides what may be shown, and all three output
+  sections call it. The report and the human output can no longer disagree,
+  which is how they came to.
+- The mask is a fixed `***` with **no prefix of the real value**. `sk***`
+  identified the issuer; the key name beside it already said more. This also
+  removes the slicing, so the panic is gone by construction.
+- `is_sensitive_key` gained a `*_KEY` / `*_SECRET` / `*_PASSWORD` / `*_TOKEN`
+  suffix rule. Deliberately broader than `validate`'s rule — masking a rotation
+  interval costs a line of information, printing a signing key costs the key.
+- ⓘ `--format patch` still emits real values, because a patch exists to be
+  applied and a masked one would write `***` into the file. It is reachable
+  only by asking for it: `pretty` is the default and the Action forces `json`.
+
+### ⚠️ Breaking
+
+**`diff --format json` changed shape.** `DiffItem` now carries `example_value`
+and `env_value` as nullable, holding only what is safe to print, plus
+`values_redacted: bool`. The `example_value_redacted` and `env_value_redacted`
+fields are **gone** — holding the raw value beside the mask was the defect,
+since every consumer had to know to prefer the second and the JSON formatter did
+not. Read `values_redacted` to tell a mask from a literal, and `null` to tell a
+withheld value from an absent key.
+
+---
+
 ## [0.9.0] - 2026-10-05
 
 **One pull request, and the thing it adds is money.** `evnx org` creates an

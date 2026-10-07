@@ -322,18 +322,42 @@ pub fn public_prefix(name: &str) -> Option<(&'static str, &'static str)> {
 
 #[must_use]
 pub fn is_sensitive_key(key: &str) -> bool {
-    const PATTERNS: &[&str] = &[
+    // Substring: catches the word wherever it sits — `DB_PASSWORD`,
+    // `MY_AUTH_HEADER`, `legacy_api_key_v2`.
+    const CONTAINS: &[&str] = &[
         "PASSWORD",
         "PASSWD",
         "SECRET",
         "TOKEN",
         "API_KEY",
+        // ⚠️ `APIKEY` and `PWD` added 2026-10-07 (S2). The published guide has
+        // listed `STRIPE_APIKEY` and `ADMIN_PWD` as redacted examples all
+        // along, and neither matched: `API_KEY` carries an underscore and
+        // `PASSWD` is not `PWD`. The documentation described the intent
+        // correctly and the code did not implement it.
+        "APIKEY",
+        "PWD",
         "PRIVATE_KEY",
         "AUTH",
         "CREDENTIAL",
     ];
+    // ⚠️ Suffix, added 2026-10-07 (S2). The substring list above misses every
+    // `*_KEY` that is not spelled `API_KEY` or `PRIVATE_KEY`:
+    //
+    //   STRIPE_KEY       not sensitive   ⛔
+    //   ENCRYPTION_KEY   not sensitive   ⛔
+    //   SIGNING_KEY      not sensitive   ⛔
+    //
+    // `evnx validate` has always called those credential-shaped, via
+    // `checks::is_secret_shaped`. The two commands disagreeing meant
+    // `diff --show-values` printed values that `validate` would have demanded
+    // a strong secret for.
+    const SUFFIXES: &[&str] = &["_KEY", "_SECRET", "_PASSWORD", "_TOKEN", "_PASSWD"];
+
     let upper = key.to_uppercase();
-    PATTERNS.iter().any(|p| upper.contains(p))
+    CONTAINS.iter().any(|p| upper.contains(p))
+        || SUFFIXES.iter().any(|sfx| upper.ends_with(sfx))
+        || matches!(upper.as_str(), "KEY" | "SECRET" | "PASSWORD")
 }
 
 /// Detect if a value matches any secret pattern
@@ -517,6 +541,40 @@ mod tests {
         assert!(is_sensitive_key("api_key"));
         assert!(!is_sensitive_key("APP_NAME"));
         assert!(!is_sensitive_key("DEBUG_MODE"));
+
+        // ⛔ S2: every one of these was "not sensitive", so
+        // `diff --show-values` printed them in full.
+        for key in [
+            "STRIPE_KEY",
+            "ENCRYPTION_KEY",
+            "SIGNING_KEY",
+            "stripe_key",
+            "KEY",
+        ] {
+            assert!(is_sensitive_key(key), "{key} is not treated as sensitive");
+        }
+
+        // ⚠️ Deliberately broader than `validate`'s `is_secret_shaped`, which
+        // excludes `SECRET_KEY_ROTATION_DAYS` as "a number, not a secret".
+        // That exclusion is right for *demanding a strong value* and wrong for
+        // *deciding what to print*: masking a rotation interval costs a line of
+        // information, printing a signing key costs the key.
+        assert!(is_sensitive_key("SECRET_KEY_ROTATION_DAYS"));
+
+        // ⚠️ Every key the published guide lists as redacted. Three of these
+        // were raw: the docs promised what the patterns did not deliver.
+        for key in ["ADMIN_PWD", "AWS_ACCESS_KEY", "STRIPE_APIKEY"] {
+            assert!(
+                is_sensitive_key(key),
+                "{key} is documented as redacted but is not treated as sensitive"
+            );
+        }
+
+        // Still not everything. A name with no credential word in it stays out
+        // — which is why bare `KEY` is a *suffix* rule and not a substring one.
+        assert!(!is_sensitive_key("KEYBOARD_LAYOUT"));
+        assert!(!is_sensitive_key("MONKEY"));
+        assert!(!is_sensitive_key("DONKEY_COUNT"));
     }
 
     // Named for what it covers rather than `tests` again — a `mod tests` inside
