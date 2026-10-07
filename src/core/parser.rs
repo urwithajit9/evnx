@@ -640,21 +640,50 @@ impl Parser {
         let first = raw.chars().next().unwrap(); // safe: checked is_empty above
 
         match first {
-            '"' => {
-                if !raw.ends_with('"') || raw.len() < 2 {
+            // ⚠️ **The closing quote, wherever it is — not the end of the line.**
+            //
+            // These two branches tested `raw.ends_with(q)`, so a quoted value
+            // with anything after it failed:
+            //
+            // ```text
+            // KEY="value" # a trailing comment
+            //   → Unterminated quoted string at line 1
+            // ```
+            //
+            // and because the error aborts the whole parse, one such line made
+            // `validate`, `diff` and every other command exit 2 on the entire
+            // file. The syntax is valid in every dotenv implementation there is;
+            // the comment two branches down even said inline comments are
+            // handled "only outside quotes", which was true and was the bug —
+            // a `#` *after a closing quote* is already outside them.
+            '"' | '\'' | '`' => {
+                let Some(close) = closing_quote_index(raw, first) else {
                     return Err(ParseError::UnterminatedString { line: line_num });
-                }
-                let inner = &raw[1..raw.len() - 1];
-                Ok((self.unescape_double(inner), false))
-            }
+                };
+                let inner = &raw[first.len_utf8()..close];
+                let after = raw[close + first.len_utf8()..].trim();
 
-            '\'' | '`' => {
-                if !raw.ends_with(first) || raw.len() < 2 {
-                    return Err(ParseError::UnterminatedString { line: line_num });
+                // Whatever follows the closing quote is not part of the value.
+                // Empty or a comment is fine; anything else is a mistake worth
+                // naming, because silently discarding it would hide a missing
+                // quote or a stray paste.
+                if !after.is_empty() && !after.starts_with('#') {
+                    return Err(ParseError::InvalidFormat {
+                        line: line_num,
+                        message: format!(
+                            "unexpected text after the closing {first}: `{after}` \
+                             — quote the whole value, or start a comment with #"
+                        ),
+                    });
                 }
-                // Single-quoted and backtick-quoted: literal content — no escaping,
-                // and since v0.7.0 no expansion either. One rule instead of two.
-                Ok((raw[1..raw.len() - 1].to_string(), true))
+
+                // Double quotes interpret escapes; `'` and backtick are literal,
+                // which is the promise their form makes.
+                if first == '"' {
+                    Ok((self.unescape_double(inner), false))
+                } else {
+                    Ok((inner.to_string(), true))
+                }
             }
 
             _ => {
@@ -939,6 +968,47 @@ fn ends_with_closing_quote(s: &str, q: char) -> bool {
     body.chars().rev().take_while(|&c| c == '\\').count() % 2 == 0
 }
 
+/// The byte index of the quote that **closes** a value opened with `q`, if the
+/// value closes at all on this string.
+///
+/// ⚠️ This exists because asking whether the *line* ends with a quote is a
+/// different question, and the two came apart on valid syntax:
+///
+/// ```text
+/// KEY="value" # a trailing comment
+/// ```
+///
+/// The quote closes at index 6. The line ends with `t`. So
+/// `ends_with_closing_quote` said "not closed", `opens_multiline` reported a
+/// multiline value, the parser scanned to the end of the file looking for a
+/// quote that had already been found, and the whole file failed with
+/// `Unterminated quoted string at line 1` — on a line that is well-formed in
+/// every dotenv implementation there is.
+///
+/// Escapes are honoured for `"` only, matching [`ends_with_closing_quote`] and
+/// the value parser: `'` and backtick values are literal, so the first quote
+/// they meet closes them.
+fn closing_quote_index(s: &str, q: char) -> Option<usize> {
+    let mut it = s.char_indices();
+    // Skip the opening quote. A string with nothing after it cannot close.
+    it.next()?;
+    let mut escaped = false;
+    for (i, c) in it {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if q == '"' && c == '\\' {
+            escaped = true;
+            continue;
+        }
+        if c == q {
+            return Some(i);
+        }
+    }
+    None
+}
+
 /// The quote character a multiline value is opened with, if `raw_value` opens one.
 ///
 /// `None` means the value is complete on its line — either unquoted, or quoted
@@ -949,9 +1019,10 @@ pub fn opens_multiline(raw_value: &str) -> Option<char> {
         _ => return None,
     };
     let t = raw_value.trim();
-    // A lone quote character opens a value with nothing after it, so it cannot
-    // also be the closing quote.
-    if t.len() > q.len_utf8() && ends_with_closing_quote(t, q) {
+    // ⚠️ "does the quote close anywhere" — not "does the line end with it".
+    // A closing quote followed by a comment still closes the value, and a lone
+    // quote character has nothing after it to close with.
+    if closing_quote_index(t, q).is_some() {
         None
     } else {
         Some(q)
@@ -994,6 +1065,123 @@ mod tests {
 
     fn parse_one(content: &str) -> IndexMap<String, String> {
         Parser::default().parse_content(content).expect("parses")
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // S4: a comment after a closing quote
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// ⛔ **The serious half of this defect: variables vanished, exit 0.**
+    ///
+    /// `opens_multiline` asked whether the *line* ended with the quote. For
+    /// `A="x" # c` it does not, so the value was treated as opening a multiline
+    /// one — and the parser then scanned forward for a closing quote it had
+    /// already passed. Whether that failed loudly depended entirely on what
+    /// came next:
+    ///
+    /// ```text
+    /// A="x" # c            A="x" # c
+    /// B=plain              B="y"
+    ///   → exit 2             → ONE variable, exit 0
+    /// ```
+    ///
+    /// The second shape is the common one — most `.env` files have more than
+    /// one quoted value — and `convert`, `cloud push`, `cloud run` and
+    /// `cloud export` all read through this parser. Five lines became three and
+    /// nothing said so.
+    #[test]
+    fn a_comment_after_a_closing_quote_loses_no_variables() {
+        let vars = parse_one(
+            "A=\"a\" # c\n\
+             B=plain\n\
+             C=\"c\"\n\
+             D=plain\n\
+             E=\"e\"\n",
+        );
+        assert_eq!(vars.len(), 5, "variables were swallowed: {vars:?}");
+        assert_eq!(vars["A"], "a");
+        assert_eq!(vars["C"], "c");
+        assert_eq!(vars["E"], "e");
+    }
+
+    /// Every quoting form, and the escape handling that distinguishes them.
+    #[test]
+    fn every_quote_style_accepts_a_trailing_comment() {
+        let vars = parse_one(
+            "A=\"double\" # c\n\
+             B='single' # c\n\
+             C=`backtick` # c\n\
+             D=\"has \\\"escaped\\\" quotes\" # c\n\
+             E=\"ends with a backslash\\\\\" # c\n",
+        );
+        assert_eq!(vars["A"], "double");
+        assert_eq!(vars["B"], "single");
+        assert_eq!(vars["C"], "backtick");
+        assert_eq!(vars["D"], "has \"escaped\" quotes");
+        assert_eq!(vars["E"], "ends with a backslash\\");
+    }
+
+    /// ⚠️ A `#` **inside** the quotes is part of the value, not a comment. The
+    /// closing quote is what ends it, so this must not change.
+    #[test]
+    fn a_hash_inside_the_quotes_stays_in_the_value() {
+        let vars = parse_one("A=\"keep # this\" # drop this\nB='also # kept'\n");
+        assert_eq!(vars["A"], "keep # this");
+        assert_eq!(vars["B"], "also # kept");
+    }
+
+    /// A genuinely unterminated quote must still be an error — the fix must not
+    /// turn the loud failure into a silent one in the other direction.
+    #[test]
+    fn a_genuinely_unterminated_quote_is_still_an_error() {
+        for content in ["A=\"no close\n", "A='no close\n", "A=\"\n"] {
+            let r = Parser::new(ParserConfig {
+                allow_multiline: false,
+                ..Default::default()
+            })
+            .parse_content(content);
+            assert!(r.is_err(), "accepted an unterminated quote: {content:?}");
+        }
+    }
+
+    /// Multiline values still work — the quote simply has to close *somewhere*,
+    /// and when it does not on the opening line the value continues.
+    #[test]
+    fn a_real_multiline_value_still_spans_lines() {
+        let vars = parse_one("A=\"line1\nline2\"\nB=after\n");
+        assert_eq!(vars["A"], "line1\nline2");
+        assert_eq!(vars["B"], "after");
+    }
+
+    /// Text after the closing quote that is not a comment is named rather than
+    /// discarded: silently dropping it would hide a missing quote or a stray
+    /// paste.
+    #[test]
+    fn unexpected_text_after_the_closing_quote_is_reported() {
+        let err = Parser::default()
+            .parse_content("A=\"value\" junk here\n")
+            .expect_err("should be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unexpected text") && msg.contains("junk here"),
+            "unhelpful error: {msg}"
+        );
+    }
+
+    /// The primitive, directly: where the quote closes, independent of what the
+    /// line ends with.
+    #[test]
+    fn closing_quote_index_finds_the_close_not_the_line_end() {
+        assert_eq!(closing_quote_index("\"abc\" # c", '"'), Some(4));
+        assert_eq!(closing_quote_index("\"abc\"", '"'), Some(4));
+        assert_eq!(closing_quote_index("\"abc", '"'), None);
+        assert_eq!(closing_quote_index("\"", '"'), None);
+        // An escaped quote does not close a double-quoted value. The string is
+        // `"a\"b"` — `"`(0) `a`(1) `\`(2) `"`(3) `b`(4) `"`(5) — so the close
+        // is the one at 5, and the escaped one at 3 is skipped.
+        assert_eq!(closing_quote_index("\"a\\\"b\"", '"'), Some(5));
+        // ...but `'` and backtick are literal, so the first one does.
+        assert_eq!(closing_quote_index("'a\\'b'", '\''), Some(3));
     }
 
     /// The headline: single quotes are now literal for `$`, as they already were
