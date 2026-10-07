@@ -67,6 +67,7 @@ pub fn run(
     example: String,
     strict: bool,
     fix: bool,
+    rotate_weak_secrets: bool,
     format: String,
     exit_zero: bool,
     verbose: bool,
@@ -105,6 +106,7 @@ pub fn run(
     let config = ValidationConfig {
         strict,
         fix,
+        rotate_weak_secrets,
         validate_formats,
         ignore_issues: ignore.into_iter().collect(),
     };
@@ -145,6 +147,13 @@ pub fn run(
     // ─────────────────────────────────────────
     let env_label = crate::core::env_name::name_of(&env_path);
     let raw_env_content = std::fs::read_to_string(&env_path).unwrap_or_default();
+
+    // Resolved once, so the report and the repair cannot disagree about it.
+    let weak_secret_policy = if config.rotate_weak_secrets {
+        fixer::WeakSecretPolicy::Rotate
+    } else {
+        fixer::WeakSecretPolicy::PlaceholdersOnly
+    };
 
     // ⚠️ A closure, so the checks can be run **again** after `--fix`.
     //
@@ -207,7 +216,12 @@ pub fn run(
 
         issues.extend(check_boolean_trap(vars, &env_path, &config.ignore_issues));
 
-        issues.extend(check_weak_secret(vars, &env_path, &config.ignore_issues));
+        issues.extend(check_weak_secret(
+            vars,
+            &env_path,
+            &config.ignore_issues,
+            weak_secret_policy,
+        ));
 
         issues.extend(check_localhost_docker(
             vars,
@@ -241,7 +255,12 @@ pub fn run(
         // Missing variables
         for issue in &issues {
             if issue.issue_type == IssueType::MissingVariable.as_str() && issue.auto_fixable {
-                let action = suggest_fix(&issue.variable, "", &IssueType::MissingVariable);
+                let action = suggest_fix(
+                    &issue.variable,
+                    "",
+                    &IssueType::MissingVariable,
+                    weak_secret_policy,
+                );
                 if !matches!(action, FixAction::Skip) {
                     fixes_to_apply.push((issue.variable.clone(), String::new(), action));
                 }
@@ -252,7 +271,12 @@ pub fn run(
         for issue in &issues {
             if issue.issue_type == IssueType::PlaceholderValue.as_str() && issue.auto_fixable {
                 if let Some(val) = env_vars.get(&issue.variable) {
-                    let action = suggest_fix(&issue.variable, val, &IssueType::PlaceholderValue);
+                    let action = suggest_fix(
+                        &issue.variable,
+                        val,
+                        &IssueType::PlaceholderValue,
+                        weak_secret_policy,
+                    );
                     if !matches!(action, FixAction::Skip) {
                         fixes_to_apply.push((issue.variable.clone(), val.clone(), action));
                     }
@@ -264,7 +288,12 @@ pub fn run(
         for issue in &issues {
             if issue.issue_type == IssueType::BooleanTrap.as_str() && issue.auto_fixable {
                 if let Some(val) = env_vars.get(&issue.variable) {
-                    let action = suggest_fix(&issue.variable, val, &IssueType::BooleanTrap);
+                    let action = suggest_fix(
+                        &issue.variable,
+                        val,
+                        &IssueType::BooleanTrap,
+                        weak_secret_policy,
+                    );
                     if !matches!(action, FixAction::Skip) {
                         fixes_to_apply.push((issue.variable.clone(), val.clone(), action));
                     }
@@ -281,7 +310,12 @@ pub fn run(
         for issue in &issues {
             if issue.issue_type == IssueType::WeakSecret.as_str() && issue.auto_fixable {
                 if let Some(val) = env_vars.get(&issue.variable) {
-                    let action = suggest_fix(&issue.variable, val, &IssueType::WeakSecret);
+                    let action = suggest_fix(
+                        &issue.variable,
+                        val,
+                        &IssueType::WeakSecret,
+                        weak_secret_policy,
+                    );
                     if !matches!(action, FixAction::Skip) {
                         fixes_to_apply.push((issue.variable.clone(), val.clone(), action));
                     }
@@ -328,8 +362,17 @@ pub fn run(
         // Write to file if any fixes were applied
         if !fixes_applied.is_empty() {
             let original = std::fs::read_to_string(&env_path).unwrap_or_default();
-            write_fixed_file(&env_path, &env_vars, &original)?;
-            ui::success(format!("Saved fixes to {}", env_path));
+            // ⚠️ Only the keys actually repaired. Passing the whole map is what
+            // made `write_fixed_file` rewrite — and damage — every line in the
+            // file; see the note on that function.
+            let changed: std::collections::BTreeSet<String> =
+                fixes_applied.iter().map(|f| f.variable.clone()).collect();
+            let backup = write_fixed_file(&env_path, &env_vars, &original, &changed)?;
+            if format == "pretty" {
+                ui::success(format!(
+                    "Saved fixes to {env_path} — original kept at {backup}"
+                ));
+            }
 
             // ⚠️ Recount against the file as it now stands, not as it arrived.
             // Everything below — the summary, the rendered output and the exit
@@ -428,11 +471,14 @@ fn output_pretty(result: &ValidationResult, _env_path: &str, _example_path: &str
     if !result.fixed.is_empty() {
         ui::print_section_header("", "Applied fixes");
         for fix in &result.fixed {
-            let old = fix
-                .old_value
-                .as_ref()
-                .map(|v| format!("\"{}\"", v))
-                .unwrap_or_else(|| "(new)".to_string());
+            // Three states, not two: shown, withheld, and never existed.
+            // Collapsing the middle one into "(new)" would say a credential was
+            // added when it was in fact replaced.
+            let old = match (&fix.old_value, fix.old_value_withheld) {
+                (Some(v), _) => format!("\"{v}\""),
+                (None, true) => "(previous value withheld — see the .env.bak)".to_string(),
+                (None, false) => "(new)".to_string(),
+            };
             println!(
                 "  • {}: {} → {}",
                 fix.variable.bold(),

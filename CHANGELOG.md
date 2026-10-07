@@ -6,6 +6,69 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### ⛔ Security — `validate --fix` overwrote working credentials
+
+A user read the source and reported six defects. Four were real. This is the
+first of them.
+
+`evnx validate --fix` replaced a **real** credential with random hex, printed
+the one it replaced to stdout, wrote no backup, and reported `✓ All checks
+passed`:
+
+```text
+DATABASE_PASSWORD="p@ss word#1"  →  DATABASE_PASSWORD=ad0da713…c508
+  • DATABASE_PASSWORD: "p@ss word#1" → ad0da713…
+  ✓ All checks passed                                            exit 0
+```
+
+It also rewrote **every** line in the file for a single repair, because it
+looked each key up in the whole parsed map rather than in the set of fixes. So
+quoting, trailing comments and `export ` prefixes were lost — and the first of
+those is not cosmetic:
+
+```text
+QUOTED="has spaces and #hash"   →   QUOTED=has spaces and #hash
+
+$ . ./.env
+./.env: line 1: spaces: command not found
+$ echo "[$QUOTED]"
+[]
+```
+
+**What changed**
+
+- `--fix` repairs a weak secret **only when the value is a placeholder**. The
+  check judges length and wording; it cannot tell a placeholder nobody filled
+  in from the real password, short because someone chose a short one — and the
+  second is the common case, because shortness is what trips it. The finding
+  still fires, with advice to rotate the credential where it is issued.
+- **`--rotate-weak-secrets`** (new) does it deliberately, for when nothing
+  outside the file holds the value.
+- A line whose key was not repaired is **copied byte for byte**.
+- A value evnx writes is quoted when it would not survive being read back, and
+  a value containing a line break is refused rather than truncated.
+- **`.env.bak`** is written before anything is touched, and never clobbers an
+  earlier one (`.env.bak`, `.env.bak.2`, …).
+- The replaced value is withheld for a credential-shaped variable that held a
+  real value — in the struct, not the printer, because `--format json`
+  serialises it. `old_value_withheld: true` distinguishes "withheld" from "the
+  variable was added".
+
+### ⚠️ Breaking
+
+**`validate --fix` on a project with a short real credential now exits 1 where
+it exited 0.** The finding is no longer silently resolved — it was exiting 0 by
+destroying the thing it was reporting. Pass `--rotate-weak-secrets` for the old
+behaviour, or `--exit-zero` if the exit code is what your pipeline depends on.
+
+**`FixApplied` gained `old_value_withheld`** in `--format json`, and
+`old_value` is now `null` for a withheld value. Additive; a reader that ignores
+unknown fields is unaffected.
+
+---
+
 ## [0.9.0] - 2026-10-05
 
 **One pull request, and the thing it adds is money.** `evnx org` creates an
