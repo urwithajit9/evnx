@@ -6,18 +6,21 @@
   "different": [
     {
       "key": "DB_HOST",
-      "example_value": "",
-      "env_value": "localhost"
+      "example_value": null,
+      "env_value": null,
+      "values_redacted": false
     },
     {
       "key": "AWS_KEY",
-      "example_value": "",
-      "env_value": "AKIA4OZRMFJ3VREALKEY"
+      "example_value": "***",
+      "env_value": "***",
+      "values_redacted": true
     },
     {
       "key": "PORT",
-      "example_value": "",
-      "env_value": "8080"
+      "example_value": null,
+      "env_value": null,
+      "values_redacted": false
     }
   ],
   "summary": {

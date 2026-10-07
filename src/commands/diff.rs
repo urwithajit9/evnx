@@ -35,13 +35,26 @@ pub struct DiffResult {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DiffItem {
     pub key: String,
-    pub example_value: String,
-    pub env_value: String,
-    ///  Redacted versions for safe display (auto-populated)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub example_value_redacted: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub env_value_redacted: Option<String>,
+    /// What may be shown for the template's value — **never the raw secret**.
+    ///
+    /// `None` means withheld: the value is not sensitive but `--show-values`
+    /// was not passed. `Some("***")` with `values_redacted` means the key is
+    /// credential-shaped and the value is masked whatever was asked for.
+    ///
+    /// ⛔ **This was `example_value: String`, serialised unconditionally.**
+    /// `evnx diff --format json` therefore printed every differing value in
+    /// full — with or without `--show-values`, sensitive or not — and the
+    /// GitHub Action forces `--format json` because the exit code is unusable.
+    /// A public repository running `command: diff` published its `.env`.
+    ///
+    /// The two fields that used to sit beside these, `example_value_redacted`
+    /// and `env_value_redacted`, are gone. Holding the raw value and the mask
+    /// side by side *was* the bug: every consumer had to know to prefer the
+    /// second, and the JSON formatter did not.
+    pub example_value: Option<String>,
+    pub env_value: Option<String>,
+    /// `true` when the values above are masked rather than literal.
+    pub values_redacted: bool,
 }
 
 ///  Statistics for programmatic consumption
@@ -114,7 +127,7 @@ pub fn run(
     let ignore_set: HashSet<_> = ignore_keys.into_iter().collect();
 
     // Compute diff with filtering + redaction
-    let mut diff_result = compute_diff(left, right, &ignore_set);
+    let mut diff_result = compute_diff(left, right, &ignore_set, show_values);
 
     // Add statistics if requested (JSON mode)
     if with_stats && format == "json" {
@@ -126,7 +139,7 @@ pub fn run(
         "json" => output_json(&diff_result)?,
         "patch" => {
             if interactive {
-                output_patch_interactive(&diff_result, right, right_name)?;
+                output_patch_interactive(&diff_result, left, right, right_name)?;
             } else {
                 output_patch(&diff_result, left, right)?;
             }
@@ -152,9 +165,13 @@ pub fn run(
 // ─────────────────────────────────────────────────────────────
 
 fn compute_diff(
-    left: &IndexMap<String, String>,  //  CHANGED: HashMap → IndexMap
-    right: &IndexMap<String, String>, //  CHANGED: HashMap → IndexMap
-    ignore_keys: &HashSet<String>,    //  NEW: Filter parameter
+    left: &IndexMap<String, String>,
+    right: &IndexMap<String, String>,
+    ignore_keys: &HashSet<String>,
+    // ⚠️ `compute_diff` did not take this, so the JSON path had no way to
+    // honour `--show-values` — which is why the flag was inert there in both
+    // directions: json always leaked, and passing the flag changed nothing.
+    show_values: bool,
 ) -> DiffResult {
     //  Filter out ignored keys first (preserves order via IndexMap)
     let left_filtered: IndexMap<_, _> = left
@@ -191,15 +208,13 @@ fn compute_diff(
         if let (Some(left_val), Some(right_val)) = (left_filtered.get(key), right_filtered.get(key))
         {
             if left_val != right_val {
-                // Auto-redact sensitive values
-                let (ex_redacted, env_redacted) = redact_if_sensitive(key, left_val, right_val);
-
+                let (example_value, ex_masked) = disclose(key, right_val, show_values);
+                let (env_value, env_masked) = disclose(key, left_val, show_values);
                 different.push(DiffItem {
                     key: key.clone(),
-                    example_value: right_val.clone(),
-                    env_value: left_val.clone(),
-                    example_value_redacted: ex_redacted,
-                    env_value_redacted: env_redacted,
+                    example_value,
+                    env_value,
+                    values_redacted: ex_masked || env_masked,
                 });
             }
         }
@@ -213,28 +228,41 @@ fn compute_diff(
     }
 }
 
-// Security: Auto-redact values for sensitive keys
-fn redact_if_sensitive(
-    key: &str,
-    env_val: &str,
-    example_val: &str,
-) -> (Option<String>, Option<String>) {
-    // Reuse your existing utils::patterns::is_sensitive_key if available
-    // Otherwise, inline simple pattern matching:
-    let is_sensitive = patterns::is_sensitive_key(key); // ✅ Reuse existing util
+/// The mask. A fixed string, with **no prefix of the real value**.
+///
+/// ⚠️ This was `format!("{}***", &v[..v.len().min(2)])`, which had two
+/// problems:
+///
+/// 1. **It panicked.** Byte index 2 is not a character boundary when the value
+///    starts with a 3-byte character, so `DB_PASSWORD=日本語のパスワード` killed
+///    `evnx diff` outright:
+///
+///    ```text
+///    thread 'main' panicked at src/commands/diff.rs:232:36:
+///    end byte index 2 is not a char boundary; it is inside '日'
+///    ```
+///
+/// 2. **The prefix is a leak.** `sk***` says "this is a Stripe key"; `ey***`
+///    says "this is a JWT". The key's own name is already printed beside it, so
+///    the prefix adds nothing a reader did not have and tells an attacker which
+///    credential is worth pursuing.
+const MASK: &str = "***";
 
-    if is_sensitive {
-        let redact = |v: &str| {
-            if v.is_empty() {
-                "***".to_string()
-            } else {
-                // Show first 2 chars + mask rest: "ab***"
-                format!("{}***", &v[..v.len().min(2)])
-            }
-        };
-        (Some(redact(example_val)), Some(redact(env_val)))
+/// What `diff` is allowed to show for one key's value. The **only** place this
+/// is decided, so the JSON report and the human output cannot disagree — which
+/// is exactly how they came to.
+///
+/// ⚠️ **`--show-values` does not reveal a credential-shaped key, and that is
+/// deliberate.** It never did in the human output, and a flag whose meaning
+/// changes with `--format` is worse than one with a documented limit. The
+/// values are in the file; `diff` is not the tool for reading them out.
+fn disclose(key: &str, value: &str, show_values: bool) -> (Option<String>, bool) {
+    if patterns::is_sensitive_key(key) {
+        (Some(MASK.to_string()), true)
+    } else if show_values {
+        (Some(value.to_string()), false)
     } else {
-        (None, None)
+        (None, false)
     }
 }
 
@@ -293,24 +321,19 @@ fn output_pretty(
         );
         for key in &diff.missing {
             if let Some(val) = right.get(key) {
-                // Use redacted value if available, else original (if show_values)
-                let display_val = diff
-                    .different
-                    .iter()
-                    .find(|d| &d.key == key)
-                    .and_then(|d| {
-                        if show_values {
-                            d.example_value_redacted.as_ref()
-                        } else {
-                            None
-                        }
-                    })
-                    .or(if show_values { Some(val) } else { None });
-
-                if let Some(display) = display_val {
-                    println!("  {} {} = {}", "+".green(), key.bold(), display.dimmed());
-                } else {
-                    println!("  {} {}", "+".green(), key.bold());
+                // ⛔ Through `disclose`, like everything else.
+                //
+                // This used to look the key up in `diff.different` for a
+                // redacted form and fall back to the raw value — but a *missing*
+                // key is by definition not in `different`, so the lookup always
+                // missed and the fallback always won. `--show-values` therefore
+                // printed missing and extra values **completely unredacted,
+                // including credential-shaped ones**, while the `different`
+                // section three lines below masked them correctly.
+                let (display, _) = disclose(key, val, show_values);
+                match display {
+                    Some(d) => println!("  {} {} = {}", "+".green(), key.bold(), d.dimmed()),
+                    None => println!("  {} {}", "+".green(), key.bold()),
                 }
             }
         }
@@ -324,23 +347,10 @@ fn output_pretty(
         );
         for key in &diff.extra {
             if let Some(val) = left.get(key) {
-                let display_val = diff
-                    .different
-                    .iter()
-                    .find(|d| &d.key == key)
-                    .and_then(|d| {
-                        if show_values {
-                            d.env_value_redacted.as_ref()
-                        } else {
-                            None
-                        }
-                    })
-                    .or(if show_values { Some(val) } else { None });
-
-                if let Some(display) = display_val {
-                    println!("  {} {} = {}", "-".red(), key.bold(), display.dimmed());
-                } else {
-                    println!("  {} {}", "-".red(), key.bold());
+                let (display, _) = disclose(key, val, show_values);
+                match display {
+                    Some(d) => println!("  {} {} = {}", "-".red(), key.bold(), d.dimmed()),
+                    None => println!("  {} {}", "-".red(), key.bold()),
                 }
             }
         }
@@ -351,15 +361,12 @@ fn output_pretty(
         println!("{}", "Different values:".bold());
         for item in &diff.different {
             println!("  {} {}", "~".yellow(), item.key.bold());
-            // Always show redacted values if available, regardless of show_values
-            if item.example_value_redacted.is_some() || show_values {
-                let ex_display = item
-                    .example_value_redacted
-                    .as_ref()
-                    .unwrap_or(&item.example_value);
-                let env_display = item.env_value_redacted.as_ref().unwrap_or(&item.env_value);
-                println!("    {}: {}", right_name, ex_display.dimmed());
-                println!("    {}: {}", left_name, env_display.dimmed());
+            // `compute_diff` already decided, so there is nothing to choose
+            // between here. A masked key prints its mask; a withheld one prints
+            // nothing but the key name.
+            if let (Some(ex), Some(env)) = (&item.example_value, &item.env_value) {
+                println!("    {}: {}", right_name, ex.dimmed());
+                println!("    {}: {}", left_name, env.dimmed());
             }
         }
         println!();
@@ -466,8 +473,18 @@ fn output_patch(
 
     println!("\n# Update these in .env:");
     for item in &diff.different {
-        println!("- {}={}", item.key, item.env_value);
-        println!("+ {}={}", item.key, item.example_value);
+        // ⚠️ From the maps, not from `DiffItem`, which now carries only what is
+        // safe to *display*. A patch exists to be applied, so it needs the real
+        // values — masking them would produce a patch that writes `***` into
+        // the file.
+        //
+        // ⚠️ This is therefore the one format that prints secrets, and it is
+        // reachable only by typing `--format patch` by hand: the GitHub Action
+        // forces `--format json` for diff, and `pretty` is the default.
+        if let (Some(env_val), Some(ex_val)) = (left.get(&item.key), right.get(&item.key)) {
+            println!("- {}={}", item.key, env_val);
+            println!("+ {}={}", item.key, ex_val);
+        }
     }
 
     Ok(())
@@ -476,6 +493,7 @@ fn output_patch(
 // Interactive merge mode for patch format
 fn output_patch_interactive(
     diff: &DiffResult,
+    left: &IndexMap<String, String>,
     right: &IndexMap<String, String>,
     _target_file: &str,
 ) -> Result<()> {
@@ -508,9 +526,14 @@ fn output_patch_interactive(
 
     // Handle different values
     for item in &diff.different {
+        // Same reasoning as `output_patch`: an interactive merge writes real
+        // values into a real file, so it reads them from the maps.
+        let (Some(env_val), Some(ex_val)) = (left.get(&item.key), right.get(&item.key)) else {
+            continue;
+        };
         print!(
             "Update {}?\n   - {}\n   + {}? [y/n/s]: ",
-            item.key, item.env_value, item.example_value
+            item.key, env_val, ex_val
         );
         io::stdout().flush()?;
 
@@ -519,8 +542,8 @@ fn output_patch_interactive(
 
         match input.trim().to_lowercase().as_str() {
             "y" | "yes" => {
-                println!("   ✓ Queued: + {}={}", item.key, item.example_value);
-                applied.push(('~', item.key.clone(), item.example_value.clone()));
+                println!("   ✓ Queued: + {}={}", item.key, ex_val);
+                applied.push(('~', item.key.clone(), ex_val.clone()));
             }
             "s" | "skip" => break,
             _ => println!("   ✗ Skipped"),
@@ -584,7 +607,7 @@ mod tests {
         };
         let ignore = HashSet::new();
 
-        let diff = compute_diff(&left, &right, &ignore);
+        let diff = compute_diff(&left, &right, &ignore, false);
 
         assert_eq!(diff.missing, vec!["MISSING"]);
         assert_eq!(diff.extra, vec!["EXTRA"]);
@@ -599,24 +622,120 @@ mod tests {
         let mut ignore = HashSet::new();
         ignore.insert("IGNORED".to_string());
 
-        let diff = compute_diff(&left, &right, &ignore);
+        let diff = compute_diff(&left, &right, &ignore, false);
 
         assert!(diff.missing.is_empty());
         assert!(diff.extra.is_empty());
         assert!(diff.different.is_empty());
     }
 
-    #[test]
-    fn test_redact_sensitive_values() {
-        let (ex_red, env_red) = redact_if_sensitive("DB_PASSWORD", "secret123", "secret456");
-        assert!(ex_red.as_ref().unwrap().contains("***"));
-        assert!(env_red.as_ref().unwrap().contains("***"));
-        assert!(!ex_red.as_ref().unwrap().contains("secret123"));
+    // ─────────────────────────────────────────────────────────
+    // S2 — a value leaves `diff` only when it is safe to
+    //
+    // ⚠️ `test_redact_sensitive_values` used to live here. It asserted that
+    // `redact_if_sensitive` returned a mask containing `***` and not the raw
+    // value — and it passed throughout, because the function it tested was
+    // correct. The leak was that **`--format json` never consulted it**: the
+    // raw value sat in `example_value`/`env_value` beside the mask, and the
+    // JSON formatter serialised the struct. A unit test of the redactor could
+    // not see that. These test the output instead.
+    // ─────────────────────────────────────────────────────────
 
-        // Non-sensitive key should not be redacted
-        let (ex_red, env_red) = redact_if_sensitive("APP_NAME", "MyApp", "MyApp");
-        assert!(ex_red.is_none());
-        assert!(env_red.is_none());
+    /// ⛔ The reported defect. A sensitive value must not reach the JSON,
+    /// which is the format the GitHub Action is forced to use.
+    #[test]
+    fn json_never_carries_a_sensitive_value() {
+        let left = indexmap! {
+            "DB_PASSWORD".to_string() => "HUNTER2_live".to_string(),
+            "API_KEY".to_string()     => "sk_live_abc".to_string(),
+        };
+        let right = indexmap! {
+            "DB_PASSWORD".to_string() => "example_pw".to_string(),
+            "API_KEY".to_string()     => "sk_test_xyz".to_string(),
+        };
+        // Both ways: the flag must not be able to turn the mask off.
+        for show_values in [false, true] {
+            let diff = compute_diff(&left, &right, &HashSet::new(), show_values);
+            let json = serde_json::to_string(&diff).unwrap();
+            for secret in ["HUNTER2_live", "sk_live_abc", "example_pw", "sk_test_xyz"] {
+                assert!(
+                    !json.contains(secret),
+                    "--show-values={show_values} leaked {secret} into json: {json}"
+                );
+            }
+            assert!(diff.different.iter().all(|d| d.values_redacted));
+        }
+    }
+
+    /// `--show-values` must actually do something, and only for values that
+    /// are not credential-shaped.
+    #[test]
+    fn show_values_governs_non_sensitive_values_and_nothing_else() {
+        let left = indexmap! { "LOG_LEVEL".to_string() => "debug".to_string() };
+        let right = indexmap! { "LOG_LEVEL".to_string() => "info".to_string() };
+
+        let withheld = compute_diff(&left, &right, &HashSet::new(), false);
+        assert_eq!(withheld.different[0].env_value, None, "withheld");
+        assert!(!withheld.different[0].values_redacted);
+        assert!(!serde_json::to_string(&withheld).unwrap().contains("debug"));
+
+        let shown = compute_diff(&left, &right, &HashSet::new(), true);
+        assert_eq!(shown.different[0].env_value.as_deref(), Some("debug"));
+        assert_eq!(shown.different[0].example_value.as_deref(), Some("info"));
+        assert!(!shown.different[0].values_redacted);
+    }
+
+    /// ⛔ The one the report missed: `evnx diff` **panicked**. Byte index 2 is
+    /// not a character boundary when the value starts with a 3-byte character.
+    ///
+    /// ```text
+    /// thread 'main' panicked at src/commands/diff.rs:232:36:
+    /// end byte index 2 is not a char boundary; it is inside '日'
+    /// ```
+    #[test]
+    fn a_non_ascii_secret_does_not_panic() {
+        for value in ["日本語のパスワード", "中", "é", "🔑key", ""] {
+            let left = indexmap! { "DB_PASSWORD".to_string() => value.to_string() };
+            let right = indexmap! { "DB_PASSWORD".to_string() => "x".to_string() };
+            let diff = compute_diff(&left, &right, &HashSet::new(), true);
+            if let Some(item) = diff.different.first() {
+                assert_eq!(item.env_value.as_deref(), Some(MASK));
+            }
+        }
+    }
+
+    /// The mask must not carry a prefix of the real value. `sk***` identifies
+    /// the credential's issuer; the key name beside it already said more.
+    #[test]
+    fn the_mask_reveals_no_part_of_the_value() {
+        let left = indexmap! { "STRIPE_SECRET".to_string() => "sk_live_zzz".to_string() };
+        let right = indexmap! { "STRIPE_SECRET".to_string() => "sk_test_aaa".to_string() };
+        let diff = compute_diff(&left, &right, &HashSet::new(), true);
+        assert_eq!(diff.different[0].env_value.as_deref(), Some("***"));
+        assert_eq!(diff.different[0].example_value.as_deref(), Some("***"));
+    }
+
+    /// ⛔ The second one the report missed. `disclose` is now the only decision,
+    /// so a key that is only on one side is masked exactly like one that
+    /// differs — the human output used to print those raw under
+    /// `--show-values`, because it looked for a mask in `different`, where a
+    /// missing key can never be.
+    #[test]
+    fn disclosure_does_not_depend_on_which_section_a_key_lands_in() {
+        for show_values in [false, true] {
+            let (masked, redacted) = disclose("DB_PASSWORD", "HUNTER2", show_values);
+            assert_eq!(
+                masked.as_deref(),
+                Some(MASK),
+                "sensitive key was not masked"
+            );
+            assert!(redacted);
+        }
+        assert_eq!(disclose("LOG_LEVEL", "debug", false).0, None);
+        assert_eq!(
+            disclose("LOG_LEVEL", "debug", true).0.as_deref(),
+            Some("debug")
+        );
     }
 
     #[test]
@@ -634,7 +753,7 @@ mod tests {
         };
         let ignore = HashSet::new();
 
-        let diff = compute_diff(&left, &right, &ignore);
+        let diff = compute_diff(&left, &right, &ignore, false);
 
         // Missing should follow right's order: D appears after C in right
         assert_eq!(diff.missing, vec!["D"]);
@@ -669,7 +788,7 @@ mod tests {
             indexmap! { "A".to_string() => "1".to_string(), "C".to_string() => "3".to_string() };
         let ignore = HashSet::new();
 
-        let diff = compute_diff(&left, &right, &ignore);
+        let diff = compute_diff(&left, &right, &ignore, false);
         let stats = compute_stats(&left, &right, &diff);
 
         assert_eq!(stats.total_keys_env, 2);
@@ -684,7 +803,7 @@ mod tests {
         let right = indexmap! { "A".into() => "1".into(), "B".into() => "2".into() };
         let ignore = HashSet::new();
 
-        let diff = compute_diff(&left, &right, &ignore);
+        let diff = compute_diff(&left, &right, &ignore, false);
         let stats = compute_stats(&left, &right, &diff);
 
         assert_eq!(stats.overlap_count, 2);
@@ -697,7 +816,7 @@ mod tests {
         let right = indexmap! { "B".into() => "2".into() };
         let ignore = HashSet::new();
 
-        let diff = compute_diff(&left, &right, &ignore);
+        let diff = compute_diff(&left, &right, &ignore, false);
         let stats = compute_stats(&left, &right, &diff);
 
         assert_eq!(stats.overlap_count, 0);
@@ -710,7 +829,7 @@ mod tests {
         let right = indexmap! {};
         let ignore = HashSet::new();
 
-        let diff = compute_diff(&left, &right, &ignore);
+        let diff = compute_diff(&left, &right, &ignore, false);
         let stats = compute_stats(&left, &right, &diff);
 
         assert_eq!(stats.similarity_percent, 100.0); // Empty files are "identical"
