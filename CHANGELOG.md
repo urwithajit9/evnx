@@ -229,6 +229,48 @@ value. The documentation described the intent correctly and the code did not
 implement it — the same shape as `diff`'s `is_sensitive_key`, which listed
 `ADMIN_PWD` and `STRIPE_APIKEY` as redacted and matched neither.
 
+### ⛔ `validate --fix` still destroyed real values, by a second route
+
+The weak-secret gate added earlier in this release stopped `--fix` overwriting a
+credential it judged *weak*. It left the **placeholder** path doing the same
+damage, and that path reaches values the first one never would:
+
+```console
+$ cat .env
+DB_PASSWORD=Tr0ub4dor<3horse
+DATABASE_URL=postgres://u:pw@db/todos
+MAIL_FROM=ops@acme.example.corp
+
+$ evnx validate --fix
+  • DB_PASSWORD: "Tr0ub4dor<3horse" → 3a7567fbe982f2bb…
+  • DATABASE_URL: "postgres://u:pw@db/todos" → https://example.com
+  • MAIL_FROM: "ops@acme.example.corp" → user@example.com
+```
+
+Three real values, replaced. The passphrase matched on `<`, the database URL on
+`todo`, the sender address on `example` — every placeholder pattern was a
+**substring** test, and `--fix` acts on its verdict by overwriting the value.
+The old value was printed too, because the redaction asks the same broken
+question.
+
+**What changed**
+
+- The patterns are **anchored**. `<…>` counts only when it wraps the whole
+  value; `your_`, `change_me`, `todo`, `xxx` and the rest count as a prefix or
+  as the whole value, never as a fragment inside one.
+- A host under an RFC 2606 documentation domain (`example.com` and friends) is
+  a placeholder — that is what those domains are for — so
+  `https://api.example.com/v1` is caught while `postgres://u:p@db/example_db`
+  is not.
+- **`--fix` no longer replaces URLs or emails at all.** `https://example.com` is
+  not anyone's database, and substituting one placeholder for a less
+  informative one is the no-op this module already declined to do for `DB_NAME`.
+  `PORT` keeps its `8080`, which is a working default rather than a stand-in.
+
+ⓘ This is the same defect as the weak-secret one, found by an external review
+that read the code without running it. Fixing one path and not the other is why
+it survived.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
