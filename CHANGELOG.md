@@ -167,6 +167,24 @@ did not do is worse than one that fails.
 
 ### ⚠️ Breaking
 
+**`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
+
+If your `.env` is UTF-16 it is now *scanned*, so a secret in it fails the build
+as it always should have. If a selected file cannot be decoded at all — a
+Latin-1 `.env`, say — the scan reports it and exits 1, because "I could not read
+it" must not share an exit code with "it is clean".
+
+A build that starts failing here was already not being scanned. ⓘ Editor swap
+files (`.env.swp` and friends) are excluded rather than reported, so a `.env`
+open in vim does not fail anything. If you need the old behaviour while you
+re-save files as UTF-8, `--exit-zero` still applies.
+
+**`scan`'s JSON gained `summary.files_unreadable` and a top-level `unreadable`
+array.** Additive. ⚠️ But `summary.files_scanned` now counts files actually
+read, where it previously counted files *found* — so a pipeline asserting
+`summary.total == 0` should assert `summary.files_unreadable == 0` beside it.
+The first says no secrets were found; only both together say there are none.
+
 **`diff --format json` changed shape.** `DiffItem` now carries `example_value`
 and `env_value` as nullable, holding only what is safe to print, plus
 `values_redacted: bool`. The `example_value_redacted` and `env_value_redacted`
