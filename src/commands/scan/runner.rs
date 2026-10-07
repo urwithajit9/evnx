@@ -19,6 +19,7 @@
 use super::{
     detector::DetectorRegistry,
     filters::FileFilter,
+    models::UnreadableFile,
     models::{Confidence, Finding, ScanResults},
     output::{render, OutputFormat},
 };
@@ -240,7 +241,10 @@ impl ScanRunner {
             ui::verbose_stderr(format!("Found {} files to scan", files.len()));
         }
 
-        let mut results = ScanResults::new(files.len());
+        // ⚠️ Zero, not `files.len()`. The count is of files **read**, and it
+        // used to be the number *found* — which is how `1 file scanned` came to
+        // be printed about a file that was never decoded.
+        let mut results = ScanResults::new(0);
 
         for file in &files {
             if self.verbose {
@@ -253,7 +257,13 @@ impl ScanRunner {
         render(&results, format, &files)?;
 
         // Return status for caller to handle exit code
-        Ok(results.secrets_found > 0)
+        // ⛔ An unreadable file fails the scan.
+        //
+        // `scan` exists to answer "is it safe to push this?", and the honest
+        // answer for a file it could not read is "I do not know" — which must
+        // not share an exit code with "no". Exiting 0 there is what let a live
+        // AWS key through a CI gate that was working exactly as configured.
+        Ok(results.secrets_found > 0 || !results.unreadable.is_empty())
     }
 
     /// Scan a single file for secrets.
@@ -295,10 +305,46 @@ impl ScanRunner {
     }
 
     fn scan_file(&self, path: &Path, results: &mut ScanResults) -> Result<()> {
-        let content = match std::fs::read_to_string(path) {
-            Ok(c) => c,
-            Err(_) => return Ok(()), // Skip binary/unreadable files
+        let content = match decode(path) {
+            Decoded::Text(c) => c,
+            // ⛔ **A file this command chose to scan and could not read is a
+            // reportable failure, not a skip.**
+            //
+            // This was:
+            //
+            // ```text
+            // let content = match std::fs::read_to_string(path) {
+            //     Ok(c) => c,
+            //     Err(_) => return Ok(()),   // Skip binary/unreadable files
+            // };
+            // ```
+            //
+            // so a `.env` saved as UTF-16 — which is what a Windows editor
+            // produces when you pick "Unicode" — reported:
+            //
+            // ```text
+            // ✓  No secrets detected
+            //    1 file scanned                            exit 0
+            // ```
+            //
+            // over a live `AWS_SECRET_ACCESS_KEY`. The count came from
+            // `files.len()`, so it said "scanned" about a file it had not read.
+            //
+            // This is the third time this shape has appeared: `is_scannable`
+            // skipping `.env.production` (task 23) and `validate --fix`
+            // reporting "All checks passed" over a credential it had
+            // destroyed. CLAUDE.md's note on task 23 is the rule — a scanner
+            // that misses is **worse than useless, because it reports clean**.
+            Decoded::Unreadable { reason } => {
+                results.unreadable.push(UnreadableFile {
+                    path: path.display().to_string(),
+                    reason,
+                });
+                return Ok(());
+            }
         };
+
+        results.files_scanned += 1;
 
         let is_env = path.to_string_lossy().contains(".env");
 
@@ -682,9 +728,267 @@ pub fn truncate_value(value: &str) -> String {
     format!("{prefix}…{suffix}")
 }
 
+// ─────────────────────────────────────────────────────────────
+// Decoding
+// ─────────────────────────────────────────────────────────────
+
+/// The outcome of trying to read a file as text.
+enum Decoded {
+    Text(String),
+    Unreadable { reason: String },
+}
+
+/// Read a file as text, decoding UTF-16 rather than giving up on it.
+///
+/// ⚠️ **There are two ways a UTF-16 `.env` defeated a UTF-8 read, and only one
+/// of them was an error.** Fixing the error alone leaves the other.
+///
+/// * **With a byte-order mark**, `read_to_string` fails: `0xFF` is not valid
+///   UTF-8. That surfaced as `Err`, and the `Err` arm returned `Ok(())`.
+/// * **Without one, `read_to_string` succeeds** — UTF-16LE ASCII is *valid
+///   UTF-8*, because every byte is either an ASCII character or `0x00`, and
+///   `0x00` is a legal UTF-8 code unit. So the scanner received
+///   `"A\0W\0S\0_\0S\0E\0C\0R\0E\0T\0"` and no pattern matched a single
+///   key or value. It genuinely scanned the file, and genuinely found nothing.
+///
+/// So a NUL byte is the signal, not a decoding error: no UTF-8 text file
+/// contains one, and a UTF-16 one is half NULs by construction.
+fn decode(path: &Path) -> Decoded {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => {
+            return Decoded::Unreadable {
+                // ⚠️ `e` and not the path: the caller records the path, and an
+                // io::Error's Display does not include it.
+                reason: format!("could not be read: {e}"),
+            };
+        }
+    };
+
+    // An explicit byte-order mark settles it.
+    if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
+        return from_utf16(rest, u16::from_le_bytes, "UTF-16LE");
+    }
+    if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
+        return from_utf16(rest, u16::from_be_bytes, "UTF-16BE");
+    }
+    if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
+        // A UTF-8 BOM. Not an encoding problem, but left in the string it
+        // becomes part of the first key's name.
+        return match String::from_utf8(rest.to_vec()) {
+            Ok(text) => Decoded::Text(text),
+            Err(e) => Decoded::Unreadable {
+                reason: format!("has a UTF-8 byte-order mark but is not valid UTF-8: {e}"),
+            },
+        };
+    }
+
+    // No BOM. A NUL means this is not UTF-8 text whatever `from_utf8` says.
+    if bytes.contains(&0) {
+        // UTF-16 without a byte-order mark. Try both parities and judge the
+        // **result**, not the input.
+        //
+        // ⚠️ The first version of this counted NUL bytes by position — "at
+        // least half the even-numbered bytes are zero, so it is UTF-16BE". A
+        // six-byte binary blob, `00 FF 13 37 00 01`, satisfies that by
+        // accident and was decoded into Ethiopic and Latin-Extended
+        // characters, which the caller then scanned as though it were the
+        // file's text. Its own test caught it.
+        //
+        // A ratio of input bytes cannot distinguish those cases. What can is
+        // whether the decode *produced text*: a `.env` is ASCII keys, `=` and
+        // newlines, with at most a few non-ASCII characters in values, and
+        // never a C0 control character other than tab, newline or return.
+        if bytes.len() % 2 == 0 && !bytes.is_empty() {
+            for (unit, label) in [
+                (
+                    u16::from_le_bytes as fn([u8; 2]) -> u16,
+                    "UTF-16LE (no BOM)",
+                ),
+                (
+                    u16::from_be_bytes as fn([u8; 2]) -> u16,
+                    "UTF-16BE (no BOM)",
+                ),
+            ] {
+                if let Decoded::Text(text) = from_utf16(&bytes, unit, label) {
+                    if looks_like_text(&text) {
+                        return Decoded::Text(text);
+                    }
+                }
+            }
+        }
+        return Decoded::Unreadable {
+            reason: "contains NUL bytes and does not decode as UTF-16, so it is not text \
+                     this scanner can read"
+                .to_string(),
+        };
+    }
+
+    match String::from_utf8(bytes) {
+        Ok(text) => Decoded::Text(text),
+        Err(e) => Decoded::Unreadable {
+            reason: format!("is not valid UTF-8: {e}"),
+        },
+    }
+}
+
+/// Did a candidate decode actually produce text?
+///
+/// Two conditions, both cheap and both decisive on the cases that matter:
+///
+/// * **No C0 control characters** beyond tab, newline and carriage return.
+///   Binary interpreted as UTF-16 lands on these almost immediately.
+/// * **Mostly ASCII.** A `.env` is ASCII keys, `=`, and newlines; a non-ASCII
+///   value is possible but cannot dominate the file. Binary decoded as UTF-16
+///   produces characters spread across the whole BMP, so it fails this by a
+///   wide margin rather than a narrow one.
+fn looks_like_text(text: &str) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+    let mut ascii = 0usize;
+    let mut total = 0usize;
+    for c in text.chars() {
+        if c.is_control() && !matches!(c, '\t' | '\n' | '\r') {
+            return false;
+        }
+        if c.is_ascii() {
+            ascii += 1;
+        }
+        total += 1;
+    }
+    // Half, not all: a password with an accent in it is still a .env file.
+    ascii * 2 >= total
+}
+
+/// Decode UTF-16 code units into a `String`.
+fn from_utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16, label: &str) -> Decoded {
+    if bytes.len() % 2 != 0 {
+        return Decoded::Unreadable {
+            reason: format!("looks like {label} but has an odd number of bytes"),
+        };
+    }
+    let units: Vec<u16> = bytes.chunks_exact(2).map(|c| unit([c[0], c[1]])).collect();
+    match String::from_utf16(&units) {
+        Ok(text) => Decoded::Text(text),
+        Err(e) => Decoded::Unreadable {
+            reason: format!("looks like {label} but does not decode: {e}"),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ─────────────────────────────────────────────────────────
+    // S3 — a file that was not read is not clean
+    // ─────────────────────────────────────────────────────────
+
+    fn write(dir: &std::path::Path, name: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let p = dir.join(name);
+        std::fs::write(&p, bytes).unwrap();
+        p
+    }
+
+    fn utf16le(text: &str, bom: bool) -> Vec<u8> {
+        let mut out = if bom { vec![0xFF, 0xFE] } else { Vec::new() };
+        for u in text.encode_utf16() {
+            out.extend_from_slice(&u.to_le_bytes());
+        }
+        out
+    }
+
+    fn utf16be(text: &str, bom: bool) -> Vec<u8> {
+        let mut out = if bom { vec![0xFE, 0xFF] } else { Vec::new() };
+        for u in text.encode_utf16() {
+            out.extend_from_slice(&u.to_be_bytes());
+        }
+        out
+    }
+
+    /// ⛔ **A `.env` saved as UTF-16 scanned clean with exit 0.**
+    ///
+    /// Two different routes to the same false all-clear, which is why fixing
+    /// one is not enough:
+    ///
+    /// * **With a BOM**, `read_to_string` fails on `0xFF`, and the `Err` arm
+    ///   was `return Ok(())`.
+    /// * **Without one it succeeds**, because UTF-16LE ASCII *is* valid UTF-8:
+    ///   every byte is an ASCII character or `0x00`, and `0x00` is a legal
+    ///   UTF-8 code unit. The scanner got `"S\0T\0R\0I\0P\0E\0"` and
+    ///   genuinely found nothing in it.
+    #[test]
+    fn a_utf16_env_file_is_decoded_and_scanned() {
+        let dir = tempfile::tempdir().unwrap();
+        let line = "STRIPE_SECRET_KEY=sk_live_51H8xQ2eZvKYlo2CpR4mN7bV9\n";
+
+        for (name, bytes) in [
+            ("bom-le", utf16le(line, true)),
+            ("no-bom-le", utf16le(line, false)),
+            ("bom-be", utf16be(line, true)),
+            ("no-bom-be", utf16be(line, false)),
+        ] {
+            let path = write(dir.path(), &format!(".env.{name}"), &bytes);
+            match decode(&path) {
+                Decoded::Text(text) => assert!(
+                    text.contains("STRIPE_SECRET_KEY") && text.contains("sk_live_"),
+                    "{name} decoded to something unusable: {text:?}"
+                ),
+                Decoded::Unreadable { reason } => {
+                    panic!("{name} was not decoded: {reason}")
+                }
+            }
+        }
+    }
+
+    /// A UTF-8 byte-order mark is not an encoding problem, but left in the
+    /// string it becomes part of the first key's name.
+    #[test]
+    fn a_utf8_bom_is_stripped() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend_from_slice(b"TOKEN=abc\n");
+        let path = write(dir.path(), ".env", &bytes);
+        match decode(&path) {
+            Decoded::Text(t) => assert!(t.starts_with("TOKEN="), "BOM survived: {t:?}"),
+            Decoded::Unreadable { reason } => panic!("{reason}"),
+        }
+    }
+
+    /// ⛔ The general rule, and the one the old code broke: a file this command
+    /// selected and could not read must **say so**, not return quietly.
+    #[test]
+    fn an_undecodable_file_is_reported_rather_than_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Binary with NULs that is not UTF-16.
+        let bin = write(
+            dir.path(),
+            ".env.bin",
+            &[0x00, 0xFF, 0x13, 0x37, 0x00, 0x01],
+        );
+        assert!(matches!(decode(&bin), Decoded::Unreadable { .. }));
+
+        // Latin-1: a high byte, no NULs, so `from_utf8` rejects it.
+        let latin = write(dir.path(), ".env.latin1", b"PW=caf\xe9_value\n");
+        assert!(matches!(decode(&latin), Decoded::Unreadable { .. }));
+
+        // A file that does not exist at all is an io error, not a silent pass.
+        assert!(matches!(
+            decode(&dir.path().join("nope")),
+            Decoded::Unreadable { .. }
+        ));
+    }
+
+    /// Odd-length UTF-16 cannot be decoded, and must not be truncated into
+    /// something that looks scanned.
+    #[test]
+    fn odd_length_utf16_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(dir.path(), ".env", &[0xFF, 0xFE, 0x41]);
+        assert!(matches!(decode(&path), Decoded::Unreadable { .. }));
+    }
 
     /// ⚠️ These two tests asserted the bug. `truncate_value("short") == "short"`
     /// and `truncate_value("exactly20characters!")` returning its input whole
