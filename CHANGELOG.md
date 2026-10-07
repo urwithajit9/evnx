@@ -271,6 +271,38 @@ question.
 that read the code without running it. Fixing one path and not the other is why
 it survived.
 
+### ⛔ The PyPI wheels still had no cloud commands — the fix never ran
+
+`#111` set `--all-features` in `python-publish.yml` to put `auth`, `vault`,
+`cloud` and `org` into the PyPI wheels. It could not work.
+
+**`#` is not a comment inside `args: >-`.** A YAML folded block scalar is a
+string, so the explanatory comment block was argument text. Parsing the file
+returns:
+
+```text
+--release --out dist --find-interpreter --strip # ⚠️ --all-features, NOT --features full. # …
+```
+
+maturin-action writes that into a shell script on Linux, so everything from the
+first `#` was dropped — taking `--strip` and `--all-features` with it.
+
+And `pyproject.toml` carried a **second** switch, `features = ["full"]`, which
+excludes `cloud` and applies on top of whatever the workflow passes. Fixing
+either alone would have changed nothing.
+
+**What changed**
+
+- Every comment moved out of all three `args:` scalars, to above `with:`.
+- `pyproject.toml` is `features = ["full", "cloud"]`.
+- A release step installs the built wheel and **asserts the commands are
+  there**. Verified non-vacuous: it passes on the corrected build and fails on
+  exactly the build that shipped for five releases.
+
+⚠️ Every release check before this read `evnx --version`, which is identical
+with or without the feature. That is why five releases went green over a wheel
+missing its headline feature.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
