@@ -165,6 +165,70 @@ And `1 file scanned` was a lie independent of either: the count came from
 a credential it had destroyed, and this. A tool that reports success for work it
 did not do is worse than one that fails.
 
+### ⛔ A comment after a closing quote silently lost whole variables
+
+```bash
+KEY="value" # a trailing comment
+```
+
+Valid in every dotenv implementation there is, and documented on evnx.dev's own
+syntax page. It was read as an **unclosed** quote, because `opens_multiline`
+asked whether the *line* ended with a quote rather than where the quote closed.
+The parser then scanned forward for a quote it had already passed.
+
+**What happened next depended entirely on the following lines**, which is why
+this was reported as a loud failure and is worse than that:
+
+```text
+A="x" # c          A="x" # c
+B=plain            B="y"
+  → exit 2           → ONE variable, exit 0
+```
+
+The second shape is the common one — most `.env` files have more than one
+quoted value. The runaway value closed on the next quote it found, swallowing
+every line in between, and the parse *succeeded*:
+
+```console
+$ cat .env
+A="a" # c
+B=plain
+C="c"
+D=plain
+E="e"
+$ evnx convert --to json | jq 'length'
+3                                        # five variables in the file
+$ echo $?
+0
+```
+
+`convert`, `cloud push`, `cloud run` and `cloud export` all read through this
+parser, so a push could upload a subset of a vault and a `cloud run` child
+could start with part of its environment missing — in both cases silently.
+
+ⓘ `scan` still found a secret in a swallowed line, because its detectors read
+values and the secret had become part of one. It attributed it to the wrong
+variable.
+
+**What changed**
+
+- `closing_quote_index` finds where the quote closes. `opens_multiline` and the
+  value parser both use it, so the two cannot disagree about whether a value is
+  complete.
+- A `#` after a closing quote is a comment, in every quoting form. A `#` inside
+  the quotes is still part of the value — the closing quote is what ends it.
+- Anything else after a closing quote is **an error naming what it found**,
+  rather than silently discarded: dropping it would hide a missing quote or a
+  stray paste.
+- A genuinely unterminated quote is still an error, and real multiline values
+  still span lines.
+
+⚠️ evnx.dev documented `KEY="value # here"   # kept` as yielding
+`value # here`. It yielded this page's own annotation text appended to the
+value. The documentation described the intent correctly and the code did not
+implement it — the same shape as `diff`'s `is_sensitive_key`, which listed
+`ADMIN_PWD` and `STRIPE_APIKEY` as redacted and matched neither.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
