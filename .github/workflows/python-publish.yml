@@ -39,6 +39,28 @@ jobs:
       #   • installing the right Rust cross-compilation target
       #   • running inside a manylinux container for broad glibc compat
       #   • calling `maturin build --release` with the right flags
+      # ⛔ **`#` IS NOT A COMMENT INSIDE `args: >-`.**
+      #
+      # A folded block scalar is a *string*, so every `#` line below used to be
+      # argument text, not a comment. Parsing the file returned:
+      #
+      #   --release --out dist --find-interpreter --strip # ⚠️ --all-features, …
+      #
+      # maturin-action writes that into a shell script on Linux, so everything
+      # from the first `#` was dropped — taking `--strip` and `--all-features`
+      # with it. On macOS and Windows the words reached maturin as arguments.
+      #
+      # So the fix that was supposed to put the cloud commands into the PyPI
+      # wheels (#111) never took effect, and nothing noticed because the release
+      # checks read `--version` and never looked at the command surface.
+      #
+      # ⚠️ `--all-features`, NOT `--features full`: `full = ["migrate", "backup"]`
+      # and `cloud` is deliberately outside it, which is why every wheel from
+      # 0.4.0 to 0.9.0 shipped without `auth`, `vault`, `cloud` and `org`.
+      # `release.yml` has always used `--all-features`; only this file did not.
+      #
+      # ⓘ Comments live here, above `with:`. Nothing inside the scalar is a
+      # comment, ever.
       - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
@@ -47,26 +69,41 @@ jobs:
           args: >-
             --release
             --out dist
-            --find-interpreter    # picks up all available Python versions
+            --find-interpreter
             --strip
-            # ⚠️ --all-features, NOT --features full.
-            #
-            # `full = ["migrate", "backup"]` and `cloud` is deliberately not in
-            # it, so every wheel PyPI has ever published shipped WITHOUT the
-            # cloud commands — verified against the 0.4.0, 0.8.0 and 0.9.0
-            # wheels on 2026-10-05, all of which lack `auth`, `vault`, `cloud`
-            # and `org`. `release.yml` has always used --all-features, which is
-            # why every other channel has them and only this one did not.
-            #
-            # Nothing caught it because the release checks read `--version` and
-            # never looked at the command surface.
             --all-features
-          # Uncomment if you need musl (fully static) builds:
-          # manylinux: musllinux_1_2
-        # env:
         #   RING_PREGENERATE_ASM: "1"
         #   PKG_CONFIG_ALLOW_CROSS: "1"
 
+
+      # ⛔ The check that would have caught #111 never taking effect.
+      #
+      # Every release gate before this read `evnx --version`, which is identical
+      # whether or not the cloud feature is compiled in. So five releases shipped
+      # a PyPI wheel with no `auth`, `vault`, `cloud` or `org` and every gate
+      # went green.
+      #
+      # ⓘ x86_64 only: the runner can run the wheel it just built. A feature-flag
+      # mistake is not architecture-specific, so one arch is enough to catch it.
+      - name: Verify the wheel actually contains the cloud commands
+        if: matrix.target == 'x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/wheelcheck
+          /tmp/wheelcheck/bin/pip install --quiet --no-index --find-links dist evnx
+          surface=$(/tmp/wheelcheck/bin/evnx --help)
+          missing=()
+          for cmd in auth vault cloud org; do
+            grep -qE "^[[:space:]]+$cmd([[:space:]]|$)" <<<"$surface" || missing+=("$cmd")
+          done
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "::error::the built wheel is missing: ${missing[*]}"
+            echo "--- evnx --help ---"
+            printf '%s\n' "$surface"
+            exit 1
+          fi
+          echo "✓ wheel carries: auth vault cloud org"
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -95,6 +132,28 @@ jobs:
         with:
           python-version: "3.11"
 
+      # ⛔ **`#` IS NOT A COMMENT INSIDE `args: >-`.**
+      #
+      # A folded block scalar is a *string*, so every `#` line below used to be
+      # argument text, not a comment. Parsing the file returned:
+      #
+      #   --release --out dist --find-interpreter --strip # ⚠️ --all-features, …
+      #
+      # maturin-action writes that into a shell script on Linux, so everything
+      # from the first `#` was dropped — taking `--strip` and `--all-features`
+      # with it. On macOS and Windows the words reached maturin as arguments.
+      #
+      # So the fix that was supposed to put the cloud commands into the PyPI
+      # wheels (#111) never took effect, and nothing noticed because the release
+      # checks read `--version` and never looked at the command surface.
+      #
+      # ⚠️ `--all-features`, NOT `--features full`: `full = ["migrate", "backup"]`
+      # and `cloud` is deliberately outside it, which is why every wheel from
+      # 0.4.0 to 0.9.0 shipped without `auth`, `vault`, `cloud` and `org`.
+      # `release.yml` has always used `--all-features`; only this file did not.
+      #
+      # ⓘ Comments live here, above `with:`. Nothing inside the scalar is a
+      # comment, ever.
       - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
@@ -104,17 +163,6 @@ jobs:
             --out dist
             --find-interpreter
             --strip
-            # ⚠️ --all-features, NOT --features full.
-            #
-            # `full = ["migrate", "backup"]` and `cloud` is deliberately not in
-            # it, so every wheel PyPI has ever published shipped WITHOUT the
-            # cloud commands — verified against the 0.4.0, 0.8.0 and 0.9.0
-            # wheels on 2026-10-05, all of which lack `auth`, `vault`, `cloud`
-            # and `org`. `release.yml` has always used --all-features, which is
-            # why every other channel has them and only this one did not.
-            #
-            # Nothing caught it because the release checks read `--version` and
-            # never looked at the command surface.
             --all-features
 
       - name: Upload wheels
@@ -137,6 +185,28 @@ jobs:
         with:
           python-version: "3.11"
 
+      # ⛔ **`#` IS NOT A COMMENT INSIDE `args: >-`.**
+      #
+      # A folded block scalar is a *string*, so every `#` line below used to be
+      # argument text, not a comment. Parsing the file returned:
+      #
+      #   --release --out dist --find-interpreter --strip # ⚠️ --all-features, …
+      #
+      # maturin-action writes that into a shell script on Linux, so everything
+      # from the first `#` was dropped — taking `--strip` and `--all-features`
+      # with it. On macOS and Windows the words reached maturin as arguments.
+      #
+      # So the fix that was supposed to put the cloud commands into the PyPI
+      # wheels (#111) never took effect, and nothing noticed because the release
+      # checks read `--version` and never looked at the command surface.
+      #
+      # ⚠️ `--all-features`, NOT `--features full`: `full = ["migrate", "backup"]`
+      # and `cloud` is deliberately outside it, which is why every wheel from
+      # 0.4.0 to 0.9.0 shipped without `auth`, `vault`, `cloud` and `org`.
+      # `release.yml` has always used `--all-features`; only this file did not.
+      #
+      # ⓘ Comments live here, above `with:`. Nothing inside the scalar is a
+      # comment, ever.
       - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
@@ -146,17 +216,6 @@ jobs:
             --out dist
             --find-interpreter
             --strip
-            # ⚠️ --all-features, NOT --features full.
-            #
-            # `full = ["migrate", "backup"]` and `cloud` is deliberately not in
-            # it, so every wheel PyPI has ever published shipped WITHOUT the
-            # cloud commands — verified against the 0.4.0, 0.8.0 and 0.9.0
-            # wheels on 2026-10-05, all of which lack `auth`, `vault`, `cloud`
-            # and `org`. `release.yml` has always used --all-features, which is
-            # why every other channel has them and only this one did not.
-            #
-            # Nothing caught it because the release checks read `--version` and
-            # never looked at the command surface.
             --all-features
 
       - name: Upload wheels
