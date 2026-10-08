@@ -17,6 +17,24 @@ categories  = ["command-line-utilities", "development-tools"]
 license     = "MIT"
 readme      = "README.md"
 
+# The five workflow files were shipping inside the published crate. They are not
+# part of the library, the binary, or anything that builds — and because
+# crates.io versions are immutable, having them in the package meant a
+# workflow-only fix changed the crate's contents and so could not be released by
+# moving a tag. That cost two version numbers before anyone noticed.
+#
+# ⚠️ `exclude`, not `include`. `include` is a whitelist, so a file added to the
+# crate later would be silently left out of the package until someone thought to
+# list it; `exclude` fails in the harmless direction.
+#
+# ⚠️ Nothing here is reachable from a build. Verified: the only `include_str!`
+# paths in the crate are `src/docs.rs`, `src/cloud/device.rs` and
+# `src/assets/schema.json`, all under `src/`.
+exclude = [
+    ".github/**",
+]
+
+
 [[bin]]
 name = "evnx"
 path = "src/main.rs"
