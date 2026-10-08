@@ -520,6 +520,40 @@ Measured against 0.9.0: each of the three went 0 → 1 finding, the virtualenv
 case went 2 → 0, and an ordinary file with one real secret still reports exactly
 one.
 
+### ⛔ The pre-commit hook blocked every commit, for everyone
+
+`evnx-scan` ran with `pass_filenames: false` and `always_run: true`, so it
+scanned the **whole working tree** on every commit — including the real,
+gitignored `.env` that any working setup necessarily has. The scan finds the
+secrets in it, exits 1, and the commit is refused.
+
+Every commit. For anyone with a functioning local environment. Over a file that
+was never going to be committed.
+
+```text
+staged: .gitignore, app.conf        (nothing secret)
+old hook  →  exit 1   commit BLOCKED
+new hook  →  exit 0   commit allowed
+```
+
+Both scan hooks now take the staged paths, which is what a pre-commit hook is
+for. A gitignored `.env` is never staged, so the obstruction disappears — and a
+secret that *is* staged still blocks the commit, verified.
+
+ⓘ No `files:` filter. `scan`'s detectors are content-based and already find keys
+in `.py`, `.yml` and `.md`, so narrowing to `.env*` would lose the case where
+one is pasted into source.
+
+⚠️ **Not changed: `.env.example` is still excluded**, and the review asked for
+that to be removed. The reasoning given was "placeholders are already
+suppressed" — they are not. An ordinary template produces five findings
+(`sk_test_xxxx`, `AKIAIOSFODNN7EXAMPLE`, `ghp_xxxx`, `<your-api-key>`, and a
+`user:password@` connection string), and `is_placeholder` recognises two of
+seven such values. Removing the exclusion today would turn every project's hook
+red on a correct template, which is worse than the miss it fixes. The
+prerequisite is placeholder detection that understands template values; the
+decision and its evidence are recorded in the test that guards the exclusion.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
