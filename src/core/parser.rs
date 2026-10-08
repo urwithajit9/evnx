@@ -304,6 +304,53 @@ fn strip_markers(s: &str) -> String {
     }
 }
 
+/// Where an unquoted value ends, given that `#` may start a comment.
+///
+/// ⛔ **A `#` is a comment only when whitespace precedes it.** This was
+/// `raw.find('#')`, which took the first one anywhere — so every `#` inside a
+/// value truncated it, silently:
+///
+/// ```text
+/// COLOR=#ff0000           →  ""
+/// PW=Tr0ub4dor#3          →  "Tr0ub4dor"
+/// URL=https://x/#/route   →  "https://x/"
+/// TAG=v1.0#rc1            →  "v1.0"
+/// ```
+///
+/// ⚠️ **The ecosystem is split on this and the choice is deliberate.** Measured,
+/// not assumed:
+///
+/// | | evnx (before) | Node dotenv 17 | Docker Compose |
+/// |---|---|---|---|
+/// | `PW=Tr0ub4dor#3` | `Tr0ub4dor` | `Tr0ub4dor` | `Tr0ub4dor#3` |
+/// | `COLOR=#ff0000` | `` | `` | `#ff0000` |
+/// | `A=v # comment` | `v` | `v` | `v` |
+///
+/// Node dotenv truncates at any `#`; Compose requires the whitespace. They
+/// agree only on the case that is actually a comment. evnx follows **Compose**,
+/// for two reasons: the failure mode of the other rule is silent destruction of
+/// a password or a URL, and `evnx convert --to docker` would otherwise emit a
+/// file Compose reads differently from the `.env` it came from.
+///
+/// ⓘ A `#` at the very start of a value is literal, which is also what Compose
+/// does — so `KEY= # c` is the value `# c`, and there is no way to write an
+/// empty value followed by a comment. That is Compose's behaviour verbatim,
+/// checked with `docker compose config`.
+fn strip_inline_comment(value: &str) -> &str {
+    let bytes = value.as_bytes();
+    let mut from = 0;
+    while let Some(offset) = value[from..].find('#') {
+        let at = from + offset;
+        // ⓘ Byte-indexing is safe for this test: every ASCII whitespace byte is
+        // < 0x80, and no continuation byte of a multi-byte character is.
+        if at > 0 && bytes[at - 1].is_ascii_whitespace() {
+            return value[..at].trim_end();
+        }
+        from = at + 1;
+    }
+    value.trim_end()
+}
+
 impl Parser {
     /// Create a parser with a custom [`ParserConfig`].
     pub fn new(config: ParserConfig) -> Self {
@@ -689,12 +736,8 @@ impl Parser {
             _ => {
                 // Unquoted value.
                 let val = if self.config.allow_inline_comments {
-                    // Strip `# comment` — but only outside quotes (we are
-                    // already in the unquoted branch here).
-                    match raw.find('#') {
-                        Some(pos) => raw[..pos].trim_end(),
-                        None => raw.trim_end(),
-                    }
+                    // Only outside quotes — we are already in the unquoted branch.
+                    strip_inline_comment(raw)
                 } else {
                     raw.trim_end()
                 };
@@ -1065,6 +1108,73 @@ mod tests {
 
     fn parse_one(content: &str) -> IndexMap<String, String> {
         Parser::default().parse_content(content).expect("parses")
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // P2: `#` inside an unquoted value
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// ⛔ Every `#` used to end the value, so four realistic values were
+    /// silently destroyed.
+    ///
+    /// ⚠️ The expectations below are **Docker Compose's**, measured with
+    /// `docker compose config` rather than assumed. Node dotenv 17 disagrees —
+    /// it truncates at any `#`, turning `COLOR=#ff0000` into an empty string —
+    /// and the divergence is deliberate: the failure mode of that rule is a
+    /// destroyed password or URL, and `evnx convert --to docker` would otherwise
+    /// emit a file Compose reads differently from the `.env` it came from.
+    #[test]
+    fn a_hash_without_preceding_whitespace_stays_in_the_value() {
+        let vars = parse_one(
+            "COLOR=#ff0000\n\
+             PW=Tr0ub4dor#3\n\
+             URL=https://x/#/route\n\
+             TAG=v1.0#rc1\n\
+             TIGHT=a#b\n",
+        );
+        assert_eq!(vars["COLOR"], "#ff0000");
+        assert_eq!(vars["PW"], "Tr0ub4dor#3");
+        assert_eq!(vars["URL"], "https://x/#/route");
+        assert_eq!(vars["TAG"], "v1.0#rc1");
+        assert_eq!(vars["TIGHT"], "a#b");
+    }
+
+    /// The complement: a `#` that *is* preceded by whitespace is still a
+    /// comment, which is the one case every implementation agrees on.
+    #[test]
+    fn a_hash_after_whitespace_is_still_a_comment() {
+        let vars = parse_one("A=v # comment\nB=v\t# comment\nC=v   #c\n");
+        assert_eq!(vars["A"], "v");
+        assert_eq!(vars["B"], "v");
+        assert_eq!(vars["C"], "v");
+    }
+
+    /// ⓘ A `#` at the start of a value is literal, so there is no way to write
+    /// an empty value followed by a comment. That is Compose's behaviour
+    /// verbatim — `LEAD= #ff0000` gives `#ff0000`, not an empty string.
+    #[test]
+    fn a_leading_hash_is_part_of_the_value() {
+        let vars = parse_one("LEAD= #ff0000\nEMPTY= # just a comment\n");
+        assert_eq!(vars["LEAD"], "#ff0000");
+        assert_eq!(vars["EMPTY"], "# just a comment");
+    }
+
+    /// A quoted value was never affected and must stay that way.
+    #[test]
+    fn a_quoted_value_keeps_its_hash_and_drops_a_trailing_comment() {
+        let vars = parse_one("Q=\"keep # this\" # drop this\nS='also # kept'\n");
+        assert_eq!(vars["Q"], "keep # this");
+        assert_eq!(vars["S"], "also # kept");
+    }
+
+    /// ⚠️ The whitespace test indexes bytes. A multi-byte character before a
+    /// `#` must not be mistaken for whitespace, and must not panic.
+    #[test]
+    fn a_multibyte_character_before_a_hash_is_not_whitespace() {
+        let vars = parse_one("A=日本#x\nB=café#1\nC=日本 #c\n");
+        assert_eq!(vars["A"], "日本#x");
+        assert_eq!(vars["B"], "café#1");
+        assert_eq!(vars["C"], "日本", "a real comment after a multi-byte value");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

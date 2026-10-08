@@ -387,25 +387,60 @@ fn print_inspect(content: &str) {
 
 /// Extract variable key names from `.env` content, preserving file order.
 ///
-/// Skips blank lines and comment lines (`#`). For `KEY=value` lines, returns
-/// only the portion before the first `=`. Values are never stored or returned.
+/// ⛔ **This used to be its own line-splitter, and it printed secret values.**
 ///
-/// This is the only function in the codebase that parses `.env` key names —
-/// kept deliberately simple to avoid false negatives on edge cases.
-fn extract_key_names(content: &str) -> Vec<&str> {
-    content
-        .lines()
-        .filter_map(|line| {
-            let trimmed = line.trim();
-            // Skip blank lines and comments.
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                return None;
-            }
-            // Take everything before the first `=` as the key name.
-            // If there is no `=`, treat the whole line as a key (export KEY).
-            Some(trimmed.split('=').next().unwrap_or(trimmed).trim())
-        })
-        .collect()
+/// It took "everything before the first `=`" as a key name and, in its own
+/// words, "if there is no `=`, treat the whole line as a key". A multiline value
+/// has no `=` on its continuation lines — so every line of a PEM private key was
+/// printed as a key name, under a heading that says *"names only — values never
+/// shown"*:
+///
+/// ```text
+/// Variables in this backup (names only — values never shown)
+///   TLS_KEY
+///   MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC…
+///   …
+/// ```
+///
+/// The comment above it said it was "kept deliberately simple to avoid false
+/// negatives on edge cases". The edge case it could not see was the one that
+/// leaks.
+///
+/// It now uses `core::parser`, which is the thing that knows what a multiline
+/// value is. ⚠️ Expansion is off: a backup is read back literally, and expanding
+/// `$OTHER` here could substitute one of the user's own secrets into a *name*.
+fn extract_key_names(content: &str) -> Vec<String> {
+    use crate::core::parser::{Parser, ParserConfig};
+
+    let parser = Parser::new(ParserConfig {
+        allow_expansion: false,
+        ..Default::default()
+    });
+
+    match parser.parse_content(content) {
+        Ok(vars) => vars.keys().cloned().collect(),
+        // ⚠️ A backup that does not parse still has to list something, and the
+        // fallback must not reintroduce the defect — so it takes only lines that
+        // genuinely look like an assignment, and never "the whole line".
+        Err(_) => content
+            .lines()
+            .filter_map(|line| {
+                let t = line.trim();
+                if t.is_empty() || t.starts_with('#') {
+                    return None;
+                }
+                let t = t.strip_prefix("export ").unwrap_or(t);
+                let (key, _) = t.split_once('=')?;
+                let key = key.trim();
+                // A key is a key. A base64 line is not.
+                let plausible = !key.is_empty()
+                    && key
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.');
+                plausible.then(|| key.to_string())
+            })
+            .collect(),
+    }
 }
 
 /// Determine where to write the restored file.
@@ -496,6 +531,66 @@ fn print_next_steps(write_path: &Path, output: &Path, used_fallback: bool) {
 
 #[cfg(test)]
 mod tests {
+
+    /// ⛔ **`--inspect` printed private-key bodies under a heading that says
+    /// "values never shown".**
+    ///
+    /// `extract_key_names` took "everything before the first `=`" and, failing
+    /// that, "the whole line" — and a multiline value has no `=` on its
+    /// continuation lines. Measured against the shipped 0.9.0 binary:
+    ///
+    /// ```text
+    /// Variables in this backup (names only — values never shown):
+    ///   APP
+    ///   TLS_KEY
+    ///   MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggS…SUPERSECRET1
+    ///   aGVsbG8gdGhpcyBpcyB0aGUgc2Vjb25kIGxpbmU…
+    ///   -----END PRIVATE KEY-----"
+    ///   PORT
+    /// ✓ 6 variable(s) found
+    /// ```
+    #[test]
+    fn inspect_lists_names_and_never_a_value() {
+        let content = concat!(
+            "APP=demo\n",
+            "TLS_KEY=\"-----BEGIN PRIVATE KEY-----\n",
+            "MIIEvQIBADANBgkqSUPERSECRETBODY1\n",
+            "c2Vjb25kIGxpbmUgb2YgdGhlIGtleQ==\n",
+            "-----END PRIVATE KEY-----\"\n",
+            "PORT=8080\n",
+        );
+
+        let keys = extract_key_names(content);
+
+        assert_eq!(keys, vec!["APP", "TLS_KEY", "PORT"]);
+        for k in &keys {
+            assert!(
+                !k.contains("SUPERSECRET") && !k.contains("PRIVATE KEY"),
+                "a key body reached the name list: {k}"
+            );
+        }
+    }
+
+    /// The fallback for a backup that does not parse must not reintroduce the
+    /// defect: it takes only lines that genuinely look like an assignment, and
+    /// never "the whole line".
+    #[test]
+    fn the_unparseable_fallback_still_refuses_key_bodies() {
+        // An unterminated quote makes the real parser fail.
+        let content = concat!(
+            "GOOD=1\n",
+            "BROKEN=\"never closed\n",
+            "MIIEvQIBADANBgkqSUPERSECRETBODY1\n",
+            "-----END PRIVATE KEY-----\n",
+        );
+        let keys = extract_key_names(content);
+        assert!(
+            keys.iter()
+                .all(|k| !k.contains("SUPERSECRET") && !k.contains("PRIVATE")),
+            "the fallback printed a key body: {keys:?}"
+        );
+        assert!(keys.contains(&"GOOD".to_string()));
+    }
     use super::*;
     use crate::utils::dotenv_validation;
 

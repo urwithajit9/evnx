@@ -429,6 +429,55 @@ fails all five.
 
 ⓘ `heroku.rs` already escaped correctly and was the model.
 
+### ⛔ A `#` inside a value truncated it, and `--inspect` printed private keys
+
+**`#` is a comment only when whitespace precedes it.** It used to end the value
+wherever it appeared, so four shapes people actually have were silently
+destroyed:
+
+```text
+COLOR=#ff0000           →  ""
+PW=Tr0ub4dor#3          →  "Tr0ub4dor"
+URL=https://x/#/route   →  "https://x/"
+TAG=v1.0#rc1            →  "v1.0"
+```
+
+⚠️ **The ecosystem is split on this, and following Compose is a deliberate
+choice.** Measured rather than assumed — Node dotenv 17 via `dotenv.parse`,
+Compose via `docker compose config`:
+
+| | evnx (before) | Node dotenv 17 | Docker Compose |
+|---|---|---|---|
+| `PW=Tr0ub4dor#3` | `Tr0ub4dor` | `Tr0ub4dor` | `Tr0ub4dor#3` |
+| `COLOR=#ff0000` | `` | `` | `#ff0000` |
+| `A=v # comment` | `v` | `v` | `v` |
+
+They agree only on the case that really is a comment. evnx now follows Compose,
+for two reasons: the other rule's failure mode is silent destruction of a
+password or a URL, and `evnx convert --to docker` would otherwise emit a file
+Compose reads differently from the `.env` it came from.
+
+ⓘ A `#` at the start of a value is literal, so there is no way to write an empty
+value followed by a comment. That is Compose's behaviour verbatim.
+
+**`restore --inspect` printed private-key bodies.** It had its own line
+splitter, which took everything before the first `=` and, failing that, "the
+whole line". A multiline value has no `=` on its continuation lines:
+
+```text
+Variables in this backup (names only — values never shown):
+  APP
+  TLS_KEY
+  MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggS…SUPERSECRET1   ← the key
+  -----END PRIVATE KEY-----"
+  PORT
+✓ 6 variable(s) found                                     ← there are 3
+```
+
+It now uses `core::parser`, which is the thing that knows what a multiline value
+is. The comment above it said it was "kept deliberately simple to avoid false
+negatives on edge cases"; the edge case it could not see was the one that leaks.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
