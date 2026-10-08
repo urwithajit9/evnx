@@ -1,11 +1,26 @@
+# ⛔ `pass_filenames: true`, not `false` with `always_run`.
+#
+# This hook used to run `evnx scan` with no arguments, so it scanned the whole
+# working tree on every commit — including the real, gitignored `.env` that a
+# developer necessarily has. A scan finds the secrets in it, exits 1, and the
+# commit is blocked. **Every commit**, for anyone with a working local setup,
+# over a file that was never going to be committed.
+#
+# A pre-commit hook's job is to check what is **being committed**. pre-commit
+# passes the staged paths, and a gitignored `.env` is never staged — so the
+# obstruction disappears without losing any real coverage.
+#
+# ⓘ No `files:` filter on purpose. `scan`'s detectors are content-based and
+# already find secrets in `.py`, `.yml`, `.md` and the rest, so narrowing this
+# to `.env*` would lose the case where a key is pasted into source. `scan`
+# ignores paths it cannot usefully read.
 - id: evnx-scan
   name: evnx — Secret Scanner
-  description: Scan .env files for accidentally committed secrets (AWS keys, Stripe, OpenAI, etc.)
+  description: Scan staged files for accidentally committed secrets (AWS keys, Stripe, OpenAI, etc.)
   entry: evnx scan
   language: rust
-  pass_filenames: false
+  pass_filenames: true
   stages: [pre-commit]
-  always_run: true
 
 - id: evnx-validate
   name: evnx — .env Validator
@@ -41,11 +56,13 @@
   stages: [pre-commit]
 
 # Pre-push variant (heavier checks)
+# ⚠️ Same change, same reason. At pre-push the question is what is about to be
+# published, not what happens to be on disk — and the working tree still holds
+# the gitignored `.env` that blocked every commit above.
 - id: evnx-scan-push
   name: evnx — Strict Secret Scanner (pre-push)
   description: Strict secret scan with SARIF output before push
   entry: evnx scan --format sarif
   language: rust
-  pass_filenames: false
-  always_run: true
+  pass_filenames: true
   stages: [pre-push]

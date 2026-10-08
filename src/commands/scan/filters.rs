@@ -465,6 +465,35 @@ mod tests {
         }
     }
 
+    /// ⚠️ **An external review asked for this exclusion to be removed, and the
+    /// answer is "not yet". Measured before deciding.**
+    ///
+    /// The argument for removing it is good: `.env.example` is one of the few
+    /// `.env*` files that actually gets committed, so a live key pasted there is
+    /// exactly the leak this command exists to catch — and today it is missed.
+    ///
+    /// The argument was "placeholders are already suppressed". They are not. A
+    /// perfectly ordinary template produces **five** findings:
+    ///
+    /// ```text
+    /// DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+    ///                                      → Credentials in a connection string
+    /// STRIPE_SECRET_KEY=sk_test_xxxxxxxxxx → Stripe Secret Key (test)
+    /// AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE → AWS Access Key
+    /// GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx → GitHub Token
+    /// API_KEY=<your-api-key>               → Sensitive config key
+    /// ```
+    ///
+    /// and `utils::patterns::is_placeholder` recognises only two of those seven
+    /// values. Adding a real key makes it six findings among five false ones.
+    ///
+    /// Removing the exclusion today would turn every project's pre-commit hook
+    /// red on a correct template, which is how a tool teaches people to ignore
+    /// it — a worse outcome than the miss it would fix.
+    ///
+    /// ⛔ **The prerequisite is placeholder detection that recognises template
+    /// values**, which also needs `--ignore-placeholders` to stop being inert.
+    /// Both are tracked. Until then this stays, deliberately.
     #[test]
     fn env_template_family_is_still_excluded() {
         let filter = FileFilter::new(&[]);
