@@ -3,6 +3,9 @@ pub mod docker;
 pub mod github;
 pub mod json;
 pub mod kubernetes;
+/// One quoting rule per output format, in one place — see the module docs for
+/// why each converter escaping inline was the wrong shape.
+pub mod quoting;
 pub mod shell;
 pub mod terraform;
 pub mod yaml;

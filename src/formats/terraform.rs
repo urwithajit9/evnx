@@ -19,9 +19,15 @@ impl Converter for TerraformConverter {
         for (k, v) in filtered.iter() {
             let key = options.transform_key(k).to_lowercase();
             let value = options.transform_value(v);
-            // Escape quotes and backslashes
-            let escaped_value = value.replace('\\', "\\\\").replace('"', "\\\"");
-            output.push_str(&format!("{} = \"{}\"\n", key, escaped_value));
+            // ⛔ `${` and `%{` are HCL interpolation and directive markers, and
+            // escaping only `\` and `"` left them live — so a value containing
+            // `${…}` referred to a variable that does not exist and the
+            // generated tfvars failed to load.
+            output.push_str(&format!(
+                "{} = {}\n",
+                key,
+                crate::formats::quoting::hcl_string(value.as_str())
+            ));
         }
 
         Ok(output)

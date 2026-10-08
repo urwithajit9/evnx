@@ -208,39 +208,6 @@ fn handle_gitignore(output: &str, mode: &GitignoreMode) -> anyhow::Result<()> {
 // Regex Pattern Helpers (avoid format! brace escaping hell)
 // ─────────────────────────────────────────────────────────────
 
-/// Build regex pattern to match `${VAR}` style references.
-///
-/// # Example (internal use only)
-///
-/// ```ignore
-/// // This function is private - iterate over results internally
-/// let pattern = shell_var_pattern("MY_VAR");
-///
-/// ```
-fn shell_var_pattern(key: &str) -> String {
-    // Produces: \$\{\s*KEY\s*\}  which matches `${KEY}` and `${ KEY }`.
-    //
-    // ⚠️ The `\s*` is the fix for a silent-wrong-answer bug: without it,
-    // `${ PORT }` matched nothing and was written to the output file verbatim,
-    // with a zero exit code. Whitespace inside a placeholder is how most people
-    // write one, so the failure was common and invisible.
-    format!("\\$\\{{\\s*{}\\s*\\}}", regex::escape(key))
-}
-
-/// Build regex pattern to match `{{VAR}}` style references.
-///
-/// # Example (internal use only)
-///
-/// ```ignore
-/// // This function is private - used internally by process_simple_substitution
-/// let pattern = template_var_pattern("MY_VAR");
-/// // pattern == r"\{\{MY_VAR\}\}" as a regex string
-/// ```
-fn template_var_pattern(key: &str) -> String {
-    // Matches `{{KEY}}` and `{{ KEY }}` alike — see `shell_var_pattern`.
-    format!("\\{{\\{{\\s*{}\\s*\\}}\\}}", regex::escape(key))
-}
-
 /// Build regex pattern to match `{{VAR|filter}}` style references.
 ///
 /// The `filter` argument **must include the leading pipe**, e.g. `"|upper"`, `"|bool"`.
@@ -503,27 +470,65 @@ fn apply_absent_defaults(template: &str) -> String {
 ///
 /// String with all simple variable references replaced
 fn process_simple_substitution(template: &str, vars: &IndexMap<String, String>) -> String {
-    let mut result = template.to_string();
-
-    for (key, value) in vars {
-        // ${VAR} style
-        if let Ok(re) = Regex::new(&shell_var_pattern(key)) {
-            result = re.replace_all(&result, value.as_str()).to_string();
-        }
-
-        // {{VAR}} style
-        if let Ok(re) = Regex::new(&template_var_pattern(key)) {
-            result = re.replace_all(&result, value.as_str()).to_string();
-        }
-
-        // $VAR style with word boundary - raw string works here (no literal braces)
-        let simple_pattern = format!(r"\${}\b", regex::escape(key));
-        if let Ok(re) = Regex::new(&simple_pattern) {
-            result = re.replace_all(&result, value.as_str()).to_string();
-        }
+    // ⛔ **One pass over the template, not one pass per variable.**
+    //
+    // This used to loop over `vars`, replacing each key across the whole
+    // accumulating result. So a value substituted early was **re-scanned** by
+    // every later iteration:
+    //
+    // ```text
+    // BRACE='{{OTHER}}'   OTHER=plain
+    //   brace={{BRACE}}   →   brace=plain
+    // ```
+    //
+    // The secret's own text was treated as a template, and whether that happened
+    // depended on key order — so the same file could render differently after an
+    // unrelated edit.
+    //
+    // ⚠️ The alternation is built from the **actual keys**, not from a generic
+    // `\w+`. `regex::escape` keeps keys containing dots working, which a
+    // character class would have silently dropped.
+    if vars.is_empty() {
+        return template.to_string();
     }
 
-    result
+    let alt = vars
+        .keys()
+        .map(|k| regex::escape(k))
+        .collect::<Vec<_>>()
+        .join("|");
+
+    // ⚠️ The `\s*` around the key is load-bearing and predates this rewrite:
+    // without it `${ PORT }` matched nothing and was written to the output file
+    // verbatim with a zero exit code. Whitespace inside a placeholder is how
+    // most people write one, so the failure was common and invisible.
+    let pattern = format!(r"\$\{{\s*({alt})\s*\}}|\{{\{{\s*({alt})\s*\}}\}}|\$({alt})\b");
+    let Ok(re) = Regex::new(&pattern) else {
+        return template.to_string();
+    };
+
+    re.replace_all(template, |caps: &regex::Captures| {
+        let key = caps
+            .get(1)
+            .or_else(|| caps.get(2))
+            .or_else(|| caps.get(3))
+            .map(|m| m.as_str())
+            .unwrap_or_default();
+
+        match vars.get(key) {
+            // ⚠️ Returning the value from a closure puts it in **verbatim**.
+            // A `&str` replacement is a template, in which `$` names a capture
+            // group — which is what turned `DB_PASSWORD=pa$sw0rd` into `pa`,
+            // silently and with exit 0.
+            Some(value) => value.clone(),
+            None => caps
+                .get(0)
+                .map(|m| m.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        }
+    })
+    .to_string()
 }
 
 /// Type alias for filter transformation functions.
@@ -599,7 +604,9 @@ fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<St
             if let Ok(re) = Regex::new(&pattern) {
                 if re.is_match(&result) {
                     let transformed = transform(value);
-                    result = re.replace_all(&result, transformed.as_str()).to_string();
+                    result = re
+                        .replace_all(&result, regex::NoExpand(transformed.as_str()))
+                        .to_string();
                 }
             }
         }
@@ -612,7 +619,7 @@ fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<St
                     || value.eq_ignore_ascii_case("yes")
                     || value.eq_ignore_ascii_case("1");
                 result = re
-                    .replace_all(&result, bool_val.to_string().as_str())
+                    .replace_all(&result, regex::NoExpand(bool_val.to_string().as_str()))
                     .to_string();
             }
         }
@@ -628,7 +635,7 @@ fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<St
                     )
                 })?;
                 result = re
-                    .replace_all(&result, int_val.to_string().as_str())
+                    .replace_all(&result, regex::NoExpand(int_val.to_string().as_str()))
                     .to_string();
             }
         }
@@ -640,7 +647,9 @@ fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<St
                 let json_val = serde_json::to_string(value)
                     .with_context(|| format!("Failed to JSON-encode variable '{}'", key))?;
                 // Keep quotes - they're part of valid JSON string representation
-                result = re.replace_all(&result, json_val.as_str()).to_string();
+                result = re
+                    .replace_all(&result, regex::NoExpand(json_val.as_str()))
+                    .to_string();
             }
         }
 
@@ -657,7 +666,9 @@ fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<St
                 } else {
                     value.clone()
                 };
-                result = re.replace_all(&result, replacement.as_str()).to_string();
+                result = re
+                    .replace_all(&result, regex::NoExpand(replacement.as_str()))
+                    .to_string();
             }
         }
     }
@@ -755,10 +766,25 @@ mod tests {
             .is_match(haystack)
     }
 
+    /// Render through the real substitution path, which is what the removed
+    /// `shell_var_pattern` / `template_var_pattern` helpers used to feed.
+    ///
+    /// ⚠️ These assertions used to check the *pattern string* those helpers
+    /// built. Testing the rendered output instead is why the single-pass
+    /// rewrite could be verified at all: a pattern test cannot see that a
+    /// substituted value gets re-scanned.
+    fn render(template: &str, pairs: &[(&str, &str)]) -> String {
+        let vars: IndexMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        process_simple_substitution(template, &vars)
+    }
+
     #[test]
     fn test_pattern_helpers() {
-        assert!(matches(&shell_var_pattern("MY_VAR"), "${MY_VAR}"));
-        assert!(matches(&template_var_pattern("MY_VAR"), "{{MY_VAR}}"));
+        assert_eq!(render("${MY_VAR}", &[("MY_VAR", "v")]), "v");
+        assert_eq!(render("{{MY_VAR}}", &[("MY_VAR", "v")]), "v");
         assert!(matches(&filter_var_pattern("KEY", "|bool"), "{{KEY|bool}}"));
         assert!(matches(&default_var_pattern("OPT"), "{{OPT|default:x}}"));
     }
@@ -767,8 +793,8 @@ mod tests {
     /// one of these forms rendered literally into the output file before v0.5.0.
     #[test]
     fn whitespace_inside_a_placeholder_is_tolerated() {
-        assert!(matches(&shell_var_pattern("V"), "${ V }"));
-        assert!(matches(&template_var_pattern("V"), "{{ V }}"));
+        assert_eq!(render("${ V }", &[("V", "x")]), "x");
+        assert_eq!(render("{{ V }}", &[("V", "x")]), "x");
         assert!(matches(
             &filter_var_pattern("V", "|upper"),
             "{{ V | upper }}"
@@ -983,35 +1009,46 @@ mod tests {
         assert_eq!(result, "1 2 3");
     }
 
+    /// ⚠️ A dot is a regex metacharacter, so a key containing one must stay
+    /// escaped. The single-pass rewrite builds its alternation with
+    /// `regex::escape` over the real keys for exactly this reason — a generic
+    /// `\w+` class would have dropped dotted keys silently.
     #[test]
-    fn test_shell_var_pattern() {
-        assert!(matches(&shell_var_pattern("MY_VAR"), "${MY_VAR}"));
-        assert!(matches(&shell_var_pattern("MY_VAR"), "${ MY_VAR }"));
-        // A dot is a regex metacharacter and must stay escaped.
-        assert!(matches(
-            &shell_var_pattern("VAR.WITH.DOTS"),
-            "${VAR.WITH.DOTS}"
-        ));
-        assert!(!matches(
-            &shell_var_pattern("VAR.WITH.DOTS"),
-            "${VARxWITHyDOTS}"
-        ));
+    fn a_dotted_key_is_matched_literally() {
+        let vars = &[("VAR.WITH.DOTS", "v")];
+        assert_eq!(render("${VAR.WITH.DOTS}", vars), "v");
+        assert_eq!(render("{{VAR.WITH.DOTS}}", vars), "v");
+        // The dot must not act as "any character".
+        assert_eq!(render("${VARxWITHyDOTS}", vars), "${VARxWITHyDOTS}");
+        assert_eq!(render("{{VARxWITHyDOTS}}", vars), "{{VARxWITHyDOTS}}");
     }
 
+    /// A key must not swallow a longer neighbouring name.
     #[test]
-    fn test_template_var_pattern() {
-        assert!(matches(&template_var_pattern("MY_VAR"), "{{MY_VAR}}"));
-        assert!(matches(&template_var_pattern("MY_VAR"), "{{ MY_VAR }}"));
-        assert!(matches(
-            &template_var_pattern("VAR.WITH.DOTS"),
-            "{{VAR.WITH.DOTS}}"
-        ));
-        assert!(!matches(
-            &template_var_pattern("VAR.WITH.DOTS"),
-            "{{VARxWITHyDOTS}}"
-        ));
-        // Must not swallow a neighbouring name.
-        assert!(!matches(&template_var_pattern("PORT"), "{{PORTAL}}"));
+    fn a_key_does_not_shadow_a_longer_one() {
+        assert_eq!(render("{{PORTAL}}", &[("PORT", "8080")]), "{{PORTAL}}");
+        assert_eq!(
+            render("{{PORTAL}}", &[("PORT", "8080"), ("PORTAL", "gate")]),
+            "gate"
+        );
+        assert_eq!(render("$PORTAL", &[("PORT", "8080")]), "$PORTAL");
+    }
+
+    /// ⛔ The two defects this rewrite closed, as behaviour.
+    #[test]
+    fn a_value_is_substituted_literally_and_only_once() {
+        // `$` in a value is not a capture reference.
+        assert_eq!(
+            render("p={{DB_PASSWORD}}", &[("DB_PASSWORD", "pa$sw0rd")]),
+            "p=pa$sw0rd"
+        );
+        // A substituted value is never re-scanned.
+        assert_eq!(
+            render("b={{BRACE}}", &[("BRACE", "{{OTHER}}"), ("OTHER", "plain")]),
+            "b={{OTHER}}"
+        );
+        // An unknown reference is left exactly as written.
+        assert_eq!(render("{{NOPE}}", &[("A", "1")]), "{{NOPE}}");
     }
 
     #[test]

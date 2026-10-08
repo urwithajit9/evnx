@@ -19,7 +19,15 @@ impl Converter for DockerComposeConverter {
         for (k, v) in filtered.iter() {
             let key = options.transform_key(k);
             let value = options.transform_value(v);
-            output.push_str(&format!("  - {}={}\n", key, value));
+            // ⛔ The whole `KEY=value` item as one quoted scalar. Unquoted,
+            // Compose reads `-` items the same way YAML does — `a: b` turns the
+            // item into a map, `#` truncates — and additionally interpolates
+            // `$`, for which a literal needs `$$`.
+            let item = format!("{}={}", key, value.replace('$', "$$"));
+            output.push_str(&format!(
+                "  - {}\n",
+                crate::formats::quoting::yaml_scalar(&item)
+            ));
         }
 
         Ok(output)

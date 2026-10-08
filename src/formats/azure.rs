@@ -36,8 +36,19 @@ impl Converter for AzureKeyVaultConverter {
             let secret_name = key.replace('_', "-");
 
             output.push_str(&format!(
-                "az keyvault secret set --vault-name {} --name {} --value '{}'\n",
-                self.vault_name, secret_name, value
+                // ⛔ Quoted by the shared helper, not by wrapping in `'{}'`.
+                // A value containing a single quote closed the quoting and the
+                // rest of it became shell:
+                //
+                //   PWNED=x';touch /tmp/pwned;'
+                //   → az … --value 'x';touch /tmp/pwned;''
+                //
+                // which runs when the generated script is run. Verified against
+                // the shipped converter with a stub `az` on PATH.
+                "az keyvault secret set --vault-name {} --name {} --value {}\n",
+                self.vault_name,
+                secret_name,
+                crate::formats::quoting::shell_single(&value)
             ));
         }
 

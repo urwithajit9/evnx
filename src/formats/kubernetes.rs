@@ -38,7 +38,16 @@ impl Converter for KubernetesSecretConverter {
         for (k, v) in filtered.iter() {
             let key = options.transform_key(k);
             let value = options.transform_value(v);
-            output.push_str(&format!("  {}: {}\n", key, value));
+            // ⛔ A quoted scalar, always. Unquoted, YAML types the value by its
+            // shape: `PORT: 8080` is an integer and `BOOL: true` a boolean, both
+            // of which kubectl rejects under `stringData:`; `a: b` becomes a
+            // mapping; `#` starts a comment; and a value containing `\n---\n`
+            // starts a second manifest.
+            output.push_str(&format!(
+                "  {}: {}\n",
+                key,
+                crate::formats::quoting::yaml_scalar(value.as_str())
+            ));
         }
 
         Ok(output)

@@ -20,9 +20,17 @@ impl Converter for ShellExportConverter {
         for (k, v) in filtered.iter() {
             let key = options.transform_key(k);
             let value = options.transform_value(v);
-            // Escape quotes in values
-            let escaped_value = value.replace('"', "\\\"");
-            output.push_str(&format!("export {}=\"{}\"\n", key, escaped_value));
+            // ⛔ Single quotes, via the shared helper. This was
+            // `value.replace('"', "\\\"")` inside double quotes, which left
+            // `$(…)`, backticks and `$VAR` live — so the script this command
+            // tells you to source executed whatever a value contained, lost
+            // `pa$sw0rd` to an empty expansion, and failed `sh -n` outright on a
+            // value ending in a backslash.
+            output.push_str(&format!(
+                "export {}={}\n",
+                key,
+                crate::formats::quoting::shell_single(value.as_str())
+            ));
         }
 
         Ok(output)
