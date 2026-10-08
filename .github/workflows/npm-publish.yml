@@ -31,55 +31,160 @@ jobs:
     steps:
       - name: Resolve trigger source
         id: check
+        # ⚠️ EVERY untrusted value arrives as an environment variable, never as
+        # `${{ }}` inside the script.
+        #
+        # `${{ }}` is substituted into the script TEXT before bash sees it, so a
+        # value containing shell syntax becomes shell syntax. `head_branch` is a
+        # ref name chosen by whoever pushed, and git permits `"` `$` `;` `|` `&`
+        # and backticks in one — only whitespace is excluded. Verified: the
+        # branch `v1.0.0";id>/tmp/pwned;"` is a legal ref, and the old
+        #
+        #     HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
+        #
+        # ran the `id` and then went on to report `version: 1.0.0`, so the
+        # injection was silent. This job holds NPM_TOKEN and a write-scoped
+        # GITHUB_TOKEN.
+        env:
+          EVENT_NAME:      ${{ github.event_name }}
+          DISPATCH_RUN_ID: ${{ github.event.inputs.run_id }}
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+          WR_PATH:         ${{ github.event.workflow_run.path }}
+          WR_EVENT:        ${{ github.event.workflow_run.event }}
+          WR_CONCLUSION:   ${{ github.event.workflow_run.conclusion }}
+          WR_BRANCH:       ${{ github.event.workflow_run.head_branch }}
+          WR_SHA:          ${{ github.event.workflow_run.head_sha }}
+          WR_RUN_ID:       ${{ github.event.workflow_run.id }}
+          WR_HEAD_REPO:    ${{ github.event.workflow_run.head_repository.full_name }}
+          THIS_REPO:       ${{ github.repository }}
+          GH_TOKEN:        ${{ secrets.GITHUB_TOKEN }}
+          ACTOR:           ${{ github.actor }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "Triggered manually"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-            echo "run_id=${{ github.event.inputs.run_id }}" >> $GITHUB_OUTPUT
-            echo "Will publish version: ${{ github.event.inputs.version }} from run: ${{ github.event.inputs.run_id }}"
-          else
-            CONCLUSION="${{ github.event.workflow_run.conclusion }}"
-            HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
-            RUN_ID="${{ github.event.workflow_run.id }}"
+          set -euo pipefail
 
-            echo "Upstream conclusion: $CONCLUSION"
-            echo "Head branch/tag: $HEAD_BRANCH"
-            echo "Run ID: $RUN_ID"
+          # A version this workflow will write into six package.json files and
+          # publish under. Pinned to semver so nothing else can reach npm.
+          VERSION_RE='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
 
-            # Not a version tag: nothing was expected to publish, so this is a
-            # quiet green skip. release.yml only triggers on `v*`, so this branch
-            # should be unreachable; it stays as a guard rather than an assertion.
-            if [[ ! "$HEAD_BRANCH" =~ ^v[0-9] ]]; then
-              echo "should_run=false" >> $GITHUB_OUTPUT
-              echo "Not a version tag (ref=$HEAD_BRANCH) — nothing to publish"
-              exit 0
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "Triggered manually by $ACTOR"
+
+            if [[ ! "$DISPATCH_VERSION" =~ $VERSION_RE ]]; then
+              echo "::error::version '$DISPATCH_VERSION' is not a semver string"
+              exit 1
             fi
-
-            # ⚠️ A failed upstream release is a FAILURE here, not a skip.
-            #
-            # `workflow_run` fires whatever the upstream concluded, and this used
-            # to skip quietly — but a skipped job leaves the workflow **green**.
-            # That is how v0.4.0 was believed published: release.yml failed, this
-            # workflow fired, skipped, and reported a green check next to it. The
-            # npm token had also expired, and npm answers an unauthorised publish
-            # to an existing package with 404, so even the eventual real error
-            # read like a missing package.
-            #
-            # A real tag whose release failed is worth a red mark. Recovery is
-            # the workflow_dispatch input, which is why it exists.
-            if [[ "$CONCLUSION" != "success" ]]; then
-              echo "::error::Release run for $HEAD_BRANCH concluded '$CONCLUSION' — refusing to publish to npm"
-              echo "Nothing was published. Fix the release, then re-run this workflow"
-              echo "manually with run_id=$RUN_ID and version=${HEAD_BRANCH#v}."
+            if [[ ! "$DISPATCH_RUN_ID" =~ ^[0-9]+$ ]]; then
+              echo "::error::run_id '$DISPATCH_RUN_ID' is not a number"
               exit 1
             fi
 
-            echo "should_run=true" >> $GITHUB_OUTPUT
-            echo "version=${HEAD_BRANCH#v}" >> $GITHUB_OUTPUT
-            echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
-            echo "Will publish version: ${HEAD_BRANCH#v}"
+            # ⚠️ The run_id is typed by hand and decides which artifacts get
+            # published. Confirm it is a SUCCESSFUL release.yml run in THIS
+            # repository before trusting what it uploaded — a transposed digit
+            # otherwise publishes whatever some other run happened to produce.
+            RUN=$(gh api "repos/$THIS_REPO/actions/runs/$DISPATCH_RUN_ID" 2>/dev/null) || {
+              echo "::error::no run $DISPATCH_RUN_ID in $THIS_REPO"; exit 1; }
+            RUN_PATH=$(jq -r '.path' <<<"$RUN")
+            RUN_CONC=$(jq -r '.conclusion' <<<"$RUN")
+            if [[ "$RUN_PATH" != ".github/workflows/release.yml" ]]; then
+              echo "::error::run $DISPATCH_RUN_ID is '$RUN_PATH', not release.yml"; exit 1
+            fi
+            if [[ "$RUN_CONC" != "success" ]]; then
+              echo "::error::run $DISPATCH_RUN_ID concluded '$RUN_CONC'"; exit 1
+            fi
+
+            echo "should_run=true"                     >> "$GITHUB_OUTPUT"
+            echo "version=$DISPATCH_VERSION"           >> "$GITHUB_OUTPUT"
+            echo "run_id=$DISPATCH_RUN_ID"             >> "$GITHUB_OUTPUT"
+            echo "Will publish $DISPATCH_VERSION from run $DISPATCH_RUN_ID"
+            exit 0
           fi
+
+          echo "Upstream: path=$WR_PATH event=$WR_EVENT ref=$WR_BRANCH sha=$WR_SHA"
+
+          # ⚠️ `workflows: ["Release"]` matches by NAME, and a name is none of
+          # unique, immutable, or confined to the default branch. Any workflow
+          # file anywhere in the repo whose `name:` is `Release` fires this one
+          # — and GitHub is explicit that "the workflow started by the
+          # workflow_run event is able to access secrets and write tokens, even
+          # if the previous workflow was not". The file path is the identity
+          # that the trigger filter cannot express.
+          if [[ "$WR_PATH" != ".github/workflows/release.yml" ]]; then
+            echo "::error::triggered by '$WR_PATH', not .github/workflows/release.yml"
+            exit 1
+          fi
+
+          if [[ "$WR_HEAD_REPO" != "$THIS_REPO" ]]; then
+            echo "::error::upstream run belongs to '$WR_HEAD_REPO', not '$THIS_REPO'"
+            exit 1
+          fi
+
+          if [[ "$WR_EVENT" != "push" ]]; then
+            echo "::error::upstream run was triggered by '$WR_EVENT'; release.yml publishes on tag pushes only"
+            exit 1
+          fi
+
+          # ⚠️ A failed upstream release is a FAILURE here, not a skip.
+          #
+          # `workflow_run` fires whatever the upstream concluded, and this used
+          # to skip quietly — but a skipped job leaves the workflow **green**.
+          # That is how v0.4.0 was believed published: release.yml failed, this
+          # workflow fired, skipped, and reported a green check next to it. The
+          # npm token had also expired, and npm answers an unauthorised publish
+          # to an existing package with 404, so even the eventual real error
+          # read like a missing package.
+          #
+          # Recovery is the workflow_dispatch input, which is why it exists.
+          if [[ "$WR_CONCLUSION" != "success" ]]; then
+            echo "::error::Release run for $WR_BRANCH concluded '$WR_CONCLUSION' — refusing to publish to npm"
+            echo "Nothing was published. Fix the release, then re-run this workflow"
+            echo "manually with run_id=$WR_RUN_ID and version=${WR_BRANCH#v}."
+            exit 1
+          fi
+
+          # ⚠️ `head_branch` is the ref's SHORT NAME and nothing more — it reads
+          # `v0.9.0` for the tag v0.9.0 and `v0.9.0` for a BRANCH called v0.9.0.
+          # The old `^v[0-9]` test could not tell them apart, so pushing a branch
+          # with a version-shaped name was enough to drive a publish. Ask the
+          # refs API for a TAG specifically; a branch 404s here.
+          if [[ ! "$WR_BRANCH" =~ ^v[0-9] ]]; then
+            echo "::error::ref '$WR_BRANCH' is not version-shaped"
+            exit 1
+          fi
+
+          REF=$(gh api "repos/$THIS_REPO/git/ref/tags/$WR_BRANCH" 2>/dev/null) || {
+            echo "::error::no TAG named '$WR_BRANCH' — a branch with a version-shaped name does not release"
+            exit 1; }
+
+          OBJ_TYPE=$(jq -r '.object.type' <<<"$REF")
+          OBJ_SHA=$(jq -r '.object.sha'  <<<"$REF")
+          if [[ "$OBJ_TYPE" == "tag" ]]; then     # annotated: deref to the commit
+            # `gh api` + `jq -r`, matching the lookup above rather than using
+            # `--jq`. Uniform shape so both branches are exercised the same way
+            # by the same harness — the mismatch hid this path from its test.
+            TAG_OBJ=$(gh api "repos/$THIS_REPO/git/tags/$OBJ_SHA")
+            OBJ_SHA=$(jq -r '.object.sha' <<<"$TAG_OBJ")
+          fi
+
+          # ⚠️ And it must still point where the build pointed. A tag that was
+          # moved after release.yml ran would otherwise publish binaries built
+          # from one commit under a tag that now names another.
+          if [[ "$OBJ_SHA" != "$WR_SHA" ]]; then
+            echo "::error::tag $WR_BRANCH points at $OBJ_SHA but the release run built $WR_SHA"
+            exit 1
+          fi
+
+          VERSION="${WR_BRANCH#v}"
+          if [[ ! "$VERSION" =~ $VERSION_RE ]]; then
+            echo "::error::'$VERSION' is not a semver string"
+            exit 1
+          fi
+
+          echo "should_run=true"      >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"     >> "$GITHUB_OUTPUT"
+          echo "run_id=$WR_RUN_ID"    >> "$GITHUB_OUTPUT"
+          echo "✓ tag $WR_BRANCH → $OBJ_SHA, built by release.yml run $WR_RUN_ID"
+          echo "Will publish version: $VERSION"
 
   publish:
     name: Publish to npm
@@ -498,10 +603,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v$VERSION"
-          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/$TAG --jq '.id')
+          RELEASE_ID=$(gh api repos/$GITHUB_REPOSITORY/releases/tags/$TAG --jq '.id')
 
           if [[ -n "$RELEASE_ID" ]]; then
-            EXISTING_BODY=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID --jq '.body')
+            EXISTING_BODY=$(gh api repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID --jq '.body')
 
             NPM_NOTE="
 
@@ -514,7 +619,7 @@ jobs:
           "
 
             gh api --method PATCH \
-              repos/${{ github.repository }}/releases/$RELEASE_ID \
+              repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID \
               --field "body=${EXISTING_BODY}${NPM_NOTE}"
 
             echo "✓ Updated release notes"

@@ -554,6 +554,46 @@ red on a correct template, which is worse than the miss it fixes. The
 prerequisite is placeholder detection that understands template values; the
 decision and its evidence are recorded in the test that guards the exclusion.
 
+### ⛔ A branch name could publish to npm, and run commands while doing it
+
+`npm-publish.yml` is triggered by `workflow_run: workflows: ["Release"]`, and
+that filter matches a workflow **name**. A name is not unique, not immutable
+and not confined to the default branch, so any workflow file in the repository
+called `Release` fired it — in a job that GitHub documents as able to "access
+secrets and write tokens, even if the previous workflow was not". That job
+holds `NPM_TOKEN` and publishes six packages with provenance.
+
+- **The trigger is now identified by file path.** `workflow_run.path` must be
+  `.github/workflows/release.yml`; the upstream run must belong to this
+  repository rather than a fork, and must have been a `push`.
+
+- **A branch was indistinguishable from a tag.** `head_branch` carries a ref's
+  short name and nothing else — it reads `v0.9.0` both for the tag `v0.9.0`
+  and for a *branch* called `v0.9.0`, and the old `^v[0-9]` test could not
+  tell them apart. The tag is now resolved through the refs API, where a
+  branch 404s, and must still dereference to the commit the release run built,
+  so a tag moved afterwards cannot publish binaries from one commit under a
+  tag that names another.
+
+- **The ref name was interpolated into a shell script.** `HEAD_BRANCH="${{ … }}"`
+  substitutes into the script *text*, and git permits `"`, `$`, `;`, `|`, `&`
+  and backticks in a ref name — only whitespace is excluded. The branch
+  `v1.0.0";id>/tmp/pwned;"` is a legal ref, and it executed the `id` and then
+  reported `version: 1.0.0`, so nothing in the log looked wrong. Every
+  untrusted value now reaches the script as an environment variable, and no
+  `${{ }}` remains inside any `run:` block in the file.
+
+- **`workflow_dispatch` validated nothing.** It took a `run_id` and a `version`
+  by hand and published whatever that run had uploaded. The run must now be a
+  successful `release.yml` run in this repository, and the version must be
+  semver — it is written into six `package.json` files.
+
+⚠️ Every release tag in this repository is **annotated**, so the dereference
+is the path that runs on an ordinary release rather than an edge case. The new
+check was replayed against v0.6.0, v0.7.0, v0.8.0 and v0.9.0 using the live
+API: all four resolve to exactly the commit their release run built, and all
+four pass.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
