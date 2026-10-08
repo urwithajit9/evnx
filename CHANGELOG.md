@@ -478,6 +478,48 @@ It now uses `core::parser`, which is the thing that knows what a multiline value
 is. The comment above it said it was "kept deliberately simple to avoid false
 negatives on edge cases"; the edge case it could not see was the one that leaks.
 
+### ⛔ `scan` missed secrets a parsed `.env` cannot show it
+
+A parsed `.env` is a map, and a map is smaller than the file. Three kinds of
+secret fell into the gap, and each reported **0 findings, exit 0**:
+
+```text
+# STRIPE_SECRET_KEY=sk_live_…      a comment to the parser, a leak to everyone else
+K=sk_live_…                        shadowed by the line below, so never scanned
+K=
+STRIPE_SECRET_KEY: sk_live_…       in .env.yaml, scanned by neither path
+```
+
+- **A commented-out assignment** was skipped by both the parser and the raw
+  fallback. A key pasted into a file and then commented out is still a key that
+  was committed.
+- **A shadowed duplicate** survives only as the last value, so `K=sk_live_…`
+  followed by `K=` left the real value unseen. Blanking it on the line below does
+  not unpublish it.
+- **`.env.yaml` and `.env.json`** were handed to the dotenv parser, which failed,
+  and the raw fallback only looked at lines containing `=` — so `KEY: value` was
+  scanned by neither.
+
+**And the same test produced false positives.** Whether a file was "dotenv" was
+decided by `path.contains(".env")`, which is true of every file inside a
+directory called `.env` — and a Python virtualenv is routinely named exactly
+that. Library code in `site-packages` became findings: `self.password = password`
+in somebody else's package was reported as a secret.
+
+**What changed**
+
+- Dotenv-ness is decided by **file name**, not path, and a known structured
+  extension (`.yaml`, `.json`, `.toml`, …) means the content detectors read it
+  as text instead.
+- After a successful parse, the lines the parse did not account for — comments
+  and shadowed duplicates — are scanned too. ⓘ Only those lines, so a secret is
+  never reported twice.
+- The raw fallback no longer skips `#` lines.
+
+Measured against 0.9.0: each of the three went 0 → 1 finding, the virtualenv
+case went 2 → 0, and an ordinary file with one real secret still reports exactly
+one.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
