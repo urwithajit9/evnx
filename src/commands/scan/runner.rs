@@ -285,7 +285,12 @@ impl ScanRunner {
     /// matching `EnvFile::lines` and the convention parse errors already use.
     /// Pointing at the fragment that happened to match would send someone to the
     /// middle of a PEM block rather than to the assignment they need to edit.
-    fn scan_env_parsed(&self, path: &Path, content: &str, results: &mut ScanResults) -> Option<()> {
+    fn scan_env_parsed(
+        &self,
+        path: &Path,
+        content: &str,
+        results: &mut ScanResults,
+    ) -> Option<indexmap::IndexMap<String, String>> {
         use crate::core::parser::{Parser, ParserConfig};
 
         let parser = Parser::new(ParserConfig {
@@ -301,7 +306,75 @@ impl ScanRunner {
                 self.add_finding(results, path, line_num, Some(key.clone()), detection);
             }
         }
-        Some(())
+        Some(vars)
+    }
+
+    /// The lines a successful parse does **not** account for.
+    ///
+    /// ⛔ A parsed `.env` is a map, and a map is smaller than the file. Two
+    /// kinds of line vanish into it, and a secret on either scanned clean:
+    ///
+    /// * **A commented-out assignment.** `# STRIPE_SECRET_KEY=sk_live_…` is a
+    ///   comment to the parser and a leaked credential to everyone else. A key
+    ///   pasted into a file and then commented out is still a key that was
+    ///   committed.
+    /// * **A shadowed duplicate.** `K=sk_live_…` followed by `K=` leaves only
+    ///   the empty one in the map, so the real value was never offered to a
+    ///   detector — and "I blanked it on the line below" does not unpublish it.
+    ///
+    /// ⚠️ Only lines the parsed pass missed are scanned here, so a secret is
+    /// not reported twice.
+    fn scan_lines_the_parser_dropped(
+        &self,
+        path: &Path,
+        content: &str,
+        vars: &indexmap::IndexMap<String, String>,
+        results: &mut ScanResults,
+    ) {
+        for (idx, raw) in content.lines().enumerate() {
+            let line_num = idx + 1;
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let (key, value) = if let Some(body) = trimmed.strip_prefix('#') {
+                // A comment. If it looks like an assignment, keep the key so the
+                // finding can name it; otherwise scan the text as a bare value.
+                let body = body.trim();
+                match body.split_once('=') {
+                    Some((k, v)) => (k.trim().trim_start_matches("export ").trim(), v.trim()),
+                    None => ("", body),
+                }
+            } else {
+                let Some((k, v)) = trimmed.split_once('=') else {
+                    continue;
+                };
+                let k = k.trim().trim_start_matches("export ").trim();
+                let v = v.trim();
+                // ⓘ Already covered by the parsed pass unless this assignment
+                // was shadowed by a later one for the same key.
+                match vars.get(k) {
+                    Some(kept)
+                        if kept.trim_matches(['"', '\''].as_ref())
+                            == v.trim_matches(['"', '\''].as_ref()) =>
+                    {
+                        continue
+                    }
+                    Some(_) => (k, v),
+                    None => continue,
+                }
+            };
+
+            if value.is_empty() {
+                continue;
+            }
+            let location = format!("{}:{} ({})", path.display(), line_num, key);
+            if let Some(detection) = Self::best(self.registry.scan_kv(key, value, &location)) {
+                let variable = (!key.is_empty()).then(|| key.to_string());
+                self.add_finding(results, path, line_num, variable, detection);
+            }
+        }
     }
 
     fn scan_file(&self, path: &Path, results: &mut ScanResults) -> Result<()> {
@@ -346,7 +419,7 @@ impl ScanRunner {
 
         results.files_scanned += 1;
 
-        let is_env = path.to_string_lossy().contains(".env");
+        let is_env = looks_like_dotenv(path);
 
         // ── `.env`: the real parser, not a second implementation ─────────────
         //
@@ -366,7 +439,9 @@ impl ScanRunner {
         //   which is the value that would reach a program.
         // * `strict: false` — a lowercase key is still worth scanning.
         if is_env {
-            if let Some(()) = self.scan_env_parsed(path, &content, results) {
+            if let Some(vars) = self.scan_env_parsed(path, &content, results) {
+                // ⛔ The parsed pass is not the whole file — see the function.
+                self.scan_lines_the_parser_dropped(path, &content, &vars, results);
                 return Ok(());
             }
             // Fell through: the file does not parse. Carry on into the raw loop
@@ -382,8 +457,10 @@ impl ScanRunner {
         for (line_num, line) in content.lines().enumerate() {
             let line_num = line_num + 1;
 
-            // Skip comments and empty lines
-            if line.trim().is_empty() || line.trim().starts_with('#') {
+            // ⚠️ Blank lines only. A commented-out secret is still a secret
+            // that was committed, so `#` no longer skips the line — the
+            // detectors below read the raw text either way.
+            if line.trim().is_empty() {
                 continue;
             }
 
@@ -726,6 +803,35 @@ pub fn truncate_value(value: &str) -> String {
     let prefix: String = chars[..keep].iter().collect();
     let suffix: String = chars[n - keep..].iter().collect();
     format!("{prefix}…{suffix}")
+}
+
+/// Should this file be read with the `.env` parser?
+///
+/// ⛔ **By file name, not by path.** This was
+/// `path.to_string_lossy().contains(".env")`, which is true of every file under
+/// a directory that happens to be called `.env` — and a Python virtualenv is
+/// routinely named exactly that. So every file in `.env/lib/python3/site-packages`
+/// was handed to the dotenv parser, and a line like `self.password = password`
+/// in somebody else's library became a finding.
+///
+/// ⚠️ It was also true of `.env.yaml` and `.env.json`, which are *not* dotenv.
+/// Those parse as nothing useful, and the raw fallback only looks at lines
+/// containing `=`, so `STRIPE_SECRET_KEY: sk_live_…` in a `.env.yaml` was
+/// scanned by neither path and reported clean.
+fn looks_like_dotenv(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    if name != ".env" && !name.starts_with(".env.") {
+        return false;
+    }
+    // ⓘ `.env.yaml` is YAML that happens to be named after `.env`. Anything with
+    // a known structured-format extension is left to the content detectors,
+    // which read it as text rather than as assignments.
+    const NOT_DOTENV: &[&str] = &[
+        ".yaml", ".yml", ".json", ".toml", ".ini", ".xml", ".md", ".py", ".js", ".ts",
+    ];
+    !NOT_DOTENV.iter().any(|ext| name.ends_with(ext))
 }
 
 // ─────────────────────────────────────────────────────────────

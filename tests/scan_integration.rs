@@ -1578,3 +1578,101 @@ fn a_vim_swap_file_does_not_fail_the_scan() {
         "the .env.bak that `validate --fix` writes was not scanned"
     );
 }
+
+// ─────────────────────────────────────────────────────────────
+// S2 / S5 / S6 — what the parsed pass does not see
+// ─────────────────────────────────────────────────────────────
+
+fn findings(dir: &TempDir) -> usize {
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "--format", "json"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    json["summary"]["total"].as_u64().unwrap() as usize
+}
+
+const LIVE_KEY: &str = "sk_live_51H8xQ2eZvKYlo2CpR4mN7bV9";
+
+/// ⛔ **S2.** A commented-out assignment is a comment to the parser and a leaked
+/// credential to everyone else. A key pasted into a file and then commented out
+/// is still a key that was committed.
+#[test]
+fn a_commented_out_secret_is_still_found() {
+    let d = TempDir::new().unwrap();
+    fs::write(
+        d.path().join(".env"),
+        format!("# STRIPE_SECRET_KEY={LIVE_KEY}\nOK=1\n"),
+    )
+    .unwrap();
+    assert_eq!(findings(&d), 1, "a secret in a comment was not scanned");
+}
+
+/// ⛔ **S6.** A parsed `.env` is a map, so `K=secret` followed by `K=` leaves
+/// only the empty one — and the real value was never offered to a detector.
+/// Blanking it on the line below does not unpublish it.
+#[test]
+fn a_secret_shadowed_by_a_later_assignment_is_still_found() {
+    let d = TempDir::new().unwrap();
+    fs::write(
+        d.path().join(".env"),
+        format!("STRIPE_SECRET_KEY={LIVE_KEY}\nSTRIPE_SECRET_KEY=\n"),
+    )
+    .unwrap();
+    assert_eq!(findings(&d), 1, "the shadowed assignment was not scanned");
+}
+
+/// ⛔ **S5.** `.env.yaml` is YAML that happens to be named after `.env`. It was
+/// handed to the dotenv parser, which failed, and the raw fallback only looked
+/// at lines containing `=` — so `KEY: value` was scanned by neither.
+#[test]
+fn a_dotenv_named_yaml_file_is_still_scanned() {
+    let d = TempDir::new().unwrap();
+    fs::write(
+        d.path().join(".env.yaml"),
+        format!("STRIPE_SECRET_KEY: {LIVE_KEY}\n"),
+    )
+    .unwrap();
+    assert_eq!(findings(&d), 1, "a secret in .env.yaml was not scanned");
+}
+
+/// ⛔ **S5, the other half.** A Python virtualenv is routinely called `.env`,
+/// and the old test was on the whole *path* — so every file inside one was read
+/// as a dotenv file and other people's library code became findings.
+#[test]
+fn a_virtualenv_named_dot_env_is_not_treated_as_dotenv() {
+    let d = TempDir::new().unwrap();
+    let pkgs = d.path().join(".env/lib/python3/site-packages");
+    fs::create_dir_all(&pkgs).unwrap();
+    fs::write(
+        pkgs.join("lib.py"),
+        "self.password = password\nself.token = token\n",
+    )
+    .unwrap();
+    fs::write(d.path().join(".env.local"), "APP=demo\n").unwrap();
+
+    assert_eq!(
+        findings(&d),
+        0,
+        "library code inside a .env/ virtualenv was reported as secrets"
+    );
+}
+
+/// ⚠️ The complement to all of the above: scanning the dropped lines must not
+/// report the same secret twice, and must not invent findings in an ordinary
+/// file.
+#[test]
+fn an_ordinary_file_gains_no_findings_and_no_duplicates() {
+    let d = TempDir::new().unwrap();
+    fs::write(
+        d.path().join(".env"),
+        format!("# a plain comment\nAPP=demo\nSTRIPE_SECRET_KEY={LIVE_KEY}\nPORT=8080\n"),
+    )
+    .unwrap();
+    assert_eq!(
+        findings(&d),
+        1,
+        "the one real secret was reported more or fewer than once"
+    );
+}
