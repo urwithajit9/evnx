@@ -594,6 +594,28 @@ check was replayed against v0.6.0, v0.7.0, v0.8.0 and v0.9.0 using the live
 API: all four resolve to exactly the commit their release run built, and all
 four pass.
 
+### ⚠️ The published crate carried the CI workflows
+
+`cargo package` shipped all five `.github/workflows/*.yml` files inside the
+`evnx` crate. They are not part of the library, the binary, or anything that
+builds — but crates.io versions are immutable, so a workflow-only fix changed
+the crate's contents and therefore could not be released by moving a tag. That
+cost two version numbers before anyone noticed.
+
+`exclude = [".github/**"]` drops them: **185 files → 180**, 708.0 KiB → 687.9
+KiB compressed. Verified with a full `cargo package`, which runs the same
+verification build `cargo publish` does.
+
+⚠️ `exclude` rather than `include`, deliberately. `include` is a whitelist, so a
+file added to the crate later would be silently left out of the package until
+someone thought to list it. `exclude` fails in the harmless direction.
+
+ⓘ Nothing excluded is reachable from a build — the crate's only `include_str!`
+targets are `src/docs.rs`, `src/cloud/device.rs` and `src/assets/schema.json`,
+all under `src/`. `tests/`, `docs/`, `scripts/`, `benches/`, `Dockerfile`,
+`pyproject.toml` and `pypi-readme.md` still ship; `tests/` alone is 440 KB, so
+there is more to trim here if it turns out to be worth trimming.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
