@@ -373,6 +373,62 @@ documents now say the same thing, and cloud sync is labelled **beta**.
 signed wraps plus locally pinned identities, and a server change. The offline
 commands are unaffected.
 
+### ⛔ Converter output ran code, or did not parse
+
+Every format emitter escaped values inline, and each got it differently wrong.
+Measured against the shipped 0.9.0 converter with
+`CMD_SUB='$(touch /tmp/evnx-pwned)'` in a `.env`:
+
+```console
+$ evnx convert --to shell > out.sh
+$ sh -n out.sh
+out.sh: 13: Syntax error: Unterminated quoted string
+$ . ./out.sh                 # the file this command tells you to source
+/tmp/evnx-pwned              ← created
+$ echo "$DOLLAR"             # the value was pa$sw0rd
+                             ← empty
+```
+
+- **shell** escaped `"` and nothing else, inside double quotes — so `$(…)`,
+  backticks and `$VAR` stayed live, and a value ending in `\` swallowed the
+  closing quote and broke every line after it.
+- **Kubernetes** and **Compose** quoted nothing, so YAML typed the values by
+  shape: `PORT: 8080` an integer and `BOOL: true` a boolean, both of which
+  kubectl rejects under `stringData:`; `key: value` became a mapping; `#`
+  started a comment; and `\n---\n` started a second manifest. The output did not
+  parse as YAML at all.
+- **Terraform** escaped `\` and `"` but left `${` and `%{`, HCL's interpolation
+  and directive markers.
+- **Azure** and **GCP** wrapped values in `'…'` by hand, so a single quote in a
+  value closed the quoting and the rest became shell. Verified with a stub `az`
+  on `PATH`: a `.env` value **injected and ran a command**. GCP additionally used
+  `echo` without `-n`, appending a newline to every secret it pushed.
+- **`template`** passed values to `Regex::replace_all` as a replacement string,
+  where `$` names a capture group: `DB_PASSWORD=pa$sw0rd` rendered as `pa`.
+  Substituted values were also re-scanned, so a value containing `{{OTHER}}`
+  expanded or not depending on key order.
+
+⚠️ `cloud export --to shell` reaches the same converters, and there the values
+come from **other vault members** — so a hostile value is reachable by someone
+who is not the person running the command.
+
+**What changed**
+
+One module, `formats::quoting`, with one function per format:
+`shell_single` (POSIX single quotes, `'\''` for an embedded quote),
+`yaml_scalar` (always a quoted scalar, so a value is always a string), and
+`hcl_string` (escapes `${` and `%{` as `$${` and `%%{`). Every emitter calls it.
+`template` substitutes in a single pass with `NoExpand`, so `$` is literal and a
+substituted value is never re-scanned.
+
+ⓘ The tests feed each format to its real consumer — `sh -n` and `sh` for the
+shell script, a YAML parser for Kubernetes and Compose, stub `az` and `gcloud`
+binaries that record exactly what they were handed. An escape list reviewed by
+eye passes review; output handed to `sh` does not. Reverting all six emitters
+fails all five.
+
+ⓘ `heroku.rs` already escaped correctly and was the model.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.

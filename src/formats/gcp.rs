@@ -36,8 +36,18 @@ impl Converter for GcpSecretConverter {
             let secret_name = key.to_lowercase().replace('_', "-");
 
             output.push_str(&format!(
-                "echo '{}' | gcloud secrets create {} --data-file=- --project={}\n",
-                value, secret_name, self.project_id
+                // ⛔ `printf '%s'`, not `echo`, and the value quoted by the
+                // shared helper.
+                //
+                // Two defects in one line. A single quote in the value closed
+                // the quoting and the remainder became shell. And `echo` with no
+                // `-n` appends a newline, so **every** secret pushed this way
+                // was stored one byte longer than the value — which breaks an
+                // exact comparison and, for a key or token, breaks the key.
+                "printf '%s' {} | gcloud secrets create {} --data-file=- --project={}\n",
+                crate::formats::quoting::shell_single(&value),
+                secret_name,
+                self.project_id
             ));
         }
 
