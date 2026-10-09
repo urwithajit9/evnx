@@ -619,25 +619,16 @@ impl SecretDetector for ConfigKeyDetector {
     }
 
     fn scan_kv(&self, key: &str, value: &str, _location: &str) -> Option<Detection> {
-        let key_lower = key.to_lowercase();
-
-        // Check for sensitive key names with non-placeholder values
-        if key_lower.contains("password")
-            || key_lower.contains("secret")
-            || key_lower.contains("token")
-            || key_lower.contains("api_key")
-            || key_lower.contains("apikey")
-        {
-            // ✅ Skip common placeholders (respect --ignore-placeholders flag)
-            if crate::utils::patterns::is_placeholder(value) {
-                return None;
-            }
-
-            // Skip empty values
-            if value.is_empty() {
-                return None;
-            }
-
+        // ⚠️ One rule, in `patterns::name_suggests_secret`, not a second
+        // hardcoded word list here.
+        //
+        // This used to test five words of its own — password, secret, token,
+        // api_key, apikey — while `is_sensitive_key` sat next door carrying
+        // PASSWD, PWD, PRIVATE_KEY, AUTH, CREDENTIAL and a `*_KEY` suffix
+        // rule, maintained for `diff`'s redaction and never consulted here.
+        // Two lists for one question drift, and these had: `DB_PASSWD` was
+        // missed, and `QUOTA_FREE_TOKENS=2` was reported as a secret.
+        if crate::utils::patterns::name_suggests_secret(key, value) {
             Some(Detection {
                 judged_value: true,
                 pattern: format!("Sensitive config key: {}", key),

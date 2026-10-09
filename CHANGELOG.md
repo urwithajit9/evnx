@@ -761,6 +761,48 @@ a vault key still has it. The help and the command's output now say this and
 point at `evnx vault rekey`, which is what actually leaves an old key with
 nothing to open.
 
+### ⛔ `scan` missed whole classes of credential, and invented one
+
+Six credentials in a `.env`, before: **four** findings, every one of them the
+generic *"High-entropy string · low"*, and two missed entirely. After: six
+findings, each named, each at its own severity.
+
+**Five formats had no rule at all.**
+
+| | | |
+|---|---|---|
+| AWS temporary key (`ASIA…`) | high | not found at all — and it is what every CI role assumption hands out, so it is the form most likely to reach a `.env` by accident |
+| GitHub fine-grained PAT (`github_pat_…`) | high | the existing rule covers `ghp_`/`gho_`/`ghu_`/`ghs_` only, and GitHub now steers everyone to this one |
+| Slack (`xox[abprs]-`, `xapp-`) | high | |
+| Google API key (`AIza…`) | medium | ⓘ medium deliberately: a browser key for Maps or Places is meant to ship in a page and is restricted by referrer, not secrecy |
+| JSON Web Token | medium | ⓘ also medium: plenty of JWTs are public ID tokens |
+
+**And the variable name was being judged by two different rules.**
+
+`scan` had a name check of its own with five hardcoded words, while
+`is_sensitive_key` sat next to it carrying `PASSWD`, `PWD`, `PRIVATE_KEY`,
+`AUTH`, `CREDENTIAL` and a `*_KEY` suffix rule — maintained for `diff`'s
+redaction and never consulted here. Two lists for one question drift, and
+these had:
+
+- ⛔ `DB_PASSWD=hunter2hunter2hunter2` was **missed**. No provider prefix, and
+  a repeating value scores far below the entropy fallback's threshold.
+- ⛔ `QUOTA_FREE_TOKENS=2` was **reported as a medium-severity secret**,
+  because the name contains `TOKENS`. That one was live in evnx-server's own
+  `.env.example`.
+
+There is now one rule. It uses the list that was already being maintained, and
+it has the guards the old check lacked: a value must be at least 8 characters
+and must not be a variable reference (`${…}`, `%…%`), a filesystem path, or a
+bare number — each of those a false positive this produced on a real file.
+
+⚠️ **`PUBLIC_KEY` is excluded, `NEXT_PUBLIC_TOKEN` is not**, and the
+distinction is adjacency rather than the word. A public key is the one piece of
+key material meant to be published; a token behind a prefix that says
+"published" is the clearest finding there is. The first version of this
+exclusion got that wrong in both directions and the existing `g11` tests caught
+it — they encode exactly this pair.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
