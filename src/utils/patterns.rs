@@ -70,6 +70,54 @@ pub fn builtin_rules() -> Vec<PatternRule> {
             "high",
             Some("https://console.aws.amazon.com/iam"),
         ),
+        // ⚠️ `ASIA`, not only `AKIA`. An STS temporary key is a live credential
+        // until it expires, and it is what every CI role assumption hands out —
+        // so it is the form most likely to be pasted into a `.env` by accident.
+        // It was not matched at all: `ASIAIOSFODNN7EXAMPLE` scanned clean.
+        // Named separately from the long-term key so the output says which kind
+        // it found, because what you do about them differs.
+        PatternRule::builtin(
+            "AWS Temporary Access Key (STS)",
+            r"ASIA[0-9A-Z]{16}",
+            "high",
+            Some("https://console.aws.amazon.com/iam"),
+        ),
+        // ⚠️ The fine-grained PAT, which the `ghp_|gho_|ghu_|ghs_` alternation
+        // above cannot match — different prefix, different length, and it is
+        // the form GitHub now steers everyone towards.
+        PatternRule::builtin(
+            "GitHub Fine-grained PAT",
+            r"github_pat_[A-Za-z0-9_]{40,}",
+            "high",
+            Some("https://github.com/settings/personal-access-tokens"),
+        ),
+        // Bot, user, app-level and legacy tokens share the `xox<x>-` shape;
+        // `xapp-` is the app-level token and has its own prefix.
+        PatternRule::builtin(
+            "Slack Token",
+            r"xox[abprs]-[0-9A-Za-z-]{10,}|xapp-[0-9]-[A-Za-z0-9-]{10,}",
+            "high",
+            Some("https://api.slack.com/apps"),
+        ),
+        // ⚠️ `medium`, not `high`. A Google API key is frequently a *browser*
+        // key — Maps, Places — that is meant to ship in a page and is restricted
+        // by referrer instead of secrecy. Calling every one of them high would
+        // train people to ignore the severity column.
+        PatternRule::builtin(
+            "Google API Key",
+            r"AIza[0-9A-Za-z_\-]{35}",
+            "medium",
+            Some("https://console.cloud.google.com/apis/credentials"),
+        ),
+        // ⚠️ Also `medium`, and for the same reason: plenty of JWTs are public
+        // ID tokens. What makes one sensitive is usually the variable it sits
+        // in, which the name heuristic now covers separately.
+        PatternRule::builtin(
+            "JSON Web Token",
+            r"eyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}",
+            "medium",
+            None,
+        ),
         PatternRule::builtin(
             "Stripe Secret Key (LIVE)",
             r"sk_live_[0-9a-zA-Z]{24,}",
@@ -301,6 +349,148 @@ mod placeholder_noise_tests {
             );
         }
     }
+}
+
+#[cfg(test)]
+mod name_rule_tests {
+    use super::*;
+
+    /// ⛔ The gap: `scan` judged values only. `is_sensitive_key` existed and
+    /// had one caller, in `diff.rs`, for redaction — the scanner never asked.
+    /// `DB_PASSWD=hunter2hunter2hunter2` scanned clean: no provider prefix,
+    /// and entropy far below the 4.8 fallback because it repeats.
+    #[test]
+    fn a_secret_shaped_name_with_a_real_value_is_reported() {
+        for (k, v) in [
+            ("DB_PASSWD", "hunter2hunter2hunter2"),
+            ("ADMIN_PASSWORD", "correct-horse-battery"),
+            ("SESSION_SECRET", "keyboardcat-but-longer"),
+            ("LEGACY_APIKEY", "abcd1234abcd1234"),
+            // ⚠️ A token behind a prefix that says "published" is the clearest
+            // finding there is, not an exemption. `PUBLIC` here qualifies
+            // nothing — contrast RSA_PUBLIC_KEY in the clean list below.
+            ("NEXT_PUBLIC_TOKEN", "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB"),
+        ] {
+            assert!(
+                name_suggests_secret(k, v),
+                "{k}={v} should be reported on the strength of the name"
+            );
+        }
+    }
+
+    /// ⚠️ The half that decides whether this feature is worth having. A name
+    /// heuristic that fires on ordinary configuration makes `scan` noise, and
+    /// noise is how a scanner gets ignored.
+    #[test]
+    fn ordinary_configuration_under_a_matching_name_is_not_reported() {
+        for (k, v) in [
+            // ⛔ A public key is meant to be public. It reaches this function
+            // through the `*_KEY` suffix rule in is_sensitive_key.
+            (
+                "PUBLIC_KEY",
+                "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAx7Qw9fKmN2vLpQ",
+            ),
+            (
+                "RSA_PUBLIC_KEY",
+                "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAx7Qw",
+            ),
+            // ⛔ Live in evnx-server/.env.example: reported as a medium
+            // severity secret because the name contains TOKENS.
+            ("QUOTA_FREE_TOKENS", "2"),
+            // the name matches, the value is a flag
+            ("AUTH_ENABLED", "true"),
+            ("TOKEN_REFRESH", "false"),
+            // a duration, not a credential
+            ("API_TOKEN_TTL", "86400"),
+            // indirection — the secret is wherever this points
+            ("DB_PASSWORD", "${POSTGRES_PASSWORD}"),
+            ("API_KEY", "$PROD_API_KEY"),
+            ("CLIENT_SECRET", "%VAULT_SECRET%"),
+            // a path names a file; the key is in the file
+            ("PRIVATE_KEY_PATH", "/etc/ssl/private/server.pem"),
+            ("TLS_PRIVATE_KEY", "./certs/key.pem"),
+            // placeholders, which .env.example is made of
+            ("DB_PASSWORD", "your_password_here"),
+            ("API_KEY", "changeme"),
+            ("SECRET_TOKEN", "xxxxxxxxxxxx"),
+            // short enough that no credential is plausible
+            ("AUTH_MODE", "jwt"),
+        ] {
+            assert!(
+                !name_suggests_secret(k, v),
+                "{k}={v} must NOT be reported — this is ordinary config"
+            );
+        }
+    }
+
+    /// The free-text token path passes an empty key. It must not start
+    /// reporting every long word it meets.
+    #[test]
+    fn an_empty_key_does_not_trigger_the_name_path() {
+        assert!(!name_suggests_secret("", "some-ordinary-sentence-fragment"));
+    }
+}
+
+/// Does the variable's NAME make this value worth reporting?
+///
+/// ⛔ The scanner used to judge values only — almost. There was a name check
+/// inside `HeuristicDetector::scan_kv` with its own hardcoded list of five
+/// words, no relation to [`is_sensitive_key`] next door, and no guards at all.
+/// So two things were true at once: `DB_PASSWD=hunter2hunter2hunter2` was
+/// missed (its list has no `PASSWD`, and the entropy fallback scores a
+/// repeating value far below 4.8), and `QUOTA_FREE_TOKENS=2` was reported as
+/// a medium-severity secret because the name contains `TOKENS`.
+///
+/// This is now the one place that decides, and it uses [`is_sensitive_key`] —
+/// the list that was already being maintained, for `diff`'s redaction.
+///
+/// ⚠️ Every exclusion below is a false positive this produced on a real file,
+/// not caution for its own sake. `QUOTA_FREE_TOKENS=2` is the one that was
+/// live in evnx-server's own `.env.example`.
+pub fn name_suggests_secret(key: &str, value: &str) -> bool {
+    if key.is_empty() || !is_sensitive_key(key) {
+        return false;
+    }
+
+    // ⚠️ `PUBLIC` immediately qualifying `KEY` — and only that.
+    //
+    // `PUBLIC_KEY` reaches this function through the `*_KEY` suffix rule in
+    // `is_sensitive_key`, and a public key is the one piece of key material
+    // meant to be published. Caught by
+    // `g11_a_public_prefix_never_invents_a_finding`.
+    //
+    // ⛔ But NOT every name containing "public". My first attempt excluded
+    // those and broke `g11_a_name_only_match_still_carries_the_prefix`:
+    // `NEXT_PUBLIC_TOKEN` is the clearest finding there is — a name that says
+    // "token" behind a prefix that says "published" — and the scanner
+    // deliberately reports it, annotated with the prefix. Adjacency is the
+    // distinction: PUBLIC qualifies KEY in `RSA_PUBLIC_KEY`, and qualifies
+    // nothing in `NEXT_PUBLIC_TOKEN`.
+    let parts: Vec<&str> = key.split('_').collect();
+    if parts.windows(2).any(|w| {
+        (w[0].eq_ignore_ascii_case("public") || w[0].eq_ignore_ascii_case("pub"))
+            && w[1].eq_ignore_ascii_case("key")
+    }) {
+        return false;
+    }
+    if looks_like_placeholder_secret(value) {
+        return false;
+    }
+
+    let v = value.trim();
+
+    //   len >= 8   `AUTH_ENABLED=true`, `QUOTA_FREE_TOKENS=2` — the name
+    //              matches and the value is a flag or a count.
+    //   not a ref  `PASSWORD=${DB_PASSWORD}`, `%VAULT_SECRET%` — indirection;
+    //              the secret is wherever it points, not on this line.
+    //   not a path `PRIVATE_KEY_PATH=/etc/ssl/key.pem` names a file. The key
+    //              is in the file; this line is a path.
+    //   not digits `API_TOKEN_TTL=86400` is a duration.
+    let is_ref = v.starts_with('$') || (v.starts_with('%') && v.ends_with('%'));
+    let is_path = v.starts_with('/') || v.starts_with("./") || v.starts_with("~/");
+    let is_number = v.bytes().all(|b| b.is_ascii_digit());
+
+    v.len() >= 8 && !is_ref && !is_path && !is_number
 }
 
 /// Would a human call this finding obvious noise?
