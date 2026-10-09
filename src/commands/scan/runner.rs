@@ -655,9 +655,16 @@ impl ScanRunner {
         variable: Option<String>,
         detection: super::detector::Detection,
     ) {
-        // Skip placeholders if configured
+        // Skip placeholders if configured.
+        //
+        // ⚠️ `looks_like_placeholder_secret`, NOT `is_placeholder`. The latter
+        // answers "is this safe to overwrite?" for `validate --fix` and was
+        // anchored in #121 so it could not destroy a real value — which left
+        // it unable to recognise a placeholder EMBEDDED in a detector match,
+        // and made this flag inert. See the doc comment on the new function
+        // for why the two must not be merged back together.
         if self.ignore_placeholders
-            && crate::utils::patterns::is_placeholder(&detection.matched_value)
+            && crate::utils::patterns::looks_like_placeholder_secret(&detection.matched_value)
         {
             return;
         }

@@ -394,8 +394,38 @@ pub fn rotate(
     println!("{}", "ok".green());
 
     // ── Write the way back, before sending anything ─────────────────────────
-    let bundle_path = write_recovery_bundle(&server, &me, &opened)?;
-    println!("  Recovery file  {}", bundle_path.display());
+    //
+    // ⛔ **Not under `--compromised`.** The bundle's own note says it: "nothing
+    // here opens without the OLD master password". That is exactly the
+    // password `--compromised` says is in someone else's hands.
+    //
+    // Writing it anyway took the previous wraps, the previous argon2 salt and
+    // the previous sealed private key — which until that moment existed only
+    // on a server the attacker would have to breach separately — and put them
+    // in a file on disk that the leaked password opens, then printed the path.
+    // Against the one threat the flag names, that is strictly worse than
+    // writing nothing.
+    //
+    // ⚠️ It also contradicted the flag's own help, which says "keeps **no
+    // undo**". A server-side undo was skipped; a local one was written.
+    let bundle_path = if compromised {
+        println!();
+        println!(
+            "  {} no recovery file written — it would be openable with the password \
+             you have just told evnx is compromised.",
+            "!".yellow()
+        );
+        println!(
+            "    {}",
+            "There is no way back from here. If the new password is lost, the vaults are gone."
+                .dimmed()
+        );
+        None
+    } else {
+        let path = write_recovery_bundle(&server, &me, &opened)?;
+        println!("  Recovery file  {}", path.display());
+        Some(path)
+    };
 
     // ── Prove the current password to the server ────────────────────────────
     reauthenticate(&client, &me, &current, &old_salt, verbose)?;
@@ -444,10 +474,21 @@ pub fn rotate(
         let back = unwrap_vault_key_with_master_key(&raw, &new_master).map_err(|_| {
             anyhow!(
                 "\n  {} the password WAS changed, but {} no longer opens with it.\n\
-                 \x20 Undo with `evnx auth undo-password-change`, or restore from {}.",
+                 \x20 {}",
                 "!".red(),
                 v.label,
-                bundle_path.display()
+                match &bundle_path {
+                    Some(p) => format!(
+                        "Undo with `evnx auth undo-password-change`, or restore from {}.",
+                        p.display()
+                    ),
+                    // ⚠️ --compromised kept neither, by design. Saying "undo"
+                    // here would send someone to a command that cannot help.
+                    None => "No undo and no recovery file were kept (--compromised). \
+                             Your vault keys are unchanged, so re-wrap them with \
+                             `evnx vault rekey` once you can sign in."
+                        .to_string(),
+                }
             )
         })?;
         if back.expose() != v.key.expose() {
@@ -475,12 +516,27 @@ pub fn rotate(
                 format!("Undo available until {deadline} — `evnx auth undo-password-change`")
                     .dimmed()
             );
-            println!(
-                "  {}",
-                format!("Delete {} once you are sure.", bundle_path.display()).dimmed()
-            );
+            if let Some(p) = &bundle_path {
+                println!(
+                    "  {}",
+                    format!("Delete {} once you are sure.", p.display()).dimmed()
+                );
+            }
         }
-        None => println!("  {}", "No undo was kept.".yellow()),
+        None => {
+            println!("  {}", "No undo and no recovery file were kept.".yellow());
+            if compromised {
+                // ⚠️ The flag is named for a compromise but rotates the
+                // PASSWORD. Every vault key was re-wrapped, not replaced, so
+                // a key already extracted still opens everything it did.
+                println!(
+                    "  {}",
+                    "Your vault keys were re-wrapped, not replaced — anyone holding one \
+                     still has it. Run `evnx vault rekey <vault>` for each exposed vault."
+                        .yellow()
+                );
+            }
+        }
     }
     Ok(())
 }
