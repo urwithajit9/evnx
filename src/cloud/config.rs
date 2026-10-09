@@ -177,13 +177,7 @@ pub fn canonical_server(raw: &str) -> Result<String> {
         Some(i) => (&rest[..i], &rest[i..]),
         None => (rest, ""),
     };
-    let host = authority
-        .rsplit_once(':')
-        .map(|(h, _port)| h)
-        .unwrap_or(authority)
-        .trim_start_matches('[')
-        .trim_end_matches(']')
-        .to_ascii_lowercase();
+    let host = authority_host(authority)?;
 
     if scheme == "http" && !is_loopback(&host) {
         return Err(anyhow!(
@@ -199,6 +193,91 @@ pub fn canonical_server(raw: &str) -> Result<String> {
     ))
 }
 
+/// Extract the host from an `authority`, rejecting anything ambiguous.
+///
+/// ⛔ **This existed as `authority.rsplit_once(':')` and had four defects.**
+///
+/// The one that mattered: `rsplit_once` on `localhost:80@evil.com` returns
+/// `("localhost", "80@evil.com")`, so the loopback test saw `localhost` and
+/// allowed plain `http://` — while the request went to **evil.com**, carrying
+/// an access token and a refresh token valid for thirty days, in clear. The
+/// guard was not missing; it was reading the wrong half of the string.
+///
+/// RFC 3986 is `authority = [ userinfo "@" ] host [ ":" port ]`. Userinfo
+/// comes FIRST, so any `@` has to be resolved before a colon means anything.
+///
+/// ⚠️ Userinfo is **refused**, not stripped. A server URL has no legitimate
+/// use for embedded credentials, and this value is written to `config.toml`
+/// and used as the credential-store key — stripping would silently accept a
+/// URL whose visible text disagrees with where the request goes, and store a
+/// password in a file while doing it.
+///
+/// The other three, all found while reproducing the first:
+///
+/// * `http://[::1]` was **refused**. `"[::1]".rsplit_once(':')` is
+///   `("[:", "1]")`, which trims to `:` — not a loopback address. With a port
+///   it happened to work, so IPv6 localhost worked or not depending on whether
+///   you typed one.
+/// * `http://localhost:abc` was accepted, `abc` taken as a port.
+/// * `http://a:b:c` was accepted, `a:b` taken as a host.
+fn authority_host(authority: &str) -> Result<String> {
+    if authority.is_empty() {
+        return Err(anyhow!("server URL has no host"));
+    }
+
+    // rsplit, matching what browsers do with a repeated `@`.
+    if let Some((userinfo, after)) = authority.rsplit_once('@') {
+        return Err(anyhow!(
+            "server URL must not contain credentials (found {userinfo:?} before '@'). \
+             The real host here is {after:?}, not what precedes the '@' — this \
+             is how a URL is made to look like localhost while pointing \
+             somewhere else. Use the plain host, and sign in with \
+             `evnx auth login`."
+        ));
+    }
+
+    let (host, port) = if let Some(rest) = authority.strip_prefix('[') {
+        // IPv6 literal: the brackets delimit the host, a port may follow `]`.
+        let (inside, after) = rest
+            .split_once(']')
+            .ok_or_else(|| anyhow!("unterminated IPv6 address in {authority:?}"))?;
+        let port = match after {
+            "" => None,
+            p => Some(p.strip_prefix(':').ok_or_else(|| {
+                anyhow!("expected ':port' after ']' in {authority:?}, found {p:?}")
+            })?),
+        };
+        (inside.to_string(), port)
+    } else {
+        match authority.rsplit_once(':') {
+            Some((h, p)) => (h.to_string(), Some(p)),
+            None => (authority.to_string(), None),
+        }
+    };
+
+    if host.is_empty() {
+        return Err(anyhow!("server URL has no host (got {authority:?})"));
+    }
+    // A bare host cannot contain a colon; one here means `a:b:c`, where the
+    // split above would silently have taken `a:b` as the host.
+    if host.contains(':') && !authority.starts_with('[') {
+        return Err(anyhow!(
+            "{authority:?} has more than one ':' outside brackets — an IPv6 \
+             address must be written as [::1]:port"
+        ));
+    }
+    if let Some(p) = port {
+        if p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(anyhow!("{p:?} is not a valid port in {authority:?}"));
+        }
+        if p.parse::<u16>().is_err() {
+            return Err(anyhow!("port {p} is out of range in {authority:?}"));
+        }
+    }
+
+    Ok(host.to_ascii_lowercase())
+}
+
 fn is_loopback(host: &str) -> bool {
     host == "localhost"
         || host == "::1"
@@ -211,6 +290,83 @@ mod tests {
     use super::*;
     use crate::cloud::testutil::ConfigDirGuard;
     use serial_test::serial;
+
+    /// ⛔ **The bypass this function was rewritten for.**
+    ///
+    /// `http://localhost:80@evil.com` is a URL whose host is **evil.com** —
+    /// `localhost:80` is userinfo. The old parser split on the last `:` and
+    /// saw `localhost`, so plain http was allowed and an access token plus a
+    /// thirty-day refresh token went to the attacker in clear.
+    ///
+    /// Verified against the shipped 0.9.0 binary before the fix: both of
+    /// these were accepted.
+    #[test]
+    fn userinfo_cannot_disguise_the_host() {
+        for url in [
+            "http://localhost:80@evil.com",
+            "http://127.0.0.1:1@attacker.io",
+            "http://[::1]:1@evil.com",
+        ] {
+            let err = canonical_server(url).unwrap_err().to_string();
+            assert!(
+                err.contains("credentials"),
+                "{url} must be refused for carrying userinfo, got: {err}"
+            );
+        }
+    }
+
+    /// Userinfo is refused over https too. It is not only a loopback trick:
+    /// this value is written to config.toml and keys the credential store, so
+    /// accepting it would persist a password to disk as a side effect.
+    #[test]
+    fn credentials_are_refused_even_over_https() {
+        let err = canonical_server("https://user:pass@evil.com")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("credentials"), "got: {err}");
+    }
+
+    /// ⚠️ Found while fixing the above, not reported: `http://[::1]` was
+    /// REFUSED. `"[::1]".rsplit_once(':')` is `("[:", "1]")`, which trims to
+    /// `:`. IPv6 localhost worked with a port and not without one.
+    #[test]
+    fn ipv6_loopback_works_with_and_without_a_port() {
+        assert_eq!(canonical_server("http://[::1]").unwrap(), "http://[::1]");
+        assert_eq!(
+            canonical_server("http://[::1]:8080").unwrap(),
+            "http://[::1]:8080"
+        );
+    }
+
+    /// A non-numeric port was silently accepted as a port, and `a:b:c` was
+    /// silently accepted with `a:b` as the host.
+    #[test]
+    fn malformed_authorities_are_refused() {
+        for url in [
+            "http://localhost:abc",
+            "http://localhost:99999",
+            "http://a:b:c",
+            "http://[::1",
+        ] {
+            assert!(
+                canonical_server(url).is_err(),
+                "{url} should be refused, got {:?}",
+                canonical_server(url)
+            );
+        }
+    }
+
+    /// The guard must still do its actual job, and still allow what it should.
+    #[test]
+    fn plain_http_is_loopback_only() {
+        for ok in ["http://localhost", "http://127.0.0.1:8080", "http://[::1]"] {
+            assert!(canonical_server(ok).is_ok(), "{ok} should be allowed");
+        }
+        for bad in ["http://evil.com", "http://localhost.evil.com"] {
+            let err = canonical_server(bad).unwrap_err().to_string();
+            assert!(err.contains("refusing plain http"), "{bad}: {err}");
+        }
+    }
 
     #[test]
     fn https_urls_are_canonicalised() {
