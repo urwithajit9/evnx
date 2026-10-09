@@ -2,7 +2,12 @@
 # evnx (formely dotenv-space-cli) installer
 # Usage: curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
 
-set -e
+# ⚠️ `-o pipefail` is not free on this script and two pipelines had to be
+# changed for it — see the musl check and the release lookup below. Both
+# relied on a command in the pipeline failing while the pipeline succeeded,
+# which is exactly what pipefail stops tolerating. Adding the flag without
+# reading them would have broken Alpine installs.
+set -euo pipefail
 
 REPO="urwithajit9/evnx"
 BINARY_NAME="evnx"
@@ -35,7 +40,12 @@ ARCH=$(uname -m)
 case "$OS" in
     Linux)
         # Try to detect musl vs glibc
-        if ldd --version 2>&1 | grep -q musl; then
+        # ⚠️ `|| true` is load-bearing under `set -o pipefail`. musl's ldd
+        # prints its version to stderr and **exits 1** — that is why `2>&1` is
+        # here at all. With pipefail and without this, the pipeline inherits
+        # ldd's failure even though grep matched, musl goes undetected, and
+        # Alpine users are handed the glibc binary, which does not run.
+        if { ldd --version 2>&1 || true; } | grep -q musl; then
             OS="unknown-linux-musl"
             info "Detected musl-based Linux"
         else
@@ -84,14 +94,23 @@ info "Target: $TARGET"
 # The API call is kept as a fallback, with position-independent parsing that works
 # on minified and pretty-printed JSON alike.
 info "Fetching latest release..."
+# `|| true` so a network failure leaves LATEST empty and falls through to the
+# fallback below, rather than aborting here under `set -e` with no message.
 LATEST=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-    "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##')
+    "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##') || true
 
 if [ -z "$LATEST" ] || [ "$LATEST" = "https://github.com/$REPO/releases" ]; then
+    # ⓘ `grep | head -1` is left exactly as it was. The obvious pipefail worry
+    # is that `head` closes the pipe and grep dies of SIGPIPE — measured
+    # against a 655 KB grep output, ten times the pipe buffer, and it does not
+    # happen. Swapping in `grep -m1` to "fix" it is actively wrong: this JSON
+    # is one line, `-m1` stops after the first matching LINE, and `-o` then
+    # still prints every match on it — the parsed tag became the LAST
+    # tag_name in the body instead of the first.
     LATEST=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
         | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' \
         | head -1 \
-        | sed -E 's/.*"([^"]+)"$/\1/')
+        | sed -E 's/.*"([^"]+)"$/\1/') || true
 fi
 
 # A tag must look like a version. Without this the script happily builds a URL
@@ -121,22 +140,48 @@ if ! curl -fsSL "$URL" -o "$ARCHIVE_NAME"; then
     error "Failed to download binary"
 fi
 
-# Verify checksum
-if curl -fsSL "$CHECKSUM_URL" -o checksum.sha256 2>/dev/null; then
-    info "Verifying checksum..."
-    if command -v sha256sum >/dev/null 2>&1; then
-        if ! sha256sum -c checksum.sha256; then
-            warn "Checksum verification failed"
-            read -p "Continue anyway? (y/N) " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                error "Installation aborted"
-            fi
-        else
-            info "Checksum verified ✓"
-        fi
-    fi
+# ── Verify the checksum. Mandatory, and fatal when it fails ──────────────────
+#
+# ⚠️ This block used to be able to skip verification in three separate ways and
+# say nothing about any of them:
+#
+#   1. A missing or 404ing checksum file: the whole `if` was false, and the
+#      install continued unverified.
+#   2. No `sha256sum` on the box — which is **every macOS machine**, where the
+#      tool is `shasum -a 256`. There was no `else`, so macOS never verified a
+#      download, ever.
+#   3. On mismatch it asked "Continue anyway?" with `read -p`. ⛔ The documented
+#      way to run this script is `curl -sSL … | bash`, so the script itself is
+#      on stdin — `read` consumes the script's own remaining text rather than
+#      waiting for a human. The prompt could not work in the path the README
+#      publishes, and under `set -u` an unset $REPLY aborts on top of that.
+#
+# A checksum that is optional, unavailable on macOS, and overridable by a
+# prompt nobody can answer is not a check. All three paths now stop the install.
+if ! curl -fsSL "$CHECKSUM_URL" -o checksum.sha256; then
+    error "Could not download the checksum for $ARCHIVE_NAME.
+       Expected it at: $CHECKSUM_URL
+       Refusing to install a binary that cannot be verified."
 fi
+
+if command -v sha256sum >/dev/null 2>&1; then
+    SHA_VERIFY="sha256sum -c"
+elif command -v shasum >/dev/null 2>&1; then
+    SHA_VERIFY="shasum -a 256 -c"
+else
+    error "Neither sha256sum nor shasum is available, so the download cannot be
+       verified. Install coreutils, or download the release manually from
+       https://github.com/$REPO/releases/tag/$LATEST"
+fi
+
+info "Verifying checksum..."
+if ! $SHA_VERIFY checksum.sha256; then
+    error "CHECKSUM MISMATCH for $ARCHIVE_NAME.
+       The download does not match what the release published. This is either
+       a corrupted transfer or a tampered file — do not run it.
+       Nothing was installed."
+fi
+info "Checksum verified ✓"
 
 info "Extracting..."
 tar -xzf "$ARCHIVE_NAME"

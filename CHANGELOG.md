@@ -616,6 +616,57 @@ all under `src/`. `tests/`, `docs/`, `scripts/`, `benches/`, `Dockerfile`,
 `pyproject.toml` and `pypi-readme.md` still ship; `tests/` alone is 440 KB, so
 there is more to trim here if it turns out to be worth trimming.
 
+### ⚠️ Every GitHub Action ran from a tag anyone could move
+
+All 59 `uses:` entries across the five workflows referenced a mutable tag, and
+three referenced a **branch** — `dtolnay/rust-toolchain@stable`, the same at
+`@master`, and `pypa/gh-action-pypi-publish@release/v1`. A branch moves on
+every push. The highest-leverage of them sits in `release.yml`'s build job,
+which compiles every binary for every one of the nine install channels.
+
+All 59 are now pinned to a full commit SHA with the version beside them, and
+`.github/dependabot.yml` keeps them current — pinning without that trades a
+moving tag for being frozen on October 2026, security fixes included.
+
+⚠️ `dtolnay/rust-toolchain` needed checking rather than pinning blind: it
+selects the toolchain **by ref name**. Pinning `@stable` is safe because the
+`action.yml` at that commit carries `default: stable`, so rustup still resolves
+the current stable at run time — only the action's code is frozen. `@master`
+has `toolchain` as **required with no default**, and is safe here only because
+that one call site already passes `toolchain:` explicitly.
+
+`ci.yml` had no `permissions:` block, so the repository default applied to a
+workflow that only builds and tests; it is now `contents: read`.
+
+### ⚠️ `install.sh` could skip checksum verification three ways
+
+The installer verified downloads only when it happened to be able to, and said
+nothing when it could not.
+
+- **A missing checksum file was silently fine.** The whole check sat inside
+  `if curl …; then`, so a 404 skipped verification and continued.
+- ⛔ **macOS never verified a download, ever.** The check required `sha256sum`,
+  which macOS does not ship — the tool there is `shasum -a 256` — and there was
+  no `else`. Every macOS install since the script was written was unverified.
+- ⛔ **On mismatch it asked "Continue anyway?"** via `read -p`. The documented
+  way to run this script is `curl -sSL … | bash`, which puts the *script* on
+  stdin, so `read` consumes the script's own remaining text rather than waiting
+  for anybody. The prompt could not work in the path the README publishes.
+
+All three now stop the install. ⓘ The checksum is still only as good as the
+release that published it — this closes the gap between "we fetched a checksum"
+and "we checked it", not the one above it.
+
+⚠️ `set -e` became `set -euo pipefail`, and **two pipelines had to change for
+it**, which is why this is not the one-line fix it looks like. musl's `ldd`
+prints its version to stderr and exits 1 — that is what the existing `2>&1` was
+for — so under `pipefail` the musl check inherited that failure, musl went
+undetected, and Alpine users were handed the glibc binary. Reproduced, and
+fixed with an explicit `|| true` inside the pipeline. A network failure during
+the release lookup likewise aborted the installer with curl's exit code and no
+message; those two substitutions now fall through to the existing
+"that doesn't look like a version" error.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.

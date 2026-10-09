@@ -1,0 +1,34 @@
+# ⚠️ This exists because every action is now pinned to a commit SHA, and a SHA
+# does not update itself. Pinning without this trades "a tag could move under
+# us" for "we are frozen on whatever was current in October 2026, including the
+# security fixes we never pick up" — which is the worse of the two.
+#
+# Dependabot understands the `# v4` comment beside each pin: it bumps the SHA
+# and rewrites the comment together, so the file stays readable.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # One PR per week carrying every action bump, rather than one per action.
+    # ⚠️ Separate PRs here would mean up to 18 CI runs a week on a matrix that
+    # builds seven targets, for updates that are almost always reviewed together.
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(ci)"
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    # ⚠️ Security updates only for the dependency tree. A weekly PR for every
+    # patch release of every transitive crate is how a bot gets muted, and a
+    # muted bot is worse than no bot. `cargo audit` already runs in CI for the
+    # advisories that matter.
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(deps)"
