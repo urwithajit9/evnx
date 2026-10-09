@@ -667,6 +667,44 @@ the release lookup likewise aborted the installer with curl's exit code and no
 message; those two substitutions now fall through to the existing
 "that doesn't look like a version" error.
 
+### ⛔ Security — a URL that looked like localhost sent your token elsewhere
+
+`--server http://localhost:80@evil.com` was accepted, and the request went to
+**evil.com** carrying an access token and a refresh token valid for thirty
+days, in clear.
+
+`localhost:80` there is *userinfo*, not a host — RFC 3986 is
+`authority = [ userinfo "@" ] host [ ":" port ]`, so an `@` has to be resolved
+before a colon means anything. `canonical_server` split on the last `:` and
+read `localhost`, which passed the loopback test that allows plain `http://`
+for local development. The guard was not missing; it was reading the wrong
+half of the string.
+
+⚠️ **Userinfo is now refused, not stripped.** This value is written to
+`config.toml` and used as the credential-store key, so quietly accepting it
+would store a password on disk as a side effect — and leave a URL whose
+visible text disagrees with where the request goes.
+
+Three more defects in the same five lines, all found while reproducing the
+first and none of them reported:
+
+- ⛔ **`http://[::1]` was refused.** `"[::1]".rsplit_once(':')` is
+  `("[:", "1]")`, which trims to `:` — not a loopback address. With a port it
+  happened to work, so IPv6 localhost worked or not depending on whether you
+  typed one.
+- **`http://localhost:abc` was accepted**, with `abc` taken as a port.
+- **`http://a:b:c` was accepted**, with `a:b` taken as a host.
+
+The authority is now parsed properly: userinfo refused, bracketed IPv6
+literals understood with and without a port, and a port required to be a
+number in range.
+
+ⓘ The guard still does its job and still allows what it should: `http://evil.com`
+and `http://localhost.evil.com` are refused, `http://localhost`,
+`http://127.0.0.1:8080`, `http://[::1]` and `https://api.evnx.dev` are not.
+13 cases checked against the built binary, and the five new tests were run
+against the old parser first — all five fail there.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.
