@@ -705,6 +705,62 @@ and `http://localhost.evil.com` are refused, `http://localhost`,
 13 cases checked against the built binary, and the five new tests were run
 against the old parser first — all five fail there.
 
+### ⚠️ `scan --ignore-placeholders` did nothing
+
+The flag was wired end to end and reached the right line — and could never
+fire. It asked `is_placeholder`, which answers a different question.
+
+`is_placeholder` decides whether `validate --fix` may **overwrite** a value,
+and its patterns were anchored deliberately so it could not destroy a real
+credential. That makes it recognise a value that *is* a placeholder and never
+one that *contains* a placeholder — but a scanner only ever sees values a
+detector has already matched, like `sk_live_xxxxxxxxxxxxxxxxxxxxxxxx`. The
+strict answer always won, so findings were identical with and without the
+flag.
+
+Scanning now uses its own predicate. The two questions are not the same one:
+
+- *"Is this safe to overwrite?"* — a false positive destroys a working
+  credential. Must stay strict.
+- *"Did you ask to hide findings like this?"* — a false positive hides one
+  line the reader explicitly asked to hide.
+
+⛔ The strict predicate is unchanged, and a test now asserts it still refuses
+to call these values safe. Merging the two back together re-opens the data
+loss this release already fixed twice.
+
+ⓘ Matching is on whole tokens, so `latest` is not `test` and
+`exampleshire_road_token_4418` is not a placeholder — the first version used a
+prefix match and claimed it was, caught by its own test before it shipped. A
+run of four or more identical characters counts, because that is how a value
+gets redacted by hand.
+
+### ⛔ Security — `--compromised` wrote a file the leaked password opens
+
+`evnx auth rotate-master-password --compromised` says the old password is in
+someone else's hands. It then wrote a recovery bundle to disk and printed the
+path. The bundle's own note explains the problem: *"nothing here opens without
+the OLD master password"*.
+
+So in the one case the flag exists for, the previous vault wraps, the previous
+argon2 salt and the previous sealed private key — until that moment held only
+on a server an attacker would have to breach separately — were written to the
+local filesystem, openable with the password just declared compromised.
+
+It also contradicted the flag's own help, which promised **no undo**. The
+server-side undo was skipped; a local one was written anyway.
+
+`--compromised` now writes no recovery file and says so, including that there
+is no way back if the new password is lost.
+
+⚠️ **And the flag's name over-promised, which is now stated rather than
+implied.** It rotates the *password*. The identity keypair and every vault key
+are re-wrapped under the new password, not replaced — that invariant is
+asserted on every rotation and is not a bug — so anyone who already extracted
+a vault key still has it. The help and the command's output now say this and
+point at `evnx vault rekey`, which is what actually leaves an old key with
+nothing to open.
+
 ### ⚠️ Breaking
 
 **`evnx scan` now exits 1 when it could not read a file**, where it exited 0.

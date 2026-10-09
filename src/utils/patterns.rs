@@ -226,6 +226,185 @@ pub fn is_placeholder(value: &str) -> bool {
     false
 }
 
+#[cfg(test)]
+mod placeholder_noise_tests {
+    use super::*;
+
+    /// ⛔ The values that made `--ignore-placeholders` inert. Each was reported
+    /// identically with and without the flag against the 0.9.0 binary.
+    #[test]
+    fn embedded_placeholders_are_recognised() {
+        for v in [
+            "sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "sk_live_EXAMPLE_KEY_DO_NOT_USE_1234",
+            "ghp_0000000000000000000000000000000000",
+            "AKIA****************",
+            "my-REDACTED-token",
+            "token_placeholder_value",
+            "api-key-changeme-now",
+        ] {
+            assert!(
+                looks_like_placeholder_secret(v),
+                "{v} should read as a placeholder"
+            );
+        }
+    }
+
+    /// ⚠️ The half that matters more. A loose predicate that eats real
+    /// credentials turns `--ignore-placeholders` from inert into dangerous.
+    #[test]
+    fn real_looking_secrets_are_not_suppressed() {
+        for v in [
+            "sk_live_51HrealkeystuffABC123",
+            "production_api_key_2024",
+            "My$ecureP@ssw0rd!",
+            "postgresql://user:hunter2@db.internal:5432/app",
+            "ghp_aB3dEfGhIjKlMnOpQrStUvWxYz0123456789",
+            "AKIAZ3MQEXAMPLE1REAL",
+        ] {
+            assert!(
+                !looks_like_placeholder_secret(v),
+                "{v} is a credential and must still be reported"
+            );
+        }
+    }
+
+    /// Token-wise, not substring. `latest` contains `test`; it is not a
+    /// placeholder, and neither is `contextual`.
+    #[test]
+    fn a_marker_inside_a_longer_word_does_not_match() {
+        for v in [
+            "latest_build_key_9f3a2b1c8d",
+            "contextual_auth_secret_77213",
+            "exampleshire_road_token_4418",
+        ] {
+            assert!(
+                !looks_like_placeholder_secret(v),
+                "{v} matched on a substring rather than a token"
+            );
+        }
+    }
+
+    /// ⚠️ The two predicates must stay apart. If this ever fails, A1/K6 has
+    /// been re-opened: `validate --fix` would overwrite a working credential.
+    #[test]
+    fn the_strict_predicate_stays_strict() {
+        for v in [
+            "sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "DB_PASSWORD=Tr0ub4dor<3horse",
+            "Tr0ub4dor<3horse",
+            "postgres://u:pw@db/todos",
+        ] {
+            assert!(
+                !is_placeholder(v),
+                "is_placeholder must NOT claim {v} is safe to overwrite"
+            );
+        }
+    }
+}
+
+/// Would a human call this finding obvious noise?
+///
+/// ⛔ **Deliberately looser than [`is_placeholder`], and deliberately separate
+/// from it.** They answer different questions and must not be merged.
+///
+/// * `is_placeholder` answers *"is this value safe to OVERWRITE?"* for
+///   `validate --fix`. A false positive there destroys a working credential,
+///   which is finding A1/K6 — the patterns were anchored in #121 precisely to
+///   stop `DB_PASSWORD=Tr0ub4dor<3horse` being replaced on the strength of a
+///   `<`.
+/// * This answers *"did the user ask to hide findings like this?"* for
+///   `scan --ignore-placeholders`. A false positive here hides one line of
+///   output that was explicitly asked to be hidden.
+///
+/// Sharing one function made the strict answer win, and `--ignore-placeholders`
+/// became inert: a detector fires on `sk_live_xxxxxxxxxxxxxxxxxxxxxxxx`, but
+/// `is_placeholder` only recognises a value that *is* a placeholder, never one
+/// that *contains* one, so the flag could never suppress anything a detector
+/// had flagged. Measured before the fix: identical findings with and without
+/// the flag.
+///
+/// ⚠️ **Never call this from `validate --fix` or `fixer.rs`.** Doing so
+/// re-opens A1 by a third route.
+///
+/// Matching is on whole tokens, not bare substrings — `latest` must not match
+/// on `test`, and `contextual` must not match on `test` either.
+pub fn looks_like_placeholder_secret(value: &str) -> bool {
+    if is_placeholder(value) {
+        return true;
+    }
+
+    let lower = value.trim().to_lowercase();
+    if lower.is_empty() {
+        return true;
+    }
+
+    const MARKERS: &[&str] = &[
+        "example",
+        "placeholder",
+        "changeme",
+        "change_me",
+        "replace_me",
+        "replaceme",
+        "dummy",
+        "fake",
+        "sample",
+        "redacted",
+        "todo",
+        "notreal",
+        "not_real",
+        "yourkey",
+        "your_key",
+        "your_api_key",
+        "your_secret",
+        "your_token",
+        "insert",
+        "fixme",
+        "xxxxx",
+    ];
+
+    // Token-wise: split on anything that is not a letter or digit, so
+    // `sk_live_EXAMPLE_KEY` yields ["sk","live","example","key"] and `latest`
+    // stays one token that no marker equals.
+    let tokens: Vec<&str> = lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .collect();
+
+    // A token matches a marker exactly, or is a marker followed only by
+    // digits (`example123`). ⚠️ NOT `starts_with` alone — that made
+    // `exampleshire_road_token_4418` a placeholder, which is the same
+    // substring mistake this function exists to avoid. Caught by its own test.
+    let token_is_marker = |t: &str| {
+        MARKERS.iter().any(|m| {
+            t == *m
+                || t.strip_prefix(m).is_some_and(|rest| {
+                    !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit())
+                })
+        })
+    };
+    if tokens.iter().any(|t| token_is_marker(t)) {
+        return true;
+    }
+
+    // A run of four or more identical characters is how a value gets redacted
+    // by hand: sk_live_xxxxxxxx, ghp_0000…, AKIA****.
+    let bytes = lower.as_bytes();
+    let mut run = 1usize;
+    for i in 1..bytes.len() {
+        if bytes[i] == bytes[i - 1] {
+            run += 1;
+            if run >= 4 {
+                return true;
+            }
+        } else {
+            run = 1;
+        }
+    }
+
+    false
+}
+
 /// Helper: Check for common placeholder patterns like example123, test456, dev_key
 fn is_placeholder_pattern(value: &str) -> bool {
     const BASE_WORDS: &[&str] = &[

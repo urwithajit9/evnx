@@ -582,10 +582,16 @@ pub enum AuthCommands {
 
         /// The current password is believed to be in someone else's hands.
         ///
-        /// Keeps **no undo**: the change takes effect immediately and cannot be
-        /// reversed. Without this an undo stays available for a window, by
-        /// proving the old password — which is exactly what you do not want when
-        /// the old password is the thing that leaked.
+        /// Keeps **no undo at all**: no server-side undo window, and no local
+        /// recovery file. The change takes effect immediately and cannot be
+        /// reversed. Both of those are redeemed with the OLD password, which is
+        /// the thing you are saying leaked.
+        ///
+        /// ⚠️ **This rotates the password, not your keys.** Your identity
+        /// keypair and every vault key are re-wrapped under the new password,
+        /// not replaced — so anyone who already extracted a vault key still has
+        /// it. Follow this with `evnx vault rekey <vault>` for each vault that
+        /// was exposed; that is what gives the old key nothing left to open.
         #[arg(long)]
         compromised: bool,
 
