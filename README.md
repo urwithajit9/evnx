@@ -475,7 +475,14 @@ Every push is a new version. Nothing is overwritten.
 ```bash
 evnx cloud history                  # what changed, when, and who pushed it
 evnx cloud pull --version 3         # restore an earlier version
+evnx cloud diff                     # what differs between two versions
+evnx cloud export --out ./backup    # every version to disk, decrypted
 ```
+
+⚠️ `cloud diff` compares **key names**, not values. The server holds ciphertext
+and a list of names, so it can tell you a variable appeared, disappeared or
+changed — never what it changed to. It says "same keys, different contents"
+rather than claiming nothing changed.
 
 If someone else pushed since you last pulled, your push is refused with a conflict
 rather than silently overwriting them. Pull, re-apply, push again — the version
@@ -493,6 +500,17 @@ Decrypts in memory and hands the variables to the child process. Nothing on disk
 nothing in shell history, and **nothing in `ps`** — values travel in the environment
 block, never the argument vector. The child's exit code comes back unchanged, so a
 pipeline can branch on it.
+
+### Who changed what, and being told when
+
+```bash
+evnx cloud audit --vault app/production   # who pushed, pulled, shared, revoked
+evnx cloud watch --vault app/production   # notify when someone else pushes
+```
+
+⛔ `cloud watch` **notifies and never pulls.** Pulling automatically would
+overwrite local edits without being asked, and it would mean holding the vault
+key in memory for as long as the watch runs. It tells you; you decide.
 
 `--include` / `--exclude` narrow what the child sees; a filter that matches nothing is
 an error rather than a silent run with zero secrets.

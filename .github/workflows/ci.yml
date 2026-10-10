@@ -56,6 +56,27 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  # ⚠️ `rust-version = "1.85"` in Cargo.toml is a promise to anyone on an older
+  # toolchain, and nothing checked it. A dependency bump can raise the real
+  # floor silently — the first person to find out would be a user on 1.85
+  # getting an error from a crate they have never heard of.
+  #
+  # ⓘ The `@master` pin, not `@stable`: that build of the action takes an
+  # explicit `toolchain` input, which is the whole point here. `@stable`
+  # defaults to stable and would check nothing.
+  msrv:
+    name: MSRV (1.85.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: "1.85.0"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      # --all-targets so tests and benches are covered too: a dev-dependency
+      # raising the floor breaks `cargo test` for the same people.
+      - run: cargo check --all-features --all-targets
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
