@@ -12,12 +12,19 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # One PR per week carrying every action bump, rather than one per action.
-    # ⚠️ Separate PRs here would mean up to 18 CI runs a week on a matrix that
-    # builds seven targets, for updates that are almost always reviewed together.
+    # One PR per week for minor and patch bumps, rather than one per action.
+    # ⚠️ Separate PRs for those would mean up to 18 CI runs a week on a matrix
+    # that builds seven targets, for updates almost always reviewed together.
+    #
+    # ⛔ **Majors are deliberately NOT grouped.** The first grouped run bundled
+    # `actions/checkout` v4→v7, `setup-node` v4.4.0→v7 and
+    # `action-download-artifact` v9→v27 together with ten patch bumps, in one
+    # PR, a week before a release. A major that needs reading should not arrive
+    # welded to nine that do not — Dependabot opens those individually now.
     groups:
-      actions:
+      actions-minor-patch:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
     commit-message:
       prefix: "chore(ci)"
 
