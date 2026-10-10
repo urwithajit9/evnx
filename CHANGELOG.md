@@ -8,6 +8,57 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-10
+
+### ⚠️ Four dependencies that were compiled for nothing
+
+Each verified by building, not by reading the manifest:
+
+- **`serde_json` in `[build-dependencies]`** — and there is no `build.rs`.
+  Cargo reports the crate's build-script target as `NONE`, so this was fetched
+  and compiled on every build of every install, for a script that does not
+  exist. ⓘ The `[dependencies]` and `[dev-dependencies]` entries are real and
+  untouched.
+- **`dotenvy`** and **`console`** — zero code references. `console` is still
+  in the tree through `dialoguer` and `indicatif`; only the redundant direct
+  declaration is gone.
+- **`rand`** — a direct optional dependency of the `backup` feature, and
+  `cargo check --features backup` succeeds without it. The randomness that
+  feature actually uses comes from `aes_gcm::aead::OsRng` and `getrandom`.
+
+`chacha20`, `dotenvy` and `rand` leave the dependency tree. `src/utils/selection.rs`
+is removed too — it was **0 bytes** and declared in no `mod`.
+
+ⓘ Verified against all seven feature combinations — default, `net`, `migrate`,
+`backup`, `cloud`, `full`, `--all-features` — before and after each removal,
+one at a time so a failure would name its own cause.
+
+### ⚠️ `rust-version = "1.85"` was a promise nothing checked
+
+CI now has an MSRV job pinned to 1.85.0, running
+`cargo check --all-features --all-targets`.
+
+The floor held when measured — this does not fix a break, it stops one
+happening quietly. A dependency bump can raise the real minimum at any time,
+and without this the first person to find out is a user on 1.85 getting an
+error from a crate they have never heard of.
+
+ⓘ `--all-targets` so tests and benches are covered: a dev-dependency raising
+the floor breaks `cargo test` for the same people.
+
+
+⚠️ **Why 0.10.0 and not 0.9.1.** Three new commands (`cloud audit`, `cloud
+diff`, `cloud watch`) and two changes to the output of commands that already
+shipped — `diff --format json` lost its `*_redacted` fields, and `scan` now
+reports credential classes it did not before. In `0.x` a feature is a minor
+bump, and a change to the output of a shipped command is a compatibility
+change, which is also a minor bump.
+
+ⓘ **This is the release every security fix from the 2026-10-07 review has
+been held for.** S1–S5 plus the external review's A1, B1, C5, S7, S8 and C3.
+Anyone on 0.9.0 or earlier is running at least four known defects, two of
+which leak credentials.
+
 ### ⛔ Security — `validate --fix` overwrote working credentials
 
 A user read the source and reported six defects. Four were real. This is the
