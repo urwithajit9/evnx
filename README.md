@@ -424,14 +424,18 @@ evnx cloud pull                          # download, decrypt, write .env
 Scoop, winget and the GitHub Release are all built with `--all-features`, so if you
 installed evnx any of those ways, `evnx cloud --help` already works.
 
-> ⚠️ **PyPI is the exception, and it is a bug.** Every wheel up to and including
-> **0.9.0** was built with `--features full`, and `cloud` is deliberately not in
-> `full` — so `pip install evnx` and `pipx install evnx` give you a binary with no
-> `auth`, `vault`, `cloud` or `org` at all. Verified against the 0.4.0, 0.8.0 and
-> 0.9.0 wheels.
+> ⓘ **PyPI carries the cloud commands from 0.10.0 onward.** Every wheel from
+> 0.4.0 **up to and including 0.9.0** was built with `--features full`, and
+> `cloud` is deliberately not in `full` — so `pip install evnx` gave a binary
+> with no `auth`, `vault`, `cloud` or `org` at all, for five releases.
 >
-> The workflow is fixed and the next release carries the cloud commands on PyPI.
-> Until then, install from any other channel if you need them.
+> Fixed in 0.10.0 and verified by installing the published wheel and running it
+> rather than by reading the workflow: `evnx commands` reports
+> `built with: net, migrate, backup, cloud`.
+>
+> ⚠️ **If you are on 0.9.0 or earlier, `pip install --upgrade evnx`.** The
+> version string was identical whether or not the feature was compiled in, which
+> is exactly why this went unnoticed for five releases.
 
 `cargo install` is the other exception, by design, because it compiles from source
 with `default = []`:
@@ -682,7 +686,11 @@ default_install_hook_types: [pre-commit, pre-push]
 
 repos:
   - repo: https://github.com/urwithajit9/evnx
-    rev: v0.5.0
+    # ⚠️ Pin 0.10.0 or newer. Before it, these hooks ran `evnx scan` with no
+    # arguments and `always_run: true`, so every commit scanned the whole working
+    # tree — including the real, gitignored `.env` a developer necessarily has.
+    # That found secrets, exited 1, and blocked the commit. Every commit.
+    rev: v0.10.0
     hooks:
       - id: evnx-scan        # blocks commit if secrets found
       - id: evnx-validate    # blocks commit if .env misconfigured
