@@ -285,9 +285,11 @@ mod tests {
 
     #[test]
     fn local_fetch_missing_file_gives_file_not_found_error() {
-        let result = fetch_local(Path::new(
-            "/tmp/does-not-exist-evnx-test-source-xq39.backup",
-        ));
+        // ⚠️ `env::temp_dir()`, not a hardcoded `/tmp`. On Windows `Path::new("/tmp")`
+        // means `\tmp` on the current drive, which does not exist — see the
+        // sibling test below, where that difference changed which error arm ran.
+        let missing = std::env::temp_dir().join("does-not-exist-evnx-test-source-xq39.backup");
+        let result = fetch_local(&missing);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -299,9 +301,28 @@ mod tests {
         );
     }
 
+    /// ⛔ **This asserts the DIRECTORY arm**, which needs a path that exists and
+    /// is not a file. `fetch_local` has two branches and only the second says
+    /// "not a regular file":
+    ///
+    /// ```text
+    /// !path.exists()  -> FileNotFound(path)
+    /// !path.is_file() -> FileNotFound("{path} (not a regular file)")
+    /// ```
+    ///
+    /// ⚠️ It used a hardcoded `/tmp`. On Windows that is `\tmp` on the current
+    /// drive, which does not exist — so the **first** arm ran, the message had
+    /// no "not a regular file" in it, and the test failed for a reason that
+    /// said nothing about the behaviour being pinned. `env::temp_dir()` is a
+    /// directory that exists on every platform.
     #[test]
     fn local_fetch_directory_gives_file_not_found_with_not_regular_file_message() {
-        let result = fetch_local(Path::new("/tmp"));
+        let dir = std::env::temp_dir();
+        assert!(
+            dir.is_dir(),
+            "temp_dir must exist for this test to mean anything"
+        );
+        let result = fetch_local(&dir);
         assert!(result.is_err());
         let err = result.unwrap_err();
         let typed = err.downcast_ref::<RestoreError>();

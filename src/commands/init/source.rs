@@ -429,10 +429,25 @@ mod tests {
         assert!(s.found.is_empty());
     }
 
+    /// ⚠️ **The expectation is built with `join`, not written as a string.**
+    ///
+    /// `location` is `path.strip_prefix(root).display()` plus a line number, so
+    /// its separator is the platform's: `src/config.rs:3` on Unix and
+    /// `src\config.rs:3` on Windows. Both are right — this value is **display
+    /// only**, printed by `init/components.rs` and read by a person, and a
+    /// Windows user should see a Windows path.
+    ///
+    /// ⛔ So the hardcoded `"src/config.rs:3"` was the bug, not the output. It
+    /// was the second of two failures on the first Windows CI run this repo has
+    /// ever had, and the only one that was not already known.
     #[test]
     fn a_location_is_reported_so_a_proposal_can_be_checked() {
         let d = project(&[("src/config.rs", "\n\nlet x = env::var(\"MY_VAR\");")]);
         let s = scan(d.path()).unwrap();
-        assert_eq!(s.found[0].location, "src/config.rs:3", "{:?}", s.found[0]);
+        let expected = format!(
+            "{}:3",
+            std::path::Path::new("src").join("config.rs").display()
+        );
+        assert_eq!(s.found[0].location, expected, "{:?}", s.found[0]);
     }
 }
