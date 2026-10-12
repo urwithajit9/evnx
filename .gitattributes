@@ -1,0 +1,21 @@
+# ⛔ Line endings are a correctness property in this repo, not a style one.
+#
+# `tests/golden/` holds ten files compared **byte for byte** against program
+# output. GitHub's Windows runners ship `core.autocrlf=true`, so without this a
+# Windows checkout converts every one of them to CRLF while the binary keeps
+# emitting LF — and all ten golden tests fail for a reason that has nothing to
+# do with the code under test. Reproduced locally by converting one fixture:
+# `scan_json_is_stable` fails, the other nine pass, exactly as predicted.
+#
+# ⚠️ `eol=lf` is the normalisation, not `text=auto` alone. `text=auto` only says
+# "decide if it is text"; the working-tree ending still follows the platform.
+* text=auto eol=lf
+
+# Belt and braces for the fixtures themselves, so the intent survives someone
+# relaxing the line above.
+tests/golden/** text eol=lf
+
+# ⓘ No `.bat`, `.cmd`, `.ps1` or binary files are tracked here today — checked,
+# not assumed. If one is added it needs its own rule: a batch file with LF
+# endings can fail on older Windows shells, and marking a binary as text
+# corrupts it.

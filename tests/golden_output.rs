@@ -99,13 +99,26 @@ fn check(name: &str, actual_raw: &str) {
         return;
     }
 
-    let expected = fs::read_to_string(&path).unwrap_or_else(|_| {
-        panic!(
-            "missing golden file {}\n\n\
+    // ⚠️ **Both sides, not just one.** `normalise` runs `raw.lines()`, which
+    // strips `\r\n` as readily as `\n` and rejoins with `\n` — so `actual` was
+    // always LF while `expected` came straight off disk. On a Windows checkout
+    // (`core.autocrlf=true`) that asymmetry alone fails all ten of these, with
+    // a diff that looks like a content change and is not.
+    //
+    // ⓘ `.gitattributes` is the real fix and pins the fixtures to LF. This is
+    // here because a one-sided comparison is a latent trap on any platform, and
+    // because it makes the failure mode impossible rather than merely unlikely.
+    // Nothing is lost: these files are JSON, YAML and SARIF that the binary
+    // emits with `\n`, so a CRLF in one is never intentional.
+    let expected = fs::read_to_string(&path)
+        .map(|s| normalise(&s))
+        .unwrap_or_else(|_| {
+            panic!(
+                "missing golden file {}\n\n\
              Create it with:  UPDATE_GOLDEN=1 cargo test --all-features --test golden_output",
-            path.display()
-        )
-    });
+                path.display()
+            )
+        });
 
     assert_eq!(
         expected, actual,

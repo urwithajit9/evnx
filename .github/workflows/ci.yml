@@ -25,12 +25,22 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ⛔ `windows-latest` added 2026-10-13. Until then **no test in this repo had
+  # ever run on Windows**, and a Windows-only defect shipped because of it: the
+  # scanner's directory exclusions were forward-slash substrings matched against
+  # `to_string_lossy()`, so none of `.git/`, `node_modules/`, `target/`, `dist/`
+  # or `build/` ever fired there (#146).
+  #
+  # ⚠️ `fail-fast: false` so one platform's failure does not cancel the others.
+  # The default would hide a Linux regression behind a Windows one while this
+  # platform is still being brought up.
   test:
     name: Test Suite
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         rust: [stable]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
