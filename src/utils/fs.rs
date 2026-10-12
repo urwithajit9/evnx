@@ -133,6 +133,41 @@ pub fn human_readable_size(bytes: u64) -> String {
 ///
 /// Returns an error only if `WalkDir` itself fails to initialise (extremely rare).
 /// Individual unreadable entries are silently skipped via `filter_map(|e| e.ok())`.
+/// Render a path for **machine-readable output**, with `/` separators on every
+/// platform.
+///
+/// ⛔ **This is a correctness requirement, not cosmetics.** `evnx scan` emits
+/// three formats that other programs parse, and a backslash breaks all three:
+///
+/// * **SARIF** `artifactLocation.uri` is specified as a URI, and a URI uses
+///   `/`. GitHub code scanning cannot associate `.\.env` with a file in the
+///   repository.
+/// * **SARIF** `partialFingerprints` is the *identity* of a finding across
+///   runs — it exists so that inserting a line above a secret does not close
+///   one alert and open another. With a platform-dependent separator in it,
+///   the same secret in the same file has a different identity depending on
+///   which runner scanned it, so a matrix build duplicates every alert and a
+///   dismissal made on one is lost on the other.
+/// * **GitHub Actions annotations** (`::error file=…`) are matched against
+///   repository paths, which use `/`. A backslash path annotates nothing.
+///
+/// ⚠️ **Windows only, and that asymmetry is deliberate.** `\` is a reserved
+/// character in a Windows filename, so the replacement is lossless there. On
+/// Unix it is a perfectly legal one — a file really can be called `a\b` — and
+/// rewriting it would corrupt the path being reported. Unix therefore gets the
+/// string unchanged rather than a normalisation that is almost always a no-op
+/// and occasionally wrong.
+#[cfg(windows)]
+pub fn display_portable(path: &std::path::Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}
+
+/// See the Windows variant for why this is platform-split.
+#[cfg(not(windows))]
+pub fn display_portable(path: &std::path::Path) -> String {
+    path.display().to_string()
+}
+
 pub fn find_files(pattern: &str) -> Result<Vec<String>> {
     use walkdir::WalkDir;
 
@@ -157,6 +192,42 @@ pub fn find_files(pattern: &str) -> Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
+
+    /// ⚠️ **On Unix this must be a no-op, including for a file whose name
+    /// really contains a backslash.**
+    ///
+    /// `\` is reserved in a Windows filename, so rewriting it there is
+    /// lossless. On Unix it is an ordinary character, and a normalisation that
+    /// rewrote it would corrupt the very path being reported — a scanner
+    /// naming the wrong file is worse than one naming an awkward file.
+    #[test]
+    #[cfg(not(windows))]
+    fn display_portable_leaves_unix_paths_alone() {
+        use std::path::Path;
+        assert_eq!(display_portable(Path::new("./.env")), "./.env");
+        assert_eq!(display_portable(Path::new("a/b/.env")), "a/b/.env");
+        // The case the platform split exists for.
+        assert_eq!(
+            display_portable(Path::new(r"weird\name.env")),
+            r"weird\name.env",
+            "a backslash is a legal Unix filename character and must survive"
+        );
+    }
+
+    /// The Windows half: separators become `/` so SARIF URIs, GitHub
+    /// annotations and finding fingerprints are identical across platforms.
+    #[test]
+    #[cfg(windows)]
+    fn display_portable_rewrites_windows_separators() {
+        use std::path::Path;
+        assert_eq!(display_portable(Path::new(r".\.env")), "./.env");
+        assert_eq!(display_portable(Path::new(r"a\b\.env")), "a/b/.env");
+        assert_eq!(
+            display_portable(Path::new(r"C:\work\app\.env")),
+            "C:/work/app/.env"
+        );
+    }
+
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;

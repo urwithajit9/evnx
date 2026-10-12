@@ -23,6 +23,7 @@ use super::{
     models::{Confidence, Finding, ScanResults},
     output::{render, OutputFormat},
 };
+use crate::utils::fs::display_portable;
 use crate::utils::ui;
 use anyhow::Result;
 // use colored::*;
@@ -301,7 +302,7 @@ impl ScanRunner {
 
         for (key, value) in &vars {
             let line_num = lines.get(key).copied().unwrap_or(1);
-            let location = format!("{}:{} ({})", path.display(), line_num, key);
+            let location = format!("{}:{} ({})", display_portable(path), line_num, key);
             if let Some(detection) = Self::best(self.registry.scan_kv(key, value, &location)) {
                 self.add_finding(results, path, line_num, Some(key.clone()), detection);
             }
@@ -369,7 +370,7 @@ impl ScanRunner {
             if value.is_empty() {
                 continue;
             }
-            let location = format!("{}:{} ({})", path.display(), line_num, key);
+            let location = format!("{}:{} ({})", display_portable(path), line_num, key);
             if let Some(detection) = Self::best(self.registry.scan_kv(key, value, &location)) {
                 let variable = (!key.is_empty()).then(|| key.to_string());
                 self.add_finding(results, path, line_num, variable, detection);
@@ -410,7 +411,7 @@ impl ScanRunner {
             // that misses is **worse than useless, because it reports clean**.
             Decoded::Unreadable { reason } => {
                 results.unreadable.push(UnreadableFile {
-                    path: path.display().to_string(),
+                    path: display_portable(path),
                     reason,
                 });
                 return Ok(());
@@ -470,7 +471,7 @@ impl ScanRunner {
                     let key = key.trim().trim_start_matches("export").trim();
                     let value = value.trim();
 
-                    let location = format!("{}:{} ({})", path.display(), line_num, key);
+                    let location = format!("{}:{} ({})", display_portable(path), line_num, key);
                     if let Some(detection) =
                         Self::best(self.registry.scan_kv(key, value, &location))
                     {
@@ -479,7 +480,7 @@ impl ScanRunner {
                 }
             } else {
                 // Scan tokens for general text files.
-                let location = format!("{}:{}", path.display(), line_num);
+                let location = format!("{}:{}", display_portable(path), line_num);
                 let mut detections: Vec<super::detector::Detection> = Vec::new();
 
                 for token in Self::extract_tokens(line) {
@@ -717,9 +718,9 @@ impl ScanRunner {
             detection.confidence,
             truncate_value(&detection.matched_value),
             if let Some(ref var) = variable {
-                format!("{}:{} ({})", path.display(), line, var)
+                format!("{}:{} ({})", display_portable(path), line, var)
             } else {
-                format!("{}:{}", path.display(), line)
+                format!("{}:{}", display_portable(path), line)
             },
             variable,
             detection.action_url,
