@@ -46,6 +46,32 @@ jobs:
       - name: Run tests
         run: cargo test --all-features
 
+  # ⛔ **Nothing in this repo had ever run a test on Windows**, and a Windows-only
+  # defect shipped because of it: `scan`'s hardcoded directory exclusions were
+  # forward-slash substrings (`"node_modules/"`) tested against
+  # `path.to_string_lossy()`, which on Windows is `node_modules\pkg\.env`. Not
+  # one of the five ever matched, so `scan` walked `.git`, `node_modules`,
+  # `target`, `dist` and `build` in full. An earlier note in the tracker claimed
+  # CI had a Windows runner; the matrix above is `[ubuntu-latest, macos-latest]`.
+  #
+  # ⚠️ Deliberately scoped to the module the fix touches, **not** the whole
+  # suite. 786 tests have never executed on Windows and nobody knows what they
+  # do there — finding out is worth doing and is its own task, but discovering
+  # it inside a bug-fix PR would turn `main` red for reasons unrelated to the
+  # bug. Widening this is a decision, not an oversight.
+  windows-paths:
+    name: Path handling on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      # ⓘ `--lib` because the assertion lives beside the code it guards, and the
+      # integration tests are what have never been tried here.
+      - run: cargo test --all-features --lib scan::filters
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

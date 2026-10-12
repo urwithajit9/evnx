@@ -20,6 +20,23 @@ use glob::Pattern;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+/// Rewrite `\` as `/` so a pattern written with forward slashes can match a
+/// Windows path.
+///
+/// ⚠️ Only used for the **user's own** `--exclude` substring patterns, and only
+/// as an *additional* spelling to try — never as a replacement for the path as
+/// written. On Unix a backslash is a legal filename character, so normalising
+/// unconditionally would make `--exclude a/b` match a single file named
+/// `a\b`. Trying both spellings cannot remove a match, so no project's
+/// exclusions change meaning on upgrade.
+///
+/// ⓘ The hardcoded directory exclusions do **not** go through this. They match
+/// by path component instead, which the platform's own parser splits correctly,
+/// and that is strictly better than normalising a string.
+fn normalise_separators(path_str: &str) -> String {
+    path_str.replace('\\', "/")
+}
+
 /// File filter for collecting scannable files.
 ///
 /// Manages exclusion patterns and file type filtering to determine
@@ -224,26 +241,66 @@ impl FileFilter {
             }
         }
 
-        // Check substring patterns
+        // Check substring patterns.
+        //
+        // ⚠️ Matched against the path as written *and* with separators
+        // normalised to `/`. On Windows `to_string_lossy` yields
+        // `project\\node_modules\\pkg.json`, so `--exclude node_modules/` —
+        // the spelling every tutorial and `.gitignore` uses — matched nothing
+        // there. Trying both only ever *adds* a match for a pattern the user
+        // typed on purpose, so no existing exclusion changes meaning.
+        let slashed = normalise_separators(&path_str);
         for pattern in &self.exclude_patterns {
-            if !pattern.contains('*') && path_str.contains(pattern) {
+            if !pattern.contains('*') && (path_str.contains(pattern) || slashed.contains(pattern)) {
                 return true;
             }
         }
 
-        // Always exclude common non-secret files
-        const ALWAYS_EXCLUDE: &[&str] = &[
-            ".git/",
-            "node_modules/",
-            "target/",
-            "dist/",
-            "build/",
-            ".env.example",
-            ".env.sample",
-            ".env.template",
-        ];
+        // Always exclude common non-secret locations.
+        //
+        // ⛔ These were one list of substrings — `".git/"`, `"node_modules/"`,
+        // … — tested with `path_str.contains(p)`. Every directory entry ended
+        // in a **forward slash**, and on Windows `to_string_lossy` returns
+        // `node_modules\\pkg\\.env`. So on Windows **not one of the five
+        // directory exclusions ever fired**, and `scan` walked `.git`,
+        // `node_modules`, `target`, `dist` and `build` in full.
+        //
+        // ⓘ It over-scanned rather than under-reporting, so it was never a
+        // missed secret — it was a slow walk of `node_modules` and a flood of
+        // findings from lockfile hashes and vendored test fixtures, which is
+        // its own route to someone deciding the tool cries wolf.
+        //
+        // Directories are matched **by path component** and files by name, so
+        // the platform's own path parser does the separator handling and there
+        // is no string to normalise.
+        //
+        // ⓘ A component is an exact comparison, which also closes a quieter
+        // over-match in the other direction: `contains("dist/")` was true for
+        // `redist/`, `contains("target/")` for `my_target/`, and
+        // `contains("build/")` for `prebuild/` — all plausible directory names
+        // that were silently skipped. ⚠️ Note the shape: the extra text has to
+        // come **before** the name. `my-node_modules-notes/` was *not*
+        // affected, because the trailing `-notes` breaks the substring.
+        const ALWAYS_EXCLUDE_DIRS: &[&str] = &[".git", "node_modules", "target", "dist", "build"];
+        const ALWAYS_EXCLUDE_FILES: &[&str] = &[".env.example", ".env.sample", ".env.template"];
 
-        if ALWAYS_EXCLUDE.iter().any(|p| path_str.contains(p)) {
+        if path
+            .components()
+            .any(|c| ALWAYS_EXCLUDE_DIRS.iter().any(|d| c.as_os_str() == *d))
+        {
+            return true;
+        }
+
+        // ⚠️ By file name, not by substring: `.env.example` as a substring also
+        // matched `.env.example.bak` and `my.env.example-notes`, and a name
+        // comparison is what was meant. Falls back to the whole path when a
+        // path has no final component, which `components()` can produce for
+        // something like `..`.
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or(std::borrow::Cow::Borrowed(""));
+        if ALWAYS_EXCLUDE_FILES.iter().any(|f| name == *f) {
             return true;
         }
 
@@ -503,6 +560,118 @@ mod tests {
                 "{name} must stay excluded"
             );
         }
+    }
+
+    /// ⛔ **The defect, stated as the string comparison it actually was.**
+    ///
+    /// `ALWAYS_EXCLUDE` held `"node_modules/"` with a forward slash and was
+    /// tested with `path_str.contains(p)`. On Windows the path string uses
+    /// `\`, so the test was this — and it is `false`:
+    #[test]
+    fn a_forward_slash_substring_cannot_match_a_windows_path() {
+        let windows_path = r"project\node_modules\pkg\.env";
+
+        // What the old code asked, on every one of the five directory
+        // patterns. All five answered "do not exclude".
+        for pattern in [".git/", "node_modules/", "target/", "dist/", "build/"] {
+            assert!(
+                !windows_path.contains(pattern),
+                "{pattern} cannot appear in a backslash path — this is the bug"
+            );
+        }
+
+        // ⓘ This test needs no Windows machine because the defect was never
+        // about Windows behaviour; it was about comparing a `/` pattern against
+        // a `\` string. The fix removes the comparison rather than fixing the
+        // string, so the one below is what now decides it.
+    }
+
+    /// The component walk the fix uses, exercised on this platform's own
+    /// separator.
+    ///
+    /// ⚠️ **On Unix this test passes against the old substring code too**, so
+    /// on the runners that exist today it is a regression guard and nothing
+    /// more — measured, not assumed. The assertion that actually distinguishes
+    /// fixed from broken is `windows_paths_hit_the_hardcoded_directory_exclusions`
+    /// below, and it cannot run until `windows-latest` is in CI's matrix. ⛔ Do
+    /// not read this test's green as coverage of the bug it was written for.
+    #[test]
+    fn hardcoded_directories_are_excluded_by_component() {
+        let filter = FileFilter::new(&[]);
+        for dir in [".git", "node_modules", "target", "dist", "build"] {
+            let nested: PathBuf = ["project", dir, "pkg", ".env"].iter().collect();
+            assert!(
+                filter.should_exclude(&nested),
+                "{} must be excluded",
+                nested.display()
+            );
+        }
+    }
+
+    /// ⚠️ A component is an exact match, so a directory whose name merely
+    /// *ends with* one of these is no longer skipped.
+    ///
+    /// ⓘ These three are the real over-matches, found by measuring rather than
+    /// by guessing: `redist/` contains `dist/`, `my_target/` contains
+    /// `target/`, `prebuild/` contains `build/`. Each was silently excluded
+    /// from every scan. ⚠️ My first attempt at this test used
+    /// `my-node_modules-notes` and `distribution`, which the old code did
+    /// **not** match — the extra text has to precede the name, not follow it.
+    /// The negative control is what caught that.
+    #[test]
+    fn a_directory_whose_name_ends_with_an_excluded_one_is_still_scanned() {
+        let filter = FileFilter::new(&[]);
+        for dir in ["redist", "my_target", "prebuild", "vendor_node_modules"] {
+            let nested: PathBuf = ["project", dir, ".env"].iter().collect();
+            assert!(
+                !filter.should_exclude(&nested),
+                "{} is not a build directory and must be scanned",
+                nested.display()
+            );
+        }
+    }
+
+    /// The template family is matched by **file name**, not as a substring, so
+    /// a file that merely begins with one of the names is still scanned.
+    #[test]
+    fn only_the_template_file_itself_is_excluded() {
+        let filter = FileFilter::new(&[]);
+        assert!(filter.should_exclude(Path::new(".env.example")));
+        // ⚠️ `.contains(".env.example")` matched both of these too. A copy of a
+        // template with a real key pasted in is exactly what should be read.
+        assert!(!filter.should_exclude(Path::new(".env.example.bak")));
+        assert!(!filter.should_exclude(Path::new("my.env.example-notes")));
+    }
+
+    /// A user's `--exclude node_modules/` — written the way `.gitignore` and
+    /// every tutorial write it — must work on a Windows path too.
+    #[test]
+    fn a_user_pattern_with_forward_slashes_matches_a_backslash_path() {
+        let filter = FileFilter::new(&["vendor/cache/".to_string()]);
+
+        // A backslash path, as `to_string_lossy` produces on Windows. On Unix
+        // this is one oddly-named file, and matching it is still the answer the
+        // user asked for by typing that pattern.
+        assert!(filter.should_exclude(Path::new(r"app\vendor\cache\.env")));
+
+        // The forward-slash spelling keeps working, unchanged.
+        assert!(filter.should_exclude(Path::new("app/vendor/cache/.env")));
+
+        // And an unrelated path is still scanned.
+        assert!(!filter.should_exclude(Path::new("app/src/.env")));
+    }
+
+    /// Windows-only, and the assertion the fix exists for. ⓘ It runs only once
+    /// `windows-latest` is in CI's matrix — which it was not when this was
+    /// written, despite a note claiming otherwise.
+    #[test]
+    #[cfg(windows)]
+    fn windows_paths_hit_the_hardcoded_directory_exclusions() {
+        let filter = FileFilter::new(&[]);
+        assert!(filter.should_exclude(Path::new(r"project\node_modules\pkg\.env")));
+        assert!(filter.should_exclude(Path::new(r"project\.git\config")));
+        assert!(filter.should_exclude(Path::new(r"C:\work\app\target\debug\.env")));
+        assert!(!filter.should_exclude(Path::new(r"project\src\.env")));
     }
 
     /// `evnx backup` output is a single base64 blob that the high-entropy detector

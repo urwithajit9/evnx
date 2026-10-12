@@ -8,6 +8,48 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+#### ⛔ `scan`'s directory exclusions never fired on Windows
+
+`.git`, `node_modules`, `target`, `dist` and `build` were scanned in full on
+every Windows machine, and had been since the exclusions were written.
+
+They were forward-slash substrings — `"node_modules/"` — tested with
+`path.to_string_lossy().contains(…)`. On Windows that string is
+`node_modules\pkg\.env`, so not one of the five ever matched. Directories are
+now matched **by path component**, which lets the platform's own path parser
+handle separators instead of comparing a `/` pattern against a `\` string.
+
+ⓘ The direction matters: it over-scanned, so no secret was ever missed because
+of this. What users got was a slow walk of `node_modules` and a flood of
+findings from lockfile hashes and vendored fixtures — which is its own way to
+teach someone the tool cries wolf.
+
+Two smaller defects in the same comparison, both found while fixing it:
+
+- **A directory whose name *ended with* an excluded one was also skipped** —
+  `contains("dist/")` is true for `redist/`, `contains("target/")` for
+  `my_target/`, `contains("build/")` for `prebuild/`. All silently excluded
+  from every scan, on every platform. ⚠️ Note the shape: the extra text has to
+  come *before* the name, so `my-node_modules-notes/` was never affected.
+- **`.env.example` was a substring, not a file name**, so `.env.example.bak`
+  and `my.env.example-notes` were excluded too. A copy of a template with a
+  real key pasted into it is exactly what should be read.
+
+Your own `--exclude` patterns are also now matched against the path with
+separators normalised, as well as the path as written — so `--exclude
+node_modules/`, the spelling `.gitignore` and every tutorial use, works on
+Windows. ⓘ Trying both spellings can only *add* a match for a pattern you
+typed on purpose, so no existing exclusion changes meaning.
+
+⚠️ **CI now runs this module's tests on `windows-latest`.** Nothing in the repo
+had ever run a test on Windows, which is why a Windows-only defect could ship;
+a note in the tracker claimed otherwise. It is scoped to the module the fix
+touches — the other 786 tests have still never executed there, and finding out
+what they do is a separate task rather than something to discover inside a
+bug-fix.
+
 ## [0.10.0] - 2026-10-10
 
 ### ⚠️ Four dependencies that were compiled for nothing
