@@ -10,6 +10,53 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+#### ⛔ `scan` emitted Windows path separators into machine-readable output
+
+Three outputs that other programs parse carried `.\.env` instead of `./.env`
+on Windows, and each one broke differently:
+
+- **SARIF `artifactLocation.uri`** is specified as a URI, which uses `/`.
+  GitHub code scanning could not associate the alert with a file in the
+  repository, so it attached to nothing.
+- **GitHub Actions annotations** (`::error file=…`) are matched against
+  repository paths. `evnx-action` on a windows runner reported findings that
+  annotated no file.
+- **SARIF `partialFingerprints`** is the *identity* of a finding across runs —
+  it exists so that inserting a line above a secret does not close one alert
+  and open another. ⚠️ With a platform-dependent separator inside it, the same
+  secret in the same file had a different identity depending on which runner
+  scanned it, so a matrix build duplicated every alert and a dismissal made on
+  one platform was lost on the other. That is precisely the failure the
+  fingerprint was added to prevent.
+
+ⓘ Normalisation is Windows-only. `\` is reserved in a Windows filename so the
+rewrite is lossless there; on Unix it is an ordinary character and a file
+really can be called `weird\name.env`, where rewriting it would report the
+wrong path.
+
+#### ⛔ `--exclude` glob patterns were inert on Windows
+
+`--exclude "fixtures/**"` excluded nothing. `glob::Pattern` treats `/` as its
+only separator, so it could never match the `.\fixtures\.env` the walker
+produces, and the leading `.\` defeated the `./` prefix strip as well.
+
+⚠️ This is the branch the previous release's exclusion fix missed. That one
+corrected the hardcoded directory list and the plain-substring patterns and
+left globs untouched — so `--exclude` appeared to work, and silently did not.
+
+ⓘ The substring branch is narrowed in the same change. It previously matched
+both the raw path and a normalised copy on *every* platform, which widened Unix
+by accident: a file genuinely named `a\b` began matching `--exclude a/b`. For a
+scanner an over-exclusion is a **silent miss** — the file is never read and the
+output still says no secrets were detected.
+
+#### ⚠️ `doctor` on Windows reports file permissions as skipped
+
+Unchanged behaviour, now pinned by a test. File modes are a Unix concept, so
+the check reports `info` / "Skipped: Windows platform" rather than a warning.
+The assertion exists so the check cannot quietly disappear from the report
+while the summary counts still add up.
+
 #### ⛔ `scan`'s directory exclusions never fired on Windows
 
 `.git`, `node_modules`, `target`, `dist` and `build` were scanned in full on

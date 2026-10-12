@@ -20,23 +20,6 @@ use glob::Pattern;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-/// Rewrite `\` as `/` so a pattern written with forward slashes can match a
-/// Windows path.
-///
-/// ⚠️ Only used for the **user's own** `--exclude` substring patterns, and only
-/// as an *additional* spelling to try — never as a replacement for the path as
-/// written. On Unix a backslash is a legal filename character, so normalising
-/// unconditionally would make `--exclude a/b` match a single file named
-/// `a\b`. Trying both spellings cannot remove a match, so no project's
-/// exclusions change meaning on upgrade.
-///
-/// ⓘ The hardcoded directory exclusions do **not** go through this. They match
-/// by path component instead, which the platform's own parser splits correctly,
-/// and that is strictly better than normalising a string.
-fn normalise_separators(path_str: &str) -> String {
-    path_str.replace('\\', "/")
-}
-
 /// File filter for collecting scannable files.
 ///
 /// Manages exclusion patterns and file type filtering to determine
@@ -222,10 +205,34 @@ impl FileFilter {
     /// pattern that worked before still works, so no project's exclusions change
     /// meaning on upgrade.
     pub fn should_exclude(&self, path: &Path) -> bool {
-        let path_str = path.to_string_lossy();
+        // ⛔ **Normalised once, here, and every user pattern matches against
+        // this rather than the raw string.**
+        //
+        // `glob::Pattern` treats `/` as its separator and nothing else, so on
+        // Windows — where the walker yields `.\fixtures\.env` — a pattern like
+        // `fixtures/**` could never match. `--exclude` was simply inert there.
+        // That is the second half of the same defect as the hardcoded
+        // directories below: #146 fixed those and the substring branch and left
+        // the glob branch untouched.
+        //
+        // ⚠️ `display_portable` is **Windows-only by construction**, and that
+        // matters more here than it does for output. On Unix `\` is a legal
+        // filename character, so normalising unconditionally would let
+        // `--exclude a/b` match a single file named `a\b` — **excluding a file
+        // the user never named**. For a scanner an over-exclusion is a silent
+        // miss, the one failure mode this command cannot afford.
+        //
+        // ⓘ The hardcoded directory list does not go through this at all. It
+        // matches by path component, which the platform's own parser splits
+        // correctly, and that is strictly better than normalising a string.
+        let path_str = crate::utils::fs::display_portable(path);
 
         // Check compiled glob patterns
         if !self.compiled_globs.is_empty() {
+            // ⚠️ After normalisation this strips on both platforms. Against the
+            // raw Windows string it never did — the walker produces `.\…`, not
+            // `./…`, so a pattern lost to the leading `.\` even when its
+            // separators were right.
             let relative = path_str.strip_prefix("./").unwrap_or(&path_str);
             let file_name = path.file_name().map(|n| n.to_string_lossy());
 
@@ -243,15 +250,13 @@ impl FileFilter {
 
         // Check substring patterns.
         //
-        // ⚠️ Matched against the path as written *and* with separators
-        // normalised to `/`. On Windows `to_string_lossy` yields
-        // `project\\node_modules\\pkg.json`, so `--exclude node_modules/` —
-        // the spelling every tutorial and `.gitignore` uses — matched nothing
-        // there. Trying both only ever *adds* a match for a pattern the user
-        // typed on purpose, so no existing exclusion changes meaning.
-        let slashed = normalise_separators(&path_str);
+        // ⓘ One spelling, because `path_str` above is already portable. #146
+        // matched the raw string *and* a normalised copy, which fixed Windows
+        // but quietly widened Unix: a file genuinely named `a\b` would start
+        // matching `--exclude a/b`. Normalising only on the platform where `\`
+        // cannot appear in a filename keeps Unix behaviour exactly as it was.
         for pattern in &self.exclude_patterns {
-            if !pattern.contains('*') && (path_str.contains(pattern) || slashed.contains(pattern)) {
+            if !pattern.contains('*') && path_str.contains(pattern) {
                 return true;
             }
         }
@@ -643,22 +648,67 @@ mod tests {
         assert!(!filter.should_exclude(Path::new("my.env.example-notes")));
     }
 
-    /// A user's `--exclude node_modules/` — written the way `.gitignore` and
-    /// every tutorial write it — must work on a Windows path too.
+    /// A user's `--exclude vendor/cache/` — written the way `.gitignore` and
+    /// every tutorial write it — works on both platforms, and the forward-slash
+    /// spelling is unchanged everywhere.
     #[test]
-    fn a_user_pattern_with_forward_slashes_matches_a_backslash_path() {
+    fn a_user_pattern_with_forward_slashes_still_matches_a_normal_path() {
         let filter = FileFilter::new(&["vendor/cache/".to_string()]);
-
-        // A backslash path, as `to_string_lossy` produces on Windows. On Unix
-        // this is one oddly-named file, and matching it is still the answer the
-        // user asked for by typing that pattern.
-        assert!(filter.should_exclude(Path::new(r"app\vendor\cache\.env")));
-
-        // The forward-slash spelling keeps working, unchanged.
         assert!(filter.should_exclude(Path::new("app/vendor/cache/.env")));
-
-        // And an unrelated path is still scanned.
         assert!(!filter.should_exclude(Path::new("app/src/.env")));
+    }
+
+    /// ⛔ **A backslash means different things on the two platforms, and this
+    /// pins both.**
+    ///
+    /// ⚠️ **This assertion was the other way round until 2026-10-13**, and the
+    /// change is deliberate. #146 normalised separators *unconditionally*,
+    /// which fixed Windows and quietly widened Unix: a file genuinely named
+    /// `app\vendor\cache\.env` — one filename, backslashes and all, which is
+    /// legal on Unix — started matching `--exclude vendor/cache/`.
+    ///
+    /// ⛔ That is an **over-exclusion**, and for a scanner an over-exclusion is
+    /// a silent miss: the file is never read, nothing is reported, and the
+    /// output says "no secrets detected". `SCANNER-REWORK-NOTES.md` names that
+    /// as the asymmetric failure this command cannot afford. Normalising only
+    /// where `\` cannot appear in a filename keeps Unix exactly as it was.
+    #[test]
+    fn a_backslash_path_is_a_filename_on_unix_and_a_path_on_windows() {
+        let filter = FileFilter::new(&["vendor/cache/".to_string()]);
+        let weird = Path::new(r"app\vendor\cache\.env");
+
+        #[cfg(windows)]
+        assert!(
+            filter.should_exclude(weird),
+            "on Windows this is a path and the pattern names it"
+        );
+
+        #[cfg(not(windows))]
+        assert!(
+            !filter.should_exclude(weird),
+            "on Unix this is ONE file with backslashes in its name — excluding \
+             it would skip a file the user never named, and a skipped file in a \
+             secret scanner is a silent miss"
+        );
+    }
+
+    /// ⛔ **The glob branch, which #146 left behind.**
+    ///
+    /// `glob::Pattern` treats `/` as its separator and nothing else, so against
+    /// a raw `.\fixtures\.env` a pattern like `fixtures/**` matched nothing and
+    /// `--exclude` was inert on Windows. Found by `scan_integration`'s
+    /// `exclude_globs_match_the_forms_people_write` on the fourth round of
+    /// bringing this platform up.
+    ///
+    /// ⓘ The leading `.\` mattered too: `strip_prefix("./")` could not strip
+    /// it, so even a correctly-separated pattern lost to the prefix.
+    #[test]
+    #[cfg(windows)]
+    fn windows_paths_hit_user_glob_patterns() {
+        let filter = FileFilter::new(&["fixtures/**".to_string()]);
+        assert!(filter.should_exclude(Path::new(r".\fixtures\.env")));
+        assert!(filter.should_exclude(Path::new(r"fixtures\nested\.env")));
+        assert!(!filter.should_exclude(Path::new(r".\src\.env")));
     }
 
     /// Windows-only, and the assertion the fix exists for. ⓘ It runs only once
