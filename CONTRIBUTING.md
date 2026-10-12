@@ -142,6 +142,30 @@ cargo build --all-features
 cargo run -- --help
 ```
 
+### On Windows: give the debug build a bigger stack
+
+If `cargo run` or `cargo test` dies immediately with
+`thread 'main' has overflowed its stack`, this is why — and it is a one-line
+fix, not something you have broken.
+
+Windows reserves **1 MB** for a process's main thread where Linux reserves 8 MB.
+A *debug* build of evnx needs between 1 MB and 1.5 MB just to parse its own
+arguments, so it overflows before any command runs. Even `evnx --version` dies.
+
+Create `.cargo/config.toml` — it is gitignored, so this stays local to you:
+
+```toml
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/STACK:8388608"]
+```
+
+That reserves 8 MB, matching Linux. CI sets the same flag for its Windows job.
+
+ⓘ **This affects debug builds only and no released binary.** The optimised
+build runs in under 256 KB, and every published artefact is built
+`--release`. What costs the stack is debug-mode frame bloat in the argument
+parser, not anything the program does at runtime.
+
 ---
 
 ## 4. Create a Feature Branch
