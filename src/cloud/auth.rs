@@ -571,9 +571,28 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
 #[derive(Deserialize)]
 pub(crate) struct UsageResponse {
     pub plan: String,
+    /// Which organisation supplied the plan, or `None` for the account's own.
+    ///
+    /// ⚠️ **`Option`, and the server sends `null` rather than omitting it.**
+    /// Absent and null both deserialise to `None` here, so an older server that
+    /// does not send the field at all still works — `plan` alone is what it
+    /// always was.
+    #[serde(default)]
+    pub plan_via: Option<PlanVia>,
     pub vaults: UsageCount,
     pub api_tokens: UsageCount,
     pub versions_per_vault: VersionUsage,
+}
+
+/// The organisation whose seat supplied the plan.
+///
+/// ⓘ `slug` is what you type at a command line; `name` is what a person reads.
+/// Both are carried because the answer to "why are my limits what they are?" is
+/// read by a human and then acted on in a terminal.
+#[derive(Deserialize)]
+pub(crate) struct PlanVia {
+    pub name: String,
+    pub slug: String,
 }
 
 #[derive(Deserialize)]
@@ -616,7 +635,18 @@ pub(crate) fn usage_line(used: i64, limit: Option<i64>) -> String {
 
 fn print_usage(u: &UsageResponse) {
     println!();
-    println!("{} ({})", "plan".bold(), u.plan);
+    // ⛔ "You are on team" and "you are on team because Acme pays for your seat"
+    // are different sentences, and only the second tells you who to ask when a
+    // limit is wrong. The server resolved this and used to discard it.
+    match &u.plan_via {
+        Some(org) => println!("{} ({} via {})", "plan".bold(), u.plan, org.slug.bold()),
+        None => println!("{} ({})", "plan".bold(), u.plan),
+    }
+    if let Some(org) = &u.plan_via {
+        // The readable name, dimmed, on its own line — the slug above is the
+        // one you can paste into `evnx org billing --org …`.
+        println!("  {}", format!("seat in {}", org.name).dimmed());
+    }
     println!(
         "  vaults      {}",
         usage_line(u.vaults.used, u.vaults.limit)
@@ -1258,6 +1288,52 @@ mod tests {
         let l = usage_line(42, None);
         assert!(l.contains("42") && l.contains("unlimited"), "{l:?}");
         assert!(!l.contains("full"));
+    }
+
+    /// ⚠️ **An older server does not send `plan_via` at all**, and a client that
+    /// refused to parse that would break every existing deployment the moment
+    /// this field was added. Absent and explicit-null must both mean "the
+    /// account's own plan".
+    #[test]
+    fn a_response_without_plan_via_still_parses() {
+        let without = r#"{
+            "plan": "free",
+            "vaults": {"used": 1, "limit": 3},
+            "api_tokens": {"used": 0, "limit": 2},
+            "versions_per_vault": {"limit": 5, "vaults": []}
+        }"#;
+        let u: UsageResponse = serde_json::from_str(without).expect("a server predating plan_via");
+        assert_eq!(u.plan, "free");
+        assert!(u.plan_via.is_none());
+
+        let explicit_null = r#"{
+            "plan": "free", "plan_via": null,
+            "vaults": {"used": 1, "limit": 3},
+            "api_tokens": {"used": 0, "limit": 2},
+            "versions_per_vault": {"limit": 5, "vaults": []}
+        }"#;
+        let u: UsageResponse = serde_json::from_str(explicit_null).expect("explicit null");
+        assert!(u.plan_via.is_none(), "null and absent must agree");
+    }
+
+    /// The whole point of the field: naming where a plan came from.
+    #[test]
+    fn plan_via_carries_both_the_slug_and_the_readable_name() {
+        let body = r#"{
+            "plan": "team",
+            "plan_via": {"id": "0241e0a5-e4f9-4216-a7c6-592bce19f940", "name": "Acme Ltd", "slug": "acme"},
+            "vaults": {"used": 4, "limit": null},
+            "api_tokens": {"used": 1, "limit": null},
+            "versions_per_vault": {"limit": null, "vaults": []}
+        }"#;
+        let u: UsageResponse = serde_json::from_str(body).expect("a seated account");
+        let via = u.plan_via.expect("plan_via must be present");
+        // ⓘ `slug` is what you paste into `--org`; `name` is what a person reads.
+        assert_eq!(via.slug, "acme");
+        assert_eq!(via.name, "Acme Ltd");
+        // ⚠️ `id` is deliberately not a field here — nothing in the CLI has a
+        // use for it, and parsing a value you do not render is how a struct
+        // acquires fields nobody maintains.
     }
 
     #[test]
