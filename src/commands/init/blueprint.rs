@@ -3,7 +3,7 @@ use colored::*;
 use dialoguer::Select;
 use std::path::Path;
 
-use super::shared::{write_env_files, WriteOptions};
+use super::shared::{aborted, write_env_files_with_outcome, Outcome, WriteOptions};
 use crate::schema::{component, formatter, loader};
 use crate::utils::ui::{print_header, print_preview_header, success};
 
@@ -22,7 +22,7 @@ pub fn handle(
     opts: WriteOptions,
     verbose: bool,
     requested: Option<&str>,
-) -> Result<()> {
+) -> Result<Outcome> {
     if !opts.yes {
         print_header("Blueprint Mode", Some("Select a pre-configured stack"));
     }
@@ -80,11 +80,14 @@ pub fn handle(
                 })
                 .collect();
 
-            let selection = Select::new()
+            let Some(selection) = Select::new()
                 .with_prompt("Choose a stack blueprint")
                 .items(&display_items)
                 .default(0)
-                .interact()?;
+                .interact_opt()?
+            else {
+                return Ok(aborted()); // Esc or q
+            };
             blueprints[selection].0
         }
     };
@@ -130,14 +133,14 @@ pub fn handle(
     }
 
     if !opts.yes {
+        super::shared::require_terminal(&format!("evnx init --blueprint {selected_id} --yes"))?;
         let confirm = dialoguer::Confirm::new()
             .with_prompt("Generate .env files with these variables?")
             .default(true)
-            .interact()?;
+            .interact_opt()?;
 
-        if !confirm {
-            println!("{}", "Aborted.".yellow());
-            return Ok(());
+        if confirm != Some(true) {
+            return Ok(aborted());
         }
     }
 
@@ -146,12 +149,16 @@ pub fn handle(
     let template_content = formatter::format_env_template(&vars)?;
 
     let output_path = Path::new(&path);
-    write_env_files(output_path, &example_content, &template_content, opts)?;
+    let outcome =
+        write_env_files_with_outcome(output_path, &example_content, &template_content, opts)?;
+    if outcome != Outcome::Written {
+        return Ok(outcome);
+    }
 
     success(format!(
         "Created .env.example with {} variables",
         vars.vars.len()
     ));
 
-    Ok(())
+    Ok(Outcome::Written)
 }

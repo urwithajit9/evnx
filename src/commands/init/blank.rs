@@ -3,10 +3,10 @@ use anyhow::Result;
 // use colored::*;
 use std::path::Path;
 
-use super::shared::{write_env_files, WriteOptions};
+use super::shared::{write_env_files_with_outcome, Outcome, WriteOptions};
 
 /// Handle Blank mode: create minimal .env files
-pub fn handle(path: String, opts: WriteOptions, _verbose: bool) -> Result<()> {
+pub fn handle(path: String, opts: WriteOptions, _verbose: bool) -> Result<Outcome> {
     if !opts.yes {
         print_header("Blank Template", Some("Creating minimal .env files"));
     }
@@ -15,7 +15,11 @@ pub fn handle(path: String, opts: WriteOptions, _verbose: bool) -> Result<()> {
     let template_content = "# TODO: Replace with real values\n# Format: KEY=value\n\n";
 
     let output_path = Path::new(&path);
-    write_env_files(output_path, example_content, template_content, opts)?;
+    let outcome =
+        write_env_files_with_outcome(output_path, example_content, template_content, opts)?;
+    if outcome != Outcome::Written {
+        return Ok(outcome);
+    }
 
     // Not "empty": the template carries two comment lines on purpose, and a
     // user who opens it after being told it is empty has reason to distrust
@@ -23,5 +27,5 @@ pub fn handle(path: String, opts: WriteOptions, _verbose: bool) -> Result<()> {
     success("Created .env.example (no variables yet)");
     info("Tip: Run 'evnx add' to add variables interactively");
 
-    Ok(())
+    Ok(Outcome::Written)
 }

@@ -133,7 +133,15 @@ pub fn run(
             // Blank, not Blueprint (DQ-6). Enter-Enter used to write a 27-variable
             // T3 stack into whatever directory this was run in.
             .default(0)
-            .interact()?;
+            .interact_opt()?;
+
+        // Esc or q: leave before anything is written, the same way every
+        // other prompt in init now does.
+        let Some(selection) = selection else {
+            shared::aborted();
+            print_docs_hint(&docs::INIT);
+            return Ok(());
+        };
 
         match selection {
             0 => Mode::Blank,
@@ -144,15 +152,21 @@ pub fn run(
     };
 
     // Step 2: Route to handler
-    match mode {
+    let outcome = match mode {
         Mode::Blank => blank::handle(path, opts, verbose)?,
         Mode::Components => components::handle(path, opts, verbose, &with)?,
         Mode::Detected => components::handle_detected(path, opts, verbose, &detected)?,
         Mode::Blueprint => self::blueprint::handle(path, opts, verbose, blueprint.as_deref())?,
         Mode::Architect => architect::handle(path, opts, verbose)?,
-    }
+    };
 
-    print_next_steps_ui();
+    // ⚠️ "Next steps: Edit .env" only when something was written. It used to
+    // print after "Aborted." and after the user kept their own template, both
+    // times about a `.env` that did not exist (I-013, N-01). Exit code is 0 in
+    // all three cases (DQ-3).
+    if outcome == shared::Outcome::Written {
+        print_next_steps_ui();
+    }
     print_docs_hint(&docs::INIT);
     Ok(())
 }

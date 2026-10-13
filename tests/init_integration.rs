@@ -1289,3 +1289,74 @@ fn known_i007_quiet_still_prints() {
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("Next steps"));
 }
+
+// ─────────────────────────────────────────────────────────────
+// Group C: write order and honest outcomes
+// ─────────────────────────────────────────────────────────────
+
+/// I-008 (fixed in 0.10.1, group C): when stdout closes early (`| head`), `.env`
+/// is never left on disk without the `.gitignore` rule that protects it. On
+/// 0.10.0 this happened in 4 to 33% of runs. Stdout is closed right after the
+/// header, which is the window the old order lost.
+#[cfg(unix)]
+#[test]
+fn a_closed_stdout_never_leaves_env_unprotected() {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+
+    for run in 0..40 {
+        let d = TempDir::new().unwrap();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_evnx"))
+            .current_dir(d.path())
+            .args(["init", "--with", "nextjs", "--yes"])
+            .env("NO_COLOR", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut out = BufReader::new(child.stdout.take().unwrap());
+        let mut line = String::new();
+        while out.read_line(&mut line).unwrap_or(0) > 0 {
+            if line.contains("Set up environment variables") {
+                break;
+            }
+            line.clear();
+        }
+        drop(out); // the reader goes away, like `head` does
+        let _ = child.wait();
+
+        if d.path().join(".env").exists() {
+            let gitignore = std::fs::read_to_string(d.path().join(".gitignore"))
+                .unwrap_or_else(|_| panic!("run {run}: .env written without .gitignore"));
+            assert!(
+                gitignore.lines().any(|l| l.trim() == ".env*"),
+                "run {run}: .gitignore lacks .env*:\n{gitignore}"
+            );
+        }
+    }
+}
+
+/// N-08 (fixed in 0.10.1, group C): `--with` or `--blueprint` without `--yes`
+/// and without a terminal says to add `--yes` instead of a raw IO error.
+#[test]
+fn a_confirmation_without_a_terminal_says_add_yes() {
+    for (args, suggestion) in [
+        (
+            &["--with", "stripe,postgres"][..],
+            "evnx init --with stripe,postgres --yes",
+        ),
+        (
+            &["--blueprint", "t3_modern"][..],
+            "evnx init --blueprint t3_modern --yes",
+        ),
+    ] {
+        let d = TempDir::new().unwrap();
+        let out = init_in(d.path(), args);
+        let text = text_of(&out);
+        assert_eq!(out.status.code(), Some(2), "{text}");
+        assert!(text.contains(suggestion), "{text}");
+        assert!(!text.contains("not a terminal: not a terminal"), "{text}");
+        assert!(!d.path().join(".env.example").exists());
+    }
+}

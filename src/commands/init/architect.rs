@@ -3,12 +3,12 @@ use colored::*;
 use dialoguer::{Confirm, MultiSelect, Select};
 use std::path::Path;
 
-use super::shared::{write_env_files, WriteOptions};
+use super::shared::{aborted, write_env_files_with_outcome, Outcome, WriteOptions};
 use crate::schema::{formatter, loader, resolver};
 use crate::utils::ui::{info, print_header, print_preview_header, success};
 
 /// Handle Architect mode: step-by-step custom stack building
-pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
+pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<Outcome> {
     // Header for Architect mode
     if !opts.yes {
         print_header(
@@ -31,11 +31,15 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
     let lang_idx = if opts.yes {
         0
     } else {
-        Select::new()
+        match Select::new()
             .with_prompt("Select your primary language")
             .items(&lang_display)
             .default(0)
-            .interact()?
+            .interact_opt()?
+        {
+            Some(v) => v,
+            None => return Ok(aborted()), // Esc or q
+        }
     };
     let language_id = languages[lang_idx];
 
@@ -51,11 +55,15 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
     let fw_idx = if opts.yes {
         0
     } else {
-        Select::new()
+        match Select::new()
             .with_prompt("Select your framework")
             .items(&fw_display)
             .default(0)
-            .interact()?
+            .interact_opt()?
+        {
+            Some(v) => v,
+            None => return Ok(aborted()), // Esc or q
+        }
     };
     let framework_id = frameworks[fw_idx].0;
 
@@ -74,10 +82,14 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
         // Default: select first service from first group
         vec![0]
     } else {
-        MultiSelect::new()
+        match MultiSelect::new()
             .with_prompt("Select services you'll use (Space to toggle, Enter to confirm)")
             .items(&service_items)
-            .interact()?
+            .interact_opt()?
+        {
+            Some(v) => v,
+            None => return Ok(aborted()), // Esc or q
+        }
     };
 
     let selected_services: Vec<String> = selected_svc_indices
@@ -103,10 +115,14 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
     let selected_infra_indices = if opts.yes {
         vec![] // Default: no infra in non-interactive
     } else {
-        MultiSelect::new()
+        match MultiSelect::new()
             .with_prompt("Select deployment/infrastructure (optional)")
             .items(&infra_display)
-            .interact()?
+            .interact_opt()?
+        {
+            Some(v) => v,
+            None => return Ok(aborted()), // Esc or q
+        }
     };
 
     let selected_infra: Vec<String> = selected_infra_indices
@@ -141,11 +157,10 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
         let confirm = Confirm::new()
             .with_prompt("Generate .env files with these variables?")
             .default(true)
-            .interact()?;
+            .interact_opt()?;
 
-        if !confirm {
-            println!("{}", "Aborted.".yellow());
-            return Ok(());
+        if confirm != Some(true) {
+            return Ok(aborted());
         }
     }
 
@@ -154,7 +169,11 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
     let template_content = formatter::format_env_template(&vars)?;
 
     let output_path = Path::new(&path);
-    write_env_files(output_path, &example_content, &template_content, opts)?;
+    let outcome =
+        write_env_files_with_outcome(output_path, &example_content, &template_content, opts)?;
+    if outcome != Outcome::Written {
+        return Ok(outcome);
+    }
 
     // println!(
     //     "{} Created .env.example with {} variables",
@@ -166,7 +185,7 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
         vars.vars.len()
     ));
 
-    Ok(())
+    Ok(Outcome::Written)
 }
 
 fn format_language_display(id: &str) -> String {

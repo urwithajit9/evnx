@@ -211,10 +211,10 @@ fn answering_no_writes_nothing() {
 // KNOWN DEFECTS — pinned as they behave in 0.10.0
 // ─────────────────────────────────────────────────────────────
 
-/// KNOWN I-013 (group C): after `Aborted.` the "Next steps" block still prints,
-/// telling the user to edit a `.env` that was never written.
+/// I-013 (fixed in 0.10.1, group C; was `known_i013_*`): after an abort there
+/// are no "Next steps" about a `.env` that was never written.
 #[test]
-fn known_i013_next_steps_after_abort() {
+fn an_abort_prints_no_next_steps() {
     let d = TempDir::new().unwrap();
     let mut run = Run::start(d.path(), &[]);
 
@@ -224,16 +224,18 @@ fn known_i013_next_steps_after_abort() {
     run.press(&[ENTER]);
     run.wait_for("Generate .env files with these variables?");
     run.press(&["n", ENTER]);
-    let (rest, _) = run.finish();
+    let (rest, code) = run.finish();
 
-    assert!(rest.contains("Aborted"), "{rest}");
-    assert!(rest.contains("Next steps"), "{rest}");
+    assert_eq!(code, 0);
+    assert!(rest.contains("Aborted. Nothing was written."), "{rest}");
+    assert!(!rest.contains("Next steps"), "{rest}");
 }
 
-/// KNOWN N-01 (group C): keeping an existing template still reports
-/// "✓ Created .env.example", and no `.env` is written.
+/// N-01 (fixed in 0.10.1, group C; was `known_n01_*`): keeping an existing
+/// template says so, claims nothing was created, and gives no "Next steps".
+/// `.gitignore` is still updated (protection is never skipped).
 #[test]
-fn known_n01_keeping_the_template_still_says_created() {
+fn keeping_the_template_says_so() {
     let d = TempDir::new().unwrap();
     std::fs::write(d.path().join(".env.example"), "MINE=1\n").unwrap();
     let mut run = Run::start(d.path(), &[]);
@@ -249,12 +251,84 @@ fn known_n01_keeping_the_template_still_says_created() {
     let (rest, code) = run.finish();
 
     assert_eq!(code, 0);
-    assert!(rest.contains("Kept the existing .env.example"), "{rest}");
-    assert!(rest.contains("Created .env.example with"), "{rest}");
+    assert!(
+        rest.contains("Kept the existing .env.example. Nothing was generated."),
+        "{rest}"
+    );
+    assert!(!rest.contains("Created .env.example"), "{rest}");
+    assert!(!rest.contains("Next steps"), "{rest}");
     assert_eq!(
         std::fs::read_to_string(d.path().join(".env.example")).unwrap(),
         "MINE=1\n"
     );
+    assert!(d.path().join(".gitignore").exists());
+}
+
+const ESC: &str = "\x1b";
+
+/// N-07 (part, group C): Esc cancels at every kind of prompt, writes nothing,
+/// and exits 0. (Ctrl-C is a signal, handled separately.)
+#[test]
+fn escape_cancels_at_every_prompt() {
+    // (keys to reach the prompt, prompt text, label)
+    let cases: &[(&[&str], &str, &str)] = &[
+        (&[], "How do you want to start?", "start menu"),
+        (&[DOWN, ENTER], "Choose a stack blueprint", "blueprint list"),
+        (
+            &[DOWN, ENTER, ENTER],
+            "Generate .env files with these variables?",
+            "confirm",
+        ),
+        (
+            &[DOWN, DOWN, ENTER],
+            "Select your primary language",
+            "architect",
+        ),
+    ];
+    for (keys, prompt, label) in cases {
+        let d = TempDir::new().unwrap();
+        let mut run = Run::start(d.path(), &[]);
+        run.wait_for("How do you want to start?");
+        if !keys.is_empty() {
+            run.press(keys);
+            run.wait_for(prompt);
+        }
+        run.press(&[ESC]);
+        let (rest, code) = run.finish();
+
+        assert_eq!(code, 0, "{label}");
+        assert!(
+            rest.contains("Aborted. Nothing was written."),
+            "{label}: {rest}"
+        );
+        assert!(!rest.contains("Next steps"), "{label}: {rest}");
+        for f in [".env", ".env.example", ".gitignore"] {
+            assert!(!d.path().join(f).exists(), "{label}: {f} written");
+        }
+    }
+}
+
+/// Esc at "Overwrite it?" is a cancel, not a "no": nothing at all is written,
+/// not even `.gitignore`, and the template is untouched.
+#[test]
+fn escape_at_the_overwrite_question_writes_nothing() {
+    let d = TempDir::new().unwrap();
+    std::fs::write(d.path().join(".env.example"), "MINE=1\n").unwrap();
+    let mut run = Run::start(d.path(), &[]);
+
+    run.wait_for("How do you want to start?");
+    run.press(&[ENTER]); // Blank
+    run.wait_for("exists. Overwrite it?");
+    run.press(&[ESC]);
+    let (rest, code) = run.finish();
+
+    assert_eq!(code, 0);
+    assert!(rest.contains("Aborted. Nothing was written."), "{rest}");
+    assert_eq!(
+        std::fs::read_to_string(d.path().join(".env.example")).unwrap(),
+        "MINE=1\n"
+    );
+    assert!(!d.path().join(".gitignore").exists());
     assert!(!d.path().join(".env").exists());
 }
 

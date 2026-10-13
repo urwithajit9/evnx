@@ -10,7 +10,7 @@ use colored::Colorize;
 use std::io::IsTerminal;
 use std::path::Path;
 
-use super::shared::{write_env_files, WriteOptions};
+use super::shared::{aborted, write_env_files_with_outcome, Outcome, WriteOptions};
 use crate::schema::models::{VarCollection, VarMetadata, VarSource};
 use crate::schema::{component, formatter};
 use crate::utils::string::pluralize;
@@ -22,7 +22,7 @@ pub fn handle(
     opts: WriteOptions,
     verbose: bool,
     components: &[String],
-) -> Result<()> {
+) -> Result<Outcome> {
     // ⚠️ Resolve before anything is printed or written. An unknown name fails
     // here, with suggestions, rather than after a preview has implied it worked.
     let vars = component::resolve(components).context("Failed to resolve components")?;
@@ -50,26 +50,33 @@ pub fn handle(
         }
         println!("\n{}", formatter::generate_preview(&vars).dimmed());
 
+        super::shared::require_terminal(&format!(
+            "evnx init --with {} --yes",
+            components.join(",")
+        ))?;
         let confirm = dialoguer::Confirm::new()
             .with_prompt("Generate .env files with these variables?")
             .default(true)
-            .interact()?;
-        if !confirm {
-            println!("{}", "Aborted.".yellow());
-            return Ok(());
+            .interact_opt()?;
+        if confirm != Some(true) {
+            return Ok(aborted());
         }
     }
 
     let example_content = formatter::format_env_example(&vars, true)?;
     let template_content = formatter::format_env_template(&vars)?;
-    write_env_files(Path::new(&path), &example_content, &template_content, opts)?;
+    let outcome =
+        write_env_files_with_outcome(Path::new(&path), &example_content, &template_content, opts)?;
+    if outcome != Outcome::Written {
+        return Ok(outcome);
+    }
 
     ui::success(format!(
         "Created .env.example with {} from {}",
         pluralize(vars.vars.len(), "variable", "variables"),
         pluralize(components.len(), "component", "components")
     ));
-    Ok(())
+    Ok(Outcome::Written)
 }
 
 /// Print every component `--with` accepts, grouped by kind.
@@ -131,7 +138,7 @@ pub fn handle_detected(
     opts: WriteOptions,
     verbose: bool,
     found: &[super::detect::Detected],
-) -> Result<()> {
+) -> Result<Outcome> {
     let ids: Vec<String> = found.iter().map(|d| d.component.clone()).collect();
     let vars = component::resolve(&ids).context("Failed to resolve detected components")?;
 
@@ -148,9 +155,16 @@ pub fn handle_detected(
         );
         let example_content = formatter::format_env_example(&vars, true)?;
         let template_content = formatter::format_env_template(&vars)?;
-        write_env_files(Path::new(&path), &example_content, &template_content, opts)?;
-        ui::success("Created .env.example (no variables yet)");
-        return Ok(());
+        let outcome = write_env_files_with_outcome(
+            Path::new(&path),
+            &example_content,
+            &template_content,
+            opts,
+        )?;
+        if outcome == Outcome::Written {
+            ui::success("Created .env.example (no variables yet)");
+        }
+        return Ok(outcome);
     }
 
     println!("\n  {}", "Detected".bold());
@@ -198,14 +212,14 @@ pub fn handle_detected(
         let confirm = dialoguer::Confirm::new()
             .with_prompt("Generate .env files with these variables?")
             .default(true)
-            .interact()?;
-        if !confirm {
+            .interact_opt()?;
+        if confirm != Some(true) {
             println!(
                 "  {}  nothing written — name them yourself with {}",
                 glyph::INFO.dimmed(),
                 "evnx init --with <a,b,c>".cyan()
             );
-            return Ok(());
+            return Ok(Outcome::Aborted);
         }
     }
 
@@ -215,13 +229,17 @@ pub fn handle_detected(
 
     let example_content = formatter::format_env_example(&vars, true)?;
     let template_content = formatter::format_env_template(&vars)?;
-    write_env_files(Path::new(&path), &example_content, &template_content, opts)?;
+    let outcome =
+        write_env_files_with_outcome(Path::new(&path), &example_content, &template_content, opts)?;
+    if outcome != Outcome::Written {
+        return Ok(outcome);
+    }
 
     ui::success(format!(
         "Created .env.example with {}",
         pluralize(vars.vars.len(), "variable", "variables")
     ));
-    Ok(())
+    Ok(Outcome::Written)
 }
 
 /// `evnx init --from-source` — build the template from what the code reads.
@@ -345,9 +363,9 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
                 drift.missing.len()
             ))
             .default(true)
-            .interact()?;
-        if !confirm {
-            println!("{}", "Aborted.".yellow());
+            .interact_opt()?;
+        if confirm != Some(true) {
+            aborted();
             return Ok(());
         }
     }
@@ -369,7 +387,9 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
     } else {
         let example_content = formatter::format_env_example(&vars, true)?;
         let template_content = formatter::format_env_template(&vars)?;
-        write_env_files(root, &example_content, &template_content, opts)?;
+        // No template yet, so nothing to ask about: this writes `.gitignore`
+        // first and `.env.example` and `.env` after it (I-008).
+        write_env_files_with_outcome(root, &example_content, &template_content, opts)?;
     }
 
     ui::success(format!(
