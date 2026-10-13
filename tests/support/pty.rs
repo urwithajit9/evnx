@@ -58,6 +58,21 @@ impl Pty {
         String::from_utf8_lossy(found.before()).to_string()
     }
 
+    /// Like [`Pty::wait_for`], but give up after `timeout` and return `None`
+    /// instead of failing the test. For keys that may or may not have been
+    /// consumed (see [`Pty::cancel_yes_no`] and `add_pty.rs`'s Esc test).
+    pub fn try_wait_for(&mut self, text: &str, timeout: Duration) -> Option<String> {
+        self.session.set_expect_timeout(Some(timeout));
+        let found = self
+            .session
+            .expect(text)
+            .ok()
+            .map(|f| String::from_utf8_lossy(f.before()).to_string());
+        self.session
+            .set_expect_timeout(Some(Duration::from_secs(15)));
+        found
+    }
+
     /// Press keys one at a time, the way a person would. dialoguer reads one key
     /// per event, and a burst of escape sequences is not what it is built for.
     pub fn press(&mut self, keys: &[&str]) {

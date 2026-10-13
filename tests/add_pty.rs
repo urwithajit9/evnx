@@ -171,18 +171,40 @@ fn known_n12_next_steps_after_an_abort() {
 }
 
 /// N-13 (AD-A): Esc at a confirmation is ignored; the question keeps waiting
-/// and takes the next key. (init cancels on Esc since 0.10.1.)
+/// and takes a later key. (init cancels on Esc since 0.10.1.)
+///
+/// ⚠️ The key after Esc may be swallowed. The `console` crate, having read an
+/// ESC byte, takes the next byte at once if one is already waiting and reads
+/// the pair as one unknown escape sequence. Prompt text on screen does not
+/// mean dialoguer is already reading, so on a slow runner Esc and the `n`
+/// after it can both be waiting when it starts: `ESC n` is dropped and the
+/// question never returns (CI, 2026-10-14; same family as #156). Whichever
+/// way the Esc is read, it does not end the question, so this presses `n`
+/// until the question takes it.
 #[test]
 fn known_n13_escape_is_ignored_at_the_confirmation() {
+    use std::time::Duration;
     let p = project();
     let mut s = Pty::spawn(p.path(), &["add", "service", "redis"]);
     s.wait_for("Add these 5 variables to .env.example?");
     s.press(&[ESC]);
-    std::thread::sleep(std::time::Duration::from_millis(300));
-    s.press(&["n"]);
+    let mut answered = None;
+    for _ in 0..5 {
+        std::thread::sleep(Duration::from_millis(300));
+        s.press(&["n"]);
+        answered = s.try_wait_for("? no", Duration::from_secs(2));
+        if answered.is_some() {
+            break;
+        }
+    }
+    let shown = answered.expect("the question never took an answer after Esc");
+    assert!(
+        !shown.contains("Nothing was written"),
+        "Esc ended the prompt: {shown}"
+    );
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
-    assert!(rest.contains("? no"), "Esc ended the prompt: {rest}");
+    assert!(rest.contains("Aborted."), "{rest}");
     assert!(!rest.contains("Nothing was written"), "{rest}");
 }
 
