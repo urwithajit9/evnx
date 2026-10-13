@@ -1248,10 +1248,11 @@ fn a_mistyped_blueprint_is_pointed_at() {
     assert!(text.contains("Available blueprints:"), "{text}");
 }
 
-/// KNOWN I-002 (group H): a Vite stack gets no `VITE_*` client variables, and
-/// does get a Next.js one.
+/// I-002 (fixed in 0.10.1, group H; was `known_i002_*`): a Vite stack gets the
+/// `VITE_` names its browser code reads. Additive only (DQ-2): the original
+/// names stay, and so does Clerk's Next.js name (removing it is not planned).
 #[test]
-fn known_i002_vite_stack_has_no_vite_client_variables() {
+fn a_vite_stack_gets_vite_client_variables() {
     let d = TempDir::new().unwrap();
     assert!(
         init_in(d.path(), &["--with", "vite,supabase,clerk", "--yes"])
@@ -1259,11 +1260,28 @@ fn known_i002_vite_stack_has_no_vite_client_variables() {
             .success()
     );
     let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
-    assert!(!example.contains("VITE_SUPABASE_URL="), "{example}");
-    assert!(
-        example.contains("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="),
-        "{example}"
-    );
+    for name in [
+        "VITE_SUPABASE_URL",
+        "VITE_SUPABASE_ANON_KEY",
+        "VITE_CLERK_PUBLISHABLE_KEY",
+        "SUPABASE_URL",
+        "SUPABASE_ANON_KEY",
+        "CLERK_PUBLISHABLE_KEY",
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+    ] {
+        assert!(
+            example.contains(&format!("\n{name}=")),
+            "{name} missing:\n{example}"
+        );
+    }
+    // Secrets are never given a browser prefix.
+    for never in [
+        "VITE_SUPABASE_SERVICE_ROLE_KEY",
+        "VITE_SUPABASE_JWT_SECRET",
+        "VITE_CLERK_SECRET_KEY",
+    ] {
+        assert!(!example.contains(never), "{never} written:\n{example}");
+    }
 }
 
 /// I-005 (fixed in 0.10.1, group F; was `known_i005_*`): `import.meta.env`,

@@ -160,6 +160,86 @@ pub const ALIASES: &[(&str, &str)] = &[
     ("k8s", "kubernetes"),
 ];
 
+/// The prefix a framework's browser bundle needs, by framework id.
+///
+/// A browser framework only exposes variables with its own prefix to client
+/// code. Laravel is here because its Vite integration exposes `VITE_*` to the
+/// frontend (decision 2026-10-13). Server frameworks are absent: they read
+/// every variable directly.
+pub const CLIENT_PREFIX: &[(&str, &str)] = &[
+    ("vite", "VITE_"),
+    ("nextjs", "NEXT_PUBLIC_"),
+    ("sveltekit", "PUBLIC_"),
+    ("nuxt", "NUXT_PUBLIC_"),
+    ("laravel", "VITE_"),
+];
+
+/// Service variables their vendor designs to be shipped to the browser.
+///
+/// ⚠️ Only these get a client-prefixed copy (I-002). Each is public by design:
+/// a project URL, a publishable or anon key, an OAuth client id, a DSN, the
+/// Firebase web config. Secrets never appear here, and a test fails if a name
+/// that looks like one is added. The reasoning for each entry, and for what was
+/// left out, is in the review package (`PROPOSAL-H-client-variables.md`).
+pub const CLIENT_SAFE: &[&str] = &[
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "FIREBASE_API_KEY",
+    "FIREBASE_PROJECT_ID",
+    "FIREBASE_AUTH_DOMAIN",
+    "FIREBASE_STORAGE_BUCKET",
+    "AUTH0_DOMAIN",
+    "AUTH0_CLIENT_ID",
+    "AUTH0_AUDIENCE",
+    "CLERK_PUBLISHABLE_KEY",
+    "GOOGLE_CLIENT_ID",
+    "SENTRY_DSN",
+    "STRIPE_PUBLIC_KEY",
+    "RAZORPAY_KEY_ID",
+    "CLOUDINARY_CLOUD_NAME",
+];
+
+/// Add the client-prefixed copy of each browser-safe variable in `collection`,
+/// for a framework that needs one (I-002, phase A of DQ-2).
+///
+/// ⚠️ Additive only. A Vite + Supabase stack used to get `SUPABASE_URL` and not
+/// the `VITE_SUPABASE_URL` the browser can read. The original stays (server code
+/// reads it); the copy is added beside it with the same placeholder and
+/// category; a name that already exists is left alone (Clerk already carries
+/// `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`). Called by both resolvers, so `--with`,
+/// a blueprint and the Architect menu produce the same file.
+pub(crate) fn add_client_copies(collection: &mut VarCollection, framework_id: &str) {
+    let Some((_, prefix)) = CLIENT_PREFIX.iter().find(|(id, _)| *id == framework_id) else {
+        return;
+    };
+    let framework = schema()
+        .ok()
+        .and_then(|s| {
+            s.languages
+                .values()
+                .find_map(|l| l.frameworks.get(framework_id))
+                .and_then(|f| f.display_name.clone())
+        })
+        .unwrap_or_else(|| framework_id.to_string());
+
+    let copies: Vec<(String, super::models::VarMetadata)> = CLIENT_SAFE
+        .iter()
+        .filter_map(|name| {
+            let meta = collection.vars.get(*name)?;
+            let copy = format!("{prefix}{name}");
+            if collection.vars.contains_key(&copy) {
+                return None;
+            }
+            let mut meta = meta.clone();
+            meta.description = Some(format!(
+                "Client-side copy of {name} (exposed to the browser by {framework})"
+            ));
+            Some((copy, meta))
+        })
+        .collect();
+    collection.vars.extend(copies);
+}
+
 /// The catalogue id for a name: the alias target if `name` is an alias, the
 /// name itself otherwise. Matching is exact; case is left to the suggestions.
 pub fn canonical(name: &str) -> &str {
@@ -231,6 +311,17 @@ pub fn resolve(ids: &[String]) -> Result<VarCollection> {
                 add_infra_vars(&mut collection, id, infra);
             }
         }
+    }
+
+    // After every component, so the result does not depend on the order the
+    // framework and its services were named in.
+    let frameworks: Vec<&str> = seen
+        .iter()
+        .copied()
+        .filter(|id| all.iter().any(|c| c.id == *id && c.kind == Kind::Framework))
+        .collect();
+    for framework in frameworks {
+        add_client_copies(&mut collection, framework);
     }
 
     Ok(collection)
@@ -567,5 +658,83 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// T-INIT-24: nothing that looks like a secret is browser-safe, every entry
+    /// is a real catalogue variable, and every prefixed framework exists.
+    #[test]
+    fn client_safe_list_holds_no_secrets_and_no_strangers() {
+        for name in CLIENT_SAFE {
+            for word in ["SECRET", "PASSWORD", "PRIVATE", "SERVICE_ROLE", "TOKEN"] {
+                assert!(!name.contains(word), "{name} looks like a secret");
+            }
+            assert!(
+                declaring(name).unwrap().is_some(),
+                "{name} is not a catalogue variable"
+            );
+        }
+        let frameworks: Vec<String> = catalogue()
+            .unwrap()
+            .into_iter()
+            .filter(|c| c.kind == Kind::Framework)
+            .map(|c| c.id)
+            .collect();
+        for (id, prefix) in CLIENT_PREFIX {
+            assert!(frameworks.iter().any(|f| f == id), "unknown framework {id}");
+            assert!(prefix.ends_with('_'), "{prefix}");
+        }
+    }
+
+    /// DQ-2, phase A: adding a framework only ever adds variables. For every
+    /// prefixed framework and every service, the combination keeps everything
+    /// each part had on its own, and the copies carry the original's value.
+    #[test]
+    fn client_copies_are_additive_only() {
+        let keys = |ids: &[&str]| -> std::collections::BTreeSet<String> {
+            let ids: Vec<String> = ids.iter().map(|s| s.to_string()).collect();
+            resolve(&ids).unwrap().vars.keys().cloned().collect()
+        };
+        let services: Vec<String> = catalogue()
+            .unwrap()
+            .into_iter()
+            .filter(|c| c.kind == Kind::Service)
+            .map(|c| c.id)
+            .collect();
+        for (framework, prefix) in CLIENT_PREFIX {
+            for service in &services {
+                let both = resolve(&[framework.to_string(), service.clone()]).unwrap();
+                let names: std::collections::BTreeSet<String> = both.vars.keys().cloned().collect();
+                for k in keys(&[framework]).union(&keys(&[service])) {
+                    assert!(names.contains(k), "{framework}+{service} lost {k}");
+                }
+                for name in CLIENT_SAFE {
+                    let copy = format!("{prefix}{name}");
+                    // Only the copies this adds; a name the catalogue already
+                    // had (Clerk's `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`) is left alone.
+                    let added = both.vars.get(&copy).filter(|m| {
+                        m.description
+                            .as_deref()
+                            .is_some_and(|d| d.starts_with("Client-side copy of"))
+                    });
+                    if let Some(meta) = added {
+                        let original = both.vars.get(*name).expect("copy without original");
+                        assert_eq!(meta.example_value, original.example_value, "{copy}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The copies do not depend on the order the components were named in.
+    #[test]
+    fn client_copies_do_not_depend_on_order() {
+        let names = |ids: &[&str]| -> Vec<String> {
+            let ids: Vec<String> = ids.iter().map(|s| s.to_string()).collect();
+            let mut v: Vec<String> = resolve(&ids).unwrap().vars.keys().cloned().collect();
+            v.sort();
+            v
+        };
+        assert_eq!(names(&["vite", "supabase"]), names(&["supabase", "vite"]));
+        assert!(names(&["supabase", "vite"]).contains(&"VITE_SUPABASE_URL".to_string()));
     }
 }
