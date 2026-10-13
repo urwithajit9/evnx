@@ -17,7 +17,10 @@ pub fn handle(path: String, opts: WriteOptions, _verbose: bool) -> Result<()> {
     let output_path = Path::new(&path);
     write_env_files(output_path, example_content, template_content, opts)?;
 
-    success("Created empty .env.example");
+    // Not "empty": the template carries two comment lines on purpose, and a
+    // user who opens it after being told it is empty has reason to distrust
+    // every other message (I-004).
+    success("Created .env.example (no variables yet)");
     info("Tip: Run 'evnx add' to add variables interactively");
 
     Ok(())

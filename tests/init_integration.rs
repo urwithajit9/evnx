@@ -13,7 +13,10 @@
 //! these can assert what they were always trying to: that `t3_modern` produces
 //! Next.js variables and `rust_high_perf` produces Rust ones.
 //!
-//! Architect mode remains interactive-only and its tests stay `#[ignore]`d.
+//! The interactive menus (Blank, Blueprint, Architect, abort) are tested through a
+//! real pseudo-terminal in `tests/init_pty.rs`. The four `#[ignore]`d tests that
+//! used to sit here fed keys through `write_stdin`, which dialoguer refuses, so
+//! they could not pass even when run by hand (T-001).
 
 use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
@@ -54,7 +57,9 @@ fn init_blank_creates_minimal_files() {
         .arg(dir.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("Created empty .env.example"));
+        .stdout(predicate::str::contains(
+            "Created .env.example (no variables yet)",
+        ));
 
     assert!(
         dir.path().join(".env.example").exists(),
@@ -289,28 +294,6 @@ fn init_blueprint_with_many_services() {
     assert!(count_env_vars(&example) >= 5);
 }
 
-#[test]
-#[ignore = "requires interactive TTY - run manually to test specific blueprint"]
-fn init_blueprint_specific_t3_modern() {
-    let dir = TempDir::new().unwrap();
-
-    // This only works in a real terminal:
-    // 1 = Blueprint mode, then select t3_modern by index
-    cargo_bin_cmd!("evnx")
-        .arg("init")
-        .arg("--path")
-        .arg(dir.path())
-        .write_stdin("1\n0\ny\n") // Blueprint, first option (t3_modern), confirm
-        .assert()
-        .success();
-
-    let example = read_env_example(dir.path()).unwrap();
-
-    // Now we can check for T3-specific vars
-    assert!(example.contains("NEXTAUTH_SECRET=") || example.contains("NEXT_PUBLIC_"));
-    assert!(example.contains("CLERK_") || example.contains("DATABASE_URL="));
-}
-
 // ─────────────────────────────────────────────────────────────
 // Architect Mode Tests
 // ─────────────────────────────────────────────────────────────
@@ -349,31 +332,6 @@ fn init_blueprint_django_enterprise() {
     assert!(
         example.contains("# ──") || example.contains("# [ADDED]"),
         "Should have section headers"
-    );
-}
-
-#[test]
-#[ignore = "requires interactive TTY - run manually"]
-fn init_architect_interactive() {
-    let dir = TempDir::new().unwrap();
-
-    // This would work in a real terminal
-    cargo_bin_cmd!("evnx")
-        .arg("init")
-        .arg("--path")
-        .arg(dir.path())
-        .write_stdin("2\n0\n0\n0\n\n") // Architect, Python, Django, PostgreSQL, no infra, confirm
-        .assert()
-        .success();
-
-    let example = read_env_example(dir.path()).unwrap();
-    assert!(
-        example.contains("SECRET_KEY="),
-        "Should have Django SECRET_KEY"
-    );
-    assert!(
-        example.contains("DATABASE_URL="),
-        "Should have DATABASE_URL"
     );
 }
 
@@ -463,51 +421,6 @@ fn init_does_not_overwrite_existing_env() {
     assert!(
         env_content.contains("MY_CUSTOM_VAR=keep_this"),
         "Existing .env should not be overwritten"
-    );
-}
-
-// ─────────────────────────────────────────────────────────────
-// Interactive Mode Simulation Tests
-// ─────────────────────────────────────────────────────────────
-
-#[test]
-#[ignore = "requires interactive TTY - run manually"]
-fn init_interactive_mode_selection() {
-    let dir = TempDir::new().unwrap();
-
-    // Simulate interactive selection: choose Blueprint, then first blueprint
-    cargo_bin_cmd!("evnx")
-        .arg("init")
-        .arg("--path")
-        .arg(dir.path())
-        .write_stdin("1\n0\ny\n") // Blueprint mode, first blueprint, confirm
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Preview:"))
-        .stdout(predicate::str::contains("Generate .env files"));
-
-    assert!(dir.path().join(".env.example").exists());
-}
-
-#[test]
-#[ignore = "requires interactive TTY - run manually"]
-fn init_interactive_abort() {
-    let dir = TempDir::new().unwrap();
-
-    // Simulate aborting at confirmation
-    cargo_bin_cmd!("evnx")
-        .arg("init")
-        .arg("--path")
-        .arg(dir.path())
-        .write_stdin("1\n0\nn\n") // Blueprint, first blueprint, NO to confirm
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Aborted"));
-
-    // Verify no files were created
-    assert!(
-        !dir.path().join(".env.example").exists(),
-        "Should not create files when aborted"
     );
 }
 
@@ -804,7 +717,9 @@ fn an_undetectable_project_still_gets_the_blank_path() {
         .arg(d.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("Created empty .env.example"));
+        .stdout(predicate::str::contains(
+            "Created .env.example (no variables yet)",
+        ));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -905,4 +820,410 @@ fn from_source_on_an_empty_project_writes_nothing() {
         .stdout(predicate::str::contains("no environment variables found"));
 
     assert!(!d.path().join(".env.example").exists());
+}
+
+// ─────────────────────────────────────────────────────────────
+// Contracts: exit codes, flag conflicts, paths, colour
+// ─────────────────────────────────────────────────────────────
+
+/// Run `evnx init <args>` in `dir` with stdin closed, so a run that would prompt
+/// fails fast instead of waiting on the terminal that `cargo test` inherited.
+fn init_in(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir)
+        .arg("init")
+        .args(args)
+        .write_stdin("")
+        .output()
+        .unwrap()
+}
+
+fn text_of(out: &std::process::Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    )
+}
+
+/// T-INIT-16. The existing refusal test asserts only `.failure()`; scripts rely
+/// on the exact code, and on the template surviving byte for byte.
+#[test]
+fn a_refusal_exits_exactly_2_and_leaves_the_template_untouched() {
+    let d = TempDir::new().unwrap();
+    let original = "# mine\nKEEP_ME=1\n";
+    std::fs::write(d.path().join(".env.example"), original).unwrap();
+
+    let out = init_in(d.path(), &["--yes"]);
+
+    assert_eq!(out.status.code(), Some(2), "{}", text_of(&out));
+    assert_eq!(
+        std::fs::read_to_string(d.path().join(".env.example")).unwrap(),
+        original
+    );
+}
+
+/// T-INIT-12. The `--blueprint` + `--with` conflict is covered above; this is
+/// the other declared conflict.
+#[test]
+fn detect_and_with_conflict() {
+    let d = TempDir::new().unwrap();
+    let out = init_in(d.path(), &["--detect", "--with", "stripe"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(text_of(&out).contains("cannot be used with"));
+    assert!(!d.path().join(".env.example").exists());
+}
+
+/// T-INIT-13. `num_args = 1..` makes `--with a b` legal; it must mean `a,b`.
+#[test]
+fn with_accepts_space_separated_names_too() {
+    let spaced = TempDir::new().unwrap();
+    let commas = TempDir::new().unwrap();
+    assert!(
+        init_in(spaced.path(), &["--with", "vite", "supabase", "--yes"])
+            .status
+            .success()
+    );
+    assert!(
+        init_in(commas.path(), &["--with", "vite,supabase", "--yes"])
+            .status
+            .success()
+    );
+
+    let strip = |p: &std::path::Path| {
+        std::fs::read_to_string(p.join(".env.example"))
+            .unwrap()
+            .lines()
+            .filter(|l| !l.starts_with("# Generated by evnx"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(strip(spaced.path()), strip(commas.path()));
+}
+
+/// T-INIT-17. `--path` naming a file is refused cleanly, and nothing is written.
+#[test]
+fn a_path_that_is_a_file_is_refused() {
+    let d = TempDir::new().unwrap();
+    std::fs::write(d.path().join("afile"), "").unwrap();
+
+    let out = init_in(d.path(), &["--yes", "--path", "afile"]);
+
+    assert_eq!(out.status.code(), Some(2), "{}", text_of(&out));
+    assert!(text_of(&out).contains("Failed to create directory"));
+    assert!(!d.path().join(".env").exists());
+    assert!(!d.path().join(".gitignore").exists());
+}
+
+/// T-INIT-17. An unwritable directory is refused cleanly. Skipped as root,
+/// where permissions do not apply.
+#[cfg(unix)]
+#[test]
+fn an_unwritable_path_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = TempDir::new().unwrap();
+    let ro = d.path().join("ro");
+    std::fs::create_dir(&ro).unwrap();
+    std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(ro.join("probe"), "").is_ok() {
+        return; // running as root
+    }
+
+    let out = init_in(d.path(), &["--yes", "--path", "ro"]);
+    std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert_eq!(out.status.code(), Some(2), "{}", text_of(&out));
+    assert!(text_of(&out).contains("Permission denied"));
+    assert!(!ro.join(".env").exists());
+}
+
+/// T-INIT-22. `--no-color` wins even when colour is forced on, so this proves
+/// the flag rather than passing because a test harness is not a terminal.
+#[test]
+fn no_color_removes_every_escape_code() {
+    let d = TempDir::new().unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .env("CLICOLOR_FORCE", "1")
+        .args(["--no-color", "init", "--with", "nextjs", "--yes"])
+        .write_stdin("")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(
+        !text_of(&out).contains('\u{1b}'),
+        "escape code under --no-color:\n{}",
+        text_of(&out)
+    );
+}
+
+/// Case is already handled by the suggestion (`unknown_message` lower-cases).
+/// Typo matching (I-001) must keep this working.
+#[test]
+fn an_upper_case_name_is_pointed_at_the_real_one() {
+    let d = TempDir::new().unwrap();
+    let out = init_in(d.path(), &["--with", "CLERK", "--yes"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        text_of(&out).contains("Did you mean: clerk"),
+        "{}",
+        text_of(&out)
+    );
+}
+
+/// T-INIT-11. `--list-components` prints every catalogue id exactly once.
+#[test]
+fn list_components_prints_the_whole_catalogue_once() {
+    let schema: serde_json::Value = serde_json::from_str(include_str!("../src/assets/schema.json"))
+        .expect("schema.json parses");
+    let mut ids: Vec<String> = Vec::new();
+    for lang in schema["languages"].as_object().unwrap().values() {
+        ids.extend(lang["frameworks"].as_object().unwrap().keys().cloned());
+    }
+    for group in schema["services"].as_object().unwrap().values() {
+        ids.extend(group.as_object().unwrap().keys().cloned());
+    }
+    ids.extend(
+        schema["infrastructure"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned(),
+    );
+
+    let d = TempDir::new().unwrap();
+    let out = init_in(d.path(), &["--list-components"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let listed: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.starts_with("    ") && !l.starts_with("     "))
+        .filter_map(|l| l.split_whitespace().next())
+        .collect();
+
+    let mut a = ids.clone();
+    a.sort();
+    let mut b: Vec<String> = listed.iter().map(|s| s.to_string()).collect();
+    b.sort();
+    assert_eq!(a, b, "catalogue and --list-components disagree");
+    assert_eq!(
+        ids.len(),
+        51,
+        "catalogue size moved; update the docs that say 51"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
+// KNOWN DEFECTS — pinned as they behave in 0.10.0
+//
+// Each test below asserts today's *wrong* behaviour, named after its issue. The
+// PR that fixes the issue must flip the test (assert the right behaviour and
+// drop the `known_` prefix), so every fix is a visible, reviewed change rather
+// than a silent one. Plan and owning group: local/init/plan/PLAN-INIT.md in the
+// review package; release-note entry in local/init/CHANGES.md.
+// ─────────────────────────────────────────────────────────────
+
+/// I-004 (fixed in 0.10.1, group A1; was `known_i004_*`): the blank template
+/// holds two comment lines, so it is not called "empty".
+#[test]
+fn the_blank_template_is_not_called_empty() {
+    let d = TempDir::new().unwrap();
+    let out = init_in(d.path(), &["--yes"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("Created .env.example (no variables yet)"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("empty"), "{stdout}");
+}
+
+/// I-009 (fixed in 0.10.1, group A2; was `known_i009_one_component_*`).
+#[test]
+fn one_component_is_singular() {
+    let d = TempDir::new().unwrap();
+    let out = init_in(d.path(), &["--with", "stripe", "--yes"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("from 1 component\n") || stdout.ends_with("from 1 component"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("1 components"), "{stdout}");
+}
+
+/// KNOWN I-009 (group B1): an append by `init --from-source` is stamped as `add`.
+#[test]
+fn known_i009_from_source_append_is_stamped_as_add() {
+    let d = sourced_project();
+    std::fs::write(d.path().join(".env.example"), "HAND_WRITTEN=1\n").unwrap();
+    assert!(init_in(d.path(), &["--from-source", "--yes"])
+        .status
+        .success());
+    let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+    assert!(example.contains("# Added by evnx add on"), "{example}");
+}
+
+/// I-012 (fixed in 0.10.1, group A10; was `known_i012_*`). `--force` never had an
+/// effect with `--from-source`, which only appends; the combination is now an
+/// argument error, and nothing is touched. **Breaking** (CH-INIT-01).
+#[test]
+fn force_is_refused_with_from_source() {
+    let d = sourced_project();
+    std::fs::write(d.path().join(".env.example"), "HAND_WRITTEN=1\n").unwrap();
+    let out = init_in(d.path(), &["--from-source", "--yes", "--force"]);
+    assert_eq!(out.status.code(), Some(2), "{}", text_of(&out));
+    assert!(
+        text_of(&out).contains("cannot be used with"),
+        "{}",
+        text_of(&out)
+    );
+    assert_eq!(
+        std::fs::read_to_string(d.path().join(".env.example")).unwrap(),
+        "HAND_WRITTEN=1\n"
+    );
+}
+
+/// I-014 (fixed in 0.10.1, group A11; was `known_i014_*`): no terminal and no
+/// flags names the flags to use instead of a raw, doubled IO error. Exit 2 is
+/// unchanged.
+#[test]
+fn no_terminal_names_the_flags_to_use() {
+    let d = TempDir::new().unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .arg("init")
+        .write_stdin("1\n")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let text = text_of(&out);
+    for flag in ["--yes", "--blueprint", "--with", "--detect"] {
+        assert!(text.contains(flag), "{flag} not suggested:\n{text}");
+    }
+    assert!(!text.contains("not a terminal: not a terminal"), "{text}");
+    assert!(!d.path().join(".env.example").exists());
+}
+
+/// I-015 (fixed in 0.10.1, group A6; was `known_i015_*`): nothing detected says
+/// so, and writes the same file as 0.10.0 did (DQ-5: message only).
+#[test]
+fn nothing_detected_says_so_and_writes_the_same_file() {
+    let d = TempDir::new().unwrap();
+    let out = init_in(d.path(), &["--detect"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("Nothing detected in this project"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("0 components"), "{stdout}");
+    // 0.10.0 wrote a template holding only the dated footer; so does 0.10.1.
+    let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+    assert!(
+        example
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .all(|l| l.starts_with("# Generated by evnx ")),
+        "{example}"
+    );
+}
+
+/// KNOWN N-06 (group E): appending to an existing template writes neither the
+/// `.gitignore` rules nor `.env`.
+#[test]
+fn known_n06_from_source_append_writes_no_gitignore_or_env() {
+    let d = sourced_project();
+    std::fs::write(d.path().join(".env.example"), "HAND_WRITTEN=1\n").unwrap();
+    assert!(init_in(d.path(), &["--from-source", "--yes"])
+        .status
+        .success());
+    assert!(!d.path().join(".gitignore").exists());
+    assert!(!d.path().join(".env").exists());
+}
+
+/// I-023 / D-1 (fixed in 0.10.1, group A9; was `known_i023_*`): `-p` is `--path`,
+/// as in `evnx add` and the docs.
+#[test]
+fn short_p_is_path() {
+    let d = TempDir::new().unwrap();
+    let out = init_in(d.path(), &["-p", "packages/api", "--yes"]);
+    assert!(out.status.success(), "{}", text_of(&out));
+    assert!(d.path().join("packages/api/.env.example").exists());
+}
+
+/// KNOWN I-001 (group D1): a transposition gets no suggestion.
+#[test]
+fn known_i001_a_typo_gets_no_suggestion() {
+    let d = TempDir::new().unwrap();
+    let out = init_in(d.path(), &["--with", "supabse", "--yes"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(!text_of(&out).contains("Did you mean"), "{}", text_of(&out));
+}
+
+/// KNOWN I-002 (group H): a Vite stack gets no `VITE_*` client variables, and
+/// does get a Next.js one.
+#[test]
+fn known_i002_vite_stack_has_no_vite_client_variables() {
+    let d = TempDir::new().unwrap();
+    assert!(
+        init_in(d.path(), &["--with", "vite,supabase,clerk", "--yes"])
+            .status
+            .success()
+    );
+    let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+    assert!(!example.contains("VITE_SUPABASE_URL="), "{example}");
+    assert!(
+        example.contains("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="),
+        "{example}"
+    );
+}
+
+/// KNOWN I-005 (group F): `import.meta.env`, `Deno.env.get` and `Bun.env` are
+/// not recognised by `--from-source`.
+#[test]
+fn known_i005_from_source_misses_import_meta_env() {
+    let d = TempDir::new().unwrap();
+    std::fs::create_dir_all(d.path().join("src")).unwrap();
+    std::fs::write(
+        d.path().join("src/app.ts"),
+        "const a = import.meta.env.VITE_X1;\nconst b = Deno.env.get(\"DENO_X1\");\nconst c = Bun.env.BUN_X1;\nconst p = process.env.NODE_X1;\n",
+    )
+    .unwrap();
+    assert!(init_in(d.path(), &["--from-source", "--yes"])
+        .status
+        .success());
+    let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+    assert!(example.contains("NODE_X1="), "{example}");
+    for missed in ["VITE_X1", "DENO_X1", "BUN_X1"] {
+        assert!(!example.contains(missed), "{missed} found:\n{example}");
+    }
+}
+
+/// KNOWN I-006 (group B3): `@clerk/clerk-react` is not detected.
+#[test]
+fn known_i006_clerk_react_is_not_detected() {
+    let d = TempDir::new().unwrap();
+    std::fs::write(
+        d.path().join("package.json"),
+        r#"{"dependencies":{"vite":"5","@clerk/clerk-react":"5"}}"#,
+    )
+    .unwrap();
+    let out = init_in(d.path(), &["--detect"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Vite"), "{stdout}");
+    assert!(!stdout.contains("Clerk"), "{stdout}");
+}
+
+/// KNOWN I-007 (group G1): `-q` does not silence `init`.
+#[test]
+fn known_i007_quiet_still_prints() {
+    let d = TempDir::new().unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["-q", "init", "--yes"])
+        .write_stdin("")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Next steps"));
 }

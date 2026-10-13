@@ -32,7 +32,7 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
         0
     } else {
         Select::new()
-            .with_prompt("Select your primary language:")
+            .with_prompt("Select your primary language")
             .items(&lang_display)
             .default(0)
             .interact()?
@@ -52,7 +52,7 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
         0
     } else {
         Select::new()
-            .with_prompt("Select your framework:")
+            .with_prompt("Select your framework")
             .items(&fw_display)
             .default(0)
             .interact()?
@@ -75,7 +75,7 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
         vec![0]
     } else {
         MultiSelect::new()
-            .with_prompt("Select services you'll use (Space to toggle, Enter to confirm):")
+            .with_prompt("Select services you'll use (Space to toggle, Enter to confirm)")
             .items(&service_items)
             .interact()?
     };
@@ -88,8 +88,13 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
     // Step 4: Select Infrastructure (optional, MultiSelect)
     let infra_items: Vec<_> = loader::schema()?
         .infrastructure
-        .keys()
-        .map(|k| (k.as_str(), format!("[Infra] {}", k)))
+        .iter()
+        // The schema's display name, not the raw id: `aws_advanced` meant
+        // nothing next to "[Auth] Clerk" in the services list (I-010).
+        .map(|(k, v)| {
+            let name = v.display_name.as_deref().unwrap_or(k.as_str());
+            (k.as_str(), format!("[Infra] {name}"))
+        })
         .collect();
 
     let infra_display: Vec<String> = infra_items.iter().map(|(_, d)| d.clone()).collect();
@@ -99,7 +104,7 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
         vec![] // Default: no infra in non-interactive
     } else {
         MultiSelect::new()
-            .with_prompt("Select deployment/infrastructure (optional):")
+            .with_prompt("Select deployment/infrastructure (optional)")
             .items(&infra_display)
             .interact()?
     };
@@ -168,6 +173,7 @@ fn format_language_display(id: &str) -> String {
     match id {
         "javascript_typescript" => "JavaScript / TypeScript".to_string(),
         "java_kotlin" => "Java / Kotlin".to_string(),
+        "php" => "PHP".to_string(),
         other => {
             // Capitalize first letter
             let mut chars = other.chars();

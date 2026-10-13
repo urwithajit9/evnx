@@ -180,6 +180,13 @@ criterion          = { version = "0.5", features = ["html_reports"] }
 pretty_assertions  = "1"
 serial_test        = "3.0"
 
+# Drives `evnx init`'s menus through a real pseudo-terminal (`tests/init_pty.rs`).
+# dialoguer refuses a piped stdin, so the four interactive tests that fed keys
+# through `write_stdin` could never pass and sat `#[ignore]`d. Unix only: the
+# Windows console is a different mechanism and those tests are `cfg(unix)`.
+[target.'cfg(unix)'.dev-dependencies]
+expectrl           = "0.9"
+
 # ⚠️ `harness = false` is required: criterion supplies its own `main`, and
 # without this cargo links the default libtest harness and the benches do not run.
 [[bench]]

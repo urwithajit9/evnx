@@ -65,9 +65,9 @@ pub fn handle(
     write_env_files(Path::new(&path), &example_content, &template_content, opts)?;
 
     ui::success(format!(
-        "Created .env.example with {} variables from {} components",
-        vars.vars.len(),
-        components.len()
+        "Created .env.example with {} from {}",
+        pluralize(vars.vars.len(), "variable", "variables"),
+        pluralize(components.len(), "component", "components")
     ));
     Ok(())
 }
@@ -124,6 +124,24 @@ pub fn handle_detected(
     let ids: Vec<String> = found.iter().map(|d| d.component.clone()).collect();
     let vars = component::resolve(&ids).context("Failed to resolve detected components")?;
 
+    // ⚠️ Same files as before (DQ-5), different words. An empty "Detected"
+    // heading followed by "0 variables from 0 components" read like a
+    // malfunction; it is a normal outcome for a project evnx cannot read, and
+    // the user needs to know what to do instead (I-015).
+    if found.is_empty() {
+        println!(
+            "\n  {}  Nothing detected in this project. Writing an empty template.\n     {}\n",
+            glyph::INFO.dimmed(),
+            "Name components instead: evnx init --with <a,b,c>   (list: evnx init --list-components)"
+                .dimmed()
+        );
+        let example_content = formatter::format_env_example(&vars, true)?;
+        let template_content = formatter::format_env_template(&vars)?;
+        write_env_files(Path::new(&path), &example_content, &template_content, opts)?;
+        ui::success("Created .env.example (no variables yet)");
+        return Ok(());
+    }
+
     println!("\n  {}", "Detected".bold());
     for d in found {
         let name = component::find(&d.component)?
@@ -147,8 +165,8 @@ pub fn handle_detected(
     }
     println!(
         "\n  {} from {}\n",
-        format!("{} variables", vars.vars.len()).bold(),
-        format!("{} components", found.len()).dimmed()
+        pluralize(vars.vars.len(), "variable", "variables").bold(),
+        pluralize(found.len(), "component", "components").dimmed()
     );
 
     // ⚠️ Refuse before prompting, rather than letting `dialoguer` fail with
@@ -189,8 +207,8 @@ pub fn handle_detected(
     write_env_files(Path::new(&path), &example_content, &template_content, opts)?;
 
     ui::success(format!(
-        "Created .env.example with {} variables",
-        vars.vars.len()
+        "Created .env.example with {}",
+        pluralize(vars.vars.len(), "variable", "variables")
     ));
     Ok(())
 }

@@ -158,7 +158,20 @@ How do you want to start?
   Architect  — build a custom stack by selecting services interactively
 ```
 
-There are no flags required. The interactive flow handles stack and service selection inside the TUI.
+No flags are required: the interactive flow handles stack and service selection. For scripts and CI, every choice also has a flag:
+
+| Flag | Does |
+|---|---|
+| `--yes`, `-y` | no prompts; blank files unless `--blueprint` or `--with` is given |
+| `--blueprint <id>` | a named stack (an unknown id lists the ten valid ones) |
+| `--with <a,b,c>` | name the components directly |
+| `--list-components` | print every name `--with` accepts |
+| `--detect` | accept what `package.json`, compose files and other manifests declare |
+| `--from-source` | add the variables the code reads; never removes |
+| `--force` | replace an existing `.env.example` (`.env` is never overwritten) |
+| `--path <dir>` | write somewhere other than `.` |
+
+Full reference: [docs.evnx.dev/cli/commands/init](https://docs.evnx.dev/cli/commands/init).
 
 ---
 

@@ -111,19 +111,22 @@ Creates minimal empty `.env` and `.env.example` files. Use this when you want a 
 
 Selects from a catalog of pre-configured stacks — Next.js, FastAPI, Django, Laravel, T3 Turbo, Rust, and more. Each blueprint generates `.env.example` with the variables that stack typically needs, along with sensible placeholders.
 
-Example output after selecting the T3 Turbo blueprint:
+Example output after selecting the T3 Turbo blueprint (evnx 0.10.0):
 
 ```
 Preview:
-  NEXTAUTH_URL=http://localhost:3000
-  NEXTAUTH_SECRET=CHANGE_ME
-  DATABASE_URL=postgresql://localhost:5432/app
-  CLERK_SECRET_KEY=CHANGE_ME
-  ... 11 more variables
-
-Created .env.example with 15 variables
-Added .env to .gitignore
+27 variables
+  • framework ×4
+  • service ×17
+  • infra ×6
+  Categories: API, Application, Auth, Authentication, CI/CD, Cloud Storage, Database, Deployment Platform, Payments
+Generate .env files with these variables? yes
+✓ Created .env from template
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env.example with 27 variables
 ```
+
+The `×` counts are variables by where they come from (framework, services, infrastructure), not numbers of components.
 
 ### Architect mode
 
@@ -131,12 +134,19 @@ Lets you compose a custom stack by selecting a language, framework, and individu
 
 ### Non-interactive usage
 
-For scripting or CI environments, use `--yes` to skip prompts and accept the first available blueprint:
+For scripting or CI, name what you want; nothing is guessed. `--yes` alone writes **blank** files (it has meant Blank since v0.5.0, not "the first blueprint"):
 
 ```bash
-evnx init --yes
-evnx init --yes --path ./packages/api
+evnx init --yes                                  # blank .env.example, .env and .gitignore rules
+evnx init --yes --blueprint t3_modern            # a named stack
+evnx init --yes --with nextjs,postgresql,stripe  # name the components directly
+evnx init --list-components                      # every name --with accepts
+evnx init --detect                               # accept what package.json, compose files etc. declare
+evnx init --from-source --yes                    # add the variables the code reads
+evnx init --yes --path ./packages/api            # write into another directory
 ```
+
+Re-running is safe: `.env` is never overwritten, and an existing `.env.example` is replaced only with `--force` (under `--yes` without `--force`, init stops with exit 2). Without a terminal, plain `evnx init` cannot show its menu, so pass one of the flags above.
 
 After `init`, edit `.env` and replace placeholder values with your real credentials. Never commit `.env` — it is added to `.gitignore` automatically.
 
@@ -531,7 +541,7 @@ Precedence is **flag > config > default**, and lists combine rather than replace
 it. Keys named in older copies of this page (`env_file`, `auto_fix`, `exclude_patterns`,
 `[convert]`, `[aliases]`) were never read by anything and do not exist.
 
-Full reference: [evnx.dev/guides/reference/configuration-file](https://docs.evnx.dev/cli/reference/configuration-file)
+Full reference: [docs.evnx.dev/cli/reference/configuration-file](https://docs.evnx.dev/cli/reference/configuration-file)
 
 ---
 
@@ -539,15 +549,15 @@ Full reference: [evnx.dev/guides/reference/configuration-file](https://docs.evnx
 
 | Topic | Link |
 |---|---|
-| All command guides | [evnx.dev/guides](https://docs.evnx.dev/cli) |
-| evnx init in depth | [evnx.dev/guides/commands/init](https://docs.evnx.dev/cli/commands/init) |
-| evnx add in depth | [evnx.dev/guides/commands/add](https://docs.evnx.dev/cli/commands/add) |
-| Prevent secret leaks | [evnx.dev/guides/use-cases/prevent-secret-leaks](https://docs.evnx.dev/cli/use-cases/prevent-secret-leaks) |
-| GitHub Actions integration | [evnx.dev/guides/integrations/github-actions](https://docs.evnx.dev/cli/integrations/github-actions) |
-| Migrate to AWS Secrets Manager | [evnx.dev/guides/use-cases/use-cases-aws](https://docs.evnx.dev/cli/use-cases/use-cases-aws) |
-| Team collaboration with sync | [evnx.dev/guides/use-cases/team-collaboration](https://docs.evnx.dev/cli/use-cases/team-collaboration) |
-| .evnx.toml reference | [evnx.dev/guides/reference/configuration-file](https://docs.evnx.dev/cli/reference/configuration-file) |
-| Security model | [evnx.dev/guides/reference/concepts-security-model](https://docs.evnx.dev/cli/reference/concepts-security-model) |
+| All command guides | [docs.evnx.dev/cli](https://docs.evnx.dev/cli) |
+| evnx init in depth | [docs.evnx.dev/cli/commands/init](https://docs.evnx.dev/cli/commands/init) |
+| evnx add in depth | [docs.evnx.dev/cli/commands/add](https://docs.evnx.dev/cli/commands/add) |
+| Prevent secret leaks | [docs.evnx.dev/cli/use-cases/prevent-secret-leaks](https://docs.evnx.dev/cli/use-cases/prevent-secret-leaks) |
+| GitHub Actions integration | [docs.evnx.dev/cli/integrations/github-actions](https://docs.evnx.dev/cli/integrations/github-actions) |
+| Migrate to AWS Secrets Manager | [docs.evnx.dev/cli/use-cases/use-cases-aws](https://docs.evnx.dev/cli/use-cases/use-cases-aws) |
+| Team collaboration with sync | [docs.evnx.dev/cli/use-cases/team-collaboration](https://docs.evnx.dev/cli/use-cases/team-collaboration) |
+| .evnx.toml reference | [docs.evnx.dev/cli/reference/configuration-file](https://docs.evnx.dev/cli/reference/configuration-file) |
+| Security model | [docs.evnx.dev/cli/reference/concepts-security-model](https://docs.evnx.dev/cli/reference/concepts-security-model) |
 | Changelog | [CHANGELOG.md](../CHANGELOG.md) |
 
 ---

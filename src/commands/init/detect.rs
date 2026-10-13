@@ -75,7 +75,9 @@ fn package_table() -> BTreeMap<&'static str, &'static str> {
         // ── Ruby / PHP / JVM ──
         ("rails", "rails"),
         ("laravel/framework", "laravel"),
-        ("org.springframework.boot", "spring_boot"),
+        // No Spring Boot row: nothing reads `pom.xml` or `build.gradle`, so a
+        // Maven coordinate here could never match (N-04, DQ-11). Name it with
+        // `--with spring_boot`.
         // ── Databases and caches ──
         ("pg", "postgresql"),
         ("psycopg2", "postgresql"),

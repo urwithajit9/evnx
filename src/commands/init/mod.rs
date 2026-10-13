@@ -13,6 +13,7 @@ use crate::{
 use anyhow::Result;
 use colored::*;
 use dialoguer::Select;
+use std::io::IsTerminal;
 use std::path::Path;
 
 mod architect;
@@ -104,6 +105,22 @@ pub fn run(
     } else if yes {
         Mode::Blank
     } else {
+        // ⚠️ Check before drawing the menu. dialoguer cannot run without a
+        // terminal and says only "IO error: not a terminal" (twice, once from
+        // each layer), which tells a CI job or an agent nothing about what to do
+        // instead. The detected and from-source paths already refuse this way;
+        // this was the one door that did not (I-014). Exit code stays 2.
+        if !std::io::stdin().is_terminal() {
+            anyhow::bail!(
+                "there is no terminal to show the menu on.\n\n\
+                 Name what you want instead:\n  \
+                 evnx init --yes                     blank files\n  \
+                 evnx init --yes --blueprint <id>    a named stack\n  \
+                 evnx init --yes --with <a,b,c>      components (evnx init --list-components)\n  \
+                 evnx init --detect                  what the project's manifests declare"
+            );
+        }
+
         let modes = [
             "Blank      — create empty .env files",
             "Blueprint  — use a pre-configured stack",
@@ -113,7 +130,9 @@ pub fn run(
         let selection = Select::new()
             .with_prompt("How do you want to start?")
             .items(&modes)
-            .default(1)
+            // Blank, not Blueprint (DQ-6). Enter-Enter used to write a 27-variable
+            // T3 stack into whatever directory this was run in.
+            .default(0)
             .interact()?;
 
         match selection {

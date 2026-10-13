@@ -1377,7 +1377,9 @@ pub enum Commands {
     #[command(after_help = docs::INIT.after_help)]
     Init {
         /// Output path for .env files.
-        #[arg(long, default_value = ".")]
+        // `-p` matches `evnx add`, and the documentation showed it for `init`
+        // before it existed (I-023).
+        #[arg(short, long, default_value = ".")]
         path: String,
 
         /// Skip all prompts. Creates blank .env files unless --blueprint names a stack.
@@ -1436,7 +1438,10 @@ pub enum Commands {
         ///
         /// ⚠️ A heuristic. Variables consumed entirely inside a library, and
         /// dynamic access like `process.env[key]`, are invisible in principle.
-        #[arg(long, conflicts_with_all = ["with", "blueprint", "detect", "list_components"])]
+        ///
+        /// Only ever appends, so it cannot be combined with --force.
+        // `force` used to be accepted here and silently ignored (I-012).
+        #[arg(long, conflicts_with_all = ["with", "blueprint", "detect", "list_components", "force"])]
         from_source: bool,
 
         /// Overwrite an existing .env.example.
@@ -1444,6 +1449,7 @@ pub enum Commands {
         /// `.env.example` is normally a tracked, hand-maintained file, so init
         /// asks before replacing it and refuses outright under --yes. This is how
         /// a script says it meant to replace it. `.env` is never overwritten.
+        /// Not valid with --from-source, which only appends.
         #[arg(long)]
         force: bool,
     },

@@ -69,7 +69,7 @@ pub fn handle(
                 .collect();
 
             let selection = Select::new()
-                .with_prompt("Choose a stack blueprint:")
+                .with_prompt("Choose a stack blueprint")
                 .items(&display_items)
                 .default(0)
                 .interact()?;
