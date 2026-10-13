@@ -177,13 +177,16 @@ Short names work too (`postgres`, `pg`, `mongo`, `next`, `k8s` and others; see `
 
 ### `evnx add`
 
-Add the variables a service, framework or whole stack needs to `.env.example` and `.env`, without retyping them. Same catalogue and section headings as `init`. Each subcommand shows a preview and asks first; `--yes` skips the question (scripts and CI need it).
+Add the variables a service, framework or whole stack needs to `.env.example` and `.env`, without retyping them. Same catalogue and section headings as `init`. Names already there are skipped, and a value you have set is never replaced. Each subcommand shows a preview and asks first; `--yes` skips the question (scripts and CI need it).
 
 ```bash
 evnx add service postgresql       # any catalogue id: a service, an infra target or a framework (`add infra` is an alias)
 evnx add framework nextjs         # --language is optional
 evnx add blueprint t3_modern      # a whole stack
-evnx add custom                   # your own variables, one prompt at a time
+evnx add custom API_URL=https://api.example.com DEBUG=false --yes   # your own, as arguments
+evnx add custom                   # ... or one prompt at a time
+evnx add --list                   # every id
+evnx add service redis --dry-run  # what would be written; --json for scripts
 ```
 
 ---

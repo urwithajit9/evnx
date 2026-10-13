@@ -8,6 +8,129 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-14
+
+⚠️ **Why 0.10.2.** As 0.10.1 explains, each reviewed command ships as its own
+`0.10.x` and 0.11.0 is reserved for the first stable release. This one is
+**`evnx add`**: every issue from its review, re-verified against the shipped
+0.10.1 binary, plus one parser fix that every command benefits from.
+
+ⓘ **Library API.** Unlike 0.10.1, this patch release changes evnx's public
+library surface (see *Library* below). crates.io lists no crate that depends on
+evnx, so nobody is known to be affected; it is stated so that nobody is
+surprised.
+
+### ⚠️ Breaking
+
+**Yes/no questions in `evnx add` answer on Enter**, as in `evnx init` since
+0.10.1. Type `y` or `n` and press Enter; Enter alone takes the default. Before,
+the `y` answered at once and the Enter after it silently answered the next
+question.
+
+**`evnx add custom` asks less.** Per variable: name, value, and one `More
+options? (description, category, required)`; an empty name finishes. `Add
+another variable?` and the separate description and category questions are
+gone, and the category list starts on `None`. Scripts should use the new
+argument form instead (below).
+
+### ⛔ Fixed — adding a variable again replaced your real value
+
+`evnx add` appended every name every time. A second `add service redis` wrote
+`REDIS_URL` twice into `.env.example` and `.env` and still said "Added 5
+variables". Because dotenv uses the **last** assignment, the placeholder
+appended to `.env` silently replaced the value you had set, so the app read
+`redis://localhost` instead of your server. `evnx init --from-source` did the
+same through the same code. Now each name is checked in each file:
+
+- a name a file already has is **skipped** in that file;
+- a name `.env.example` has with a **different value** is kept, listed, and
+  not added to `.env` either;
+- `.env` catches up with names `.env.example` already had.
+
+The result says what happened: `Added 4 variables for PostgreSQL, skipped 2
+already present`, or `Nothing to add`. Values in `.env` are never compared or
+printed.
+
+### Added
+
+- **`evnx add custom NAME=value …`**: your own variables as arguments, with
+  `--desc`, `--category` and `--required` for all of them. Works without a
+  terminal under `--yes`, so scripts, CI and agents can use it. A name alone
+  gets a placeholder; a secret-looking one (`*_SECRET`, `*_TOKEN`, `*_KEY`, …),
+  in a terminal, is asked for without echo instead. Every name is checked
+  before anything is written.
+- **`evnx add --list`**: every id `add` takes, the same catalogue as `init
+  --list-components`, plus the blueprints. Leave the id out
+  (`evnx add blueprint`) to pick one in a terminal.
+- **`--dry-run`** on every `add` subcommand: what would be added to each file,
+  skipped and kept, and whether `.env` would be created. Writes nothing; needs
+  no terminal.
+- **`--json`** (with `--yes` or `--dry-run`): one document on stdout, with
+  `added`, `skipped`, `conflicts`, `env_added`, `env_created`,
+  `env_committable`, `written`, `dry_run`. Names only, and `.env.example`
+  values for conflicts; nothing from `.env`.
+- **`evnx add framework nextjs`** works: `--language` is optional (framework
+  ids are unique). When given, it is checked, and a mismatch names the right
+  language.
+- **One id space**: `add service` and `add framework` take any catalogue id and
+  say what it is (`vercel is an infra component; adding it.`). `evnx add infra`
+  is a new alias of `add service`.
+- **Browser copies in `add service`**: in a Vite, Next.js, SvelteKit, Nuxt or
+  Laravel project (read from `package.json`, as `init --detect` reads it), the
+  public values get their prefixed copy, as `init --with` writes them:
+  `add service supabase` in a Vite project adds `VITE_SUPABASE_URL`.
+- Esc cancels any `evnx add` confirmation or menu without writing anything
+  (exit 0); at a yes/no question, Esc then Enter.
+
+### Changed
+
+- With no `.env`, `evnx add` creates one from `.env.example`, as `init` does:
+  `.gitignore` first, asking in a terminal and not under `--yes`.
+- `--yes` never shows the preview, in any `add` subcommand (`framework` and
+  `blueprint` used to); `-q` leaves only warnings, conflicts and errors.
+- The preview lists framework, service, infra in a fixed order (also `init`).
+
+### Fixed
+
+- **All commands: a bare `$NAME` in a `.env` value kept the character after
+  it out.** `URL=$BASE/api` read as `http://localhostapi`, `$B:8080` as
+  `app8080`, in `convert`, `template`, `validate`, `scan`, `diff`, `sync` and
+  `migrate`. `${NAME}` was always correct.
+- `evnx add custom`: a category with no description commented the variable out
+  (`# [Application] NAME=value`) while reporting it added.
+- A file `add` cannot write stops the run before anything is written; a
+  read-only `.env` used to leave `.env.example` already appended. The error
+  names the file.
+- Without a terminal and without `--yes`, `add` says to add `--yes` (or, for
+  `add custom`, to pass the variables as arguments) instead of `IO error: not a
+  terminal: not a terminal`, and prints no preview first. Exit code still 2.
+- "Next steps" no longer follows "Aborted.".
+- Appended lines follow the file's line endings, so a CRLF `.env.example` no
+  longer comes back mixed.
+- Wording: `1 variable`, `1 conflict`; `-v` no longer mentions "TODO
+  placeholders", which `add` stopped writing in 0.5.0.
+
+### Library
+
+- Removed: `commands::add::shared::{AppendMode, detect_conflicts,
+  append_to_env_files}`. Use `commands::add::shared::{plan, apply}`.
+- Changed: `commands::add::shared::Conflict` has no `existing_line`;
+  `commands::add::run` takes `(Option<AddTarget>, add::Options)`; the
+  subcommand handlers take a `shared::Mode`.
+- Changed: `AddTarget` (re-exported as `evnx::AddTarget`): ids are
+  `Option<String>`, `Framework.language` is `Option<String>`, and `Custom` has
+  fields (`vars`, `desc`, `category`, `required`). `Commands::Add` gained
+  `list`, `dry_run` and `json`.
+- Added: `utils::prompt::{yes_no, require_terminal, require_terminal_or}`
+  (moved from `init`, which re-exports them internally).
+
+### Tests
+
+`tests/support/` is a shared module for integration tests (temp projects, a
+real isolated git repository, snapshot normalising, the pty driver).
+`tests/add_golden.rs` pins what `add` writes byte for byte, and
+`tests/add_runner.rs` runs the training demo's scenes in CI.
+
 ## [0.10.1] - 2026-10-13
 
 ⚠️ **Why 0.10.1 and not 0.11.0.** By the rule in `docs/RELEASING.md` this would
