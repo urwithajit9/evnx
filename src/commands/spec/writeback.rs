@@ -144,6 +144,10 @@ pub fn report(outcome: &Outcome, verbose: bool) {
             }
         }
         Outcome::Wrote { names, config } => {
+            // A success, not a finding: `-q` hides it (add DQ-A6).
+            if ui::is_quiet() {
+                return;
+            }
             eprintln!(
                 "  {} added {} variable(s) to [vars] in {}",
                 ui::glyph::OK.green(),

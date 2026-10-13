@@ -74,34 +74,10 @@ pub enum Outcome {
     Aborted,
 }
 
-/// Stop before a confirmation prompt that cannot be shown.
-///
-/// ⚠️ Without a terminal dialoguer fails with "IO error: not a terminal" (twice),
-/// which says nothing about what to do. `--with` and `--blueprint` reach a
-/// confirmation unless `--yes` is given, so a script that forgot `--yes` got
-/// exactly that (N-08, the same family as I-014). Exit code stays 2.
-pub fn require_terminal(example: &str) -> Result<()> {
-    use std::io::IsTerminal;
-    if !std::io::stdin().is_terminal() {
-        bail!(
-            "there is no terminal to confirm with.\n\n\
-             Add --yes to write without asking:\n  {example}"
-        );
-    }
-    Ok(())
-}
-
-/// A yes/no question that is answered on Enter, not on the first keystroke.
-///
-/// ⚠️ dialoguer's default answers the moment `y` or `n` is pressed. People type
-/// `y⏎`, and the Enter then answered the *next* question with its default
-/// without the user seeing it: on 0.10.0, `y⏎` at "Generate .env files?"
-/// silently answered "Overwrite it?" with No, so the stack the user asked for
-/// was never written (N-09). Every yes/no prompt in `init` goes through this.
-/// `y`, `yes`, `n`, `no` then need Enter; Enter alone takes the default.
-pub(crate) fn yes_no() -> dialoguer::Confirm<'static> {
-    dialoguer::Confirm::new().wait_for_newline(true)
-}
+// Moved to `utils::prompt` in 0.10.2 so `add` shares them; re-exported so
+// init's call sites read as before.
+pub use crate::utils::prompt::require_terminal;
+pub(crate) use crate::utils::prompt::yes_no;
 
 /// Print the one line every cancel path shares, and say so in the type.
 pub fn aborted() -> Outcome {

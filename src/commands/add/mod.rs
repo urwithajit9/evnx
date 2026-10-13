@@ -38,28 +38,22 @@ pub fn run(
 
     let output_path = Path::new(&path); // Convert to &str
 
-    match target {
+    let outcome = match target {
         crate::cli::AddTarget::Service { service } => {
-            //service::handle(&service, output_path, yes)?;  // Remove verbose
-            // service::handle expects (&str, &str, bool, bool)
-            service::handle(&service, &path, yes, verbose)?;
+            service::handle(&service, &path, yes, verbose)?
         }
         crate::cli::AddTarget::Framework {
             language,
             framework,
-        } => {
-            framework::handle(&language, &framework, output_path, yes, verbose)?;
-        }
+        } => framework::handle(&language, &framework, output_path, yes, verbose)?,
         crate::cli::AddTarget::Blueprint { blueprint } => {
-            blueprint::handle(&blueprint, output_path, yes, verbose)?;
+            blueprint::handle(&blueprint, output_path, yes, verbose)?
         }
-        crate::cli::AddTarget::Custom => {
-            custom::handle(output_path, yes, verbose)?;
-        }
-    }
+        crate::cli::AddTarget::Custom => custom::handle(output_path, yes, verbose)?,
+    };
 
-    // Common next steps at end
-    if !yes {
+    // Next steps only after a write: they used to follow "Aborted." (N-12).
+    if !yes && outcome == shared::Outcome::Written {
         print_next_steps(&[
             "Edit .env and replace placeholder values",
             "Run 'evnx validate' to check for issues",

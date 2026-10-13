@@ -10,6 +10,35 @@ use crate::utils::ui;
 use crate::utils::ui::glyph;
 
 /// How to handle conflicts when appending
+/// What a handler did, so `run` can tell the truth afterwards.
+///
+/// ⚠️ Every handler used to return `Ok(())` whether it wrote or the user said
+/// no, and `run` printed "Next steps: Edit .env…" after "Aborted." (N-12, the
+/// same defect init fixed as I-013).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// The variables were appended.
+    Written,
+    /// Nothing was written: the user answered no, pressed Esc, or (in
+    /// `custom`) gave no variable.
+    Aborted,
+}
+
+/// Print the one line every cancel path shares, and say so in the type.
+pub fn aborted() -> Outcome {
+    println!("{}", "Aborted. Nothing was written.".yellow());
+    Outcome::Aborted
+}
+
+/// `1 variable`, `2 variables`: a count with its noun (I-022).
+pub fn count(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AppendMode {
     /// Warn about conflicts but still append (user sees warning)
@@ -129,7 +158,11 @@ pub fn append_to_env_files(
     // variables carry placeholder values, which `validate` reports as
     // placeholders — a finding the user can act on, unlike "missing".
     if env_path.exists() {
-        let existing = fs::read_to_string(&env_path)?;
+        // ⚠️ Name the file. A bare `?` here printed only
+        // `Permission denied (os error 13)`, with nothing to say which file
+        // (N-14b).
+        let existing = fs::read_to_string(&env_path)
+            .with_context(|| format!("Failed to read {}", env_path.display()))?;
 
         let body = addition.trim();
         let updated = if existing.trim().is_empty() {
@@ -137,16 +170,15 @@ pub fn append_to_env_files(
         } else {
             format!("{}\n\n{body}\n", existing.trim_end())
         };
-        fs::write(&env_path, updated)?;
+        fs::write(&env_path, updated)
+            .with_context(|| format!("Failed to write {}", env_path.display()))?;
 
         warn_if_env_is_committable(output_path);
 
         if verbose {
-            println!(
-                "{} Updated {} with TODO placeholders",
-                "[DEBUG]".dimmed(),
-                env_path.display()
-            );
+            // ⚠️ Said "with TODO placeholders" until 0.10.2, two releases after
+            // `add` stopped writing them (I-024).
+            println!("{} Appended to {}", "[DEBUG]".dimmed(), env_path.display());
         }
     }
 

@@ -1,59 +1,44 @@
 use anyhow::Result;
 use colored::*;
-use dialoguer::Confirm;
 use std::path::Path;
 
+use super::shared::{aborted, count, Outcome};
 use crate::schema::{component, formatter};
+use crate::utils::prompt::{require_terminal, yes_no};
 use crate::utils::ui::{print_header, print_preview_header, success};
 
-/// Handle `evnx add service <service_id>`
-pub fn handle(service_id: &str, path: &str, yes: bool, _verbose: bool) -> Result<()> {
-    if !yes {
-        print_header(
-            "Add Service",
-            Some(&format!("Adding variables for '{}'", service_id)),
-        );
-    }
-    // ⚠️ Through the shared catalogue, so `evnx add service postgresql` and
-    // `evnx init --with postgresql` resolve the same component by the same name.
-    // The unknown-name error comes with suggestions and points at
-    // `--list-components`, instead of at this subcommand's --help.
+pub fn handle(service_id: &str, path: &str, yes: bool, _verbose: bool) -> Result<Outcome> {
     let vars = component::resolve(&[service_id.to_string()])?;
     let display_name = component::find(service_id)?
         .map(|c| c.display_name)
         .unwrap_or_else(|| service_id.to_string());
 
-    // 3. Show preview
-    // println!("\n{}", "📋 Preview:".bold());
-    // println!("{}", formatter::generate_preview(&vars).dimmed());
+    // `--yes` never previews (DQ-A6): the result line says what happened.
     if !yes {
+        // Before the preview: without a terminal the question cannot be asked,
+        // and dialoguer's own error says nothing about `--yes` (I-020).
+        require_terminal(&format!("evnx add service {service_id} --yes"))?;
+        print_header(
+            "Add Service",
+            Some(&format!("Adding variables for '{}'", service_id)),
+        );
         print_preview_header();
         println!("{}", formatter::generate_preview(&vars).dimmed());
-    }
 
-    // 4. Confirm (unless --yes)
-    if !yes {
-        let confirm = Confirm::new()
+        let confirm = yes_no()
             .with_prompt(format!(
-                "Add these {} variables to .env.example?",
-                vars.vars.len()
+                "Add these {} to .env.example?",
+                count(vars.vars.len(), "variable")
             ))
             .default(true)
-            .interact()?;
-
-        if !confirm {
-            println!("{}", "Aborted.".yellow());
-            return Ok(());
+            .interact_opt()?;
+        if confirm != Some(true) {
+            return Ok(aborted());
         }
     }
 
-    // 5. Format as addition
     let addition = formatter::format_addition(&vars)?;
 
-    // ⚠️ Through `append_to_env_files`, like `add framework`, `add custom` and
-    // `add blueprint` already do. This subcommand carried its own copy of the
-    // same logic — which is why it silently missed the `.gitignore` check that
-    // lives there, and would have kept missing anything else added to it.
     super::shared::append_to_env_files(
         Path::new(path),
         &addition,
@@ -63,10 +48,10 @@ pub fn handle(service_id: &str, path: &str, yes: bool, _verbose: bool) -> Result
     )?;
 
     success(format!(
-        "Added {} variables for {}",
-        vars.vars.len(),
+        "Added {} for {}",
+        count(vars.vars.len(), "variable"),
         display_name
     ));
 
-    Ok(())
+    Ok(Outcome::Written)
 }

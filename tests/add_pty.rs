@@ -5,9 +5,9 @@
 //! could not pass even when run by hand (T-002). These press the keys a person
 //! would, through `tests/support/pty.rs`.
 //!
-//! On 0.10.1 every yes/no prompt in `add` answers on the first key (`y` or
-//! `n`, no Enter). AD-A moves them to init's `yes_no()` (answered on Enter,
-//! N-09), and the keys below change in that PR.
+//! Since 0.10.2 (AD-A) every yes/no prompt in `add` is answered on Enter, as
+//! in `init` (N-09): `n⏎`, `y⏎`, or Enter for the default. Esc, then Enter,
+//! cancels (N-13).
 //!
 //! `known_*` tests pin defects; the package named in each flips it (see
 //! `add_integration.rs`).
@@ -15,7 +15,7 @@
 
 mod support;
 
-use support::pty::{Pty, DOWN, ENTER, ESC};
+use support::pty::{Pty, DOWN, ENTER};
 use support::snapshot::{check_golden, normalise};
 use support::{run, Project};
 
@@ -48,15 +48,15 @@ fn custom_name_and_value(p: &Project, name: &str, value: &str) -> Pty {
 fn custom_writes_the_variable_and_its_section() {
     let p = project();
     let mut s = custom_name_and_value(&p, "MY_API_KEY", "sk_test_xxx");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     s.wait_for("Assign to a category?");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     s.wait_for("Is this variable required?");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     s.wait_for("Add another variable?");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     s.wait_for("Append these variables to .env.example?");
-    s.press(&["y"]);
+    s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
 
@@ -79,7 +79,7 @@ fn answering_no_writes_nothing() {
     let mut s = Pty::spawn(p.path(), &["add", "service", "redis"]);
     s.wait_for("Preview:");
     s.wait_for("Add these 5 variables to .env.example?");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
     assert!(rest.contains("Aborted."), "{rest}");
@@ -92,7 +92,7 @@ fn yes_at_the_prompt_writes_what_dash_dash_yes_writes() {
     let asked = project();
     let mut s = Pty::spawn(asked.path(), &["add", "service", "redis"]);
     s.wait_for("Add these 5 variables to .env.example?");
-    s.press(&["y"]);
+    s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
 
@@ -112,117 +112,144 @@ fn yes_at_the_prompt_writes_what_dash_dash_yes_writes() {
 // KNOWN IN 0.10.1
 // ─────────────────────────────────────────────────────────────
 
-/// N-09 (AD-A): `y⏎` at "Is this variable required?" also answers "Add
-/// another variable?" (default yes): the `y` answers the first, the Enter the
-/// second, and the user never sees the second question asked.
+/// N-09 (fixed in 0.10.2, AD-A; was `known_n09_*`): `y⏎` answers one
+/// question. On 0.10.1 the `y` answered "Is this variable required?" and the
+/// Enter silently answered "Add another variable?" with its default.
 #[test]
-fn known_n09_y_enter_answers_two_questions() {
+fn y_enter_answers_exactly_one_question() {
     let p = project();
     let mut s = custom_name_and_value(&p, "N09_VAR", "v");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     s.wait_for("Assign to a category?");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     s.wait_for("Is this variable required?");
     s.press(&["y", ENTER]);
-    let shown = s.wait_for("Variable name");
-    assert!(shown.contains("Add another variable? yes"), "{shown}");
-    s.press(&[ENTER]); // empty name: finish
+    let shown = s.wait_for("Add another variable?");
+    assert!(!shown.contains("Add another variable? yes"), "{shown}");
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    s.press(&["n", ENTER]); // the user's own answer
     s.wait_for("Append these variables to .env.example?");
-    s.press(&["y"]);
+    s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
+    let example = p.read(".env.example");
+    assert!(example.contains("# (required)\nN09_VAR=v"), "{example}");
 }
 
-/// I-016 (AD-S) and I-022 plurals (AD-A): `add custom` accepts a name that is
-/// already there, and talks about "1 variables".
+/// I-016 (AD-S): `add custom` accepts a name that is already there. (I-022,
+/// the plural in "1 variables to add", was fixed in AD-A and is asserted
+/// here too.)
 #[test]
-fn known_i016f_i022_custom_re_adds_an_existing_name_in_the_plural() {
+fn known_i016f_custom_re_adds_an_existing_name() {
     let p = project();
     let mut s = custom_name_and_value(&p, "VITE_ENV", "your_value");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     s.wait_for("Assign to a category?");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     s.wait_for("Is this variable required?");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     s.wait_for("Add another variable?");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     let shown = s.wait_for("Append these variables to .env.example?");
-    assert!(shown.contains("1 variables to add"), "{shown}");
-    s.press(&["y"]);
+    assert!(shown.contains("1 variable to add"), "{shown}");
+    s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
-    assert!(rest.contains("Added 1 custom variables"), "{rest}");
+    assert!(rest.contains("Added 1 custom variable"), "{rest}");
+    assert!(!rest.contains("custom variables"), "{rest}");
     assert_eq!(p.count_lines(".env.example", "VITE_ENV="), 2);
     assert_eq!(p.count_lines(".env", "VITE_ENV="), 2);
 }
 
-/// N-12 (AD-A): "Next steps" is printed after "Aborted.".
+/// N-12 (fixed in 0.10.2, AD-A; was `known_n12_*`): an abort prints no next
+/// steps. On 0.10.1 "Next steps: 1. Edit .env…" followed "Aborted.".
 #[test]
-fn known_n12_next_steps_after_an_abort() {
+fn an_abort_prints_no_next_steps() {
     let p = project();
     let mut s = Pty::spawn(p.path(), &["add", "blueprint", "mern_v2"]);
     s.wait_for("Add these 18 variables to .env.example?");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
-    let aborted = rest.find("Aborted.").expect("aborted");
-    let next = rest.find("Next steps").expect("next steps");
-    assert!(aborted < next, "{rest}");
+    assert!(rest.contains("Aborted. Nothing was written."), "{rest}");
+    assert!(!rest.contains("Next steps"), "{rest}");
 }
 
-/// N-13 (AD-A): Esc at a confirmation is ignored; the question keeps waiting
-/// and takes a later key. (init cancels on Esc since 0.10.1.)
-///
-/// ⚠️ The key after Esc may be swallowed. The `console` crate, having read an
-/// ESC byte, takes the next byte at once if one is already waiting and reads
-/// the pair as one unknown escape sequence. Prompt text on screen does not
-/// mean dialoguer is already reading, so on a slow runner Esc and the `n`
-/// after it can both be waiting when it starts: `ESC n` is dropped and the
-/// question never returns (CI, 2026-10-14; same family as #156). Whichever
-/// way the Esc is read, it does not end the question, so this presses `n`
-/// until the question takes it.
+/// N-13 (fixed in 0.10.2, AD-A; was `known_n13_*`): Esc cancels a
+/// confirmation, writes nothing and exits 0, as in `init`. A yes/no question
+/// takes its answer on Enter, so Esc selects "cancel" and Enter confirms it;
+/// `cancel_yes_no` waits for the redraw between the two (see its comment for
+/// the race this avoids).
 #[test]
-fn known_n13_escape_is_ignored_at_the_confirmation() {
-    use std::time::Duration;
-    let p = project();
-    let mut s = Pty::spawn(p.path(), &["add", "service", "redis"]);
-    s.wait_for("Add these 5 variables to .env.example?");
-    s.press(&[ESC]);
-    let mut answered = None;
-    for _ in 0..5 {
-        std::thread::sleep(Duration::from_millis(300));
-        s.press(&["n"]);
-        answered = s.try_wait_for("? no", Duration::from_secs(2));
-        if answered.is_some() {
-            break;
-        }
+fn escape_cancels_every_confirmation() {
+    for args in [
+        &["add", "service", "redis"][..],
+        &["add", "framework", "-l", "python", "django"],
+        &["add", "blueprint", "mern_v2"],
+    ] {
+        let p = project();
+        let before = (p.read(".env.example"), p.read(".env"));
+        let mut s = Pty::spawn(p.path(), args);
+        s.wait_for("to .env.example?");
+        s.cancel_yes_no();
+        let (rest, code) = s.finish();
+        assert_eq!(code, 0, "{args:?}: {rest}");
+        assert!(
+            rest.contains("Aborted. Nothing was written."),
+            "{args:?}: {rest}"
+        );
+        assert_eq!((p.read(".env.example"), p.read(".env")), before, "{args:?}");
     }
-    let shown = answered.expect("the question never took an answer after Esc");
-    assert!(
-        !shown.contains("Nothing was written"),
-        "Esc ended the prompt: {shown}"
-    );
+}
+
+/// N-13: Esc at one of `add custom`'s questions cancels the whole run.
+#[test]
+fn escape_cancels_add_custom() {
+    let p = project();
+    let before = p.read(".env.example");
+    let mut s = custom_name_and_value(&p, "NEVER_WRITTEN", "v");
+    s.cancel_yes_no();
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
-    assert!(rest.contains("Aborted."), "{rest}");
-    assert!(!rest.contains("Nothing was written"), "{rest}");
+    assert!(rest.contains("Aborted. Nothing was written."), "{rest}");
+    assert_eq!(p.read(".env.example"), before);
+}
+
+/// N-10 (fixed in 0.10.2, AD-A; was `known_n10_*` in `add_integration.rs`):
+/// the preview lists framework, service and infra in that order on every run.
+/// On 0.10.1 the order came from a `HashMap` and changed between runs.
+#[test]
+fn preview_groups_come_in_a_fixed_order() {
+    for _ in 0..3 {
+        let p = Project::new();
+        let mut s = Pty::spawn(p.path(), &["add", "blueprint", "t3_modern"]);
+        let shown = s.wait_for("to .env.example?");
+        let order: Vec<&str> = shown
+            .lines()
+            .filter_map(|l| l.trim_start().strip_prefix("• "))
+            .filter_map(|l| l.split_whitespace().next())
+            .collect();
+        assert_eq!(order, ["framework", "service", "infra"], "{shown}");
+        s.press(&["n", ENTER]);
+        s.finish();
+    }
 }
 
 /// `add custom` with a category and no description, to the end.
 /// Returns what was printed between the category list and the next question.
 fn custom_with_category_only(p: &Project) -> String {
     let mut s = custom_name_and_value(p, "CAT_ONLY", "v1");
-    s.press(&["n"]); // no description
+    s.press(&["n", ENTER]); // no description
     s.wait_for("Assign to a category?");
-    s.press(&["y"]);
+    s.press(&["y", ENTER]);
     s.wait_for("Other");
     s.press(&[DOWN, ENTER]);
     let picked = s.wait_for("Is this variable required?");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     s.wait_for("Add another variable?");
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     s.wait_for("Append these variables to .env.example?");
-    s.press(&["y"]);
+    s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
     picked

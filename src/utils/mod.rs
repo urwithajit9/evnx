@@ -4,6 +4,7 @@ pub mod file_permissions;
 pub mod fs;
 pub mod git;
 pub mod patterns;
+pub mod prompt;
 pub mod string;
 pub mod term;
 pub mod ui;

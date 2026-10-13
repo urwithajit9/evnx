@@ -2,11 +2,12 @@
 
 use anyhow::{Context, Result};
 use colored::*;
-use dialoguer::Confirm;
 use std::path::Path;
 
-use super::shared::{append_to_env_files, AppendMode};
+use super::shared::{aborted, append_to_env_files, count, AppendMode, Outcome};
 use crate::schema::{component, formatter, loader};
+use crate::utils::prompt::{require_terminal, yes_no};
+use crate::utils::ui::success;
 
 /// Handle framework addition
 pub fn handle(
@@ -15,7 +16,7 @@ pub fn handle(
     output_path: &Path,
     yes: bool,
     verbose: bool,
-) -> Result<()> {
+) -> Result<Outcome> {
     // 1. Validate language exists
     let schema = loader::schema()?;
     let language = schema.languages.get(language_id).context(format!(
@@ -59,24 +60,26 @@ pub fn handle(
     // for a framework that belongs to a different language.
     let vars = component::resolve(&[framework_id.to_string()])?;
 
-    // 4. Show preview
-    println!("\n{}", "Preview:".bold());
-    println!("{}", formatter::generate_preview(&vars).dimmed());
-
-    // 5. Confirm (unless --yes)
+    // 4–5. Preview and confirm, unless --yes. `--yes` never previews (DQ-A6):
+    // it used to here and in `blueprint` but not in `service`, and `-q` did
+    // not hide it (I-019, N-15).
     if !yes {
-        let confirm = Confirm::new()
+        require_terminal(&format!(
+            "evnx add framework --language {language_id} {framework_id} --yes"
+        ))?;
+        println!("\n{}", "Preview:".bold());
+        println!("{}", formatter::generate_preview(&vars).dimmed());
+
+        let confirm = yes_no()
             .with_prompt(format!(
-                "Add these {} variables for {} to .env.example?",
-                vars.vars.len(),
+                "Add these {} for {} to .env.example?",
+                count(vars.vars.len(), "variable"),
                 framework.display_name.as_deref().unwrap_or(framework_id)
             ))
             .default(true)
-            .interact()?;
-
-        if !confirm {
-            println!("{}", "Aborted.".yellow());
-            return Ok(());
+            .interact_opt()?;
+        if confirm != Some(true) {
+            return Ok(aborted());
         }
     }
 
@@ -97,14 +100,13 @@ pub fn handle(
         &vars,
     )?;
 
-    println!(
-        "{} Added {} variables for {}",
-        "✓".green(),
-        vars.vars.len(),
+    success(format!(
+        "Added {} for {}",
+        count(vars.vars.len(), "variable"),
         framework.display_name.as_deref().unwrap_or(framework_id)
-    );
+    ));
 
-    Ok(())
+    Ok(Outcome::Written)
 }
 
 #[cfg(test)]

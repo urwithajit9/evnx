@@ -233,8 +233,13 @@ pub fn generate_preview(vars: &VarCollection) -> String {
         *by_source.entry(source).or_insert(0) += 1;
     }
 
-    for (source, count) in by_source {
-        lines.push(format!("  • {} ×{}", source, count));
+    // ⚠️ A fixed order. Iterating the `HashMap` printed these lines in a
+    // different order on every run (N-10), which made two previews of the
+    // same stack look different.
+    for source in ["framework", "service", "infra", "override"] {
+        if let Some(count) = by_source.get(source) {
+            lines.push(format!("  • {} ×{}", source, count));
+        }
     }
 
     // List categories (convert to owned Strings for join)

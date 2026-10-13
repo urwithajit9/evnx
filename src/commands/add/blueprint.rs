@@ -4,15 +4,15 @@
 
 use anyhow::{Context, Result};
 use colored::*;
-use dialoguer::Confirm;
 use std::path::Path;
 
-use super::shared::{append_to_env_files, detect_conflicts, AppendMode};
+use super::shared::{aborted, append_to_env_files, count, detect_conflicts, AppendMode, Outcome};
 use crate::schema::{formatter, loader, resolver};
-use crate::utils::ui::{info, warning};
+use crate::utils::prompt::{require_terminal, yes_no};
+use crate::utils::ui::{info, success, warning};
 
 /// Handle blueprint addition
-pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) -> Result<()> {
+pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
     // 1. Find blueprint
     //
     // ⚠️ The list is printed here rather than pointing at another command.
@@ -59,13 +59,16 @@ pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) 
         Vec::new()
     };
 
-    // 4. Show preview with conflict warnings
-    println!("\n{}", "Preview:".bold());
-    println!("{}", formatter::generate_preview(&vars).dimmed());
+    // 4. Preview, unless --yes (DQ-A6: `--yes` never previews; I-019, N-15).
+    if !yes {
+        require_terminal(&format!("evnx add blueprint {blueprint_id} --yes"))?;
+        println!("\n{}", "Preview:".bold());
+        println!("{}", formatter::generate_preview(&vars).dimmed());
+    }
 
+    // Conflicts are a finding, not chatter: they print under `--yes` and `-q`.
     if !conflicts.is_empty() {
-        //println!("\n{}", "⚠️  Conflicts detected:".yellow().bold());
-        warning(format!("{} conflicts detected", conflicts.len()));
+        warning(format!("{} detected", count(conflicts.len(), "conflict")));
         for conflict in &conflicts {
             println!(
                 "  • {} (existing: \"{}\", new: \"{}\")",
@@ -74,30 +77,27 @@ pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) 
                 conflict.new_value.dimmed()
             );
         }
-        // println!("\n{}", "Conflicting variables will be SKIPPED (not overwritten).".yellow());
         info("Conflicting variables will be SKIPPED (not overwritten)");
     }
 
     // 5. Confirm (unless --yes)
     if !yes {
         let prompt = if conflicts.is_empty() {
-            format!("Add these {} variables to .env.example?", vars.vars.len())
+            format!(
+                "Add these {} to .env.example?",
+                count(vars.vars.len(), "variable")
+            )
         } else {
             format!(
-                "Add {} new variables (skipping {} conflicts)?",
-                vars.vars.len() - conflicts.len(),
-                conflicts.len()
+                "Add {} (skipping {})?",
+                count(vars.vars.len() - conflicts.len(), "new variable"),
+                count(conflicts.len(), "conflict")
             )
         };
 
-        let confirm = Confirm::new()
-            .with_prompt(&prompt)
-            .default(true)
-            .interact()?;
-
-        if !confirm {
-            println!("{}", "Aborted.".yellow());
-            return Ok(());
+        let confirm = yes_no().with_prompt(&prompt).default(true).interact_opt()?;
+        if confirm != Some(true) {
+            return Ok(aborted());
         }
     }
 
@@ -125,23 +125,20 @@ pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) 
         &filtered_vars,
     )?;
 
-    let added_count = filtered_vars.vars.len();
-    println!(
-        "{} Added {} variables from blueprint '{}'",
-        "✓".green(),
-        added_count,
+    success(format!(
+        "Added {} from blueprint '{}'",
+        count(filtered_vars.vars.len(), "variable"),
         blueprint.name
-    );
+    ));
 
     if !conflicts.is_empty() {
-        println!(
-            "{} Skipped {} conflicting variables (preserved existing values)",
-            "·".blue(),
-            conflicts.len()
-        );
+        info(format!(
+            "Skipped {} (preserved existing values)",
+            count(conflicts.len(), "conflicting variable")
+        ));
     }
 
-    Ok(())
+    Ok(Outcome::Written)
 }
 
 #[cfg(test)]
