@@ -8,6 +8,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-13
+
+⚠️ **Why 0.10.1 and not 0.11.0.** By the rule in `docs/RELEASING.md` this would
+be a minor bump: it adds features (component aliases, browser variables, `-p`)
+and changes the output of a shipped command (`init`). It is a patch by decision:
+from 0.10.1 each reviewed command ships as its own `0.10.x` release (`init` here,
+`add` next), and **0.11.0 is reserved as the first stable release** after the
+command-by-command review. The breaking changes are few and listed first. The
+library API only gained items (`schema::format_addition_from`,
+`schema::component::{ALIASES, canonical, CLIENT_PREFIX, CLIENT_SAFE}`,
+`utils::ui::{set_quiet, is_quiet, say}`, `utils::term`); no reachable public item
+was removed or changed its signature, so a crate depending on `evnx = "0.10"`
+still compiles.
+
+ⓘ **This release is mainly `evnx init`.** Every issue found by re-verifying the
+0.10.0 review against the shipped binary is fixed here, plus three behaviours
+shared by every command: `-q`, a closed pipe, and Ctrl-C at a prompt. It also
+carries the Windows fixes for `scan` and `doctor` listed under Fixed.
+
 ### ⚠️ Breaking
 
 **`evnx init --from-source --force` is now an error** (exit 2, `the argument
