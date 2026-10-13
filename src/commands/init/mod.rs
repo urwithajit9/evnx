@@ -20,7 +20,7 @@ mod architect;
 mod blank;
 mod blueprint;
 mod components;
-mod detect;
+pub(crate) mod detect;
 pub(crate) mod shared;
 mod source;
 

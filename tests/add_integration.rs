@@ -1034,17 +1034,73 @@ fn appended_lines_follow_each_files_line_endings() {
     assert!(!env.contains('\r'), "CRLF in an LF file: {env:?}");
 }
 
-/// BR-1 (AD-H, DQ-A8): `add service supabase` on a Vite project adds no
-/// `VITE_` copies of the public variables. `init --with vite,supabase` does.
+/// BR-1 (fixed in 0.10.2, AD-H, DQ-A8; was `known_br1_*`): `add service`
+/// reads the project's framework the way `init --detect` does and adds the
+/// browser copies of the public values, as `init --with vite,supabase` does.
 #[test]
-fn known_br1_service_adds_no_browser_copies() {
-    let p = Project::new()
+fn service_adds_browser_copies_for_the_detected_framework() {
+    for (package, prefix) in [
+        (r#"{"devDependencies":{"vite":"5"}}"#, "VITE_"),
+        (r#"{"dependencies":{"next":"16"}}"#, "NEXT_PUBLIC_"),
+    ] {
+        let p = Project::new()
+            .file("package.json", package)
+            .example("APP=1\n");
+        run(p.path(), &["add", "service", "supabase", "--yes"])
+            .assert_code(0)
+            .assert_contains(&format!("adding 2 {prefix} copies for the browser"));
+        let example = p.read(".env.example");
+        for name in ["SUPABASE_URL", "SUPABASE_ANON_KEY"] {
+            assert!(example.contains(&format!("\n{prefix}{name}=")), "{example}");
+        }
+        // Secrets never get a browser copy.
+        assert!(!example.contains(&format!("{prefix}SUPABASE_SERVICE_ROLE_KEY")));
+    }
+}
+
+/// BR-1: the copies are the ones `init --with` writes, line for line.
+#[test]
+fn service_copies_match_init() {
+    let via_add = Project::new()
         .file("package.json", r#"{"devDependencies":{"vite":"5"}}"#)
-        .example("VITE_APP_TITLE=x\n");
-    run(p.path(), &["add", "service", "supabase", "--yes"]).assert_code(0);
-    let example = p.read(".env.example");
-    assert!(example.contains("\nSUPABASE_URL="), "{example}");
-    assert!(!example.contains("VITE_SUPABASE_URL="), "{example}");
+        .example("APP=1\n");
+    run(via_add.path(), &["add", "service", "supabase", "--yes"]).assert_code(0);
+    let via_init = Project::new();
+    run(
+        via_init.path(),
+        &["init", "--with", "vite,supabase", "--yes"],
+    )
+    .assert_code(0);
+    let block = |text: &str| -> Vec<String> {
+        let lines: Vec<&str> = text.lines().collect();
+        lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.starts_with("VITE_SUPABASE_"))
+            .flat_map(|(i, l)| [lines[i - 1].to_string(), l.to_string()])
+            .collect()
+    };
+    let added = block(&via_add.read(".env.example"));
+    assert_eq!(
+        added.len(),
+        4,
+        "two copies, each with its comment: {added:?}"
+    );
+    assert_eq!(added, block(&via_init.read(".env.example")));
+}
+
+/// BR-1: no browser framework, no copies, and one line saying so; a service
+/// with no public values says nothing at all.
+#[test]
+fn no_browser_framework_no_copies() {
+    let p = Project::new().example("APP=1\n");
+    run(p.path(), &["add", "service", "supabase", "--yes"])
+        .assert_code(0)
+        .assert_contains("No browser framework found in this project");
+    assert!(!p.read(".env.example").contains("VITE_"));
+    run(p.path(), &["add", "service", "postgresql", "--yes"])
+        .assert_code(0)
+        .assert_not_contains("browser");
 }
 
 /// N-11 in `init --from-source` (fixed in 0.10.2, AD-S): it appends through
