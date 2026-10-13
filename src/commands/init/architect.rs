@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use colored::*;
-use dialoguer::{Confirm, MultiSelect, Select};
+use dialoguer::{MultiSelect, Select};
 use std::path::Path;
 
 use super::shared::{aborted, write_env_files_with_outcome, Outcome, WriteOptions};
@@ -154,7 +154,7 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<Outcome
     }
 
     if !opts.yes {
-        let confirm = Confirm::new()
+        let confirm = super::shared::yes_no()
             .with_prompt("Generate .env files with these variables?")
             .default(true)
             .interact_opt()?;

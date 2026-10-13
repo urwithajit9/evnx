@@ -134,7 +134,7 @@ pub fn handle(
 
     if !opts.yes {
         super::shared::require_terminal(&format!("evnx init --blueprint {selected_id} --yes"))?;
-        let confirm = dialoguer::Confirm::new()
+        let confirm = super::shared::yes_no()
             .with_prompt("Generate .env files with these variables?")
             .default(true)
             .interact_opt()?;

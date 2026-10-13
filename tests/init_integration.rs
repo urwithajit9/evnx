@@ -1132,17 +1132,47 @@ fn nothing_detected_says_so_and_writes_the_same_file() {
     );
 }
 
-/// KNOWN N-06 (group E): appending to an existing template writes neither the
-/// `.gitignore` rules nor `.env`.
+/// N-06 (fixed in 0.10.1, group E; was `known_n06_*`): appending to an existing
+/// template also writes the `.gitignore` rules and, under `--yes`, creates
+/// `.env` as a byte copy of the template (DQ-10, DQ-14).
 #[test]
-fn known_n06_from_source_append_writes_no_gitignore_or_env() {
+fn from_source_append_writes_gitignore_and_env() {
     let d = sourced_project();
     std::fs::write(d.path().join(".env.example"), "HAND_WRITTEN=1\n").unwrap();
     assert!(init_in(d.path(), &["--from-source", "--yes"])
         .status
         .success());
-    assert!(!d.path().join(".gitignore").exists());
-    assert!(!d.path().join(".env").exists());
+
+    let gitignore = std::fs::read_to_string(d.path().join(".gitignore")).unwrap();
+    assert!(
+        gitignore.lines().any(|l| l.trim() == ".env*"),
+        "{gitignore}"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join(".env")).unwrap(),
+        std::fs::read(d.path().join(".env.example")).unwrap(),
+        ".env must be a byte copy of the (appended) template"
+    );
+
+    // A second run changes nothing.
+    let before = std::fs::read(d.path().join(".env")).unwrap();
+    assert!(init_in(d.path(), &["--from-source", "--yes"])
+        .status
+        .success());
+    assert_eq!(std::fs::read(d.path().join(".env")).unwrap(), before);
+}
+
+/// An existing `.env` is never replaced by the template copy.
+#[test]
+fn from_source_never_replaces_an_existing_env() {
+    let d = sourced_project();
+    std::fs::write(d.path().join(".env.example"), "HAND_WRITTEN=1\n").unwrap();
+    std::fs::write(d.path().join(".env"), "SECRET=real\n").unwrap();
+    assert!(init_in(d.path(), &["--from-source", "--yes"])
+        .status
+        .success());
+    let env = std::fs::read_to_string(d.path().join(".env")).unwrap();
+    assert!(env.starts_with("SECRET=real\n"), "{env}");
 }
 
 /// I-023 / D-1 (fixed in 0.10.1, group A9; was `known_i023_*`): `-p` is `--path`,

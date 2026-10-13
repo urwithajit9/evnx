@@ -91,6 +91,18 @@ pub fn require_terminal(example: &str) -> Result<()> {
     Ok(())
 }
 
+/// A yes/no question that is answered on Enter, not on the first keystroke.
+///
+/// ⚠️ dialoguer's default answers the moment `y` or `n` is pressed. People type
+/// `y⏎`, and the Enter then answered the *next* question with its default
+/// without the user seeing it: on 0.10.0, `y⏎` at "Generate .env files?"
+/// silently answered "Overwrite it?" with No, so the stack the user asked for
+/// was never written (N-09). Every yes/no prompt in `init` goes through this.
+/// `y`, `yes`, `n`, `no` then need Enter; Enter alone takes the default.
+pub(crate) fn yes_no() -> dialoguer::Confirm<'static> {
+    dialoguer::Confirm::new().wait_for_newline(true)
+}
+
 /// Print the one line every cancel path shares, and say so in the type.
 pub fn aborted() -> Outcome {
     println!("{}", "Aborted. Nothing was written.".yellow());
@@ -133,7 +145,7 @@ pub(crate) fn write_env_files_with_outcome(
             );
         }
 
-        let overwrite = dialoguer::Confirm::new()
+        let overwrite = yes_no()
             .with_prompt(format!("{} exists. Overwrite it?", example_path.display()))
             .default(false)
             .interact_opt()
@@ -149,6 +161,9 @@ pub(crate) fn write_env_files_with_outcome(
                 if let Some(line) = gitignore_line {
                     crate::utils::ui::say(line);
                 }
+                // Keeping the template used to end here with no `.env`, while
+                // the closing lines told the user to edit one (N-01, DQ-4).
+                env_from_template(output_path, true)?;
                 warn_if_env_is_still_committable(output_path);
                 return Ok(Outcome::KeptExisting);
             }
@@ -194,6 +209,49 @@ pub(crate) fn write_env_files_with_outcome(
     Ok(Outcome::Written)
 }
 
+/// Create `.env` from an existing `.env.example`: a byte copy, the same as
+/// `cp .env.example .env` (DQ-4a). Returns whether it was created.
+///
+/// Used where a template exists but `.env` does not: after the user keeps their
+/// own template, and after `--from-source` appends to one (N-06). `ask` puts the
+/// question first (`Create .env from your .env.example? [Y/n]`, default yes);
+/// without it, as under `--yes`, the file is created (DQ-14).
+///
+/// ⚠️ Never replaces an existing `.env`, and updates `.gitignore` before the
+/// file exists, for the same reason as `write_env_files_with_outcome` (I-008).
+/// Esc at the question creates nothing and is not an error: the template the
+/// user chose to keep stays as it was.
+pub(crate) fn env_from_template(output_path: &Path, ask: bool) -> Result<bool> {
+    let example_path = output_path.join(".env.example");
+    let env_path = output_path.join(".env");
+    if env_path.exists() || !example_path.exists() {
+        return Ok(false);
+    }
+
+    if ask {
+        let create = yes_no()
+            .with_prompt("Create .env from your .env.example?")
+            .default(true)
+            .interact_opt()
+            .context("could not ask whether to create .env")?;
+        if create != Some(true) {
+            return Ok(false);
+        }
+    }
+
+    let gitignore_line = update_gitignore(output_path)?;
+    let template = fs::read(&example_path)
+        .with_context(|| format!("Failed to read: {}", example_path.display()))?;
+    fs::write(&env_path, template)
+        .with_context(|| format!("Failed to write: {}", env_path.display()))?;
+
+    if let Some(line) = gitignore_line {
+        crate::utils::ui::say(line);
+    }
+    crate::utils::ui::say(format!("{} Created .env from .env.example", "✓".green()));
+    Ok(true)
+}
+
 /// Say so when `.gitignore` has the rules but a later line undoes them.
 ///
 /// ⚠️ `update_gitignore` checks that each rule is *present*, line by line. A
@@ -220,7 +278,7 @@ fn warn_if_env_is_still_committable(output_path: &Path) {
 /// `git check-ignore .env` reported the file unignored — while `init`'s closing
 /// banner told the user never to commit it. `check_ignored` compares whole lines
 /// and skips comments, which is the distinction that was missing.
-fn update_gitignore(output_path: &Path) -> Result<Option<String>> {
+pub(crate) fn update_gitignore(output_path: &Path) -> Result<Option<String>> {
     let gitignore_path = output_path.join(".gitignore");
     let existed = gitignore_path.exists();
     let mut added = Vec::new();

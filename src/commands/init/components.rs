@@ -54,7 +54,7 @@ pub fn handle(
             "evnx init --with {} --yes",
             components.join(",")
         ))?;
-        let confirm = dialoguer::Confirm::new()
+        let confirm = super::shared::yes_no()
             .with_prompt("Generate .env files with these variables?")
             .default(true)
             .interact_opt()?;
@@ -216,7 +216,7 @@ pub fn handle_detected(
     }
 
     if !opts.yes {
-        let confirm = dialoguer::Confirm::new()
+        let confirm = super::shared::yes_no()
             .with_prompt("Generate .env files with these variables?")
             .default(true)
             .interact_opt()?;
@@ -372,7 +372,7 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
         );
     }
     if !opts.yes {
-        let confirm = dialoguer::Confirm::new()
+        let confirm = super::shared::yes_no()
             .with_prompt(format!(
                 "Add these {} to .env.example?",
                 drift.missing.len()
@@ -391,6 +391,10 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
     // file. The first version of this did exactly that, turning a 21-variable
     // template into a 5-variable one.
     if example.exists() {
+        // Protect before writing, as every init path does (I-008). `add` only
+        // warns about `.gitignore`, because it runs in someone else's project;
+        // `init` owns these rules (N-06, DQ-10).
+        let gitignore_line = super::shared::update_gitignore(root)?;
         let addition = formatter::format_addition_from(&vars, "evnx init --from-source")?;
         crate::commands::add::shared::append_to_env_files(
             root,
@@ -399,6 +403,12 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
             verbose,
             &vars,
         )?;
+        if let Some(line) = gitignore_line {
+            ui::say(line);
+        }
+        // A template with no `.env` beside it: create one from it, asking first
+        // when there is someone to ask (DQ-10, DQ-14).
+        super::shared::env_from_template(root, !opts.yes)?;
     } else {
         let example_content = formatter::format_env_example(&vars, true)?;
         let template_content = formatter::format_env_template(&vars)?;

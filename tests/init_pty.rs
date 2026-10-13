@@ -231,11 +231,11 @@ fn an_abort_prints_no_next_steps() {
     assert!(!rest.contains("Next steps"), "{rest}");
 }
 
-/// N-01 (fixed in 0.10.1, group C; was `known_n01_*`): keeping an existing
-/// template says so, claims nothing was created, and gives no "Next steps".
-/// `.gitignore` is still updated (protection is never skipped).
+/// N-01 (fixed in 0.10.1, group C) and DQ-4 (group E): keeping an existing
+/// template says so, claims nothing was generated, gives no "Next steps", and
+/// offers to create `.env` from it. Answering yes makes a byte copy.
 #[test]
-fn keeping_the_template_says_so() {
+fn keeping_the_template_offers_to_create_env() {
     let d = TempDir::new().unwrap();
     std::fs::write(d.path().join(".env.example"), "MINE=1\n").unwrap();
     let mut run = Run::start(d.path(), &[]);
@@ -248,44 +248,106 @@ fn keeping_the_template_says_so() {
     run.press(&["y", ENTER]);
     run.wait_for("exists. Overwrite it?");
     run.press(&["n", ENTER]);
+    let shown = run.wait_for("Create .env from your .env.example?");
+    run.press(&[ENTER]); // default: yes
     let (rest, code) = run.finish();
 
     assert_eq!(code, 0);
     assert!(
-        rest.contains("Kept the existing .env.example. Nothing was generated."),
-        "{rest}"
+        shown.contains("Kept the existing .env.example. Nothing was generated."),
+        "{shown}"
     );
+    assert!(rest.contains("Created .env from .env.example"), "{rest}");
     assert!(!rest.contains("Created .env.example"), "{rest}");
     assert!(!rest.contains("Next steps"), "{rest}");
     assert_eq!(
         std::fs::read_to_string(d.path().join(".env.example")).unwrap(),
         "MINE=1\n"
     );
+    assert_eq!(
+        std::fs::read_to_string(d.path().join(".env")).unwrap(),
+        "MINE=1\n"
+    );
     assert!(d.path().join(".gitignore").exists());
+}
+
+/// DQ-4: answering no keeps today's behaviour, no `.env`.
+#[test]
+fn keeping_the_template_and_declining_creates_no_env() {
+    let d = TempDir::new().unwrap();
+    std::fs::write(d.path().join(".env.example"), "MINE=1\n").unwrap();
+    let mut run = Run::start(d.path(), &[]);
+
+    run.wait_for("How do you want to start?");
+    run.press(&[ENTER]); // Blank
+    run.wait_for("exists. Overwrite it?");
+    run.press(&["n", ENTER]);
+    run.wait_for("Create .env from your .env.example?");
+    run.press(&["n", ENTER]);
+    let (_, code) = run.finish();
+
+    assert_eq!(code, 0);
+    assert!(!d.path().join(".env").exists());
+    assert!(d.path().join(".gitignore").exists());
+}
+
+/// N-06 interactively: `--from-source` asks before creating `.env` beside an
+/// existing template.
+#[test]
+fn from_source_asks_before_creating_env() {
+    let d = TempDir::new().unwrap();
+    std::fs::create_dir_all(d.path().join("src")).unwrap();
+    std::fs::write(
+        d.path().join("src/a.ts"),
+        "const a = process.env.NEW_ONE;\n",
+    )
+    .unwrap();
+    std::fs::write(d.path().join(".env.example"), "HAND=1\n").unwrap();
+    let mut run = Run::start(d.path(), &["--from-source"]);
+
+    run.wait_for("Add these 1 to .env.example?");
+    run.press(&[ENTER]);
+    run.wait_for("Create .env from your .env.example?");
+    run.press(&["n", ENTER]);
+    let (_, code) = run.finish();
+
+    assert_eq!(code, 0);
+    assert!(!d.path().join(".env").exists());
+    let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+    assert!(example.contains("NEW_ONE="), "{example}");
 }
 
 const ESC: &str = "\x1b";
 
 /// N-07 (part, group C): Esc cancels at every kind of prompt, writes nothing,
-/// and exits 0. (Ctrl-C is a signal, handled separately.)
+/// and exits 0. (Ctrl-C is a signal, handled separately.) A list menu cancels
+/// on Esc; a yes/no question takes its answer on Enter (N-09), so there Esc
+/// selects "cancel" and Enter confirms it.
 #[test]
 fn escape_cancels_at_every_prompt() {
-    // (keys to reach the prompt, prompt text, label)
-    let cases: &[(&[&str], &str, &str)] = &[
-        (&[], "How do you want to start?", "start menu"),
-        (&[DOWN, ENTER], "Choose a stack blueprint", "blueprint list"),
+    // (keys to reach the prompt, prompt text, keys that cancel, label)
+    let cases: &[(&[&str], &str, &[&str], &str)] = &[
+        (&[], "How do you want to start?", &[ESC], "start menu"),
+        (
+            &[DOWN, ENTER],
+            "Choose a stack blueprint",
+            &[ESC],
+            "blueprint list",
+        ),
         (
             &[DOWN, ENTER, ENTER],
             "Generate .env files with these variables?",
+            &[ESC, ENTER],
             "confirm",
         ),
         (
             &[DOWN, DOWN, ENTER],
             "Select your primary language",
+            &[ESC],
             "architect",
         ),
     ];
-    for (keys, prompt, label) in cases {
+    for (keys, prompt, cancel, label) in cases {
         let d = TempDir::new().unwrap();
         let mut run = Run::start(d.path(), &[]);
         run.wait_for("How do you want to start?");
@@ -293,7 +355,7 @@ fn escape_cancels_at_every_prompt() {
             run.press(keys);
             run.wait_for(prompt);
         }
-        run.press(&[ESC]);
+        run.press(cancel);
         let (rest, code) = run.finish();
 
         assert_eq!(code, 0, "{label}");
@@ -319,7 +381,7 @@ fn escape_at_the_overwrite_question_writes_nothing() {
     run.wait_for("How do you want to start?");
     run.press(&[ENTER]); // Blank
     run.wait_for("exists. Overwrite it?");
-    run.press(&[ESC]);
+    run.press(&[ESC, ENTER]); // yes/no: Esc selects cancel, Enter confirms it
     let (rest, code) = run.finish();
 
     assert_eq!(code, 0);
@@ -446,4 +508,35 @@ fn ctrl_c_at_a_menu_restores_the_cursor() {
     for f in [".env", ".env.example", ".gitignore"] {
         assert!(!d.path().join(f).exists(), "{f} written");
     }
+}
+
+/// N-09 (fixed in 0.10.1, group E): `y⏎` answers one question. On 0.10.0 the
+/// `y` answered "Generate .env files?" and the Enter silently answered the next
+/// question, "Overwrite it?", with its default (No): the stack was never
+/// written. Now the overwrite question waits for its own answer.
+#[test]
+fn y_enter_answers_exactly_one_question() {
+    let d = TempDir::new().unwrap();
+    std::fs::write(d.path().join(".env.example"), "MINE=1\n").unwrap();
+    let mut run = Run::start(d.path(), &[]);
+
+    run.wait_for("How do you want to start?");
+    run.press(&[DOWN, ENTER]);
+    run.wait_for("Choose a stack blueprint");
+    run.press(&[ENTER]); // T3 Turbo
+    run.wait_for("Generate .env files with these variables?");
+    run.press(&["y", ENTER]);
+    let shown = run.wait_for("exists. Overwrite it?");
+    assert!(!shown.contains("Overwrite it? no"), "{shown}");
+    std::thread::sleep(Duration::from_millis(300));
+    run.press(&["y", ENTER]); // the user's own answer
+    let (rest, code) = run.finish();
+
+    assert_eq!(code, 0);
+    assert!(!rest.contains("Kept the existing"), "{rest}");
+    let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+    assert!(
+        example.contains("NEXTAUTH_SECRET="),
+        "not overwritten:\n{example}"
+    );
 }
