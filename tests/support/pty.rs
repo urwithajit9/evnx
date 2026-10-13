@@ -73,6 +73,34 @@ impl Pty {
         found
     }
 
+    /// Wait until the program has switched terminal echo off: a hidden-input
+    /// prompt is reading.
+    ///
+    /// ⚠️ Seeing the prompt text is not enough. `console` prints the prompt,
+    /// *then* turns echo off with `TCSAFLUSH`, which discards input already
+    /// waiting. Text typed between the two was thrown away and the prompt
+    /// read only the Enter after it, an empty value (CI, 2026-10-14). The
+    /// pty's line settings are shared by both ends, so the echo flag is read
+    /// here. Gives up quietly after 5 s, on a platform where it cannot tell.
+    pub fn wait_for_echo_off(&mut self) {
+        use std::os::fd::AsRawFd;
+        let fd = self.session.as_raw_fd();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            let mut t = std::mem::MaybeUninit::<libc::termios>::uninit();
+            // SAFETY: `fd` is the open pty master; tcgetattr fills `t` on 0.
+            if unsafe { libc::tcgetattr(fd, t.as_mut_ptr()) } == 0 {
+                let t = unsafe { t.assume_init() };
+                if t.c_lflag & libc::ECHO == 0 {
+                    // Settled: the read is next, and the flush is done.
+                    std::thread::sleep(Duration::from_millis(50));
+                    return;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     /// Press keys one at a time, the way a person would. dialoguer reads one key
     /// per event, and a burst of escape sequences is not what it is built for.
     pub fn press(&mut self, keys: &[&str]) {

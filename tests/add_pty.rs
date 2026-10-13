@@ -174,6 +174,9 @@ fn a_secret_name_alone_is_asked_for_unseen() {
         &["add", "custom", "STRIPE_SECRET_KEY", "FEATURE_FLAG"],
     );
     s.wait_for("Value for STRIPE_SECRET_KEY (hidden");
+    // Not straight after the prompt text: input sent before echo is off is
+    // flushed (see `wait_for_echo_off`).
+    s.wait_for_echo_off();
     s.type_line("sk_live_typed_here");
     s.wait_for("Append these variables to .env.example?");
     s.press(&["y", ENTER]);
