@@ -143,13 +143,13 @@ pub(crate) fn write_env_files_with_outcome(
             None => return Ok(aborted()),
             Some(false) => {
                 let gitignore_line = update_gitignore(output_path)?;
-                println!(
-                    "{}",
-                    "Kept the existing .env.example. Nothing was generated.".yellow()
+                crate::utils::ui::say(
+                    "Kept the existing .env.example. Nothing was generated.".yellow(),
                 );
                 if let Some(line) = gitignore_line {
-                    println!("{line}");
+                    crate::utils::ui::say(line);
                 }
+                warn_if_env_is_still_committable(output_path);
                 return Ok(Outcome::KeptExisting);
             }
             Some(true) => {}
@@ -184,13 +184,31 @@ pub(crate) fn write_env_files_with_outcome(
 
     // 3. Talk, in the order these lines have always appeared.
     if created_env {
-        println!("{} Created .env from template", "✓".green());
+        crate::utils::ui::say(format!("{} Created .env from template", "✓".green()));
     }
     if let Some(line) = gitignore_line {
-        println!("{line}");
+        crate::utils::ui::say(line);
     }
+    warn_if_env_is_still_committable(output_path);
 
     Ok(Outcome::Written)
+}
+
+/// Say so when `.gitignore` has the rules but a later line undoes them.
+///
+/// ⚠️ `update_gitignore` checks that each rule is *present*, line by line. A
+/// `.gitignore` reading `.env*` … `!.env` has them all, so nothing is added and
+/// nothing is said, yet git does not ignore `.env` (N-03). This asks git (or,
+/// with no repository, the same gitignore logic `add` and `doctor` use) whether
+/// `.env` is actually ignored. It warns and never edits: the negation is the
+/// user's line, and may be deliberate. A warning, so `-q` does not hide it.
+fn warn_if_env_is_still_committable(output_path: &Path) {
+    if !crate::core::gitignore::env_file_is_protected(output_path, ".env") {
+        crate::utils::ui::warning(
+            ".env is still not ignored: a later line in .gitignore re-includes it. \
+             Check with: git check-ignore -v .env",
+        );
+    }
 }
 
 /// Ensure `.gitignore` actually ignores the env files. Returns the line to print,

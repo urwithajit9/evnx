@@ -55,7 +55,13 @@ fn resolve_env(
 }
 
 fn main() -> Result<()> {
+    // Before anything prints: a closed stdout ends evnx quietly (exit 141)
+    // instead of panicking, and Ctrl-C at a prompt gives the cursor back.
+    evnx::utils::term::exit_quietly_on_broken_pipe();
+    evnx::utils::term::restore_cursor_on_interrupt();
+
     let cli = Cli::parse();
+    evnx::utils::ui::set_quiet(cli.quiet);
 
     // Configure colored output
     if cli.no_color {

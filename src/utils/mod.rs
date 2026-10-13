@@ -5,6 +5,7 @@ pub mod fs;
 pub mod git;
 pub mod patterns;
 pub mod string;
+pub mod term;
 pub mod ui;
 
 // Re-export commonly used items

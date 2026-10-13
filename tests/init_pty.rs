@@ -400,3 +400,50 @@ fn architect_lists_show_names_not_ids() {
     let (_, code) = run.finish();
     assert_eq!(code, 0);
 }
+
+/// N-07 (fixed in 0.10.1, group G3): Ctrl-C at a menu gives the cursor back.
+/// dialoguer hides it (`ESC[?25l`) while a menu is open; the process still ends
+/// as interrupted (SIGINT), and writes nothing.
+#[test]
+fn ctrl_c_at_a_menu_restores_the_cursor() {
+    let d = TempDir::new().unwrap();
+    let mut cmd = Command::new(evnx_bin());
+    cmd.current_dir(d.path())
+        .arg("init")
+        .env("NO_COLOR", "1")
+        .env("TERM", "xterm");
+    let mut session = Session::spawn(cmd).expect("spawn evnx in a pty");
+    session.set_expect_timeout(Some(Duration::from_secs(15)));
+    session.get_process_mut().set_window_size(110, 40).unwrap();
+
+    session.expect("How do you want to start?").unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    session.send("\x03").unwrap(); // Ctrl-C
+    let rest = session.expect(Eof).unwrap();
+    let raw = rest.as_bytes();
+
+    let hide = b"\x1b[?25l";
+    let show = b"\x1b[?25h";
+    let last = |needle: &[u8]| raw.windows(needle.len()).rposition(|w| w == needle);
+    assert!(
+        last(show) > last(hide),
+        "cursor left hidden: {:?}",
+        String::from_utf8_lossy(raw)
+    );
+
+    let status = session.get_process().wait().unwrap();
+    assert!(
+        matches!(
+            status,
+            expectrl::process::unix::WaitStatus::Signaled(
+                _,
+                expectrl::process::unix::Signal::SIGINT,
+                _
+            )
+        ),
+        "{status:?}"
+    );
+    for f in [".env", ".env.example", ".gitignore"] {
+        assert!(!d.path().join(f).exists(), "{f} written");
+    }
+}

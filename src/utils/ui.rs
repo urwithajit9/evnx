@@ -73,6 +73,35 @@ pub const MAX_BOX_WIDTH: usize = 80;
 // Headers & Layout
 // ─────────────────────────────────────────────────────────────
 
+// ─── Quiet ───────────────────────────────────────────────────────────────────
+
+/// `-q/--quiet`, set once by `main` for the whole process.
+///
+/// ⚠️ It used to reach only the config banner (`config_banner`), so `-q` on any
+/// command still printed headers, tips and "Next steps" (I-007, decided: `-q`
+/// must be silent). Now the decorative helpers below check it: `print_header`,
+/// `success`, `info`, `print_next_steps`, `print_docs_hint` and `say`. Warnings,
+/// errors, findings and anything a script reads as data still print.
+static QUIET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Set quiet mode for the process. Called once, from `main`.
+pub fn set_quiet(quiet: bool) {
+    QUIET.store(quiet, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether `-q` was given.
+pub fn is_quiet() -> bool {
+    QUIET.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Print a progress or status line that `-q` suppresses. For the plain
+/// `println!`s that report what a command did rather than what it found.
+pub fn say(line: impl std::fmt::Display) {
+    if !is_quiet() {
+        println!("{line}");
+    }
+}
+
 /// Print a command header in the standard boxed format.
 ///
 /// ```text
@@ -93,6 +122,9 @@ pub const MAX_BOX_WIDTH: usize = 80;
 /// print_header("evnx init", Some("Set up environment variables"));
 /// ```
 pub fn print_header(title: &str, subtitle: Option<&str>) {
+    if is_quiet() {
+        return;
+    }
     // The user typed the command; a three-line box repeating it back says
     // nothing. One dim line gives the same context at a fifth of the height.
     // ⚠️ The full `evnx scan`, not `scan`. In a CI log among other tools' output
@@ -231,7 +263,7 @@ mod section_header_tests {
 /// ]);
 /// ```
 pub fn print_next_steps(steps: &[&str]) {
-    if steps.is_empty() {
+    if steps.is_empty() || is_quiet() {
         return;
     }
 
@@ -262,7 +294,9 @@ pub fn print_next_steps(steps: &[&str]) {
 /// print_docs_hint(&docs::INIT);
 /// ```
 pub fn print_docs_hint(doc: &crate::docs::CommandDoc) {
-    // println!("{}", doc.hint_line().dimmed());
+    if is_quiet() {
+        return;
+    }
     eprintln!("{}", doc.hint_line().dimmed());
 }
 
@@ -330,6 +364,9 @@ pub mod glyph {
 /// ✓ Created .env.example with 15 variables
 /// ```
 pub fn success(message: impl AsRef<str>) {
+    if is_quiet() {
+        return;
+    }
     println!("{} {}", glyph::OK.green(), message.as_ref());
 }
 
@@ -357,6 +394,9 @@ pub fn warning(message: impl AsRef<str>) {
 /// ℹ️  Tip: Run 'evnx validate' to check configuration
 /// ```
 pub fn info(message: impl AsRef<str>) {
+    if is_quiet() {
+        return;
+    }
     println!("{} {}", glyph::INFO.dimmed(), message.as_ref().dimmed());
 }
 

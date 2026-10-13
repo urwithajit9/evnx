@@ -1276,18 +1276,46 @@ fn clerk_react_is_detected() {
     }
 }
 
-/// KNOWN I-007 (group G1): `-q` does not silence `init`.
+/// I-007 (fixed in 0.10.1, group G1; was `known_i007_*`): `-q` is silent on
+/// success, on both streams, and the files are still written.
 #[test]
-fn known_i007_quiet_still_prints() {
+fn quiet_is_silent_on_success() {
+    for args in [
+        &["-q", "init", "--yes"][..],
+        &["init", "-q", "--with", "stripe", "--yes"][..],
+        &["-q", "init", "--blueprint", "t3_modern", "--yes"][..],
+    ] {
+        let d = TempDir::new().unwrap();
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(d.path())
+            .args(args)
+            .write_stdin("")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{args:?}: {}", text_of(&out));
+        assert!(out.stdout.is_empty(), "{args:?} stdout: {}", text_of(&out));
+        assert!(out.stderr.is_empty(), "{args:?} stderr: {}", text_of(&out));
+        assert!(d.path().join(".env.example").exists());
+        assert!(d.path().join(".gitignore").exists());
+    }
+}
+
+/// `-q` never hides an error.
+#[test]
+fn quiet_still_reports_errors() {
     let d = TempDir::new().unwrap();
     let out = cargo_bin_cmd!("evnx")
         .current_dir(d.path())
-        .args(["-q", "init", "--yes"])
+        .args(["-q", "init", "--with", "supabse", "--yes"])
         .write_stdin("")
         .output()
         .unwrap();
-    assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains("Next steps"));
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        text_of(&out).contains("Did you mean: supabase"),
+        "{}",
+        text_of(&out)
+    );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1359,4 +1387,95 @@ fn a_confirmation_without_a_terminal_says_add_yes() {
         assert!(!text.contains("not a terminal: not a terminal"), "{text}");
         assert!(!d.path().join(".env.example").exists());
     }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Group G: shared terminal behaviour
+// ─────────────────────────────────────────────────────────────
+
+/// I-008 / I-185 (fixed in 0.10.1, group G2): when the reader of stdout goes
+/// away, evnx exits 141 with no panic message, the way `yes | head -1` does.
+#[cfg(unix)]
+#[test]
+fn a_closed_stdout_exits_141_without_a_panic() {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    let d = TempDir::new().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_evnx"))
+        .current_dir(d.path())
+        .args(["init", "--with", "nextjs", "--yes"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take()); // nobody reads stdout
+    let mut stderr = String::new();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    let status = child.wait().unwrap();
+
+    assert_eq!(status.code(), Some(141), "stderr: {stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+/// N-03 (fixed in 0.10.1, group G4): a later `!.env` in `.gitignore` is reported.
+/// Checked in a non-git directory (gitignore fallback) and in a git repository
+/// (`git check-ignore`), and never edited.
+#[test]
+fn a_gitignore_that_re_includes_env_is_reported() {
+    let rules = ".env*\n!.env.example\n!.env.sample\n!.env.template\n!.env\n";
+    let has_git = std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_ok();
+
+    for with_git in [false, true] {
+        if with_git && !has_git {
+            continue;
+        }
+        let d = TempDir::new().unwrap();
+        if with_git {
+            let ok = std::process::Command::new("git")
+                .args(["init", "-q"])
+                .current_dir(d.path())
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+        }
+        std::fs::write(d.path().join(".gitignore"), rules).unwrap();
+
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(d.path())
+            .args(["-q", "init", "--yes"])
+            .write_stdin("")
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        let text = text_of(&out);
+        assert!(
+            text.contains(".env is still not ignored"),
+            "git={with_git}: {text}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(d.path().join(".gitignore")).unwrap(),
+            rules,
+            "the user's .gitignore must not be edited"
+        );
+    }
+
+    // And no warning when nothing re-includes it.
+    let d = TempDir::new().unwrap();
+    let out = init_in(d.path(), &["--yes"]);
+    assert!(
+        !text_of(&out).contains("still not ignored"),
+        "{}",
+        text_of(&out)
+    );
 }

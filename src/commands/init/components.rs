@@ -147,12 +147,12 @@ pub fn handle_detected(
     // malfunction; it is a normal outcome for a project evnx cannot read, and
     // the user needs to know what to do instead (I-015).
     if found.is_empty() {
-        println!(
+        ui::say(format!(
             "\n  {}  Nothing detected in this project. Writing an empty template.\n     {}\n",
             glyph::INFO.dimmed(),
             "Name components instead: evnx init --with <a,b,c>   (list: evnx init --list-components)"
                 .dimmed()
-        );
+        ));
         let example_content = formatter::format_env_example(&vars, true)?;
         let template_content = formatter::format_env_template(&vars)?;
         let outcome = write_env_files_with_outcome(
@@ -167,8 +167,13 @@ pub fn handle_detected(
         return Ok(outcome);
     }
 
-    println!("\n  {}", "Detected".bold());
-    for d in found {
+    // The proposal is part of the question when init is about to ask; under
+    // `--detect` (no question) it is a status report, which `-q` silences.
+    let show = !opts.yes || !ui::is_quiet();
+    if show {
+        println!("\n  {}", "Detected".bold());
+    }
+    for d in found.iter().filter(|_| show) {
         let name = component::find(&d.component)?
             .map(|c| c.display_name)
             .unwrap_or_else(|| d.component.clone());
@@ -188,11 +193,13 @@ pub fn handle_detected(
             d.evidence.dimmed()
         );
     }
-    println!(
-        "\n  {} from {}\n",
-        pluralize(vars.vars.len(), "variable", "variables").bold(),
-        pluralize(found.len(), "component", "components").dimmed()
-    );
+    if show {
+        println!(
+            "\n  {} from {}\n",
+            pluralize(vars.vars.len(), "variable", "variables").bold(),
+            pluralize(found.len(), "component", "components").dimmed()
+        );
+    }
 
     // ⚠️ Refuse before prompting, rather than letting `dialoguer` fail with
     // "IO error: not a terminal" — which says nothing about what to do instead.
@@ -254,17 +261,17 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
     let example = root.join(".env.example");
     let drift = super::source::compare(&scan, &example)?;
 
-    println!(
+    ui::say(format!(
         "\n  scanned {}",
         pluralize(scan.files_scanned, "source file", "source files").dimmed()
-    );
+    ));
 
     if scan.found.is_empty() {
-        println!(
+        ui::say(format!(
             "\n  {}  no environment variables found in the source.\n     {}",
             glyph::INFO.dimmed(),
             "Name them instead: evnx init --with <a,b,c>".dimmed()
-        );
+        ));
         return Ok(());
     }
 
@@ -294,22 +301,28 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
         );
     }
 
-    println!(
-        "\n  {}",
-        format!(
-            "{} read by the code",
-            pluralize(scan.found.len(), "variable", "variables")
-        )
-        .bold()
-    );
-    for v in drift.missing.iter().take(12) {
-        println!("     {:<28} {}", v.name, v.location.dimmed());
-    }
-    if drift.missing.len() > 12 {
+    // What is about to be added: part of the question when init asks, a status
+    // report under `--yes`, which `-q` silences. The unused warnings below are
+    // findings and always print.
+    let show = !opts.yes || !ui::is_quiet();
+    if show {
         println!(
-            "     {}",
-            format!("… and {} more", drift.missing.len() - 12).dimmed()
+            "\n  {}",
+            format!(
+                "{} read by the code",
+                pluralize(scan.found.len(), "variable", "variables")
+            )
+            .bold()
         );
+        for v in drift.missing.iter().take(12) {
+            println!("     {:<28} {}", v.name, v.location.dimmed());
+        }
+        if drift.missing.len() > 12 {
+            println!(
+                "     {}",
+                format!("… and {} more", drift.missing.len() - 12).dimmed()
+            );
+        }
     }
 
     let mut summary = vec![format!("{} already in .env.example", drift.matched)];
@@ -319,7 +332,9 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
     if !drift.unused.is_empty() {
         summary.push(format!("{} unused", drift.unused.len()));
     }
-    println!("\n  {}", summary.join("  ·  "));
+    if show {
+        println!("\n  {}", summary.join("  ·  "));
+    }
 
     // ⚠️ Reported, never removed. A variable the code does not name may still be
     // read by a library — `RUST_LOG` reaches `tracing_subscriber` without ever
@@ -333,10 +348,10 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
     }
 
     if drift.missing.is_empty() {
-        println!(
+        ui::say(format!(
             "\n  {}  .env.example already covers the source.",
             glyph::OK.green()
-        );
+        ));
         return Ok(());
     }
 
