@@ -17,90 +17,20 @@
 //! all fixed in 0.10.1.
 #![cfg(unix)]
 
+mod support;
+
 use assert_cmd::cargo::cargo_bin_cmd;
-use expectrl::{Eof, Expect, Session};
 use std::path::Path;
-use std::process::Command;
 use std::time::Duration;
+use support::pty::{Pty, CTRL_C, DOWN, ENTER, ESC, SPACE};
 use tempfile::TempDir;
 
-const ENTER: &str = "\r";
-const DOWN: &str = "\x1b[B";
-const SPACE: &str = " ";
-
-/// The evnx binary under test, as cargo builds it for integration tests.
-fn evnx_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_evnx")
-}
-
-/// One interactive `evnx init` in `dir`, on a 110×40 terminal, without colour.
-struct Run {
-    session: expectrl::session::OsSession,
-}
-
-impl Run {
-    fn start(dir: &Path, args: &[&str]) -> Run {
-        let mut cmd = Command::new(evnx_bin());
-        cmd.current_dir(dir)
-            .arg("init")
-            .args(args)
-            .env("NO_COLOR", "1")
-            .env("TERM", "xterm");
-        let mut session = Session::spawn(cmd).expect("spawn evnx in a pty");
-        session.set_expect_timeout(Some(Duration::from_secs(15)));
-        session
-            .get_process_mut()
-            .set_window_size(110, 40)
-            .expect("set pty size");
-        Run { session }
-    }
-
-    /// Wait until `text` has been printed; returns everything printed before it.
-    fn wait_for(&mut self, text: &str) -> String {
-        let found = self
-            .session
-            .expect(text)
-            .unwrap_or_else(|e| panic!("never saw {text:?}: {e}"));
-        String::from_utf8_lossy(found.before()).to_string()
-    }
-
-    /// Press keys one at a time, the way a person would. dialoguer reads one key
-    /// per event, and a burst of escape sequences is not what it is built for.
-    fn press(&mut self, keys: &[&str]) {
-        for k in keys {
-            self.session.send(k).expect("write to pty");
-            std::thread::sleep(Duration::from_millis(40));
-        }
-    }
-
-    /// Cancel a yes/no question: Esc, then Enter once Esc has been read.
-    ///
-    /// ⚠️ Not `press(&[ESC, ENTER])`. On Unix the `console` crate, after an
-    /// ESC byte, checks with a zero timeout whether more bytes are waiting; if
-    /// the Enter is already queued, the two are read as one unknown escape
-    /// sequence, the Enter is swallowed, and the question never returns. That
-    /// passed locally and hung on a slower CI runner. After Esc the question is
-    /// redrawn with no default, `[y/n]` (it showed `[Y/n]` or `[y/N]` before),
-    /// so seeing that redraw proves the Esc was read on its own.
-    fn cancel_yes_no(&mut self) {
-        self.press(&[ESC]);
-        self.wait_for("[y/n]");
-        self.press(&[ENTER]);
-    }
-
-    /// Read to the end and return (remaining output, exit code).
-    fn finish(mut self) -> (String, i32) {
-        // ⚠️ `as_bytes`, not `before`: the `Eof` needle matches the whole
-        // remaining buffer, so `before()` is always empty here.
-        let rest = self.session.expect(Eof).expect("evnx did not exit");
-        let rest = String::from_utf8_lossy(rest.as_bytes()).to_string();
-        let status = self.session.get_process().wait().expect("wait for evnx");
-        let code = match status {
-            expectrl::process::unix::WaitStatus::Exited(_, code) => code,
-            other => panic!("evnx did not exit normally: {other:?}"),
-        };
-        (rest, code)
-    }
+/// One interactive `evnx init <args>` in `dir`. The driver itself is shared,
+/// in `tests/support/pty.rs`.
+fn run_init(dir: &Path, args: &[&str]) -> Pty {
+    let mut full = vec!["init"];
+    full.extend_from_slice(args);
+    Pty::spawn(dir, &full)
 }
 
 /// `.env.example` without the dated footer.
@@ -136,7 +66,7 @@ fn example_via_flags(args: &[&str]) -> String {
 #[test]
 fn blueprint_from_the_menu_equals_the_flag() {
     let d = TempDir::new().unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     run.press(&[DOWN, ENTER]); // Blueprint (Blank is pre-selected since 0.10.1)
@@ -162,7 +92,7 @@ fn blueprint_from_the_menu_equals_the_flag() {
 #[test]
 fn architect_from_the_menu_equals_with() {
     let d = TempDir::new().unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     run.press(&[DOWN, DOWN, ENTER]); // Architect
@@ -191,7 +121,7 @@ fn architect_from_the_menu_equals_with() {
 #[test]
 fn blank_from_the_menu() {
     let d = TempDir::new().unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     run.press(&[ENTER]); // Blank, the default since 0.10.1
@@ -206,7 +136,7 @@ fn blank_from_the_menu() {
 #[test]
 fn answering_no_writes_nothing() {
     let d = TempDir::new().unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     run.press(&[DOWN, ENTER]);
@@ -232,7 +162,7 @@ fn answering_no_writes_nothing() {
 #[test]
 fn an_abort_prints_no_next_steps() {
     let d = TempDir::new().unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     run.press(&[DOWN, ENTER]);
@@ -254,7 +184,7 @@ fn an_abort_prints_no_next_steps() {
 fn keeping_the_template_offers_to_create_env() {
     let d = TempDir::new().unwrap();
     std::fs::write(d.path().join(".env.example"), "MINE=1\n").unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     run.press(&[DOWN, ENTER]);
@@ -292,7 +222,7 @@ fn keeping_the_template_offers_to_create_env() {
 fn keeping_the_template_and_declining_creates_no_env() {
     let d = TempDir::new().unwrap();
     std::fs::write(d.path().join(".env.example"), "MINE=1\n").unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     run.press(&[ENTER]); // Blank
@@ -319,7 +249,7 @@ fn from_source_asks_before_creating_env() {
     )
     .unwrap();
     std::fs::write(d.path().join(".env.example"), "HAND=1\n").unwrap();
-    let mut run = Run::start(d.path(), &["--from-source"]);
+    let mut run = run_init(d.path(), &["--from-source"]);
 
     run.wait_for("Add these 1 to .env.example?");
     run.press(&[ENTER]);
@@ -332,8 +262,6 @@ fn from_source_asks_before_creating_env() {
     let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
     assert!(example.contains("NEW_ONE="), "{example}");
 }
-
-const ESC: &str = "\x1b";
 
 /// N-07 (part, group C): Esc cancels at every kind of prompt, writes nothing,
 /// and exits 0. (Ctrl-C is a signal, handled separately.) A list menu cancels
@@ -365,7 +293,7 @@ fn escape_cancels_at_every_prompt() {
     ];
     for (keys, prompt, yes_no, label) in cases {
         let d = TempDir::new().unwrap();
-        let mut run = Run::start(d.path(), &[]);
+        let mut run = run_init(d.path(), &[]);
         run.wait_for("How do you want to start?");
         if !keys.is_empty() {
             run.press(keys);
@@ -396,7 +324,7 @@ fn escape_cancels_at_every_prompt() {
 fn escape_at_the_overwrite_question_writes_nothing() {
     let d = TempDir::new().unwrap();
     std::fs::write(d.path().join(".env.example"), "MINE=1\n").unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     run.press(&[ENTER]); // Blank
@@ -419,7 +347,7 @@ fn escape_at_the_overwrite_question_writes_nothing() {
 #[test]
 fn the_menu_starts_on_blank() {
     let d = TempDir::new().unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     let screen = run.wait_for("Architect");
@@ -436,7 +364,7 @@ fn the_menu_starts_on_blank() {
 #[test]
 fn prompts_end_in_a_single_colon() {
     let d = TempDir::new().unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     run.press(&[DOWN, ENTER]);
@@ -460,7 +388,7 @@ fn prompts_end_in_a_single_colon() {
 #[test]
 fn architect_lists_show_names_not_ids() {
     let d = TempDir::new().unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     run.press(&[DOWN, DOWN, ENTER]); // Architect
@@ -489,20 +417,13 @@ fn architect_lists_show_names_not_ids() {
 #[test]
 fn ctrl_c_at_a_menu_restores_the_cursor() {
     let d = TempDir::new().unwrap();
-    let mut cmd = Command::new(evnx_bin());
-    cmd.current_dir(d.path())
-        .arg("init")
-        .env("NO_COLOR", "1")
-        .env("TERM", "xterm");
-    let mut session = Session::spawn(cmd).expect("spawn evnx in a pty");
-    session.set_expect_timeout(Some(Duration::from_secs(15)));
-    session.get_process_mut().set_window_size(110, 40).unwrap();
+    let mut run = run_init(d.path(), &[]);
 
-    session.expect("How do you want to start?").unwrap();
+    run.wait_for("How do you want to start?");
     std::thread::sleep(Duration::from_millis(100));
-    session.send("\x03").unwrap(); // Ctrl-C
-    let rest = session.expect(Eof).unwrap();
-    let raw = rest.as_bytes();
+    run.press(&[CTRL_C]);
+    let (raw, status) = run.finish_raw();
+    let raw = &raw[..];
 
     let hide = b"\x1b[?25l";
     let show = b"\x1b[?25h";
@@ -513,7 +434,6 @@ fn ctrl_c_at_a_menu_restores_the_cursor() {
         String::from_utf8_lossy(raw)
     );
 
-    let status = session.get_process().wait().unwrap();
     assert!(
         matches!(
             status,
@@ -538,7 +458,7 @@ fn ctrl_c_at_a_menu_restores_the_cursor() {
 fn y_enter_answers_exactly_one_question() {
     let d = TempDir::new().unwrap();
     std::fs::write(d.path().join(".env.example"), "MINE=1\n").unwrap();
-    let mut run = Run::start(d.path(), &[]);
+    let mut run = run_init(d.path(), &[]);
 
     run.wait_for("How do you want to start?");
     run.press(&[DOWN, ENTER]);
