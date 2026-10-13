@@ -35,9 +35,21 @@ pub fn handle(
     let selected_id = match requested {
         Some(id) => {
             if loader::get_blueprint(id).is_none() {
+                // The full list stays (it is how people discover the ids); a
+                // close match is named above it (I-001).
+                let close = component::closest(
+                    &id.to_lowercase(),
+                    blueprints.iter().map(|(bid, _)| (*bid, *bid)),
+                );
+                let hint = if close.is_empty() {
+                    String::new()
+                } else {
+                    format!("Did you mean: {}\n\n", close.join(", "))
+                };
                 return Err(anyhow::anyhow!(
-                    "Unknown blueprint '{}'.\n\nAvailable blueprints:\n{}",
+                    "Unknown blueprint '{}'.\n\n{}Available blueprints:\n{}",
                     id,
+                    hint,
                     blueprints
                         .iter()
                         .map(|(bid, name)| format!("  {bid:<22} {name}"))

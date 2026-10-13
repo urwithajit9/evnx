@@ -129,10 +129,29 @@ fn an_unknown_component_is_refused_with_a_suggestion() {
     let d = TempDir::new().unwrap();
     cargo_bin_cmd!("evnx")
         .current_dir(d.path())
-        .args(["spec", "init", "--with", "postgres", "--stdout"])
+        .args(["spec", "init", "--with", "postgress", "--stdout"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("postgresql"));
+        .stderr(predicate::str::contains("Did you mean: postgresql"));
+}
+
+/// DEC-SP12: `postgres` is an alias of `postgresql`. It used to be refused, so
+/// the `--help` example `--with django,postgres,redis` failed (D-127).
+#[test]
+fn postgres_is_accepted_as_an_alias() {
+    let d = TempDir::new().unwrap();
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args([
+            "spec",
+            "init",
+            "--with",
+            "django,postgres,redis",
+            "--stdout",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("DATABASE_URL"));
 }
 
 #[test]

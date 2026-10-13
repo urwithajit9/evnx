@@ -29,7 +29,9 @@ pub fn handle(
             .join(", ")
     ))?;
 
-    // 2. Validate framework exists for this language
+    // 2. Validate framework exists for this language. An alias (`express`,
+    // `next`) names the same framework as its id, as it does for `init --with`.
+    let framework_id = crate::schema::component::canonical(framework_id);
     let framework = language.frameworks.get(framework_id).context(format!(
         "Unknown framework '{}' for language '{}'. Available: {}",
         framework_id,

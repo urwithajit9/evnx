@@ -96,7 +96,18 @@ pub fn list() -> Result<()> {
                 group = &c.group;
                 println!("  {}", group.dimmed());
             }
-            println!("    {:<24} {}", c.id, c.display_name.dimmed());
+            // Aliases are listed beside their component, or nobody finds them.
+            let also: Vec<&str> = component::ALIASES
+                .iter()
+                .filter(|(_, id)| *id == c.id)
+                .map(|(alias, _)| *alias)
+                .collect();
+            let name = if also.is_empty() {
+                c.display_name.clone()
+            } else {
+                format!("{} (also: {})", c.display_name, also.join(", "))
+            };
+            println!("    {:<24} {}", c.id, name.dimmed());
         }
     }
 

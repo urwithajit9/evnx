@@ -131,8 +131,48 @@ fn service_categories(
     ]
 }
 
-/// Look one up by the name a user would type.
+/// Names people type for a component whose id is something else.
+///
+/// The ids are a compatibility surface (see the module docs) and stay as they
+/// are; these are accepted *in addition*, resolve to exactly the same component,
+/// and never appear in output. Several ids are two products sharing one set of
+/// variables (`express_fastify`), so either half is a natural thing to type.
+///
+/// ⚠️ Every entry is a name evnx has to keep accepting. Add one only when it is
+/// unambiguous, and never one that is also a real id (a test enforces both).
+/// A table here rather than a field in `schema.json`: the schema's types are
+/// public library API, and a new field would change them (DEC-SP12, I-001).
+pub const ALIASES: &[(&str, &str)] = &[
+    ("postgres", "postgresql"),
+    ("pg", "postgresql"),
+    ("mysql", "mysql_mariadb"),
+    ("mariadb", "mysql_mariadb"),
+    ("mongo", "mongodb"),
+    ("express", "express_fastify"),
+    ("fastify", "express_fastify"),
+    ("fastapi", "fastapi_flask"),
+    ("flask", "fastapi_flask"),
+    ("axum", "axum_actix"),
+    ("actix", "axum_actix"),
+    ("gin", "gin_echo"),
+    ("echo", "gin_echo"),
+    ("next", "nextjs"),
+    ("k8s", "kubernetes"),
+];
+
+/// The catalogue id for a name: the alias target if `name` is an alias, the
+/// name itself otherwise. Matching is exact; case is left to the suggestions.
+pub fn canonical(name: &str) -> &str {
+    ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == name)
+        .map(|(_, id)| *id)
+        .unwrap_or(name)
+}
+
+/// Look one up by the name a user would type (an id or an alias).
 pub fn find(id: &str) -> Result<Option<Component>> {
+    let id = canonical(id);
     Ok(catalogue()?.into_iter().find(|c| c.id == id))
 }
 
@@ -155,7 +195,8 @@ pub fn resolve(ids: &[String]) -> Result<VarCollection> {
     let mut seen: Vec<&str> = Vec::new();
 
     for id in ids {
-        let id = id.trim();
+        // Canonical first, so `postgres,postgresql` collapses to one component.
+        let id = canonical(id.trim());
         if id.is_empty() || seen.contains(&id) {
             continue;
         }
@@ -253,12 +294,25 @@ pub fn declaring(var_name: &str) -> Result<Option<Component>> {
 /// actually make — an abbreviation, and the wrong half of a two-word name.
 fn unknown_message(id: &str, all: &[Component]) -> String {
     let lower = id.to_lowercase();
-    let near: Vec<&str> = all
+    let mut near: Vec<&str> = all
         .iter()
         .filter(|c| c.id.starts_with(&lower) || c.id.contains(&lower))
         .map(|c| c.id.as_str())
         .take(6)
         .collect();
+
+    // Prefix and substring miss the commonest typos: a transposition
+    // (`supabse`), a dropped letter (`strpe`), a doubled one (`stripee`).
+    // Only consulted when they found nothing, so every hint that worked before
+    // reads exactly as it did (I-001). Aliases are candidates too, and suggest
+    // the id they stand for.
+    if near.is_empty() {
+        let names = all
+            .iter()
+            .map(|c| (c.id.as_str(), c.id.as_str()))
+            .chain(ALIASES.iter().copied());
+        near = closest(&lower, names);
+    }
 
     let mut msg = format!("unknown component '{id}'");
     if !near.is_empty() {
@@ -266,6 +320,58 @@ fn unknown_message(id: &str, all: &[Component]) -> String {
     }
     msg.push_str("\n\nRun `evnx init --list-components` for the full list.");
     msg
+}
+
+/// The ids within a small edit distance of `input`, closest first, at most
+/// three. `candidates` pairs a name to compare with the id to suggest (they
+/// differ for an alias).
+///
+/// The threshold grows with length: one edit for names of up to four letters,
+/// two above that. A fixed two would make `pg` look like `go` and `aws`, and a
+/// fixed one would miss `postgrsql`.
+pub(crate) fn closest<'a>(
+    input: &str,
+    candidates: impl Iterator<Item = (&'a str, &'a str)>,
+) -> Vec<&'a str> {
+    let limit = if input.chars().count() <= 4 { 1 } else { 2 };
+    let mut scored: Vec<(usize, &str)> = Vec::new();
+    for (name, id) in candidates {
+        let d = edit_distance(input, name);
+        if d <= limit && !scored.iter().any(|(_, seen)| *seen == id) {
+            scored.push((d, id));
+        }
+    }
+    // Stable sort: equal distances keep catalogue order.
+    scored.sort_by_key(|(d, _)| *d);
+    scored.into_iter().take(3).map(|(_, id)| id).collect()
+}
+
+/// Optimal string alignment distance: insertions, deletions, substitutions and
+/// swaps of two adjacent characters each cost one. Inputs here are a few dozen
+/// short ids, so the plain O(n·m) table is the right size.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let (n, m) = (a.len(), b.len());
+    let mut d = vec![vec![0usize; m + 1]; n + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+    for i in 1..=n {
+        for j in 1..=m {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            d[i][j] = (d[i - 1][j] + 1)
+                .min(d[i][j - 1] + 1)
+                .min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+            }
+        }
+    }
+    d[n][m]
 }
 
 #[cfg(test)]
@@ -340,8 +446,72 @@ mod tests {
     /// The error has to answer "then what should I have typed?".
     #[test]
     fn a_near_miss_is_suggested() {
-        let err = resolve(&["postgres".to_string()]).unwrap_err().to_string();
-        assert!(err.contains("postgresql"), "{err}");
+        // A prefix (was `postgres`, which is now an alias and resolves).
+        let err = resolve(&["postgre".to_string()]).unwrap_err().to_string();
+        assert!(err.contains("Did you mean: postgresql"), "{err}");
+    }
+
+    /// T-INIT-09 (I-001): typos a prefix match cannot see.
+    #[test]
+    fn a_typo_is_suggested() {
+        for (typo, want) in [
+            ("supabse", "supabase"), // missing letter / swap
+            ("strpe", "stripe"),     // dropped letter
+            ("stripee", "stripe"),   // doubled letter
+            ("postgrsql", "postgresql"),
+            ("rdeis", "redis"),          // adjacent swap
+            ("postgress", "postgresql"), // typo of an alias suggests its id
+        ] {
+            let err = resolve(&[typo.to_string()]).unwrap_err().to_string();
+            assert!(
+                err.contains(&format!("Did you mean: {want}")),
+                "{typo}: {err}"
+            );
+        }
+        for nothing_close in ["zzzz", "kafkaesque-thing"] {
+            let err = resolve(&[nothing_close.to_string()])
+                .unwrap_err()
+                .to_string();
+            assert!(!err.contains("Did you mean"), "{nothing_close}: {err}");
+        }
+    }
+
+    #[test]
+    fn edit_distance_counts_a_swap_as_one() {
+        assert_eq!(edit_distance("redis", "redis"), 0);
+        assert_eq!(edit_distance("rdeis", "redis"), 1);
+        assert_eq!(edit_distance("strpe", "stripe"), 1);
+        assert_eq!(edit_distance("", "abc"), 3);
+    }
+
+    /// Aliases resolve to exactly what their id resolves to, collapse with it,
+    /// and can never shadow or point past a real id.
+    #[test]
+    fn aliases_are_the_same_component() {
+        let ids: Vec<String> = catalogue().unwrap().into_iter().map(|c| c.id).collect();
+        for (alias, id) in ALIASES {
+            assert!(
+                !ids.iter().any(|i| i == alias),
+                "alias {alias} is also an id"
+            );
+            assert!(
+                ids.iter().any(|i| i == id),
+                "alias {alias} points at unknown {id}"
+            );
+            let via_alias = resolve(&[alias.to_string()]).unwrap();
+            let via_id = resolve(&[id.to_string()]).unwrap();
+            // `vars` is a HashMap: compare as sets, not in iteration order.
+            let names = |c: &VarCollection| {
+                let mut v: Vec<_> = c.vars.keys().cloned().collect();
+                v.sort();
+                v
+            };
+            assert_eq!(names(&via_alias), names(&via_id), "{alias}");
+            assert_eq!(find(alias).unwrap().unwrap().id, *id);
+        }
+        let both = resolve(&["postgres".to_string(), "postgresql".to_string()]).unwrap();
+        let one = resolve(&["postgresql".to_string()]).unwrap();
+        assert_eq!(both.vars.len(), one.vars.len());
     }
 
     #[test]
