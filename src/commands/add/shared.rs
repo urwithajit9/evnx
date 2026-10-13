@@ -42,6 +42,25 @@ pub enum Outcome {
     Aborted,
 }
 
+/// How a run talks: whether it may ask, whether it writes, what it prints.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Mode {
+    /// `--yes`: never ask for a confirmation.
+    pub yes: bool,
+    /// `--dry-run`: say what would happen, write nothing (I-026).
+    pub dry_run: bool,
+    /// `--json`: one JSON document on stdout, nothing else there (I-026).
+    pub json: bool,
+    pub verbose: bool,
+}
+
+impl Mode {
+    /// Whether this run may stop and ask: no `--yes`, `--dry-run` or `--json`.
+    pub fn interactive(&self) -> bool {
+        !self.yes && !self.dry_run && !self.json
+    }
+}
+
 /// Print the one line every cancel path shares, and say so in the type.
 pub fn aborted() -> Outcome {
     println!("{}", "Aborted. Nothing was written.".yellow());
@@ -225,13 +244,24 @@ fn read_assignments(path: &Path) -> Result<Option<IndexMap<String, String>>> {
 /// A read-only `.env` used to fail the run *after* `.env.example` had been
 /// appended, leaving the two files disagreeing and a retry duplicating the
 /// template's names (N-14). Full atomicity is C-04's `safe_write` (0.11.0).
+/// What [`apply`] did beyond the plan.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Applied {
+    /// `.env` was created from the template (DQ-A4).
+    pub env_created: bool,
+    /// `.env` was written and git would commit it.
+    pub env_committable: bool,
+}
+
 pub fn apply(
     output_path: &Path,
     plan: &Plan,
     render: &dyn Fn(&VarCollection) -> Result<String>,
     verbose: bool,
     create_env: Option<bool>,
-) -> Result<()> {
+    announce: bool,
+) -> Result<Applied> {
+    let mut applied = Applied::default();
     let example_path = output_path.join(".env.example");
     let env_path = output_path.join(".env");
     let write_example = !plan.to_example.vars.is_empty();
@@ -276,7 +306,10 @@ pub fn apply(
             format!("{}{tail}", existing.trim_end())
         };
         write(&env_path, updated)?;
-        warn_if_env_is_committable(output_path);
+        applied.env_committable = env_is_committable(output_path);
+        if announce && applied.env_committable {
+            warn_env_is_committable();
+        }
         if verbose {
             // ⚠️ Said "with TODO placeholders" until 0.10.2, two releases after
             // `add` stopped writing them (I-024).
@@ -284,7 +317,8 @@ pub fn apply(
         }
     } else if !plan.env_exists {
         if let Some(ask) = create_env {
-            crate::commands::init::shared::env_from_template(output_path, ask)?;
+            applied.env_created =
+                crate::commands::init::shared::env_from_template(output_path, ask)?;
         }
     }
 
@@ -294,7 +328,7 @@ pub fn apply(
         Err(e) => eprintln!("  could not update [vars]: {e:#}"),
     }
 
-    Ok(())
+    Ok(applied)
 }
 
 /// Fail now, naming the file, if `path` cannot be written later.
@@ -342,22 +376,35 @@ pub struct Flow<'a> {
 }
 
 /// Plan, preview, ask (unless `--yes`), apply and report: the whole of an
-/// `add` subcommand after it knows its variables.
+/// `add` subcommand after it knows its variables. `--dry-run` stops after the
+/// plan; `--json` replaces every line on stdout with one document.
 pub fn confirm_and_apply(
     output_path: &Path,
     requested: &VarCollection,
     flow: &Flow,
-    yes: bool,
-    verbose: bool,
+    mode: &Mode,
 ) -> Result<Outcome> {
     let plan = plan(output_path, requested)?;
+
+    if mode.dry_run {
+        if mode.json {
+            print_json(&plan, true, &Applied::default());
+        } else {
+            print_dry_run(&plan, flow);
+        }
+        return Ok(Outcome::Unchanged);
+    }
     if plan.is_empty() {
-        report(&plan, flow, true);
+        if mode.json {
+            print_json(&plan, false, &Applied::default());
+        } else {
+            report(&plan, flow, true);
+        }
         return Ok(Outcome::Unchanged);
     }
 
     // `--yes` never previews (DQ-A6): the result line says what happened.
-    if !yes {
+    if mode.interactive() {
         if let Some(example) = &flow.terminal_example {
             // Before the preview: without a terminal the question cannot be
             // asked, and dialoguer's own error says nothing about `--yes`
@@ -387,10 +434,98 @@ pub fn confirm_and_apply(
         }
     }
 
-    apply(output_path, &plan, flow.render, verbose, Some(!yes))?;
-    // Asked: the conflicts were shown with the question.
-    report(&plan, flow, yes);
+    let applied = apply(
+        output_path,
+        &plan,
+        flow.render,
+        mode.verbose && !mode.json,
+        Some(mode.interactive()),
+        !mode.json,
+    )?;
+    if mode.json {
+        print_json(&plan, false, &applied);
+    } else {
+        // Asked: the conflicts were shown with the question.
+        report(&plan, flow, !mode.interactive());
+    }
     Ok(Outcome::Written)
+}
+
+/// `--dry-run`: what [`apply`] would do, file by file. Printed whatever `-q`
+/// says: it is the output that was asked for.
+fn print_dry_run(plan: &Plan, flow: &Flow) {
+    let names = |v: &VarCollection| {
+        let mut n: Vec<&str> = v.vars.keys().map(String::as_str).collect();
+        n.sort_unstable();
+        n.join(", ")
+    };
+    let what = flow.what.trim();
+    println!(
+        "Dry run{}: nothing was written.",
+        if what.is_empty() {
+            String::new()
+        } else {
+            format!(" ({what})")
+        }
+    );
+    if plan.to_example.vars.is_empty() {
+        println!("  .env.example: nothing to add");
+    } else {
+        println!(
+            "  .env.example: would add {}: {}",
+            count(plan.to_example.vars.len(), "variable"),
+            names(&plan.to_example)
+        );
+    }
+    if !plan.present.is_empty() {
+        println!("  already there, would skip: {}", plan.present.join(", "));
+    }
+    for c in &plan.conflicts {
+        println!(
+            "  different value, would keep: {} (existing: \"{}\", new: \"{}\")",
+            c.var_name, c.existing_value, c.new_value
+        );
+    }
+    if plan.env_exists {
+        if !plan.to_env.vars.is_empty() {
+            println!(
+                "  .env: would add {}: {}",
+                count(plan.to_env.vars.len(), "variable"),
+                names(&plan.to_env)
+            );
+        }
+    } else if !plan.is_empty() {
+        println!("  .env: would be created from .env.example (with .gitignore first)");
+    }
+}
+
+/// `--json`: the result as one document. Names only, and conflicts with the
+/// `.env.example` values they compare; nothing from `.env`, ever.
+///
+/// Stable fields (I-026): `dry_run`, `written`, `added` (to `.env.example`),
+/// `skipped` (already there, same value), `conflicts` (`name`, `existing`,
+/// `new`; kept), `env_added`, `env_created`, `env_committable`.
+fn print_json(plan: &Plan, dry_run: bool, applied: &Applied) {
+    fn sorted(v: &VarCollection) -> Vec<&str> {
+        let mut n: Vec<&str> = v.vars.keys().map(String::as_str).collect();
+        n.sort_unstable();
+        n
+    }
+    let doc = serde_json::json!({
+        "dry_run": dry_run,
+        "written": !dry_run && !plan.is_empty(),
+        "added": sorted(&plan.to_example),
+        "skipped": plan.present,
+        "conflicts": plan.conflicts.iter().map(|c| serde_json::json!({
+            "name": c.var_name,
+            "existing": c.existing_value,
+            "new": c.new_value,
+        })).collect::<Vec<_>>(),
+        "env_added": sorted(&plan.to_env),
+        "env_created": applied.env_created,
+        "env_committable": applied.env_committable,
+    });
+    println!("{doc:#}");
 }
 
 /// Print what [`apply`] did: the conflicts (when `show_conflicts`), then one
@@ -490,13 +625,11 @@ pub fn format_var_line(
     lines.join("\n")
 }
 
-fn warn_if_env_is_committable(project_root: &Path) {
-    use crate::core::gitignore;
+fn env_is_committable(project_root: &Path) -> bool {
+    !crate::core::gitignore::env_file_is_protected(project_root, ".env")
+}
 
-    if gitignore::env_file_is_protected(project_root, ".env") {
-        return;
-    }
-
+fn warn_env_is_committable() {
     ui::warning(".env is not covered by .gitignore — it can be committed");
     println!(
         "     {}  {}",

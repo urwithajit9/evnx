@@ -6,11 +6,30 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::path::Path;
 
-use super::shared::{confirm_and_apply, count, Flow, Outcome};
+use super::shared::{confirm_and_apply, count, Flow, Mode, Outcome};
 use crate::schema::{formatter, loader, resolver};
 
 /// Handle blueprint addition
-pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
+pub fn handle(blueprint_id: Option<&str>, output_path: &Path, mode: &Mode) -> Result<Outcome> {
+    // No id: pick one.
+    let picked;
+    let blueprint_id = match blueprint_id {
+        Some(id) => id,
+        None => {
+            let items: Vec<(String, String)> = loader::list_blueprints()
+                .into_iter()
+                .map(|(id, name)| (id.to_string(), name.to_string()))
+                .collect();
+            match super::pick(mode, "blueprint", &items)? {
+                Some(id) => {
+                    picked = id;
+                    picked.as_str()
+                }
+                None => return Ok(super::shared::aborted()),
+            }
+        }
+    };
+
     // 1. Find blueprint
     //
     // ⚠️ The list is printed here rather than pointing at another command.
@@ -35,7 +54,7 @@ pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) 
         }
     };
 
-    if verbose {
+    if mode.verbose {
         println!(
             "{} Resolving blueprint: {} ({})",
             "[DEBUG]".dimmed(),
@@ -68,7 +87,7 @@ pub fn handle(blueprint_id: &str, output_path: &Path, yes: bool, verbose: bool) 
         question: &|n, file| format!("Add these {} to {file}?", count(n, "variable")),
         render: &render,
     };
-    confirm_and_apply(output_path, &vars, &flow, yes, verbose)
+    confirm_and_apply(output_path, &vars, &flow, mode)
 }
 
 #[cfg(test)]
@@ -86,7 +105,15 @@ mod tests {
         fs::write(&example_path, "DATABASE_URL=existing_value\n").unwrap();
 
         // Handle blueprint that includes postgresql (which defines DATABASE_URL)
-        handle("t3_modern", dir.path(), true, false).unwrap();
+        handle(
+            Some("t3_modern"),
+            dir.path(),
+            &crate::commands::add::shared::Mode {
+                yes: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         // Verify conflict was skipped
         let content = fs::read_to_string(&example_path).unwrap();

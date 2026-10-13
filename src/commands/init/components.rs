@@ -84,6 +84,18 @@ pub fn handle(
 /// This is the list the error message points at, so it has to be reachable
 /// without a project, without a prompt, and without side effects.
 pub fn list() -> Result<()> {
+    print_catalogue()?;
+    println!(
+        "\n  {}  evnx init --with {}\n",
+        glyph::ARROW.dimmed(),
+        "nextjs,postgresql,stripe".dimmed()
+    );
+    Ok(())
+}
+
+/// The catalogue, grouped by kind, aliases beside their component. Shared by
+/// `init --list-components` and `add --list`, so the two cannot drift (7f).
+pub fn print_catalogue() -> Result<()> {
     let all = component::catalogue()?;
 
     for kind in [
@@ -117,12 +129,6 @@ pub fn list() -> Result<()> {
             println!("    {:<24} {}", c.id, name.dimmed());
         }
     }
-
-    println!(
-        "\n  {}  evnx init --with {}\n",
-        glyph::ARROW.dimmed(),
-        "nextjs,postgresql,stripe".dimmed()
-    );
     Ok(())
 }
 
@@ -425,6 +431,7 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
             &|v| formatter::format_addition_from(v, "evnx init --from-source"),
             verbose,
             None, // init creates `.env` itself, just below
+            true,
         )?;
         if let Some(line) = gitignore_line {
             ui::say(line);

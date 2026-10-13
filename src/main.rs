@@ -130,7 +130,24 @@ fn main() -> Result<()> {
             cli.verbose,
         ),
 
-        Commands::Add { target, path, yes } => commands::add::run(target, path, yes, cli.verbose),
+        Commands::Add {
+            target,
+            list,
+            dry_run,
+            json,
+            path,
+            yes,
+        } => commands::add::run(
+            target,
+            commands::add::Options {
+                path,
+                yes,
+                list,
+                dry_run,
+                json,
+                verbose: cli.verbose,
+            },
+        ),
 
         Commands::Validate {
             env,

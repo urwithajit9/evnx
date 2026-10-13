@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::path::Path;
 
-use super::shared::{confirm_and_apply, count, kind_hint, Flow, Outcome};
+use super::shared::{confirm_and_apply, count, kind_hint, Flow, Mode, Outcome};
 use crate::schema::{component, formatter, loader};
 use crate::utils::ui::info;
 
@@ -16,10 +16,9 @@ use crate::utils::ui::info;
 /// would add it.
 pub fn handle(
     language_id: Option<&str>,
-    framework_id: &str,
+    framework_id: Option<&str>,
     output_path: &Path,
-    yes: bool,
-    verbose: bool,
+    mode: &Mode,
 ) -> Result<Outcome> {
     let schema = loader::schema()?;
 
@@ -38,6 +37,27 @@ pub fn handle(
             );
         }
     }
+
+    // No id: pick a framework (of the given language, if there is one).
+    let picked;
+    let framework_id = match framework_id {
+        Some(id) => id,
+        None => {
+            let items: Vec<(String, String)> = component::catalogue()?
+                .into_iter()
+                .filter(|c| c.kind == component::Kind::Framework)
+                .filter(|c| language_id.is_none_or(|l| c.group == l))
+                .map(|c| (c.id, format!("{} [{}]", c.display_name, c.group)))
+                .collect();
+            match super::pick(mode, "framework", &items)? {
+                Some(id) => {
+                    picked = id;
+                    picked.as_str()
+                }
+                None => return Ok(super::shared::aborted()),
+            }
+        }
+    };
 
     // 2. Find the id anywhere in the catalogue. An alias (`express`, `next`)
     // names the same component as its id.
@@ -68,7 +88,7 @@ pub fn handle(
             info(kind_hint(&found));
         }
         let path = output_path.to_string_lossy();
-        return super::service::handle(framework_id, &path, yes, verbose);
+        return super::service::handle(Some(framework_id), &path, mode);
     }
 
     // 4. A framework. `--language`, when given, has to be its language; say
@@ -89,7 +109,7 @@ pub fn handle(
         .get(framework_id)
         .context("the catalogue lists a framework its language does not have")?;
 
-    if verbose {
+    if mode.verbose {
         println!(
             "{} Resolving framework: {}/{}",
             "[DEBUG]".dimmed(),
@@ -128,7 +148,7 @@ pub fn handle(
         question: &question,
         render: &render,
     };
-    confirm_and_apply(output_path, &vars, &flow, yes, verbose)
+    confirm_and_apply(output_path, &vars, &flow, mode)
 }
 
 #[cfg(test)]
@@ -146,7 +166,16 @@ mod tests {
         fs::write(&example_path, "# Existing\nAPP_NAME=test\n").unwrap();
 
         // Handle framework addition
-        handle(Some("python"), "django", dir.path(), true, false).unwrap();
+        handle(
+            Some("python"),
+            Some("django"),
+            dir.path(),
+            &crate::commands::add::shared::Mode {
+                yes: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         // Verify append (not overwrite)
         let content = fs::read_to_string(&example_path).unwrap();

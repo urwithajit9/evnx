@@ -20,7 +20,7 @@ use dialoguer::{Input, Password, Select};
 use std::io::IsTerminal;
 use std::path::Path;
 
-use super::shared::{aborted, confirm_and_apply, count, Flow, Outcome};
+use super::shared::{aborted, confirm_and_apply, count, Flow, Mode, Outcome};
 use crate::schema::models::{VarCollection, VarMetadata, VarSource};
 use crate::utils::prompt::{require_terminal, require_terminal_or, yes_no};
 use crate::utils::ui::{info, print_header, print_preview_header};
@@ -56,7 +56,10 @@ struct Custom {
     required: bool,
 }
 
-pub fn handle(output_path: &Path, args: Args, yes: bool, verbose: bool) -> Result<Outcome> {
+pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
+    // Asking (a hidden value, the "More options?" question) only when the run
+    // may ask: not under --yes, --dry-run or --json.
+    let yes = !mode.interactive();
     let category = args
         .category
         .as_deref()
@@ -74,7 +77,7 @@ pub fn handle(output_path: &Path, args: Args, yes: bool, verbose: bool) -> Resul
             None => return Ok(aborted()),
         }
     } else {
-        if !yes {
+        if mode.interactive() {
             let shown: Vec<&str> = args.vars.iter().map(String::as_str).collect();
             require_terminal(&format!("evnx add custom {} --yes", shown.join(" ")))?;
         }
@@ -85,7 +88,7 @@ pub fn handle(output_path: &Path, args: Args, yes: bool, verbose: bool) -> Resul
         println!("No variables added.");
         return Ok(Outcome::Aborted);
     }
-    write(output_path, &customs, yes, verbose)
+    write(output_path, &customs, mode)
 }
 
 /// The argument form. Every name is checked before anything is asked or
@@ -274,7 +277,7 @@ fn canonical_category(given: &str) -> Result<String> {
 /// Plan, ask, write: the same path as every other subcommand (AD-S), so a
 /// name the files already have is skipped and reported, not appended again
 /// (I-016).
-fn write(output_path: &Path, customs: &[Custom], yes: bool, verbose: bool) -> Result<Outcome> {
+fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome> {
     let mut collected = VarCollection::default();
     for c in customs {
         // ⚠️ Built alongside the text rather than parsed back out of it.
@@ -338,7 +341,7 @@ fn write(output_path: &Path, customs: &[Custom], yes: bool, verbose: bool) -> Re
         question: &|_, file| format!("Append these variables to {file}?"),
         render: &render,
     };
-    confirm_and_apply(output_path, &collected, &flow, yes, verbose)
+    confirm_and_apply(output_path, &collected, &flow, mode)
 }
 
 /// One variable as it is written: an optional comment line, then `NAME=value`.

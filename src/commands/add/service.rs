@@ -1,11 +1,29 @@
 use anyhow::Result;
 use std::path::Path;
 
-use super::shared::{confirm_and_apply, count, kind_hint, Flow, Outcome};
+use super::shared::{confirm_and_apply, count, kind_hint, Flow, Mode, Outcome};
 use crate::schema::{component, formatter};
 use crate::utils::ui::{info, print_header, print_preview_header};
 
-pub fn handle(service_id: &str, path: &str, yes: bool, verbose: bool) -> Result<Outcome> {
+pub fn handle(service_id: Option<&str>, path: &str, mode: &Mode) -> Result<Outcome> {
+    // No id: pick one from the whole catalogue (one id space, I-018).
+    let picked;
+    let service_id = match service_id {
+        Some(id) => id,
+        None => {
+            let items: Vec<(String, String)> = component::catalogue()?
+                .into_iter()
+                .map(|c| (c.id, format!("{} [{}]", c.display_name, c.kind.label())))
+                .collect();
+            match super::pick(mode, "component", &items)? {
+                Some(id) => {
+                    picked = id;
+                    picked.as_str()
+                }
+                None => return Ok(super::shared::aborted()),
+            }
+        }
+    };
     let mut vars = component::resolve(&[service_id.to_string()])?;
     add_browser_copies(&mut vars, Path::new(path));
     let found = component::find(service_id)?;
@@ -37,7 +55,7 @@ pub fn handle(service_id: &str, path: &str, yes: bool, verbose: bool) -> Result<
         question: &|n, file| format!("Add these {} to {file}?", count(n, "variable")),
         render: &|v| formatter::format_addition(v),
     };
-    confirm_and_apply(Path::new(path), &vars, &flow, yes, verbose)
+    confirm_and_apply(Path::new(path), &vars, &flow, mode)
 }
 
 /// Browser copies of the public values, for the framework this project uses

@@ -363,3 +363,19 @@ fn the_category_list_starts_on_the_first_item() {
     let picked = custom_with_category_only(&q, &[DOWN, ENTER]);
     assert!(picked.contains("Category: Application"), "{picked}");
 }
+
+/// I-026, 7a, T-ADD-54: with no id, a terminal gets a picker; the picked id is
+/// added like a typed one.
+#[test]
+fn a_missing_id_opens_a_picker() {
+    let p = project();
+    let mut s = Pty::spawn(p.path(), &["add", "blueprint"]);
+    s.wait_for("Which blueprint?");
+    s.wait_for("T3 Turbo");
+    s.press(&[DOWN, ENTER]); // the second: Modern MERN
+    s.wait_for("Add these 18 variables to .env.example?");
+    s.press(&["y", ENTER]);
+    let (rest, code) = s.finish();
+    assert_eq!(code, 0, "{rest}");
+    assert!(p.read(".env.example").contains("Modern MERN"));
+}

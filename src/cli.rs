@@ -21,9 +21,10 @@ pub enum AddTarget {
     /// Example: evnx add service postgresql
     #[command(visible_alias = "infra")]
     Service {
-        /// Catalogue id (e.g., "postgresql", "vercel"). `evnx init --list-components` lists them.
+        /// Catalogue id (e.g., "postgresql", "vercel"). `evnx add --list` lists
+        /// them. Leave it out in a terminal to pick one.
         #[arg()]
-        service: String,
+        service: Option<String>,
     },
 
     /// Add variables for a framework.
@@ -37,18 +38,20 @@ pub enum AddTarget {
         #[arg(long, short)]
         language: Option<String>,
 
-        /// Framework ID (e.g., "django", "nextjs", "axum_actix").
+        /// Framework id (e.g., "django", "nextjs", "axum_actix"). Leave it out
+        /// in a terminal to pick one.
         #[arg()]
-        framework: String,
+        framework: Option<String>,
     },
 
     /// Add variables from a stack blueprint (without overwriting existing).
     ///
     /// Example: evnx add blueprint t3_modern
     Blueprint {
-        /// Blueprint ID (e.g., "t3_modern", "rust_high_perf").
+        /// Blueprint id (e.g., "t3_modern", "rust_high_perf"). Leave it out in
+        /// a terminal to pick one.
         #[arg()]
-        blueprint: String,
+        blueprint: Option<String>,
     },
 
     /// Add your own variables: as arguments, or one prompt at a time.
@@ -1496,10 +1499,32 @@ pub enum Commands {
     /// • framework: Add vars for a framework (e.g., django)
     /// • blueprint: Add vars from a stack blueprint
     /// • custom: Interactive custom variable addition
-    #[command(after_help = docs::ADD.after_help)]
+    ///
+    /// Exit codes: 0 when the variables were added, were already there, or
+    /// the run was a --dry-run or answered no; 2 when it could not run
+    /// (unknown id, bad argument, no terminal to ask, a write error).
+    // ⚠️ Not `args_conflicts_with_subcommands`: that also refuses every flag
+    // written before the subcommand (`evnx add --path api service redis`),
+    // which has always worked. `--list` with a subcommand is refused in `run`.
+    #[command(after_help = docs::ADD.after_help, arg_required_else_help = true)]
     Add {
         #[command(subcommand)]
-        target: AddTarget,
+        target: Option<AddTarget>,
+
+        /// List every id `add` takes: services, infrastructure, frameworks
+        /// and blueprints.
+        #[arg(long)]
+        list: bool,
+
+        /// Show what would be added, skipped and kept; write nothing. Needs no
+        /// terminal.
+        #[arg(long, global = true)]
+        dry_run: bool,
+
+        /// Print the result as one JSON document on stdout (needs --yes or
+        /// --dry-run: it never asks).
+        #[arg(long, global = true)]
+        json: bool,
 
         /// Output path (default: current directory).
         #[arg(long, short, default_value = ".", global = true)]

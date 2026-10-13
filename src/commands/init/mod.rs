@@ -19,7 +19,7 @@ use std::path::Path;
 mod architect;
 mod blank;
 mod blueprint;
-mod components;
+pub(crate) mod components;
 pub(crate) mod detect;
 pub(crate) mod shared;
 mod source;

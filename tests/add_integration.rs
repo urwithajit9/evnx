@@ -1080,20 +1080,158 @@ fn custom_argument_already_present_is_skipped() {
     assert_eq!(p.count_lines(".env.example", "NEW="), 1);
 }
 
-/// I-026 (AD-G): no `--list`, `--dry-run` or `--json`.
+/// The ids in a `--list`-style listing: the first word of every indented
+/// line that looks like an id.
+fn listed_ids(text: &str) -> Vec<String> {
+    text.lines()
+        .filter(|l| l.starts_with("    "))
+        .filter_map(|l| l.split_whitespace().next())
+        .filter(|w| {
+            w.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        })
+        .map(str::to_string)
+        .collect()
+}
+
+/// I-026, 7a, 7f, T-ADD-50 (fixed in 0.10.2, AD-G; was `known_i026_*`):
+/// `add --list` lists every component `init --list-components` lists, from
+/// the same function, then the blueprints.
 #[test]
-fn known_i026_no_list_dry_run_or_json() {
+fn add_list_matches_init_and_adds_blueprints() {
     let p = Project::new();
+    let add = run(p.path(), &["add", "--list"]);
+    add.assert_code(0).assert_contains("BLUEPRINT");
+    let init = run(p.path(), &["init", "--list-components"]);
+    init.assert_code(0);
+    let (components, blueprints) = add.stdout.split_once("BLUEPRINT").unwrap();
+    assert_eq!(listed_ids(components), listed_ids(&init.stdout));
+    assert!(listed_ids(&init.stdout).len() > 40);
+    assert_eq!(listed_ids(blueprints).len(), 10, "{blueprints}");
+    assert!(!p.exists(".env.example"));
+}
+
+/// I-026, T-ADD-51: `--dry-run` writes nothing, needs no terminal, and exits 0,
+/// for every subcommand; it says what would happen.
+#[test]
+fn dry_run_writes_nothing_in_every_subcommand() {
     for args in [
-        &["add", "--list"][..],
-        &["add", "service", "redis", "--dry-run", "--yes"],
-        &["add", "service", "redis", "--json", "--yes"],
+        &["add", "service", "postgresql", "--dry-run"][..],
+        &["add", "framework", "nextjs", "--dry-run"],
+        &["add", "blueprint", "t3_modern", "--dry-run"],
+        &["add", "custom", "A=1", "B", "--dry-run"],
     ] {
+        let p = Project::new()
+            .example("DATABASE_URL=postgres://mine\n")
+            .env("X=1\n");
+        let before = (p.read(".env.example"), p.read(".env"));
+        run(p.path(), args)
+            .assert_code(0)
+            .assert_contains("Dry run")
+            .assert_contains("nothing was written")
+            .assert_contains(".env.example: would add");
+        assert_eq!((p.read(".env.example"), p.read(".env")), before, "{args:?}");
+        assert!(!p.exists(".gitignore"), "{args:?}");
+    }
+}
+
+/// I-026: with no `.env`, a dry run says one would be created, and creates none.
+#[test]
+fn dry_run_says_env_would_be_created() {
+    let p = Project::new();
+    run(p.path(), &["add", "service", "redis", "--dry-run"])
+        .assert_code(0)
+        .assert_contains(".env: would be created from .env.example");
+    assert!(!p.exists(".env") && !p.exists(".env.example"));
+}
+
+/// I-026, 7c, T-ADD-52: `--json` prints one document, alone on stdout, with
+/// the stable fields; with `--dry-run` it writes nothing.
+#[test]
+fn json_reports_added_skipped_and_conflicts() {
+    let setup = || {
+        Project::new()
+            .example("DATABASE_URL=postgres://mine\nDB_PORT=5432\n")
+            .env("DB_PORT=1\n")
+            .file(".gitignore", ".env\n")
+    };
+    for (extra, written) in [("--dry-run", false), ("--yes", true)] {
+        let p = setup();
+        let out = run(p.path(), &["add", "service", "postgresql", "--json", extra]);
+        out.assert_code(0);
+        let doc: serde_json::Value = serde_json::from_str(&out.stdout)
+            .unwrap_or_else(|e| panic!("stdout is not one JSON document ({e}):\n{}", out.stdout));
+        assert_eq!(doc["dry_run"], !written);
+        assert_eq!(doc["written"], written);
+        assert_eq!(
+            doc["added"],
+            serde_json::json!(["DB_HOST", "DB_NAME", "DB_PASSWORD", "DB_USER"])
+        );
+        assert_eq!(doc["skipped"], serde_json::json!(["DB_PORT"]));
+        assert_eq!(doc["conflicts"][0]["name"], "DATABASE_URL");
+        assert_eq!(doc["conflicts"][0]["existing"], "postgres://mine");
+        assert_eq!(doc["env_added"].as_array().unwrap().len(), 4);
+        assert_eq!(doc["env_created"], false);
+        // Nothing from .env ever appears: its DB_PORT value is "1".
+        assert!(!out.stdout.contains("\"1\""), "{}", out.stdout);
+        assert_eq!(
+            p.count_lines(".env.example", "DB_HOST="),
+            usize::from(written)
+        );
+    }
+}
+
+/// I-026: `--json` never asks, so it needs `--yes` or `--dry-run`.
+#[test]
+fn json_needs_yes_or_dry_run() {
+    let p = Project::new();
+    run(p.path(), &["add", "service", "redis", "--json"])
+        .assert_code(2)
+        .assert_contains("--json needs --yes or --dry-run");
+    assert!(!p.exists(".env.example"));
+}
+
+/// T-SHARE-33 on `add`: the pretty and JSON runs agree on the exit code and on
+/// every byte written.
+#[test]
+fn pretty_and_json_write_the_same_files() {
+    support::renderers::both_renderers(
+        || {
+            Project::new()
+                .example("DATABASE_URL=postgres://mine\n")
+                .env("X=1\n")
+                .file(".gitignore", ".env\n")
+        },
+        &["add", "service", "postgresql", "--yes"],
+        &["add", "service", "postgresql", "--yes", "--json"],
+    );
+}
+
+/// I-026, 7e, T-ADD-53: every subcommand runs without a terminal under
+/// `--yes`; with no id and no terminal, the error points at `--list`.
+#[test]
+fn every_subcommand_runs_without_a_terminal() {
+    for args in [
+        &["add", "service", "redis", "--yes"][..],
+        &["add", "infra", "vercel", "--yes"],
+        &["add", "framework", "django", "--yes"],
+        &["add", "blueprint", "mern_v2", "--yes"],
+        &["add", "custom", "A=1", "--yes"],
+    ] {
+        let p = Project::new();
+        run(p.path(), args).assert_code(0);
+        assert!(p.exists(".env.example"), "{args:?}");
+    }
+    for args in [
+        &["add", "service", "--yes"][..],
+        &["add", "framework"],
+        &["add", "blueprint", "--dry-run"],
+    ] {
+        let p = Project::new();
         run(p.path(), args)
             .assert_code(2)
-            .assert_contains("unexpected argument");
+            .assert_contains("evnx add --list");
     }
-    assert!(!p.exists(".env.example"));
 }
 
 /// N-14 (fixed in 0.10.2, AD-S; was `known_n14_*`): a read-only `.env` stops
@@ -1228,4 +1366,29 @@ fn init_from_source_keeps_the_real_env_value() {
         effective(&p.read(".env"), "REDIS_URL").as_deref(),
         Some(REAL_REDIS)
     );
+}
+
+/// Flags `add` owns go before or after the subcommand, as they always have
+/// (`-p` and `--yes` are global to it). Found while turning the training demo
+/// into tests: a clap setting added for `--list` refused the first form.
+#[test]
+fn add_flags_work_before_the_subcommand() {
+    let p = Project::new().dir("api");
+    run(
+        p.path(),
+        &["add", "--path", "api", "--yes", "service", "redis"],
+    )
+    .assert_code(0);
+    run(
+        p.path(),
+        &["add", "-p", "api", "service", "stripe", "--yes"],
+    )
+    .assert_code(0);
+    run(p.path(), &["add", "--dry-run", "service", "sentry"]).assert_code(0);
+    assert_eq!(p.count_lines("api/.env.example", "REDIS_URL="), 1);
+    assert_eq!(p.count_lines("api/.env.example", "STRIPE_SECRET_KEY="), 1);
+    assert_eq!(p.count_lines("api/.env.example", "SENTRY_DSN="), 0);
+    run(p.path(), &["add", "--list", "service", "redis"])
+        .assert_code(2)
+        .assert_contains("--list takes no subcommand");
 }
