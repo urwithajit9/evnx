@@ -84,7 +84,7 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<()> {
                 "Application",
                 "Security",
                 "Database",
-                "Auth",
+                "Authentication",
                 "Service",
                 "Other",
             ];

@@ -27,7 +27,7 @@
             "NEXT_PUBLIC_APP_URL": "http://localhost:3000"
           },
           "categories": {
-            "NEXTAUTH_SECRET": "Auth",
+            "NEXTAUTH_SECRET": "Authentication",
             "NEXTAUTH_URL": "Application",
             "NEXT_PUBLIC_API_URL": "API",
             "NEXT_PUBLIC_APP_URL": "Application"

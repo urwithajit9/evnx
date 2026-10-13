@@ -90,13 +90,26 @@ fn package_table() -> BTreeMap<&'static str, &'static str> {
         ("ioredis", "redis"),
         ("@elastic/elasticsearch", "elasticsearch"),
         ("@supabase/supabase-js", "supabase"),
+        ("@supabase/ssr", "supabase"),
         ("firebase", "firebase"),
         // ── Messaging ──
         ("kafkajs", "kafka"),
         ("amqplib", "rabbitmq"),
         ("pika", "rabbitmq"),
         // ── Auth, payments, storage ──
+        // Clerk ships one package per framework, and exact rows were missing all
+        // but two (I-006). Each was checked on the npm registry on 2026-10-13.
+        // `@clerk/clerk-react` and `@clerk/clerk-sdk-node` are deprecated in
+        // favour of `@clerk/react` and `@clerk/express`; the old names stay so
+        // projects that have not moved are still recognised.
         ("@clerk/nextjs", "clerk"),
+        ("@clerk/react", "clerk"),
+        ("@clerk/clerk-react", "clerk"),
+        ("@clerk/react-router", "clerk"),
+        ("@clerk/remix", "clerk"),
+        ("@clerk/astro", "clerk"),
+        ("@clerk/express", "clerk"),
+        ("@clerk/backend", "clerk"),
         ("@clerk/clerk-sdk-node", "clerk"),
         ("@auth0/auth0-react", "auth0"),
         ("stripe", "stripe"),
@@ -109,6 +122,13 @@ fn package_table() -> BTreeMap<&'static str, &'static str> {
         // ── Observability ──
         ("@sentry/node", "sentry"),
         ("@sentry/nextjs", "sentry"),
+        ("@sentry/react", "sentry"),
+        ("@sentry/browser", "sentry"),
+        ("@sentry/vue", "sentry"),
+        ("@sentry/sveltekit", "sentry"),
+        // ⚠️ No `@stripe/stripe-js`: it is the browser SDK, and proposing the
+        // `stripe` component for it would put STRIPE_SECRET_KEY into a
+        // client-only project (DQ-7). A real Stripe backend has `stripe`.
         ("sentry-sdk", "sentry"),
         ("@datadog/browser-logs", "datadog"),
         // ── AI ──
@@ -449,6 +469,39 @@ mod tests {
         let found = ids(&detect(d.path()).unwrap());
         assert!(found.iter().any(|c| c == "github_actions"), "{found:?}");
         assert!(found.iter().any(|c| c == "docker"), "{found:?}");
+    }
+
+    /// T-INIT-05. Every per-framework Clerk, Sentry and Supabase package maps
+    /// to its component, and a look-alike scope maps to nothing.
+    #[test]
+    fn framework_packages_map_to_their_component() {
+        for (dep, component) in [
+            ("@clerk/react", "clerk"),
+            ("@clerk/clerk-react", "clerk"),
+            ("@clerk/react-router", "clerk"),
+            ("@clerk/remix", "clerk"),
+            ("@clerk/astro", "clerk"),
+            ("@clerk/express", "clerk"),
+            ("@clerk/backend", "clerk"),
+            ("@sentry/react", "sentry"),
+            ("@sentry/browser", "sentry"),
+            ("@sentry/vue", "sentry"),
+            ("@sentry/sveltekit", "sentry"),
+            ("@supabase/ssr", "supabase"),
+        ] {
+            let manifest = format!(r#"{{"dependencies":{{"{dep}":"1"}}}}"#);
+            let d = project(&[("package.json", manifest.as_str())]);
+            assert_eq!(ids(&detect(d.path()).unwrap()), vec![component], "{dep}");
+        }
+
+        for not_ours in ["@clerk-like/react", "@stripe/stripe-js", "clerk"] {
+            let manifest = format!(r#"{{"dependencies":{{"{not_ours}":"1"}}}}"#);
+            let d = project(&[("package.json", manifest.as_str())]);
+            assert!(
+                detect(d.path()).unwrap().is_empty(),
+                "{not_ours} was detected"
+            );
+        }
     }
 
     #[test]

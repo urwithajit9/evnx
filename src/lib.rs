@@ -40,7 +40,10 @@ pub mod utils;
 pub use cli::{AddTarget, Cli, Commands};
 pub use commands::validate::{Issue, IssueType, ValidationConfig, ValidationResult};
 pub use schema::{
-    formatter::{format_addition, format_env_example, format_env_template, generate_preview},
+    formatter::{
+        format_addition, format_addition_from, format_env_example, format_env_template,
+        generate_preview,
+    },
     loader::{
         find_framework, find_service, get_frameworks_for_language, get_services_grouped,
         list_blueprints, schema as load_schema,

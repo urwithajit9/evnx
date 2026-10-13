@@ -9,7 +9,10 @@ pub mod resolver;
 
 // Re-export commonly used types
 pub use component::{catalogue, Component, Kind};
-pub use formatter::{format_addition, format_env_example, format_env_template, generate_preview};
+pub use formatter::{
+    format_addition, format_addition_from, format_env_example, format_env_template,
+    generate_preview,
+};
 pub use loader::{
     find_framework, find_service, get_frameworks_for_language, get_services_grouped,
     list_blueprints, schema,

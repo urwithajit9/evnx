@@ -16,7 +16,10 @@ const CATEGORY_ORDER: &[&str] = &[
     "Security",
     "Database",
     "Cache",
-    "Auth",
+    // No "Auth": it was a second name for "Authentication", which every auth
+    // service in the schema uses, so NEXTAUTH_SECRET sat under its own "Auth"
+    // heading next to an "Authentication" one (I-010). "Authentication" keeps the
+    // position it has always had (unlisted, alphabetical after these).
     "Storage",
     "Service",
     "Infrastructure",
@@ -144,7 +147,6 @@ pub fn format_env_template(vars: &VarCollection) -> Result<String> {
         "Security",
         "Database",
         "Cache",
-        "Auth",
         "Storage",
         "Service",
         "Infrastructure",
@@ -186,8 +188,20 @@ pub fn format_env_template(vars: &VarCollection) -> Result<String> {
     Ok(content)
 }
 
-/// Format as minimal addition for appending to existing .env.example
+/// Format as minimal addition for appending to existing .env.example,
+/// stamped `# Added by evnx add on <date>`.
 pub fn format_addition(vars: &VarCollection) -> Result<String> {
+    format_addition_from(vars, "evnx add")
+}
+
+/// [`format_addition`], stamped with the command that made the addition:
+/// `# Added by <origin> on <date>`.
+///
+/// ⚠️ A separate function rather than a new parameter: `format_addition` is
+/// re-exported from the library, and changing its signature would break every
+/// caller outside this crate. `init --from-source` appends through the same
+/// writer as `add`, and used to stamp its block "Added by evnx add" (I-009).
+pub fn format_addition_from(vars: &VarCollection, origin: &str) -> Result<String> {
     // The same sections `init` writes. `evnx add postgresql` and
     // `evnx init --with postgresql` put the same component in the same file, and
     // used to disagree about what that looked like.
@@ -196,7 +210,7 @@ pub fn format_addition(vars: &VarCollection) -> Result<String> {
     // Kept: *when* something arrived is still worth recording, and unlike the old
     // `# [ADDED]` heading it does not change the shape of a section.
     content.push_str(&format!(
-        "# Added by evnx add on {}\n",
+        "# Added by {origin} on {}\n",
         chrono::Local::now().format("%Y-%m-%d %H:%M")
     ));
 

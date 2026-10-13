@@ -55,3 +55,29 @@ fn test_list_tags() {
         "Should have 'typescript' tag"
     );
 }
+
+/// `format_addition` is public API and keeps its stamp; `format_addition_from`
+/// names the command that made the addition (I-009). Both use the library's
+/// re-exports, which is how a crate depending on evnx would call them.
+#[test]
+fn addition_stamps_name_their_origin() {
+    let vars = evnx::schema::component::resolve(&["redis".to_string()]).unwrap();
+
+    let from_add = evnx::format_addition(&vars).unwrap();
+    assert!(from_add.contains("# Added by evnx add on "), "{from_add}");
+
+    let from_init = evnx::format_addition_from(&vars, "evnx init --from-source").unwrap();
+    assert!(
+        from_init.contains("# Added by evnx init --from-source on "),
+        "{from_init}"
+    );
+
+    // Same body; only the stamp differs.
+    let body = |s: &str| {
+        s.lines()
+            .filter(|l| !l.starts_with("# Added by "))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(body(&from_add), body(&from_init));
+}

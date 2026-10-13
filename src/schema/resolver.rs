@@ -215,7 +215,7 @@ fn infer_category(var_name: &str) -> Option<String> {
     } else if name_lower.contains("redis") {
         Some("Cache".to_string())
     } else if name_lower.contains("auth") || name_lower.contains("oauth") {
-        Some("Auth".to_string())
+        Some("Authentication".to_string())
     } else if name_lower.contains("url")
         || name_lower.contains("host")
         || name_lower.contains("port")
@@ -246,7 +246,7 @@ fn infer_category_from_service(service_id: &str) -> Option<String> {
         || service_id.contains("oauth")
         || service_id.contains("clerk")
     {
-        Some("Auth".to_string())
+        Some("Authentication".to_string())
     } else if service_id.contains("stripe")
         || service_id.contains("payment")
         || service_id.contains("razorpay")

@@ -1050,16 +1050,21 @@ fn one_component_is_singular() {
     assert!(!stdout.contains("1 components"), "{stdout}");
 }
 
-/// KNOWN I-009 (group B1): an append by `init --from-source` is stamped as `add`.
+/// I-009 (fixed in 0.10.1, group B1; was `known_i009_from_source_*`): an append
+/// by `init --from-source` names `init`, not `add`. `add` keeps its own stamp.
 #[test]
-fn known_i009_from_source_append_is_stamped_as_add() {
+fn a_from_source_append_is_stamped_as_init() {
     let d = sourced_project();
     std::fs::write(d.path().join(".env.example"), "HAND_WRITTEN=1\n").unwrap();
     assert!(init_in(d.path(), &["--from-source", "--yes"])
         .status
         .success());
     let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
-    assert!(example.contains("# Added by evnx add on"), "{example}");
+    assert!(
+        example.contains("# Added by evnx init --from-source on"),
+        "{example}"
+    );
+    assert!(!example.contains("# Added by evnx add"), "{example}");
 }
 
 /// I-012 (fixed in 0.10.1, group A10; was `known_i012_*`). `--force` never had an
@@ -1198,20 +1203,23 @@ fn known_i005_from_source_misses_import_meta_env() {
     }
 }
 
-/// KNOWN I-006 (group B3): `@clerk/clerk-react` is not detected.
+/// I-006 (fixed in 0.10.1, group B3; was `known_i006_*`): Clerk's React package
+/// is detected, both the current name and the deprecated one.
 #[test]
-fn known_i006_clerk_react_is_not_detected() {
-    let d = TempDir::new().unwrap();
-    std::fs::write(
-        d.path().join("package.json"),
-        r#"{"dependencies":{"vite":"5","@clerk/clerk-react":"5"}}"#,
-    )
-    .unwrap();
-    let out = init_in(d.path(), &["--detect"]);
-    assert!(out.status.success());
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("Vite"), "{stdout}");
-    assert!(!stdout.contains("Clerk"), "{stdout}");
+fn clerk_react_is_detected() {
+    for pkg in ["@clerk/react", "@clerk/clerk-react"] {
+        let d = TempDir::new().unwrap();
+        std::fs::write(
+            d.path().join("package.json"),
+            format!(r#"{{"dependencies":{{"vite":"5","{pkg}":"5"}}}}"#),
+        )
+        .unwrap();
+        let out = init_in(d.path(), &["--detect"]);
+        assert!(out.status.success());
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("Vite"), "{stdout}");
+        assert!(stdout.contains("Clerk"), "{pkg} not detected:\n{stdout}");
+    }
 }
 
 /// KNOWN I-007 (group G1): `-q` does not silence `init`.

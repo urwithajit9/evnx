@@ -347,7 +347,7 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
     // file. The first version of this did exactly that, turning a 21-variable
     // template into a 5-variable one.
     if example.exists() {
-        let addition = formatter::format_addition(&vars)?;
+        let addition = formatter::format_addition_from(&vars, "evnx init --from-source")?;
         crate::commands::add::shared::append_to_env_files(
             root,
             &addition,
