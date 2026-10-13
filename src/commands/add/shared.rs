@@ -108,13 +108,14 @@ pub fn append_to_env_files(
     if example_path.exists() {
         let existing = fs::read_to_string(&example_path).context("Failed to read .env.example")?;
 
-        let updated = match mode {
-            AppendMode::SkipConflicts => {
-                // This is handled upstream by filtering vars
-                format!("{}\n{}", existing.trim_end(), addition)
-            }
-            _ => format!("{}\n{}", existing.trim_end(), addition),
-        };
+        // Every mode appends the same way; `SkipConflicts` filtered its
+        // variables upstream.
+        let _ = mode;
+        let updated = format!(
+            "{}{}",
+            existing.trim_end(),
+            in_line_endings_of(&existing, format!("\n{addition}"))
+        );
 
         fs::write(&example_path, updated).context("Failed to write .env.example")?;
 
@@ -168,7 +169,11 @@ pub fn append_to_env_files(
         let updated = if existing.trim().is_empty() {
             format!("{body}\n")
         } else {
-            format!("{}\n\n{body}\n", existing.trim_end())
+            format!(
+                "{}{}",
+                existing.trim_end(),
+                in_line_endings_of(&existing, format!("\n\n{body}\n"))
+            )
         };
         fs::write(&env_path, updated)
             .with_context(|| format!("Failed to write {}", env_path.display()))?;
@@ -200,6 +205,23 @@ pub fn append_to_env_files(
 }
 
 /// Format a single variable as a .env line with optional metadata
+/// `tail`, in the line endings `existing` already uses.
+///
+/// ⚠️ `add` wrote `\n` into every file, so a CRLF file (one saved on Windows)
+/// came back with mixed line endings: the user's lines in CRLF, the added block
+/// in LF (N-16). The user's own lines are never rewritten; only what is
+/// appended follows them. A file's first line ending decides.
+fn in_line_endings_of(existing: &str, tail: String) -> String {
+    let crlf = existing
+        .find('\n')
+        .is_some_and(|i| i > 0 && existing.as_bytes()[i - 1] == b'\r');
+    if crlf {
+        tail.replace("\r\n", "\n").replace('\n', "\r\n")
+    } else {
+        tail
+    }
+}
+
 pub fn format_var_line(
     name: &str,
     example_value: &str,
@@ -299,6 +321,22 @@ mod tests {
         assert_eq!(conflicts[0].var_name, "DATABASE_URL");
         assert_eq!(conflicts[0].existing_value, "old_value");
         assert_eq!(conflicts[0].new_value, "new_value");
+    }
+
+    /// N-16: what is appended follows the file's line endings; the file's
+    /// own lines are not touched.
+    #[test]
+    fn appended_lines_follow_the_files_line_endings() {
+        assert_eq!(
+            in_line_endings_of("A=1\r\nB=2\r\n", "\nC=3\n".to_string()),
+            "\r\nC=3\r\n"
+        );
+        assert_eq!(
+            in_line_endings_of("A=1\nB=2\n", "\nC=3\n".to_string()),
+            "\nC=3\n"
+        );
+        // One line with no newline at all: nothing to follow, so LF.
+        assert_eq!(in_line_endings_of("A=1", "\nC=3\n".to_string()), "\nC=3\n");
     }
 
     #[test]

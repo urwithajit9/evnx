@@ -235,15 +235,16 @@ fn preview_groups_come_in_a_fixed_order() {
     }
 }
 
-/// `add custom` with a category and no description, to the end.
-/// Returns what was printed between the category list and the next question.
-fn custom_with_category_only(p: &Project) -> String {
+/// `add custom` with a category and no description, to the end. `keys` pick
+/// the category. Returns what was printed between the list and the next
+/// question.
+fn custom_with_category_only(p: &Project, keys: &[&str]) -> String {
     let mut s = custom_name_and_value(p, "CAT_ONLY", "v1");
     s.press(&["n", ENTER]); // no description
     s.wait_for("Assign to a category?");
     s.press(&["y", ENTER]);
     s.wait_for("Other");
-    s.press(&[DOWN, ENTER]);
+    s.press(keys);
     let picked = s.wait_for("Is this variable required?");
     s.press(&["n", ENTER]);
     s.wait_for("Add another variable?");
@@ -255,24 +256,32 @@ fn custom_with_category_only(p: &Project) -> String {
     picked
 }
 
-/// N-17 (high; AD-B): a category with no description is written on the
-/// assignment's own line, which comments the variable out. The run still says
-/// it added it.
+/// N-17 (fixed in 0.10.2, AD-B; was `known_n17_*`): a category with no
+/// description goes on a comment line of its own, and the variable stays
+/// active. On 0.10.1 it was written as `# [Application] CAT_ONLY=v1`: commented
+/// out, while the run said "Added".
 #[test]
-fn known_n17_a_category_comments_the_variable_out() {
+fn a_category_never_comments_the_variable_out() {
     let p = project();
-    custom_with_category_only(&p);
+    custom_with_category_only(&p, &[ENTER]);
     let example = p.read(".env.example");
-    assert!(example.contains("# [Application] CAT_ONLY=v1"), "{example}");
-    assert_eq!(p.count_lines(".env.example", "CAT_ONLY="), 0);
-    assert_eq!(p.count_lines(".env", "CAT_ONLY="), 0);
+    assert!(
+        example.contains("# [Application]\nCAT_ONLY=v1\n"),
+        "{example}"
+    );
+    assert_eq!(p.count_lines(".env.example", "CAT_ONLY="), 1);
+    assert_eq!(p.count_lines(".env", "CAT_ONLY="), 1);
 }
 
-/// N-18 (AD-B): the category list starts with nothing selected, so the first
-/// Down lands on the first item and Enter alone selects nothing.
+/// N-18 (fixed in 0.10.2, AD-B; was `known_n18_*`): the category list starts
+/// on its first item, so Enter picks it and Down moves to the second. On
+/// 0.10.1 nothing was selected, Enter did nothing, and Down landed on the first.
 #[test]
-fn known_n18_the_category_list_has_no_default() {
+fn the_category_list_starts_on_the_first_item() {
     let p = project();
-    let picked = custom_with_category_only(&p);
+    let picked = custom_with_category_only(&p, &[ENTER]);
     assert!(picked.contains("Select category: Application"), "{picked}");
+    let q = project();
+    let picked = custom_with_category_only(&q, &[DOWN, ENTER]);
+    assert!(picked.contains("Select category: Security"), "{picked}");
 }

@@ -928,19 +928,24 @@ fn known_n14_read_only_env_leaves_a_partial_write() {
     assert_eq!(p.count_lines(".env", "REDIS_URL="), 0);
 }
 
-/// N-16 (AD-B): a CRLF `.env.example` gets LF lines appended.
+/// N-16 (fixed in 0.10.2, AD-B; was `known_n16_*`): what `add` appends
+/// follows each file's own line endings, and the user's lines are untouched.
+/// On 0.10.1 a CRLF file came back with LF lines appended.
 #[test]
-fn known_n16_crlf_file_gets_lf_lines() {
-    let p = Project::new().example("A=1\r\nB=2\r\n");
+fn appended_lines_follow_each_files_line_endings() {
+    let p = Project::new().example("A=1\r\nB=2\r\n").env("A=x\nB=y\n");
     run(p.path(), &["add", "service", "redis", "--yes"]).assert_code(0);
-    let raw = std::fs::read(p.join(".env.example")).unwrap();
-    let text = String::from_utf8(raw).unwrap();
-    let line = text
-        .split('\n')
-        .find(|l| l.starts_with("REDIS_URL="))
-        .unwrap();
-    assert!(!line.ends_with('\r'), "already CRLF: {line:?}");
-    assert!(text.starts_with("A=1\r\n"), "original line endings changed");
+
+    let example = String::from_utf8(std::fs::read(p.join(".env.example")).unwrap()).unwrap();
+    assert!(example.starts_with("A=1\r\nB=2\r\n"), "{example:?}");
+    assert!(
+        !example.replace("\r\n", "").contains('\n'),
+        "LF in a CRLF file: {example:?}"
+    );
+    assert!(example.contains("\r\nREDIS_URL="), "{example:?}");
+
+    let env = String::from_utf8(std::fs::read(p.join(".env")).unwrap()).unwrap();
+    assert!(!env.contains('\r'), "CRLF in an LF file: {env:?}");
 }
 
 /// BR-1 (AD-H, DQ-A8): `add service supabase` on a Vite project adds no

@@ -106,9 +106,13 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
             };
 
             if use_cat {
+                // `.default(0)`: with no default the list opened with nothing
+                // selected, Enter alone did nothing, and the first Down landed
+                // on the first item (N-18).
                 let Some(idx) = Select::new()
                     .with_prompt("Select category")
                     .items(&categories)
+                    .default(0)
                     .interact_opt()?
                 else {
                     return Ok(aborted());
@@ -133,19 +137,17 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
             }
         };
 
-        // Format as .env line
-        // Same shape as `shared::format_var_line`: the marker belongs above the
-        // variable, not on a detached line after it.
-        let mut lines = Vec::new();
-        match (&description, required) {
-            (Some(desc), true) => lines.push(format!("# {} (required)", desc)),
-            (Some(desc), false) => lines.push(format!("# {}", desc)),
-            (None, true) => lines.push("# (required)".to_string()),
-            (None, false) => {}
-        }
-        lines.push(format!("{}={}", name.trim(), example));
-
-        additions.push((lines.join("\n"), name.trim().to_string(), category.clone()));
+        additions.push((
+            entry(
+                name.trim(),
+                &example,
+                description.as_deref(),
+                category.as_deref(),
+                required,
+            ),
+            name.trim().to_string(),
+            category.clone(),
+        ));
 
         // ⚠️ Built alongside the text rather than parsed back out of it. `custom`
         // is the one `add` subcommand with no `VarCollection` of its own — it
@@ -185,8 +187,9 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
     // Format all additions
     let mut content = String::from("\n# ── Custom Variables ──\n");
     for (line, _name, category) in &additions {
-        if let Some(cat) = category {
-            content.push_str(&format!("\n# [{}] ", cat));
+        // A categorised entry keeps the blank line above it that it always had.
+        if category.is_some() {
+            content.push('\n');
         }
         content.push_str(line);
         content.push('\n');
@@ -251,27 +254,71 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
     Ok(Outcome::Written)
 }
 
+/// One variable as it is written: an optional comment line, then `NAME=value`.
+///
+/// Same shape as `shared::format_var_line`: the marker belongs above the
+/// variable, not on a detached line after it. The category goes *inside* the
+/// comment line (`# [Security] API key (required)`, or `# [Security]` alone).
+///
+/// ⚠️ It used to be prefixed to the entry's first line. With no description
+/// and not required, that first line is the assignment, so a category turned
+/// `CAT=v1` into `# [Application] CAT=v1`: commented out, invisible to every
+/// parser, while the run said "Added" (N-17).
+fn entry(
+    name: &str,
+    example: &str,
+    description: Option<&str>,
+    category: Option<&str>,
+    required: bool,
+) -> String {
+    let mut words = Vec::new();
+    if let Some(cat) = category {
+        words.push(format!("[{cat}]"));
+    }
+    if let Some(desc) = description {
+        words.push(desc.to_string());
+    }
+    if required {
+        words.push("(required)".to_string());
+    }
+    let assignment = format!("{name}={example}");
+    if words.is_empty() {
+        assignment
+    } else {
+        format!("# {}\n{assignment}", words.join(" "))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    // use super::*;
-    // use tempfile::TempDir;
-    // use std::fs;
+    use super::entry;
 
     #[test]
-    fn test_handle_creates_custom_section() {
-        // let dir = TempDir::new().unwrap();
+    fn plain_entry_is_one_assignment() {
+        assert_eq!(entry("A", "1", None, None, false), "A=1");
+    }
 
-        // Simulate adding one variable (non-interactive test)
-        // Note: Full interactive testing requires mocking dialoguer
-        // This test verifies the output formatting logic
+    #[test]
+    fn description_and_required_go_above() {
+        assert_eq!(
+            entry("A", "1", Some("Key"), None, true),
+            "# Key (required)\nA=1"
+        );
+        assert_eq!(entry("A", "1", None, None, true), "# (required)\nA=1");
+    }
 
-        let mut content = String::from("\n# ── Custom Variables ──\n");
-        content.push_str("# My custom API key\n");
-        content.push_str("MY_API_KEY=placeholder_value\n");
-        content.push_str("  # (required)\n");
-
-        assert!(content.contains("Custom Variables"));
-        assert!(content.contains("MY_API_KEY="));
-        assert!(content.contains("(required)"));
+    /// N-17: every combination with a category leaves the assignment active.
+    #[test]
+    fn a_category_never_comments_out_the_assignment() {
+        for (desc, required, comment) in [
+            (None, false, "# [Security]"),
+            (None, true, "# [Security] (required)"),
+            (Some("Key"), false, "# [Security] Key"),
+            (Some("Key"), true, "# [Security] Key (required)"),
+        ] {
+            let text = entry("A", "1", desc, Some("Security"), required);
+            assert_eq!(text, format!("{comment}\nA=1"));
+            assert!(text.lines().any(|l| l == "A=1"), "{text}");
+        }
     }
 }
