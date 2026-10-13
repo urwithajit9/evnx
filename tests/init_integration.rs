@@ -1266,10 +1266,10 @@ fn known_i002_vite_stack_has_no_vite_client_variables() {
     );
 }
 
-/// KNOWN I-005 (group F): `import.meta.env`, `Deno.env.get` and `Bun.env` are
-/// not recognised by `--from-source`.
+/// I-005 (fixed in 0.10.1, group F; was `known_i005_*`): `import.meta.env`,
+/// `Deno.env.get` and `Bun.env` are recognised by `--from-source`.
 #[test]
-fn known_i005_from_source_misses_import_meta_env() {
+fn from_source_finds_import_meta_env_deno_and_bun() {
     let d = TempDir::new().unwrap();
     std::fs::create_dir_all(d.path().join("src")).unwrap();
     std::fs::write(
@@ -1281,10 +1281,56 @@ fn known_i005_from_source_misses_import_meta_env() {
         .status
         .success());
     let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
-    assert!(example.contains("NODE_X1="), "{example}");
-    for missed in ["VITE_X1", "DENO_X1", "BUN_X1"] {
-        assert!(!example.contains(missed), "{missed} found:\n{example}");
+    for name in ["VITE_X1", "DENO_X1", "BUN_X1", "NODE_X1"] {
+        assert!(
+            example.contains(&format!("{name}=")),
+            "{name} missing:\n{example}"
+        );
     }
+}
+
+/// T-INIT-04 (I-005): a Vite project with no config file, reading its variables
+/// in a `.vue` component and a `.ts` module, gets all of them proposed.
+#[test]
+fn a_vite_project_without_a_config_file_gets_its_variables() {
+    let d = TempDir::new().unwrap();
+    std::fs::create_dir_all(d.path().join("src/components")).unwrap();
+    std::fs::write(
+        d.path().join("src/supabase.ts"),
+        "export const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("src/components/Login.vue"),
+        "<script setup>\nconst key = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY\n</script>\n",
+    )
+    .unwrap();
+    let out = init_in(d.path(), &["--from-source", "--yes"]);
+    assert!(out.status.success(), "{}", text_of(&out));
+    let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
+    for name in [
+        "VITE_SUPABASE_URL",
+        "VITE_SUPABASE_ANON_KEY",
+        "VITE_CLERK_PUBLISHABLE_KEY",
+    ] {
+        assert!(
+            example.contains(&format!("{name}=")),
+            "{name} missing:\n{example}"
+        );
+    }
+}
+
+/// N-05: `--from-source` says how many directory symlinks it did not follow.
+#[cfg(unix)]
+#[test]
+fn from_source_reports_skipped_symlinks() {
+    let d = sourced_project();
+    std::os::unix::fs::symlink("..", d.path().join("src/loop")).unwrap();
+    let out = init_in(d.path(), &["--from-source", "--yes"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("scanned 1 source file"), "{stdout}");
+    assert!(stdout.contains("skipped 1 symlinked directory"), "{stdout}");
 }
 
 /// I-006 (fixed in 0.10.1, group B3; was `known_i006_*`): Clerk's React package

@@ -68,9 +68,22 @@ const SKIP_DIRS: &[&str] = &[
 ];
 
 const SOURCE_EXTENSIONS: &[&str] = &[
-    "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "go", "rb", "php", "java", "kt", "ex",
-    "exs",
+    "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts", "py", "go", "rb", "php", "java",
+    "kt", "ex", "exs", "vue", "svelte", "astro",
 ];
+
+/// Component files: scanned for direct access (`import.meta.env.X` in a
+/// `<script>` block) but never for the config-file literal pass.
+///
+/// ⚠️ That pass is the whole precision story (see the module docs), measured on
+/// ordinary source files. A `.vue` or `.svelte` file is mostly markup, where a
+/// quoted `"SUBMIT"` or `'PRIMARY'` is a label, not a variable; letting
+/// `config.vue` in would add noise the measurement never covered (I-005).
+const DIRECT_ONLY_EXTENSIONS: &[&str] = &["vue", "svelte", "astro"];
+
+/// A hard ceiling, so a mistaken `evnx init --from-source /` cannot walk a whole
+/// filesystem before anybody notices.
+const MAX_FILES: usize = 5_000;
 
 /// What a scan saw: what to propose, and what the tree merely mentions.
 pub struct Scan {
@@ -86,6 +99,13 @@ pub struct Scan {
     /// simply wrong.
     pub mentioned: Vec<String>,
     pub files_scanned: usize,
+    /// Directory symlinks not followed (N-05): a link back up the tree used to
+    /// be walked until the OS refused, so one real file was "scanned" 41 times,
+    /// and a link out of the project scanned somebody else's files.
+    pub symlinked_dirs_skipped: usize,
+    /// The walk stopped at [`MAX_FILES`]. Said out loud, because a partial scan
+    /// reported as complete would call variables "unused" that it never saw.
+    pub truncated: bool,
 }
 
 /// Scan a project for variable names its code reads.
@@ -100,6 +120,11 @@ pub fn scan(root: &Path) -> Result<Scan> {
         | os\.Getenv\( \s* "(?<e>[A-Z][A-Z0-9_]{2,})"          # Go
         | ENV\[\s*["'](?<f>[A-Z][A-Z0-9_]{2,})["']             # Ruby
         | \benv\( \s* ['"](?<g>[A-Z][A-Z0-9_]{2,})['"]         # PHP / Laravel
+        | import\.meta\.env\.(?<h>[A-Z][A-Z0-9_]{2,})          # Vite, Astro, SvelteKit
+        | import\.meta\.env\[\s*["'](?<i>[A-Z][A-Z0-9_]{2,})["'] # ... indexed
+        | Deno\.env\.get\( \s* ["'](?<j>[A-Z][A-Z0-9_]{2,})["']  # Deno
+        | Bun\.env\.(?<k>[A-Z][A-Z0-9_]{2,})                    # Bun, dotted
+        | Bun\.env\[\s*["'](?<l>[A-Z][A-Z0-9_]{2,})["']        # Bun, indexed
         "#,
     )?;
 
@@ -110,10 +135,11 @@ pub fn scan(root: &Path) -> Result<Scan> {
     // Keyed by name so the first sighting wins and repeats collapse.
     let mut found: BTreeMap<String, SourceVar> = BTreeMap::new();
     let mut mentioned: std::collections::BTreeSet<String> = Default::default();
-    let mut files = Vec::new();
-    collect(root, &mut files);
+    let mut walk = Walk::default();
+    collect(root, &mut walk);
+    let files = &walk.files;
 
-    for path in &files {
+    for path in files {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };
@@ -122,13 +148,17 @@ pub fn scan(root: &Path) -> Result<Scan> {
             .unwrap_or(path)
             .display()
             .to_string();
-        let is_config = looks_like_config(path);
+        let direct_only = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| DIRECT_ONLY_EXTENSIONS.contains(&e));
+        let is_config = looks_like_config(path) && !direct_only;
 
         for (n, line) in text.lines().enumerate() {
             let at = format!("{relative}:{}", n + 1);
 
             for caps in direct.captures_iter(line) {
-                if let Some(name) = ["a", "b", "c", "d", "e", "f", "g"]
+                if let Some(name) = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]
                     .iter()
                     .find_map(|k| caps.name(k))
                 {
@@ -158,6 +188,8 @@ pub fn scan(root: &Path) -> Result<Scan> {
         found: found.into_values().collect(),
         mentioned: mentioned.into_iter().collect(),
         files_scanned: files.len(),
+        symlinked_dirs_skipped: walk.symlinked_dirs_skipped,
+        truncated: walk.truncated,
     })
 }
 
@@ -193,33 +225,49 @@ fn looks_like_config(path: &Path) -> bool {
         || CONFIG_NAMES.contains(&parent.as_str())
 }
 
-/// Every source file under `root`, skipping dependency and build directories.
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    // A hard ceiling, so a mistaken `evnx init --from-source /` cannot walk a
-    // whole filesystem before anybody notices.
-    const MAX_FILES: usize = 5_000;
+/// What a walk of the project found.
+#[derive(Default)]
+struct Walk {
+    files: Vec<PathBuf>,
+    symlinked_dirs_skipped: usize,
+    truncated: bool,
+}
 
+/// Every source file under `root`, skipping dependency and build directories.
+///
+/// ⚠️ Directory symlinks are not followed (N-05). `path.is_dir()` follows them,
+/// so `src/loop -> ..` was walked again and again until the OS gave up, and a
+/// link to a directory outside the project was scanned as if it were inside it.
+/// `DirEntry::file_type` does not follow, which is the distinction needed.
+/// Symlinked *files* are still read: they cannot loop.
+fn collect(dir: &Path, walk: &mut Walk) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
-        if out.len() >= MAX_FILES {
+        if walk.files.len() >= MAX_FILES {
+            walk.truncated = true;
             return;
         }
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
 
-        if path.is_dir() {
+        if kind.is_symlink() && path.is_dir() {
+            walk.symlinked_dirs_skipped += 1;
+        } else if kind.is_dir() {
             if SKIP_DIRS.contains(&name.as_str()) || name.starts_with('.') && name != ".config" {
                 continue;
             }
-            collect(&path, out);
+            collect(&path, walk);
         } else if path
             .extension()
             .and_then(|e| e.to_str())
             .is_some_and(|e| SOURCE_EXTENSIONS.contains(&e))
         {
-            out.push(path);
+            walk.files.push(path);
         }
     }
 }
@@ -449,5 +497,98 @@ mod tests {
             std::path::Path::new("src").join("config.rs").display()
         );
         assert_eq!(s.found[0].location, expected, "{:?}", s.found[0]);
+    }
+
+    /// T-INIT-03 (I-005): the access forms Vite, Astro, SvelteKit, Deno and Bun
+    /// use, found in an ordinary (non-config) file.
+    #[test]
+    fn modern_runtime_access_is_found_in_any_file() {
+        let d = project(&[(
+            "src/app.ts",
+            r#"
+            const a = import.meta.env.VITE_DOTTED;
+            const b = import.meta.env["VITE_INDEXED"];
+            const c = import.meta.env['VITE_SINGLE'];
+            const e = Deno.env.get("DENO_VAR");
+            const f = Bun.env.BUN_DOTTED;
+            const g = Bun.env["BUN_INDEXED"];
+            "#,
+        )]);
+        let found = names(&scan(d.path()).unwrap());
+        for want in [
+            "VITE_DOTTED",
+            "VITE_INDEXED",
+            "VITE_SINGLE",
+            "DENO_VAR",
+            "BUN_DOTTED",
+            "BUN_INDEXED",
+        ] {
+            assert!(
+                found.contains(&want.to_string()),
+                "{want} missing: {found:?}"
+            );
+        }
+    }
+
+    /// Component files are read for direct access only: a quoted label in the
+    /// markup of `config.vue` is not a variable.
+    #[test]
+    fn component_files_contribute_direct_reads_only() {
+        let d = project(&[
+            (
+                "src/config.vue",
+                "<script>const x = import.meta.env.VITE_IN_VUE</script>\n<b title=\"SUBMIT_FORM\"/>",
+            ),
+            ("src/App.svelte", "<script>const y = import.meta.env.PUBLIC_IN_SVELTE</script>"),
+            ("src/Page.astro", "---\nconst z = import.meta.env.PUBLIC_IN_ASTRO\n---"),
+            ("src/x.mts", "export const m = process.env.IN_MTS;"),
+        ]);
+        let s = scan(d.path()).unwrap();
+        let found = names(&s);
+        for want in [
+            "VITE_IN_VUE",
+            "PUBLIC_IN_SVELTE",
+            "PUBLIC_IN_ASTRO",
+            "IN_MTS",
+        ] {
+            assert!(
+                found.contains(&want.to_string()),
+                "{want} missing: {found:?}"
+            );
+        }
+        assert!(!found.contains(&"SUBMIT_FORM".to_string()), "{found:?}");
+        // Still counts as "mentioned", so it is never called unused.
+        assert!(s.mentioned.contains(&"SUBMIT_FORM".to_string()));
+    }
+
+    /// N-05: a directory symlink is not followed, so a loop scans each real file
+    /// once and a link out of the project is not walked.
+    #[cfg(unix)]
+    #[test]
+    fn directory_symlinks_are_not_followed() {
+        let outside = project(&[("leak.ts", "process.env.OUTSIDE_VAR")]);
+        let d = project(&[("src/a.ts", "process.env.INSIDE_VAR")]);
+        std::os::unix::fs::symlink("..", d.path().join("src/loop")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), d.path().join("src/elsewhere")).unwrap();
+
+        let s = scan(d.path()).unwrap();
+        assert_eq!(s.files_scanned, 1);
+        assert_eq!(s.symlinked_dirs_skipped, 2);
+        assert_eq!(names(&s), vec!["INSIDE_VAR".to_string()]);
+        assert!(!s.truncated);
+    }
+
+    /// The 5,000-file ceiling is reported, not silent.
+    #[test]
+    fn the_file_ceiling_is_reported() {
+        let d = TempDir::new().unwrap();
+        let src = d.path().join("src");
+        fs::create_dir_all(&src).unwrap();
+        for i in 0..=MAX_FILES {
+            fs::write(src.join(format!("f{i}.js")), "").unwrap();
+        }
+        let s = scan(d.path()).unwrap();
+        assert!(s.truncated);
+        assert_eq!(s.files_scanned, MAX_FILES);
     }
 }

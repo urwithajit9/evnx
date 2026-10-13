@@ -261,10 +261,30 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
     let example = root.join(".env.example");
     let drift = super::source::compare(&scan, &example)?;
 
+    let skipped = if scan.symlinked_dirs_skipped > 0 {
+        format!(
+            " (skipped {}, not followed)",
+            pluralize(
+                scan.symlinked_dirs_skipped,
+                "symlinked directory",
+                "symlinked directories"
+            )
+        )
+    } else {
+        String::new()
+    };
     ui::say(format!(
-        "\n  scanned {}",
-        pluralize(scan.files_scanned, "source file", "source files").dimmed()
+        "\n  scanned {}{}",
+        pluralize(scan.files_scanned, "source file", "source files").dimmed(),
+        skipped.dimmed()
     ));
+    if scan.truncated {
+        // A warning, so `-q` does not hide it: everything below is partial.
+        ui::warning(format!(
+            "stopped after {} source files; run it on a smaller directory with --path",
+            scan.files_scanned
+        ));
+    }
 
     if scan.found.is_empty() {
         ui::say(format!(
@@ -329,7 +349,7 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
     if !drift.missing.is_empty() {
         summary.push(format!("{} new", drift.missing.len()));
     }
-    if !drift.unused.is_empty() {
+    if !drift.unused.is_empty() && !scan.truncated {
         summary.push(format!("{} unused", drift.unused.len()));
     }
     if show {
@@ -339,7 +359,8 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
     // ⚠️ Reported, never removed. A variable the code does not name may still be
     // read by a library — `RUST_LOG` reaches `tracing_subscriber` without ever
     // appearing in a config file — so this is a question, not a verdict.
-    for name in &drift.unused {
+    // A partial scan cannot say a name is used nowhere, so it says nothing.
+    for name in drift.unused.iter().filter(|_| !scan.truncated) {
         println!(
             "     {}  {} is in .env.example but named nowhere in the source",
             glyph::WARN.yellow(),
