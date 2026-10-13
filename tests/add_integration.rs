@@ -930,10 +930,12 @@ fn one_conflict_is_singular() {
 #[test]
 fn verbose_says_appended() {
     let p = Project::new().example("A=\n").env("A=1\n");
-    run(p.path(), &["-v", "add", "service", "redis", "--yes"])
-        .assert_code(0)
-        .assert_contains("[DEBUG] Appended to ./.env\n")
-        .assert_not_contains("TODO");
+    let out = run(p.path(), &["-v", "add", "service", "redis", "--yes"]);
+    out.assert_code(0).assert_not_contains("TODO");
+    // The path is printed with the platform's separator (`.\.env` on
+    // Windows); the test pins the words, not the separator.
+    let stdout = out.stdout.replace('\\', "/");
+    assert!(stdout.contains("[DEBUG] Appended to ./.env\n"), "{stdout}");
 }
 
 /// I-025 (AD-F): `add custom` takes no `NAME=value` arguments.
