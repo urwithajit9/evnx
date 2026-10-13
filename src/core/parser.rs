@@ -927,10 +927,22 @@ impl Parser {
 
                 // ── $VAR bare syntax ──────────────────────────────────────────
                 Some(&c) if c.is_ascii_alphanumeric() || c == '_' => {
-                    let var_name: String = chars
-                        .by_ref()
-                        .take_while(|&c| c.is_ascii_alphanumeric() || c == '_')
-                        .collect();
+                    // ⚠️ Peek, then consume. This was `take_while`, which also
+                    // consumes the first character that is *not* part of the
+                    // name, so the character ending the reference vanished:
+                    // `$BASE/api` became `http://localhostapi`, `$B:8080`
+                    // became `app8080` (I-141). Every command that reads
+                    // values went through it. `${VAR}` is unaffected: there
+                    // the consumed terminator is the `}`, which belongs to it.
+                    let mut var_name = String::new();
+                    while let Some(&c) = chars.peek() {
+                        if c.is_ascii_alphanumeric() || c == '_' {
+                            var_name.push(c);
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
 
                     if stack.contains(&var_name) {
                         return Err(ParseError::CircularExpansion {
@@ -1731,14 +1743,89 @@ mod tests {
         assert_eq!(vars["URL"], "http://localhost/api");
     }
 
-    // #[test]
-    // fn test_expansion_bare_syntax() {
-    //     let p = Parser::default();
-    //     let vars = p
-    //         .parse_content("BASE=http://localhost\nURL=$BASE/api")
-    //         .unwrap();
-    //     assert_eq!(vars["URL"], "http://localhost/api");
-    // }
+    /// T-SHARE-22 / T-024: this test sat commented out while the bug it
+    /// describes shipped (I-141). Re-enabled with the fix.
+    #[test]
+    fn test_expansion_bare_syntax() {
+        let p = Parser::default();
+        let vars = p
+            .parse_content("BASE=http://localhost\nURL=$BASE/api")
+            .unwrap();
+        assert_eq!(vars["URL"], "http://localhost/api");
+    }
+
+    /// T-SHARE-21 (I-141): every character that ends a bare `$NAME` stays in
+    /// the value. On 0.10.1 all of these but end-of-string lost it.
+    #[test]
+    fn bare_reference_keeps_the_character_that_ends_it() {
+        let p = Parser::default();
+        let cases = [
+            ("$B/data", "app/data"),
+            ("$B:8080", "app:8080"),
+            ("$B.example.com", "app.example.com"),
+            ("a$B!", "aapp!"),
+            ("$B-x", "app-x"),
+            ("$B,x", "app,x"),
+            ("$B;x", "app;x"),
+            ("($B)", "(app)"),
+            ("$B", "app"),
+            ("$B$C", "appcee"),
+            ("${B}x", "appx"),
+            ("$BX", "$BX"),
+            ("$NOPE/bin", "$NOPE/bin"),
+            ("$5/x", "$5/x"),
+            ("$/x", "$/x"),
+            ("x$", "x$"),
+        ];
+        for (raw, want) in cases {
+            let vars = p
+                .parse_content(&format!("B=app\nC=cee\nV={raw}\n"))
+                .unwrap_or_else(|e| panic!("{raw}: {e}"));
+            assert_eq!(vars["V"], want, "V={raw}");
+        }
+    }
+
+    /// T-SHARE-21: a space ends a reference too, inside double quotes (an
+    /// unquoted value would lose its trailing part to comment and space rules,
+    /// which is a separate matter).
+    #[test]
+    fn bare_reference_keeps_a_following_space_in_double_quotes() {
+        let p = Parser::default();
+        let vars = p
+            .parse_content("B=app\nV=\"$B rest\"\nQ=\"$B'\"\n")
+            .unwrap();
+        assert_eq!(vars["V"], "app rest");
+        assert_eq!(vars["Q"], "app'");
+    }
+
+    /// T-SHARE-21: an escaped dollar is not a reference, whatever follows.
+    #[test]
+    fn escaped_dollar_is_not_a_reference() {
+        let p = Parser::default();
+        let vars = p.parse_content("B=app\nV=\"\\$B/x\"\n").unwrap();
+        assert_eq!(vars["V"], "$B/x");
+    }
+
+    /// T-SHARE-22: chained bare references, each with a terminator.
+    #[test]
+    fn bare_references_chain() {
+        let p = Parser::default();
+        let vars = p
+            .parse_content("HOST=localhost\nBASE=http://$HOST:8080\nAPI=$BASE/api\n")
+            .unwrap();
+        assert_eq!(vars["API"], "http://localhost:8080/api");
+    }
+
+    /// T-SHARE-22: a cycle through a bare reference is still caught.
+    #[test]
+    fn bare_reference_cycle_is_an_error() {
+        let p = Parser::default();
+        let err = p.parse_content("A=$B/x\nB=$A/y\n").unwrap_err();
+        assert!(
+            matches!(err, ParseError::CircularExpansion { .. }),
+            "{err:?}"
+        );
+    }
 
     #[test]
     fn test_expansion_chained() {
