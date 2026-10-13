@@ -72,6 +72,21 @@ impl Run {
         }
     }
 
+    /// Cancel a yes/no question: Esc, then Enter once Esc has been read.
+    ///
+    /// ⚠️ Not `press(&[ESC, ENTER])`. On Unix the `console` crate, after an
+    /// ESC byte, checks with a zero timeout whether more bytes are waiting; if
+    /// the Enter is already queued, the two are read as one unknown escape
+    /// sequence, the Enter is swallowed, and the question never returns. That
+    /// passed locally and hung on a slower CI runner. After Esc the question is
+    /// redrawn with no default, `[y/n]` (it showed `[Y/n]` or `[y/N]` before),
+    /// so seeing that redraw proves the Esc was read on its own.
+    fn cancel_yes_no(&mut self) {
+        self.press(&[ESC]);
+        self.wait_for("[y/n]");
+        self.press(&[ENTER]);
+    }
+
     /// Read to the end and return (remaining output, exit code).
     fn finish(mut self) -> (String, i32) {
         // ⚠️ `as_bytes`, not `before`: the `Eof` needle matches the whole
@@ -325,29 +340,29 @@ const ESC: &str = "\x1b";
 /// selects "cancel" and Enter confirms it.
 #[test]
 fn escape_cancels_at_every_prompt() {
-    // (keys to reach the prompt, prompt text, keys that cancel, label)
-    let cases: &[(&[&str], &str, &[&str], &str)] = &[
-        (&[], "How do you want to start?", &[ESC], "start menu"),
+    // (keys to reach the prompt, prompt text, is it a yes/no question, label)
+    let cases: &[(&[&str], &str, bool, &str)] = &[
+        (&[], "How do you want to start?", false, "start menu"),
         (
             &[DOWN, ENTER],
             "Choose a stack blueprint",
-            &[ESC],
+            false,
             "blueprint list",
         ),
         (
             &[DOWN, ENTER, ENTER],
             "Generate .env files with these variables?",
-            &[ESC, ENTER],
+            true,
             "confirm",
         ),
         (
             &[DOWN, DOWN, ENTER],
             "Select your primary language",
-            &[ESC],
+            false,
             "architect",
         ),
     ];
-    for (keys, prompt, cancel, label) in cases {
+    for (keys, prompt, yes_no, label) in cases {
         let d = TempDir::new().unwrap();
         let mut run = Run::start(d.path(), &[]);
         run.wait_for("How do you want to start?");
@@ -355,7 +370,11 @@ fn escape_cancels_at_every_prompt() {
             run.press(keys);
             run.wait_for(prompt);
         }
-        run.press(cancel);
+        if *yes_no {
+            run.cancel_yes_no();
+        } else {
+            run.press(&[ESC]);
+        }
         let (rest, code) = run.finish();
 
         assert_eq!(code, 0, "{label}");
@@ -381,7 +400,7 @@ fn escape_at_the_overwrite_question_writes_nothing() {
     run.wait_for("How do you want to start?");
     run.press(&[ENTER]); // Blank
     run.wait_for("exists. Overwrite it?");
-    run.press(&[ESC, ENTER]); // yes/no: Esc selects cancel, Enter confirms it
+    run.cancel_yes_no();
     let (rest, code) = run.finish();
 
     assert_eq!(code, 0);
