@@ -1014,13 +1014,14 @@ fn list_components_prints_the_whole_catalogue_once() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// KNOWN DEFECTS — pinned as they behave in 0.10.0
+// FIXED IN 0.10.1 — each test below started as a `known_*` lock
 //
-// Each test below asserts today's *wrong* behaviour, named after its issue. The
-// PR that fixes the issue must flip the test (assert the right behaviour and
-// drop the `known_` prefix), so every fix is a visible, reviewed change rather
-// than a silent one. Plan and owning group: local/init/plan/PLAN-INIT.md in the
-// review package; release-note entry in local/init/CHANGES.md.
+// Every one of these first asserted 0.10.0's *wrong* behaviour, named after its
+// issue, and the PR that fixed the issue flipped it (asserting the right
+// behaviour and dropping the `known_` prefix), so each fix was a visible,
+// reviewed change. All are fixed now; the doc comment on each test names the
+// issue and the group. Keep the convention for future defects: pin first, then
+// flip in the fixing PR.
 // ─────────────────────────────────────────────────────────────
 
 /// I-004 (fixed in 0.10.1, group A1; was `known_i004_*`): the blank template

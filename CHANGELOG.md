@@ -8,7 +8,108 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### ⚠️ Breaking
+
+**`evnx init --from-source --force` is now an error** (exit 2, `the argument
+'--from-source' cannot be used with '--force'`). `--force` never had an effect
+there, because `--from-source` only appends. Drop the flag.
+
+**The `evnx init` start menu pre-selects Blank**, where it pre-selected
+Blueprint. Enter, Enter used to write a 27-variable T3 stack into whatever
+directory you were in. Press Down once for Blueprint.
+
+**Yes/no questions in `evnx init` answer on Enter.** Type `y` or `n` (or `yes` /
+`no`) and press Enter; Enter alone takes the default. Before, the `y` answered
+at once and the Enter typed after it answered the *next* question with its
+default, unseen: `y⏎` at "Generate .env files?" silently answered "Overwrite
+it?" with No, so the stack you asked for was never written.
+
+**All commands: a closed stdout exits 141, quietly.** `evnx … | head` used to
+end with `thread 'main' panicked … Broken pipe` and exit 101. ⓘ Only a closed
+pipe is affected: SIGPIPE handling is unchanged, so a write to a closed network
+socket is still reported as an error, and so is every other failure.
+
+### ⛔ Security — `init` could leave `.env` without its `.gitignore` rule
+
+`init` wrote `.env`, printed "Created .env from template", and only then
+updated `.gitignore`. With stdout closed early (`evnx init … | head -n 3`) that
+print panicked, `.gitignore` was never written, and a `.env` that git would
+commit was left on disk: 4 to 33% of runs on 0.10.0. `init` now writes
+`.gitignore` before any env file and prints only after every write. The lines
+printed, and their order, are unchanged.
+
+It also warns `.env is still not ignored` when a later line in `.gitignore`
+(such as `!.env`) re-includes it. It checks with git, and never edits your file.
+
+### Added
+
+- **Browser variables.** For Vite, Next.js, SvelteKit, Nuxt and Laravel stacks,
+  `init` adds a prefixed copy (`VITE_`, `NEXT_PUBLIC_`, `PUBLIC_`,
+  `NUXT_PUBLIC_`) of each service value designed to be public: the Supabase URL
+  and anon key, the Firebase web config, the Auth0 domain, client ID and
+  audience, the Clerk publishable key, the Google OAuth client ID, the Sentry
+  DSN, the Stripe publishable key, the Razorpay key ID and the Cloudinary cloud
+  name. A Vite + Supabase stack now gets `VITE_SUPABASE_URL` next to
+  `SUPABASE_URL`. Additive only: nothing is removed, and secrets are never
+  copied. `evnx add blueprint` writes the same.
+- **Component aliases**: `postgres`, `pg`, `mysql`, `mariadb`, `mongo`,
+  `express`, `fastify`, `fastapi`, `flask`, `axum`, `actix`, `gin`, `echo`,
+  `next`, `k8s`. They write exactly what the full id writes, and work in
+  `init --with`, `add service`, `add framework` and `spec init --with` (the
+  `spec --help` example `--with django,postgres,redis` now works).
+- **Typo suggestions** for unknown components and blueprints: `supabse` →
+  `Did you mean: supabase`, `t3modern` → `t3_modern`. Existing hints are
+  unchanged.
+- **`.env` from a template you keep.** Answer "no" to "Overwrite it?" and `init`
+  offers to create `.env` as a copy of your `.env.example`. `--from-source` on a
+  project with a template but no `.env` creates it too (asking first unless
+  `--yes`), and writes the `.gitignore` rules. An existing `.env` is never
+  replaced.
+- `-p` as the short form of `init --path`, as `evnx add` has.
+- `--detect` recognises more packages: `@clerk/react` (and the deprecated
+  `@clerk/clerk-react`), `@clerk/react-router`, `@clerk/remix`, `@clerk/astro`,
+  `@clerk/express`, `@clerk/backend`, `@sentry/react`, `@sentry/browser`,
+  `@sentry/vue`, `@sentry/sveltekit`, `@supabase/ssr`. `@stripe/stripe-js` is
+  deliberately not recognised: it is the browser SDK, and the Stripe component
+  carries a secret key.
+- Esc or `q` cancels any `init` prompt without writing anything (exit 0).
+
+### Changed
+
+- **`-q/--quiet` is silent on success, for every command.** Headers, success
+  lines, tips, "Next steps" and the docs hint are suppressed. Errors, warnings,
+  findings and data output (`convert`, `spec --stdout`) still print, and exit
+  codes are unchanged. Without `-q`, output is unchanged.
+- `init --from-source` recognises `import.meta.env.X` and `import.meta.env["X"]`
+  (Vite, Astro, SvelteKit), `Deno.env.get("X")`, `Bun.env.X` and `Bun.env["X"]`,
+  and scans `.mts`, `.cts`, `.vue`, `.svelte` and `.astro` files. Component
+  files are read for direct access only, so a label in the markup is never
+  proposed. Re-running it may append newly found names.
+- `init --from-source` no longer follows directory symlinks (it says how many it
+  skipped), and warns when it stops at 5,000 files, after which it calls
+  nothing unused.
+- Generated files have one `Authentication` section: `NEXTAUTH_SECRET` no longer
+  sits under a separate `Auth` heading. No variable or value changes.
+- Appends by `init --from-source` are stamped `# Added by evnx init
+  --from-source` (they said `evnx add`). Library: `format_addition_from(vars,
+  origin)` is new; `format_addition` is unchanged.
+
 ### Fixed
+
+- **`init`: no "Next steps" after an abort**, and no "✓ Created .env.example"
+  after you chose to keep your own template. Both told you to edit a `.env` that
+  did not exist.
+- **`init` without a terminal** says which flags to use (`--yes`, `--blueprint`,
+  `--with`, `--detect`) instead of `IO error: not a terminal: not a terminal`.
+  `--with` and `--blueprint` without `--yes` say to add `--yes`. Exit code
+  still 2.
+- Ctrl-C at a prompt no longer leaves the terminal cursor hidden (Unix).
+- `init` wording: `Created .env.example (no variables yet)` instead of "empty";
+  `1 component`; one colon after prompts; `PHP`; infrastructure shown by name
+  (`AWS (Advanced)`) rather than id; `Nothing detected in this project` instead
+  of an empty list.
+- Removed an unreachable Spring Boot detection row: `pom.xml` and Gradle files
+  are not read. Name the stack with `--with spring_boot`.
 
 #### ⛔ `scan` emitted Windows path separators into machine-readable output
 

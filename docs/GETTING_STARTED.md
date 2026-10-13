@@ -111,20 +111,25 @@ Creates minimal empty `.env` and `.env.example` files. Use this when you want a 
 
 Selects from a catalog of pre-configured stacks — Next.js, FastAPI, Django, Laravel, T3 Turbo, Rust, and more. Each blueprint generates `.env.example` with the variables that stack typically needs, along with sensible placeholders.
 
-Example output after selecting the T3 Turbo blueprint (evnx 0.10.0):
+Example output after selecting the T3 Turbo blueprint (evnx 0.10.1):
 
 ```
 Preview:
-27 variables
+28 variables
   • framework ×4
-  • service ×17
+  • service ×18
   • infra ×6
-  Categories: API, Application, Auth, Authentication, CI/CD, Cloud Storage, Database, Deployment Platform, Payments
+  Categories: API, Application, Authentication, CI/CD, Cloud Storage, Database, Deployment Platform, Payments
 Generate .env files with these variables? yes
 ✓ Created .env from template
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
-✓ Created .env.example with 27 variables
+✓ Created .env.example with 28 variables
 ```
+
+Next.js stacks also get `NEXT_PUBLIC_` copies of service values that are meant for the
+browser (here the Stripe publishable key); Vite, SvelteKit, Nuxt and Laravel stacks get
+their own prefixes. In the menus, Blank is pre-selected, yes/no questions take their answer
+on Enter, and Esc cancels without writing anything.
 
 The `×` counts are variables by where they come from (framework, services, infrastructure), not numbers of components.
 

@@ -12,8 +12,9 @@
 //! Unix only: the Windows console is a different mechanism, and `expectrl` is a
 //! `cfg(unix)` dev-dependency.
 //!
-//! Tests named `known_*` pin a defect as it behaves in 0.10.0; the PR that fixes
-//! it must flip the test (see `init_integration.rs` for the convention).
+//! Defects are pinned first as `known_*` tests and flipped by the PR that fixes
+//! them (see `init_integration.rs` for the convention). Those in this file were
+//! all fixed in 0.10.1.
 #![cfg(unix)]
 
 use assert_cmd::cargo::cargo_bin_cmd;
@@ -223,7 +224,7 @@ fn answering_no_writes_nothing() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// KNOWN DEFECTS — pinned as they behave in 0.10.0
+// FIXED IN 0.10.1 — each test below started as a `known_*` lock
 // ─────────────────────────────────────────────────────────────
 
 /// I-013 (fixed in 0.10.1, group C; was `known_i013_*`): after an abort there

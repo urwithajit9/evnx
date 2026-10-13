@@ -168,10 +168,10 @@ No flags are required: the interactive flow handles stack and service selection.
 | `--list-components` | print every name `--with` accepts |
 | `--detect` | accept what `package.json`, compose files and other manifests declare |
 | `--from-source` | add the variables the code reads; never removes |
-| `--force` | replace an existing `.env.example` (`.env` is never overwritten) |
-| `--path <dir>` | write somewhere other than `.` |
+| `--force` | replace an existing `.env.example` (`.env` is never overwritten); not with `--from-source` |
+| `--path <dir>`, `-p` | write somewhere other than `.` |
 
-Full reference: [docs.evnx.dev/cli/commands/init](https://docs.evnx.dev/cli/commands/init).
+Short names work too (`postgres`, `pg`, `mongo`, `next`, `k8s` and others; see `--list-components`), and browser frameworks get prefixed copies of public values (`VITE_SUPABASE_URL` next to `SUPABASE_URL`). Full reference: [docs.evnx.dev/cli/commands/init](https://docs.evnx.dev/cli/commands/init).
 
 ---
 
