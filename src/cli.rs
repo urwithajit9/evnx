@@ -51,8 +51,35 @@ pub enum AddTarget {
         blueprint: String,
     },
 
-    /// Add custom variables interactively.
-    Custom,
+    /// Add your own variables: as arguments, or one prompt at a time.
+    ///
+    /// Examples:
+    ///   evnx add custom API_URL=https://api.example.com DEBUG=false --yes
+    ///   evnx add custom STRIPE_WEBHOOK_SECRET --desc "Stripe webhook signing secret" --required
+    ///   evnx add custom            (asks for each variable)
+    ///
+    /// A name without `=value` gets a placeholder. When it looks like a secret
+    /// (`*_SECRET`, `*_TOKEN`, `*_KEY`, `*_PASSWORD`, …) and there is a
+    /// terminal, its value is asked for without echo instead. A value given as
+    /// an argument lands in your shell history.
+    Custom {
+        /// Variables, as `NAME=value` or `NAME`. None: ask one at a time.
+        #[arg(value_name = "NAME[=VALUE]")]
+        vars: Vec<String>,
+
+        /// A description comment for every variable given.
+        #[arg(long)]
+        desc: Option<String>,
+
+        /// A category for every variable given: Application, Security,
+        /// Database, Authentication, Service or Other.
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Mark every variable given as required.
+        #[arg(long)]
+        required: bool,
+    },
 }
 
 // ------------------------------------

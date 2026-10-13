@@ -49,7 +49,22 @@ pub fn run(
         crate::cli::AddTarget::Blueprint { blueprint } => {
             blueprint::handle(&blueprint, output_path, yes, verbose)?
         }
-        crate::cli::AddTarget::Custom => custom::handle(output_path, yes, verbose)?,
+        crate::cli::AddTarget::Custom {
+            vars,
+            desc,
+            category,
+            required,
+        } => custom::handle(
+            output_path,
+            custom::Args {
+                vars,
+                desc,
+                category,
+                required,
+            },
+            yes,
+            verbose,
+        )?,
     };
 
     // Next steps only after a write: they used to follow "Aborted." (N-12).

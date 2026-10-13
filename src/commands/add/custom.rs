@@ -1,38 +1,176 @@
-//! Handle `evnx add custom` — Interactive custom variable addition
+//! Handle `evnx add custom`: your own variables, as arguments or one prompt
+//! at a time.
+//!
+//! # Two forms (I-025, decided 2026-10-10; DQ-A9, 2026-10-14)
+//!
+//! * **Arguments:** `evnx add custom API_URL=https://… DEBUG=false --yes`, with
+//!   `--desc`, `--category` and `--required` applying to every name given. No
+//!   terminal needed, so scripts, CI and agents can use it. `NAME` alone gets a
+//!   placeholder; a secret-looking `NAME` alone, in a terminal and without
+//!   `--yes`, is asked for without echo instead.
+//! * **Prompts:** name, value, and one `More options?` question per variable;
+//!   an empty name finishes.
+//!
+//! ⚠️ It was prompts only, six to eight questions per variable plus a final
+//! confirmation, and `--yes` still needed a terminal (I-020), so nothing
+//! automated could use it.
 
-use anyhow::Result;
-use colored::*;
-use dialoguer::{Input, Select};
+use anyhow::{bail, Result};
+use dialoguer::{Input, Password, Select};
+use std::io::IsTerminal;
 use std::path::Path;
 
 use super::shared::{aborted, confirm_and_apply, count, Flow, Outcome};
-use crate::utils::prompt::{require_terminal_or, yes_no};
+use crate::schema::models::{VarCollection, VarMetadata, VarSource};
+use crate::utils::prompt::{require_terminal, require_terminal_or, yes_no};
 use crate::utils::ui::{info, print_header, print_preview_header};
 
-/// Handle interactive custom variable addition
-pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
-    // Every variable is typed at a prompt, so `--yes` cannot stand in for a
-    // terminal here; say so instead of dialoguer's raw error (I-020). The
-    // argument form that works without one is AD-F (I-025).
-    require_terminal_or("`evnx add custom` asks for each variable, so it needs a terminal.")?;
+/// The categories a custom variable can be filed under.
+pub const CATEGORIES: &[&str] = &[
+    "Application",
+    "Security",
+    "Database",
+    "Authentication",
+    "Service",
+    "Other",
+];
 
+/// The placeholder for a name given without a value.
+const PLACEHOLDER: &str = "your_value_here";
+
+/// What `evnx add custom` was given on the command line.
+pub struct Args {
+    /// `NAME=value` or `NAME`, in order.
+    pub vars: Vec<String>,
+    pub desc: Option<String>,
+    pub category: Option<String>,
+    pub required: bool,
+}
+
+/// One custom variable, before it is written.
+struct Custom {
+    name: String,
+    value: String,
+    description: Option<String>,
+    category: Option<String>,
+    required: bool,
+}
+
+pub fn handle(output_path: &Path, args: Args, yes: bool, verbose: bool) -> Result<Outcome> {
+    let category = args
+        .category
+        .as_deref()
+        .map(canonical_category)
+        .transpose()?;
+    let customs = if args.vars.is_empty() {
+        // With no arguments every variable is typed at a prompt: `--yes`
+        // cannot stand in for a terminal here (I-020).
+        require_terminal_or(
+            "Give the variables as arguments instead:\n  \
+             evnx add custom NAME=value OTHER_NAME=value --yes",
+        )?;
+        match prompt_loop(yes, args.desc, category, args.required)? {
+            Some(customs) => customs,
+            None => return Ok(aborted()),
+        }
+    } else {
+        if !yes {
+            let shown: Vec<&str> = args.vars.iter().map(String::as_str).collect();
+            require_terminal(&format!("evnx add custom {} --yes", shown.join(" ")))?;
+        }
+        from_arguments(&args.vars, args.desc, category, args.required, yes)?
+    };
+
+    if customs.is_empty() {
+        println!("No variables added.");
+        return Ok(Outcome::Aborted);
+    }
+    write(output_path, &customs, yes, verbose)
+}
+
+/// The argument form. Every name is checked before anything is asked or
+/// written (T-ADD-42).
+fn from_arguments(
+    vars: &[String],
+    desc: Option<String>,
+    category: Option<String>,
+    required: bool,
+    yes: bool,
+) -> Result<Vec<Custom>> {
+    let mut parsed: Vec<(String, Option<String>)> = Vec::new();
+    for raw in vars {
+        let (name, value) = match raw.split_once('=') {
+            Some((n, v)) => (n.trim().to_string(), Some(v.to_string())),
+            None => (raw.trim().to_string(), None),
+        };
+        if !crate::core::parser::is_valid_key(&name) {
+            bail!(
+                "`{name}` is not a valid variable name.\n\n\
+                 Names start with a letter or underscore and contain only letters, \
+                 digits and underscores. Nothing was written."
+            );
+        }
+        if parsed.iter().any(|(n, _)| *n == name) {
+            bail!("`{name}` is given twice. Nothing was written.");
+        }
+        parsed.push((name, value));
+    }
+
+    // DQ-A9: a secret without a value is asked for, unseen, when someone is
+    // there to ask; otherwise it gets the placeholder like any other name.
+    let can_ask = !yes && std::io::stdin().is_terminal();
+    let mut customs = Vec::new();
+    for (name, value) in parsed {
+        let value = match value {
+            Some(v) => v,
+            None if can_ask && crate::commands::spec::infer::looks_secret(&name) => {
+                let v = Password::new()
+                    .with_prompt(format!(
+                        "Value for {name} (hidden; Enter for a placeholder)"
+                    ))
+                    .allow_empty_password(true)
+                    .interact()?;
+                if v.is_empty() {
+                    PLACEHOLDER.to_string()
+                } else {
+                    v
+                }
+            }
+            None => PLACEHOLDER.to_string(),
+        };
+        customs.push(Custom {
+            name,
+            value,
+            description: desc.clone(),
+            category: category.clone(),
+            required,
+        });
+    }
+    Ok(customs)
+}
+
+/// The prompt form: name, value, and one `More options?` per variable. An
+/// empty name finishes. `None` means the user pressed Esc.
+fn prompt_loop(
+    yes: bool,
+    desc: Option<String>,
+    category: Option<String>,
+    required: bool,
+) -> Result<Option<Vec<Custom>>> {
     print_header(
         "Custom Variables",
         Some("Add your own environment variables interactively"),
     );
-
     info("Enter variables one at a time. Empty name to finish.");
 
-    let mut additions = Vec::new();
-    let mut collected = crate::schema::models::VarCollection::default();
-
+    // Options given as flags apply to every variable and are not asked again.
+    let flags_given = desc.is_some() || category.is_some() || required;
+    let mut customs: Vec<Custom> = Vec::new();
     loop {
-        // Prompt for variable name
         let name: String = Input::new()
             .with_prompt("Variable name (or Enter to finish)")
             .allow_empty(true)
             .interact_text()?;
-
         if name.trim().is_empty() {
             break;
         }
@@ -45,7 +183,8 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
         let name = name.trim().to_string();
         if !crate::core::parser::is_valid_key(&name) {
             if name.contains('=') {
-                // By far the most likely slip, and the one in the issue.
+                // By far the most likely slip, and the one in the issue. The
+                // argument form takes it as it is.
                 let (key, _) = name.split_once('=').expect("contains checked");
                 crate::utils::ui::warning(format!(
                     "Enter the name on its own — the value is the next prompt.\n                       Did you mean {}?",
@@ -60,144 +199,114 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
             continue;
         }
 
-        // Prompt for example value
-        let example: String = Input::new()
+        let value: String = Input::new()
             .with_prompt("Example/placeholder value")
-            .default("your_value_here".to_string())
+            .default(PLACEHOLDER.to_string())
             .interact_text()?;
 
-        // Prompt for description (optional)
-        let description: Option<String> = if yes {
-            None
-        } else {
-            let Some(add_desc) = yes_no()
-                .with_prompt("Add a description comment?")
-                .default(false)
-                .interact_opt()?
-            else {
-                return Ok(aborted());
-            };
-
-            if add_desc {
-                Some(Input::new().with_prompt("Description").interact_text()?)
-            } else {
-                None
-            }
+        let mut custom = Custom {
+            name,
+            value,
+            description: desc.clone(),
+            category: category.clone(),
+            required,
         };
 
-        // Prompt for category (optional)
-        let category: Option<String> = if yes {
-            None
-        } else {
-            let categories = vec![
-                "Application",
-                "Security",
-                "Database",
-                "Authentication",
-                "Service",
-                "Other",
-            ];
-            let Some(use_cat) = yes_no()
-                .with_prompt("Assign to a category?")
+        // One question instead of three (I-025): most variables need none of
+        // them.
+        if !yes && !flags_given {
+            let Some(more) = yes_no()
+                .with_prompt("More options? (description, category, required)")
                 .default(false)
                 .interact_opt()?
             else {
-                return Ok(aborted());
+                return Ok(None);
             };
+            if more {
+                let d: String = Input::new()
+                    .with_prompt("Description (Enter for none)")
+                    .allow_empty(true)
+                    .interact_text()?;
+                custom.description = Some(d.trim().to_string()).filter(|d| !d.is_empty());
 
-            if use_cat {
-                // `.default(0)`: with no default the list opened with nothing
-                // selected, Enter alone did nothing, and the first Down landed
-                // on the first item (N-18).
+                // "None" first, so Enter alone files nothing (N-18).
+                let mut items = vec!["None"];
+                items.extend_from_slice(CATEGORIES);
                 let Some(idx) = Select::new()
-                    .with_prompt("Select category")
-                    .items(&categories)
+                    .with_prompt("Category")
+                    .items(&items)
                     .default(0)
                     .interact_opt()?
                 else {
-                    return Ok(aborted());
+                    return Ok(None);
                 };
-                Some(categories[idx].to_string())
-            } else {
-                None
-            }
-        };
+                custom.category = (idx > 0).then(|| items[idx].to_string());
 
-        // Prompt for required flag
-        let required = if yes {
-            false
-        } else {
-            match yes_no()
-                .with_prompt("Is this variable required?")
-                .default(false)
-                .interact_opt()?
-            {
-                Some(answer) => answer,
-                None => return Ok(aborted()),
-            }
-        };
-
-        additions.push((
-            entry(
-                name.trim(),
-                &example,
-                description.as_deref(),
-                category.as_deref(),
-                required,
-            ),
-            name.trim().to_string(),
-            category.clone(),
-        ));
-
-        // ⚠️ Built alongside the text rather than parsed back out of it. `custom`
-        // is the one `add` subcommand with no `VarCollection` of its own — it
-        // renders straight to lines — and the spec write-back needs the same
-        // structure every other subcommand already has.
-        collected.vars.insert(
-            name.trim().to_string(),
-            crate::schema::models::VarMetadata {
-                example_value: example.clone(),
-                description: description.clone(),
-                category,
-                required,
-                source: crate::schema::models::VarSource::BlueprintOverride,
-            },
-        );
-
-        if !yes {
-            let Some(continue_adding) = yes_no()
-                .with_prompt("Add another variable?")
-                .default(true)
-                .interact_opt()?
-            else {
-                return Ok(aborted());
-            };
-
-            if !continue_adding {
-                break;
+                let Some(req) = yes_no()
+                    .with_prompt("Is this variable required?")
+                    .default(false)
+                    .interact_opt()?
+                else {
+                    return Ok(None);
+                };
+                custom.required = req;
             }
         }
+        customs.push(custom);
+    }
+    Ok(Some(customs))
+}
+
+/// `--category security` → `Security`; an unknown one is refused with the list.
+fn canonical_category(given: &str) -> Result<String> {
+    CATEGORIES
+        .iter()
+        .find(|c| c.eq_ignore_ascii_case(given))
+        .map(|c| c.to_string())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown category '{given}'. Use one of: {}",
+                CATEGORIES.join(", ")
+            )
+        })
+}
+
+/// Plan, ask, write: the same path as every other subcommand (AD-S), so a
+/// name the files already have is skipped and reported, not appended again
+/// (I-016).
+fn write(output_path: &Path, customs: &[Custom], yes: bool, verbose: bool) -> Result<Outcome> {
+    let mut collected = VarCollection::default();
+    for c in customs {
+        // ⚠️ Built alongside the text rather than parsed back out of it.
+        // `custom` is the one `add` subcommand with no `VarCollection` of its
+        // own — it renders straight to lines — and the spec write-back needs
+        // the same structure every other subcommand already has.
+        collected.vars.insert(
+            c.name.clone(),
+            VarMetadata {
+                example_value: c.value.clone(),
+                description: c.description.clone(),
+                category: c.category.clone(),
+                required: c.required,
+                source: VarSource::BlueprintOverride,
+            },
+        );
     }
 
-    if additions.is_empty() {
-        println!("{}", "No variables added.".yellow());
-        return Ok(Outcome::Aborted);
-    }
-
-    // Skip what is there, list what differs, ask, write: the same path as
-    // every other subcommand (AD-S). A name typed here that the files already
-    // have used to be appended a second time (I-016).
-    let render = |v: &crate::schema::models::VarCollection| -> Result<String> {
+    let render = |v: &VarCollection| -> Result<String> {
         let mut content = String::from("\n# ── Custom Variables ──\n");
-        for (line, name, category) in &additions {
-            if !v.vars.contains_key(name) {
-                continue;
-            }
+        for c in customs.iter().filter(|c| v.vars.contains_key(&c.name)) {
             // A categorised entry keeps the blank line above it that it always had.
-            if category.is_some() {
+            if c.category.is_some() {
                 content.push('\n');
             }
-            content.push_str(line);
+            content.push_str(&entry(
+                &c.name,
+                &c.value,
+                c.description.as_deref(),
+                c.category.as_deref(),
+                c.required,
+            ));
             content.push('\n');
         }
         content.push_str(&format!(
@@ -206,12 +315,12 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
         ));
         Ok(content)
     };
-    let preview = |v: &crate::schema::models::VarCollection| {
+    let preview = |v: &VarCollection| {
         let mut out = format!("  • {} to add", count(v.vars.len(), "variable"));
-        let categories: Vec<&str> = additions
+        let categories: Vec<&str> = customs
             .iter()
-            .filter(|(_, name, _)| v.vars.contains_key(name))
-            .filter_map(|(_, _, cat)| cat.as_deref())
+            .filter(|c| v.vars.contains_key(&c.name))
+            .filter_map(|c| c.category.as_deref())
             .collect();
         if !categories.is_empty() {
             out.push_str(&format!("\n  • Categories: {}", categories.join(", ")));
@@ -221,7 +330,8 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
     let flow = Flow {
         noun: "custom variable",
         what: String::new(),
-        // Checked at the top: every variable here was typed at a prompt.
+        // Checked by the caller: prompts need a terminal, arguments need one
+        // only to be asked for a confirmation.
         terminal_example: None,
         heading: &print_preview_header,
         preview: &preview,

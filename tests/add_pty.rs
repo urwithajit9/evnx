@@ -27,14 +27,15 @@ fn project() -> Project {
         .file(".gitignore", ".env\n")
 }
 
-/// `add custom` up to the first question after the value.
+/// `add custom` up to the one question after the value (I-025: name, value,
+/// "More options?").
 fn custom_name_and_value(p: &Project, name: &str, value: &str) -> Pty {
     let mut s = Pty::spawn(p.path(), &["add", "custom"]);
     s.wait_for("Variable name");
     s.type_line(name);
     s.wait_for("Example/placeholder value");
     s.type_line(value);
-    s.wait_for("Add a description comment?");
+    s.wait_for("More options?");
     s
 }
 
@@ -42,19 +43,16 @@ fn custom_name_and_value(p: &Project, name: &str, value: &str) -> Pty {
 // Locked behaviour
 // ─────────────────────────────────────────────────────────────
 
-/// T-002 / T-ADD-01: replaces the ignored `add_custom_interactive`. One
-/// variable with no extras, written to both files under its own section.
+/// T-002 / T-ADD-01, T-ADD-44: replaces the ignored `add_custom_interactive`.
+/// One variable with no extras, written to both files under its own section:
+/// name, value, "More options?" no, then an empty name to finish.
 #[test]
 fn custom_writes_the_variable_and_its_section() {
     let p = project();
     let mut s = custom_name_and_value(&p, "MY_API_KEY", "sk_test_xxx");
     s.press(&["n", ENTER]);
-    s.wait_for("Assign to a category?");
-    s.press(&["n", ENTER]);
-    s.wait_for("Is this variable required?");
-    s.press(&["n", ENTER]);
-    s.wait_for("Add another variable?");
-    s.press(&["n", ENTER]);
+    s.wait_for("Variable name");
+    s.press(&[ENTER]); // empty name: finish
     s.wait_for("Append these variables to .env.example?");
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
@@ -114,26 +112,35 @@ fn yes_at_the_prompt_writes_what_dash_dash_yes_writes() {
 
 /// N-09 (fixed in 0.10.2, AD-A; was `known_n09_*`): `y⏎` answers one
 /// question. On 0.10.1 the `y` answered "Is this variable required?" and the
-/// Enter silently answered "Add another variable?" with its default.
+/// Enter silently answered the next question. Here the next prompt is the next
+/// variable's name: a leaked Enter would have ended the loop.
 #[test]
 fn y_enter_answers_exactly_one_question() {
     let p = project();
     let mut s = custom_name_and_value(&p, "N09_VAR", "v");
-    s.press(&["n", ENTER]);
-    s.wait_for("Assign to a category?");
-    s.press(&["n", ENTER]);
+    s.press(&["y", ENTER]); // more options
+    s.wait_for("Description (Enter for none)");
+    s.press(&[ENTER]);
+    s.wait_for("Category");
+    s.press(&[ENTER]); // None
     s.wait_for("Is this variable required?");
     s.press(&["y", ENTER]);
-    let shown = s.wait_for("Add another variable?");
-    assert!(!shown.contains("Add another variable? yes"), "{shown}");
+    s.wait_for("Variable name");
     std::thread::sleep(std::time::Duration::from_millis(300));
-    s.press(&["n", ENTER]); // the user's own answer
+    s.type_line("N09_SECOND");
+    s.wait_for("Example/placeholder value");
+    s.type_line("w");
+    s.wait_for("More options?");
+    s.press(&["n", ENTER]);
+    s.wait_for("Variable name");
+    s.press(&[ENTER]);
     s.wait_for("Append these variables to .env.example?");
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
     let example = p.read(".env.example");
-    assert!(example.contains("# (required)\nN09_VAR=v"), "{example}");
+    assert!(example.contains("# (required)\nN09_VAR=v\n"), "{example}");
+    assert!(example.contains("\nN09_SECOND=w\n"), "{example}");
 }
 
 /// I-016 (fixed in 0.10.2, AD-S; was `known_i016f_*`): a name typed in
@@ -144,12 +151,8 @@ fn custom_does_not_re_add_an_existing_name() {
     let p = project();
     let mut s = custom_name_and_value(&p, "VITE_ENV", "your_value");
     s.press(&["n", ENTER]);
-    s.wait_for("Assign to a category?");
-    s.press(&["n", ENTER]);
-    s.wait_for("Is this variable required?");
-    s.press(&["n", ENTER]);
-    s.wait_for("Add another variable?");
-    s.press(&["n", ENTER]);
+    s.wait_for("Variable name");
+    s.press(&[ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
     assert!(
@@ -159,6 +162,34 @@ fn custom_does_not_re_add_an_existing_name() {
     assert!(rest.contains("Nothing to add"), "{rest}");
     assert_eq!(p.count_lines(".env.example", "VITE_ENV="), 1);
     assert_eq!(p.count_lines(".env", "VITE_ENV="), 1);
+}
+
+/// DQ-A9: a secret-looking name given alone, in a terminal, is asked for
+/// without echo; what is typed is written and never shown.
+#[test]
+fn a_secret_name_alone_is_asked_for_unseen() {
+    let p = project();
+    let mut s = Pty::spawn(
+        p.path(),
+        &["add", "custom", "STRIPE_SECRET_KEY", "FEATURE_FLAG"],
+    );
+    s.wait_for("Value for STRIPE_SECRET_KEY (hidden");
+    s.type_line("sk_live_typed_here");
+    s.wait_for("Append these variables to .env.example?");
+    s.press(&["y", ENTER]);
+    let (rest, code) = s.finish();
+    assert_eq!(code, 0, "{rest}");
+    assert!(!rest.contains("sk_live_typed_here"), "{rest}");
+    let example = p.read(".env.example");
+    assert!(
+        example.contains("STRIPE_SECRET_KEY=sk_live_typed_here"),
+        "{example}"
+    );
+    // Not secret-looking: the placeholder, no question.
+    assert!(
+        example.contains("FEATURE_FLAG=your_value_here"),
+        "{example}"
+    );
 }
 
 /// DQ-A4: with no `.env`, an interactive `add` offers to create it from the
@@ -284,15 +315,15 @@ fn preview_groups_come_in_a_fixed_order() {
 /// question.
 fn custom_with_category_only(p: &Project, keys: &[&str]) -> String {
     let mut s = custom_name_and_value(p, "CAT_ONLY", "v1");
-    s.press(&["n", ENTER]); // no description
-    s.wait_for("Assign to a category?");
-    s.press(&["y", ENTER]);
+    s.press(&["y", ENTER]); // more options
+    s.wait_for("Description (Enter for none)");
+    s.press(&[ENTER]); // no description
     s.wait_for("Other");
     s.press(keys);
     let picked = s.wait_for("Is this variable required?");
     s.press(&["n", ENTER]);
-    s.wait_for("Add another variable?");
-    s.press(&["n", ENTER]);
+    s.wait_for("Variable name");
+    s.press(&[ENTER]);
     s.wait_for("Append these variables to .env.example?");
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
@@ -307,7 +338,7 @@ fn custom_with_category_only(p: &Project, keys: &[&str]) -> String {
 #[test]
 fn a_category_never_comments_the_variable_out() {
     let p = project();
-    custom_with_category_only(&p, &[ENTER]);
+    custom_with_category_only(&p, &[DOWN, ENTER]);
     let example = p.read(".env.example");
     assert!(
         example.contains("# [Application]\nCAT_ONLY=v1\n"),
@@ -320,12 +351,15 @@ fn a_category_never_comments_the_variable_out() {
 /// N-18 (fixed in 0.10.2, AD-B; was `known_n18_*`): the category list starts
 /// on its first item, so Enter picks it and Down moves to the second. On
 /// 0.10.1 nothing was selected, Enter did nothing, and Down landed on the first.
+/// Since AD-F the first item is "None".
 #[test]
 fn the_category_list_starts_on_the_first_item() {
     let p = project();
     let picked = custom_with_category_only(&p, &[ENTER]);
-    assert!(picked.contains("Select category: Application"), "{picked}");
+    assert!(picked.contains("Category: None"), "{picked}");
+    assert!(p.read(".env.example").contains("\nCAT_ONLY=v1\n"));
+    assert!(!p.read(".env.example").contains("# ["));
     let q = project();
     let picked = custom_with_category_only(&q, &[DOWN, ENTER]);
-    assert!(picked.contains("Select category: Security"), "{picked}");
+    assert!(picked.contains("Category: Application"), "{picked}");
 }

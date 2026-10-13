@@ -907,15 +907,18 @@ fn no_terminal_says_to_add_yes() {
     }
 }
 
-/// I-020 / I-025 (AD-F): `add custom --yes` still needs a terminal. Since
-/// AD-A it says so instead of printing dialoguer's raw error.
+/// I-020 (fixed in 0.10.2, AD-F; was `known_i020c_*`): with no terminal,
+/// `add custom` with no arguments points at the argument form, which needs
+/// none. On 0.10.1 `add custom --yes` could not run without a terminal at all.
 #[test]
-fn known_i020c_custom_yes_needs_a_terminal() {
+fn custom_without_a_terminal_points_at_arguments() {
     let p = Project::new();
     run(p.path(), &["add", "custom", "--yes"])
         .assert_code(2)
-        .assert_contains("`evnx add custom` asks for each variable, so it needs a terminal");
+        .assert_contains("evnx add custom NAME=value OTHER_NAME=value --yes");
     assert!(!p.exists(".env.example"));
+    run(p.path(), &["add", "custom", "A=1", "--yes"]).assert_code(0);
+    assert_eq!(p.count_lines(".env.example", "A=1"), 1);
 }
 
 /// I-021, DQ-A4 (fixed in 0.10.2, AD-S; was `known_i021_*`): with no `.env`,
@@ -963,13 +966,118 @@ fn verbose_says_appended() {
     assert!(stdout.contains("[DEBUG] Appended to ./.env\n"), "{stdout}");
 }
 
-/// I-025 (AD-F): `add custom` takes no `NAME=value` arguments.
+/// I-025, T-ADD-40 (fixed in 0.10.2, AD-F; was `known_i025_*`): `add custom`
+/// takes `NAME=value` arguments, several at once, with no terminal.
 #[test]
-fn known_i025_custom_takes_no_arguments() {
+fn custom_takes_name_value_arguments() {
+    let p = Project::new().example("APP=1\n").env("APP=1\n");
+    run(
+        p.path(),
+        &[
+            "add",
+            "custom",
+            "API_URL=https://api.example.com",
+            "DEBUG=false",
+            "--yes",
+        ],
+    )
+    .assert_code(0)
+    .assert_contains("Added 2 custom variables");
+    for f in [".env.example", ".env"] {
+        let text = p.read(f);
+        assert!(
+            text.contains("\nAPI_URL=https://api.example.com\n"),
+            "{f}:\n{text}"
+        );
+        assert!(text.contains("\nDEBUG=false\n"), "{f}:\n{text}");
+        assert!(text.contains("# ── Custom Variables ──"), "{f}:\n{text}");
+    }
+}
+
+/// T-ADD-41: a name without a value gets the placeholder (no terminal, or
+/// `--yes`, so nothing is asked even for a secret-looking name).
+#[test]
+fn custom_name_alone_gets_the_placeholder() {
     let p = Project::new();
-    run(p.path(), &["add", "custom", "API_KEY=abc", "--yes"])
-        .assert_code(2)
-        .assert_contains("unexpected argument 'API_KEY=abc'");
+    run(
+        p.path(),
+        &[
+            "add",
+            "custom",
+            "FEATURE_FLAG",
+            "STRIPE_SECRET_KEY",
+            "--yes",
+        ],
+    )
+    .assert_code(0);
+    let example = p.read(".env.example");
+    assert!(
+        example.contains("FEATURE_FLAG=your_value_here"),
+        "{example}"
+    );
+    assert!(
+        example.contains("STRIPE_SECRET_KEY=your_value_here"),
+        "{example}"
+    );
+}
+
+/// T-ADD-42: an invalid or repeated name fails before anything is written,
+/// even when the names before it are fine.
+#[test]
+fn custom_checks_every_name_before_writing() {
+    let p = Project::new();
+    for args in [
+        &["add", "custom", "GOOD=1", "my var=2", "--yes"][..],
+        &["add", "custom", "GOOD=1", "9LIVES=2", "--yes"],
+        &["add", "custom", "GOOD=1", "GOOD=2", "--yes"],
+        &["add", "custom", "GOOD=1", "--category", "nope", "--yes"],
+    ] {
+        run(p.path(), args).assert_code(2);
+        assert!(!p.exists(".env.example"), "{args:?}");
+    }
+}
+
+/// T-ADD-43: `--desc`, `--category` (any case) and `--required` apply to
+/// every name given, in one comment line above each.
+#[test]
+fn custom_flags_go_into_the_written_block() {
+    let p = Project::new();
+    run(
+        p.path(),
+        &[
+            "add",
+            "custom",
+            "WEBHOOK_SECRET",
+            "--desc",
+            "Webhook signing secret",
+            "--category",
+            "security",
+            "--required",
+            "--yes",
+        ],
+    )
+    .assert_code(0);
+    let example = p.read(".env.example");
+    assert!(
+        example.contains(
+            "# [Security] Webhook signing secret (required)\nWEBHOOK_SECRET=your_value_here\n"
+        ),
+        "{example}"
+    );
+}
+
+/// T-ADD-45: a name the template already has is skipped and reported (AD-S).
+#[test]
+fn custom_argument_already_present_is_skipped() {
+    let p = Project::new().example("DEBUG=false\n");
+    run(
+        p.path(),
+        &["add", "custom", "DEBUG=false", "NEW=1", "--yes"],
+    )
+    .assert_code(0)
+    .assert_contains("Added 1 custom variable, skipped 1 already present");
+    assert_eq!(p.count_lines(".env.example", "DEBUG="), 1);
+    assert_eq!(p.count_lines(".env.example", "NEW="), 1);
 }
 
 /// I-026 (AD-G): no `--list`, `--dry-run` or `--json`.
