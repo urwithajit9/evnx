@@ -104,20 +104,19 @@ fn add_service_unknown_returns_error() {
         .stderr(predicate::str::contains("unknown component"));
 }
 
-/// I-016 (KNOWN in 0.10.1; flipped by AD-S): adding a service twice writes
-/// every name twice, in both files, and the second run still says it added
-/// them. T-003: this was `add_service_multiple_times_deduplicates`, commented
-/// out with the right expectation (`DATABASE_URL` once); it comes back as that
-/// test when AD-S lands.
+/// I-016 (fixed in 0.10.2, AD-S; was `known_i016_*`). T-003: this is the
+/// test that sat commented out as `add_service_multiple_times_deduplicates`,
+/// with the right expectation, while the product duplicated every name.
 #[test]
-fn known_i016_re_adding_a_service_duplicates_every_name() {
+fn add_service_multiple_times_deduplicates() {
     let p = Project::new().example("APP_NAME=test\n").env("APP_NAME=\n");
     run(p.path(), &["add", "service", "postgresql", "--yes"]).assert_code(0);
     run(p.path(), &["add", "service", "postgresql", "--yes"])
         .assert_code(0)
-        .assert_contains("Added 6 variables for PostgreSQL");
-    assert_eq!(p.count_lines(".env.example", "DATABASE_URL="), 2);
-    assert_eq!(p.count_lines(".env", "DATABASE_URL="), 2);
+        .assert_contains("Nothing to add: 6 variables for PostgreSQL already in .env.example")
+        .assert_not_contains("Added");
+    assert_eq!(p.count_lines(".env.example", "DATABASE_URL="), 1);
+    assert_eq!(p.count_lines(".env", "DATABASE_URL="), 1);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -658,36 +657,37 @@ fn other_env_files_are_left_alone() {
 // KNOWN IN 0.10.1 — each test pins a defect; the named package flips it
 // ─────────────────────────────────────────────────────────────
 
-/// I-016 (AD-S): `add blueprint` re-adds a name whose value is identical; it
-/// skips only names whose value differs.
+/// I-016 (fixed in 0.10.2, AD-S; was `known_i016d_*`): `add blueprint` skips
+/// a name already present with the same value, and says how many it skipped.
 #[test]
-fn known_i016d_blueprint_re_adds_identical_names() {
+fn blueprint_skips_names_already_present() {
     let p = Project::new();
     run(p.path(), &["add", "service", "postgresql", "--yes"]).assert_code(0);
-    run(p.path(), &["add", "blueprint", "t3_modern", "--yes"]).assert_code(0);
-    assert_eq!(p.count_lines(".env.example", "DATABASE_URL="), 2);
+    run(p.path(), &["add", "blueprint", "t3_modern", "--yes"])
+        .assert_code(0)
+        // t3_modern's six PostgreSQL names are already there, same values.
+        .assert_contains("skipped 6 already present");
+    assert_eq!(p.count_lines(".env.example", "DATABASE_URL="), 1);
 }
 
-/// I-016 (AD-S; DA-14 in the docs): `add service` appends a name whose
-/// existing value differs, with no conflict shown.
+/// I-016, DQ-A3 (fixed in 0.10.2, AD-S; was `known_i016e_*`): a name whose
+/// value in `.env.example` differs is kept, not appended, and listed. All four
+/// subcommands do this now; only `blueprint` did on 0.10.1.
 #[test]
-fn known_i016e_a_differing_value_is_appended_without_warning() {
+fn a_differing_value_is_kept_and_listed() {
     let dir = TempDir::new().unwrap();
     setup_postgres_project(dir.path()).unwrap();
-    let out = run(dir.path(), &["add", "service", "postgresql", "--yes"]);
-    out.assert_code(0);
-    assert!(
-        !out.all().to_lowercase().contains("conflict"),
-        "{}",
-        out.all()
-    );
+    run(dir.path(), &["add", "service", "postgresql", "--yes"])
+        .assert_code(0)
+        .assert_contains("with a different value in .env.example: kept as it is")
+        .assert_contains("DATABASE_URL (existing: \"postgresql://user:pass@localhost/prod_db\"");
     let example = read_env_example(dir.path()).unwrap();
     assert_eq!(
         example
             .lines()
             .filter(|l| l.starts_with("DATABASE_URL="))
             .count(),
-        2
+        1
     );
 }
 
@@ -701,34 +701,52 @@ fn effective(text: &str, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// N-11 (high; AD-S): a re-add appends the placeholder below the user's real
-/// value in `.env`, and the placeholder is the one that takes effect.
+/// N-11 (fixed in 0.10.2, AD-S; was `known_n11_*`): a name `.env` already
+/// has is not appended there again, so the user's real value stays the one in
+/// effect. On 0.10.1 the placeholder landed below it and won.
 #[test]
-fn known_n11_a_re_add_shadows_the_real_env_value() {
+fn a_re_add_keeps_the_real_env_value() {
     let p = Project::new()
         .example("REDIS_URL=redis://localhost:6379/0\n")
         .env(&format!("{REAL_REDIS}\n"));
     run(p.path(), &["add", "service", "redis", "--yes"]).assert_code(0);
+    assert_eq!(p.count_lines(".env", "REDIS_URL="), 1);
     assert_eq!(
-        effective(&p.read(".env"), "REDIS_URL").as_deref(),
-        Some("REDIS_URL=redis://localhost:6379/0")
-    );
-}
-
-/// N-11b (AD-S): `add blueprint` looks for conflicts in `.env.example` only, so
-/// a real value in `.env` is shadowed and no conflict is shown.
-#[test]
-fn known_n11b_blueprint_misses_a_conflict_in_env() {
-    let p = Project::new()
-        .example("REDIS_URL=redis://localhost:6379/0\n")
-        .env(&format!("{REAL_REDIS}\n"));
-    let out = run(p.path(), &["add", "blueprint", "fastapi_ai", "--yes"]);
-    out.assert_code(0)
-        .assert_not_contains("REDIS_URL (existing");
-    assert_ne!(
         effective(&p.read(".env"), "REDIS_URL").as_deref(),
         Some(REAL_REDIS)
     );
+}
+
+/// N-11b (fixed in 0.10.2, AD-S; was `known_n11b_*`): `add blueprint` keeps
+/// a real `.env` value too. `.env`'s value is never printed: it is a secret,
+/// and differs from the placeholder by design.
+#[test]
+fn blueprint_keeps_the_real_env_value() {
+    let p = Project::new()
+        .example("REDIS_URL=redis://localhost:6379/0\n")
+        .env(&format!("{REAL_REDIS}\n"));
+    run(p.path(), &["add", "blueprint", "fastapi_ai", "--yes"])
+        .assert_code(0)
+        .assert_not_contains("real-host");
+    assert_eq!(
+        effective(&p.read(".env"), "REDIS_URL").as_deref(),
+        Some(REAL_REDIS)
+    );
+}
+
+/// DQ-A2: per file. A name `.env.example` already has but `.env` lacks is
+/// added to `.env` only, and the run says so.
+#[test]
+fn env_catches_up_with_the_template() {
+    let p = Project::new()
+        .example("REDIS_URL=redis://localhost:6379/0\n")
+        .env("OTHER=1\n");
+    run(p.path(), &["add", "service", "redis", "--yes"])
+        .assert_code(0)
+        .assert_contains("Added 4 variables for Redis, skipped 1 already present")
+        .assert_contains("Added 1 variable to .env that .env.example already had: REDIS_URL");
+    assert_eq!(p.count_lines(".env.example", "REDIS_URL="), 1);
+    assert_eq!(p.count_lines(".env", "REDIS_URL="), 1);
 }
 
 /// I-017 (fixed in 0.10.2, AD-C; was `known_i017_*`): `--language` is
@@ -853,7 +871,7 @@ fn yes_never_previews_and_quiet_shows_only_problems() {
     let q = Project::new().example("DATABASE_URL=postgres://mine\n");
     let out = run(q.path(), &["-q", "add", "blueprint", "t3_modern", "--yes"]);
     out.assert_code(0)
-        .assert_contains("1 conflict detected")
+        .assert_contains("1 variable with a different value in .env.example")
         .assert_contains("DATABASE_URL (existing")
         .assert_not_contains("Added")
         .assert_not_contains("Preview:");
@@ -900,14 +918,22 @@ fn known_i020c_custom_yes_needs_a_terminal() {
     assert!(!p.exists(".env.example"));
 }
 
-/// I-021 (AD-S, DQ-A4): with no `.env`, `add` writes only `.env.example`.
-/// After AD-S it creates `.env` from the template, as `init` does.
+/// I-021, DQ-A4 (fixed in 0.10.2, AD-S; was `known_i021_*`): with no `.env`,
+/// `add` creates it from the template, as `init` does: `.gitignore` first,
+/// then a byte copy. Under `--yes` without asking. On 0.10.1 it wrote only
+/// `.env.example` and said nothing.
 #[test]
-fn known_i021_no_env_is_created() {
+fn no_env_is_created_from_the_template() {
     let p = Project::new();
-    run(p.path(), &["add", "service", "redis", "--yes"]).assert_code(0);
-    assert!(p.exists(".env.example"));
-    assert!(!p.exists(".env"));
+    run(p.path(), &["add", "service", "redis", "--yes"])
+        .assert_code(0)
+        .assert_contains("Created .env from .env.example");
+    assert_eq!(p.read(".env"), p.read(".env.example"));
+    assert!(
+        p.read(".gitignore").contains(".env*"),
+        "{}",
+        p.read(".gitignore")
+    );
 }
 
 /// I-022 (fixed in 0.10.2, AD-A; was `known_i022c_*`): one conflict is
@@ -918,10 +944,9 @@ fn one_conflict_is_singular() {
     let p = Project::new().example("DATABASE_URL=postgres://mine\n");
     run(p.path(), &["add", "blueprint", "t3_modern", "--yes"])
         .assert_code(0)
-        .assert_contains("1 conflict detected")
-        .assert_contains("Skipped 1 conflicting variable (preserved existing values)")
-        .assert_not_contains("1 conflicts")
-        .assert_not_contains("1 conflicting variables");
+        .assert_contains("1 variable with a different value in .env.example")
+        .assert_contains("skipped 1 already present")
+        .assert_not_contains("1 variables");
 }
 
 /// I-024 (fixed in 0.10.2, AD-A; was `known_i024_*`; DA-15): `-v` says what
@@ -963,12 +988,12 @@ fn known_i026_no_list_dry_run_or_json() {
     assert!(!p.exists(".env.example"));
 }
 
-/// N-14 (AD-S): with a read-only `.env`, the run fails after `.env.example`
-/// was already appended. (N-14b, the error not naming the file, was fixed in
-/// AD-A and is asserted here too.)
+/// N-14 (fixed in 0.10.2, AD-S; was `known_n14_*`): a read-only `.env` stops
+/// the run before anything is written. On 0.10.1 `.env.example` had already
+/// been appended. N-14b (AD-A): the error names the file.
 #[cfg(unix)]
 #[test]
-fn known_n14_read_only_env_leaves_a_partial_write() {
+fn a_read_only_env_stops_the_run_before_any_write() {
     let p = Project::new()
         .example("A=\n")
         .env("A=1\n")
@@ -985,7 +1010,7 @@ fn known_n14_read_only_env_leaves_a_partial_write() {
     // N-14b (fixed in 0.10.2, AD-A): the error names the file.
     out.assert_code(2)
         .assert_contains("Failed to write ./.env: Permission denied");
-    assert_eq!(p.count_lines(".env.example", "REDIS_URL="), 1);
+    assert_eq!(p.count_lines(".env.example", "REDIS_URL="), 0);
     assert_eq!(p.count_lines(".env", "REDIS_URL="), 0);
 }
 
@@ -1020,4 +1045,23 @@ fn known_br1_service_adds_no_browser_copies() {
     let example = p.read(".env.example");
     assert!(example.contains("\nSUPABASE_URL="), "{example}");
     assert!(!example.contains("VITE_SUPABASE_URL="), "{example}");
+}
+
+/// N-11 in `init --from-source` (fixed in 0.10.2, AD-S): it appends through
+/// `add`'s planner, so a name the user already set in `.env` is not appended
+/// there again below the real value.
+#[test]
+fn init_from_source_keeps_the_real_env_value() {
+    let p = Project::new()
+        .file("src/app.ts", "const u = process.env.REDIS_URL;\n")
+        .example("APP=1\n")
+        .env(&format!("APP=1\n{REAL_REDIS}\n"))
+        .file(".gitignore", ".env\n");
+    run(p.path(), &["init", "--from-source", "--yes"]).assert_code(0);
+    assert_eq!(p.count_lines(".env.example", "REDIS_URL="), 1);
+    assert_eq!(p.count_lines(".env", "REDIS_URL="), 1);
+    assert_eq!(
+        effective(&p.read(".env"), "REDIS_URL").as_deref(),
+        Some(REAL_REDIS)
+    );
 }

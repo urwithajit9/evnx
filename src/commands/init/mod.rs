@@ -21,7 +21,7 @@ mod blank;
 mod blueprint;
 mod components;
 mod detect;
-mod shared;
+pub(crate) mod shared;
 mod source;
 
 pub use shared::{write_env_files, WriteOptions};

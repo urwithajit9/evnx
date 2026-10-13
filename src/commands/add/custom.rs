@@ -5,9 +5,9 @@ use colored::*;
 use dialoguer::{Input, Select};
 use std::path::Path;
 
-use super::shared::{aborted, append_to_env_files, count, Outcome};
+use super::shared::{aborted, confirm_and_apply, count, Flow, Outcome};
 use crate::utils::prompt::{require_terminal_or, yes_no};
-use crate::utils::ui::{info, print_header, print_preview_header, success};
+use crate::utils::ui::{info, print_header, print_preview_header};
 
 /// Handle interactive custom variable addition
 pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
@@ -184,74 +184,51 @@ pub fn handle(output_path: &Path, yes: bool, verbose: bool) -> Result<Outcome> {
         return Ok(Outcome::Aborted);
     }
 
-    // Format all additions
-    let mut content = String::from("\n# ── Custom Variables ──\n");
-    for (line, _name, category) in &additions {
-        // A categorised entry keeps the blank line above it that it always had.
-        if category.is_some() {
+    // Skip what is there, list what differs, ask, write: the same path as
+    // every other subcommand (AD-S). A name typed here that the files already
+    // have used to be appended a second time (I-016).
+    let render = |v: &crate::schema::models::VarCollection| -> Result<String> {
+        let mut content = String::from("\n# ── Custom Variables ──\n");
+        for (line, name, category) in &additions {
+            if !v.vars.contains_key(name) {
+                continue;
+            }
+            // A categorised entry keeps the blank line above it that it always had.
+            if category.is_some() {
+                content.push('\n');
+            }
+            content.push_str(line);
             content.push('\n');
         }
-        content.push_str(line);
-        content.push('\n');
-    }
-    content.push_str(&format!(
-        "\n# Added by evnx add custom on {}\n",
-        chrono::Local::now().format("%Y-%m-%d %H:%M")
-    ));
-
-    // Show summary
-    // println!("\n{}", "📋 Summary:".bold());
-    // println!("  • {} variables to add", additions.len());
-    if !yes {
-        print_preview_header();
-        println!("  • {} to add", count(additions.len(), "variable"));
-    }
-
-    let _categories: Vec<_> = additions
-        .iter()
-        .filter_map(|(_, _, cat)| cat.as_ref())
-        .collect();
-
-    let categories: Vec<String> = additions
-        .iter()
-        .filter_map(|(_, _, cat)| cat.as_ref().cloned())
-        .collect();
-
-    if !categories.is_empty() {
-        println!("  • Categories: {}", categories.join(", "));
-    }
-
-    // Confirm
-    if !yes {
-        let confirm = yes_no()
-            .with_prompt("Append these variables to .env.example?")
-            .default(true)
-            .interact_opt()?;
-        if confirm != Some(true) {
-            return Ok(aborted());
+        content.push_str(&format!(
+            "\n# Added by evnx add custom on {}\n",
+            chrono::Local::now().format("%Y-%m-%d %H:%M")
+        ));
+        Ok(content)
+    };
+    let preview = |v: &crate::schema::models::VarCollection| {
+        let mut out = format!("  • {} to add", count(v.vars.len(), "variable"));
+        let categories: Vec<&str> = additions
+            .iter()
+            .filter(|(_, name, _)| v.vars.contains_key(name))
+            .filter_map(|(_, _, cat)| cat.as_deref())
+            .collect();
+        if !categories.is_empty() {
+            out.push_str(&format!("\n  • Categories: {}", categories.join(", ")));
         }
-    }
-
-    // Append to files
-    append_to_env_files(
-        output_path,
-        &content,
-        super::shared::AppendMode::WithConflictWarning,
-        verbose,
-        &collected,
-    )?;
-
-    // println!(
-    //     "{} Added {} custom variables",
-    //     "✓".green(),
-    //     additions.len()
-    // );
-    success(format!(
-        "Added {}",
-        count(additions.len(), "custom variable")
-    ));
-
-    Ok(Outcome::Written)
+        out
+    };
+    let flow = Flow {
+        noun: "custom variable",
+        what: String::new(),
+        // Checked at the top: every variable here was typed at a prompt.
+        terminal_example: None,
+        heading: &print_preview_header,
+        preview: &preview,
+        question: &|_, file| format!("Append these variables to {file}?"),
+        render: &render,
+    };
+    confirm_and_apply(output_path, &collected, &flow, yes, verbose)
 }
 
 /// One variable as it is written: an optional comment line, then `NAME=value`.

@@ -416,13 +416,15 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
         // warns about `.gitignore`, because it runs in someone else's project;
         // `init` owns these rules (N-06, DQ-10).
         let gitignore_line = super::shared::update_gitignore(root)?;
-        let addition = formatter::format_addition_from(&vars, "evnx init --from-source")?;
-        crate::commands::add::shared::append_to_env_files(
+        // Through `add`'s planner, so a name the user already set in `.env`
+        // is not appended there again below their real value (N-11).
+        let plan = crate::commands::add::shared::plan(root, &vars)?;
+        crate::commands::add::shared::apply(
             root,
-            &addition,
-            crate::commands::add::shared::AppendMode::SkipConflicts,
+            &plan,
+            &|v| formatter::format_addition_from(v, "evnx init --from-source"),
             verbose,
-            &vars,
+            None, // init creates `.env` itself, just below
         )?;
         if let Some(line) = gitignore_line {
             ui::say(line);

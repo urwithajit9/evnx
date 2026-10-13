@@ -4,10 +4,9 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::path::Path;
 
-use super::shared::{aborted, append_to_env_files, count, kind_hint, AppendMode, Outcome};
+use super::shared::{confirm_and_apply, count, kind_hint, Flow, Outcome};
 use crate::schema::{component, formatter, loader};
-use crate::utils::prompt::{require_terminal, yes_no};
-use crate::utils::ui::{info, success};
+use crate::utils::ui::info;
 
 /// Handle framework addition.
 ///
@@ -105,53 +104,31 @@ pub fn handle(
     // for a framework that belongs to a different language.
     let vars = component::resolve(&[framework_id.to_string()])?;
 
-    // 4–5. Preview and confirm, unless --yes. `--yes` never previews (DQ-A6):
-    // it used to here and in `blueprint` but not in `service`, and `-q` did
-    // not hide it (I-019, N-15).
-    if !yes {
-        require_terminal(&format!(
+    let name = framework
+        .display_name
+        .clone()
+        .unwrap_or_else(|| framework_id.to_string());
+    let heading = || println!("\n{}", "Preview:".bold());
+    let question =
+        |n: usize, file: &str| format!("Add these {} for {name} to {file}?", count(n, "variable"));
+    let render = |v: &crate::schema::models::VarCollection| {
+        Ok(format!(
+            "\n# ── Framework: {name} ──\n{}",
+            formatter::format_addition(v)?
+        ))
+    };
+    let flow = Flow {
+        noun: "variable",
+        what: format!("for {name}"),
+        terminal_example: Some(format!(
             "evnx add framework --language {language_id} {framework_id} --yes"
-        ))?;
-        println!("\n{}", "Preview:".bold());
-        println!("{}", formatter::generate_preview(&vars).dimmed());
-
-        let confirm = yes_no()
-            .with_prompt(format!(
-                "Add these {} for {} to .env.example?",
-                count(vars.vars.len(), "variable"),
-                framework.display_name.as_deref().unwrap_or(framework_id)
-            ))
-            .default(true)
-            .interact_opt()?;
-        if confirm != Some(true) {
-            return Ok(aborted());
-        }
-    }
-
-    // 6. Format as addition with framework header
-    let addition = formatter::format_addition(&vars)?;
-    let header = format!(
-        "\n# ── Framework: {} ──\n",
-        framework.display_name.as_deref().unwrap_or(framework_id)
-    );
-    let content = format!("{}{}", header, addition);
-
-    // 7. Append to files
-    append_to_env_files(
-        output_path,
-        &content,
-        AppendMode::WithConflictWarning,
-        verbose,
-        &vars,
-    )?;
-
-    success(format!(
-        "Added {} for {}",
-        count(vars.vars.len(), "variable"),
-        framework.display_name.as_deref().unwrap_or(framework_id)
-    ));
-
-    Ok(Outcome::Written)
+        )),
+        heading: &heading,
+        preview: &formatter::generate_preview,
+        question: &question,
+        render: &render,
+    };
+    confirm_and_apply(output_path, &vars, &flow, yes, verbose)
 }
 
 #[cfg(test)]

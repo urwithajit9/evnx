@@ -136,11 +136,11 @@ fn y_enter_answers_exactly_one_question() {
     assert!(example.contains("# (required)\nN09_VAR=v"), "{example}");
 }
 
-/// I-016 (AD-S): `add custom` accepts a name that is already there. (I-022,
-/// the plural in "1 variables to add", was fixed in AD-A and is asserted
-/// here too.)
+/// I-016 (fixed in 0.10.2, AD-S; was `known_i016f_*`): a name typed in
+/// `add custom` that `.env.example` already has is not appended again. Here
+/// its value differs, so it is listed as a conflict and nothing is written.
 #[test]
-fn known_i016f_custom_re_adds_an_existing_name() {
+fn custom_does_not_re_add_an_existing_name() {
     let p = project();
     let mut s = custom_name_and_value(&p, "VITE_ENV", "your_value");
     s.press(&["n", ENTER]);
@@ -150,15 +150,59 @@ fn known_i016f_custom_re_adds_an_existing_name() {
     s.press(&["n", ENTER]);
     s.wait_for("Add another variable?");
     s.press(&["n", ENTER]);
-    let shown = s.wait_for("Append these variables to .env.example?");
-    assert!(shown.contains("1 variable to add"), "{shown}");
+    let (rest, code) = s.finish();
+    assert_eq!(code, 0, "{rest}");
+    assert!(
+        rest.contains("VITE_ENV (existing: \"development\""),
+        "{rest}"
+    );
+    assert!(rest.contains("Nothing to add"), "{rest}");
+    assert_eq!(p.count_lines(".env.example", "VITE_ENV="), 1);
+    assert_eq!(p.count_lines(".env", "VITE_ENV="), 1);
+}
+
+/// DQ-A4: with no `.env`, an interactive `add` offers to create it from the
+/// template after writing, and does so on yes: a byte copy, `.gitignore` first.
+#[test]
+fn offers_to_create_env_when_there_is_none() {
+    let p = Project::new().example("APP=1\n");
+    let mut s = Pty::spawn(p.path(), &["add", "service", "redis"]);
+    s.wait_for("Add these 5 variables to .env.example?");
+    s.press(&["y", ENTER]);
+    s.wait_for("Create .env from your .env.example?");
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
-    assert!(rest.contains("Added 1 custom variable"), "{rest}");
-    assert!(!rest.contains("custom variables"), "{rest}");
-    assert_eq!(p.count_lines(".env.example", "VITE_ENV="), 2);
-    assert_eq!(p.count_lines(".env", "VITE_ENV="), 2);
+    assert_eq!(p.read(".env"), p.read(".env.example"));
+    assert!(p.read(".gitignore").contains(".env*"));
+}
+
+/// T-ADD-13: before asking, the preview counts only what is new, and lists
+/// what is skipped and what is kept.
+#[test]
+fn the_question_counts_only_new_names_and_lists_conflicts() {
+    let p = Project::new()
+        .example("DATABASE_URL=postgres://mine\nDB_PORT=5432\n")
+        .file(".gitignore", ".env\n");
+    let mut s = Pty::spawn(p.path(), &["add", "service", "postgresql"]);
+    let shown = s.wait_for("Add these 4 variables to .env.example?");
+    assert!(
+        shown.contains("Already in .env.example, skipped: DB_PORT"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("DATABASE_URL (existing: \"postgres://mine\""),
+        "{shown}"
+    );
+    s.press(&["y", ENTER]);
+    // No `.env` here, so it asks, as `init` does (DQ-A4); no, this time.
+    s.wait_for("Create .env from your .env.example?");
+    s.press(&["n", ENTER]);
+    let (rest, code) = s.finish();
+    assert_eq!(code, 0, "{rest}");
+    assert!(!p.exists(".env"));
+    assert_eq!(p.count_lines(".env.example", "DATABASE_URL="), 1);
+    assert_eq!(p.count_lines(".env.example", "DB_HOST="), 1);
 }
 
 /// N-12 (fixed in 0.10.2, AD-A; was `known_n12_*`): an abort prints no next
