@@ -552,7 +552,7 @@ fn every_refusal_exits_2_and_writes_nothing() {
             "--yes",
         ],
         &["add", "framework", "--language", "python", "nope", "--yes"],
-        &["add", "framework", "nextjs", "--yes"],
+        &["add", "framework", "nope", "--yes"],
         &["add", "blueprint", "nope", "--yes"],
         &["add"],
     ] {
@@ -731,20 +731,39 @@ fn known_n11b_blueprint_misses_a_conflict_in_env() {
     );
 }
 
-/// I-017 (AD-C): `add framework` needs `--language`, though framework ids are
-/// unique across languages.
+/// I-017 (fixed in 0.10.2, AD-C; was `known_i017_*`): `--language` is
+/// optional, as framework ids are unique; aliases work too. On 0.10.1
+/// `add framework nextjs` was a clap error, though the README showed it.
 #[test]
-fn known_i017_framework_needs_language() {
+fn framework_needs_no_language() {
+    for id in ["nextjs", "next"] {
+        let p = Project::new();
+        run(p.path(), &["add", "framework", id, "--yes"])
+            .assert_code(0)
+            .assert_contains("Added 4 variables for Next.js");
+    }
     let p = Project::new();
-    run(p.path(), &["add", "framework", "nextjs", "--yes"])
-        .assert_code(2)
-        .assert_contains("--language <LANGUAGE>");
+    run(
+        p.path(),
+        &[
+            "add",
+            "framework",
+            "--language",
+            "python",
+            "django",
+            "--yes",
+        ],
+    )
+    .assert_code(0)
+    .assert_contains("Added 5 variables for Django");
 }
 
-/// I-017b (AD-C): the wrong language for a known framework lists that
-/// language's frameworks and does not say which language `nextjs` belongs to.
+/// I-017b (fixed in 0.10.2, AD-C; was `known_i017b_*`): the wrong language
+/// for a known framework says which language it belongs to. An unknown id
+/// with a language still lists that language's frameworks; without one it
+/// gets the shared catalogue message with near matches.
 #[test]
-fn known_i017b_wrong_language_gives_no_hint() {
+fn wrong_language_names_the_right_one() {
     let p = Project::new();
     run(
         p.path(),
@@ -758,21 +777,61 @@ fn known_i017b_wrong_language_gives_no_hint() {
         ],
     )
     .assert_code(2)
-    .assert_contains("Unknown framework 'nextjs' for language 'python'")
-    .assert_not_contains("javascript_typescript");
+    .assert_contains(
+        "nextjs is a javascript_typescript framework: use --language javascript_typescript",
+    );
+    run(
+        p.path(),
+        &["add", "framework", "--language", "python", "nope", "--yes"],
+    )
+    .assert_code(2)
+    .assert_contains("Available: django, fastapi_flask");
+    run(p.path(), &["add", "framework", "nxtjs", "--yes"])
+        .assert_code(2)
+        .assert_contains("Did you mean: nextjs");
+    assert!(!p.exists(".env.example"));
 }
 
-/// I-018 (AD-C): `add service` takes an infra id without saying so, and there
-/// is no `add infra` (DQ-A7 adds it).
+/// I-018 (fixed in 0.10.2, AD-C, DQ-A7; was `known_i018_*`): one id space.
+/// `add service` and `add framework` take any catalogue id and say what it
+/// is; `add infra` is `add service` under another name. On 0.10.1 an infra id
+/// went through `add service` silently and `add infra` did not exist.
 #[test]
-fn known_i018_service_takes_infra_without_a_hint() {
+fn any_id_through_any_subcommand_with_a_hint() {
+    for (args, hint) in [
+        (
+            &["add", "service", "vercel"][..],
+            "vercel is an infra component; adding it.",
+        ),
+        (
+            &["add", "infra", "vercel"],
+            "vercel is an infra component; adding it.",
+        ),
+        (
+            &["add", "service", "nextjs"],
+            "nextjs is a javascript_typescript framework; adding it.",
+        ),
+        (
+            &["add", "framework", "postgresql"],
+            "postgresql is a service component; adding it.",
+        ),
+        (
+            &["add", "framework", "vercel"],
+            "vercel is an infra component; adding it.",
+        ),
+    ] {
+        let p = Project::new();
+        let mut full = args.to_vec();
+        full.push("--yes");
+        let out = run(p.path(), &full);
+        out.assert_code(0).assert_contains(hint);
+        assert_eq!(out.all().matches("adding it.").count(), 1, "{}", out.all());
+    }
+    // A service through `add service` or `add infra` needs no hint.
     let p = Project::new();
-    let out = run(p.path(), &["add", "service", "vercel", "--yes"]);
-    out.assert_code(0);
-    assert!(!out.all().to_lowercase().contains("infra"), "{}", out.all());
-    run(p.path(), &["add", "infra", "vercel", "--yes"])
-        .assert_code(2)
-        .assert_contains("unrecognized subcommand 'infra'");
+    run(p.path(), &["add", "infra", "postgresql", "--yes"])
+        .assert_code(0)
+        .assert_not_contains("adding it.");
 }
 
 /// I-019b and N-15 (fixed in 0.10.2, AD-A, DQ-A6; was

@@ -177,12 +177,13 @@ Short names work too (`postgres`, `pg`, `mongo`, `next`, `k8s` and others; see `
 
 ### `evnx add`
 
-Add variables to an existing `.env` file interactively. Supports custom input, service blueprints, and variable templates.
+Add the variables a service, framework or whole stack needs to `.env.example` and `.env`, without retyping them. Same catalogue and section headings as `init`. Each subcommand shows a preview and asks first; `--yes` skips the question (scripts and CI need it).
 
 ```bash
-evnx add                          # interactive
-evnx add service postgresql       # a known service, non-interactively
-evnx add framework nextjs
+evnx add service postgresql       # any catalogue id: a service, an infra target or a framework (`add infra` is an alias)
+evnx add framework nextjs         # --language is optional
+evnx add blueprint t3_modern      # a whole stack
+evnx add custom                   # your own variables, one prompt at a time
 ```
 
 ---

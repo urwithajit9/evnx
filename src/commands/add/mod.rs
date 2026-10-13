@@ -45,7 +45,7 @@ pub fn run(
         crate::cli::AddTarget::Framework {
             language,
             framework,
-        } => framework::handle(&language, &framework, output_path, yes, verbose)?,
+        } => framework::handle(language.as_deref(), &framework, output_path, yes, verbose)?,
         crate::cli::AddTarget::Blueprint { blueprint } => {
             blueprint::handle(&blueprint, output_path, yes, verbose)?
         }

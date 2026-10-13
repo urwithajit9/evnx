@@ -12,22 +12,30 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 /// Target for adding environment variables.
 #[derive(Subcommand, Debug, Clone)]
 pub enum AddTarget {
-    /// Add variables for a specific service.
+    /// Add variables for a service, infrastructure target or framework.
+    ///
+    /// Takes any id `evnx init --with` takes, aliases included: a service
+    /// (postgresql, redis, stripe), an infrastructure target (vercel, docker)
+    /// or a framework (nextjs). `add infra` is the same command.
     ///
     /// Example: evnx add service postgresql
+    #[command(visible_alias = "infra")]
     Service {
-        /// Service ID (e.g., "postgresql", "redis", "stripe").
+        /// Catalogue id (e.g., "postgresql", "vercel"). `evnx init --list-components` lists them.
         #[arg()]
         service: String,
     },
 
     /// Add variables for a framework.
     ///
-    /// Example: evnx add framework --language python django
+    /// Framework ids are unique across languages, so `--language` is optional;
+    /// when given it is checked.
+    ///
+    /// Example: evnx add framework nextjs
     Framework {
-        /// Language ID (e.g., "python", "javascript_typescript").
+        /// Language id (e.g., "python", "javascript_typescript"). Optional.
         #[arg(long, short)]
-        language: String,
+        language: Option<String>,
 
         /// Framework ID (e.g., "django", "nextjs", "axum_actix").
         #[arg()]
@@ -1457,7 +1465,7 @@ pub enum Commands {
     /// Add environment variables to existing .env files.
     ///
     /// Subcommands:
-    /// • service: Add vars for a service (e.g., postgresql)
+    /// • service (or infra): Add vars for any catalogue id (e.g., postgresql, vercel)
     /// • framework: Add vars for a framework (e.g., django)
     /// • blueprint: Add vars from a stack blueprint
     /// • custom: Interactive custom variable addition

@@ -159,13 +159,13 @@ After `init`, edit `.env` and replace placeholder values with your real credenti
 
 ## Step 2 — Add variables
 
-Once your project is initialised, use `evnx add` to add new variables interactively without touching the file directly:
+Once your project is initialised, use `evnx add` to add the variables of a new service, framework or whole stack without touching the files directly:
 
 ```bash
-evnx add
+evnx add service stripe
 ```
 
-The interactive flow lets you add a custom variable, pick from a service blueprint (e.g. add Stripe variables to an existing project), or select from a variable template. This keeps `.env` and `.env.example` in sync as your project grows.
+It shows a preview and asks before writing; `--yes` skips the question. `evnx add framework <id>` and `evnx add blueprint <id>` work the same way, and `evnx add custom` asks for your own variables one at a time. `.env.example` and `.env` are updated together, so they stay in sync as your project grows.
 
 ---
 

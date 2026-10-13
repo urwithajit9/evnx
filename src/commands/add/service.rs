@@ -2,14 +2,23 @@ use anyhow::Result;
 use colored::*;
 use std::path::Path;
 
-use super::shared::{aborted, count, Outcome};
+use super::shared::{aborted, count, kind_hint, Outcome};
 use crate::schema::{component, formatter};
 use crate::utils::prompt::{require_terminal, yes_no};
-use crate::utils::ui::{print_header, print_preview_header, success};
+use crate::utils::ui::{info, print_header, print_preview_header, success};
 
 pub fn handle(service_id: &str, path: &str, yes: bool, _verbose: bool) -> Result<Outcome> {
     let vars = component::resolve(&[service_id.to_string()])?;
-    let display_name = component::find(service_id)?
+    let found = component::find(service_id)?;
+    // One id space (I-018): an infra or framework id is added, and named for
+    // what it is. `add infra` is this same command.
+    if let Some(c) = found
+        .as_ref()
+        .filter(|c| c.kind != component::Kind::Service)
+    {
+        info(kind_hint(c));
+    }
+    let display_name = found
         .map(|c| c.display_name)
         .unwrap_or_else(|| service_id.to_string());
 

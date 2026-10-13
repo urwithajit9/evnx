@@ -30,6 +30,24 @@ pub fn aborted() -> Outcome {
     Outcome::Aborted
 }
 
+/// The one line that says what an id is when it is added through a
+/// subcommand named for another group: `vercel is an infra component; adding
+/// it.` (I-018). One id space, as `init --with` has: the id is not refused.
+pub fn kind_hint(c: &crate::schema::component::Component) -> String {
+    use crate::schema::component::Kind;
+    let what = match c.kind {
+        Kind::Framework => format!("a {} framework", c.group),
+        Kind::Service => "a service".to_string(),
+        Kind::Infrastructure => "an infra".to_string(),
+    };
+    let what = if c.kind == Kind::Framework {
+        what
+    } else {
+        format!("{what} component")
+    };
+    format!("{} is {what}; adding it.", c.id)
+}
+
 /// `1 variable`, `2 variables`: a count with its noun (I-022).
 pub fn count(n: usize, noun: &str) -> String {
     if n == 1 {
