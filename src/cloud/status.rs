@@ -21,20 +21,33 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
     let server = CloudConfig::resolve_server(server_override)?;
     let store = Store::load()?;
     let now = chrono::Utc::now().timestamp();
+    // `-q` (DEC-G3, I-225): the answer is data and stays — server, account,
+    // status, token, vault, reachable. The heading, the hints, the spacing and
+    // the Docs line are hidden.
+    let quiet = crate::utils::ui::is_quiet();
+    let gap = || {
+        if !quiet {
+            println!();
+        }
+    };
 
-    println!("{}", "evnx cloud".bold());
+    if !quiet {
+        println!("{}", "evnx cloud".bold());
+    }
     println!("  server    {server}");
 
     match store.session(&server) {
         None => {
             println!("  status    {}", "not signed in".yellow());
-            println!();
-            println!("  No credentials for this server.");
-            println!("    {}   create an account", "evnx auth register".cyan());
-            println!(
-                "    {}      sign in on this machine",
-                "evnx auth login".cyan()
-            );
+            if !quiet {
+                println!();
+                println!("  No credentials for this server.");
+                println!("    {}   create an account", "evnx auth register".cyan());
+                println!(
+                    "    {}      sign in on this machine",
+                    "evnx auth login".cyan()
+                );
+            }
         }
         Some(session) => {
             println!("  account   {}", session.email);
@@ -60,10 +73,12 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
                     "  token     {} — the next command will try to renew it",
                     "access token expired".dimmed()
                 );
-                println!(
-                    "  {}",
-                    "run `evnx auth status` to confirm with the server".dimmed()
-                );
+                if !quiet {
+                    println!(
+                        "  {}",
+                        "run `evnx auth status` to confirm with the server".dimmed()
+                    );
+                }
             }
         }
     }
@@ -75,14 +90,14 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
         .and_then(|d| super::binding::read(&d).ok().flatten())
     {
         Some(bound) => {
-            println!();
+            gap();
             println!("  vault     {}", bound.vault.bold());
             if verbose {
                 println!("  bound by  {}", bound.path.display());
             }
         }
         None if verbose => {
-            println!();
+            gap();
             println!(
                 "  vault     {} — push and pull need --vault",
                 "not bound".dimmed()
@@ -93,23 +108,25 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
 
     let others: Vec<&str> = store.servers().filter(|s| *s != server).collect();
     if !others.is_empty() {
-        println!();
+        gap();
         println!("  Also signed in to:");
         for s in others {
             println!("    {s}");
         }
-        println!("  Use --server to act on one of those instead.");
+        if !quiet {
+            println!("  Use --server to act on one of those instead.");
+        }
     }
 
     if verbose {
-        println!();
+        gap();
         println!("  config      {}", config::config_path()?.display());
         println!("  credentials {}", config::credentials_path()?.display());
         println!("  No network request was made.");
     }
 
     if ping {
-        println!();
+        gap();
         match Client::new(server.clone()).and_then(|c| c.health()) {
             Ok(health) => {
                 println!(
@@ -118,13 +135,15 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
                     health.status,
                     health.version
                 );
-                println!();
-                println!("{}", crate::docs::CLOUD.hint_line());
+                gap();
+                if !quiet {
+                    println!("{}", crate::docs::CLOUD.hint_line());
+                }
                 Ok(())
             }
             Err(e) => {
                 println!("  reachable {}", "no".red());
-                println!();
+                gap();
                 // Returned rather than merely printed: the exit code is what a
                 // health-check script reads. Re-wrapped as a flat message so the
                 // reason prints on one line instead of as an anyhow chain that
@@ -133,8 +152,10 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
             }
         }
     } else {
-        println!();
-        println!("{}", crate::docs::CLOUD.hint_line());
+        if !quiet {
+            println!();
+            println!("{}", crate::docs::CLOUD.hint_line());
+        }
         Ok(())
     }
 }

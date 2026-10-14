@@ -570,8 +570,9 @@ fn write_output(content: &str, output_path: Option<&str>, verbose: bool) -> Resu
                     format!("{} Output written to: {}", ui::glyph::OK, path).dimmed()
                 );
             } else {
-                println!("{} Converted successfully", "✓".green());
-                println!("Output written to: {}", path);
+                // Both hidden by `-q`: the file is the result (I-007 family).
+                ui::success("Converted successfully");
+                ui::say(format!("Output written to: {path}"));
             }
         }
         None => {

@@ -184,7 +184,13 @@ fn run_text(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) ->
     if verbose {
         ui::info(format!("Project path: {}", project_root.display()));
     }
-    println!();
+    // `-q` (I-164, decided: hides the report): checks run as usual, but nothing
+    // prints until the end, and then only if something needs attention. A
+    // healthy project prints nothing; findings still print (G1).
+    let quiet = ui::is_quiet();
+    if !quiet {
+        println!();
+    }
 
     let mut report = DiagnosticReport {
         project_path: project_root.to_string_lossy().to_string(),
@@ -216,7 +222,20 @@ fn run_text(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) ->
         report.checks.push(result.clone());
 
         // Print immediate result using existing UI utilities
-        print_check_result_text(&result, verbose);
+        if !quiet {
+            print_check_result_text(&result, verbose);
+        }
+    }
+
+    if quiet {
+        // No errors and no warnings cannot be a failure, even under `--strict`.
+        if report.summary.errors == 0 && report.summary.warnings == 0 {
+            return Ok(());
+        }
+        println!();
+        for result in &report.checks {
+            print_check_result_text(result, verbose);
+        }
     }
 
     // Print summary

@@ -38,8 +38,6 @@ Next steps:
   ok: --exit-zero reports but exits 0 (exit 0)
 
 $ evnx scan . --no-color -q
-  scanning ./.env
-
   ✗  AWS Access Key                              high
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder

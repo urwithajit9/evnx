@@ -15,8 +15,6 @@ For more information, try '--help'.
 
 $ evnx migrate --to heroku --heroku-app a -q
 
-✓ Loaded 8 secrets from env-file
-
 · Heroku Config Vars migration
 · Requires Heroku CLI
   Install: https://devcenter.heroku.com/articles/heroku-cli
@@ -36,11 +34,6 @@ heroku config:set --app a \
 Summary:
   ✓  8 command(s) generated
      nothing has been uploaded — run the commands above
-
-Next steps:
-  1. Verify with `heroku config --app a`.
-  2. The dyno restarts automatically after `config:set`.
-  3. Remove your local .env file.
 [exit 0]
   ok: KNOWN I-105: -q changes nothing; decided: hides banner and next steps (exit 0)
 

@@ -310,7 +310,8 @@ fn output_pretty(
     show_values: bool,
 ) -> Result<()> {
     if !diff.has_changes() {
-        println!("{} Files are identical", "✓".green());
+        // `ui::success`: same line, and `-q` hides it (I-079).
+        ui::success("Files are identical");
         return Ok(());
     }
 

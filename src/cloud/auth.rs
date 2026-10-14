@@ -497,8 +497,15 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
 
+    // `-q` (DEC-G3, I-225): the answer stays, the heading and hints go.
+    let quiet = crate::utils::ui::is_quiet();
+
     if !client.is_signed_in() {
-        println!("  Not signed in to {server}. Run `evnx auth login`.");
+        if quiet {
+            println!("  Not signed in to {server}.");
+        } else {
+            println!("  Not signed in to {server}. Run `evnx auth login`.");
+        }
         return Ok(());
     }
 
@@ -515,16 +522,22 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
     let me: MeResponse = match client.get("/api/v1/auth/me") {
         Ok(me) => me,
         Err(crate::cloud::client::ApiError::Unauthorized) => {
-            println!("{}", "evnx account".bold());
+            if !quiet {
+                println!("{}", "evnx account".bold());
+            }
             println!("  server    {server}");
             println!("  status    {}", "session expired".yellow());
-            println!("  Run `evnx auth login` to sign in again.");
+            if !quiet {
+                println!("  Run `evnx auth login` to sign in again.");
+            }
             return Ok(());
         }
         Err(e) => return Err(anyhow!("{e}")),
     };
 
-    println!("{}", "evnx account".bold());
+    if !quiet {
+        println!("{}", "evnx account".bold());
+    }
     println!("  server    {server}");
     println!("  email     {}", me.email);
     println!(
@@ -547,7 +560,7 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
         println!("  user id   {}", me.user_id);
     }
 
-    if !me.email_verified {
+    if !me.email_verified && !quiet {
         println!();
         println!("  Vault commands stay unavailable until you open the verification");
         println!("  link sent to {}.", me.email);

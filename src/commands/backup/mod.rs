@@ -297,20 +297,23 @@ pub fn run(
         let size_display = format!("{} bytes (encrypted + Base64)", backup_size);
         let verify_display = if verify { "yes" } else { "no" };
 
-        println!();
-        ui::success(if verify {
-            "Backup created and verified successfully"
-        } else {
-            "Backup created successfully"
-        });
-        ui::print_key_value(&[
-            ("Source", env.as_str()),
-            ("Backup", output_path.to_str().unwrap_or(&output_path_str)),
-            ("Size", &size_display),
-            ("Verified", verify_display),
-        ]);
+        // `-q`: nothing on success, the reminder included (DEC-G4, I-153).
+        if !ui::is_quiet() {
+            println!();
+            ui::success(if verify {
+                "Backup created and verified successfully"
+            } else {
+                "Backup created successfully"
+            });
+            ui::print_key_value(&[
+                ("Source", env.as_str()),
+                ("Backup", output_path.to_str().unwrap_or(&output_path_str)),
+                ("Size", &size_display),
+                ("Verified", verify_display),
+            ]);
 
-        print_next_steps(&output_path, &env);
+            print_next_steps(&output_path, &env);
+        }
         ui::print_docs_hint(&docs::BACKUP);
 
         Ok(())

@@ -58,11 +58,15 @@ pub(crate) fn resolve_target(explicit: Option<String>) -> Result<String> {
     let cwd = std::env::current_dir().context("reading the current directory")?;
     match binding::read(&cwd)? {
         Some(bound) => {
-            println!(
-                "  using {} from {}",
-                bound.vault.bold(),
-                bound.path.display()
-            );
+            // stderr and hidden by `-q` (DEC-CL4, I-226): `cloud pull` to stdout
+            // and `cloud run` print data there, and this line is not part of it.
+            if !crate::utils::ui::is_quiet() {
+                eprintln!(
+                    "  using {} from {}",
+                    bound.vault.bold(),
+                    bound.path.display()
+                );
+            }
             Ok(bound.vault)
         }
         None => Err(anyhow!(
@@ -572,12 +576,17 @@ pub fn link(server_override: Option<&str>, vault_target: String, verbose: bool) 
     let canonical = format!("{}/{}", vault_ref.name, vault_ref.environment);
     let path = binding::write(&cwd, &canonical)?;
 
-    println!("  {} bound this directory to {canonical}", "✓".green());
-    println!("  written to {}", path.display());
-    println!();
-    println!("  `evnx cloud push` and `pull` now work here without --vault.");
-    println!("  Safe to commit — a vault name is not a secret, and sharing it");
-    println!("  means a teammate's pull lands in the same place.");
+    // `-q` (DEC-CL3, I-225): silent on success.
+    use crate::utils::ui::say;
+    say(format!(
+        "  {} bound this directory to {canonical}",
+        "✓".green()
+    ));
+    say(format!("  written to {}", path.display()));
+    say("");
+    say("  `evnx cloud push` and `pull` now work here without --vault.");
+    say("  Safe to commit — a vault name is not a secret, and sharing it");
+    say("  means a teammate's pull lands in the same place.");
     if verbose {
         println!("  vault id  {}", vault_ref.id);
     }
@@ -588,10 +597,12 @@ pub fn link(server_override: Option<&str>, vault_target: String, verbose: bool) 
 pub fn unlink(verbose: bool) -> Result<()> {
     let cwd = std::env::current_dir().context("reading the current directory")?;
     match binding::clear(&cwd)? {
+        // `-q` (DEC-CL3, I-225): silent on success. "No binding" is the
+        // answer to what the user asked for, so it stays.
         Some(path) => {
-            println!("  {} removed the vault binding", "✓".green());
+            crate::utils::ui::say(format!("  {} removed the vault binding", "✓".green()));
             if verbose {
-                println!("  from {}", path.display());
+                crate::utils::ui::say(format!("  from {}", path.display()));
             }
         }
         None => println!("  This directory has no vault binding."),

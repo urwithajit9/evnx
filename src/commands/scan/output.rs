@@ -140,7 +140,10 @@ pub fn render(results: &ScanResults, format: OutputFormat, files: &[PathBuf]) ->
 /// * `results` - Scan results to render
 /// * `files` - List of scanned files for summary
 fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
-    if !files.is_empty() {
+    // `-q` (I-060): no progress line and, on a clean run, no all-clear. Findings,
+    // unreadable files and the summary under findings still print (G1).
+    let quiet = crate::utils::ui::is_quiet();
+    if !files.is_empty() && !quiet {
         let shown = files
             .iter()
             .take(3)
@@ -165,6 +168,9 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
 
     if results.secrets_found == 0 {
         if results.unreadable.is_empty() {
+            if quiet {
+                return Ok(());
+            }
             println!("  {}  No secrets detected", glyph::OK.green());
         } else {
             // Not a tick. Nothing was found, and that is not the same as clean.

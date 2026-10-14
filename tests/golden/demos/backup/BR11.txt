@@ -2,20 +2,9 @@
 ================ BR11 ================
 
 $ evnx -q backup --key-file pw
-
-  Source  : .env
-  Backup  : .env.backup
-  Size    : 620 bytes (encrypted + Base64)
-  Verified: no
-
-! Important:
-  • Keep your password (or key file) safe — it cannot be recovered
-  • Store the backup in a secure, separate location
-  • To restore: evnx restore .env.backup --output .env
-  • Test the restore before deleting the original .env
 [exit 0]
-  ok: KNOWN I-153 residual: -q still prints the summary (exit 0)
-  ok: KNOWN I-153 residual: since 0.10.1 -q hides the banner and Docs line but still prints the summary (decided: -q hides decoration)
+  ok: I-153 fixed (DEC-G4): -q backup prints nothing on success (exit 0)
+  ok: I-153 fixed (DEC-G4): -q output is empty, without -q the summary prints
   ok: -v prints no secret value or passphrase
 
 ================ summary: 3 ok, 0 mismatch   ================

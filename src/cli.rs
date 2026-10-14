@@ -1391,7 +1391,7 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
-    /// Suppress non-essential output.
+    /// Print nothing on success. Findings, warnings, errors and requested data still print.
     #[arg(short, long, global = true)]
     pub quiet: bool,
 

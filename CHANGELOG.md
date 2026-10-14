@@ -27,9 +27,30 @@ terminal shows both exactly as before.
   their detail lines: the permissions hint in `sync`, the `.gitignore` remedy and
   conflict list in `add`, the `.restored` fallback note in `restore`.
 - `scan -q` no longer prints the banner (part of I-060).
+- `cloud pull`, `push`, `run`, `history` and the other vault commands print
+  "using <vault> from <file>" on stderr, and not at all under `-q` (I-226). It
+  used to be the first line of stdout, ahead of the pulled file or the child's
+  output.
 - Not changed yet, and announced here one release ahead: success lines (`✓ …`),
   tips (`· …`) and "Next steps" stay on stdout in this release and are planned to
   move to stderr in a later one.
+
+### Changed — `-q` is silent on success
+
+`-q` now means what its help says: **nothing on success**; findings, warnings,
+errors and data you asked for still print (I-007). A script that ran with `-q`
+and read a success line must check the exit code instead.
+
+- `diff` (no differences), `convert -o`, `scan` (clean), `doctor` (healthy),
+  `backup`, `restore`, `cloud link` and `cloud unlink` print nothing on success.
+  `backup` drops the "Important" reminder too (I-079, I-060, I-164, I-153).
+- `doctor -q` with a finding prints the full report and exits 1, as before.
+- `migrate -q` drops "Loaded N secrets" and "Next steps" (I-105). The
+  destination's own intro lines stay until `--print-only` (I-111).
+- `cloud status -q` and `auth status -q` print the answer only (server, account,
+  status, token, vault): no heading, hints or Docs line.
+- `restore -q --inspect` and `--dry-run` still print the backup information.
+- The `-q` help text says this, instead of "Suppress non-essential output".
 
 ### Library
 
@@ -58,6 +79,9 @@ terminal shows both exactly as before.
   `spec_integration` parses that stdout as TOML (T-SP-20).
 - `scripts/behaviour-lock.sh <cmd> [old] [new]` runs a demo twice, or with two
   binaries, and lists every line that moved.
+- `tests/quiet_walk.rs` (T-SHARE-60) reads every command from `evnx commands
+  --json`: each one has a `-q` success case that must print nothing, or a stated
+  reason it has none. A new command fails the test until it is classified.
 
 ## [0.10.2] - 2026-10-14
 

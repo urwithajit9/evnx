@@ -1,6 +1,6 @@
 
 ================ DR9 ================
-  ok: KNOWN I-164 residual: since 0.10.1 -q hides the banner but still prints the report; decided: -q hides the report
+  ok: I-164 fixed: -q doctor on a healthy project prints nothing; the report still prints when there is a finding
 
 $ env EVNX_OUTPUT_JSON=1 evnx doctor
 {

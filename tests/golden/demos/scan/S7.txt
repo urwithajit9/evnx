@@ -34,8 +34,6 @@ Next steps:
   ok: config merges: weakening is announced on screen (exit 1)
 
 $ evnx scan . -q
-  scanning ./.env, ./.evnx.toml
-
   ✗  AWS Access Key                              high
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder

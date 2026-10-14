@@ -45,7 +45,7 @@ Options:
           Show detailed diagnostic output
 
   -q, --quiet
-          Suppress non-essential output
+          Print nothing on success. Findings, warnings, errors and requested data still print
 
       --no-color
           Disable colored output

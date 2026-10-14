@@ -92,13 +92,13 @@ pub fn run(args: MigrateArgs) -> Result<()> {
     // ── Load secrets from source ──────────────────────────────────────────
     let raw = load_secrets(&source, &args.source_file, args.verbose)?;
 
-    println!(
+    ui::say(format!(
         "\n{} Loaded {} secret{} from {}",
         "✓".green(),
         raw.len(),
         if raw.len() == 1 { "" } else { "s" },
         source,
-    );
+    ));
 
     if raw.is_empty() {
         // ⚠️ Not `Ok(())`. This returned 0 and printed no docs link, so a
@@ -209,9 +209,11 @@ pub fn run(args: MigrateArgs) -> Result<()> {
         // steps are written for a migration that happened — "verify secrets
         // were set", "redeploy your project" — and printing them directly under
         // "nothing was uploaded" contradicts the line above them (F12).
-        println!("\nNext step:");
-        println!("  Re-run without --dry-run to apply this.");
-    } else if result.failed == 0 {
+        ui::say("\nNext step:");
+        ui::say("  Re-run without --dry-run to apply this.");
+    } else if result.failed == 0 && !ui::is_quiet() {
+        // `-q` hides the banner and next steps (I-105, accepted as proposed).
+        // The destinations' own intro lines move with `--print-only` (I-111).
         dest.print_next_steps();
     }
     ui::print_docs_hint(&docs::MIGRATE);

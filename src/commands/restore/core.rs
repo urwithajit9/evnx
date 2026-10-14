@@ -259,7 +259,11 @@ pub fn prepare_restore(
     // ── Metadata ──────────────────────────────────────────────────────────────
     // Shown on inspect, dry-run, and normal paths so the user can confirm this
     // is the correct backup before any file is written.
-    print_metadata(&metadata, &content);
+    // `-q` hides it on a plain restore (DEC-G4); `--inspect` and `--dry-run`
+    // print it because it is what they were asked for.
+    if !ui::is_quiet() || options.inspect || options.dry_run {
+        print_metadata(&metadata, &content);
+    }
 
     // ── Inspect ───────────────────────────────────────────────────────────────
     // List variable names (never values) and exit. No file is written, no
@@ -283,10 +287,7 @@ pub fn prepare_restore(
 
     // ── Success message ───────────────────────────────────────────────────────
     ui::success("Decryption successful");
-    println!(
-        "{}",
-        format!("  {} Decryption key cleared from memory", "✓".green()).dimmed()
-    );
+    ui::say(format!("  {} Decryption key cleared from memory", "✓".green()).dimmed());
 
     // ── Choose write path ─────────────────────────────────────────────────────
     let (write_path, used_fallback) = choose_write_path(&options.output, &content, options.verbose);
@@ -339,14 +340,18 @@ pub fn commit_restore(mut outcome: RestoreOutcome, options: &RestoreOptions) -> 
         ui::verbose_stderr("Plaintext content zeroized from memory");
     }
 
-    println!(
-        "\n{} Restored {} variable(s) to {}",
-        "✓".green(),
-        var_count,
-        outcome.write_path.display(),
-    );
+    // `-q`: nothing on success (DEC-G4, I-153). A fallback write is not a plain
+    // success (exit 5), so its steps print regardless.
+    if !ui::is_quiet() || outcome.used_fallback {
+        println!(
+            "\n{} Restored {} variable(s) to {}",
+            "✓".green(),
+            var_count,
+            outcome.write_path.display(),
+        );
 
-    print_next_steps(&outcome.write_path, &options.output, outcome.used_fallback);
+        print_next_steps(&outcome.write_path, &options.output, outcome.used_fallback);
+    }
     ui::print_docs_hint(&crate::docs::RESTORE);
 
     if outcome.used_fallback {
