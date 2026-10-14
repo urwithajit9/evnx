@@ -2,6 +2,7 @@
 ================ S11 ================
 
 $ evnx sync --check --env empty.env
+[stderr]
 
   evnx sync  empty.env ↔ .env.example  (forward)
 
@@ -9,15 +10,11 @@ $ evnx sync --check --env empty.env
 · Overly permissive .env files may expose secrets to other users
 ! empty.env has no variables, while .env.example has 4. Nothing was copied.
 · If that is unexpected, check you are in the right directory. To fill empty.env from the template instead, run `evnx sync --direction reverse`.
-[stderr]
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: KNOWN I-127: empty source, full template: warning but exit 0; decided: exit 2 under --check (exit 0)
 
 $ evnx sync --check --direction reverse --env nope.env
-
-  evnx sync  nope.env ↔ .env.example  (reverse)
-
 · nope.env not found, creating from .env.example
 
 Preview:
@@ -28,10 +25,13 @@ Target: nope.env (action: Add)
   ! API_PORT = 8080
   ! REDIS_URL = redis://localhost:6379
 
-! Replace placeholder values with real credentials!
 
 (dry-run: no files were modified)
 [stderr]
+
+  evnx sync  nope.env ↔ .env.example  (reverse)
+
+! Replace placeholder values with real credentials!
   Docs: https://docs.evnx.dev/cli/commands/sync
 
 ✗ Out of sync. Run `evnx sync --direction reverse` and commit the result.

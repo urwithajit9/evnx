@@ -2,12 +2,7 @@
 ================ BR10 ================
 
 $ evnx restore golden.bak --key-file golden.key --output golden.out
-
-  evnx restore  Decrypt and restore from an encrypted backup
-
 ✓ Read backup from golden.bak
-! Reading password from file: golden.key
-  Less secure than interactive prompt — avoid in shared environments.
 
 Backup information:
   Schema version: v1
@@ -25,6 +20,11 @@ Next steps:
   2. Verify your application starts correctly
   3. Delete the backup file once you have confirmed the restore
 [stderr]
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+! Reading password from file: golden.key
+  Less secure than interactive prompt — avoid in shared environments.
   Docs: https://docs.evnx.dev/cli/commands/restore
 [exit 0]
   ok: FORMAT LOCK: the backup made by 0.10.0 opens in this version (exit 0)

@@ -4,10 +4,9 @@
 //! is a contract. The command is the `--help` example (D-127, fixed in
 //! 0.10.1).
 //!
-//! ⚠️ The first lines of the golden file are the banner, which 0.10.2 prints
-//! on stdout. That is I-176: U1 moves it to stderr (DEC-SP1) and regenerates
-//! this file on purpose. Everything from the `# ── Variable contract` line
-//! down must stay byte for byte through U1 and U3.
+//! Until 0.10.2 the first lines here were the banner, printed on stdout
+//! (I-176). Since DEC-SP1 / DEC-G1 it is on stderr, and this file holds only
+//! TOML; `tests/spec_integration.rs` parses it as such.
 
 mod support;
 

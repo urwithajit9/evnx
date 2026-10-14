@@ -2,14 +2,14 @@
 ================ TP8 ================
 
 $ evnx template --input config.tpl.yml --output out1.yml --gitignore
-
-  Generate config from template
-
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at out1.yml
 ✓ Added 'out1.yml' to .gitignore
 [stderr]
+
+  Generate config from template
+
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: --gitignore adds the output (exit 0)
@@ -19,27 +19,27 @@ $ evnx template --input config.tpl.yml --output out1.yml --gitignore
 out1.yml
 
 $ evnx template --input config.tpl.yml --output out2.yml
-
-  Generate config from template
-
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at out2.yml
-! 'out2.yml' may contain secrets and is not in .gitignore
 [stderr]
+
+  Generate config from template
+
+! 'out2.yml' may contain secrets and is not in .gitignore
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: default mode without a terminal: warning only (exit 0)
 
 $ evnx template --input config.tpl.yml --output out3.yml --gitignore
-
-  Generate config from template
-
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at out3.yml
 ✓ 'out3.yml' is already in .gitignore
 [stderr]
+
+  Generate config from template
+
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: KNOWN I-139: says already in .gitignore, but the negation means git will commit it (exit 0)
@@ -49,14 +49,14 @@ git: NOT ignored
 [exit 0]
 
 $ evnx template --input config.tpl.yml --output out4.yml --gitignore
-
-  Generate config from template
-
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at out4.yml
 ✓ Added 'out4.yml' to .gitignore
 [stderr]
+
+  Generate config from template
+
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: KNOWN O-8: already tracked: added to .gitignore, no word that it stays tracked (exit 0)

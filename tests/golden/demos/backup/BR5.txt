@@ -2,10 +2,6 @@
 ================ BR5 ================
 
 $ evnx backup ex.env --key-file pw --output ex.bak
-
-  evnx backup  Encrypt and back up your .env file
-
-! File does not look like a standard .env file — backing up anyway
 · Using key file for encryption (non-interactive mode)
 
 ✓ Backup created successfully
@@ -20,17 +16,16 @@ $ evnx backup ex.env --key-file pw --output ex.bak
   • To restore: evnx restore ex.bak --output ex.env
   • Test the restore before deleting the original .env
 [stderr]
+
+  evnx backup  Encrypt and back up your .env file
+
+! File does not look like a standard .env file — backing up anyway
   Docs: https://docs.evnx.dev/cli/commands/backup
 [exit 0]
   ok: KNOWN I-145: warns 'does not look like a standard .env file' (exit 0)
 
 $ evnx restore ex.bak --key-file pw --inspect
-
-  evnx restore  Decrypt and restore from an encrypted backup
-
 ✓ Read backup from ex.bak
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
 
 Backup information:
   Schema version: v1
@@ -46,16 +41,17 @@ Variables in this backup (names only — values never shown):
 
 ✓ 3 variable(s) found
   To restore: evnx restore <backup-file>
+[stderr]
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
 [exit 0]
   ok: inspect uses the real parser: three names, no values (exit 0)
 
 $ evnx restore b.bak --key-file pw --dry-run
-
-  evnx restore  Decrypt and restore from an encrypted backup
-
 ✓ Read backup from b.bak
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
 
 Backup information:
   Schema version: v1
@@ -67,17 +63,18 @@ Backup information:
 ✓ Decrypted content appears to be a valid .env file
 
 ✓ Dry-run complete — no files were written
+[stderr]
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
 [exit 0]
   ok: dry-run: nothing written (exit 0)
   ok: no file created by dry-run
 
 $ evnx restore b.bak --key-file pw --inspect --dry-run
-
-  evnx restore  Decrypt and restore from an encrypted backup
-
 ✓ Read backup from b.bak
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
 
 Backup information:
   Schema version: v1
@@ -101,6 +98,12 @@ Variables in this backup (names only — values never shown):
 
 ✓ 11 variable(s) found
   To restore: evnx restore <backup-file>
+[stderr]
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
 [exit 0]
   ok: both flags: inspect wins (exit 0)
   ok: no value reaches the output

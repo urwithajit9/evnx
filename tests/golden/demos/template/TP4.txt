@@ -2,13 +2,13 @@
 ================ TP4 ================
 
 $ evnx template --input e.tpl --output e.out --no-gitignore
-
-  Generate config from template
-
 ✓ Loaded 7 variables from .env
 ✓ Read template from e.tpl
 ✓ Generated config at e.out
 [stderr]
+
+  Generate config from template
+
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: KNOWN I-136/I-135: unknown filter, bash default and chained filter are written through silently; no escape (exit 0)

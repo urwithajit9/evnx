@@ -2,9 +2,6 @@
 ================ SP7 ================
 
 $ evnx validate
-
-  evnx validate  Check environment configuration
-
   ✗  A looks like a placeholder
      .env
 
@@ -16,6 +13,9 @@ Next steps:
   3. Use --ignore issue_type to suppress specific warnings
 [stderr]
   config    .evnx.toml
+
+  evnx validate  Check environment configuration
+
 Validation failed: 1 error
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]
@@ -37,9 +37,6 @@ $ evnx scan
 KNOWN I-187: 'secrett' is ignored: B is not declared secret
 
 $ evnx validate
-
-  evnx validate  Check environment configuration
-
   ✗  B is not a match for /urll/
      .env
      →  Fix the value, or relax `format` in [vars.B]
@@ -52,6 +49,9 @@ Next steps:
   3. Use --ignore issue_type to suppress specific warnings
 [stderr]
   config    .evnx.toml
+
+  evnx validate  Check environment configuration
+
 Validation failed: 1 error
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]

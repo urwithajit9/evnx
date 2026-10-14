@@ -360,7 +360,8 @@ fn add_warns_when_env_is_committable() {
         .assert()
         .success();
 
-    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    // stderr: a warning and its remedy are notices, not output (DEC-G2).
+    let out = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
     assert!(out.contains(".gitignore"), "no warning:\n{out}");
     assert!(out.contains("doctor --fix"), "no remedy offered:\n{out}");
 }

@@ -2,13 +2,13 @@
 ================ TP9 ================
 
 $ evnx template --input config.tpl.yml --output p.yml --env-name production --no-gitignore
-
-  Generate config from template
-
 ✓ Loaded 7 variables from ./.env.production
 ✓ Read template from config.tpl.yml
 ✓ Generated config at p.yml
 [stderr]
+
+  Generate config from template
+
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: --env-name production (exit 0)
@@ -28,11 +28,11 @@ No verdict: evnx did not run. This is not a clean result.
   ok: unknown environment lists the existing ones (exit 2)
 
 $ evnx template --input nope.tpl --output p3.yml --no-gitignore
+✓ Loaded 7 variables from .env
+[stderr]
 
   Generate config from template
 
-✓ Loaded 7 variables from .env
-[stderr]
 Error: Failed to read template file: nope.tpl: No such file or directory (os error 2)
 
 No verdict: evnx did not finish. This is not a clean result.
@@ -40,10 +40,10 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: missing input (exit 2)
 
 $ evnx template --input config.tpl.yml --output p4.yml --env nope.env --no-gitignore
+[stderr]
 
   Generate config from template
 
-[stderr]
 Error: Failed to parse environment file: nope.env: nope.env does not exist
 
 No verdict: evnx did not finish. This is not a clean result.

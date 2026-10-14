@@ -65,9 +65,6 @@ $ env EVNX_OUTPUT_JSON=1 evnx doctor
 
 $ evnx doctor --format text
 
-  evnx doctor  Diagnosing environment setup
-
-
   ✓  Validate .env file existence, security, and syntax
 
   ✓  Check .env.example exists and is Git-tracked
@@ -82,15 +79,15 @@ $ evnx doctor --format text
 
   3 checks passed
 [stderr]
+
+  evnx doctor  Diagnosing environment setup
+
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: hidden alias --format text is accepted (decided: stays) (exit 0)
 
 $ env EVNX_AUTO_FIX=1 evnx doctor
 
-  evnx doctor  Diagnosing environment setup
-
-
   ✓  Validate .env file existence, security, and syntax
 
   ✓  Check .env.example exists and is Git-tracked
@@ -105,6 +102,9 @@ $ env EVNX_AUTO_FIX=1 evnx doctor
 
   3 checks passed
 [stderr]
+
+  evnx doctor  Diagnosing environment setup
+
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: KNOWN I-167: EVNX_AUTO_FIX=1 repairs with no notice; decided: stderr notice (exit 0)

@@ -197,7 +197,7 @@ impl ScanRunner {
         // Only show header for human-readable output
         // Machine formats (JSON/SARIF) skip the UI header to keep stdout clean
         if matches!(format, OutputFormat::Pretty) {
-            ui::print_header_stderr("evnx scan", Some("Checking for exposed secrets"));
+            ui::print_header("evnx scan", Some("Checking for exposed secrets"));
         } else if self.verbose {
             // For machine formats, at least acknowledge start in verbose mode
             ui::verbose_stderr("Starting scan...");

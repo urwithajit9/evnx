@@ -2,9 +2,6 @@
 ================ D2 ================
 
 $ evnx diff
-
-  evnx diff  .env ↔ .env.example
-
 Missing from .env (present in .env.example):
   + REDIS_URL
   + FEATURE_X
@@ -21,6 +18,9 @@ Different values:
 
   2 missing from .env  ·  1 not in .env.example  ·  3 different values
 [stderr]
+
+  evnx diff  .env ↔ .env.example
+
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
   ok: any difference exits 1 (missing, extra, different values) (exit 1)

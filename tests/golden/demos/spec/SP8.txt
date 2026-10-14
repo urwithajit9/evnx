@@ -2,9 +2,6 @@
 ================ SP8 ================
 
 $ evnx spec init
-
-  evnx spec  Generate the variable contract
-
 ✓ wrote 5 variable(s) to .evnx.toml
 
 Next steps:
@@ -12,14 +9,14 @@ Next steps:
   2. Mark optional variables with `required = false`
   3. Commit .evnx.toml; the spec is the contract
 [stderr]
+
+  evnx spec  Generate the variable contract
+
   Docs: https://docs.evnx.dev/cli/commands/spec
 [exit 0]
   ok: spec init writes a contract from these values (exit 0)
 
 $ evnx validate
-
-  evnx validate  Check environment configuration
-
   ✗  PORT is not a port between 1 and 65535
      .env
      →  Fix the value, or relax `format` in [vars.PORT]
@@ -44,6 +41,9 @@ Next steps:
   3. Use --ignore issue_type to suppress specific warnings
 [stderr]
   config    .evnx.toml
+
+  evnx validate  Check environment configuration
+
 Validation failed: 4 errors
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]

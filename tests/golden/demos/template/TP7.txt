@@ -2,13 +2,13 @@
 ================ TP7 ================
 
 $ evnx template --input config.tpl.yml --output link.yml --no-gitignore
-
-  Generate config from template
-
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at link.yml
 [stderr]
+
+  Generate config from template
+
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: KNOWN I-140: the symlink target is overwritten silently (exit 0)
@@ -20,13 +20,13 @@ database:
 [exit 0]
 
 $ evnx template --input config.tpl.yml --output - --no-gitignore
-
-  Generate config from template
-
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at -
 [stderr]
+
+  Generate config from template
+
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: KNOWN S-T1: --output - writes a FILE named - (exit 0)
@@ -36,12 +36,12 @@ file named - exists
 [exit 0]
 
 $ evnx template --input config.tpl.yml --output nodir/x.yml --no-gitignore
-
-  Generate config from template
-
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 [stderr]
+
+  Generate config from template
+
 Error: Failed to write generated config to: nodir/x.yml: No such file or directory (os error 2)
 
 No verdict: evnx did not finish. This is not a clean result.

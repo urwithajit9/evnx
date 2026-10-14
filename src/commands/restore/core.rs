@@ -460,13 +460,17 @@ fn choose_write_path(output: &Path, content: &str, verbose: bool) -> (PathBuf, b
     let fallback = PathBuf::from(format!("{}.restored", output.display()));
 
     ui::warning("Decrypted content does not look like a valid .env file.");
-    println!(
+    ui::warning_detail(format!(
         "  Writing to {} instead of {} to protect your current file.",
         fallback.display(),
         output.display(),
-    );
-    println!("  Inspect the file manually, then rename it if the content looks correct:");
-    println!("    mv {} {}", fallback.display(), output.display());
+    ));
+    ui::warning_detail("  Inspect the file manually, then rename it if the content looks correct:");
+    ui::warning_detail(format!(
+        "    mv {} {}",
+        fallback.display(),
+        output.display()
+    ));
 
     if verbose {
         ui::verbose_stderr(format!("Fallback path: {}", fallback.display()));

@@ -13,7 +13,7 @@ pub mod ui;
 pub use dotenv_validation::{count_dotenv_vars, looks_like_dotenv};
 pub use file_permissions::write_secure;
 pub use patterns::{calculate_entropy, detect_heuristic, is_placeholder, Confidence};
-pub use ui::{
-    error, info, print_header, print_header_stderr, scanning_file_stderr, success, verbose_stderr,
-    warning,
-};
+// `print_header_stderr` is deprecated (DEC-G1) and re-exported until it goes.
+#[allow(deprecated)]
+pub use ui::print_header_stderr;
+pub use ui::{error, info, print_header, scanning_file_stderr, success, verbose_stderr, warning};

@@ -3,11 +3,11 @@
 
 $ evnx migrate --to heroku --heroku-app a --skip-existing
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 8 secrets from env-file
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
 Error: --skip-existing cannot apply to `heroku`.
 
 evnx does not contact heroku — it prints the commands for you to run, so it cannot see which secrets are already there. Drop the flag, or pass the platform's own equivalent to the printed command.
@@ -20,11 +20,11 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx migrate --to heroku --heroku-app a --overwrite
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 8 secrets from env-file
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
 Error: --overwrite cannot apply to `heroku`.
 
 evnx does not contact heroku — it prints the commands for you to run, so it cannot see which secrets are already there. Drop the flag, or pass the platform's own equivalent to the printed command.

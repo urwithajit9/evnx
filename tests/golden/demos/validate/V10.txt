@@ -11,9 +11,11 @@ $ evnx validate
 [exit 0]
   ok: KNOWN D-27: .env is not in .gitignore and validate says nothing (docs claim a check) (exit 0)
 
-$ bash -c set -o pipefail; "$0" validate | head -c 10 evnx
+$ bash -c { sleep 0.3; "$0" validate; } | true; exit ${PIPESTATUS[0]} evnx
 
-  evnx va[exit 141]
-KNOWN I-028: a closed pipe makes validate panic (exit 101) instead of ending quietly
+  evnx validate  Check environment configuration
 
-================ summary: 1 ok, 0 mismatch   ================
+[exit 141]
+  ok: I-028 fixed in 0.10.1: a closed pipe ends validate quietly, exit 141 (exit 141)
+
+================ summary: 2 ok, 0 mismatch   ================

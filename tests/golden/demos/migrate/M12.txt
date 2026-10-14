@@ -45,10 +45,10 @@ Next steps:
   ok: KNOWN I-105: -q changes nothing; decided: hides banner and next steps (exit 0)
 
 $ evnx migrate --source-file nope.env --to heroku --heroku-app a
+[stderr]
 
   evnx migrate  Generate destination commands from your .env
 
-[stderr]
 Error: nope.env does not exist
 
 Create it with `evnx init`, or point at another file with --source-file.

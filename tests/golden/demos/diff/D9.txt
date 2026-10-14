@@ -2,9 +2,6 @@
 ================ D9 ================
 
 $ evnx diff --ignore-keys extra_debug
-
-  evnx diff  .env ↔ .env.example
-
 Missing from .env (present in .env.example):
   + REDIS_URL
   + FEATURE_X
@@ -21,14 +18,14 @@ Different values:
 
   2 missing from .env  ·  1 not in .env.example  ·  3 different values
 [stderr]
+
+  evnx diff  .env ↔ .env.example
+
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
   ok: KNOWN I-077: ignore-keys is case-sensitive and silent about names that match nothing (exit 1)
 
 $ evnx diff --ignore-keys REDIS_URL
-
-  evnx diff  .env ↔ .env.example
-
 Missing from .env (present in .env.example):
   + FEATURE_X
 
@@ -42,6 +39,9 @@ Different values:
   1 missing from .env  ·  3 different values
 [stderr]
   config    .evnx.toml
+
+  evnx diff  .env ↔ .env.example
+
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
   ok: config and flag add up (union); the config line is printed (exit 1)

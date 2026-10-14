@@ -164,3 +164,51 @@ fn a_project_with_nothing_to_read_says_so() {
         .failure()
         .stderr(predicate::str::contains("evnx init"));
 }
+
+/// T-SP-20 / T-SHARE-41 (I-176, DEC-SP1, DEC-G1): `--stdout` prints TOML and
+/// nothing else, so `evnx spec init --stdout >> .evnx.toml` stays valid. The
+/// banner used to be the first line of stdout.
+#[test]
+fn t_i176_stdout_is_only_toml() {
+    for args in [
+        &["spec", "init", "--stdout"][..],
+        &[
+            "spec",
+            "init",
+            "--with",
+            "django,postgres,redis",
+            "--stdout",
+        ][..],
+    ] {
+        let d = project();
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(d.path())
+            .env("NO_COLOR", "1")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{args:?}");
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        let parsed: toml::Table = toml::from_str(&stdout)
+            .unwrap_or_else(|e| panic!("{args:?}: stdout is not TOML: {e}\n{stdout}"));
+        assert!(parsed.contains_key("vars"), "{args:?}");
+        assert!(
+            !stdout.contains("Generate the variable contract"),
+            "{args:?}"
+        );
+    }
+}
+
+/// The banner is not lost, it moved: it is on stderr, where a terminal still
+/// shows it and a redirect does not capture it (DEC-G1).
+#[test]
+fn t_i176_banner_is_on_stderr() {
+    let d = project();
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .env("NO_COLOR", "1")
+        .args(["spec", "init", "--stdout"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("evnx spec"));
+}

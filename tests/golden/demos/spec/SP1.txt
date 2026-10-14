@@ -2,9 +2,6 @@
 ================ SP1 ================
 
 $ evnx spec init
-
-  evnx spec  Generate the variable contract
-
 ✓ wrote 6 variable(s) to .evnx.toml
 
 Next steps:
@@ -12,6 +9,9 @@ Next steps:
   2. Mark optional variables with `required = false`
   3. Commit .evnx.toml; the spec is the contract
 [stderr]
+
+  evnx spec  Generate the variable contract
+
   Docs: https://docs.evnx.dev/cli/commands/spec
 [exit 0]
   ok: first spec from .env.example + .env (exit 0)
@@ -50,23 +50,23 @@ secret = true
   ok: only STRIPE_SECRET_KEY is marked secret (DATABASE_URL carries a password but is not: KNOWN I-184, decided DEC-SP10)
 
 $ evnx validate
-
-  evnx validate  Check environment configuration
-
 ✓ All required variables present
 ✓ All checks passed
 [stderr]
   config    .evnx.toml
+
+  evnx validate  Check environment configuration
+
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 0]
   ok: the project passes its own generated spec (exit 0)
 
 $ evnx spec init
+[stderr]
+  config    .evnx.toml
 
   evnx spec  Generate the variable contract
 
-[stderr]
-  config    .evnx.toml
 Error: .evnx.toml already has a [vars] section.
   Appending a second one would produce a file TOML refuses to read.
   Review the existing entries, or pass --force to append anyway and

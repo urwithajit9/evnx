@@ -46,13 +46,13 @@ For more information, try '--help'.
   ok: json needs --check (clap error) (exit 2)
 
 $ evnx sync --check --env t.env --example t.example
+✓ .env.example is up to date
+[stderr]
 
   evnx sync  t.env ↔ t.example  (forward)
 
 ! t.env has permissive permissions (0o664). Consider: chmod 600 t.env
 · Overly permissive .env files may expose secrets to other users
-✓ .env.example is up to date
-[stderr]
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: KNOWN I-119: a key only in the template is never reported; decided: two-way, exit 1 (exit 0)

@@ -2,9 +2,6 @@
 ================ BR2 ================
 
 $ evnx backup --key-file bin.key --output b1.bak
-
-  evnx backup  Encrypt and back up your .env file
-
 ✓ Read 258 bytes from .env
 · Using key file for encryption (non-interactive mode)
 
@@ -20,17 +17,15 @@ $ evnx backup --key-file bin.key --output b1.bak
   • To restore: evnx restore b1.bak --output .env
   • Test the restore before deleting the original .env
 [stderr]
+
+  evnx backup  Encrypt and back up your .env file
+
   Docs: https://docs.evnx.dev/cli/commands/backup
 [exit 0]
   ok: binary key file (exit 0)
 
 $ evnx restore b1.bak --key-file bin.key --inspect
-
-  evnx restore  Decrypt and restore from an encrypted backup
-
 ✓ Read backup from b1.bak
-! Reading password from file: bin.key
-  Less secure than interactive prompt — avoid in shared environments.
 
 Backup information:
   Schema version: v1
@@ -54,16 +49,17 @@ Variables in this backup (names only — values never shown):
 
 ✓ 11 variable(s) found
   To restore: evnx restore <backup-file>
+[stderr]
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+! Reading password from file: bin.key
+  Less secure than interactive prompt — avoid in shared environments.
 [exit 0]
   ok: same file under restore's spelling opens it (F7) (exit 0)
 
 $ env EVNX_PASSWORD=env-passphrase-1 evnx backup --output b2.bak
-
-  evnx backup  Encrypt and back up your .env file
-
 ✓ Read 258 bytes from .env
-! Reading password from EVNX_PASSWORD environment variable.
-  Less secure than interactive prompt — avoid in shared environments.
 
 ✓ Backup created successfully
   Source  : .env
@@ -77,16 +73,21 @@ $ env EVNX_PASSWORD=env-passphrase-1 evnx backup --output b2.bak
   • To restore: evnx restore b2.bak --output .env
   • Test the restore before deleting the original .env
 [stderr]
+
+  evnx backup  Encrypt and back up your .env file
+
+! Reading password from EVNX_PASSWORD environment variable.
+  Less secure than interactive prompt — avoid in shared environments.
   Docs: https://docs.evnx.dev/cli/commands/backup
 [exit 0]
   ok: EVNX_PASSWORD, warning printed (exit 0)
 
 $ env EVNX_PASSWORD= evnx backup --output b3.bak
+✓ Read 258 bytes from .env
+[stderr]
 
   evnx backup  Encrypt and back up your .env file
 
-✓ Read 258 bytes from .env
-[stderr]
 Error: EVNX_PASSWORD is set but empty.
 
 An empty passphrase would encrypt the backup behind nothing. Unset it to be prompted, or give it a value.
@@ -96,11 +97,11 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: empty EVNX_PASSWORD refused (exit 2)
 
 $ evnx backup --key-file empty.key --output b4.bak
+✓ Read 258 bytes from .env
+[stderr]
 
   evnx backup  Encrypt and back up your .env file
 
-✓ Read 258 bytes from .env
-[stderr]
 Error: Key file is empty: empty.key
 
 No verdict: evnx did not finish. This is not a clean result.
@@ -108,9 +109,6 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: empty key file refused (exit 2)
 
 $ env EVNX_PASSWORD=env-passphrase-1 evnx backup --key-file pw --output b5.bak
-
-  evnx backup  Encrypt and back up your .env file
-
 ✓ Read 258 bytes from .env
 · Using key file for encryption (non-interactive mode)
 
@@ -126,26 +124,26 @@ $ env EVNX_PASSWORD=env-passphrase-1 evnx backup --key-file pw --output b5.bak
   • To restore: evnx restore b5.bak --output .env
   • Test the restore before deleting the original .env
 [stderr]
+
+  evnx backup  Encrypt and back up your .env file
+
   Docs: https://docs.evnx.dev/cli/commands/backup
 [exit 0]
   ok: KNOWN I-155: file and env both set, the file wins with no notice (exit 0)
 
 $ env EVNX_PASSWORD=env-passphrase-1 evnx restore b5.bak --inspect
+✓ Read backup from b5.bak
+[stderr]
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-✓ Read backup from b5.bak
 ! Reading password from EVNX_PASSWORD environment variable.
   Less secure than interactive prompt — avoid in shared environments.
-[stderr]
 Error: Wrong password or corrupt backup — decryption failed
 [exit 2]
   ok: the env secret does not open it (the file was used) (exit 2)
 
 $ evnx backup --key-file short.key --output b6.bak
-
-  evnx backup  Encrypt and back up your .env file
-
 ✓ Read 258 bytes from .env
 · Using key file for encryption (non-interactive mode)
 
@@ -161,16 +159,19 @@ $ evnx backup --key-file short.key --output b6.bak
   • To restore: evnx restore b6.bak --output .env
   • Test the restore before deleting the original .env
 [stderr]
+
+  evnx backup  Encrypt and back up your .env file
+
   Docs: https://docs.evnx.dev/cli/commands/backup
 [exit 0]
   ok: KNOWN I-147: a one-character secret is accepted; decided: floor 8 for new backups (exit 0)
 
 $ evnx backup --output b7.bak
+✓ Read 258 bytes from .env
+[stderr]
 
   evnx backup  Encrypt and back up your .env file
 
-✓ Read 258 bytes from .env
-[stderr]
 Error: IO error: not a terminal: not a terminal
 
 No verdict: evnx did not finish. This is not a clean result.

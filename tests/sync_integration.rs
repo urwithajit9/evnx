@@ -755,7 +755,8 @@ mod file_selection {
             .args(["sync", "--env-name", "production", "--dry-run"])
             .current_dir(d.path())
             .assert()
-            .stdout(predicate::str::contains(".env.production"));
+            // The header is on stderr since DEC-G1.
+            .stderr(predicate::str::contains(".env.production"));
     }
 
     #[test]

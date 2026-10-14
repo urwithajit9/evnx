@@ -3,12 +3,6 @@
 
 $ evnx sync -f
 
-  evnx sync  .env ↔ .env.example  (forward)
-
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
-! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
-
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
 │ Found 5 variable(s) in .env missing from .env.example:                       │
 │   • DATABASE_URL                                                             │
@@ -21,6 +15,12 @@ $ evnx sync -f
 · Force mode: using placeholder values and skipping prompts
 ✓ Added 5 variables to .env.example
 [stderr]
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: template is a symlink (exit 0)
@@ -33,12 +33,6 @@ KNOWN I-122: the link is replaced and its target untouched; decided: write throu
 
 $ evnx sync -f
 
-  evnx sync  .env ↔ .env.example  (forward)
-
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
-! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
-
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
 │ Found 2 variable(s) in .env missing from .env.example:                       │
 │   • NEW_FEATURE                                                              │
@@ -48,6 +42,12 @@ $ evnx sync -f
 · Force mode: using placeholder values and skipping prompts
 ✓ Added 2 variables to .env.example
 [stderr]
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
 

@@ -3,9 +3,6 @@
 
 $ evnx migrate --to heroku --heroku-app a --dry-run
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 8 secrets from env-file
 
 · Heroku Config Vars migration
@@ -23,14 +20,14 @@ Summary:
 Next step:
   Re-run without --dry-run to apply this.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: dry run: heroku --heroku-app a (exit 0)
 
 $ evnx migrate --to aws-secrets-manager --secret-name prod/app --dry-run
-
-  evnx migrate  Generate destination commands from your .env
-
 
 ✓ Loaded 8 secrets from env-file
 
@@ -59,14 +56,14 @@ Summary:
 Next step:
   Re-run without --dry-run to apply this.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: dry run: aws-secrets-manager --secret-name prod/app (exit 0)
 
 $ evnx migrate --to gcp-secret-manager --project p --dry-run
-
-  evnx migrate  Generate destination commands from your .env
-
 
 ✓ Loaded 8 secrets from env-file
 
@@ -82,14 +79,14 @@ Summary:
 Next step:
   Re-run without --dry-run to apply this.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: dry run: gcp-secret-manager --project p (exit 0)
 
 $ evnx migrate --to azure-keyvault --vault-name v --dry-run
-
-  evnx migrate  Generate destination commands from your .env
-
 
 ✓ Loaded 8 secrets from env-file
 
@@ -108,14 +105,14 @@ Summary:
 Next step:
   Re-run without --dry-run to apply this.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: dry run: azure-keyvault --vault-name v (exit 0)
 
 $ evnx migrate --to vercel --vercel-project p --dry-run
-
-  evnx migrate  Generate destination commands from your .env
-
 
 ✓ Loaded 8 secrets from env-file
 
@@ -135,14 +132,14 @@ Summary:
 Next step:
   Re-run without --dry-run to apply this.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: dry run: vercel --vercel-project p (exit 0)
 
 $ evnx migrate --to doppler --project p --doppler-config dev --dry-run
-
-  evnx migrate  Generate destination commands from your .env
-
 
 ✓ Loaded 8 secrets from env-file
 
@@ -162,14 +159,14 @@ Summary:
 Next step:
   Re-run without --dry-run to apply this.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: dry run: doppler --project p --doppler-config dev (exit 0)
 
 $ evnx migrate --to infisical --project p --infisical-env dev --dry-run
-
-  evnx migrate  Generate destination commands from your .env
-
 
 ✓ Loaded 8 secrets from env-file
 
@@ -189,14 +186,14 @@ Summary:
 Next step:
   Re-run without --dry-run to apply this.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: dry run: infisical --project p --infisical-env dev (exit 0)
 
 $ evnx migrate --to railway --railway-project p --dry-run
-
-  evnx migrate  Generate destination commands from your .env
-
 
 ✓ Loaded 8 secrets from env-file
 
@@ -215,14 +212,14 @@ Summary:
 Next step:
   Re-run without --dry-run to apply this.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: dry run: railway --railway-project p (exit 0)
 
 $ evnx migrate --to github-actions --repo o/r --dry-run
-
-  evnx migrate  Generate destination commands from your .env
-
 
 ✓ Loaded 8 secrets from env-file
 
@@ -240,6 +237,9 @@ Summary:
 Next step:
   Re-run without --dry-run to apply this.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: dry run: github-actions --repo o/r (exit 0)

@@ -11,12 +11,8 @@
   ok: newest first, up to .3
 
 $ evnx backup --key-file pw --keep 1
-
-  evnx backup  Encrypt and back up your .env file
-
 ✓ Read 4 bytes from .env
 · Using key file for encryption (non-interactive mode)
-! --keep 1: .env.backup.1 will be overwritten by rotation — increase --keep or prune manually to retain it
 
 ✓ Backup created successfully
   Source  : .env
@@ -30,14 +26,15 @@ $ evnx backup --key-file pw --keep 1
   • To restore: evnx restore .env.backup --output .env
   • Test the restore before deleting the original .env
 [stderr]
+
+  evnx backup  Encrypt and back up your .env file
+
+! --keep 1: .env.backup.1 will be overwritten by rotation — increase --keep or prune manually to retain it
   Docs: https://docs.evnx.dev/cli/commands/backup
 [exit 0]
   ok: --keep 1 replaces .1 and warns (exit 0)
 
 $ evnx backup --key-file pw --keep 0
-
-  evnx backup  Encrypt and back up your .env file
-
 ✓ Read 4 bytes from .env
 · Using key file for encryption (non-interactive mode)
 
@@ -53,6 +50,9 @@ $ evnx backup --key-file pw --keep 0
   • To restore: evnx restore .env.backup --output .env
   • Test the restore before deleting the original .env
 [stderr]
+
+  evnx backup  Encrypt and back up your .env file
+
   Docs: https://docs.evnx.dev/cli/commands/backup
 [exit 0]
   ok: --keep 0: no rotation (exit 0)

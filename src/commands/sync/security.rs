@@ -25,7 +25,10 @@ pub fn check_env_permissions(path: &str) -> Result<()> {
                 perms & 0o777,
                 path
             ));
-            ui::info("Overly permissive .env files may expose secrets to other users");
+            ui::warning_detail(format!(
+                "{} Overly permissive .env files may expose secrets to other users",
+                colored::Colorize::dimmed(ui::glyph::INFO)
+            ));
         }
     }
 

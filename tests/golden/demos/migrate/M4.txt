@@ -3,9 +3,6 @@
 
 $ evnx migrate --to heroku --heroku-app a --include API_*,PORT --add-prefix PROD_
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 8 secrets from env-file
 · After filtering: 2 of 8 secrets remain.
 
@@ -28,18 +25,21 @@ Next steps:
   2. The dyno restarts automatically after `config:set`.
   3. Remove your local .env file.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: comma list, then prefix (exit 0)
 
 $ evnx migrate --to heroku --heroku-app a --include NOPE_*
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 8 secrets from env-file
 · After filtering: 0 of 8 secrets remain.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 Error: every one of the 8 variable(s) in .env was filtered out, so there is nothing to migrate.
 
@@ -51,11 +51,11 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx migrate --source-file empty.env --to heroku --heroku-app a
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 0 secrets from env-file
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 Error: empty.env holds no variables, so there is nothing to migrate.
 
@@ -66,9 +66,6 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: an empty source is an error (exit 2)
 
 $ evnx migrate --source-file col.env --to heroku --heroku-app a --strip-prefix API_
-
-  evnx migrate  Generate destination commands from your .env
-
 
 ✓ Loaded 2 secrets from env-file
 · After filtering: 1 of 2 secrets remain.
@@ -91,6 +88,9 @@ Next steps:
   2. The dyno restarts automatically after `config:set`.
   3. Remove your local .env file.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: KNOWN I-104: API_X and X both become X; one value lost; message says only '1 of 2'; decided: error + --allow-collisions (exit 0)

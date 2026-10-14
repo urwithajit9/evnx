@@ -15,9 +15,6 @@ $ evnx add service redis --yes
   ok: REDIS_PASSWORD declared secret
 
 $ evnx validate
-
-  evnx validate  Check environment configuration
-
   ✗  DB looks like a placeholder
      .env
 
@@ -38,6 +35,9 @@ Next steps:
   3. Use --ignore issue_type to suppress specific warnings
 [stderr]
   config    .evnx.toml
+
+  evnx validate  Check environment configuration
+
 Validation failed: 3 errors
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]

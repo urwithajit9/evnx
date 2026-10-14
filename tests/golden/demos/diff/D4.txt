@@ -2,9 +2,6 @@
 ================ D4 ================
 
 $ evnx diff --reverse
-
-  evnx diff  .env ↔ .env.example
-
 Missing from .env.example (present in .env):
   + EXTRA_DEBUG
 
@@ -21,6 +18,9 @@ Different values:
 
   1 missing from .env.example  ·  2 not in .env  ·  3 different values
 [stderr]
+
+  evnx diff  .env ↔ .env.example
+
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
   ok: sides swapped: what the template would need to learn from .env (exit 1)

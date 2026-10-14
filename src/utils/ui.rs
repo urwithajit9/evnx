@@ -102,7 +102,7 @@ pub fn say(line: impl std::fmt::Display) {
     }
 }
 
-/// Print a command header in the standard boxed format.
+/// Print a command header (to stderr; hidden by `-q`).
 ///
 /// ```text
 /// ┌─ evnx init ─────────────────────────────────────┐
@@ -133,7 +133,11 @@ pub fn print_header(title: &str, subtitle: Option<&str>) {
         Some(sub) => format!("\n  {}  {}\n", title.bold(), sub.dimmed()),
         None => format!("\n  {}\n", title.bold()),
     };
-    println!("{}", line);
+    // ⚠️ stderr, for every command (DEC-G1, 2026-10-14). On stdout the banner
+    // became the first line of whatever a script captured: `evnx spec init
+    // --stdout >> .evnx.toml` wrote a line that is not TOML (I-176). Stdout
+    // carries data; decoration goes beside it, never into it.
+    eprintln!("{}", line);
 }
 
 /// Print a simple boxed message (for sub-sections or alerts).
@@ -376,7 +380,8 @@ pub fn success(message: impl AsRef<str>) {
 /// ✗ Failed to parse schema.json
 /// ```
 pub fn error(message: impl AsRef<str>) {
-    println!("{} {}", glyph::FAIL.red(), message.as_ref().red());
+    // stderr (DEC-G2): a notice about the run, not part of its output.
+    eprintln!("{} {}", glyph::FAIL.red(), message.as_ref().red());
 }
 
 /// Print a yellow warning message with alert icon.
@@ -385,7 +390,19 @@ pub fn error(message: impl AsRef<str>) {
 /// ⚠️  Conflicting variables will be skipped
 /// ```
 pub fn warning(message: impl AsRef<str>) {
-    println!("{} {}", glyph::WARN.yellow(), message.as_ref().yellow());
+    // stderr (DEC-G2), and never hidden by `-q`: a warning is something the
+    // user has not seen yet.
+    eprintln!("{} {}", glyph::WARN.yellow(), message.as_ref().yellow());
+}
+
+/// A line that belongs to the warning above it: the reason, the remedy, or
+/// one item of a list the warning announced. stderr, beside its warning, and
+/// never hidden by `-q` (DEC-G2). Printed as given; the caller indents.
+///
+/// ⚠️ Not `info` and not `println!`: those go to stdout, so a captured run
+/// would hold the warning's detail without the warning (or the reverse).
+pub fn warning_detail(line: impl std::fmt::Display) {
+    eprintln!("{line}");
 }
 
 /// Print a cyan info message with info icon.
@@ -624,38 +641,15 @@ where
 // Stderr Variants (for machine-readable output commands)
 // ─────────────────────────────────────────────────────────────
 
-/// Print a command header to stderr in the standard boxed format.
-///
-/// Use this for commands that output structured data to stdout
-/// (e.g., JSON, SARIF) but still want to show progress to users.
-///
-/// ```text
-/// ┌─ evnx scan ─────────────────────────────────────┐
-/// │ Checking for exposed secrets                   │
-/// └────────────────────────────────────────────────┘
-/// ```
-///
-/// # Arguments
-///
-/// * `title` - The command name (e.g., "evnx scan")
-/// * `subtitle` - Optional description shown on second line
-///
-/// # Example
-///
-/// ```no_run
-/// # use evnx::utils::ui::print_header_stderr;
-/// print_header_stderr("evnx scan", Some("Checking for exposed secrets"));
-/// ```
+/// The old stderr variant of [`print_header`], kept so library callers still
+/// compile. Since DEC-G1 both write the same line to stderr, and this one is
+/// now also hidden by `-q` (scan printed its banner under `-q`, I-060).
+#[deprecated(
+    since = "0.10.3",
+    note = "`print_header` writes to stderr now (DEC-G1); call it instead"
+)]
 pub fn print_header_stderr(title: &str, subtitle: Option<&str>) {
-    // The user typed the command; a three-line box repeating it back says
-    // nothing. One dim line gives the same context at a fifth of the height.
-    // ⚠️ The full `evnx scan`, not `scan`. In a CI log among other tools' output
-    // the bare verb is ambiguous, and the five characters cost nothing.
-    let line = match subtitle {
-        Some(sub) => format!("\n  {}  {}\n", title.bold(), sub.dimmed()),
-        None => format!("\n  {}\n", title.bold()),
-    };
-    eprintln!("{}", line);
+    print_header(title, subtitle);
 }
 
 /// Print verbose progress message to stderr.

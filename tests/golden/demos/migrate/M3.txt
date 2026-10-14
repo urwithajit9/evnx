@@ -3,9 +3,6 @@
 
 $ evnx migrate --to heroku --heroku-app a
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 8 secrets from env-file
 
 · Heroku Config Vars migration
@@ -33,14 +30,14 @@ Next steps:
   2. The dyno restarts automatically after `config:set`.
   3. Remove your local .env file.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: heroku: one bulk command, single-quoted (exit 0)
 
 $ evnx migrate --to doppler --project p --doppler-config dev
-
-  evnx migrate  Generate destination commands from your .env
-
 
 ✓ Loaded 8 secrets from env-file
 
@@ -48,6 +45,9 @@ $ evnx migrate --to doppler --project p --doppler-config dev
 · Requires Doppler CLI
   Install: https://docs.doppler.com/docs/cli
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
 Error: Doppler CLI not found. Install from https://docs.doppler.com/docs/cli
 
 No verdict: evnx did not finish. This is not a clean result.
@@ -56,15 +56,15 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx migrate --to railway --railway-project p
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 8 secrets from env-file
 
 · Railway migration
 · Requires Railway CLI
   Install: npm install -g @railway/cli
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
 Error: Railway CLI not found. Install with: npm install -g @railway/cli
 
 No verdict: evnx did not finish. This is not a clean result.

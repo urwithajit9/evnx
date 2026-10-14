@@ -55,7 +55,8 @@ environments = ["prodution"]
 X
   run "$EVNX" validate; echo "B is optional (required=false) so no missing error; PORT format_mismatch expected"; echo "KNOWN I-042: typo 'prodution' in environments is silently accepted; decided: warn"; }
 V9() { scene V9; printf 'DB_HOST=db\n' > .env.example; printf 'DB_HOST=localhost\n' > .env; run "$EVNX" validate; echo "(no Docker file: localhost is fine)"; printf 'FROM alpine\n' > Dockerfile; run "$EVNX" validate; echo "(Dockerfile in cwd: localhost_in_docker warning)"; mkdir -p sub; cp .env .env.example sub/; cd sub; run "$EVNX" validate; echo "KNOWN I-046: run from sub/ the project's Dockerfile one level up is not seen, so no warning; decided: env file folder, then project root"; }
-V10() { scene V10; git init -q .; printf 'A=1\n' > .env.example; printf 'A=1\n' > .env; run "$EVNX" validate; expect 0 "KNOWN D-27: .env is not in .gitignore and validate says nothing (docs claim a check)"; bad_fixture; run bash -c 'set -o pipefail; "$0" validate | head -c 10' "$EVNX"; echo "KNOWN I-028: a closed pipe makes validate panic (exit 101) instead of ending quietly"; }
+# U1-EDIT (2026-10-14): V10 reader is `true` after 0.3 s instead of `head -c 10`: with head the result depended on timing (T-068); I-028 was fixed in 0.10.1.
+V10() { scene V10; git init -q .; printf 'A=1\n' > .env.example; printf 'A=1\n' > .env; run "$EVNX" validate; expect 0 "KNOWN D-27: .env is not in .gitignore and validate says nothing (docs claim a check)"; bad_fixture; run bash -c '{ sleep 0.3; "$0" validate; } | true; exit ${PIPESTATUS[0]}' "$EVNX"; expect 141 "I-028 fixed in 0.10.1: a closed pipe ends validate quietly, exit 141"; }
 
 if [ $# -eq 0 ]; then set -- V0 V1 V2 V3 V4 V5 V6 V7 V8 V9 V10; fi
 for s in "$@"; do "$s"; done

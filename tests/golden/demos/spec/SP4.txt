@@ -2,11 +2,11 @@
 ================ SP4 ================
 
 $ evnx spec init
+[stderr]
+  config    .evnx.toml (scan.severity=high)
 
   evnx spec  Generate the variable contract
 
-[stderr]
-  config    .evnx.toml (scan.severity=high)
 Error: .evnx.toml already has a [vars] section.
   Appending a second one would produce a file TOML refuses to read.
   Review the existing entries, or pass --force to append anyway and
@@ -18,9 +18,6 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: the file is untouched, byte for byte
 
 $ evnx spec init --force
-
-  evnx spec  Generate the variable contract
-
 ✓ wrote 6 variable(s) to .evnx.toml
 
 Next steps:
@@ -29,27 +26,27 @@ Next steps:
   3. Commit .evnx.toml; the spec is the contract
 [stderr]
   config    .evnx.toml (scan.severity=high)
+
+  evnx spec  Generate the variable contract
+
   Docs: https://docs.evnx.dev/cli/commands/spec
 [exit 0]
   ok: KNOWN I-178: --force appends a second [vars] table (exit 0)
   ok: two [vars...] tables now (A plus the generated ones)
 
 $ evnx validate
-
-  evnx validate  Check environment configuration
-
 ✓ All required variables present
 ✓ All checks passed
 [stderr]
   config    .evnx.toml (scan.severity=high)
+
+  evnx validate  Check environment configuration
+
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 0]
 KNOWN I-178: a duplicated table is only a problem when the same name appears twice; with [vars.A] plus new names it still parses
 
 $ evnx spec init
-
-  evnx spec  Generate the variable contract
-
 ✓ wrote 6 variable(s) to .evnx.toml
 
 Next steps:
@@ -58,6 +55,9 @@ Next steps:
   3. Commit .evnx.toml; the spec is the contract
 [stderr]
   config    .evnx.toml
+
+  evnx spec  Generate the variable contract
+
   Docs: https://docs.evnx.dev/cli/commands/spec
 [exit 0]
 KNOWN I-179: inline-table vars is not seen by the textual guard

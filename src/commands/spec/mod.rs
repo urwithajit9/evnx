@@ -55,6 +55,11 @@ pub fn run(
 
     if entries.is_empty() {
         ui::warning("nothing to write — no variables found");
+        // ⚠️ `--stdout` promises TOML on stdout and nothing else (DEC-SP1), and
+        // the steps print on stdout; the warning above already says why.
+        if stdout {
+            return Ok(());
+        }
         ui::print_next_steps(&[
             "Run `evnx spec init --with <components>` to start from the catalogue",
             "Or create .env.example first, with `evnx init`",

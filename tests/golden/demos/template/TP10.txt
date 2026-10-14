@@ -2,13 +2,13 @@
 ================ TP10 ================
 
 $ evnx template --input t.tpl --output t.out --env t.env --no-gitignore
-
-  Generate config from template
-
 ✓ Loaded 6 variables from t.env
 ✓ Read template from t.tpl
 ✓ Generated config at t.out
 [stderr]
+
+  Generate config from template
+
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: KNOWN I-141: the parser drops the character after a bare $NAME (exit 0)

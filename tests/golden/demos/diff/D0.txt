@@ -72,10 +72,10 @@ Full guide: https://docs.evnx.dev/cli/commands/diff
 [exit 0]
 
 $ evnx diff
+[stderr]
 
   evnx diff  .env ↔ .env.example
 
-[stderr]
 Error: .env does not exist
 
 Create it with `evnx init`, or point at another file with --env.

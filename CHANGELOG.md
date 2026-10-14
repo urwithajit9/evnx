@@ -8,9 +8,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-No change to the product. This lays the groundwork for the shared-module work
-that follows: each reviewed command's output is now locked in CI before any
-module changes it.
+The first shared-module change (the output rules) and the safety net under it:
+each reviewed command's output is locked in CI before any module changes it.
+
+### Changed — what goes to stdout and what to stderr
+
+⚠️ **Scripts that read stderr or stdout line by line should check this.**
+Stdout carries what a command produces; notices about the run go to stderr. A
+terminal shows both exactly as before.
+
+- **The command banner is on stderr**, for every command (`  evnx sync  .env ↔
+  .env.example`). `evnx spec init --stdout > spec.toml` now writes valid TOML;
+  it used to start with the banner, which made the file unreadable by the next
+  command (I-176). A script that captured stdout and looked for the banner must
+  read stderr.
+- **Warnings and errors printed by evnx (`! …`, `✗ …`) are on stderr**, with
+  their detail lines: the permissions hint in `sync`, the `.gitignore` remedy and
+  conflict list in `add`, the `.restored` fallback note in `restore`.
+- `scan -q` no longer prints the banner (part of I-060).
+- Not changed yet, and announced here one release ahead: success lines (`✓ …`),
+  tips (`· …`) and "Next steps" stay on stdout in this release and are planned to
+  move to stderr in a later one.
+
+### Library
+
+- `utils::ui::print_header_stderr` is deprecated: `print_header` writes to stderr
+  now, and both are hidden by `-q`. New: `utils::ui::warning_detail`.
+- `utils::ui::warning` and `utils::ui::error` write to stderr.
 
 ### Tests
 
@@ -21,7 +45,8 @@ module changes it.
   fails the test until its runner line is changed on purpose. Linux only.
 - `tests/backup_format_lock.rs`: backups made by 0.10.0 and 0.10.2 must keep
   restoring byte for byte. The key file there is a published test passphrase.
-- `tests/spec_golden.rs` pins the `[vars]` block `spec init --stdout` prints.
+- `tests/spec_golden.rs` pins the `[vars]` block `spec init --stdout` prints;
+  `spec_integration` parses that stdout as TOML (T-SP-20).
 - `scripts/behaviour-lock.sh <cmd> [old] [new]` runs a demo twice, or with two
   binaries, and lists every line that moved.
 

@@ -3,9 +3,6 @@
 
 $ evnx doctor
 
-  evnx doctor  Diagnosing environment setup
-
-
   !  Validate .env file existence, security, and syntax
      .env file not found - create from .env.example
 
@@ -22,14 +19,14 @@ $ evnx doctor
 
   2 warnings
 [stderr]
+
+  evnx doctor  Diagnosing environment setup
+
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: KNOWN I-162: an empty directory exits 0; decided: exit 2 'nothing to diagnose' (exit 0)
 
 $ evnx doctor
-
-  evnx doctor  Diagnosing environment setup
-
 
   !  Validate .env file existence, security, and syntax
      .env file not found - create from .env.example
@@ -46,14 +43,14 @@ $ evnx doctor
 
   1 warning  ·  1 check passed
 [stderr]
+
+  evnx doctor  Diagnosing environment setup
+
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: KNOWN I-162: template but no .env is a warning; decided: error, exit 1 (exit 0)
 
 $ evnx doctor --strict
-
-  evnx doctor  Diagnosing environment setup
-
 
   !  Validate .env file existence, security, and syntax
      .env file not found - create from .env.example
@@ -69,13 +66,14 @@ $ evnx doctor --strict
   ·  Skipped: .env not found
 
   1 warning  ·  1 check passed
+[stderr]
+
+  evnx doctor  Diagnosing environment setup
+
 [exit 1]
   ok: ...--strict makes it fail (exit 1)
 
 $ evnx doctor
-
-  evnx doctor  Diagnosing environment setup
-
 
   ✗  Validate .env file existence, security, and syntax
      .env is NOT in .gitignore (security risk)
@@ -84,6 +82,9 @@ $ evnx doctor
      .env.example not found - consider creating a template
 
 [stderr]
+
+  evnx doctor  Diagnosing environment setup
+
   Docs: https://docs.evnx.dev/cli/commands/doctor
 Error: Is a directory (os error 21)
 

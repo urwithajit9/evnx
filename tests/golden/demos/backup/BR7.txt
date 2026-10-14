@@ -2,12 +2,7 @@
 ================ BR7 ================
 
 $ evnx restore .env.backup --key-file pw
-
-  evnx restore  Decrypt and restore from an encrypted backup
-
 ✓ Read backup from .env.backup
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
 
 Backup information:
   Schema version: v1
@@ -17,8 +12,13 @@ Backup information:
   Variables     : 11
 ✓ Decryption successful
   ✓ Decryption key cleared from memory
-! Output file already exists: .env
 [stderr]
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
+! Output file already exists: .env
 Error: IO error: not a terminal: not a terminal
 
 No verdict: evnx did not finish. This is not a clean result.
@@ -26,12 +26,7 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: KNOWN I-148: existing .env, no terminal: 'not a terminal', 'No verdict'; decided: --yes (alias --force) and a line naming it (exit 2)
 
 $ evnx restore .env.backup --key-file pw --output .env.new
-
-  evnx restore  Decrypt and restore from an encrypted backup
-
 ✓ Read backup from .env.backup
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
 
 Backup information:
   Schema version: v1
@@ -49,6 +44,11 @@ Next steps:
   2. Verify your application starts correctly
   3. Delete the backup file once you have confirmed the restore
 [stderr]
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
   Docs: https://docs.evnx.dev/cli/commands/restore
 [exit 0]
   ok: today's workaround: a new path, then mv (exit 0)

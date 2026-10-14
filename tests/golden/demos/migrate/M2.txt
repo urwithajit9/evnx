@@ -3,11 +3,11 @@
 
 $ evnx migrate --to aws-secrets-manager --dry-run
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 8 secrets from env-file
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
 Error: AWS secret name (e.g. prod/myapp/config) is required for this destination. Pass `--secret-name`.
   --dry-run still needs it: without it evnx would print a command
   with a placeholder where the name should be.
@@ -18,11 +18,11 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx migrate --to azure-keyvault --dry-run
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 8 secrets from env-file
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
 Error: Azure Key Vault name is required for this destination. Pass `--vault-name`.
   --dry-run still needs it: without it evnx would print a command
   with a placeholder where the name should be.
@@ -33,11 +33,11 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx migrate --to heroku --dry-run
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 8 secrets from env-file
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
 Error: Heroku app name is required for this destination. Pass `--heroku-app`.
   --dry-run still needs it: without it evnx would print a command
   with a placeholder where the name should be.
@@ -48,11 +48,11 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx migrate --to github-actions --dry-run
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 8 secrets from env-file
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
 Error: GitHub repository (owner/repo) is required for this destination. Pass `--repo`.
   --dry-run still needs it: without it evnx would print a command
   with a placeholder where the name should be.

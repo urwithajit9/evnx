@@ -3,8 +3,29 @@
 
 $ evnx doctor
 
+  !  Validate .env file existence, security, and syntax
+     .env: Line 2: invalid syntax '!!bad one'; Line 4: invalid syntax '@@bad two'; Line 6: invalid syntax '%%bad three'
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  1 warning  ·  2 checks passed
+[stderr]
+
   evnx doctor  Diagnosing environment setup
 
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: KNOWN I-161: three bad lines are only a warning, exit 0; decided: errors, exit 1 (exit 0)
+
+$ evnx doctor --strict
 
   !  Validate .env file existence, security, and syntax
      .env: Line 2: invalid syntax '!!bad one'; Line 4: invalid syntax '@@bad two'; Line 6: invalid syntax '%%bad three'
@@ -21,36 +42,13 @@ $ evnx doctor
 
   1 warning  ·  2 checks passed
 [stderr]
-  Docs: https://docs.evnx.dev/cli/commands/doctor
-[exit 0]
-  ok: KNOWN I-161: three bad lines are only a warning, exit 0; decided: errors, exit 1 (exit 0)
-
-$ evnx doctor --strict
 
   evnx doctor  Diagnosing environment setup
 
-
-  !  Validate .env file existence, security, and syntax
-     .env: Line 2: invalid syntax '!!bad one'; Line 4: invalid syntax '@@bad two'; Line 6: invalid syntax '%%bad three'
-
-  ✓  Check .env.example exists and is Git-tracked
-
-  ·  Detect project type and validate dependencies
-     No recognized project configuration
-
-  ·  Check for Docker configuration files
-     No Docker configuration detected
-
-  ✓  Check file permissions for sensitive files
-
-  1 warning  ·  2 checks passed
 [exit 1]
   ok: --strict makes the warning fail (exit 1)
 
 $ evnx doctor
-
-  evnx doctor  Diagnosing environment setup
-
 
   ✓  Validate .env file existence, security, and syntax
 
@@ -66,14 +64,14 @@ $ evnx doctor
 
   3 checks passed
 [stderr]
+
+  evnx doctor  Diagnosing environment setup
+
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: export prefix and multi-line value are valid (parser agreement) (exit 0)
 
 $ evnx doctor
-
-  evnx doctor  Diagnosing environment setup
-
 
   !  Validate .env file existence, security, and syntax
      .env: Line 1: unterminated double-quoted value — the quote is never closed
@@ -90,14 +88,14 @@ $ evnx doctor
 
   1 warning  ·  2 checks passed
 [stderr]
+
+  evnx doctor  Diagnosing environment setup
+
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: KNOWN I-161: unterminated quote is a warning (exit 0)
 
 $ evnx doctor
-
-  evnx doctor  Diagnosing environment setup
-
 
   !  Validate .env file existence, security, and syntax
      .env: Line 1: invalid syntax 'MY-KEY=1'
@@ -114,6 +112,9 @@ $ evnx doctor
 
   1 warning  ·  2 checks passed
 [stderr]
+
+  evnx doctor  Diagnosing environment setup
+
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
 dashed key: invalid for doctor and for the parser (consistent)

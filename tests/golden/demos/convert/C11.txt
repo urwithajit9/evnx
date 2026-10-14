@@ -40,10 +40,10 @@ export PLAIN='ok'
 [exit 0]
 
 $ evnx convert
+[stderr]
 
   evnx convert  Transform .env into different formats
 
-[stderr]
 Error: Convert command failed: Format selection cancelled by user: IO error: not a terminal: not a terminal
 
 No verdict: evnx did not finish. This is not a clean result.

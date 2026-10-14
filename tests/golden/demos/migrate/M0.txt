@@ -101,10 +101,10 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
 
 $ evnx migrate
+[stderr]
 
   evnx migrate  Generate destination commands from your .env
 
-[stderr]
 Error: --to is required when there is no terminal to ask.
 
   Pass one explicitly:
@@ -117,10 +117,10 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: no --to and no terminal: refuses, lists the destinations (exit 2)
 
 $ evnx migrate --to bogus --dry-run
+[stderr]
 
   evnx migrate  Generate destination commands from your .env
 
-[stderr]
 Error: .env does not exist
 
 Create it with `evnx init`, or point at another file with --source-file.

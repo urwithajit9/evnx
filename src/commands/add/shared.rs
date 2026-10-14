@@ -578,12 +578,12 @@ pub fn print_conflicts(plan: &Plan) {
         count(plan.conflicts.len(), "variable")
     ));
     for c in &plan.conflicts {
-        println!(
+        ui::warning_detail(format!(
             "  • {} (existing: \"{}\", new: \"{}\")",
             c.var_name.bold(),
             c.existing_value.dimmed(),
             c.new_value.dimmed()
-        );
+        ));
     }
 }
 
@@ -631,11 +631,11 @@ fn env_is_committable(project_root: &Path) -> bool {
 
 fn warn_env_is_committable() {
     ui::warning(".env is not covered by .gitignore — it can be committed");
-    println!(
+    ui::warning_detail(format!(
         "     {}  {}",
         glyph::ARROW.dimmed(),
         "evnx doctor --fix".cyan()
-    );
+    ));
 }
 
 #[cfg(test)]

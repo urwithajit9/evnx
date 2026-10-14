@@ -347,9 +347,10 @@ fn sync_forward(
                 paths.example_str(),
                 example_file.vars.len(),
             ));
-            ui::info(format!(
-                "If that is unexpected, check you are in the right directory. \
+            ui::warning_detail(format!(
+                "{} If that is unexpected, check you are in the right directory. \
 To fill {} from the template instead, run `evnx sync --direction reverse`.",
+                ui::glyph::INFO.dimmed(),
                 paths.env_str(),
             ));
             return Ok(false);

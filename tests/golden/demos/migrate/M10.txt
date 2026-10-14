@@ -3,9 +3,6 @@
 
 $ bash -c env -i PATH=/usr/bin:/bin HOME=/x API_TOKEN=tok-demo OTHER=1 "$(command -v "$0")" migrate --from environment --to heroku --heroku-app a --dry-run evnx
 
-  evnx migrate  Generate destination commands from your .env
-
-
 ✓ Loaded 2 secrets from environment
 
 · Heroku Config Vars migration
@@ -23,6 +20,9 @@ Summary:
 Next step:
   Re-run without --dry-run to apply this.
 [stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: KNOWN I-103: every variable except 14 system names is sent (PATH and HOME skipped; API_TOKEN and OTHER included); decided: --include required (exit 0)

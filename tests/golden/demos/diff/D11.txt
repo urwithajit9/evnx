@@ -21,9 +21,6 @@ Different values:
 KNOWN I-079: -q changes nothing; decided: hides header and footer
 
 $ evnx diff -v
-
-  evnx diff  .env ↔ .env.example
-
 Missing from .env (present in .env.example):
   + REDIS_URL
   + FEATURE_X
@@ -41,15 +38,18 @@ Different values:
   2 missing from .env  ·  1 not in .env.example  ·  3 different values
 [stderr]
 Running diff in verbose mode
+
+  evnx diff  .env ↔ .env.example
+
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
 (verbose adds one stderr line today)
 
 $ evnx diff
+[stderr]
 
   evnx diff  .env ↔ .env.example
 
-[stderr]
 Error: .env does not exist
 
 Create it with `evnx init`, or point at another file with --env.

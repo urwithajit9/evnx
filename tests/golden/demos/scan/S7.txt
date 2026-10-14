@@ -34,9 +34,6 @@ Next steps:
   ok: config merges: weakening is announced on screen (exit 1)
 
 $ evnx scan . -q
-
-  evnx scan  Checking for exposed secrets
-
   scanning ./.evnx.toml, ./.env
 
   ✗  AWS Access Key                              high

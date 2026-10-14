@@ -2,33 +2,33 @@
 ================ TP3 ================
 
 $ evnx template --input u.tpl --output u.out --no-gitignore
+✓ Loaded 7 variables from .env
+✓ Read template from u.tpl
+✓ Generated config at u.out
+· 4 placeholders were left unresolved and written through literally. Use --strict to make this an error.
+[stderr]
 
   Generate config from template
 
-✓ Loaded 7 variables from .env
-✓ Read template from u.tpl
 ! Variable 'MISSING' referenced in template but not defined in .env
 ! Variable 'ALSO' referenced in template but not defined in .env
 ! Variable 'NOPE2' referenced in template but not defined in .env
 ! Variable 'HOME' referenced in template but not defined in .env
-✓ Generated config at u.out
-· 4 placeholders were left unresolved and written through literally. Use --strict to make this an error.
-[stderr]
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: KNOWN I-142: unresolved references are written through, exit 0; decided: error by default (exit 0)
 
 $ evnx template --input u.tpl --output u2.out --strict --no-gitignore
+✓ Loaded 7 variables from .env
+✓ Read template from u.tpl
+[stderr]
 
   Generate config from template
 
-✓ Loaded 7 variables from .env
-✓ Read template from u.tpl
 ! Variable 'MISSING' referenced in template but not defined in .env
 ! Variable 'ALSO' referenced in template but not defined in .env
 ! Variable 'NOPE2' referenced in template but not defined in .env
 ! Variable 'HOME' referenced in template but not defined in .env
-[stderr]
 Error: 4 variables referenced in u.tpl have no value in .env: MISSING, ALSO, NOPE2, HOME
 
 Define them there, or give each a fallback with {{NAME|default:value}}.

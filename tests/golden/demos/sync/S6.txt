@@ -3,12 +3,6 @@
 
 $ evnx sync -n --template-config tc.json
 
-  evnx sync  .env ↔ .env.example  (forward)
-
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
-! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
-
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
 │ Found 2 variable(s) in .env missing from .env.example:                       │
 │   • NEW_FEATURE                                                              │
@@ -24,17 +18,23 @@ Target: .env.example (action: Add)
 
 (dry-run: no files were modified)
 [stderr]
-  Docs: https://docs.evnx.dev/cli/commands/sync
-[exit 0]
-  ok: custom patterns, default and allow_actual in the preview (exit 0)
-
-$ evnx sync -n --template-config tc2.json
 
   evnx sync  .env ↔ .env.example  (forward)
 
 ! .env has permissive permissions (0o644). Consider: chmod 600 .env
 · Overly permissive .env files may expose secrets to other users
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: custom patterns, default and allow_actual in the preview (exit 0)
+
+$ evnx sync -n --template-config tc2.json
 [stderr]
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
 Error: `allow_actual` would copy a real credential into .env.example, which is a committed file. Nothing was written.
 
   DATABASE_URL — Credentials in a connection string
@@ -62,12 +62,6 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx sync -n --template-config tc4.json
 
-  evnx sync  .env ↔ .env.example  (forward)
-
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
-! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
-
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
 │ Found 2 variable(s) in .env missing from .env.example:                       │
 │   • NEW_FEATURE                                                              │
@@ -83,17 +77,17 @@ Target: .env.example (action: Add)
 
 (dry-run: no files were modified)
 [stderr]
-  Docs: https://docs.evnx.dev/cli/commands/sync
-[exit 0]
-  ok: KNOWN I-121: misspelt key accepted and ignored (NEW_FEATURE stays YOUR_VALUE_HERE); decided: error, exit 2 (exit 0)
-
-$ evnx sync -n
 
   evnx sync  .env ↔ .env.example  (forward)
 
 ! .env has permissive permissions (0o644). Consider: chmod 600 .env
 · Overly permissive .env files may expose secrets to other users
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: KNOWN I-121: misspelt key accepted and ignored (NEW_FEATURE stays YOUR_VALUE_HERE); decided: error, exit 2 (exit 0)
+
+$ evnx sync -n
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
 │ Found 2 variable(s) in .env missing from .env.example:                       │
@@ -111,6 +105,12 @@ Target: .env.example (action: Add)
 (dry-run: no files were modified)
 [stderr]
   config    .evnx.toml
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: KNOWN I-121: invalid [sync] naming_policy ignored; decided: error (exit 0)

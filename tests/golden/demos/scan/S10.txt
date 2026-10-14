@@ -38,9 +38,6 @@ Next steps:
   ok: --exit-zero reports but exits 0 (exit 0)
 
 $ evnx scan . --no-color -q
-
-  evnx scan  Checking for exposed secrets
-
   scanning ./.env
 
   ✗  AWS Access Key                              high

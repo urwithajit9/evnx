@@ -1966,7 +1966,8 @@ fn c_sync_says_why_it_copied_nothing_from_a_blank_env() {
         .args(["sync", "--no-color"])
         .output()
         .unwrap();
-    let text = String::from_utf8_lossy(&out.stdout);
+    // A warning and its detail are on stderr since DEC-G2.
+    let text = String::from_utf8_lossy(&out.stderr);
 
     assert!(
         text.contains("has no variables"),
