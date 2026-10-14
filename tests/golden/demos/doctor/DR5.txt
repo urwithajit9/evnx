@@ -1,0 +1,86 @@
+
+================ DR5 ================
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✗  Validate .env file existence, security, and syntax
+     .envrc is NOT in .gitignore (security risk)
+     ! .envrc: Line 1: invalid syntax 'use flake'
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  1 error  ·  2 checks passed
+
+  →  1 issue evnx doctor --fix can repair:
+     ·  Validate .env file existence, security, and syntax
+[exit 1]
+  ok: KNOWN I-173: a direnv .envrc is a security error; decided: .envrc is not an env file (exit 1)
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✗  Validate .env file existence, security, and syntax
+     .env-notes.md is NOT in .gitignore (security risk)
+     ! .env-notes.md: Line 1: invalid syntax 'notes'
+     .environment is NOT in .gitignore (security risk)
+     ! .environment: Line 1: invalid syntax 'hello'
+     .envrc is NOT in .gitignore (security risk)
+     ! .envrc: Line 1: invalid syntax 'use flake'
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  1 error  ·  2 checks passed
+
+  →  1 issue evnx doctor --fix can repair:
+     ·  Validate .env file existence, security, and syntax
+[exit 1]
+  ok: KNOWN I-173: .environment and .env-notes.md parsed as dotenv (exit 1)
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✗  Validate .env file existence, security, and syntax
+     .env.bak is NOT in .gitignore (security risk)
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  1 error  ·  2 checks passed
+
+  →  1 issue evnx doctor --fix can repair:
+     ·  Validate .env file existence, security, and syntax
+[exit 1]
+  ok: KNOWN I-160: the plaintext copy .env.bak is checked and flagged... (exit 1)
+  ok: KNOWN I-160: ...but the same copy named .env.backup is skipped by name and never mentioned; decided: look inside, warn on plaintext copies
+
+================ summary: 4 ok, 0 mismatch   ================

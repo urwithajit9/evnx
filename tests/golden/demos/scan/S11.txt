@@ -1,0 +1,33 @@
+
+================ S11 ================
+
+$ evnx scan .
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./.env
+
+  ✗  Stripe Secret Key (LIVE)                    high
+     ./.env:1 (NEXT_PUBLIC_STRIPE_SECRET)  sk_l…hijk
+     !  matches a live key format, not a placeholder
+     !  NEXT_PUBLIC_ is inlined into the client bundle by Next.js — anyone who loads your site can read this
+     →  rename to STRIPE_SECRET and read it server-side
+     →  revoke at https://dashboard.stripe.com/apikeys
+
+  ✗  AWS Access Key                              high
+     ./.env:2 (OLD_KEY)  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  2 findings  ·  2 high
+
+
+Next steps:
+  1. Rename the public-prefixed variables above and read them server-side — while the name carries the prefix, every build republishes the value
+  2. Revoke and reissue those keys — they have been readable by every visitor to your site, so treat them as public, not merely leaked
+  3. Then, for anything that was ALSO committed: git filter-repo --path .env --invert-paths, and force push after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: client-bundle prefix escalation; a commented-out key is still a leaked key (exit 1)
+
+================ summary: 1 ok, 0 mismatch   ================

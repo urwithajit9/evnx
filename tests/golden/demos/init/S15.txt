@@ -1,0 +1,48 @@
+
+================ S15 ================
+Aliases write exactly what the id writes
+
+$ evnx init --with next,pg --yes
+
+  evnx init  Set up environment variables for your project
+
+✓ Created .env from template
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env.example with 10 variables from 2 components
+
+Next steps:
+  1. Edit .env and replace placeholder values
+  2. Never commit .env to version control
+  3. Run 'evnx validate' to check configuration
+  4. Use 'evnx add' to add more variables later
+  Docs: https://docs.evnx.dev/cli/commands/init
+[exit 0]
+  ok: aliases next,pg (exit 0)
+  ok: same file as nextjs,postgresql
+
+$ evnx init --blueprint t3modern --yes
+
+  evnx init  Set up environment variables for your project
+
+Error: Unknown blueprint 't3modern'.
+
+Did you mean: t3_modern
+
+Available blueprints:
+  t3_modern              T3 Turbo (Next.js + Clerk + Prisma)
+  mern_v2                Modern MERN (Vite + Express + MongoDB)
+  fastapi_ai             AI/ML Backend (FastAPI + Redis + S3)
+  rust_high_perf         Rust Speedstack (Axum + SQLx + Postgres)
+  laravel_monolith       Laravel V-Stack (Laravel + Vue + MySQL)
+  go_microservice        Go Cloud Native (Gin + Kafka + Postgres)
+  supabase_fullstack     Supabase Starter (Next.js + Supabase)
+  django_enterprise      Django Secure (Django + Postgres + Celery)
+  firebase_mobile        App Backend (Node + Firebase)
+  content_marketing      SEO Content Stack (Nuxt + S3 + Stripe)
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: mistyped blueprint (exit 2)
+  ok: blueprint typo hint
+
+================ summary: 4 ok, 0 mismatch   ================

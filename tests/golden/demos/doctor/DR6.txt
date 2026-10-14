@@ -1,0 +1,121 @@
+
+================ DR6 ================
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✓  Validate .env file existence, security, and syntax
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  3 checks passed
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: KNOWN I-158: .env.production at 644 is not mentioned (only .env is checked); decided: every env file (exit 0)
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✓  Validate .env file existence, security, and syntax
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  !  Check file permissions for sensitive files
+     Permissions: 700 (recommended: 600)
+
+  1 warning  ·  2 checks passed
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: KNOWN I-170: mode 700 is a warning (exit 0); decided: no group/other access passes (exit 0)
+
+$ evnx doctor --fix
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✓  Validate .env file existence, security, and syntax
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  3 checks passed
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: --fix changes .env only; .env.production stays 644 (decided: every flagged env file)
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✓  Validate .env file existence, security, and syntax
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  !  Check file permissions for sensitive files
+     Permissions: 644 (recommended: 600)
+
+  1 warning  ·  2 checks passed
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+KNOWN I-159: a symlinked .env is not seen by env_file
+
+$ evnx doctor --fix
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✓  Validate .env file existence, security, and syntax
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  3 checks passed
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: KNOWN I-159: --fix chmod'ed the target OUTSIDE the project (decided: only inside the project)
+
+================ summary: 4 ok, 0 mismatch   ================

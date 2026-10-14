@@ -28,12 +28,15 @@
 //! | [`snapshot`] | normalise temp paths, dates, the version and colour; compare with a golden file or rewrite it under `UPDATE_GOLDEN=1` | T-SHARE-37 |
 //! | [`renderers`] | run one scenario through two output formats and assert the same exit code and the same files changed | T-SHARE-33 |
 //! | [`pty`] | drive interactive prompts through a real pseudo-terminal (Unix only) | T-ADD-00 |
+//! | [`demo`] | run a training demo scene from `tests/demos/` and lock it to a golden file (Linux only) | P0-3, U0 |
 //!
 //! Each test file is its own crate and uses only part of this module, so
 //! `dead_code` and `unused_imports` (for the re-exports below) are allowed here
 //! rather than in every file that includes it.
 #![allow(dead_code, unused_imports)]
 
+#[cfg(target_os = "linux")]
+pub mod demo;
 pub mod project;
 #[cfg(unix)]
 pub mod pty;

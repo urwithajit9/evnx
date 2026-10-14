@@ -1,0 +1,41 @@
+
+================ S12 ================
+
+$ bash -c echo '1' | 'evnx' init
+
+  evnx init  Set up environment variables for your project
+
+Error: there is no terminal to show the menu on.
+
+Name what you want instead:
+  evnx init --yes                     blank files
+  evnx init --yes --blueprint <id>    a named stack
+  evnx init --yes --with <a,b,c>      components (evnx init --list-components)
+  evnx init --detect                  what the project's manifests declare
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: no terminal and no flags: stops (exit 2)
+  ok: the hint names the flags
+
+$ bash -c 'evnx' init --with stripe </dev/null
+
+  evnx init  Set up environment variables for your project
+
+
+  ✓  Stripe                 service
+
+3 variables
+  • service ×3
+  Categories: Payments
+Error: there is no terminal to confirm with.
+
+Add --yes to write without asking:
+  evnx init --with stripe --yes
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: --with without --yes and no terminal (exit 2)
+  ok: ...says to add --yes
+
+================ summary: 4 ok, 0 mismatch   ================

@@ -1,0 +1,94 @@
+
+================ DR8 ================
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  !  Validate .env file existence, security, and syntax
+     .env file not found - create from .env.example
+
+  !  Check .env.example exists and is Git-tracked
+     .env.example not found - consider creating a template
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ·  Skipped: .env not found
+
+  2 warnings
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: KNOWN I-162: an empty directory exits 0; decided: exit 2 'nothing to diagnose' (exit 0)
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  !  Validate .env file existence, security, and syntax
+     .env file not found - create from .env.example
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ·  Skipped: .env not found
+
+  1 warning  ·  1 check passed
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: KNOWN I-162: template but no .env is a warning; decided: error, exit 1 (exit 0)
+
+$ evnx doctor --strict
+
+  evnx doctor  Diagnosing environment setup
+
+
+  !  Validate .env file existence, security, and syntax
+     .env file not found - create from .env.example
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ·  Skipped: .env not found
+
+  1 warning  ·  1 check passed
+[exit 1]
+  ok: ...--strict makes it fail (exit 1)
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✗  Validate .env file existence, security, and syntax
+     .env is NOT in .gitignore (security risk)
+
+  !  Check .env.example exists and is Git-tracked
+     .env.example not found - consider creating a template
+
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+Error: Is a directory (os error 21)
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: KNOWN I-163: a directory named requirements.txt aborts the run: bare OS error, no check name, no path, no summary; decided: 'could not run' entry, rest finish, exit 2 (exit 2)
+
+================ summary: 4 ok, 0 mismatch   ================

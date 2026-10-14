@@ -1,0 +1,60 @@
+
+================ S3 ================
+
+$ evnx sync --check --format json
+{
+  "in_sync": false,
+  "direction": "forward",
+  "env": ".env",
+  "example": ".env.example",
+  "missing": [
+    "NEW_FEATURE",
+    "stripe_key"
+  ],
+  "summary": {
+    "missing": 2
+  }
+}
+[exit 1]
+  ok: json report: missing keys, sorted (exit 1)
+
+$ evnx sync --check --format json --direction reverse
+{
+  "in_sync": false,
+  "direction": "reverse",
+  "env": ".env",
+  "example": ".env.example",
+  "missing": [
+    "REDIS_URL"
+  ],
+  "summary": {
+    "missing": 1
+  }
+}
+[exit 1]
+  ok: reverse: keys the .env lacks (exit 1)
+
+$ evnx sync --format json
+[stderr]
+error: the following required arguments were not provided:
+  --check
+
+Usage: evnx sync --check --format <FORMAT>
+
+For more information, try '--help'.
+[exit 2]
+  ok: json needs --check (clap error) (exit 2)
+
+$ evnx sync --check --env t.env --example t.example
+
+  evnx sync  t.env ↔ t.example  (forward)
+
+! t.env has permissive permissions (0o664). Consider: chmod 600 t.env
+· Overly permissive .env files may expose secrets to other users
+✓ .env.example is up to date
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: KNOWN I-119: a key only in the template is never reported; decided: two-way, exit 1 (exit 0)
+
+================ summary: 4 ok, 0 mismatch   ================

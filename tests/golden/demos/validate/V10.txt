@@ -1,0 +1,19 @@
+
+================ V10 ================
+
+$ evnx validate
+
+  evnx validate  Check environment configuration
+
+✓ All required variables present
+✓ All checks passed
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 0]
+  ok: KNOWN D-27: .env is not in .gitignore and validate says nothing (docs claim a check) (exit 0)
+
+$ bash -c set -o pipefail; "$0" validate | head -c 10 evnx
+
+  evnx va[exit 141]
+KNOWN I-028: a closed pipe makes validate panic (exit 101) instead of ending quietly
+
+================ summary: 1 ok, 0 mismatch   ================

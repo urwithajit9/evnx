@@ -1,0 +1,36 @@
+
+================ BR9 ================
+
+$ evnx restore cloud://myproject --key-file pw
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+[stderr]
+Error: evnx-cloud restore is not yet available in this build
+[exit 6]
+  ok: KNOWN D-112: cloud:// exits 6 'not yet available'; decided (DEC-B4): removed, hint 'use evnx cloud pull' (exit 6)
+
+$ evnx restore .env.backup --key-file pw --output lnk.env
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+✓ Read backup from .env.backup
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
+
+Backup information:
+  Schema version: v1
+  Original file : .env
+  Created at    : <date>Z
+  Tool version  : evnx v<version>
+  Variables     : 11
+✓ Decryption successful
+  ✓ Decryption key cleared from memory
+[stderr]
+Error: Failed to write restored file to lnk.env: could not open lnk.env for writing — if it is a symlink, evnx refuses to write through it: Too many levels of symbolic links (os error 40)
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: KNOWN I-151: a symlink output is refused; decided: write through with a notice (exit 2)
+
+================ summary: 2 ok, 0 mismatch   ================

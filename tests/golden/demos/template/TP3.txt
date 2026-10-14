@@ -1,0 +1,45 @@
+
+================ TP3 ================
+
+$ evnx template --input u.tpl --output u.out --no-gitignore
+
+  Generate config from template
+
+✓ Loaded 7 variables from .env
+✓ Read template from u.tpl
+! Variable 'MISSING' referenced in template but not defined in .env
+! Variable 'ALSO' referenced in template but not defined in .env
+! Variable 'NOPE2' referenced in template but not defined in .env
+! Variable 'HOME' referenced in template but not defined in .env
+✓ Generated config at u.out
+· 4 placeholders were left unresolved and written through literally. Use --strict to make this an error.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/template
+[exit 0]
+  ok: KNOWN I-142: unresolved references are written through, exit 0; decided: error by default (exit 0)
+
+$ evnx template --input u.tpl --output u2.out --strict --no-gitignore
+
+  Generate config from template
+
+✓ Loaded 7 variables from .env
+✓ Read template from u.tpl
+! Variable 'MISSING' referenced in template but not defined in .env
+! Variable 'ALSO' referenced in template but not defined in .env
+! Variable 'NOPE2' referenced in template but not defined in .env
+! Variable 'HOME' referenced in template but not defined in .env
+[stderr]
+Error: 4 variables referenced in u.tpl have no value in .env: MISSING, ALSO, NOPE2, HOME
+
+Define them there, or give each a fallback with {{NAME|default:value}}.
+Nothing was written to u2.out.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: --strict refuses, names all four (including $HOME: KNOWN I-135), writes nothing (exit 2)
+
+$ bash -c test -e u2.out && echo "u2.out exists" || echo "u2.out not created"
+u2.out not created
+[exit 0]
+
+================ summary: 2 ok, 0 mismatch   ================

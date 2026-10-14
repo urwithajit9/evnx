@@ -1,0 +1,14 @@
+
+================ D1 ================
+
+$ evnx diff
+
+  evnx diff  .env ↔ .env.example
+
+✓ Files are identical
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 0]
+  ok: same keys and values in another order are identical (exit 0)
+
+================ summary: 1 ok, 0 mismatch   ================

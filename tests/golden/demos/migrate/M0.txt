@@ -1,0 +1,132 @@
+
+================ M0 ================
+
+$ evnx --version
+evnx <version>
+[exit 0]
+
+$ evnx migrate --help
+Full migration workflow to secret managers.
+
+Supports: github-actions, aws-secrets-manager, doppler, infisical, gcp-secret-manager, azure-keyvault, vercel, heroku, railway
+
+Examples: evnx migrate --to github-actions --repo owner/repo evnx migrate --to aws-secrets-manager --secret-name prod/myapp/config evnx migrate --to doppler --project myapp --doppler-config dev --dry-run
+
+Usage: evnx migrate [OPTIONS]
+
+Options:
+      --from <FROM>
+          Source system: `env-file` (default) or `environment`
+
+      --source-file <SOURCE_FILE>
+          Path to the source .env file (used when --from env-file)
+          
+          [default: .env]
+
+      --to <TO>
+          Destination system: github-actions | aws-secrets-manager | doppler | infisical | gcp-secret-manager | azure-keyvault | vercel | heroku | railway
+
+      --dry-run
+          Preview what would be migrated without making any changes
+
+      --skip-existing
+          Skip secrets that already exist at the destination
+
+      --overwrite
+          Overwrite secrets that already exist without prompting
+
+      --include <INCLUDE>
+          Comma-separated glob patterns — only migrate matching keys. Example: --include "DB_*,AWS_*"
+
+      --exclude <EXCLUDE>
+          Comma-separated glob patterns — skip matching keys. Example: --exclude "*_LOCAL,*_TEST"
+
+      --strip-prefix <STRIP_PREFIX>
+          Strip this prefix from key names before uploading. Example: --strip-prefix "APP_"  →  APP_DB_URL becomes DB_URL
+
+      --add-prefix <ADD_PREFIX>
+          Add this prefix to key names before uploading. Example: --add-prefix "PROD_"
+
+      --repo <REPO>
+          GitHub repository in owner/repo format
+
+      --github-token <GITHUB_TOKEN>
+          GitHub Personal Access Token (or set GITHUB_TOKEN env var)
+          
+          [env: GITHUB_TOKEN]
+
+      --secret-name <SECRET_NAME>
+          AWS Secrets Manager secret name, e.g. prod/myapp/config
+
+      --aws-profile <AWS_PROFILE>
+          AWS CLI named profile
+
+      --project <PROJECT>
+          Doppler project slug or Infisical project ID
+
+      --doppler-config <DOPPLER_CONFIG>
+          Doppler config name (dev / staging / prd)
+
+      --infisical-env <INFISICAL_ENV>
+          Infisical environment name (dev / staging / prod)
+
+      --vault-name <VAULT_NAME>
+          Azure Key Vault name
+
+      --heroku-app <HEROKU_APP>
+          Heroku application name
+
+      --vercel-project <VERCEL_PROJECT>
+          Vercel project ID or name
+
+      --railway-project <RAILWAY_PROJECT>
+          Railway project ID
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Suppress non-essential output
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Full guide: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+
+$ evnx migrate
+
+  evnx migrate  Generate destination commands from your .env
+
+[stderr]
+Error: --to is required when there is no terminal to ask.
+
+  Pass one explicitly:
+    evnx migrate --to <DESTINATION>
+
+  Available: github-actions, aws-secrets-manager, doppler, infisical, gcp-secret-manager, azure-keyvault, vercel, heroku, railway
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: no --to and no terminal: refuses, lists the destinations (exit 2)
+
+$ evnx migrate --to bogus --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+[stderr]
+Error: .env does not exist
+
+Create it with `evnx init`, or point at another file with --source-file.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: unknown destination (exit 2)
+
+================ summary: 2 ok, 0 mismatch   ================

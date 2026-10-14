@@ -1,0 +1,58 @@
+
+================ C5 ================
+
+$ evnx convert --to json --include P*
+{
+  "PORT": "8080",
+  "PRICE": "$5"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: prefix glob: PORT, PRICE (exit 0)
+
+$ evnx convert --to json --include *_URL --exclude DATABASE_*
+{}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: exclude applies after include: nothing left (exit 0)
+
+$ evnx convert --to json --include API_* --prefix APP_ --transform lowercase
+{
+  "app_api_secret": "abc123"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: prefix before casing: app_api_secret (exit 0)
+
+$ evnx convert --to json --include NOPE_*
+{}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: KNOWN I-089: zero match prints {} and exits 0; decided: exit 1, --allow-empty (exit 0)
+
+$ evnx convert --to json --include PORT,DEBUG
+{}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+KNOWN I-090: comma list matches nothing; decided: repeatable --include
+
+$ evnx convert --to json --include P?RT
+{}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+KNOWN I-090: ? is literal today; decided: core::glob
+
+$ evnx convert --env empty --to json
+{}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: KNOWN I-089: empty .env prints {} and exits 0 (exit 0)
+
+================ summary: 5 ok, 0 mismatch   ================

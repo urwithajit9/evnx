@@ -1,0 +1,83 @@
+
+================ S3 ================
+
+$ evnx scan . --severity high
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./.env
+
+  ✗  AWS Access Key                              high
+     ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  ✗  Stripe Secret Key (LIVE)                    high
+     ./.env:2 (STRIPE_SECRET_KEY)  sk_l…hijk
+     !  matches a live key format, not a placeholder
+     →  revoke at https://dashboard.stripe.com/apikeys
+
+  ✗  GitHub Token                                high
+     ./.env:3 (GITHUB_TOKEN)  ghp_…Q7r8
+     !  matches a live key format, not a placeholder
+     →  revoke at https://github.com/settings/tokens
+
+  ✗  Credentials in a connection string          high
+     ./.env:4 (DATABASE_URL)  post…5432
+     !  matches a live key format, not a placeholder
+
+  4 findings  ·  4 high
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: only high findings (exit 1)
+
+$ evnx scan . --severity all
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./.env
+
+  ✗  AWS Access Key                              high
+     ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  ✗  Stripe Secret Key (LIVE)                    high
+     ./.env:2 (STRIPE_SECRET_KEY)  sk_l…hijk
+     !  matches a live key format, not a placeholder
+     →  revoke at https://dashboard.stripe.com/apikeys
+
+  ✗  GitHub Token                                high
+     ./.env:3 (GITHUB_TOKEN)  ghp_…Q7r8
+     !  matches a live key format, not a placeholder
+     →  revoke at https://github.com/settings/tokens
+
+  ✗  Credentials in a connection string          high
+     ./.env:4 (DATABASE_URL)  post…5432
+     !  matches a live key format, not a placeholder
+
+  4 findings  ·  4 high
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: all = low and above (exit 1)
+
+$ evnx scan . --severity bogus
+Error: unknown severity 'bogus' — expected one of: high, medium, low
+
+No verdict: evnx did not scan anything. This is not a clean result.
+[exit 2]
+  ok: bad severity is a usage error (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

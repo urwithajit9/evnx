@@ -1,0 +1,32 @@
+
+================ TP5 ================
+
+$ evnx template --input t.tpl --output t.out --env t.env --no-gitignore
+
+  Generate config from template
+
+✓ Loaded 2 variables from t.env
+✓ Read template from t.tpl
+✓ Generated config at t.out
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/template
+[exit 0]
+  ok: KNOWN I-134: the second default reuses the first (exit 0)
+--- t.out:
+a=one b=one
+
+$ evnx template --input r.tpl --output r.out --env r.env --no-gitignore
+
+  Generate config from template
+
+✓ Loaded 2 variables from r.env
+✓ Read template from r.tpl
+✓ Generated config at r.out
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/template
+[exit 0]
+  ok: KNOWN I-133: the value of A is evaluated as a template by a later key's filter (exit 0)
+--- r.out:
+v="BEE"
+
+================ summary: 2 ok, 0 mismatch   ================

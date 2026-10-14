@@ -1,0 +1,33 @@
+
+================ D3 ================
+
+$ evnx diff --show-values
+
+  evnx diff  .env ↔ .env.example
+
+Missing from .env (present in .env.example):
+  + REDIS_URL = redis://localhost:6379
+  + FEATURE_X = false
+
+Extra in .env (not in .env.example):
+  - EXTRA_DEBUG = 1
+
+Different values:
+  ~ DATABASE_URL
+    .env.example: postgres://user:pass@localhost:5432/app
+    .env: postgres://admin:s3cr3tPassw0rd@db.internal:5432/app
+  ~ API_SECRET
+    .env.example: ***
+    .env: ***
+  ~ API_PORT
+    .env.example: 8080
+    .env: 9090
+
+  2 missing from .env  ·  1 not in .env.example  ·  3 different values
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 1]
+  ok: values shown; API_SECRET is masked by its name (exit 1)
+KNOWN I-076: the password inside DATABASE_URL is printed because masking is by key name only; decided: value-aware masking
+
+================ summary: 1 ok, 0 mismatch   ================

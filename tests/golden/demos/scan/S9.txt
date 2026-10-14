@@ -1,0 +1,54 @@
+
+================ S9 ================
+
+$ evnx scan does-not-exist
+
+  evnx scan  Checking for exposed secrets
+
+Error: cannot scan 1 of the 1 path(s) given:
+  does-not-exist (does not exist)
+
+No verdict: evnx did not scan anything. This is not a clean result.
+[exit 2]
+  ok: missing path is exit 2 (exit 2)
+
+$ evnx scan utf16.env
+
+  evnx scan  Checking for exposed secrets
+
+  scanning utf16.env
+
+  ✗  AWS Access Key                              high
+     utf16.env:1  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  1 finding  ·  1 high
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: UTF-16 file is decoded and scanned (exit 1)
+
+$ evnx scan bad.env
+
+  evnx scan  Checking for exposed secrets
+
+  scanning bad.env
+
+  ✗  1 file could not be read, so it was NOT scanned
+     bad.env  is not valid UTF-8: invalid utf-8 sequence of 1 bytes from index 2
+     →  re-save as UTF-8 and scan again — a file that was not read is not clean
+
+  !  No secrets detected in the files that could be read
+
+  0 files scanned  ·  1 unreadable
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+(unreadable or odd input fails closed; see exit above)
+
+================ summary: 2 ok, 0 mismatch   ================

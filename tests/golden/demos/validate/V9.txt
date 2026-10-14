@@ -1,0 +1,37 @@
+
+================ V9 ================
+
+$ evnx validate
+
+  evnx validate  Check environment configuration
+
+✓ All required variables present
+✓ All checks passed
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 0]
+(no Docker file: localhost is fine)
+
+$ evnx validate
+
+  evnx validate  Check environment configuration
+
+  !  DB_HOST uses localhost/127.0.0.1
+     .env
+     →  In Docker, use service name instead (e.g., db:5432)
+
+  1 warning
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 0]
+(Dockerfile in cwd: localhost_in_docker warning)
+
+$ evnx validate
+
+  evnx validate  Check environment configuration
+
+✓ All required variables present
+✓ All checks passed
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 0]
+KNOWN I-046: run from sub/ the project's Dockerfile one level up is not seen, so no warning; decided: env file folder, then project root
+
+================ summary: 0 ok, 0 mismatch   ================

@@ -1,0 +1,76 @@
+
+================ BR3 ================
+.env.backup -> N=5
+.env.backup.1 -> N=4
+.env.backup.2 -> N=3
+.env.backup.3 -> N=2
+.env.backup
+.env.backup.1
+.env.backup.2
+.env.backup.3
+  ok: newest first, up to .3
+
+$ evnx backup --key-file pw --keep 1
+
+  evnx backup  Encrypt and back up your .env file
+
+✓ Read 4 bytes from .env
+· Using key file for encryption (non-interactive mode)
+! --keep 1: .env.backup.1 will be overwritten by rotation — increase --keep or prune manually to retain it
+
+✓ Backup created successfully
+  Source  : .env
+  Backup  : .env.backup
+  Size    : 260 bytes (encrypted + Base64)
+  Verified: no
+
+! Important:
+  • Keep your password (or key file) safe — it cannot be recovered
+  • Store the backup in a secure, separate location
+  • To restore: evnx restore .env.backup --output .env
+  • Test the restore before deleting the original .env
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/backup
+[exit 0]
+  ok: --keep 1 replaces .1 and warns (exit 0)
+
+$ evnx backup --key-file pw --keep 0
+
+  evnx backup  Encrypt and back up your .env file
+
+✓ Read 4 bytes from .env
+· Using key file for encryption (non-interactive mode)
+
+✓ Backup created successfully
+  Source  : .env
+  Backup  : .env.backup
+  Size    : 260 bytes (encrypted + Base64)
+  Verified: no
+
+! Important:
+  • Keep your password (or key file) safe — it cannot be recovered
+  • Store the backup in a secure, separate location
+  • To restore: evnx restore .env.backup --output .env
+  • Test the restore before deleting the original .env
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/backup
+[exit 0]
+  ok: --keep 0: no rotation (exit 0)
+toml keep=1:
+.env.backup
+.env.backup.1
+
+$ evnx backup --key-file pw
+[stderr]
+Error: parsing <dir>/scenes/BR3/t/.evnx.toml: TOML parse error at line 2, column 8
+  |
+2 | keep = "x"
+  |        ^^^
+invalid type: string "x", expected u32
+
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: bad config value is an error (exit 2)
+
+================ summary: 4 ok, 0 mismatch   ================

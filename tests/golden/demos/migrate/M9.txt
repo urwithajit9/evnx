@@ -1,0 +1,21 @@
+
+================ M9 ================
+
+$ bash -c "$0" migrate --to "$1" "$2" "x;echo_PWNED" 2>/dev/null </dev/null | grep PWNED evnx heroku --heroku-app
+heroku config:set --app x;echo_PWNED \
+  1. Verify with `heroku config --app x;echo_PWNED`.
+[exit 0]
+  ok: the name is printed unquoted into the command: heroku (exit 0)
+
+$ bash -c "$0" migrate --to "$1" "$2" "x;echo_PWNED" 2>/dev/null </dev/null | grep PWNED evnx vercel --vercel-project
+echo "1" | vercel env add A production --project-id x;echo_PWNED 
+[exit 0]
+  ok: the name is printed unquoted into the command: vercel (exit 0)
+
+$ bash -c "$0" migrate --to "$1" "$2" "x;echo_PWNED" 2>/dev/null </dev/null | grep PWNED evnx azure-keyvault --vault-name
+az keyvault secret set --vault-name x;echo_PWNED --name A --value "1"
+[exit 0]
+  ok: the name is printed unquoted into the command: azure-keyvault (exit 0)
+KNOWN I-102: a name containing ; is pasted into the command, which then runs a second command when the user runs it; decided: validate per destination, refuse, and quote
+
+================ summary: 3 ok, 0 mismatch   ================

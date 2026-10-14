@@ -1,0 +1,60 @@
+
+================ S9 ================
+
+$ evnx sync -f
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
+
+┌─ Variables to Add ───────────────────────────────────────────────────────────┐
+│ Found 5 variable(s) in .env missing from .env.example:                       │
+│   • DATABASE_URL                                                             │
+│   • API_SECRET                                                               │
+│   • API_PORT                                                                 │
+│   • NEW_FEATURE                                                              │
+│   • stripe_key                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+· Force mode: using placeholder values and skipping prompts
+✓ Added 5 variables to .env.example
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: template is a symlink (exit 0)
+
+$ bash -c test -L .env.example && echo "still a symlink" || echo "REPLACED by a regular file"; cat shared/real.example
+REPLACED by a regular file
+KEEP=1
+[exit 0]
+KNOWN I-122: the link is replaced and its target untouched; decided: write through to the target
+
+$ evnx sync -f
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
+
+┌─ Variables to Add ───────────────────────────────────────────────────────────┐
+│ Found 2 variable(s) in .env missing from .env.example:                       │
+│   • NEW_FEATURE                                                              │
+│   • stripe_key                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+· Force mode: using placeholder values and skipping prompts
+✓ Added 2 variables to .env.example
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+
+$ bash -c stat -c "%n mode %a (was 644)" .env.example .env
+.env.example mode 600 (was 644)
+.env mode 644 (was 644)
+[exit 0]
+KNOWN I-123: template becomes 600 by accident of the temp file, and a written .env is forced to 600 (reverse); decided: preserve existing modes, new template 644, new .env 600
+
+================ summary: 1 ok, 0 mismatch   ================

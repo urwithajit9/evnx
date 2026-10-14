@@ -1,0 +1,64 @@
+
+================ M2 ================
+
+$ evnx migrate --to aws-secrets-manager --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+[stderr]
+Error: AWS secret name (e.g. prod/myapp/config) is required for this destination. Pass `--secret-name`.
+  --dry-run still needs it: without it evnx would print a command
+  with a placeholder where the name should be.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: dry run still needs the name it would print: aws-secrets-manager (exit 2)
+
+$ evnx migrate --to azure-keyvault --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+[stderr]
+Error: Azure Key Vault name is required for this destination. Pass `--vault-name`.
+  --dry-run still needs it: without it evnx would print a command
+  with a placeholder where the name should be.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: dry run still needs the name it would print: azure-keyvault (exit 2)
+
+$ evnx migrate --to heroku --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+[stderr]
+Error: Heroku app name is required for this destination. Pass `--heroku-app`.
+  --dry-run still needs it: without it evnx would print a command
+  with a placeholder where the name should be.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: dry run still needs the name it would print: heroku (exit 2)
+
+$ evnx migrate --to github-actions --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+[stderr]
+Error: GitHub repository (owner/repo) is required for this destination. Pass `--repo`.
+  --dry-run still needs it: without it evnx would print a command
+  with a placeholder where the name should be.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: dry run still needs the name it would print: github-actions (exit 2)
+
+================ summary: 4 ok, 0 mismatch   ================

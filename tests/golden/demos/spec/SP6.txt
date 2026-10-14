@@ -1,0 +1,44 @@
+
+================ SP6 ================
+
+$ evnx scan app.env
+  scanning app.env
+
+  ✓  No secrets detected
+
+  1 file scanned
+[stderr]
+  config    .evnx.toml (vars.secret=false on 1 variable(s))
+
+  evnx scan  Checking for exposed secrets
+
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 0]
+secret=true is the declaration; secret=false retracts only a name-based guess
+
+$ evnx scan live.env
+  scanning live.env
+
+  ✗  Stripe Secret Key (LIVE)                    high
+     live.env:1  sk_l…aaaa
+     !  matches a live key format, not a placeholder
+     →  revoke at https://dashboard.stripe.com/apikeys
+
+  1 finding  ·  1 high
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+[stderr]
+  config    .evnx.toml (vars.secret=false on 1 variable(s))
+
+  evnx scan  Checking for exposed secrets
+
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: a live key shape cannot be silenced by secret=false
+KNOWN carry-forward: declared secret=true is not applied to the file app.env (scan pass)
+
+================ summary: 1 ok, 0 mismatch   ================

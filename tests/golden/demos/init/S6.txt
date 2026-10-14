@@ -1,0 +1,51 @@
+
+================ S6 ================
+
+$ evnx init --with vite,supabse --yes
+
+  evnx init  Set up environment variables for your project
+
+Error: Failed to resolve components: unknown component 'supabse'
+
+Did you mean: supabase
+
+Run `evnx init --list-components` for the full list.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: typo is refused (exit 2)
+  ok: typo gets a suggestion
+
+$ evnx init --with postgre --yes
+
+  evnx init  Set up environment variables for your project
+
+Error: Failed to resolve components: unknown component 'postgre'
+
+Did you mean: postgresql
+
+Run `evnx init --list-components` for the full list.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: prefix hint works (exit 2)
+
+$ evnx init --blueprint mern_v2 --with stripe --yes
+error: the argument '--blueprint <ID>' cannot be used with '--with <LIST>...'
+
+Usage: evnx init --blueprint <ID> --yes
+
+For more information, try '--help'.
+[exit 2]
+  ok: conflict (exit 2)
+
+$ evnx init --detect --with stripe --yes
+error: the argument '--detect' cannot be used with '--with <LIST>...'
+
+Usage: evnx init --detect --yes
+
+For more information, try '--help'.
+[exit 2]
+  ok: conflict (exit 2)
+
+================ summary: 5 ok, 0 mismatch   ================

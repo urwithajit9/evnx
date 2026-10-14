@@ -1,0 +1,85 @@
+
+================ DR4 ================
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✗  Validate .env file existence, security, and syntax
+     .env is NOT in .gitignore (security risk)
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  1 error  ·  2 checks passed
+
+  →  1 issue evnx doctor --fix can repair:
+     ·  Validate .env file existence, security, and syntax
+[exit 1]
+  ok: .env* then !.env: .env is exposed (exit 1)
+
+$ evnx doctor --fix
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✓  Validate .env file existence, security, and syntax
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  3 checks passed
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: KNOWN I-156: --fix claims success; the rule that exposes .env is still there (exit 0)
+
+$ cat .gitignore
+.env*
+!.env
+!.env.example
+!.env.sample
+!.env.template
+[exit 0]
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✗  Validate .env file existence, security, and syntax
+     .env is NOT in .gitignore (security risk)
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  1 error  ·  2 checks passed
+
+  →  1 issue evnx doctor --fix can repair:
+     ·  Validate .env file existence, security, and syntax
+[exit 1]
+  ok: still exposed on the next run; decided (DEC-D1): verify after fix, exit 1 (exit 1)
+
+================ summary: 3 ok, 0 mismatch   ================

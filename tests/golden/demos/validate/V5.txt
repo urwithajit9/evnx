@@ -1,0 +1,96 @@
+
+================ V5 ================
+
+$ evnx validate --format json
+{
+  "status": "failed",
+  "required_present": 7,
+  "required_total": 8,
+  "issues": [
+    {
+      "severity": "error",
+      "type": "missing_variable",
+      "variable": "STRIPE_KEY",
+      "message": "Missing required variable: STRIPE_KEY",
+      "location": ".env",
+      "suggestion": "Add STRIPE_KEY=<value> to .env",
+      "auto_fixable": true
+    },
+    {
+      "severity": "error",
+      "type": "missing_variable",
+      "variable": "OPTIONAL_X",
+      "message": "Missing required variable: OPTIONAL_X",
+      "location": ".env",
+      "suggestion": "Add OPTIONAL_X=<value> to .env",
+      "auto_fixable": true
+    },
+    {
+      "severity": "warning",
+      "type": "duplicate_key",
+      "variable": "A",
+      "message": "A is assigned 2 times (lines 7, 8) — only line 8 takes effect",
+      "location": ".env",
+      "suggestion": "Remove the earlier assignments of A, or rename them if they were meant to differ",
+      "auto_fixable": false
+    },
+    {
+      "severity": "error",
+      "type": "placeholder_value",
+      "variable": "SECRET_KEY",
+      "message": "SECRET_KEY looks like a placeholder",
+      "location": ".env",
+      "suggestion": "Run: openssl rand -hex 32",
+      "auto_fixable": true
+    },
+    {
+      "severity": "warning",
+      "type": "boolean_trap",
+      "variable": "DEBUG",
+      "message": "DEBUG is set to \"False\" (string, not boolean)",
+      "location": ".env",
+      "suggestion": "Use false or 0 for proper boolean handling",
+      "auto_fixable": true
+    },
+    {
+      "severity": "error",
+      "type": "weak_secret",
+      "variable": "SECRET_KEY",
+      "message": "SECRET_KEY is too weak or predictable",
+      "location": ".env",
+      "suggestion": "Run: openssl rand -hex 32",
+      "auto_fixable": true
+    }
+  ],
+  "fixed": [],
+  "summary": {
+    "errors": 4,
+    "warnings": 2,
+    "style": 0,
+    "fixed_count": 0
+  }
+}
+Validation failed: 4 errors
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 1]
+
+$ evnx validate --format github-actions
+::error file=.env,line=1::Missing required variable: STRIPE_KEY%0ASuggestion: Add STRIPE_KEY=<value> to .env
+::error file=.env,line=1::Missing required variable: OPTIONAL_X%0ASuggestion: Add OPTIONAL_X=<value> to .env
+::warning file=.env,line=7::A is assigned 2 times (lines 7, 8) — only line 8 takes effect%0ASuggestion: Remove the earlier assignments of A, or rename them if they were meant to differ
+::error file=.env,line=2::SECRET_KEY looks like a placeholder%0ASuggestion: Run: openssl rand -hex 32
+::warning file=.env,line=5::DEBUG is set to "False" (string, not boolean)%0ASuggestion: Use false or 0 for proper boolean handling
+::error file=.env,line=2::SECRET_KEY is too weak or predictable%0ASuggestion: Run: openssl rand -hex 32
+Validation failed: 4 errors
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 1]
+
+$ evnx validate --format xml
+Error: unknown format 'xml' — expected one of: pretty, json, github-actions
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: bad format value is an error (exit 2)
+KNOWN I-034: required_present counts any variable, not the declared ones (see JSON summary above)
+
+================ summary: 1 ok, 0 mismatch   ================

@@ -8,6 +8,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+No change to the product. This lays the groundwork for the shared-module work
+that follows: each reviewed command's output is now locked in CI before any
+module changes it.
+
+### Tests
+
+- The training demos for `sync`, `template`, `convert`, `diff`, `doctor`,
+  `migrate`, `spec`, `scan`, `validate`, `init` and `backup`/`restore` run in CI
+  scene by scene (`tests/<cmd>_runner.rs`, 140 scenes). Each scene must match
+  `tests/golden/demos/<cmd>/<scene>.txt`, and a check marked `KNOWN` that flips
+  fails the test until its runner line is changed on purpose. Linux only.
+- `tests/backup_format_lock.rs`: backups made by 0.10.0 and 0.10.2 must keep
+  restoring byte for byte. The key file there is a published test passphrase.
+- `tests/spec_golden.rs` pins the `[vars]` block `spec init --stdout` prints.
+- `scripts/behaviour-lock.sh <cmd> [old] [new]` runs a demo twice, or with two
+  binaries, and lists every line that moved.
+
 ## [0.10.2] - 2026-10-14
 
 ⚠️ **Why 0.10.2.** As 0.10.1 explains, each reviewed command ships as its own

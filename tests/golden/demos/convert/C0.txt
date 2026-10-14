@@ -1,0 +1,119 @@
+
+================ C0 ================
+
+$ evnx --version
+evnx <version>
+[exit 0]
+
+$ evnx convert --help
+Transform `.env` files into multiple output formats.
+
+Supports 14+ formats including JSON, YAML, cloud configs, CI/CD variables, and infrastructure-as-code.
+
+⚠️ The examples live in `after_help` below, not here. clap strips the markdown fence and collapses newlines in a doc comment, so a fenced block renders as one unusable line with the backslash continuations inline and the fence markers still visible. `after_help` is passed through verbatim.
+
+Usage: evnx convert [OPTIONS]
+
+Options:
+      --env <PATH>
+          Path to input .env file
+
+      --env-name <NAME>
+          Operate on `.env.<NAME>` instead of `.env`.
+          
+          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do — it never falls back to `.env`.
+
+      --to <FORMAT>
+          Target output format (omit for interactive selection)
+          
+          Supported: json, yaml, shell, aws-secrets, gcp-secrets, azure-keyvault, github-actions, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway
+
+  -o, --output <FILE>
+          Write output to file instead of stdout
+
+      --include <PATTERN>
+          Include only variables matching this glob pattern
+          
+          Examples: "AWS_*", "*_URL", "*_SECRET_*" Supports: prefix*, *suffix, *contains*, exact
+
+      --exclude <PATTERN>
+          Exclude variables matching this glob pattern
+          
+          Examples: "*_DEBUG", "TEST_*" Applied after --include filtering
+
+      --base64
+          Base64-encode all values before output.
+          
+          For `kubernetes` this chooses the field: with the flag values are base64 under `data:`; without it they are literal under `stringData:`, which Kubernetes encodes itself on apply.
+          
+          ⚠️ This said "Some formats (e.g., kubernetes) always base64-encode regardless of this flag", which was exactly backwards.
+
+      --prefix <PREFIX>
+          Prefix to prepend to all variable names
+          
+          Example: --prefix "APP_" transforms "KEY" → "APP_KEY" Applied before key casing transformation
+
+      --transform <MODE>
+          Transform variable name casing
+          
+          Options: uppercase, lowercase, camelCase, snake_case
+          
+          Examples: "database_url" --transform uppercase → "DATABASE_URL" "DATABASE_URL" --transform camelCase → "databaseUrl" "DatabaseURL" --transform snake_case → "database_url"
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Suppress non-essential output
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Examples:
+  # Basic JSON conversion
+  evnx convert --to json
+
+  # Kubernetes secret with transformations
+  evnx convert \
+    --to kubernetes \
+    --include "PROD_*" \
+    --prefix "MYAPP_" \
+    --transform uppercase \
+    --output k8s-secret.yaml
+
+  # Interactive mode (opens the format selector)
+  evnx convert
+
+Supported formats:
+  Generic:        json, yaml, shell
+  Cloud:          aws-secrets, gcp-secrets, azure-keyvault
+  CI/CD:          github-actions
+  Containers:     docker-compose, kubernetes
+  IaC:            terraform
+  Secret Managers: doppler, heroku, vercel, railway
+
+Aliases:
+  k8s → kubernetes, tf → terraform, yml → yaml
+  gh-actions → github-actions, compose → docker-compose
+
+Use 'evnx convert' without --to for interactive format selection.
+
+📖  Full guide: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+
+$ evnx convert --to json
+[stderr]
+Error: Convert command failed: Failed to validate input file: '.env': Input file not found: '.env'
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: no .env: could not run (exit 2)
+KNOWN I-082: --help carries developer commit notes ('clap strips the markdown fence...'); decided: removed
+
+================ summary: 1 ok, 0 mismatch   ================

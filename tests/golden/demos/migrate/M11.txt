@@ -1,0 +1,18 @@
+
+================ M11 ================
+first 6 lines of run.sh:
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+
+$ sh -n run.sh
+[stderr]
+run.sh: 11: Syntax error: "(" unexpected
+[exit 2]
+  ok: the saved file is not a script (exit 2)
+KNOWN I-111: the banner and status lines are on stdout, so the saved file is not a script; decided: --print-only
+
+================ summary: 1 ok, 0 mismatch   ================

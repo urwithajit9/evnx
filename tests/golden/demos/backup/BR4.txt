@@ -1,0 +1,84 @@
+
+================ BR4 ================
+
+$ evnx backup --key-file pw --output odir
+
+  evnx backup  Encrypt and back up your .env file
+
+✓ Read 258 bytes from .env
+· Using key file for encryption (non-interactive mode)
+
+✓ Backup created successfully
+  Source  : .env
+  Backup  : odir
+  Size    : 620 bytes (encrypted + Base64)
+  Verified: no
+
+! Important:
+  • Keep your password (or key file) safe — it cannot be recovered
+  • Store the backup in a secure, separate location
+  • To restore: evnx restore odir --output .env
+  • Test the restore before deleting the original .env
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/backup
+[exit 0]
+  ok: KNOWN I-146: an existing directory is renamed to odir.1 and a file takes its place (exit 0)
+
+$ stat -c %F %n odir odir.1
+regular file odir
+directory odir.1
+[exit 0]
+
+$ evnx backup src.env --key-file pw --output src.env
+
+  evnx backup  Encrypt and back up your .env file
+
+✓ Read 258 bytes from src.env
+· Using key file for encryption (non-interactive mode)
+
+✓ Backup created successfully
+  Source  : src.env
+  Backup  : src.env
+  Size    : 624 bytes (encrypted + Base64)
+  Verified: no
+
+! Important:
+  • Keep your password (or key file) safe — it cannot be recovered
+  • Store the backup in a secure, separate location
+  • To restore: evnx restore src.env --output src.env
+  • Test the restore before deleting the original .env
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/backup
+[exit 0]
+  ok: KNOWN I-146: output equals source: the .env is now ciphertext (exit 0)
+
+$ bash -c ls src.env*; grep -c "^DB_URL=" src.env || echo "src.env no longer holds DB_URL= (it is ciphertext); the plaintext is only in src.env.1"
+src.env
+src.env.1
+0
+src.env no longer holds DB_URL= (it is ciphertext); the plaintext is only in src.env.1
+[exit 0]
+
+$ evnx backup --key-file pw --output nodir/x.bak
+
+  evnx backup  Encrypt and back up your .env file
+
+✓ Read 258 bytes from .env
+· Using key file for encryption (non-interactive mode)
+[stderr]
+Error: Failed to write backup file: could not open nodir/x.bak for writing — if it is a symlink, evnx refuses to write through it
+[exit 5]
+  ok: KNOWN I-152: missing directory; the message blames symlinks (exit 5)
+
+$ evnx backup --key-file pw --output lnk.bak
+
+  evnx backup  Encrypt and back up your .env file
+
+✓ Read 258 bytes from .env
+· Using key file for encryption (non-interactive mode)
+[stderr]
+Error: Failed to write backup file: could not open lnk.bak for writing — if it is a symlink, evnx refuses to write through it
+[exit 5]
+  ok: KNOWN I-151: a symlink output is refused; decided: write through with a notice (exit 5)
+
+================ summary: 4 ok, 0 mismatch   ================

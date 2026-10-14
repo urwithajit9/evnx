@@ -1,0 +1,51 @@
+
+================ TP7 ================
+
+$ evnx template --input config.tpl.yml --output link.yml --no-gitignore
+
+  Generate config from template
+
+✓ Loaded 7 variables from .env
+✓ Read template from config.tpl.yml
+✓ Generated config at link.yml
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/template
+[exit 0]
+  ok: KNOWN I-140: the symlink target is overwritten silently (exit 0)
+
+$ bash -c test -L link.yml && echo "link kept"; head -2 real/target.yml
+link kept
+database:
+  host: db.internal
+[exit 0]
+
+$ evnx template --input config.tpl.yml --output - --no-gitignore
+
+  Generate config from template
+
+✓ Loaded 7 variables from .env
+✓ Read template from config.tpl.yml
+✓ Generated config at -
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/template
+[exit 0]
+  ok: KNOWN S-T1: --output - writes a FILE named - (exit 0)
+
+$ bash -c test -f ./- && echo "file named - exists"
+file named - exists
+[exit 0]
+
+$ evnx template --input config.tpl.yml --output nodir/x.yml --no-gitignore
+
+  Generate config from template
+
+✓ Loaded 7 variables from .env
+✓ Read template from config.tpl.yml
+[stderr]
+Error: Failed to write generated config to: nodir/x.yml: No such file or directory (os error 2)
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: missing output directory: clear error (decided: hint and --mkdir) (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

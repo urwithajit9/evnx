@@ -1,0 +1,11 @@
+
+================ TP2 ================
+--- filter values (rendered; [exit] then output):
+  [0] title=Hello world~ 
+  [0] bool on=false yes=true maybe=false~ 
+  [0] int=8000 plus=5~ 
+  [2]  Error: Failed to process template substitutions: Variable 'F' value '8000.0' is not a valid integer 
+  [2]  Error: Failed to process template substitutions: Variable 'H' value '' is not a valid integer for |i
+KNOWN I-137: title only capitalises the first letter; I-138: on and maybe are silently false; decided: real title case, strict |bool
+
+================ summary: 0 ok, 0 mismatch   ================

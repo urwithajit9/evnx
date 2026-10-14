@@ -1,0 +1,116 @@
+
+================ D6 ================
+
+$ evnx diff --format json
+{
+  "missing": [
+    "REDIS_URL",
+    "FEATURE_X"
+  ],
+  "extra": [
+    "EXTRA_DEBUG"
+  ],
+  "different": [
+    {
+      "key": "DATABASE_URL",
+      "example_value": null,
+      "env_value": null,
+      "values_redacted": false
+    },
+    {
+      "key": "API_SECRET",
+      "example_value": "***",
+      "env_value": "***",
+      "values_redacted": true
+    },
+    {
+      "key": "API_PORT",
+      "example_value": null,
+      "env_value": null,
+      "values_redacted": false
+    }
+  ],
+  "summary": {
+    "missing": 2,
+    "extra": 1,
+    "different": 3,
+    "total": 6
+  }
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 1]
+
+$ evnx diff --format json --with-stats
+{
+  "missing": [
+    "REDIS_URL",
+    "FEATURE_X"
+  ],
+  "extra": [
+    "EXTRA_DEBUG"
+  ],
+  "different": [
+    {
+      "key": "DATABASE_URL",
+      "example_value": null,
+      "env_value": null,
+      "values_redacted": false
+    },
+    {
+      "key": "API_SECRET",
+      "example_value": "***",
+      "env_value": "***",
+      "values_redacted": true
+    },
+    {
+      "key": "API_PORT",
+      "example_value": null,
+      "env_value": null,
+      "values_redacted": false
+    }
+  ],
+  "stats": {
+    "total_keys_env": 4,
+    "total_keys_example": 5,
+    "overlap_count": 3,
+    "similarity_percent": 66.67
+  },
+  "summary": {
+    "missing": 2,
+    "extra": 1,
+    "different": 3,
+    "total": 6
+  }
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 1]
+
+$ bash -c "$0" diff --format json 2>/dev/null | jq -e ".summary.missing == 0" >/dev/null evnx
+[exit 1]
+  ok: CI gate recipe: fails because keys are missing (exit 1)
+
+$ evnx diff --format xml
+Missing from .env (present in .env.example):
+  + REDIS_URL
+  + FEATURE_X
+
+Extra in .env (not in .env.example):
+  - EXTRA_DEBUG
+
+Different values:
+  ~ DATABASE_URL
+  ~ API_SECRET
+    .env.example: ***
+    .env: ***
+  ~ API_PORT
+
+  2 missing from .env  ·  1 not in .env.example  ·  3 different values
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 1]
+KNOWN I-074: an unknown format falls back to pretty and exits 1; decided: exit 2 with the valid values
+KNOWN I-076b: null values with values_redacted false; decided: value_state
+
+================ summary: 1 ok, 0 mismatch   ================

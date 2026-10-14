@@ -1,0 +1,77 @@
+
+================ S7 ================
+
+$ evnx sync -n
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
+
+┌─ Variables to Add ───────────────────────────────────────────────────────────┐
+│ Found 2 variable(s) in .env missing from .env.example:                       │
+│   • NEW_FEATURE                                                              │
+│   • stripe_key                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+Preview:
+Target: .env.example (action: Add)
+
+  · NEW_FEATURE = YOUR_VALUE_HERE
+  · stripe_key = YOUR_KEY_HERE
+
+(dry-run: no files were modified)
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: default warn: stripe_key warned, still synced (exit 0)
+
+$ evnx sync -n --naming-policy error
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+✗ Non-standard variable name 'stripe_key'. Expected: UPPERCASE_WITH_UNDERSCORES
+[exit 1]
+  ok: policy error in plain mode (decided: exit 2) (exit 1)
+
+$ evnx sync --check --naming-policy error
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+✗ Non-standard variable name 'stripe_key'. Expected: UPPERCASE_WITH_UNDERSCORES
+[exit 1]
+  ok: KNOWN I-116: under --check this is exit 1, which reads as 'out of sync'; decided: exit 2 (exit 1)
+
+$ evnx sync -n --naming-policy ignore
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+
+┌─ Variables to Add ───────────────────────────────────────────────────────────┐
+│ Found 2 variable(s) in .env missing from .env.example:                       │
+│   • NEW_FEATURE                                                              │
+│   • stripe_key                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+Preview:
+Target: .env.example (action: Add)
+
+  · NEW_FEATURE = YOUR_VALUE_HERE
+  · stripe_key = YOUR_KEY_HERE
+
+(dry-run: no files were modified)
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: ignore: silent (exit 0)
+
+================ summary: 4 ok, 0 mismatch   ================

@@ -1,0 +1,25 @@
+
+================ V8 ================
+
+$ evnx validate
+  config    .evnx.toml
+
+  evnx validate  Check environment configuration
+
+  ✗  PORT is not a port between 1 and 65535
+     .env
+     →  Fix the value, or relax `format` in [vars.PORT]
+
+  1 error
+
+Next steps:
+  1. Review and fix the errors above
+  2. Run with --fix to auto-correct common issues
+  3. Use --ignore issue_type to suppress specific warnings
+Validation failed: 1 error
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 1]
+B is optional (required=false) so no missing error; PORT format_mismatch expected
+KNOWN I-042: typo 'prodution' in environments is silently accepted; decided: warn
+
+================ summary: 0 ok, 0 mismatch   ================

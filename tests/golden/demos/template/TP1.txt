@@ -1,0 +1,33 @@
+
+================ TP1 ================
+
+$ evnx template --input config.tpl.yml --output out.yml --no-gitignore
+
+  Generate config from template
+
+✓ Loaded 7 variables from .env
+✓ Read template from config.tpl.yml
+✓ Generated config at out.yml
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/template
+[exit 0]
+  ok: all three styles, whitespace, int, upper, title, bool, json, default (exit 0)
+--- out.yml:
+database:
+  host: db.internal
+  port: 5432
+  ssl: yes
+  name: APP
+  title: App
+  flag: true
+secret: sk_live_abcdefghijklmnopqrstuvwx
+msg: "say \"hi\""
+opt: fallback
+empty: dflt
+
+$ bash -c stat -c "out.yml mode %a" out.yml
+out.yml mode 664
+[exit 0]
+KNOWN I-130: the file holds a live-looking key and is created 644; decided: 0600 (and tighten an existing file with a notice)
+
+================ summary: 1 ok, 0 mismatch   ================

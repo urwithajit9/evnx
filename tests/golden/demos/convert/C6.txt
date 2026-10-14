@@ -1,0 +1,70 @@
+
+================ C6 ================
+
+$ evnx convert --to json --transform uppercase
+{
+  "API": "2"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: KNOWN I-088: Api and API collide; one value silently lost; decided: error + --allow-collisions (exit 0)
+
+$ evnx convert --to json --transform camelCase
+{
+  "dbUrl": "2"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+KNOWN I-088: both become dbUrl; the first value is lost without a word (a prefix alone cannot collide: it is applied to every key)
+
+$ evnx convert --to json --transform Title
+{
+  "APP_NAME": "demo app",
+  "DATABASE_URL": "postgres://admin:s3cr3t@db.internal:5432/app",
+  "API_SECRET": "abc123",
+  "DEBUG": "true",
+  "PORT": "8080",
+  "GREETING": "hello \"world\"",
+  "EMPTY": "",
+  "PRICE": "$5"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: KNOWN I-090: unknown mode ignored; decided: exit 2 listing modes (exit 0)
+
+$ evnx convert --to json --include DATABASE_URL --transform uppercase
+{
+  "DATABASE_URL": "postgres://admin:s3cr3t@db.internal:5432/app"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+
+$ evnx convert --to json --include DATABASE_URL --transform lowercase
+{
+  "database_url": "postgres://admin:s3cr3t@db.internal:5432/app"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+
+$ evnx convert --to json --include DATABASE_URL --transform camelCase
+{
+  "databaseUrl": "postgres://admin:s3cr3t@db.internal:5432/app"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+
+$ evnx convert --to json --include DATABASE_URL --transform snake_case
+{
+  "database_url": "postgres://admin:s3cr3t@db.internal:5432/app"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+
+================ summary: 2 ok, 0 mismatch   ================

@@ -1,0 +1,70 @@
+
+================ S12 ================
+
+$ evnx sync --env-name production --check
+
+  evnx sync  ./.env.production ↔ .env.example  (forward)
+
+! ./.env.production has permissive permissions (0o644). Consider: chmod 600 ./.env.production
+· Overly permissive .env files may expose secrets to other users
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
+
+┌─ Variables to Add ───────────────────────────────────────────────────────────┐
+│ Found 2 variable(s) in .env missing from .env.example:                       │
+│   • NEW_FEATURE                                                              │
+│   • stripe_key                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+Preview:
+Target: .env.example (action: Add)
+
+  · NEW_FEATURE = YOUR_VALUE_HERE
+  · stripe_key = YOUR_KEY_HERE
+
+(dry-run: no files were modified)
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+
+✗ Out of sync. Run `evnx sync --direction forward` and commit the result.
+[exit 1]
+  ok: --env-name picks .env.production (exit 1)
+
+$ evnx sync --env-name typo --check
+[stderr]
+Error: .env.typo does not exist
+
+Available: production
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: unknown environment: error listing the existing ones (exit 2)
+
+$ evnx sync --env-name production -f
+
+  evnx sync  ./.env.production ↔ .env.example  (forward)
+
+! ./.env.production has permissive permissions (0o644). Consider: chmod 600 ./.env.production
+· Overly permissive .env files may expose secrets to other users
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
+
+┌─ Variables to Add ───────────────────────────────────────────────────────────┐
+│ Found 2 variable(s) in .env missing from .env.example:                       │
+│   • NEW_FEATURE                                                              │
+│   • stripe_key                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+· Force mode: using placeholder values and skipping prompts
+✓ Added 2 variables to .env.example
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: header names the files in play (exit 0)
+
+$ bash -c tail -n 3 .env.example
+# Synced from ./.env.production
+NEW_FEATURE=YOUR_VALUE_HERE
+stripe_key=YOUR_KEY_HERE
+[exit 0]
+
+================ summary: 3 ok, 0 mismatch   ================

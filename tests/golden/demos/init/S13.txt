@@ -1,0 +1,9 @@
+
+================ S13 ================
+
+$ evnx -q init --yes
+[exit 0]
+  ok: quiet init (exit 0)
+  ok: -q prints nothing
+
+================ summary: 2 ok, 0 mismatch   ================

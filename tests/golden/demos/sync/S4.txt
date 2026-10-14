@@ -1,0 +1,56 @@
+
+================ S4 ================
+
+$ evnx sync -f --direction reverse
+
+  evnx sync  .env ↔ .env.example  (reverse)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+
+┌─ Missing Variables ──────────────────────────────────────────────────────────┐
+│ Found 1 variable(s) in .env.example missing from .env:                       │
+│   • REDIS_URL                                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+· Force mode: adding with placeholder values, skipping prompts
+✓ Added 1 variables to .env
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: reverse adds template-only keys (exit 0)
+--- .env:
+DATABASE_URL=postgres://admin:s3cr3t@db.internal:5432/app
+API_SECRET=abc123def456
+API_PORT=9090
+NEW_FEATURE=true
+stripe_key=sk_live_abcdefghijklmnopqrstuvwx
+
+# Added by evnx sync
+REDIS_URL=redis://localhost:6379/0
+KNOWN I-115: REDIS_URL became redis://localhost:6379/0, not the template's own value; decided: copy the template value
+
+$ evnx sync -f --direction reverse
+
+  evnx sync  .env ↔ .env.example  (reverse)
+
+· .env not found, creating from .env.example
+✓ Created .env
+! Replace placeholder values with real credentials!
+
+Next steps:
+  1. Edit .env and replace placeholder values with real credentials
+  2. Run 'chmod 600 .env' to secure the file
+  3. Never commit .env to version control
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: no .env: template copied as it is (exit 0)
+--- .env:
+DATABASE_URL=postgres://user:pass@localhost:5432/app
+API_SECRET=
+API_PORT=8080
+REDIS_URL=redis://localhost:6379
+KNOWN I-129: a template header such as '# Generated from .env' would be copied into the new .env
+
+================ summary: 2 ok, 0 mismatch   ================

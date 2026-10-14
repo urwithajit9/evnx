@@ -1,0 +1,42 @@
+
+================ C10 ================
+
+$ evnx convert --env-name production --to json
+{
+  "DATABASE_URL": "postgres://prod:pw@prod-db:5432/app",
+  "PORT": "80"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: named environment (exit 0)
+
+$ evnx convert --env-name prod --to json
+[stderr]
+Error: .env.prod does not exist — did you mean 'production'?
+
+Available: production
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: unknown name lists the environments (exit 2)
+
+$ evnx convert --env-name production --env .env --to json
+[stderr]
+error: the argument '--env-name <NAME>' cannot be used with '--env <PATH>'
+
+Usage: evnx convert --env-name <NAME> --to <FORMAT>
+
+For more information, try '--help'.
+[exit 2]
+  ok: --env-name conflicts with --env (exit 2)
+
+$ evnx convert --env nope.env --to json
+[stderr]
+Error: Convert command failed: Failed to validate input file: 'nope.env': Input file not found: 'nope.env'
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: KNOWN I-091: missing file error is nested ('Convert command failed: Failed to validate input file: ...'); decided: one line (exit 2)
+
+================ summary: 4 ok, 0 mismatch   ================

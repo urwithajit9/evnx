@@ -1,0 +1,79 @@
+
+================ SP4 ================
+
+$ evnx spec init
+
+  evnx spec  Generate the variable contract
+
+[stderr]
+  config    .evnx.toml (scan.severity=high)
+Error: .evnx.toml already has a [vars] section.
+  Appending a second one would produce a file TOML refuses to read.
+  Review the existing entries, or pass --force to append anyway and
+  merge them by hand.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: existing [vars]: refused (exit 2)
+  ok: the file is untouched, byte for byte
+
+$ evnx spec init --force
+
+  evnx spec  Generate the variable contract
+
+✓ wrote 6 variable(s) to .evnx.toml
+
+Next steps:
+  1. Read the generated entries — every field is a guess from your files
+  2. Mark optional variables with `required = false`
+  3. Commit .evnx.toml; the spec is the contract
+[stderr]
+  config    .evnx.toml (scan.severity=high)
+  Docs: https://docs.evnx.dev/cli/commands/spec
+[exit 0]
+  ok: KNOWN I-178: --force appends a second [vars] table (exit 0)
+  ok: two [vars...] tables now (A plus the generated ones)
+
+$ evnx validate
+
+  evnx validate  Check environment configuration
+
+✓ All required variables present
+✓ All checks passed
+[stderr]
+  config    .evnx.toml (scan.severity=high)
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 0]
+KNOWN I-178: a duplicated table is only a problem when the same name appears twice; with [vars.A] plus new names it still parses
+
+$ evnx spec init
+
+  evnx spec  Generate the variable contract
+
+✓ wrote 6 variable(s) to .evnx.toml
+
+Next steps:
+  1. Read the generated entries — every field is a guess from your files
+  2. Mark optional variables with `required = false`
+  3. Commit .evnx.toml; the spec is the contract
+[stderr]
+  config    .evnx.toml
+  Docs: https://docs.evnx.dev/cli/commands/spec
+[exit 0]
+KNOWN I-179: inline-table vars is not seen by the textual guard
+
+$ evnx validate
+[stderr]
+Error: parsing <dir>/scenes/SP4/.evnx.toml: TOML parse error at line 7, column 1
+  |
+7 | [vars.ADMIN_EMAIL]
+  | ^
+invalid table header
+dotted key `vars` attempted to extend non-table type (inline table)
+
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: KNOWN I-179: the result declares vars twice, validate cannot read it (exit 2)
+
+================ summary: 5 ok, 0 mismatch   ================

@@ -1,0 +1,246 @@
+
+================ S4 ================
+
+$ evnx scan . --format json
+{
+  "files_scanned": 1,
+  "unreadable": [],
+  "secrets_found": 4,
+  "findings": [
+    {
+      "pattern": "AWS Access Key",
+      "confidence": "high",
+      "value_preview": "AKIA…LKEY",
+      "location": "./.env:1 (AWS_ACCESS_KEY_ID)",
+      "variable": "AWS_ACCESS_KEY_ID",
+      "action_url": "https://console.aws.amazon.com/iam",
+      "matched_by": "value"
+    },
+    {
+      "pattern": "Stripe Secret Key (LIVE)",
+      "confidence": "high",
+      "value_preview": "sk_l…hijk",
+      "location": "./.env:2 (STRIPE_SECRET_KEY)",
+      "variable": "STRIPE_SECRET_KEY",
+      "action_url": "https://dashboard.stripe.com/apikeys",
+      "matched_by": "value"
+    },
+    {
+      "pattern": "GitHub Token",
+      "confidence": "high",
+      "value_preview": "ghp_…Q7r8",
+      "location": "./.env:3 (GITHUB_TOKEN)",
+      "variable": "GITHUB_TOKEN",
+      "action_url": "https://github.com/settings/tokens",
+      "matched_by": "value"
+    },
+    {
+      "pattern": "Credentials in a connection string",
+      "confidence": "high",
+      "value_preview": "post…5432",
+      "location": "./.env:4 (DATABASE_URL)",
+      "variable": "DATABASE_URL",
+      "action_url": null,
+      "matched_by": "value"
+    }
+  ],
+  "high_confidence": 4,
+  "medium_confidence": 0,
+  "low_confidence": 0,
+  "summary": {
+    "total": 4,
+    "high": 4,
+    "medium": 0,
+    "low": 0,
+    "files_scanned": 1,
+    "files_unreadable": 0
+  }
+}
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+
+$ evnx scan . --format github
+::error file=./.env,line=1,title=Secret detected (high)::AWS_ACCESS_KEY_ID matches AWS Access Key. Rotate it at https://console.aws.amazon.com/iam
+::error file=./.env,line=2,title=Secret detected (high)::STRIPE_SECRET_KEY matches Stripe Secret Key (LIVE). Rotate it at https://dashboard.stripe.com/apikeys
+::error file=./.env,line=3,title=Secret detected (high)::GITHUB_TOKEN matches GitHub Token. Rotate it at https://github.com/settings/tokens
+::error file=./.env,line=4,title=Secret detected (high)::DATABASE_URL matches Credentials in a connection string. Rotate this credential at its source
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+
+$ evnx scan . --format sarif --exit-zero
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "hostedViewerUri": "https://console.aws.amazon.com/iam",
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "./.env"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "AWS Access Key detected in AWS_ACCESS_KEY_ID"
+          },
+          "partialFingerprints": {
+            "evnxSecretV1": "./.env::AWS_ACCESS_KEY_ID::secret/aws-access-key"
+          },
+          "ruleId": "secret/aws-access-key"
+        },
+        {
+          "hostedViewerUri": "https://dashboard.stripe.com/apikeys",
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "./.env"
+                },
+                "region": {
+                  "startLine": 2
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Stripe Secret Key (LIVE) detected in STRIPE_SECRET_KEY"
+          },
+          "partialFingerprints": {
+            "evnxSecretV1": "./.env::STRIPE_SECRET_KEY::secret/stripe-secret-key-live"
+          },
+          "ruleId": "secret/stripe-secret-key-live"
+        },
+        {
+          "hostedViewerUri": "https://github.com/settings/tokens",
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "./.env"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "GitHub Token detected in GITHUB_TOKEN"
+          },
+          "partialFingerprints": {
+            "evnxSecretV1": "./.env::GITHUB_TOKEN::secret/github-token"
+          },
+          "ruleId": "secret/github-token"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "./.env"
+                },
+                "region": {
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Credentials in a connection string detected in DATABASE_URL"
+          },
+          "partialFingerprints": {
+            "evnxSecretV1": "./.env::DATABASE_URL::secret/credentials-in-a-connection-string"
+          },
+          "ruleId": "secret/credentials-in-a-connection-string"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://docs.evnx.dev/cli/commands/scan",
+          "name": "evnx scan",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "evnx scan matched AWS Access Key in a file that may be committed."
+              },
+              "helpUri": "https://docs.evnx.dev/cli/commands/scan",
+              "id": "secret/aws-access-key",
+              "name": "AWSAccessKey",
+              "shortDescription": {
+                "text": "AWS Access Key"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "evnx scan matched Stripe Secret Key (LIVE) in a file that may be committed."
+              },
+              "helpUri": "https://docs.evnx.dev/cli/commands/scan",
+              "id": "secret/stripe-secret-key-live",
+              "name": "StripeSecretKey(LIVE)",
+              "shortDescription": {
+                "text": "Stripe Secret Key (LIVE)"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "evnx scan matched GitHub Token in a file that may be committed."
+              },
+              "helpUri": "https://docs.evnx.dev/cli/commands/scan",
+              "id": "secret/github-token",
+              "name": "GitHubToken",
+              "shortDescription": {
+                "text": "GitHub Token"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "evnx scan matched Credentials in a connection string in a file that may be committed."
+              },
+              "helpUri": "https://docs.evnx.dev/cli/commands/scan",
+              "id": "secret/credentials-in-a-connection-string",
+              "name": "Credentialsinaconnectionstring",
+              "shortDescription": {
+                "text": "Credentials in a connection string"
+              }
+            }
+          ],
+          "version": "<version>"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 0]
+
+$ bash -c set -o pipefail; "$0" scan . --format sarif | head -c 10 evnx
+{
+  "$sche  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+KNOWN I-063 (proved in review step 5): with enough output a closed pipe makes scan panic with exit 101; with this small output it exits 1 as seen above. Decided: fix with a shared print helper
+
+================ summary: 0 ok, 0 mismatch   ================

@@ -1,0 +1,57 @@
+
+================ S0 ================
+
+$ evnx --version
+evnx <version>
+[exit 0]
+
+$ evnx sync
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
+
+┌─ Variables to Add ───────────────────────────────────────────────────────────┐
+│ Found 2 variable(s) in .env missing from .env.example:                       │
+│   • NEW_FEATURE                                                              │
+│   • stripe_key                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+[stderr]
+Error: IO error: not a terminal: not a terminal
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: drift but no terminal: 'not a terminal' error (KNOWN I-124; decided: auto-placeholder) (exit 2)
+
+$ evnx sync --env nope.env
+
+  evnx sync  nope.env ↔ .env.example  (forward)
+
+✗ File not found: .env
+
+┌─ Getting started ────────────────────────────────────────────────────────────┐
+│ It looks like this project hasn't been initialized yet.                      │
+│                                                                              │
+│ To create .env and .env.example files, run:                                  │
+│                                                                              │
+│ $ evnx init                                                                  │
+│                                                                              │
+│ Or if you have an existing .env file, place it in this directory and try ... │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+Next steps:
+  1. Run 'evnx init' to set up a new project
+  2. Or copy your existing .env file to this directory
+  3. Then run 'evnx sync' again
+[stderr]
+Error: .env file not found - run 'evnx init' to get started
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: missing .env: exit 2 (KNOWN I-125: message names .env, not nope.env) (exit 2)
+
+================ summary: 2 ok, 0 mismatch   ================

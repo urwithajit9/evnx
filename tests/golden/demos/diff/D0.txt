@@ -1,0 +1,85 @@
+
+================ D0 ================
+
+$ evnx --version
+evnx <version>
+[exit 0]
+
+$ evnx diff --help
+Compare .env vs .env.example — show missing/extra vars
+
+Usage: evnx diff [OPTIONS]
+
+Options:
+      --env <ENV>
+          The environment file on the left of the comparison.
+          
+          Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
+
+      --example <EXAMPLE>
+          The file on the right of the comparison.
+          
+          Defaults to `.env.example`. Comparing against a template shows every filled-in value as different by construction — `--against` compares two real environments instead.
+
+      --env-name <NAME>
+          Operate on `.env.<NAME>` instead of `.env`.
+          
+          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do — it never falls back to `.env`.
+
+      --against <NAME>
+          Compare against `.env.<NAME>` instead of `.env.example`.
+          
+          Comparing two real environments is the useful diff — `evnx diff --env-name production --against staging`. The default compares against the template, where every filled-in value differs by construction.
+
+      --show-values
+          Print the values, not just which keys differ.
+          
+          ⚠️ This puts secrets on your terminal and into its scrollback, and into any CI log the command runs in.
+
+      --format <FORMAT>
+          Output format: `pretty`, `json` or `patch`
+          
+          [default: pretty]
+
+      --reverse
+          Swap the two sides: compare the example against the environment
+
+      --ignore-keys <IGNORE_KEYS>
+          Ignore these keys (comma-separated) — useful for env-specific vars
+
+      --with-stats
+          Include extended statistics in JSON output
+
+  -i, --interactive
+          Enable interactive merge mode (patch format only)
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Suppress non-essential output
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Full guide: https://docs.evnx.dev/cli/commands/diff
+[exit 0]
+
+$ evnx diff
+
+  evnx diff  .env ↔ .env.example
+
+[stderr]
+Error: .env does not exist
+
+Create it with `evnx init`, or point at another file with --env.
+[exit 2]
+  ok: no .env: could not run, exit 2 (exit 2)
+
+================ summary: 1 ok, 0 mismatch   ================

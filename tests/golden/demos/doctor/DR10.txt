@@ -1,0 +1,106 @@
+
+================ DR10 ================
+pyproject.toml     ->      Detected Python project (Python (Poetry))
+Pipfile            -> Error: No such file or directory (os error 2)
+requirements.txt   ->      ✓ Detected Python project (Python (requirements))
+package.json       ->      Detected Node.js project
+Cargo.toml         ->      Detected Rust project
+go.mod             ->      Detected Go project
+composer.json      ->      Detected PHP project
+KNOWN I-175: the Pipfile line above is an Error, not a detection
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✓  Validate .env file existence, security, and syntax
+
+  !  Check .env.example exists and is Git-tracked
+     .env.example not found - consider creating a template
+
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+Error: No such file or directory (os error 2)
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: KNOWN I-175 (High): a Pipfile-only project (no pyproject.toml) aborts the whole run: 'No such file or directory', exit 2; decided: read the file that defines the type, never abort (exit 2)
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✓  Validate .env file existence, security, and syntax
+
+  !  Check .env.example exists and is Git-tracked
+     .env.example not found - consider creating a template
+
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+Error: No such file or directory (os error 2)
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: KNOWN I-175: a poetry.lock-only project aborts the same way (exit 2)
+
+$ evnx doctor --verbose
+
+  evnx doctor  Diagnosing environment setup
+
+· Project path: .
+
+  ✓  Validate .env file existence, security, and syntax
+     .env is properly ignored by git
+     .env syntax is valid
+
+  !  Check .env.example exists and is Git-tracked
+     .env.example not found - consider creating a template
+
+  !  Detect project type and validate dependencies
+     ✓ Detected Python project (Python (requirements))
+     python-dotenv not in requirements.txt
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+     Permissions: 600 (secure)
+
+  2 warnings  ·  2 checks passed
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+KNOWN: only the first match is reported (decided: every detected type)
+
+$ evnx doctor --verbose
+
+  evnx doctor  Diagnosing environment setup
+
+· Project path: .
+
+  ✓  Validate .env file existence, security, and syntax
+     .env is properly ignored by git
+     .env syntax is valid
+
+  !  Check .env.example exists and is Git-tracked
+     .env.example not found - consider creating a template
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+     Supported: requirements.txt, pyproject.toml, Pipfile, poetry.lock, package.json, Cargo.toml, go.mod, composer.json
+
+  ✓  Check for Docker configuration files
+     Found: Dockerfile
+
+  ✓  Check file permissions for sensitive files
+     Permissions: 600 (secure)
+
+  1 warning  ·  3 checks passed
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: KNOWN S-D5: Dockerfile with COPY . . and no .dockerignore is 'Found: Dockerfile', no warning; decided: warn, --fix adds .env* (exit 0)
+
+================ summary: 3 ok, 0 mismatch   ================

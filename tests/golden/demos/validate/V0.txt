@@ -1,0 +1,20 @@
+
+================ V0 ================
+
+$ evnx --version
+evnx <version>
+[exit 0]
+
+$ evnx validate
+
+  evnx validate  Check environment configuration
+
+Error: .env.example does not exist
+
+validate compares .env against it, so it needs one. Create it with `evnx sync` (from your .env) or `evnx init`, or point at another file with --example.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: no .env.example: could not run, exit 2 (not 1) (exit 2)
+
+================ summary: 1 ok, 0 mismatch   ================

@@ -1,0 +1,32 @@
+
+================ V7 ================
+
+$ evnx validate --env-name staging
+
+  evnx validate  Check environment configuration
+
+✓ All required variables present
+✓ All checks passed
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 0]
+  ok: resolves .env.staging (exit 0)
+
+$ evnx validate --env-name prod
+Error: .env.prod does not exist — did you mean 'production'?
+
+Available: production, staging
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: no silent fallback; lists existing names (exit 2)
+
+$ evnx validate --env-name staging --env .env.production
+error: the argument '--env-name <NAME>' cannot be used with '--env <ENV>'
+
+Usage: evnx validate --env-name <NAME>
+
+For more information, try '--help'.
+[exit 2]
+  ok: --env-name conflicts with --env (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

@@ -1,0 +1,118 @@
+
+================ DR1 ================
+
+$ evnx doctor
+
+  evnx doctor  Diagnosing environment setup
+
+
+  ✓  Validate .env file existence, security, and syntax
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  3 checks passed
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: healthy project, real repo: exit 0 (exit 0)
+
+$ evnx doctor --verbose
+
+  evnx doctor  Diagnosing environment setup
+
+· Project path: .
+
+  ✓  Validate .env file existence, security, and syntax
+     .env is properly ignored by git
+     .env syntax is valid
+
+  ✓  Check .env.example exists and is Git-tracked
+     File is tracked in Git
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+     Supported: requirements.txt, pyproject.toml, Pipfile, poetry.lock, package.json, Cargo.toml, go.mod, composer.json
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+     Permissions: 600 (secure)
+
+  3 checks passed
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: verbose shows the ticks (exit 0)
+
+$ evnx doctor --format json
+{
+  "project_path": ".",
+  "checks": [
+    {
+      "name": "env_file",
+      "description": "Validate .env file existence, security, and syntax",
+      "severity": "ok",
+      "details": null,
+      "fixable": false,
+      "fixed": false
+    },
+    {
+      "name": "env_example",
+      "description": "Check .env.example exists and is Git-tracked",
+      "severity": "ok",
+      "details": null,
+      "fixable": false,
+      "fixed": false
+    },
+    {
+      "name": "project_structure",
+      "description": "Detect project type and validate dependencies",
+      "severity": "info",
+      "details": "No recognized project configuration",
+      "fixable": false,
+      "fixed": false
+    },
+    {
+      "name": "docker_config",
+      "description": "Check for Docker configuration files",
+      "severity": "info",
+      "details": "No Docker configuration detected",
+      "fixable": false,
+      "fixed": false
+    },
+    {
+      "name": "file_permissions",
+      "description": "Check file permissions for sensitive files",
+      "severity": "ok",
+      "details": null,
+      "fixable": false,
+      "fixed": false
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "errors": 0,
+    "warnings": 0,
+    "passed": 3,
+    "info": 2,
+    "fixable": 0
+  },
+  "timestamp": "<date>+00:00"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: json (exit 0)
+  ok: JSON on stdout only: 5 checks, 0 errors
+  ok: no colour escapes when piped
+
+================ summary: 5 ok, 0 mismatch   ================

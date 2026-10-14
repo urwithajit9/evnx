@@ -1,0 +1,22 @@
+
+================ D10 ================
+
+$ evnx diff --env left --example right --show-values
+
+  evnx diff  left ↔ right
+
+Missing from left (present in right):
+  + H = 
+
+Different values:
+  ~ C
+    right: 1
+    left: 
+
+  1 missing from left  ·  1 different value
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 1]
+  ok: quotes, export, multiline and duplicates compare as parsed values; C is empty vs 1; H is missing (exit 1)
+
+================ summary: 1 ok, 0 mismatch   ================

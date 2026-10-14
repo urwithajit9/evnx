@@ -1,0 +1,5 @@
+
+================ S11 (interactive) ================
+Not scripted. Run by hand: evnx init   then follow the runbook keys (Blank is pre-selected). Or use drive-pty.py.
+
+================ summary: 0 ok, 0 mismatch   ================

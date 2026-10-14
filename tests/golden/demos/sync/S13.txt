@@ -1,0 +1,45 @@
+
+================ S13 ================
+
+$ evnx sync -d reverse -n
+[stderr]
+error: unexpected argument '-d' found
+
+Usage: evnx sync [OPTIONS]
+
+For more information, try '--help'.
+[exit 2]
+  ok: D-73: the docs list -d; the binary rejects it (decided: fix the docs) (exit 2)
+
+$ evnx sync -p -n
+[stderr]
+error: unexpected argument '-p' found
+
+Usage: evnx sync [OPTIONS]
+
+For more information, try '--help'.
+[exit 2]
+  ok: D-73: the docs list -p; rejected (exit 2)
+
+$ env CI=1 evnx sync
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
+
+┌─ Variables to Add ───────────────────────────────────────────────────────────┐
+│ Found 2 variable(s) in .env missing from .env.example:                       │
+│   • NEW_FEATURE                                                              │
+│   • stripe_key                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+[stderr]
+Error: IO error: not a terminal: not a terminal
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: D-74: the docs say CI=1 acts like --force; it does not (decided: honour CI=1) (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

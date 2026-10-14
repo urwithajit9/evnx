@@ -1,0 +1,64 @@
+
+================ V3 ================
+
+$ evnx validate --strict --validate-formats
+
+  evnx validate  Check environment configuration
+
+  ✗  Missing required variable: STRIPE_KEY
+     .env
+     →  Add STRIPE_KEY=<value> to .env
+     ·  fixable with --fix
+
+  ✗  Missing required variable: OPTIONAL_X
+     .env
+     →  Add OPTIONAL_X=<value> to .env
+     ·  fixable with --fix
+
+  !  Extra variable not in .env.example: EXTRA_VAR
+     .env
+     →  Add EXTRA_VAR to .env.example or remove from .env
+
+  !  A is assigned 2 times (lines 7, 8) — only line 8 takes effect
+     .env
+     →  Remove the earlier assignments of A, or rename them if they were meant to differ
+
+  ✗  SECRET_KEY looks like a placeholder
+     .env
+     →  Run: openssl rand -hex 32
+     ·  fixable with --fix
+
+  !  DEBUG is set to "False" (string, not boolean)
+     .env
+     →  Use false or 0 for proper boolean handling
+     ·  fixable with --fix
+
+  ✗  SECRET_KEY is too weak or predictable
+     .env
+     →  Run: openssl rand -hex 32
+     ·  fixable with --fix
+
+  !  DATABASE_URL does not appear to be a valid URL
+     .env
+     →  Expected format: https://example.com/path
+
+  ✗  API_PORT is not a valid port number (1-65535)
+     .env
+     →  Expected format: 8080
+
+  !  ADMIN_EMAIL does not appear to be a valid email
+     .env
+     →  Expected format: user@example.com
+
+  5 errors  ·  5 warnings
+
+Next steps:
+  1. Review and fix the errors above
+  2. Run with --fix to auto-correct common issues
+  3. Use --ignore issue_type to suppress specific warnings
+Validation failed: 5 errors
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 1]
+  ok: strict adds extras; formats adds url/port/email (exit 1)
+
+================ summary: 1 ok, 0 mismatch   ================

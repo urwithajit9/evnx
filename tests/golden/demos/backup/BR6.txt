@@ -1,0 +1,46 @@
+
+================ BR6 ================
+restore of valid-looking inputs (named path vs .restored):
+  [plain] exit 0 lk.out 
+  [empty] exit 0 lk.out 
+  [comments] exit 0 lk.out 
+  [KNOWN I-145 export] exit 5 lk.out.restored 
+  [dashed key: the parser rejects it too, stays .restored (correct)] exit 5 lk.out.restored 
+  [dotted key: the parser rejects it too, stays .restored (correct)] exit 5 lk.out.restored 
+  [KNOWN I-145 PEM-heavy] exit 5 lk.out.restored 
+  [prose (correct)] exit 5 lk.out.restored 
+
+$ evnx restore prose.txt.backup --key-file pw --output r.env
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+✓ Read backup from prose.txt.backup
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
+
+Backup information:
+  Schema version: v1
+  Original file : prose.txt
+  Created at    : <date>Z
+  Tool version  : evnx v<version>
+  Variables     : 0
+✓ Decryption successful
+  ✓ Decryption key cleared from memory
+! Decrypted content does not look like a valid .env file.
+  Writing to r.env.restored instead of r.env to protect your current file.
+  Inspect the file manually, then rename it if the content looks correct:
+    mv r.env.restored r.env
+
+✓ Restored 0 variable(s) to r.env.restored
+
+Next steps:
+  1. Inspect the restored file:  cat r.env.restored
+  2. If the content is correct:  mv r.env.restored r.env
+  3. Validate the result:        evnx validate --env r.env
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/restore
+[exit 5]
+  ok: fallback: .restored, exit 5 (exit 5)
+KNOWN I-154: the line above says Restored 0 variable(s) with a tick next to exit 5
+
+================ summary: 1 ok, 0 mismatch   ================

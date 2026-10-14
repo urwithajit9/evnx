@@ -1,0 +1,71 @@
+
+================ V6 ================
+
+$ evnx validate --fix
+
+  evnx validate  Check environment configuration
+
+✓ Saved fixes to .env — original kept at .env.bak
+
+Applied fixes:
+  • STRIPE_KEY: (new) → CHANGE_ME_SECURE_32_CHARS_MIN
+    a placeholder — evnx cannot invent this value, so fill it in
+  • OPTIONAL_X: (new) → your_value_here
+    a placeholder — evnx cannot invent this value, so fill it in
+  • SECRET_KEY: "changeme" → <random-hex64>
+  • DEBUG: "False" → false
+
+  !  A is assigned 2 times (lines 7, 8) — only line 8 takes effect
+     .env
+     →  Remove the earlier assignments of A, or rename them if they were meant to differ
+
+  ✗  STRIPE_KEY looks like a placeholder
+     .env
+     →  Get from Stripe Dashboard
+     ·  fixable with --fix
+
+  ✗  OPTIONAL_X looks like a placeholder
+     .env
+
+  2 errors  ·  1 warning  ·  4 fixed
+
+Next steps:
+  1. Review and fix the errors above
+  2. Run with --fix to auto-correct common issues
+  3. Use --ignore issue_type to suppress specific warnings
+Validation failed: 2 errors
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 1]
+
+$ ls -A
+.env
+.env.bak
+.env.example
+[exit 0]
+
+$ cat .env
+DATABASE_URL=not-a-url
+SECRET_KEY=<random-hex64>
+API_PORT=99999
+ADMIN_EMAIL=nobody
+DEBUG=false
+EXTRA_VAR=1
+A=1
+A=2
+OPTIONAL_X=your_value_here
+STRIPE_KEY=CHANGE_ME_SECURE_32_CHARS_MIN
+[exit 0]
+(SECRET_KEY placeholder replaced; non-placeholder values such as DATABASE_URL are never touched; .env.bak kept)
+
+$ evnx validate --rotate-weak-secrets
+error: the following required arguments were not provided:
+  --fix
+
+Usage: evnx validate --fix --rotate-weak-secrets
+
+For more information, try '--help'.
+[exit 2]
+  ok: --rotate-weak-secrets requires --fix (exit 2)
+Gap S1: no --fix --dry-run yet (decided)
+
+================ summary: 1 ok, 0 mismatch   ================

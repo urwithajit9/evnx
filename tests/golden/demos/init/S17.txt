@@ -1,0 +1,10 @@
+
+================ S17 ================
+Piped into head: files complete, quiet exit 141
+
+$ bash -c { sleep 0.3; 'evnx' init --with nextjs --yes; } | true; exit ${PIPESTATUS[0]}
+[exit 141]
+  ok: exit 141 on a closed pipe
+  ok: .gitignore exists whenever .env does
+
+================ summary: 2 ok, 0 mismatch   ================

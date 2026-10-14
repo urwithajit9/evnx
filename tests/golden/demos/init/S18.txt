@@ -1,0 +1,25 @@
+
+================ S18 ================
+.env from a template you already have
+
+$ evnx init --from-source --yes
+
+  evnx init  Set up environment variables for your project
+
+
+  scanned 1 source file
+
+  1 variable read by the code
+     NEW_ONE                      src/a.ts:1
+
+  0 already in .env.example  ·  1 new  ·  1 unused
+     !  HAND is in .env.example but named nowhere in the source
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env from .env.example
+✓ Added 1 variable from the source
+[exit 0]
+  ok: from-source beside a template (exit 0)
+  ok: .env is a copy of the template
+  ok: .gitignore written
+
+================ summary: 3 ok, 0 mismatch   ================

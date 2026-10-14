@@ -1,0 +1,82 @@
+
+================ BR8 ================
+
+$ evnx restore .env.backup --key-file bad --inspect
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+✓ Read backup from .env.backup
+! Reading password from file: bad
+  Less secure than interactive prompt — avoid in shared environments.
+[stderr]
+Error: Wrong password or corrupt backup — decryption failed
+[exit 2]
+  ok: wrong password (exit 2)
+
+$ evnx restore nope.backup --key-file pw
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+[stderr]
+Error: Backup file not found: nope.backup
+[exit 3]
+  ok: backup not found (exit 3)
+
+$ evnx restore adir --key-file pw
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+[stderr]
+Error: Backup file not found: adir (not a regular file)
+[exit 3]
+  ok: directory: not a regular file (exit 3)
+
+$ evnx restore trunc.bak --key-file pw --inspect
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+✓ Read backup from trunc.bak
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
+[stderr]
+Error: Wrong password or corrupt backup — decryption failed
+[exit 2]
+  ok: KNOWN I-149: truncated file says 'Wrong password or corrupt' (exit 2)
+
+$ evnx restore garb.bak --key-file pw --inspect
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+✓ Read backup from garb.bak
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
+[stderr]
+Error: Wrong password or corrupt backup — decryption failed
+[exit 2]
+  ok: KNOWN I-149: not an evnx backup says the same (exit 2)
+
+$ evnx restore ver2.bak --key-file pw --inspect
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+✓ Read backup from ver2.bak
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
+[stderr]
+Error: Wrong password or corrupt backup — decryption failed
+[exit 2]
+  ok: KNOWN I-149: a newer format (version byte 2) looks like a wrong password; decided: say 'upgrade' (exit 2)
+
+$ evnx restore flip.bak --key-file pw --inspect
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+✓ Read backup from flip.bak
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
+[stderr]
+Error: Wrong password or corrupt backup — decryption failed
+[exit 2]
+  ok: a flipped byte: tamper (stays one message with wrong password) (exit 2)
+
+================ summary: 7 ok, 0 mismatch   ================

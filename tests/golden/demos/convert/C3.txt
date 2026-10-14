@@ -1,0 +1,45 @@
+
+================ C3 ================
+
+$ evnx convert --to kubernetes
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+type: Opaque
+stringData:
+  APP_NAME: "demo app"
+  DATABASE_URL: "postgres://admin:s3cr3t@db.internal:5432/app"
+  API_SECRET: "abc123"
+  DEBUG: "true"
+  PORT: "8080"
+  GREETING: "hello \"world\""
+  EMPTY: ""
+  PRICE: "$5"
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: stringData: literal values, Kubernetes encodes on apply (exit 0)
+
+$ evnx convert --to kubernetes --base64
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+type: Opaque
+data:
+  APP_NAME: "ZGVtbyBhcHA="
+  DATABASE_URL: "cG9zdGdyZXM6Ly9hZG1pbjpzM2NyM3RAZGIuaW50ZXJuYWw6NTQzMi9hcHA="
+  API_SECRET: "YWJjMTIz"
+  DEBUG: "dHJ1ZQ=="
+  PORT: "ODA4MA=="
+  GREETING: "aGVsbG8gIndvcmxkIg=="
+  EMPTY: ""
+  PRICE: "JDU="
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: data: values are base64 (exit 0)
+KNOWN I-084: Secret name is always app-secrets; decided: --name/--namespace, required
+
+================ summary: 2 ok, 0 mismatch   ================

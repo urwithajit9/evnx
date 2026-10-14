@@ -1,0 +1,16 @@
+
+================ M8 ================
+--- printed create-secret command:
+aws secretsmanager create-secret \
+  --name s \
+  --secret-string '{
+  "A": "it\'s"
+}'
+
+$ bash -c PATH="$PWD/bin:$PATH" sh run.sh 2>&1; echo "sh exit: $?"
+run.sh: 6: Syntax error: Unterminated quoted string
+sh exit: 2
+[exit 0]
+KNOWN I-094: the apostrophe is escaped as \' inside single quotes, which the shell does not honour; decided: shared shell_word()
+
+================ summary: 0 ok, 0 mismatch   ================

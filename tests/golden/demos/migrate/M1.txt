@@ -1,0 +1,247 @@
+
+================ M1 ================
+
+$ evnx migrate --to heroku --heroku-app a --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· Heroku Config Vars migration
+· Requires Heroku CLI
+  Install: https://devcenter.heroku.com/articles/heroku-cli
+
+Dry-run — would upload to Heroku:
+  App     : a
+  Secrets : 8
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+Next step:
+  Re-run without --dry-run to apply this.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: dry run: heroku --heroku-app a (exit 0)
+
+$ evnx migrate --to aws-secrets-manager --secret-name prod/app --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· AWS Secrets Manager migration
+
+Dry-run — would upload to AWS Secrets Manager:
+  Secret name : prod/app
+  Secrets     : 8
+
+  JSON preview (first 300 chars):
+  {
+  "APP_NAME": "demo app",
+  "DATABASE_URL": "postgres://admin:s3cr3t@db.internal:5432/app",
+  "API_SECRET": "abc123",
+  "DEBUG": "true",
+  "PORT": "8080",
+  "GREETING": "hello \"world\"",
+  "EMPTY": "",
+  "PRICE": "$5"
+}
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+Next step:
+  Re-run without --dry-run to apply this.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: dry run: aws-secrets-manager --secret-name prod/app (exit 0)
+
+$ evnx migrate --to gcp-secret-manager --project p --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· GCP Secret Manager migration
+
+Dry-run — would upload to GCP Secret Manager:
+  Secrets : 8
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+Next step:
+  Re-run without --dry-run to apply this.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: dry run: gcp-secret-manager --project p (exit 0)
+
+$ evnx migrate --to azure-keyvault --vault-name v --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· Azure Key Vault migration
+· Requires Azure CLI (`az`)
+  Install: https://learn.microsoft.com/cli/azure/install-azure-cli
+
+Dry-run — would upload to Azure Key Vault:
+  Vault   : v
+  Secrets : 8
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+Next step:
+  Re-run without --dry-run to apply this.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: dry run: azure-keyvault --vault-name v (exit 0)
+
+$ evnx migrate --to vercel --vercel-project p --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· Vercel environment variable migration
+· Requires Vercel CLI
+  Install: npm install -g vercel
+
+Dry-run — would upload to Vercel:
+  Project     : p
+  Environment : production
+  Secrets     : 8
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+Next step:
+  Re-run without --dry-run to apply this.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: dry run: vercel --vercel-project p (exit 0)
+
+$ evnx migrate --to doppler --project p --doppler-config dev --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· Doppler migration
+· Requires Doppler CLI
+  Install: https://docs.doppler.com/docs/cli
+
+Dry-run — would upload to Doppler:
+  Project : p
+  Config  : dev
+  Secrets : 8
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+Next step:
+  Re-run without --dry-run to apply this.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: dry run: doppler --project p --doppler-config dev (exit 0)
+
+$ evnx migrate --to infisical --project p --infisical-env dev --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· Infisical migration
+· Requires Infisical CLI
+  Install: https://infisical.com/docs/cli/overview
+
+Dry-run — would upload to Infisical:
+  Project     : p
+  Environment : dev
+  Secrets     : 8
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+Next step:
+  Re-run without --dry-run to apply this.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: dry run: infisical --project p --infisical-env dev (exit 0)
+
+$ evnx migrate --to railway --railway-project p --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· Railway migration
+· Requires Railway CLI
+  Install: npm install -g @railway/cli
+
+Dry-run — would upload to Railway:
+  Project : p
+  Secrets : 8
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+Next step:
+  Re-run without --dry-run to apply this.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: dry run: railway --railway-project p (exit 0)
+
+$ evnx migrate --to github-actions --repo o/r --dry-run
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· Migrating to GitHub Actions Secrets…
+
+Migration plan:
+  • 8 to upload
+
+· Dry-run — no changes made.
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+Next step:
+  Re-run without --dry-run to apply this.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: dry run: github-actions --repo o/r (exit 0)
+
+================ summary: 9 ok, 0 mismatch   ================

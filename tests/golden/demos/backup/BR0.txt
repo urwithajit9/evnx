@@ -1,0 +1,41 @@
+
+================ BR0 ================
+
+$ evnx --version
+evnx <version>
+[exit 0]
+
+$ evnx restore
+[stderr]
+error: the following required arguments were not provided:
+  <BACKUP>
+
+Usage: evnx restore <BACKUP>
+
+For more information, try '--help'.
+[exit 2]
+  ok: restore needs a backup argument (clap) (exit 2)
+
+$ evnx backup .env --env-name production --key-file pw
+[stderr]
+error: the argument '[ENV]' cannot be used with '--env-name <NAME>'
+
+Usage: evnx backup --key-file <PATH> <ENV>
+
+For more information, try '--help'.
+[exit 2]
+  ok: [ENV] and --env-name conflict (exit 2)
+
+$ evnx backup --env .env --key-file pw
+[stderr]
+error: unexpected argument '--env' found
+
+  tip: a similar argument exists: '--env-name'
+
+Usage: evnx backup --env-name <NAME> [ENV]
+
+For more information, try '--help'.
+[exit 2]
+  ok: D-99/D-107: --env does not exist (docs examples use it) (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

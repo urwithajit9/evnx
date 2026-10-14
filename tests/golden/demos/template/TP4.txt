@@ -1,0 +1,23 @@
+
+================ TP4 ================
+
+$ evnx template --input e.tpl --output e.out --no-gitignore
+
+  Generate config from template
+
+✓ Loaded 7 variables from .env
+✓ Read template from e.tpl
+✓ Generated config at e.out
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/template
+[exit 0]
+  ok: KNOWN I-136/I-135: unknown filter, bash default and chained filter are written through silently; no escape (exit 0)
+--- e.out:
+a: {{DB_HOST|bogus}}
+b: ${DB_HOST:-dflt}
+c: {{DB_HOST|upper|json}}
+d: \db.internal
+e: $db.internal
+decided: unknown filter is an error, chaining works, backslash escape
+
+================ summary: 1 ok, 0 mismatch   ================

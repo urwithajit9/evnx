@@ -1,0 +1,9 @@
+
+================ S0 ================
+
+$ evnx --version
+evnx <version>
+[exit 0]
+(help truncated; see slide 'Flag reference')
+
+================ summary: 0 ok, 0 mismatch   ================

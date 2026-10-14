@@ -1,0 +1,14 @@
+
+================ V1 ================
+
+$ evnx validate
+
+  evnx validate  Check environment configuration
+
+✓ All required variables present
+✓ All checks passed
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 0]
+  ok: clean project exits 0 (exit 0)
+
+================ summary: 1 ok, 0 mismatch   ================

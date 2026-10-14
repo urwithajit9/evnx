@@ -1,0 +1,33 @@
+
+================ C9 ================
+
+$ bash -c PATH="$PWD/bin:$PATH"; "$0" convert --to aws-secrets 2>/dev/null | aws secretsmanager create-secret --name prod/myapp/config --secret-string file:///dev/stdin evnx
+stub aws got:
+  ARG<secretsmanager>
+  ARG<create-secret>
+  ARG<--name>
+  ARG<prod/myapp/config>
+  ARG<--secret-string>
+  ARG<file:///dev/stdin>
+  stdin:
+{
+  "APP_NAME": "demo app",
+  "DATABASE_URL": "postgres://admin:s3cr3t@db.internal:5432/app",
+[exit 0]
+  ok: pipe mechanics only: stdout is the JSON and nothing else (a stub, NOT the real aws: acceptance by aws is unverified V-01) (exit 0)
+  json: lines with the Docs footer on stdout = 0
+  yaml: lines with the Docs footer on stdout = 0
+  shell: lines with the Docs footer on stdout = 0
+  kubernetes: lines with the Docs footer on stdout = 0
+  terraform: lines with the Docs footer on stdout = 0
+  docker-compose: lines with the Docs footer on stdout = 0
+  gcp-secrets: lines with the Docs footer on stdout = 0
+
+$ bash -c "$0" convert --to json | head -1 evnx
+{
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: broken pipe: no panic message (exit 101 is the failure; I-063 class) (exit 0)
+
+================ summary: 2 ok, 0 mismatch   ================

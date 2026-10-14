@@ -1,0 +1,60 @@
+
+================ M12 ================
+
+$ evnx migrate --env-name production --to heroku --heroku-app a
+[stderr]
+error: unexpected argument '--env-name' found
+
+  tip: a similar argument exists: '--vault-name'
+
+Usage: evnx migrate --vault-name <VAULT_NAME>
+
+For more information, try '--help'.
+[exit 2]
+  ok: KNOWN S-M1: no --env-name; the clap error points at an unrelated flag; decided: add --env-name (exit 2)
+
+$ evnx migrate --to heroku --heroku-app a -q
+
+✓ Loaded 8 secrets from env-file
+
+· Heroku Config Vars migration
+· Requires Heroku CLI
+  Install: https://devcenter.heroku.com/articles/heroku-cli
+
+Run this command (single bulk set = one restart):
+
+heroku config:set --app a \
+  APP_NAME='demo app' \
+  DATABASE_URL='postgres://admin:s3cr3t@db.internal:5432/app' \
+  API_SECRET='abc123' \
+  DEBUG='true' \
+  PORT='8080' \
+  GREETING='hello "world"' \
+  EMPTY='' \
+  PRICE='$5'
+
+Summary:
+  ✓  8 command(s) generated
+     nothing has been uploaded — run the commands above
+
+Next steps:
+  1. Verify with `heroku config --app a`.
+  2. The dyno restarts automatically after `config:set`.
+  3. Remove your local .env file.
+[exit 0]
+  ok: KNOWN I-105: -q changes nothing; decided: hides banner and next steps (exit 0)
+
+$ evnx migrate --source-file nope.env --to heroku --heroku-app a
+
+  evnx migrate  Generate destination commands from your .env
+
+[stderr]
+Error: nope.env does not exist
+
+Create it with `evnx init`, or point at another file with --source-file.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: missing file: one clear line with a hint (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

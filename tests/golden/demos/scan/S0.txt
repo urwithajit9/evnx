@@ -1,0 +1,84 @@
+
+================ S0 ================
+
+$ evnx --version
+evnx <version>
+[exit 0]
+
+$ evnx scan --help
+Detect secrets that look real (AWS keys, tokens, etc.)
+
+Usage: evnx scan [OPTIONS] [PATH]...
+
+Arguments:
+  [PATH]...
+          [default: .]
+
+Options:
+      --exclude <EXCLUDE>
+          [default: .env.example]
+
+      --pattern <REGEX>
+          Also report values matching this regular expression. Repeatable.
+          
+          For the formats evnx does not ship with — an internal token, a vendor key shape. `--pattern 'ACME-[A-Z0-9]{32}'` reports matches as `Custom pattern 1`, numbered in the order the flags are given.
+          
+          It takes an expression and nothing else. For a name that means something, and for a rule the whole team scans with, declare it under `[[scan.patterns]]` in `.evnx.toml` instead; both sets apply together.
+          
+          An expression that does not compile exits 2 — no verdict — rather than reporting a clean scan it never ran.
+
+      --ignore-placeholders
+          Skip values evnx recognises as filler.
+          
+          `changeme`, `your_api_key_here`, `xxx` and similar. Useful on a first run over a template-heavy repository; prefer `--severity high` if the goal is simply less noise.
+
+      --severity <LEVEL>
+          Lowest confidence worth reporting: high, medium or low.
+          
+          Filters what is reported, counted and exited on — all three describe the same set. `--severity high` reports only detections that matched a format — a provider's, or one this project declared under `[[scan.patterns]]` — which is the usual choice for a blocking CI gate; the default reports everything. Defaults to `low` (report everything), or `[scan] severity` from `.evnx.toml` when that is set.
+
+      --format <FORMAT>
+          Output format: `pretty`, `json`, `sarif` or `github`.
+          
+          `sarif` uploads to GitHub's Security tab; `github` emits `::error` annotations inline on a pull request; `json` carries a `summary` object for `jq`. An unrecognised value is an error, not a silent fall back to `pretty`.
+          
+          [default: pretty]
+
+      --exit-zero
+          Always exit 0, even when secrets are found.
+          
+          ⚠️ Suppresses exit 1 only. A scan that could not run still exits 2 — the flag means "do not fail my build over findings", not "never tell me the scan was impossible".
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Suppress non-essential output
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Full guide: https://docs.evnx.dev/cli/commands/scan
+[exit 0]
+
+$ evnx scan .
+
+  evnx scan  Checking for exposed secrets
+
+Error: nothing was scanned — every path given was filtered out.
+
+Directory walks skip .git, node_modules, target, dist and build by default. Name a file directly to scan it regardless, or widen the walk with --include.
+
+Paths given: .
+
+No verdict: evnx did not scan anything. This is not a clean result.
+[exit 2]
+  ok: empty folder: nothing was scanned is exit 2, not a clean pass (exit 2)
+
+================ summary: 1 ok, 0 mismatch   ================

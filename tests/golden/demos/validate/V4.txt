@@ -1,0 +1,109 @@
+
+================ V4 ================
+
+$ evnx validate --ignore placeholder_value,weak_secret,missing_variable
+
+  evnx validate  Check environment configuration
+
+  !  A is assigned 2 times (lines 7, 8) — only line 8 takes effect
+     .env
+     →  Remove the earlier assignments of A, or rename them if they were meant to differ
+
+  !  DEBUG is set to "False" (string, not boolean)
+     .env
+     →  Use false or 0 for proper boolean handling
+     ·  fixable with --fix
+
+  2 warnings
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 0]
+  ok: ignored types disappear; warnings alone exit 0 (exit 0)
+
+$ evnx validate --exit-zero
+
+  evnx validate  Check environment configuration
+
+  ✗  Missing required variable: STRIPE_KEY
+     .env
+     →  Add STRIPE_KEY=<value> to .env
+     ·  fixable with --fix
+
+  ✗  Missing required variable: OPTIONAL_X
+     .env
+     →  Add OPTIONAL_X=<value> to .env
+     ·  fixable with --fix
+
+  !  A is assigned 2 times (lines 7, 8) — only line 8 takes effect
+     .env
+     →  Remove the earlier assignments of A, or rename them if they were meant to differ
+
+  ✗  SECRET_KEY looks like a placeholder
+     .env
+     →  Run: openssl rand -hex 32
+     ·  fixable with --fix
+
+  !  DEBUG is set to "False" (string, not boolean)
+     .env
+     →  Use false or 0 for proper boolean handling
+     ·  fixable with --fix
+
+  ✗  SECRET_KEY is too weak or predictable
+     .env
+     →  Run: openssl rand -hex 32
+     ·  fixable with --fix
+
+  4 errors  ·  2 warnings
+
+Next steps:
+  1. Review and fix the errors above
+  2. Run with --fix to auto-correct common issues
+  3. Use --ignore issue_type to suppress specific warnings
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 0]
+  ok: --exit-zero: report but exit 0 (exit 0)
+
+$ evnx validate --ignore bogus_type
+
+  evnx validate  Check environment configuration
+
+  ✗  Missing required variable: STRIPE_KEY
+     .env
+     →  Add STRIPE_KEY=<value> to .env
+     ·  fixable with --fix
+
+  ✗  Missing required variable: OPTIONAL_X
+     .env
+     →  Add OPTIONAL_X=<value> to .env
+     ·  fixable with --fix
+
+  !  A is assigned 2 times (lines 7, 8) — only line 8 takes effect
+     .env
+     →  Remove the earlier assignments of A, or rename them if they were meant to differ
+
+  ✗  SECRET_KEY looks like a placeholder
+     .env
+     →  Run: openssl rand -hex 32
+     ·  fixable with --fix
+
+  !  DEBUG is set to "False" (string, not boolean)
+     .env
+     →  Use false or 0 for proper boolean handling
+     ·  fixable with --fix
+
+  ✗  SECRET_KEY is too weak or predictable
+     .env
+     →  Run: openssl rand -hex 32
+     ·  fixable with --fix
+
+  4 errors  ·  2 warnings
+
+Next steps:
+  1. Review and fix the errors above
+  2. Run with --fix to auto-correct common issues
+  3. Use --ignore issue_type to suppress specific warnings
+Validation failed: 4 errors
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 1]
+KNOWN I-038: unknown type accepted silently; decided: exit 2 and list valid types
+
+================ summary: 2 ok, 0 mismatch   ================

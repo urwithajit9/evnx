@@ -1,0 +1,35 @@
+
+================ S14 ================
+Agent-style run: no terminal, flags only, machine-checkable exit codes
+
+$ evnx init --with nextjs,postgresql,stripe --yes
+
+  evnx init  Set up environment variables for your project
+
+✓ Created .env from template
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env.example with 14 variables from 3 components
+
+Next steps:
+  1. Edit .env and replace placeholder values
+  2. Never commit .env to version control
+  3. Run 'evnx validate' to check configuration
+  4. Use 'evnx add' to add more variables later
+  Docs: https://docs.evnx.dev/cli/commands/init
+[exit 0]
+  ok: agent init (exit 0)
+
+$ evnx init --with nextjs --yes
+
+  evnx init  Set up environment variables for your project
+
+Error: ./.env.example already exists.
+
+Refusing to overwrite it without being asked to — it is a tracked file and the contents may be hand-maintained.
+Re-run with --force to replace it, or remove it first.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: agent re-run is refused, not silently overwritten (exit 2)
+
+================ summary: 2 ok, 0 mismatch   ================

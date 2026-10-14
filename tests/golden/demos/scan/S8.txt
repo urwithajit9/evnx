@@ -1,0 +1,78 @@
+
+================ S8 ================
+
+$ evnx scan .
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./src/main.py
+
+  ✗  AWS Access Key                              high
+     ./src/main.py:1  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  1 finding  ·  1 high
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: walk finds src/main.py (exit 1)
+KNOWN I-047: config/id_rsa.pem is not listed above because the walk allow-list skips .pem; decided: --include
+
+$ evnx scan config/id_rsa.pem
+
+  evnx scan  Checking for exposed secrets
+
+  scanning config/id_rsa.pem
+
+  ✗  Private Key                                 high
+     config/id_rsa.pem:1  ----…----
+     !  matches a live key format, not a placeholder
+
+  ·  High-entropy string (possible secret)       low
+     config/id_rsa.pem:2  MIIB…t8Qu
+
+  2 findings  ·  1 high  ·  1 low
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: named file is scanned (exit 1)
+
+$ evnx scan . .
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./src/main.py, ./src/main.py
+
+  ✗  AWS Access Key                              high
+     ./src/main.py:1  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  ✗  AWS Access Key                              high
+     ./src/main.py:1  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  2 findings  ·  2 high
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+KNOWN I-054: same path twice doubles findings; decided: dedupe
+
+================ summary: 2 ok, 0 mismatch   ================

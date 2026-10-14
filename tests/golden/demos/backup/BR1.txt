@@ -1,0 +1,66 @@
+
+================ BR1 ================
+
+$ evnx backup --key-file pw --verify
+
+  evnx backup  Encrypt and back up your .env file
+
+✓ Read 258 bytes from .env
+· Using key file for encryption (non-interactive mode)
+
+✓ Backup created and verified successfully
+  Source  : .env
+  Backup  : .env.backup
+  Size    : 620 bytes (encrypted + Base64)
+  Verified: yes
+
+! Important:
+  • Keep your password (or key file) safe — it cannot be recovered
+  • Store the backup in a secure, separate location
+  • To restore: evnx restore .env.backup --output .env
+  • Test the restore before deleting the original .env
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/backup
+[exit 0]
+  ok: backup with --verify (exit 0)
+
+$ modes .env.backup
+600 .env.backup
+[exit 0]
+
+$ evnx restore .env.backup --key-file pw
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+✓ Read backup from .env.backup
+! Reading password from file: pw
+  Less secure than interactive prompt — avoid in shared environments.
+
+Backup information:
+  Schema version: v1
+  Original file : .env
+  Created at    : <date>Z
+  Tool version  : evnx v<version>
+  Variables     : 11
+✓ Decryption successful
+  ✓ Decryption key cleared from memory
+
+✓ Restored 11 variable(s) to .env
+
+Next steps:
+  1. Run: evnx validate --env .env
+  2. Verify your application starts correctly
+  3. Delete the backup file once you have confirmed the restore
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/restore
+[exit 0]
+  ok: restore with no .env present (exit 0)
+  ok: restored file is byte-identical (multi-line PEM, 'My App # prod' survive)
+
+$ modes .env
+600 .env
+[exit 0]
+  ok: backup mode 0600
+  ok: the backup file holds no key name or value in clear
+
+================ summary: 5 ok, 0 mismatch   ================

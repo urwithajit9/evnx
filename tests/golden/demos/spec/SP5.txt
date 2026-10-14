@@ -1,0 +1,58 @@
+
+================ SP5 ================
+
+$ evnx add service redis --yes
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env from .env.example
+✓ Added 5 variables for Redis
+[stderr]
+  config    .evnx.toml
+  ✓ added 5 variable(s) to [vars] in .evnx.toml
+  Docs: https://docs.evnx.dev/cli/commands/add
+[exit 0]
+  ok: hand-edited entry and comment are untouched
+  ok: REDIS_URL appended to the contract
+  ok: REDIS_PASSWORD declared secret
+
+$ evnx validate
+
+  evnx validate  Check environment configuration
+
+  ✗  DB looks like a placeholder
+     .env
+
+  ✗  REDIS_PASSWORD looks like a placeholder
+     .env
+     ·  fixable with --fix
+
+  ✗  REDIS_PASSWORD is too weak or predictable
+     .env
+     →  Run: openssl rand -hex 32
+     ·  fixable with --fix
+
+  3 errors
+
+Next steps:
+  1. Review and fix the errors above
+  2. Run with --fix to auto-correct common issues
+  3. Use --ignore issue_type to suppress specific warnings
+[stderr]
+  config    .evnx.toml
+Validation failed: 3 errors
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 1]
+validate reads the appended entries
+
+$ evnx add service redis --yes
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env from .env.example
+✓ Added 5 variables for Redis
+[stderr]
+  config    .evnx.toml (scan.severity=high)
+  !  .evnx.toml has no [vars] section — the new variables are not under contract
+     run `evnx spec init` to declare them
+  Docs: https://docs.evnx.dev/cli/commands/add
+[exit 0]
+  ok: a config with no [vars] is never given one
+
+================ summary: 4 ok, 0 mismatch   ================

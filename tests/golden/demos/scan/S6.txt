@@ -1,0 +1,51 @@
+
+================ S6 ================
+
+$ evnx scan .
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./.env
+
+  ✓  No secrets detected
+
+  1 file scanned
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 0]
+  ok: value of an unknown provider under a neutral name is not detected (name heuristic cannot help) (exit 0)
+
+$ evnx scan . --pattern acme_live_[0-9a-f]{20}
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./.env
+
+  ✗  Custom pattern 1                            high
+     ./.env:1 (VENDOR_REF)  acme…1706
+     !  matches a live key format, not a placeholder
+
+  1 finding  ·  1 high
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: --pattern adds a custom regex (Custom pattern 1) (exit 1)
+
+$ evnx scan . --pattern ([
+Error: 'Custom pattern 1' is not a valid regular expression
+  ([
+
+regex parse error:
+    ([
+     ^
+error: unclosed character class
+
+No verdict: evnx did not scan anything. This is not a clean result.
+[exit 2]
+  ok: bad regex is an error (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

@@ -1,0 +1,26 @@
+
+================ TP10 ================
+
+$ evnx template --input t.tpl --output t.out --env t.env --no-gitignore
+
+  Generate config from template
+
+✓ Loaded 6 variables from t.env
+✓ Read template from t.tpl
+✓ Generated config at t.out
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/template
+[exit 0]
+  ok: KNOWN I-141: the parser drops the character after a bare $NAME (exit 0)
+--- t.out:
+url=http://localhost/api hostp=http://localhost:8080 site=http://localhost.example.com pass=ahttp://localhost! ok=http://localhost/api
+
+$ bash -c "$0" convert --to json --env t.env | grep -E "URL|OK" evnx
+  "URL": "http://localhost/api",
+  "OK": "http://localhost/api"
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+decided: keep the terminator (every command)
+
+================ summary: 1 ok, 0 mismatch   ================

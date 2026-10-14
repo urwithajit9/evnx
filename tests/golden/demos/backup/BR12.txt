@@ -1,0 +1,7 @@
+
+================ BR12 ================
+  ok: restore -v prints no secret value or passphrase
+  ok: restored file mode 0600
+  ok: round trip with the fixture
+
+================ summary: 3 ok, 0 mismatch   ================

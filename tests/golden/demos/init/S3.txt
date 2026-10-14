@@ -1,0 +1,86 @@
+
+================ S3 ================
+
+$ evnx init --list-components
+
+  FRAMEWORK
+  javascript_typescript
+    nextjs                   Next.js (also: next)
+    vite                     Vite
+    express_fastify          Express / Fastify (also: express, fastify)
+    nest                     NestJS
+    nuxt                     Nuxt
+    sveltekit                SvelteKit
+  python
+    django                   Django
+    fastapi_flask            FastAPI / Flask (also: fastapi, flask)
+  rust
+    axum_actix               Axum / Actix (also: axum, actix)
+  go
+    gin_echo                 Gin / Echo (also: gin, echo)
+  ruby
+    rails                    Ruby on Rails
+  php
+    laravel                  Laravel
+  java_kotlin
+    spring_boot              Spring Boot
+
+  SERVICE
+  databases
+    postgresql               PostgreSQL (also: postgres, pg)
+    mysql_mariadb            MySQL / MariaDB (also: mysql, mariadb)
+    mongodb                  MongoDB (also: mongo)
+    redis                    Redis
+    elasticsearch            Elasticsearch
+    supabase                 Supabase
+    firebase                 Firebase
+  messaging_queues
+    rabbitmq                 RabbitMQ
+    kafka                    Apache Kafka
+    redis_pubsub             Redis Pub/Sub
+  auth_providers
+    auth0                    Auth0
+    clerk                    Clerk
+    google_oauth             Google OAuth
+  storage
+    aws_s3                   AWS S3
+    cloudinary               Cloudinary
+    uploadthing              UploadThing
+  monitoring_logging
+    sentry                   Sentry
+    datadog                  Datadog
+    logtail                  Logtail (Better Stack)
+  payments
+    stripe                   Stripe
+    razorpay                 Razorpay
+    lemon_squeezy            Lemon Squeezy
+  ai_ml
+    openai_api               OpenAI API
+    anthropic                Anthropic (Claude)
+    huggingface              Hugging Face
+  email_sms
+    resend_email             Resend
+    sendgrid                 SendGrid
+    twilio                   Twilio
+
+  INFRASTRUCTURE
+  infrastructure
+    aws                      AWS (Basic)
+    vercel                   Vercel
+    docker                   Docker (Basic)
+    kubernetes               Kubernetes (also: k8s)
+    railway                  Railway
+    github_actions           GitHub Actions
+    gitlab_ci                GitLab CI
+    azure_devops             Azure DevOps
+    aws_advanced             AWS (Advanced)
+    docker_advanced          Docker (Advanced)
+
+  →  evnx init --with nextjs,postgresql,stripe
+
+[exit 0]
+  ok: list components (exit 0)
+  ok: 51 components
+  ok: aliases are listed
+
+================ summary: 3 ok, 0 mismatch   ================

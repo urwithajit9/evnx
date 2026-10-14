@@ -1,0 +1,47 @@
+
+================ S11 ================
+
+$ evnx sync --check --env empty.env
+
+  evnx sync  empty.env ↔ .env.example  (forward)
+
+! empty.env has permissive permissions (0o664). Consider: chmod 600 empty.env
+· Overly permissive .env files may expose secrets to other users
+! empty.env has no variables, while .env.example has 4. Nothing was copied.
+· If that is unexpected, check you are in the right directory. To fill empty.env from the template instead, run `evnx sync --direction reverse`.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: KNOWN I-127: empty source, full template: warning but exit 0; decided: exit 2 under --check (exit 0)
+
+$ evnx sync --check --direction reverse --env nope.env
+
+  evnx sync  nope.env ↔ .env.example  (reverse)
+
+· nope.env not found, creating from .env.example
+
+Preview:
+Target: nope.env (action: Add)
+
+  ! DATABASE_URL = postgres://user:pass@localhost:5432/app
+  ! API_SECRET = 
+  ! API_PORT = 8080
+  ! REDIS_URL = redis://localhost:6379
+
+! Replace placeholder values with real credentials!
+
+(dry-run: no files were modified)
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+
+✗ Out of sync. Run `evnx sync --direction reverse` and commit the result.
+[exit 1]
+  ok: reverse, .env missing, pretty: out of sync (it would create it) (exit 1)
+
+$ evnx sync --check --format json --direction reverse --env nope.env
+[stderr]
+evnx could not check: Failed to parse nope.env: nope.env does not exist
+[exit 2]
+  ok: KNOWN I-117: same inputs, json says exit 2; decided: one drift computation (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

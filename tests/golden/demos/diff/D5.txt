@@ -1,0 +1,64 @@
+
+================ D5 ================
+
+$ evnx diff --env-name production --against staging
+
+  evnx diff  ./.env.production ↔ ./.env.staging
+
+Missing from ./.env.production (present in ./.env.staging):
+  + STAGING_ONLY
+
+Extra in ./.env.production (not in ./.env.staging):
+  - SENTRY_DSN
+
+Different values:
+  ~ DATABASE_URL
+  ~ API_PORT
+
+  1 missing from ./.env.production  ·  1 not in ./.env.staging  ·  2 different values
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 1]
+  ok: two real environments (exit 1)
+
+$ evnx diff --env-name production --against staging --ignore-keys SENTRY_DSN,STAGING_ONLY,DATABASE_URL,API_PORT
+
+  evnx diff  ./.env.production ↔ ./.env.staging
+
+✓ Files are identical
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 0]
+  ok: environment-specific keys ignored: identical (exit 0)
+
+$ evnx diff --env-name prod
+[stderr]
+Error: .env.prod does not exist — did you mean 'production'?
+
+Available: production, staging
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: unknown name lists the environments, no silent fallback (exit 2)
+
+$ evnx diff --env-name staging --env .env
+[stderr]
+error: the argument '--env-name <NAME>' cannot be used with '--env <ENV>'
+
+Usage: evnx diff --env-name <NAME>
+
+For more information, try '--help'.
+[exit 2]
+  ok: --env-name conflicts with --env (exit 2)
+
+$ evnx diff --against staging --example .env.production
+[stderr]
+error: the argument '--against <NAME>' cannot be used with '--example <EXAMPLE>'
+
+Usage: evnx diff --against <NAME>
+
+For more information, try '--help'.
+[exit 2]
+  ok: --against conflicts with --example (exit 2)
+
+================ summary: 5 ok, 0 mismatch   ================

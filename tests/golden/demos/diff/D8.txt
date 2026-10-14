@@ -1,0 +1,35 @@
+
+================ D8 ================
+
+$ bash -c "$0" diff --format patch --interactive < answers evnx
+
+Interactive merge
+Prompts: (y)es, (n)o, (s)kip rest
+
+Add REDIS_URL=redis://localhost:6379? [y/n/s]:    ✓ Queued: + REDIS_URL=redis://localhost:6379
+Add FEATURE_X=false? [y/n/s]:    ✓ Queued: + FEATURE_X=false
+Update DATABASE_URL?
+   - postgres://admin:s3cr3tPassw0rd@db.internal:5432/app
+   + postgres://user:pass@localhost:5432/app? [y/n/s]:    ✓ Queued: + DATABASE_URL=postgres://user:pass@localhost:5432/app
+Update API_SECRET?
+   - real-secret-value-123456
+   + generate-me? [y/n/s]:    ✓ Queued: + API_SECRET=generate-me
+Update API_PORT?
+   - 9090
+   + 8080? [y/n/s]:    ✗ Skipped
+
+Applied changes:
+  + REDIS_URL=redis://localhost:6379
+  + FEATURE_X=false
+  ~ DATABASE_URL=postgres://user:pass@localhost:5432/app
+  ~ API_SECRET=generate-me
+
+  →  save it and apply with: patch -p1 < changes.patch
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 1]
+  .env is byte-identical after answering y to every prompt
+.env .env.before .env.example .env.production .env.staging answers 
+KNOWN I-073: 'Applied changes' but nothing is written and no changes.patch exists; decided: write the file with .env.bak
+
+================ summary: 0 ok, 0 mismatch   ================

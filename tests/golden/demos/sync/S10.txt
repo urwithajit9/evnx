@@ -1,0 +1,52 @@
+
+================ S10 ================
+
+$ evnx sync --direction forward --placeholder
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+✗ File not found: .env
+
+┌─ Getting started ────────────────────────────────────────────────────────────┐
+│ It looks like this project hasn't been initialized yet.                      │
+│                                                                              │
+│ To create .env and .env.example files, run:                                  │
+│                                                                              │
+│ $ evnx init                                                                  │
+│                                                                              │
+│ Or if you have an existing .env file, place it in this directory and try ... │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+Next steps:
+  1. Run 'evnx init' to set up a new project
+  2. Or copy your existing .env file to this directory
+  3. Then run 'evnx sync' again
+[stderr]
+Error: .env file not found - run 'evnx init' to get started
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: the shipped pre-commit hook on a fresh clone (no .env) (exit 2)
+
+$ evnx sync --direction forward --placeholder
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o664). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+
+┌─ Variables to Add ───────────────────────────────────────────────────────────┐
+│ Found 1 variable(s) in .env missing from .env.example:                       │
+│   • B                                                                        │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+[stderr]
+Error: IO error: not a terminal: not a terminal
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: the shipped hook with drift and no terminal (exit 2)
+KNOWN I-128: both cases block the commit; decided: hook runs 'evnx sync --check' (works without .env via spec) plus optional 'sync --force' hook
+
+================ summary: 2 ok, 0 mismatch   ================

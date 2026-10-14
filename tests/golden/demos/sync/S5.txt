@@ -1,0 +1,34 @@
+
+================ S5 ================
+
+$ evnx sync -f
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o664). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+· .env.example not found, creating from .env
+✓ Created .env.example
+
+Next steps:
+  1. Review .env.example to ensure the placeholders are appropriate
+  2. Commit .env.example to Git (never commit .env)
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: template created from .env (exit 0)
+--- .env.example:
+# Generated from .env
+# Replace all placeholder values with real credentials
+
+SUPPORT_EMAIL=8000
+MONKEY_COUNT=YOUR_KEY_HERE
+BYPASS_CACHE=YOUR_PASSWORD_HERE
+GHOST_MODE=localhost
+DEBUG=true
+DB_URL=YOUR_URL_HERE
+MONGO_URL=YOUR_URL_HERE
+API_PORT=8000
+KNOWN I-120: SUPPORT_EMAIL=8000, MONKEY_COUNT=YOUR_KEY_HERE, BYPASS_CACHE=YOUR_PASSWORD_HERE, GHOST_MODE=localhost, DEBUG=true, postgres:// and mongodb:// = YOUR_URL_HERE; decided: whole-token matching, scheme list
+
+================ summary: 1 ok, 0 mismatch   ================

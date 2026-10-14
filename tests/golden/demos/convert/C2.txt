@@ -1,0 +1,70 @@
+
+================ C2 ================
+
+$ evnx convert --to k8s
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+type: Opaque
+stringData:
+  APP_NAME: "demo app"
+  DATABASE_URL: "postgres://admin:s3cr3t@db.internal:5432/app"
+  API_SECRET: "abc123"
+  DEBUG: "true"
+  PORT: "8080"
+  GREETING: "hello \"world\""
+  EMPTY: ""
+  PRICE: "$5"
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: alias k8s = kubernetes (exit 0)
+
+$ evnx convert --to JSON
+{
+  "APP_NAME": "demo app",
+  "DATABASE_URL": "postgres://admin:s3cr3t@db.internal:5432/app",
+  "API_SECRET": "abc123",
+  "DEBUG": "true",
+  "PORT": "8080",
+  "GREETING": "hello \"world\"",
+  "EMPTY": "",
+  "PRICE": "$5"
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: case does not matter (exit 0)
+
+$ evnx convert --to bogus
+[stderr]
+✗ Unknown format: bogus
+
+Supported formats:
+
+  Generic:
+    json, yaml, shell
+
+  Cloud providers:
+    aws-secrets, gcp-secrets, azure-keyvault
+
+  CI/CD:
+    github-actions
+
+  Containers:
+    docker-compose, kubernetes
+
+  Infrastructure:
+    terraform
+
+  Secret managers:
+    doppler, heroku, vercel, railway
+
+  Aliases:
+    k8s → kubernetes, tf → terraform, yml → yaml
+    gh-actions → github-actions, compose → docker-compose
+[exit 2]
+  ok: unknown format lists the valid ones (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

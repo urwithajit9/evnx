@@ -1,0 +1,31 @@
+
+================ C4 ================
+
+$ evnx convert --to json -o out.json
+✓ Converted successfully
+Output written to: out.json
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: writes the file (exit 0)
+mode of out.json: 664  (KNOWN I-081: 644; decided 600)
+
+$ evnx convert --to yaml -o out.json
+✓ Converted successfully
+Output written to: out.json
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: KNOWN I-081: second run overwrites silently; decided: refuse without --force (exit 0)
+APP_NAME: demo app
+DATABASE_URL: postgres://admin:s3cr3t@db.internal:5432/app
+
+$ evnx convert --to json -o nodir/out.json
+[stderr]
+Error: Convert command failed: Failed to write output to 'nodir/out.json': No such file or directory (os error 2)
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: missing directory is an error, no mkdir (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

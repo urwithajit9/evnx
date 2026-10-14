@@ -1,0 +1,28 @@
+
+================ D4 ================
+
+$ evnx diff --reverse
+
+  evnx diff  .env ↔ .env.example
+
+Missing from .env.example (present in .env):
+  + EXTRA_DEBUG
+
+Extra in .env.example (not in .env):
+  - REDIS_URL
+  - FEATURE_X
+
+Different values:
+  ~ DATABASE_URL
+  ~ API_SECRET
+    .env: ***
+    .env.example: ***
+  ~ API_PORT
+
+  1 missing from .env.example  ·  2 not in .env  ·  3 different values
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 1]
+  ok: sides swapped: what the template would need to learn from .env (exit 1)
+
+================ summary: 1 ok, 0 mismatch   ================

@@ -1,0 +1,74 @@
+
+================ M3 ================
+
+$ evnx migrate --to heroku --heroku-app a
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· Heroku Config Vars migration
+· Requires Heroku CLI
+  Install: https://devcenter.heroku.com/articles/heroku-cli
+
+Run this command (single bulk set = one restart):
+
+heroku config:set --app a \
+  APP_NAME='demo app' \
+  DATABASE_URL='postgres://admin:s3cr3t@db.internal:5432/app' \
+  API_SECRET='abc123' \
+  DEBUG='true' \
+  PORT='8080' \
+  GREETING='hello "world"' \
+  EMPTY='' \
+  PRICE='$5'
+
+Summary:
+  ✓  8 command(s) generated
+     nothing has been uploaded — run the commands above
+
+Next steps:
+  1. Verify with `heroku config --app a`.
+  2. The dyno restarts automatically after `config:set`.
+  3. Remove your local .env file.
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: heroku: one bulk command, single-quoted (exit 0)
+
+$ evnx migrate --to doppler --project p --doppler-config dev
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· Doppler migration
+· Requires Doppler CLI
+  Install: https://docs.doppler.com/docs/cli
+[stderr]
+Error: Doppler CLI not found. Install from https://docs.doppler.com/docs/cli
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: KNOWN I-110: doppler needs the tool installed to PRINT commands on a real run (not on a dry run); decided: opt-in --check (exit 2)
+
+$ evnx migrate --to railway --railway-project p
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from env-file
+
+· Railway migration
+· Requires Railway CLI
+  Install: npm install -g @railway/cli
+[stderr]
+Error: Railway CLI not found. Install with: npm install -g @railway/cli
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: KNOWN I-110: same for railway (and infisical) (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

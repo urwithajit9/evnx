@@ -1,0 +1,111 @@
+
+================ S5 ================
+
+$ evnx scan .
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./.env
+
+  ✗  AWS Access Key                              high
+     ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  ✗  Stripe Secret Key (LIVE)                    high
+     ./.env:2 (STRIPE_SECRET_KEY)  sk_l…hijk
+     !  matches a live key format, not a placeholder
+     →  revoke at https://dashboard.stripe.com/apikeys
+
+  ✗  GitHub Token                                high
+     ./.env:3 (GITHUB_TOKEN)  ghp_…Q7r8
+     !  matches a live key format, not a placeholder
+     →  revoke at https://github.com/settings/tokens
+
+  ✗  Credentials in a connection string          high
+     ./.env:4 (DATABASE_URL)  post…5432
+     !  matches a live key format, not a placeholder
+
+  4 findings  ·  4 high
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+.env.example is excluded by default
+
+$ evnx scan . --exclude nothing-matches
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./.env
+
+  ✗  AWS Access Key                              high
+     ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  ✗  Stripe Secret Key (LIVE)                    high
+     ./.env:2 (STRIPE_SECRET_KEY)  sk_l…hijk
+     !  matches a live key format, not a placeholder
+     →  revoke at https://dashboard.stripe.com/apikeys
+
+  ✗  GitHub Token                                high
+     ./.env:3 (GITHUB_TOKEN)  ghp_…Q7r8
+     !  matches a live key format, not a placeholder
+     →  revoke at https://github.com/settings/tokens
+
+  ✗  Credentials in a connection string          high
+     ./.env:4 (DATABASE_URL)  post…5432
+     !  matches a live key format, not a placeholder
+
+  4 findings  ·  4 high
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: custom --exclude replaces the default (exit 1)
+
+$ evnx scan .env.example
+
+  evnx scan  Checking for exposed secrets
+
+  scanning .env.example
+
+  ✗  Stripe Secret Key (LIVE)                    high
+     .env.example:1 (STRIPE_KEY)  sk_l…xxxx
+     !  matches a live key format, not a placeholder
+     →  revoke at https://dashboard.stripe.com/apikeys
+
+  1 finding  ·  1 high
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: named file is always scanned (exit 1)
+
+$ evnx scan .env.example --ignore-placeholders
+
+  evnx scan  Checking for exposed secrets
+
+  scanning .env.example
+
+  ✓  No secrets detected
+
+  1 file scanned
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 0]
+KNOWN I-050: sk_live_xxxx is still high even with --ignore-placeholders
+
+================ summary: 2 ok, 0 mismatch   ================

@@ -1,0 +1,54 @@
+
+================ S1 ================
+
+$ evnx sync -f
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+· .env.example not found, creating from .env
+✓ Created .env.example
+
+Next steps:
+  1. Review .env.example to ensure the placeholders are appropriate
+  2. Commit .env.example to Git (never commit .env)
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: no template: created with placeholders (no terminal / -f) (exit 0)
+--- .env.example:
+# Generated from .env
+# Replace all placeholder values with real credentials
+
+DATABASE_URL=YOUR_URL_HERE
+API_SECRET=YOUR_KEY_HERE
+API_PORT=8000
+NEW_FEATURE=YOUR_VALUE_HERE
+stripe_key=YOUR_KEY_HERE
+
+$ evnx sync --check
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+✓ .env.example is up to date
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: second run: in sync (exit 0)
+
+$ evnx sync -f
+
+  evnx sync  .env ↔ .env.example  (forward)
+
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
+· Overly permissive .env files may expose secrets to other users
+✓ .env.example is up to date
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: idempotent: nothing to add (exit 0)
+
+================ summary: 3 ok, 0 mismatch   ================
