@@ -5,7 +5,7 @@ $ evnx sync -f --template-config tc.json
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o664). Consider: chmod 600 .env
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
 · Overly permissive .env files may expose secrets to other users
 · .env.example not found, creating from .env
 ✓ Created .env.example

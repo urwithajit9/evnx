@@ -49,8 +49,14 @@ pub fn run_scene(cmd: &str, scene: &str) -> String {
         .join("tests/demos")
         .join(format!("run-{cmd}-demo.sh"));
 
+    // ⚠️ The umask is pinned. Files evnx creates take their mode from it, and
+    // several scenes print a mode (I-081, I-130, I-237): 664 under a desktop's
+    // 0002, 644 under CI's 0022. 022 is the common default and what the KNOWN
+    // lines describe.
     let mut c = Command::new("bash");
-    c.arg(&script)
+    c.arg("-c")
+        .arg(r#"umask 022 && exec bash "$0" "$@""#)
+        .arg(&script)
         .arg(scene)
         .current_dir(root.path())
         // Nothing from the developer's machine may leak into the output: no
