@@ -16,6 +16,8 @@
 # The masking matches tests/support/demo.rs closely enough for a diff between two
 # runs on one machine; it is not used to produce golden files.
 set -u
+# Same umask as tests/support/demo.rs: scenes print file modes.
+umask 022
 here="$(cd "$(dirname "$0")/.." && pwd)"
 cmd="${1:?usage: behaviour-lock.sh <cmd>|all [evnx] [new-evnx]}"
 old="${2:-$here/target/debug/evnx}"

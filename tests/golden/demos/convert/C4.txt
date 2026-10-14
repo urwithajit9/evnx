@@ -8,7 +8,7 @@ Output written to: out.json
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
   ok: writes the file (exit 0)
-mode of out.json: 664  (KNOWN I-081: 644; decided 600)
+mode of out.json: 644  (KNOWN I-081: 644; decided 600)
 
 $ evnx convert --to yaml -o out.json
 ✓ Converted successfully

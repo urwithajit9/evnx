@@ -40,7 +40,7 @@ $ evnx sync --direction forward --placeholder
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o664). Consider: chmod 600 .env
+! .env has permissive permissions (0o644). Consider: chmod 600 .env
 · Overly permissive .env files may expose secrets to other users
 Error: IO error: not a terminal: not a terminal
 

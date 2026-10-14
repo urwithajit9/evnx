@@ -26,7 +26,7 @@ opt: fallback
 empty: dflt
 
 $ bash -c stat -c "out.yml mode %a" out.yml
-out.yml mode 664
+out.yml mode 644
 [exit 0]
 KNOWN I-130: the file holds a live-looking key and is created 644; decided: 0600 (and tighten an existing file with a notice)
 

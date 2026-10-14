@@ -51,7 +51,7 @@ $ evnx sync --check --env t.env --example t.example
 
   evnx sync  t.env ↔ t.example  (forward)
 
-! t.env has permissive permissions (0o664). Consider: chmod 600 t.env
+! t.env has permissive permissions (0o644). Consider: chmod 600 t.env
 · Overly permissive .env files may expose secrets to other users
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]

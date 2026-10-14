@@ -6,7 +6,7 @@ $ evnx sync --check --env empty.env
 
   evnx sync  empty.env ↔ .env.example  (forward)
 
-! empty.env has permissive permissions (0o664). Consider: chmod 600 empty.env
+! empty.env has permissive permissions (0o644). Consider: chmod 600 empty.env
 · Overly permissive .env files may expose secrets to other users
 ! empty.env has no variables, while .env.example has 4. Nothing was copied.
 · If that is unexpected, check you are in the right directory. To fill empty.env from the template instead, run `evnx sync --direction reverse`.
