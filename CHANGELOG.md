@@ -12,6 +12,13 @@ The first shared-module change (the output rules), one small fix found when the
 new output locks first ran in CI, and the safety net under both: each reviewed
 command's output is locked in CI before any module changes it.
 
+### Security — dependency
+
+- `rustls` 0.23.45 → 0.23.46 (through `reqwest`, used by the cloud commands,
+  `migrate --to github-actions` and `update`): RUSTSEC-2026-0346 (`Debug` output of
+  client session values exposed TLS secrets, medium), -0347, -0348, -0349 (low).
+  `Cargo.lock` only; no code change.
+
 ### Changed — what goes to stdout and what to stderr
 
 ⚠️ **Scripts that read stderr or stdout line by line should check this.**
