@@ -237,10 +237,8 @@ $ evnx scan . --format sarif --exit-zero
   Docs: https://docs.evnx.dev/cli/commands/scan
 [exit 0]
 
-$ bash -c set -o pipefail; "$0" scan . --format sarif | head -c 10 evnx
-{
-  "$sche  Docs: https://docs.evnx.dev/cli/commands/scan
-[exit 1]
-KNOWN I-063 (proved in review step 5): with enough output a closed pipe makes scan panic with exit 101; with this small output it exits 1 as seen above. Decided: fix with a shared print helper
+$ bash -c { sleep 0.3; "$0" scan . --format sarif; } | true; exit ${PIPESTATUS[0]} evnx
+[exit 141]
+  ok: I-063 fixed in 0.10.1: a closed pipe ends scan quietly, exit 141 (exit 141)
 
-================ summary: 0 ok, 0 mismatch   ================
+================ summary: 1 ok, 0 mismatch   ================

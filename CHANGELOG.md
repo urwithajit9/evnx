@@ -8,9 +8,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-No change to the product. This lays the groundwork for the shared-module work
-that follows: each reviewed command's output is now locked in CI before any
-module changes it.
+One small product fix, found when the new output locks first ran in CI, and the
+groundwork for the shared-module work that follows: each reviewed command's
+output is now locked in CI before any module changes it.
+
+### Fixed
+
+- **`scan` and `init --from-source` walk folders in name order.** They followed
+  the order the filesystem returns, which differs between machines, so the same
+  project printed a different `scanning …` line and findings order (including in
+  JSON and SARIF) in CI than on a laptop, and `init --from-source` could report a
+  variable at a different file (I-243).
 
 ### Tests
 

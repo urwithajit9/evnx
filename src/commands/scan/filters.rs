@@ -127,8 +127,13 @@ impl FileFilter {
                 // million vendored files. They are not a veto over an argument.
                 files.push(path.to_path_buf());
             } else if path.is_dir() {
+                // ⚠️ Sorted by name. Without it the walk follows the order the
+                // filesystem returns, which differs between machines (ext4
+                // hashes directory entries), so one project printed a different
+                // file list and findings order in CI than locally (I-243, G14).
                 for entry in WalkDir::new(path)
                     .follow_links(false)
+                    .sort_by_file_name()
                     .into_iter()
                     .filter_map(|e| e.ok())
                 {
