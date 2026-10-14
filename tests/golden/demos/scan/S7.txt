@@ -6,7 +6,7 @@ $ evnx scan .
 
   evnx scan  Checking for exposed secrets
 
-  scanning ./.evnx.toml, ./.env
+  scanning ./.env, ./.evnx.toml
 
   ✗  AWS Access Key                              high
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
@@ -34,7 +34,7 @@ Next steps:
   ok: config merges: weakening is announced on screen (exit 1)
 
 $ evnx scan . -q
-  scanning ./.evnx.toml, ./.env
+  scanning ./.env, ./.evnx.toml
 
   ✗  AWS Access Key                              high
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
@@ -60,7 +60,7 @@ $ evnx scan . --severity low
 
   evnx scan  Checking for exposed secrets
 
-  scanning ./.evnx.toml, ./.env
+  scanning ./.env, ./.evnx.toml
 
   ✗  AWS Access Key                              high
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY

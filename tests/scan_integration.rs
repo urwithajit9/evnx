@@ -1676,3 +1676,50 @@ fn an_ordinary_file_gains_no_findings_and_no_duplicates() {
         "the one real secret was reported more or fewer than once"
     );
 }
+
+/// I-243 (G14): a directory walk reports files in name order, not in the order
+/// the filesystem returns them. That order differs between machines (ext4's
+/// hashed directories, tmpfs, APFS), so the same project gave a different
+/// `scanning …` line and a different findings order in CI than on a laptop.
+#[test]
+fn t_i243_walk_order_is_by_name_not_by_disk() {
+    let dir = TempDir::new().unwrap();
+    // Created out of name order on purpose, with a subfolder in the middle.
+    let names = [
+        "f07.env",
+        "f02.env",
+        "f11.env",
+        "sub/f05.env",
+        "f00.env",
+        "f09.env",
+        "f04.env",
+        "f10.env",
+        "sub/f01.env",
+        "f06.env",
+        "f03.env",
+        "f08.env",
+    ];
+    fs::create_dir(dir.path().join("sub")).unwrap();
+    for n in names {
+        fs::write(dir.path().join(n), "KEY=AKIA4OZRMFJ3VREALKEY\n").unwrap();
+    }
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", ".", "--format", "json"])
+        .output()
+        .unwrap();
+    let json = parse_json_output(&String::from_utf8_lossy(&out.stdout)).unwrap();
+    let files: Vec<String> = json["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            let loc = f["location"].as_str().unwrap();
+            loc[..loc.find(':').unwrap()].to_string()
+        })
+        .collect();
+    assert_eq!(files.len(), names.len(), "{files:?}");
+    let mut sorted = files.clone();
+    sorted.sort();
+    assert_eq!(files, sorted, "findings must follow path order");
+}

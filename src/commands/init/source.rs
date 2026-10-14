@@ -244,7 +244,12 @@ fn collect(dir: &Path, walk: &mut Walk) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
-    for entry in entries.flatten() {
+    // ⚠️ Name order, not the order the filesystem returns (it differs between
+    // machines). It decides which file a name is reported at ("first sighting
+    // wins") and which files survive `MAX_FILES` (I-243, G14).
+    let mut entries: Vec<_> = entries.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
         if walk.files.len() >= MAX_FILES {
             walk.truncated = true;
             return;
@@ -346,6 +351,25 @@ mod tests {
 
     fn names(scan: &Scan) -> Vec<String> {
         scan.found.iter().map(|v| v.name.clone()).collect()
+    }
+
+    /// I-243 (G14): "first sighting wins", so the walk order decides which
+    /// file a variable is reported at. It used to be the order the filesystem
+    /// returned, which differs between machines; now it is name order.
+    #[test]
+    fn t_i243_location_is_the_first_file_by_name() {
+        let order = [
+            "m07.py", "m02.py", "m11.py", "m05.py", "m00.py", "m09.py", "m04.py", "m10.py",
+            "m01.py", "m06.py", "m03.py", "m08.py",
+        ];
+        let files: Vec<(&str, &str)> = order
+            .iter()
+            .map(|n| (*n, r#"token = os.environ["API_TOKEN"]"#))
+            .collect();
+        let d = project(&files);
+        let s = scan(d.path()).unwrap();
+        let v = s.found.iter().find(|v| v.name == "API_TOKEN").unwrap();
+        assert_eq!(v.location, "m00.py:1");
     }
 
     #[test]

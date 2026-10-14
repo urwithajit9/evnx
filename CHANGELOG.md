@@ -8,8 +8,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-The first shared-module change (the output rules) and the safety net under it:
-each reviewed command's output is locked in CI before any module changes it.
+The first shared-module change (the output rules), one small fix found when the
+new output locks first ran in CI, and the safety net under both: each reviewed
+command's output is locked in CI before any module changes it.
 
 ### Changed — what goes to stdout and what to stderr
 
@@ -35,6 +36,14 @@ terminal shows both exactly as before.
 - `utils::ui::print_header_stderr` is deprecated: `print_header` writes to stderr
   now, and both are hidden by `-q`. New: `utils::ui::warning_detail`.
 - `utils::ui::warning` and `utils::ui::error` write to stderr.
+
+### Fixed
+
+- **`scan` and `init --from-source` walk folders in name order.** They followed
+  the order the filesystem returns, which differs between machines, so the same
+  project printed a different `scanning …` line and findings order (including in
+  JSON and SARIF) in CI than on a laptop, and `init --from-source` could report a
+  variable at a different file (I-243).
 
 ### Tests
 

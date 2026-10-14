@@ -22,7 +22,7 @@ Validation failed: 1 error
   ok: KNOWN I-187: 'requird' ignored: A stays required, empty A fails, and the typo itself is never reported (decided DEC-SP5: warn, exit 1) (exit 1)
 
 $ evnx scan
-  scanning ./.evnx.toml, ./.env
+  scanning ./.env, ./.evnx.toml
 
   ✓  No secrets detected
 
