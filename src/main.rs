@@ -269,6 +269,7 @@ fn main() -> Result<()> {
             env_name,
             to,
             output,
+            force,
             include,
             exclude,
             base64,
@@ -304,6 +305,7 @@ fn main() -> Result<()> {
                 .prefix(prefix)
                 .transform(transform_enum)
                 .verbose(cli.verbose)
+                .force(force)
                 .build();
 
             commands::convert::run(config).context("Convert command failed")

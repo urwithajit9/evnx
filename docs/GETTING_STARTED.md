@@ -330,6 +330,10 @@ evnx diff --format json     # JSON output for scripting
 evnx convert --to kubernetes --output secret.yaml
 ```
 
+The file holds your secrets, so it is created readable by you only (mode 0600).
+If `secret.yaml` already exists, evnx stops and changes nothing; add `--force`
+to replace it.
+
 Available targets:
 
 ```bash
