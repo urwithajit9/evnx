@@ -8,24 +8,33 @@ Output written to: out.json
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
   ok: writes the file (exit 0)
-mode of out.json: 644  (KNOWN I-081: 644; decided 600)
+mode of out.json: 600  (I-081 fixed: a new output is 600)
 
 $ evnx convert --to yaml -o out.json
+[stderr]
+Error: Convert command failed: 'out.json' already exists. Pass --force to replace it.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: I-081 fixed (DEC-G5): an existing output is refused without --force (exit 2)
+
+$ evnx convert --to yaml -o out.json --force
 ✓ Converted successfully
 Output written to: out.json
+Replaced out.json
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
-  ok: KNOWN I-081: second run overwrites silently; decided: refuse without --force (exit 0)
+  ok: --force replaces it and says Replaced (exit 0)
 APP_NAME: demo app
 DATABASE_URL: postgres://admin:s3cr3t@db.internal:5432/app
 
 $ evnx convert --to json -o nodir/out.json
 [stderr]
-Error: Convert command failed: Failed to write output to 'nodir/out.json': No such file or directory (os error 2)
+Error: Convert command failed: Failed to write output to 'nodir/out.json': the directory nodir does not exist
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: missing directory is an error, no mkdir (exit 2)
 
-================ summary: 3 ok, 0 mismatch   ================
+================ summary: 4 ok, 0 mismatch   ================

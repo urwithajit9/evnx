@@ -12,6 +12,20 @@ The first shared-module change (the output rules), one small fix found when the
 new output locks first ran in CI, and the safety net under both: each reviewed
 command's output is locked in CI before any module changes it.
 
+### ⛔ Security — `convert -o` wrote every secret world-readable
+
+- **`convert -o FILE` creates FILE with mode 0600**, not the umask's 0644 (I-081).
+  The file holds every value from `.env`.
+- ⚠️ **An existing FILE is refused unless `--force`** (exit 2, nothing written).
+  It used to be replaced in silence. A script that reruns `convert -o` must add
+  `--force`. With it, the file is replaced atomically, keeps its mode, and evnx
+  prints `Replaced FILE`; if that kept mode lets others read it, a warning names
+  the `chmod` command (DEC-G5, DEC-G6).
+- The input is never the output: `-o .env`, or a symlink or hard link to it, is
+  refused even with `--force`. It used to replace `.env` with its own conversion.
+- A symlinked FILE is written through to its target, and the link stays.
+- A missing output directory says so in one line.
+
 ### Changed — what goes to stdout and what to stderr
 
 ⚠️ **Scripts that read stderr or stdout line by line should check this.**
@@ -54,6 +68,13 @@ and read a success line must check the exit code instead.
 
 ### Library
 
+- New: `core::safe_write` (`write_private`, `write_shared`, `write_with_mode`,
+  `same_file`, `report`, `Written`) and `core::permissions` (`is_private`,
+  `make_private`, `mode`, `PRIVATE`, `SHARED`, `MODES_APPLY`) — the one way evnx
+  writes files (C-04).
+- `commands::convert::ConvertConfig` has a new public field `force` (and
+  `ConfigBuilder::force`). Code that builds the struct literally must add it;
+  the builder and `Default` are unaffected.
 - `utils::ui::print_header_stderr` is deprecated: `print_header` writes to stderr
   now, and both are hidden by `-q`. New: `utils::ui::warning_detail`.
 - `utils::ui::warning` and `utils::ui::error` write to stderr.
@@ -79,6 +100,8 @@ and read a success line must check the exit code instead.
   `spec_integration` parses that stdout as TOML (T-SP-20).
 - `scripts/behaviour-lock.sh <cmd> [old] [new]` runs a demo twice, or with two
   binaries, and lists every line that moved.
+- `tests/convert_output.rs` (8 tests) pins how `convert -o` writes: mode, refusal
+  without `--force`, same file by path/symlink/hard link, write-through, `-q`.
 - `tests/quiet_walk.rs` (T-SHARE-60) reads every command from `evnx commands
   --json`: each one has a `-q` success case that must print nothing, or a stated
   reason it has none. A new command fails the test until it is classified.

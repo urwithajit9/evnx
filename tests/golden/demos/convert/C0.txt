@@ -31,6 +31,11 @@ Options:
   -o, --output <FILE>
           Write output to file instead of stdout
 
+      --force
+          Replace FILE when it already exists (with --output).
+          
+          Without it an existing output is refused and nothing is written. The input file is never replaced, even with --force.
+
       --include <PATTERN>
           Include only variables matching this glob pattern
           

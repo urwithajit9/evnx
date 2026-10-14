@@ -1811,6 +1811,13 @@ Use 'evnx convert' without --to for interactive format selection.
         #[arg(long, short, value_name = "FILE")]
         output: Option<String>,
 
+        /// Replace FILE when it already exists (with --output).
+        ///
+        /// Without it an existing output is refused and nothing is written.
+        /// The input file is never replaced, even with --force.
+        #[arg(long, requires = "output")]
+        force: bool,
+
         /// Include only variables matching this glob pattern
         ///
         /// Examples: "AWS_*", "*_URL", "*_SECRET_*"

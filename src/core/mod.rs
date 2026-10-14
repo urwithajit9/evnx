@@ -4,6 +4,8 @@ pub mod env_name;
 pub mod gitignore;
 pub mod glob;
 pub mod parser;
+pub mod permissions;
+pub mod safe_write;
 pub mod spec;
 
 // Re-export commonly used types

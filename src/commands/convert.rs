@@ -76,7 +76,6 @@ use anyhow::{Context, Result};
 use colored::*;
 use dialoguer::Select;
 // use indexmap::IndexMap;
-use std::fs;
 use std::path::Path;
 
 use crate::core::{
@@ -119,6 +118,8 @@ pub struct ConvertConfig {
     pub options: ConvertOptions,
     /// Enable verbose progress output
     pub verbose: bool,
+    /// Replace an existing output file (`--force`, DEC-G5).
+    pub force: bool,
 }
 
 impl ConvertConfig {
@@ -184,6 +185,7 @@ impl Default for ConvertConfig {
             output_path: None,
             options: ConvertOptions::default(),
             verbose: false,
+            force: false,
         }
     }
 }
@@ -218,6 +220,7 @@ pub struct ConfigBuilder {
     prefix: Option<String>,
     transform: Option<KeyTransform>,
     verbose: bool,
+    force: bool,
 }
 
 impl ConfigBuilder {
@@ -284,6 +287,13 @@ impl ConfigBuilder {
         self
     }
 
+    /// Replace an existing output file (DEC-G5).
+    #[must_use]
+    pub fn force(mut self, enabled: bool) -> Self {
+        self.force = enabled;
+        self
+    }
+
     /// Build the final [`ConvertConfig`].
     #[must_use]
     pub fn build(self) -> ConvertConfig {
@@ -299,6 +309,7 @@ impl ConfigBuilder {
                 transform: self.transform,
             },
             verbose: self.verbose,
+            force: self.force,
         }
     }
 }
@@ -366,6 +377,12 @@ pub fn run(config: ConvertConfig) -> Result<()> {
     config
         .validate_input()
         .with_context(|| format!("Failed to validate input file: '{}'", config.env_path))?;
+
+    // ⚠️ Before anything is read or converted, so a refusal costs nothing and
+    // writes nothing (I-081, DEC-G5).
+    if let Some(out) = config.output_path.as_deref() {
+        check_output(Path::new(&config.env_path), Path::new(out), config.force)?;
+    }
 
     // Parse .env file
     let parser = Parser::default();
@@ -538,6 +555,27 @@ fn print_format_help() {
     formats::format_help();
 }
 
+/// Refuse an output that would destroy something: the input itself (by any
+/// name — path, symlink or hard link), or an existing file without `--force`
+/// (DEC-G5).
+fn check_output(input: &Path, output: &Path, force: bool) -> Result<()> {
+    if crate::core::safe_write::same_file(input, output) {
+        anyhow::bail!(
+            "'{}' is the same file as the input '{}'; writing it would replace your \
+             .env with its own conversion. Choose another --output.",
+            output.display(),
+            input.display()
+        );
+    }
+    if !force && std::fs::symlink_metadata(output).is_ok() {
+        anyhow::bail!(
+            "'{}' already exists. Pass --force to replace it.",
+            output.display()
+        );
+    }
+    Ok(())
+}
+
 /// Write conversion result to stdout or file.
 ///
 /// # Arguments
@@ -561,7 +599,9 @@ fn write_output(content: &str, output_path: Option<&str>, verbose: bool) -> Resu
 
     match output_path {
         Some(path) => {
-            fs::write(path, content)
+            // The output holds every value from the input: new files 0600,
+            // atomic, symlinks written through (I-081, core::safe_write).
+            let written = crate::core::safe_write::write_private(path, content.as_bytes())
                 .with_context(|| format!("Failed to write output to '{}'", path))?;
             if verbose {
                 eprintln!("{}", "✓ Converted successfully".green());
@@ -574,6 +614,10 @@ fn write_output(content: &str, output_path: Option<&str>, verbose: bool) -> Resu
                 ui::success("Converted successfully");
                 ui::say(format!("Output written to: {path}"));
             }
+            if written.replaced {
+                ui::say(format!("Replaced {path}"));
+            }
+            crate::core::safe_write::report(&written);
         }
         None => {
             // `print!`, not `println!` — `content` is already newline-terminated
