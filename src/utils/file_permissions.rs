@@ -1,6 +1,6 @@
 //! Platform-specific file permission utilities.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 // use std::fs::File;
 use std::path::Path;
 
@@ -43,6 +43,7 @@ pub fn write_secure<P: AsRef<Path>>(path: P, content: &[u8]) -> Result<()> {
 
     #[cfg(unix)]
     {
+        use anyhow::Context;
         use std::fs::{OpenOptions, Permissions};
         use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 

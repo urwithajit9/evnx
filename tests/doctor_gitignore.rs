@@ -13,11 +13,11 @@ mod support;
 use support::{run, Project};
 
 fn healthy() -> Project {
-    let p = Project::new()
-        .git()
-        .example("A=\n")
-        .env("A=1\n")
-        .mode(".env", 0o600);
+    let p = Project::new().git().example("A=\n").env("A=1\n");
+    // Unix only: a mode doctor would otherwise flag. Windows has no modes and
+    // doctor does not check them there.
+    #[cfg(unix)]
+    let p = p.mode(".env", 0o600);
     p.track(".env.example");
     p
 }
