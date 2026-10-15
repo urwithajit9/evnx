@@ -1889,11 +1889,19 @@ Use 'evnx convert' without --to for interactive format selection.
         #[arg(long)]
         input: String,
 
-        /// Where to write the rendered file.
+        /// Where to write the rendered file, or `-` for stdout.
         ///
-        /// ⚠️ The result usually contains real values — see `--gitignore`.
+        /// ⚠️ The result usually contains real values — see `--gitignore`. A
+        /// new file is created readable by you only (0600); an existing one is
+        /// replaced and keeps its mode. The template and the env file are never
+        /// overwritten.
         #[arg(long)]
         output: String,
+
+        /// File mode for the output, in octal (e.g. 0640). Applied to a new or
+        /// an existing file. Without it a new file is 0600.
+        #[arg(long, value_name = "MODE", value_parser = parse_mode)]
+        mode: Option<u32>,
 
         /// The environment file to take values from.
         ///
@@ -2304,4 +2312,15 @@ pub enum SpecAction {
         #[arg(long)]
         force: bool,
     },
+}
+
+/// `--mode` for `template`: an octal file mode, at most 0777 (DEC-T6).
+fn parse_mode(s: &str) -> Result<u32, String> {
+    let digits = s.strip_prefix("0o").unwrap_or(s);
+    match u32::from_str_radix(digits, 8) {
+        Ok(m) if m <= 0o777 => Ok(m),
+        _ => Err(format!(
+            "'{s}' is not a file mode; use octal digits such as 0600 or 0640"
+        )),
+    }
 }

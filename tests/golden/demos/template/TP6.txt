@@ -2,35 +2,34 @@
 ================ TP6 ================
 
 $ evnx template --input same.yml --output same.yml --no-gitignore
-✓ Loaded 7 variables from .env
-✓ Read template from same.yml
-✓ Generated config at same.yml
 [stderr]
+Error: --output 'same.yml' is the same file as the template 'same.yml'. Nothing was written; choose another --output.
 
-  Generate config from template
-
-  Docs: https://docs.evnx.dev/cli/commands/template
-[exit 0]
-  ok: KNOWN I-131: input equal to output is accepted (exit 0)
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: I-131 fixed (DEC-T4): input equal to output is refused (exit 2)
 
 $ bash -c head -3 same.yml; grep -c "{{" same.yml
 database:
-  host: db.internal
-  port: 5432
-0
-[exit 1]
-the template now holds real values and no placeholders; decided: refuse, exit 2
+  host: {{DB_HOST}}
+  port: {{DB_PORT|int}}
+8
+[exit 0]
+the template is untouched: it still holds its placeholders
 
 $ evnx template --input config.tpl.yml --output exist.yml --no-gitignore
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at exist.yml
+Replaced exist.yml
 [stderr]
 
   Generate config from template
 
+! exist.yml is readable by other users (mode 644); evnx keeps the mode you set
+     →  chmod 600 exist.yml
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: KNOWN I-132: an existing output is replaced without a word; decided: notice 'Replaced' (exit 0)
+  ok: I-132 fixed (DEC-T4): an existing output is replaced with a Replaced notice (exit 0)
 
 ================ summary: 2 ok, 0 mismatch   ================

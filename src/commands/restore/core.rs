@@ -31,7 +31,7 @@
 //!                                          ▼
 //!                                    commit_restore()
 //!                                          │
-//!                                    write_secure() → zeroize content
+//!                                    safe_write::write_private() → zeroize content
 //!                                          │
 //!                                    Ok(()) — or Err(ValidationFallback)
 //!                                    when .restored path was used
@@ -320,19 +320,20 @@ pub fn prepare_restore(
 pub fn commit_restore(mut outcome: RestoreOutcome, options: &RestoreOptions) -> Result<()> {
     let var_count = crate::utils::count_dotenv_vars(&outcome.content);
 
-    let path_str = outcome.write_path.to_str().with_context(|| {
-        format!(
-            "Output path contains non-UTF-8 characters: {:?}",
-            outcome.write_path
-        )
-    })?;
-
-    crate::utils::write_secure(path_str, outcome.content.as_bytes()).with_context(|| {
-        format!(
-            "Failed to write restored file to {}",
-            outcome.write_path.display()
-        )
-    })?;
+    // ⚠️ Atomic (I-151, DEC-B7). `write_secure` truncated the file in place, so
+    // a crash or a full disk mid-write left a half-written `.env`. A symlink at
+    // the output is now written through with a notice (DEC-B7, same as sync);
+    // `write_secure` refused it. An existing output keeps its mode, with a
+    // warning if others can read it (DEC-G6).
+    let written =
+        crate::core::safe_write::write_private(&outcome.write_path, outcome.content.as_bytes())
+            .with_context(|| {
+                format!(
+                    "Failed to write restored file to {}",
+                    outcome.write_path.display()
+                )
+            })?;
+    crate::core::safe_write::report(&written);
 
     outcome.content.zeroize();
 

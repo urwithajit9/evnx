@@ -13,11 +13,12 @@
 //!   backup_inner()
 //!         │
 //!         ├─ ZeroizeOnDrop guard wraps password immediately
-//!         ├─ rotate_backups()        (rename existing, warn beyond --keep)
 //!         ├─ spinner starts          (suppressed in verbose mode)
 //!         ├─ encrypt_content()       (Argon2id + AES-256-GCM)
 //!         ├─ spinner stops
-//!         ├─ write_secure()          (0o600 permissions)
+//!         ├─ safe_write::stage_private()  (temp file beside the output, 0o600)
+//!         ├─ rotate_backups()        (only now: rename existing, warn beyond --keep)
+//!         ├─ Staged::commit()        (rename into place — DEC-B7, I-150)
 //!         ├─ verify_backup()         (optional — only when --verify is set)
 //!         └─ Ok(output_path)         password zeroized on drop
 //! ```
@@ -184,11 +185,6 @@ pub fn backup_inner(content: &str, password: String, options: &BackupOptions) ->
         ui::verbose_stderr("Argon2id key derivation in progress…");
     }
 
-    // ── Rotate existing backups ───────────────────────────────────────────────
-    if options.keep > 0 {
-        rotate_backups(&options.output, options.keep)?;
-    }
-
     // ── Spinner ───────────────────────────────────────────────────────────────
     // Shown only when verbose is off. The KDF is deliberately slow — without
     // feedback users may assume the tool has hung.
@@ -224,16 +220,20 @@ pub fn backup_inner(content: &str, password: String, options: &BackupOptions) ->
         ui::verbose_stderr("Encryption complete — writing backup file");
     }
 
-    // ── Write backup ──────────────────────────────────────────────────────────
-    let path_str = options.output.to_str().with_context(|| {
-        format!(
-            "Output path contains non-UTF-8 characters: {:?}",
-            options.output
-        )
-    })?;
-
-    crate::utils::write_secure(path_str, encrypted.as_bytes())
-        .map_err(|e| BackupError::WriteFailed(e.to_string()))?;
+    // ── Write backup, then rotate, then make it visible (DEC-B7, I-150) ──────
+    // ⚠️ This order is the fix. Rotation used to run first, before encryption
+    // and writing, so any failure after it left the previous backup at `.1`
+    // and no backup at the name the user knows. Now the new backup is fully
+    // on disk (a temp file beside the output) before anything is renamed.
+    let staged = crate::core::safe_write::stage_private(&options.output, encrypted.as_bytes())
+        .map_err(|e| BackupError::WriteFailed(format!("{e:#}")))?;
+    if options.keep > 0 {
+        rotate_backups(&options.output, options.keep)?;
+    }
+    let written = staged
+        .commit()
+        .map_err(|e| BackupError::WriteFailed(format!("{e:#}")))?;
+    crate::core::safe_write::report(&written);
 
     if options.verbose {
         ui::verbose_stderr(format!("Backup written to {}", options.output.display()));
@@ -808,7 +808,7 @@ mod tests {
             std::fs::write(&temp_env, "KEY=value\n").unwrap();
 
             let temp_backup = temp_env.path().with_extension("backup");
-            let result = crate::utils::write_secure(&temp_backup, b"test");
+            let result = crate::core::safe_write::write_private(&temp_backup, b"test");
             assert!(result.is_ok());
 
             let metadata = std::fs::metadata(&temp_backup).unwrap();
@@ -875,6 +875,48 @@ mod tests {
 
         backup_inner("KEY=value\n", "verbosepass123".to_owned(), &options)
             .expect("backup_inner in verbose mode must not panic");
+    }
+
+    /// I-150, DEC-B7: when the new backup cannot be written, the previous one
+    /// stays where it was. Rotation used to run first, so a failed write left
+    /// `.env.backup.1` and no `.env.backup`.
+    #[test]
+    #[cfg(all(feature = "backup", unix))]
+    fn t_i150_a_failed_write_does_not_rotate() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let output_path = dir.path().join(".env.backup");
+        std::fs::write(&output_path, "previous backup").unwrap();
+        // A directory nobody can create files in: the temp file fails.
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+        if std::fs::write(dir.path().join("probe"), "").is_ok() {
+            // Running as root: permissions do not stop it, so the scenario
+            // cannot be built here.
+            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+            return;
+        }
+        let options = BackupOptions {
+            env: dir.path().join(".env"),
+            output: output_path.clone(),
+            verbose: false,
+            key_file: None,
+            keep: 3,
+            verify: false,
+        };
+        let result = backup_inner("A=1\n", "test-password-123".to_owned(), &options);
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(&output_path).unwrap(),
+            "previous backup"
+        );
+        assert!(
+            !numbered_backup_path(&output_path, 1).exists(),
+            "nothing rotated"
+        );
     }
 
     // ── rotate_backups ────────────────────────────────────────────────────────

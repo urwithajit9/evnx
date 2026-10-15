@@ -21,16 +21,22 @@ Backup information:
   Variables     : 11
 ✓ Decryption successful
   ✓ Decryption key cleared from memory
+· wrote through lnk.env -> realtarget
+
+✓ Restored 11 variable(s) to lnk.env
+
+Next steps:
+  1. Run: evnx validate --env lnk.env
+  2. Verify your application starts correctly
+  3. Delete the backup file once you have confirmed the restore
 [stderr]
 
   evnx restore  Decrypt and restore from an encrypted backup
 
 ! Reading password from file: pw
   Less secure than interactive prompt — avoid in shared environments.
-Error: Failed to write restored file to lnk.env: could not open lnk.env for writing — if it is a symlink, evnx refuses to write through it: Too many levels of symbolic links (os error 40)
-
-No verdict: evnx did not finish. This is not a clean result.
-[exit 2]
-  ok: KNOWN I-151: a symlink output is refused; decided: write through with a notice (exit 2)
+  Docs: https://docs.evnx.dev/cli/commands/restore
+[exit 0]
+  ok: I-151 fixed (DEC-B7): restore writes through the symlink with a notice (exit 0)
 
 ================ summary: 2 ok, 0 mismatch   ================

@@ -159,18 +159,18 @@ pub(crate) fn write_env_files_with_outcome(
     // — and dotenv reads the whole thing as a comment, so the variable silently
     // disappears. `evnx add` is immune because its writer trims and re-adds the
     // newline; a hand edit or another tool is not.
-    fs::write(
+    let example = crate::core::safe_write::write_shared(
         &example_path,
-        format!("{}\n", example_content.trim_start().trim_end()),
+        format!("{}\n", example_content.trim_start().trim_end()).as_bytes(),
     )
     .with_context(|| format!("Failed to write: {}", example_path.display()))?;
+    crate::core::safe_write::report(&example);
 
     // `.env` holds real values, so it is never replaced — only created.
     let env_path = output_path.join(".env");
     let created_env = !env_path.exists();
     if created_env {
-        fs::write(&env_path, template_content)
-            .with_context(|| format!("Failed to write: {}", env_path.display()))?;
+        create_env(&env_path, template_content.as_bytes())?;
     }
 
     // 3. Talk, in the order these lines have always appeared.
@@ -183,6 +183,16 @@ pub(crate) fn write_env_files_with_outcome(
     warn_if_env_is_still_committable(output_path);
 
     Ok(Outcome::Written)
+}
+
+/// Every new `.env` that init or add creates comes through here: 0600 on Unix,
+/// atomic (I-237, DQ-16, core::safe_write). It used to take the umask's mode
+/// (644), and `evnx doctor` then warned about the file init had just made.
+fn create_env(path: &Path, bytes: &[u8]) -> Result<()> {
+    let w = crate::core::safe_write::write_private(path, bytes)
+        .with_context(|| format!("Failed to write: {}", path.display()))?;
+    crate::core::safe_write::report(&w);
+    Ok(())
 }
 
 /// Create `.env` from an existing `.env.example`: a byte copy, the same as
@@ -218,8 +228,7 @@ pub(crate) fn env_from_template(output_path: &Path, ask: bool) -> Result<bool> {
     let gitignore_line = update_gitignore(output_path)?;
     let template = fs::read(&example_path)
         .with_context(|| format!("Failed to read: {}", example_path.display()))?;
-    fs::write(&env_path, template)
-        .with_context(|| format!("Failed to write: {}", env_path.display()))?;
+    create_env(&env_path, &template)?;
 
     if let Some(line) = gitignore_line {
         crate::utils::ui::say(line);

@@ -6,9 +6,8 @@ use dialoguer::{Confirm, Input, MultiSelect, Select};
 use indexmap::IndexMap;
 use std::collections::HashSet;
 use std::fs;
-use std::io::{IsTerminal, Write};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
-use tempfile::NamedTempFile;
 
 use crate::cli::{NamingPolicy, SyncDirection};
 use crate::core::Parser;
@@ -19,33 +18,28 @@ use super::models::{PlaceholderConfig, SyncAction, SyncPreview, VarChange};
 use super::placeholder::{generate_placeholder, is_placeholder_value};
 use super::security::{check_env_permissions, log_security_event, validate_var_name};
 
-/// Atomic write: write to temp file, then rename to target
-fn atomic_write<P: AsRef<Path>>(path: P, content: &str) -> Result<()> {
-    let path = path.as_ref();
-    let temp = NamedTempFile::new_in(path.parent().unwrap_or_else(|| Path::new(".")))?;
+/// Write the env file sync manages: atomic, new files 0600, an existing file
+/// keeps its mode, a symlink is written through (DEC-S6, DEC-S7, core::safe_write).
+///
+/// ⚠️ This used to force 0600 on every file whose name started with `.env` and
+/// did not contain "example" — including a `.env` the user had set to 0640 —
+/// and the template came out 0600 only because the temp file did (I-123).
+fn write_env(path: &Path, content: &str) -> Result<()> {
+    let written = crate::core::safe_write::write_private(path, content.as_bytes())
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    crate::core::safe_write::report(&written);
+    Ok(())
+}
 
-    temp.as_file().write_all(content.as_bytes())?;
-    temp.as_file().sync_all()?;
-    temp.persist(path)?;
-
-    // Set restrictive permissions on env files.
-    //
-    // This matched the literal name `.env`, so `.env.production` — written by
-    // the very same code path once sync could address it — would have been left
-    // at the default umask while `.env` got 0600.
-    let is_env_file = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|n| n.starts_with(".env") && !n.contains("example"));
-    if is_env_file {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(path)?.permissions();
-            perms.set_mode(0o600);
-            fs::set_permissions(path, perms)?;
-        }
-    }
+/// Write the template: as [`write_env`], but a new file is 0644 — it is meant
+/// to be committed and read by the team.
+///
+/// ⚠️ Renaming a temp file over `.env.example` replaced a symlink with a plain
+/// file, breaking monorepo and stow setups that link the template (I-122).
+fn write_template(path: &Path, content: &str) -> Result<()> {
+    let written = crate::core::safe_write::write_shared(path, content.as_bytes())
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    crate::core::safe_write::report(&written);
     Ok(())
 }
 
@@ -514,7 +508,7 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
 
         let mut content = fs::read_to_string(&paths.example)?;
         content.push_str(&format!("\n# {}\n", comment));
-        atomic_write(&paths.example, &content)?;
+        write_template(&paths.example, &content)?;
     }
 
     ui::success(format!(
@@ -605,7 +599,7 @@ fn handle_new_example_file(
     if use_placeholders {
         convert_to_example(paths, vars, config)?;
     } else {
-        atomic_write(&paths.example, &fs::read_to_string(&paths.env)?)?;
+        write_template(&paths.example, &fs::read_to_string(&paths.env)?)?;
     }
 
     ui::success(format!("Created {}", paths.example_str()));
@@ -846,7 +840,7 @@ fn handle_new_env_file(
         return Ok(true);
     }
 
-    atomic_write(&paths.env, &fs::read_to_string(&paths.example)?)?;
+    write_env(&paths.env, &fs::read_to_string(&paths.example)?)?;
     ui::success("Created .env");
     ui::warning("Replace placeholder values with real credentials!");
     ui::print_next_steps(&[
@@ -875,7 +869,7 @@ fn add_with_placeholders(
         content.push_str(&format!("{}={}\n", key, placeholder));
     }
 
-    atomic_write(&paths.example, &content)?;
+    write_template(&paths.example, &content)?;
     Ok(())
 }
 
@@ -915,7 +909,7 @@ fn add_with_actual_values(
         }
     }
 
-    atomic_write(&paths.example, &content)?;
+    write_template(&paths.example, &content)?;
     Ok(())
 }
 
@@ -956,7 +950,7 @@ fn add_interactively(
         content.push_str(&format!("{}={}\n", key, placeholder));
     }
 
-    atomic_write(&paths.example, &content)?;
+    write_template(&paths.example, &content)?;
     Ok(())
 }
 
@@ -993,7 +987,7 @@ fn convert_to_example(
         content.push_str(&format!("{}={}\n", key, placeholder));
     }
 
-    atomic_write(&paths.example, &content)?;
+    write_template(&paths.example, &content)?;
     Ok(())
 }
 
@@ -1045,7 +1039,7 @@ fn add_from_example(
         content.push_str(&format!("{}={}\n", key, value));
     }
 
-    atomic_write(&paths.env, &content)?;
+    write_env(&paths.env, &content)?;
     Ok(())
 }
 
@@ -1093,7 +1087,7 @@ fn add_from_example_interactive(
         content.push_str(&format!("{}={}\n", key, placeholder));
     }
 
-    atomic_write(&paths.env, &content)?;
+    write_env(&paths.env, &content)?;
     Ok(())
 }
 
@@ -1190,7 +1184,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let env_path = temp_dir.path().join(".env");
 
-        atomic_write(&env_path, "TEST=value\n").unwrap();
+        write_env(&env_path, "TEST=value\n").unwrap();
 
         #[cfg(unix)]
         {
@@ -1206,7 +1200,7 @@ mod tests {
         let nested_path = temp_dir.path().join("subdir").join(".env");
 
         // Should not panic even if subdir doesn't exist
-        let result = atomic_write(&nested_path, "TEST=value\n");
+        let result = write_env(&nested_path, "TEST=value\n");
         // This will fail because parent doesn't exist, but shouldn't panic
         assert!(result.is_err());
     }
@@ -1216,7 +1210,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let env_path = temp_dir.path().join(".env");
 
-        atomic_write(&env_path, "TEST=value\n").unwrap();
+        write_env(&env_path, "TEST=value\n").unwrap();
 
         #[cfg(unix)]
         {
@@ -1229,6 +1223,30 @@ mod tests {
                 ".env files must have restrictive permissions"
             );
         }
+    }
+
+    /// I-123, DEC-S7: a new template is 0644, and an existing file keeps the
+    /// mode its owner gave it.
+    #[test]
+    #[cfg(unix)]
+    fn t_i123_modes_new_template_0644_existing_kept() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = TempDir::new().unwrap();
+        let example = d.path().join(".env.example");
+        write_template(&example, "A=\n").unwrap();
+        assert_eq!(
+            fs::metadata(&example).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
+
+        let env = d.path().join(".env");
+        fs::write(&env, "A=1\n").unwrap();
+        fs::set_permissions(&env, fs::Permissions::from_mode(0o640)).unwrap();
+        write_env(&env, "A=2\n").unwrap();
+        assert_eq!(
+            fs::metadata(&env).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
     }
 
     // Preview helper tests

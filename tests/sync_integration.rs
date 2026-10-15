@@ -1165,3 +1165,28 @@ fn naming_convention_in_the_template_config_says_it_is_not_read() -> Result<()> 
     assert!(out.contains("--naming-policy"), "{out}");
     Ok(())
 }
+
+/// I-122, DEC-S6: a symlinked template is written through to its target, the
+/// link stays, and the output says so. It used to become a plain file.
+#[test]
+#[cfg(unix)]
+fn t_i122_a_symlinked_template_is_written_through() {
+    let d = TempDir::new().unwrap();
+    fs::create_dir(d.path().join("shared")).unwrap();
+    fs::write(d.path().join("shared/real.example"), "KEEP=1\n").unwrap();
+    std::os::unix::fs::symlink("shared/real.example", d.path().join(".env.example")).unwrap();
+    fs::write(d.path().join(".env"), "KEEP=1\nNEW_VAR=x\n").unwrap();
+
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["sync", "-f"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "wrote through .env.example -> shared/real.example",
+        ));
+    let link = fs::symlink_metadata(d.path().join(".env.example")).unwrap();
+    assert!(link.file_type().is_symlink(), "the link stays");
+    let real = fs::read_to_string(d.path().join("shared/real.example")).unwrap();
+    assert!(real.contains("NEW_VAR"), "{real}");
+}

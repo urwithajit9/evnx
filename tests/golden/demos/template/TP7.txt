@@ -5,13 +5,17 @@ $ evnx template --input config.tpl.yml --output link.yml --no-gitignore
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at link.yml
+Replaced link.yml
+· wrote through link.yml -> real/target.yml
 [stderr]
 
   Generate config from template
 
+! link.yml is readable by other users (mode 644); evnx keeps the mode you set
+     →  chmod 600 link.yml
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: KNOWN I-140: the symlink target is overwritten silently (exit 0)
+  ok: I-140 fixed (DEC-T12): the symlink is written through with a notice (exit 0)
 
 $ bash -c test -L link.yml && echo "link kept"; head -2 real/target.yml
 link kept
@@ -20,20 +24,29 @@ database:
 [exit 0]
 
 $ evnx template --input config.tpl.yml --output - --no-gitignore
-✓ Loaded 7 variables from .env
-✓ Read template from config.tpl.yml
-✓ Generated config at -
+database:
+  host: db.internal
+  port: 5432
+  ssl: yes
+  name: APP
+  title: App
+  flag: true
+secret: sk_live_abcdefghijklmnopqrstuvwx
+msg: "say \"hi\""
+opt: fallback
+empty: dflt
 [stderr]
 
   Generate config from template
 
+✓ Loaded 7 variables from .env
+✓ Read template from config.tpl.yml
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: KNOWN S-T1: --output - writes a FILE named - (exit 0)
+  ok: S-T1 done (DEC-T8): --output - prints to stdout and writes no file (exit 0)
 
 $ bash -c test -f ./- && echo "file named - exists"
-file named - exists
-[exit 0]
+[exit 1]
 
 $ evnx template --input config.tpl.yml --output nodir/x.yml --no-gitignore
 ✓ Loaded 7 variables from .env
@@ -42,7 +55,7 @@ $ evnx template --input config.tpl.yml --output nodir/x.yml --no-gitignore
 
   Generate config from template
 
-Error: Failed to write generated config to: nodir/x.yml: No such file or directory (os error 2)
+Error: Failed to write generated config to: nodir/x.yml: the directory nodir does not exist
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]

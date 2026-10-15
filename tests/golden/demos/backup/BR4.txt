@@ -4,30 +4,19 @@
 $ evnx backup --key-file pw --output odir
 ✓ Read 258 bytes from .env
 · Using key file for encryption (non-interactive mode)
-
-✓ Backup created successfully
-  Source  : .env
-  Backup  : odir
-  Size    : 620 bytes (encrypted + Base64)
-  Verified: no
-
-! Important:
-  • Keep your password (or key file) safe — it cannot be recovered
-  • Store the backup in a secure, separate location
-  • To restore: evnx restore odir --output .env
-  • Test the restore before deleting the original .env
 [stderr]
 
   evnx backup  Encrypt and back up your .env file
 
-  Docs: https://docs.evnx.dev/cli/commands/backup
-[exit 0]
-  ok: KNOWN I-146: an existing directory is renamed to odir.1 and a file takes its place (exit 0)
+Error: Failed to write backup file: odir exists and is not a regular file
+[exit 5]
+  ok: I-146 partly fixed (U2): an existing directory is refused and nothing is renamed; DEC-B3 wants exit 2 (open) (exit 5)
 
 $ stat -c %F %n odir odir.1
-regular file odir
-directory odir.1
-[exit 0]
+directory odir
+[stderr]
+stat: cannot stat 'odir.1': No such file or directory (os error 2)
+[exit 1]
 
 $ evnx backup src.env --key-file pw --output src.env
 ✓ Read 258 bytes from src.env
@@ -66,19 +55,32 @@ $ evnx backup --key-file pw --output nodir/x.bak
 
   evnx backup  Encrypt and back up your .env file
 
-Error: Failed to write backup file: could not open nodir/x.bak for writing — if it is a symlink, evnx refuses to write through it
+Error: Failed to write backup file: the directory nodir does not exist
 [exit 5]
-  ok: KNOWN I-152: missing directory; the message blames symlinks (exit 5)
+  ok: I-152 fixed (U2): a missing directory is named plainly (exit 5)
 
 $ evnx backup --key-file pw --output lnk.bak
 ✓ Read 258 bytes from .env
 · Using key file for encryption (non-interactive mode)
+· wrote through lnk.bak -> real.bak
+
+✓ Backup created successfully
+  Source  : .env
+  Backup  : lnk.bak
+  Size    : 620 bytes (encrypted + Base64)
+  Verified: no
+
+! Important:
+  • Keep your password (or key file) safe — it cannot be recovered
+  • Store the backup in a secure, separate location
+  • To restore: evnx restore lnk.bak --output .env
+  • Test the restore before deleting the original .env
 [stderr]
 
   evnx backup  Encrypt and back up your .env file
 
-Error: Failed to write backup file: could not open lnk.bak for writing — if it is a symlink, evnx refuses to write through it
-[exit 5]
-  ok: KNOWN I-151: a symlink output is refused; decided: write through with a notice (exit 5)
+  Docs: https://docs.evnx.dev/cli/commands/backup
+[exit 0]
+  ok: I-151 fixed (DEC-B7): a symlink output is written through with a notice (exit 0)
 
 ================ summary: 4 ok, 0 mismatch   ================

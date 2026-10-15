@@ -16,6 +16,8 @@ $ evnx sync -f --direction reverse
 
 ! .env has permissive permissions (0o644). Consider: chmod 600 .env
 · Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644); evnx keeps the mode you set
+     →  chmod 600 .env
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: reverse adds template-only keys (exit 0)

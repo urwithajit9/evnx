@@ -13,6 +13,7 @@ $ evnx sync -f
 └──────────────────────────────────────────────────────────────────────────────┘
 
 · Force mode: using placeholder values and skipping prompts
+· wrote through .env.example -> shared/real.example
 ✓ Added 5 variables to .env.example
 [stderr]
 
@@ -26,10 +27,17 @@ $ evnx sync -f
   ok: template is a symlink (exit 0)
 
 $ bash -c test -L .env.example && echo "still a symlink" || echo "REPLACED by a regular file"; cat shared/real.example
-REPLACED by a regular file
+still a symlink
 KEEP=1
+
+# Synced from .env
+DATABASE_URL=YOUR_URL_HERE
+API_SECRET=YOUR_KEY_HERE
+API_PORT=8000
+NEW_FEATURE=YOUR_VALUE_HERE
+stripe_key=YOUR_KEY_HERE
 [exit 0]
-KNOWN I-122: the link is replaced and its target untouched; decided: write through to the target
+I-122 fixed (DEC-S6): the link stays and its target is written
 
 $ evnx sync -f
 
@@ -52,9 +60,9 @@ $ evnx sync -f
 [exit 0]
 
 $ bash -c stat -c "%n mode %a (was 644)" .env.example .env
-.env.example mode 600 (was 644)
+.env.example mode 644 (was 644)
 .env mode 644 (was 644)
 [exit 0]
-KNOWN I-123: template becomes 600 by accident of the temp file, and a written .env is forced to 600 (reverse); decided: preserve existing modes, new template 644, new .env 600
+I-123 fixed (DEC-S7): existing modes are kept; a new template is 644, a new .env 600
 
 ================ summary: 1 ok, 0 mismatch   ================

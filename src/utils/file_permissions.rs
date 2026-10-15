@@ -33,6 +33,11 @@ use std::path::Path;
 ///   somebody else's file is otherwise a way to have evnx write secrets there.
 /// * **`set_permissions` after opening**, which applies to the file that is
 ///   actually open rather than only to one being created.
+#[deprecated(
+    since = "0.10.3",
+    note = "use `core::safe_write::write_private`: atomic, symlinks written through, \
+            existing mode kept with a warning (C-04, DEC-G6)"
+)]
 pub fn write_secure<P: AsRef<Path>>(path: P, content: &[u8]) -> Result<()> {
     let path = path.as_ref();
 
@@ -86,6 +91,7 @@ pub fn describe_permissions() -> &'static str {
     }
 }
 
+#[allow(deprecated)] // tests of the deprecated function itself
 #[cfg(test)]
 mod tests {
     use super::*;

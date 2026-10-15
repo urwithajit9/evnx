@@ -281,9 +281,9 @@ pub fn apply(
         if example_path.exists() {
             let existing = read(&example_path)?;
             let tail = in_line_endings_of(&existing, format!("\n{addition}"));
-            write(&example_path, format!("{}{tail}", existing.trim_end()))?;
+            write_shared(&example_path, format!("{}{tail}", existing.trim_end()))?;
         } else {
-            write(&example_path, format!("{}\n", addition.trim()))?;
+            write_shared(&example_path, format!("{}\n", addition.trim()))?;
         }
         if verbose {
             println!(
@@ -305,7 +305,7 @@ pub fn apply(
             let tail = in_line_endings_of(&existing, format!("\n\n{body}\n"));
             format!("{}{tail}", existing.trim_end())
         };
-        write(&env_path, updated)?;
+        write_private(&env_path, updated)?;
         applied.env_committable = env_is_committable(output_path);
         if announce && applied.env_committable {
             warn_env_is_committable();
@@ -352,8 +352,21 @@ fn read(path: &Path) -> Result<String> {
     fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))
 }
 
-fn write(path: &Path, content: String) -> Result<()> {
-    fs::write(path, content).with_context(|| format!("Failed to write {}", path.display()))
+/// `.env.example`: shared, a new file 0644 (core::safe_write).
+fn write_shared(path: &Path, content: String) -> Result<()> {
+    let w = crate::core::safe_write::write_shared(path, content.as_bytes())
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    crate::core::safe_write::report(&w);
+    Ok(())
+}
+
+/// `.env`: holds real values, a new file 0600; an existing one keeps its mode
+/// and is reported when others can read it (G9, DEC-G6).
+fn write_private(path: &Path, content: String) -> Result<()> {
+    let w = crate::core::safe_write::write_private(path, content.as_bytes())
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    crate::core::safe_write::report(&w);
+    Ok(())
 }
 
 /// How one subcommand asks and talks, for [`confirm_and_apply`].

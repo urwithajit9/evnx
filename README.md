@@ -362,6 +362,11 @@ evnx template \
   --env .env
 ```
 
+The output usually holds real values, so a new file is created readable by you
+only (0600; `--mode 0640` to choose another). An existing output is replaced and
+keeps its mode. `--output -` prints to stdout instead of writing a file. The
+template and the env file are never overwritten.
+
 Supported inline filters:
 
 ```yaml

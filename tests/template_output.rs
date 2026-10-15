@@ -1,0 +1,192 @@
+//! How `evnx template` writes its output (U2 part 2).
+//!
+//! The rendered file holds real values. It used to be written with `fs::write`:
+//! 0644 (I-130), over the template itself when `--output` named it (I-131), and
+//! through a symlink without a word (I-140). Now it goes through
+//! `core::safe_write`:
+//!
+//! - a new output is 0600; `--mode` sets another on request (DEC-T6, DEC-G6);
+//! - an existing output is replaced, keeps its mode and says `Replaced FILE`
+//!   (DEC-T4), with a warning if others can read it (DEC-G6);
+//! - the template and the env file are never the output, by any name (DEC-T4);
+//! - a symlink is written through with a notice (DEC-T12);
+//! - `--output -` prints the rendered text on stdout and nothing else (DEC-T8).
+
+mod support;
+
+use support::{run, Project};
+
+fn project() -> Project {
+    Project::new()
+        .env("DB_HOST=db.internal\nDB_PASSWORD=s3cr3t\n")
+        .file(
+            "config.tpl",
+            "host: {{DB_HOST}}\npassword: {{DB_PASSWORD}}\n",
+        )
+}
+
+const RENDER: &[&str] = &[
+    "template",
+    "--input",
+    "config.tpl",
+    "--output",
+    "out.yml",
+    "--no-gitignore",
+];
+
+fn with<'a>(extra: &[&'a str]) -> Vec<&'a str> {
+    let mut v: Vec<&str> = RENDER.to_vec();
+    v.extend_from_slice(extra);
+    v
+}
+
+#[cfg(unix)]
+fn mode(p: &Project, name: &str) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(p.join(name))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777
+}
+
+#[test]
+#[cfg(unix)]
+fn t_i130_a_new_output_is_private() {
+    let p = project();
+    run(p.path(), RENDER).assert_code(0);
+    assert_eq!(mode(&p, "out.yml"), 0o600);
+    assert!(p.read("out.yml").contains("s3cr3t"));
+}
+
+#[test]
+#[cfg(unix)]
+fn t_dec_t6_mode_sets_the_mode_new_or_existing() {
+    let p = project();
+    run(p.path(), &with(&["--mode", "0640"])).assert_code(0);
+    assert_eq!(mode(&p, "out.yml"), 0o640);
+    std::fs::set_permissions(
+        p.join("out.yml"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o600),
+    )
+    .unwrap();
+    run(p.path(), &with(&["--mode", "644"])).assert_code(0);
+    assert_eq!(mode(&p, "out.yml"), 0o644);
+}
+
+#[test]
+fn t_dec_t6_a_bad_mode_is_refused() {
+    let p = project();
+    for bad in ["999", "rw-r--r--", "07777"] {
+        run(p.path(), &with(&["--mode", bad])).assert_code(2);
+    }
+    assert!(!p.exists("out.yml"));
+}
+
+#[test]
+#[cfg(unix)]
+fn t_dec_t4_an_existing_output_is_replaced_and_keeps_its_mode() {
+    let p = project().file("out.yml", "old\n").mode("out.yml", 0o644);
+    let out = run(p.path(), RENDER);
+    out.assert_code(0).assert_contains("Replaced out.yml");
+    assert_eq!(mode(&p, "out.yml"), 0o644, "DEC-G6");
+    assert!(
+        out.stderr.contains("readable by other users"),
+        "{}",
+        out.stderr
+    );
+    assert!(p.read("out.yml").contains("db.internal"));
+}
+
+#[test]
+fn t_i131_the_template_is_never_the_output() {
+    let p = project();
+    let before = p.read("config.tpl");
+    run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "config.tpl",
+            "--output",
+            "./config.tpl",
+            "--no-gitignore",
+        ],
+    )
+    .assert_code(2)
+    .assert_contains("same file");
+    assert_eq!(p.read("config.tpl"), before);
+}
+
+#[test]
+fn t_i131_the_env_file_is_never_the_output() {
+    let p = project();
+    let before = p.read(".env");
+    run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "config.tpl",
+            "--output",
+            ".env",
+            "--no-gitignore",
+        ],
+    )
+    .assert_code(2)
+    .assert_contains("same file");
+    assert_eq!(p.read(".env"), before);
+}
+
+#[test]
+#[cfg(unix)]
+fn t_i131_the_template_by_another_name_is_refused() {
+    let p = project();
+    std::os::unix::fs::symlink("config.tpl", p.join("link.yml")).unwrap();
+    std::fs::hard_link(p.join("config.tpl"), p.join("hard.yml")).unwrap();
+    let before = p.read("config.tpl");
+    for out in ["link.yml", "hard.yml"] {
+        run(
+            p.path(),
+            &[
+                "template",
+                "--input",
+                "config.tpl",
+                "--output",
+                out,
+                "--no-gitignore",
+            ],
+        )
+        .assert_code(2)
+        .assert_contains("same file");
+    }
+    assert_eq!(p.read("config.tpl"), before);
+}
+
+#[test]
+#[cfg(unix)]
+fn t_i140_a_symlinked_output_is_written_through() {
+    let p = project().dir("deploy");
+    std::fs::write(p.join("deploy/real.yml"), "old\n").unwrap();
+    std::os::unix::fs::symlink("deploy/real.yml", p.join("out.yml")).unwrap();
+    run(p.path(), RENDER)
+        .assert_code(0)
+        .assert_contains("wrote through out.yml -> deploy/real.yml");
+    assert!(std::fs::symlink_metadata(p.join("out.yml"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(p.read("deploy/real.yml").contains("db.internal"));
+}
+
+#[test]
+fn t_dec_t8_output_dash_prints_only_the_rendered_text() {
+    let p = project();
+    let out = run(
+        p.path(),
+        &["template", "--input", "config.tpl", "--output", "-"],
+    );
+    out.assert_code(0);
+    assert_eq!(out.stdout, "host: db.internal\npassword: s3cr3t\n");
+    assert!(!p.exists("-"), "no file named -");
+}

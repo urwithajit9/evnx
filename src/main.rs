@@ -384,6 +384,7 @@ fn main() -> Result<()> {
             gitignore,
             no_gitignore,
             strict,
+            mode: file_mode,
         } => {
             let mode = if gitignore {
                 commands::template::GitignoreMode::Auto
@@ -398,7 +399,7 @@ fn main() -> Result<()> {
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
             );
-            commands::template::run(input, output, env, cli.verbose, mode, strict)
+            commands::template::run_with(input, output, env, cli.verbose, mode, strict, file_mode)
         }
 
         // #[cfg(feature = "backup")]

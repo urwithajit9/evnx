@@ -52,11 +52,14 @@ $ evnx template --input config.tpl.yml --output out4.yml --gitignore
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at out4.yml
+Replaced out4.yml
 ✓ Added 'out4.yml' to .gitignore
 [stderr]
 
   Generate config from template
 
+! out4.yml is readable by other users (mode 644); evnx keeps the mode you set
+     →  chmod 600 out4.yml
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: KNOWN O-8: already tracked: added to .gitignore, no word that it stays tracked (exit 0)

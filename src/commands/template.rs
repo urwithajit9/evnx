@@ -89,6 +89,9 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::fs;
 use std::io::IsTerminal;
+use std::path::Path;
+
+use colored::Colorize;
 
 use crate::core::gitignore::{self, GitignoreStatus};
 use crate::core::Parser;
@@ -303,6 +306,50 @@ pub fn run(
     gitignore_mode: GitignoreMode,
     strict: bool,
 ) -> Result<()> {
+    run_with(input, output, env, verbose, gitignore_mode, strict, None)
+}
+
+/// [`run`] with a file mode for the output (`--mode`, DEC-T6). `None`: a new
+/// output is 0600 and an existing one keeps its mode (DEC-G6).
+///
+/// `output` of `-` prints the rendered text on stdout and writes no file
+/// (DEC-T8); status lines then go to stderr.
+pub fn run_with(
+    input: String,
+    output: String,
+    env: String,
+    verbose: bool,
+    gitignore_mode: GitignoreMode,
+    strict: bool,
+    file_mode: Option<u32>,
+) -> Result<()> {
+    let to_stdout = output == "-";
+    // With `--output -` stdout is the rendered file, so a status line there
+    // would end up inside it (DEC-T8).
+    let status = |msg: String| {
+        if to_stdout {
+            if !ui::is_quiet() {
+                eprintln!("{} {}", ui::glyph::OK.green(), msg);
+            }
+        } else {
+            ui::success(msg);
+        }
+    };
+
+    // ⛔ Before anything is read: the template or the env file named as the
+    // output, by any path, symlink or hard link, would be replaced by the
+    // rendered result — real values in, the template gone (I-131, DEC-T4).
+    if !to_stdout {
+        for (what, path) in [("template", &input), ("env file", &env)] {
+            if crate::core::safe_write::same_file(Path::new(path), Path::new(&output)) {
+                anyhow::bail!(
+                    "--output '{output}' is the same file as the {what} '{path}'. \
+                     Nothing was written; choose another --output."
+                );
+            }
+        }
+    }
+
     if verbose {
         ui::verbose_stderr("Running template in verbose mode");
     }
@@ -315,7 +362,7 @@ pub fn run(
         .parse_file(&env)
         .with_context(|| format!("Failed to parse environment file: {}", env))?;
 
-    ui::success(format!(
+    status(format!(
         "Loaded {} variables from {}",
         env_file.vars.len(),
         env
@@ -325,7 +372,7 @@ pub fn run(
     let template_content = fs::read_to_string(&input)
         .with_context(|| format!("Failed to read template file: {}", input))?;
 
-    ui::success(format!("Read template from {}", input));
+    status(format!("Read template from {}", input));
 
     // Detect undefined variables and warn
     let undefined = detect_undefined_vars(&template_content, &env_file.vars);
@@ -358,11 +405,26 @@ pub fn run(
     let result = process_template(&template_content, &env_file.vars)
         .context("Failed to process template substitutions")?;
 
-    // Write output
-    fs::write(&output, &result)
-        .with_context(|| format!("Failed to write generated config to: {}", output))?;
+    if to_stdout {
+        print!("{result}");
+        // No file, so nothing to protect in .gitignore (DEC-T8).
+        ui::print_docs_hint(&docs::TEMPLATE);
+        return Ok(());
+    }
+
+    // Write output: new 0600, existing keeps its mode, atomic, symlinks written
+    // through (I-130, I-140, core::safe_write).
+    let written = match file_mode {
+        Some(m) => crate::core::safe_write::write_with_mode(&output, result.as_bytes(), m),
+        None => crate::core::safe_write::write_private(&output, result.as_bytes()),
+    }
+    .with_context(|| format!("Failed to write generated config to: {}", output))?;
 
     ui::success(format!("Generated config at {}", output));
+    if written.replaced {
+        ui::say(format!("Replaced {output}"));
+    }
+    crate::core::safe_write::report(&written);
 
     if !undefined.is_empty() {
         ui::info(format!(

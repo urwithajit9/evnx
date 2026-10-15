@@ -72,19 +72,46 @@ pub fn write_with_mode(path: impl AsRef<Path>, bytes: &[u8], mode: u32) -> Resul
     write(path.as_ref(), bytes, Mode::Always(mode), false)
 }
 
+/// Stage a private write: the bytes are in a temp file beside the target, and
+/// nothing visible has changed until [`Staged::commit`]. For callers that must
+/// do something between the two — `backup` rotates old copies only once the new
+/// one is safely on disk (DEC-B7, I-150).
+pub fn stage_private(path: impl AsRef<Path>, bytes: &[u8]) -> Result<Staged> {
+    stage(
+        path.as_ref(),
+        bytes,
+        Mode::NewOnly(permissions::PRIVATE),
+        true,
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
 enum Mode {
     NewOnly(u32),
     Always(u32),
 }
 
+/// A write that has been prepared but not made visible. Dropping it without
+/// [`commit`](Staged::commit) deletes the temp file and leaves the target as it
+/// was.
+#[derive(Debug)]
+pub struct Staged {
+    tmp: tempfile::NamedTempFile,
+    path: PathBuf,
+    target: PathBuf,
+    dir: PathBuf,
+    through_link: bool,
+    mode: Mode,
+    holds_secrets: bool,
+}
+
 fn write(path: &Path, bytes: &[u8], mode: Mode, holds_secrets: bool) -> Result<Written> {
+    stage(path, bytes, mode, holds_secrets)?.commit()
+}
+
+fn stage(path: &Path, bytes: &[u8], mode: Mode, holds_secrets: bool) -> Result<Staged> {
     let (target, through_link) = resolve(path)?;
-    let existing = match std::fs::metadata(&target) {
-        Ok(m) if m.is_file() => Some(m),
-        Ok(_) => bail!("{} exists and is not a regular file", target.display()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(e).with_context(|| format!("reading {}", target.display())),
-    };
+    existing_file(&target)?;
 
     let dir = match target.parent() {
         Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
@@ -104,35 +131,65 @@ fn write(path: &Path, bytes: &[u8], mode: Mode, holds_secrets: bool) -> Result<W
         .and_then(|_| tmp.as_file().sync_all())
         .with_context(|| format!("could not write {}", target.display()))?;
 
-    let final_mode = match (&mode, &existing) {
-        (Mode::Always(m), _) => Some(*m),
-        (Mode::NewOnly(_), Some(meta)) => existing_mode(meta),
-        (Mode::NewOnly(m), None) => Some(*m),
-    };
-    #[cfg(unix)]
-    if let Some(m) = final_mode {
-        use std::os::unix::fs::PermissionsExt;
-        tmp.as_file()
-            .set_permissions(std::fs::Permissions::from_mode(m))
-            .with_context(|| format!("could not set the mode of {}", target.display()))?;
-    }
-
-    tmp.persist(&target)
-        .map_err(|e| e.error)
-        .with_context(|| format!("could not replace {}", target.display()))?;
-    sync_dir(&dir);
-
-    let loose_mode = match (holds_secrets, &existing, final_mode) {
-        (true, Some(_), Some(m)) if permissions::MODES_APPLY && m & 0o077 != 0 => Some(m),
-        _ => None,
-    };
-    Ok(Written {
+    Ok(Staged {
+        tmp,
         path: path.to_path_buf(),
         target,
+        dir,
         through_link,
-        replaced: existing.is_some(),
-        loose_mode,
+        mode,
+        holds_secrets,
     })
+}
+
+/// The file at `target`, if one exists; an error if something else is there.
+fn existing_file(target: &Path) -> Result<Option<std::fs::Metadata>> {
+    match std::fs::metadata(target) {
+        Ok(m) if m.is_file() => Ok(Some(m)),
+        Ok(_) => bail!("{} exists and is not a regular file", target.display()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("reading {}", target.display())),
+    }
+}
+
+impl Staged {
+    /// Make the write visible: rename the temp file over the target. The mode
+    /// is decided here, against what is at the target **now** — after a
+    /// rotation moved the old file away, the new one is a new file.
+    pub fn commit(self) -> Result<Written> {
+        let existing = existing_file(&self.target)?;
+        let final_mode = match (self.mode, &existing) {
+            (Mode::Always(m), _) => Some(m),
+            (Mode::NewOnly(_), Some(meta)) => existing_mode(meta),
+            (Mode::NewOnly(m), None) => Some(m),
+        };
+        #[cfg(unix)]
+        if let Some(m) = final_mode {
+            use std::os::unix::fs::PermissionsExt;
+            self.tmp
+                .as_file()
+                .set_permissions(std::fs::Permissions::from_mode(m))
+                .with_context(|| format!("could not set the mode of {}", self.target.display()))?;
+        }
+
+        self.tmp
+            .persist(&self.target)
+            .map_err(|e| e.error)
+            .with_context(|| format!("could not replace {}", self.target.display()))?;
+        sync_dir(&self.dir);
+
+        let loose_mode = match (self.holds_secrets, &existing, final_mode) {
+            (true, Some(_), Some(m)) if permissions::MODES_APPLY && m & 0o077 != 0 => Some(m),
+            _ => None,
+        };
+        Ok(Written {
+            path: self.path,
+            target: self.target,
+            through_link: self.through_link,
+            replaced: existing.is_some(),
+            loose_mode,
+        })
+    }
 }
 
 /// Follow `path` while it is a symlink. A dangling link resolves to the file it
@@ -264,6 +321,22 @@ mod tests {
         std::fs::create_dir(d.path().join("out")).unwrap();
         let err = write_private(d.path().join("out"), b"x").unwrap_err();
         assert!(format!("{err:#}").contains("not a regular file"), "{err:#}");
+    }
+
+    #[test]
+    fn a_staged_write_changes_nothing_until_commit() {
+        let d = TempDir::new().unwrap();
+        let p = d.path().join("out");
+        std::fs::write(&p, "old").unwrap();
+        let staged = stage_private(&p, b"new").unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "old");
+        staged.commit().unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "new");
+
+        // Dropped without commit: target untouched, no temp file left.
+        drop(stage_private(&p, b"never").unwrap());
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "new");
+        assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 1);
     }
 
     #[cfg(unix)]

@@ -26,6 +26,49 @@ command's output is locked in CI before any module changes it.
 - A symlinked FILE is written through to its target, and the link stays.
 - A missing output directory says so in one line.
 
+### ⛔ Security — files holding secrets were created readable by everyone
+
+Every file evnx writes now goes through one writer (`core::safe_write`): written
+to a temp file beside it and renamed into place, so a crash leaves the old file
+or the new one, never half of either.
+
+- **`template`**: the rendered file is created 0600 (it was 0644 while holding
+  real values, I-130). `--output` naming the template or the env file — by path,
+  symlink or hard link — is refused and nothing is written (it used to replace
+  the template with real values, I-131). An existing output is replaced with
+  `Replaced FILE` (I-132). New `--mode 0640` sets a mode on request.
+  `--output -` prints the rendered text on stdout and writes no file; it used to
+  write a file named `-` (DEC-T8).
+- **`init` and `add`** create `.env` 0600 and `.env.example` 0644 (I-237). `doctor`
+  no longer warns about the `.env` that `init` just made.
+- **`backup`**: rotation of older backups happens only after the new one is on
+  disk; a failure before then leaves your previous backup where it was (I-150).
+  An existing directory at `--output` is refused and no longer renamed aside
+  (part of I-146).
+- **`restore`** replaces its output atomically; a crash could leave a half-written
+  `.env` (I-151).
+
+### Changed — symlinks and existing file modes
+
+⚠️ **One rule now, in every command:** a symlink at the output is written
+through to its target and the link stays, with `· wrote through LINK -> TARGET`;
+an existing file keeps the mode you gave it (DEC-S6, DEC-S7, DEC-B7, DEC-G6).
+
+- `sync` used to replace a symlinked `.env.example` with a plain file (I-122), and
+  forced 0600 on a `.env` you had set to 0640 (I-123). A new `.env.example` from
+  `sync` is now 0644 (it came out 0600 by accident).
+- `backup` and `restore` refused a symlinked output; they now write through it.
+- `restore` over an existing `.env` used to force it to 0600; it now keeps its
+  mode. When a file that holds secrets is readable by other users, evnx warns
+  and names `chmod 600 FILE` instead of changing it.
+
+### Security — dependency
+
+- `rustls` 0.23.45 → 0.23.46 (through `reqwest`, used by the cloud commands,
+  `migrate --to github-actions` and `update`): RUSTSEC-2026-0346 (`Debug` output of
+  client session values exposed TLS secrets, medium), -0347, -0348, -0349 (low).
+  Landed in #170; this entry was missing there.
+
 ### Changed — what goes to stdout and what to stderr
 
 ⚠️ **Scripts that read stderr or stdout line by line should check this.**
@@ -72,6 +115,10 @@ and read a success line must check the exit code instead.
   `same_file`, `report`, `Written`) and `core::permissions` (`is_private`,
   `make_private`, `mode`, `PRIVATE`, `SHARED`, `MODES_APPLY`) — the one way evnx
   writes files (C-04).
+- `core::safe_write::stage_private` and `Staged::commit`: prepare a write, do
+  something else (backup rotates), then make it visible.
+- `commands::template::run_with` adds the output's file mode; `run` is unchanged.
+- `utils::write_secure` is deprecated in favour of `core::safe_write::write_private`.
 - `commands::convert::ConvertConfig` has a new public field `force` (and
   `ConfigBuilder::force`). Code that builds the struct literally must add it;
   the builder and `Default` are unaffected.
@@ -102,6 +149,8 @@ and read a success line must check the exit code instead.
   binaries, and lists every line that moved.
 - `tests/convert_output.rs` (8 tests) pins how `convert -o` writes: mode, refusal
   without `--force`, same file by path/symlink/hard link, write-through, `-q`.
+- `tests/template_output.rs` (9), `tests/env_modes.rs` (4, T-INIT-27), a sync
+  symlink test and backup/sync unit tests pin the writer's rules per command.
 - `tests/quiet_walk.rs` (T-SHARE-60) reads every command from `evnx commands
   --json`: each one has a `-q` success case that must print nothing, or a stated
   reason it has none. A new command fails the test until it is classified.
