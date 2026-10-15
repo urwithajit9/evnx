@@ -311,6 +311,7 @@ fn main() -> Result<()> {
             dry_run: opts.dry_run,
             skip_existing: opts.skip_existing,
             overwrite: opts.overwrite,
+            yes: opts.yes,
             verbose: cli.verbose,
             include: opts.include.clone(),
             exclude: opts.exclude.clone(),

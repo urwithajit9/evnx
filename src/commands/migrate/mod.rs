@@ -52,6 +52,7 @@ pub struct MigrateArgs {
     pub dry_run: bool,
     pub skip_existing: bool,
     pub overwrite: bool,
+    pub yes: bool,
     pub verbose: bool,
 
     // ── Filtering / key transforms ────────────────────────────────────────
@@ -160,6 +161,7 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         dry_run: args.dry_run,
         skip_existing: args.skip_existing,
         overwrite: args.overwrite,
+        yes: args.yes,
         verbose: args.verbose,
         include: args.include.clone(),
         exclude: args.exclude.clone(),

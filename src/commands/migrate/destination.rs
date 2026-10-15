@@ -112,6 +112,8 @@ pub struct MigrationOptions {
     pub skip_existing: bool,
     /// Silently overwrite secrets that already exist.
     pub overwrite: bool,
+    /// `--yes`: do not ask before uploading. Never implies `overwrite`.
+    pub yes: bool,
     /// Emit extra diagnostic output.
     pub verbose: bool,
 

@@ -3,7 +3,7 @@
 //! Moved here from `commands/init/shared.rs` in 0.10.2 so `add` follows the
 //! same rules as `init` instead of a copy of them. `init` re-exports both.
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 /// Stop before a confirmation prompt that cannot be shown.
 ///
@@ -21,9 +21,25 @@ pub fn require_terminal(example: &str) -> Result<()> {
 pub fn require_terminal_or(hint: &str) -> Result<()> {
     use std::io::IsTerminal;
     if !std::io::stdin().is_terminal() {
-        bail!("there is no terminal to confirm with.\n\n{hint}");
+        return Err(NoTerminal {
+            hint: hint.to_string(),
+        }
+        .into());
     }
     Ok(())
+}
+
+/// A prompt was needed and there was no terminal to show it on.
+///
+/// `main` reports it like any other error — exit 2, "No verdict" — and `hint`
+/// names the flag that makes the question unnecessary. Typed so a caller can
+/// tell it apart (`err.downcast_ref::<NoTerminal>()`) from a prompt that failed
+/// for another reason.
+#[derive(Debug, thiserror::Error)]
+#[error("there is no terminal to confirm with.\n\n{hint}")]
+pub struct NoTerminal {
+    /// What to do instead, usually the same command with `--yes`.
+    pub hint: String,
 }
 
 /// A yes/no question that is answered on Enter, not on the first keystroke.

@@ -232,6 +232,14 @@ pub struct MigrateOptions {
     #[arg(long)]
     pub overwrite: bool,
 
+    /// Upload without asking "Proceed with migration?" (github-actions).
+    ///
+    /// For CI. Without a terminal and without `--yes` the upload stops before
+    /// contacting GitHub (exit 2). ⚠️ It does not answer "overwrite?": a secret
+    /// that already exists still needs `--overwrite` or `--skip-existing`.
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+
     // ── Filtering / key transforms ────────────────────────────────────────────
     /// Comma-separated glob patterns — only migrate matching keys.
     /// Example: --include "DB_*,AWS_*"

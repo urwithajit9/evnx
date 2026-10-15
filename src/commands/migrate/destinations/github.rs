@@ -19,9 +19,9 @@
 //! "not empty", both of which the placeholder satisfied. A ciphertext test has to
 //! decrypt.
 
+use crate::utils::prompt;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
-use dialoguer::Confirm;
 use indexmap::IndexMap;
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -103,6 +103,19 @@ impl MigrationDestination for GitHubDestination {
             crate::utils::ui::glyph::INFO.cyan()
         );
 
+        // ── Ask first, or refuse (I-109) ──────────────────────────────────────
+        // ⚠️ Before any request. Without a terminal the confirmation below
+        // cannot be shown, and there was no `--yes`, so an upload could not run
+        // in CI at all — it failed with dialoguer's "not a terminal" after
+        // already listing the repository's secrets.
+        if !opts.dry_run && !opts.yes {
+            prompt::require_terminal_or(&format!(
+                "Add --yes to upload without asking:\n  \
+                 evnx migrate --to github-actions --repo {} --yes",
+                self.repository
+            ))?;
+        }
+
         // ── Fetch existing secrets (skip in dry-run to avoid network calls) ──
         let existing: Vec<String> = if !opts.dry_run {
             fetch_existing_secrets(&self.api_base, &self.repository, &self.token, opts.verbose)?
@@ -114,17 +127,21 @@ impl MigrationDestination for GitHubDestination {
         let mut to_upload: Vec<(String, String)> = Vec::new();
         let mut to_skip: Vec<String> = Vec::new();
         let mut conflicts: Vec<String> = Vec::new();
+        let mut undecided: Vec<&str> = Vec::new();
 
         for (key, value) in secrets {
             if existing.contains(key) {
                 if opts.skip_existing {
                     to_skip.push(key.clone());
-                // FIX: Merge identical branches to resolve clippy::if_same_then_else
+                } else if opts.yes && !opts.overwrite {
+                    // `--yes` answers "Proceed?", never "replace this secret?".
+                    undecided.push(key);
                 } else if opts.overwrite
-                    || Confirm::new()
+                    || prompt::yes_no()
                         .with_prompt(format!("Overwrite existing secret '{}'?", key))
                         .default(false)
-                        .interact()?
+                        .interact_opt()?
+                        .unwrap_or(false)
                 {
                     to_upload.push((key.clone(), value.clone()));
                     conflicts.push(key.clone());
@@ -134,6 +151,18 @@ impl MigrationDestination for GitHubDestination {
             } else {
                 to_upload.push((key.clone(), value.clone()));
             }
+        }
+
+        if !undecided.is_empty() {
+            anyhow::bail!(
+                "{} already exist{} in {}: {}.\n\n\
+                 --yes does not replace secrets. Add --overwrite to replace them \
+                 or --skip-existing to leave them. Nothing was uploaded.",
+                undecided.len(),
+                if undecided.len() == 1 { "s" } else { "" },
+                self.repository,
+                undecided.join(", ")
+            );
         }
 
         // ── Print plan ────────────────────────────────────────────────────────
@@ -162,12 +191,15 @@ impl MigrationDestination for GitHubDestination {
         }
 
         // ── Confirm ───────────────────────────────────────────────────────────
-        if !Confirm::new()
-            .with_prompt("Proceed with migration?")
-            .default(true)
-            .interact()?
+        // Answered on Enter (N-09); Esc cancels like "no".
+        if !opts.yes
+            && !prompt::yes_no()
+                .with_prompt("Proceed with migration?")
+                .default(true)
+                .interact_opt()?
+                .unwrap_or(false)
         {
-            println!("{} Migration cancelled.", "·".cyan());
+            println!("{} Cancelled. Nothing was uploaded.", "·".cyan());
             return Ok(MigrationResult::default());
         }
 

@@ -325,9 +325,13 @@ evnx sync --direction reverse
 Migrates secrets directly to cloud secret managers.
 
 ```bash
-# GitHub Actions secrets
+# GitHub Actions secrets (asks before uploading)
 evnx migrate --from env-file --to github-actions \
   --repo owner/repo --github-token $GITHUB_TOKEN
+
+# The same in CI: --yes skips the question; existing secrets still need
+# --overwrite or --skip-existing. Exit 1 if any upload failed.
+evnx migrate --from env-file --to github-actions --repo owner/repo --yes --skip-existing
 
 # AWS Secrets Manager
 evnx migrate --to aws-secrets-manager --secret-name prod/myapp/config

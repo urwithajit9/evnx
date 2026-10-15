@@ -117,6 +117,18 @@ not run — no verdict". Four places broke that:
   like every other command; `sync --check`'s own "evnx could not check:" line
   is replaced by the shared `Error:` line.
 
+### Added — `migrate --to github-actions` runs unattended
+
+- **`--yes` (`-y`) uploads without asking "Proceed with migration?"** (I-109).
+  Without a terminal and without `--yes`, the upload now stops before contacting
+  GitHub, exit 2, and names `--yes`; it used to fail with "not a terminal" after
+  listing the repository's secrets, so it could not run in CI at all.
+- `--yes` never replaces a secret that already exists: with neither
+  `--overwrite` nor `--skip-existing` the run lists them and uploads nothing
+  (exit 2).
+- At a terminal both questions are answered on Enter, like every other yes/no
+  prompt, and Esc cancels: "Cancelled. Nothing was uploaded."
+
 ### Changed — one placeholder rule, with the variable's name
 
 `validate` and `scan` each kept their own list of placeholder values, and they
@@ -228,6 +240,11 @@ and read a success line must check the exit code instead.
   ⚠️ `commands::sync::run` and `commands::migrate::run` return
   `Result<Verdict>` instead of `Result<()>` and no longer exit the process;
   `sync::EXIT_*` are now aliases of the `core::verdict` constants.
+- New: `utils::prompt::NoTerminal`, the typed error `require_terminal` and
+  `require_terminal_or` return (same message as before).
+- `commands::migrate::MigrateArgs` and `MigrationOptions` have a new public
+  field `yes`. `MigrationOptions` literals with `..Default::default()` are
+  unaffected; a full `MigrateArgs` literal must add it.
 
 ### Fixed
 
@@ -272,6 +289,9 @@ and read a success line must check the exit code instead.
   (2, Unix) drives `migrate --to github-actions` against a local mock of the
   GitHub API and pins I-106; `tests/architecture.rs` adds that `sync` and
   `migrate` never call `process::exit` themselves.
+- `tests/migrate_exit.rs` adds I-109 (no terminal without and with `--yes`,
+  existing secrets under `--yes`, Esc at the confirmation) and T-MIG-28
+  (`--skip-existing`), all against the mock GitHub API.
 
 ## [0.10.2] - 2026-10-14
 

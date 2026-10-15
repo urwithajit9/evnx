@@ -283,6 +283,7 @@ mod tests {
             dry_run: false,
             skip_existing: false,
             overwrite: false,
+            yes: false,
             verbose: false,
             include: None,
             exclude: None,
