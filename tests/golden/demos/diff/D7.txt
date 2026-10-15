@@ -3,19 +3,19 @@
 
 $ evnx diff --format patch
 # Add these to .env:
-+ REDIS_URL=redis://localhost:6379
-+ FEATURE_X=false
++ REDIS_URL=<withheld>
++ FEATURE_X=<withheld>
 
 # Remove these from .env:
-- EXTRA_DEBUG=1
+- EXTRA_DEBUG=<withheld>
 
 # Update these in .env:
-- DATABASE_URL=postgres://admin:s3cr3tPassw0rd@db.internal:5432/app
-+ DATABASE_URL=postgres://user:pass@localhost:5432/app
-- API_SECRET=real-secret-value-123456
-+ API_SECRET=generate-me
-- API_PORT=9090
-+ API_PORT=8080
+- DATABASE_URL=<withheld>
++ DATABASE_URL=<withheld>
+- API_SECRET=<withheld>
++ API_SECRET=<withheld>
+- API_PORT=<withheld>
++ API_PORT=<withheld>
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
@@ -24,7 +24,7 @@ $ bash -c "$0" diff --format patch > changes.patch 2>/dev/null; patch -p1 --dry-
 [stderr]
 patch: **** Only garbage was found in the patch input.
 [exit 2]
-KNOWN I-071: the patch prints real values (password in DATABASE_URL, API_SECRET) without --show-values; decided: mask unless --show-values
+I-071 fixed (DEC-G7): values are <withheld> unless --show-values
 KNOWN I-072: patch(1) rejects the output and headings always say .env; decided: dotenv fragment with real file names
 
 ================ summary: 0 ok, 0 mismatch   ================

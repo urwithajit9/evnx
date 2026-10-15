@@ -12,6 +12,22 @@ The first shared-module change (the output rules), one small fix found when the
 new output locks first ran in CI, and the safety net under both: each reviewed
 command's output is locked in CI before any module changes it.
 
+### ⛔ Security — `diff` printed secrets
+
+- **`diff --format patch` and `diff --interactive` print `<withheld>`** in place
+  of values unless `--show-values` is given (I-071, DEC-G7). They printed every
+  real value from `.env` — database passwords, API secrets — with no flag. With
+  `--show-values` they print the exact values (a patch has to apply), and a
+  warning on stderr says the output holds secrets.
+  ⚠️ A script that saves `diff --format patch` and applies it must now add
+  `--show-values`.
+- **`--show-values` masks credentials inside values** (I-076, DEC-G9). It masked
+  by the variable's name only, so `DATABASE_URL=postgres://admin:s3cr3t@db/app`
+  printed the password. A URL now keeps its structure with the password masked
+  (`postgres://admin:***@db/app`), and a token-shaped value is masked whole
+  even under a harmless name — the same built-in rules `scan` uses. In `pretty`
+  and `json`; without `--show-values` nothing about a value is shown, as before.
+
 ### ⛔ Security — `convert -o` wrote every secret world-readable
 
 - **`convert -o FILE` creates FILE with mode 0600**, not the umask's 0644 (I-081).
@@ -141,6 +157,9 @@ and read a success line must check the exit code instead.
   something else (backup rotates), then make it visible.
 - `commands::template::run_with` adds the output's file mode; `run` is unchanged.
 - `utils::write_secure` is deprecated in favour of `core::safe_write::write_private`.
+- New: `core::classify` (`is_secret_shaped`, `is_sensitive_key`, `holds_secret`,
+  `url_password`) and `core::mask` (`mask`, `disclose`, `Disclosure`, `MASK`,
+  `WITHHELD`) — one answer to "is this a secret" and one way to show it (C-05).
 - New: `core::gitignore::{is_protected, exposure, Exposure, append_entries}`.
   `env_file_is_protected` now delegates to `is_protected`. Deprecated:
   `utils::git::{is_in_gitignore, add_to_gitignore}` and
@@ -180,6 +199,8 @@ and read a success line must check the exit code instead.
 - `tests/doctor_gitignore.rs` (5) pins I-156, I-157, DEC-D1, DEC-D2 and JSON
   under `--fix`; three template tests pin I-139; `core::gitignore` gains unit
   tests against a real git repository and a CRLF file.
+- `tests/diff_values.rs` (4) pins I-071 and I-076; `core::classify` and
+  `core::mask` have unit tests (URL structure, no prefix, UTF-8).
 - `tests/quiet_walk.rs` (T-SHARE-60) reads every command from `evnx commands
   --json`: each one has a `-q` success case that must print nothing, or a stated
   reason it has none. A new command fails the test until it is classified.

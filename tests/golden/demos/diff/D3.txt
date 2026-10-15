@@ -11,8 +11,8 @@ Extra in .env (not in .env.example):
 
 Different values:
   ~ DATABASE_URL
-    .env.example: postgres://user:pass@localhost:5432/app
-    .env: postgres://admin:s3cr3tPassw0rd@db.internal:5432/app
+    .env.example: postgres://user:***@localhost:5432/app
+    .env: postgres://admin:***@db.internal:5432/app
   ~ API_SECRET
     .env.example: ***
     .env: ***
@@ -28,6 +28,6 @@ Different values:
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
   ok: values shown; API_SECRET is masked by its name (exit 1)
-KNOWN I-076: the password inside DATABASE_URL is printed because masking is by key name only; decided: value-aware masking
+I-076 fixed (DEC-G9): the password inside DATABASE_URL is masked, the URL keeps its structure
 
 ================ summary: 1 ok, 0 mismatch   ================

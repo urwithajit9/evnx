@@ -34,7 +34,9 @@ Options:
       --show-values
           Print the values, not just which keys differ.
           
-          ⚠️ This puts secrets on your terminal and into its scrollback, and into any CI log the command runs in.
+          In `pretty` and `json` a secret stays masked: by its name, or by the value itself (`postgres://admin:***@db`). Without this flag `patch` and `--interactive` print `<withheld>`; with it they print the exact values, so the patch applies.
+          
+          ⚠️ With `patch` and `--interactive` this puts real secrets on your terminal and into its scrollback, and into any CI log.
 
       --format <FORMAT>
           Output format: `pretty`, `json` or `patch`

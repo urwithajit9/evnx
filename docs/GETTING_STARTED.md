@@ -315,7 +315,7 @@ Sample output:
 Options:
 
 ```bash
-evnx diff --show-values     # include actual values in output
+evnx diff --show-values     # include values; secrets stay masked
 evnx diff --reverse         # swap the comparison direction
 evnx diff --format json     # JSON output for scripting
 ```

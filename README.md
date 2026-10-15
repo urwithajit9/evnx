@@ -255,7 +255,7 @@ Compares `.env` and `.env.example` and shows what is missing, extra, or mismatch
 
 ```bash
 evnx diff                     # compare .env vs .env.example
-evnx diff --show-values       # include actual values
+evnx diff --show-values       # include values (secrets stay masked, e.g. postgres://admin:***@db)
 evnx diff --reverse           # swap comparison direction
 evnx diff --format json       # JSON output
 ```

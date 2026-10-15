@@ -1,6 +1,5 @@
 use crate::core::Parser;
 use crate::docs;
-use crate::utils::patterns;
 use crate::utils::string::pluralize;
 use crate::utils::ui;
 use crate::utils::ui::glyph;
@@ -138,10 +137,18 @@ pub fn run(
     match format.as_str() {
         "json" => output_json(&diff_result)?,
         "patch" => {
+            // DEC-G7: values are withheld unless asked for; when they are, the
+            // output is exact (a patch must apply) and says it holds secrets.
+            if show_values {
+                ui::warning(format!(
+                    "--show-values: this output holds the real values from {left_name} \
+                     and {right_name}; do not paste it where others can read it"
+                ));
+            }
             if interactive {
-                output_patch_interactive(&diff_result, left, right, right_name)?;
+                output_patch_interactive(&diff_result, left, right, right_name, show_values)?;
             } else {
-                output_patch(&diff_result, left, right)?;
+                output_patch(&diff_result, left, right, show_values)?;
             }
         }
         _ => output_pretty(
@@ -228,26 +235,6 @@ fn compute_diff(
     }
 }
 
-/// The mask. A fixed string, with **no prefix of the real value**.
-///
-/// ⚠️ This was `format!("{}***", &v[..v.len().min(2)])`, which had two
-/// problems:
-///
-/// 1. **It panicked.** Byte index 2 is not a character boundary when the value
-///    starts with a 3-byte character, so `DB_PASSWORD=日本語のパスワード` killed
-///    `evnx diff` outright:
-///
-///    ```text
-///    thread 'main' panicked at src/commands/diff.rs:232:36:
-///    end byte index 2 is not a char boundary; it is inside '日'
-///    ```
-///
-/// 2. **The prefix is a leak.** `sk***` says "this is a Stripe key"; `ey***`
-///    says "this is a JWT". The key's own name is already printed beside it, so
-///    the prefix adds nothing a reader did not have and tells an attacker which
-///    credential is worth pursuing.
-const MASK: &str = "***";
-
 /// What `diff` is allowed to show for one key's value. The **only** place this
 /// is decided, so the JSON report and the human output cannot disagree — which
 /// is exactly how they came to.
@@ -256,14 +243,14 @@ const MASK: &str = "***";
 /// deliberate.** It never did in the human output, and a flag whose meaning
 /// changes with `--format` is worse than one with a documented limit. The
 /// values are in the file; `diff` is not the tool for reading them out.
+///
+/// ⚠️ Now `core::mask::disclose` (C-05, A-10a): with `--show-values` it reads
+/// the **value** too, so `DATABASE_URL=postgres://admin:s3cr3t@db` shows
+/// `postgres://admin:***@db` instead of the password (I-076), and a token
+/// under a harmless name is masked whole.
 fn disclose(key: &str, value: &str, show_values: bool) -> (Option<String>, bool) {
-    if patterns::is_sensitive_key(key) {
-        (Some(MASK.to_string()), true)
-    } else if show_values {
-        (Some(value.to_string()), false)
-    } else {
-        (None, false)
-    }
+    let d = crate::core::mask::disclose(key, value, show_values);
+    (d.text().map(str::to_string), d.is_masked())
 }
 
 // Compute statistics for JSON output
@@ -457,18 +444,19 @@ fn output_patch(
     diff: &DiffResult,
     left: &IndexMap<String, String>,
     right: &IndexMap<String, String>,
+    show_values: bool,
 ) -> Result<()> {
     println!("# Add these to .env:");
     for key in &diff.missing {
-        if let Some(val) = right.get(key) {
-            println!("+ {}={}", key, val);
+        if let Some(v) = right.get(key) {
+            println!("+ {}={}", key, shown(v, show_values));
         }
     }
 
     println!("\n# Remove these from .env:");
     for key in &diff.extra {
-        if let Some(val) = left.get(key) {
-            println!("- {}={}", key, val);
+        if let Some(v) = left.get(key) {
+            println!("- {}={}", key, shown(v, show_values));
         }
     }
 
@@ -483,12 +471,22 @@ fn output_patch(
         // reachable only by typing `--format patch` by hand: the GitHub Action
         // forces `--format json` for diff, and `pretty` is the default.
         if let (Some(env_val), Some(ex_val)) = (left.get(&item.key), right.get(&item.key)) {
-            println!("- {}={}", item.key, env_val);
-            println!("+ {}={}", item.key, ex_val);
+            println!("- {}={}", item.key, shown(env_val, show_values));
+            println!("+ {}={}", item.key, shown(ex_val, show_values));
         }
     }
 
     Ok(())
+}
+
+/// A value as patch and interactive print it: exact when values were asked
+/// for, `<withheld>` otherwise (I-071, DEC-G7).
+fn shown(value: &str, show_values: bool) -> &str {
+    if show_values {
+        value
+    } else {
+        crate::core::mask::WITHHELD
+    }
 }
 
 // Interactive merge mode for patch format
@@ -497,6 +495,7 @@ fn output_patch_interactive(
     left: &IndexMap<String, String>,
     right: &IndexMap<String, String>,
     _target_file: &str,
+    show_values: bool,
 ) -> Result<()> {
     use std::io::{self, Write};
 
@@ -507,8 +506,8 @@ fn output_patch_interactive(
 
     // Handle missing keys
     for key in &diff.missing {
-        if let Some(val) = right.get(key) {
-            print!("Add {}={}? [y/n/s]: ", key, val);
+        if let Some(v) = right.get(key) {
+            print!("Add {}={}? [y/n/s]: ", key, shown(v, show_values));
             io::stdout().flush()?;
 
             let mut input = String::new();
@@ -516,8 +515,8 @@ fn output_patch_interactive(
 
             match input.trim().to_lowercase().as_str() {
                 "y" | "yes" => {
-                    println!("   ✓ Queued: + {}={}", key, val);
-                    applied.push(('+', key.clone(), val.clone()));
+                    println!("   ✓ Queued: + {}={}", key, shown(v, show_values));
+                    applied.push(('+', key.clone(), shown(v, show_values).to_string()));
                 }
                 "s" | "skip" => break,
                 _ => println!("   ✗ Skipped"),
@@ -534,7 +533,9 @@ fn output_patch_interactive(
         };
         print!(
             "Update {}?\n   - {}\n   + {}? [y/n/s]: ",
-            item.key, env_val, ex_val
+            item.key,
+            shown(env_val, show_values),
+            shown(ex_val, show_values)
         );
         io::stdout().flush()?;
 
@@ -543,8 +544,12 @@ fn output_patch_interactive(
 
         match input.trim().to_lowercase().as_str() {
             "y" | "yes" => {
-                println!("   ✓ Queued: + {}={}", item.key, ex_val);
-                applied.push(('~', item.key.clone(), ex_val.clone()));
+                println!("   ✓ Queued: + {}={}", item.key, shown(ex_val, show_values));
+                applied.push((
+                    '~',
+                    item.key.clone(),
+                    shown(ex_val, show_values).to_string(),
+                ));
             }
             "s" | "skip" => break,
             _ => println!("   ✗ Skipped"),
@@ -700,7 +705,7 @@ mod tests {
             let right = indexmap! { "DB_PASSWORD".to_string() => "x".to_string() };
             let diff = compute_diff(&left, &right, &HashSet::new(), true);
             if let Some(item) = diff.different.first() {
-                assert_eq!(item.env_value.as_deref(), Some(MASK));
+                assert_eq!(item.env_value.as_deref(), Some(crate::core::mask::MASK));
             }
         }
     }
@@ -727,7 +732,7 @@ mod tests {
             let (masked, redacted) = disclose("DB_PASSWORD", "HUNTER2", show_values);
             assert_eq!(
                 masked.as_deref(),
-                Some(MASK),
+                Some(crate::core::mask::MASK),
                 "sensitive key was not masked"
             );
             assert!(redacted);
