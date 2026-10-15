@@ -23,6 +23,10 @@ pub fn file_contains(path: &Path, substring: &str) -> Result<bool> {
 }
 
 /// Append content to a file if it doesn't already contain a marker
+#[deprecated(
+    since = "0.10.3",
+    note = "no caller in evnx; for `.gitignore` use `core::gitignore::append_entries` (A-28)"
+)]
 pub fn append_if_missing(path: &Path, content: &str, marker: &str) -> Result<bool> {
     if file_contains(path, marker)? {
         return Ok(false);

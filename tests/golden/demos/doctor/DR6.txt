@@ -67,6 +67,7 @@ $ evnx doctor --fix
 
   evnx doctor  Diagnosing environment setup
 
+✓ Fixed: .env mode 644 → 600
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: --fix changes .env only; .env.production stays 644 (decided: every flagged env file)
@@ -114,6 +115,7 @@ $ evnx doctor --fix
 
   evnx doctor  Diagnosing environment setup
 
+✓ Fixed: .env mode 644 → 600
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: KNOWN I-159: --fix chmod'ed the target OUTSIDE the project (decided: only inside the project)

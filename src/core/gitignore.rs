@@ -279,20 +279,55 @@ pub fn append_entry(gitignore_path: &Path, entry: &str) -> Result<()> {
         String::new()
     };
 
-    let updated = if content.contains(SECTION_HEADER) {
+    // ⚠️ A `.gitignore` with CRLF endings keeps them: the entry is added in the
+    // file's own line endings, not as a lone LF line among CRLF ones (A-28).
+    let crlf = content.contains("\r\n");
+    let content = if crlf {
+        content.replace("\r\n", "\n")
+    } else {
+        content
+    };
+    let mut updated = if content.contains(SECTION_HEADER) {
         insert_into_section(&content, entry)
     } else {
         append_new_section(&content, entry)
     };
+    if crlf {
+        updated = updated.replace('\n', "\r\n");
+    }
 
-    fs::write(gitignore_path, updated).with_context(|| {
-        format!(
-            "Failed to write .gitignore at '{}'",
-            gitignore_path.display()
-        )
-    })?;
+    // Shared, so a new `.gitignore` is 0644; atomic, and a symlinked
+    // `.gitignore` is written through (core::safe_write).
+    let written = crate::core::safe_write::write_shared(gitignore_path, updated.as_bytes())
+        .with_context(|| {
+            format!(
+                "Failed to write .gitignore at '{}'",
+                gitignore_path.display()
+            )
+        })?;
+    crate::core::safe_write::report(&written);
 
     Ok(())
+}
+
+/// Add each of `entries` that `.gitignore` does not already hold as a line,
+/// under the evnx section. Returns the entries that were added, in order.
+///
+/// The one `.gitignore` writer (A-28): `init`, `add` and `doctor --fix` all come
+/// through here. "Holds as a line" is deliberately literal — whether the result
+/// actually protects a file is [`is_protected`]'s question, asked afterwards.
+pub fn append_entries(gitignore_path: &Path, entries: &[&str]) -> Result<Vec<String>> {
+    let mut added = Vec::new();
+    for entry in entries {
+        match check_ignored(gitignore_path, entry)? {
+            GitignoreStatus::AlreadyIgnored => {}
+            GitignoreStatus::NotIgnored | GitignoreStatus::FileNotFound => {
+                append_entry(gitignore_path, entry)?;
+                added.push((*entry).to_string());
+            }
+        }
+    }
+    Ok(added)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -378,8 +413,56 @@ pub const ENV_ENTRIES: &[&str] = &[".env*", "!.env.example", "!.env.sample", "!.
 /// Asks git, which is the authority, and falls back to reading `.gitignore` when
 /// git cannot answer — no repository, or git not installed.
 pub fn env_file_is_protected(project_root: &Path, filename: &str) -> bool {
+    is_protected(project_root, filename)
+}
+
+/// Whether git would leave `filename` out of a commit: ignored by the rules
+/// that apply to it. `git check-ignore` is the authority (every `.gitignore`
+/// level, negation, `.git/info/exclude`, global excludes); the fallback reads
+/// the project's `.gitignore` when git cannot answer (A-24, DEC-T11).
+///
+/// ⚠️ A file that is already **tracked** is not protected whatever the rules
+/// say, and `git check-ignore` reports it as not ignored. Use [`exposure`] to
+/// tell the two apart.
+pub fn is_protected(project_root: &Path, filename: &str) -> bool {
     is_gitignored(project_root, filename)
         .unwrap_or_else(|_| fallback_gitignore_check(project_root, filename))
+}
+
+/// How exposed `filename` is to git.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Exposure {
+    /// Ignored: a commit will not include it.
+    Protected,
+    /// Not ignored and not tracked: the next `git add .` takes it.
+    Unignored,
+    /// Already in the index: its contents are in the repository, and
+    /// `.gitignore` no longer applies to it (I-157). Only `git rm --cached`
+    /// and rotating the secrets undo that.
+    Tracked,
+}
+
+/// [`Exposure`] of `filename` under `project_root`. Without git, or outside a
+/// repository, nothing can be tracked and the answer comes from the rules.
+pub fn exposure(project_root: &Path, filename: &str) -> Exposure {
+    if is_tracked(project_root, filename) {
+        Exposure::Tracked
+    } else if is_protected(project_root, filename) {
+        Exposure::Protected
+    } else {
+        Exposure::Unignored
+    }
+}
+
+/// Whether git's index holds `filename`. `false` when git cannot answer.
+fn is_tracked(project_root: &Path, filename: &str) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(project_root)
+        .args(["ls-files", "--error-unmatch", "--", filename])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 /// Ask git whether `filename` is ignored.
@@ -468,6 +551,98 @@ pub fn fallback_gitignore_check(project_root: &Path, filename: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    // ── exposure / append_entries (U2 part 3) ─────────────────────────────────
+
+    fn git_repo() -> Option<tempfile::TempDir> {
+        let d = tempfile::TempDir::new().unwrap();
+        let ok = Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(d.path())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        ok.then_some(d)
+    }
+
+    fn git(dir: &Path, args: &[&str]) {
+        let ok = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@example.com")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@example.com")
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?}");
+    }
+
+    /// I-156: `.env*` then `!.env` re-includes `.env`. Every line evnx writes
+    /// is present, so a line-by-line check says protected; git says not.
+    #[test]
+    fn t_i156_a_later_negation_leaves_env_unignored() {
+        let Some(d) = git_repo() else { return };
+        fs::write(d.path().join(".gitignore"), ".env*\n!.env\n").unwrap();
+        fs::write(d.path().join(".env"), "A=1\n").unwrap();
+        assert_eq!(exposure(d.path(), ".env"), Exposure::Unignored);
+        assert!(!is_protected(d.path(), ".env"));
+    }
+
+    /// I-157: a committed `.env` is tracked, whatever `.gitignore` says.
+    #[test]
+    fn t_i157_a_committed_env_is_tracked_not_unignored() {
+        let Some(d) = git_repo() else { return };
+        fs::write(d.path().join(".env"), "A=1\n").unwrap();
+        git(d.path(), &["add", ".env"]);
+        git(d.path(), &["commit", "-qm", "x"]);
+        fs::write(d.path().join(".gitignore"), ".env\n").unwrap();
+        assert_eq!(exposure(d.path(), ".env"), Exposure::Tracked);
+    }
+
+    #[test]
+    fn exposure_protected_and_without_a_repository() {
+        let Some(d) = git_repo() else { return };
+        fs::write(d.path().join(".gitignore"), ".env*\n!.env.example\n").unwrap();
+        fs::write(d.path().join(".env"), "A=1\n").unwrap();
+        assert_eq!(exposure(d.path(), ".env"), Exposure::Protected);
+        assert_eq!(exposure(d.path(), ".env.example"), Exposure::Unignored);
+
+        let plain = tempfile::TempDir::new().unwrap();
+        fs::write(plain.path().join(".gitignore"), ".env*\n").unwrap();
+        assert_eq!(exposure(plain.path(), ".env"), Exposure::Protected);
+    }
+
+    #[test]
+    fn append_entries_adds_only_what_is_missing() {
+        let d = tempfile::TempDir::new().unwrap();
+        let g = d.path().join(".gitignore");
+        fs::write(&g, "node_modules/\n.env*\n").unwrap();
+        let added = append_entries(&g, &[".env*", "!.env.example"]).unwrap();
+        assert_eq!(added, vec!["!.env.example".to_string()]);
+        assert!(append_entries(&g, &[".env*", "!.env.example"])
+            .unwrap()
+            .is_empty());
+    }
+
+    /// A-28: a CRLF `.gitignore` stays CRLF.
+    #[test]
+    fn a_crlf_gitignore_keeps_its_line_endings() {
+        let d = tempfile::TempDir::new().unwrap();
+        let g = d.path().join(".gitignore");
+        fs::write(&g, "node_modules/\r\ndist/\r\n").unwrap();
+        append_entry(&g, ".env*").unwrap();
+        let out = fs::read_to_string(&g).unwrap();
+        assert!(out.contains(".env*\r\n"), "{out:?}");
+        assert!(
+            !out.replace("\r\n", "").contains('\n'),
+            "a lone LF: {out:?}"
+        );
+    }
+
     use super::*;
     use std::fs;
     use tempfile::TempDir;

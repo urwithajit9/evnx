@@ -190,3 +190,57 @@ fn t_dec_t8_output_dash_prints_only_the_rendered_text() {
     assert_eq!(out.stdout, "host: db.internal\npassword: s3cr3t\n");
     assert!(!p.exists("-"), "no file named -");
 }
+
+const RENDER_GITIGNORE: &[&str] = &[
+    "template",
+    "--input",
+    "config.tpl",
+    "--output",
+    "out.yml",
+    "--gitignore",
+];
+
+/// I-139: `*.yml` already covers the output. The exact-line match did not see
+/// that and added a redundant `out.yml` line.
+#[test]
+fn t_i139_a_wildcard_already_covers_the_output() {
+    let p = project().git().file(".gitignore", "*.yml\n");
+    run(p.path(), RENDER_GITIGNORE)
+        .assert_code(0)
+        .assert_contains("already ignored by git");
+    assert_eq!(p.read(".gitignore"), "*.yml\n", "no redundant line");
+}
+
+/// I-139: a later `!out.yml` re-includes it. The exact-line match said "already
+/// in .gitignore" and did nothing while git would commit the file. Now git is
+/// asked; with `--gitignore` the entry is added after the negation, which wins
+/// (last match), and the user's own line stays.
+#[test]
+fn t_i139_a_later_negation_is_seen_and_overridden_on_request() {
+    let p = project().git().file(".gitignore", "out.yml\n!out.yml\n");
+    run(p.path(), RENDER_GITIGNORE)
+        .assert_code(0)
+        .assert_contains("Added 'out.yml' to .gitignore");
+    assert!(p.is_ignored("out.yml"), "git now ignores it");
+    assert!(
+        p.read(".gitignore").contains("!out.yml\n"),
+        "the user's line stays"
+    );
+}
+
+/// DEC-T11: a tracked output gets `git rm --cached`, not a .gitignore line.
+#[test]
+fn t_dec_t11_a_tracked_output_is_reported() {
+    let p = project().git().file("out.yml", "old\n");
+    p.track("out.yml");
+    p.commit_all("x");
+    let out = run(p.path(), RENDER_GITIGNORE);
+    out.assert_code(0);
+    assert!(out.stderr.contains("tracked by git"), "{}", out.stderr);
+    assert!(
+        out.stderr.contains("git rm --cached out.yml"),
+        "{}",
+        out.stderr
+    );
+    assert!(!p.exists(".gitignore") || !p.read(".gitignore").contains("out.yml"));
+}

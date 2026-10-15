@@ -88,7 +88,9 @@ $ evnx doctor --format text
 
 $ env EVNX_AUTO_FIX=1 evnx doctor
 
-  ✓  Validate .env file existence, security, and syntax
+  ✗  Validate .env file existence, security, and syntax
+     .env is tracked by git: its values are in the repository history
+     → git rm --cached .env, commit, then rotate every secret it held (`evnx scan .` lists them)
 
   ✓  Check .env.example exists and is Git-tracked
 
@@ -100,14 +102,14 @@ $ env EVNX_AUTO_FIX=1 evnx doctor
 
   ✓  Check file permissions for sensitive files
 
-  3 checks passed
+  1 error  ·  2 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
 
-  Docs: https://docs.evnx.dev/cli/commands/doctor
-[exit 0]
-  ok: KNOWN I-167: EVNX_AUTO_FIX=1 repairs with no notice; decided: stderr notice (exit 0)
+✓ Fixed: .env mode 644 → 600
+[exit 1]
+  ok: I-167 fixed: the mode repair prints a Fixed: notice on stderr; exit 1 because this scene committed .env (tracked, I-157) (exit 1)
   ok: the file was changed
 
 ================ summary: 6 ok, 0 mismatch   ================

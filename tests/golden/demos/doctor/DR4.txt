@@ -4,7 +4,8 @@
 $ evnx doctor
 
   ✗  Validate .env file existence, security, and syntax
-     .env is NOT in .gitignore (security risk)
+     .env is tracked by git: its values are in the repository history
+     → git rm --cached .env, commit, then rotate every secret it held (`evnx scan .` lists them)
 
   ✓  Check .env.example exists and is Git-tracked
 
@@ -17,9 +18,6 @@ $ evnx doctor
   ✓  Check file permissions for sensitive files
 
   1 error  ·  2 checks passed
-
-  →  1 issue evnx doctor --fix can repair:
-     ·  Validate .env file existence, security, and syntax
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -29,39 +27,9 @@ $ evnx doctor
 
 $ evnx doctor --fix
 
-  ✓  Validate .env file existence, security, and syntax
-
-  ✓  Check .env.example exists and is Git-tracked
-
-  ·  Detect project type and validate dependencies
-     No recognized project configuration
-
-  ·  Check for Docker configuration files
-     No Docker configuration detected
-
-  ✓  Check file permissions for sensitive files
-
-  3 checks passed
-[stderr]
-
-  evnx doctor  Diagnosing environment setup
-
-  Docs: https://docs.evnx.dev/cli/commands/doctor
-[exit 0]
-  ok: KNOWN I-156: --fix claims success; the rule that exposes .env is still there (exit 0)
-
-$ cat .gitignore
-.env*
-!.env
-!.env.example
-!.env.sample
-!.env.template
-[exit 0]
-
-$ evnx doctor
-
   ✗  Validate .env file existence, security, and syntax
-     .env is NOT in .gitignore (security risk)
+     .env is tracked by git: its values are in the repository history
+     → git rm --cached .env, commit, then rotate every secret it held (`evnx scan .` lists them)
 
   ✓  Check .env.example exists and is Git-tracked
 
@@ -74,9 +42,35 @@ $ evnx doctor
   ✓  Check file permissions for sensitive files
 
   1 error  ·  2 checks passed
+[stderr]
 
-  →  1 issue evnx doctor --fix can repair:
-     ·  Validate .env file existence, security, and syntax
+  evnx doctor  Diagnosing environment setup
+
+[exit 1]
+  ok: I-156 fixed (DEC-D1): --fix re-checks; still exposed is not fixed, exit 1 (exit 1)
+
+$ cat .gitignore
+.env*
+!.env
+[exit 0]
+
+$ evnx doctor
+
+  ✗  Validate .env file existence, security, and syntax
+     .env is tracked by git: its values are in the repository history
+     → git rm --cached .env, commit, then rotate every secret it held (`evnx scan .` lists them)
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  1 error  ·  2 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup

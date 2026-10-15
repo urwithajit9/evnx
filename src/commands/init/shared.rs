@@ -1,4 +1,3 @@
-use crate::core::gitignore::{append_entry, check_ignored, GitignoreStatus};
 use anyhow::{bail, Context, Result};
 use colored::*;
 use std::fs;
@@ -266,17 +265,8 @@ fn warn_if_env_is_still_committable(output_path: &Path) {
 pub(crate) fn update_gitignore(output_path: &Path) -> Result<Option<String>> {
     let gitignore_path = output_path.join(".gitignore");
     let existed = gitignore_path.exists();
-    let mut added = Vec::new();
-
-    for entry in GITIGNORE_ENTRIES {
-        match check_ignored(&gitignore_path, entry)? {
-            GitignoreStatus::AlreadyIgnored => {}
-            GitignoreStatus::NotIgnored | GitignoreStatus::FileNotFound => {
-                append_entry(&gitignore_path, entry)?;
-                added.push(*entry);
-            }
-        }
-    }
+    // The one `.gitignore` writer (A-28), shared with `add` and `doctor --fix`.
+    let added = crate::core::gitignore::append_entries(&gitignore_path, GITIGNORE_ENTRIES)?;
 
     if added.is_empty() {
         return Ok(None);

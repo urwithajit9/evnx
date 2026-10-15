@@ -35,17 +35,17 @@ $ evnx template --input config.tpl.yml --output out3.yml --gitignore
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at out3.yml
-✓ 'out3.yml' is already in .gitignore
+✓ Added 'out3.yml' to .gitignore
 [stderr]
 
   Generate config from template
 
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: KNOWN I-139: says already in .gitignore, but the negation means git will commit it (exit 0)
+  ok: I-139 fixed (DEC-T11): git is asked; the entry is added after the negation and git now ignores out3.yml (exit 0)
 
 $ bash -c git check-ignore -q out3.yml && echo "git: ignored" || echo "git: NOT ignored"
-git: NOT ignored
+git: ignored
 [exit 0]
 
 $ evnx template --input config.tpl.yml --output out4.yml --gitignore
@@ -53,16 +53,17 @@ $ evnx template --input config.tpl.yml --output out4.yml --gitignore
 ✓ Read template from config.tpl.yml
 ✓ Generated config at out4.yml
 Replaced out4.yml
-✓ Added 'out4.yml' to .gitignore
 [stderr]
 
   Generate config from template
 
 ! out4.yml is readable by other users (mode 644); evnx keeps the mode you set
      →  chmod 600 out4.yml
+! 'out4.yml' is tracked by git: a commit includes it whatever .gitignore says
+     →  git rm --cached out4.yml
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: KNOWN O-8: already tracked: added to .gitignore, no word that it stays tracked (exit 0)
+  ok: O-8 fixed (DEC-T11): a tracked output is reported with git rm --cached, and no .gitignore line is added (exit 0)
 
 $ bash -c git ls-files out4.yml
 out4.yml

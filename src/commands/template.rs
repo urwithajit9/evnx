@@ -93,7 +93,7 @@ use std::path::Path;
 
 use colored::Colorize;
 
-use crate::core::gitignore::{self, GitignoreStatus};
+use crate::core::gitignore;
 use crate::core::Parser;
 use crate::docs;
 use crate::utils::ui;
@@ -166,13 +166,23 @@ fn handle_gitignore(output: &str, mode: &GitignoreMode) -> anyhow::Result<()> {
     };
     let entry = entry_path.to_string_lossy().to_string();
 
-    // Check whether the entry is already present.
-    match gitignore::check_ignored(&gitignore_path, &entry)? {
-        GitignoreStatus::AlreadyIgnored => {
-            ui::success(format!("'{}' is already in .gitignore", entry));
+    // Ask git, not the text of .gitignore (I-139, DEC-T11). An exact-line match
+    // called `out.yml` covered when a later `!out.yml` re-included it, missed
+    // `*.yml` and `config/` (and so added redundant lines), and could not see a
+    // file that is already tracked.
+    match gitignore::exposure(git_root, &entry) {
+        gitignore::Exposure::Protected => {
+            ui::success(format!("'{}' is already ignored by git", entry));
             return Ok(());
         }
-        GitignoreStatus::NotIgnored | GitignoreStatus::FileNotFound => {}
+        gitignore::Exposure::Tracked => {
+            ui::warning(format!(
+                "'{entry}' is tracked by git: a commit includes it whatever .gitignore says"
+            ));
+            ui::warning_detail(format!("     →  git rm --cached {entry}"));
+            return Ok(());
+        }
+        gitignore::Exposure::Unignored => {}
     }
 
     // Decide whether to write based on mode and TTY.
@@ -202,6 +212,14 @@ fn handle_gitignore(output: &str, mode: &GitignoreMode) -> anyhow::Result<()> {
     if should_write {
         gitignore::append_entry(&gitignore_path, &entry)?;
         ui::success(format!("Added '{}' to .gitignore", entry));
+        // A later `!entry` (or a nested .gitignore) can still win: say so,
+        // and leave the user's line alone (G8).
+        if !gitignore::is_protected(git_root, &entry) {
+            ui::warning(format!(
+                "'{entry}' is still not ignored: a later rule re-includes it. \
+                 Check with: git check-ignore -v {entry}"
+            ));
+        }
     }
 
     Ok(())

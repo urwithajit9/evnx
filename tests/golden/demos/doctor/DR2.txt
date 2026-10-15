@@ -50,19 +50,23 @@ $ evnx doctor --fix
 
   evnx doctor  Diagnosing environment setup
 
+✓ Fixed: .gitignore: added .env*, !.env.example, !.env.sample, !.env.template
+✓ Fixed: .env mode 644 → 600
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: --fix repairs both and exits 0 (exit 0)
 
 $ cat .gitignore
+# ── evnx generated ─────────────────────────────────────────
+# Written by evnx. These files may contain secrets — do not commit.
 .env*
 !.env.example
 !.env.sample
 !.env.template
 [exit 0]
-KNOWN I-168: bare lines, no evnx section header (init writes a headed section)
+I-168 fixed: doctor writes the evnx section through the one .gitignore writer
   ok: .env is now 600
-  ok: KNOWN I-168: no section header written by doctor
+  ok: I-168 fixed: the section header is written
 
 $ evnx doctor
 
@@ -87,6 +91,6 @@ $ evnx doctor
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: healthy without --fix (exit 0)
-KNOWN I-165: --fix printed no 'Fixed:' lines (decided S-D1: it will list each change)
+I-165 fixed (DEC-D1): --fix prints one Fixed: line per change, on stderr
 
 ================ summary: 5 ok, 0 mismatch   ================

@@ -48,6 +48,28 @@ or the new one, never half of either.
 - **`restore`** replaces its output atomically; a crash could leave a half-written
   `.env` (I-151).
 
+### ⛔ Fixed — `doctor --fix` reported repairs it had not made
+
+- **`doctor --fix` checks again after every fix** (I-156, DEC-D1). With
+  `.gitignore` reading `.env*` then `!.env`, it showed ✓ and exited 0 while git
+  still committed `.env`. Now a problem that is still there after the fix is
+  "not fixed", the exit is 1, and doctor stops offering `--fix` for it. A later
+  `!.env` is your line: doctor reports it and does not edit it.
+- **A committed `.env` is reported as tracked by git** (I-157, DEC-D2), with
+  `git rm --cached .env` and a pointer to `evnx scan` — its values are already in
+  the repository history. It used to say "NOT in .gitignore", which is false
+  when `.gitignore` covers it. `--fix` never runs git.
+- `--fix` prints one `Fixed:` line per change, on stderr (I-165): the
+  `.gitignore` lines it added, and `.env mode 644 → 600`.
+- `doctor --fix` writes its `.gitignore` lines under the same evnx section as
+  `init` (I-168).
+- **`template --gitignore` asks git** whether the output is ignored (I-139,
+  DEC-T11). `*.yml` already covering `out.yml` no longer adds a redundant line;
+  `out.yml` then `!out.yml` is no longer called "already in .gitignore"; a tracked
+  output gets `git rm --cached` instead of a `.gitignore` line.
+- One `.gitignore` writer for `init`, `add`, `doctor` and `template`; a `.gitignore`
+  with CRLF line endings keeps them.
+
 ### Changed — symlinks and existing file modes
 
 ⚠️ **One rule now, in every command:** a symlink at the output is written
@@ -119,6 +141,10 @@ and read a success line must check the exit code instead.
   something else (backup rotates), then make it visible.
 - `commands::template::run_with` adds the output's file mode; `run` is unchanged.
 - `utils::write_secure` is deprecated in favour of `core::safe_write::write_private`.
+- New: `core::gitignore::{is_protected, exposure, Exposure, append_entries}`.
+  `env_file_is_protected` now delegates to `is_protected`. Deprecated:
+  `utils::git::{is_in_gitignore, add_to_gitignore}` and
+  `utils::file_ops::append_if_missing` (text matching; no callers left).
 - `commands::convert::ConvertConfig` has a new public field `force` (and
   `ConfigBuilder::force`). Code that builds the struct literally must add it;
   the builder and `Default` are unaffected.
@@ -151,6 +177,9 @@ and read a success line must check the exit code instead.
   without `--force`, same file by path/symlink/hard link, write-through, `-q`.
 - `tests/template_output.rs` (9), `tests/env_modes.rs` (4, T-INIT-27), a sync
   symlink test and backup/sync unit tests pin the writer's rules per command.
+- `tests/doctor_gitignore.rs` (5) pins I-156, I-157, DEC-D1, DEC-D2 and JSON
+  under `--fix`; three template tests pin I-139; `core::gitignore` gains unit
+  tests against a real git repository and a CRLF file.
 - `tests/quiet_walk.rs` (T-SHARE-60) reads every command from `evnx commands
   --json`: each one has a `-q` success case that must print nothing, or a stated
   reason it has none. A new command fails the test until it is classified.

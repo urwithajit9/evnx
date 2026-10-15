@@ -202,20 +202,7 @@ fn run_text(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) ->
     // Run all checks
     let checks = get_all_checks();
     for check in checks {
-        let mut result = check.run(project_root, verbose)?;
-
-        // Attempt auto-fix if enabled and applicable
-        if auto_fix && result.fixable && !result.fixed {
-            if let Some(fix_fn) = result.fix_action {
-                if fix_fn(project_root, verbose)? {
-                    result.fixed = true;
-                    result.severity = Severity::Ok;
-                    if verbose {
-                        ui::success(format!("✓ Fixed: {}", result.name));
-                    }
-                }
-            }
-        }
+        let mut result = run_check(check.as_ref(), project_root, verbose, auto_fix)?;
 
         normalise_details(&mut result);
         report.summary.add(&result);
@@ -267,17 +254,7 @@ fn run_json(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) ->
 
     let checks = get_all_checks();
     for check in checks {
-        let mut result = check.run(project_root, verbose)?;
-
-        // Attempt auto-fix if enabled
-        if auto_fix && result.fixable && !result.fixed {
-            if let Some(fix_fn) = result.fix_action {
-                if fix_fn(project_root, verbose)? {
-                    result.fixed = true;
-                    result.severity = Severity::Ok;
-                }
-            }
-        }
+        let mut result = run_check(check.as_ref(), project_root, verbose, auto_fix)?;
 
         normalise_details(&mut result);
         report.summary.add(&result);
@@ -308,6 +285,51 @@ trait DiagnosticCheck: Send + Sync {
 }
 
 /// Registry of all available checks
+/// Run `check`; under `--fix`, apply its fix and **run it again** (DEC-D1).
+///
+/// ⚠️ A fix used to count as done when the fix function returned `true`, and the
+/// check was then shown as ✓ with exit 0. `.gitignore` reading `.env*` then
+/// `!.env` was "fixed" that way while git still committed `.env` (I-156). Now
+/// the check is the judge: still an error after the fix means "not fixed",
+/// exit 1, and doctor stops offering `--fix` for it.
+fn run_check(
+    check: &dyn DiagnosticCheck,
+    project_root: &Path,
+    verbose: bool,
+    auto_fix: bool,
+) -> Result<CheckResult> {
+    let result = check.run(project_root, verbose)?;
+    let fix_fn = match result.fix_action {
+        Some(f) if auto_fix && result.fixable && !result.fixed => f,
+        _ => return Ok(result),
+    };
+    let changed = fix_fn(project_root, verbose)?;
+    let mut after = check.run(project_root, verbose)?;
+    if after.severity == Severity::Error {
+        after.fixable = false;
+        let note = if changed {
+            "--fix changed what it could; the problem above remains"
+        } else {
+            "--fix could not change this; the problem above remains"
+        };
+        after.details = Some(match after.details.take() {
+            Some(d) => format!("{d}\n! not fixed: {note}"),
+            None => format!("! not fixed: {note}"),
+        });
+    } else if changed {
+        after.fixed = true;
+    }
+    Ok(after)
+}
+
+/// One "Fixed:" line per change (DEC-D1). On stderr, so `--format json` keeps
+/// stdout as JSON; hidden by `-q` like other success lines.
+fn report_fix(line: String) {
+    if !ui::is_quiet() {
+        eprintln!("{} Fixed: {line}", ui::glyph::OK.green());
+    }
+}
+
 fn get_all_checks() -> Vec<Box<dyn DiagnosticCheck>> {
     vec![
         Box::new(EnvFileCheck),
@@ -358,15 +380,37 @@ impl DiagnosticCheck for EnvFileCheck {
         let mut details = Vec::new();
         let mut severity = Severity::Ok;
 
+        // Fixable only when a file is merely unignored: `--fix` edits
+        // `.gitignore` and never runs git (DEC-D2), so a tracked file is not
+        // something it can repair.
+        let mut fixable = false;
         for name in &env_files {
-            let gitignored = gitignore::is_gitignored(project_root, name)
-                .unwrap_or_else(|_| gitignore::fallback_gitignore_check(project_root, name));
-
-            if !gitignored {
-                severity = Severity::Error;
-                details.push(format!("✗ {name} is NOT in .gitignore (security risk)"));
-            } else if verbose {
-                details.push(format!("✓ {name} is properly ignored by git"));
+            match gitignore::exposure(project_root, name) {
+                gitignore::Exposure::Tracked => {
+                    // ⚠️ I-157: this said "NOT in .gitignore", which is false
+                    // when .gitignore covers it, and sent the user to the one
+                    // place that cannot help. The values are already in git.
+                    severity = Severity::Error;
+                    details.push(format!(
+                        "✗ {name} is tracked by git: its values are in the repository history"
+                    ));
+                    details.push(format!(
+                        "→ git rm --cached {name}, commit, then rotate every secret it held \
+                         (`evnx scan .` lists them)"
+                    ));
+                }
+                gitignore::Exposure::Unignored => {
+                    severity = Severity::Error;
+                    fixable = true;
+                    // Wording unchanged: `doctor --format json` carries it
+                    // and other programs parse that output.
+                    details.push(format!("✗ {name} is NOT in .gitignore (security risk)"));
+                }
+                gitignore::Exposure::Protected => {
+                    if verbose {
+                        details.push(format!("✓ {name} is properly ignored by git"));
+                    }
+                }
             }
 
             match validate_env_syntax(&project_root.join(name)) {
@@ -390,7 +434,7 @@ impl DiagnosticCheck for EnvFileCheck {
             } else {
                 Some(details.join("\n"))
             },
-            fixable: severity == Severity::Error,
+            fixable,
             fixed: false,
             fix_action: Some(fix_env_gitignore),
         })
@@ -422,24 +466,22 @@ fn secret_bearing_env_files(project_root: &Path) -> Vec<String> {
     names
 }
 
-fn fix_env_gitignore(project_root: &Path, verbose: bool) -> Result<bool> {
+fn fix_env_gitignore(project_root: &Path, _verbose: bool) -> Result<bool> {
     let gitignore_path = project_root.join(".gitignore");
-    let mut changed = false;
 
     // Mirrors what `evnx init` writes — one pattern covering every env file, with
-    // the committable template family carved back out. Adding `.env` alone would
-    // leave `.env.production` exposed, which is the bug this fix exists for.
-    for entry in crate::core::gitignore::ENV_ENTRIES {
-        if !gitignore::is_gitignored(project_root, entry).unwrap_or(false) {
-            add_to_gitignore(&gitignore_path, entry)?;
-            changed = true;
-        }
+    // the committable template family carved back out — through the one
+    // `.gitignore` writer (A-28).
+    //
+    // ⚠️ This asked `git check-ignore ".env*"` — the pattern as a *file name* —
+    // so it decided what to add from the wrong question. It now adds the lines
+    // the file lacks, and `run_check` asks git again about the real files. A
+    // later `!.env` is the user's line and is reported, never edited (G8).
+    let added = gitignore::append_entries(&gitignore_path, gitignore::ENV_ENTRIES)?;
+    if !added.is_empty() {
+        report_fix(format!(".gitignore: added {}", added.join(", ")));
     }
-
-    if changed && verbose {
-        ui::success("Added .env* to .gitignore (keeping .env.example committable)");
-    }
-    Ok(changed)
+    Ok(!added.is_empty())
 }
 
 /// Check: .env.example existence and Git tracking
@@ -744,36 +786,19 @@ fn fix_file_permissions(project_root: &Path, verbose: bool) -> Result<bool> {
         return Ok(false);
     }
 
-    let mut perms = fs::metadata(&env_path)?.permissions();
-    let current = perms.mode() & 0o777;
-    perms.set_mode(0o600);
-    fs::set_permissions(&env_path, perms)?;
-
-    if verbose {
-        ui::success(format!("Fixed permissions: {:o} → 600", current));
+    let _ = verbose;
+    let current = fs::metadata(&env_path)?.permissions().mode() & 0o777;
+    if current == crate::core::permissions::PRIVATE {
+        return Ok(false);
     }
+    crate::core::permissions::make_private(&env_path)?;
+    report_fix(format!(".env mode {current:o} → 600"));
     Ok(true)
 }
 
 // ─────────────────────────────────────────────────────────────
 // Helper Functions
 // ─────────────────────────────────────────────────────────────
-
-fn add_to_gitignore(gitignore_path: &Path, pattern: &str) -> Result<()> {
-    if gitignore_path.exists() {
-        let content = fs::read_to_string(gitignore_path)?;
-        if content.lines().any(|l| l.trim() == pattern) {
-            return Ok(());
-        }
-        fs::write(
-            gitignore_path,
-            format!("{}\n{}\n", content.trim_end(), pattern),
-        )?;
-    } else {
-        fs::write(gitignore_path, format!("{}\n", pattern))?;
-    }
-    Ok(())
-}
 
 /// Is every line of this file something `core::Parser` will accept?
 ///

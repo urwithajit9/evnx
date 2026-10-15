@@ -25,6 +25,10 @@ use std::process::Command;
 /// This is a simple line-by-line text search. It does not evaluate glob
 /// patterns, negation rules (`!pattern`), or directory-specific ignores.
 /// For a future revision, consider using `git check-ignore -v <file>` instead.
+#[deprecated(
+    since = "0.10.3",
+    note = "a text match misses negation and wildcards; use `core::gitignore::is_protected` (A-24)"
+)]
 pub fn is_in_gitignore(file: &str) -> Result<bool> {
     let gitignore = match std::fs::read_to_string(".gitignore") {
         Ok(content) => content,
@@ -43,6 +47,10 @@ pub fn is_in_gitignore(file: &str) -> Result<bool> {
 ///
 /// A blank line and a `# Environment variables` comment are prepended so the
 /// entry is easy to find on manual inspection.
+#[deprecated(
+    since = "0.10.3",
+    note = "use `core::gitignore::append_entries`, the one `.gitignore` writer (A-28)"
+)]
 pub fn add_to_gitignore(file: &str) -> Result<()> {
     use std::io::Write;
 
@@ -130,6 +138,7 @@ pub fn is_clean() -> bool {
         .unwrap_or(false)
 }
 
+#[allow(deprecated)] // tests of the deprecated functions themselves
 #[cfg(test)]
 mod tests {
     use super::*;
