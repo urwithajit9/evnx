@@ -11,6 +11,7 @@
 //!
 //! Install Doppler CLI: <https://docs.doppler.com/docs/cli>
 
+use crate::core::shell;
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 use indexmap::IndexMap;
@@ -75,9 +76,11 @@ impl MigrationDestination for DopplerDestination {
 
         // Build optional project/config flags
         let project_flags = match (&self.project, &self.config) {
-            (Some(p), Some(c)) => format!("--project {} --config {} ", p, c),
-            (Some(p), None) => format!("--project {} ", p),
-            (None, Some(c)) => format!("--config {} ", c),
+            (Some(p), Some(c)) => {
+                format!("--project {} --config {} ", shell::word(p), shell::word(c))
+            }
+            (Some(p), None) => format!("--project {} ", shell::word(p)),
+            (None, Some(c)) => format!("--config {} ", shell::word(c)),
             (None, None) => String::new(),
         };
 
@@ -85,8 +88,11 @@ impl MigrationDestination for DopplerDestination {
         println!();
 
         for (key, value) in secrets {
-            let escaped = value.replace('\'', "'\\''");
-            println!("doppler secrets set {}{}='{}'", project_flags, key, escaped);
+            println!(
+                "doppler secrets set {}{}",
+                project_flags,
+                shell::assignment(key, value)
+            );
         }
 
         Ok(MigrationResult {

@@ -1,7 +1,7 @@
 
 ================ M5 ================
 
-$ evnx migrate --to heroku --heroku-app a --skip-existing
+$ evnx migrate --to heroku --heroku-app demo-app --skip-existing
 
 ✓ Loaded 8 secrets from env-file
 [stderr]
@@ -18,7 +18,7 @@ No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: refused: evnx cannot see what already exists for a printing destination (exit 2)
 
-$ evnx migrate --to heroku --heroku-app a --overwrite
+$ evnx migrate --to heroku --heroku-app demo-app --overwrite
 
 ✓ Loaded 8 secrets from env-file
 [stderr]

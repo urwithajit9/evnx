@@ -27,6 +27,7 @@ pub mod vercel;
 #[cfg(feature = "migrate")]
 pub mod github;
 
+use crate::core::args::{self, Name};
 use anyhow::{anyhow, Result};
 use std::io::IsTerminal;
 
@@ -146,6 +147,7 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                     args.dry_run,
                     ArgKind::Identifier,
                 )?;
+                args::check("--repo", &repo, Name::GitHubRepo)?;
                 // ⚠️ `GITHUB_TOKEN` stays ahead of the prompt. Inside a GitHub
                 // Actions job that variable is already set, and this is the one
                 // destination that really uploads — losing the fallback would
@@ -181,19 +183,33 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 args.dry_run,
                 ArgKind::Identifier,
             )?;
+            args::check("--secret-name", &name, Name::AwsSecretName)?;
+            args::check_opt("--aws-profile", args.aws_profile.as_deref(), Name::Slug)?;
             Ok(Box::new(aws::AwsDestination::new(
                 name,
                 args.aws_profile.clone(),
             )))
         }
-        "doppler" => Ok(Box::new(doppler::DopplerDestination::new(
-            args.project.clone(),
-            args.doppler_config.clone(),
-        ))),
-        "infisical" => Ok(Box::new(infisical::InfisicalDestination::new(
-            args.project.clone(),
-            args.infisical_env.clone(),
-        ))),
+        "doppler" => {
+            args::check_opt("--project", args.project.as_deref(), Name::Slug)?;
+            args::check_opt(
+                "--doppler-config",
+                args.doppler_config.as_deref(),
+                Name::Slug,
+            )?;
+            Ok(Box::new(doppler::DopplerDestination::new(
+                args.project.clone(),
+                args.doppler_config.clone(),
+            )))
+        }
+        "infisical" => {
+            args::check_opt("--project", args.project.as_deref(), Name::Slug)?;
+            args::check_opt("--infisical-env", args.infisical_env.as_deref(), Name::Slug)?;
+            Ok(Box::new(infisical::InfisicalDestination::new(
+                args.project.clone(),
+                args.infisical_env.clone(),
+            )))
+        }
         "gcp-secret-manager" | "gcp" => Ok(Box::new(gcp::GcpDestination::new())),
         "azure-keyvault" | "azure" => {
             let name = resolve_arg(
@@ -203,13 +219,21 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 args.dry_run,
                 ArgKind::Identifier,
             )?;
+            args::check("--vault-name", &name, Name::AzureVault)?;
             Ok(Box::new(azure::AzureDestination::new(name)))
         }
 
         // ── PaaS platforms ────────────────────────────────────────────────
-        "vercel" => Ok(Box::new(vercel::VercelDestination::new(
-            args.vercel_project.clone(),
-        ))),
+        "vercel" => {
+            args::check_opt(
+                "--vercel-project",
+                args.vercel_project.as_deref(),
+                Name::Slug,
+            )?;
+            Ok(Box::new(vercel::VercelDestination::new(
+                args.vercel_project.clone(),
+            )))
+        }
         "heroku" => {
             let app = resolve_arg(
                 args.heroku_app.clone(),
@@ -218,11 +242,19 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 args.dry_run,
                 ArgKind::Identifier,
             )?;
+            args::check("--heroku-app", &app, Name::HerokuApp)?;
             Ok(Box::new(heroku::HerokuDestination::new(app)))
         }
-        "railway" => Ok(Box::new(railway::RailwayDestination::new(
-            args.railway_project.clone(),
-        ))),
+        "railway" => {
+            args::check_opt(
+                "--railway-project",
+                args.railway_project.as_deref(),
+                Name::Slug,
+            )?;
+            Ok(Box::new(railway::RailwayDestination::new(
+                args.railway_project.clone(),
+            )))
+        }
 
         other => Err(anyhow!(
             "Unknown destination: '{}'. Run `evnx migrate` without --to to pick from the list.",

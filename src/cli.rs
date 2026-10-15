@@ -206,6 +206,9 @@ pub enum NamingPolicy {
 pub struct MigrateOptions {
     // ── Source ────────────────────────────────────────────────────────────────
     /// Source system: `env-file` (default) or `environment`
+    ///
+    /// `environment` requires `--include`: a shell's or CI job's environment holds
+    /// tokens you did not mean to send. evnx lists the names it will send.
     #[arg(long)]
     pub from: Option<String>,
 

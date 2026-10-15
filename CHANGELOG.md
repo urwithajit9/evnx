@@ -129,6 +129,30 @@ not run — no verdict". Four places broke that:
 - At a terminal both questions are answered on Enter, like every other yes/no
   prompt, and Esc cancels: "Cancelled. Nothing was uploaded."
 
+### ⛔ Security — the commands `migrate` prints ran parts of your values
+
+- **vercel and azure put values in double quotes** (I-101). Running the printed
+  commands emptied `$5`, replaced `$HOME` with your home folder, and **ran**
+  `$(…)` and backticks inside a value. Every value is now single-quoted; vercel
+  gets it through `printf '%s'` instead of `echo`, which also stops a trailing
+  newline being stored.
+- **aws escaped an apostrophe as `\'` inside single quotes** (I-094), which ends
+  the string: the printed command was a syntax error, or ran the rest of the
+  value. It is now written `'\''`.
+- **Names are checked before anything is printed** (I-102, I-107).
+  `--heroku-app`, `--vault-name`, `--secret-name`, `--aws-profile`,
+  `--vercel-project`, `--project`, `--doppler-config`, `--infisical-env`,
+  `--railway-project` and `--repo` were pasted into commands unvalidated, so
+  `--heroku-app 'x;echo PWNED'` printed a second command. A name the platform
+  cannot accept is refused (exit 2, naming the flag and the rule): Heroku app
+  names 3–30 lowercase letters, digits and dashes; Key Vault names 3–24; AWS
+  secret names `A-Za-z0-9/_+=.@-`; `--repo` must be `owner/repo`; the others
+  allow letters, digits and `._-@+=:/`. Names that pass are still quoted.
+- **`--from environment` needs `--include`** (I-103). It sent the whole process
+  environment minus 14 system names — in CI, the runner's own tokens with it.
+  Now it refuses without `--include`, and lists on stderr the names it will
+  send.
+
 ### ⛔ Fixed — values written into `.env` files lost everything after ` #`
 
 - **`sync` and `add custom` quote a value when it needs it** (I-114). They wrote
@@ -266,6 +290,11 @@ and read a success line must check the exit code instead.
 - New: `core::envfile` (`quote`, `line`, `is_dotenv`, `count_vars`) — the one
   way evnx writes a `.env` line and decides whether text is a `.env` (C-01).
   `utils::looks_like_dotenv` and `utils::count_dotenv_vars` now ask it.
+- New: `core::shell` (`quote`, `word`, `assignment`), the one way evnx writes a
+  shell word (A-16); `formats::quoting::shell_single` now asks it.
+  `core::args` (`check`, `check_opt`, `Name`) checks names (A-17).
+  `core::envsource` (`SKIP`, `is_skipped`, `require_include`, `read`) reads the
+  environment (A-18); `migrate::sources::is_system_variable` asks it.
 
 ### Fixed
 
@@ -317,6 +346,11 @@ and read a success line must check the exit code instead.
   `restore`; `core::envfile` round-trips 24 awkward values (CRLF, PEM, `$NAME`
   next to a defined variable, mixed quotes) through the real parser;
   `tests/architecture.rs` refuses a raw `KEY=value` write in sync, add or schema.
+- `tests/migrate_quoting.rs` (8, Unix) runs the printed commands of aws, azure,
+  vercel, heroku, doppler, infisical and railway through `sh` with stub tools and
+  checks each of 10 values arrives exactly and nothing runs (T-MIG-01..04, 07);
+  names refused and accepted (T-MIG-09, 32); `--from environment` (T-MIG-17,
+  18). `core::shell` unit test feeds 15 values through `sh` (T-SHARE-11).
 
 ## [0.10.2] - 2026-10-14
 

@@ -11,6 +11,7 @@
 //! evnx migrate --to aws --dry-run
 //! ```
 
+use crate::core::shell;
 use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
@@ -54,7 +55,7 @@ impl MigrationDestination for AwsDestination {
         let profile_flag = self
             .profile
             .as_deref()
-            .map(|p| format!("--profile {} ", p))
+            .map(|p| format!("--profile {} ", shell::word(p)))
             .unwrap_or_default();
 
         if opts.dry_run {
@@ -75,19 +76,22 @@ impl MigrationDestination for AwsDestination {
             });
         }
 
-        let escaped = json.replace('\'', "\\'");
+        // ⚠️ Not `replace('\'', "\\'")`: inside single quotes `\'` is two
+        // characters and the next `'` ends the string (I-094).
+        let secret_string = shell::quote(&json);
+        let name = shell::word(&self.secret_name);
 
         println!("\n{}", "Run one of the following commands:".bold());
         println!();
         println!("{}", "# Create a new secret:".dimmed());
         println!("aws secretsmanager create-secret \\");
-        println!("  {}--name {} \\", profile_flag, self.secret_name);
-        println!("  --secret-string '{}'", escaped);
+        println!("  {}--name {} \\", profile_flag, name);
+        println!("  --secret-string {}", secret_string);
         println!();
         println!("{}", "# Or update an existing secret:".dimmed());
         println!("aws secretsmanager update-secret \\");
-        println!("  {}--secret-id {} \\", profile_flag, self.secret_name);
-        println!("  --secret-string '{}'", escaped);
+        println!("  {}--secret-id {} \\", profile_flag, name);
+        println!("  --secret-string {}", secret_string);
 
         // We print CLI commands; we don't upload directly, so mark as "uploaded"
         // conceptually (the operator will run the commands).

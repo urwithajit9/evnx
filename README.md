@@ -336,6 +336,9 @@ evnx migrate --from env-file --to github-actions --repo owner/repo --yes --skip-
 # AWS Secrets Manager
 evnx migrate --to aws-secrets-manager --secret-name prod/myapp/config
 
+# From the process environment: --include is required, and evnx lists what it sends
+evnx migrate --from environment --include 'APP_*,DATABASE_URL' --to heroku --heroku-app my-app
+
 # Doppler (with dry run)
 evnx migrate --to doppler --dry-run
 ```

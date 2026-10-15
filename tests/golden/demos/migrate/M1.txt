@@ -1,7 +1,7 @@
 
 ================ M1 ================
 
-$ evnx migrate --to heroku --heroku-app a --dry-run
+$ evnx migrate --to heroku --heroku-app demo-app --dry-run
 
 ✓ Loaded 8 secrets from env-file
 
@@ -10,7 +10,7 @@ $ evnx migrate --to heroku --heroku-app a --dry-run
   Install: https://devcenter.heroku.com/articles/heroku-cli
 
 Dry-run — would upload to Heroku:
-  App     : a
+  App     : demo-app
   Secrets : 8
 
 Summary:
@@ -25,7 +25,7 @@ Next step:
 
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
-  ok: dry run: heroku --heroku-app a (exit 0)
+  ok: dry run: heroku --heroku-app demo-app (exit 0)
 
 $ evnx migrate --to aws-secrets-manager --secret-name prod/app --dry-run
 
@@ -86,7 +86,7 @@ Next step:
 [exit 0]
   ok: dry run: gcp-secret-manager --project p (exit 0)
 
-$ evnx migrate --to azure-keyvault --vault-name v --dry-run
+$ evnx migrate --to azure-keyvault --vault-name demo-vault --dry-run
 
 ✓ Loaded 8 secrets from env-file
 
@@ -95,7 +95,7 @@ $ evnx migrate --to azure-keyvault --vault-name v --dry-run
   Install: https://learn.microsoft.com/cli/azure/install-azure-cli
 
 Dry-run — would upload to Azure Key Vault:
-  Vault   : v
+  Vault   : demo-vault
   Secrets : 8
 
 Summary:
@@ -110,7 +110,7 @@ Next step:
 
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
-  ok: dry run: azure-keyvault --vault-name v (exit 0)
+  ok: dry run: azure-keyvault --vault-name demo-vault (exit 0)
 
 $ evnx migrate --to vercel --vercel-project p --dry-run
 

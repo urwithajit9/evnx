@@ -1,14 +1,17 @@
+pub mod args;
 pub mod classify;
 pub mod config;
 pub mod converter;
 pub mod env_name;
 pub mod envfile;
+pub mod envsource;
 pub mod gitignore;
 pub mod glob;
 pub mod mask;
 pub mod parser;
 pub mod permissions;
 pub mod safe_write;
+pub mod shell;
 pub mod spec;
 pub mod verdict;
 

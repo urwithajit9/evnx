@@ -2,7 +2,7 @@
 ================ M6 ================
 
 $ bash -c PATH="$PWD/bin:$PATH" sh run.sh
-stub heroku args: <config:set> <--app> <a> <A=it's> <B=$5> <C=$(echo INJECTED)> <D=two words>
+stub heroku args: <config:set> <--app> <demo-app> <A=it's> <B=$5> <C=$(echo INJECTED)> <D=two words>
 [exit 0]
   ok: heroku (and doppler, infisical, railway) quote correctly: every value arrives exactly as written, nothing is executed (exit 0)
 

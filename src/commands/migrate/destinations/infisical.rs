@@ -11,6 +11,7 @@
 //!
 //! Install Infisical CLI: <https://infisical.com/docs/cli/overview>
 
+use crate::core::shell;
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 use indexmap::IndexMap;
@@ -80,22 +81,23 @@ impl MigrationDestination for InfisicalDestination {
         let project_flag = self
             .project
             .as_deref()
-            .map(|p| format!("--projectId {} ", p))
+            .map(|p| format!("--projectId {} ", shell::word(p)))
             .unwrap_or_default();
 
         let env_flag = self
             .environment
             .as_deref()
-            .map(|e| format!("--env {} ", e))
+            .map(|e| format!("--env {} ", shell::word(e)))
             .unwrap_or_default();
 
         println!("\n{}", "Upload secrets with:".bold());
         println!();
         for (key, value) in secrets {
-            let escaped = value.replace('\'', "'\\''");
             println!(
-                "infisical secrets set {}{}{}='{}'",
-                project_flag, env_flag, key, escaped
+                "infisical secrets set {}{}{}",
+                project_flag,
+                env_flag,
+                shell::assignment(key, value)
             );
         }
 

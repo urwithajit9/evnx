@@ -1,20 +1,35 @@
 
 ================ M10 ================
 
-$ bash -c env -i PATH=/usr/bin:/bin HOME=/x API_TOKEN=tok-demo OTHER=1 "$(command -v "$0")" migrate --from environment --to heroku --heroku-app a --dry-run evnx
+$ bash -c env -i PATH=/usr/bin:/bin HOME=/x API_TOKEN=tok-demo OTHER=1 "$(command -v "$0")" migrate --from environment --to heroku --heroku-app demo-app --dry-run evnx
+[stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
+Error: --from environment needs --include.
+
+The environment of a shell or CI job holds tokens you did not mean to send — the runner's own among them. Name what to migrate:
+  evnx migrate --from environment --include 'APP_*,DATABASE_URL' …
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-103: refused without --include (exit 2)
+
+$ bash -c env -i PATH=/usr/bin:/bin HOME=/x API_TOKEN=tok-demo OTHER=1 "$(command -v "$0")" migrate --from environment --include OTHER --to heroku --heroku-app demo-app --dry-run evnx
 
 ✓ Loaded 2 secrets from environment
+· After filtering: 1 of 2 secrets remain.
 
 · Heroku Config Vars migration
 · Requires Heroku CLI
   Install: https://devcenter.heroku.com/articles/heroku-cli
 
 Dry-run — would upload to Heroku:
-  App     : a
-  Secrets : 2
+  App     : demo-app
+  Secrets : 1
 
 Summary:
-  ·  2 secret(s) previewed
+  ·  1 secret(s) previewed
      dry run — nothing was uploaded and nothing was written
 
 Next step:
@@ -23,8 +38,9 @@ Next step:
 
   evnx migrate  Generate destination commands from your .env
 
+! Sending 1 variable from the environment: OTHER
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
-  ok: KNOWN I-103: every variable except 14 system names is sent (PATH and HOME skipped; API_TOKEN and OTHER included); decided: --include required (exit 0)
+  ok: with --include only OTHER is sent, and the names are listed (exit 0)
 
-================ summary: 1 ok, 0 mismatch   ================
+================ summary: 2 ok, 0 mismatch   ================

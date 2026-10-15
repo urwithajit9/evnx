@@ -8,6 +8,7 @@
 //! evnx migrate --to vercel --vercel-project my-project
 //! ```
 
+use crate::core::shell;
 use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
@@ -65,20 +66,24 @@ impl MigrationDestination for VercelDestination {
         let project_flag = self
             .project
             .as_deref()
-            .map(|p| format!("--project-id {} ", p))
+            .map(|p| format!("--project-id {} ", shell::word(p)))
             .unwrap_or_default();
 
         println!(
             "\n{}",
-            "Run these commands (uses heredoc for non-interactive input):".bold()
+            "Run these commands (each value goes to vercel on stdin):".bold()
         );
         println!();
 
         for (key, value) in secrets {
-            let escaped = value.replace('"', "\\\"");
+            // ⚠️ `printf '%s'`, not `echo "…"`: double quotes expanded `$5`
+            // and ran `$(…)` (I-101), and `echo` adds a newline vercel stores.
             println!(
-                "echo \"{}\" | vercel env add {} {} {}",
-                escaped, key, self.environment, project_flag
+                "printf '%s' {} | vercel env add {} {} {}",
+                shell::quote(value),
+                shell::word(key),
+                shell::word(&self.environment),
+                project_flag
             );
         }
 

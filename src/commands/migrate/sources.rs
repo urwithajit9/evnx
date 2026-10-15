@@ -33,15 +33,7 @@ pub fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<IndexMap<
             )?;
             Ok(env_file.vars)
         }
-        "environment" => {
-            let mut secrets = IndexMap::new();
-            for (key, value) in std::env::vars() {
-                if !is_system_variable(&key) {
-                    secrets.insert(key, value);
-                }
-            }
-            Ok(secrets)
-        }
+        "environment" => Ok(crate::core::envsource::read()),
         other => Err(anyhow!(
             "Unsupported source: '{}'. Valid options: env-file, environment",
             other
@@ -49,26 +41,10 @@ pub fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<IndexMap<
     }
 }
 
-/// Returns `true` for well-known operating-system variables that should not be
-/// migrated to a secret manager when using the `environment` source.
+/// Returns `true` for the operating-system variables that are never migrated
+/// from the `environment` source: `core::envsource::SKIP`.
 pub fn is_system_variable(key: &str) -> bool {
-    matches!(
-        key,
-        "PATH"
-            | "HOME"
-            | "USER"
-            | "SHELL"
-            | "PWD"
-            | "TERM"
-            | "LANG"
-            | "LOGNAME"
-            | "TMPDIR"
-            | "TEMP"
-            | "TMP"
-            | "OLDPWD"
-            | "SHLVL"
-            | "_"
-    )
+    crate::core::envsource::is_skipped(key)
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────

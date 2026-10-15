@@ -10,6 +10,7 @@
 //!
 //! Install Railway CLI: <https://docs.railway.app/develop/cli>
 
+use crate::core::shell;
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 use indexmap::IndexMap;
@@ -68,7 +69,7 @@ impl MigrationDestination for RailwayDestination {
         let project_flag = self
             .project
             .as_deref()
-            .map(|p| format!("--project {} ", p))
+            .map(|p| format!("--project {} ", shell::word(p)))
             .unwrap_or_default();
 
         println!("\n{}", "Upload secrets with:".bold());
@@ -77,8 +78,7 @@ impl MigrationDestination for RailwayDestination {
         // Railway CLI supports bulk `variables set KEY=VALUE …`
         print!("railway {}variables set", project_flag);
         for (key, value) in secrets {
-            let escaped = value.replace('\'', "'\\''");
-            print!(" \\\n  {}='{}'", key, escaped);
+            print!(" \\\n  {}", shell::assignment(key, value));
         }
         println!();
 

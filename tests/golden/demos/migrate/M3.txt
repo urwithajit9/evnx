@@ -1,7 +1,7 @@
 
 ================ M3 ================
 
-$ evnx migrate --to heroku --heroku-app a
+$ evnx migrate --to heroku --heroku-app demo-app
 
 ✓ Loaded 8 secrets from env-file
 
@@ -11,7 +11,7 @@ $ evnx migrate --to heroku --heroku-app a
 
 Run this command (single bulk set = one restart):
 
-heroku config:set --app a \
+heroku config:set --app demo-app \
   APP_NAME='demo app' \
   DATABASE_URL='postgres://admin:s3cr3t@db.internal:5432/app' \
   API_SECRET='abc123' \
@@ -26,7 +26,7 @@ Summary:
      nothing has been uploaded — run the commands above
 
 Next steps:
-  1. Verify with `heroku config --app a`.
+  1. Verify with `heroku config --app demo-app`.
   2. The dyno restarts automatically after `config:set`.
   3. Remove your local .env file.
 [stderr]

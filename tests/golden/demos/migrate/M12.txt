@@ -1,7 +1,7 @@
 
 ================ M12 ================
 
-$ evnx migrate --env-name production --to heroku --heroku-app a
+$ evnx migrate --env-name production --to heroku --heroku-app demo-app
 [stderr]
 error: unexpected argument '--env-name' found
 
@@ -13,7 +13,7 @@ For more information, try '--help'.
 [exit 2]
   ok: KNOWN S-M1: no --env-name; the clap error points at an unrelated flag; decided: add --env-name (exit 2)
 
-$ evnx migrate --to heroku --heroku-app a -q
+$ evnx migrate --to heroku --heroku-app demo-app -q
 
 · Heroku Config Vars migration
 · Requires Heroku CLI
@@ -21,7 +21,7 @@ $ evnx migrate --to heroku --heroku-app a -q
 
 Run this command (single bulk set = one restart):
 
-heroku config:set --app a \
+heroku config:set --app demo-app \
   APP_NAME='demo app' \
   DATABASE_URL='postgres://admin:s3cr3t@db.internal:5432/app' \
   API_SECRET='abc123' \
@@ -37,7 +37,7 @@ Summary:
 [exit 0]
   ok: KNOWN I-105: -q changes nothing; decided: hides banner and next steps (exit 0)
 
-$ evnx migrate --source-file nope.env --to heroku --heroku-app a
+$ evnx migrate --source-file nope.env --to heroku --heroku-app demo-app
 [stderr]
 
   evnx migrate  Generate destination commands from your .env

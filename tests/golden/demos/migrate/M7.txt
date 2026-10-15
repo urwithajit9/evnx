@@ -2,29 +2,29 @@
 ================ M7 ================
 
 --- printed for vercel --vercel-project p:
-echo "$5" | vercel env add PRICE production --project-id p 
-echo "$HOME" | vercel env add HOME_X production --project-id p 
-echo "$(echo INJECTED)" | vercel env add CMD production --project-id p 
+printf '%s' '$5' | vercel env add PRICE production --project-id p 
+printf '%s' '$HOME' | vercel env add HOME_X production --project-id p 
+printf '%s' '$(echo INJECTED)' | vercel env add CMD production --project-id p 
 
 $ bash -c HOME=/home/demo PATH="$PWD/bin:$PATH" sh run.sh
 stub vercel args: <env> <add> <PRICE> <production> <--project-id> <p>
-  stdin: 
+  stdin: $5
 stub vercel args: <env> <add> <HOME_X> <production> <--project-id> <p>
-  stdin: /home/demo
+  stdin: $HOME
 stub vercel args: <env> <add> <CMD> <production> <--project-id> <p>
-  stdin: INJECTED
+  stdin: $(echo INJECTED)
 [exit 0]
 
---- printed for azure-keyvault --vault-name v:
-az keyvault secret set --vault-name v --name PRICE --value "$5"
-az keyvault secret set --vault-name v --name HOME-X --value "$HOME"
-az keyvault secret set --vault-name v --name CMD --value "$(echo INJECTED)"
+--- printed for azure-keyvault --vault-name demo-vault:
+az keyvault secret set --vault-name demo-vault --name PRICE --value '$5'
+az keyvault secret set --vault-name demo-vault --name HOME-X --value '$HOME'
+az keyvault secret set --vault-name demo-vault --name CMD --value '$(echo INJECTED)'
 
 $ bash -c HOME=/home/demo PATH="$PWD/bin:$PATH" sh run.sh
-stub az args: <keyvault> <secret> <set> <--vault-name> <v> <--name> <PRICE> <--value> <>
-stub az args: <keyvault> <secret> <set> <--vault-name> <v> <--name> <HOME-X> <--value> </home/demo>
-stub az args: <keyvault> <secret> <set> <--vault-name> <v> <--name> <CMD> <--value> <INJECTED>
+stub az args: <keyvault> <secret> <set> <--vault-name> <demo-vault> <--name> <PRICE> <--value> <$5>
+stub az args: <keyvault> <secret> <set> <--vault-name> <demo-vault> <--name> <HOME-X> <--value> <$HOME>
+stub az args: <keyvault> <secret> <set> <--vault-name> <demo-vault> <--name> <CMD> <--value> <$(echo INJECTED)>
 [exit 0]
-KNOWN I-101: PRICE became empty, HOME_X became the real home folder (/home/demo here), and CMD ran 'echo INJECTED' (command substitution) before the tool was called; decided: shared shell_word() with single quotes
+FIXED I-101: every value reaches the tool exactly as written (single quotes, printf); nothing expands or runs
 
 ================ summary: 0 ok, 0 mismatch   ================

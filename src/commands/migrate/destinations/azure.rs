@@ -11,6 +11,7 @@
 //!
 //! Install Azure CLI: <https://learn.microsoft.com/cli/azure/install-azure-cli>
 
+use crate::core::shell;
 use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
@@ -72,10 +73,11 @@ impl MigrationDestination for AzureDestination {
             if akv_name != *key {
                 warnings.push(format!("  {} → {} (underscores → hyphens)", key, akv_name));
             }
-            let escaped = value.replace('"', "\\\"");
             println!(
-                "az keyvault secret set --vault-name {} --name {} --value \"{}\"",
-                self.vault_name, akv_name, escaped
+                "az keyvault secret set --vault-name {} --name {} --value {}",
+                shell::word(&self.vault_name),
+                shell::word(&akv_name),
+                shell::quote(value)
             );
         }
 

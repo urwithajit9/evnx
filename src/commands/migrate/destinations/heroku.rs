@@ -9,6 +9,7 @@
 //! evnx migrate --to heroku --heroku-app my-heroku-app
 //! ```
 
+use crate::core::shell;
 use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
@@ -60,12 +61,10 @@ impl MigrationDestination for HerokuDestination {
             "Run this command (single bulk set = one restart):".bold()
         );
         println!();
-        print!("heroku config:set --app {}", self.app);
+        print!("heroku config:set --app {}", shell::word(&self.app));
 
         for (key, value) in secrets {
-            // Shell-escape the value with single quotes
-            let escaped = value.replace('\'', "'\\''");
-            print!(" \\\n  {}='{}'", key, escaped);
+            print!(" \\\n  {}", shell::assignment(key, value));
         }
         println!();
 
@@ -77,7 +76,10 @@ impl MigrationDestination for HerokuDestination {
 
     fn print_next_steps(&self) {
         println!("\n{}", "Next steps:".bold());
-        println!("  1. Verify with `heroku config --app {}`.", self.app);
+        println!(
+            "  1. Verify with `heroku config --app {}`.",
+            shell::word(&self.app)
+        );
         println!("  2. The dyno restarts automatically after `config:set`.");
         println!("  3. Remove your local .env file.");
     }

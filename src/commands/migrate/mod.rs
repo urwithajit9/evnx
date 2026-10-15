@@ -92,6 +92,10 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
     };
 
     // ── Load secrets from source ──────────────────────────────────────────
+    // I-103: the environment is read only with `--include` selecting from it.
+    if source == "environment" {
+        crate::core::envsource::require_include(args.include.as_deref())?;
+    }
     let raw = load_secrets(&source, &args.source_file, args.verbose)?;
 
     ui::say(format!(
@@ -131,6 +135,17 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         args.strip_prefix.as_deref(),
         args.add_prefix.as_deref(),
     );
+
+    // I-103: say which names leave the environment, before anything is printed.
+    if source == "environment" {
+        let names: Vec<&str> = secrets.keys().map(String::as_str).collect();
+        ui::warning(format!(
+            "Sending {} variable{} from the environment: {}",
+            names.len(),
+            if names.len() == 1 { "" } else { "s" },
+            names.join(", ")
+        ));
+    }
 
     if secrets.len() != raw.len() {
         println!(
