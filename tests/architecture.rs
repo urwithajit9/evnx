@@ -72,3 +72,25 @@ fn t_share_01_placeholder_and_mask_have_one_definition() {
         "second definitions outside core: {offenders:?}"
     );
 }
+
+/// Commands that report through a `Verdict` never exit on their own (U4,
+/// I-116): a `process::exit` inside one skips `main`, so its error got its own
+/// wording and, under `sync --check`, the wrong code.
+#[test]
+fn t_u4_verdict_commands_do_not_exit_themselves() {
+    let mut offenders = Vec::new();
+    for dir in ["commands/sync", "commands/migrate"] {
+        let mut files = Vec::new();
+        rust_files(&src().join(dir), &mut files);
+        for f in files {
+            let text = std::fs::read_to_string(&f).unwrap();
+            if text
+                .lines()
+                .any(|l| !l.trim_start().starts_with("//") && l.contains("process::exit("))
+            {
+                offenders.push(f.display().to_string());
+            }
+        }
+    }
+    assert!(offenders.is_empty(), "exits outside main: {offenders:?}");
+}

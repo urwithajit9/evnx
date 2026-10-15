@@ -8,6 +8,7 @@ use std::path::Path;
 use evnx::cli::{Cli, Commands, SpecAction};
 use evnx::commands;
 use evnx::core::converter::KeyTransform;
+use evnx::core::verdict::{self, Stage};
 
 /// `[sync] naming_policy` arrives as a string; map it to the enum clap parses.
 ///
@@ -45,12 +46,7 @@ fn resolve_env(
 ) -> String {
     match evnx::core::env_name::select(dir, env, env_name, configured) {
         Ok(path) => path,
-        Err(e) => {
-            eprintln!("{} {:#}", "Error:".on_red().bold(), e);
-            eprintln!();
-            eprintln!("No verdict: evnx did not run. This is not a clean result.");
-            std::process::exit(2);
-        }
+        Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
     }
 }
 
@@ -91,12 +87,7 @@ fn main() -> Result<()> {
     // than impersonating whatever failure that command happens to number 1.
     let loaded = match evnx::core::config::load(&here) {
         Ok(loaded) => loaded,
-        Err(e) => {
-            eprintln!("{} {:#}", "Error:".on_red().bold(), e);
-            eprintln!();
-            eprintln!("No verdict: evnx did not run. This is not a clean result.");
-            std::process::exit(2);
-        }
+        Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
     };
     if let Some(source) = &loaded.source {
         evnx::utils::ui::config_banner(source, &loaded.config.security_overrides(), cli.quiet);
@@ -251,16 +242,12 @@ fn main() -> Result<()> {
                 interactive,
             ) {
                 Ok(exit_code) => std::process::exit(exit_code),
-                Err(e) => {
-                    // ⚠️ `{:#}`, like every other anyhow site here. With `{}`
-                    // only the outermost context printed, so `diff` reported
-                    // "Failed to parse .env.example" and dropped the
-                    // "Invalid format at line 1: missing '=' separator" that
-                    // says what to actually fix. The two sites below print a
-                    // downcast BackupError/RestoreError, where `{}` is right.
-                    eprintln!("{} {:#}", "Error:".on_red().bold(), e);
-                    std::process::exit(2);
-                }
+                // ⚠️ Through `no_verdict`, which prints `{:#}`: with `{}` only
+                // the outermost context printed, so `diff` reported "Failed to
+                // parse .env.example" and dropped the "Invalid format at line
+                // 1" that says what to fix. It also lacked the "No verdict"
+                // line every other command prints (U4).
+                Err(e) => verdict::no_verdict(&e, Stage::DuringRun),
             }
         }
 
@@ -340,7 +327,8 @@ fn main() -> Result<()> {
             heroku_app: opts.heroku_app.clone(),
             vercel_project: opts.vercel_project.clone(),
             railway_project: opts.railway_project.clone(),
-        }),
+        })
+        .map(verdict::finish),
 
         Commands::Sync { args } => commands::sync::run(
             resolve_env(
@@ -371,7 +359,8 @@ fn main() -> Result<()> {
                 evnx::cli::NamingPolicy::Warn,
             ),
             cfg.vars.clone(),
-        ),
+        )
+        .map(verdict::finish),
 
         // Commands::Template { input, output, env } => {
         //     commands::template::run(input, output, env, cli.verbose)
@@ -543,10 +532,7 @@ fn main() -> Result<()> {
     // Commands that exit on their own — `scan`, `doctor`, `backup`, `restore`
     // and the findings path in `validate` — never reach here.
     if let Err(e) = outcome {
-        eprintln!("{} {:#}", "Error:".on_red().bold(), e);
-        eprintln!();
-        eprintln!("No verdict: evnx did not finish. This is not a clean result.");
-        std::process::exit(2);
+        verdict::no_verdict(&e, Stage::DuringRun);
     }
 
     Ok(())

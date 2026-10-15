@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 use crate::cli::{NamingPolicy, SyncDirection};
+use crate::core::verdict::{self, Verdict};
 
 mod executor;
 mod models;
@@ -17,11 +18,11 @@ mod security;
 pub use models::{PlaceholderConfig, SyncAction, SyncPreview, VarChange};
 
 /// In sync — nothing to do.
-pub const EXIT_IN_SYNC: i32 = 0;
+pub const EXIT_IN_SYNC: i32 = verdict::EXIT_OK;
 /// `--check` only: the files are out of step.
-pub const EXIT_OUT_OF_SYNC: i32 = 1;
+pub const EXIT_OUT_OF_SYNC: i32 = verdict::EXIT_FINDINGS;
 /// `--check` only: the command could not reach a verdict.
-pub const EXIT_ERROR: i32 = 2;
+pub const EXIT_ERROR: i32 = verdict::EXIT_ERROR;
 
 /// Public entry point called from main.rs.
 ///
@@ -80,7 +81,7 @@ pub fn run(
     template_config: Option<PathBuf>,
     naming_policy: NamingPolicy,
     spec: crate::core::spec::Spec,
-) -> Result<()> {
+) -> Result<Verdict> {
     let paths = executor::SyncPaths {
         env: PathBuf::from(env),
         example: PathBuf::from(example),
@@ -95,14 +96,12 @@ pub fn run(
         // under `--check` an error is a *different answer*, not a louder "out of
         // sync". Propagating the `Err` would exit 1, and a pipeline branching on
         // the code would read an unparseable template as drift.
-        return match check_as_json(&paths, direction) {
-            Ok(false) => Ok(()),
-            Ok(true) => std::process::exit(EXIT_OUT_OF_SYNC),
-            Err(e) => {
-                eprintln!("evnx could not check: {e:#}");
-                std::process::exit(EXIT_ERROR);
-            }
-        };
+        // `main` turns the `Err` into 2 with the "No verdict" line (U4).
+        return Ok(if check_as_json(&paths, direction)? {
+            Verdict::Findings
+        } else {
+            Verdict::Clean
+        });
     }
 
     let ctx = executor::SyncCtx {
@@ -118,29 +117,16 @@ pub fn run(
         spec,
     };
 
-    match executor::execute(ctx) {
-        Ok(out_of_step) => {
-            if check && out_of_step {
-                eprintln!();
-                eprintln!(
-                    "✗ Out of sync. Run `evnx sync --direction {direction}` and commit the result."
-                );
-                std::process::exit(EXIT_OUT_OF_SYNC);
-            }
-            Ok(())
-        }
-        // Under `--check` an error is a *different answer*, not a louder version
-        // of "out of sync" — so it gets its own code and prints here rather than
-        // propagating to `main`, which would collapse it back onto 1.
-        Err(e) => {
-            if check {
-                eprintln!();
-                eprintln!("✗ evnx could not check: {e:#}");
-                std::process::exit(EXIT_ERROR);
-            }
-            Err(e)
-        }
+    // Under `--check` an error is a *different answer*, not a louder version of
+    // "out of sync". `main` gives every `Err` 2 and the "No verdict" line, so it
+    // propagates; this used to print its own line and exit here (U4).
+    let out_of_step = executor::execute(ctx)?;
+    if check && out_of_step {
+        eprintln!();
+        eprintln!("✗ Out of sync. Run `evnx sync --direction {direction}` and commit the result.");
+        return Ok(Verdict::Findings);
     }
+    Ok(Verdict::Clean)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -190,7 +176,7 @@ mod tests {
             Option<std::path::PathBuf>,
             crate::cli::NamingPolicy,
             crate::core::spec::Spec,
-        ) -> anyhow::Result<()> = run;
+        ) -> anyhow::Result<Verdict> = run;
     }
 }
 

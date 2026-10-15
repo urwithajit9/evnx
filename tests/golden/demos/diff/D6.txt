@@ -92,25 +92,13 @@ $ bash -c "$0" diff --format json 2>/dev/null | jq -e ".summary.missing == 0" >/
   ok: CI gate recipe: fails because keys are missing (exit 1)
 
 $ evnx diff --format xml
-Missing from .env (present in .env.example):
-  + REDIS_URL
-  + FEATURE_X
-
-Extra in .env (not in .env.example):
-  - EXTRA_DEBUG
-
-Different values:
-  ~ DATABASE_URL
-  ~ API_SECRET
-    .env.example: ***
-    .env: ***
-  ~ API_PORT
-
-  2 missing from .env  ·  1 not in .env.example  ·  3 different values
 [stderr]
-  Docs: https://docs.evnx.dev/cli/commands/diff
-[exit 1]
-KNOWN I-074: an unknown format falls back to pretty and exits 1; decided: exit 2 with the valid values
+error: invalid value 'xml' for '--format <FORMAT>'
+  [possible values: pretty, json, patch]
+
+For more information, try '--help'.
+[exit 2]
+  ok: FIXED I-074: an unknown format is refused with the valid values (exit 2)
 KNOWN I-076b: null values with values_redacted false; decided: value_state
 
-================ summary: 1 ok, 0 mismatch   ================
+================ summary: 2 ok, 0 mismatch   ================

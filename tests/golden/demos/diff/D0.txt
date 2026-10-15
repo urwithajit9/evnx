@@ -39,9 +39,12 @@ Options:
           ⚠️ With `patch` and `--interactive` this puts real secrets on your terminal and into its scrollback, and into any CI log.
 
       --format <FORMAT>
-          Output format: `pretty`, `json` or `patch`
+          Output format: `pretty`, `json` or `patch`.
+          
+          An unrecognised value is an error (exit 2), not a silent fall back to `pretty` (I-074).
           
           [default: pretty]
+          [possible values: pretty, json, patch]
 
       --reverse
           Swap the two sides: compare the example against the environment
@@ -81,6 +84,8 @@ $ evnx diff
 Error: .env does not exist
 
 Create it with `evnx init`, or point at another file with --env.
+
+No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: no .env: could not run, exit 2 (exit 2)
 

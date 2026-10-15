@@ -394,9 +394,11 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
     let mut warnings = Vec::new();
     for key in &missing {
         if let Err(msg) = validate_var_name(key, naming_policy) {
+            // ⚠️ An `Err`, not `process::exit(1)` (I-116, DEC-S13). A refusal
+            // is "could not run", which is 2; under `--check`, 1 means drift,
+            // so a bad name read as an out-of-date template.
             if naming_policy == NamingPolicy::Error {
-                ui::error(&msg);
-                std::process::exit(1);
+                anyhow::bail!("{msg}");
             }
             warnings.push(msg);
         }
@@ -788,9 +790,11 @@ fn sync_reverse(
 
     for key in &missing {
         if let Err(msg) = validate_var_name(key, naming_policy) {
+            // ⚠️ An `Err`, not `process::exit(1)` (I-116, DEC-S13). A refusal
+            // is "could not run", which is 2; under `--check`, 1 means drift,
+            // so a bad name read as an out-of-date template.
             if naming_policy == NamingPolicy::Error {
-                ui::error(&msg);
-                std::process::exit(1);
+                anyhow::bail!("{msg}");
             }
             ui::warning(&msg);
         }

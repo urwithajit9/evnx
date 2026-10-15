@@ -35,9 +35,11 @@ $ evnx sync -n --naming-policy error
 
 ! .env has permissive permissions (0o644). Consider: chmod 600 .env
 · Overly permissive .env files may expose secrets to other users
-✗ Non-standard variable name 'stripe_key'. Expected: UPPERCASE_WITH_UNDERSCORES
-[exit 1]
-  ok: policy error in plain mode (decided: exit 2) (exit 1)
+Error: Non-standard variable name 'stripe_key'. Expected: UPPERCASE_WITH_UNDERSCORES
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: policy error in plain mode: no verdict (I-116, DEC-S13) (exit 2)
 
 $ evnx sync --check --naming-policy error
 [stderr]
@@ -46,9 +48,11 @@ $ evnx sync --check --naming-policy error
 
 ! .env has permissive permissions (0o644). Consider: chmod 600 .env
 · Overly permissive .env files may expose secrets to other users
-✗ Non-standard variable name 'stripe_key'. Expected: UPPERCASE_WITH_UNDERSCORES
-[exit 1]
-  ok: KNOWN I-116: under --check this is exit 1, which reads as 'out of sync'; decided: exit 2 (exit 1)
+Error: Non-standard variable name 'stripe_key'. Expected: UPPERCASE_WITH_UNDERSCORES
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-116: under --check a refused name is no verdict, not 'out of sync' (exit 2)
 
 $ evnx sync -n --naming-policy ignore
 

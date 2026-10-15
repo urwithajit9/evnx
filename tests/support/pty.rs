@@ -34,11 +34,19 @@ impl Pty {
     /// Start `evnx <args>`. `args` is the whole command line, subcommand
     /// included (`&["add", "custom"]`).
     pub fn spawn(dir: &Path, args: &[&str]) -> Pty {
+        Pty::spawn_with(dir, args, &[])
+    }
+
+    /// [`Pty::spawn`] with extra environment variables.
+    pub fn spawn_with(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Pty {
         let mut cmd = Command::new(super::evnx_bin());
         cmd.current_dir(dir)
             .args(args)
             .env("NO_COLOR", "1")
             .env("TERM", "xterm");
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
         let mut session = Session::spawn(cmd).expect("spawn evnx in a pty");
         session.set_expect_timeout(Some(Duration::from_secs(15)));
         session

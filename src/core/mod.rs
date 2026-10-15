@@ -9,6 +9,7 @@ pub mod parser;
 pub mod permissions;
 pub mod safe_write;
 pub mod spec;
+pub mod verdict;
 
 // Re-export commonly used types
 pub use config::Config;

@@ -98,6 +98,25 @@ or the new one, never half of either.
 - One `.gitignore` writer for `init`, `add`, `doctor` and `template`; a `.gitignore`
   with CRLF line endings keeps them.
 
+### Changed — exit codes mean the same thing in every command
+
+0 is "ran, nothing to report", 1 is "ran, and the answer is no", 2 is "could
+not run — no verdict". Four places broke that:
+
+- **`sync --naming-policy error` exits 2, not 1** (I-116, DEC-S13). Under
+  `--check`, 1 means "out of sync", so a refused variable name read as drift.
+  The error now ends with the same "No verdict" line as every other command.
+- **`diff --format` and `sync --check --format` refuse an unknown value** with
+  exit 2 and the valid values (I-074). `diff --format xml` used to print the
+  pretty report and exit 1, so a typo in a CI step quietly broke a JSON
+  contract.
+- **`migrate --to github-actions` exits 1 when an upload failed** (I-106). It
+  listed "✗ 1 failed" and exited 0, so a step that migrated half its secrets
+  passed. A run that cannot start (no token, GitHub unreachable) is still 2.
+- `diff` and `sync --check` errors end with "No verdict: evnx did not finish"
+  like every other command; `sync --check`'s own "evnx could not check:" line
+  is replaced by the shared `Error:` line.
+
 ### Changed — one placeholder rule, with the variable's name
 
 `validate` and `scan` each kept their own list of placeholder values, and they
@@ -204,6 +223,11 @@ and read a success line must check the exit code instead.
 - `utils::ui::print_header_stderr` is deprecated: `print_header` writes to stderr
   now, and both are hidden by `-q`. New: `utils::ui::warning_detail`.
 - `utils::ui::warning` and `utils::ui::error` write to stderr.
+- New: `core::verdict` (`EXIT_OK`, `EXIT_FINDINGS`, `EXIT_ERROR`, `Verdict`,
+  `finish`, `no_verdict`, `Stage`) — the exit-code contract (C-04).
+  ⚠️ `commands::sync::run` and `commands::migrate::run` return
+  `Result<Verdict>` instead of `Result<()>` and no longer exit the process;
+  `sync::EXIT_*` are now aliases of the `core::verdict` constants.
 
 ### Fixed
 
@@ -244,6 +268,10 @@ and read a success line must check the exit code instead.
 - `tests/quiet_walk.rs` (T-SHARE-60) reads every command from `evnx commands
   --json`: each one has a `-q` success case that must print nothing, or a stated
   reason it has none. A new command fails the test until it is classified.
+- `tests/exit_verdicts.rs` (6) pins I-116 and I-074; `tests/migrate_exit.rs`
+  (2, Unix) drives `migrate --to github-actions` against a local mock of the
+  GitHub API and pins I-106; `tests/architecture.rs` adds that `sync` and
+  `migrate` never call `process::exit` themselves.
 
 ## [0.10.2] - 2026-10-14
 

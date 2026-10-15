@@ -32,6 +32,7 @@ use destination::{DestinationKind, MigrationOptions};
 use filtering::apply_filters;
 use sources::load_secrets;
 
+use crate::core::verdict::Verdict;
 use crate::docs;
 use crate::utils::ui;
 
@@ -75,7 +76,7 @@ pub struct MigrateArgs {
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
-pub fn run(args: MigrateArgs) -> Result<()> {
+pub fn run(args: MigrateArgs) -> Result<Verdict> {
     if args.verbose {
         println!("{}", "Running migrate in verbose mode".dimmed());
     }
@@ -217,7 +218,15 @@ pub fn run(args: MigrateArgs) -> Result<()> {
         dest.print_next_steps();
     }
     ui::print_docs_hint(&docs::MIGRATE);
-    Ok(())
+    // ⚠️ A run with failed uploads is a "no" (I-106). It printed "✗ 1 failed"
+    // and exited 0, so a pipeline step that migrated half its secrets passed.
+    // 1, not 2: the run finished and the summary names each failure; 2 stays
+    // for a run that could not start (no token, GitHub unreachable).
+    Ok(if result.failed > 0 {
+        Verdict::Findings
+    } else {
+        Verdict::Clean
+    })
 }
 
 // ─── Private helpers ─────────────────────────────────────────────────────────

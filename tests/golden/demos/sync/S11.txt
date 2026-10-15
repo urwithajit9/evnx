@@ -40,7 +40,9 @@ Target: nope.env (action: Add)
 
 $ evnx sync --check --format json --direction reverse --env nope.env
 [stderr]
-evnx could not check: Failed to parse nope.env: nope.env does not exist
+Error: Failed to parse nope.env: nope.env does not exist
+
+No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: KNOWN I-117: same inputs, json says exit 2; decided: one drift computation (exit 2)
 

@@ -53,6 +53,8 @@ $ evnx diff
 Error: .env does not exist
 
 Create it with `evnx init`, or point at another file with --env.
+
+No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: KNOWN D-39: this is what the pre-commit hook evnx-diff does in a fresh clone (exit 2)
 

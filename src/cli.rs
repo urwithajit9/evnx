@@ -161,6 +161,7 @@ pub struct SyncArgs {
         long,
         value_name = "FORMAT",
         default_value = "pretty",
+        value_parser = ["pretty", "json"],
         requires = "check"
     )]
     pub format: String,
@@ -1733,7 +1734,10 @@ pub enum Commands {
         show_values: bool,
 
         /// Output format: `pretty`, `json` or `patch`.
-        #[arg(long, default_value = "pretty")]
+        ///
+        /// An unrecognised value is an error (exit 2), not a silent fall back
+        /// to `pretty` (I-074).
+        #[arg(long, default_value = "pretty", value_parser = ["pretty", "json", "patch"])]
         format: String,
         /// Swap the two sides: compare the example against the environment.
         #[arg(long)]
