@@ -2,6 +2,7 @@
 ================ BR5 ================
 
 $ evnx backup ex.env --key-file pw --output ex.bak
+✓ Read 46 bytes from ex.env
 · Using key file for encryption (non-interactive mode)
 
 ✓ Backup created successfully
@@ -19,10 +20,9 @@ $ evnx backup ex.env --key-file pw --output ex.bak
 
   evnx backup  Encrypt and back up your .env file
 
-! File does not look like a standard .env file — backing up anyway
   Docs: https://docs.evnx.dev/cli/commands/backup
 [exit 0]
-  ok: KNOWN I-145: warns 'does not look like a standard .env file' (exit 0)
+  ok: FIXED I-145: read as a .env, no warning (exit 0)
 
 $ evnx restore ex.bak --key-file pw --inspect
 ✓ Read backup from ex.bak

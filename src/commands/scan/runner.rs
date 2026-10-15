@@ -420,7 +420,7 @@ impl ScanRunner {
 
         results.files_scanned += 1;
 
-        let is_env = looks_like_dotenv(path);
+        let is_env = named_like_dotenv(path);
 
         // ── `.env`: the real parser, not a second implementation ─────────────
         //
@@ -826,7 +826,7 @@ pub fn truncate_value(value: &str) -> String {
 /// Those parse as nothing useful, and the raw fallback only looks at lines
 /// containing `=`, so `STRIPE_SECRET_KEY: sk_live_…` in a `.env.yaml` was
 /// scanned by neither path and reported clean.
-fn looks_like_dotenv(path: &Path) -> bool {
+fn named_like_dotenv(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
     };

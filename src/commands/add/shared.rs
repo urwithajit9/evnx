@@ -633,7 +633,7 @@ pub fn format_var_line(
         (None, false) => {}
     }
 
-    lines.push(format!("{}={}", name, example_value));
+    lines.push(crate::core::envfile::line(name, example_value));
 
     lines.join("\n")
 }

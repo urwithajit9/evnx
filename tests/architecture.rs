@@ -94,3 +94,27 @@ fn t_u4_verdict_commands_do_not_exit_themselves() {
     }
     assert!(offenders.is_empty(), "exits outside main: {offenders:?}");
 }
+
+/// Every `.env` line evnx writes goes through `core::envfile::line` (U5,
+/// I-114): a raw `KEY=value` lost everything after ` #`.
+#[test]
+fn t_i114_env_lines_have_one_writer() {
+    let mut offenders = Vec::new();
+    for dir in ["commands/sync", "commands/add", "schema"] {
+        let mut files = Vec::new();
+        rust_files(&src().join(dir), &mut files);
+        for f in files {
+            let text = std::fs::read_to_string(&f).unwrap();
+            for (n, l) in text.lines().enumerate() {
+                let code = !l.trim_start().starts_with("//");
+                let raw = l.contains(r#"format!("{}={}"#)
+                    || l.contains(r#"format!("{name}={"#)
+                    || l.contains(r#"format!("{key}={"#);
+                if code && raw {
+                    offenders.push(format!("{}:{}", f.display(), n + 1));
+                }
+            }
+        }
+    }
+    assert!(offenders.is_empty(), "raw KEY=value writes: {offenders:?}");
+}

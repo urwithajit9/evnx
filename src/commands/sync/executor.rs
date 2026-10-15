@@ -10,7 +10,7 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::cli::{NamingPolicy, SyncDirection};
-use crate::core::Parser;
+use crate::core::{envfile, Parser};
 use crate::docs;
 use crate::utils::ui;
 
@@ -948,7 +948,8 @@ fn add_with_placeholders(
 
     for key in keys {
         let placeholder = generate_placeholder(key, values.get(*key), config);
-        content.push_str(&format!("{}={}\n", key, placeholder));
+        content.push_str(&envfile::line(key, &placeholder));
+        content.push('\n');
     }
 
     write_template(&paths.example, &content)?;
@@ -992,9 +993,11 @@ fn add_with_actual_values(
     for key in keys {
         if refused.iter().any(|(r, _)| r == *key) {
             let placeholder = generate_placeholder(key, values.get(*key), config);
-            content.push_str(&format!("{}={}\n", key, placeholder));
+            content.push_str(&envfile::line(key, &placeholder));
+            content.push('\n');
         } else if let Some(value) = values.get(*key) {
-            content.push_str(&format!("{}={}\n", key, value));
+            content.push_str(&envfile::line(key, value));
+            content.push('\n');
         }
     }
 
@@ -1049,7 +1052,8 @@ fn add_interactively(
     for &idx in &selected {
         let key = keys[idx];
         let placeholder = generate_placeholder(key, values.get(key), config);
-        content.push_str(&format!("{}={}\n", key, placeholder));
+        content.push_str(&envfile::line(key, &placeholder));
+        content.push('\n');
     }
 
     write_template(&paths.example, &content)?;
@@ -1086,7 +1090,8 @@ fn convert_to_example(
 
     for (key, value) in vars {
         let placeholder = generate_placeholder(key, Some(value), config);
-        content.push_str(&format!("{}={}\n", key, placeholder));
+        content.push_str(&envfile::line(key, &placeholder));
+        content.push('\n');
     }
 
     write_template(&paths.example, &content)?;
@@ -1138,7 +1143,8 @@ fn add_from_example(
                 .default(default.to_string())
                 .interact_text()?
         };
-        content.push_str(&format!("{}={}\n", key, value));
+        content.push_str(&envfile::line(key, &value));
+        content.push('\n');
     }
 
     write_env(&paths.env, &content)?;
@@ -1186,7 +1192,8 @@ fn add_from_example_interactive(
     for &idx in &selected {
         let key = keys[idx];
         let placeholder = generate_placeholder(key, example_vars.get(key), config);
-        content.push_str(&format!("{}={}\n", key, placeholder));
+        content.push_str(&envfile::line(key, &placeholder));
+        content.push('\n');
     }
 
     write_env(&paths.env, &content)?;

@@ -82,7 +82,8 @@ fn format_sections(vars: &VarCollection) -> String {
                     (None, true) => content.push_str("# (required)\n"),
                     (None, false) => {}
                 }
-                content.push_str(&format!("{}={}\n", name, meta.example_value));
+                content.push_str(&crate::core::envfile::line(name, &meta.example_value));
+                content.push('\n');
             }
         }
         content.push('\n');
@@ -180,7 +181,8 @@ pub fn format_env_template(vars: &VarCollection) -> Result<String> {
                 if meta.required {
                     content.push_str("# (required - must be set)\n");
                 }
-                content.push_str(&format!("{}={}\n", name, meta.example_value));
+                content.push_str(&crate::core::envfile::line(name, &meta.example_value));
+                content.push('\n');
             }
         }
     }

@@ -21,14 +21,14 @@ Next steps:
 # Generated from .env
 # Replace all placeholder values with real credentials
 
-APP_NAME=My App # prod
+APP_NAME="My App # prod"
 LOG_LEVEL=info
 
 $ bash -c "$0" convert --to json --env .env.example | grep APP_NAME evnx
-  "APP_NAME": "My App",
+  "APP_NAME": "My App # prod",
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
-  ok: KNOWN I-114: written unquoted, re-read as 'My App'; decided: shared writer quotes (exit 0)
+  ok: FIXED I-114: written quoted, re-read whole (exit 0)
 
 ================ summary: 2 ok, 0 mismatch   ================

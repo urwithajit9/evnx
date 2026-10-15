@@ -705,9 +705,12 @@ mod tests {
         ));
     }
 
+    /// ⚠️ Flipped in U5 (C-01, I-145). The 80% heuristic accepted this; the
+    /// parser does not, so evnx could not have read the restored file anyway.
+    /// It now goes to `.restored`, the side that cannot overwrite a good `.env`.
     #[test]
-    fn looks_like_dotenv_tolerates_minority_of_noise_lines() {
-        assert!(dotenv_validation::looks_like_dotenv(
+    fn looks_like_dotenv_refuses_a_line_the_parser_cannot_read() {
+        assert!(!dotenv_validation::looks_like_dotenv(
             "KEY=value\nOTHER=123\n# comment\nFOO=bar\nnot-a-valid-line\n"
         ));
     }

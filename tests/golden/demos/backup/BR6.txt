@@ -4,10 +4,10 @@ restore of valid-looking inputs (named path vs .restored):
   [plain] exit 0 lk.out 
   [empty] exit 0 lk.out 
   [comments] exit 0 lk.out 
-  [KNOWN I-145 export] exit 5 lk.out.restored 
+  [FIXED I-145 export] exit 0 lk.out 
   [dashed key: the parser rejects it too, stays .restored (correct)] exit 5 lk.out.restored 
   [dotted key: the parser rejects it too, stays .restored (correct)] exit 5 lk.out.restored 
-  [KNOWN I-145 PEM-heavy] exit 5 lk.out.restored 
+  [FIXED I-145 PEM-heavy] exit 0 lk.out 
   [prose (correct)] exit 5 lk.out.restored 
 
 $ evnx restore prose.txt.backup --key-file pw --output r.env

@@ -129,6 +129,24 @@ not run — no verdict". Four places broke that:
 - At a terminal both questions are answered on Enter, like every other yes/no
   prompt, and Esc cancels: "Cancelled. Nothing was uploaded."
 
+### ⛔ Fixed — values written into `.env` files lost everything after ` #`
+
+- **`sync` and `add custom` quote a value when it needs it** (I-114). They wrote
+  `KEY=value` raw, so `APP_NAME="My App # prod"` came back as `My App` — the
+  rest read as a comment — and `MSG=hello # world` as `hello`; leading and
+  trailing spaces were lost too. One writer now serves `sync`, `add`, `init`'s
+  schema output and `validate --fix`: plain values stay bare, a value with `$`
+  or `\` goes in single quotes (literal in every dotenv reader), anything else
+  in double quotes, and a line break is written as `\n` (`validate --fix` used
+  to refuse one).
+- **`restore` puts a valid `.env` back where it belongs** (I-145). Its "is this
+  a `.env`?" check was a line heuristic that rejected `export A=1` and files with
+  a PEM block, and wrote such backups to `.env.restored`. It now asks the parser
+  every command reads `.env` with. `backup` no longer warns about those files.
+  ⚠️ The other direction changed too: a file with a line the parser cannot read
+  (up to a fifth of the lines used to be tolerated) now restores to `.restored`,
+  the side that cannot overwrite a good `.env`.
+
 ### Changed — one placeholder rule, with the variable's name
 
 `validate` and `scan` each kept their own list of placeholder values, and they
@@ -245,6 +263,9 @@ and read a success line must check the exit code instead.
 - `commands::migrate::MigrateArgs` and `MigrationOptions` have a new public
   field `yes`. `MigrationOptions` literals with `..Default::default()` are
   unaffected; a full `MigrateArgs` literal must add it.
+- New: `core::envfile` (`quote`, `line`, `is_dotenv`, `count_vars`) — the one
+  way evnx writes a `.env` line and decides whether text is a `.env` (C-01).
+  `utils::looks_like_dotenv` and `utils::count_dotenv_vars` now ask it.
 
 ### Fixed
 
@@ -292,6 +313,10 @@ and read a success line must check the exit code instead.
 - `tests/migrate_exit.rs` adds I-109 (no terminal without and with `--yes`,
   existing secrets under `--yes`, Esc at the confirmation) and T-MIG-28
   (`--skip-existing`), all against the mock GitHub API.
+- `tests/env_writer.rs` (5) pins I-114 for `sync` and `add custom` and I-145 for
+  `restore`; `core::envfile` round-trips 24 awkward values (CRLF, PEM, `$NAME`
+  next to a defined variable, mixed quotes) through the real parser;
+  `tests/architecture.rs` refuses a raw `KEY=value` write in sync, add or schema.
 
 ## [0.10.2] - 2026-10-14
 

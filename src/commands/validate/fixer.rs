@@ -415,33 +415,12 @@ fn key_of(line: &str) -> Option<&str> {
 /// ⓘ Every value evnx generates today — 64 hex characters, `true`, `false`,
 /// `8080`, `https://example.com`, `user@example.com`, `your_value_here` — is
 /// safe bare, so in practice this quotes nothing. It exists so that a fix
-/// action added later cannot reintroduce the bug this file documents, and it
-/// is covered by its own tests rather than by the fixes that happen to exist.
-fn render_value(key: &str, value: &str) -> Result<String> {
-    if value.contains('\n') || value.contains('\r') {
-        // There is no representation for this in the format, and writing the
-        // first line only would be the same class of silent truncation.
-        anyhow::bail!("refusing to write {key}: the value contains a line break");
-    }
-    let needs_quoting = value.is_empty()
-        || value.starts_with(char::is_whitespace)
-        || value.ends_with(char::is_whitespace)
-        || value.chars().any(|c| {
-            matches!(
-                c,
-                ' ' | '\t' | '#' | '"' | '\'' | '`' | '$' | '\\' | '=' | '&'
-            )
-        });
-    if !needs_quoting {
-        return Ok(value.to_string());
-    }
-    // ⚠️ `\` and `"` only. `$` is deliberately left as-is inside the quotes:
-    // dotenv implementations disagree about whether `\$` means a dollar sign or
-    // a backslash followed by one, and guessing wrong would corrupt the value
-    // in the same way as not quoting it. evnx never emits a `$`, so this is a
-    // boundary that is documented rather than crossed.
-    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
-    Ok(format!("\"{escaped}\""))
+/// action added later cannot reintroduce the bug this file documents.
+///
+/// The rule is `core::envfile::quote`, the one every `.env` writer uses (U5);
+/// it also writes a line break as `\n`, which this copy used to refuse.
+fn render_value(_key: &str, value: &str) -> Result<String> {
+    Ok(crate::core::envfile::quote(value).into_owned())
 }
 
 /// Copy the file aside before overwriting it, and never clobber an earlier copy.
@@ -621,11 +600,13 @@ mod tests {
         }
     }
 
-    /// There is no representation for a line break in this format, and writing
-    /// the first line only is the same silent truncation by another route.
+    /// A line break is written as `\n` in double quotes and reads back whole —
+    /// never the first line only (U5: one writer for every `.env`).
     #[test]
-    fn a_value_with_a_line_break_is_refused_not_truncated() {
-        assert!(render_value("K", "one\ntwo").is_err());
+    fn a_value_with_a_line_break_survives_a_round_trip() {
+        let line = format!("K={}", render_value("K", "one\ntwo").unwrap());
+        let parsed = crate::core::Parser::default().parse_content(&line).unwrap();
+        assert_eq!(parsed["K"], "one\ntwo", "{line:?}");
     }
 
     /// ⛔ `--fix` replaced working credentials with random hex, printed the old

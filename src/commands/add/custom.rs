@@ -371,7 +371,7 @@ fn entry(
     if required {
         words.push("(required)".to_string());
     }
-    let assignment = format!("{name}={example}");
+    let assignment = crate::core::envfile::line(name, example);
     if words.is_empty() {
         assignment
     } else {

@@ -3,54 +3,33 @@
 //! This module provides heuristic checks and helpers used by both
 //! `backup` and `restore` commands to ensure consistent behavior.
 
-/// Heuristically check whether `content` resembles a `.env` file.
+/// Whether `content` is a `.env` evnx can read.
 ///
-/// A file passes if at least **80%** of its non-empty lines are one of:
-/// - blank lines,
-/// - comment lines beginning with `#`, or
-/// - `KEY=VALUE` assignments where KEY contains only alphanumerics and `_`.
-///
-/// The 80% threshold is intentionally lenient — its purpose is to detect
-/// obviously wrong content (binary blobs, PDFs, prose) rather than to
-/// enforce strict `.env` grammar.
+/// The same parser every command reads `.env` with (`core::envfile::is_dotenv`,
+/// U5). ⚠️ It was an 80% line heuristic, which rejected `export A=1` and any
+/// file whose PEM block made up more than a fifth of its lines — so `restore`
+/// set valid backups aside as `.restored` (I-145) — while accepting files the
+/// parser cannot read.
 pub fn looks_like_dotenv(content: &str) -> bool {
-    if content.trim().is_empty() {
-        return true;
-    }
-
-    let valid_line = |line: &str| -> bool {
-        let line = line.trim();
-        line.is_empty()
-            || line.starts_with('#')
-            || line
-                .split_once('=')
-                .map(|(key, _)| {
-                    !key.trim().is_empty()
-                        && key.trim().chars().all(|c| c.is_alphanumeric() || c == '_')
-                })
-                .unwrap_or(false)
-    };
-
-    let non_empty: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-    if non_empty.is_empty() {
-        return true;
-    }
-    let valid_count = non_empty.iter().filter(|&&l| valid_line(l)).count();
-    // Integer equivalent of valid_count / total >= 0.8
-    valid_count * 10 >= non_empty.len() * 8
+    crate::core::envfile::is_dotenv(content)
 }
 
-/// Count the number of `KEY=VALUE` variable assignments in a `.env` string.
+/// Count the variables in a `.env` string.
 ///
-/// Comments (`#`) and blank lines are excluded from the count.
+/// Parsed, so a multi-line value counts once and a base64 line inside it
+/// (which may contain `=`) not at all. Content the parser cannot read falls
+/// back to counting `KEY=` lines, since a count is still useful when restore
+/// sets such a file aside.
 pub fn count_dotenv_vars(content: &str) -> usize {
-    content
-        .lines()
-        .filter(|line| {
-            let l = line.trim();
-            !l.is_empty() && !l.starts_with('#') && l.contains('=')
-        })
-        .count()
+    crate::core::envfile::count_vars(content).unwrap_or_else(|| {
+        content
+            .lines()
+            .filter(|line| {
+                let l = line.trim();
+                !l.is_empty() && !l.starts_with('#') && l.contains('=')
+            })
+            .count()
+    })
 }
 
 #[cfg(test)]
@@ -75,11 +54,26 @@ mod tests {
         ));
     }
 
+    /// ⚠️ Flipped in U5: a line the parser cannot read makes the file "not a
+    /// `.env`" (it was tolerated up to 20% of lines).
     #[test]
-    fn test_looks_like_dotenv_tolerates_some_noise() {
-        // 4 valid lines, 1 invalid → 80% valid → should pass.
+    fn test_looks_like_dotenv_refuses_an_unreadable_line() {
         let content = "KEY=value\nOTHER=123\n# comment\nFOO=bar\nnot-a-valid-line\n";
-        assert!(looks_like_dotenv(content));
+        assert!(!looks_like_dotenv(content));
+    }
+
+    /// I-145: what the heuristic rejected.
+    #[test]
+    fn t_i145_export_and_multiline_are_dotenv() {
+        assert!(looks_like_dotenv("export A=1\nexport B=2\n"));
+        let pem: String = (0..30).map(|_| "QUJDREVGR0g=\n").collect();
+        let content = format!("A=1\nK=\"-----BEGIN-----\n{pem}-----END-----\"\n");
+        assert!(looks_like_dotenv(&content));
+        assert_eq!(
+            count_dotenv_vars(&content),
+            2,
+            "base64 lines are not variables"
+        );
     }
 
     #[test]
