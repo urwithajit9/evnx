@@ -12,11 +12,10 @@ Error: Failed to write backup file: odir exists and is not a regular file
 [exit 5]
   ok: I-146 partly fixed (U2): an existing directory is refused and nothing is renamed; DEC-B3 wants exit 2 (open) (exit 5)
 
-$ stat -c %F %n odir odir.1
+$ bash -c for f in odir odir.1; do if [ -e "$f" ]; then stat -c "%F %n" "$f"; else echo "$f: absent"; fi; done
 directory odir
-[stderr]
-stat: cannot stat 'odir.1': No such file or directory (os error 2)
-[exit 1]
+odir.1: absent
+[exit 0]
 
 $ evnx backup src.env --key-file pw --output src.env
 ✓ Read 258 bytes from src.env
