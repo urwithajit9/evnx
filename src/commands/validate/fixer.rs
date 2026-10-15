@@ -141,7 +141,8 @@ pub fn suggest_fix(
         // which the person can act on with the old value still in front of
         // them.
         IssueType::WeakSecret => {
-            if super::checks::is_placeholder(value) || weak_secrets == WeakSecretPolicy::Rotate {
+            if super::checks::is_placeholder(key, value) || weak_secrets == WeakSecretPolicy::Rotate
+            {
                 FixAction::GenerateSecret
             } else {
                 FixAction::Skip
@@ -215,7 +216,7 @@ pub fn generate_secure_secret() -> String {
 /// names a placeholder rather than a credential. What must not be echoed is a
 /// credential-shaped variable that held something real.
 fn old_value_is_safe_to_show(key: &str, value: &str) -> bool {
-    !super::checks::is_secret_shaped(key) || super::checks::is_placeholder(value)
+    !super::checks::is_secret_shaped(key) || super::checks::is_placeholder(key, value)
 }
 
 pub fn apply_fix(

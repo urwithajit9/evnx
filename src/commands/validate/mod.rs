@@ -489,7 +489,7 @@ fn output_pretty(result: &ValidationResult, _env_path: &str, _example_path: &str
             // value does not. Without this line the report reads as evnx
             // contradicting itself — "Applied fixes: B → your_value_here"
             // directly above "✗ B looks like a placeholder".
-            if checks::is_placeholder(&fix.new_value) {
+            if checks::is_placeholder(&fix.variable, &fix.new_value) {
                 println!(
                     "    {}",
                     "a placeholder — evnx cannot invent this value, so fill it in".dimmed()

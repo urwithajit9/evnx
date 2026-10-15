@@ -98,6 +98,24 @@ or the new one, never half of either.
 - One `.gitignore` writer for `init`, `add`, `doctor` and `template`; a `.gitignore`
   with CRLF line endings keeps them.
 
+### Changed — one placeholder rule, with the variable's name
+
+`validate` and `scan` each kept their own list of placeholder values, and they
+disagreed on 32 of 56 common values. Both now ask one rule, at one of two levels:
+**Strict** for `validate` (a placeholder verdict lets `--fix` overwrite the
+value) and **Lenient** for `scan` and display. The lists moved unchanged; what
+changes for you:
+
+- **`validate` reports more placeholders**: `API_KEY=dev`, `DB_PASSWORD=test`
+  (a placeholder word under a secret name, DEC-G11), `*****` and AWS's
+  documentation key `AKIAIOSFODNN7EXAMPLE` (DEC-G10). `ENVIRONMENT=development`
+  and `MODE=test` are still real values.
+- **`scan` treats `<set-me>`, `change-me`, `none`, `null` and an empty value as
+  placeholders** (DEC-G10).
+- `validate --fix` still never treats prefix forms such as `test_db_pass`,
+  `example_value` or `abc123` as placeholders, so it never overwrites them
+  (DEC-G13).
+
 ### Changed — symlinks and existing file modes
 
 ⚠️ **One rule now, in every command:** a symlink at the output is written
@@ -176,6 +194,10 @@ and read a success line must check the exit code instead.
   `env_file_is_protected` now delegates to `is_protected`. Deprecated:
   `utils::git::{is_in_gitignore, add_to_gitignore}` and
   `utils::file_ops::append_if_missing` (text matching; no callers left).
+- `core::classify::{is_placeholder, Strictness}`: the one placeholder rule.
+  `utils::patterns::is_placeholder(value)` now asks it (Lenient, no key) and
+  answers as before except for DEC-G10. ⚠️ `commands::validate::checks::is_placeholder`
+  now takes the variable's name: `is_placeholder(name, value)`.
 - `commands::convert::ConvertConfig` has a new public field `force` (and
   `ConfigBuilder::force`). Code that builds the struct literally must add it;
   the builder and `Default` are unaffected.
@@ -215,6 +237,10 @@ and read a success line must check the exit code instead.
   `core::mask` have unit tests (URL structure, no prefix, UTF-8).
 - `tests/sync_pty.rs` (2) drives both "actual values" choices through a real
   terminal (I-113).
+- `tests/architecture.rs` (T-SHARE-01): `core` imports no command, and no
+  placeholder or mask function outside `core` decides on its own.
+  `tests/validate_placeholders.rs` pins DEC-G11 end to end; `core::classify`
+  unit tests pin DEC-G10, G11 and G13 at both levels.
 - `tests/quiet_walk.rs` (T-SHARE-60) reads every command from `evnx commands
   --json`: each one has a `-q` success case that must print nothing, or a stated
   reason it has none. A new command fails the test until it is classified.

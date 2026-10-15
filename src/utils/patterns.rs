@@ -216,62 +216,13 @@ pub fn calculate_entropy(s: &str) -> f64 {
     entropy
 }
 
-/// Check if a value looks like a placeholder (not a real secret)
+/// Whether `value` looks like a placeholder, with no key to go on — scan's
+/// suppression list. The one definition now lives in
+/// [`crate::core::classify::is_placeholder`] (C-05); this asks it at the
+/// `Lenient` level with no key, which is exactly what this function answered
+/// before.
 pub fn is_placeholder(value: &str) -> bool {
-    let v = value.trim();
-    let lower = v.to_lowercase();
-
-    // Exact known fake/example secrets
-    const EXACT: &[&str] = &[
-        "akiaiosfodnn7example",
-        "wjalrxutnfemi/k7mdeng/bpxrficyexamplekey",
-        "your_key_here",
-        "your_api_key",
-        "your_api_key_here",
-        "your_secret_here",
-        "your_token_here",
-        "change_me",
-        "changeme",
-        "replace_me",
-        "xxx",
-        "xxxx",
-        "xxxxx",
-        "todo",
-        "placeholder",
-        "test",
-        "testing",
-        "dev",
-        "development",
-        "dummy",
-        "fake",
-        "sample",
-    ];
-
-    if EXACT.iter().any(|p| lower == *p) {
-        return true;
-    }
-
-    // Structured placeholder patterns (safe substrings)
-    const SUBSTRINGS: &[&str] = &[
-        "change_me",
-        "changeme",
-        "your_key_here",
-        "your_secret_here",
-        "your_token_here",
-        "replace_me",
-        "generate-with",
-    ];
-
-    if SUBSTRINGS.iter().any(|p| lower.contains(p)) {
-        return true;
-    }
-
-    // ✅ NEW: Pattern-based checks for common placeholder formats
-    if is_placeholder_pattern(&lower) {
-        return true;
-    }
-
-    false
+    crate::core::classify::is_placeholder("", value, crate::core::classify::Strictness::Lenient)
 }
 
 #[cfg(test)]
@@ -595,58 +546,6 @@ pub fn looks_like_placeholder_secret(value: &str) -> bool {
     false
 }
 
-/// Helper: Check for common placeholder patterns like example123, test456, dev_key
-fn is_placeholder_pattern(value: &str) -> bool {
-    const BASE_WORDS: &[&str] = &[
-        "example",
-        "test",
-        "testing",
-        "dev",
-        "development",
-        "dummy",
-        "fake",
-        "sample",
-        "placeholder",
-        "todo",
-    ];
-
-    // ✅ Use strip_prefix instead of starts_with + manual slicing
-    for base in BASE_WORDS {
-        if let Some(remainder) = value.strip_prefix(base) {
-            // Allow: empty, digits only, or underscore + anything
-            if remainder.is_empty()
-                || remainder.chars().all(|c| c.is_ascii_digit())
-                || remainder.starts_with('_')
-            {
-                return true;
-            }
-        }
-    }
-
-    // Pattern: your_* variations
-    if value.starts_with("your_") || value.starts_with("your-") {
-        return true;
-    }
-
-    // Pattern: all same character (xxx, *****, ####)
-    if !value.is_empty() {
-        let first = value.chars().next().unwrap();
-        if value.chars().all(|c| c == first) && value.len() >= 3 {
-            return true;
-        }
-    }
-
-    // Pattern: simple alphanumeric placeholder like abc123, def456
-    if value.len() == 6 && value.chars().all(|c| c.is_ascii_alphanumeric()) {
-        let letters: usize = value.chars().filter(|c| c.is_ascii_alphabetic()).count();
-        let digits: usize = value.chars().filter(|c| c.is_ascii_digit()).count();
-        if letters == 3 && digits == 3 {
-            return true;
-        }
-    }
-
-    false
-}
 /// Build-time prefixes that inline a variable into the **client bundle**.
 ///
 /// Each entry is `(prefix, what inlines it)`. The second field is there so a

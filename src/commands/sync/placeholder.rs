@@ -121,14 +121,21 @@ fn best_pattern(key: &str, config: &PlaceholderConfig) -> Option<String> {
         .map(|(_, (_, placeholder))| placeholder.clone())
 }
 
-/// Check if a value looks like a placeholder
+/// Whether `value` is one sync itself would write: a configured placeholder,
+/// the configured default, or one of the generator's stock values. For the
+/// `--dry-run` preview's "placeholder" label.
+///
+/// ⚠️ Not a placeholder *judgement* (DEC-G12): `localhost`, `8000` and `true`
+/// are here because sync generates them, not because they are holes. The
+/// shared judgement is `core::classify::is_placeholder`; this was renamed from
+/// `is_placeholder_value` so it stops reading like a fourth copy of it.
 ///
 /// ⚠️ This consulted `config.default` and a list of hardcoded strings, and
 /// **ignored `config.patterns` entirely** — so a project whose convention is
 /// `<set-me>` had every one of its own placeholders reported as a real value.
 /// Display only, in the `--dry-run` preview, which is why it went unnoticed; but
 /// the preview is exactly where someone decides whether a template is ready.
-pub fn is_placeholder_value(value: &str, config: &PlaceholderConfig) -> bool {
+pub fn is_generated_value(value: &str, config: &PlaceholderConfig) -> bool {
     config.patterns.values().any(|p| p == value)
         || value == config.default
         || value.contains("YOUR_")
@@ -271,8 +278,8 @@ mod tests {
             .patterns
             .insert("API_.*".to_string(), "<set-me>".to_string());
 
-        assert!(is_placeholder_value("<set-me>", &config));
-        assert!(!is_placeholder_value("sk_live_abc123", &config));
+        assert!(is_generated_value("<set-me>", &config));
+        assert!(!is_generated_value("sk_live_abc123", &config));
     }
 
     #[test]
@@ -400,16 +407,16 @@ mod tests {
     }
 
     #[test]
-    fn test_is_placeholder_value() {
+    fn test_is_generated_value() {
         let config = PlaceholderConfig::default();
 
-        assert!(is_placeholder_value("YOUR_VALUE_HERE", &config));
-        assert!(is_placeholder_value("YOUR_KEY_HERE", &config));
-        assert!(is_placeholder_value("localhost", &config));
-        assert!(is_placeholder_value("placeholder", &config));
-        assert!(!is_placeholder_value("sk_live_abc123", &config));
-        assert!(!is_placeholder_value("production-db.example.com", &config));
-        assert!(!is_placeholder_value("my-secret-value", &config));
+        assert!(is_generated_value("YOUR_VALUE_HERE", &config));
+        assert!(is_generated_value("YOUR_KEY_HERE", &config));
+        assert!(is_generated_value("localhost", &config));
+        assert!(is_generated_value("placeholder", &config));
+        assert!(!is_generated_value("sk_live_abc123", &config));
+        assert!(!is_generated_value("production-db.example.com", &config));
+        assert!(!is_generated_value("my-secret-value", &config));
     }
 
     #[test]
@@ -419,13 +426,13 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(is_placeholder_value("CUSTOM_PLACEHOLDER", &config));
+        assert!(is_generated_value("CUSTOM_PLACEHOLDER", &config));
         // ✅ FIXED: "YOUR_VALUE_HERE" still matches because of .contains("YOUR_") check
         // This is intentional behavior - we detect common placeholder patterns
-        assert!(is_placeholder_value("YOUR_VALUE_HERE", &config)); // Still true due to "YOUR_" check
+        assert!(is_generated_value("YOUR_VALUE_HERE", &config)); // Still true due to "YOUR_" check
 
         // Test a value that should NOT be detected as placeholder
-        assert!(!is_placeholder_value("my-actual-secret-123", &config));
+        assert!(!is_generated_value("my-actual-secret-123", &config));
     }
 
     // NEW: Edge cases

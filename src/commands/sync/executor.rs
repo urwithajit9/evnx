@@ -15,7 +15,7 @@ use crate::docs;
 use crate::utils::ui;
 
 use super::models::{PlaceholderConfig, SyncAction, SyncPreview, VarChange};
-use super::placeholder::{generate_placeholder, is_placeholder_value};
+use super::placeholder::{generate_placeholder, is_generated_value};
 use super::security::{check_env_permissions, log_security_event, validate_var_name};
 
 /// Write the env file sync manages: atomic, new files 0600, an existing file
@@ -906,7 +906,7 @@ fn handle_new_env_file(
                 key: k.clone(),
                 old_value: None,
                 new_value: v.clone(),
-                is_placeholder: is_placeholder_value(v, config),
+                is_placeholder: is_generated_value(v, config),
             })
             .collect();
         print_preview(&SyncPreview {
