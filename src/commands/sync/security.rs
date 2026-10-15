@@ -65,14 +65,16 @@ pub fn validate_var_name(key: &str, policy: NamingPolicy) -> Result<(), String> 
 }
 
 /// Log a security audit event (for actual-values mode)
-pub fn log_security_event(keys: &[String], verbose: bool) {
-    if verbose {
+/// One line on stderr naming the keys written to `.env.example` with real
+/// values. DEC-S1: printed whenever that happens, not only with `--verbose`,
+/// and not hidden by `-q` — it records a choice with consequences.
+pub fn log_security_event(keys: &[String], always: bool) {
+    if always && !keys.is_empty() {
         eprintln!(
-            "[AUDIT] User added actual values to .env.example for keys: {:?}",
-            keys
+            "[AUDIT] actual values written to .env.example for: {}",
+            keys.join(", ")
         );
     }
-    // In production: send to structured audit log
 }
 
 // ─────────────────────────────────────────────────────────────

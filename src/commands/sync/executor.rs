@@ -210,29 +210,7 @@ pub fn check_allow_actual(
     //
     // Found by adding the connection-string rule and watching this guard fail to
     // pick it up.
-    let patterns =
-        crate::commands::scan::PatternSet::compile(&crate::utils::patterns::builtin_rules())
-            .map_err(|e| anyhow::anyhow!("the built-in secret patterns failed to compile: {e}"))?;
-    let registry = crate::commands::scan::DetectorRegistry::new().with_patterns(patterns);
-    let mut refused: Vec<(String, String)> = Vec::new();
-
-    for key in &config.allow_actual {
-        // A key listed but absent from .env is not an error: a shared config
-        // naturally covers keys a given project does not set.
-        let Some(value) = env_vars.get(key) else {
-            continue;
-        };
-
-        // The strongest verdict, not the first: `scan_kv` runs every detector
-        // and more than one can answer for a single value.
-        if let Some(detection) = registry
-            .scan_kv(key, value, "allow_actual")
-            .into_iter()
-            .max_by_key(|d| d.confidence)
-        {
-            refused.push((key.clone(), detection.pattern));
-        }
-    }
+    let refused = credential_keys(config.allow_actual.iter(), env_vars, "allow_actual")?;
 
     if refused.is_empty() {
         return Ok(());
@@ -251,6 +229,65 @@ pub fn check_allow_actual(
          Remove these keys from it and they will be written as placeholders.",
     );
     anyhow::bail!(message)
+}
+
+/// The keys among `keys` whose value in `env_vars` holds a credential, each with
+/// the reason, by the detectors `evnx scan` uses. One check for every path that
+/// writes **actual values** into `.env.example`: `allow_actual`, and the two
+/// interactive "actual values" choices (I-113, DEC-S1). A key absent from
+/// `env_vars` is skipped.
+pub(crate) fn credential_keys<'a>(
+    keys: impl IntoIterator<Item = &'a String>,
+    env_vars: &IndexMap<String, String>,
+    source: &str,
+) -> Result<Vec<(String, String)>> {
+    // ⚠️ `DetectorRegistry::new()` alone is NOT the set `evnx scan` uses; see
+    // `check_allow_actual`. `with_patterns` adds the provider rules.
+    let patterns =
+        crate::commands::scan::PatternSet::compile(&crate::utils::patterns::builtin_rules())
+            .map_err(|e| anyhow::anyhow!("the built-in secret patterns failed to compile: {e}"))?;
+    let registry = crate::commands::scan::DetectorRegistry::new().with_patterns(patterns);
+    let mut refused = Vec::new();
+    for key in keys {
+        let Some(value) = env_vars.get(key) else {
+            continue;
+        };
+        // The strongest verdict, not the first: `scan_kv` runs every detector
+        // and more than one can answer for a single value.
+        if let Some(detection) = registry
+            .scan_kv(key, value, source)
+            .into_iter()
+            .max_by_key(|d| d.confidence)
+        {
+            refused.push((key.clone(), detection.pattern));
+        }
+    }
+    Ok(refused)
+}
+
+/// Say which keys were kept out of `.env.example`, and log the ones written
+/// with real values (DEC-S1: the audit line always goes to stderr).
+fn report_actual_values(written: &[String], refused: &[(String, String)]) {
+    if !refused.is_empty() {
+        ui::warning(format!(
+            "{} kept out of .env.example: {} a credential, written as {}",
+            refused.len(),
+            if refused.len() == 1 {
+                "it holds"
+            } else {
+                "they hold"
+            },
+            if refused.len() == 1 {
+                "a placeholder"
+            } else {
+                "placeholders"
+            }
+        ));
+        for (key, why) in refused {
+            ui::warning_detail(format!("  • {key} — {why}"));
+        }
+    }
+    log_security_event(written, true);
 }
 
 fn sync_forward(
@@ -458,12 +495,9 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
                 return Ok(true);
             }
 
-            log_security_event(
-                &missing.iter().map(|k| (*k).clone()).collect::<Vec<_>>(),
-                verbose,
-            );
-
-            let preview = add_with_actual_values_preview(&missing, &env_file.vars)?;
+            let _ = verbose;
+            let refused = credential_keys(missing.iter().copied(), &env_file.vars, "sync")?;
+            let preview = add_with_actual_values_preview(&missing, &env_file.vars, config)?;
             if dry_run {
                 print_preview(&SyncPreview {
                     target_file: paths.example_str(),
@@ -473,7 +507,13 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
                 });
                 return Ok(true);
             }
-            add_with_actual_values(paths, &missing, &env_file.vars)?;
+            add_with_actual_values(paths, &missing, &env_file.vars, config)?;
+            let written: Vec<String> = missing
+                .iter()
+                .filter(|k| !refused.iter().any(|(r, _)| r == **k))
+                .map(|k| (*k).clone())
+                .collect();
+            report_actual_values(&written, &refused);
         }
         2 => {
             let preview = add_interactively_preview(&missing, &env_file.vars, config)?;
@@ -573,6 +613,14 @@ fn handle_new_example_file(
         true
     };
 
+    // DEC-S1: actual values, except a key holding a credential (I-113).
+    let refused = if use_placeholders {
+        Vec::new()
+    } else {
+        credential_keys(vars.keys(), vars, "sync")?
+    };
+    let is_refused = |k: &str| refused.iter().any(|(r, _)| r == k);
+
     let preview = if use_placeholders {
         convert_to_example_preview(vars, config)?
     } else {
@@ -580,8 +628,12 @@ fn handle_new_example_file(
             .map(|(k, v)| VarChange {
                 key: k.clone(),
                 old_value: None,
-                new_value: v.clone(),
-                is_placeholder: false,
+                new_value: if is_refused(k) {
+                    generate_placeholder(k, Some(v), config)
+                } else {
+                    v.clone()
+                },
+                is_placeholder: is_refused(k),
             })
             .collect()
     };
@@ -599,7 +651,33 @@ fn handle_new_example_file(
     if use_placeholders {
         convert_to_example(paths, vars, config)?;
     } else {
-        write_template(&paths.example, &fs::read_to_string(&paths.env)?)?;
+        // The `.env` text as it is — comments and order kept — with each
+        // credential's line rewritten to its placeholder.
+        let text = fs::read_to_string(&paths.env)?;
+        let mut out = String::with_capacity(text.len());
+        for line in text.split_inclusive('\n') {
+            let body = line.trim_start();
+            let body = body.strip_prefix("export ").unwrap_or(body);
+            let key = body.split('=').next().unwrap_or("").trim();
+            if body.contains('=') && is_refused(key) {
+                let eol = if line.ends_with("\r\n") {
+                    "\r\n"
+                } else if line.ends_with('\n') {
+                    "\n"
+                } else {
+                    ""
+                };
+                out.push_str(&format!(
+                    "{key}={}{eol}",
+                    generate_placeholder(key, vars.get(key), config)
+                ));
+            } else {
+                out.push_str(line);
+            }
+        }
+        write_template(&paths.example, &out)?;
+        let written: Vec<String> = vars.keys().filter(|k| !is_refused(k)).cloned().collect();
+        report_actual_values(&written, &refused);
     }
 
     ui::success(format!("Created {}", paths.example_str()));
@@ -892,11 +970,15 @@ fn add_with_placeholders_preview(
         .collect())
 }
 
+/// Append `keys` with their real values — except a key holding a credential,
+/// which gets its placeholder instead (I-113, DEC-S1).
 fn add_with_actual_values(
     paths: &SyncPaths,
     keys: &[&String],
     values: &IndexMap<String, String>,
+    config: &PlaceholderConfig,
 ) -> Result<()> {
+    let refused = credential_keys(keys.iter().copied(), values, "sync")?;
     let mut content = fs::read_to_string(&paths.example)?;
     content.push_str(&format!(
         "\n# Synced from {} [! ACTUAL VALUES]\n",
@@ -904,7 +986,10 @@ fn add_with_actual_values(
     ));
 
     for key in keys {
-        if let Some(value) = values.get(*key) {
+        if refused.iter().any(|(r, _)| r == *key) {
+            let placeholder = generate_placeholder(key, values.get(*key), config);
+            content.push_str(&format!("{}={}\n", key, placeholder));
+        } else if let Some(value) = values.get(*key) {
             content.push_str(&format!("{}={}\n", key, value));
         }
     }
@@ -916,15 +1001,28 @@ fn add_with_actual_values(
 fn add_with_actual_values_preview(
     keys: &[&String],
     values: &IndexMap<String, String>,
+    config: &PlaceholderConfig,
 ) -> Result<Vec<VarChange>> {
+    let refused = credential_keys(keys.iter().copied(), values, "sync")?;
     Ok(keys
         .iter()
         .filter_map(|key| {
-            values.get(*key).map(|v| VarChange {
-                key: (*key).clone(),
-                old_value: None,
-                new_value: v.clone(),
-                is_placeholder: false,
+            values.get(*key).map(|v| {
+                if refused.iter().any(|(r, _)| r == *key) {
+                    VarChange {
+                        key: (*key).clone(),
+                        old_value: None,
+                        new_value: generate_placeholder(key, Some(v), config),
+                        is_placeholder: true,
+                    }
+                } else {
+                    VarChange {
+                        key: (*key).clone(),
+                        old_value: None,
+                        new_value: v.clone(),
+                        is_placeholder: false,
+                    }
+                }
             })
         })
         .collect())
@@ -1299,11 +1397,14 @@ mod tests {
         let keys_vec: Vec<String> = vec!["API_KEY".to_string()];
         let keys: Vec<&String> = keys_vec.iter().collect();
 
-        let preview = add_with_actual_values_preview(&keys, &values).unwrap();
+        let preview =
+            add_with_actual_values_preview(&keys, &values, &PlaceholderConfig::default()).unwrap();
 
+        // DEC-S1 (I-113): a credential is shown as the placeholder it will be
+        // written as, never as its real value.
         assert_eq!(preview.len(), 1);
-        assert!(!preview[0].is_placeholder);
-        assert_eq!(preview[0].new_value, "sk_live_123");
+        assert!(preview[0].is_placeholder);
+        assert_ne!(preview[0].new_value, "sk_live_123");
     }
 
     // NEW: Integration-style tests with temp files

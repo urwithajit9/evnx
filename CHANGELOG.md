@@ -28,6 +28,18 @@ command's output is locked in CI before any module changes it.
   even under a harmless name — the same built-in rules `scan` uses. In `pretty`
   and `json`; without `--show-values` nothing about a value is shown, as before.
 
+### ⛔ Security — `sync`'s "actual values" choices copied credentials into `.env.example`
+
+- **The two interactive "actual values" choices of `sync` now refuse
+  credentials** (I-113, DEC-S1), as `allow_actual` already did: "Yes, add with
+  actual values" for an existing template, and "Actual values copied from .env"
+  for a new one. A key whose value holds a credential — by the detectors `evnx
+  scan` uses — gets its placeholder instead and is named in a warning; the other
+  keys keep their real values. One `y` used to commit `sk_live_…` or a database
+  password. A new template keeps the `.env`'s comments and order.
+- `[AUDIT] actual values written to .env.example for: …` goes to stderr every
+  time real values are written, not only with `--verbose`.
+
 ### ⛔ Security — `convert -o` wrote every secret world-readable
 
 - **`convert -o FILE` creates FILE with mode 0600**, not the umask's 0644 (I-081).
@@ -201,6 +213,8 @@ and read a success line must check the exit code instead.
   tests against a real git repository and a CRLF file.
 - `tests/diff_values.rs` (4) pins I-071 and I-076; `core::classify` and
   `core::mask` have unit tests (URL structure, no prefix, UTF-8).
+- `tests/sync_pty.rs` (2) drives both "actual values" choices through a real
+  terminal (I-113).
 - `tests/quiet_walk.rs` (T-SHARE-60) reads every command from `evnx commands
   --json`: each one has a `-q` success case that must print nothing, or a stated
   reason it has none. A new command fails the test until it is classified.
