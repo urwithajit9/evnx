@@ -29,6 +29,8 @@ pub enum Name {
     AwsSecretName,
     /// A project, config, environment or profile identifier.
     Slug,
+    /// An evnx organisation slug (the server's rule, migration 010).
+    OrgSlug,
 }
 
 impl Name {
@@ -48,6 +50,9 @@ impl Name {
             }
             Name::AwsSecretName => "1–512 characters from letters, digits and `/_+=.@-`",
             Name::Slug => "letters, digits and `._-@+=:/`, no spaces or shell characters",
+            Name::OrgSlug => {
+                "1–63 lowercase letters, digits and hyphens, not starting or ending with a hyphen"
+            }
         }
     }
 
@@ -89,6 +94,13 @@ impl Name {
                             || matches!(c, '/' | '_' | '+' | '=' | '.' | '@' | '-')
                     })
             }
+            Name::OrgSlug => {
+                (1..=63).contains(&n)
+                    && !s.starts_with('-')
+                    && !s.ends_with('-')
+                    && s.chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            }
             Name::Slug => {
                 (1..=256).contains(&n)
                     && s.chars().all(|c| {
@@ -110,6 +122,22 @@ pub fn check(flag: &str, value: &str, kind: Name) -> Result<()> {
          Expected {}. Nothing was printed or sent.",
         kind.rule()
     )
+}
+
+/// Refuse `value` for `flag` unless it looks like an email address: one `@`
+/// with something on both sides, no whitespace (I-216). ⚠️ No stricter than the
+/// server, which asks only for an `@` — `bob@localhost` is accepted there, so it
+/// is here.
+pub fn check_email(flag: &str, value: &str) -> Result<()> {
+    let v = value.trim();
+    let ok = !v.chars().any(char::is_whitespace)
+        && v.split_once('@').is_some_and(|(local, domain)| {
+            !local.is_empty() && !domain.is_empty() && !domain.contains('@')
+        });
+    if ok {
+        return Ok(());
+    }
+    bail!("{flag} {value:?} is not an email address. Nothing was sent.")
 }
 
 /// [`check`] for an optional flag.
@@ -196,6 +224,34 @@ mod tests {
         assert!(Name::GitHubRepo.accepts("octo-org/hello.world_1"));
         for bad in ["notarepo", "/r", "o/", "o/r/x", "-o/r", "o/..", "o r/x"] {
             assert!(!Name::GitHubRepo.accepts(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn t_i215_org_slug_is_the_servers_rule() {
+        for ok in ["acme", "acme-2", "a"] {
+            assert!(Name::OrgSlug.accepts(ok), "{ok}");
+        }
+        for bad in ["Bad Slug!", "-acme", "acme-", "ACME", "", &"a".repeat(64)] {
+            assert!(!Name::OrgSlug.accepts(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn t_i216_email_needs_an_at_with_text_both_sides() {
+        // ⚠️ No stricter than the server, which asks only for an `@`.
+        for ok in ["bob@example.com", "bob@localhost", " bob@example.com "] {
+            assert!(check_email("<email>", ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "not-an-email",
+            "@example.com",
+            "bob@",
+            "b ob@x.io",
+            "a@b@c.io",
+            "",
+        ] {
+            assert!(check_email("<email>", bad).is_err(), "{bad}");
         }
     }
 

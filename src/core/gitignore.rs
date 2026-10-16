@@ -454,6 +454,17 @@ pub fn exposure(project_root: &Path, filename: &str) -> Exposure {
     }
 }
 
+/// Whether `dir` is inside a git work tree. `false` when git cannot answer.
+pub fn in_work_tree(dir: &Path) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output()
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true")
+        .unwrap_or(false)
+}
+
 /// Whether git's index holds `filename`. `false` when git cannot answer.
 fn is_tracked(project_root: &Path, filename: &str) -> bool {
     Command::new("git")

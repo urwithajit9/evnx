@@ -28,6 +28,7 @@
 //! difference between this and every `export`-based workaround. There is a test
 //! that checks exactly that by reading `/proc`.
 
+use crate::cloud::client::api_path;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use indexmap::IndexMap;
@@ -52,6 +53,7 @@ pub fn run(
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
     password_stdin: bool,
+    allow_unsafe_names: bool,
     verbose: bool,
     command: Vec<String>,
 ) -> Result<()> {
@@ -82,10 +84,13 @@ pub fn run(
     };
 
     let blob_bytes = client
-        .get_bytes(&format!(
-            "/api/v1/vaults/{}/versions/{version}/blob",
-            vault_ref.id
-        ))
+        .get_bytes(&api_path(&[
+            "vaults",
+            &vault_ref.id.to_string(),
+            "versions",
+            &version.to_string(),
+            "blob",
+        ])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     if blob_bytes.len() <= NONCE_LEN {
@@ -188,6 +193,9 @@ pub fn run(
         );
     }
 
+    // Before the child exists: a refused name means nothing runs (I-228).
+    check_names(&env_vars, allow_unsafe_names)?;
+
     let status = spawn_with_env(program, args, &env_vars).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             anyhow!(
@@ -232,6 +240,33 @@ pub fn run(
     }
 }
 
+/// Refuse vault variables that would make the child load or run other code
+/// (`PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, …), unless `allow`.
+///
+/// ⚠️ Any name from the vault was injected, so anyone who can push to a vault
+/// could set `LD_PRELOAD` and run code inside every reader's `cloud run`
+/// (I-228, DEC-CL1). Checked before the child starts: nothing runs.
+fn check_names(env_vars: &IndexMap<String, String>, allow: bool) -> Result<()> {
+    if allow {
+        return Ok(());
+    }
+    let unsafe_names: Vec<&str> = env_vars
+        .keys()
+        .map(String::as_str)
+        .filter(|k| crate::core::envsource::is_unsafe_name(k))
+        .collect();
+    if unsafe_names.is_empty() {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "the vault sets {}, which make a program load or run other code.\n\
+         \x20 Anyone who can push to this vault could use them to run code here.\n\
+         \x20 Nothing was run. Exclude them with --exclude, or pass\n\
+         \x20 --allow-unsafe-names if you meant to set them.",
+        unsafe_names.join(", ")
+    ))
+}
+
 /// Run `program` with `env_vars` laid over the inherited environment.
 ///
 /// ⚠️ Separated from `run` so the properties that matter can be tested without a
@@ -248,6 +283,17 @@ fn spawn_with_env(
 ) -> std::io::Result<std::process::ExitStatus> {
     let mut cmd = Command::new(program);
     cmd.args(args);
+    // ⚠️ evnx's own settings stay with evnx (I-227, DEC-CL1). `EVNX_TOKEN`,
+    // `EVNX_PASSWORD` and `EVNX_SERVER` were inherited, so every child of a CI
+    // step held the pipeline's API token.
+    for (key, _) in std::env::vars_os() {
+        if key
+            .to_str()
+            .is_some_and(crate::core::envsource::is_evnx_own)
+        {
+            cmd.env_remove(&key);
+        }
+    }
     for (key, value) in env_vars {
         // `env`, never an argument. This one line is the whole reason to prefer
         // this command over `export $(cat .env | xargs)`.
@@ -358,29 +404,64 @@ mod tests {
     /// Inherited, not cleared — otherwise PATH is gone and nothing runs.
     #[test]
     fn the_parent_environment_is_inherited() {
-        std::env::set_var("EVNX_RUN_INHERIT_PROBE", "from-parent");
+        std::env::set_var("RUN_INHERIT_PROBE", "from-parent");
         let status = spawn_with_env(
             "sh",
-            &sh(r#"[ "$EVNX_RUN_INHERIT_PROBE" = "from-parent" ]"#),
+            &sh(r#"[ "$RUN_INHERIT_PROBE" = "from-parent" ]"#),
             &IndexMap::new(),
         )
         .unwrap();
-        std::env::remove_var("EVNX_RUN_INHERIT_PROBE");
+        std::env::remove_var("RUN_INHERIT_PROBE");
         assert!(status.success(), "the parent environment was not inherited");
     }
 
     /// And the vault wins where both define a name — that is what injection means.
     #[test]
     fn a_vault_variable_overrides_the_inherited_one() {
-        std::env::set_var("EVNX_RUN_OVERRIDE_PROBE", "from-parent");
+        std::env::set_var("RUN_OVERRIDE_PROBE", "from-parent");
         let status = spawn_with_env(
             "sh",
-            &sh(r#"[ "$EVNX_RUN_OVERRIDE_PROBE" = "from-vault" ]"#),
-            &vars(&[("EVNX_RUN_OVERRIDE_PROBE", "from-vault")]),
+            &sh(r#"[ "$RUN_OVERRIDE_PROBE" = "from-vault" ]"#),
+            &vars(&[("RUN_OVERRIDE_PROBE", "from-vault")]),
         )
         .unwrap();
-        std::env::remove_var("EVNX_RUN_OVERRIDE_PROBE");
+        std::env::remove_var("RUN_OVERRIDE_PROBE");
         assert!(status.success(), "the inherited value won");
+    }
+
+    /// I-227, DEC-CL1: evnx's own settings — the API token above all — do not
+    /// reach the child. A test used to lock in that they did.
+    #[test]
+    fn t_i227_evnx_settings_are_not_inherited() {
+        std::env::set_var("EVNX_TOKEN_PROBE_I227", "evnx_tok_secret");
+        let status = spawn_with_env(
+            "sh",
+            &sh(r#"[ -z "${EVNX_TOKEN_PROBE_I227+set}" ]"#),
+            &IndexMap::new(),
+        )
+        .unwrap();
+        std::env::remove_var("EVNX_TOKEN_PROBE_I227");
+        assert!(status.success(), "an EVNX_ variable reached the child");
+    }
+
+    /// I-228, DEC-CL1: a vault variable that makes the child load or run other
+    /// code is refused, naming it, unless the user allows it.
+    #[test]
+    fn t_i228_unsafe_names_are_refused_unless_allowed() {
+        let v = vars(&[
+            ("API_KEY", "k"),
+            ("LD_PRELOAD", "/tmp/x.so"),
+            ("NODE_OPTIONS", "-r x"),
+        ]);
+        let err = check_names(&v, false).unwrap_err().to_string();
+        assert!(
+            err.contains("LD_PRELOAD") && err.contains("NODE_OPTIONS"),
+            "{err}"
+        );
+        assert!(err.contains("--allow-unsafe-names"), "{err}");
+        assert!(!err.contains("API_KEY"), "{err}");
+        assert!(check_names(&v, true).is_ok());
+        assert!(check_names(&vars(&[("API_KEY", "k")]), false).is_ok());
     }
 
     /// A missing command is an io::ErrorKind::NotFound, which `run` turns into

@@ -133,7 +133,16 @@ fn t_i217_cloud_paths_have_one_builder() {
         for (n, l) in text.lines().enumerate() {
             let code = !l.trim_start().starts_with("//");
             // `/api/v1/probe/` is a client test's own fake route.
-            if code && l.contains("format!(\"/api/v1") && !l.contains("/api/v1/probe/") {
+            // ⚠️ The path text, not `format!("/api/v1`: six calls had `format!(`
+            // on one line and the path on the next, and passed the first version
+            // of this test. A `"/api/v1…{…}"` literal is a hand-built path
+            // however it is laid out.
+            let literal_with_placeholder = l
+                .split('"')
+                .skip(1)
+                .step_by(2)
+                .any(|s| s.starts_with("/api/v1") && s.contains('{'));
+            if code && literal_with_placeholder && !l.contains("/api/v1/probe/") {
                 offenders.push(format!("{}:{}", f.display(), n + 1));
             }
         }

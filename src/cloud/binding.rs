@@ -152,8 +152,14 @@ pub fn clear(dir: &Path) -> Result<Option<PathBuf>> {
         doc.remove("cloud");
     }
 
-    std::fs::write(&path, doc.to_string())
-        .with_context(|| format!("writing {}", path.display()))?;
+    // ⚠️ Nothing left: remove the file rather than leave a 0-byte
+    // `.evnx.toml` behind (I-224). Anything else in it is the user's and stays.
+    let rest = doc.to_string();
+    if rest.trim().is_empty() {
+        std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
+        return Ok(Some(path));
+    }
+    std::fs::write(&path, rest).with_context(|| format!("writing {}", path.display()))?;
     Ok(Some(path))
 }
 

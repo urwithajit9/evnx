@@ -35,6 +35,8 @@
 //! rather than in every file that includes it.
 #![allow(dead_code, unused_imports)]
 
+#[cfg(feature = "cloud")]
+pub mod cloud;
 #[cfg(target_os = "linux")]
 pub mod demo;
 pub mod project;

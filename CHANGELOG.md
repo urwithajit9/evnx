@@ -129,6 +129,42 @@ not run — no verdict". Four places broke that:
 - At a terminal both questions are answered on Enter, like every other yes/no
   prompt, and Esc cancels: "Cancelled. Nothing was uploaded."
 
+### ⛔ Security — `cloud run`, and what an API token may do
+
+- **`cloud run` refuses vault variables that make a program run other code**
+  (I-228, DEC-CL1): `PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`,
+  `PYTHONPATH`, `JAVA_TOOL_OPTIONS` and similar. Any name from the vault was
+  injected, so anyone who could push to a vault could run code in every
+  reader's process. Nothing runs; `--exclude` them, or pass
+  `--allow-unsafe-names` if the vault is meant to set them.
+- **`cloud run` no longer hands evnx's own settings to the child** (I-227):
+  `EVNX_TOKEN`, `EVNX_PASSWORD`, `EVNX_SERVER` and the rest stay with evnx.
+- **An API token can no longer delete a vault or a version, share, change a
+  role, revoke or re-key** (I-220, DEC-VL1): refused before any request. The
+  server refuses them too (evnx-server SV-1). Push, pull, run, list and members
+  stay open to tokens — what CI needs.
+
+### Fixed — `evnx org`, `vault` and `cloud`
+
+- **`org delete --force` is the gate it says it is** (I-214, DEC-OR1): it sent
+  `force: true` whenever seats were assigned, so `--yes` alone deleted an
+  organisation with seat holders. Without `--force` that is now refused, naming
+  the flag.
+- `org create` checks the slug and name, and `org invite` the email, against the
+  server's own rules before sending anything (I-215, I-216).
+- `org remove`, `delete`, `leave` and `auth devices disavow` ask with the shared
+  confirmation: piped `y` no longer confirms, and without a terminal they stop
+  and name `--yes` (I-218).
+- `org invites` shows `2026-10-20 09:00`, not the raw timestamp (I-219); every
+  cloud command now formats times one way.
+- `vault share` and `vault role` accept `--role Admin` (I-223).
+- `cloud link <vault-id>` writes the vault's name, not `vault = "/"` (I-221).
+- `cloud unlink` removes `.evnx.toml` when nothing else is left in it (I-224).
+- `cloud status` reports an `EVNX_TOKEN` instead of "not signed in" (I-232).
+- **`cloud export` refuses to write into a git repository** unless `-o` names the
+  place or `--force` accepts it, and every export gets a `.gitignore` of `*`
+  (I-230, DEC-CL6). The default `./evnx-export` is plaintext.
+
 ### Fixed — `evnx auth`
 
 - **An API token can no longer change the master password, download the
@@ -340,6 +376,8 @@ and read a success line must check the exit code instead.
   is gone); `core::args::{MAX_DAYS, parse_days, days_before}`;
   `utils::prompt::confirm`; `core::envsource::{UNSAFE_NAMES, UNSAFE_PREFIXES,
   is_unsafe_name, is_evnx_own}`.
+- New: `cloud::when` (one timestamp format), `core::args::{Name::OrgSlug,
+  check_email}`, `core::gitignore::in_work_tree`, `cloud run --allow-unsafe-names`.
 
 ### Fixed
 
@@ -405,6 +443,10 @@ and read a success line must check the exit code instead.
   status and logout. `tests/quoted_commands.rs` (T-SHARE-49): every
   `` `evnx …` `` quoted in `src/` is a real command, not a bare group, with real
   flags — it catches I-202 and both I-208 on the old source and nothing else.
+- `tests/cloud_org.rs` (5), `tests/cloud_vault.rs` (3), `tests/cloud_cloud.rs` (4):
+  every Part D fix against a mock server, refusals with zero requests; the
+  architecture guard now reads the path text, after six multi-line hand-built
+  paths had passed it.
 
 ## [0.10.2] - 2026-10-14
 

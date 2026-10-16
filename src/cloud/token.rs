@@ -229,11 +229,11 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
             pad(&vault, 22),
             t.expires_at
                 .as_deref()
-                .map(short_date)
+                .map(super::when::date)
                 .unwrap_or_else(|| "never".into()),
             t.last_used_at
                 .as_deref()
-                .map(short_date)
+                .map(super::when::date)
                 .unwrap_or_else(|| "never".into()),
         );
     }
@@ -245,7 +245,7 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
                 "  {}  {} (created {})",
                 t.id,
                 t.name,
-                short_date(&t.created_at)
+                super::when::date(&t.created_at)
             );
         }
     }
@@ -348,11 +348,6 @@ fn validate_scope(scope: &str) -> Result<String> {
     }
 }
 
-/// Trim an RFC 3339 timestamp to its date.
-fn short_date(ts: &str) -> String {
-    ts.split('T').next().unwrap_or(ts).to_string()
-}
-
 /// The widest of `items` as a terminal draws it, at least `min`.
 ///
 /// ⚠️ Display width, not bytes or chars: `t.name.len()` counted bytes, so an
@@ -435,8 +430,11 @@ mod tests {
 
     #[test]
     fn dates_are_trimmed_for_display() {
-        assert_eq!(short_date("2026-09-14T10:00:00Z"), "2026-09-14");
-        assert_eq!(short_date("never"), "never");
+        assert_eq!(
+            crate::cloud::when::date("2026-09-14T10:00:00Z"),
+            "2026-09-14"
+        );
+        assert_eq!(crate::cloud::when::date("never"), "never");
     }
 
     #[test]

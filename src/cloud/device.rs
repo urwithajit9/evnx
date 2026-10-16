@@ -101,8 +101,8 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
         println!(
             "  {:<14}  {:<17}  {:<17}  {:>7}  {}",
             id,
-            stamp(&d.first_seen),
-            stamp(&d.last_seen),
+            super::when::stamp(&d.first_seen),
+            super::when::stamp(&d.last_seen),
             d.sign_in_count,
             marker,
         );
@@ -169,12 +169,13 @@ pub fn disavow(
         );
         println!("  You will need to sign in again.");
         println!();
-        print!("  Disavow device {device_id}? [y/N] ");
-        use std::io::Write;
-        std::io::stdout().flush().ok();
-        let mut answer = String::new();
-        std::io::stdin().read_line(&mut answer)?;
-        if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+        // The shared confirm (I-218, DEC-AU7): no terminal and no `--yes` is a
+        // refusal naming `--yes`, not a raw stdin read that `echo y |` answers.
+        if !crate::utils::prompt::confirm(
+            &format!("Disavow device {device_id}?"),
+            false,
+            "evnx auth devices disavow <device> --yes",
+        )? {
             println!("  Nothing changed.");
             return Ok(());
         }
@@ -240,29 +241,20 @@ fn require_login(client: &Client, _server: &str) -> Result<()> {
     )
 }
 
-/// `2026-10-02T14:23:08.123Z` → `2026-10-02 14:23`.
-///
-/// Shared shape with `session::stamp`; kept local rather than imported because
-/// the two modules format different payloads and a change to one should not
-/// silently move the other.
-fn stamp(ts: &str) -> String {
-    let s = ts.replace('T', " ");
-    s.chars().take(16).collect()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn a_timestamp_is_trimmed_to_the_minute() {
-        assert_eq!(stamp("2026-10-02T14:23:08.123456Z"), "2026-10-02 14:23");
+        assert_eq!(
+            crate::cloud::when::stamp("2026-10-02T14:23:08.123456Z"),
+            "2026-10-02 14:23"
+        );
     }
 
     #[test]
     fn a_short_timestamp_does_not_panic() {
-        assert_eq!(stamp("2026-10-02"), "2026-10-02");
-        assert_eq!(stamp(""), "");
+        assert_eq!(crate::cloud::when::stamp("2026-10-02"), "2026-10-02");
+        assert_eq!(crate::cloud::when::stamp(""), "");
     }
 
     /// ⚠️ Nothing this command prints may claim a location.

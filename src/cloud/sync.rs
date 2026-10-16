@@ -437,10 +437,13 @@ pub(crate) fn fetch_blob(
     version: i32,
 ) -> Result<evnx_crypto::EncryptedBlob> {
     let blob_bytes = client
-        .get_bytes(&format!(
-            "/api/v1/vaults/{}/versions/{version}/blob",
-            vault_ref.id
-        ))
+        .get_bytes(&api_path(&[
+            "vaults",
+            &vault_ref.id.to_string(),
+            "versions",
+            &version.to_string(),
+            "blob",
+        ])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     if blob_bytes.len() <= NONCE_LEN {
@@ -575,7 +578,13 @@ pub fn link(server_override: Option<&str>, vault_target: String, verbose: bool) 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     client.require_credential()?;
-    let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
+    let mut vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
+    // ⚠️ An id skips the lookup, so name and environment come back empty, and
+    // this wrote `vault = "/"` (I-221, DEC-CL2). Look the id up; a binding is
+    // read by people, and `app/production` says what `/` did not.
+    if vault_ref.name.is_empty() {
+        vault_ref = vault::resolve_id(&client, &vault_ref.id)?;
+    }
 
     let cwd = std::env::current_dir().context("reading the current directory")?;
     let canonical = format!("{}/{}", vault_ref.name, vault_ref.environment);
@@ -1026,7 +1035,10 @@ pub fn delete_version(
     let vault_target = resolve_target(vault_target)?;
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    client.require_credential()?;
+    client.require_user_session(
+        "delete a version",
+        "\x20 A deleted version and its blob cannot be recovered; a leaked CI token\n\x20 must not be able to erase history.\n",
+    )?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
     let listed: VersionList = client
@@ -1098,10 +1110,12 @@ pub fn delete_version(
     }
 
     client
-        .delete(&format!(
-            "/api/v1/vaults/{}/versions/{version_num}",
-            vault_ref.id
-        ))
+        .delete(&api_path(&[
+            "vaults",
+            &vault_ref.id.to_string(),
+            "versions",
+            &version_num.to_string(),
+        ])?)
         .map_err(delete_version_error)?;
 
     println!("  {} deleted version {version_num}", "✓".green());

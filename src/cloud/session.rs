@@ -70,9 +70,9 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
         println!(
             "  {:<8}  {:<17}  {:<17}  {:<10}  {}",
             id,
-            stamp(&s.created_at),
-            stamp(&s.last_used_at),
-            short_date(&s.expires_at),
+            super::when::stamp(&s.created_at),
+            super::when::stamp(&s.last_used_at),
+            super::when::date(&s.expires_at),
             if s.current {
                 "← this device".green().to_string()
             } else {
@@ -262,15 +262,6 @@ fn require_login(client: &Client, _server: &str) -> Result<()> {
     client.require_user_session("manage sessions", "")
 }
 
-/// `2026-09-14T15:02:11Z` → `2026-09-14 15:02`.
-fn stamp(ts: &str) -> String {
-    ts.replace('T', " ").chars().take(16).collect()
-}
-
-fn short_date(ts: &str) -> String {
-    ts.split('T').next().unwrap_or(ts).to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,7 +320,13 @@ mod tests {
 
     #[test]
     fn timestamps_are_trimmed_for_display() {
-        assert_eq!(stamp("2026-09-14T15:02:11Z"), "2026-09-14 15:02");
-        assert_eq!(short_date("2026-10-14T15:02:11Z"), "2026-10-14");
+        assert_eq!(
+            crate::cloud::when::stamp("2026-09-14T15:02:11Z"),
+            "2026-09-14 15:02"
+        );
+        assert_eq!(
+            crate::cloud::when::date("2026-10-14T15:02:11Z"),
+            "2026-10-14"
+        );
     }
 }

@@ -105,6 +105,26 @@ pub(crate) fn fetch_and_resolve(client: &Client, target: &str) -> Result<VaultRe
 /// Deliberately strict: a loose check that accepted a vault *name* would send the
 /// name straight to the API as an id and produce a 404 instead of the much more
 /// useful "no vault called …".
+/// The name and environment of the vault with `id`, from `GET /vaults`.
+///
+/// For where a person will read the result (`cloud link`, I-221). An error if
+/// the id is not among the caller's vaults or the list cannot be fetched — a
+/// vault-scoped token cannot list, and then the name is not knowable.
+pub(crate) fn resolve_id(client: &Client, id: &str) -> Result<VaultRef> {
+    let listed: VaultList = client
+        .get("/api/v1/vaults")
+        .map_err(|e| anyhow!("could not look up vault {id}: {e}"))?;
+    let v =
+        listed.vaults.iter().find(|v| v.id == id).ok_or_else(|| {
+            anyhow!("no vault {id} among yours. Run `evnx vault list` to see them.")
+        })?;
+    Ok(VaultRef {
+        id: v.id.clone(),
+        name: v.name.clone(),
+        environment: v.environment.clone(),
+    })
+}
+
 pub(crate) fn looks_like_vault_id(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 36
@@ -276,7 +296,10 @@ pub fn delete(
 ) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    client.require_credential()?;
+    client.require_user_session(
+        "delete a vault",
+        "\x20 Deleting a vault is for a signed-in member, not a pipeline — a leaked\n\x20 CI token must not be able to destroy it.\n",
+    )?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
     let vault = resolve(&listed.vaults, &target)?;
@@ -367,6 +390,8 @@ pub fn share(
 ) -> Result<()> {
     use evnx_crypto::{unwrap_vault_key_with_master_key, wrap_vault_key_for_user, UserPublicKeys};
 
+    // Case-insensitive, like `--env` (I-223, DEC-CL8): `--role Admin` was refused.
+    let role = role.trim().to_lowercase();
     let valid_roles = ["viewer", "developer", "admin"];
     if !valid_roles.contains(&role.as_str()) {
         return Err(anyhow!(
@@ -379,7 +404,10 @@ pub fn share(
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    client.require_credential()?;
+    client.require_user_session(
+        "share a vault",
+        "\x20 Sharing decides who can read these secrets; a leaked CI token must\n\x20 not be able to add a reader.\n",
+    )?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
     let vault = resolve(&listed.vaults, &target)?;
@@ -875,6 +903,7 @@ pub fn set_role(
     role: String,
     verbose: bool,
 ) -> Result<()> {
+    let role = role.trim().to_lowercase(); // I-223
     let valid = ["viewer", "developer", "admin"];
     if !valid.contains(&role.as_str()) {
         return Err(anyhow!(
@@ -887,7 +916,10 @@ pub fn set_role(
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    client.require_credential()?;
+    client.require_user_session(
+        "change a member's role",
+        "\x20 Roles decide who can push, share and revoke; a leaked CI token must\n\x20 not be able to promote anyone.\n",
+    )?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
     let vault = resolve(&listed.vaults, &target)?;
@@ -1029,7 +1061,10 @@ pub fn revoke(
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    client.require_credential()?;
+    client.require_user_session(
+        "revoke a member",
+        "\x20 Revoking re-keys the vault for everyone left; a leaked CI token must\n\x20 not be able to remove members or lock them out.\n",
+    )?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
     let vault = resolve(&listed.vaults, &target)?;
@@ -1126,10 +1161,12 @@ pub fn revoke(
     // ── The simple path ──────────────────────────────────────────────────────
     if no_rekey {
         client
-            .delete(&format!(
-                "/api/v1/vaults/{}/members/{}",
-                vault.id, leaving.user_id
-            ))
+            .delete(&api_path(&[
+                "vaults",
+                &vault.id.to_string(),
+                "members",
+                &leaving.user_id.to_string(),
+            ])?)
             .map_err(|e| anyhow!("{e}"))?;
         println!("  {} removed {user_email} from {label}", "✓".green());
         println!(
@@ -1237,7 +1274,10 @@ pub fn rekey(
 ) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    client.require_credential()?;
+    client.require_user_session(
+        "re-key a vault",
+        "\x20 A re-key the server cannot check can lock every member out for good;\n\x20 it takes a signed-in member.\n",
+    )?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
     let vault = resolve(&listed.vaults, &target)?;

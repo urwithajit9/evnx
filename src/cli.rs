@@ -1131,6 +1131,15 @@ pub enum CloudCommands {
         #[arg(long)]
         password_stdin: bool,
 
+        /// Inject variables that make a program load or run other code.
+        ///
+        /// `PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV` and similar are
+        /// refused by default: anyone who can push to the vault could use them
+        /// to run code in your process. Pass this only if the vault is meant to
+        /// set them.
+        #[arg(long)]
+        allow_unsafe_names: bool,
+
         /// The command to run, after `--`.
         ///
         /// `last = true` makes the separator mandatory, so a flag meant for the

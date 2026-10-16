@@ -36,7 +36,27 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
     }
     println!("  server    {server}");
 
+    // ⚠️ A non-empty `EVNX_TOKEN` is the credential every cloud command uses,
+    // ahead of any stored login; this said "not signed in" while the commands
+    // worked (I-232, DEC-CL8). Local state only — `--ping` still checks reach.
+    let token_set = std::env::var(super::client::ENV_TOKEN).is_ok_and(|t| !t.trim().is_empty());
+    if token_set {
+        println!(
+            "  status    {}",
+            format!("using an API token (from {})", super::client::ENV_TOKEN).green()
+        );
+        if !quiet {
+            if let Some(session) = store.session(&server) {
+                println!(
+                    "  It takes precedence over the login stored for {}.",
+                    session.email
+                );
+            }
+            println!("  Account commands need a login: unset it and run `evnx auth login`.");
+        }
+    }
     match store.session(&server) {
+        _ if token_set => {}
         None => {
             println!("  status    {}", "not signed in".yellow());
             if !quiet {

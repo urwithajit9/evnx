@@ -76,6 +76,22 @@ pub fn export(
         None => None,
     };
 
+    // ⚠️ Before any request or password (I-230, DEC-CL6). The default output is
+    // `./evnx-export`: plaintext secrets, inside whatever directory this is. In
+    // a git work tree that is one `git add .` from history. `-o` names a place
+    // on purpose; `--force` accepts this one.
+    if output.is_none() && !force {
+        let cwd = std::env::current_dir().context("reading the current directory")?;
+        if crate::core::gitignore::in_work_tree(&cwd) {
+            return Err(anyhow!(
+                "this directory is inside a git repository, and an export writes every\n\
+                 \x20 secret in plaintext to ./{DEFAULT_OUTPUT_DIR}. Export somewhere outside it\n\
+                 \x20 with -o <dir>, or pass --force to write here (a .gitignore is written\n\
+                 \x20 inside the export). Nothing was sent."
+            ));
+        }
+    }
+
     let vault_target = sync::resolve_target(vault_target)?;
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
@@ -137,6 +153,16 @@ pub fn export(
     let vault_key = sync::unwrap_vault_key(&client, &vault_ref, &master_key)?;
 
     create_dir_private(&dir)?;
+    // Everything in an export is plaintext: ignore all of it, wherever it lands
+    // (DEC-CL6). `*` also covers this file.
+    let ignore = dir.join(".gitignore");
+    if !ignore.exists() {
+        std::fs::write(
+            &ignore,
+            "# Written by evnx cloud export: plaintext secrets.\n*\n",
+        )
+        .with_context(|| format!("writing {}", ignore.display()))?;
+    }
 
     let extension = converter
         .as_ref()

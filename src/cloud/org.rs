@@ -221,27 +221,18 @@ fn validate_role(raw: &str) -> Result<String> {
     }
 }
 
-/// Ask, and read a yes.
-///
-/// Inline rather than shared, matching `device::disavow` and `sync`: each caller
-/// prints its own consequences first, and a shared prompt would invite callers to
-/// rely on a generic question instead of naming what is about to happen.
-fn confirm(prompt: &str) -> Result<bool> {
-    use std::io::Write;
-    print!("{prompt}");
-    std::io::stdout().flush().ok();
-    let mut answer = String::new();
-    std::io::stdin().read_line(&mut answer)?;
-    Ok(matches!(
-        answer.trim().to_ascii_lowercase().as_str(),
-        "y" | "yes"
-    ))
-}
-
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 /// `evnx org create <name> --slug <slug>`
 pub fn create(server_override: Option<&str>, name: &str, slug: &str, verbose: bool) -> Result<()> {
+    // The server's own rules, checked before anything is sent (I-215, DEC-CL8).
+    let trimmed = name.trim();
+    if trimmed.is_empty() || trimmed.len() > 120 {
+        return Err(anyhow!(
+            "the organisation name must be 1–120 characters. Nothing was sent."
+        ));
+    }
+    crate::core::args::check("--slug", slug, crate::core::args::Name::OrgSlug)?;
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
@@ -370,6 +361,7 @@ pub fn invite(
     org: Option<&str>,
     verbose: bool,
 ) -> Result<()> {
+    crate::core::args::check_email("<email>", email)?; // I-216
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
@@ -446,7 +438,10 @@ pub fn invites(server_override: Option<&str>, org: Option<&str>, _verbose: bool)
     for i in &listed.invites {
         println!(
             "  {:<34}  {:<10}  {:<22}  {}",
-            i.email, i.role, i.expires_at, i.id
+            i.email,
+            i.role,
+            super::when::stamp(&i.expires_at),
+            i.id
         );
     }
     println!();
@@ -900,17 +895,20 @@ pub fn remove(
         }
         println!("  {}", "Nothing they already pulled is recalled.".dimmed());
         println!();
-        if !confirm("  Continue? [y/N] ")? {
+        if !crate::utils::prompt::confirm("Remove them?", false, "evnx org remove <member> --yes")?
+        {
             println!("  Cancelled.");
             return Ok(());
         }
     }
 
     client
-        .delete(&format!(
-            "/api/v1/orgs/{}/members/{}",
-            target.id, member.user_id
-        ))
+        .delete(&api_path(&[
+            "orgs",
+            &target.id.to_string(),
+            "members",
+            &member.user_id.to_string(),
+        ])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     println!("  {} removed {}", "✓".green(), member.email);
@@ -936,6 +934,19 @@ pub fn delete(
 
     let target = resolve_org(&client, org)?;
 
+    // ⚠️ `--force` is the gate, and only `--force` opens it (I-214, DEC-OR1).
+    // This sent `force: true` whenever seats were assigned, so with `--yes` the
+    // flag the help presents as a safety check gated nothing.
+    if target.seats.used > 0 && !force {
+        return Err(anyhow!(
+            "{} has {} seat(s) assigned, and deleting it drops every holder back to\n\
+             \x20 their own plan. Add --force to accept that, or release the seats\n\
+             \x20 first with `evnx org release`. Nothing was deleted.",
+            target.slug,
+            target.seats.used
+        ));
+    }
+
     if !yes {
         println!();
         println!("  Delete {}?", target.slug.bold());
@@ -953,7 +964,7 @@ pub fn delete(
             "Nothing anyone already pulled is recalled, and no vault is touched.".dimmed()
         );
         println!();
-        if !confirm("  Continue? [y/N] ")? {
+        if !crate::utils::prompt::confirm("Delete it?", false, "evnx org delete --yes")? {
             println!("  Cancelled.");
             return Ok(());
         }
@@ -962,7 +973,7 @@ pub fn delete(
     client
         .delete_with_body(
             &api_path(&["orgs", &target.id.to_string()])?,
-            &serde_json::json!({ "force": force || target.seats.used > 0 }),
+            &serde_json::json!({ "force": force }),
         )
         .map_err(|e| anyhow!("{e}"))?;
 
@@ -1011,17 +1022,19 @@ pub fn leave(
             );
         }
         println!();
-        if !confirm("  Continue? [y/N] ")? {
+        if !crate::utils::prompt::confirm("Leave it?", false, "evnx org leave --yes")? {
             println!("  Cancelled.");
             return Ok(());
         }
     }
 
     client
-        .delete(&format!(
-            "/api/v1/orgs/{}/members/{}",
-            target.id, me.user_id
-        ))
+        .delete(&api_path(&[
+            "orgs",
+            &target.id.to_string(),
+            "members",
+            &me.user_id.to_string(),
+        ])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     println!("  {} left {}", "✓".green(), target.slug);
