@@ -504,8 +504,15 @@ fn a_blueprint_and_its_component_list_generate_the_same_file() {
         .assert()
         .success();
 
-    let a = std::fs::read_to_string(by_blueprint.path().join(".env.example")).unwrap();
-    let b = std::fs::read_to_string(by_components.path().join(".env.example")).unwrap();
+    // Without the footer: it carries the minute, and the two runs straddled a
+    // minute boundary on the Windows runner (T-074, again — this test was
+    // missed when the others were fixed).
+    let a = without_generated_stamp(
+        &std::fs::read_to_string(by_blueprint.path().join(".env.example")).unwrap(),
+    );
+    let b = without_generated_stamp(
+        &std::fs::read_to_string(by_components.path().join(".env.example")).unwrap(),
+    );
     assert_eq!(a, b, "t3_modern and its component list diverge");
     assert!(a.len() > 200, "suspiciously small output: {a}");
 }
@@ -542,9 +549,14 @@ fn with_accepts_repeats_and_commas_alike() {
         .assert()
         .success();
 
+    // Without the minute-stamped footer (T-074).
     assert_eq!(
-        std::fs::read_to_string(combined.path().join(".env.example")).unwrap(),
-        std::fs::read_to_string(repeated.path().join(".env.example")).unwrap()
+        without_generated_stamp(
+            &std::fs::read_to_string(combined.path().join(".env.example")).unwrap()
+        ),
+        without_generated_stamp(
+            &std::fs::read_to_string(repeated.path().join(".env.example")).unwrap()
+        )
     );
 }
 
