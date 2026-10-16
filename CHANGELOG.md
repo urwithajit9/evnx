@@ -129,6 +129,27 @@ not run — no verdict". Four places broke that:
 - At a terminal both questions are answered on Enter, like every other yes/no
   prompt, and Esc cancels: "Cancelled. Nothing was uploaded."
 
+### Fixed — `evnx auth`
+
+- **An API token can no longer change the master password, download the
+  account's data or delete the account** (I-211, DEC-AU3). With `EVNX_TOKEN` set
+  those three went to the server — the other account commands already refused
+  locally. All of them now refuse before any request, with the same message.
+- **`auth sessions revoke` needs at least 4 characters of a session id**
+  (I-204, DEC-AU1). An empty target matched every session, so
+  `evnx auth sessions revoke "$ID" -y` with `$ID` unset signed the machine out.
+- **Revoking the session you are signed in with signs this machine out** (I-209):
+  it said so but kept the dead login, so the next command failed instead.
+- `auth status` says which credential it used (`using API token (from
+  EVNX_TOKEN)` or `signed in on this machine`); `auth logout` with only
+  `EVNX_TOKEN` says a token is ended with `evnx auth token revoke`, not "nothing
+  to do" (I-212, DEC-AU10).
+- Hints that named commands which do not run are fixed: `auth totp
+  recovery-codes` (was `backup-codes`, I-202) and `auth sessions list` (was the
+  group `auth sessions`, twice, I-208).
+- `auth token list` lines its columns up by display width, so accented and CJK
+  token names no longer push the columns out (I-207).
+
 ### ⛔ Security — cloud requests stay on the resource you named
 
 - **Text you give a cloud command can no longer change which API resource it
@@ -379,6 +400,11 @@ and read a success line must check the exit code instead.
   `--yes` (T-SHARE-52), each refused with no request. `api_path` is tested against
   what `reqwest::Url` really sends; `tests/architecture.rs` refuses a hand-built
   `/api/v1` path in `src/cloud` and a credential check outside `Client`.
+- `tests/cloud_auth.rs` (5): T-SHARE-51 (8 account commands refuse a token with
+  no request), I-204, I-209 (a real stored login is removed), DEC-AU10 for
+  status and logout. `tests/quoted_commands.rs` (T-SHARE-49): every
+  `` `evnx …` `` quoted in `src/` is a real command, not a bare group, with real
+  flags — it catches I-202 and both I-208 on the old source and nothing else.
 
 ## [0.10.2] - 2026-10-14
 

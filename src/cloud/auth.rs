@@ -439,7 +439,7 @@ fn login_with_password(
         let note = format!("  {n} recovery code(s) left");
         if n <= 3 {
             println!(
-                "{} — reissue them with `evnx auth totp backup-codes`",
+                "{} — reissue them with `evnx auth totp recovery-codes`",
                 note.yellow()
             );
         } else if verbose {
@@ -461,7 +461,19 @@ pub fn logout(server_override: Option<&str>, verbose: bool) -> Result<()> {
     let mut store = Store::load()?;
 
     if store.session(&server).is_none() {
-        println!("  Not signed in to {server}; nothing to do.");
+        // ⚠️ With only an API token there is nothing to sign out of, but
+        // "nothing to do" read as if the credential had ended. A token stays
+        // valid until it expires or is revoked (DEC-AU10, I-212).
+        if std::env::var(super::client::ENV_TOKEN).is_ok_and(|t| !t.is_empty()) {
+            println!("  Not signed in to {server} on this machine.");
+            println!(
+                "  {} is an API token, and logging out does not end it. Revoke it",
+                super::client::ENV_TOKEN
+            );
+            println!("  from a signed-in machine with `evnx auth token revoke <name>`.");
+        } else {
+            println!("  Not signed in to {server}; nothing to do.");
+        }
         return Ok(());
     }
 
@@ -479,7 +491,7 @@ pub fn logout(server_override: Option<&str>, verbose: bool) -> Result<()> {
             println!("  {} local credentials removed", "✓".green());
             println!("  {} the server was not told: {e}", "warning:".yellow());
             println!("  The session may still be usable until it expires. Revoke it from");
-            println!("  another signed-in machine with `evnx auth sessions`.");
+            println!("  another signed-in machine with `evnx auth sessions list`.");
         }
     }
     if verbose {
@@ -539,6 +551,17 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
         println!("{}", "evnx account".bold());
     }
     println!("  server    {server}");
+    // Which credential answered (DEC-AU10, I-212). An API token and a login
+    // can do different things, and "signed in as ci@example.com" alone does not
+    // say which one a pipeline is running with.
+    println!(
+        "  using     {}",
+        if client.is_api_token() {
+            format!("API token (from {})", super::client::ENV_TOKEN)
+        } else {
+            "signed in on this machine".to_string()
+        }
+    );
     println!("  email     {}", me.email);
     println!(
         "  verified  {}",
@@ -1006,7 +1029,10 @@ pub fn delete_account(
 ) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    client.require_credential()?;
+    client.require_user_session(
+        "delete the account",
+        "\x20 A leaked CI token must not be able to destroy the account it was\n\x20 issued from.\n",
+    )?;
 
     // Read the account first, so the prompt can name it and the 2FA question is
     // asked only when it applies. It is also the last chance to discover an
@@ -1142,7 +1168,10 @@ pub fn download_data(
 ) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    client.require_credential()?;
+    client.require_user_session(
+        "download the account's data",
+        "\x20 The export holds the account's keys and every vault's history; a\n\x20 leaked CI token must not be able to take it.\n",
+    )?;
 
     let path = output.unwrap_or_else(|| {
         std::path::PathBuf::from(default_data_filename(

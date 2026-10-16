@@ -107,6 +107,8 @@ pub fn revoke(
     assume_yes: bool,
     verbose: bool,
 ) -> Result<()> {
+    // First, before signing in or listing anything (I-204, DEC-AU1).
+    let target = check_target(&target)?;
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
@@ -154,6 +156,12 @@ pub fn revoke(
     );
     println!("  Its access token stopped working immediately, not when it expires.");
     if session.current {
+        // ⚠️ Remove the stored login too. This printed "signed out" while
+        // credentials.json still held the dead session, so the next command
+        // failed with an expired-session error instead (I-209, DEC-AU6).
+        let mut store = super::creds::Store::load()?;
+        store.remove_session(&server);
+        store.save()?;
         println!("  You are now signed out on this machine — run `evnx auth login`.");
     }
     if verbose {
@@ -204,6 +212,27 @@ pub fn revoke_others(
     Ok(())
 }
 
+/// The shortest session-id prefix `revoke` accepts.
+pub(crate) const MIN_TARGET: usize = 4;
+
+/// A revoke target, trimmed, or a refusal naming the rule.
+///
+/// ⚠️ An empty target matched **every** session by prefix (`starts_with("")`).
+/// With one session — the usual single-machine case — `evnx auth sessions revoke
+/// "$ID" -y` with `$ID` unset revoked the current session and signed the machine
+/// out; with two or more it failed only by luck (I-204). Four characters is far
+/// below the 8 the listing shows, so the shown id always works.
+fn check_target(target: &str) -> Result<String> {
+    let t = target.trim();
+    if t.chars().count() < MIN_TARGET {
+        return Err(anyhow!(
+            "{target:?} is too short to name a session: give at least {MIN_TARGET} characters \
+             of its id. `evnx auth sessions list` shows each one."
+        ));
+    }
+    Ok(t.to_string())
+}
+
 /// Find the session a person meant, by full id or by the short form shown in the
 /// listing.
 ///
@@ -220,7 +249,7 @@ fn resolve<'a>(sessions: &'a [SessionSummary], target: &str) -> Result<&'a Sessi
     match matches.as_slice() {
         [one] => Ok(one),
         [] => Err(anyhow!(
-            "no session starting {target:?}. Run `evnx auth sessions` to see them."
+            "no session starting {target:?}. Run `evnx auth sessions list` to see them."
         )),
         many => Err(anyhow!(
             "{target:?} matches {} sessions. Use more characters, or the full id.",
@@ -283,7 +312,19 @@ mod tests {
         let err = resolve(&[s("abcd1111", false)], "zzzz")
             .unwrap_err()
             .to_string();
-        assert!(err.contains("evnx auth sessions"), "{err}");
+        // ⚠️ `sessions list`, not `sessions`: the bare group prints help, and
+        // this test used to assert the wrong hint (I-208).
+        assert!(err.contains("`evnx auth sessions list`"), "{err}");
+    }
+
+    /// I-204, DEC-AU1: under 4 characters is refused; the 8 shown always works.
+    #[test]
+    fn t_i204_a_target_needs_four_characters() {
+        for bad in ["", "   ", "a", "abc", " ab "] {
+            assert!(check_target(bad).is_err(), "{bad:?}");
+        }
+        assert_eq!(check_target(" abcd ").unwrap(), "abcd");
+        assert_eq!(check_target("abcd1111").unwrap(), "abcd1111");
     }
 
     #[test]

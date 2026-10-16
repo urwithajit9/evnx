@@ -204,13 +204,7 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
         })
         .collect();
 
-    let name_w = listed
-        .tokens
-        .iter()
-        .map(|t| t.name.len())
-        .max()
-        .unwrap_or(4)
-        .max(4);
+    let name_w = display_width_max(listed.tokens.iter().map(|t| t.name.as_str()), 4);
 
     println!(
         "  {:<name_w$}  {:<11}  {:<22}  {:<10}  {}",
@@ -229,10 +223,10 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
             None => "all vaults".to_string(),
         };
         println!(
-            "  {:<name_w$}  {:<11}  {:<22}  {:<10}  {}",
-            t.name,
+            "  {}  {:<11}  {}  {:<10}  {}",
+            pad(&t.name, name_w),
             t.scope,
-            vault,
+            pad(&vault, 22),
             t.expires_at
                 .as_deref()
                 .map(short_date)
@@ -359,9 +353,42 @@ fn short_date(ts: &str) -> String {
     ts.split('T').next().unwrap_or(ts).to_string()
 }
 
+/// The widest of `items` as a terminal draws it, at least `min`.
+///
+/// ⚠️ Display width, not bytes or chars: `t.name.len()` counted bytes, so an
+/// accented or CJK token name pushed every later column out of line (I-207).
+fn display_width_max<'a>(items: impl Iterator<Item = &'a str>, min: usize) -> usize {
+    use unicode_width::UnicodeWidthStr;
+    items
+        .map(UnicodeWidthStr::width)
+        .max()
+        .unwrap_or(0)
+        .max(min)
+}
+
+/// `s` padded with spaces to `width` terminal columns.
+fn pad(s: &str, width: usize) -> String {
+    use unicode_width::UnicodeWidthStr;
+    format!("{s}{}", " ".repeat(width.saturating_sub(s.width())))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// I-207, DEC-AU6: columns line up by display width, not bytes. `t.name.len()`
+    /// made `ci-é世界` 11 "wide" (bytes) while a terminal draws it 8 columns.
+    #[test]
+    fn t_i207_columns_pad_by_display_width() {
+        use unicode_width::UnicodeWidthStr;
+        let names = ["ci", "ci-é世界", "deploy"];
+        let w = display_width_max(names.iter().copied(), 4);
+        assert_eq!(w, 8, "é is 1 column, 世 and 界 are 2 each");
+        for n in names {
+            assert_eq!(UnicodeWidthStr::width(pad(n, w).as_str()), w, "{n:?}");
+        }
+        assert_eq!(pad("ci", 4), "ci  ");
+    }
 
     fn t(name: &str, id: &str) -> TokenSummary {
         TokenSummary {

@@ -59,6 +59,9 @@ dialoguer = "0.11"
 
 # Terminal output
 colored   = "2"
+# Display width of a string in a terminal. Already in the build through
+# dialoguer → console; named here because `auth token list` pads by it (I-207).
+unicode-width = "0.2"
 
 # Progress bars — used in utils/ui.rs and migrate/destinations/github.rs;
 # always compiled so both call-sites can import without a feature gate.

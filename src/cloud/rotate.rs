@@ -195,7 +195,10 @@ pub fn rotate(
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    client.require_credential()?;
+    client.require_user_session(
+        "change the master password",
+        "\x20 A leaked CI token must not be able to re-wrap every vault key you\n\x20 hold and lock you out of your own account.\n",
+    )?;
 
     let me: Me = client
         .get("/api/v1/auth/me")
