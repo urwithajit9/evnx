@@ -14,7 +14,7 @@
 
 mod support;
 
-use support::pty::{Pty, ENTER, ESC};
+use support::pty::{Pty, ENTER};
 use support::{run_with, Project};
 
 /// 32 bytes, base64: a key GitHub's sealed-box encryption accepts.
@@ -181,7 +181,18 @@ fn t_i109_esc_at_the_confirmation_uploads_nothing() {
     let mut server = github_with(&[]);
     let good = put(&mut server, "GOOD_ONE", 0);
     let bad = put(&mut server, "BAD_ONE", 0);
-    let (out, code) = migrate_answering(&server, &[ESC, ENTER]);
+    // ⚠️ Not `press(&[ESC, ENTER])`: queued together they are read as one
+    // unknown escape sequence and the Enter is lost, so the question never
+    // returns — it hung on a slow CI runner (#156, again here in U8d's CI).
+    // `cancel_yes_no` waits for the redraw between the two.
+    let p = project();
+    let url = server.url();
+    let mut s = Pty::spawn_with(p.path(), ARGS, &[("GITHUB_API_URL", url.as_str())]);
+    s.wait_for("Proceed with migration?");
+    s.wait_for("[Y/n]");
+    s.wait_for_echo_off();
+    s.cancel_yes_no();
+    let (out, code) = s.finish();
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("Nothing was uploaded"), "{out}");
     good.assert();

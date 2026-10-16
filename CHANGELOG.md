@@ -568,6 +568,10 @@ and read a success line must check the exit code instead.
   `tests/spec_merge.rs` (5, I-178, I-179), and an `init::source` unit test for
   I-239 (T-INIT-29) — each red first. Demo scenes flipped from `KNOWN` to
   `FIXED`: sync S4 and S10, doctor DR10, spec SP3 and SP4.
+- `tests/migrate_exit.rs`: `t_i109_esc_at_the_confirmation_uploads_nothing` sent
+  Esc and Enter together and hung on a slow CI runner — the race #156 fixed
+  elsewhere (the two bytes read as one escape sequence, the Enter lost). It now
+  uses `cancel_yes_no`; 20 of 20 runs passed with every core loaded.
 - `tests/cloud_org.rs` (5), `tests/cloud_vault.rs` (3), `tests/cloud_cloud.rs` (4):
   every Part D fix against a mock server, refusals with zero requests; the
   architecture guard now reads the path text, after six multi-line hand-built
