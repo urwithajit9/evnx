@@ -2,22 +2,24 @@
 ================ C6 ================
 
 $ evnx convert --to json --transform uppercase
-{
-  "API": "2"
-}
 [stderr]
-  Docs: https://docs.evnx.dev/cli/commands/convert
-[exit 0]
-  ok: KNOWN I-088: Api and API collide; one value silently lost; decided: error + --allow-collisions (exit 0)
+Error: Convert command failed: these names become the same name after renaming, and one value would be lost:
+  Api, API → API
+Rename one in the .env, or convert without the transform. Nothing was written.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-088: Api and API collide; refused, both named, nothing written (DEC-U8-3) (exit 2)
 
 $ evnx convert --to json --transform camelCase
-{
-  "dbUrl": "2"
-}
 [stderr]
-  Docs: https://docs.evnx.dev/cli/commands/convert
-[exit 0]
-KNOWN I-088: both become dbUrl; the first value is lost without a word (a prefix alone cannot collide: it is applied to every key)
+Error: Convert command failed: these names become the same name after renaming, and one value would be lost:
+  DB_URL, db_url → dbUrl
+Rename one in the .env, or convert without the transform. Nothing was written.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-088: both become dbUrl; refused, both named (a prefix alone cannot collide: it is applied to every key) (exit 2)
 
 $ evnx convert --to json --transform Title
 {
@@ -67,4 +69,4 @@ $ evnx convert --to json --include DATABASE_URL --transform snake_case
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
 
-================ summary: 2 ok, 0 mismatch   ================
+================ summary: 3 ok, 0 mismatch   ================

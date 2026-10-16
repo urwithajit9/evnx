@@ -442,6 +442,9 @@ pub fn run(config: ConvertConfig) -> Result<()> {
         );
     }
 
+    // Before converting: two names that become one would lose a value (I-088).
+    config.options.check_collisions(&env_file.vars)?;
+
     // Perform conversion with options
     let result = converter
         .convert(&env_file.vars, &config.options)

@@ -54,6 +54,8 @@ pub fn handle(service_id: Option<&str>, path: &str, mode: &Mode) -> Result<Outco
         preview: &formatter::generate_preview,
         question: &|n, file| format!("Add these {} to {file}?", count(n, "variable")),
         render: &|v| formatter::format_addition(v),
+        example_render: None,
+        env_from_values: false,
     };
     confirm_and_apply(Path::new(path), &vars, &flow, mode)
 }

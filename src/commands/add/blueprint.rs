@@ -86,6 +86,8 @@ pub fn handle(blueprint_id: Option<&str>, output_path: &Path, mode: &Mode) -> Re
         preview: &formatter::generate_preview,
         question: &|n, file| format!("Add these {} to {file}?", count(n, "variable")),
         render: &render,
+        example_render: None,
+        env_from_values: false,
     };
     confirm_and_apply(output_path, &vars, &flow, mode)
 }

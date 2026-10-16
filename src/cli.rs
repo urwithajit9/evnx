@@ -1056,6 +1056,9 @@ pub enum CloudCommands {
         /// Defaults to `.env.<environment>` when the vault names one and that
         /// file already exists, and to `.env` otherwise — a first pull into a
         /// fresh checkout writes `.env`. The file chosen is always printed.
+        ///
+        /// `-` writes it to stdout instead, and no file is created; the status
+        /// lines go to stderr, so stdout holds only the `.env` text.
         #[arg(long, short)]
         file: Option<std::path::PathBuf>,
 

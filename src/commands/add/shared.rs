@@ -118,6 +118,9 @@ pub struct Plan {
     pub conflicts: Vec<Conflict>,
     /// Whether `.env` existed when the plan was made.
     pub env_exists: bool,
+    /// `.env` does not exist yet and will be created to hold the values
+    /// (`add custom`, DEC-U8-1): a missing `.env` is planned as empty.
+    pub create_env_file: bool,
 }
 
 impl Plan {
@@ -153,13 +156,29 @@ impl Plan {
 /// which differ from the catalogue's placeholders by design; a name it has is
 /// simply skipped, and its value is never read into a message.
 pub fn plan(output_path: &Path, requested: &VarCollection) -> Result<Plan> {
+    plan_with(output_path, requested, false)
+}
+
+/// [`plan`], and with `create_env_file` a missing `.env` is planned as an
+/// empty one that [`apply`] creates (0600) — for values that must land
+/// somewhere other than the template (I-240).
+pub fn plan_with(
+    output_path: &Path,
+    requested: &VarCollection,
+    create_env_file: bool,
+) -> Result<Plan> {
     let example = read_assignments(&output_path.join(".env.example"))?;
     let env_path = output_path.join(".env");
-    let env = read_assignments(&env_path)?;
+    let mut env = read_assignments(&env_path)?;
+    let create_env_file = create_env_file && env.is_none();
+    if create_env_file {
+        env = Some(Default::default());
+    }
 
     let mut plan = Plan {
         requested: requested.clone(),
         env_exists: env_path.exists(),
+        create_env_file,
         ..Plan::default()
     };
 
@@ -257,6 +276,7 @@ pub fn apply(
     output_path: &Path,
     plan: &Plan,
     render: &dyn Fn(&VarCollection) -> Result<String>,
+    example_render: Option<&Render<'_>>,
     verbose: bool,
     create_env: Option<bool>,
     announce: bool,
@@ -265,7 +285,7 @@ pub fn apply(
     let example_path = output_path.join(".env.example");
     let env_path = output_path.join(".env");
     let write_example = !plan.to_example.vars.is_empty();
-    let write_env = plan.env_exists && !plan.to_env.vars.is_empty();
+    let write_env = (plan.env_exists || plan.create_env_file) && !plan.to_env.vars.is_empty();
 
     // 1. Every target writable, before anything is written.
     if write_example {
@@ -277,7 +297,9 @@ pub fn apply(
 
     // 2. The template.
     if write_example {
-        let addition = render(&plan.to_example)?;
+        // The template's own text when the flow has one: `add custom` writes
+        // placeholders there and values only to `.env` (I-240, DEC-U8-1).
+        let addition = example_render.unwrap_or(render)(&plan.to_example)?;
         if example_path.exists() {
             let existing = read(&example_path)?;
             let tail = in_line_endings_of(&existing, format!("\n{addition}"));
@@ -297,7 +319,11 @@ pub fn apply(
     // 3. The local file.
     if write_env {
         let addition = render(&plan.to_env)?;
-        let existing = read(&env_path)?;
+        let existing = if env_path.exists() {
+            read(&env_path)?
+        } else {
+            String::new() // created now, 0600, by `write_private` below
+        };
         let body = addition.trim();
         let updated = if existing.trim().is_empty() {
             format!("{body}\n")
@@ -369,6 +395,9 @@ fn write_private(path: &Path, content: String) -> Result<()> {
     Ok(())
 }
 
+/// Text appended to a file for a set of variables.
+pub type Render<'r> = dyn Fn(&VarCollection) -> Result<String> + 'r;
+
 /// How one subcommand asks and talks, for [`confirm_and_apply`].
 pub struct Flow<'a> {
     /// What is counted: `variable`, or `custom variable`.
@@ -386,6 +415,11 @@ pub struct Flow<'a> {
     pub question: &'a dyn Fn(usize, &str) -> String,
     /// The text appended for a set of variables.
     pub render: &'a dyn Fn(&VarCollection) -> Result<String>,
+    /// The text appended to `.env.example`, when it differs from [`Flow::render`]
+    /// (`add custom`: placeholders, DEC-U8-1). `None`: the same text.
+    pub example_render: Option<&'a Render<'a>>,
+    /// Create `.env` for the values when it does not exist (`add custom`).
+    pub env_from_values: bool,
 }
 
 /// Plan, preview, ask (unless `--yes`), apply and report: the whole of an
@@ -397,7 +431,7 @@ pub fn confirm_and_apply(
     flow: &Flow,
     mode: &Mode,
 ) -> Result<Outcome> {
-    let plan = plan(output_path, requested)?;
+    let plan = plan_with(output_path, requested, flow.env_from_values)?;
 
     if mode.dry_run {
         if mode.json {
@@ -451,6 +485,7 @@ pub fn confirm_and_apply(
         output_path,
         &plan,
         flow.render,
+        flow.example_render,
         mode.verbose && !mode.json,
         Some(mode.interactive()),
         !mode.json,

@@ -92,6 +92,34 @@ impl ConvertOptions {
         }
     }
 
+    /// Refuse when two of `vars`' names become the same name after
+    /// [`ConvertOptions::transform_key`] (I-088, DEC-U8-3).
+    ///
+    /// ⚠️ Each converter renames keys one at a time into its own output, so
+    /// `db_host=a` and `DB_HOST=b` under `--transform uppercase` both became
+    /// `DB_HOST` and the later one silently won. Checked once, before any
+    /// converter runs, over the variables that pass the filters.
+    pub fn check_collisions(&self, vars: &IndexMap<String, String>) -> anyhow::Result<()> {
+        let mut seen: IndexMap<String, Vec<&str>> = IndexMap::new();
+        for key in vars.keys().filter(|k| self.should_include(k)) {
+            seen.entry(self.transform_key(key)).or_default().push(key);
+        }
+        let clashes: Vec<String> = seen
+            .iter()
+            .filter(|(_, from)| from.len() > 1)
+            .map(|(to, from)| format!("{} → {to}", from.join(", ")))
+            .collect();
+        if clashes.is_empty() {
+            return Ok(());
+        }
+        anyhow::bail!(
+            "these names become the same name after renaming, and one value would be \
+             lost:\n  {}\nRename one in the .env, or convert without the transform. \
+             Nothing was written.",
+            clashes.join("\n  ")
+        )
+    }
+
     /// Transform a value (base64 encode if enabled)
     pub fn transform_value(&self, value: &str) -> String {
         if self.base64 {

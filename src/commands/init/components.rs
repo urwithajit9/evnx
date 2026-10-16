@@ -429,6 +429,7 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
             root,
             &plan,
             &|v| formatter::format_addition_from(v, "evnx init --from-source"),
+            None,
             verbose,
             None, // init creates `.env` itself, just below
             true,

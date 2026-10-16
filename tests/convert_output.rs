@@ -141,3 +141,33 @@ fn t_i081_quiet_prints_nothing_on_success() {
     out.assert_code(0);
     assert!(out.all().trim().is_empty(), "{}", out.all());
 }
+
+/// I-088, DEC-U8-3: two names that become one after `--transform` or
+/// `--prefix` are an error naming both — exit 2, nothing written. It printed
+/// `{"DB_HOST":"b"}` and exited 0, so `db_host=a` was lost without a word.
+#[test]
+fn t_i088_a_name_collision_is_refused_and_named() {
+    let p = Project::new().env("db_host=a\nDB_HOST=b\nPORT=1\n");
+    let out = run(
+        p.path(),
+        &[
+            "convert",
+            "--to",
+            "json",
+            "--transform",
+            "uppercase",
+            "-o",
+            "out.json",
+        ],
+    );
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("db_host") && out.stderr.contains("DB_HOST"),
+        "{}",
+        out.stderr
+    );
+    assert!(!p.path().join("out.json").exists(), "nothing is written");
+
+    // Without the transform the two names are distinct: no collision.
+    run(p.path(), &["convert", "--to", "json"]).assert_code(0);
+}

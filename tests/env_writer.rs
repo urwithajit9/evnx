@@ -44,7 +44,9 @@ fn t_i114_add_custom_values_survive_a_round_trip() {
         &["add", "custom", "MSG=hello # world", "SPACED=a b", "--yes"],
     )
     .assert_code(0);
-    let got = read_back(&p, ".env.example");
+    // ⚠️ `.env`, not `.env.example`: since DEC-U8-1 (I-240) `add custom` puts a
+    // placeholder in the template and the value only in `.env`.
+    let got = read_back(&p, ".env");
     assert_eq!(got["MSG"], "hello # world");
     assert_eq!(got["SPACED"], "a b");
 }

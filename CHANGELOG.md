@@ -129,6 +129,25 @@ not run — no verdict". Four places broke that:
 - At a terminal both questions are answered on Enter, like every other yes/no
   prompt, and Esc cancels: "Cancelled. Nothing was uploaded."
 
+### ⛔ Security — `add custom` put your values in `.env.example`
+
+- **`evnx add custom NAME=value` writes a placeholder into `.env.example` and
+  the value only into `.env`** (I-240, DEC-U8-1). The value went into both, so
+  `add custom STRIPE_SECRET_KEY=sk_live_…` put a live key in the committed file.
+  Every name gets a placeholder (the same ones `sync` writes, such as
+  `YOUR_KEY_HERE`), not only secret-looking ones. ⚠️ If `.env` does not exist
+  it is created, mode 0600, so the value is not lost.
+
+### Fixed — `convert` and `cloud pull`
+
+- **`convert` refuses names that become one name after renaming** (I-088,
+  DEC-U8-3). With `db_host=a` and `DB_HOST=b`, `--transform uppercase` printed
+  `{"DB_HOST":"b"}` and exited 0 — one value silently gone. Now exit 2, both
+  names listed, nothing written.
+- **`cloud pull --file -` writes to stdout** (I-244, DEC-U8-4), with the status
+  lines on stderr. It wrote the plaintext to a file named `-` in the working
+  directory.
+
 ### ⛔ Security — `cloud run`, and what an API token may do
 
 - **`cloud run` refuses vault variables that make a program run other code**
@@ -443,6 +462,9 @@ and read a success line must check the exit code instead.
   status and logout. `tests/quoted_commands.rs` (T-SHARE-49): every
   `` `evnx …` `` quoted in `src/` is a real command, not a bare group, with real
   flags — it catches I-202 and both I-208 on the old source and nothing else.
+- `tests/add_custom_example.rs` (3): I-240 with and without `.env`, and a rerun is
+  not a conflict; `tests/convert_output.rs` adds I-088; `cloud::sync` unit test for
+  `--file -` (I-244, also checked against a local server).
 - `tests/cloud_org.rs` (5), `tests/cloud_vault.rs` (3), `tests/cloud_cloud.rs` (4):
   every Part D fix against a mock server, refusals with zero requests; the
   architecture guard now reads the path text, after six multi-line hand-built

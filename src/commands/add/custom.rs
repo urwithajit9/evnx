@@ -287,7 +287,10 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
         collected.vars.insert(
             c.name.clone(),
             VarMetadata {
-                example_value: c.value.clone(),
+                // ⚠️ The placeholder, not the value (I-240, DEC-U8-1): this is what
+                // goes into `.env.example`, and what the planner compares there,
+                // so running the same command twice is not a conflict.
+                example_value: placeholder_for(&c.name),
                 description: c.description.clone(),
                 category: c.category.clone(),
                 required: c.required,
@@ -296,16 +299,23 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
         );
     }
 
-    let render = |v: &VarCollection| -> Result<String> {
+    // One renderer, two files: `.env` gets the values, `.env.example` the
+    // placeholders (I-240, DEC-U8-1 — every name, not only secret-looking ones).
+    let render_with = |v: &VarCollection, values: bool| -> Result<String> {
         let mut content = String::from("\n# ── Custom Variables ──\n");
         for c in customs.iter().filter(|c| v.vars.contains_key(&c.name)) {
             // A categorised entry keeps the blank line above it that it always had.
             if c.category.is_some() {
                 content.push('\n');
             }
+            let shown = if values {
+                c.value.clone()
+            } else {
+                placeholder_for(&c.name)
+            };
             content.push_str(&entry(
                 &c.name,
-                &c.value,
+                &shown,
                 c.description.as_deref(),
                 c.category.as_deref(),
                 c.required,
@@ -318,6 +328,8 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
         ));
         Ok(content)
     };
+    let render = |v: &VarCollection| render_with(v, true);
+    let render_example = |v: &VarCollection| render_with(v, false);
     let preview = |v: &VarCollection| {
         let mut out = format!("  • {} to add", count(v.vars.len(), "variable"));
         let categories: Vec<&str> = customs
@@ -340,8 +352,20 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
         preview: &preview,
         question: &|_, file| format!("Append these variables to {file}?"),
         render: &render,
+        example_render: Some(&render_example),
+        env_from_values: true,
     };
     confirm_and_apply(output_path, &collected, &flow, mode)
+}
+
+/// What `.env.example` holds for `name`: the same placeholder `sync` writes
+/// (`YOUR_KEY_HERE`, …), never the value typed (I-240, DEC-U8-1).
+fn placeholder_for(name: &str) -> String {
+    crate::commands::sync::placeholder::generate_placeholder(
+        name,
+        None,
+        &crate::commands::sync::PlaceholderConfig::default(),
+    )
 }
 
 /// One variable as it is written: an optional comment line, then `NAME=value`.

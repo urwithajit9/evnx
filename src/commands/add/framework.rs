@@ -147,6 +147,8 @@ pub fn handle(
         preview: &formatter::generate_preview,
         question: &question,
         render: &render,
+        example_render: None,
+        env_from_values: false,
     };
     confirm_and_apply(output_path, &vars, &flow, mode)
 }

@@ -60,9 +60,12 @@ fn custom_writes_the_variable_and_its_section() {
 
     for f in [".env.example", ".env"] {
         let text = p.read(f);
-        assert!(text.contains("MY_API_KEY=sk_test_xxx"), "{f}:\n{text}");
+        assert!(text.contains("MY_API_KEY="), "{f}:\n{text}");
         assert!(text.contains("# ── Custom Variables ──"), "{f}:\n{text}");
     }
+    // ⚠️ DEC-U8-1 (I-240): the value goes to `.env` only; `.env.example` gets a placeholder.
+    assert!(p.read(".env").contains("MY_API_KEY=sk_test_xxx"));
+    assert!(!p.read(".env.example").contains("sk_test_xxx"));
     check_golden(
         "add/custom.env.example",
         &normalise(&p.read(".env.example"), &[p.path()]),
@@ -138,9 +141,13 @@ fn y_enter_answers_exactly_one_question() {
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
+    // ⚠️ DEC-U8-1 (I-240): the value goes to `.env` only; `.env.example` gets a placeholder.
+    let env = p.read(".env");
+    assert!(env.contains("# (required)\nN09_VAR=v\n"), "{env}");
+    assert!(env.contains("\nN09_SECOND=w\n"), "{env}");
     let example = p.read(".env.example");
-    assert!(example.contains("# (required)\nN09_VAR=v\n"), "{example}");
-    assert!(example.contains("\nN09_SECOND=w\n"), "{example}");
+    assert!(example.contains("# (required)\nN09_VAR="), "{example}");
+    assert!(example.contains("\nN09_SECOND="), "{example}");
 }
 
 /// I-016 (fixed in 0.10.2, AD-S; was `known_i016f_*`): a name typed in
@@ -183,16 +190,18 @@ fn a_secret_name_alone_is_asked_for_unseen() {
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
     assert!(!rest.contains("sk_live_typed_here"), "{rest}");
+    // ⚠️ This asserted the typed secret WAS in `.env.example` — I-240 itself.
+    // Since DEC-U8-1 it goes to `.env` only.
+    let env = p.read(".env");
+    assert!(
+        env.contains("STRIPE_SECRET_KEY=sk_live_typed_here"),
+        "{env}"
+    );
     let example = p.read(".env.example");
-    assert!(
-        example.contains("STRIPE_SECRET_KEY=sk_live_typed_here"),
-        "{example}"
-    );
+    assert!(!example.contains("sk_live_typed_here"), "{example}");
+    assert!(example.contains("\nSTRIPE_SECRET_KEY="), "{example}");
     // Not secret-looking: the placeholder, no question.
-    assert!(
-        example.contains("FEATURE_FLAG=your_value_here"),
-        "{example}"
-    );
+    assert!(env.contains("FEATURE_FLAG=your_value_here"), "{env}");
 }
 
 /// DQ-A4: with no `.env`, an interactive `add` offers to create it from the
@@ -342,11 +351,11 @@ fn custom_with_category_only(p: &Project, keys: &[&str]) -> String {
 fn a_category_never_comments_the_variable_out() {
     let p = project();
     custom_with_category_only(&p, &[DOWN, ENTER]);
+    // The category comment sits above the variable in both files; the value
+    // is only in `.env` (DEC-U8-1).
+    assert!(p.read(".env").contains("# [Application]\nCAT_ONLY=v1\n"));
     let example = p.read(".env.example");
-    assert!(
-        example.contains("# [Application]\nCAT_ONLY=v1\n"),
-        "{example}"
-    );
+    assert!(example.contains("# [Application]\nCAT_ONLY="), "{example}");
     assert_eq!(p.count_lines(".env.example", "CAT_ONLY="), 1);
     assert_eq!(p.count_lines(".env", "CAT_ONLY="), 1);
 }
@@ -360,7 +369,8 @@ fn the_category_list_starts_on_the_first_item() {
     let p = project();
     let picked = custom_with_category_only(&p, &[ENTER]);
     assert!(picked.contains("Category: None"), "{picked}");
-    assert!(p.read(".env.example").contains("\nCAT_ONLY=v1\n"));
+    assert!(p.read(".env").contains("\nCAT_ONLY=v1\n")); // DEC-U8-1
+    assert!(p.read(".env.example").contains("\nCAT_ONLY="));
     assert!(!p.read(".env.example").contains("# ["));
     let q = project();
     let picked = custom_with_category_only(&q, &[DOWN, ENTER]);

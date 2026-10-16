@@ -173,7 +173,10 @@ fn a8_custom_without_a_terminal() {
     run(p.path(), &["add", "custom", "MY_KEY=value", "--yes"])
         .assert_code(0)
         .assert_contains("Added 1 custom variable");
-    assert!(p.read(".env.example").contains("\nMY_KEY=value\n"));
+    // DEC-U8-1 (I-240): the value in `.env` only, a placeholder in the template.
+    assert!(p.read(".env").contains("\nMY_KEY=value\n"));
+    assert!(p.read(".env.example").contains("\nMY_KEY="));
+    assert!(!p.read(".env.example").contains("MY_KEY=value"));
 }
 
 /// A9: `-p`, `-q`, `-v`.
@@ -246,10 +249,15 @@ fn a11_custom_interactive() {
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
+    // DEC-U8-1 (I-240): the value in `.env` only, a placeholder in the template.
     assert!(
-        p.read(".env.example")
+        p.read(".env")
             .contains("# Payment key (required)\nMY_API_KEY=sk_test_xxx\n"),
         "{}",
-        p.read(".env.example")
+        p.read(".env")
     );
+    assert!(p
+        .read(".env.example")
+        .contains("# Payment key (required)\nMY_API_KEY="));
+    assert!(!p.read(".env.example").contains("sk_test_xxx"));
 }

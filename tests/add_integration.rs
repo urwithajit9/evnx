@@ -919,7 +919,12 @@ fn custom_without_a_terminal_points_at_arguments() {
         .assert_contains("evnx add custom NAME=value OTHER_NAME=value --yes");
     assert!(!p.exists(".env.example"));
     run(p.path(), &["add", "custom", "A=1", "--yes"]).assert_code(0);
-    assert_eq!(p.count_lines(".env.example", "A=1"), 1);
+    // ⚠️ DEC-U8-1 (I-240): the value goes to `.env` only; `.env.example` gets a placeholder.
+    assert_eq!(p.count_lines(".env", "A=1"), 1);
+    assert!(
+        p.read(".env.example").contains("\nA="),
+        "the name is in the template"
+    );
 }
 
 /// I-021, DQ-A4 (fixed in 0.10.2, AD-S; was `known_i021_*`): with no `.env`,
@@ -986,13 +991,19 @@ fn custom_takes_name_value_arguments() {
     .assert_contains("Added 2 custom variables");
     for f in [".env.example", ".env"] {
         let text = p.read(f);
-        assert!(
-            text.contains("\nAPI_URL=https://api.example.com\n"),
-            "{f}:\n{text}"
-        );
-        assert!(text.contains("\nDEBUG=false\n"), "{f}:\n{text}");
+        assert!(text.contains("\nAPI_URL="), "{f}:\n{text}");
+        assert!(text.contains("\nDEBUG="), "{f}:\n{text}");
         assert!(text.contains("# ── Custom Variables ──"), "{f}:\n{text}");
     }
+    // ⚠️ DEC-U8-1 (I-240): the value goes to `.env` only; `.env.example` gets a placeholder.
+    let env = p.read(".env");
+    assert!(env.contains("\nAPI_URL=https://api.example.com\n"), "{env}");
+    assert!(env.contains("\nDEBUG=false\n"), "{env}");
+    let example = p.read(".env.example");
+    assert!(
+        !example.contains("api.example.com") && !example.contains("DEBUG=false"),
+        "{example}"
+    );
 }
 
 /// T-ADD-41: a name without a value gets the placeholder (no terminal, or
@@ -1011,15 +1022,14 @@ fn custom_name_alone_gets_the_placeholder() {
         ],
     )
     .assert_code(0);
+    // ⚠️ DEC-U8-1 (I-240): the value goes to `.env` only; `.env.example` gets a placeholder.
+    // A name alone still gets a placeholder in both files.
+    let env = p.read(".env");
+    assert!(env.contains("FEATURE_FLAG=your_value_here"), "{env}");
+    assert!(env.contains("STRIPE_SECRET_KEY=your_value_here"), "{env}");
     let example = p.read(".env.example");
-    assert!(
-        example.contains("FEATURE_FLAG=your_value_here"),
-        "{example}"
-    );
-    assert!(
-        example.contains("STRIPE_SECRET_KEY=your_value_here"),
-        "{example}"
-    );
+    assert!(example.contains("\nFEATURE_FLAG="), "{example}");
+    assert!(example.contains("\nSTRIPE_SECRET_KEY="), "{example}");
 }
 
 /// T-ADD-42: an invalid or repeated name fails before anything is written,
@@ -1058,13 +1068,15 @@ fn custom_flags_go_into_the_written_block() {
         ],
     )
     .assert_code(0);
-    let example = p.read(".env.example");
-    assert!(
-        example.contains(
-            "# [Security] Webhook signing secret (required)\nWEBHOOK_SECRET=your_value_here\n"
-        ),
-        "{example}"
-    );
+    // The comment line goes above the variable in both files (DEC-U8-1:
+    // the template's value is a placeholder).
+    for f in [".env.example", ".env"] {
+        let text = p.read(f);
+        assert!(
+            text.contains("# [Security] Webhook signing secret (required)\nWEBHOOK_SECRET="),
+            "{f}:\n{text}"
+        );
+    }
 }
 
 /// T-ADD-45: a name the template already has is skipped and reported (AD-S).

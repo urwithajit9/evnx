@@ -150,6 +150,11 @@ fn resolve_env_file(
 /// plain `.env` that was not asked for by name. That is the shape of "I forgot
 /// the flag", and it is the one that puts development secrets in a production
 /// vault.
+/// Whether `--file` names stdout: exactly `-`, as `template --output -` (DEC-T8).
+fn is_stdout(file: Option<&Path>) -> bool {
+    file == Some(Path::new("-"))
+}
+
 fn report_file(file: &Path, choice: FileChoice, vault_env: &str, action: &str) {
     println!("  file      {} ({})", file.display(), choice.note());
 
@@ -350,13 +355,21 @@ pub fn pull(
     // first pull into a fresh checkout still writes `.env`. That is the right
     // default: pull must not invent `.env.production` in a project that has no
     // such convention. Name it explicitly to create one.
+    // `--file -` is stdout (I-244, DEC-U8-4): it wrote a file named `-`,
+    // holding plaintext, in the working directory.
+    let to_stdout = is_stdout(file.as_deref());
     let (file, choice) = resolve_env_file(
         Path::new("."),
         file,
         env_name.as_deref(),
         &vault_ref.environment,
     )?;
-    report_file(&file, choice, &vault_ref.environment, "writing");
+    if to_stdout {
+        // Status on stderr: stdout carries the file and nothing else.
+        eprintln!("  file      - (stdout)");
+    } else {
+        report_file(&file, choice, &vault_ref.environment, "writing");
+    }
 
     let version = match version {
         Some(v) => v,
@@ -383,6 +396,19 @@ pub fn pull(
     let vault_key = unwrap_vault_key(&client, &vault_ref, &master_key)?;
 
     let plaintext = decrypt_version(&blob, &vault_ref, version, &vault_key)?;
+
+    if to_stdout {
+        use std::io::Write;
+        let mut out = std::io::stdout().lock();
+        out.write_all(&plaintext).context("writing to stdout")?;
+        out.flush().context("writing to stdout")?;
+        eprintln!(
+            "  {} pulled version {version} of {} to stdout",
+            "✓".green(),
+            vault_ref.label()
+        );
+        return Ok(());
+    }
 
     if !force && !confirm_overwrite(&file, &plaintext)? {
         return Ok(());
@@ -834,6 +860,17 @@ fn push_error(e: ApiError, based_on: i32) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// I-244, DEC-U8-4: exactly `-` is stdout; a path that merely contains a
+    /// dash, or `./-`, is a file.
+    #[test]
+    fn t_i244_only_a_bare_dash_means_stdout() {
+        assert!(is_stdout(Some(Path::new("-"))));
+        for f in ["./-", "-.env", ".env", "a-b"] {
+            assert!(!is_stdout(Some(Path::new(f))), "{f}");
+        }
+        assert!(!is_stdout(None));
+    }
 
     #[test]
     fn key_names_are_extracted_without_values() {

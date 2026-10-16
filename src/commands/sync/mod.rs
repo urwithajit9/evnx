@@ -11,7 +11,7 @@ use crate::core::verdict::{self, Verdict};
 
 mod executor;
 mod models;
-mod placeholder;
+pub(crate) mod placeholder;
 mod security;
 
 // Re-export public types for external use (if needed)
