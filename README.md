@@ -724,6 +724,7 @@ repos:
       - id: evnx-scan        # blocks commit if secrets found
       - id: evnx-validate    # blocks commit if .env misconfigured
       - id: evnx-diff        # warns on .env/.env.example drift
+      - id: evnx-sync        # blocks commit if .env.example lacks a variable from .env (skips with no .env)
       - id: evnx-scan-push   # strict scan on push
 ```
 

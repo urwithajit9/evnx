@@ -1,52 +1,46 @@
 
 ================ S10 ================
 
-$ evnx sync --direction forward --placeholder
-
-┌─ Getting started ────────────────────────────────────────────────────────────┐
-│ It looks like this project hasn't been initialized yet.                      │
-│                                                                              │
-│ To create .env and .env.example files, run:                                  │
-│                                                                              │
-│ $ evnx init                                                                  │
-│                                                                              │
-│ Or if you have an existing .env file, place it in this directory and try ... │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-
-Next steps:
-  1. Run 'evnx init' to set up a new project
-  2. Or copy your existing .env file to this directory
-  3. Then run 'evnx sync' again
+$ evnx sync --check --skip-without-env
 [stderr]
+· .env not found and no required [vars] to check .env.example against — nothing to check, skipped
+[exit 0]
+  ok: FIXED I-128: the shipped hook on a fresh clone (no .env) skips and says so (exit 0)
 
-  evnx sync  .env ↔ .env.example  (forward)
-
-✗ File not found: .env
-Error: .env file not found - run 'evnx init' to get started
-
-No verdict: evnx did not finish. This is not a clean result.
-[exit 2]
-  ok: the shipped pre-commit hook on a fresh clone (no .env) (exit 2)
-
-$ evnx sync --direction forward --placeholder
+$ evnx sync --check --skip-without-env
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
 │ Found 1 variable(s) in .env missing from .env.example:                       │
 │   • B                                                                        │
 └──────────────────────────────────────────────────────────────────────────────┘
 
+
+Preview:
+Target: .env.example (action: Add)
+
+  · B = YOUR_VALUE_HERE
+
+(dry-run: no files were modified)
 [stderr]
 
   evnx sync  .env ↔ .env.example  (forward)
 
 ! .env has permissive permissions (0o644). Consider: chmod 600 .env
 · Overly permissive .env files may expose secrets to other users
-Error: IO error: not a terminal: not a terminal
+  Docs: https://docs.evnx.dev/cli/commands/sync
+
+✗ Out of sync. Run `evnx sync --direction forward` and commit the result.
+[exit 1]
+  ok: FIXED I-128: with drift the hook blocks with the command that fixes it, no terminal needed (exit 1)
+
+$ evnx sync --check
+[stderr]
+Error: nothing to compare: .env does not exist, and .evnx.toml declares no required [vars] to check .env.example against.
+
+Create .env (`evnx sync --direction reverse`), declare the contract with `evnx spec init`, or — in a pre-commit hook, where a missing .env is expected — pass --skip-without-env.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: the shipped hook with drift and no terminal (exit 2)
-KNOWN I-128: both cases block the commit; decided: hook runs 'evnx sync --check' (works without .env via spec) plus optional 'sync --force' hook
+  ok: DEC-S4: plain --check with no .env and no spec has nothing to compare (exit 2)
 
-================ summary: 2 ok, 0 mismatch   ================
+================ summary: 3 ok, 0 mismatch   ================

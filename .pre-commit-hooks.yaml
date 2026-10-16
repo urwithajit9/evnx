@@ -47,10 +47,35 @@
   pass_filenames: false
   stages: [pre-commit]
 
+# ⛔ `--check`, not a sync that writes (I-128, DEC-S15).
+#
+# This ran `evnx sync --direction forward --placeholder`. pre-commit gives a
+# hook no terminal, so on any drift sync's prompt failed with "not a
+# terminal" (exit 2) and the commit was blocked with no hint; and on a clone
+# with no `.env` — every new contributor — it failed "file not found". It also
+# described itself as "scrubs values, keeps keys", which sync does not do.
+#
+# `--check` needs no terminal and names the command that fixes the drift.
+# `--skip-without-env` lets a fresh clone commit: with no `.env` and no
+# `[vars]` spec there is nothing to compare, and the hook says it skipped. A
+# spec, when there is one, is still checked (DEC-S4).
 - id: evnx-sync
-  name: evnx — Sync .env.example
-  description: Auto-update .env.example from .env (scrubs values, keeps keys)
-  entry: evnx sync --direction forward --placeholder
+  name: evnx — .env.example up to date
+  description: Fail the commit when .env has variables .env.example does not declare (skipped with no .env)
+  entry: evnx sync --check --skip-without-env
+  language: rust
+  pass_filenames: false
+  stages: [pre-commit]
+
+# Optional: the writing variant. Adds missing variables to .env.example with
+# placeholder values — never real ones; `allow_actual` in a template config is
+# the only way a real value gets there, and it refuses credentials. pre-commit
+# fails a hook that changes a file, so the commit stops once: stage the updated
+# template and commit again.
+- id: evnx-sync-fix
+  name: evnx — Add missing names to .env.example
+  description: Add variables missing from .env.example, with placeholder values (skipped with no .env)
+  entry: evnx sync --force --skip-without-env
   language: rust
   pass_filenames: false
   stages: [pre-commit]

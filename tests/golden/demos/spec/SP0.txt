@@ -55,10 +55,10 @@ Options:
       --stdout
           Print the generated block instead of writing it
 
-      --force
-          Append even when `.evnx.toml` already has a `[vars]` section.
+      --merge
+          Add only the variables `[vars]` does not declare yet.
           
-          ⚠️ The result will need merging by hand: TOML refuses a file that declares the same table twice.
+          Every existing entry, and everything else in `.evnx.toml`, is kept byte for byte. Nothing is written unless the result parses.
 
   -v, --verbose
           Enable verbose output

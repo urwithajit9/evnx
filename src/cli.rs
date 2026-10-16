@@ -170,6 +170,17 @@ pub struct SyncArgs {
     #[arg(long, short = 'f')]
     pub force: bool,
 
+    /// With no `.env` and nothing else to compare, skip (exit 0) and say so.
+    ///
+    /// For pre-commit hooks: a fresh clone has a template and no `.env`, and a
+    /// hook that exits 2 there blocks every new contributor's first commit.
+    /// A spec (`[vars]` in `.evnx.toml`) is still checked. Forward only.
+    ///
+    /// ⚠️ Not for CI: without it, `--check` with nothing to compare exits 2, so
+    /// a gate cannot pass on a check that never ran.
+    #[arg(long)]
+    pub skip_without_env: bool,
+
     /// Path to custom placeholder template config (JSON)
     #[arg(long, value_name = "PATH")]
     pub template_config: Option<std::path::PathBuf>,
@@ -2347,11 +2358,16 @@ pub enum SpecAction {
         #[arg(long)]
         stdout: bool,
 
-        /// Append even when `.evnx.toml` already has a `[vars]` section.
+        /// Add only the variables `[vars]` does not declare yet.
         ///
-        /// ⚠️ The result will need merging by hand: TOML refuses a file that
-        /// declares the same table twice.
-        #[arg(long)]
+        /// Every existing entry, and everything else in `.evnx.toml`, is kept
+        /// byte for byte. Nothing is written unless the result parses.
+        #[arg(long, conflicts_with = "stdout")]
+        merge: bool,
+
+        /// Removed (I-178): it appended a second `[vars]` that TOML refuses.
+        /// Kept hidden so the error can point at `--merge`.
+        #[arg(long, hide = true)]
         force: bool,
     },
 }

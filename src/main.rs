@@ -368,6 +368,7 @@ fn main() -> Result<()> {
                 evnx::cli::NamingPolicy::Warn,
             ),
             cfg.vars.clone(),
+            args.skip_without_env,
         )
         .map(verdict::finish),
 
@@ -516,8 +517,9 @@ fn main() -> Result<()> {
                 env,
                 example,
                 stdout,
+                merge,
                 force,
-            } => commands::spec::run(with, env, example, stdout, force, cli.verbose),
+            } => commands::spec::run(with, env, example, stdout, merge, force, cli.verbose),
         },
 
         Commands::Surface { json, compact } => commands::surface::run(json, compact),

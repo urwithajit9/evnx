@@ -1,13 +1,13 @@
 
 ================ DR10 ================
 pyproject.toml     ->      Detected Python project (Python (Poetry))
-Pipfile            -> Error: No such file or directory (os error 2)
+Pipfile            ->      Detected Python project (Python (Pipenv))
 requirements.txt   ->      ✓ Detected Python project (Python (requirements))
 package.json       ->      Detected Node.js project
 Cargo.toml         ->      Detected Rust project
 go.mod             ->      Detected Go project
 composer.json      ->      Detected PHP project
-KNOWN I-175: the Pipfile line above is an Error, not a detection
+FIXED I-175 (U8d): the Pipfile line above is a detection
 
 $ evnx doctor
 
@@ -16,16 +16,21 @@ $ evnx doctor
   !  Check .env.example exists and is Git-tracked
      .env.example not found - consider creating a template
 
+  ✓  Detect project type and validate dependencies
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  1 warning  ·  3 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
 
   Docs: https://docs.evnx.dev/cli/commands/doctor
-Error: No such file or directory (os error 2)
-
-No verdict: evnx did not finish. This is not a clean result.
-[exit 2]
-  ok: KNOWN I-175 (High): a Pipfile-only project (no pyproject.toml) aborts the whole run: 'No such file or directory', exit 2; decided: read the file that defines the type, never abort (exit 2)
+[exit 0]
+  ok: FIXED I-175 (U8d): a Pipfile-only project gets a verdict, not an abort (exit 0)
 
 $ evnx doctor
 
@@ -34,16 +39,21 @@ $ evnx doctor
   !  Check .env.example exists and is Git-tracked
      .env.example not found - consider creating a template
 
+  ✓  Detect project type and validate dependencies
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  1 warning  ·  3 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
 
   Docs: https://docs.evnx.dev/cli/commands/doctor
-Error: No such file or directory (os error 2)
-
-No verdict: evnx did not finish. This is not a clean result.
-[exit 2]
-  ok: KNOWN I-175: a poetry.lock-only project aborts the same way (exit 2)
+[exit 0]
+  ok: FIXED I-175 (U8d): a poetry.lock-only project gets a verdict too (exit 0)
 
 $ evnx doctor --verbose
 · Project path: .

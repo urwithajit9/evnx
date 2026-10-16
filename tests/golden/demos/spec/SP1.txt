@@ -68,9 +68,8 @@ $ evnx spec init
   evnx spec  Generate the variable contract
 
 Error: .evnx.toml already has a [vars] section.
-  Appending a second one would produce a file TOML refuses to read.
-  Review the existing entries, or pass --force to append anyway and
-  merge them by hand.
+  Pass --merge to add only the variables it does not declare yet;
+  existing entries are kept as they are.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]

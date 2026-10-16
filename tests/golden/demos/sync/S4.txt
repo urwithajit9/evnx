@@ -8,7 +8,7 @@ $ evnx sync -f --direction reverse
 │   • REDIS_URL                                                                │
 └──────────────────────────────────────────────────────────────────────────────┘
 
-· Force mode: adding with placeholder values, skipping prompts
+· Force mode: adding the template's values (placeholders where it has none), skipping prompts
 ✓ Added 1 variables to .env
 [stderr]
 
@@ -29,8 +29,8 @@ NEW_FEATURE=true
 stripe_key=sk_live_abcdefghijklmnopqrstuvwx
 
 # Added by evnx sync
-REDIS_URL=redis://localhost:6379/0
-KNOWN I-115: REDIS_URL became redis://localhost:6379/0, not the template's own value; decided: copy the template value
+REDIS_URL=redis://localhost:6379
+FIXED I-115 (U8d, DEC-S2): REDIS_URL keeps the template's own value
 
 $ evnx sync -f --direction reverse
 · .env not found, creating from .env.example

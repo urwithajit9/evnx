@@ -8,9 +8,8 @@ $ evnx spec init
   evnx spec  Generate the variable contract
 
 Error: .evnx.toml already has a [vars] section.
-  Appending a second one would produce a file TOML refuses to read.
-  Review the existing entries, or pass --force to append anyway and
-  merge them by hand.
+  Pass --merge to add only the variables it does not declare yet;
+  existing entries are kept as they are.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
@@ -18,6 +17,18 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: the file is untouched, byte for byte
 
 $ evnx spec init --force
+[stderr]
+  config    .evnx.toml (scan.severity=high)
+Error: --force was removed: it appended a second [vars] section that TOML refuses to read.
+  Use --merge to add only the variables .evnx.toml does not declare yet;
+  existing entries are kept as they are.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-178 (U8d, DEC-SP3): --force is refused with a hint to --merge (exit 2)
+  ok: still untouched
+
+$ evnx spec init --merge
 ✓ wrote 6 variable(s) to .evnx.toml
 
 Next steps:
@@ -31,49 +42,39 @@ Next steps:
 
   Docs: https://docs.evnx.dev/cli/commands/spec
 [exit 0]
-  ok: KNOWN I-178: --force appends a second [vars] table (exit 0)
-  ok: two [vars...] tables now (A plus the generated ones)
-
-$ evnx validate
-✓ All required variables present
-✓ All checks passed
-[stderr]
-  config    .evnx.toml (scan.severity=high)
-
-  evnx validate  Check environment configuration
-
-  Docs: https://docs.evnx.dev/cli/commands/validate
-[exit 0]
-KNOWN I-178: a duplicated table is only a problem when the same name appears twice; with [vars.A] plus new names it still parses
+  ok: FIXED I-178: --merge adds only the names [vars] does not declare (exit 0)
+  ok: A kept as written, the hand-written start byte for byte
+  ok: every command can read the merged config
 
 $ evnx spec init
-✓ wrote 6 variable(s) to .evnx.toml
-
-Next steps:
-  1. Read the generated entries — every field is a guess from your files
-  2. Mark optional variables with `required = false`
-  3. Commit .evnx.toml; the spec is the contract
 [stderr]
   config    .evnx.toml
 
   evnx spec  Generate the variable contract
 
-  Docs: https://docs.evnx.dev/cli/commands/spec
-[exit 0]
-KNOWN I-179: inline-table vars is not seen by the textual guard
+Error: .evnx.toml already has a [vars] section.
+  Pass --merge to add only the variables it does not declare yet;
+  existing entries are kept as they are.
 
-$ evnx validate
-[stderr]
-Error: parsing <dir>/scenes/SP4/.evnx.toml: TOML parse error at line 7, column 1
-  |
-7 | [vars.ADMIN_EMAIL]
-  | ^
-invalid table header
-dotted key `vars` attempted to extend non-table type (inline table)
-
-
-No verdict: evnx did not run. This is not a clean result.
+No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: KNOWN I-179: the result declares vars twice, validate cannot read it (exit 2)
+  ok: FIXED I-179 (U8d): an inline vars table is seen and refused (exit 2)
 
-================ summary: 5 ok, 0 mismatch   ================
+$ evnx spec init --merge
+[stderr]
+  config    .evnx.toml
+
+  evnx spec  Generate the variable contract
+
+Error: adding to .evnx.toml would leave a file TOML refuses, so nothing was written:
+  TOML parse error at line 6, column 1
+  If [vars] is an inline `vars = { … }` table, it cannot be extended:
+  write one [vars.NAME] table per variable, then run this again.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-179: --merge cannot extend an inline table; nothing written (exit 2)
+  ok: the file is untouched
+  ok: and still readable
+
+================ summary: 11 ok, 0 mismatch   ================

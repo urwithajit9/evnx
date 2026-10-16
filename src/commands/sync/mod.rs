@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use crate::cli::{NamingPolicy, SyncDirection};
 use crate::core::verdict::{self, Verdict};
+use crate::utils::ui;
 
 mod executor;
 mod models;
@@ -81,11 +82,34 @@ pub fn run(
     template_config: Option<PathBuf>,
     naming_policy: NamingPolicy,
     spec: crate::core::spec::Spec,
+    skip_without_env: bool,
 ) -> Result<Verdict> {
     let paths = executor::SyncPaths {
         env: PathBuf::from(env),
         example: PathBuf::from(example),
     };
+
+    // DEC-U8-5: the skip exists for a forward run on a clone with no `.env`.
+    // Reverse *creates* `.env`; a skip there would hide that it never did.
+    if skip_without_env && direction == SyncDirection::Reverse {
+        anyhow::bail!(
+            "--skip-without-env applies to --direction forward only: reverse creates {} from {}",
+            paths.env_str(),
+            paths.example_str()
+        );
+    }
+
+    // ⚠️ No `.env` is the normal state of CI and of a fresh clone, so it is
+    // answered here rather than as "file not found" (DEC-S4, I-128).
+    if direction == SyncDirection::Forward && !paths.env.exists() {
+        if check {
+            return check_without_env(&paths, &spec, skip_without_env, format == "json");
+        }
+        if skip_without_env {
+            say_skipped(&paths);
+            return Ok(Verdict::Clean);
+        }
+    }
 
     // ⚠️ `--format json` is accepted only with `--check`. Without it `sync`
     // edits files, and a machine-readable report of an edit already made is
@@ -142,6 +166,9 @@ mod tests {
 
     /// Pins the public signature so a change to it has to be deliberate.
     ///
+    /// ⚠️ Updated 2026-10-17 (U8d): `skip_without_env` appended, for the
+    /// pre-commit hook on a clone with no `.env` (DEC-U8-5).
+    ///
     /// ⚠️ Updated again for the spec: `[vars]` is now a source for the reverse
     /// direction, so `run` takes it. This pin is the reason that change had to
     /// be deliberate rather than discovered by a library consumer.
@@ -176,6 +203,7 @@ mod tests {
             Option<std::path::PathBuf>,
             crate::cli::NamingPolicy,
             crate::core::spec::Spec,
+            bool, // skip_without_env (U8d, DEC-U8-5)
         ) -> anyhow::Result<Verdict> = run;
     }
 }
@@ -202,6 +230,11 @@ struct CheckReport {
     /// Keys the target is missing, sorted so the output is stable between runs.
     missing: Vec<String>,
     summary: CheckSummary,
+    /// `"spec"` when there was no `.env` and the template was checked against
+    /// the required `[vars]` instead (DEC-S4). Absent otherwise, so the report
+    /// for the usual comparison is unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compared_with: Option<&'static str>,
 }
 
 #[derive(serde::Serialize)]
@@ -257,9 +290,135 @@ fn check_as_json(paths: &executor::SyncPaths, direction: SyncDirection) -> Resul
             missing: missing.len(),
         },
         missing,
+        compared_with: None,
     };
 
     // stdout, and nothing else on it — the property the golden tests pin.
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(!report.in_sync)
+}
+
+// ─────────────────────────────────────────────────────────────
+// No `.env`: CI and a fresh clone (DEC-S4, DEC-U8-5)
+// ─────────────────────────────────────────────────────────────
+
+/// The skip's one line, on stderr: a skipped check must not read as a pass.
+fn say_skipped(paths: &executor::SyncPaths) {
+    eprintln!(
+        "· {} not found and no required [vars] to check {} against — nothing to check, skipped",
+        paths.env_str(),
+        paths.example_str()
+    );
+}
+
+/// Forward `--check` with no `.env`.
+///
+/// DEC-S4: the template is checked against the spec — every required
+/// `[vars]` name that applies to this file must be declared in it. Without a
+/// spec there is nothing to compare: exit 2, or the announced skip when the
+/// caller asked for one (a pre-commit hook, DEC-U8-5).
+///
+/// ⚠️ Before this, CI — which has no `.env` — got "file not found", exit 2,
+/// on every run, so `sync --check` could not be used as the gate it is
+/// documented as.
+fn check_without_env(
+    paths: &executor::SyncPaths,
+    spec: &crate::core::spec::Spec,
+    skip_without_env: bool,
+    json: bool,
+) -> Result<Verdict> {
+    use crate::core::Parser;
+
+    let env_path = paths.env_str();
+    let label = crate::core::env_name::name_of(&env_path);
+    let required = spec
+        .values()
+        .filter(|v| v.is_required() && v.applies_to(label))
+        .count();
+
+    if required == 0 {
+        if skip_without_env {
+            say_skipped(paths);
+            return Ok(Verdict::Clean);
+        }
+        anyhow::bail!(
+            "nothing to compare: {env} does not exist, and .evnx.toml declares no required \
+             [vars] to check {example} against.\n\n\
+             Create {env} (`evnx sync --direction reverse`), declare the contract with \
+             `evnx spec init`, or — in a pre-commit hook, where a missing {env} is expected — \
+             pass --skip-without-env.",
+            env = env_path,
+            example = paths.example_str()
+        );
+    }
+
+    // A missing template declares nothing, so every required name is missing.
+    let example_vars = if paths.example.exists() {
+        Parser::default()
+            .parse_file(&paths.example)
+            .with_context(|| format!("Failed to parse {}", paths.example_str()))?
+            .vars
+    } else {
+        Default::default()
+    };
+    let missing: Vec<String> =
+        crate::core::spec::missing_required(spec, |k| example_vars.contains_key(k), label)
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+    if json {
+        let report = CheckReport {
+            in_sync: missing.is_empty(),
+            direction: "forward",
+            env: env_path.clone(),
+            example: paths.example_str(),
+            summary: CheckSummary {
+                missing: missing.len(),
+            },
+            missing: missing.clone(),
+            compared_with: Some("spec"),
+        };
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        ui::print_header(
+            "evnx sync",
+            Some(&format!(
+                "{} ↔ {}  (forward)",
+                env_path,
+                paths.example_str()
+            )),
+        );
+        ui::info(format!(
+            "{env_path} not found: checking {} against the spec ([vars] in .evnx.toml)",
+            paths.example_str()
+        ));
+        if missing.is_empty() {
+            ui::success(format!(
+                "{} declares every required variable ({required})",
+                paths.example_str()
+            ));
+            ui::print_docs_hint(&crate::docs::SYNC);
+        } else {
+            ui::error(format!(
+                "{} is missing {} required variable(s):",
+                paths.example_str(),
+                missing.len()
+            ));
+            for name in &missing {
+                println!("  • {name}");
+            }
+            eprintln!();
+            eprintln!(
+                "✗ Out of sync. Add them to {} and commit the result.",
+                paths.example_str()
+            );
+        }
+    }
+
+    Ok(if missing.is_empty() {
+        Verdict::Clean
+    } else {
+        Verdict::Findings
+    })
 }

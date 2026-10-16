@@ -162,6 +162,10 @@ pub fn scan(root: &Path) -> Result<Scan> {
                     .iter()
                     .find_map(|k| caps.name(k))
                 {
+                    // I-239: a name the code reads is a name the code mentions.
+                    // Without this, `process.env.X` — no quotes, so the literal
+                    // pass never sees it — was "named nowhere in the source".
+                    mentioned.insert(name.as_str().to_string());
                     found.entry(name.as_str().to_string()).or_insert(SourceVar {
                         name: name.as_str().to_string(),
                         location: at.clone(),
@@ -460,6 +464,34 @@ mod tests {
             "a genuinely absent name should be reported: {:?}",
             drift.unused
         );
+    }
+
+    /// I-239 (T-INIT-29): a variable the code reads directly — and that the
+    /// template declares — was listed as *already in the template* and as
+    /// "named nowhere in the source" in the same report. Direct reads went
+    /// into `found` only, and `unused` is judged against `mentioned`.
+    #[test]
+    fn t_i239_a_directly_read_variable_is_never_called_unused() {
+        let d = project(&[
+            ("web/app.js", "const a = process.env.DIRECT_ONE;"),
+            ("web/vite.ts", "const b = import.meta.env.VITE_TWO;"),
+            ("app/main.py", "c = os.environ.get('PY_THREE')"),
+            (
+                ".env.example",
+                "DIRECT_ONE=\nVITE_TWO=\nPY_THREE=\nGONE_FOR_GOOD=\n",
+            ),
+        ]);
+        let s = scan(d.path()).unwrap();
+        let drift = compare(&s, &d.path().join(".env.example")).unwrap();
+        for read in ["DIRECT_ONE", "VITE_TWO", "PY_THREE"] {
+            assert!(
+                !drift.unused.iter().any(|u| u == read),
+                "{read} is read by the code: {:?}",
+                drift.unused
+            );
+        }
+        assert_eq!(drift.unused, ["GONE_FOR_GOOD"]);
+        assert_eq!(drift.matched, 3);
     }
 
     /// The thing no other evnx command can do: an independent ground truth.

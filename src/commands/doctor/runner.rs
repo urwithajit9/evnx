@@ -588,7 +588,7 @@ impl DiagnosticCheck for ProjectStructureCheck {
                     } else if verbose {
                         details.push("✓ python-dotenv dependency found".into());
                     }
-                } else if !check_pyproject_has_dotenv(project_root)? && verbose {
+                } else if verbose && !check_python_manifest_has_dotenv(project_root)? {
                     details.push("· Consider adding python-dotenv or pydantic-settings".into());
                 }
             } else if project_type == "Node.js" {
@@ -928,11 +928,28 @@ fn check_requirements_txt_has_dotenv(project_root: &Path) -> Result<bool> {
         }))
 }
 
-fn check_pyproject_has_dotenv(project_root: &Path) -> Result<bool> {
-    let content = fs::read_to_string(project_root.join("pyproject.toml"))?;
-    Ok(content.contains("python-dotenv")
-        || content.contains("pydantic-settings")
-        || content.contains("dynaconf"))
+/// Whether the Python project's manifest lists a dotenv loader (I-175).
+///
+/// ⛔ Reads the file that defines the type, and only one that exists. This
+/// read `pyproject.toml` unconditionally — and before checking `--verbose`,
+/// though only verbose output used the answer — so every Pipenv project
+/// (`Pipfile`, no `pyproject.toml`) and every `poetry.lock`-only one aborted
+/// the whole run: "No such file or directory", exit 2, no verdict. A lock file
+/// alone names no direct dependencies, so it is not read: no manifest, no
+/// finding.
+fn check_python_manifest_has_dotenv(project_root: &Path) -> Result<bool> {
+    let mut found = false;
+    for manifest in ["pyproject.toml", "Pipfile"] {
+        let path = project_root.join(manifest);
+        if !path.is_file() {
+            continue;
+        }
+        let content = fs::read_to_string(&path)?;
+        found |= content.contains("python-dotenv")
+            || content.contains("pydantic-settings")
+            || content.contains("dynaconf");
+    }
+    Ok(found)
 }
 
 fn check_package_json_has_dotenv(project_root: &Path) -> Result<bool> {

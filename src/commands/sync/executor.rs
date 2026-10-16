@@ -816,9 +816,9 @@ fn sync_reverse(
     // `--dry-run` implies non-interactive — see the note in `sync_forward`.
     if force || dry_run {
         if force && !dry_run {
-            ui::info("Force mode: adding with placeholder values, skipping prompts");
+            ui::info("Force mode: adding the template's values (placeholders where it has none), skipping prompts");
         }
-        let preview = add_from_example_preview(&missing, &example_file.vars, true)?;
+        let preview = add_from_example_preview(&missing, &example_file.vars, true, config)?;
         if dry_run {
             print_preview(&SyncPreview {
                 target_file: paths.env_str(),
@@ -828,13 +828,13 @@ fn sync_reverse(
             });
             return Ok(true);
         }
-        add_from_example(paths, &missing, &example_file.vars, true)?;
+        add_from_example(paths, &missing, &example_file.vars, true, config)?;
         ui::success(format!("Added {} variables to .env", missing.len()));
         return Ok(true);
     }
 
     let choices = vec![
-        "Yes, with placeholder values",
+        "Yes, with the template's values (placeholders where it has none)",
         "Yes, prompt me for real values",
         "Let me choose individually",
         "No, skip",
@@ -872,7 +872,7 @@ fn sync_reverse(
         _ => unreachable!(),
     };
 
-    let preview = add_from_example_preview(&missing, &example_file.vars, use_placeholders)?;
+    let preview = add_from_example_preview(&missing, &example_file.vars, use_placeholders, config)?;
     if dry_run {
         print_preview(&SyncPreview {
             target_file: paths.env_str(),
@@ -887,7 +887,13 @@ fn sync_reverse(
         return Ok(true);
     }
 
-    add_from_example(paths, &missing, &example_file.vars, use_placeholders)?;
+    add_from_example(
+        paths,
+        &missing,
+        &example_file.vars,
+        use_placeholders,
+        config,
+    )?;
     ui::success(format!("Added {} variables to .env", missing.len()));
 
     if use_placeholders {
@@ -1120,11 +1126,35 @@ fn convert_to_example_preview(
 // Reverse Sync Add Functions
 // ─────────────────────────────────────────────────────────────
 
+/// What reverse writes into `.env` for `key` (I-115, DEC-S2), and whether it
+/// was generated.
+///
+/// The template's own value when it has one: it is the project's committed
+/// answer for a new teammate, and it is already public. It used to be thrown
+/// away and regenerated from the name — `REDIS_URL=redis://localhost:6379`
+/// came back as `…/0`, `API_PORT=8080` as `8000`. Only an empty or
+/// placeholder-looking value is generated, through the project's
+/// `--template-config` (which reverse used to ignore for a built-in default).
+fn reverse_value(
+    key: &str,
+    template: Option<&String>,
+    config: &PlaceholderConfig,
+) -> (String, bool) {
+    use crate::core::classify::{is_placeholder, Strictness};
+    match template {
+        Some(v) if !v.trim().is_empty() && !is_placeholder(key, v, Strictness::Lenient) => {
+            (v.clone(), false)
+        }
+        _ => (generate_placeholder(key, template, config), true),
+    }
+}
+
 fn add_from_example(
     paths: &SyncPaths,
     keys: &[&String],
     example_vars: &IndexMap<String, String>,
     use_placeholders: bool,
+    config: &PlaceholderConfig,
 ) -> Result<()> {
     let mut content = fs::read_to_string(&paths.env).unwrap_or_default();
     // ⚠️ Not "Synced from .env.example". Since the contract became a source,
@@ -1135,7 +1165,7 @@ fn add_from_example(
 
     for key in keys {
         let value = if use_placeholders {
-            generate_placeholder(key, example_vars.get(*key), &PlaceholderConfig::default())
+            reverse_value(key, example_vars.get(*key), config).0
         } else {
             let default = example_vars.get(*key).map(|s| s.as_str()).unwrap_or("");
             Input::new()
@@ -1155,21 +1185,21 @@ fn add_from_example_preview(
     keys: &[&String],
     example_vars: &IndexMap<String, String>,
     use_placeholders: bool,
+    config: &PlaceholderConfig,
 ) -> Result<Vec<VarChange>> {
     Ok(keys
         .iter()
         .map(|key| {
-            let example_val = example_vars.get(*key).cloned().unwrap_or_default();
-            let new_val = if use_placeholders {
-                generate_placeholder(key, Some(&example_val), &PlaceholderConfig::default())
+            let (new_val, generated) = if use_placeholders {
+                reverse_value(key, example_vars.get(*key), config)
             } else {
-                example_val.clone()
+                (example_vars.get(*key).cloned().unwrap_or_default(), false)
             };
             VarChange {
                 key: (*key).clone(),
                 old_value: None,
                 new_value: new_val,
-                is_placeholder: use_placeholders,
+                is_placeholder: generated,
             }
         })
         .collect())
@@ -1191,8 +1221,8 @@ fn add_from_example_interactive(
 
     for &idx in &selected {
         let key = keys[idx];
-        let placeholder = generate_placeholder(key, example_vars.get(key), config);
-        content.push_str(&envfile::line(key, &placeholder));
+        let (value, _) = reverse_value(key, example_vars.get(key), config);
+        content.push_str(&envfile::line(key, &value));
         content.push('\n');
     }
 
@@ -1208,12 +1238,12 @@ fn add_from_example_interactive_preview(
     Ok(keys
         .iter()
         .map(|key| {
-            let placeholder = generate_placeholder(key, example_vars.get(*key), config);
+            let (value, generated) = reverse_value(key, example_vars.get(*key), config);
             VarChange {
                 key: (*key).clone(),
                 old_value: None,
-                new_value: placeholder,
-                is_placeholder: true,
+                new_value: value,
+                is_placeholder: generated,
             }
         })
         .collect())
@@ -1449,7 +1479,9 @@ mod tests {
         let keys_vec: Vec<String> = vec!["NEW_VAR".to_string()];
         let keys: Vec<&String> = keys_vec.iter().collect();
 
-        let preview = add_from_example_preview(&keys, &example_vars, true).unwrap();
+        let preview =
+            add_from_example_preview(&keys, &example_vars, true, &PlaceholderConfig::default())
+                .unwrap();
 
         assert_eq!(preview.len(), 1);
         assert!(preview[0].is_placeholder);
@@ -1465,7 +1497,9 @@ mod tests {
         let keys_vec: Vec<String> = vec!["NEW_VAR".to_string()];
         let keys: Vec<&String> = keys_vec.iter().collect();
 
-        let preview = add_from_example_preview(&keys, &example_vars, false).unwrap();
+        let preview =
+            add_from_example_preview(&keys, &example_vars, false, &PlaceholderConfig::default())
+                .unwrap();
 
         assert_eq!(preview.len(), 1);
         assert!(!preview[0].is_placeholder);

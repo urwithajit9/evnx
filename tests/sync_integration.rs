@@ -102,6 +102,7 @@ fn test_forward_sync_dry_run_adds_preview() -> Result<()> {
         None,
         NamingPolicy::Ignore,
         Default::default(),
+        false, // skip_without_env
     );
 
     // ✅ Restore directory IMMEDIATELY (before fixture drops and deletes temp dir)
@@ -150,6 +151,7 @@ fn dry_run_needs_no_terminal_forward() -> Result<()> {
         None,
         NamingPolicy::Ignore,
         Default::default(),
+        false, // skip_without_env
     );
 
     let _ = env::set_current_dir(&original_dir);
@@ -194,6 +196,7 @@ fn dry_run_needs_no_terminal_reverse() -> Result<()> {
         None,
         NamingPolicy::Ignore,
         Default::default(),
+        false, // skip_without_env
     );
 
     let _ = env::set_current_dir(&original_dir);
@@ -236,6 +239,7 @@ fn test_reverse_sync_creates_env_with_placeholders() -> Result<()> {
         None,
         NamingPolicy::Ignore,
         Default::default(),
+        false, // skip_without_env
     );
 
     // Restore BEFORE fixture drops
@@ -278,6 +282,7 @@ fn test_forward_sync_security_warning_with_actual_values() -> Result<()> {
         None,
         NamingPolicy::Ignore,
         Default::default(),
+        false, // skip_without_env
     );
 
     let _ = env::set_current_dir(&original_dir);
@@ -324,6 +329,7 @@ fn test_sync_with_custom_placeholder_config() -> Result<()> {
         Some(fixture.config_path.clone()), // Absolute path
         NamingPolicy::Ignore,
         Default::default(),
+        false, // skip_without_env
     );
 
     let _ = env::set_current_dir(&original_dir);
@@ -364,6 +370,7 @@ fn test_forward_sync_missing_env_file() -> Result<()> {
         None,
         NamingPolicy::Ignore,
         Default::default(),
+        false, // skip_without_env
     );
 
     let _ = env::set_current_dir(&original_dir);
@@ -399,6 +406,7 @@ fn test_reverse_sync_missing_example_file() -> Result<()> {
         None,
         NamingPolicy::Ignore,
         Default::default(),
+        false, // skip_without_env
     );
 
     let _ = env::set_current_dir(&original_dir);
