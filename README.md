@@ -141,6 +141,13 @@ evnx --help
 
 ## Commands
 
+Commands exit **0** when they ran and found nothing, **1** when they ran and the
+answer is no (secrets found, drift, a failed upload), and **2** when they could
+not run — "No verdict: evnx did not finish". `backup` and `restore` are the
+exception: they keep the specific codes their guides list (`restore` exits 3 when
+the backup file is missing). `-q` prints nothing on success; findings and errors
+still print.
+
 ### `evnx init`
 
 Interactive project setup. Creates `.env` and `.env.example` files for your project through a guided TUI.
@@ -183,7 +190,7 @@ Add the variables a service, framework or whole stack needs to `.env.example` an
 evnx add service postgresql       # any catalogue id: a service, an infra target or a framework (`add infra` is an alias)
 evnx add framework nextjs         # --language is optional
 evnx add blueprint t3_modern      # a whole stack
-evnx add custom API_URL=https://api.example.com DEBUG=false --yes   # your own, as arguments
+evnx add custom API_URL=https://api.example.com DEBUG=false --yes   # your own: values go to .env only, .env.example gets placeholders
 evnx add custom                   # ... or one prompt at a time
 evnx add --list                   # every id
 evnx add service redis --dry-run  # what would be written; --json for scripts
@@ -198,7 +205,11 @@ into `[vars]` in `.evnx.toml`, and read by `validate`, `scan` and `sync`.
 
 ```bash
 evnx spec init                    # infer the contract from files you already have
+evnx spec init --merge            # later: add only the names [vars] does not declare yet
 ```
+
+`--merge` keeps every existing entry as written, and nothing is ever written that
+TOML would refuse to read.
 
 ```toml
 [vars]
@@ -241,7 +252,12 @@ evnx scan --severity high              # only what evnx is confident about
 evnx scan --pattern 'ACME-[A-Z0-9]{32}'  # your own secret format
 evnx scan --format sarif               # SARIF for the GitHub Security tab
 evnx scan --exit-zero                  # warn but do not fail CI
+evnx scan --extensions env,yml,json    # opt-in: read only these files in folders (the run says so)
 ```
+
+A folder scan reads **every** file. Binary files and files over 1024 KiB are
+skipped, and the scan says how many (`-v` lists them). A file you name is always
+read.
 
 Detects: AWS Access Keys, Stripe keys (live and test), GitHub tokens, OpenAI and Anthropic API keys, RSA/EC/OpenSSH private keys, high-entropy strings, and generic API key patterns — plus any format you declare with `--pattern` or `[[scan.patterns]]`.
 
@@ -258,6 +274,7 @@ evnx diff                     # compare .env vs .env.example
 evnx diff --show-values       # include values (secrets stay masked, e.g. postgres://admin:***@db)
 evnx diff --reverse           # swap comparison direction
 evnx diff --format json       # JSON output
+evnx diff --format patch --show-values   # a patch that applies; without --show-values values are <withheld>
 ```
 
 ---
@@ -295,6 +312,9 @@ evnx convert --to json \
   --base64
 ```
 
+`--output` creates the file readable by you only (0600) and refuses to replace an
+existing one unless `--force` is given. It never writes over the `.env` it reads.
+
 Pipe directly to AWS Secrets Manager:
 
 ```bash
@@ -314,8 +334,12 @@ Keeps `.env` and `.env.example` aligned, in either direction.
 # Forward: .env → .env.example (document what you have)
 evnx sync --direction forward --placeholder
 
-# Reverse: .env.example → .env (generate env from template)
+# Reverse: .env.example → .env — copies the template's values, placeholders where it has none
 evnx sync --direction reverse
+
+# CI gate: 0 in sync, 1 drift, 2 no verdict. With no .env, the template is
+# checked against the required [vars] in .evnx.toml.
+evnx sync --check
 ```
 
 ---

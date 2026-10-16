@@ -8,9 +8,46 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-The first shared-module change (the output rules), one small fix found when the
-new output locks first ran in CI, and the safety net under both: each reviewed
-command's output is locked in CI before any module changes it.
+## [0.10.3] - 2026-10-17
+
+⚠️ **Why 0.10.3.** By `docs/RELEASING.md` this would be a minor bump: it changes
+the output and exit codes of shipped commands and removes a flag. It is a patch
+by decision, the convention set in 0.10.1: each review release ships as a
+`0.10.x`, and **0.11.0 stays reserved for the first stable release** after the
+command-by-command review, which is not finished (the per-command docs pass and
+the issues still marked `KNOWN` in the demo locks remain).
+
+ⓘ **This release is the cross-command pass.** 0.10.1 and 0.10.2 fixed one
+command each. The reviews of the other commands found the same defects again
+and again — files written world-readable, secrets printed or committed, exit
+codes that meant different things, values truncated at ` #` — so this release
+fixes them once, in shared modules every command now goes through, and then
+fixes each command's remaining critical issues. Every changed output is in a
+reviewed demo golden, and 34 demo checks across 8 commands fail on the released
+0.10.2 — each names the issue it fixes.
+
+### ⚠️ Breaking, at a glance
+
+Each is explained in its section below.
+
+- `diff --format patch` and `diff --interactive` print `<withheld>` instead of
+  values; add `--show-values` to a script that applies the patch.
+- `convert -o FILE` refuses an existing FILE without `--force`, and creates it 0600.
+- Exit codes: 0 clean, 1 findings, 2 no verdict (`backup` and `restore` keep
+  their own documented codes) — `sync --naming-policy error` is now 2,
+  `migrate --to github-actions` exits 1 when an upload failed, an unknown
+  `--format` is 2.
+- The banner and notices are on stderr; stdout carries only what a command
+  produces. `-q` prints nothing on success.
+- `spec init --force` is gone (exit 2, pointing at the new `--merge`).
+- `validate` asks a strong value of `*_PWD`, `*_APIKEY`, `*CREDENTIALS` and
+  `PASSWD` names.
+- `scan` reads every file in a folder; a scan of a large repository may read and
+  find more. `--extensions` restores a list, and says so.
+- `add custom` writes placeholders, not your values, into `.env.example`.
+- `restore` sends a file it cannot fully parse to `.restored`.
+- Library: see *Library* below; `commands::validate::checks::is_secret_shaped`
+  was removed and several `run` functions changed signature.
 
 ### ⛔ Security — `diff` printed secrets
 
@@ -101,7 +138,8 @@ or the new one, never half of either.
 ### Changed — exit codes mean the same thing in every command
 
 0 is "ran, nothing to report", 1 is "ran, and the answer is no", 2 is "could
-not run — no verdict". Four places broke that:
+not run — no verdict". ⓘ `backup` and `restore` keep their own specific codes
+(2–6, listed in their guides), unchanged. Four places broke that:
 
 - **`sync --naming-policy error` exits 2, not 1** (I-116, DEC-S13). Under
   `--check`, 1 means "out of sync", so a refused variable name read as drift.
@@ -132,14 +170,18 @@ not run — no verdict". Four places broke that:
 ### ⛔ Security — `add custom` put your values in `.env.example`
 
 - **`evnx add custom NAME=value` writes a placeholder into `.env.example` and
-  the value only into `.env`** (I-240, DEC-U8-1). The value went into both, so
-  `add custom STRIPE_SECRET_KEY=sk_live_…` put a live key in the committed file.
+  the value only into `.env`** (I-245, DEC-U8-1; numbered I-240 in #182). The
+  value went into both, so `add custom STRIPE_SECRET_KEY=sk_live_…` put a live
+  key in the committed file.
   Every name gets a placeholder (the same ones `sync` writes, such as
   `YOUR_KEY_HERE`), not only secret-looking ones. ⚠️ If `.env` does not exist
   it is created, mode 0600, so the value is not lost.
 - A name given without a value gets the same placeholder in both files
   (`FEATURE_FLAG=YOUR_VALUE_HERE`, `STRIPE_SECRET_KEY=YOUR_KEY_HERE`). `.env`
   got `your_value_here` while `.env.example` got the uppercase one.
+- The prompt for a value says where it goes — `Value for NAME (.env only;
+  .env.example gets YOUR_KEY_HERE)`. It said "Example/placeholder value", true
+  only before the fix above.
 
 ### ⛔ Security — `scan` did not read a `.pem` file in a folder
 
@@ -198,7 +240,7 @@ not run — no verdict". Four places broke that:
   came back as `…/0`, `API_PORT=8080` as `8000`, `LOG_LEVEL=info` as
   `YOUR_VALUE_HERE`.
 
-### Fixed — `doctor` and `init --from-source`
+### Fixed — `doctor`, `init --from-source` and `init --detect`
 
 - **`doctor` gives a verdict on a Pipenv or `poetry.lock`-only project**
   (I-175). It read `pyproject.toml` unconditionally and aborted: "No such file
@@ -208,6 +250,16 @@ not run — no verdict". Four places broke that:
   nowhere in the source"** (I-239). `process.env.X` and `import.meta.env.X`
   were found, listed as already in the template, and in the same report listed
   as unused.
+- **`init --detect` finds the database an `sqlx` project uses** (I-240). `sqlx`
+  names no database itself — its features do — so an Axum + sqlx project got no
+  database at all. Feature `postgres` proposes PostgreSQL and `mysql` proposes
+  MySQL / MariaDB, shown as `sqlx (postgres)`; `sqlite`, or no database feature,
+  proposes none and says so in one line.
+- **`init --from-source` no longer proposes values the framework fills itself**
+  (I-246). `import.meta.env.DEV`, `MODE`, `PROD`, `SSR`, `BASE_URL` (Vite) and
+  `SITE`, `ASSETS_PREFIX` (Astro) were written into `.env.example` as variables
+  to set. They are never proposed now, and a template that already lists one is
+  not called unused.
 
 ### Changed — one secret-name rule, at two levels
 
@@ -481,6 +533,15 @@ and read a success line must check the exit code instead.
   is_unsafe_name, is_evnx_own}`.
 - New: `cloud::when` (one timestamp format), `core::args::{Name::OrgSlug,
   check_email}`, `core::gitignore::in_work_tree`, `cloud run --allow-unsafe-names`.
+- U8: ⚠️ `commands::validate::checks::is_secret_shaped` is removed — use
+  `core::classify::is_secret_name(key, Strictness::Strict)`; the Lenient level
+  is what `is_sensitive_key` answers. `commands::scan::run` takes a trailing
+  `extensions: Option<(Vec<String>, &str)>`, `commands::sync::run` a trailing
+  `skip_without_env: bool`, and `commands::spec::run` a `merge: bool` before
+  `force`. New: `scan::filters::{Collected, MAX_WALK_BYTES}`,
+  `FileFilter::{with_extensions, extensions, collect}`,
+  `ScanRunner::with_extensions`; `ScanResults::skipped` and
+  `Summary::files_skipped`; `core::config::ScanPolicy::extensions`.
 
 ### Fixed
 
@@ -546,7 +607,7 @@ and read a success line must check the exit code instead.
   status and logout. `tests/quoted_commands.rs` (T-SHARE-49): every
   `` `evnx …` `` quoted in `src/` is a real command, not a bare group, with real
   flags — it catches I-202 and both I-208 on the old source and nothing else.
-- `tests/add_custom_example.rs` (3): I-240 with and without `.env`, and a rerun is
+- `tests/add_custom_example.rs` (3): I-245 with and without `.env`, and a rerun is
   not a conflict; `tests/convert_output.rs` adds I-088; `cloud::sync` unit test for
   `--file -` (I-244, also checked against a local server).
 - `tests/scan_walk.rs` (5): I-047 — a `.pem` and a `.swift` file are read,
@@ -566,8 +627,9 @@ and read a success line must check the exit code instead.
   `tests/sync_check_without_env.rs` (10: DEC-S4, DEC-U8-5, and T-SYNC-51 reading
   the shipped `.pre-commit-hooks.yaml`), `tests/doctor_python.rs` (3, I-175),
   `tests/spec_merge.rs` (5, I-178, I-179), and an `init::source` unit test for
-  I-239 (T-INIT-29) — each red first. Demo scenes flipped from `KNOWN` to
-  `FIXED`: sync S4 and S10, doctor DR10, spec SP3 and SP4.
+  I-239 (T-INIT-29), `init::detect` unit tests for I-240 (T-INIT-30) and an
+  `init::source` unit test for I-246 — each red first. Demo scenes flipped from
+  `KNOWN` to `FIXED`: sync S4 and S10, doctor DR10, spec SP3 and SP4.
 - `tests/migrate_exit.rs`: `t_i109_esc_at_the_confirmation_uploads_nothing` sent
   Esc and Enter together and hung on a slow CI runner — the race #156 fixed
   elsewhere (the two bytes read as one escape sequence, the Enter lost). It now

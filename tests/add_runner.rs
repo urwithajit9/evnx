@@ -173,7 +173,7 @@ fn a8_custom_without_a_terminal() {
     run(p.path(), &["add", "custom", "MY_KEY=value", "--yes"])
         .assert_code(0)
         .assert_contains("Added 1 custom variable");
-    // DEC-U8-1 (I-240): the value in `.env` only, a placeholder in the template.
+    // DEC-U8-1 (I-245): the value in `.env` only, a placeholder in the template.
     assert!(p.read(".env").contains("\nMY_KEY=value\n"));
     assert!(p.read(".env.example").contains("\nMY_KEY="));
     assert!(!p.read(".env.example").contains("MY_KEY=value"));
@@ -233,7 +233,7 @@ fn a11_custom_interactive() {
     let mut s = Pty::spawn(p.path(), &["add", "custom"]);
     s.wait_for("Variable name");
     s.type_line("MY_API_KEY");
-    s.wait_for("Example/placeholder value");
+    s.wait_for(".env only; .env.example gets");
     s.type_line("sk_test_xxx");
     s.wait_for("More options?");
     s.press(&["y", ENTER]);
@@ -249,7 +249,7 @@ fn a11_custom_interactive() {
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
-    // DEC-U8-1 (I-240): the value in `.env` only, a placeholder in the template.
+    // DEC-U8-1 (I-245): the value in `.env` only, a placeholder in the template.
     assert!(
         p.read(".env")
             .contains("# Payment key (required)\nMY_API_KEY=sk_test_xxx\n"),

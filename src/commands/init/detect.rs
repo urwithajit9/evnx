@@ -84,6 +84,9 @@ fn package_table() -> BTreeMap<&'static str, &'static str> {
         ("psycopg2-binary", "postgresql"),
         ("asyncpg", "postgresql"),
         ("mysql2", "mysql_mariadb"),
+        // ── Rust: sqlx by feature (I-240), see `dependencies` ──
+        ("sqlx (postgres)", "postgresql"),
+        ("sqlx (mysql)", "mysql_mariadb"),
         ("mongodb", "mongodb"),
         ("mongoose", "mongodb"),
         ("redis", "redis"),
@@ -211,6 +214,50 @@ pub fn detect(root: &Path) -> Result<Vec<Detected>> {
     Ok(found)
 }
 
+/// Things detection saw and deliberately did not turn into a component, each
+/// as one line for the user — so "no database proposed" is never a silence
+/// that reads like a miss.
+pub fn notes(root: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(features) = sqlx_features(root) {
+        let server = SQLX_DATABASES
+            .iter()
+            .any(|(f, _)| features.iter().any(|x| x == f));
+        if !server {
+            out.push(if features.iter().any(|x| x == "sqlite") {
+                "sqlx (sqlite): SQLite is a file, not a server, so no database variables are proposed"
+                    .to_string()
+            } else {
+                "sqlx with no database feature (postgres, mysql) in Cargo.toml, so no database is proposed"
+                    .to_string()
+            });
+        }
+    }
+    out
+}
+
+/// sqlx database features that name a server, and the component each means.
+const SQLX_DATABASES: &[(&str, &str)] = &[("postgres", "postgresql"), ("mysql", "mysql_mariadb")];
+
+/// The `features` of a `sqlx` dependency in `Cargo.toml`, or `None` when there
+/// is no `sqlx`. A plain `sqlx = "0.8"` has no features.
+fn sqlx_features(root: &Path) -> Option<Vec<String>> {
+    let text = std::fs::read_to_string(root.join("Cargo.toml")).ok()?;
+    let doc = toml::from_str::<toml::Value>(&text).ok()?;
+    let sqlx = doc.get("dependencies")?.get("sqlx")?;
+    Some(
+        sqlx.get("features")
+            .and_then(toml::Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(toml::Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default(),
+    )
+}
+
 /// Declared dependency names, paired with the file that declared them.
 ///
 /// Every manifest is read if present: a repository with both `package.json` and
@@ -235,6 +282,14 @@ fn dependencies(root: &Path) -> Vec<(String, String)> {
             if let Some(map) = doc.get("dependencies").and_then(toml::Value::as_table) {
                 out.extend(map.keys().map(|k| (k.clone(), "Cargo.toml".into())));
             }
+        }
+    }
+    // I-240: `sqlx` names no database; its features do. Each server feature
+    // becomes `sqlx (postgres)`, which the package table maps and the
+    // proposal shows as the matched token. SQLite and no feature are `notes`.
+    for f in sqlx_features(root).unwrap_or_default() {
+        if SQLX_DATABASES.iter().any(|(db, _)| *db == f) {
+            out.push((format!("sqlx ({f})"), "Cargo.toml".into()));
         }
     }
 
@@ -398,6 +453,59 @@ mod tests {
                 "{want} missing: {:?}",
                 ids(&found)
             );
+        }
+    }
+
+    /// I-240 (T-INIT-30): `sqlx` names no database by itself — its features do.
+    /// An Axum + sqlx project got no database at all.
+    #[test]
+    fn t_i240_sqlx_with_a_database_feature_proposes_that_database() {
+        for (cargo, want, matched) in [
+            (
+                "[dependencies]\naxum = \"0.7\"\nsqlx = { version = \"0.8\", features = [\"runtime-tokio\", \"postgres\"] }\n",
+                "postgresql",
+                "sqlx (postgres)",
+            ),
+            (
+                "[dependencies.sqlx]\nversion = \"0.8\"\nfeatures = [\"mysql\"]\n",
+                "mysql_mariadb",
+                "sqlx (mysql)",
+            ),
+        ] {
+            let d = project(&[("Cargo.toml", cargo)]);
+            let found = detect(d.path()).unwrap();
+            let hit = found
+                .iter()
+                .find(|f| f.component == want)
+                .unwrap_or_else(|| panic!("{want} missing: {:?}", ids(&found)));
+            assert_eq!(hit.matched, matched);
+            assert_eq!(hit.evidence, "Cargo.toml");
+            assert!(notes(d.path()).is_empty(), "{:?}", notes(d.path()));
+        }
+    }
+
+    /// SQLite is a file, not a server; no feature names no database. Neither
+    /// proposes one, and each says why rather than staying silent.
+    #[test]
+    fn t_i240_sqlx_without_a_server_database_proposes_none_and_says_why() {
+        for (cargo, says) in [
+            (
+                "[dependencies]\nsqlx = { version = \"0.8\", features = [\"sqlite\"] }\n",
+                "SQLite",
+            ),
+            ("[dependencies]\nsqlx = \"0.8\"\n", "no database feature"),
+        ] {
+            let d = project(&[("Cargo.toml", cargo)]);
+            let found = detect(d.path()).unwrap();
+            assert!(
+                !ids(&found)
+                    .iter()
+                    .any(|c| c == "postgresql" || c == "mysql_mariadb"),
+                "{:?}",
+                ids(&found)
+            );
+            let n = notes(d.path());
+            assert!(n.iter().any(|l| l.contains(says)), "{n:?}");
         }
     }
 

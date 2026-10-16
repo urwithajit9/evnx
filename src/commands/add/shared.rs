@@ -161,7 +161,7 @@ pub fn plan(output_path: &Path, requested: &VarCollection) -> Result<Plan> {
 
 /// [`plan`], and with `create_env_file` a missing `.env` is planned as an
 /// empty one that [`apply`] creates (0600) — for values that must land
-/// somewhere other than the template (I-240).
+/// somewhere other than the template (I-245).
 pub fn plan_with(
     output_path: &Path,
     requested: &VarCollection,
@@ -298,7 +298,7 @@ pub fn apply(
     // 2. The template.
     if write_example {
         // The template's own text when the flow has one: `add custom` writes
-        // placeholders there and values only to `.env` (I-240, DEC-U8-1).
+        // placeholders there and values only to `.env` (I-245, DEC-U8-1).
         let addition = example_render.unwrap_or(render)(&plan.to_example)?;
         if example_path.exists() {
             let existing = read(&example_path)?;

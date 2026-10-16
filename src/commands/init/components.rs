@@ -148,6 +148,12 @@ pub fn handle_detected(
     let ids: Vec<String> = found.iter().map(|d| d.component.clone()).collect();
     let vars = component::resolve(&ids).context("Failed to resolve detected components")?;
 
+    // What detection saw and chose not to propose (I-240: sqlx with SQLite or
+    // no database feature), so an absent database is explained, not a mystery.
+    for note in super::detect::notes(Path::new(&path)) {
+        ui::say(format!("  {}  {}", glyph::INFO.dimmed(), note.dimmed()));
+    }
+
     // ⚠️ Same files as before (DQ-5), different words. An empty "Detected"
     // heading followed by "0 variables from 0 components" read like a
     // malfunction; it is a normal outcome for a project evnx cannot read, and

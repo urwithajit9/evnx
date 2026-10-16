@@ -165,7 +165,7 @@ Once your project is initialised, use `evnx add` to add the variables of a new s
 evnx add service stripe
 ```
 
-It shows a preview and asks before writing; `--yes` skips the question. `evnx add framework <id>` and `evnx add blueprint <id>` work the same way, and `evnx add custom` asks for your own variables one at a time. `.env.example` and `.env` are updated together, so they stay in sync as your project grows.
+It shows a preview and asks before writing; `--yes` skips the question. `evnx add framework <id>` and `evnx add blueprint <id>` work the same way, and `evnx add custom` asks for your own variables one at a time. `.env.example` and `.env` are updated together, so they stay in sync as your project grows — the value you give goes only into `.env`; `.env.example`, which you commit, gets a placeholder such as `YOUR_KEY_HERE`.
 
 ---
 
@@ -235,6 +235,11 @@ answers, and collapsing them is what let `evnx scan ./typo` report success on ol
 versions. `--exit-zero` suppresses `1` only; trouble still exits `2`, because the flag
 means "do not fail my build over findings", not "never tell me the scan was impossible".
 
+A folder scan reads **every** file, so a key in `config/id_rsa.pem` or `app.swift` is
+found. Binary files and files over 1024 KiB are skipped, and the scan says how many
+(`-v` lists them). To read only some file types, opt in with
+`--extensions env,yml,json` — the run then says it is limited.
+
 Scan specific paths — positional and repeatable:
 
 ```bash
@@ -250,7 +255,7 @@ evnx scan --format sarif > scan-results.sarif
 Output as JSON:
 
 ```bash
-evnx scan --format json | jq '.findings[].key'
+evnx scan --format json | jq '.findings[].location'
 ```
 
 ---
@@ -318,6 +323,7 @@ Options:
 evnx diff --show-values     # include values; secrets stay masked
 evnx diff --reverse         # swap the comparison direction
 evnx diff --format json     # JSON output for scripting
+evnx diff --format patch --show-values   # values are <withheld> without --show-values
 ```
 
 ---
@@ -381,11 +387,15 @@ evnx convert --to aws-secrets | \
 `evnx sync` keeps `.env` and `.env.example` aligned as your project evolves:
 
 ```bash
-# Forward: propagate new keys from .env into .env.example (values redacted)
+# Forward: propagate new keys from .env into .env.example (placeholder values, never real ones)
 evnx sync --direction forward --placeholder
 
-# Reverse: generate a fresh .env from .env.example (useful for new teammates or CI)
+# Reverse: fill .env from .env.example — the template's values, placeholders where it has none
 evnx sync --direction reverse
+
+# In CI: 0 in sync, 1 drift, 2 no verdict. With no .env, the template is checked
+# against the required [vars] in .evnx.toml.
+evnx sync --check
 ```
 
 Generate `.env.example` from your existing `.env` — the forward direction creates it if it
@@ -407,7 +417,10 @@ Commit `.env.example` to your repository. It tells teammates which variables are
 
 ## Set up the pre-commit hook
 
-The pre-commit hook is the most important step for ongoing protection. It runs `evnx scan` automatically before every `git commit`, blocking commits that contain secrets.
+The pre-commit hook is the most important step for ongoing protection. It runs `evnx scan` on the files being committed, blocking a commit that contains secrets.
+
+⚠️ Scan the **staged files**, never the working tree: the tree holds your real,
+gitignored `.env`, so a hook that scans it blocks every commit.
 
 ### Using pre-commit
 
@@ -421,8 +434,7 @@ repos:
         name: Scan for secrets
         entry: evnx scan
         language: system
-        files: '\.env'
-        pass_filenames: false
+        pass_filenames: true    # the staged files — never the gitignored .env
 
       - id: evnx-validate
         name: Validate .env
@@ -442,11 +454,18 @@ pre-commit install
 ```bash
 cat > .git/hooks/pre-commit << 'EOF'
 #!/bin/bash
-evnx scan
-if [ $? -ne 0 ]; then
-  echo "evnx: secrets detected — commit blocked."
-  exit 1
-fi
+# Scan what is being committed. The working tree holds your gitignored .env with
+# real keys; scanning it would block every commit.
+files=()
+while IFS= read -r -d '' f; do files+=("$f"); done \
+  < <(git diff --cached --name-only -z --diff-filter=ACM)
+[ ${#files[@]} -eq 0 ] && exit 0
+evnx scan "${files[@]}"
+case $? in
+  0) exit 0 ;;
+  1) echo "evnx: secrets in the staged files — commit blocked."; exit 1 ;;
+  *) echo "evnx: the scan could not complete — commit blocked."; exit 1 ;;
+esac
 EOF
 chmod +x .git/hooks/pre-commit
 ```

@@ -1,4 +1,7 @@
-//! What `evnx add custom` writes where (U8, I-240, DEC-U8-1).
+//! What `evnx add custom` writes where (U8, I-245, DEC-U8-1).
+//!
+//! ⚠️ Numbered I-240 when fixed (#182); renumbered I-245 in U9 — I-240 is
+//! `init --detect` ignoring `sqlx`, which the U8 list meant.
 //!
 //! `add custom STRIPE_SECRET_KEY=sk_live_…` wrote the live key into
 //! `.env.example` — the file that gets committed — as well as `.env`. Now
@@ -26,7 +29,7 @@ fn add(p: &Project) -> support::Output {
 }
 
 #[test]
-fn t_i240_the_template_gets_placeholders_and_env_the_values() {
+fn t_i245_the_template_gets_placeholders_and_env_the_values() {
     let p = Project::new().env("A=1\n");
     add(&p).assert_code(0);
     let example = p.read(".env.example");
@@ -47,7 +50,7 @@ fn t_i240_the_template_gets_placeholders_and_env_the_values() {
 }
 
 #[test]
-fn t_i240_values_are_not_lost_without_a_dotenv() {
+fn t_i245_values_are_not_lost_without_a_dotenv() {
     let p = Project::new();
     add(&p).assert_code(0);
     let env = p.read(".env");
@@ -65,7 +68,7 @@ fn t_i240_values_are_not_lost_without_a_dotenv() {
 }
 
 #[test]
-fn t_i240_running_it_twice_is_not_a_conflict() {
+fn t_i245_running_it_twice_is_not_a_conflict() {
     let p = Project::new().env("A=1\n");
     add(&p).assert_code(0);
     let out = add(&p);

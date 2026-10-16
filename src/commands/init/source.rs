@@ -108,6 +108,18 @@ pub struct Scan {
     pub truncated: bool,
 }
 
+/// Values `import.meta.env` carries that the framework fills itself (I-246):
+/// Vite's built-ins, and Astro's on top of them. Never set in a `.env`.
+const IMPORT_META_BUILTINS: &[&str] = &[
+    "MODE",
+    "BASE_URL",
+    "PROD",
+    "DEV",
+    "SSR",
+    "SITE",
+    "ASSETS_PREFIX",
+];
+
 /// Scan a project for variable names its code reads.
 pub fn scan(root: &Path) -> Result<Scan> {
     // Direct access, anywhere. High confidence, low recall — it is the 14%.
@@ -166,6 +178,13 @@ pub fn scan(root: &Path) -> Result<Scan> {
                     // Without this, `process.env.X` — no quotes, so the literal
                     // pass never sees it — was "named nowhere in the source".
                     mentioned.insert(name.as_str().to_string());
+                    // I-246: the framework fills these; nobody sets them. Still
+                    // "mentioned", so a template that lists one is not called
+                    // unused — only never proposed.
+                    let via_import_meta = caps.name("h").is_some() || caps.name("i").is_some();
+                    if via_import_meta && IMPORT_META_BUILTINS.contains(&name.as_str()) {
+                        continue;
+                    }
                     found.entry(name.as_str().to_string()).or_insert(SourceVar {
                         name: name.as_str().to_string(),
                         location: at.clone(),
@@ -464,6 +483,26 @@ mod tests {
             "a genuinely absent name should be reported: {:?}",
             drift.unused
         );
+    }
+
+    /// I-246: `import.meta.env` carries values the framework fills itself —
+    /// Vite's `MODE`, `BASE_URL`, `PROD`, `DEV`, `SSR` and Astro's `SITE`,
+    /// `ASSETS_PREFIX`. Nobody sets them, so they are never proposed; an Astro
+    /// project got `DEV=` in its template. A real variable read the same way
+    /// still is.
+    #[test]
+    fn t_i246_framework_builtins_are_not_proposed() {
+        let d = project(&[(
+            "src/pages/index.astro",
+            "if (import.meta.env.DEV) {}\nconst m = import.meta.env.MODE;\n\
+             const p = import.meta.env.PROD || import.meta.env.SSR;\n\
+             const b = import.meta.env.BASE_URL + import.meta.env['SITE'];\n\
+             const a = import.meta.env.ASSETS_PREFIX;\n\
+             const k = import.meta.env.PUBLIC_API_URL;\n",
+        )]);
+        let s = scan(d.path()).unwrap();
+        let found: Vec<&str> = s.found.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(found, ["PUBLIC_API_URL"], "{found:?}");
     }
 
     /// I-239 (T-INIT-29): a variable the code reads directly — and that the

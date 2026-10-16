@@ -201,9 +201,15 @@ fn prompt_loop(
             continue;
         }
 
+        // ⚠️ Says where the answer goes. It was "Example/placeholder value",
+        // true until DEC-U8-1 (I-245) moved values out of `.env.example`: now
+        // this is the real value, and it goes into `.env` only.
+        let placeholder = placeholder_for(&name);
         let value: String = Input::new()
-            .with_prompt("Example/placeholder value")
-            .default(placeholder_for(&name))
+            .with_prompt(format!(
+                "Value for {name} (.env only; .env.example gets {placeholder})"
+            ))
+            .default(placeholder)
             .interact_text()?;
 
         let mut custom = Custom {
@@ -286,7 +292,7 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
         collected.vars.insert(
             c.name.clone(),
             VarMetadata {
-                // ⚠️ The placeholder, not the value (I-240, DEC-U8-1): this is what
+                // ⚠️ The placeholder, not the value (I-245, DEC-U8-1): this is what
                 // goes into `.env.example`, and what the planner compares there,
                 // so running the same command twice is not a conflict.
                 example_value: placeholder_for(&c.name),
@@ -299,7 +305,7 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
     }
 
     // One renderer, two files: `.env` gets the values, `.env.example` the
-    // placeholders (I-240, DEC-U8-1 — every name, not only secret-looking ones).
+    // placeholders (I-245, DEC-U8-1 — every name, not only secret-looking ones).
     let render_with = |v: &VarCollection, values: bool| -> Result<String> {
         let mut content = String::from("\n# ── Custom Variables ──\n");
         for c in customs.iter().filter(|c| v.vars.contains_key(&c.name)) {
@@ -358,7 +364,7 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
 }
 
 /// What `.env.example` holds for `name`: the same placeholder `sync` writes
-/// (`YOUR_KEY_HERE`, …), never the value typed (I-240, DEC-U8-1).
+/// (`YOUR_KEY_HERE`, …), never the value typed (I-245, DEC-U8-1).
 fn placeholder_for(name: &str) -> String {
     crate::commands::sync::placeholder::generate_placeholder(
         name,

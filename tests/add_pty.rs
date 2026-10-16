@@ -33,7 +33,7 @@ fn custom_name_and_value(p: &Project, name: &str, value: &str) -> Pty {
     let mut s = Pty::spawn(p.path(), &["add", "custom"]);
     s.wait_for("Variable name");
     s.type_line(name);
-    s.wait_for("Example/placeholder value");
+    s.wait_for(".env only; .env.example gets");
     s.type_line(value);
     s.wait_for("More options?");
     s
@@ -63,7 +63,7 @@ fn custom_writes_the_variable_and_its_section() {
         assert!(text.contains("MY_API_KEY="), "{f}:\n{text}");
         assert!(text.contains("# ── Custom Variables ──"), "{f}:\n{text}");
     }
-    // ⚠️ DEC-U8-1 (I-240): the value goes to `.env` only; `.env.example` gets a placeholder.
+    // ⚠️ DEC-U8-1 (I-245): the value goes to `.env` only; `.env.example` gets a placeholder.
     assert!(p.read(".env").contains("MY_API_KEY=sk_test_xxx"));
     assert!(!p.read(".env.example").contains("sk_test_xxx"));
     check_golden(
@@ -131,7 +131,7 @@ fn y_enter_answers_exactly_one_question() {
     s.wait_for("Variable name");
     std::thread::sleep(std::time::Duration::from_millis(300));
     s.type_line("N09_SECOND");
-    s.wait_for("Example/placeholder value");
+    s.wait_for(".env only; .env.example gets");
     s.type_line("w");
     s.wait_for("More options?");
     s.press(&["n", ENTER]);
@@ -141,7 +141,7 @@ fn y_enter_answers_exactly_one_question() {
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
-    // ⚠️ DEC-U8-1 (I-240): the value goes to `.env` only; `.env.example` gets a placeholder.
+    // ⚠️ DEC-U8-1 (I-245): the value goes to `.env` only; `.env.example` gets a placeholder.
     let env = p.read(".env");
     assert!(env.contains("# (required)\nN09_VAR=v\n"), "{env}");
     assert!(env.contains("\nN09_SECOND=w\n"), "{env}");
@@ -190,7 +190,7 @@ fn a_secret_name_alone_is_asked_for_unseen() {
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
     assert!(!rest.contains("sk_live_typed_here"), "{rest}");
-    // ⚠️ This asserted the typed secret WAS in `.env.example` — I-240 itself.
+    // ⚠️ This asserted the typed secret WAS in `.env.example` — I-245 itself.
     // Since DEC-U8-1 it goes to `.env` only.
     let env = p.read(".env");
     assert!(

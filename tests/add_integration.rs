@@ -919,7 +919,7 @@ fn custom_without_a_terminal_points_at_arguments() {
         .assert_contains("evnx add custom NAME=value OTHER_NAME=value --yes");
     assert!(!p.exists(".env.example"));
     run(p.path(), &["add", "custom", "A=1", "--yes"]).assert_code(0);
-    // ⚠️ DEC-U8-1 (I-240): the value goes to `.env` only; `.env.example` gets a placeholder.
+    // ⚠️ DEC-U8-1 (I-245): the value goes to `.env` only; `.env.example` gets a placeholder.
     assert_eq!(p.count_lines(".env", "A=1"), 1);
     assert!(
         p.read(".env.example").contains("\nA="),
@@ -995,7 +995,7 @@ fn custom_takes_name_value_arguments() {
         assert!(text.contains("\nDEBUG="), "{f}:\n{text}");
         assert!(text.contains("# ── Custom Variables ──"), "{f}:\n{text}");
     }
-    // ⚠️ DEC-U8-1 (I-240): the value goes to `.env` only; `.env.example` gets a placeholder.
+    // ⚠️ DEC-U8-1 (I-245): the value goes to `.env` only; `.env.example` gets a placeholder.
     let env = p.read(".env");
     assert!(env.contains("\nAPI_URL=https://api.example.com\n"), "{env}");
     assert!(env.contains("\nDEBUG=false\n"), "{env}");
@@ -1022,7 +1022,7 @@ fn custom_name_alone_gets_the_placeholder() {
         ],
     )
     .assert_code(0);
-    // ⚠️ DEC-U8-1 (I-240): the value goes to `.env` only; `.env.example` gets a placeholder.
+    // ⚠️ DEC-U8-1 (I-245): the value goes to `.env` only; `.env.example` gets a placeholder.
     // A name alone gets the same placeholder in both files (they used to
     // disagree: `your_value_here` in .env, `YOUR_VALUE_HERE` in the template).
     let env = p.read(".env");
