@@ -117,6 +117,40 @@ pub fn check_opt(flag: &str, value: Option<&str>, kind: Name) -> Result<()> {
     value.map_or(Ok(()), |v| check(flag, v, kind))
 }
 
+/// The longest span, in days, any evnx day count may name: ten years
+/// (DEC-AU2, DEC-CL7). The server enforces the same cap on token lifetimes.
+pub const MAX_DAYS: i64 = 3650;
+
+/// A day count from the command line: a whole number from 1 to [`MAX_DAYS`].
+///
+/// For clap's `value_parser`, so every flag that takes days gives the same one
+/// message. ⚠️ `--expires-in-days 0` and `=-5` used to mint a token that was
+/// already expired, and `-5` drew clap's "unexpected argument" tip, which
+/// suggests the value might be valid (I-205, I-210).
+pub fn parse_days(raw: &str) -> Result<i64, String> {
+    match raw.trim().parse::<i64>() {
+        Ok(n) if (1..=MAX_DAYS).contains(&n) => Ok(n),
+        _ => Err(format!(
+            "{raw:?} is not a number of days: use a whole number from 1 to {MAX_DAYS}"
+        )),
+    }
+}
+
+/// `now` minus `days`, or `None` if `days` is outside 1–[`MAX_DAYS`].
+///
+/// ⚠️ Checked arithmetic. `chrono::Duration::days` **panics** out of range, and
+/// `cloud audit --last 9223372036854775807d` died with exit 101 on exactly that
+/// (I-231).
+pub fn days_before(
+    now: chrono::DateTime<chrono::Utc>,
+    days: i64,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    if !(1..=MAX_DAYS).contains(&days) {
+        return None;
+    }
+    chrono::Duration::try_days(days).and_then(|d| now.checked_sub_signed(d))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,6 +169,25 @@ mod tests {
             ] {
                 assert!(!kind.accepts(bad), "{kind:?} accepted {bad:?}");
             }
+        }
+    }
+
+    #[test]
+    fn t_i205_days_are_1_to_3650() {
+        assert_eq!(parse_days("1"), Ok(1));
+        assert_eq!(parse_days(" 3650 "), Ok(3650));
+        for bad in ["0", "-5", "3651", "9223372036854775807", "abc", "", "1.5"] {
+            let err = parse_days(bad).unwrap_err();
+            assert!(err.contains("1 to 3650"), "{bad:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn t_i231_days_before_never_panics() {
+        let now = chrono::Utc::now();
+        assert!(days_before(now, 7).unwrap() < now);
+        for bad in [0, -1, 3651, i64::MAX, i64::MIN] {
+            assert_eq!(days_before(now, bad), None, "{bad}");
         }
     }
 

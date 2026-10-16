@@ -16,6 +16,7 @@
 //! quarter of an hour", which matters a great deal when the reason for running
 //! the command is a login alert you did not recognise.
 
+use crate::cloud::client::api_path;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use serde::Deserialize;
@@ -139,7 +140,11 @@ pub fn revoke(
     }
 
     client
-        .delete(&format!("/api/v1/auth/sessions/{}", session.session_id))
+        .delete(&api_path(&[
+            "auth",
+            "sessions",
+            &session.session_id.to_string(),
+        ])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     println!(
@@ -224,19 +229,8 @@ fn resolve<'a>(sessions: &'a [SessionSummary], target: &str) -> Result<&'a Sessi
     }
 }
 
-fn require_login(client: &Client, server: &str) -> Result<()> {
-    if client.is_api_token() {
-        return Err(anyhow!(
-            "an API token cannot manage sessions — that is deliberate.\n\
-             \x20 Unset EVNX_TOKEN and run `evnx auth login`."
-        ));
-    }
-    if !client.is_signed_in() {
-        return Err(anyhow!(
-            "not signed in to {server}. Run `evnx auth login` first."
-        ));
-    }
-    Ok(())
+fn require_login(client: &Client, _server: &str) -> Result<()> {
+    client.require_user_session("manage sessions", "")
 }
 
 /// `2026-09-14T15:02:11Z` → `2026-09-14 15:02`.

@@ -1006,7 +1006,7 @@ pub fn delete_account(
 ) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    super::vault::require_session(&client, &server)?;
+    client.require_credential()?;
 
     // Read the account first, so the prompt can name it and the 2FA question is
     // asked only when it applies. It is also the last chance to discover an
@@ -1142,7 +1142,7 @@ pub fn download_data(
 ) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    super::vault::require_session(&client, &server)?;
+    client.require_credential()?;
 
     let path = output.unwrap_or_else(|| {
         std::path::PathBuf::from(default_data_filename(

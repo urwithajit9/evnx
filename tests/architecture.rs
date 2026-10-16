@@ -118,3 +118,52 @@ fn t_i114_env_lines_have_one_writer() {
     }
     assert!(offenders.is_empty(), "raw KEY=value writes: {offenders:?}");
 }
+
+/// Every cloud request path is built by `cloud::client::api_path`, which keeps
+/// each value inside its own segment and refuses `.`/`..` (U7, I-217, A-43).
+/// A `format!("/api/v1/…{x}")` let `org uninvite "../members/u-bob"` reach
+/// `DELETE /orgs/o/members/u-bob`.
+#[test]
+fn t_i217_cloud_paths_have_one_builder() {
+    let mut files = Vec::new();
+    rust_files(&src().join("cloud"), &mut files);
+    let mut offenders = Vec::new();
+    for f in files {
+        let text = std::fs::read_to_string(&f).unwrap();
+        for (n, l) in text.lines().enumerate() {
+            let code = !l.trim_start().starts_with("//");
+            // `/api/v1/probe/` is a client test's own fake route.
+            if code && l.contains("format!(\"/api/v1") && !l.contains("/api/v1/probe/") {
+                offenders.push(format!("{}:{}", f.display(), n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(), "hand-built API paths: {offenders:?}");
+}
+
+/// Whether a credential may do something is decided in one place:
+/// `Client::require_user_session` (no API token) or `Client::require_credential`
+/// (U7, A-37, DEC-AU3). Five copies plus a sixth that accepted tokens are how
+/// `delete-account` reached the server with `EVNX_TOKEN` set (I-211).
+#[test]
+fn t_i211_one_credential_guard() {
+    let mut files = Vec::new();
+    rust_files(&src().join("cloud"), &mut files);
+    let mut offenders = Vec::new();
+    for f in files.iter().filter(|f| !f.ends_with("client.rs")) {
+        let text = std::fs::read_to_string(f).unwrap();
+        if text.contains("fn require_session(") {
+            offenders.push(format!("{}: fn require_session", f.display()));
+        }
+        let mut rest = text.as_str();
+        while let Some(at) = rest.find("fn require_login(") {
+            let body = &rest[at..];
+            let body = &body[..body.find("\n}\n").unwrap_or(body.len())];
+            if !body.contains(".require_user_session(") || body.contains("is_api_token") {
+                offenders.push(format!("{}: require_login decides itself", f.display()));
+            }
+            rest = &rest[at + 1..];
+        }
+    }
+    assert!(offenders.is_empty(), "{offenders:?}");
+}

@@ -79,7 +79,7 @@ pub fn export(
     let vault_target = sync::resolve_target(vault_target)?;
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    vault::require_session(&client, &server)?;
+    client.require_credential()?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
     let root = output.unwrap_or_else(|| PathBuf::from(DEFAULT_OUTPUT_DIR));

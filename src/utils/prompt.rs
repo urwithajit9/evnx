@@ -57,3 +57,40 @@ pub struct NoTerminal {
 pub fn yes_no() -> dialoguer::Confirm<'static> {
     dialoguer::Confirm::new().wait_for_newline(true)
 }
+
+/// A destructive action's yes/no, the same way in every command (A-39, DEC-AU7).
+///
+/// * `yes` (`--yes`/`-y`): no question, no stdin read — `Ok(true)`.
+/// * No terminal: [`NoTerminal`] naming `--yes` and `example` — exit 2. Never a
+///   silent "no" and never a silent "yes": `org` read raw stdin, so `echo y |`
+///   confirmed and end of input read as "Cancelled" with exit 0, while other
+///   commands failed with dialoguer's bare "not a terminal" (I-218).
+/// * A terminal: `question`, answered on Enter ([`yes_no`]), default **No**; Esc
+///   is No.
+///
+/// The caller prints what is about to happen first and asks a specific
+/// question ("Revoke session 1a2b3c4d?"); this only decides how it is asked.
+pub fn confirm(question: &str, yes: bool, example: &str) -> Result<bool> {
+    if yes {
+        return Ok(true);
+    }
+    require_terminal_or(&format!(
+        "Add --yes (-y) to go ahead without being asked:\n  {example}"
+    ))?;
+    Ok(yes_no()
+        .with_prompt(question)
+        .default(false)
+        .interact_opt()?
+        .unwrap_or(false))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `--yes` answers without touching stdin — whatever stdin is.
+    #[test]
+    fn t_i218_yes_never_asks() {
+        assert!(confirm("Delete it?", true, "evnx x --yes").unwrap());
+    }
+}

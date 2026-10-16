@@ -41,6 +41,52 @@ pub fn read() -> IndexMap<String, String> {
     std::env::vars().filter(|(k, _)| !is_skipped(k)).collect()
 }
 
+/// Variable names that make a program or its runtime load or run other code.
+///
+/// ⚠️ `cloud run` put every vault variable into the child's environment, so a
+/// vault writer could set `LD_PRELOAD` or `NODE_OPTIONS` and run code inside
+/// every reader's processes (I-228, DEC-CL1). Refused unless the user passes
+/// `--allow-unsafe-names`. Names with a prefix rule are below.
+pub const UNSAFE_NAMES: &[&str] = &[
+    "PATH",
+    "BASH_ENV",
+    "ENV",
+    "SHELLOPTS",
+    "BASHOPTS",
+    "PROMPT_COMMAND",
+    "PS4",
+    "IFS",
+    "NODE_OPTIONS",
+    "NODE_PATH",
+    "PYTHONPATH",
+    "PYTHONSTARTUP",
+    "PYTHONHOME",
+    "PERL5OPT",
+    "PERL5LIB",
+    "RUBYOPT",
+    "RUBYLIB",
+    "JAVA_TOOL_OPTIONS",
+    "_JAVA_OPTIONS",
+    "JDK_JAVA_OPTIONS",
+    "GIT_SSH_COMMAND",
+    "GIT_EXEC_PATH",
+];
+
+/// Prefixes with the same effect: the dynamic loaders' `LD_*` (Linux) and
+/// `DYLD_*` (macOS).
+pub const UNSAFE_PREFIXES: &[&str] = &["LD_", "DYLD_"];
+
+/// Whether `name` must not be injected into a child process without consent.
+pub fn is_unsafe_name(name: &str) -> bool {
+    UNSAFE_NAMES.contains(&name) || UNSAFE_PREFIXES.iter().any(|p| name.starts_with(p))
+}
+
+/// Whether `name` is one of evnx's own settings (`EVNX_TOKEN`, `EVNX_SERVER`,
+/// `EVNX_PASSWORD`, …), which a child process must not inherit (I-227).
+pub fn is_evnx_own(name: &str) -> bool {
+    name.starts_with("EVNX_")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -51,6 +97,39 @@ mod tests {
         assert!(require_include(Some(&[])).is_err());
         assert!(require_include(Some(&[" ".into()])).is_err());
         assert!(require_include(Some(&["APP_*".into()])).is_ok());
+    }
+
+    #[test]
+    fn t_i228_code_loading_names_are_unsafe() {
+        for n in [
+            "PATH",
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "LD_AUDIT",
+            "DYLD_INSERT_LIBRARIES",
+            "BASH_ENV",
+            "NODE_OPTIONS",
+            "PYTHONPATH",
+            "JAVA_TOOL_OPTIONS",
+        ] {
+            assert!(is_unsafe_name(n), "{n}");
+        }
+        for n in [
+            "DATABASE_URL",
+            "API_KEY",
+            "NODE_ENV",
+            "PATHS",
+            "MY_PATH",
+            "LDAP_URL",
+        ] {
+            assert!(!is_unsafe_name(n), "{n}");
+        }
+    }
+
+    #[test]
+    fn t_i227_evnx_settings_are_recognised() {
+        assert!(is_evnx_own("EVNX_TOKEN") && is_evnx_own("EVNX_PASSWORD"));
+        assert!(!is_evnx_own("EVNX") && !is_evnx_own("MY_EVNX_TOKEN"));
     }
 
     #[test]

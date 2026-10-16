@@ -222,21 +222,12 @@ fn confirm_error(e: super::client::ApiError) -> anyhow::Error {
 }
 
 /// Account management needs a real login, never an API token.
-fn require_login(client: &Client, server: &str) -> Result<()> {
-    if client.is_api_token() {
-        return Err(anyhow!(
-            "an API token cannot manage two-factor authentication — that is deliberate.\n\
-             \x20 A leaked CI token must not be able to enrol its own authenticator on \
-             your account.\n\
-             \x20 Unset EVNX_TOKEN and run `evnx auth login`."
-        ));
-    }
-    if !client.is_signed_in() {
-        return Err(anyhow!(
-            "not signed in to {server}. Run `evnx auth login` first."
-        ));
-    }
-    Ok(())
+fn require_login(client: &Client, _server: &str) -> Result<()> {
+    client.require_user_session(
+        "manage two-factor authentication",
+        "\x20 A leaked CI token must not be able to enrol its own authenticator on \
+your account.\n",
+    )
 }
 
 #[cfg(test)]

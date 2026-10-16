@@ -28,6 +28,7 @@
 //! belongs to several, omitting it is an error that lists them rather than a
 //! guess.
 
+use crate::cloud::client::api_path;
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 use serde::Deserialize;
@@ -132,21 +133,11 @@ struct SeatState {
 /// `require_user_session`. A leaked CI token that could invite people and assign
 /// seats could change what the account is billed — the same reasoning that keeps
 /// `evnx auth token` and account deletion off tokens.
-fn require_login(client: &Client, server: &str) -> Result<()> {
-    if client.is_api_token() {
-        return Err(anyhow!(
-            "an API token cannot manage organisations — that is deliberate.\n\
-             \x20 Inviting people and assigning seats changes what the account is\n\
-             \x20 billed, so it takes a real login.\n\
-             \x20 Unset EVNX_TOKEN and run `evnx auth login`."
-        ));
-    }
-    if !client.is_signed_in() {
-        return Err(anyhow!(
-            "not signed in to {server}. Run `evnx auth login` first."
-        ));
-    }
-    Ok(())
+fn require_login(client: &Client, _server: &str) -> Result<()> {
+    client.require_user_session(
+        "manage organisations",
+        "\x20 Inviting people and assigning seats changes what the account is\n\x20 billed, so it takes a real login.\n",
+    )
 }
 
 fn fetch_orgs(client: &Client) -> Result<Vec<OrgSummary>> {
@@ -209,7 +200,7 @@ fn resolve_member<'a>(members: &'a [MemberSummary], target: &str) -> Result<&'a 
 
 fn members_of(client: &Client, org_id: &str) -> Result<Vec<MemberSummary>> {
     let listed: MemberList = client
-        .get(&format!("/api/v1/orgs/{org_id}/members"))
+        .get(&api_path(&["orgs", org_id, "members"])?)
         .map_err(|e| anyhow!("{e}"))?;
     Ok(listed.members)
 }
@@ -388,7 +379,7 @@ pub fn invite(
 
     let created: CreatedInvite = client
         .post(
-            &format!("/api/v1/orgs/{}/invites", target.id),
+            &api_path(&["orgs", &target.id.to_string(), "invites"])?,
             &serde_json::json!({ "email": email, "role": role }),
         )
         .map_err(|e| anyhow!("{e}"))?;
@@ -436,7 +427,7 @@ pub fn invites(server_override: Option<&str>, org: Option<&str>, _verbose: bool)
 
     let target = resolve_org(&client, org)?;
     let listed: InviteList = client
-        .get(&format!("/api/v1/orgs/{}/invites", target.id))
+        .get(&api_path(&["orgs", &target.id.to_string(), "invites"])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     if listed.invites.is_empty() {
@@ -476,7 +467,12 @@ pub fn uninvite(
 
     let target = resolve_org(&client, org)?;
     client
-        .delete(&format!("/api/v1/orgs/{}/invites/{invite_id}", target.id))
+        .delete(&api_path(&[
+            "orgs",
+            &target.id.to_string(),
+            "invites",
+            invite_id,
+        ])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     println!("  {} withdrew that invitation", "✓".green());
@@ -554,7 +550,9 @@ pub fn seats(
     // computed from and this route is refused by the server — but the server's
     // message has to read the same in a browser, so it cannot name the thing a
     // terminal user should do next. This can.
-    if let Ok(state) = client.get::<BillingState>(&format!("/api/v1/orgs/{}/billing", target.id)) {
+    if let Ok(state) =
+        client.get::<BillingState>(&api_path(&["orgs", &target.id.to_string(), "billing"])?)
+    {
         if state.subscription.exists && state.subscription.status.as_deref() != Some("canceled") {
             println!();
             println!(
@@ -578,7 +576,10 @@ pub fn seats(
 
     let body = serde_json::json!({ "seats": if unlimited { serde_json::Value::Null } else { serde_json::json!(set) } });
     let state: SeatState = client
-        .put(&format!("/api/v1/orgs/{}/seats", target.id), &body)
+        .put(
+            &api_path(&["orgs", &target.id.to_string(), "seats"])?,
+            &body,
+        )
         .map_err(|e| anyhow!("{e}"))?;
 
     println!("  {} seats {}", "✓".green(), state.seats.render());
@@ -645,7 +646,7 @@ pub fn billing(server_override: Option<&str>, org: Option<&str>, _verbose: bool)
 
     let target = resolve_org(&client, org)?;
     let state: BillingState = client
-        .get(&format!("/api/v1/orgs/{}/billing", target.id))
+        .get(&api_path(&["orgs", &target.id.to_string(), "billing"])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     println!();
@@ -778,7 +779,12 @@ fn seat_change(
 
     let _: serde_json::Value = client
         .patch(
-            &format!("/api/v1/orgs/{}/members/{}", target.id, member.user_id),
+            &api_path(&[
+                "orgs",
+                &target.id.to_string(),
+                "members",
+                &member.user_id.to_string(),
+            ])?,
             &serde_json::json!({ "seat": assign }),
         )
         .map_err(|e| anyhow!("{e}"))?;
@@ -841,7 +847,12 @@ pub fn set_role(
 
     let _: serde_json::Value = client
         .patch(
-            &format!("/api/v1/orgs/{}/members/{}", target.id, member.user_id),
+            &api_path(&[
+                "orgs",
+                &target.id.to_string(),
+                "members",
+                &member.user_id.to_string(),
+            ])?,
             &serde_json::json!({ "role": role }),
         )
         .map_err(|e| anyhow!("{e}"))?;
@@ -950,7 +961,7 @@ pub fn delete(
 
     client
         .delete_with_body(
-            &format!("/api/v1/orgs/{}", target.id),
+            &api_path(&["orgs", &target.id.to_string()])?,
             &serde_json::json!({ "force": force || target.seats.used > 0 }),
         )
         .map_err(|e| anyhow!("{e}"))?;

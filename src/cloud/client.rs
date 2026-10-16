@@ -309,6 +309,38 @@ impl Client {
         matches!(self.credential, Credential::ApiToken(_))
     }
 
+    /// Refuse unless signed in. An API token is accepted (A-37, DEC-AU3): this
+    /// is for what CI does — push, pull, run, list, audit.
+    pub fn require_credential(&self) -> anyhow::Result<()> {
+        if self.is_signed_in() {
+            return Ok(());
+        }
+        anyhow::bail!(
+            "not signed in to {}. Run `evnx auth login` first.",
+            self.server
+        )
+    }
+
+    /// Refuse an API token, then refuse when not signed in (A-37, DEC-AU3).
+    ///
+    /// For account management and for what changes who holds a vault. `what`
+    /// completes "an API token cannot …"; `why` is zero or more lines, each
+    /// starting `\x20 ` and ending `\n`, saying what a leaked token could do.
+    /// The server refuses these too (403); saying so before the request makes the
+    /// reason plain and sends nothing.
+    ///
+    /// ⚠️ Five commands had their own copy of this and a sixth guard accepted
+    /// tokens, so `rotate-master-password`, `download-data` and
+    /// `delete-account` went to the server with `EVNX_TOKEN` set (I-211).
+    pub fn require_user_session(&self, what: &str, why: &str) -> anyhow::Result<()> {
+        if self.is_api_token() {
+            anyhow::bail!(
+                "an API token cannot {what} — that is deliberate.\n{why}\x20 Unset {ENV_TOKEN} and run `evnx auth login`."
+            );
+        }
+        self.require_credential()
+    }
+
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.server, path)
     }
@@ -684,6 +716,41 @@ fn transport_reason(e: &reqwest::Error) -> String {
         root = next;
     }
     root.to_string()
+}
+
+/// An `/api/v1/…` path built from `segments`, each one percent-encoded so it
+/// stays one segment (A-43, DEC-OR2).
+///
+/// ⚠️ User text was interpolated into paths, so `org uninvite
+/// "../members/u-bob"` sent `DELETE /orgs/o/members/u-bob`, and `a b?x=1#f`
+/// became a query and a fragment (I-217). Everything outside the URL standard's
+/// unreserved set (`A-Z a-z 0-9 - . _ ~`) is encoded — `/`, `?`, `#`, `%`, `@`,
+/// `+`, spaces, non-ASCII.
+///
+/// ⚠️ `.` and `..` are **refused**, not encoded: `reqwest::Url` follows the URL
+/// standard, which collapses `..`, `%2E%2E` and `.%2e` alike before sending
+/// (measured: all three turned `invites/../members/u` into `members/u`). An
+/// empty segment is refused too: it would address the collection instead of
+/// the item.
+pub(crate) fn api_path(segments: &[&str]) -> anyhow::Result<String> {
+    let mut path = String::from("/api/v1");
+    for seg in segments {
+        if seg.is_empty() || *seg == "." || *seg == ".." {
+            anyhow::bail!(
+                "{seg:?} cannot be used in a request path: it would address a \
+                 different resource than the one named. Nothing was sent."
+            );
+        }
+        path.push('/');
+        for b in seg.bytes() {
+            if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+                path.push(b as char);
+            } else {
+                path.push_str(&format!("%{b:02X}"));
+            }
+        }
+    }
+    Ok(path)
 }
 
 /// Read the `exp` claim from a JWT **without verifying its signature**.
@@ -1097,5 +1164,71 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, ApiError::Malformed { .. }), "{err:?}");
         assert!(err.to_string().contains("/api/v1/vaults"));
+    }
+}
+
+#[cfg(test)]
+mod api_path_tests {
+    use super::*;
+
+    /// What the HTTP client will really send for `path` — `reqwest::Url` applies
+    /// the URL standard's dot-segment rules, so this is the wire path.
+    fn on_the_wire(path: &str) -> String {
+        let u = reqwest::Url::parse(&format!("http://h{path}")).unwrap();
+        let mut s = u.path().to_string();
+        if let Some(q) = u.query() {
+            s.push('?');
+            s.push_str(q);
+        }
+        if let Some(f) = u.fragment() {
+            s.push('#');
+            s.push_str(f);
+        }
+        s
+    }
+
+    /// I-217, DEC-OR2: user text was interpolated into URL paths, so
+    /// `org uninvite "../members/u-bob"` sent `DELETE /orgs/o/members/u-bob`.
+    #[test]
+    fn t_i217_user_text_stays_inside_its_segment() {
+        for (seg, wire) in [
+            (
+                "../members/u-bob",
+                "/api/v1/orgs/o/invites/..%2Fmembers%2Fu-bob",
+            ),
+            ("a b?x=1#f", "/api/v1/orgs/o/invites/a%20b%3Fx%3D1%23f"),
+            ("%2E%2E", "/api/v1/orgs/o/invites/%252E%252E"),
+            ("inv-1_x.y~z", "/api/v1/orgs/o/invites/inv-1_x.y~z"),
+            ("日本", "/api/v1/orgs/o/invites/%E6%97%A5%E6%9C%AC"),
+        ] {
+            let p = api_path(&["orgs", "o", "invites", seg]).unwrap();
+            assert_eq!(on_the_wire(&p), wire, "{seg:?} built {p}");
+        }
+    }
+
+    /// An email in a path keeps working (it is how `vault share` looks a
+    /// recipient up), but cannot leave its segment.
+    #[test]
+    fn t_i217_an_email_is_one_segment() {
+        let p = api_path(&["users", "a+b@example.com", "public-key"]).unwrap();
+        assert_eq!(
+            on_the_wire(&p),
+            "/api/v1/users/a%2Bb%40example.com/public-key"
+        );
+        let p = api_path(&["users", "x/../../vaults", "public-key"]).unwrap();
+        assert_eq!(
+            on_the_wire(&p),
+            "/api/v1/users/x%2F..%2F..%2Fvaults/public-key"
+        );
+    }
+
+    /// The URL standard collapses `.` and `..` segments — and their encoded
+    /// forms — before sending, so no encoding makes them safe: refused.
+    #[test]
+    fn t_i217_dot_segments_and_empty_segments_are_refused() {
+        for seg in ["..", ".", ""] {
+            let err = api_path(&["orgs", "o", "invites", seg]).unwrap_err();
+            assert!(err.to_string().contains("request path"), "{seg:?}: {err}");
+        }
     }
 }

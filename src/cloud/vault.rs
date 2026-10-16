@@ -23,6 +23,7 @@
 //!
 //! [`VaultKey`]: evnx_crypto::VaultKey
 
+use crate::cloud::client::api_path;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
@@ -165,7 +166,7 @@ pub fn create(
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    require_session(&client, &server)?;
+    client.require_credential()?;
 
     // The master key is not cached anywhere, so every command that touches a
     // vault key asks for the password. Caching it on disk would defeat the point
@@ -207,7 +208,7 @@ pub fn create(
 pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    require_session(&client, &server)?;
+    client.require_credential()?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
 
@@ -275,7 +276,7 @@ pub fn delete(
 ) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    require_session(&client, &server)?;
+    client.require_credential()?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
     let vault = resolve(&listed.vaults, &target)?;
@@ -300,7 +301,7 @@ pub fn delete(
     }
 
     client
-        .delete(&format!("/api/v1/vaults/{}", vault.id))
+        .delete(&api_path(&["vaults", &vault.id.to_string()])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     println!(
@@ -378,7 +379,7 @@ pub fn share(
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    require_session(&client, &server)?;
+    client.require_credential()?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
     let vault = resolve(&listed.vaults, &target)?;
@@ -388,7 +389,11 @@ pub fn share(
     // Deliberately first. If the recipient cannot be shared with, saying so
     // before prompting for a master password is better than after.
     let keys: RecipientKeys = client
-        .get(&format!("/api/v1/users/{recipient_email}/public-key"))
+        .get(&api_path(&[
+            "users",
+            &recipient_email.to_string(),
+            "public-key",
+        ])?)
         .map_err(|e| match e {
             ApiError::NotFound { .. } => anyhow!(
                 "no evnx account for {recipient_email}.\n\
@@ -423,7 +428,7 @@ pub fn share(
     let master_key = auth::derive_master_key_for_account(&client, &password)?;
 
     let my_key: MyWrappedKey = client
-        .get(&format!("/api/v1/vaults/{}/my-key", vault.id))
+        .get(&api_path(&["vaults", &vault.id.to_string(), "my-key"])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     if my_key.eph_pub_key.is_some() {
@@ -455,7 +460,7 @@ pub fn share(
 
     client
         .post::<_, serde::de::IgnoredAny>(
-            &format!("/api/v1/vaults/{}/members", vault.id),
+            &api_path(&["vaults", &vault.id.to_string(), "members"])?,
             &AddMemberRequest {
                 user_email: recipient_email.clone(),
                 role: role.clone(),
@@ -541,15 +546,6 @@ fn resolve<'a>(vaults: &'a [VaultSummary], target: &str) -> Result<&'a VaultSumm
             format!("{name}/<environment>").bold()
         )),
     }
-}
-
-pub(crate) fn require_session(client: &Client, server: &str) -> Result<()> {
-    if client.is_signed_in() {
-        return Ok(());
-    }
-    Err(anyhow!(
-        "not signed in to {server}. Run `evnx auth login` first."
-    ))
 }
 
 /// Reject a name the server's regex would reject, before a round trip.
@@ -825,13 +821,13 @@ struct MemberSummary {
 pub fn members(server_override: Option<&str>, target: String, verbose: bool) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    require_session(&client, &server)?;
+    client.require_credential()?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
     let vault = resolve(&listed.vaults, &target)?;
 
     let people: MemberList = client
-        .get(&format!("/api/v1/vaults/{}/members", vault.id))
+        .get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     println!(
@@ -891,13 +887,13 @@ pub fn set_role(
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    require_session(&client, &server)?;
+    client.require_credential()?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
     let vault = resolve(&listed.vaults, &target)?;
 
     let people: MemberList = client
-        .get(&format!("/api/v1/vaults/{}/members", vault.id))
+        .get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)
         .map_err(|e| anyhow!("{e}"))?;
     let member = people
         .members
@@ -923,7 +919,12 @@ pub fn set_role(
 
     client
         .patch::<_, serde::de::IgnoredAny>(
-            &format!("/api/v1/vaults/{}/members/{}", vault.id, member.user_id),
+            &api_path(&[
+                "vaults",
+                &vault.id.to_string(),
+                "members",
+                &member.user_id.to_string(),
+            ])?,
             &SetRoleRequest { role: role.clone() },
         )
         .map_err(|e| anyhow!("{e}"))?;
@@ -1028,14 +1029,14 @@ pub fn revoke(
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    require_session(&client, &server)?;
+    client.require_credential()?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
     let vault = resolve(&listed.vaults, &target)?;
     let label = format!("{}/{}", vault.name, vault.environment);
 
     let people: MemberList = client
-        .get(&format!("/api/v1/vaults/{}/members", vault.id))
+        .get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     let leaving = people
@@ -1236,14 +1237,14 @@ pub fn rekey(
 ) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    require_session(&client, &server)?;
+    client.require_credential()?;
 
     let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
     let vault = resolve(&listed.vaults, &target)?;
     let label = format!("{}/{}", vault.name, vault.environment);
 
     let people: MemberList = client
-        .get(&format!("/api/v1/vaults/{}/members", vault.id))
+        .get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     // Everyone stays. The server requires the payload cover every member exactly
@@ -1407,7 +1408,7 @@ fn rotate_vault_key(
     };
 
     let my_key: MyWrappedKey = client
-        .get(&format!("/api/v1/vaults/{}/my-key", vault.id))
+        .get(&api_path(&["vaults", &vault.id.to_string(), "my-key"])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     let old_key = match (&my_key.eph_pub_key, &my_key.mlkem_ciphertext) {
@@ -1442,7 +1443,7 @@ fn rotate_vault_key(
 
     // ── Re-encrypt every version ─────────────────────────────────────────────
     let versions: RevokeVersionList = client
-        .get(&format!("/api/v1/vaults/{}/versions", vault.id))
+        .get(&api_path(&["vaults", &vault.id.to_string(), "versions"])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     let total = versions.versions.len();
@@ -1452,7 +1453,13 @@ fn rotate_vault_key(
     for (i, v) in versions.versions.iter().enumerate() {
         let n = v.version_num;
         let blob_bytes = client
-            .get_bytes(&format!("/api/v1/vaults/{}/versions/{n}/blob", vault.id))
+            .get_bytes(&api_path(&[
+                "vaults",
+                &vault.id.to_string(),
+                "versions",
+                &n.to_string(),
+                "blob",
+            ])?)
             .map_err(|e| anyhow!("fetching version {n}: {e}"))?;
 
         if blob_bytes.len() <= NONCE_LEN {
@@ -1476,7 +1483,7 @@ fn rotate_vault_key(
         let hash = blob_hash(&fresh.ciphertext);
         let out: StagedBlob = client
             .post(
-                &format!("/api/v1/vaults/{}/rekey/blobs", vault.id),
+                &api_path(&["vaults", &vault.id.to_string(), "rekey", "blobs"])?,
                 &StageBlobRequest {
                     version_num: n,
                     nonce: b64_encode(&fresh.nonce),
@@ -1518,7 +1525,7 @@ fn rotate_vault_key(
         }
 
         let keys: RecipientKeys = client
-            .get(&format!("/api/v1/users/{}/public-key", m.email))
+            .get(&api_path(&["users", &m.email.to_string(), "public-key"])?)
             .map_err(|e| anyhow!("fetching {}'s public keys: {e}", m.email))?;
         let mlkem = keys
             .mlkem_public_key
@@ -1540,7 +1547,7 @@ fn rotate_vault_key(
     // ── One atomic swap ──────────────────────────────────────────────────────
     client
         .post::<_, serde::de::IgnoredAny>(
-            &format!("/api/v1/vaults/{}/rekey", vault.id),
+            &api_path(&["vaults", &vault.id.to_string(), "rekey"])?,
             &RekeyRequest {
                 versions: staged,
                 members: wraps,

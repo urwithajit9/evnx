@@ -29,6 +29,7 @@
 //! enrol its own authenticator. The server enforces this with 403; this module
 //! says so before making the request, so the reason is legible.
 
+use crate::cloud::client::api_path;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
@@ -300,7 +301,7 @@ pub fn revoke(
     }
 
     client
-        .delete(&format!("/api/v1/auth/tokens/{}", token.id))
+        .delete(&api_path(&["auth", "tokens", &token.id.to_string()])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     println!("  {} revoked {}", "✓".green(), token.name);
@@ -333,21 +334,12 @@ fn resolve<'a>(tokens: &'a [TokenSummary], target: &str) -> Result<&'a TokenSumm
 }
 
 /// Token management needs a real login, never a token.
-fn require_login(client: &Client, server: &str) -> Result<()> {
-    if client.is_api_token() {
-        return Err(anyhow!(
-            "an API token cannot manage API tokens — that is deliberate.\n\
-             \x20 A leaked token must not be able to mint a wider, longer-lived \
-             replacement that survives revoking the original.\n\
-             \x20 Unset {ENV_TOKEN} and run `evnx auth login`."
-        ));
-    }
-    if !client.is_signed_in() {
-        return Err(anyhow!(
-            "not signed in to {server}. Run `evnx auth login` first."
-        ));
-    }
-    Ok(())
+fn require_login(client: &Client, _server: &str) -> Result<()> {
+    client.require_user_session(
+        "manage API tokens",
+        "\x20 A leaked token must not be able to mint a wider, longer-lived \
+replacement that survives revoking the original.\n",
+    )
 }
 
 fn validate_scope(scope: &str) -> Result<String> {

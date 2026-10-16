@@ -129,6 +129,24 @@ not run — no verdict". Four places broke that:
 - At a terminal both questions are answered on Enter, like every other yes/no
   prompt, and Esc cancels: "Cancelled. Nothing was uploaded."
 
+### ⛔ Security — cloud requests stay on the resource you named
+
+- **Text you give a cloud command can no longer change which API resource it
+  reaches** (I-217, DEC-OR2). It was pasted into request paths, so `evnx org
+  uninvite "../members/u-bob"` sent `DELETE /orgs/<org>/members/u-bob` — removing
+  a member instead of revoking an invite — and a value with a space, `?` or `#`
+  became a query string. Every value is now encoded as one path segment, and
+  `.`, `..` and empty values are refused before anything is sent: the URL
+  standard collapses `..` (and `%2E%2E`) whatever the encoding.
+- **`auth token create --expires-in-days` takes 1 to 3650** (I-205, I-210,
+  DEC-AU2). `0` and `-5` created a token that had already expired. The server now
+  enforces the same range.
+- **`cloud audit --last` takes `1d` to `3650d` or `all`** (I-231, DEC-CL7). A huge
+  value such as `9223372036854775807d` crashed the command (exit 101).
+- `-y` now works as `--yes` on `auth rotate-master-password`, `org remove`,
+  `org delete`, `org leave` and `cloud delete-version`, as it already did on every
+  other command with `--yes` (I-213).
+
 ### ⛔ Security — the commands `migrate` prints ran parts of your values
 
 - **vercel and azure put values in double quotes** (I-101). Running the printed
@@ -295,6 +313,12 @@ and read a success line must check the exit code instead.
   `core::args` (`check`, `check_opt`, `Name`) checks names (A-17).
   `core::envsource` (`SKIP`, `is_skipped`, `require_include`, `read`) reads the
   environment (A-18); `migrate::sources::is_system_variable` asks it.
+- New (U7, C-09): `cloud::client::api_path` builds every cloud request path;
+  `Client::require_user_session` and `Client::require_credential` are the one
+  credential guard (the five `require_login` copies delegate; `vault::require_session`
+  is gone); `core::args::{MAX_DAYS, parse_days, days_before}`;
+  `utils::prompt::confirm`; `core::envsource::{UNSAFE_NAMES, UNSAFE_PREFIXES,
+  is_unsafe_name, is_evnx_own}`.
 
 ### Fixed
 
@@ -351,6 +375,10 @@ and read a success line must check the exit code instead.
   checks each of 10 values arrives exactly and nothing runs (T-MIG-01..04, 07);
   names refused and accepted (T-MIG-09, 32); `--from environment` (T-MIG-17,
   18). `core::shell` unit test feeds 15 values through `sh` (T-SHARE-11).
+- `tests/cloud_inputs.rs` (3): token lifetime, audit window and `-y` on every
+  `--yes` (T-SHARE-52), each refused with no request. `api_path` is tested against
+  what `reqwest::Url` really sends; `tests/architecture.rs` refuses a hand-built
+  `/api/v1` path in `src/cloud` and a credential check outside `Client`.
 
 ## [0.10.2] - 2026-10-14
 

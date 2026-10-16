@@ -233,21 +233,11 @@ pub fn disavow(
     Ok(())
 }
 
-fn require_login(client: &Client, server: &str) -> Result<()> {
-    if client.is_api_token() {
-        return Err(anyhow!(
-            "an API token cannot manage devices — that is deliberate.\n\
-             \x20 A leaked CI token must not be able to enumerate where you sign in\n\
-             \x20 from, nor to sign you out everywhere.\n\
-             \x20 Unset EVNX_TOKEN and run `evnx auth login`."
-        ));
-    }
-    if !client.is_signed_in() {
-        return Err(anyhow!(
-            "not signed in to {server}. Run `evnx auth login` first."
-        ));
-    }
-    Ok(())
+fn require_login(client: &Client, _server: &str) -> Result<()> {
+    client.require_user_session(
+        "manage devices",
+        "\x20 A leaked CI token must not be able to enumerate where you sign in\n\x20 from, nor to sign you out everywhere.\n",
+    )
 }
 
 /// `2026-10-02T14:23:08.123Z` → `2026-10-02 14:23`.

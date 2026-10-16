@@ -31,6 +31,7 @@
 //!
 //! [`vault_aad`]: evnx_crypto::vault_aad
 
+use crate::cloud::client::api_path;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
@@ -247,7 +248,7 @@ pub fn push(
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    vault::require_session(&client, &server)?;
+    client.require_credential()?;
     // The vault has to be resolved before the file can be: which environment it
     // holds is what `.env.<environment>` is derived from.
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
@@ -283,7 +284,7 @@ pub fn push(
 
     let pushed: PushVersionResponse = client
         .post(
-            &format!("/api/v1/vaults/{}/versions", vault_ref.id),
+            &api_path(&["vaults", &vault_ref.id.to_string(), "versions"])?,
             &PushVersionRequest {
                 nonce: b64_encode(&blob.nonce),
                 ciphertext: b64_encode(&blob.ciphertext),
@@ -342,7 +343,7 @@ pub fn pull(
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    vault::require_session(&client, &server)?;
+    client.require_credential()?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
     // ⚠️ On pull the derivation only fires when the file already exists, so a
@@ -415,7 +416,11 @@ pub fn pull(
 /// `export` both go through here so "what versions exist" has one answer.
 pub(crate) fn list_versions(client: &Client, vault_ref: &VaultRef) -> Result<Vec<VersionSummary>> {
     let listed: VersionList = client
-        .get(&format!("/api/v1/vaults/{}/versions", vault_ref.id))
+        .get(&api_path(&[
+            "vaults",
+            &vault_ref.id.to_string(),
+            "versions",
+        ])?)
         .map_err(|e| anyhow!("{e}"))?;
     Ok(listed.versions)
 }
@@ -495,7 +500,7 @@ pub fn history(
     let vault_target = resolve_target(vault_target)?;
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    vault::require_session(&client, &server)?;
+    client.require_credential()?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
     let versions = list_versions(&client, &vault_ref)?;
@@ -569,7 +574,7 @@ pub fn history(
 pub fn link(server_override: Option<&str>, vault_target: String, verbose: bool) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    vault::require_session(&client, &server)?;
+    client.require_credential()?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
     let cwd = std::env::current_dir().context("reading the current directory")?;
@@ -628,7 +633,12 @@ fn human_size(bytes: i64) -> String {
 /// The server answers 404 for a vault with no versions, which is not an error
 /// here — it is the starting state.
 pub(crate) fn current_version(client: &Client, vault_ref: &VaultRef) -> Result<i32> {
-    match client.get::<LatestVersion>(&format!("/api/v1/vaults/{}/versions/latest", vault_ref.id)) {
+    match client.get::<LatestVersion>(&api_path(&[
+        "vaults",
+        &vault_ref.id.to_string(),
+        "versions",
+        "latest",
+    ])?) {
         Ok(v) => Ok(v.version_num),
         Err(ApiError::NotFound { .. }) => Ok(0),
         Err(e) => Err(anyhow!("{e}")),
@@ -655,7 +665,7 @@ pub(crate) fn unwrap_vault_key(
     use evnx_crypto::{b64_decode, unwrap_vault_key_with_master_key};
 
     let my_key: MyKey = client
-        .get(&format!("/api/v1/vaults/{}/my-key", vault_ref.id))
+        .get(&api_path(&["vaults", &vault_ref.id.to_string(), "my-key"])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     match (&my_key.eph_pub_key, &my_key.mlkem_ciphertext) {
@@ -1016,11 +1026,15 @@ pub fn delete_version(
     let vault_target = resolve_target(vault_target)?;
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    vault::require_session(&client, &server)?;
+    client.require_credential()?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
     let listed: VersionList = client
-        .get(&format!("/api/v1/vaults/{}/versions", vault_ref.id))
+        .get(&api_path(&[
+            "vaults",
+            &vault_ref.id.to_string(),
+            "versions",
+        ])?)
         .map_err(|e| anyhow!("{e}"))?;
 
     let latest = listed
@@ -1197,7 +1211,7 @@ pub fn diff(
     let vault_target = resolve_target(vault_target)?;
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    vault::require_session(&client, &server)?;
+    client.require_credential()?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
     let mut versions = list_versions(&client, &vault_ref)?;

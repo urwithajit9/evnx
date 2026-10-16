@@ -479,7 +479,7 @@ pub enum OrgCommands {
         who: String,
 
         /// Skip the confirmation prompt.
-        #[arg(long)]
+        #[arg(long, short = 'y')]
         yes: bool,
 
         #[arg(long, value_name = "SLUG")]
@@ -499,7 +499,7 @@ pub enum OrgCommands {
         force: bool,
 
         /// Skip the confirmation prompt.
-        #[arg(long)]
+        #[arg(long, short = 'y')]
         yes: bool,
 
         #[arg(long, value_name = "SLUG")]
@@ -511,7 +511,7 @@ pub enum OrgCommands {
     /// An owner cannot leave their own — transfer ownership or delete it.
     Leave {
         /// Skip the confirmation prompt.
-        #[arg(long)]
+        #[arg(long, short = 'y')]
         yes: bool,
 
         #[arg(long, value_name = "SLUG")]
@@ -646,7 +646,7 @@ pub enum AuthCommands {
         compromised: bool,
 
         /// Skip the confirmation prompt.
-        #[arg(long)]
+        #[arg(long, short = 'y')]
         yes: bool,
     },
 
@@ -747,8 +747,8 @@ pub enum TokenCommands {
         #[arg(long, value_name = "VAULT")]
         vault: Option<String>,
 
-        /// Expire after this many days. Omit for a token that never expires.
-        #[arg(long, value_name = "DAYS")]
+        /// Expire after this many days, 1 to 3650. Omit for a token that never expires.
+        #[arg(long, value_name = "DAYS", value_parser = crate::core::args::parse_days, allow_hyphen_values = true)]
         expires_in_days: Option<i64>,
     },
 
@@ -1271,7 +1271,7 @@ pub enum CloudCommands {
         vault: Option<String>,
 
         /// Skip the confirmation prompt.
-        #[arg(long)]
+        #[arg(long, short = 'y')]
         yes: bool,
     },
 

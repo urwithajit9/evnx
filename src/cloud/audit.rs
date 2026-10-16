@@ -27,6 +27,7 @@
 //!
 //! Read-only: one request, no blob, no key, no password.
 
+use crate::cloud::client::api_path;
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 use serde::Deserialize;
@@ -67,13 +68,16 @@ fn parse_window(raw: &str) -> Result<Option<i64>> {
     if t == "all" {
         return Ok(None);
     }
-    if let Some(days) = t.strip_suffix('d').and_then(|n| n.parse::<i64>().ok()) {
-        if days > 0 {
-            return Ok(Some(days));
-        }
+    if let Some(days) = t
+        .strip_suffix('d')
+        .and_then(|n| crate::core::args::parse_days(n).ok())
+    {
+        return Ok(Some(days));
     }
     Err(anyhow!(
-        "`--last {raw}` is not a window. Use a number of days like `7d` or `30d`, or `all`."
+        "`--last {raw}` is not a window. Use a number of days from 1d to {}d, like `7d` \
+         or `30d`, or `all`.",
+        crate::core::args::MAX_DAYS
     ))
 }
 
@@ -130,14 +134,16 @@ pub fn run(
     let vault_target = resolve_target(vault_target)?;
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    vault::require_session(&client, &server)?;
+    client.require_credential()?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
     let res: AuditResponse = client
-        .get(&format!("/api/v1/vaults/{}/audit", vault_ref.id))
+        .get(&api_path(&["vaults", &vault_ref.id.to_string(), "audit"])?)
         .map_err(|e| anyhow!("{e}"))?;
 
-    let cutoff = window_days.map(|d| chrono::Utc::now() - chrono::Duration::days(d));
+    // `days_before`, not `Utc::now() - Duration::days(d)`: that panics out of
+    // range (I-231). `parse_window` already capped `d`, so this is `Some`.
+    let cutoff = window_days.and_then(|d| crate::core::args::days_before(chrono::Utc::now(), d));
     let rows: Vec<&AuditEvent> = res
         .events
         .iter()
@@ -271,7 +277,15 @@ mod tests {
     /// someone narrowed on purpose is the wrong direction to be wrong in.
     #[test]
     fn a_bad_window_is_an_error_not_a_fallback() {
-        for bad in ["7", "week", "0d", "-3d", ""] {
+        for bad in [
+            "7",
+            "week",
+            "0d",
+            "-3d",
+            "",
+            "3651d",
+            "9223372036854775807d",
+        ] {
             assert!(parse_window(bad).is_err(), "{bad:?} should be rejected");
         }
     }

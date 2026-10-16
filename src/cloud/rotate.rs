@@ -33,6 +33,7 @@
 //! The server keeps its own 72-hour window as well, restorable by proving the old
 //! password. Two independent ways back, for an operation that has no third.
 
+use crate::cloud::client::api_path;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
@@ -194,7 +195,7 @@ pub fn rotate(
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
-    super::vault::require_session(&client, &server)?;
+    client.require_credential()?;
 
     let me: Me = client
         .get("/api/v1/auth/me")
@@ -244,7 +245,7 @@ pub fn rotate(
     for v in &list.vaults {
         let label = format!("{}/{}", v.name, v.environment);
         let my_key: MyWrappedKey = client
-            .get(&format!("/api/v1/vaults/{}/my-key", v.id))
+            .get(&api_path(&["vaults", &v.id.to_string(), "my-key"])?)
             .map_err(|e| anyhow!("could not read your key for {label}: {e}"))?;
 
         match (&my_key.eph_pub_key, &my_key.mlkem_ciphertext) {
@@ -467,7 +468,7 @@ pub fn rotate(
     let mut confirmed = 0usize;
     for v in &opened {
         let my_key: MyWrappedKey = client
-            .get(&format!("/api/v1/vaults/{}/my-key", v.id))
+            .get(&api_path(&["vaults", &v.id.to_string(), "my-key"])?)
             .map_err(|e| anyhow!("\n  could not re-read your key for {}: {e}", v.label))?;
         let raw = b64_decode(&my_key.encrypted_vault_key, "encrypted_vault_key")
             .map_err(|e| anyhow!("\n  unusable wrapped key for {}: {e}", v.label))?;
