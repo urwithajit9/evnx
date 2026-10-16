@@ -588,44 +588,11 @@ pub fn public_prefix(name: &str) -> Option<(&'static str, &'static str)> {
         .copied()
 }
 
+/// The Lenient secret-name rule. Defined in `core::classify` with the Strict
+/// one (F6, DEC-G14); kept here because scan's detectors call it by this name.
 #[must_use]
 pub fn is_sensitive_key(key: &str) -> bool {
-    // Substring: catches the word wherever it sits — `DB_PASSWORD`,
-    // `MY_AUTH_HEADER`, `legacy_api_key_v2`.
-    const CONTAINS: &[&str] = &[
-        "PASSWORD",
-        "PASSWD",
-        "SECRET",
-        "TOKEN",
-        "API_KEY",
-        // ⚠️ `APIKEY` and `PWD` added 2026-10-07 (S2). The published guide has
-        // listed `STRIPE_APIKEY` and `ADMIN_PWD` as redacted examples all
-        // along, and neither matched: `API_KEY` carries an underscore and
-        // `PASSWD` is not `PWD`. The documentation described the intent
-        // correctly and the code did not implement it.
-        "APIKEY",
-        "PWD",
-        "PRIVATE_KEY",
-        "AUTH",
-        "CREDENTIAL",
-    ];
-    // ⚠️ Suffix, added 2026-10-07 (S2). The substring list above misses every
-    // `*_KEY` that is not spelled `API_KEY` or `PRIVATE_KEY`:
-    //
-    //   STRIPE_KEY       not sensitive   ⛔
-    //   ENCRYPTION_KEY   not sensitive   ⛔
-    //   SIGNING_KEY      not sensitive   ⛔
-    //
-    // `evnx validate` has always called those credential-shaped, via
-    // `checks::is_secret_shaped`. The two commands disagreeing meant
-    // `diff --show-values` printed values that `validate` would have demanded
-    // a strong secret for.
-    const SUFFIXES: &[&str] = &["_KEY", "_SECRET", "_PASSWORD", "_TOKEN", "_PASSWD"];
-
-    let upper = key.to_uppercase();
-    CONTAINS.iter().any(|p| upper.contains(p))
-        || SUFFIXES.iter().any(|sfx| upper.ends_with(sfx))
-        || matches!(upper.as_str(), "KEY" | "SECRET" | "PASSWORD")
+    crate::core::classify::is_secret_name(key, crate::core::classify::Strictness::Lenient)
 }
 
 /// Detect if a value matches any secret pattern
@@ -822,7 +789,7 @@ mod tests {
             assert!(is_sensitive_key(key), "{key} is not treated as sensitive");
         }
 
-        // ⚠️ Deliberately broader than `validate`'s `is_secret_shaped`, which
+        // ⚠️ Deliberately broader than the Strict level `validate` uses, which
         // excludes `SECRET_KEY_ROTATION_DAYS` as "a number, not a secret".
         // That exclusion is right for *demanding a strong value* and wrong for
         // *deciding what to print*: masking a rotation interval costs a line of

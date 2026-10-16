@@ -68,7 +68,8 @@ pub fn suggest_fix(
             // ⚠️ The same rule the weak-secret check uses, so `DB_PASSWORD`
             // and `API_TOKEN` are treated like `SECRET_KEY` rather than falling
             // through to "evnx cannot invent this".
-            if super::checks::is_secret_shaped(key) {
+            if crate::core::classify::is_secret_name(key, crate::core::classify::Strictness::Strict)
+            {
                 FixAction::GenerateSecret
             } else if key.contains("PORT") {
                 // `8080` is a **working default**, not a stand-in — a port is
@@ -149,7 +150,10 @@ pub fn suggest_fix(
             }
         }
         IssueType::MissingVariable => {
-            let default = if super::checks::is_secret_shaped(key) {
+            let default = if crate::core::classify::is_secret_name(
+                key,
+                crate::core::classify::Strictness::Strict,
+            ) {
                 "CHANGE_ME_SECURE_32_CHARS_MIN"
             } else {
                 "your_value_here"
@@ -216,7 +220,8 @@ pub fn generate_secure_secret() -> String {
 /// names a placeholder rather than a credential. What must not be echoed is a
 /// credential-shaped variable that held something real.
 fn old_value_is_safe_to_show(key: &str, value: &str) -> bool {
-    !super::checks::is_secret_shaped(key) || super::checks::is_placeholder(key, value)
+    !crate::core::classify::is_secret_name(key, crate::core::classify::Strictness::Strict)
+        || super::checks::is_placeholder(key, value)
 }
 
 pub fn apply_fix(

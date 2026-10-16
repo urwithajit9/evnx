@@ -42,10 +42,93 @@ pub fn is_secret_shaped(value: &str) -> bool {
     rules().iter().any(|r| r.is_match(v)) || patterns::detect_heuristic(v, "").is_some()
 }
 
-/// Whether the **name** says the value is a credential (`*_PASSWORD`,
-/// `*_SECRET`, `*_TOKEN`, `*_KEY`, …).
+/// Whether the **name** says the value is a credential, at the Lenient level
+/// (`*_PASSWORD`, `*_SECRET`, `*_TOKEN`, `*_KEY`, …) — see [`is_secret_name`].
 pub fn is_sensitive_key(key: &str) -> bool {
-    patterns::is_sensitive_key(key)
+    is_secret_name(key, Strictness::Lenient)
+}
+
+/// Whether the variable's **name** says it holds a credential (F6, DEC-G14).
+///
+/// Two levels, for the same reason as [`is_placeholder`]'s — the cost of a
+/// wrong answer is opposite in different places:
+///
+/// * **Strict** — `validate` and `validate --fix`. A hit demands a strong
+///   value, and `--fix` may write one. Suffix-anchored, so
+///   `SECRET_KEY_ROTATION_DAYS` (a number), `AUTH_ENABLED` (a flag),
+///   `QUOTA_FREE_TOKENS` (a count) and `API_KEY_ID` (an id) are not secrets.
+/// * **Lenient** — scan, masking (diff, sync preview), sync. A hit hides a
+///   value; a miss prints a credential. Substring, so a credential word
+///   anywhere counts.
+///
+/// Before U8c `validate` kept its own suffix rule, which missed `ADMIN_PWD`,
+/// `STRIPE_APIKEY`, `CREDENTIALS` and `PASSWD` — names the Lenient rule and
+/// the published guide both treat as secrets — so `ADMIN_PWD=123` validated
+/// clean.
+pub fn is_secret_name(key: &str, strictness: Strictness) -> bool {
+    match strictness {
+        Strictness::Strict => strict_name(key),
+        Strictness::Lenient => lenient_name(key),
+    }
+}
+
+fn strict_name(key: &str) -> bool {
+    const SUFFIXES: &[&str] = &[
+        "_SECRET",
+        "_KEY",
+        "_PASSWORD",
+        "_TOKEN",
+        "_PASSWD",
+        "_PWD",
+        "_APIKEY",
+        "_CREDENTIALS",
+    ];
+    let upper = key.to_uppercase();
+    // ⚠️ Not bare `PWD`: that is the shell's working directory, and a `.env`
+    // that sets it holds a path.
+    matches!(
+        upper.as_str(),
+        "SECRET_KEY" | "PASSWORD" | "SECRET" | "PASSWD" | "APIKEY" | "CREDENTIALS"
+    ) || SUFFIXES.iter().any(|s| upper.ends_with(s))
+}
+
+fn lenient_name(key: &str) -> bool {
+    // Substring: catches the word wherever it sits — `DB_PASSWORD`,
+    // `MY_AUTH_HEADER`, `legacy_api_key_v2`.
+    const CONTAINS: &[&str] = &[
+        "PASSWORD",
+        "PASSWD",
+        "SECRET",
+        "TOKEN",
+        "API_KEY",
+        // ⚠️ `APIKEY` and `PWD` added 2026-10-07 (S2). The published guide has
+        // listed `STRIPE_APIKEY` and `ADMIN_PWD` as redacted examples all
+        // along, and neither matched: `API_KEY` carries an underscore and
+        // `PASSWD` is not `PWD`. The documentation described the intent
+        // correctly and the code did not implement it.
+        "APIKEY",
+        "PWD",
+        "PRIVATE_KEY",
+        "AUTH",
+        "CREDENTIAL",
+    ];
+    // ⚠️ Suffix, added 2026-10-07 (S2). The substring list above misses every
+    // `*_KEY` that is not spelled `API_KEY` or `PRIVATE_KEY`:
+    //
+    //   STRIPE_KEY       not sensitive   ⛔
+    //   ENCRYPTION_KEY   not sensitive   ⛔
+    //   SIGNING_KEY      not sensitive   ⛔
+    //
+    // `evnx validate` has always called those credential-shaped, via its
+    // own suffix rule (now the Strict level). The two commands disagreeing meant
+    // `diff --show-values` printed values that `validate` would have demanded
+    // a strong secret for.
+    const SUFFIXES: &[&str] = &["_KEY", "_SECRET", "_PASSWORD", "_TOKEN", "_PASSWD"];
+
+    let upper = key.to_uppercase();
+    CONTAINS.iter().any(|p| upper.contains(p))
+        || SUFFIXES.iter().any(|sfx| upper.ends_with(sfx))
+        || matches!(upper.as_str(), "KEY" | "SECRET" | "PASSWORD")
 }
 
 /// Whether `key=value` holds a secret, by either the name or the value.
@@ -377,6 +460,43 @@ fn placeholder_pattern(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::Strictness::{Lenient, Strict};
+
+    /// F6 (DEC-G14): the 8 of U3's 32 names on which the two rules disagreed.
+    /// Lenient says yes to all; Strict to the four that name a credential.
+    #[test]
+    fn t_f6_the_eight_names_at_both_levels() {
+        use super::is_secret_name;
+        for k in ["PASSWD", "ADMIN_PWD", "STRIPE_APIKEY", "CREDENTIALS"] {
+            assert!(is_secret_name(k, Strict), "{k}");
+            assert!(is_secret_name(k, Lenient), "{k}");
+        }
+        for k in ["QUOTA_FREE_TOKENS", "AUTH_ENABLED", "KEY", "API_KEY_ID"] {
+            assert!(!is_secret_name(k, Strict), "{k}");
+            assert!(is_secret_name(k, Lenient), "{k}");
+        }
+        // Strict is a subset of Lenient: whatever validate asks a strong value
+        // for, masking hides.
+        for k in [
+            "DB_PASSWORD",
+            "jwt_secret",
+            "AWS_CREDENTIALS",
+            "SECRET_KEY",
+            "APIKEY",
+            "SIGNING_KEY",
+            "GITHUB_TOKEN",
+            "ROOT_PASSWD",
+            "MY_PWD",
+            "X_APIKEY",
+        ] {
+            assert!(is_secret_name(k, Strict), "{k}");
+            assert!(is_secret_name(k, Lenient), "{k} is Strict but not Lenient");
+        }
+        assert!(
+            !is_secret_name("PWD", Strict),
+            "the shell's working directory"
+        );
+        assert!(!is_secret_name("SECRET_KEY_ROTATION_DAYS", Strict));
+    }
 
     /// DEC-G10. Before: scan called `<set-me>`, `none`, `null`, `change-me` and
     /// an empty value real; validate called `*****` and AWS's docs key real.

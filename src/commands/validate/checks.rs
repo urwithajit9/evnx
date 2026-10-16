@@ -342,7 +342,9 @@ pub fn check_weak_secret(
     // `is_weak_secret_key` always took any key; only the call site was narrow.
     env_vars
         .iter()
-        .filter(|(name, _)| is_secret_shaped(name))
+        .filter(|(name, _)| {
+            crate::core::classify::is_secret_name(name, crate::core::classify::Strictness::Strict)
+        })
         .filter(|(name, value)| is_weak_secret_key(name, value))
         .map(|(name, value)| Issue {
             severity: "error".to_string(),
@@ -386,19 +388,6 @@ pub fn check_weak_secret(
             .is_actionable(),
         })
         .collect()
-}
-
-/// Does this variable's **name** say it holds a credential?
-///
-/// Suffix-anchored rather than `contains`, so `SECRET_KEY` and `JWT_SECRET`
-/// match while `SECRET_KEY_ROTATION_DAYS` — a number, not a secret — does not.
-pub fn is_secret_shaped(name: &str) -> bool {
-    const SUFFIXES: &[&str] = &["_SECRET", "_KEY", "_PASSWORD", "_TOKEN", "_PASSWD"];
-    let upper = name.to_uppercase();
-    upper == "SECRET_KEY"
-        || upper == "PASSWORD"
-        || upper == "SECRET"
-        || SUFFIXES.iter().any(|s| upper.ends_with(s))
 }
 
 /// Check 6: localhost in Docker context

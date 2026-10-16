@@ -53,7 +53,15 @@ fn t_share_01_placeholder_and_mask_have_one_definition() {
     let mut offenders = Vec::new();
     for f in files.iter().filter(|f| !f.starts_with(src().join("core"))) {
         let text = std::fs::read_to_string(f).unwrap();
-        for name in ["fn is_placeholder(", "fn mask(", "fn disclose("] {
+        // F6 (DEC-G14): the secret-name rules too — `validate` kept its own.
+        for name in [
+            "fn is_placeholder(",
+            "fn mask(",
+            "fn disclose(",
+            "fn is_sensitive_key(",
+            "fn is_secret_shaped(",
+            "fn is_secret_name(",
+        ] {
             let mut rest = text.as_str();
             while let Some(at) = rest.find(name) {
                 let body = &rest[at..];

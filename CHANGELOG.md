@@ -158,6 +158,19 @@ not run — no verdict". Four places broke that:
   config key is shown as an override. A CI scan of a large repository may read
   more files than before and find more.
 
+### Changed — one secret-name rule, at two levels
+
+- **`validate` asks a strong value of `*_PWD`, `*_APIKEY`, `*CREDENTIALS` and
+  `PASSWD`** (F6, DEC-G14). It had its own name rule, and `ADMIN_PWD=123`,
+  `STRIPE_APIKEY=123`, `CREDENTIALS=123` and `PASSWD=123` validated clean while
+  `diff` and `scan` already treated those names as secrets. ⚠️ A `.env` that
+  passed `validate` may now report `weak_secret` for one of them (exit 1).
+  `--fix` still replaces a real value only with `--rotate-weak-secrets`.
+- Unchanged, on purpose: `validate` still ignores a setting whose name merely
+  contains a credential word (`AUTH_ENABLED`, `QUOTA_FREE_TOKENS`, `API_KEY_ID`,
+  `SECRET_KEY_ROTATION_DAYS`) and the shell's `PWD`; masking, `scan` and `sync`
+  still hide all of them. Both levels now live in `core::classify`.
+
 ### Fixed — `convert` and `cloud pull`
 
 - **`convert` refuses names that become one name after renaming** (I-088,
@@ -489,6 +502,11 @@ and read a success line must check the exit code instead.
   binary and over-size files are skipped and named, the list is opt-in from the
   flag and from `.evnx.toml` and announced either way, a named file is always
   read. The scan demo's `KNOWN I-047` line is flipped to `FIXED`.
+- `tests/secret_names.rs` (3): F6 — validate checks the four credential names
+  of U3's eight (red first), leaves the other four and `PWD` alone, and masking
+  stays lenient; `core::classify` unit test for all eight at both levels; the
+  one-definition guard now covers the secret-name rules (red first: it found
+  both copies).
 - `tests/cloud_org.rs` (5), `tests/cloud_vault.rs` (3), `tests/cloud_cloud.rs` (4):
   every Part D fix against a mock server, refusals with zero requests; the
   architecture guard now reads the path text, after six multi-line hand-built
