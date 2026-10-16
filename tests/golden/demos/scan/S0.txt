@@ -18,6 +18,11 @@ Options:
       --exclude <EXCLUDE>
           [default: .env.example]
 
+      --extensions <EXT>
+          Read only files with these extensions in folders (comma-separated: `env,yml,json`). By default every file is read, and binary or very large files are skipped with a note.
+          
+          ⚠️ This narrows the scan, and the run says so. A file named on the command line is read whatever this says. `[scan] extensions` in `.evnx.toml` sets the same thing for a project.
+
       --pattern <REGEX>
           Also report values matching this regular expression. Repeatable.
           

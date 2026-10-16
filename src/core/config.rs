@@ -168,6 +168,9 @@ pub struct ScanPolicy {
     /// stricter for everyone who clones the repository. There is nothing to
     /// warn about in that direction.
     pub patterns: Option<Vec<PatternRule>>,
+    /// Read only files with these extensions in folder walks. Unset: every
+    /// file (I-047, DEC-U8-2). ⚠️ Narrows the scan, so it is announced.
+    pub extensions: Option<Vec<String>>,
     #[serde(flatten)]
     extra: Extra,
 }
@@ -273,6 +276,14 @@ impl Config {
                 out.push(format!("scan.disable={} built-in rule(s)", names.len()));
             }
             _ => {}
+        }
+        // ⚠️ A list narrows every folder scan to those extensions (I-047): a
+        // key in an unlisted file is never read.
+        if let Some(list) = self.scan.extensions.as_deref() {
+            out.push(format!(
+                "scan.extensions={} (other files in folders are not scanned)",
+                list.join(",")
+            ));
         }
         if self.scan.builtins == Some(false) {
             out.push("scan.builtins=false (no built-in rules)".to_string());

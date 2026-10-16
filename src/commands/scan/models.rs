@@ -314,6 +314,11 @@ pub struct ScanResults {
     /// file has not cleared it, and saying nothing is the failure mode that made
     /// task 23 and this defect the same bug twice.
     pub unreadable: Vec<UnreadableFile>,
+    /// Files a folder walk found and did not read: not text, or larger than
+    /// `filters::MAX_WALK_BYTES` (I-047). Reported, never silent; unlike
+    /// `unreadable` they do not fail the scan — they are not files a scanner
+    /// is expected to read.
+    pub skipped: Vec<UnreadableFile>,
     pub secrets_found: usize,
     pub findings: Vec<Finding>,
     pub high_confidence: usize,
@@ -346,6 +351,8 @@ pub struct Summary {
     /// were found", which is not "there are no secrets" when this is non-zero.
     /// Gate on both.
     pub files_unreadable: usize,
+    /// Files a folder walk passed over (binary, or over the size limit).
+    pub files_skipped: usize,
 }
 
 /// A file the scan selected and could not read.
@@ -365,6 +372,7 @@ impl ScanResults {
             low: self.low_confidence,
             files_scanned: self.files_scanned,
             files_unreadable: self.unreadable.len(),
+            files_skipped: self.skipped.len(),
         }
     }
 }
@@ -388,6 +396,7 @@ impl ScanResults {
         Self {
             files_scanned,
             unreadable: Vec::new(),
+            skipped: Vec::new(),
             secrets_found: 0,
             findings: Vec::new(),
             high_confidence: 0,

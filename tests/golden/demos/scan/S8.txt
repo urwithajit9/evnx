@@ -5,14 +5,21 @@ $ evnx scan .
 
   evnx scan  Checking for exposed secrets
 
-  scanning ./src/main.py
+  scanning ./config/id_rsa.pem, ./src/main.py
+
+  ✗  Private Key                                 high
+     ./config/id_rsa.pem:1  ----…----
+     !  matches a live key format, not a placeholder
+
+  ·  High-entropy string (possible secret)       low
+     ./config/id_rsa.pem:2  MIIB…t8Qu
 
   ✗  AWS Access Key                              high
      ./src/main.py:1  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
-  1 finding  ·  1 high
+  3 findings  ·  2 high  ·  1 low
 
 
 Next steps:
@@ -21,8 +28,8 @@ Next steps:
   3. Force push, after coordinating with everyone who has a clone
   Docs: https://docs.evnx.dev/cli/commands/scan
 [exit 1]
-  ok: walk finds src/main.py (exit 1)
-KNOWN I-047: config/id_rsa.pem is not listed above because the walk allow-list skips .pem; decided: --include
+  ok: walk finds src/main.py and config/id_rsa.pem (exit 1)
+FIXED I-047 (U8b, DEC-U8-2): the walk reads every file, so config/id_rsa.pem is listed above
 
 $ evnx scan config/id_rsa.pem
 
@@ -52,19 +59,33 @@ $ evnx scan . .
 
   evnx scan  Checking for exposed secrets
 
-  scanning ./src/main.py, ./src/main.py
+  scanning ./config/id_rsa.pem, ./src/main.py, ./config/id_rsa.pem and 1 other file
+
+  ✗  Private Key                                 high
+     ./config/id_rsa.pem:1  ----…----
+     !  matches a live key format, not a placeholder
+
+  ·  High-entropy string (possible secret)       low
+     ./config/id_rsa.pem:2  MIIB…t8Qu
 
   ✗  AWS Access Key                              high
      ./src/main.py:1  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
+  ✗  Private Key                                 high
+     ./config/id_rsa.pem:1  ----…----
+     !  matches a live key format, not a placeholder
+
+  ·  High-entropy string (possible secret)       low
+     ./config/id_rsa.pem:2  MIIB…t8Qu
+
   ✗  AWS Access Key                              high
      ./src/main.py:1  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
-  2 findings  ·  2 high
+  6 findings  ·  4 high  ·  2 low
 
 
 Next steps:

@@ -72,9 +72,22 @@ pub struct ScanRunner {
     /// How many custom patterns are active, for verbose output. The patterns
     /// themselves live in the registry.
     custom_patterns: usize,
+    /// Where an extension list came from, for the run's announcement.
+    extensions_from: &'static str,
 }
 
 impl ScanRunner {
+    /// Limit folder walks to `extensions`, announcing it as coming from
+    /// `from` (`--extensions`, `.evnx.toml [scan] extensions`). `None` reads
+    /// every file (I-047, DEC-U8-2).
+    pub fn with_extensions(mut self, extensions: Option<(Vec<String>, &'static str)>) -> Self {
+        if let Some((list, from)) = extensions {
+            self.filter = self.filter.with_extensions(Some(list));
+            self.extensions_from = from;
+        }
+        self
+    }
+
     /// Create a new ScanRunner with configuration.
     ///
     /// # Arguments
@@ -159,6 +172,7 @@ impl ScanRunner {
             verbose,
             min_confidence,
             custom_patterns,
+            extensions_from: "",
         }
     }
 
@@ -210,7 +224,19 @@ impl ScanRunner {
             }
         }
 
-        let files = self.filter.collect_files(&paths)?;
+        let collected = self.filter.collect(&paths)?;
+        let files = collected.files.clone();
+        // Said before scanning: a limited walk is a weaker scan (DEC-U8-2).
+        if let Some(list) = self.filter.extensions() {
+            eprintln!(
+                "  scanning only files ending in {} in folders ({}); other files are not read",
+                list.iter()
+                    .map(|e| format!(".{e}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                self.extensions_from
+            );
+        }
 
         // ⚠️ A scan that examined nothing is not a clean scan.
         //
@@ -246,16 +272,33 @@ impl ScanRunner {
         // used to be the number *found* — which is how `1 file scanned` came to
         // be printed about a file that was never decoded.
         let mut results = ScanResults::new(0);
+        for (path, reason) in &collected.skipped {
+            results.skipped.push(UnreadableFile {
+                path: display_portable(path),
+                reason: reason.clone(),
+            });
+        }
 
+        // The files actually read: `scanning …` must not name one that was
+        // then set aside as binary.
+        let mut read = Vec::with_capacity(files.len());
         for file in &files {
             if self.verbose {
                 ui::scanning_file_stderr(file);
             }
-            self.scan_file(file, &mut results)?;
+            let walked = !collected.named.contains(file);
+            let before = results.skipped.len();
+            self.scan_file(file, walked, &mut results)?;
+            if results.skipped.len() == before {
+                read.push(file.clone());
+            }
         }
 
         // Render output (goes to stdout)
-        render(&results, format, &files)?;
+        render(&results, format, &read)?;
+        // After the report, so the note is not wedged between the stderr
+        // header and the stdout file list.
+        report_skipped(&results, self.verbose);
 
         // Return status for caller to handle exit code
         // ⛔ An unreadable file fails the scan.
@@ -378,7 +421,7 @@ impl ScanRunner {
         }
     }
 
-    fn scan_file(&self, path: &Path, results: &mut ScanResults) -> Result<()> {
+    fn scan_file(&self, path: &Path, walked: bool, results: &mut ScanResults) -> Result<()> {
         let content = match decode(path) {
             Decoded::Text(c) => c,
             // ⛔ **A file this command chose to scan and could not read is a
@@ -409,6 +452,16 @@ impl ScanRunner {
             // reporting "All checks passed" over a credential it had
             // destroyed. CLAUDE.md's note on task 23 is the rule — a scanner
             // that misses is **worse than useless, because it reports clean**.
+            // A file a walk found, of a kind not expected to be text (an image,
+            // an archive), is skipped and said — not a failure (I-047). One
+            // that *should* be text (`.env`, `.yml`, …) still fails, as above.
+            Decoded::Unreadable { reason } if walked && !FileFilter::is_scannable(path) => {
+                results.skipped.push(UnreadableFile {
+                    path: display_portable(path),
+                    reason: format!("not text: {reason}"),
+                });
+                return Ok(());
+            }
             Decoded::Unreadable { reason } => {
                 results.unreadable.push(UnreadableFile {
                     path: display_portable(path),
@@ -811,6 +864,25 @@ pub fn truncate_value(value: &str) -> String {
     let prefix: String = chars[..keep].iter().collect();
     let suffix: String = chars[n - keep..].iter().collect();
     format!("{prefix}…{suffix}")
+}
+
+/// Say what a walk did not read (I-047, DEC-U8-2): a count always, each file
+/// with `-v`. On stderr, so `--format json` stays one document.
+fn report_skipped(results: &ScanResults, verbose: bool) {
+    if results.skipped.is_empty() {
+        return;
+    }
+    eprintln!(
+        "  skipped {} file(s) that are not text or are over {} KiB{}",
+        results.skipped.len(),
+        super::filters::MAX_WALK_BYTES / 1024,
+        if verbose { ":" } else { " (-v lists them)" }
+    );
+    if verbose {
+        for f in &results.skipped {
+            eprintln!("    {}  {}", f.path, f.reason);
+        }
+    }
 }
 
 /// Should this file be read with the `.env` parser?

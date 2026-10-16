@@ -137,6 +137,26 @@ not run — no verdict". Four places broke that:
   Every name gets a placeholder (the same ones `sync` writes, such as
   `YOUR_KEY_HERE`), not only secret-looking ones. ⚠️ If `.env` does not exist
   it is created, mode 0600, so the value is not lost.
+- A name given without a value gets the same placeholder in both files
+  (`FEATURE_FLAG=YOUR_VALUE_HERE`, `STRIPE_SECRET_KEY=YOUR_KEY_HERE`). `.env`
+  got `your_value_here` while `.env.example` got the uppercase one.
+
+### ⛔ Security — `scan` did not read a `.pem` file in a folder
+
+- **A folder scan reads every file** (I-047, DEC-U8-2). It read only files with
+  an extension on a built-in list, so `config/id_rsa.pem` — a private key — or a
+  live key in `app.swift` was never opened, and the scan said "No secrets
+  detected" and exited 0.
+- Binary files and files over 1024 KiB in a folder are skipped, and the scan
+  says so: `skipped N file(s) …` on stderr, each file and why with `-v`, and a
+  new `skipped` list (and `summary.files_skipped`) in `--format json` — added
+  keys only. A file named on the command line is
+  read whatever its size or extension, as before.
+- ⚠️ **The old behaviour is opt-in and announced**: `--extensions env,yml,json`,
+  or `[scan] extensions = ["env"]` in `.evnx.toml`. A run limited this way says
+  `scanning only files ending in …` and where the list came from, and the
+  config key is shown as an override. A CI scan of a large repository may read
+  more files than before and find more.
 
 ### Fixed — `convert` and `cloud pull`
 
@@ -465,6 +485,10 @@ and read a success line must check the exit code instead.
 - `tests/add_custom_example.rs` (3): I-240 with and without `.env`, and a rerun is
   not a conflict; `tests/convert_output.rs` adds I-088; `cloud::sync` unit test for
   `--file -` (I-244, also checked against a local server).
+- `tests/scan_walk.rs` (5): I-047 — a `.pem` and a `.swift` file are read,
+  binary and over-size files are skipped and named, the list is opt-in from the
+  flag and from `.evnx.toml` and announced either way, a named file is always
+  read. The scan demo's `KNOWN I-047` line is flipped to `FIXED`.
 - `tests/cloud_org.rs` (5), `tests/cloud_vault.rs` (3), `tests/cloud_cloud.rs` (4):
   every Part D fix against a mock server, refusals with zero requests; the
   architecture guard now reads the path text, after six multi-line hand-built

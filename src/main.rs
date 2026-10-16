@@ -177,6 +177,7 @@ fn main() -> Result<()> {
         Commands::Scan {
             path,
             exclude,
+            extensions,
             pattern,
             ignore_placeholders,
             severity,
@@ -199,6 +200,13 @@ fn main() -> Result<()> {
             exit_zero,
             cli.verbose,
             cfg.vars.clone(),
+            // The flag wins; either way the run announces the limit (DEC-U8-2).
+            extensions.map(|e| (e, "--extensions")).or_else(|| {
+                cfg.scan
+                    .extensions
+                    .clone()
+                    .map(|e| (e, ".evnx.toml [scan] extensions"))
+            }),
         ),
 
         Commands::Diff {

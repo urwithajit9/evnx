@@ -32,6 +32,7 @@
 //!     false,                       // exit_zero
 //!     false,                       // verbose
 //!     Default::default(),          // spec — empty means heuristics only
+//!     None,                        // extensions — None reads every file
 //! ).unwrap();
 //! ```
 //!
@@ -133,6 +134,7 @@ pub const EXIT_ERROR: i32 = 2;
 ///     false,                   // exit_zero
 ///     false,                   // verbose
 ///     Default::default(),      // spec — `[vars]` from .evnx.toml, if any
+///     None,                    // extensions — None reads every file (I-047)
 /// ).unwrap();
 /// ```
 #[allow(clippy::too_many_arguments)]
@@ -146,6 +148,7 @@ pub fn run(
     exit_zero: bool,
     verbose: bool,
     spec: crate::core::spec::Spec,
+    extensions: Option<(Vec<String>, &'static str)>,
 ) -> Result<(), anyhow::Error> {
     // Trouble prints here and exits 2 rather than propagating to `main`, which
     // would format it as a generic error and collapse it onto 1 — the code that
@@ -163,7 +166,8 @@ pub fn run(
             min_confidence,
             spec.clone(),
             compiled,
-        );
+        )
+        .with_extensions(extensions.clone());
         runner.run(paths, output_format)
     };
 

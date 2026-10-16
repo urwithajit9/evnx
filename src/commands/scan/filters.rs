@@ -48,6 +48,24 @@ use walkdir::WalkDir;
 pub struct FileFilter {
     exclude_patterns: Vec<String>,
     compiled_globs: Vec<Pattern>,
+    /// The opt-in extension list (`--extensions`, `[scan] extensions`).
+    /// `None`, the default, reads every file a walk finds (I-047, DEC-U8-2).
+    extensions: Option<Vec<String>>,
+}
+
+/// A walked file larger than this is skipped, and the scan says so (I-047).
+/// A `.env` or config file is a few kilobytes; a megabyte of text is a log, a
+/// bundle or data — and named on the command line it is still read.
+pub const MAX_WALK_BYTES: u64 = 1024 * 1024;
+
+/// What a walk found: the files to read, and the ones it passed over and why.
+#[derive(Debug, Default)]
+pub struct Collected {
+    pub files: Vec<PathBuf>,
+    /// `(path, reason)` for files a walk did not read.
+    pub skipped: Vec<(PathBuf, String)>,
+    /// Files named on the command line, read whatever the rules say.
+    pub named: std::collections::HashSet<PathBuf>,
 }
 
 impl FileFilter {
@@ -77,7 +95,25 @@ impl FileFilter {
         Self {
             exclude_patterns: exclude.to_vec(),
             compiled_globs,
+            extensions: None,
         }
+    }
+
+    /// Limit a folder walk to these extensions (without the dot, any case).
+    /// `None` reads every file. Named files are always read.
+    pub fn with_extensions(mut self, extensions: Option<Vec<String>>) -> Self {
+        self.extensions = extensions.map(|v| {
+            v.iter()
+                .map(|e| e.trim().trim_start_matches('.').to_lowercase())
+                .filter(|e| !e.is_empty())
+                .collect()
+        });
+        self
+    }
+
+    /// The extension list in force, if any.
+    pub fn extensions(&self) -> Option<&[String]> {
+        self.extensions.as_deref()
     }
 
     /// Collect all scannable files from the given paths.
@@ -96,6 +132,13 @@ impl FileFilter {
     ///
     /// Returns error if a path cannot be read (permissions, etc.)
     pub fn collect_files(&self, paths: &[String]) -> Result<Vec<PathBuf>> {
+        Ok(self.collect(paths)?.files)
+    }
+
+    /// [`FileFilter::collect_files`], keeping what a walk skipped and which
+    /// files were named, so the scan can say what it did not read.
+    pub fn collect(&self, paths: &[String]) -> Result<Collected> {
+        let mut collected = Collected::default();
         let mut files = Vec::new();
         // ⚠️ Collected rather than bailed on immediately, so `evnx scan a b c`
         // names every bad path in one run instead of one per invocation.
@@ -126,6 +169,7 @@ impl FileFilter {
                 // Exclusions exist to keep a *directory walk* from reading a
                 // million vendored files. They are not a veto over an argument.
                 files.push(path.to_path_buf());
+                collected.named.insert(path.to_path_buf());
             } else if path.is_dir() {
                 // ⚠️ Sorted by name. Without it the walk follows the order the
                 // filesystem returns, which differs between machines (ext4
@@ -138,12 +182,27 @@ impl FileFilter {
                     .filter_map(|e| e.ok())
                 {
                     let entry_path = entry.path();
-                    if entry_path.is_file()
-                        && !self.should_exclude(entry_path)
-                        && Self::is_scannable(entry_path)
+                    if !entry_path.is_file()
+                        || self.should_exclude(entry_path)
+                        || !self.walk_selects(entry_path)
                     {
-                        files.push(entry_path.to_path_buf());
+                        continue;
                     }
+                    // ⚠️ The default reads every file (I-047, DEC-U8-2): the old
+                    // extension allow-list never opened `config/id_rsa.pem` or a
+                    // key in `app.swift`, and the scan reported clean. What it
+                    // does not read, it says — see `Collected::skipped`.
+                    if self.extensions.is_none() {
+                        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                        if size > MAX_WALK_BYTES {
+                            collected.skipped.push((
+                                entry_path.to_path_buf(),
+                                format!("larger than {} KiB", MAX_WALK_BYTES / 1024),
+                            ));
+                            continue;
+                        }
+                    }
+                    files.push(entry_path.to_path_buf());
                 }
             } else {
                 // ⚠️ Neither a file nor a directory. Previously this branch did
@@ -156,6 +215,7 @@ impl FileFilter {
             }
         }
 
+        collected.files = files;
         if !unreadable.is_empty() {
             let detail = unreadable
                 .iter()
@@ -179,7 +239,7 @@ impl FileFilter {
             );
         }
 
-        Ok(files)
+        Ok(collected)
     }
 
     /// Check if a file should be excluded from scanning.
@@ -345,65 +405,74 @@ impl FileFilter {
         stem.ends_with(".backup")
     }
 
-    /// Check if a file is scannable (text-based).
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to check
-    ///
-    /// # Returns
-    ///
-    /// `true` if the file should be scanned, `false` for binary files.
-    ///
-    /// # Scannable Extensions
-    ///
-    /// Common text file extensions: env, txt, sh, py, js, ts, rs, go,
-    /// java, rb, php, yml, yaml, json, toml, xml, conf, config, ini, properties
-    ///
-    /// # Special Cases
-    ///
-    /// Files without extensions are checked by name:
-    /// - `.env*` files
-    /// - `Dockerfile`
-    /// - `Makefile`
-    pub fn is_scannable(path: &Path) -> bool {
-        const SCANNABLE_EXTENSIONS: &[&str] = &[
-            "env",
-            "txt",
-            "sh",
-            "bash",
-            "zsh",
-            "py",
-            "js",
-            "ts",
-            "rs",
-            "go",
-            "java",
-            "rb",
-            "php",
-            "yml",
-            "yaml",
-            "json",
-            "toml",
-            "xml",
-            "conf",
-            "config",
-            "ini",
-            "properties",
-            // ⚠️ A notebook is JSON, and identical content was scanned as
-            // `.json` and ignored as `.ipynb` — a filter problem, not a parsing
-            // one. Notebooks are where ML work keeps keys, and a key often
-            // appears **twice**: once in a `source` cell and again in an
-            // `outputs` cell where it was echoed. Both are found now, because
-            // the detectors are content-based and only the extension was
-            // stopping them.
-            "ipynb",
-        ];
+    /// Whether a folder walk reads `path`: with an extension list, the list
+    /// (plus `.env*`, `Dockerfile`, `Makefile`); without one, every file but an
+    /// editor's binary swap file.
+    fn walk_selects(&self, path: &Path) -> bool {
+        match &self.extensions {
+            Some(list) => {
+                let list: Vec<&str> = list.iter().map(String::as_str).collect();
+                Self::matches(path, &list)
+            }
+            None => !Self::is_editor_swap(path),
+        }
+    }
 
+    fn is_editor_swap(path: &Path) -> bool {
+        const EDITOR_SWAP: &[&str] = &[".swp", ".swo", ".swn", ".swm", ".swl"];
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| EDITOR_SWAP.iter().any(|e| n.ends_with(e)))
+    }
+
+    /// The built-in text extensions — the list a walk was limited to before
+    /// I-047. Still the answer to "is this a file we expect to be text?": a
+    /// walked file on it that does not decode fails the scan; one off it is
+    /// skipped as not text.
+    pub fn is_scannable(path: &Path) -> bool {
+        Self::matches(path, Self::TEXT_EXTENSIONS)
+    }
+
+    const TEXT_EXTENSIONS: &'static [&'static str] = &[
+        "env",
+        "txt",
+        "sh",
+        "bash",
+        "zsh",
+        "py",
+        "js",
+        "ts",
+        "rs",
+        "go",
+        "java",
+        "rb",
+        "php",
+        "yml",
+        "yaml",
+        "json",
+        "toml",
+        "xml",
+        "conf",
+        "config",
+        "ini",
+        "properties",
+        // ⚠️ A notebook is JSON, and identical content was scanned as
+        // `.json` and ignored as `.ipynb` — a filter problem, not a parsing
+        // one. Notebooks are where ML work keeps keys, and a key often
+        // appears **twice**: once in a `source` cell and again in an
+        // `outputs` cell where it was echoed. Both are found now, because
+        // the detectors are content-based and only the extension was
+        // stopping them.
+        "ipynb",
+    ];
+
+    /// `path` has one of `list`'s extensions, or a name that is always text
+    /// (`.env*`, `Dockerfile`, `Makefile`) — never an editor swap file.
+    fn matches(path: &Path, list: &[&str]) -> bool {
         // Check extension
         if let Some(ext) = path.extension() {
             let ext_str = ext.to_string_lossy().to_lowercase();
-            if SCANNABLE_EXTENSIONS.contains(&ext_str.as_str()) {
+            if list.contains(&ext_str.as_str()) && !Self::is_editor_swap(path) {
                 return true;
             }
         }
@@ -812,12 +881,18 @@ mod tests {
         fs::write(&file1, "print('hello')").unwrap();
         fs::write(&file2, "binary").unwrap();
 
-        let filter = FileFilter::new(&[]);
-        let files = filter
-            .collect_files(&[temp_dir.path().to_string_lossy().to_string()])
-            .unwrap();
+        let dir = [temp_dir.path().to_string_lossy().to_string()];
 
-        assert_eq!(files.len(), 1);
-        assert!(files.contains(&file1));
+        // I-047 (DEC-U8-2): by default every file is collected; a binary one
+        // is set aside when it is read, not by its name.
+        let files = FileFilter::new(&[]).collect_files(&dir).unwrap();
+        assert_eq!(files.len(), 2);
+
+        // The extension list is opt-in, and then it is what decides.
+        let files = FileFilter::new(&[])
+            .with_extensions(Some(vec![".PY".into()]))
+            .collect_files(&dir)
+            .unwrap();
+        assert_eq!(files, vec![file1]);
     }
 }

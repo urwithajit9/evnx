@@ -1657,6 +1657,16 @@ pub enum Commands {
         #[arg(long, default_value = ".env.example")]
         exclude: Vec<String>,
 
+        /// Read only files with these extensions in folders (comma-separated:
+        /// `env,yml,json`). By default every file is read, and binary or very
+        /// large files are skipped with a note.
+        ///
+        /// ⚠️ This narrows the scan, and the run says so. A file named on the
+        /// command line is read whatever this says. `[scan] extensions` in
+        /// `.evnx.toml` sets the same thing for a project.
+        #[arg(long, value_delimiter = ',', value_name = "EXT")]
+        extensions: Option<Vec<String>>,
+
         /// Also report values matching this regular expression. Repeatable.
         ///
         /// For the formats evnx does not ship with — an internal token, a

@@ -35,9 +35,6 @@ pub const CATEGORIES: &[&str] = &[
     "Other",
 ];
 
-/// The placeholder for a name given without a value.
-const PLACEHOLDER: &str = "your_value_here";
-
 /// What `evnx add custom` was given on the command line.
 pub struct Args {
     /// `NAME=value` or `NAME`, in order.
@@ -134,12 +131,14 @@ fn from_arguments(
                     .allow_empty_password(true)
                     .interact()?;
                 if v.is_empty() {
-                    PLACEHOLDER.to_string()
+                    placeholder_for(&name)
                 } else {
                     v
                 }
             }
-            None => PLACEHOLDER.to_string(),
+            // The same placeholder `.env.example` gets, so the two files agree
+            // (it was `your_value_here` here and `YOUR_VALUE_HERE` there).
+            None => placeholder_for(&name),
         };
         customs.push(Custom {
             name,
@@ -204,7 +203,7 @@ fn prompt_loop(
 
         let value: String = Input::new()
             .with_prompt("Example/placeholder value")
-            .default(PLACEHOLDER.to_string())
+            .default(placeholder_for(&name))
             .interact_text()?;
 
         let mut custom = Custom {

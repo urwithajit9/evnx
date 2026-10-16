@@ -5,6 +5,7 @@ $ evnx scan . --format json
 {
   "files_scanned": 1,
   "unreadable": [],
+  "skipped": [],
   "secrets_found": 4,
   "findings": [
     {
@@ -53,7 +54,8 @@ $ evnx scan . --format json
     "medium": 0,
     "low": 0,
     "files_scanned": 1,
-    "files_unreadable": 0
+    "files_unreadable": 0,
+    "files_skipped": 0
   }
 }
   Docs: https://docs.evnx.dev/cli/commands/scan

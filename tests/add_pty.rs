@@ -201,7 +201,11 @@ fn a_secret_name_alone_is_asked_for_unseen() {
     assert!(!example.contains("sk_live_typed_here"), "{example}");
     assert!(example.contains("\nSTRIPE_SECRET_KEY="), "{example}");
     // Not secret-looking: the placeholder, no question.
-    assert!(env.contains("FEATURE_FLAG=your_value_here"), "{env}");
+    assert!(env.contains("FEATURE_FLAG=YOUR_VALUE_HERE"), "{env}");
+    assert!(
+        example.contains("FEATURE_FLAG=YOUR_VALUE_HERE"),
+        "same in both files"
+    );
 }
 
 /// DQ-A4: with no `.env`, an interactive `add` offers to create it from the

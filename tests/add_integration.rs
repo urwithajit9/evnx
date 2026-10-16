@@ -1023,13 +1023,17 @@ fn custom_name_alone_gets_the_placeholder() {
     )
     .assert_code(0);
     // ⚠️ DEC-U8-1 (I-240): the value goes to `.env` only; `.env.example` gets a placeholder.
-    // A name alone still gets a placeholder in both files.
+    // A name alone gets the same placeholder in both files (they used to
+    // disagree: `your_value_here` in .env, `YOUR_VALUE_HERE` in the template).
     let env = p.read(".env");
-    assert!(env.contains("FEATURE_FLAG=your_value_here"), "{env}");
-    assert!(env.contains("STRIPE_SECRET_KEY=your_value_here"), "{env}");
     let example = p.read(".env.example");
-    assert!(example.contains("\nFEATURE_FLAG="), "{example}");
-    assert!(example.contains("\nSTRIPE_SECRET_KEY="), "{example}");
+    for line in [
+        "FEATURE_FLAG=YOUR_VALUE_HERE",
+        "STRIPE_SECRET_KEY=YOUR_KEY_HERE",
+    ] {
+        assert!(env.contains(line), "{line}:\n{env}");
+        assert!(example.contains(line), "{line}:\n{example}");
+    }
 }
 
 /// T-ADD-42: an invalid or repeated name fails before anything is written,
