@@ -155,9 +155,14 @@ fn test_format_preserves_required_metadata() {
 
 // tests/schema_integration.rs
 
+/// I-250 (0.10.4): a service's own default beats a framework's for the same
+/// name, in either order. Until 0.10.3 this test pinned "first value added
+/// wins" — a description of the code at the time, not a decision — and with it
+/// the bug: a blueprint adds its framework first, so Django + PostgreSQL wrote
+/// the framework's `DATABASE_URL` instead of PostgreSQL's. Only the value
+/// moves; the entry's source (and so its section) is still the first adder's.
 #[test]
 fn test_deduplication_framework_vs_service_priority() {
-    // Current behavior: FIRST value added wins (regardless of source)
     let (_, django) = loader::find_framework("python", "django").unwrap();
     let (_, postgres) = loader::find_service("postgresql").unwrap();
 
@@ -177,10 +182,14 @@ fn test_deduplication_framework_vs_service_priority() {
     let service_first_value = collection2.vars["DATABASE_URL"].example_value.clone();
     let service_first_source = collection2.vars["DATABASE_URL"].source.clone();
 
-    // Verify first-wins behavior
-    assert_ne!(
+    // The same value in either order: PostgreSQL's own.
+    assert_eq!(
         framework_first_value, service_first_value,
-        "Values should differ based on add order (first-wins)"
+        "the add order must not decide DATABASE_URL (I-250)"
+    );
+    assert_eq!(
+        service_first_value,
+        "postgresql://user:password@localhost:5432/dbname"
     );
 
     assert_eq!(

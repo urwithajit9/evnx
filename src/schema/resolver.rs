@@ -162,20 +162,32 @@ pub fn add_service_vars(collection: &mut VarCollection, service_id: &str, svc: &
         .or_else(|| infer_category_from_service(service_id));
 
     for var_name in &svc.vars {
-        collection
-            .vars
-            .entry(var_name.clone())
-            .or_insert_with(|| VarMetadata {
-                example_value: svc
-                    .defaults
-                    .get(var_name)
-                    .cloned()
-                    .unwrap_or_else(|| placeholder_for(var_name)),
-                description: svc.descriptions.get(var_name).cloned(),
-                category: category.clone(),
-                required: svc.required.contains(var_name),
-                source: VarSource::Service(service_id.to_string()),
-            });
+        let entry = collection.vars.entry(var_name.clone());
+        // ⚠️ A service's own default beats a framework's for the same name, in
+        // either order (I-250). The first value used to win, and a blueprint
+        // adds its framework first, so `fastapi_ai`, `rust_high_perf` and
+        // `django_enterprise` wrote the framework's `DATABASE_URL`
+        // (`https://example.com`) into a PostgreSQL stack. Only the value moves:
+        // the framework's description and `required` stay.
+        if let std::collections::hash_map::Entry::Occupied(mut existing) = entry {
+            if let (VarSource::Framework(_), Some(default)) =
+                (&existing.get().source, svc.defaults.get(var_name))
+            {
+                existing.get_mut().example_value = default.clone();
+            }
+            continue;
+        }
+        entry.or_insert_with(|| VarMetadata {
+            example_value: svc
+                .defaults
+                .get(var_name)
+                .cloned()
+                .unwrap_or_else(|| placeholder_for(var_name)),
+            description: svc.descriptions.get(var_name).cloned(),
+            category: category.clone(),
+            required: svc.required.contains(var_name),
+            source: VarSource::Service(service_id.to_string()),
+        });
     }
 }
 

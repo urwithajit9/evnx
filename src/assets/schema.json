@@ -101,6 +101,7 @@
             "ALLOWED_HOSTS": "Comma-separated list of allowed host/domain names"
           },
           "defaults": {
+            "DATABASE_URL": "sqlite:///db.sqlite3",
             "DJANGO_SETTINGS_MODULE": "myproject.settings",
             "DEBUG": "True",
             "ALLOWED_HOSTS": "localhost,127.0.0.1"

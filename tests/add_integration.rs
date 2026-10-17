@@ -1352,12 +1352,13 @@ fn service_copies_match_init() {
     assert_eq!(added, block(&via_init.read(".env.example")));
 }
 
-/// BR-1: no browser framework, no copies, and one line saying so; a service
-/// with no public values says nothing at all.
+/// BR-1: no browser framework, no copies, and with `-v` one line saying so
+/// (N-22: only with `-v` since 0.10.4); a service with no public values says
+/// nothing at all.
 #[test]
 fn no_browser_framework_no_copies() {
     let p = Project::new().example("APP=1\n");
-    run(p.path(), &["add", "service", "supabase", "--yes"])
+    run(p.path(), &["-v", "add", "service", "supabase", "--yes"])
         .assert_code(0)
         .assert_contains("No browser framework found in this project");
     assert!(!p.read(".env.example").contains("VITE_"));
@@ -1408,4 +1409,76 @@ fn add_flags_work_before_the_subcommand() {
     run(p.path(), &["add", "--list", "service", "redis"])
         .assert_code(2)
         .assert_contains("--list takes no subcommand");
+}
+
+// ─────────────────────────────────────────────────────────────
+// 0.10.4 (R-add)
+// ─────────────────────────────────────────────────────────────
+
+/// N-21: Django's `DATABASE_URL` had no default of its own, so the resolver's
+/// URL-shaped fallback (`https://example.com`) was written, which no database
+/// accepts. It is now Django's own out-of-the-box database (owner decision
+/// 2026-10-17: SQLite).
+#[test]
+fn t_n21_django_database_url_is_sqlite() {
+    let p = Project::new();
+    run(p.path(), &["add", "framework", "django", "--yes"]).assert_code(0);
+    let example = p.read(".env.example");
+    assert!(
+        example.contains("\nDATABASE_URL=sqlite:///db.sqlite3\n"),
+        "{example}"
+    );
+    assert!(
+        !example.contains("DATABASE_URL=https://example.com"),
+        "{example}"
+    );
+}
+
+/// N-22: in a project with no browser framework, `add service` with a public
+/// value said "No browser framework found" on every run. It now says so only
+/// with `-v` (owner decision 2026-10-17); when a framework is found, the line
+/// about the copies is unchanged.
+#[test]
+fn t_n22_no_framework_line_only_with_verbose() {
+    let p = Project::new();
+    run(p.path(), &["add", "service", "stripe", "--yes"])
+        .assert_code(0)
+        .assert_not_contains("No browser framework found");
+    let q = Project::new();
+    run(q.path(), &["-v", "add", "service", "stripe", "--yes"])
+        .assert_code(0)
+        .assert_contains("No browser framework found");
+    let v = Project::new().file("package.json", r#"{"devDependencies":{"vite":"5"}}"#);
+    run(v.path(), &["add", "service", "supabase", "--yes"])
+        .assert_code(0)
+        .assert_contains("adding 2 VITE_ copies for the browser");
+}
+
+/// I-250: in a stack with PostgreSQL, `DATABASE_URL` is PostgreSQL's, not the
+/// framework's. The resolver keeps the first value it sees and adds the
+/// framework first, so `fastapi_ai`, `rust_high_perf` and `django_enterprise`
+/// wrote `https://example.com` (and, with N-21, `django_enterprise` would have
+/// written SQLite). A service's own default now wins, in either order.
+#[test]
+fn t_i250_postgres_stacks_use_the_postgres_url() {
+    const PG: &str = "DATABASE_URL=postgresql://user:password@localhost:5432/dbname\n";
+    for id in ["fastapi_ai", "rust_high_perf", "django_enterprise"] {
+        let p = Project::new();
+        run(p.path(), &["add", "blueprint", id, "--yes"]).assert_code(0);
+        assert!(p.read(".env.example").contains(PG), "add blueprint {id}");
+        let q = Project::new();
+        run(q.path(), &["init", "--blueprint", id, "--yes"]).assert_code(0);
+        assert!(q.read(".env.example").contains(PG), "init --blueprint {id}");
+    }
+    for with in ["django,postgresql", "postgresql,django"] {
+        let p = Project::new();
+        run(p.path(), &["init", "--with", with, "--yes"]).assert_code(0);
+        assert!(p.read(".env.example").contains(PG), "init --with {with}");
+    }
+    // Django on its own keeps its own default (N-21).
+    let p = Project::new();
+    run(p.path(), &["init", "--with", "django", "--yes"]).assert_code(0);
+    assert!(p
+        .read(".env.example")
+        .contains("DATABASE_URL=sqlite:///db.sqlite3\n"));
 }

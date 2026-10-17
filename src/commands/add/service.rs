@@ -25,7 +25,7 @@ pub fn handle(service_id: Option<&str>, path: &str, mode: &Mode) -> Result<Outco
         }
     };
     let mut vars = component::resolve(&[service_id.to_string()])?;
-    add_browser_copies(&mut vars, Path::new(path));
+    add_browser_copies(&mut vars, Path::new(path), mode.verbose);
     let found = component::find(service_id)?;
     // One id space (I-018): an infra or framework id is added, and named for
     // what it is. `add infra` is this same command.
@@ -71,7 +71,7 @@ pub fn handle(service_id: Option<&str>, path: &str, mode: &Mode) -> Result<Outco
 /// the values their vendors design to be public get a copy
 /// ([`component::CLIENT_SAFE`]); a service with none of them is left alone and
 /// nothing is said.
-fn add_browser_copies(vars: &mut crate::schema::models::VarCollection, root: &Path) {
+fn add_browser_copies(vars: &mut crate::schema::models::VarCollection, root: &Path, verbose: bool) {
     let has_public = vars
         .vars
         .keys()
@@ -100,7 +100,10 @@ fn add_browser_copies(vars: &mut crate::schema::models::VarCollection, root: &Pa
             ));
         }
     }
-    if !found_any {
+    // ⚠️ Only with `-v` (N-22, owner decision 2026-10-17). In a backend
+    // project it was said on every add of Stripe, Sentry, Auth0 …: nothing to
+    // act on, every time.
+    if !found_any && verbose {
         info(
             "No browser framework found in this project, so no client-side copies \
              (VITE_, NEXT_PUBLIC_, ...) were added",
