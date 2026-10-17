@@ -165,7 +165,7 @@ It reads the compiled feature list from `evnx commands --json`, so it covers
 | Channel | Check | The trap |
 |---|---|---|
 | GitHub Release | 16 assets + checksums | |
-| **npm** | `npm view @evnx/cli version` | `npm-publish.yml` fires on `release.yml` *completing* — including when it **fails**, where it correctly skips and still reports green. A green npm run means nothing; read the registry. |
+| **npm** | `npm view @evnx/cli version` | `npm-publish.yml` fires on `release.yml` *completing* — including when it **fails**, where it correctly skips and still reports green. A green npm run means nothing; read the registry. A **red** one is safe to re-run: the publish steps skip every version already in the registry and finish the rest (I-256). Only an auth failure ("check NPM_TOKEN") needs a new token first. |
 | **crates.io** | `cargo publish` — **manual** | Nothing automates it and nothing reminds you. evnx-crypto 0.1.1 and 0.1.2 exist as git tags and npm releases only, because this step was skipped twice. |
 | PyPI | install the wheel and run the binary — **and run `scripts/check-build-features.sh` on it** | ⚠️ Built with `--features full` until 0.9.0, and `full` excludes `cloud`. Five releases of wheels had no `auth`, `vault`, `cloud` or `org`. Fixed to `--all-features`; **verify it on the first release after 0.9.0.** |
 | Homebrew / Scoop | formula and manifest bumped | |

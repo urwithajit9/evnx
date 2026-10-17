@@ -28,19 +28,30 @@
 #
 #   npm-await.sh version  <pkg> <version> [timeout_seconds]
 #   npm-await.sh dist-tag <pkg> <tag> <expected_version> [timeout_seconds]
+#   npm-await.sh exists   <pkg> <version>
 #
 #   npm-await.sh version  @evnx/cli 0.5.3
 #   npm-await.sh dist-tag @evnx/cli latest 0.5.3 120
+#   npm-await.sh exists   @evnx/cli 0.5.3          # one query, no waiting
 #
 # Environment:
 #   NPM_AWAIT_INTERVAL  seconds between polls (default 10)
 #   NPM_AWAIT_TIMEOUT   default timeout when the argument is omitted (default 300)
+#   NPM_AWAIT_DEADLINE  a moment (epoch seconds) at which every wait stops. When
+#                       set it replaces each call's own timeout, so several calls
+#                       share one budget (I-256)
 #   NPM_BIN             npm executable (default `npm`) — the seam the tests use
 #
 # Exit status:
-#   0  the registry shows what was expected
-#   1  it did not, within the timeout — the message names what was seen instead
+#   0  the registry shows what was expected (`exists`: the version is there)
+#   1  it did not, within the timeout or by the deadline — the message names what
+#      was seen instead (`exists`: the version is not there, or npm did not answer)
 #   2  called wrongly (bad subcommand or missing argument)
+#
+# ⚠️ Why a deadline (I-256). v0.10.6's five platform packages appeared between
+# 1 and 8.5 minutes after their publish, and a fixed 300 s per package failed a
+# publish that had worked. Waiting longer per package would have let five slow
+# packages take five times as long; one deadline bounds the whole phase.
 #
 # ⚠️ Every query passes `--prefer-online`. Without it npm may serve a cached
 # 404 for the whole polling window, so the loop would expire on stale data while
@@ -51,10 +62,12 @@ set -uo pipefail
 NPM_BIN=${NPM_BIN:-npm}
 INTERVAL=${NPM_AWAIT_INTERVAL:-10}
 DEFAULT_TIMEOUT=${NPM_AWAIT_TIMEOUT:-300}
+DEADLINE=${NPM_AWAIT_DEADLINE:-}
 
 die_usage() {
     printf 'usage: %s version  <pkg> <version> [timeout]\n' "${0##*/}" >&2
     printf '       %s dist-tag <pkg> <tag> <expected> [timeout]\n' "${0##*/}" >&2
+    printf '       %s exists   <pkg> <version>\n' "${0##*/}" >&2
     exit 2
 }
 
@@ -81,10 +94,21 @@ npm_field() {   # npm_field <spec> <field>
     return 0
 }
 
+# Whether this wait is over: the shared deadline when one is set, else the
+# call's own timeout.
+out_of_time() {   # out_of_time <waited> <timeout>
+    if [ -n "$DEADLINE" ]; then
+        [ "$(date +%s)" -ge "$DEADLINE" ]
+    else
+        [ "$1" -ge "$2" ]
+    fi
+}
+
 # Poll until `npm_field <spec> <field>` equals <want>.
 poll_until() {   # poll_until <spec> <field> <want> <timeout> <label>
     local spec=$1 field=$2 want=$3 timeout=$4 label=$5
-    local waited=0 got attempt=0
+    local waited=0 got attempt=0 started
+    started=$(date +%s)
 
     printf '  awaiting %s\n' "$label"
     while :; do
@@ -92,12 +116,18 @@ poll_until() {   # poll_until <spec> <field> <want> <timeout> <label>
         npm_field "$spec" "$field"   # sets FIELD_VALUE and LAST_NPM_OUTPUT
         got=$FIELD_VALUE
         if [ "$got" = "$want" ]; then
-            printf '  ✓ %s after %ss (attempt %s)\n' "$label" "$waited" "$attempt"
+            # Wall-clock seconds, so the next release shows how close it came.
+            printf '  ✓ %s after %ss (attempt %s)\n' "$label" "$(( $(date +%s) - started ))" "$attempt"
             return 0
         fi
 
-        if [ "$waited" -ge "$timeout" ]; then
-            printf '::error::%s — gave up after %ss\n' "$label" "$waited"
+        if out_of_time "$waited" "$timeout"; then
+            if [ -n "$DEADLINE" ]; then
+                printf '::error::%s — gave up at the shared deadline, after %ss\n' \
+                    "$label" "$(( $(date +%s) - started ))"
+            else
+                printf '::error::%s — gave up after %ss\n' "$label" "$waited"
+            fi
             if [ -n "$got" ]; then
                 printf '  registry says %s, expected %s\n' "$got" "$want" >&2
             else
@@ -136,6 +166,11 @@ case "$sub" in
         [ $# -ge 2 ] || die_usage
         pkg=$1; want=$2; timeout=${3:-$DEFAULT_TIMEOUT}
         poll_until "$pkg@$want" version "$want" "$timeout" "$pkg@$want to be resolvable"
+        ;;
+    exists)
+        [ $# -ge 2 ] || die_usage
+        npm_field "$1@$2" version   # sets FIELD_VALUE
+        [ "$FIELD_VALUE" = "$2" ]
         ;;
     dist-tag)
         [ $# -ge 3 ] || die_usage

@@ -191,6 +191,9 @@ jobs:
     needs: check
     if: needs.check.outputs.should_run == 'true'
     runs-on: ubuntu-latest
+    # ⚠️ The waits below can run 20 minutes a phase (I-256); a hung `npm` call
+    # must not hold a runner for the default six hours.
+    timeout-minutes: 60
 
     env:
       VERSION: ${{ needs.check.outputs.version }}
@@ -502,32 +505,20 @@ jobs:
           echo "✓ dry run passed"
 
       # ── Publish platform packages first ────────────────────────────────────
+      # ⚠️ Through the script, which asks the registry first (I-256). The loop
+      # that was here decided from `npm publish`'s error text, so a re-run
+      # failed on a package an earlier attempt had uploaded and npm was still
+      # processing — v0.10.6 could not be finished by re-running it. The script
+      # skips what is there, stops at once on an auth failure (an expired token
+      # answers 404, which made v0.4.0 look published), and otherwise waits for
+      # the version to appear. One deadline covers all five.
       - name: Publish platform packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for pkg_dir in npm-publish/packages/*/; do
-            pkg_name=$(node -p "require('./${pkg_dir}package.json').name")
-            echo "Publishing $pkg_name..."
-            # ⚠️ Only a version conflict is survivable. `|| echo` used to catch
-            # *any* non-zero exit and turn it into a green step — which is how
-            # v0.4.0 reported success while publishing nothing: the npm token had
-            # expired, and npm answers an unauthorised publish to an existing
-            # package with **404, not 403**, so the failure read like a missing
-            # package and the `||` swallowed it.
-            if out=$(cd "$pkg_dir" && npm publish --access public --provenance 2>&1); then
-              echo "$out"
-              echo "✓ $pkg_name published"
-            else
-              echo "$out"
-              if grep -qi "previously published versions\|EPUBLISHCONFLICT" <<<"$out"; then
-                echo "⚠ $pkg_name is already at this version, skipping"
-              else
-                echo "::error::$pkg_name failed to publish — see the output above"
-                exit 1
-              fi
-            fi
-          done
+          set -euo pipefail
+          export NPM_AWAIT_DEADLINE=$(( $(date +%s) + 1200 ))
+          ./scripts/npm-publish-packages.sh npm-publish/packages/*/
 
       # ── Confirm the platform packages before the wrapper points at them ────
       # ⚠️ This was `sleep 30`, and a fixed sleep cannot tell whether anything
@@ -543,21 +534,29 @@ jobs:
       # Reading the registry back also makes the loop above's "already at this
       # version, skipping" safe on a manual re-run: what is verified is the end
       # state, not whether this particular run did the publishing.
+      #
+      # ⚠️ One 20-minute deadline for all five, not 300 s each (I-256): v0.10.6's
+      # linux-x64 appeared 8.5 minutes after its publish, and the fixed budget
+      # failed a publish that had worked. Each line reports how long it took.
       - name: Await platform packages in the registry
         run: |
           set -euo pipefail
+          export NPM_AWAIT_DEADLINE=$(( $(date +%s) + 1200 ))
           for pkg in evnx-linux-x64 evnx-linux-arm64 evnx-darwin-x64 \
                      evnx-darwin-arm64 evnx-win32-x64; do
-            ./scripts/npm-await.sh version "@evnx/$pkg" "$VERSION" 300
+            ./scripts/npm-await.sh version "@evnx/$pkg" "$VERSION"
           done
           echo "✓ all five platform packages resolve at $VERSION"
 
+      # The same script, so a re-run after the wrapper went up skips it and
+      # reaches the verify step (I-256).
       - name: Publish wrapper package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          (cd npm-publish/evnx && npm publish --access public --provenance)
-          echo "✓ Published @evnx/cli@$VERSION"
+          set -euo pipefail
+          export NPM_AWAIT_DEADLINE=$(( $(date +%s) + 1200 ))
+          ./scripts/npm-publish-packages.sh npm-publish/evnx
 
       # ── Verify the registry, then install ──────────────────────────────────
       # ⚠️ The old version used `npm install -g` as the availability probe and
@@ -575,15 +574,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          # 1. The exact version must be resolvable.
-          ./scripts/npm-await.sh version @evnx/cli "$VERSION" 300
+          # 1. The exact version must be resolvable, within 20 minutes (I-256).
+          NPM_AWAIT_DEADLINE=$(( $(date +%s) + 1200 )) \
+            ./scripts/npm-await.sh version @evnx/cli "$VERSION"
 
           # 2. ⚠️ And `latest` must point at it. The old smoke test installed
           #    `@evnx/cli@$VERSION` — pinned — so it passed even when the tag
           #    still pointed at the previous release, which is precisely what a
           #    plain `npm install -g @evnx/cli` hands every user. Nothing in this
           #    workflow could observe that before.
-          ./scripts/npm-await.sh dist-tag @evnx/cli latest "$VERSION" 180
+          NPM_AWAIT_DEADLINE=$(( $(date +%s) + 600 )) \
+            ./scripts/npm-await.sh dist-tag @evnx/cli latest "$VERSION"
 
           # 3. ⚠️ The three install forms the release notes advertise, each
           #    asserted (I-253). Only `npm install -g` was checked, and it was

@@ -87,6 +87,20 @@ where there were several.
   could not see `migrate` or `backup`; the npm check runs it on the global
   install; `docs/RELEASING.md` uses it for every channel.
 
+### npm
+
+- **A slow registry no longer fails a correct npm release, and re-running a
+  failed one finishes it** (I-256). v0.10.6 uploaded all five platform packages,
+  then gave up after 300 s on one that npm showed 8.5 minutes after its publish;
+  the re-run stopped on that package, which npm was still processing, and the
+  wrapper step could not be re-run at all. Both publishes now go through
+  `scripts/npm-publish-packages.sh`: a version already in the registry is
+  skipped, an authentication failure (npm's `404 Not Found - PUT` included)
+  stops at once and names `NPM_TOKEN`, and any other failure waits for the
+  version to appear. Each phase shares one deadline — 20 minutes for the five
+  platform packages, 20 for the wrapper, 10 for `latest` — through
+  `npm-await.sh`'s new `NPM_AWAIT_DEADLINE`, and the job stops after an hour.
+
 ### Docs
 
 - README: sections for `evnx commands`, `evnx completions` and `evnx update`;
