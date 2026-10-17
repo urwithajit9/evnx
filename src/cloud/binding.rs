@@ -11,20 +11,24 @@
 //! committing it is the point: a teammate who clones the repo gets the same
 //! binding and their `evnx cloud pull` goes to the same place.
 //!
-//! # The search deliberately differs from `crate::core::config`
+//! # The search is `crate::core::config`'s
 //!
-//! That one falls back to `$HOME/.evnx.toml`. A binding must not: a vault named
-//! in the home directory would silently apply to *every* project on the machine,
-//! so a push from an unrelated directory would go somewhere surprising. This
-//! search walks upward from the current directory and **stops at a `.git`
-//! boundary**, so a parent repository's binding cannot leak into a nested one.
+//! It walks upward from the current directory and **stops at a `.git`
+//! boundary**, so a parent repository's binding cannot leak into a nested one,
+//! and it never reaches `$HOME`: a vault named in the home directory would
+//! silently apply to *every* project on the machine. (This module had its own
+//! search until core adopted the rule.)
+//!
+//! A new binding goes where `spec init` writes its contract — the config in
+//! force, else a new one at the git root (`config::project_file`, DEC-SP16) —
+//! so the two never end up in two files, one shadowing the other.
 //!
 //! # Writes preserve the file
 //!
 //! Editing goes through `toml_edit`, not deserialize-mutate-reserialize. A user's
 //! `.evnx.toml` holds their comments, their key order, and settings this module
 //! knows nothing about; rewriting it from a typed struct would quietly discard
-//! all three.
+//! all three. The bytes are written by `config::save`, atomically.
 
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
@@ -89,12 +93,13 @@ pub struct Bound {
     pub path: PathBuf,
 }
 
-/// Record a binding, creating `.evnx.toml` in `dir` if there is none to edit.
+/// Record a binding in the project's `.evnx.toml`, creating it at the git root
+/// (or in `dir`, outside a repository) if there is none to edit.
 ///
 /// Everything already in the file survives: comments, ordering, and any keys this
 /// module does not understand.
 pub fn write(dir: &Path, vault: &str) -> Result<PathBuf> {
-    let path = find_config(dir).unwrap_or_else(|| dir.join(CONFIG_FILE));
+    let path = crate::core::config::project_file(dir);
 
     let mut doc: toml_edit::DocumentMut = match std::fs::read_to_string(&path) {
         Ok(text) => text
@@ -115,8 +120,7 @@ pub fn write(dir: &Path, vault: &str) -> Result<PathBuf> {
     }
     doc["cloud"]["vault"] = toml_edit::value(vault);
 
-    std::fs::write(&path, doc.to_string())
-        .with_context(|| format!("writing {}", path.display()))?;
+    crate::core::config::save(&path, &doc.to_string())?;
     Ok(path)
 }
 
@@ -159,7 +163,7 @@ pub fn clear(dir: &Path) -> Result<Option<PathBuf>> {
         std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
         return Ok(Some(path));
     }
-    std::fs::write(&path, rest).with_context(|| format!("writing {}", path.display()))?;
+    crate::core::config::save(&path, &rest)?;
     Ok(Some(path))
 }
 
@@ -169,6 +173,20 @@ mod tests {
 
     fn tmp() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
+    }
+
+    /// DEC-SP16: from a subdirectory with no config, the binding goes to the
+    /// git root — where `spec init` writes — not a file beside the caller.
+    #[test]
+    fn t_sp16_a_new_binding_is_created_at_the_git_root() {
+        let d = tmp();
+        std::fs::create_dir(d.path().join(".git")).unwrap();
+        let sub = d.path().join("apps/web");
+        std::fs::create_dir_all(&sub).unwrap();
+        let p = write(&sub, "app/production").unwrap();
+        assert_eq!(p, d.path().join(CONFIG_FILE));
+        assert!(!sub.join(CONFIG_FILE).exists());
+        assert_eq!(read(&sub).unwrap().unwrap().vault, "app/production");
     }
 
     #[test]

@@ -22,7 +22,16 @@
 //! `scan.exclude` is exactly the setting you would least want to leak that way.
 //!
 //! Bare `evnx.toml` is no longer accepted. Two spellings needs a rule about which
-//! wins, for no gain.
+//! wins, for no gain. ⚠️ Not silently, though (I-040, DEC-SP15): a bare file
+//! the walk meets with no `.evnx.toml` beside it stops every command with exit 2
+//! and the rename to make; beside a `.evnx.toml` it is one warning.
+//!
+//! # Where it is written
+//!
+//! [`project_file`] picks the file and [`save`] writes it, for every command
+//! that records into it — `spec init`, the `[vars]` writeback `add` uses, and
+//! `cloud link`. One place decides, so a contract cannot end up in a second
+//! config that shadows the first (I-177).
 //!
 //! # Evolution
 //!
@@ -33,7 +42,7 @@
 //! **Unknown keys warn; they never fail**, for the same reason. But a typo must
 //! not be silent either, so the warning names the key.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -304,6 +313,17 @@ impl Config {
         out
     }
 
+    /// The template a command compares against: the flag, else
+    /// `[defaults] example`, else `.env.example`. One rule for validate, sync
+    /// and spec init (I-189).
+    pub fn example_path(&self, flag: Option<String>) -> String {
+        pick(
+            flag,
+            self.defaults.example.clone(),
+            ".env.example".to_string(),
+        )
+    }
+
     /// Dotted names of every key this version does not recognise.
     fn unknown_keys(&self) -> Vec<String> {
         let mut out: Vec<String> = self.extra.keys().cloned().collect();
@@ -324,6 +344,15 @@ impl Config {
         // reaches here — serde refuses the file outright with "missing field".
         for (i, rule) in self.scan.patterns.iter().flatten().enumerate() {
             out.extend(rule.extra.keys().map(|k| format!("scan.patterns[{i}].{k}")));
+        }
+        // ⚠️ Each `[vars.X]` too (I-187, DEC-SP5). `requird = false` left the
+        // variable required and `secrett = true` left it undeclared, silently.
+        for (name, var) in &self.vars {
+            out.extend(
+                var.unknown_keys()
+                    .into_iter()
+                    .map(|k| format!("vars.{name}.{k}")),
+            );
         }
         out.sort();
         out
@@ -383,6 +412,22 @@ pub struct Loaded {
 /// examined** — the project boundary — so a parent repository's policy cannot
 /// leak into a nested one, and `$HOME` is never reached.
 pub fn find(start: &Path) -> Option<PathBuf> {
+    walk(start).found
+}
+
+/// The bare spelling, read by nothing (I-040).
+const BARE_FILE: &str = "evnx.toml";
+
+/// What the upward walk met.
+struct Walk {
+    /// The `.evnx.toml` governing the start.
+    found: Option<PathBuf>,
+    /// An `evnx.toml` in the directory where the walk stopped: beside `found`,
+    /// or — with `found` empty — where a `.evnx.toml` was evidently meant to be.
+    bare: Option<PathBuf>,
+}
+
+fn walk(start: &Path) -> Walk {
     // ⚠️ Absolute first. The walk is `Path::parent`, and `Path::new(".").parent()`
     // is `""` — not the parent directory — so a relative start makes the loop
     // examine the working directory and stop, silently finding nothing above it.
@@ -399,29 +444,60 @@ pub fn find(start: &Path) -> Option<PathBuf> {
     let mut dir = absolute.as_deref().or(Some(start));
     while let Some(d) = dir {
         let candidate = d.join(PROJECT_FILE);
+        let bare = Some(d.join(BARE_FILE)).filter(|b| b.is_file());
         if candidate.is_file() {
-            return Some(candidate);
+            return Walk {
+                found: Some(candidate),
+                bare,
+            };
+        }
+        // A bare file where the walk would otherwise pass by: the config the
+        // author meant, which nothing reads (I-040). Stop here and say so.
+        if bare.is_some() {
+            return Walk { found: None, bare };
         }
         // Checked *after* looking in this directory, so a repository root
         // holding the config is still found.
         if d.join(".git").exists() {
-            return None;
+            break;
         }
         dir = d.parent();
     }
-    None
+    Walk {
+        found: None,
+        bare: None,
+    }
 }
 
 /// Load the config governing `start`.
 ///
 /// A missing file is not an error — most projects have none. A **malformed** one
 /// is: quietly ignoring a config that was written on purpose would mean running
-/// with policy the user believes is in force.
+/// with policy the user believes is in force. So is a bare `evnx.toml` with no
+/// `.evnx.toml` beside it, for the same reason (I-040, DEC-SP15).
 pub fn load(start: &Path) -> Result<Loaded> {
-    let Some(path) = find(start) else {
+    let w = walk(start);
+    let Some(path) = w.found else {
+        if let Some(bare) = w.bare {
+            bail!(
+                "{} is not read: evnx reads only .evnx.toml, with the leading dot.\n\
+                 \x20 rename it:  mv {BARE_FILE} {PROJECT_FILE}",
+                bare.display()
+            );
+        }
         return Ok(Loaded::default());
     };
-    load_file(&path)
+    let mut loaded = load_file(&path)?;
+    if let Some(bare) = w.bare {
+        loaded.warnings.insert(
+            0,
+            format!(
+                "{} is ignored: {PROJECT_FILE} beside it is the config; merge the two and remove {BARE_FILE}",
+                bare.display()
+            ),
+        );
+    }
+    Ok(loaded)
 }
 
 /// Parse one specific file. Exposed for tests and for `--config`, later.
@@ -435,7 +511,16 @@ pub fn load_file(path: &Path) -> Result<Loaded> {
     let warnings = config
         .unknown_keys()
         .into_iter()
-        .map(|key| format!("{}: unknown key `{key}` (ignored)", path.display()))
+        .map(|key| {
+            // A `[vars.X]` key has a short list to be a typo of (I-187).
+            let hint = key
+                .strip_prefix("vars.")
+                .and_then(|rest| rest.rsplit('.').next())
+                .and_then(crate::core::spec::known_key_like)
+                .map(|k| format!(" — did you mean `{k}`?"))
+                .unwrap_or_default();
+            format!("{}: unknown key `{key}` (ignored){hint}", path.display())
+        })
         .collect();
 
     Ok(Loaded {
@@ -443,6 +528,81 @@ pub fn load_file(path: &Path) -> Result<Loaded> {
         source: Some(path.to_path_buf()),
         warnings,
     })
+}
+
+/// The `.evnx.toml` to record into for `start` (SH-LOC; DEC-SP2, DEC-SP16).
+///
+/// The one [`find`] returns; when there is none, a new one at the project root
+/// — the nearest directory at or above `start` holding `.git` — and, outside a
+/// repository, in `start` itself.
+///
+/// ⚠️ Never a second file below the one in force. `spec init` used to write
+/// `./.evnx.toml` while it had loaded `../.evnx.toml`, and the new file then
+/// shadowed the root one — its `[scan]` policy stopped applying (I-177).
+pub fn project_file(start: &Path) -> PathBuf {
+    if let Some(found) = find(start) {
+        return found;
+    }
+    let absolute = std::path::absolute(start).unwrap_or_else(|_| start.to_path_buf());
+    let mut dir = Some(absolute.as_path());
+    while let Some(d) = dir {
+        if d.join(".git").exists() {
+            return d.join(PROJECT_FILE);
+        }
+        dir = d.parent();
+    }
+    absolute.join(PROJECT_FILE)
+}
+
+/// Does a `.evnx.toml`'s text declare `[vars]` already, in any form — `[vars]`,
+/// `[vars.NAME]`, an inline `vars = { … }`, a dotted `vars.A.required = …`
+/// (DEC-SP7)?
+///
+/// ⚠️ Text that does not parse is read line by line instead: refusing to add to
+/// a file nobody can read matters more than being precise about it.
+pub fn has_vars_section(text: &str) -> bool {
+    match text.parse::<toml::Table>() {
+        Ok(table) => table.contains_key("vars"),
+        Err(_) => text.lines().map(str::trim).any(|l| {
+            l == "[vars]"
+                || l.starts_with("[vars.")
+                || l.strip_prefix("vars")
+                    .is_some_and(|rest| rest.trim_start().starts_with(['=', '.']))
+        }),
+    }
+}
+
+/// Write a `.evnx.toml` — the one writer, for `spec init`, the `[vars]`
+/// writeback and `cloud link` (A-31).
+///
+/// ⛔ Text that does not parse is never written: every command reads this file
+/// first, so one bad write stops all of them (I-178, I-179). The file is left as
+/// it was and the error says why.
+///
+/// Otherwise `core::safe_write`'s contract: atomic, an existing file keeps its
+/// mode, a new one is 0644 (the file is committed), and a symlink is written
+/// through to its target (DEC-SP13). The caller decides whether to print
+/// [`super::safe_write::report`].
+pub fn save(path: &Path, text: &str) -> Result<super::safe_write::Written> {
+    if let Err(e) = text.parse::<toml::Table>() {
+        let inline = text.lines().any(|l| {
+            l.trim_start()
+                .strip_prefix("vars")
+                .is_some_and(|rest| rest.trim_start().starts_with('='))
+        });
+        bail!(
+            "changing {} would leave a file TOML refuses, so nothing was written:\n  {}{}",
+            crate::utils::ui::short_path(path),
+            e.to_string().lines().next().unwrap_or_default(),
+            if inline {
+                "\n  [vars] is an inline `vars = { … }` table, which cannot be extended:\n  \
+                 write one [vars.NAME] table per variable, then run this again."
+            } else {
+                ""
+            }
+        );
+    }
+    super::safe_write::write_shared(path, text.as_bytes())
 }
 
 #[cfg(test)]
@@ -651,6 +811,116 @@ vault = "my-api/production"
         .unwrap();
 
         assert!(find(dir.path()).is_none());
+    }
+
+    /// I-040, DEC-SP15: not silently. Alone, it stops the command and names
+    /// the rename; beside `.evnx.toml`, one warning.
+    #[test]
+    fn t_i040_a_bare_evnx_toml_is_an_error_alone_and_a_warning_beside() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        fs::write(dir.path().join("evnx.toml"), "[scan]\n").unwrap();
+        let err = format!("{:#}", load(dir.path()).unwrap_err());
+        assert!(err.contains("mv evnx.toml .evnx.toml"), "{err}");
+
+        // From below too: the walk meets it before anything else.
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        assert!(load(&dir.path().join("sub")).is_err());
+
+        write(dir.path(), "[scan]\nseverity = \"high\"\n");
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded.config.scan.severity.as_deref(), Some("high"));
+        assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
+        assert!(loaded.warnings[0].contains("evnx.toml is ignored"));
+    }
+
+    /// I-187, DEC-SP5: a typo under `[vars.X]` is named, with the key meant.
+    #[test]
+    fn t_i187_unknown_vars_keys_warn_with_the_key_meant() {
+        let dir = TempDir::new().unwrap();
+        write(
+            dir.path(),
+            "[vars.A]\nrequird = false\n\n[vars.B]\nsecrett = true\nzzz = 1\n",
+        );
+        let joined = load(dir.path()).unwrap().warnings.join("\n");
+        assert!(
+            joined.contains("`vars.A.requird` (ignored) — did you mean `required`?"),
+            "{joined}"
+        );
+        assert!(joined.contains("did you mean `secret`?"), "{joined}");
+        // Nothing close: no guess.
+        assert!(
+            joined
+                .lines()
+                .any(|l| l.ends_with("`vars.B.zzz` (ignored)")),
+            "{joined}"
+        );
+    }
+
+    /// SH-LOC (I-177, DEC-SP2, DEC-SP16): the config in force, else the git
+    /// root, else the start.
+    #[test]
+    fn t_i177_project_file_is_the_config_in_force_or_the_git_root() {
+        let dir = TempDir::new().unwrap();
+        let sub = dir.path().join("a/b");
+        fs::create_dir_all(&sub).unwrap();
+        // No repository: the start itself.
+        assert_eq!(project_file(&sub), sub.join(PROJECT_FILE));
+
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        assert_eq!(project_file(&sub), dir.path().join(PROJECT_FILE));
+
+        // A config in between is the one in force.
+        write(&dir.path().join("a"), "[scan]\n");
+        assert_eq!(project_file(&sub), dir.path().join("a").join(PROJECT_FILE));
+    }
+
+    /// DEC-SP7: one answer, from the parsed file, however `[vars]` is written.
+    #[test]
+    fn has_vars_section_sees_every_form() {
+        for yes in [
+            "[vars.A]\n",
+            "  [vars.DATABASE_URL]  \n",
+            "[vars]\n",
+            "vars = { A = { required = false } }\n",
+            "vars.A.required = false\n",
+            // Does not parse: read line by line.
+            "[vars.A]\nrequired = \n",
+            "vars = { A = \n",
+        ] {
+            assert!(has_vars_section(yes), "{yes:?}");
+        }
+        for no in [
+            "[scan]\nseverity = \"high\"\n",
+            "# [vars.A] was here\n",
+            "[varsomething]\n",
+            "[scan]\nnote = \"[vars.A]\"\n",
+            "",
+        ] {
+            assert!(!has_vars_section(no), "{no:?}");
+        }
+    }
+
+    /// The one writer refuses text that does not parse, and leaves the file.
+    #[test]
+    fn save_writes_only_what_parses() {
+        let dir = TempDir::new().unwrap();
+        let p = write(dir.path(), "vars = { A = { required = false } }\n");
+        let bad = "vars = { A = { required = false } }\n\n[vars.B]\nrequired = true\n";
+        let err = format!("{:#}", save(&p, bad).unwrap_err());
+        assert!(err.contains("nothing was written"), "{err}");
+        assert!(err.contains("inline"), "{err}");
+        assert_eq!(
+            fs::read_to_string(&p).unwrap(),
+            "vars = { A = { required = false } }\n"
+        );
+
+        let w = save(&p, "[vars.B]\nrequired = true\n").unwrap();
+        assert_eq!(w.target, p);
+        assert_eq!(
+            fs::read_to_string(&p).unwrap(),
+            "[vars.B]\nrequired = true\n"
+        );
     }
 
     #[test]

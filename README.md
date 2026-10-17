@@ -207,24 +207,43 @@ which may be the repository root rather than the folder itself.
 ### `evnx spec`
 
 Declares what each variable **is** — something `.env.example` cannot express. Written
-into `[vars]` in `.evnx.toml`, and read by `validate`, `scan` and `sync`.
+into `[vars]` in the project's `.evnx.toml`, and read by `validate`, `scan` and `sync`;
+`evnx add` records the variables it introduces there too, and never rewrites an entry.
 
 ```bash
-evnx spec init                    # infer the contract from files you already have
-evnx spec init --merge            # later: add only the names [vars] does not declare yet
+evnx spec init                            # infer the contract from .env.example and .env
+evnx spec init --env-name staging         # sample values from .env.staging
+evnx spec init --with django,postgresql   # or start from the component catalogue
+evnx spec init --stdout                   # print it instead (only TOML goes to stdout)
+evnx spec init --merge                    # later: add only the names [vars] does not declare yet
 ```
 
-`--merge` keeps every existing entry as written, and nothing is ever written that
-TOML would refuse to read.
+Every field is a guess from your files — read it before you commit it. A `format` is
+written only when the sample value passes it, so the first `validate` afterwards passes;
+any it left out are named. Names only in `.env` follow the template's, marked
+`# only in .env` with `required = false`. `--env`, `--env-name`, `--example` and
+`[defaults]` work as they do for `validate`; a file named by a flag must exist.
+
+It writes the project's one `.evnx.toml` — the one in force at or above this folder, else
+a new one at the git root — and refuses a second `[vars]` unless `--merge`, which keeps
+every existing entry as written. Nothing is ever written that TOML would refuse to read.
+Exit 0 when the contract was written or printed, 2 when nothing was written.
 
 ```toml
-[vars]
-PORT = { format = "port", description = "HTTP listen port" }
+[vars.PORT]
+format      = "port"              # url, int, port, bool, email; anything else is a regex
+description = "HTTP listen port"
 
 [vars.TENANT_A]
-secret = true                     # scan reports it; no heuristic could
-environments = ["production"]     # required in production only
+secret       = true               # scan reports it; no heuristic could
+environments = ["production"]     # required in production only — not in a plain .env either
 ```
+
+One `[vars.NAME]` table per variable is the documented form. The inline
+`PORT = { format = "port" }` form under `[vars]` is read too, but `spec init --merge` and
+`evnx add` cannot extend it. A key evnx does not know (`requird = false`) is a warning on
+every command and an error in `validate`. `bool` accepts `true yes on 1 y` and
+`false no off 0 n`, in any case; a regex is anchored only if you anchor it.
 
 `secret = true` reports a credential whose name gives nothing away. `secret = false`
 retracts a guess made from a variable's **name** — but never a match on its **value**,
@@ -826,10 +845,14 @@ keep = 3
 [cloud]
 vault = "my-app/production"    # written by `evnx cloud link`
 
-# What each variable *is* — read by validate, scan and sync.
-[vars]
-PORT       = { format = "port", description = "HTTP listen port" }
-STRIPE_KEY = { secret = true, environments = ["production"] }
+# What each variable *is* — read by validate, scan and sync. `evnx spec init` writes it.
+[vars.PORT]
+format      = "port"
+description = "HTTP listen port"
+
+[vars.STRIPE_KEY]
+secret       = true
+environments = ["production"]
 ```
 
 A setting belongs here if it is true of the **project** and would otherwise be repeated
@@ -839,7 +862,11 @@ is why `[scan] severity` is configurable and `--exit-zero` is not.
 Precedence is **flag > config > default**. Lists combine rather than replace, so
 `--exclude dist` scans with `dist` *and* the project's excludes. Settings that can weaken
 scanning are announced on every run. Unknown keys warn and never fail, so a file written
-for a later evnx keeps working on an earlier one.
+for a later evnx keeps working on an earlier one — except under `[vars.NAME]`, where
+`validate` counts one as an error: a typo there changes the contract.
+
+Only `.evnx.toml`, with the leading dot, is read. A bare `evnx.toml` stops every command
+with the rename to make; beside a `.evnx.toml` it is a warning.
 
 Full reference: <https://docs.evnx.dev/cli/reference/configuration-file>
 

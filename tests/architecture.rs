@@ -184,3 +184,46 @@ fn t_i211_one_credential_guard() {
     }
     assert!(offenders.is_empty(), "{offenders:?}");
 }
+
+/// `.evnx.toml` is located by `core::config::project_file` / `find` and written
+/// by `core::config::save` only (R-spec, A-31). Three writers — `spec init`, the
+/// `[vars]` writeback and `cloud link` — each used `std::fs::write`, none
+/// atomically, and only one refused text that does not parse.
+#[test]
+fn t_i177_evnx_toml_has_one_writer_and_one_vars_check() {
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    for f in &files {
+        let text = std::fs::read_to_string(f).unwrap();
+        let code: String = text
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let in_config = f.ends_with("core/config.rs");
+        let locates = [
+            "PROJECT_FILE",
+            "CONFIG_FILE",
+            "config::find",
+            "config::load",
+            "project_file",
+        ]
+        .iter()
+        .any(|n| code.contains(n));
+        if !in_config && locates && code.contains("fs::write(") {
+            offenders.push(format!("{}: fs::write beside a config lookup", f.display()));
+        }
+        // DEC-SP7: one `has_vars_section`; I-190 (DEC-SP14): spec's own
+        // secret-name list is gone for `core::classify`.
+        for name in ["fn has_vars_section(", "fn looks_secret(", "SECRET_WORDS"] {
+            if code.contains(name) && !(in_config && name == "fn has_vars_section(") {
+                offenders.push(format!("{} {name}", f.display()));
+            }
+        }
+    }
+    assert!(offenders.is_empty(), "second definitions: {offenders:?}");
+}

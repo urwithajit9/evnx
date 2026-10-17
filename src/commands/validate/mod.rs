@@ -194,6 +194,7 @@ pub fn run(
                 &env_path,
                 &config.ignore_issues,
             ));
+            issues.extend(checks::check_spec_keys(&spec, &config.ignore_issues));
         }
 
         issues.extend(check_extra_variables(

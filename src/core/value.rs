@@ -3,8 +3,8 @@
 //! Boolean words were recognised in three places with three lists: template's
 //! `|bool` (`true`/`yes`/`1`, everything else silently `false`, I-138), spec's
 //! `format = "bool"` (`true`/`false`/`1`/`0`/`yes`/`no`) and spec's inference
-//! (`true`/`false`/`yes`/`no`). This module holds the one list. spec moves onto
-//! it in its own patch (R-spec), where its accepted set widens.
+//! (`true`/`false`/`yes`/`no`). This module holds the one list; spec moved onto
+//! it in 0.10.6 (R-spec), which widened what `format = "bool"` accepts.
 
 /// The words read as true, in any case (DEC-T7).
 pub const TRUE_WORDS: [&str; 5] = ["true", "yes", "on", "1", "y"];

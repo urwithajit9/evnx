@@ -2352,22 +2352,39 @@ mod tests {
 #[derive(Subcommand, Debug)]
 pub enum SpecAction {
     /// Generate a first spec from this project, or from named components.
+    #[command(after_help = SPEC_INIT_EXIT_CODES)]
     Init {
         /// Build from the component catalogue instead of the project's files.
         ///
         /// Example: --with django,postgres,redis
-        #[arg(long, value_delimiter = ',')]
+        #[arg(long, value_delimiter = ',', conflicts_with_all = ["env", "env_name", "example"])]
         with: Option<Vec<String>>,
 
         /// The environment file to read sample values from.
-        #[arg(long, default_value = ".env")]
-        env: String,
+        ///
+        /// Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`. A
+        /// file named here must exist.
+        #[arg(long)]
+        env: Option<String>,
+
+        /// Read sample values from `.env.<NAME>` instead of `.env`.
+        ///
+        /// `--env-name production` reads `.env.production`. A name whose file
+        /// does not exist is an error listing the environments that do.
+        #[arg(long, value_name = "NAME", conflicts_with = "env")]
+        env_name: Option<String>,
 
         /// The template that decides which variables are in the contract.
-        #[arg(long, default_value = ".env.example")]
-        example: String,
+        ///
+        /// Defaults to `.env.example`, or `[defaults] example` from
+        /// `.evnx.toml`. A file named here must exist.
+        #[arg(long)]
+        example: Option<String>,
 
         /// Print the generated block instead of writing it.
+        ///
+        /// Only TOML goes to stdout, so `> contract.toml` gives a file every
+        /// command can read; notes and warnings go to stderr.
         #[arg(long)]
         stdout: bool,
 
@@ -2384,6 +2401,17 @@ pub enum SpecAction {
         force: bool,
     },
 }
+
+/// `spec init --help`: what each exit code means (D-131).
+const SPEC_INIT_EXIT_CODES: &str = "\
+Exit codes:
+  0  the contract was written, printed, or every variable was already declared
+  2  nothing was written: no variables to read, nothing to write, a file named
+     by --env or --example that does not exist, a file that does not parse,
+     [vars] already present without --merge, or an unknown component
+
+The project's one .evnx.toml is written: the one in force (found at or above
+this directory), else a new one at the git root.";
 
 /// `--mode` for `template`: an octal file mode, at most 0777 (DEC-T6).
 fn parse_mode(s: &str) -> Result<u32, String> {

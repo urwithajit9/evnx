@@ -737,6 +737,39 @@ pub fn check_spec_required(
         .collect()
 }
 
+/// Keys under `[vars.X]` that evnx does not understand (I-187, DEC-SP5).
+///
+/// ⚠️ An error, not a warning. `[vars.OPT] requird = false` leaves OPT
+/// required and `[vars.SEC] secrett = true` leaves SEC undeclared, so the
+/// contract `validate` is checking is not the one its author wrote. Every other
+/// command warns about the same key when it loads the config.
+pub fn check_spec_keys(spec: &Spec, ignore: &HashSet<String>) -> Vec<Issue> {
+    if ignore.contains(IssueType::UnknownSpecKey.as_str()) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for (name, declared) in spec {
+        for key in declared.unknown_keys() {
+            out.push(Issue {
+                severity: "error".to_string(),
+                issue_type: IssueType::UnknownSpecKey.as_str().to_string(),
+                variable: name.clone(),
+                message: format!("Unknown key `{key}` in [vars.{name}] — evnx ignores it"),
+                location: crate::core::config::PROJECT_FILE.to_string(),
+                suggestion: Some(match crate::core::spec::known_key_like(key) {
+                    Some(k) => format!("Did you mean `{k}`?"),
+                    None => format!(
+                        "Remove it; [vars.{name}] understands {}",
+                        crate::core::spec::VarSpec::KEYS.join(", ")
+                    ),
+                }),
+                auto_fixable: false,
+            });
+        }
+    }
+    out
+}
+
 /// Values that do not match the format their `[vars]` entry declares.
 ///
 /// ⚠️ An empty value is not reported here. It is either a missing variable —

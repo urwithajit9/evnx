@@ -8,6 +8,119 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The `spec` patch: the review fixes left after 0.10.3 (package R-spec), the
+`.evnx.toml` locator and writer that `spec`, `add` and `cloud link` each had a
+copy of, and the npm install forms that never worked (I-253).
+
+⚠️ **Some runs that passed on 0.10.5 now stop with exit 2**, and write nothing:
+
+- any command, in a project with a bare `evnx.toml` (no leading dot) and no
+  `.evnx.toml` beside it. That file was never read; now it says so. Rename it:
+  `mv evnx.toml .evnx.toml`.
+- `spec init` given `--env FILE`, `--example FILE` or `[defaults] example`
+  naming a file that does not exist (it was read as empty), `--with` together
+  with `--env`, `--example` or `--env-name` (they were ignored), or with
+  nothing to write, `--with ""` (it was exit 0).
+
+And `validate` exits 1 on an unknown key under `[vars.NAME]`.
+
+### spec
+
+#### Fixed
+
+- **A generated contract passes the project it came from** (I-180). A `format`
+  is written only when the sample value passes it; `PORT=0`, `REDIS_PORT=70000`,
+  `DEBUG=2` and a 20-digit id each got one before, and the next `validate`
+  failed four times. Each format left out is named on stderr, without the value.
+  `--with django` no longer declares `DATABASE_URL` a `url`: the catalogue's
+  sample is `sqlite:///db.sqlite3`, which has no host.
+- **It writes the project's one `.evnx.toml`** (I-177). From a subfolder it
+  loaded `../.evnx.toml` and then wrote a new `./.evnx.toml` that shadowed it.
+  It now writes the config in force — at or above the folder — or, with none,
+  creates one at the git root; the success line names it (`../.evnx.toml`).
+  The `[vars]` guard reads that file too.
+- **`--env-name` and `[defaults]`** (I-189): `--env-name staging` reads
+  `.env.staging`, and `[defaults] env_name` and `[defaults] example` apply, as
+  they do for `validate` and `sync`.
+- **A file named by a flag must exist** (I-182): `--env`, `--example` and
+  `[defaults] example` naming a missing file are exit 2. The default `.env` and
+  `.env.example` may still be absent. `--with` with `--env`, `--example` or
+  `--env-name` is refused, since `--with` reads no project file.
+- **Nothing to write is exit 2** (I-186), so `spec init --with "$X" && git add
+  .evnx.toml` does not carry on with no file.
+- **The template's order, and names only in `.env`** (I-183). Entries follow
+  `.env.example` instead of the alphabet; a name only in the environment file
+  follows them as `required = false`, marked `# only in .env` (or the file's
+  name). It used to be dropped without a word.
+- **A URL with a password is `secret = true`** (I-184): `DATABASE_URL=postgres://u:p@db/app`.
+- **`-q`** prints nothing on success (fixed in 0.10.3; the demo now checks it).
+
+#### Changed
+
+- **`secret` from a name follows `validate`'s rule** (I-190): `*_PWD` is now
+  declared secret; `SENTRY_DSN`, `*_PRIVATE` and bare `TOKEN` no longer are.
+  One rule, so the contract declares secret what `validate` demands a strong
+  value for.
+- **`format = "bool"` accepts `on`, `off`, `y` and `n`** as well, in any case —
+  the one list template's `|bool` uses. A contract that checked these values
+  now passes them.
+- **A symlinked `.evnx.toml` is written through** to its target, which stays a
+  link, with a `wrote through` notice — as `sync`, `backup` and `template` do.
+- `spec init --help` lists the exit codes, and `--stdout` says only TOML goes
+  to stdout.
+
+### Every command: reading `.evnx.toml`
+
+- **A key evnx does not know under `[vars.NAME]` is named** (I-187):
+  `requird = false` left the variable required and `secrett = true` left it
+  undeclared, silently. Every command now warns, with the key meant
+  ("did you mean `required`?"), and `validate` reports it as an error,
+  type `unknown_spec_key`, so it exits 1.
+- **A bare `evnx.toml` is not ignored silently** (I-040): with no `.evnx.toml`
+  beside it, exit 2 and the rename to make; beside one, a warning.
+
+### add
+
+- New variables are recorded with `spec init`'s inference: a format the
+  catalogue's example value fails is left out, and a URL with a password, or
+  a `*_PWD` name, is declared secret.
+- An inline `vars = { … }` table is reported as one that cannot be extended,
+  instead of as "no [vars] section".
+- The config line names the file from where you are (`../.evnx.toml` from a
+  subfolder), and a symlinked config is written through with a notice.
+
+### cloud
+
+- **`cloud link` from a subfolder with no config creates `.evnx.toml` at the
+  git root**, where `spec init` writes, not in the subfolder. With a config at
+  or above the folder, nothing changes.
+
+### npm
+
+- **`npx @evnx/cli` and `npm install --save-dev @evnx/cli` give an `evnx`
+  command** (I-253). Only `npm install -g` worked, on every release since
+  0.4.0: the five platform packages declared the `evnx` command too, and with
+  two claims npm linked neither. The wrapper alone declares it now, and the
+  release workflow checks all three install forms.
+
+### Shared code
+
+One definition each, where commands had their own:
+
+- `core::config::project_file()`: which `.evnx.toml` a command records into —
+  `spec init`, the `[vars]` writeback (`add`) and `cloud link`.
+- `core::config::save()`: the one writer for it. It refuses text that does not
+  parse and writes through `core::safe_write` (atomic, mode kept). All three
+  wrote with `std::fs::write`, and only `spec init` checked the result parsed.
+- `core::config::has_vars_section()`: one answer, from the parsed file
+  (two textual copies, which missed an inline `vars = { … }`).
+- `Config::example_path()`: the template path from `--example` and
+  `[defaults] example`, for `validate`, `sync` and `spec init`.
+- `spec::infer::guess()` and one `[vars.NAME]` renderer for `spec init` and the
+  writeback; spec's secret-name list and bool words are gone for
+  `core::classify` and `core::value`.
+- `ui::short_path()` is public: a path as the person would type it from here.
+
 ## [0.10.5] - 2026-10-17
 
 The `template` patch: the review fixes left after 0.10.3 (package R-template),

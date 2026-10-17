@@ -2,10 +2,18 @@
 ================ SP7 ================
 
 $ evnx validate
+  ✗  Unknown key `requird` in [vars.A] — evnx ignores it
+     .evnx.toml
+     →  Did you mean `required`?
+
+  ✗  Unknown key `secrett` in [vars.B] — evnx ignores it
+     .evnx.toml
+     →  Did you mean `secret`?
+
   ✗  A looks like a placeholder
      .env
 
-  1 error
+  3 errors
 
 Next steps:
   1. Review and fix the errors above
@@ -13,13 +21,16 @@ Next steps:
   3. Use --ignore issue_type to suppress specific warnings
 [stderr]
   config    .evnx.toml
+! <dir>/scenes/SP7/.evnx.toml: unknown key `vars.A.requird` (ignored) — did you mean `required`?
+! <dir>/scenes/SP7/.evnx.toml: unknown key `vars.B.secrett` (ignored) — did you mean `secret`?
 
   evnx validate  Check environment configuration
 
-Validation failed: 1 error
+Validation failed: 3 errors
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]
-  ok: KNOWN I-187: 'requird' ignored: A stays required, empty A fails, and the typo itself is never reported (decided DEC-SP5: warn, exit 1) (exit 1)
+  ok: FIXED I-187 (DEC-SP5): 'requird' is an error naming the fix (did you mean `required`?); A stays required until it is spelt right (exit 1)
+  ok: FIXED I-187: validate reports the typo itself
 
 $ evnx scan
   scanning ./.env, ./.evnx.toml
@@ -29,12 +40,14 @@ $ evnx scan
   2 files scanned
 [stderr]
   config    .evnx.toml
+! <dir>/scenes/SP7/.evnx.toml: unknown key `vars.A.requird` (ignored) — did you mean `required`?
+! <dir>/scenes/SP7/.evnx.toml: unknown key `vars.B.secrett` (ignored) — did you mean `secret`?
 
   evnx scan  Checking for exposed secrets
 
   Docs: https://docs.evnx.dev/cli/commands/scan
 [exit 0]
-KNOWN I-187: 'secrett' is ignored: B is not declared secret
+  ok: FIXED I-187: every command names 'secrett' (did you mean `secret`?); B is not declared secret until it is spelt right
 
 $ evnx validate
   ✗  B is not a match for /urll/
@@ -57,4 +70,4 @@ Validation failed: 1 error
 [exit 1]
 KNOWN I-188: 'urll' became a regex and matched nothing sensible (decided DEC-SP6: unknown name is an error)
 
-================ summary: 1 ok, 0 mismatch   ================
+================ summary: 3 ok, 0 mismatch   ================

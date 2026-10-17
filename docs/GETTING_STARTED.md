@@ -298,6 +298,21 @@ evnx validate --format json             # machine-readable
 evnx validate --format github-actions   # inline PR annotations
 ```
 
+### Declare the contract
+
+`.env.example` cannot say that a variable is optional, a port, or a secret. `[vars]` in
+`.evnx.toml` can, and `evnx spec init` writes a first one from the files you already have:
+
+```bash
+evnx spec init            # infer from .env.example and .env, write .evnx.toml
+cat .evnx.toml            # every field is a guess: read it, set required = false where it applies
+evnx validate             # now checks against the contract
+git add .evnx.toml        # commit it; the spec is the contract
+```
+
+A `format` is written only when your own value passes it, so this `validate` passes.
+Later, `evnx spec init --merge` adds only the names `[vars]` does not declare yet.
+
 ---
 
 ## Step 6 — Compare files
@@ -585,13 +600,19 @@ validate_formats = true
 [sync]
 naming_policy = "warn"
 
-# What each variable *is* — read by validate, scan and sync.
-[vars]
-PORT       = { format = "port", description = "HTTP listen port" }
-STRIPE_KEY = { secret = true, environments = ["production"] }
+# What each variable *is* — read by validate, scan and sync. `evnx spec init` writes it.
+[vars.PORT]
+format      = "port"
+description = "HTTP listen port"
+
+[vars.STRIPE_KEY]
+secret       = true
+environments = ["production"]
 ```
 
-Precedence is **flag > config > default**, and lists combine rather than replace.
+Precedence is **flag > config > default**, and lists combine rather than replace. Only
+`.evnx.toml`, with the leading dot, is read; a bare `evnx.toml` stops every command with the
+rename to make.
 
 ⚠️ **On v0.4.x and earlier this file did nothing** — the loader existed and nothing called
 it. Keys named in older copies of this page (`env_file`, `auto_fix`, `exclude_patterns`,

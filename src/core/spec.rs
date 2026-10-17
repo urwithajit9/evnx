@@ -141,10 +141,9 @@ impl Format {
             Format::Url => is_url(value),
             Format::Int => value.parse::<i64>().is_ok(),
             Format::Port => matches!(value.parse::<u32>(), Ok(p) if (1..=65535).contains(&p)),
-            Format::Bool => matches!(
-                value.to_ascii_lowercase().as_str(),
-                "true" | "false" | "1" | "0" | "yes" | "no"
-            ),
+            // The one list of boolean words (DEC-T7), as template's `|bool`:
+            // `on`, `off`, `y` and `n` count too since 0.10.6.
+            Format::Bool => super::value::parse_bool(value).is_some(),
             Format::Email => {
                 let mut parts = value.splitn(2, '@');
                 match (parts.next(), parts.next()) {
@@ -226,10 +225,31 @@ impl VarSpec {
         }
     }
 
+    /// The keys a `[vars.X]` table understands.
+    pub const KEYS: [&'static str; 5] = [
+        "required",
+        "secret",
+        "format",
+        "description",
+        "environments",
+    ];
+
     /// Keys under `[vars.X]` that evnx does not understand.
+    ///
+    /// Reported on every command through `config::load`'s warnings, and an
+    /// error in `validate` (I-187, DEC-SP5): `requird = false` left the variable
+    /// required and `secrett = true` left it undeclared, without a word.
     pub fn unknown_keys(&self) -> Vec<&str> {
         self.extra.keys().map(String::as_str).collect()
     }
+}
+
+/// The `[vars.X]` key an unknown one was probably meant to be: `requird` →
+/// `required`.
+pub fn known_key_like(unknown: &str) -> Option<&'static str> {
+    crate::utils::string::closest(unknown, VarSpec::KEYS.iter().map(|k| (*k, *k)))
+        .first()
+        .copied()
 }
 
 /// Every declared variable, keyed by name. `BTreeMap` so output is ordered.
@@ -309,6 +329,23 @@ mod tests {
             let f = Format::parse(name).unwrap_or_else(|e| panic!("{name}: {e}"));
             assert!(f.matches(good), "{name} rejected {good}");
             assert!(!f.matches(bad), "{name} accepted {bad}");
+        }
+    }
+
+    /// `format = "bool"` accepts exactly `core::value`'s words (DEC-T7), the
+    /// list template's `|bool` uses. Widened in 0.10.6: `on`, `off`, `y`, `n`.
+    #[test]
+    fn bool_is_the_shared_word_list() {
+        let f = Format::Bool;
+        for w in crate::core::value::TRUE_WORDS
+            .iter()
+            .chain(crate::core::value::FALSE_WORDS.iter())
+        {
+            assert!(f.matches(w), "{w}");
+            assert!(f.matches(&w.to_uppercase()), "{w}");
+        }
+        for v in ["2", "enabled", "t", ""] {
+            assert!(!f.matches(v), "{v:?}");
         }
     }
 

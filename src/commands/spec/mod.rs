@@ -13,9 +13,9 @@ pub mod infer;
 pub mod writeback;
 
 use anyhow::{bail, Context, Result};
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use crate::core::config;
 use crate::core::spec::{Format, VarSpec};
 use crate::core::Parser;
 use crate::docs;
@@ -23,29 +23,47 @@ use crate::schema::component;
 use crate::schema::models::VarSource;
 use crate::utils::ui;
 
+/// Where the variables come from.
+pub enum Source {
+    /// `--with django,postgresql`: the component catalogue.
+    Components(Vec<String>),
+    /// The project's own files.
+    Project(Inputs),
+}
+
+/// The project's files, resolved the way `validate` resolves them: `--env`,
+/// `--env-name`, `[defaults] env_name`; `--example`, `[defaults] example`
+/// (I-189, DEC-SP2).
+pub struct Inputs {
+    /// The environment file with the sample values.
+    pub env: String,
+    /// What named `env`, when something did. ⚠️ A named file that does not exist
+    /// is an error, not an empty file (I-182, DEC-SP8); the default `.env` may
+    /// be absent. A name (`--env-name`) was already checked when it resolved.
+    pub env_named_by: Option<&'static str>,
+    /// The template that decides membership.
+    pub example: String,
+    /// What named `example`: `--example` or `[defaults] example`.
+    pub example_named_by: Option<&'static str>,
+}
+
 /// Where a generated entry came from, for the comment above it.
 enum Origin {
     /// Named by the component catalogue.
     Component(String),
     /// Seen in the project's own files.
     Project,
+    /// In the environment file but not in the template (I-183, DEC-SP9).
+    OnlyIn(String),
 }
 
 struct Entry {
+    name: String,
     spec: VarSpec,
     origin: Origin,
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn run(
-    with: Option<Vec<String>>,
-    env: String,
-    example: String,
-    stdout: bool,
-    merge: bool,
-    force: bool,
-    verbose: bool,
-) -> Result<()> {
+pub fn run(source: Source, stdout: bool, merge: bool, force: bool, verbose: bool) -> Result<()> {
     // ⛔ I-178, DEC-SP3. `--force` appended a second `[vars]` "to be merged by
     // hand"; with any repeated name TOML refuses the file, and every command
     // that reads the config exited 2 until someone did. The flag stays hidden
@@ -60,24 +78,30 @@ pub fn run(
 
     ui::print_header("evnx spec", Some("Generate the variable contract"));
 
-    let entries = if let Some(ids) = with {
-        from_components(&ids)?
-    } else {
-        from_project(Path::new(&env), Path::new(&example))?
+    let (entries, left_out) = match source {
+        Source::Components(ids) => from_components(&ids)?,
+        Source::Project(inputs) => from_project(&inputs)?,
     };
 
+    // ⚠️ Exit 2, not 0 (I-186, DEC-SP8): `spec init --with "$X" && git add
+    // .evnx.toml` must not carry on with no file.
     if entries.is_empty() {
-        ui::warning("nothing to write — no variables found");
-        // ⚠️ `--stdout` promises TOML on stdout and nothing else (DEC-SP1), and
-        // the steps print on stdout; the warning above already says why.
-        if stdout {
-            return Ok(());
-        }
-        ui::print_next_steps(&[
-            "Run `evnx spec init --with <components>` to start from the catalogue",
-            "Or create .env.example first, with `evnx init`",
-        ]);
-        return Ok(());
+        bail!(
+            "nothing to write: --with named no variables.\n\
+             \x20 Name components (--with django,postgresql), or leave out --with to read\n\
+             \x20 .env.example and .env."
+        );
+    }
+
+    // I-180, DEC-SP4: a guessed format the project's own value fails is left
+    // out, and said, so the first `validate` after this stays green. On
+    // stderr: with `--stdout`, stdout is TOML only (DEC-SP1).
+    for (name, format) in &left_out {
+        ui::warning(format!(
+            "{name}: left out `format = \"{}\"` — the sample value is not {}",
+            format_name(format),
+            format.describe()
+        ));
     }
 
     if stdout {
@@ -85,29 +109,31 @@ pub fn run(
         return Ok(());
     }
 
-    let path = PathBuf::from(crate::core::config::PROJECT_FILE);
+    // ⚠️ The project's one `.evnx.toml` — the one in force, else a new one at
+    // the git root — never `./.evnx.toml` beside a config loaded from above
+    // (I-177, DEC-SP2).
+    let path = config::project_file(Path::new("."));
+    let shown = ui::short_path(&path);
     let written = write_into(&path, &entries, merge)?;
 
     if written == 0 {
         ui::success(format!(
-            "every variable is already declared in [vars] — {} unchanged",
-            path.display()
+            "every variable is already declared in [vars] — {shown} unchanged"
         ));
         return Ok(());
     }
     if merge && written < entries.len() {
         ui::success(format!(
-            "added {written} variable(s) to {}; {} already declared, kept as they are",
-            path.display(),
+            "added {written} variable(s) to {shown}; {} already declared, kept as they are",
             entries.len() - written
         ));
     } else {
-        ui::success(format!("wrote {written} variable(s) to {}", path.display()));
+        ui::success(format!("wrote {written} variable(s) to {shown}"));
     }
     if verbose {
-        for (name, e) in &entries {
+        for e in &entries {
             if let Origin::Component(c) = &e.origin {
-                println!("  {name}  ({c})");
+                println!("  {}  ({c})", e.name);
             }
         }
     }
@@ -122,23 +148,50 @@ pub fn run(
     Ok(())
 }
 
+/// Formats left out because the sample failed them, by variable.
+type LeftOut = Vec<(String, Format)>;
+
+/// The entry for `name` from a sample value, and the format left out if any.
+fn entry(
+    name: &str,
+    sample: &str,
+    required: bool,
+    description: Option<String>,
+) -> (VarSpec, Option<Format>) {
+    let g = infer::guess(name, sample);
+    let spec = VarSpec {
+        required: Some(required),
+        secret: g.secret.then_some(true),
+        format: g.format,
+        description,
+        ..Default::default()
+    };
+    (spec, g.left_out)
+}
+
 /// Build entries from the component catalogue — `--with django,postgres`.
 ///
 /// This is the higher-quality source: `VarMetadata` already carries `required`
 /// and `description`, so nothing has to be guessed except the format.
-fn from_components(ids: &[String]) -> Result<BTreeMap<String, Entry>> {
+fn from_components(ids: &[String]) -> Result<(Vec<Entry>, LeftOut)> {
     let collection = component::resolve(ids)?;
-    let mut out = BTreeMap::new();
+    // The catalogue has no order of its own; alphabetical, as before.
+    let mut names: Vec<&String> = collection.vars.keys().collect();
+    names.sort();
 
-    for (name, meta) in &collection.vars {
-        let spec = VarSpec {
-            required: Some(meta.required),
-            secret: infer::looks_secret(name).then_some(true),
-            format: infer::format_of(name, &meta.example_value),
-            description: meta.description.clone(),
-            environments: None,
-            ..Default::default()
-        };
+    let mut out = Vec::new();
+    let mut left_out = Vec::new();
+    for name in names {
+        let meta = &collection.vars[name];
+        let (spec, dropped) = entry(
+            name,
+            &meta.example_value,
+            meta.required,
+            meta.description.clone(),
+        );
+        if let Some(f) = dropped {
+            left_out.push((name.clone(), f));
+        }
         // ⚠️ From `meta.source`, not `component::declaring`. The resolver records
         // which of the components *the user named* contributed this variable;
         // `declaring` searches the whole catalogue and returns the first match,
@@ -151,9 +204,13 @@ fn from_components(ids: &[String]) -> Result<BTreeMap<String, Entry>> {
             }
             VarSource::BlueprintOverride => Origin::Project,
         };
-        out.insert(name.clone(), Entry { spec, origin });
+        out.push(Entry {
+            name: name.clone(),
+            spec,
+            origin,
+        });
     }
-    Ok(out)
+    Ok((out, left_out))
 }
 
 /// Build entries from `.env.example` (which names) and `.env` (what they look
@@ -163,60 +220,58 @@ fn from_components(ids: &[String]) -> Result<BTreeMap<String, Entry>> {
 /// already means: `validate` treats every line in the template as required
 /// today. So a project generating its first spec keeps the behaviour it had,
 /// and relaxes it per variable afterwards.
-fn from_project(env: &Path, example: &Path) -> Result<BTreeMap<String, Entry>> {
-    let parser = Parser::default();
-
-    let template = if example.exists() {
-        parser
-            .parse_file(example)
-            .with_context(|| format!("Failed to parse {}", example.display()))?
-            .vars
-    } else {
-        Default::default()
-    };
-
-    let actual = if env.exists() {
-        parser
-            .parse_file(env)
-            .with_context(|| format!("Failed to parse {}", env.display()))?
-            .vars
-    } else {
-        Default::default()
-    };
+///
+/// The template's order is kept, so its grouping survives; a name only in the
+/// environment file follows, `required = false`, with a comment saying so —
+/// it used to be dropped without a word (I-183, DEC-SP9).
+fn from_project(inputs: &Inputs) -> Result<(Vec<Entry>, LeftOut)> {
+    let template = read(&inputs.example, inputs.example_named_by)?;
+    let actual = read(&inputs.env, inputs.env_named_by)?;
 
     if template.is_empty() && actual.is_empty() {
         bail!(
             "found no variables in {} or {}.\n\
              \x20 Run `evnx init` first, or name the files with --env and --example.",
-            example.display(),
-            env.display()
+            inputs.example,
+            inputs.env
         );
     }
 
     // Names from the template when there is one; otherwise from `.env`.
-    let names: Vec<String> = if template.is_empty() {
-        actual.keys().cloned().collect()
+    let (names, extras): (Vec<&String>, Vec<&String>) = if template.is_empty() {
+        (actual.keys().collect(), Vec::new())
     } else {
-        template.keys().cloned().collect()
+        (
+            template.keys().collect(),
+            actual
+                .keys()
+                .filter(|k| !template.contains_key(*k))
+                .collect(),
+        )
     };
 
-    let mut out = BTreeMap::new();
-    for name in names {
+    let mut out = Vec::new();
+    let mut left_out = Vec::new();
+    let only_in = Path::new(&inputs.env)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| inputs.env.clone());
+
+    for (name, required) in names
+        .into_iter()
+        .map(|n| (n, true))
+        .chain(extras.into_iter().map(|n| (n, false)))
+    {
         // A real value says more than a template placeholder, so prefer it.
         let sample = actual
-            .get(&name)
-            .or_else(|| template.get(&name))
+            .get(name)
+            .or_else(|| template.get(name))
             .map(String::as_str)
             .unwrap_or("");
-
-        let spec = VarSpec {
-            required: Some(true),
-            secret: infer::looks_secret(&name).then_some(true),
-            format: infer::format_of(&name, sample),
-            description: None,
-            environments: None,
-            ..Default::default()
-        };
+        let (spec, dropped) = entry(name, sample, required, None);
+        if let Some(f) = dropped {
+            left_out.push((name.clone(), f));
+        }
         // ⚠️ No `# from <component>` comment here, deliberately.
         // `component::declaring` returns the **first** component in the
         // catalogue that declares a name, and common names like DATABASE_URL and
@@ -225,15 +280,33 @@ fn from_project(env: &Path, example: &Path) -> Result<BTreeMap<String, Entry>> {
         // "# from NestJS" in an Express project. When the user names the
         // components with --with, the attribution is real; here it is a guess
         // dressed as a fact.
-        out.insert(
-            name,
-            Entry {
-                spec,
-                origin: Origin::Project,
+        out.push(Entry {
+            name: name.clone(),
+            spec,
+            origin: if required {
+                Origin::Project
+            } else {
+                Origin::OnlyIn(only_in.clone())
             },
-        );
+        });
     }
-    Ok(out)
+    Ok((out, left_out))
+}
+
+/// The variables in `path`, in file order. A file nobody named may be absent
+/// and reads as empty; a named one must exist (I-182, DEC-SP8).
+fn read(path: &str, named_by: Option<&str>) -> Result<indexmap::IndexMap<String, String>> {
+    let parser = Parser::default();
+    match named_by {
+        Some(by) => Ok(parser
+            .parse_file_or_hint(path, &format!("{path} was named by {by}; check the path."))?
+            .vars),
+        None if Path::new(path).exists() => Ok(parser
+            .parse_file(path)
+            .with_context(|| format!("Failed to parse {path}"))?
+            .vars),
+        None => Ok(Default::default()),
+    }
 }
 
 /// Render the `[vars]` block.
@@ -248,28 +321,36 @@ const GENERATED: &str =
 const MERGED: &str = "\n# Added by `evnx spec init --merge` — inferred from this project's\n\
      # files; review, then commit.\n";
 
-fn render<'a>(entries: impl IntoIterator<Item = (&'a String, &'a Entry)>, header: &str) -> String {
+fn render<'a>(entries: impl IntoIterator<Item = &'a Entry>, header: &str) -> String {
     let mut s = String::from(header);
+    for e in entries {
+        let comment = match &e.origin {
+            Origin::Component(c) => Some(format!("from {c}")),
+            Origin::OnlyIn(file) => Some(format!("only in {file}")),
+            Origin::Project => None,
+        };
+        s.push_str(&render_entry(&e.name, &e.spec, comment.as_deref()));
+    }
+    s
+}
 
-    for (name, entry) in entries {
-        s.push_str(&format!("\n[vars.{name}]\n"));
-
-        if let Origin::Component(c) = &entry.origin {
-            s.push_str(&format!("# from {c}\n"));
-        }
-        if let Some(d) = &entry.spec.description {
-            s.push_str(&format!("description = {}\n", toml_string(d)));
-        }
-        s.push_str(&format!(
-            "required = {}\n",
-            entry.spec.required.unwrap_or(true)
-        ));
-        if let Some(f) = &entry.spec.format {
-            s.push_str(&format!("format = {}\n", toml_string(&format_name(f))));
-        }
-        if entry.spec.secret == Some(true) {
-            s.push_str("secret = true\n");
-        }
+/// One `[vars.NAME]` table — the one renderer, for `spec init` and the
+/// writeback `add` uses. Field order: comment, description, required, format,
+/// secret.
+pub(crate) fn render_entry(name: &str, spec: &VarSpec, comment: Option<&str>) -> String {
+    let mut s = format!("\n[vars.{name}]\n");
+    if let Some(c) = comment {
+        s.push_str(&format!("# {c}\n"));
+    }
+    if let Some(d) = &spec.description {
+        s.push_str(&format!("description = {}\n", toml_string(d)));
+    }
+    s.push_str(&format!("required = {}\n", spec.required.unwrap_or(true)));
+    if let Some(f) = &spec.format {
+        s.push_str(&format!("format = {}\n", toml_string(&format_name(f))));
+    }
+    if spec.secret == Some(true) {
+        s.push_str("secret = true\n");
     }
     s
 }
@@ -302,8 +383,8 @@ fn toml_string(s: &str) -> String {
     out
 }
 
-/// Append entries to `.evnx.toml`, creating the file if it is not there.
-/// Returns how many were written.
+/// Append entries to the project's `.evnx.toml`, creating it if it is not
+/// there. Returns how many were written.
 ///
 /// ⚠️ Appends rather than rewrites, so every other section, and every comment,
 /// survives byte for byte.
@@ -311,17 +392,13 @@ fn toml_string(s: &str) -> String {
 /// Into a file that already has `[vars]`: refused, unless `merge` — then only
 /// the names not yet declared are added (I-178, DEC-SP3).
 ///
-/// ⛔ Nothing is written that does not parse. `--force` used to append a
-/// duplicate table, and an inline `vars = { … }` slipped past the textual
-/// guard (I-179); either way the next read of the config failed in every
-/// command. The candidate text is parsed first, and a failure leaves the file
-/// as it was.
-fn write_into(path: &Path, entries: &BTreeMap<String, Entry>, merge: bool) -> Result<usize> {
-    let existing = if path.exists() {
-        std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read {}", path.display()))?
-    } else {
-        String::new()
+/// ⛔ Nothing is written that does not parse: [`config::save`] checks, and a
+/// failure leaves the file as it was (I-179).
+fn write_into(path: &Path, entries: &[Entry], merge: bool) -> Result<usize> {
+    let existing = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e).with_context(|| format!("Failed to read {}", path.display())),
     };
 
     let parsed: toml::Table = existing.parse().with_context(|| {
@@ -336,19 +413,19 @@ fn write_into(path: &Path, entries: &BTreeMap<String, Entry>, merge: bool) -> Re
         .map(|t| t.keys().cloned().collect())
         .unwrap_or_default();
 
-    let has_vars = has_vars_section(&existing) || parsed.contains_key("vars");
+    let has_vars = config::has_vars_section(&existing);
     if has_vars && !merge {
         bail!(
             "{} already has a [vars] section.\n\
              \x20 Pass --merge to add only the variables it does not declare yet;\n\
              \x20 existing entries are kept as they are.",
-            path.display()
+            ui::short_path(path)
         );
     }
 
-    let new: Vec<(&String, &Entry)> = entries
+    let new: Vec<&Entry> = entries
         .iter()
-        .filter(|(name, _)| !declared.contains(name))
+        .filter(|e| !declared.contains(&e.name))
         .collect();
     if new.is_empty() {
         return Ok(0);
@@ -363,44 +440,15 @@ fn write_into(path: &Path, entries: &BTreeMap<String, Entry>, merge: bool) -> Re
         if has_vars { MERGED } else { GENERATED },
     ));
 
-    if let Err(e) = out.parse::<toml::Table>() {
-        bail!(
-            "adding to {} would leave a file TOML refuses, so nothing was written:\n  {}\n\
-             \x20 If [vars] is an inline `vars = {{ … }}` table, it cannot be extended:\n\
-             \x20 write one [vars.NAME] table per variable, then run this again.",
-            path.display(),
-            e.to_string().lines().next().unwrap_or_default()
-        );
-    }
-
-    std::fs::write(path, out).with_context(|| format!("Failed to write {}", path.display()))?;
+    let written = config::save(path, &out)?;
+    // A symlinked config is written through to its target, and said (DEC-SP13).
+    crate::core::safe_write::report(&written);
     Ok(new.len())
-}
-
-/// Is there a `[vars.…]` or `[vars]` table already?
-///
-/// Deliberately textual: the file may not parse yet, and refusing to clobber
-/// something unreadable is more important than being precise about it.
-fn has_vars_section(src: &str) -> bool {
-    src.lines()
-        .map(str::trim)
-        .any(|l| (l.starts_with("[vars.") || l == "[vars]") && !l.starts_with('#'))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn an_existing_vars_section_is_detected_however_it_is_written() {
-        assert!(has_vars_section("[vars.A]\n"));
-        assert!(has_vars_section("  [vars.DATABASE_URL]  \n"));
-        assert!(has_vars_section("[vars]\n"));
-        assert!(!has_vars_section("[scan]\nseverity = \"high\"\n"));
-        assert!(!has_vars_section("# [vars.A] was here\n"));
-        // ⚠️ `[varsomething]` is a different table and must not trip the guard.
-        assert!(!has_vars_section("[varsomething]\n"));
-    }
 
     #[test]
     fn strings_are_escaped_so_a_description_cannot_break_the_file() {
@@ -411,10 +459,9 @@ mod tests {
 
     #[test]
     fn rendered_output_parses_back_as_a_spec() {
-        let mut e = BTreeMap::new();
-        e.insert(
-            "DATABASE_URL".to_string(),
+        let e = [
             Entry {
+                name: "DATABASE_URL".to_string(),
                 spec: VarSpec {
                     required: Some(true),
                     secret: Some(true),
@@ -424,18 +471,16 @@ mod tests {
                 },
                 origin: Origin::Component("PostgreSQL".into()),
             },
-        );
-        e.insert(
-            "MAX_RETRIES".to_string(),
             Entry {
+                name: "MAX_RETRIES".to_string(),
                 spec: VarSpec {
                     required: Some(false),
                     format: Some(Format::Int),
                     ..Default::default()
                 },
-                origin: Origin::Project,
+                origin: Origin::OnlyIn(".env".into()),
             },
-        );
+        ];
 
         let rendered = render(&e, GENERATED);
 
@@ -455,5 +500,9 @@ mod tests {
         assert!(!back.vars["MAX_RETRIES"].is_required());
         // `secret` is left unstated rather than written as false — see core::spec.
         assert_eq!(back.vars["MAX_RETRIES"].secret, None);
+        assert!(
+            rendered.contains("[vars.MAX_RETRIES]\n# only in .env\n"),
+            "{rendered}"
+        );
     }
 }

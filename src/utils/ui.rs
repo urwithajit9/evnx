@@ -818,7 +818,7 @@ pub fn config_banner(path: &std::path::Path, overrides: &[String], quiet: bool) 
 /// above rather than from here.
 ///
 /// Falls back to the absolute path when the two share no prefix.
-fn short_path(path: &std::path::Path) -> String {
+pub fn short_path(path: &std::path::Path) -> String {
     // `current_dir` is already absolute and already symlink-resolved by `getcwd`,
     // and the path being shortened came from a walk rooted at it — so the two
     // share a prefix without any further resolution. Canonicalizing again would

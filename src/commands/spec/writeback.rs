@@ -29,6 +29,7 @@ use colored::Colorize;
 use std::path::{Path, PathBuf};
 
 use crate::core::config;
+use crate::core::spec::VarSpec;
 use crate::schema::models::VarCollection;
 use crate::utils::ui;
 
@@ -42,13 +43,22 @@ pub enum Outcome {
     /// Every name was already declared.
     AlreadyDeclared,
     /// Names appended to `[vars]`.
-    Wrote { names: Vec<String>, config: PathBuf },
+    Wrote {
+        names: Vec<String>,
+        config: PathBuf,
+        /// `config` is a symlink and this file was written instead (DEC-SP13).
+        through: Option<PathBuf>,
+    },
 }
 
 /// Append any newly-introduced variables to the project's contract.
 ///
 /// Returns what it did rather than printing, so the decision about how loudly to
 /// say it stays with the command the user actually ran.
+///
+/// ⚠️ The config in force for `start` — the one `config::load` finds at or
+/// above it, which is also where `spec init` writes (SH-LOC). It never creates
+/// one: a project that has not opted in is left alone.
 pub fn record(start: &Path, vars: &VarCollection) -> Result<Outcome> {
     let loaded = config::load(start)?;
     let Some(config_path) = loaded.source else {
@@ -58,10 +68,10 @@ pub fn record(start: &Path, vars: &VarCollection) -> Result<Outcome> {
     let text = std::fs::read_to_string(&config_path)
         .with_context(|| format!("reading {}", config_path.display()))?;
 
-    // ⚠️ Textual, like `spec init`'s guard. A `[vars]` section that failed to
-    // parse still counts as present: appending beside it would produce a file
-    // nothing can read, which is worse than declining.
-    if !has_vars_section(&text) {
+    // ⚠️ Any form of `[vars]` counts, an inline table included (DEC-SP7). One
+    // that cannot be extended is then refused by `config::save` with the reason,
+    // rather than reported as "no [vars] section".
+    if !config::has_vars_section(&text) {
         return Ok(Outcome::NoSpec {
             config: config_path,
         });
@@ -83,22 +93,18 @@ pub fn record(start: &Path, vars: &VarCollection) -> Result<Outcome> {
     let mut block = String::new();
     for name in &new_names {
         let meta = &vars.vars[name];
-        block.push_str(&format!("\n[vars.{name}]\n"));
-        if let Some(d) = &meta.description {
-            block.push_str(&format!("description = {}\n", super::toml_string(d)));
-        }
-        block.push_str(&format!("required = {}\n", meta.required));
-        // The same inference `evnx spec init` uses, so a variable's entry does
-        // not depend on which command happened to introduce it.
-        if let Some(f) = super::infer::format_of(name, &meta.example_value) {
-            block.push_str(&format!(
-                "format = {}\n",
-                super::toml_string(&super::format_name(&f))
-            ));
-        }
-        if super::infer::looks_secret(name) {
-            block.push_str("secret = true\n");
-        }
+        // The same inference and the same renderer `evnx spec init` uses, so a
+        // variable's entry does not depend on which command introduced it. A
+        // format the example value fails is left out (I-180).
+        let g = super::infer::guess(name, &meta.example_value);
+        let spec = VarSpec {
+            required: Some(meta.required),
+            secret: g.secret.then_some(true),
+            format: g.format,
+            description: meta.description.clone(),
+            ..Default::default()
+        };
+        block.push_str(&super::render_entry(name, &spec, None));
     }
 
     let mut out = text;
@@ -106,12 +112,12 @@ pub fn record(start: &Path, vars: &VarCollection) -> Result<Outcome> {
         out.push('\n');
     }
     out.push_str(&block);
-    std::fs::write(&config_path, out)
-        .with_context(|| format!("writing {}", config_path.display()))?;
+    let written = config::save(&config_path, &out)?;
 
     Ok(Outcome::Wrote {
         names: new_names,
         config: config_path,
+        through: written.through_link.then_some(written.target),
     })
 }
 
@@ -134,7 +140,7 @@ pub fn report(outcome: &Outcome, verbose: bool) {
             eprintln!(
                 "  {}  {} has no [vars] section — the new variables are not under contract",
                 ui::glyph::WARN.yellow(),
-                short(config)
+                ui::short_path(config)
             );
             eprintln!("     run `evnx spec init` to declare them");
         }
@@ -143,7 +149,11 @@ pub fn report(outcome: &Outcome, verbose: bool) {
                 eprintln!("  every variable was already declared in [vars]");
             }
         }
-        Outcome::Wrote { names, config } => {
+        Outcome::Wrote {
+            names,
+            config,
+            through,
+        } => {
             // A success, not a finding: `-q` hides it (add DQ-A6).
             if ui::is_quiet() {
                 return;
@@ -152,8 +162,15 @@ pub fn report(outcome: &Outcome, verbose: bool) {
                 "  {} added {} variable(s) to [vars] in {}",
                 ui::glyph::OK.green(),
                 names.len(),
-                short(config)
+                ui::short_path(config)
             );
+            if let Some(target) = through {
+                eprintln!(
+                    "     wrote through {} -> {}",
+                    ui::short_path(config),
+                    target.display()
+                );
+            }
             if verbose {
                 for n in names {
                     eprintln!("     {n}");
@@ -161,19 +178,6 @@ pub fn report(outcome: &Outcome, verbose: bool) {
             }
         }
     }
-}
-
-fn short(p: &Path) -> String {
-    p.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| p.display().to_string())
-}
-
-/// Is there a `[vars.…]` or `[vars]` table already?
-fn has_vars_section(src: &str) -> bool {
-    src.lines()
-        .map(str::trim)
-        .any(|l| (l.starts_with("[vars.") || l == "[vars]") && !l.starts_with('#'))
 }
 
 #[cfg(test)]
@@ -278,6 +282,66 @@ mod tests {
             "hand edit lost:\n{after}"
         );
         assert_eq!(after.matches("[vars.REDIS_URL]").count(), 1);
+    }
+
+    /// I-180: the writeback uses `spec init`'s inference, so a format the
+    /// example value fails is not written.
+    #[test]
+    fn t_i180_a_format_the_example_fails_is_left_out() {
+        let d = project(Some("[vars.EXISTING]\nrequired = true\n"));
+        record(d.path(), &collection(&[("APP_PORT", "0", true)])).unwrap();
+        let after = std::fs::read_to_string(d.path().join(".evnx.toml")).unwrap();
+        assert!(after.contains("[vars.APP_PORT]"), "{after}");
+        assert!(!after.contains("format"), "{after}");
+    }
+
+    /// DEC-SP7: an inline `vars = { … }` is a spec too. It cannot be extended,
+    /// so the write is refused with the reason and the file is left alone —
+    /// it used to be reported as "no [vars] section".
+    #[test]
+    fn t_i179_an_inline_vars_table_is_refused_not_ignored() {
+        let before = "vars = { A = { required = false } }\n";
+        let d = project(Some(before));
+        let err = record(d.path(), &collection(&[("B", "x", true)])).unwrap_err();
+        assert!(format!("{err:#}").contains("inline"), "{err:#}");
+        let after = std::fs::read_to_string(d.path().join(".evnx.toml")).unwrap();
+        assert_eq!(after, before);
+    }
+
+    /// SH-LOC: from below the project root, the root's config is the one.
+    #[test]
+    fn t_i177_a_subdirectory_records_into_the_root_config() {
+        let d = project(Some("[vars.A]\nrequired = true\n"));
+        let sub = d.path().join("apps/web");
+        std::fs::create_dir_all(&sub).unwrap();
+        let out = record(&sub, &collection(&[("B", "x", true)])).unwrap();
+        assert!(matches!(out, Outcome::Wrote { .. }), "{out:?}");
+        assert!(!sub.join(".evnx.toml").exists());
+        let after = std::fs::read_to_string(d.path().join(".evnx.toml")).unwrap();
+        assert!(after.contains("[vars.B]"), "{after}");
+    }
+
+    /// DEC-SP13: a symlinked config is written through, and the outcome says
+    /// where.
+    #[cfg(unix)]
+    #[test]
+    fn t_sp13_a_symlinked_config_is_written_through() {
+        let d = project(None);
+        std::fs::write(d.path().join("real.toml"), "[vars.A]\nrequired = true\n").unwrap();
+        std::os::unix::fs::symlink("real.toml", d.path().join(".evnx.toml")).unwrap();
+        let out = record(d.path(), &collection(&[("B", "x", true)])).unwrap();
+        match out {
+            Outcome::Wrote { through, .. } => {
+                assert_eq!(through, Some(d.path().join("real.toml")))
+            }
+            other => panic!("expected Wrote, got {other:?}"),
+        }
+        assert!(std::fs::symlink_metadata(d.path().join(".evnx.toml"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        let real = std::fs::read_to_string(d.path().join("real.toml")).unwrap();
+        assert!(real.contains("[vars.B]"), "{real}");
     }
 
     #[test]

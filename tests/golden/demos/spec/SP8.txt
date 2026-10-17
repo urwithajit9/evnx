@@ -12,41 +12,25 @@ Next steps:
 
   evnx spec  Generate the variable contract
 
+! PORT: left out `format = "port"` — the sample value is not a port between 1 and 65535
+! REDIS_PORT: left out `format = "port"` — the sample value is not a port between 1 and 65535
+! DEBUG: left out `format = "bool"` — the sample value is not a boolean
+! USER_ID: left out `format = "int"` — the sample value is not an integer
   Docs: https://docs.evnx.dev/cli/commands/spec
 [exit 0]
   ok: spec init writes a contract from these values (exit 0)
+  ok: FIXED I-180 (DEC-SP4): the four formats these values fail are left out and named on stderr
 
 $ evnx validate
-  ✗  PORT is not a port between 1 and 65535
-     .env
-     →  Fix the value, or relax `format` in [vars.PORT]
-
-  ✗  REDIS_PORT is not a port between 1 and 65535
-     .env
-     →  Fix the value, or relax `format` in [vars.REDIS_PORT]
-
-  ✗  DEBUG is not a boolean
-     .env
-     →  Fix the value, or relax `format` in [vars.DEBUG]
-
-  ✗  USER_ID is not an integer
-     .env
-     →  Fix the value, or relax `format` in [vars.USER_ID]
-
-  4 errors
-
-Next steps:
-  1. Review and fix the errors above
-  2. Run with --fix to auto-correct common issues
-  3. Use --ignore issue_type to suppress specific warnings
+✓ All required variables present
+✓ All checks passed
 [stderr]
   config    .evnx.toml
 
   evnx validate  Check environment configuration
 
-Validation failed: 4 errors
   Docs: https://docs.evnx.dev/cli/commands/validate
-[exit 1]
-  ok: KNOWN I-180: the generated spec fails the project it came from (decided DEC-SP4: format only if the sample fits; this flips to exit 0) (exit 1)
+[exit 0]
+  ok: FIXED I-180 (DEC-SP4): the generated spec passes the project it came from (exit 0)
 
-================ summary: 2 ok, 0 mismatch   ================
+================ summary: 3 ok, 0 mismatch   ================

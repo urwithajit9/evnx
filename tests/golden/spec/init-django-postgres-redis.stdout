@@ -12,6 +12,7 @@ required = true
 # from Django
 required = true
 format = "url"
+secret = true
 
 [vars.DB_HOST]
 # from PostgreSQL

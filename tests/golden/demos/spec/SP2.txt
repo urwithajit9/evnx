@@ -15,7 +15,6 @@ required = true
 [vars.DATABASE_URL]
 # from Django
 required = true
-format = "url"
 
 [vars.DEBUG]
 # from Django
@@ -59,6 +58,7 @@ secret = true
 
   evnx spec  Generate the variable contract
 
+! DATABASE_URL: left out `format = "url"` — the sample value is not a URL
 [exit 0]
   ok: each entry carries its own '# from <Component>'
 
@@ -78,6 +78,7 @@ Next steps:
 
   evnx spec  Generate the variable contract
 
+! DATABASE_URL: left out `format = "url"` — the sample value is not a URL
   Docs: https://docs.evnx.dev/cli/commands/spec
 [exit 0]
   ok: writes .evnx.toml from the catalogue (exit 0)
@@ -97,7 +98,6 @@ required = true
 [vars.DATABASE_URL]
 # from Django
 required = true
-format = "url"
 
 [vars.DEBUG]
 # from Django
@@ -118,6 +118,7 @@ secret = true
 
   evnx spec  Generate the variable contract
 
+! DATABASE_URL: left out `format = "url"` — the sample value is not a URL
 [exit 0]
 KNOWN: spaces are trimmed and duplicates tolerated
 

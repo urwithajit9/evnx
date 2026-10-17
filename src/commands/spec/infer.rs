@@ -8,78 +8,73 @@
 //! project red on the next `evnx validate`, so a field is emitted only when the
 //! evidence is unambiguous — and left out otherwise, which the spec reads as
 //! "not stated".
+//!
+//! One entry point, [`guess`], for every writer of `[vars]`: `spec init` and
+//! the writeback that `add` (and later `init`) uses. A variable's entry does not
+//! depend on which command introduced it.
 
+use crate::core::classify::{self, Strictness};
 use crate::core::spec::Format;
+use crate::core::value;
 
-/// Names that are a secret by their own account, regardless of value.
-///
-/// Matched as whole `_`-separated words so `KEYCLOAK_URL` is not a "KEY" and
-/// `PASSWORD_MIN_LENGTH` is not a password.
-const SECRET_WORDS: [&str; 8] = [
-    "SECRET",
-    "PASSWORD",
-    "PASSWD",
-    "TOKEN",
-    "APIKEY",
-    "PRIVATE",
-    "CREDENTIALS",
-    "DSN",
-];
-
-/// Is this name unambiguously a secret?
-///
-/// ⚠️ The test is on the **last** `_`-separated word, not on the name
-/// containing one anywhere. `PASSWORD_MIN_LENGTH` contains "PASSWORD" and is a
-/// configuration number; declaring it `secret = true` would have `scan` treat
-/// `8` as a leaked credential.
-///
-/// The rule falls out nicely elsewhere too. `AWS_SECRET_ACCESS_KEY` ends in KEY
-/// and is a secret; `AWS_ACCESS_KEY_ID` ends in ID and is not — which is right,
-/// the ID half of an AWS pair is public. `TOKEN_EXPIRY_SECONDS` ends in SECONDS
-/// and is not a secret either.
-pub fn looks_secret(name: &str) -> bool {
-    let upper = name.to_ascii_uppercase();
-    let words: Vec<&str> = upper.split('_').collect();
-    let Some(last) = words.last() else {
-        return false;
-    };
-
-    if SECRET_WORDS.contains(last) {
-        return true;
-    }
-    // "KEY" is only a secret in a compound: `API_KEY` yes, a bare `KEY` no, and
-    // `KEYCLOAK_URL` does not reach here because its last word is URL.
-    *last == "KEY" && words.len() > 1
+/// What the evidence supports for one variable.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Guess {
+    /// A format the sample has the shape of **and** passes.
+    pub format: Option<Format>,
+    /// A format the shape suggested but the sample fails, so it was left out
+    /// (I-180, DEC-SP4). The caller says so; the value itself is never printed.
+    pub left_out: Option<Format>,
+    /// The name says credential (validate's Strict rule, DEC-SP14), or the
+    /// sample is a URL carrying a password (DEC-SP10).
+    pub secret: bool,
 }
 
-/// Guess a format from a sample value, or `None` when nothing is obvious.
+/// Guess `name`'s contract from a sample value (`""` when there is none).
 ///
-/// `name` is consulted only to break the genuine ambiguity between a port and
-/// an integer — `8080` is both, and only the name says which.
-pub fn format_of(name: &str, value: &str) -> Option<Format> {
-    let v = value.trim();
-    if v.is_empty() {
-        return None;
+/// ⚠️ A format is kept only when the sample passes [`Format::matches`] — the
+/// same check `validate` applies to the same value. Before 0.10.6 the guess was
+/// shape-only, so `PORT=0`, `REDIS_PORT=70000`, `DEBUG=2` and a 20-digit id
+/// produced a spec that failed the project it came from (I-180).
+pub fn guess(name: &str, sample: &str) -> Guess {
+    let v = sample.trim();
+    let shape = shape_of(name, v);
+    let (format, left_out) = match shape {
+        Some(f) if f.matches(v) => (Some(f), None),
+        Some(f) => (None, Some(f)),
+        None => (None, None),
+    };
+    Guess {
+        format,
+        left_out,
+        secret: classify::is_secret_name(name, Strictness::Strict)
+            || classify::url_password(v).is_some(),
     }
-    // A placeholder tells us about the template, not about the value.
-    if v.starts_with("YOUR_") || v.starts_with('<') || v.eq_ignore_ascii_case("changeme") {
+}
+
+/// The format a value has the shape of, or `None` when nothing is obvious.
+///
+/// `name` is consulted only to break the genuine ambiguity between a port, a
+/// boolean and an integer — `8080` and `1` are several things, and only the
+/// name says which.
+fn shape_of(name: &str, v: &str) -> Option<Format> {
+    // An empty value or a placeholder tells us about the template, not about
+    // the value. The Lenient level, as for every other display use (DEC-G8).
+    if v.is_empty() || classify::is_placeholder(name, v, Strictness::Lenient) {
         return None;
     }
 
+    // The shape only: `guess` then checks it with `core::spec::is_url`, so
+    // `sqlite:///db.sqlite3` (no host) is named as left out rather than kept
+    // or dropped silently.
     if v.contains("://") && !v.contains(' ') {
         return Some(Format::Url);
     }
 
     let upper = name.to_ascii_uppercase();
+    let digits = v.chars().all(|c| c.is_ascii_digit());
 
-    if matches!(
-        v.to_ascii_lowercase().as_str(),
-        "true" | "false" | "yes" | "no"
-    ) {
-        return Some(Format::Bool);
-    }
-
-    if v.chars().all(|c| c.is_ascii_digit()) {
+    if digits {
         // ⚠️ `1` and `0` are legal booleans and legal integers. The name decides,
         // and when it does not say, `int` is the safer guess: every boolean this
         // project accepts parses as an integer, but not the reverse.
@@ -90,6 +85,11 @@ pub fn format_of(name: &str, value: &str) -> Option<Format> {
             return Some(Format::Bool);
         }
         return Some(Format::Int);
+    }
+
+    // The one list of boolean words (`core::value`, DEC-T7).
+    if value::parse_bool(v).is_some() {
+        return Some(Format::Bool);
     }
 
     if let Some((local, domain)) = v.split_once('@') {
@@ -105,18 +105,26 @@ pub fn format_of(name: &str, value: &str) -> Option<Format> {
 mod tests {
     use super::*;
 
+    fn format_of(name: &str, v: &str) -> Option<Format> {
+        guess(name, v).format
+    }
+
+    /// DEC-SP14 (I-190): `secret` from the name is validate's Strict rule, so
+    /// the contract declares secret exactly what `validate` demands a strong
+    /// value for.
     #[test]
-    fn secret_words_match_whole_words_only() {
+    fn t_i190_secret_names_are_validates_strict_rule() {
         for yes in [
             "STRIPE_SECRET_KEY",
             "DB_PASSWORD",
             "GITHUB_TOKEN",
             "API_KEY",
-            "SENTRY_DSN",
             "PRIVATE_KEY",
             "AWS_SECRET_ACCESS_KEY",
+            "ADMIN_PWD",
+            "STRIPE_APIKEY",
         ] {
-            assert!(looks_secret(yes), "{yes} should look secret");
+            assert!(guess(yes, "").secret, "{yes} should look secret");
         }
         // ⚠️ The near-misses are the point. A substring match would call all of
         // these secrets and the generated spec would be noise.
@@ -129,9 +137,21 @@ mod tests {
             "AWS_ACCESS_KEY_ID",
             "TOKEN_EXPIRY_SECONDS",
             "KEY",
+            // Before DEC-SP14 spec's own list called these secret; validate's
+            // rule does not.
+            "SENTRY_DSN",
+            "TOKEN",
         ] {
-            assert!(!looks_secret(no), "{no} should not look secret");
+            assert!(!guess(no, "").secret, "{no} should not look secret");
         }
+    }
+
+    /// DEC-SP10 (I-184): the evidence is in the value.
+    #[test]
+    fn t_i184_a_url_with_a_password_is_secret() {
+        assert!(guess("DATABASE_URL", "postgres://u:p@h/d").secret);
+        assert!(guess("REPO_URL", "https://TOKEN@github.com/o/r").secret);
+        assert!(!guess("REDIS_URL", "redis://localhost:6379").secret);
     }
 
     #[test]
@@ -162,10 +182,12 @@ mod tests {
         assert_eq!(format_of("FEATURE_ENABLED", "0"), Some(Format::Bool));
     }
 
+    /// The shared words (`core::value`, DEC-T7), in any case.
     #[test]
-    fn literal_booleans_are_bools_whatever_the_name() {
-        assert_eq!(format_of("ANYTHING", "true"), Some(Format::Bool));
-        assert_eq!(format_of("ANYTHING", "NO"), Some(Format::Bool));
+    fn boolean_words_are_bools_whatever_the_name() {
+        for v in ["true", "NO", "on", "Off", "y", "N"] {
+            assert_eq!(format_of("ANYTHING", v), Some(Format::Bool), "{v}");
+        }
     }
 
     #[test]
@@ -179,7 +201,8 @@ mod tests {
     #[test]
     fn placeholders_and_blanks_infer_nothing() {
         for v in ["", "   ", "YOUR_KEY_HERE", "<your-value>", "changeme"] {
-            assert_eq!(format_of("API_KEY", v), None, "inferred from {v:?}");
+            let g = guess("API_KEY", v);
+            assert_eq!((g.format, g.left_out), (None, None), "inferred from {v:?}");
         }
     }
 
@@ -187,5 +210,48 @@ mod tests {
     fn an_opaque_string_infers_nothing() {
         assert_eq!(format_of("APP_NAME", "my-app"), None);
         assert_eq!(format_of("STRIPE_SECRET_KEY", "sk_live_abc"), None);
+    }
+
+    /// I-180, DEC-SP4 (T-SP-60): a shape the sample fails is left out, and
+    /// named for the caller. Every row would have failed `validate` before.
+    #[test]
+    fn t_i180_a_format_the_sample_fails_is_left_out() {
+        for (name, v, shape) in [
+            ("PORT", "0", Format::Port),
+            ("PORT", "65536", Format::Port),
+            ("REDIS_PORT", "70000", Format::Port),
+            ("DEBUG", "2", Format::Bool),
+            ("ENABLE_X", "7", Format::Bool),
+            ("USER_ID", "18446744073709551616000", Format::Int),
+            ("ADMIN_EMAIL", "a@.com", Format::Email),
+            // No host: not a URL by the definition `validate` uses.
+            ("DATABASE_URL", "sqlite:///db.sqlite3", Format::Url),
+        ] {
+            let g = guess(name, v);
+            assert_eq!(g.format, None, "{name}={v} kept a format");
+            assert_eq!(g.left_out, Some(shape), "{name}={v}");
+        }
+        // And the ones that fit are kept, with nothing to say.
+        for (name, v) in [("PORT", "1"), ("PORT", "65535"), ("DEBUG", "0"), ("N", "-")] {
+            assert_eq!(guess(name, v).left_out, None, "{name}={v}");
+        }
+        assert_eq!(format_of("PORT", " 8080 "), Some(Format::Port));
+    }
+
+    /// `validate` trims before it checks; the guess does too, so the two agree.
+    #[test]
+    fn a_guess_always_passes_the_check_validate_makes() {
+        for (name, v) in [
+            ("PORT", "8080"),
+            ("DEBUG", "true"),
+            ("X", "yes"),
+            ("COUNT", "42"),
+            ("URL", "amqp://h"),
+            ("MAIL", "a@b.io"),
+        ] {
+            let g = guess(name, v);
+            let f = g.format.unwrap_or_else(|| panic!("{name}={v}: no format"));
+            assert!(f.matches(v.trim()), "{name}={v}");
+        }
     }
 }

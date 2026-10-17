@@ -17,6 +17,9 @@ pub enum IssueType {
     FormatMismatch,
     /// The same key assigned more than once in one file.
     DuplicateKey,
+    /// A key under `[vars.X]` evnx does not understand — usually a typo that
+    /// leaves the variable's contract other than its author meant (I-187).
+    UnknownSpecKey,
 }
 
 impl IssueType {
@@ -33,6 +36,7 @@ impl IssueType {
             IssueType::InvalidPort => "invalid_port",
             IssueType::InvalidEmail => "invalid_email",
             IssueType::FormatMismatch => "format_mismatch",
+            IssueType::UnknownSpecKey => "unknown_spec_key",
         }
     }
 }

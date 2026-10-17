@@ -158,11 +158,7 @@ fn main() -> Result<()> {
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
             ),
-            evnx::core::config::pick(
-                example,
-                cfg.defaults.example.clone(),
-                ".env.example".to_string(),
-            ),
+            cfg.example_path(example),
             evnx::core::config::any(strict, cfg.validate.strict),
             fix,
             rotate_weak_secrets,
@@ -346,11 +342,7 @@ fn main() -> Result<()> {
                 args.env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
             ),
-            evnx::core::config::pick(
-                args.example.clone(),
-                cfg.defaults.example.clone(),
-                ".env.example".to_string(),
-            ),
+            cfg.example_path(args.example.clone()),
             args.direction,
             args.placeholder,
             cli.verbose,
@@ -529,11 +521,38 @@ fn main() -> Result<()> {
             SpecAction::Init {
                 with,
                 env,
+                env_name,
                 example,
                 stdout,
                 merge,
                 force,
-            } => commands::spec::run(with, env, example, stdout, merge, force, cli.verbose),
+            } => {
+                // ⚠️ Resolved only when the project's files are read: with
+                // `--with`, a `[defaults] env_name` whose file is missing must
+                // not stop a run that never reads it.
+                let source = match with {
+                    Some(ids) => commands::spec::Source::Components(ids),
+                    None => commands::spec::Source::Project(commands::spec::Inputs {
+                        env_named_by: env.is_some().then_some("--env"),
+                        // The same resolution as validate and sync (I-189).
+                        env: resolve_env(
+                            Path::new("."),
+                            env.as_deref(),
+                            env_name.as_deref(),
+                            cfg.defaults.env_name.as_deref(),
+                        ),
+                        example_named_by: if example.is_some() {
+                            Some("--example")
+                        } else if cfg.defaults.example.is_some() {
+                            Some("[defaults] example in .evnx.toml")
+                        } else {
+                            None
+                        },
+                        example: cfg.example_path(example),
+                    }),
+                };
+                commands::spec::run(source, stdout, merge, force, cli.verbose)
+            }
         },
 
         Commands::Surface { json, compact } => commands::surface::run(json, compact),

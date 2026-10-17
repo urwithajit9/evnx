@@ -43,17 +43,24 @@ Options:
           Example: --with django,postgres,redis
 
       --env <ENV>
-          The environment file to read sample values from
+          The environment file to read sample values from.
           
-          [default: .env]
+          Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`. A file named here must exist.
+
+      --env-name <NAME>
+          Read sample values from `.env.<NAME>` instead of `.env`.
+          
+          `--env-name production` reads `.env.production`. A name whose file does not exist is an error listing the environments that do.
 
       --example <EXAMPLE>
-          The template that decides which variables are in the contract
+          The template that decides which variables are in the contract.
           
-          [default: .env.example]
+          Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`. A file named here must exist.
 
       --stdout
-          Print the generated block instead of writing it
+          Print the generated block instead of writing it.
+          
+          Only TOML goes to stdout, so `> contract.toml` gives a file every command can read; notes and warnings go to stderr.
 
       --merge
           Add only the variables `[vars]` does not declare yet.
@@ -74,6 +81,15 @@ Options:
 
   -V, --version
           Print version
+
+Exit codes:
+  0  the contract was written, printed, or every variable was already declared
+  2  nothing was written: no variables to read, nothing to write, a file named
+     by --env or --example that does not exist, a file that does not parse,
+     [vars] already present without --merge, or an unknown component
+
+The project's one .evnx.toml is written: the one in force (found at or above
+this directory), else a new one at the git root.
 [exit 0]
   ok: the --help example names django,postgres,redis
 
@@ -92,6 +108,7 @@ required = true
 # from Django
 required = true
 format = "url"
+secret = true
 
 [vars.DB_HOST]
 # from PostgreSQL
