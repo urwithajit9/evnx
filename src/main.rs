@@ -557,7 +557,7 @@ fn main() -> Result<()> {
 
         Commands::Surface { json, compact } => commands::surface::run(json, compact),
         Commands::Completions { shell } => commands::completions::run(shell),
-        Commands::Update { check } => commands::update::run(check),
+        Commands::Update { check, json } => commands::update::run(check, json).map(verdict::finish),
     };
 
     // ⚠️ An error is exit **2**, not 1.

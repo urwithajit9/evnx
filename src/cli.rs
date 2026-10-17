@@ -1403,15 +1403,20 @@ pub enum CloudCommands {
 //
 // It matters because `cargo install evnx` is the only channel that builds with
 // `default = []`, and it is the canonical one.
+//
+// ⚠️ One cargo line, `--all-features` (DEC-SF11): a line per feature told
+// someone missing `cloud` to rebuild without `migrate` and `backup`. The table
+// names what each feature adds; `evnx commands` says which this build has.
 #[cfg_attr(
     not(all(feature = "backup", feature = "migrate", feature = "cloud")),
     command(after_help = "\
-Not built into this binary:
-  backup, restore        cargo install evnx --features backup
-  migrate                cargo install evnx --features migrate
-  auth, vault, cloud     cargo install evnx --features cloud
+This binary was built without some optional features (`evnx commands` lists
+what it has). What each one adds:
+  backup     backup, restore
+  migrate    migrate
+  cloud      auth, org, vault, cloud
 
-`cargo install evnx` compiles with no features. For all of them at once:
+`cargo install evnx` compiles with no features. For all of them:
   cargo install evnx --all-features
 
 Every prebuilt binary — Homebrew, Scoop, winget, npm, PyPI and the GitHub
@@ -2233,6 +2238,8 @@ Use 'evnx convert' without --to for interactive format selection.
     /// PyPI shipped five releases with no cloud commands at all and nobody
     /// noticed, because every check anyone ran read `--version` and stopped.
     ///
+    /// `-q` has no effect: the list is the answer.
+    ///
     /// ⓘ Named `commands`; `surface` still works, because tooling calls it that.
     #[command(name = "commands", visible_alias = "surface", after_help = docs::COMMANDS.after_help)]
     Surface {
@@ -2250,18 +2257,29 @@ Use 'evnx convert' without --to for interactive format selection.
     },
 
     /// Generate shell completions.
-    // #[command(after_help = docs::INIT.after_help)]
-    Completions { shell: String },
+    ///
+    /// The script is written to stdout and covers the commands this build has.
+    /// `-q` has no effect: the script is the answer.
+    #[command(after_help = docs::COMPLETIONS.after_help)]
+    Completions {
+        /// The shell to write the script for, in any case.
+        #[arg(value_enum, ignore_case = true)]
+        shell: clap_complete::Shell,
+    },
 
     /// Show how to upgrade, and optionally whether a newer release exists.
     ///
     /// Without `--check` this contacts nothing: it reads the path of the running
-    /// binary to work out which of the nine install channels put it there, and
-    /// prints that channel's upgrade command.
+    /// binary, and the files pip leaves beside it, to work out which channel
+    /// installed it — cargo, Homebrew, Scoop, winget, npm, pip or the install
+    /// script — and prints that channel's upgrade command. Where the install
+    /// script and pip share a folder and nothing tells them apart, it prints
+    /// both; where it cannot tell at all, every channel's.
     ///
-    /// ⚠️ evnx never replaces its own binary. Nine package managers ship it, and a
-    /// self-updating binary fights whichever one owns the file — Homebrew and
-    /// winget would then report a version they did not install.
+    /// ⚠️ evnx never replaces its own binary. Each package manager owns the file
+    /// it installed, and a self-updating binary fights it — Homebrew and winget
+    /// would then report a version they did not install.
+    #[command(after_help = docs::UPDATE.after_help)]
     Update {
         /// Ask api.github.com for the latest release.
         ///
@@ -2272,6 +2290,14 @@ Use 'evnx convert' without --to for interactive format selection.
         /// `cargo install evnx` has none, and says so.
         #[arg(long)]
         check: bool,
+
+        /// With `--check`: the answer as JSON on stdout, for scripts and CI.
+        ///
+        /// `schema` (1), `installed`, `latest`, `status` (`current`, `behind` or
+        /// `ahead`), `channel`, `command` (null when evnx cannot name one) and
+        /// `release_url`. The exit code is the same as without it.
+        #[arg(long, requires = "check")]
+        json: bool,
     },
 }
 

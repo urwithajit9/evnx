@@ -160,7 +160,8 @@ pub enum ApiError {
     /// Deliberately holds a flattened `reason` rather than the `reqwest::Error`
     /// as a `#[source]`. reqwest wraps hyper wraps the OS error, so keeping the
     /// chain makes a refused connection print as five nested lines, four of them
-    /// noise, with the only actionable one last. See [`transport_reason`].
+    /// noise, with the only actionable one last. See
+    /// [`crate::core::http::transport_reason`].
     #[error("could not reach {server}: {reason}")]
     Transport {
         /// Server that could not be reached.
@@ -264,11 +265,7 @@ impl Client {
     /// that legitimately take longer than a control-plane call.
     pub fn with_timeout(server: impl Into<String>, timeout: Duration) -> Result<Self, ApiError> {
         let server = server.into();
-        let http = reqwest::blocking::Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(timeout)
-            .user_agent(concat!("evnx/", env!("CARGO_PKG_VERSION")))
-            .build()
+        let http = crate::core::http::client(timeout, Some(CONNECT_TIMEOUT))
             .context("building the HTTP client")?;
         let store = Store::load().context("reading the credential store")?;
 
@@ -353,7 +350,7 @@ impl Client {
             .send()
             .map_err(|e| ApiError::Transport {
                 server: self.server.clone(),
-                reason: transport_reason(&e),
+                reason: crate::core::http::transport_reason(&e, REQUEST_TIMEOUT),
             })?;
         self.decode(resp, "/health")
     }
@@ -371,7 +368,7 @@ impl Client {
             .send()
             .map_err(|e| ApiError::Transport {
                 server: self.server.clone(),
-                reason: transport_reason(&e),
+                reason: crate::core::http::transport_reason(&e, REQUEST_TIMEOUT),
             })?;
         self.decode(resp, path)
     }
@@ -395,7 +392,7 @@ impl Client {
                 .send()
                 .map_err(|e| ApiError::Transport {
                     server: self.server.clone(),
-                    reason: transport_reason(&e),
+                    reason: crate::core::http::transport_reason(&e, REQUEST_TIMEOUT),
                 })
         };
 
@@ -418,7 +415,7 @@ impl Client {
             .map(|b| b.to_vec())
             .map_err(|e| ApiError::Transport {
                 server: self.server.clone(),
-                reason: transport_reason(&e),
+                reason: crate::core::http::transport_reason(&e, REQUEST_TIMEOUT),
             })
     }
 
@@ -510,7 +507,7 @@ impl Client {
             .send()
             .map_err(|e| ApiError::Transport {
                 server: self.server.clone(),
-                reason: transport_reason(&e),
+                reason: crate::core::http::transport_reason(&e, REQUEST_TIMEOUT),
             })?;
 
         if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
@@ -527,7 +524,7 @@ impl Client {
             .send()
             .map_err(|e| ApiError::Transport {
                 server: self.server.clone(),
-                reason: transport_reason(&e),
+                reason: crate::core::http::transport_reason(&e, REQUEST_TIMEOUT),
             })?;
         self.decode(resp, path)
     }
@@ -695,27 +692,6 @@ impl Client {
             },
         }
     }
-}
-
-/// Shortest useful description of a transport failure.
-///
-/// `reqwest::Error`'s own `Display` is "error sending request for url (...)",
-/// which repeats the URL the caller already knows and says nothing about the
-/// cause. The cause sits at the end of a chain through hyper down to the OS
-/// error, so this walks to the root and reports that instead — "Connection
-/// refused (os error 111)" rather than four wrappers around it.
-///
-/// Timeouts are special-cased because their root cause is an opaque internal
-/// type, and because "timed out" is what the user needs to read.
-fn transport_reason(e: &reqwest::Error) -> String {
-    if e.is_timeout() {
-        return format!("timed out after {}s", REQUEST_TIMEOUT.as_secs());
-    }
-    let mut root: &dyn std::error::Error = e;
-    while let Some(next) = root.source() {
-        root = next;
-    }
-    root.to_string()
 }
 
 /// An `/api/v1/…` path built from `segments`, each one percent-encoded so it

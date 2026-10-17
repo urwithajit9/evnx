@@ -64,24 +64,13 @@ fn t_i231_audit_window_never_panics() {
 /// `delete-account` has no `--yes` on purpose (typed email) and is not listed.
 #[test]
 fn t_i213_every_yes_has_the_short_y() {
-    let p = Project::new();
-    let out = evnx(&p, &["commands", "--json"]);
-    out.assert_code(0);
-    let json: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
     let mut missing = Vec::new();
-    for c in json["commands"].as_array().unwrap() {
-        for a in c["args"].as_array().unwrap() {
-            if a["long"] == "yes" && a["short"] != "y" {
-                missing.push(
-                    c["path"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|s| s.as_str().unwrap())
-                        .collect::<Vec<_>>()
-                        .join(" "),
-                );
-            }
+    for c in support::surface::entries() {
+        if c.args()
+            .iter()
+            .any(|a| a["long"] == "yes" && a["short"] != "y")
+        {
+            missing.push(c.name());
         }
     }
     assert!(missing.is_empty(), "--yes without -y: {missing:?}");

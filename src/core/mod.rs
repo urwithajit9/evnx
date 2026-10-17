@@ -1,4 +1,5 @@
 pub mod args;
+pub mod build;
 pub mod classify;
 pub mod config;
 pub mod converter;
@@ -7,6 +8,8 @@ pub mod envfile;
 pub mod envsource;
 pub mod gitignore;
 pub mod glob;
+#[cfg(feature = "net")]
+pub mod http;
 pub mod mask;
 pub mod parser;
 pub mod permissions;

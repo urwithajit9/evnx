@@ -18,6 +18,8 @@
 //! used to sit here fed keys through `write_stdin`, which dialoguer refuses, so
 //! they could not pass even when run by hand (T-001).
 
+mod support;
+
 use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
 use tempfile::TempDir;
@@ -1525,30 +1527,10 @@ fn a_confirmation_without_a_terminal_says_add_yes() {
 #[cfg(unix)]
 #[test]
 fn a_closed_stdout_exits_141_without_a_panic() {
-    use std::io::Read;
-    use std::process::{Command, Stdio};
-
     let d = TempDir::new().unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_evnx"))
-        .current_dir(d.path())
-        .args(["init", "--with", "nextjs", "--yes"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    drop(child.stdout.take()); // nobody reads stdout
-    let mut stderr = String::new();
-    child
-        .stderr
-        .take()
-        .unwrap()
-        .read_to_string(&mut stderr)
-        .unwrap();
-    let status = child.wait().unwrap();
-
-    assert_eq!(status.code(), Some(141), "stderr: {stderr}");
-    assert!(!stderr.contains("panicked"), "{stderr}");
+    let out = support::run::closed_stdout(d.path(), &["init", "--with", "nextjs", "--yes"]);
+    assert_eq!(out.code, Some(141), "stderr: {}", out.stderr);
+    assert!(!out.stderr.contains("panicked"), "{}", out.stderr);
 }
 
 /// N-03 (fixed in 0.10.1, group G4): a later `!.env` in `.gitignore` is reported.

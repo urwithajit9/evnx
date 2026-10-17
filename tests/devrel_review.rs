@@ -156,6 +156,9 @@ fn f21_validate_fix_exits_0_when_it_fixed_everything() {
 /// centralised mapping `main` gained in v0.5.0. So it was the one command that
 /// answered an unusable argument with 1 — the code every other command reserves
 /// for a real finding.
+///
+/// Since DEC-SF6 the shell is a value list, so clap refuses an unknown one
+/// itself: still 2, and clap's message names every value.
 #[test]
 fn completions_rejects_an_unknown_shell_with_2() {
     let assert = cargo_bin_cmd!("evnx")
@@ -164,16 +167,17 @@ fn completions_rejects_an_unknown_shell_with_2() {
         .code(2);
 
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
-    assert!(stderr.contains("No verdict"), "{stderr}");
-    assert!(
-        stderr.contains("bash"),
-        "the error should name the valid shells: {stderr}"
-    );
+    for shell in ["bash", "elvish", "fish", "powershell", "zsh"] {
+        assert!(
+            stderr.contains(shell),
+            "the error should name the valid shells: {stderr}"
+        );
+    }
 }
 
 #[test]
 fn completions_still_generates_for_a_known_shell() {
-    for shell in ["bash", "zsh", "fish", "powershell"] {
+    for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
         let assert = cargo_bin_cmd!("evnx")
             .args(["completions", shell])
             .assert()

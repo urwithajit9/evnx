@@ -29,6 +29,8 @@
 //! | [`renderers`] | run one scenario through two output formats and assert the same exit code and the same files changed | T-SHARE-33 |
 //! | [`pty`] | drive interactive prompts through a real pseudo-terminal (Unix only) | T-ADD-00 |
 //! | [`demo`] | run a training demo scene from `tests/demos/` and lock it to a golden file (Linux only) | P0-3, U0 |
+//! | [`surface`] | `evnx commands --json` parsed from real stdout: every command path and its arguments | T-SHARE-46 |
+//! | [`install`] | the binary placed in a fake install location (`.cargo/bin`, a venv), for `evnx update` | T-SHARE-45 |
 //!
 //! Each test file is its own crate and uses only part of this module, so
 //! `dead_code` and `unused_imports` (for the re-exports below) are allowed here
@@ -39,12 +41,14 @@
 pub mod cloud;
 #[cfg(target_os = "linux")]
 pub mod demo;
+pub mod install;
 pub mod project;
 #[cfg(unix)]
 pub mod pty;
 pub mod renderers;
 pub mod run;
 pub mod snapshot;
+pub mod surface;
 
 pub use project::Project;
 pub use run::{run, run_with, Output};

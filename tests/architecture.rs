@@ -227,3 +227,68 @@ fn t_i177_evnx_toml_has_one_writer_and_one_vars_check() {
     }
     assert!(offenders.is_empty(), "second definitions: {offenders:?}");
 }
+
+/// Source lines outside comments and the `#[cfg(test)]` tail of a file.
+fn code_lines(text: &str) -> Vec<(usize, &str)> {
+    text.split("#[cfg(test)]")
+        .next()
+        .unwrap_or_default()
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| !l.trim_start().starts_with("//"))
+        .collect()
+}
+
+/// T-SF-50, A-35, DEC-SF9: one place builds an HTTP client and words a
+/// transport failure. `update --check` and `cloud` each had a builder and a
+/// `transport_reason`, so a fix for the proxy CA (I-192) would have had to be
+/// made twice and could land once.
+///
+/// ⚠️ `migrate`'s GitHub destination still calls `Client::new()` with no
+/// timeout. Moving it adds one, which changes `migrate`: recorded in R-migrate.
+#[test]
+fn t_sf50_one_http_client_builder_and_one_transport_reason() {
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    for f in files.iter().filter(|f| !f.ends_with("core/http.rs")) {
+        let text = std::fs::read_to_string(f).unwrap();
+        for (n, l) in code_lines(&text) {
+            if l.contains("Client::builder(") || l.contains("fn transport_reason(") {
+                offenders.push(format!("{}:{}", f.display(), n + 1));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "HTTP clients outside core::http: {offenders:?}"
+    );
+}
+
+/// DEC-SF2, DEC-SF11, I-199: every `cargo install evnx` command evnx prints
+/// builds every feature. Five copies carried three flag sets, and the upgrade
+/// one (`--features cloud`) dropped `migrate` and `backup`. A bare
+/// `` `cargo install evnx` `` (naming the default build) is not a command
+/// evnx tells anyone to run, and stays allowed.
+#[test]
+fn t_dec_sf11_every_cargo_line_builds_every_feature() {
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    for f in &files {
+        let text = std::fs::read_to_string(f).unwrap();
+        for (n, l) in code_lines(&text) {
+            let mut rest = l;
+            while let Some(at) = rest.find("cargo install evnx --") {
+                rest = &rest[at + "cargo install evnx --".len()..];
+                if !rest.starts_with("all-features") {
+                    offenders.push(format!("{}:{}: {}", f.display(), n + 1, l.trim()));
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "cargo lines without --all-features: {offenders:?}"
+    );
+}

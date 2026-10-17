@@ -46,6 +46,25 @@ fn is_broken_pipe_panic(message: &str) -> bool {
         && (message.contains("Broken pipe") || message.contains("os error 232"))
 }
 
+/// Write a command's answer to stdout in full, ending quietly with
+/// [`BROKEN_PIPE_EXIT`] if the reader has gone.
+///
+/// For output that does not pass through `println!`, whose panic the hook
+/// above matches. clap_complete wrote completion scripts to stdout itself and
+/// panicked with its own message, "failed to write completion file: Broken
+/// pipe", so `evnx completions bash | head -1` still exited 101 after the hook
+/// was in (I-185). Build the bytes, then write them here.
+pub fn write_stdout(bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    match out.write_all(bytes).and_then(|()| out.flush()) {
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+            std::process::exit(BROKEN_PIPE_EXIT)
+        }
+        other => other,
+    }
+}
+
 /// Give the cursor back if the user presses Ctrl-C at a prompt.
 ///
 /// dialoguer hides the cursor while a menu is open and shows it again when the

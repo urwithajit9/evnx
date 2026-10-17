@@ -21,45 +21,88 @@
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use serde::Serialize;
 use std::time::Duration;
 
 use super::Channel;
+use crate::core::http;
+use crate::core::verdict::Verdict;
+use crate::utils::ui;
 
 /// Where the tag lives. Unauthenticated, and no identifiers are sent.
 const LATEST_RELEASE: &str = "https://api.github.com/repos/urwithajit9/evnx/releases/latest";
 
+/// Shown when a release carries no `html_url`.
+const RELEASES_PAGE: &str = "https://github.com/urwithajit9/evnx/releases/latest";
+
 /// Short, because this is interactive and a hang is worse than a failure.
 const TIMEOUT: Duration = Duration::from_secs(10);
+
+/// `--json`'s shape. Bumped when a consumer would notice (S-SF4).
+const SCHEMA: u32 = 1;
 
 #[derive(serde::Deserialize)]
 struct Release {
     /// `v0.6.0`.
     tag_name: String,
-    html_url: String,
+    #[serde(default)]
+    html_url: Option<String>,
 }
 
-pub fn run(channel: Channel) -> Result<()> {
-    let current = env!("CARGO_PKG_VERSION");
+/// Where to ask.
+///
+/// ⚠️ `EVNX_UPDATE_URL` is read only by a **debug** build (DEC-SF10), so the
+/// tests can answer from a loopback server. A release binary always asks
+/// GitHub, and nothing in its environment can point it elsewhere.
+fn latest_release_url() -> String {
+    #[cfg(debug_assertions)]
+    if let Ok(url) = std::env::var("EVNX_UPDATE_URL") {
+        if !url.is_empty() {
+            return url;
+        }
+    }
+    LATEST_RELEASE.to_string()
+}
 
-    println!();
+pub fn run(channel: Channel, json: bool) -> Result<Verdict> {
+    let quiet = ui::is_quiet();
+
     // Say what is about to happen before it happens: this is the only network
-    // request in the command, and a secrets tool should not surprise anyone with one.
-    println!(
-        "  {} api.github.com for the latest release…",
-        "asking".dimmed()
-    );
+    // request in the command, and a secrets tool should not surprise anyone with
+    // one. On stderr, so stdout is only the answer (`--json` is parsed).
+    if !quiet {
+        eprintln!();
+        eprintln!(
+            "  {} api.github.com for the latest release…",
+            "asking".dimmed()
+        );
+    }
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(TIMEOUT)
-        // GitHub rejects requests with no user agent.
-        .user_agent(concat!("evnx/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .context("building the HTTP client")?;
+    let report = Report::new(env!("CARGO_PKG_VERSION"), &fetch()?, channel);
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report.payload())?);
+    } else if quiet {
+        // DEC-SF5: the status line and the command.
+        println!("{}", report.status_line());
+        if report.status == Ordering::Behind {
+            super::print_commands_only(channel);
+        }
+    } else {
+        report.print();
+    }
+    Ok(report.verdict())
+}
 
-    let resp = client
-        .get(LATEST_RELEASE)
-        .send()
-        .map_err(|e| anyhow::anyhow!("could not reach api.github.com: {}", transport_reason(&e)))?;
+/// The one request: the latest release, or why there is no answer.
+fn fetch() -> Result<Release> {
+    let client = http::client(TIMEOUT, None).context("building the HTTP client")?;
+
+    let resp = client.get(latest_release_url()).send().map_err(|e| {
+        anyhow::anyhow!(
+            "could not reach api.github.com: {}",
+            http::transport_reason(&e, TIMEOUT)
+        )
+    })?;
 
     // ⚠️ 403 here is almost always the unauthenticated rate limit — 60 requests an
     // hour per IP — not a permissions problem. Saying "forbidden" would send someone
@@ -81,40 +124,96 @@ pub fn run(channel: Channel) -> Result<()> {
         );
     }
 
-    let release: Release = resp
-        .json()
-        .context("reading the release information from api.github.com")?;
+    resp.json()
+        .context("reading the release information from api.github.com")
+}
 
-    // The tag carries a leading `v`; the crate version does not.
-    let latest = release.tag_name.trim_start_matches('v');
+/// The answer, apart from how it is printed.
+struct Report {
+    installed: &'static str,
+    latest: String,
+    status: Ordering,
+    channel: Channel,
+    release_url: String,
+}
 
-    println!();
-    println!("  installed   {}", current.bold());
-    println!("  latest      {}", latest.bold());
-    println!();
+#[derive(Serialize)]
+struct Payload<'a> {
+    schema: u32,
+    installed: &'a str,
+    latest: &'a str,
+    /// `current`, `behind` or `ahead`.
+    status: &'static str,
+    channel: &'static str,
+    /// `null` when evnx cannot name one command (see [`Channel::candidates`]).
+    command: Option<&'static str>,
+    release_url: &'a str,
+}
 
-    match compare(current, latest) {
-        Ordering::UpToDate => {
-            println!("  {} you are on the latest release.", "✓".green());
+impl Report {
+    fn new(installed: &'static str, release: &Release, channel: Channel) -> Report {
+        // The tag carries a leading `v`; the crate version does not.
+        let latest = release.tag_name.trim_start_matches('v').to_string();
+        Report {
+            status: compare(installed, &latest),
+            installed,
+            latest,
+            channel,
+            release_url: release
+                .html_url
+                .clone()
+                .unwrap_or_else(|| RELEASES_PAGE.to_string()),
         }
-        Ordering::Behind => {
-            println!("  {} a newer release is available.", "→".cyan());
+    }
+
+    /// DEC-SF4: 1 when a newer release exists, the answer a script asks for.
+    fn verdict(&self) -> Verdict {
+        match self.status {
+            Ordering::Behind => Verdict::Findings,
+            Ordering::UpToDate | Ordering::Ahead => Verdict::Clean,
+        }
+    }
+
+    fn payload(&self) -> Payload<'_> {
+        Payload {
+            schema: SCHEMA,
+            installed: self.installed,
+            latest: &self.latest,
+            status: match self.status {
+                Ordering::UpToDate => "current",
+                Ordering::Behind => "behind",
+                Ordering::Ahead => "ahead",
+            },
+            channel: self.channel.id(),
+            command: self.channel.upgrade_command(),
+            release_url: &self.release_url,
+        }
+    }
+
+    fn status_line(&self) -> String {
+        match self.status {
+            Ordering::UpToDate => format!("{} you are on the latest release.", "✓".green()),
+            Ordering::Behind => format!("{} a newer release is available.", "→".cyan()),
+            // A development build, or a tag that has not been published yet.
+            Ordering::Ahead => format!(
+                "{} this build is newer than the latest release.",
+                "note:".yellow()
+            ),
+        }
+    }
+
+    fn print(&self) {
+        println!();
+        println!("  installed   {}", self.installed.bold());
+        println!("  latest      {}", self.latest.bold());
+        println!();
+        println!("  {}", self.status_line());
+
+        if self.status == Ordering::Behind {
             println!();
-            match channel.upgrade_command() {
-                Some(command) => {
-                    println!("  Installed via {}. Upgrade with:", channel.label().cyan());
-                    println!();
-                    println!("      {}", command.bold());
-                }
-                None => {
-                    println!(
-                        "  Run {} to see the upgrade commands.",
-                        "evnx update".cyan()
-                    );
-                }
-            }
+            super::print_upgrade(self.channel, false);
             println!();
-            println!("  Release notes: {}", release.html_url.dimmed());
+            println!("  Release notes: {}", self.release_url.dimmed());
             // ⚠️ Said every time, because it is the one way this output can mislead.
             println!();
             println!(
@@ -123,19 +222,11 @@ pub fn run(channel: Channel) -> Result<()> {
             );
             println!("  command above cannot find it yet, it has not propagated.");
         }
-        Ordering::Ahead => {
-            // A development build, or a tag that has not been published yet.
-            println!(
-                "  {} this build is newer than the latest release.",
-                "note:".yellow()
-            );
-        }
+        println!();
     }
-    println!();
-
-    Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Ordering {
     UpToDate,
     Behind,
@@ -170,22 +261,6 @@ fn compare(current: &str, latest: &str) -> Ordering {
         }
     }
     Ordering::UpToDate
-}
-
-/// Shortest useful description of a transport failure.
-///
-/// Same reasoning as `cloud::client::transport_reason`: reqwest wraps hyper wraps
-/// the OS error, so the default `Display` prints five nested lines with the only
-/// actionable one last.
-fn transport_reason(e: &reqwest::Error) -> String {
-    if e.is_timeout() {
-        return format!("timed out after {}s", TIMEOUT.as_secs());
-    }
-    let mut source: &dyn std::error::Error = e;
-    while let Some(next) = source.source() {
-        source = next;
-    }
-    source.to_string()
 }
 
 #[cfg(test)]
@@ -229,5 +304,57 @@ mod tests {
         // A pre-release suffix is ignored rather than rejected.
         assert_eq!(cmp("0.7.0-rc1", "0.7.0"), "same");
         assert_eq!(cmp("garbage", "0.7.0"), "behind");
+    }
+
+    /// T-SF-41, T-063: a fourth component is ignored, and so is a pre-release
+    /// suffix on the latest tag.
+    #[test]
+    fn four_parts_and_a_pre_release_latest() {
+        assert_eq!(cmp("0.7.0", "0.7.0.1"), "same");
+        assert_eq!(cmp("0.7.0", "0.7.1-rc1"), "behind");
+    }
+
+    fn release(tag: &str, url: Option<&str>) -> Release {
+        Release {
+            tag_name: tag.to_string(),
+            html_url: url.map(str::to_string),
+        }
+    }
+
+    /// I-198, DEC-SF4: only "behind" is a finding; the `v` is dropped before
+    /// comparing; a release with no page gets the releases list.
+    #[test]
+    fn t_i198_only_behind_is_a_finding() {
+        let behind = Report::new("0.6.0", &release("v0.7.0", None), Channel::Cargo);
+        assert_eq!(behind.latest, "0.7.0");
+        assert_eq!(behind.verdict(), Verdict::Findings);
+        assert_eq!(behind.release_url, RELEASES_PAGE);
+        for tag in ["v0.6.0", "0.6.0", "v0.5.9"] {
+            let r = Report::new("0.6.0", &release(tag, Some("u")), Channel::Cargo);
+            assert_eq!(r.verdict(), Verdict::Clean, "{tag}");
+        }
+    }
+
+    /// S-SF4: the JSON fields, with `command` null where evnx cannot name one.
+    #[test]
+    fn t_i198_the_payload_names_status_channel_and_command() {
+        let r = Report::new("0.6.0", &release("v0.7.0", Some("u")), Channel::Cargo);
+        let v = serde_json::to_value(r.payload()).unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "schema": 1,
+                "installed": "0.6.0",
+                "latest": "0.7.0",
+                "status": "behind",
+                "channel": "cargo",
+                "command": "cargo install evnx --all-features --force",
+                "release_url": "u",
+            })
+        );
+        for channel in [Channel::ScriptOrPip, Channel::Unknown] {
+            let r = Report::new("0.6.0", &release("v0.7.0", Some("u")), channel);
+            assert!(serde_json::to_value(r.payload()).unwrap()["command"].is_null());
+        }
     }
 }

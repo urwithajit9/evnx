@@ -17,8 +17,6 @@ mod support;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use support::{run, Project};
-
 const GLOBAL_FLAGS: &[&str] = &["quiet", "verbose", "no-color", "help", "version", "server"];
 
 fn is_word(w: &str) -> bool {
@@ -40,26 +38,14 @@ fn rust_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
 
 #[test]
 fn t_share_49_quoted_commands_exist() {
-    let p = Project::new();
-    let out = run(p.path(), &["commands", "--json"]);
-    out.assert_code(0);
-    let json: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
-
     let mut flags: HashMap<Vec<String>, HashSet<String>> = HashMap::new();
-    for c in json["commands"].as_array().unwrap() {
-        let path: Vec<String> = c["path"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|s| s.as_str().unwrap().to_string())
-            .collect();
-        let longs = c["args"]
-            .as_array()
-            .unwrap()
+    for c in support::surface::entries() {
+        let longs = c
+            .args()
             .iter()
             .filter_map(|a| a["long"].as_str().map(String::from))
             .collect();
-        flags.insert(path, longs);
+        flags.insert(c.path, longs);
     }
     let is_group = |p: &[String]| {
         flags

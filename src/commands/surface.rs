@@ -1,4 +1,5 @@
-//! `evnx surface` — the whole command tree as JSON.
+//! `evnx commands` (alias `surface`) — what this build can do, and the whole
+//! command tree as JSON.
 //!
 //! # Why this exists
 //!
@@ -92,7 +93,8 @@ struct CommandNode {
     visible_aliases: Vec<String>,
     /// Every alias, including the ones `--help` does not show.
     aliases: Vec<String>,
-    /// ⚠️ True for commands absent from `--help`, including this one. A
+    /// ⚠️ True for commands absent from `--help`. None is hidden today —
+    /// `commands` itself was, until it became a feature (D-143). A
     /// documentation check should skip them; a tour certainly should.
     hidden: bool,
     /// The guide this command's `--help` footer points at, when it has one.
@@ -102,8 +104,9 @@ struct CommandNode {
     /// `docs.evnx.dev/cli/commands/{name}` would be a 404 for any command that
     /// shipped before its guide, and would look correct in review.
     ///
-    /// `null` for subcommands (the guide is per top-level command), for hidden
-    /// commands, and for the few with a guide but no `CommandDoc` entry.
+    /// `null` for subcommands (the guide is per top-level command) and for a
+    /// command that ships before its guide. Every top-level command has one
+    /// today (I-195).
     docs_url: Option<&'static str>,
     args: Vec<ArgNode>,
 }
@@ -217,28 +220,6 @@ fn walk(cmd: &Command, prefix: &[String], out: &mut Vec<CommandNode>) {
     }
 }
 
-/// Which optional features this binary was built with.
-///
-/// ⚠️ Read with `cfg!`, not from a list someone maintains. The whole point of
-/// this command is to stop keeping a second copy of something the compiler
-/// already knows.
-fn enabled_features() -> Vec<&'static str> {
-    let mut f = Vec::new();
-    if cfg!(feature = "net") {
-        f.push("net");
-    }
-    if cfg!(feature = "migrate") {
-        f.push("migrate");
-    }
-    if cfg!(feature = "backup") {
-        f.push("backup");
-    }
-    if cfg!(feature = "cloud") {
-        f.push("cloud");
-    }
-    f
-}
-
 fn build_surface() -> Surface {
     // ⚠️ `.build()` is not optional, and leaving it out under-reported the CLI.
     //
@@ -257,7 +238,7 @@ fn build_surface() -> Surface {
     Surface {
         schema: SCHEMA,
         evnx_version: env!("CARGO_PKG_VERSION"),
-        features: enabled_features(),
+        features: crate::core::build::features(),
         commands,
     }
 }
@@ -270,17 +251,26 @@ fn build_surface() -> Surface {
 /// never missing.
 const NEEDS_ACCOUNT: &[&str] = &["auth", "vault", "org", "cloud"];
 
-fn print_human(s: &Surface) {
-    println!();
-    println!("  evnx {}", s.evnx_version);
+/// The plain output, as one string, so it can be checked for any feature set
+/// (the no-cloud warning only prints from a build without `cloud`).
+fn render_human(s: &Surface) -> String {
+    use std::fmt::Write;
+    let mut o = String::new();
+    // `writeln!` into a String cannot fail.
+    macro_rules! line {
+        ($($arg:tt)*) => { let _ = writeln!(o, $($arg)*); };
+    }
+
+    line!();
+    line!("  evnx {}", s.evnx_version);
 
     // ⚠️ The line that would have saved five releases of broken PyPI wheels.
     if s.features.is_empty() {
-        println!("  built with no optional features");
+        line!("  built with no optional features");
     } else {
-        println!("  built with: {}", s.features.join(", "));
+        line!("  built with: {}", s.features.join(", "));
     }
-    println!();
+    line!();
 
     let roots: Vec<&CommandNode> = s
         .commands
@@ -289,60 +279,66 @@ fn print_human(s: &Surface) {
         .collect();
     let width = roots.iter().map(|c| c.name.len()).max().unwrap_or(8);
 
-    let print_group = |title: &str, want_account: bool| {
+    for (title, want_account) in [("On this machine", false), ("With an evnx account", true)] {
         let group: Vec<&&CommandNode> = roots
             .iter()
             .filter(|c| NEEDS_ACCOUNT.contains(&c.name.as_str()) == want_account)
             .collect();
         if group.is_empty() {
-            return;
+            continue;
         }
-        println!("  {title}");
+        line!("  {title}");
         for c in group {
-            println!(
+            line!(
                 "    {:width$}  {}",
                 c.name,
                 c.about.as_deref().unwrap_or(""),
                 width = width
             );
         }
-        println!();
-    };
-
-    print_group("On this machine", false);
-    print_group("With an evnx account", true);
+        line!();
+    }
 
     // ⛔ The case that is otherwise invisible. A binary without `cloud` does not
     // merely hide those commands — it never had them, and nothing in `--help`
     // distinguishes "this tool cannot sync" from "I have not found it yet".
+    //
+    // ⚠️ No release numbers (I-197): "pip install evnx did not, up to and
+    // including 0.9.0" was history, and would be wrong on any later build
+    // without `cloud`.
     if !s.features.contains(&"cloud") {
         // ⚠️ Printed here rather than through `ui::warning`, which starts at
         // column 0 and would break the two-space indent every other line in
         // this output uses. A warning that looks like a layout bug gets read as
         // one.
         use colored::Colorize;
-        println!(
+        line!(
             "  {} This build has NO cloud commands — no auth, vault, cloud or org.",
             "!".yellow().bold()
         );
-        println!("    It was compiled without the `cloud` feature. Every prebuilt");
-        println!("    binary except PyPI's carries them; `pip install evnx` did not,");
-        println!("    up to and including 0.9.0.");
-        println!();
-        println!("    Reinstall from another channel, or build with:");
-        println!("      cargo install evnx --features cloud");
-        println!();
+        line!("    It was compiled without the `cloud` feature.");
+        line!();
+        line!("    Install from a channel that includes them (`evnx update` lists");
+        line!("    every channel), or build with:");
+        line!("      {}", crate::core::build::CARGO_INSTALL);
+        line!();
     }
 
-    let total = s.commands.iter().filter(|c| !c.hidden).count();
-    println!("  {total} commands. `evnx <command> --help` for any of them.");
-    println!("  `evnx commands --json` emits the whole tree, for tooling.");
-    println!();
+    // ⚠️ The listed commands, then every path (I-196): "83 commands" under a
+    // list of 20 read as a count of the list.
+    let all = s.commands.iter().filter(|c| !c.hidden).count();
+    line!(
+        "  {} commands ({all} with sub-commands). `evnx <command> --help` for any of them.",
+        roots.len()
+    );
+    line!("  `evnx commands --json` emits the whole tree, for tooling.");
+    line!();
     // ⚠️ `docs::BASE_URL`, not a literal. Thirty-three URLs in this binary once
     // pointed at a host that had moved, and kept working via a 301 — so nothing
     // failed and nothing warned. One constant is what stops that recurring.
-    println!("  Guides: {}", crate::docs::BASE_URL);
-    println!();
+    line!("  Guides: {}", crate::docs::BASE_URL);
+    line!();
+    o
 }
 
 pub fn run(json: bool, compact: bool) -> Result<()> {
@@ -354,7 +350,7 @@ pub fn run(json: bool, compact: bool) -> Result<()> {
         if compact {
             anyhow::bail!("--compact only applies to --json output");
         }
-        print_human(&surface);
+        print!("{}", render_human(&surface));
         return Ok(());
     }
 
@@ -456,17 +452,6 @@ mod tests {
         }
     }
 
-    /// The feature list is the difference between "this build has no `org`" and
-    /// "the docs are wrong". A consumer that cannot see it will conclude the
-    /// latter.
-    #[test]
-    fn the_feature_list_matches_what_was_compiled() {
-        let f = enabled_features();
-        assert_eq!(f.contains(&"cloud"), cfg!(feature = "cloud"));
-        assert_eq!(f.contains(&"backup"), cfg!(feature = "backup"));
-        assert_eq!(f.contains(&"migrate"), cfg!(feature = "migrate"));
-    }
-
     /// Under `--all-features` the cloud commands must be present, and `org` is
     /// the newest of them — the one a stale emitter would miss.
     #[cfg(feature = "cloud")]
@@ -538,14 +523,11 @@ mod tests {
         }
 
         // ⚠️ A command with no `CommandDoc` gets `None`, not a URL composed
-        // from its name. `completions` is visible and has a guide on the site,
-        // but no entry in `docs::ALL` — composing one would be right by luck
-        // here and a 404 for the next command that ships before its guide.
+        // from its name: composing one would be a 404 for the next command
+        // that ships before its guide.
+        assert_eq!(crate::docs::url_for("no-such-command"), None);
         let completions = s.iter().find(|n| n.path == ["completions"]).unwrap();
-        assert_eq!(
-            completions.docs_url, None,
-            "a command absent from docs::ALL must not get an invented URL"
-        );
+        assert_eq!(completions.docs_url, Some(crate::docs::COMPLETIONS.url));
 
         // And one that IS in the registry carries exactly that string.
         let me = s.iter().find(|n| n.path == ["commands"]).unwrap();
@@ -581,7 +563,7 @@ mod tests {
         let json = serde_json::to_string(&Surface {
             schema: SCHEMA,
             evnx_version: env!("CARGO_PKG_VERSION"),
-            features: enabled_features(),
+            features: crate::core::build::features(),
             commands,
         })
         .expect("surface must serialise");
@@ -594,5 +576,63 @@ mod tests {
         ] {
             assert!(json.contains(key), "missing {key} in the payload");
         }
+    }
+
+    fn surface_with(features: Vec<&'static str>) -> Surface {
+        Surface {
+            schema: SCHEMA,
+            evnx_version: "9.9.9",
+            features,
+            commands: surface(),
+        }
+    }
+
+    /// I-197, DEC-SF7, DEC-SF11, T-SF-07: a build without `cloud` says so,
+    /// names no release, and gives the one cargo line.
+    #[test]
+    fn t_i197_the_no_cloud_warning_names_no_release() {
+        // Colour codes carry digits; the words are what is checked.
+        let strip = |t: String| -> String {
+            let mut out = String::new();
+            let mut esc = false;
+            for c in t.chars() {
+                match (esc, c) {
+                    (_, '\x1b') => esc = true,
+                    (true, 'm') => esc = false,
+                    (true, _) => {}
+                    (false, c) => out.push(c),
+                }
+            }
+            out
+        };
+        let text = strip(render_human(&surface_with(vec!["net"])));
+        assert!(text.contains("This build has NO cloud commands"), "{text}");
+        assert!(text.contains(crate::core::build::CARGO_INSTALL), "{text}");
+        let warning: String = text
+            .lines()
+            .skip_while(|l| !l.contains("NO cloud commands"))
+            .take_while(|l| !l.contains("commands ("))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !warning.chars().any(|c| c.is_ascii_digit()),
+            "the warning names a version: {warning}"
+        );
+        assert!(!warning.contains("--features cloud"), "{warning}");
+
+        let with = render_human(&surface_with(vec!["net", "cloud"]));
+        assert!(!with.contains("NO cloud commands"), "{with}");
+    }
+
+    /// I-196, DEC-SF7: the count line counts the listed commands, then every
+    /// path.
+    #[test]
+    fn t_i196_the_count_line_counts_the_list_then_every_path() {
+        let s = surface_with(crate::core::build::features());
+        let top = s.commands.iter().filter(|c| c.path.len() == 1).count();
+        let all = s.commands.len();
+        assert!(render_human(&s).contains(&format!(
+            "  {top} commands ({all} with sub-commands). `evnx <command> --help` for any of them.\n"
+        )));
     }
 }

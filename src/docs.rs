@@ -196,6 +196,40 @@ pub const COMMANDS: CommandDoc = CommandDoc {
     after_help: "Full guide: https://docs.evnx.dev/cli/commands/commands",
 };
 
+pub const COMPLETIONS: CommandDoc = CommandDoc {
+    command: "completions",
+    url: "https://docs.evnx.dev/cli/commands/completions",
+    description: "Shell completion scripts, and where each shell reads them",
+    after_help: "\
+Install, for the shell you use (create the folder first if it does not exist),\n\
+then open a new shell:\n\
+\x20 bash        evnx completions bash > ~/.local/share/bash-completion/completions/evnx\n\
+\x20 zsh         evnx completions zsh > ~/.zfunc/_evnx\n\
+\x20             and in ~/.zshrc, before compinit: fpath=(~/.zfunc $fpath)\n\
+\x20 fish        evnx completions fish > ~/.config/fish/completions/evnx.fish\n\
+\x20 powershell  evnx completions powershell >> $PROFILE\n\
+\x20 elvish      evnx completions elvish >> ~/.config/elvish/rc.elv\n\
+\n\
+The script lists this build's commands: generate it again after an upgrade.\n\
+\n\
+Full guide: https://docs.evnx.dev/cli/commands/completions",
+};
+
+pub const UPDATE: CommandDoc = CommandDoc {
+    command: "update",
+    url: "https://docs.evnx.dev/cli/commands/update",
+    description: "How to upgrade, and whether a newer release exists",
+    after_help: "\
+Exit codes:\n\
+\x20 0  without --check, always; with it, this is the latest release or newer\n\
+\x20 1  --check: a newer release exists\n\
+\x20 2  --check could not tell: no network support, no answer, or rate-limited\n\
+\n\
+-q prints only the upgrade command; with --check, the status line and the command.\n\
+\n\
+Full guide: https://docs.evnx.dev/cli/commands/update",
+};
+
 /// Every `CommandDoc` in this file.
 ///
 /// Hand-maintained, which is a risk — so
@@ -207,16 +241,35 @@ pub const COMMANDS: CommandDoc = CommandDoc {
 /// would be two things to keep in step, which is the failure this whole area
 /// exists to stop.
 pub const ALL: &[&CommandDoc] = &[
-    &INIT, &SPEC, &ADD, &VALIDATE, &SCAN, &DIFF, &CONVERT, &SYNC, &MIGRATE, &DOCTOR, &TEMPLATE,
-    &BACKUP, &RESTORE, &CLOUD, &AUTH, &VAULT, &ORG, &COMMANDS,
+    &INIT,
+    &SPEC,
+    &ADD,
+    &VALIDATE,
+    &SCAN,
+    &DIFF,
+    &CONVERT,
+    &SYNC,
+    &MIGRATE,
+    &DOCTOR,
+    &TEMPLATE,
+    &BACKUP,
+    &RESTORE,
+    &CLOUD,
+    &AUTH,
+    &VAULT,
+    &ORG,
+    &COMMANDS,
+    &COMPLETIONS,
+    &UPDATE,
 ];
 
 /// The documentation URL for a top-level command, if it has one.
 ///
-/// ⚠️ `None` is a real answer, not a gap to paper over: `surface` is hidden and
-/// `completions` and `update` have guides but no `CommandDoc`. A caller that
-/// invented a URL from the command name would produce a 404 the moment a
-/// command shipped before its guide did.
+/// ⚠️ `None` is a real answer, not a gap to paper over: a command that ships
+/// before its guide has no `CommandDoc` yet. A caller that invented a URL from
+/// the command name would produce a 404 for exactly that command. Today every
+/// top-level command has an entry, and `tests/surface_integration.rs` checks
+/// it (I-195).
 pub fn url_for(command: &str) -> Option<&'static str> {
     ALL.iter().find(|d| d.command == command).map(|d| d.url)
 }

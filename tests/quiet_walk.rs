@@ -129,23 +129,9 @@ fn healthy_project() -> Project {
 }
 
 fn leaves() -> Vec<String> {
-    let p = Project::new();
-    let out = run(p.path(), &["commands", "--json"]);
-    out.assert_code(0);
-    let json: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
-    let paths: Vec<String> = json["commands"]
-        .as_array()
-        .unwrap()
+    let paths: Vec<String> = support::surface::entries()
         .iter()
-        .map(|c| {
-            c["path"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|s| s.as_str().unwrap())
-                .collect::<Vec<_>>()
-                .join(" ")
-        })
+        .map(|c| c.name())
         .collect();
     // A path that prefixes another is a group (`add`, `auth token`), not a leaf.
     paths

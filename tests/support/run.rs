@@ -67,7 +67,19 @@ pub fn run(dir: &Path, args: &[&str]) -> Output {
 /// ⚠️ Piping bytes to stdin does **not** make it a terminal. Prompts built on
 /// dialoguer refuse it (`not a terminal`); use [`super::pty`] for those.
 pub fn run_with(dir: &Path, args: &[&str], env: &[(&str, &str)], stdin: Option<&[u8]>) -> Output {
-    let mut cmd = Command::new(super::evnx_bin());
+    run_program(Path::new(super::evnx_bin()), dir, args, env, stdin)
+}
+
+/// [`run_with`] for a copy of the binary somewhere else, such as a fake install
+/// location ([`super::install`]).
+pub fn run_program(
+    program: &Path,
+    dir: &Path,
+    args: &[&str],
+    env: &[(&str, &str)],
+    stdin: Option<&[u8]>,
+) -> Output {
+    let mut cmd = Command::new(program);
     cmd.current_dir(dir)
         .args(args)
         .env("NO_COLOR", "1")
@@ -92,6 +104,37 @@ pub fn run_with(dir: &Path, args: &[&str], env: &[(&str, &str)], stdin: Option<&
         code: out.status.code(),
         stdout: strip_ansi(&String::from_utf8_lossy(&out.stdout)),
         stderr: strip_ansi(&String::from_utf8_lossy(&out.stderr)),
+    }
+}
+
+/// `evnx <args>` in `dir` with nobody reading stdout: the read end of the pipe
+/// is closed before evnx writes, the way `evnx … | head -0` leaves it
+/// (T-SHARE-42, I-008, I-185). The caller asserts exit 141 and no panic.
+#[cfg(unix)]
+pub fn closed_stdout(dir: &Path, args: &[&str]) -> Output {
+    use std::io::Read;
+    let mut child = Command::new(super::evnx_bin())
+        .current_dir(dir)
+        .args(args)
+        .env("NO_COLOR", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn evnx");
+    drop(child.stdout.take()); // nobody reads stdout
+    let mut stderr = String::new();
+    child
+        .stderr
+        .take()
+        .expect("stderr piped")
+        .read_to_string(&mut stderr)
+        .expect("read stderr");
+    let status = child.wait().expect("wait for evnx");
+    Output {
+        code: status.code(),
+        stdout: String::new(),
+        stderr: strip_ansi(&stderr),
     }
 }
 
