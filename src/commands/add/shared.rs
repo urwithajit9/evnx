@@ -322,7 +322,13 @@ pub fn apply(
         let existing = if env_path.exists() {
             read(&env_path)?
         } else {
-            String::new() // created now, 0600, by `write_private` below
+            // Created now, 0600, by `write_private` below. `.gitignore` first,
+            // as `env_from_template` does (DQ-A4): this `.env` holds the values
+            // `add custom` was given, and was left committable (I-251).
+            if let Some(line) = crate::commands::init::shared::update_gitignore(output_path)? {
+                crate::utils::ui::say(line);
+            }
+            String::new()
         };
         let body = addition.trim();
         let updated = if existing.trim().is_empty() {
@@ -551,6 +557,12 @@ fn print_dry_run(plan: &Plan, flow: &Flow) {
                 names(&plan.to_env)
             );
         }
+    } else if plan.create_env_file && !plan.to_env.vars.is_empty() {
+        println!(
+            "  .env: would be created with {} (with .gitignore first): {}",
+            count(plan.to_env.vars.len(), "variable"),
+            names(&plan.to_env)
+        );
     } else if !plan.is_empty() {
         println!("  .env: would be created from .env.example (with .gitignore first)");
     }

@@ -1482,3 +1482,22 @@ fn t_i250_postgres_stacks_use_the_postgres_url() {
         .read(".env.example")
         .contains("DATABASE_URL=sqlite:///db.sqlite3\n"));
 }
+
+/// I-251: `add custom` into a folder with no `.env` creates one (0600) holding
+/// the values it was given. `.gitignore` comes first, as for every other flow
+/// (DQ-A4), and the dry run says what it will do.
+#[test]
+fn t_i251_custom_protects_the_env_it_creates() {
+    let p = Project::new().git();
+    run(p.path(), &["add", "custom", "MY_KEY=value", "--dry-run"])
+        .assert_code(0)
+        .assert_contains(".env: would be created with 1 variable (with .gitignore first): MY_KEY");
+    assert!(!p.exists(".gitignore"));
+    run(p.path(), &["add", "custom", "MY_KEY=value", "--yes"])
+        .assert_code(0)
+        .assert_contains("Created .gitignore")
+        .assert_not_contains("not covered by .gitignore");
+    assert!(p.read(".env").contains("MY_KEY=value"));
+    assert!(p.read(".gitignore").contains(".env*"));
+    assert!(!p.git_cmd(&["status", "--porcelain"]).contains(".env\n"));
+}

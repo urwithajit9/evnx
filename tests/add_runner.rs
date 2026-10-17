@@ -5,7 +5,7 @@
 //! The review package teaches `add` with a shell runner,
 //! `tutorial/run-add-demo.sh`, scene by scene (A0 to A11). Nothing ran it in
 //! CI, so a scene could go stale the day the product changed. These are the
-//! same scenes, asserting 0.10.2's behaviour; the deck and runbook are
+//! same scenes, asserting the current behaviour (0.10.4); the deck and runbook are
 //! regenerated from real runs of them. Lines the runner marked `KNOWN` (a
 //! defect shown as it was) are fixed in 0.10.2 and asserted fixed here, with
 //! the issue id beside each.
@@ -172,11 +172,14 @@ fn a8_custom_without_a_terminal() {
         .assert_contains("evnx add custom NAME=value");
     run(p.path(), &["add", "custom", "MY_KEY=value", "--yes"])
         .assert_code(0)
+        .assert_contains("Created .gitignore")
         .assert_contains("Added 1 custom variable");
     // DEC-U8-1 (I-245): the value in `.env` only, a placeholder in the template.
     assert!(p.read(".env").contains("\nMY_KEY=value\n"));
     assert!(p.read(".env.example").contains("\nMY_KEY="));
     assert!(!p.read(".env.example").contains("MY_KEY=value"));
+    // I-251: the `.env` it created is ignored first, as `add service` does.
+    assert!(p.read(".gitignore").contains(".env*"));
 }
 
 /// A9: `-p`, `-q`, `-v`.

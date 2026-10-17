@@ -29,6 +29,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   default now wins over a framework's, in either order (I-250).
 - Django's `DATABASE_URL` default is `sqlite:///db.sqlite3`, Django's own
   out-of-the-box database; it was `https://example.com` (N-21).
+- **`add custom` writes `.gitignore` before the `.env` it creates.** Since
+  0.10.3 the values go to `.env` only, and in a folder with no `.env` that file
+  was created without `.gitignore`, so in a git repository the real values were
+  committable (a warning was printed). It is now ignored first, as every other
+  `add` flow and `init` do, and the dry run says what it will create (I-251).
 
 #### Changed
 
