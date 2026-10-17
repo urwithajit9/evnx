@@ -309,6 +309,11 @@ jobs:
             cp "extracted/$pkg_name/$binary" "$pkg_dir/bin/$binary"
             chmod +x "$pkg_dir/bin/$binary" || true
 
+            # ⛔ No "bin" here (I-253). The wrapper @evnx/cli owns the `evnx`
+            # command; its install.js finds this package's bin/<binary> by
+            # path. With "bin" in both, a project install and npx link
+            # neither (node_modules/.bin stays empty, `npx @evnx/cli` says
+            # "evnx: not found"); only `npm install -g` worked.
             cat > "$pkg_dir/package.json" << EOF
           {
             "name": "@evnx/$pkg_name",
@@ -316,9 +321,6 @@ jobs:
             "description": "evnx CLI binary for $os/$cpu",
             "os": ["$os"],
             "cpu": ["$cpu"],
-            "bin": {
-              "evnx": "bin/$binary"
-            },
             "files": ["bin/$binary", "README.md"],
             "license": "MIT",
             "repository": {
@@ -583,19 +585,44 @@ jobs:
           #    workflow could observe that before.
           ./scripts/npm-await.sh dist-tag @evnx/cli latest "$VERSION" 180
 
-          # 3. One install, now that the registry is known to be ready.
-          npm install -g "@evnx/cli@$VERSION"
+          # 3. ⚠️ The three install forms the release notes advertise, each
+          #    asserted (I-253). Only `npm install -g` was checked, and it was
+          #    the only one that worked: with `bin` in the platform packages as
+          #    well as the wrapper, a project install linked no `evnx` and npx
+          #    said "evnx: not found" — every release since 0.4.0.
+          #
+          #    Matched on a word boundary so 0.5.30 cannot satisfy 0.5.3. The
+          #    old step ran `evnx --version` and threw the output away, so any
+          #    binary that started would have passed.
+          reports() { # <form> <what it printed>
+            echo "$1 → $2"
+            if ! grep -qE "(^| )${VERSION//./\\.}( |\$)" <<<"$2"; then
+              echo "::error::$1 of @evnx/cli@$VERSION gave: $2"
+              exit 1
+            fi
+          }
 
-          # 4. Assert what it prints. The old step ran `evnx --version` and threw
-          #    the output away, so any binary that started would have passed.
-          #    Matched on a word boundary so 0.5.30 cannot satisfy 0.5.3.
-          got=$(evnx --version)
-          echo "evnx --version → $got"
-          if ! grep -qE "(^| )${VERSION//./\\.}( |\$)" <<<"$got"; then
-            echo "::error::installed @evnx/cli@$VERSION but the binary reports: $got"
+          # A project install, as `npm install --save-dev` leaves it.
+          proj=$(mktemp -d)
+          (cd "$proj" && npm init -y >/dev/null && npm install --save-dev "@evnx/cli@$VERSION")
+          if [ ! -x "$proj/node_modules/.bin/evnx" ]; then
+            echo "::error::npm install --save-dev @evnx/cli@$VERSION linked no node_modules/.bin/evnx"
             exit 1
           fi
-          echo "✓ @evnx/cli@$VERSION installs, is the 'latest' tag, and reports $VERSION"
+          reports "npm install --save-dev" "$("$proj/node_modules/.bin/evnx" --version)"
+
+          # npx — before the global install below, which would otherwise answer
+          # for it from PATH.
+          if command -v evnx >/dev/null; then
+            echo "::error::an evnx is already on PATH ($(command -v evnx)); the npx check would not test npx"
+            exit 1
+          fi
+          reports "npx" "$(cd "$(mktemp -d)" && npx -y "@evnx/cli@$VERSION" --version 2>&1)"
+
+          # The global install.
+          npm install -g "@evnx/cli@$VERSION"
+          reports "npm install -g" "$(evnx --version)"
+          echo "✓ @evnx/cli@$VERSION is the 'latest' tag and reports $VERSION from a project install, npx and a global install"
 
       # ── Append npm note to the GitHub Release ──────────────────────────────
       - name: Add npm install note to GitHub Release
