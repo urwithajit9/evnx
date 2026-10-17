@@ -170,12 +170,20 @@ pub fn find_gitignore_path(start: &Path) -> Option<PathBuf> {
 /// with the root as text, so without this it came back as `../x.conf`, a
 /// `.gitignore` line that matches nothing, and the caller said "Added". The
 /// resolution is lexical, as git's own path matching is.
+///
+/// ⚠️ The result is joined with `/` on every platform: it becomes a
+/// `.gitignore` line, and git reads `\` there as an escape, not a separator.
+/// Rebuilding the path for the `..` step joined it with Windows' `\`
+/// (`k8s\configmap.yaml`, caught by the Windows CI job).
 #[must_use]
 pub fn relative_output_path(git_root: &Path, output: &Path) -> Option<PathBuf> {
-    resolve_dots(output)
-        .strip_prefix(resolve_dots(git_root))
-        .ok()
-        .map(Path::to_path_buf)
+    let resolved = resolve_dots(output);
+    let rel = resolved.strip_prefix(resolve_dots(git_root)).ok()?;
+    let parts: Vec<String> = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    Some(PathBuf::from(parts.join("/")))
 }
 
 /// `path` with `.` dropped and each `..` taking off the component before it.
@@ -806,6 +814,33 @@ mod tests {
         );
         assert_eq!(
             relative_output_path(root, Path::new("/project/a/../../x")),
+            None
+        );
+    }
+
+    /// The entry is written with `/`, whatever the platform joins paths with.
+    #[test]
+    fn t_i252_an_entry_is_joined_with_forward_slashes() {
+        let entry = relative_output_path(
+            Path::new("/project"),
+            Path::new("/project/k8s/../k8s/./configmap.yaml"),
+        )
+        .unwrap();
+        assert_eq!(entry.to_string_lossy(), "k8s/configmap.yaml");
+    }
+
+    /// On Windows a path typed with `\` still gives a `/` entry.
+    #[cfg(windows)]
+    #[test]
+    fn t_i252_a_windows_path_gives_a_forward_slash_entry() {
+        let entry = relative_output_path(
+            Path::new(r"C:\project"),
+            Path::new(r"C:\project\k8s\sub\..\configmap.yaml"),
+        )
+        .unwrap();
+        assert_eq!(entry.to_string_lossy(), "k8s/configmap.yaml");
+        assert_eq!(
+            relative_output_path(Path::new(r"C:\project"), Path::new(r"C:\project\..\x.conf")),
             None
         );
     }
