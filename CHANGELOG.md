@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-10-17
+
 The `spec` patch: the review fixes left after 0.10.3 (package R-spec), the
 `.evnx.toml` locator and writer that `spec`, `add` and `cloud link` each had a
 copy of, and the npm install forms that never worked (I-253).
