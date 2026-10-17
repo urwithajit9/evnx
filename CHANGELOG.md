@@ -8,8 +8,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-10-17
+
 The `template` patch: the review fixes left after 0.10.3 (package R-template),
 and code that several commands had their own copy of, moved into one place.
+
+⚠️ **A template run that passed on 0.10.4 can now stop with exit 2**, and
+write nothing, in three cases that used to put the wrong text into the
+output silently: a filter evnx does not know (`{{PORT|innt}}`, or another
+tool's `{{ item | quote }}`), two filters chained (`{{X|upper|json}}`), and
+`|bool` on a value that is not one of `true yes on 1 y` / `false no off 0 n`
+(`enabled`, `maybe`, empty). The error names each placeholder and its line.
+Check a template before deploying with `evnx template … --dry-run`.
 
 ### template
 
