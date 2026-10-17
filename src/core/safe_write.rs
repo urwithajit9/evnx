@@ -204,23 +204,31 @@ pub fn create_dirs(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(missing)
 }
 
-/// [`create_dirs`], then `dir` itself owner-only (0700) where the platform
-/// expresses that, whether it was just made or already there. Parents it
-/// creates keep the umask.
+/// [`create_dirs`], with every directory it creates owner-only (0700) where the
+/// platform expresses that, and `dir` itself too if it already existed (an
+/// empty `cloud export` target). Directories above that already existed keep
+/// their mode.
 ///
 /// 0700 rather than the umask default: every file inside holds plaintext
 /// secrets, and a directory others cannot list is one less way to find them.
+///
+/// ⚠️ Every created one, not only `dir` (I-144): `template --mkdir
+/// deploy/k8s/app.yml` left `deploy` at the umask's mode while `--help`
+/// promised 0700.
 pub fn create_dirs_private(dir: &Path) -> Result<Vec<PathBuf>> {
     let created = create_dirs(dir)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(dir)
-            .with_context(|| format!("reading permissions of {}", dir.display()))?
-            .permissions();
-        perms.set_mode(permissions::PRIVATE_DIR);
-        std::fs::set_permissions(dir, perms)
-            .with_context(|| format!("setting permissions on {}", dir.display()))?;
+        let leaf = (!created.iter().any(|c| c == dir)).then_some(dir);
+        for d in created.iter().map(PathBuf::as_path).chain(leaf) {
+            let mut perms = std::fs::metadata(d)
+                .with_context(|| format!("reading permissions of {}", d.display()))?
+                .permissions();
+            perms.set_mode(permissions::PRIVATE_DIR);
+            std::fs::set_permissions(d, perms)
+                .with_context(|| format!("setting permissions on {}", d.display()))?;
+        }
     }
     Ok(created)
 }
@@ -580,6 +588,21 @@ mod tests {
             let deep = d.path().join("a/secrets");
             create_dirs_private(&deep).unwrap();
             assert_eq!(mode(&deep), 0o700);
+        }
+
+        /// I-144: every directory it creates is 0700, not only the last one;
+        /// one that already existed keeps its mode.
+        #[test]
+        fn create_dirs_private_makes_every_created_directory_owner_only() {
+            use std::os::unix::fs::PermissionsExt;
+            let d = TempDir::new().unwrap();
+            let existing = d.path().join("existing");
+            std::fs::create_dir(&existing).unwrap();
+            std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(0o755)).unwrap();
+            create_dirs_private(&existing.join("a/b")).unwrap();
+            assert_eq!(mode(&existing), 0o755);
+            assert_eq!(mode(&existing.join("a")), 0o700);
+            assert_eq!(mode(&existing.join("a/b")), 0o700);
         }
     }
 }

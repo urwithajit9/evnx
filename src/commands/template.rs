@@ -490,7 +490,8 @@ const FILTERS: &[&str] = &[
 /// env file, whether it has a value or not (owner, 2026-10-17). Text that is
 /// not an evnx reference — Helm's `{{ .Values.x | quote }}` — is left alone.
 ///
-/// `|default:` takes the rest of the braces as its text, pipes included.
+/// `|default:` takes the rest of the braces as its text, pipes included,
+/// unless a pipe is followed by a filter name: that is a chain.
 ///
 /// ⚠️ Chained filters (`{{X|upper|json}}`) are refused until the one
 /// substitution engine (T-WP3, 0.11.0) can apply them left to right; going
@@ -511,11 +512,23 @@ fn check_filters(
             continue;
         }
         let chunk = chunk.as_str().trim();
-        if chunk.starts_with("default:") {
-            continue;
-        }
         let line = template[..whole.start()].matches('\n').count() + 1;
         let placeholder = whole.as_str();
+        if let Some(text) = chunk.strip_prefix("default:") {
+            // The default's text runs to the braces, pipes included — unless a
+            // pipe is followed by a filter: `{{PORT|default:8080|int}}` is a
+            // chain, and rendered `8080|int` with exit 0 (found after #190).
+            if text.split('|').skip(1).any(|seg| {
+                let seg = seg.trim();
+                FILTERS.contains(&seg) || seg.starts_with("default:")
+            }) {
+                problems.push(format!(
+                    "line {line}: {placeholder}: chained filters are not supported; \
+                     use one filter per placeholder"
+                ));
+            }
+            continue;
+        }
         if chunk.contains('|') {
             problems.push(format!(
                 "line {line}: {placeholder}: chained filters are not supported; \

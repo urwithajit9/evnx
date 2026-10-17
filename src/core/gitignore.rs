@@ -165,9 +165,39 @@ pub fn find_gitignore_path(start: &Path) -> Option<PathBuf> {
 ///
 /// assert_eq!(entry.to_string_lossy(), "k8s/configmap.yaml");
 /// ```
+///
+/// ⚠️ `.` and `..` are resolved first (I-252). `cwd.join("../x.conf")` starts
+/// with the root as text, so without this it came back as `../x.conf`, a
+/// `.gitignore` line that matches nothing, and the caller said "Added". The
+/// resolution is lexical, as git's own path matching is.
 #[must_use]
 pub fn relative_output_path(git_root: &Path, output: &Path) -> Option<PathBuf> {
-    output.strip_prefix(git_root).ok().map(Path::to_path_buf)
+    resolve_dots(output)
+        .strip_prefix(resolve_dots(git_root))
+        .ok()
+        .map(Path::to_path_buf)
+}
+
+/// `path` with `.` dropped and each `..` taking off the component before it.
+/// A `..` with nothing left to take off stays, so the result is never inside
+/// a root it climbed out of.
+fn resolve_dots(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if matches!(out.components().next_back(), Some(Component::Normal(_))) {
+                    out.pop();
+                } else {
+                    out.push(c);
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Check whether `entry` is already present in the `.gitignore` at the given path.
@@ -755,6 +785,29 @@ mod tests {
         let output = Path::new("/project/a/b/c/config.toml");
         let result = relative_output_path(root, output).unwrap();
         assert_eq!(result, PathBuf::from("a/b/c/config.toml"));
+    }
+
+    /// I-252: `..` and `.` are resolved before the root is stripped, so
+    /// `sub/../out.yml` is `out.yml`, and `../x.conf` is outside.
+    #[test]
+    fn t_i252_dot_dot_is_resolved_before_the_root_is_stripped() {
+        let root = Path::new("/project");
+        assert_eq!(
+            relative_output_path(root, Path::new("/project/sub/../out.yml")),
+            Some(PathBuf::from("out.yml"))
+        );
+        assert_eq!(
+            relative_output_path(root, Path::new("/project/./a/./b.yml")),
+            Some(PathBuf::from("a/b.yml"))
+        );
+        assert_eq!(
+            relative_output_path(root, Path::new("/project/../x.conf")),
+            None
+        );
+        assert_eq!(
+            relative_output_path(root, Path::new("/project/a/../../x")),
+            None
+        );
     }
 
     // ── check_ignored ─────────────────────────────────────────────────────────

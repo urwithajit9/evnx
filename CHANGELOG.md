@@ -23,7 +23,9 @@ and code that several commands had their own copy of, moved into one place.
   reference and still passes through (DEC-T7).
 - **Chained filters are an error**, `{{X|upper|json}}`, instead of being
   written through. Chaining arrives with the one substitution engine in 0.11.0;
-  until then, one filter per placeholder.
+  until then, one filter per placeholder. A filter after a default is a chain
+  too: `{{PORT|default:8080|int}}` rendered `8080|int`. A pipe followed by
+  anything else stays part of the default's text (`{{X|default:a|b}}` → `a|b`).
 - **`|bool` reads `true yes on 1 y` and `false no off 0 n`**, in any case.
   Anything else (`enabled`, `maybe`, a typo, an empty value) is an error, as a
   bad `|int` already was; it was `false`, silently (I-138).
@@ -32,6 +34,11 @@ and code that several commands had their own copy of, moved into one place.
 - A bad `|bool` or `|int` value is not printed when its name looks secret
   (`DB_PASSWORD`).
 - A missing output directory says how to create it (I-144).
+- **An `--output` with `..` is resolved before it goes into `.gitignore`.**
+  `--output sub/../out.yml --gitignore` added the line `sub/../out.yml`, and
+  `--output ../x.conf` added `../x.conf`; git matches neither, and evnx said
+  "Added". Now the first adds `out.yml`, and the second, outside the
+  repository, gets the warning an absolute path already got (I-252).
 - `--env-name production` names the file `.env.production`, as `.env` is named,
   not `./.env.production` (I-144). `sync` and `diff` print the same label,
   and so does the `# Synced from` line `sync` writes into `.env.example`.
@@ -42,8 +49,8 @@ and code that several commands had their own copy of, moved into one place.
   replaced, through which link, which directory `--mkdir` would create). It
   fails where the real run would, writes nothing, prints no value and leaves
   `.gitignore` alone (DEC-T9).
-- **`--mkdir`**: create the output's missing directories, readable by you only
-  (0700), as `cloud export` does (I-144).
+- **`--mkdir`**: create the output's missing directories, each one readable by
+  you only (0700); directories that already exist keep their mode (I-144).
 - `|capitalize`, the old `|title`.
 - `--help` lists the reference styles and every filter (D-93).
 
@@ -76,7 +83,8 @@ the label above):
 - `core::safe_write::{preview, create_dirs, create_dirs_private, is_stdout}`:
   what a write would do, without writing; directory creation (`init`,
   `cloud export`, `template --mkdir`); what `-` means for an output
-  (`template --output -`, `cloud pull --file -`).
+  (`template --output -`, `cloud pull --file -`). `cloud export -o a/b/c`
+  now makes a missing `a` and `a/b` 0700 as well, not only `c`.
 - `ui::prompt_yes_no` and `utils::file_ops::ensure_dir` are deprecated: nothing
   in evnx calls them any more.
 

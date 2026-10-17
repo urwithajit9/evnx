@@ -187,3 +187,20 @@ fn t_d93_help_lists_the_styles_and_the_filters() {
         out.assert_contains(needle);
     }
 }
+
+/// A filter after `|default:` is a chain as well. `default:` took the rest of
+/// the braces as its text, so `{{PORT|default:8080|int}}` rendered `8080|int`
+/// with exit 0, past the chained-filter check (found in the docs review after
+/// #190). A pipe followed by something that is not a filter name stays part of
+/// the default's text (`{{X|default:a|b}}` → `a|b`, the guard above).
+#[test]
+fn t_dec_t7_a_filter_after_a_default_is_a_chain() {
+    for t in [
+        "{{PORT|default:8080|int}}\n",
+        "{{NOPE|default:x|json}}\n",
+        "{{NOPE|default:x | upper}}\n",
+    ] {
+        let (_, out) = render("PORT=\n", t);
+        out.assert_code(2).assert_contains("chained");
+    }
+}

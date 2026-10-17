@@ -425,3 +425,80 @@ fn t_dec_t9_dry_run_to_stdout_prints_nothing_there() {
     assert_eq!(out.stdout, "", "the rendered text is not printed");
     assert!(out.stderr.contains("would print"), "{}", out.stderr);
 }
+
+/// I-144: `--mkdir` made only the innermost directory 0700; a parent it
+/// created kept the umask's mode, while `--help` promised 0700 for every one.
+/// A directory that already existed is left as it is.
+#[test]
+#[cfg(unix)]
+fn t_i144_mkdir_makes_every_directory_it_creates_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let p = project().dir("existing");
+    std::fs::set_permissions(p.join("existing"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "config.tpl",
+            "--output",
+            "existing/a/b/out.yml",
+            "--mkdir",
+            "--no-gitignore",
+        ],
+    )
+    .assert_code(0);
+    assert_eq!(
+        mode(&p, "existing"),
+        0o755,
+        "not created by evnx: untouched"
+    );
+    assert_eq!(mode(&p, "existing/a"), 0o700);
+    assert_eq!(mode(&p, "existing/a/b"), 0o700);
+}
+
+/// I-252: an `--output` with `..` in it went into `.gitignore` as written
+/// (`sub/../out.yml`), a line git matches to nothing, and evnx said "Added".
+/// `../x` from the repository root got the same treatment instead of the
+/// "outside the git repository" warning.
+#[test]
+fn t_i252_dot_dot_in_the_output_is_resolved_for_gitignore() {
+    let p = project().git().dir("sub");
+    run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "config.tpl",
+            "--output",
+            "sub/../out.yml",
+            "--gitignore",
+        ],
+    )
+    .assert_code(0)
+    .assert_contains("Added 'out.yml'");
+    assert!(p.is_ignored("out.yml"));
+
+    // From a subdirectory, pointing back up into the repository.
+    run(
+        &p.join("sub"),
+        &[
+            "template",
+            "--input",
+            "../config.tpl",
+            "--env",
+            "../.env",
+            "--output",
+            "../out2.yml",
+            "--gitignore",
+        ],
+    )
+    .assert_code(0)
+    .assert_contains("Added 'out2.yml'");
+    assert!(p.is_ignored("out2.yml"));
+    assert!(
+        !p.read(".gitignore").contains(".."),
+        "{}",
+        p.read(".gitignore")
+    );
+}
