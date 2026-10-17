@@ -66,21 +66,6 @@ pub fn set_secure_permissions(_path: &Path) -> Result<()> {
 
 // ── File operations ───────────────────────────────────────────────────────────
 
-/// Copy `path` to `<path>.backup` in the same directory.
-///
-/// Used by commands that modify files in-place (e.g. `validate --fix`) so the
-/// user always has a recovery copy before any changes are written.
-///
-/// # Errors
-///
-/// Returns an error if the source file cannot be read or the backup cannot be
-/// written (e.g. insufficient disk space or permissions).
-pub fn backup_file(path: &Path) -> Result<()> {
-    let backup_path = path.with_extension("backup");
-    fs::copy(path, backup_path)?;
-    Ok(())
-}
-
 /// Return `true` if `path` appears to be a text file (contains no null bytes).
 ///
 /// Null bytes (`\0`) are the simplest heuristic for detecting binary content.
@@ -260,20 +245,6 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(b"hello\x00world").unwrap();
         assert!(!is_text_file(file.path()).unwrap());
-    }
-
-    #[test]
-    fn test_backup_file_creates_copy() {
-        let mut file = NamedTempFile::new().unwrap();
-        file.write_all(b"SECRET_KEY=abc123").unwrap();
-
-        backup_file(file.path()).unwrap();
-
-        let backup_path = file.path().with_extension("backup");
-        assert!(backup_path.exists());
-
-        // Clean up the backup file that persists beyond NamedTempFile scope.
-        let _ = fs::remove_file(backup_path);
     }
 
     #[test]

@@ -271,9 +271,128 @@ pub fn missing_required<'a>(
         .collect()
 }
 
+/// Something wrong with the names in `environments` lists, seen from a run on
+/// one file (I-042).
+///
+/// ⚠️ Either way the requirement silently stops applying: `"prodution"`
+/// matches no file, so the variable is required nowhere, and `.env.prod` is not
+/// `"production"`, so nothing limited to production is checked in it. Both
+/// passed validate without a word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnvNameProblem {
+    /// `name` is listed by `vars` but is no environment here: no `.env.<name>`
+    /// file and not a common name. `meant` is the one it probably stands for.
+    Unknown {
+        name: String,
+        vars: Vec<String>,
+        meant: Option<String>,
+    },
+    /// The file being checked is `.env.<file_env>`, which no list names, but
+    /// it is close to `listed`: the variables limited to `listed` (`vars`) are
+    /// not checked in this file.
+    NearMiss {
+        file_env: String,
+        listed: String,
+        vars: Vec<String>,
+    },
+}
+
+/// The [`EnvNameProblem`]s in `spec` for a run on `.env.<file_env>` (or the
+/// plain `.env`, `None`), where `known` are the environments that exist: the
+/// `.env.<name>` files beside it and the suggested names.
+///
+/// One problem per name, in name order: a typo listed by twenty variables is
+/// one warning, not twenty. A listed name already reported as unknown is not
+/// reported again as a near miss.
+pub fn environment_problems(
+    spec: &Spec,
+    file_env: Option<&str>,
+    known: &[&str],
+) -> Vec<EnvNameProblem> {
+    // listed name → the variables that list it
+    let mut listed: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+    for (var, declared) in spec {
+        for name in declared.environments.iter().flatten() {
+            listed.entry(name.as_str()).or_default().push(var.clone());
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut unknown = Vec::new();
+    for (name, vars) in &listed {
+        if known.contains(name) || Some(*name) == file_env {
+            continue;
+        }
+        unknown.push(*name);
+        out.push(EnvNameProblem::Unknown {
+            name: name.to_string(),
+            vars: vars.clone(),
+            meant: crate::core::env_name::meant(name, known).map(str::to_string),
+        });
+    }
+
+    if let Some(file_env) = file_env.filter(|f| !listed.contains_key(f)) {
+        for (name, vars) in &listed {
+            if unknown.contains(name) {
+                continue;
+            }
+            if crate::core::env_name::meant(file_env, &[*name]).is_some() {
+                out.push(EnvNameProblem::NearMiss {
+                    file_env: file_env.to_string(),
+                    listed: name.to_string(),
+                    vars: vars.clone(),
+                });
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn t_i042_environment_names_are_checked() {
+        let s = spec_of(
+            r#"
+            [vars.A]
+            environments = ["prodution"]
+            [vars.B]
+            environments = ["prodution", "staging"]
+            [vars.C]
+            environments = ["production"]
+            "#,
+        );
+        let known = [
+            "development",
+            "test",
+            "staging",
+            "production",
+            "local",
+            "prod",
+        ];
+        assert_eq!(
+            environment_problems(&s, Some("prod"), &known),
+            [
+                EnvNameProblem::Unknown {
+                    name: "prodution".into(),
+                    vars: vec!["A".into(), "B".into()],
+                    meant: Some("production".into()),
+                },
+                EnvNameProblem::NearMiss {
+                    file_env: "prod".into(),
+                    listed: "production".into(),
+                    vars: vec!["C".into()],
+                },
+            ]
+        );
+        // A file of that name makes it an environment, and a listed file is no
+        // near miss.
+        assert!(environment_problems(&s, Some("prodution"), &known).is_empty());
+        // No lists, nothing to say.
+        assert!(environment_problems(&spec_of("[vars.A]\n"), Some("x"), &known).is_empty());
+    }
 
     fn spec_of(toml_src: &str) -> Spec {
         #[derive(Deserialize)]

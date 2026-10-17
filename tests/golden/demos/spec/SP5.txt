@@ -22,12 +22,7 @@ $ evnx validate
      .env
      ·  fixable with --fix
 
-  ✗  REDIS_PASSWORD is too weak or predictable
-     .env
-     →  Run: openssl rand -hex 32
-     ·  fixable with --fix
-
-  3 errors
+  2 errors
 
 Next steps:
   1. Review and fix the errors above
@@ -38,7 +33,7 @@ Next steps:
 
   evnx validate  Check environment configuration
 
-Validation failed: 3 errors
+Validation failed: 2 errors
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]
 validate reads the appended entries

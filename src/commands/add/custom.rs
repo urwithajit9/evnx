@@ -4,7 +4,8 @@
 //! # Two forms (I-025, decided 2026-10-10; DQ-A9, 2026-10-14)
 //!
 //! * **Arguments:** `evnx add custom API_URL=https://… DEBUG=false --yes`, with
-//!   `--desc`, `--category` and `--required` applying to every name given. No
+//!   `--desc`, `--category`, `--required` and `--optional` applying to every
+//!   name given. No
 //!   terminal needed, so scripts, CI and agents can use it. `NAME` alone gets a
 //!   placeholder; a secret-looking `NAME` alone, in a terminal and without
 //!   `--yes`, is asked for without echo instead.
@@ -41,6 +42,8 @@ pub struct Args {
     pub desc: Option<String>,
     pub category: Option<String>,
     pub required: bool,
+    /// `--optional` (I-036, DEC-VA2). Conflicts with `required` in clap.
+    pub optional: bool,
 }
 
 /// One custom variable, before it is written.
@@ -50,6 +53,9 @@ struct Custom {
     description: Option<String>,
     category: Option<String>,
     required: bool,
+    /// Said optional on purpose: the `.env.example` comment says so. Not
+    /// required is the default and says nothing.
+    optional: bool,
 }
 
 pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
@@ -68,7 +74,7 @@ pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
             "Give the variables as arguments instead:\n  \
              evnx add custom NAME=value OTHER_NAME=value --yes",
         )?;
-        match prompt_loop(yes, args.desc, category, args.required)? {
+        match prompt_loop(yes, args.desc, category, args.required, args.optional)? {
             Some(customs) => customs,
             None => return Ok(aborted()),
         }
@@ -77,14 +83,65 @@ pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
             let shown: Vec<&str> = args.vars.iter().map(String::as_str).collect();
             require_terminal(&format!("evnx add custom {} --yes", shown.join(" ")))?;
         }
-        from_arguments(&args.vars, args.desc, category, args.required, yes)?
+        from_arguments(
+            &args.vars,
+            args.desc,
+            category,
+            args.required,
+            args.optional,
+            yes,
+        )?
     };
 
     if customs.is_empty() {
         println!("No variables added.");
         return Ok(Outcome::Aborted);
     }
-    write(output_path, &customs, mode)
+    let outcome = write(output_path, &customs, mode)?;
+    if outcome != Outcome::Aborted {
+        say_how_to_make_optional(output_path, &customs);
+    }
+    Ok(outcome)
+}
+
+/// `--optional` with no `[vars]` contract to write it into (I-036, DEC-VA2).
+///
+/// ⚠️ `.env.example` cannot say "optional": every line in it is required to
+/// `validate`. The contract can, but a lone `[vars.NAME]` would switch the
+/// project to the contract and stop every other template line counting as
+/// required — so the advice starts from `evnx spec init`, which declares them
+/// all. stderr, and not hidden by `-q`: the flag asked for something this run
+/// could not do.
+fn say_how_to_make_optional(output_path: &Path, customs: &[Custom]) {
+    let optional: Vec<&str> = customs
+        .iter()
+        .filter(|c| c.optional)
+        .map(|c| c.name.as_str())
+        .collect();
+    if optional.is_empty() || has_contract(output_path) {
+        return;
+    }
+    crate::utils::ui::warning(format!(
+        "{} not marked optional: .env.example cannot say it, and there is no [vars] contract",
+        optional.join(", ")
+    ));
+    crate::utils::ui::warning_detail(format!(
+        "     →  run `evnx spec init`, then set `required = false` under [vars.{}]",
+        if optional.len() == 1 {
+            optional[0]
+        } else {
+            "NAME"
+        }
+    ));
+}
+
+/// Does the `.evnx.toml` governing `dir` declare a `[vars]` contract?
+fn has_contract(dir: &Path) -> bool {
+    crate::core::config::load(dir)
+        .ok()
+        .and_then(|l| l.source)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .is_some_and(|t| crate::core::config::has_vars_section(&t))
 }
 
 /// The argument form. Every name is checked before anything is asked or
@@ -94,6 +151,7 @@ fn from_arguments(
     desc: Option<String>,
     category: Option<String>,
     required: bool,
+    optional: bool,
     yes: bool,
 ) -> Result<Vec<Custom>> {
     let mut parsed: Vec<(String, Option<String>)> = Vec::new();
@@ -145,6 +203,7 @@ fn from_arguments(
             description: desc.clone(),
             category: category.clone(),
             required,
+            optional,
         });
     }
     Ok(customs)
@@ -157,6 +216,7 @@ fn prompt_loop(
     desc: Option<String>,
     category: Option<String>,
     required: bool,
+    optional: bool,
 ) -> Result<Option<Vec<Custom>>> {
     print_header(
         "Custom Variables",
@@ -165,7 +225,7 @@ fn prompt_loop(
     info("Enter variables one at a time. Empty name to finish.");
 
     // Options given as flags apply to every variable and are not asked again.
-    let flags_given = desc.is_some() || category.is_some() || required;
+    let flags_given = desc.is_some() || category.is_some() || required || optional;
     let mut customs: Vec<Custom> = Vec::new();
     loop {
         let name: String = Input::new()
@@ -234,6 +294,7 @@ fn prompt_loop(
             description: desc.clone(),
             category: category.clone(),
             required,
+            optional,
         };
 
         // One question instead of three (I-025): most variables need none of
@@ -351,6 +412,7 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
                 c.description.as_deref(),
                 c.category.as_deref(),
                 c.required,
+                c.optional,
             ));
             content.push('\n');
         }
@@ -416,6 +478,7 @@ fn entry(
     description: Option<&str>,
     category: Option<&str>,
     required: bool,
+    optional: bool,
 ) -> String {
     let mut words = Vec::new();
     if let Some(cat) = category {
@@ -426,6 +489,8 @@ fn entry(
     }
     if required {
         words.push("(required)".to_string());
+    } else if optional {
+        words.push("(optional)".to_string());
     }
     let assignment = crate::core::envfile::line(name, example);
     if words.is_empty() {
@@ -464,16 +529,32 @@ mod tests {
 
     #[test]
     fn plain_entry_is_one_assignment() {
-        assert_eq!(entry("A", "1", None, None, false), "A=1");
+        assert_eq!(entry("A", "1", None, None, false, false), "A=1");
     }
 
     #[test]
     fn description_and_required_go_above() {
         assert_eq!(
-            entry("A", "1", Some("Key"), None, true),
+            entry("A", "1", Some("Key"), None, true, false),
             "# Key (required)\nA=1"
         );
-        assert_eq!(entry("A", "1", None, None, true), "# (required)\nA=1");
+        assert_eq!(
+            entry("A", "1", None, None, true, false),
+            "# (required)\nA=1"
+        );
+    }
+
+    /// I-036, DEC-VA2: `--optional` is said in the comment, like `--required`.
+    #[test]
+    fn t_i036_optional_is_said_above() {
+        assert_eq!(
+            entry("A", "1", None, None, false, true),
+            "# (optional)\nA=1"
+        );
+        assert_eq!(
+            entry("A", "1", Some("Key"), None, false, true),
+            "# Key (optional)\nA=1"
+        );
     }
 
     /// N-17: every combination with a category leaves the assignment active.
@@ -485,7 +566,7 @@ mod tests {
             (Some("Key"), false, "# [Security] Key"),
             (Some("Key"), true, "# [Security] Key (required)"),
         ] {
-            let text = entry("A", "1", desc, Some("Security"), required);
+            let text = entry("A", "1", desc, Some("Security"), required, false);
             assert_eq!(text, format!("{comment}\nA=1"));
             assert!(text.lines().any(|l| l == "A=1"), "{text}");
         }

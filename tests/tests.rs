@@ -51,31 +51,9 @@ fn test_init_help() {
         .stdout(predicate::str::contains("Interactive project setup"));
 }
 
-// #[test]
-// fn test_init_non_interactive() {
-//     let dir = setup_test_env();
-
-//     cargo_bin_cmd!("evnx")
-//         .args(&[
-//             "init",
-//             "--stack",
-//             "python",
-//             "--services",
-//             "postgres,redis",
-//             "--yes",
-//         ])
-//         .current_dir(dir.path())
-//         .assert()
-//         .success()
-//         .stdout(predicate::str::contains("Created .env.example"));
-
-//     assert!(dir.path().join(".env.example").exists());
-//     assert!(dir.path().join(".env").exists());
-
-//     let content = fs::read_to_string(dir.path().join(".env.example")).unwrap();
-//     assert!(content.contains("DATABASE_URL"));
-//     assert!(content.contains("REDIS_URL"));
-// }
+// T-004 (R-validate, 2026-10-18): `test_init_non_interactive` was here, commented out —
+// it used `init --stack/--services`, which no longer exist. `init --yes --with …` is
+// covered by tests/init_integration.rs and tests/init_golden.rs.
 
 // ============================================================================
 // VALIDATE COMMAND TESTS
@@ -300,37 +278,8 @@ AWS_SECRET_ACCESS_KEY=realSecretKeyWith40CharactersHere12345
         .stdout(predicate::str::contains("AWS Access Key"));
 }
 
-// #[test]
-// fn test_scan_json_output() {
-//     let dir = setup_test_env();
-//     create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
-
-//     let output = cargo_bin_cmd!("evnx")
-//         .args(&["scan", "--format", "json"])
-//         .current_dir(dir.path())
-//         .output()
-//         .unwrap();
-
-//     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-//     assert!(json.get("secrets_found").is_some());
-//     assert!(json.get("findings").is_some());
-// }
-
-// #[test]
-// fn test_scan_sarif_output() {
-//     let dir = setup_test_env();
-//     create_env(&dir, r#"AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY"#);
-
-//     let output = cargo_bin_cmd!("evnx")
-//         .args(&["scan", "--format", "sarif"])
-//         .current_dir(dir.path())
-//         .output()
-//         .unwrap();
-
-//     let sarif: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-//     assert_eq!(sarif["version"], "2.1.0");
-//     assert!(sarif.get("runs").is_some());
-// }
+// T-004: `test_scan_json_output` and `test_scan_sarif_output` were here, commented out;
+// tests/golden_output.rs locks both formats (`scan_json_is_stable`, `scan_sarif_is_stable`).
 
 #[test]
 fn test_scan_exit_zero() {
@@ -403,22 +352,8 @@ SECRET_KEY=test
         .stdout(predicate::str::contains("Missing from .env"));
 }
 
-// #[test]
-// fn test_diff_json_output() {
-//     let dir = setup_test_env();
-//     create_env_example(&dir);
-//     create_env(&dir, r#"DATABASE_URL=postgresql://localhost:5432/db"#);
-
-//     let output = cargo_bin_cmd!("evnx")
-//         .args(&["diff", "--format", "json"])
-//         .current_dir(dir.path())
-//         .output()
-//         .unwrap();
-
-//     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-//     assert!(json.get("missing").is_some());
-//     assert!(json.get("extra").is_some());
-// }
+// T-004: `test_diff_json_output` was here, commented out; tests/golden_output.rs locks
+// it (`diff_json_is_stable`).
 
 // ============================================================================
 // CONVERT COMMAND TESTS
@@ -513,28 +448,9 @@ fn test_convert_with_transform() {
 // END-TO-END WORKFLOW TESTS
 // ============================================================================
 
-// #[test]
-// fn test_workflow_init_validate_scan() {
-//     let dir = setup_test_env();
-
-//     cargo_bin_cmd!("evnx")
-//         .args(&["init", "--stack", "python", "--yes"])
-//         .current_dir(dir.path())
-//         .assert()
-//         .success();
-
-//     cargo_bin_cmd!("evnx")
-//         .arg("validate")
-//         .current_dir(dir.path())
-//         .assert()
-//         .failure();
-
-//     cargo_bin_cmd!("evnx")
-//         .arg("scan")
-//         .current_dir(dir.path())
-//         .assert()
-//         .success();
-// }
+// T-004: `test_workflow_init_validate_scan` was here, commented out — it used
+// `init --stack`. Its current form is tests/devrel_review.rs
+// (`f2_what_init_writes_passes_validate`, `n1_what_init_generates_does_not_pass_validate_unfilled`).
 
 #[test]
 fn test_workflow_convert_multiple_formats() {

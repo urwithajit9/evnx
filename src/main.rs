@@ -146,29 +146,41 @@ fn main() -> Result<()> {
             example,
             strict,
             fix,
+            dry_run,
             rotate_weak_secrets,
             format,
             exit_zero,
             ignore,
             validate_formats,
-        } => commands::validate::run(
-            resolve_env(
+            fail_on,
+        } => commands::validate::run(commands::validate::Options {
+            env: resolve_env(
                 Path::new("."),
                 env.as_deref(),
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
             ),
-            cfg.example_path(example),
-            evnx::core::config::any(strict, cfg.validate.strict),
+            example: cfg.example_path(example),
+            strict: evnx::core::config::any(strict, cfg.validate.strict),
             fix,
+            dry_run,
             rotate_weak_secrets,
             format,
             exit_zero,
-            cli.verbose,
-            evnx::core::config::extend(ignore, cfg.validate.ignore),
-            evnx::core::config::any(validate_formats, cfg.validate.validate_formats),
-            cfg.vars.clone(),
-        ),
+            // The flag wins over `[validate] fail_on`; both are checked (I-038).
+            fail_on,
+            fail_on_configured: cfg.validate.fail_on.clone(),
+            verbose: cli.verbose,
+            // Additive, as before; kept apart so an unknown type names its
+            // source (I-038).
+            ignore,
+            ignore_configured: cfg.validate.ignore.clone().unwrap_or_default(),
+            validate_formats: evnx::core::config::any(
+                validate_formats,
+                cfg.validate.validate_formats,
+            ),
+            spec: cfg.vars.clone(),
+        }),
 
         Commands::Scan {
             path,

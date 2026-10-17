@@ -72,6 +72,44 @@ pub fn write_with_mode(path: impl AsRef<Path>, bytes: &[u8], mode: u32) -> Resul
     write(path.as_ref(), bytes, Mode::Always(mode), false)
 }
 
+/// Keep `content` — what `path` holds before an in-place edit — beside it as
+/// `<path>.bak`, or `.bak.2` … `.bak.100` when earlier copies exist. Returns
+/// the backup's path.
+///
+/// ⚠️ Never overwrites an earlier copy, unlike `sed -i.bak`: two edits in a row
+/// would otherwise leave a "backup" of the already-changed file and no copy of
+/// the original.
+///
+/// The copy holds what the original held, so it gets the original's mode
+/// (0600 when that cannot be read) — set on the temp file before it is
+/// renamed, so it is never readable by others for a moment either. It used to
+/// be written at the umask's mode and `chmod`ed after.
+///
+/// `validate --fix` is the caller; it was `utils::fs::backup_file` (never
+/// called, and named `.backup`) and validate's private `write_backup`.
+pub fn backup(path: impl AsRef<Path>, content: &[u8]) -> Result<PathBuf> {
+    let path = path.as_ref();
+    let base = path.as_os_str().to_string_lossy();
+    let mut candidate = PathBuf::from(format!("{base}.bak"));
+    let mut n = 2;
+    while std::fs::symlink_metadata(&candidate).is_ok() {
+        if n > 100 {
+            bail!(
+                "refusing to change {base}: {base}.bak through {base}.bak.100 all exist — \
+                 remove some first"
+            );
+        }
+        candidate = PathBuf::from(format!("{base}.bak.{n}"));
+        n += 1;
+    }
+    let mode = existing_file(&resolve(path)?.0)?
+        .and_then(|m| existing_mode(&m))
+        .unwrap_or(permissions::PRIVATE);
+    write_with_mode(&candidate, content, mode)
+        .with_context(|| format!("could not keep a backup at {}", candidate.display()))?;
+    Ok(candidate)
+}
+
 /// Stage a private write: the bytes are in a temp file beside the target, and
 /// nothing visible has changed until [`Staged::commit`]. For callers that must
 /// do something between the two — `backup` rotates old copies only once the new
@@ -385,6 +423,32 @@ mod tests {
         let w = write_private(&p, b"A=2\n").unwrap();
         assert!(w.replaced);
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "A=2\n");
+    }
+
+    #[test]
+    fn a_backup_never_overwrites_an_earlier_one() {
+        let d = TempDir::new().unwrap();
+        let p = d.path().join(".env");
+        std::fs::write(&p, "A=1\n").unwrap();
+        let first = backup(&p, b"A=1\n").unwrap();
+        let second = backup(&p, b"A=2\n").unwrap();
+        assert_eq!(first, d.path().join(".env.bak"));
+        assert_eq!(second, d.path().join(".env.bak.2"));
+        assert_eq!(std::fs::read_to_string(first).unwrap(), "A=1\n");
+        assert_eq!(std::fs::read_to_string(second).unwrap(), "A=2\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_backup_has_the_originals_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = TempDir::new().unwrap();
+        let p = d.path().join(".env");
+        std::fs::write(&p, "A=1\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let b = backup(&p, b"A=1\n").unwrap();
+        let mode = std::fs::metadata(b).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o640);
     }
 
     #[test]

@@ -1,0 +1,65 @@
+{
+  "status": "failed",
+  "dry_run": false,
+  "required_present": 4,
+  "required_total": 4,
+  "issues": [
+    {
+      "severity": "error",
+      "type": "placeholder_value",
+      "variable": "SECRET_KEY",
+      "message": "SECRET_KEY looks like a placeholder",
+      "location": ".env",
+      "suggestion": "Run: openssl rand -hex 32",
+      "auto_fixable": true
+    },
+    {
+      "severity": "error",
+      "type": "placeholder_value",
+      "variable": "STRIPE_KEY",
+      "message": "STRIPE_KEY looks like a placeholder",
+      "location": ".env",
+      "suggestion": "Get from Stripe Dashboard",
+      "auto_fixable": true
+    }
+  ],
+  "fixed": [
+    {
+      "variable": "API_PORT",
+      "action": "Added missing variable",
+      "old_value": null,
+      "old_value_withheld": false,
+      "new_value": "8080"
+    },
+    {
+      "variable": "DEBUG",
+      "action": "Fixed boolean format",
+      "old_value": "False",
+      "old_value_withheld": false,
+      "new_value": "false"
+    }
+  ],
+  "needs_input": [
+    {
+      "variable": "SECRET_KEY",
+      "action": "Added missing variable",
+      "old_value": null,
+      "old_value_withheld": false,
+      "new_value": "CHANGE_ME_SECURE_32_CHARS_MIN"
+    },
+    {
+      "variable": "STRIPE_KEY",
+      "action": "Added missing variable",
+      "old_value": null,
+      "old_value_withheld": false,
+      "new_value": "CHANGE_ME_SECURE_32_CHARS_MIN"
+    }
+  ],
+  "summary": {
+    "errors": 2,
+    "warnings": 0,
+    "style": 0,
+    "fixed_count": 2,
+    "needs_input": 2
+  }
+}

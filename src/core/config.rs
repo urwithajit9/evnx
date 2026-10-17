@@ -190,6 +190,9 @@ pub struct ValidatePolicy {
     pub validate_formats: Option<bool>,
     /// Issue types this project suppresses.
     pub ignore: Option<Vec<String>>,
+    /// `error` (the default) or `warning`: the lowest severity that fails the
+    /// run. `--fail-on` overrides it.
+    pub fail_on: Option<String>,
     #[serde(flatten)]
     extra: Extra,
 }

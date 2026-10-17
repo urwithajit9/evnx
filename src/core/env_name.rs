@@ -144,6 +144,29 @@ pub fn available(dir: &Path) -> Vec<String> {
     names
 }
 
+/// The first candidate `name` abbreviates: `prod` → `production`.
+///
+/// One rule for the `--env-name` error and the contract's environment check
+/// (I-042), so both read `.env.prod` the same way.
+pub fn abbreviation_of<'a>(
+    name: &str,
+    candidates: impl IntoIterator<Item = &'a str>,
+) -> Option<&'a str> {
+    candidates
+        .into_iter()
+        .find(|c| c.starts_with(name) && *c != name)
+}
+
+/// The environment `name` was probably meant to be: one it abbreviates, else
+/// the closest by spelling (`prodution` → `production`).
+pub fn meant<'a>(name: &str, candidates: &[&'a str]) -> Option<&'a str> {
+    abbreviation_of(name, candidates.iter().copied()).or_else(|| {
+        crate::utils::string::closest(name, candidates.iter().map(|c| (*c, *c)))
+            .first()
+            .copied()
+    })
+}
+
 /// A message that says what is missing *and* what is there.
 ///
 /// "No such file" sends someone to `ls`. Listing the environments that do exist
@@ -156,17 +179,13 @@ fn not_found_message(dir: &Path, name: &str) -> String {
     let mut msg = format!("{wanted} does not exist");
 
     // The common typo is an abbreviation of a real name.
-    if let Some(guess) = present
-        .iter()
-        .chain(
-            SUGGESTED
-                .iter()
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>()
-                .iter(),
-        )
-        .find(|candidate| candidate.starts_with(name) && candidate.as_str() != name)
-    {
+    if let Some(guess) = abbreviation_of(
+        name,
+        present
+            .iter()
+            .map(String::as_str)
+            .chain(SUGGESTED.iter().copied()),
+    ) {
         msg.push_str(&format!(" — did you mean '{guess}'?"));
     }
 

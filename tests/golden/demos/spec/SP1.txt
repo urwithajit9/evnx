@@ -51,8 +51,11 @@ format = "int"
   ok: FIXED I-184 (DEC-SP10): STRIPE_SECRET_KEY by its name, DATABASE_URL because its URL carries a password
 
 $ evnx validate
-✓ All required variables present
-✓ All checks passed
+  !  .env is not covered by .gitignore — `git add .` would commit it
+     .env
+     →  Add it to .gitignore (`evnx doctor --fix` adds `.env*` and keeps `.env.example`)
+
+  1 warning
 [stderr]
   config    .evnx.toml
 

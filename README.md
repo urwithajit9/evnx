@@ -259,13 +259,15 @@ so a variable holding `sk_live_…` is still reported however it is declared.
 Validates your `.env` file for common misconfigurations before deployment.
 
 ```bash
-evnx validate                            # pretty output
-evnx validate --strict                   # exit non-zero on warnings
+evnx validate                            # pretty output; exit 1 on errors
+evnx validate --strict                   # also report variables nothing declares
+evnx validate --fail-on warning          # warnings exit 1 too
+evnx validate --fix --dry-run            # what --fix would change; writes nothing
 evnx validate --format json              # machine-readable output
 evnx validate --format github-actions    # inline GitHub annotations
 ```
 
-Detects: missing required variables, placeholder values (`YOUR_KEY_HERE`, `CHANGE_ME`), the boolean string trap (`DEBUG="False"` is truthy in most runtimes), weak secret keys, localhost in production, and suspicious port numbers.
+Detects: missing required variables, placeholder values (`YOUR_KEY_HERE`, `CHANGE_ME`), the boolean string trap (`DEBUG="False"` is truthy in most runtimes), weak secret keys, duplicate keys, `localhost` in a project with Docker files, an env file `.gitignore` does not cover (a warning) or git already tracks (an error), and, with `--validate-formats`, malformed URLs, ports and emails. Warnings alone exit 0 unless `--fail-on warning`.
 
 ---
 
@@ -875,6 +877,7 @@ regex = "ACME-[A-Z0-9]{32}"
 strict           = true
 validate_formats = true
 ignore           = ["boolean_trap"]
+fail_on          = "error"           # "error" | "warning": the lowest severity that exits 1
 
 [sync]
 naming_policy = "warn"         # "warn" | "error" | "ignore"

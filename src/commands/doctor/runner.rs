@@ -100,14 +100,15 @@ pub fn run(
     // by a CI image. `Option<String>` is what makes "asked for pretty"
     // distinguishable from "did not ask".
     let json_output = match format.as_deref() {
-        Some(value) => match value.trim().to_ascii_lowercase().as_str() {
-            "json" => true,
-            "pretty" | "text" => false,
-            other => {
-                eprintln!(
-                    "{} unknown format '{other}' — expected one of: pretty, json",
-                    "Error:".on_red().bold()
-                );
+        Some(value) => match crate::core::args::one_of(
+            "format",
+            value,
+            &[("json", true), ("pretty", false), ("text", false)],
+            &["pretty", "json"],
+        ) {
+            Ok(json) => json,
+            Err(e) => {
+                eprintln!("{} {e}", "Error:".on_red().bold());
                 eprintln!();
                 eprintln!("No verdict: doctor examined nothing. This is not a clean result.");
                 std::process::exit(EXIT_ERROR);
@@ -644,19 +645,9 @@ impl DiagnosticCheck for DockerCheck {
     }
 
     fn run(&self, project_root: &Path, verbose: bool) -> Result<CheckResult> {
-        let docker_files = [
-            "docker-compose.yml",
-            "docker-compose.yaml",
-            "Dockerfile",
-            "Containerfile",
-            ".dockerignore",
-        ];
-
-        let found: Vec<&str> = docker_files
-            .iter()
-            .copied()
-            .filter(|f| project_root.join(f).exists())
-            .collect();
+        // One list with `validate` (DEC-VA3), which adds Compose v2's
+        // `compose.yaml` / `compose.yml` (I-257).
+        let found = crate::core::project::docker_files_in(project_root);
 
         if found.is_empty() {
             Ok(CheckResult {

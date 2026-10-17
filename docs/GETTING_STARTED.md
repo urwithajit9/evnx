@@ -272,24 +272,32 @@ evnx validate --strict
 Sample output:
 
 ```
-[VALIDATE] Checking .env...
+  evnx validate  Check environment configuration
 
-[WARNING] DEBUG=true — boolean string trap
-          Python reads this as the string "true", not bool True
-          Tip: Use DEBUG=1 or DEBUG=True depending on your framework
+  !  Extra variable not in .env.example: OLD_FLAG
+     .env
+     →  Add OLD_FLAG to .env.example or remove from .env
 
-[WARNING] JWT_SECRET=secret — weak secret detected
-          Value is too short (6 chars). Minimum recommended: 32 chars.
+  ✗  SENDGRID_API_KEY looks like a placeholder
+     .env
+     ·  fixable with --fix
 
-[WARNING] SENDGRID_API_KEY=your-sendgrid-key — placeholder value detected
+  !  DEBUG is set to "True" (string, not boolean)
+     .env
+     →  Use true or 1 for proper boolean handling
+     ·  fixable with --fix
 
-[WARNING] DATABASE_URL contains localhost — production environment detected
-          but localhost database URL found
+  ✗  JWT_SECRET is too weak or predictable
+     .env
+     →  Rotate JWT_SECRET where it is issued, then replace it here. …
 
-[SUMMARY] 0 errors, 4 warnings
+  2 errors  ·  2 warnings
 ```
 
-`--strict` promotes warnings to errors and exits non-zero. Without it, warnings are advisory only.
+Errors exit 1; warnings alone exit 0. `--strict` adds the extra-variable check
+(`OLD_FLAG` above); `--fail-on warning` makes warnings fail the run as well.
+`--fix` repairs what it can — and lists what it could only add as a placeholder
+under "Needs your input" — and `--fix --dry-run` shows the plan without writing.
 
 Other output formats:
 
@@ -596,6 +604,7 @@ ignore_placeholders = true
 [validate]
 strict           = true
 validate_formats = true
+fail_on          = "error"           # "error" | "warning": the lowest severity that exits 1
 
 [sync]
 naming_policy = "warn"

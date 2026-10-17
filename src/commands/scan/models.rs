@@ -85,14 +85,18 @@ impl std::str::FromStr for Confidence {
     /// silent default: a typo in a CI flag must not quietly widen or narrow what
     /// the scanner reports.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "high" => Ok(Confidence::High),
-            "medium" | "med" => Ok(Confidence::Medium),
-            "low" | "all" => Ok(Confidence::Low),
-            other => Err(anyhow::anyhow!(
-                "unknown severity '{other}' — expected one of: high, medium, low"
-            )),
-        }
+        crate::core::args::one_of(
+            "severity",
+            s,
+            &[
+                ("high", Confidence::High),
+                ("medium", Confidence::Medium),
+                ("med", Confidence::Medium),
+                ("low", Confidence::Low),
+                ("all", Confidence::Low),
+            ],
+            &["high", "medium", "low"],
+        )
     }
 }
 

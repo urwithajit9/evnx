@@ -13,6 +13,9 @@
 //! name the platform accepts would break a working migration. Where the rule is
 //! not published, [`Name::Slug`] allows the characters any platform's
 //! identifiers use and refuses only whitespace and shell syntax.
+//!
+//! Also the one rule for a value chosen from a fixed list — a format, a level,
+//! an issue type: [`one_of`].
 
 use anyhow::{bail, Result};
 
@@ -145,6 +148,38 @@ pub fn check_opt(flag: &str, value: Option<&str>, kind: Name) -> Result<()> {
     value.map_or(Ok(()), |v| check(flag, v, kind))
 }
 
+/// A value from a fixed list — a format, a level, an issue type — or an error
+/// naming every accepted one.
+///
+/// `accepted` pairs each spelling with what it means, so aliases (`text` for
+/// `pretty`) cost nothing; `shown` is what the error lists. Matching ignores
+/// surrounding spaces and case, and the error repeats the value as compared:
+///
+/// ```text
+/// unknown format 'xml' — expected one of: pretty, json, github-actions
+/// ```
+///
+/// ⚠️ One helper because the rule was written four times (validate, scan twice,
+/// doctor), and validate's copy matched case-sensitively, so `--format JSON`
+/// worked on scan and was refused by validate. A list check that accepts a typo
+/// silently is worse than none: `validate --ignore placeholder_vlaue` suppressed
+/// nothing and said nothing (I-038).
+pub fn one_of<T: Copy>(
+    what: &str,
+    value: &str,
+    accepted: &[(&str, T)],
+    shown: &[&str],
+) -> Result<T> {
+    let wanted = value.trim().to_lowercase();
+    match accepted.iter().find(|(name, _)| *name == wanted) {
+        Some((_, meant)) => Ok(*meant),
+        None => bail!(
+            "unknown {what} '{wanted}' — expected one of: {}",
+            shown.join(", ")
+        ),
+    }
+}
+
 /// The longest span, in days, any evnx day count may name: ten years
 /// (DEC-AU2, DEC-CL7). The server enforces the same cap on token lifetimes.
 pub const MAX_DAYS: i64 = 3650;
@@ -198,6 +233,23 @@ mod tests {
                 assert!(!kind.accepts(bad), "{kind:?} accepted {bad:?}");
             }
         }
+    }
+
+    #[test]
+    fn t_i038_one_of_matches_any_case_and_lists_every_name() {
+        let names = [("pretty", 1), ("text", 1), ("json", 2)];
+        assert_eq!(
+            one_of("format", " JSON ", &names, &["pretty", "json"]).unwrap(),
+            2
+        );
+        assert_eq!(
+            one_of("format", "text", &names, &["pretty", "json"]).unwrap(),
+            1
+        );
+        let err = one_of("format", "XML", &names, &["pretty", "json"])
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, "unknown format 'xml' — expected one of: pretty, json");
     }
 
     #[test]

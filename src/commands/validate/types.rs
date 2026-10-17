@@ -20,9 +20,38 @@ pub enum IssueType {
     /// A key under `[vars.X]` evnx does not understand — usually a typo that
     /// leaves the variable's contract other than its author meant (I-187).
     UnknownSpecKey,
+    /// An `environments` name that matches no environment here, or a file
+    /// named close to a listed one: the variable's requirement silently stops
+    /// applying (I-042).
+    UnknownEnvironment,
+    /// The env file is not covered by `.gitignore`: `git add .` takes it
+    /// (D-27, DEC-VA1). A warning.
+    EnvNotIgnored,
+    /// The env file is already tracked by git: its values are in the history
+    /// (D-27, DEC-VA1). An error.
+    EnvTracked,
 }
 
 impl IssueType {
+    /// Every type, in the order `--ignore`'s error lists them.
+    pub const ALL: [IssueType; 15] = [
+        IssueType::MissingVariable,
+        IssueType::ExtraVariable,
+        IssueType::PlaceholderValue,
+        IssueType::BooleanTrap,
+        IssueType::WeakSecret,
+        IssueType::LocalhostInDocker,
+        IssueType::InvalidUrl,
+        IssueType::InvalidPort,
+        IssueType::InvalidEmail,
+        IssueType::FormatMismatch,
+        IssueType::DuplicateKey,
+        IssueType::UnknownSpecKey,
+        IssueType::UnknownEnvironment,
+        IssueType::EnvNotIgnored,
+        IssueType::EnvTracked,
+    ];
+
     pub fn as_str(&self) -> &'static str {
         match self {
             IssueType::MissingVariable => "missing_variable",
@@ -37,6 +66,9 @@ impl IssueType {
             IssueType::InvalidEmail => "invalid_email",
             IssueType::FormatMismatch => "format_mismatch",
             IssueType::UnknownSpecKey => "unknown_spec_key",
+            IssueType::UnknownEnvironment => "unknown_environment",
+            IssueType::EnvNotIgnored => "env_not_ignored",
+            IssueType::EnvTracked => "env_tracked",
         }
     }
 }
@@ -81,16 +113,32 @@ pub struct Summary {
     pub errors: usize,
     pub warnings: usize,
     pub style: usize,
+    /// Repairs that are complete: `fixed`'s length.
     pub fixed_count: usize,
+    /// Variables `--fix` added with a placeholder: `needs_input`'s length.
+    #[serde(default)]
+    pub needs_input: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ValidationResult {
     pub status: String,
+    /// `--fix --dry-run`: `fixed` and `needs_input` are what `--fix` would do,
+    /// and everything else describes the file as it stands — nothing was
+    /// written.
+    #[serde(default)]
+    pub dry_run: bool,
     pub required_present: usize,
     pub required_total: usize,
     pub issues: Vec<Issue>,
+    /// Repairs `--fix` completed.
     pub fixed: Vec<FixApplied>,
+    /// ⚠️ Not repairs (I-037): variables `--fix` added with a placeholder,
+    /// because evnx cannot invent their values. Each still has its
+    /// `placeholder_value` finding in `issues`, so `status`, the error count
+    /// and the exit code agree until someone fills it in.
+    #[serde(default)]
+    pub needs_input: Vec<FixApplied>,
     pub summary: Summary,
 }
 

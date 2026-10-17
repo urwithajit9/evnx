@@ -12,7 +12,7 @@ $ evnx validate --strict --validate-formats
 
   ✗  Missing required variable: OPTIONAL_X
      .env
-     →  Add OPTIONAL_X=<value> to .env
+     →  Add OPTIONAL_X=<value> to .env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.OPTIONAL_X] in .evnx.toml
      ·  fixable with --fix
 
   !  Extra variable not in .env.example: EXTRA_VAR
@@ -33,11 +33,6 @@ $ evnx validate --strict --validate-formats
      →  Use false or 0 for proper boolean handling
      ·  fixable with --fix
 
-  ✗  SECRET_KEY is too weak or predictable
-     .env
-     →  Run: openssl rand -hex 32
-     ·  fixable with --fix
-
   !  DATABASE_URL does not appear to be a valid URL
      .env
      →  Expected format: https://example.com/path
@@ -50,13 +45,13 @@ $ evnx validate --strict --validate-formats
      .env
      →  Expected format: user@example.com
 
-  5 errors  ·  5 warnings
+  4 errors  ·  5 warnings
 
 Next steps:
   1. Review and fix the errors above
   2. Run with --fix to auto-correct common issues
   3. Use --ignore issue_type to suppress specific warnings
-Validation failed: 5 errors
+Validation failed: 4 errors
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]
   ok: strict adds extras; formats adds url/port/email (exit 1)

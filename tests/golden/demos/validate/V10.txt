@@ -5,11 +5,15 @@ $ evnx validate
 
   evnx validate  Check environment configuration
 
-✓ All required variables present
-✓ All checks passed
+  !  .env is not covered by .gitignore — `git add .` would commit it
+     .env
+     →  Add it to .gitignore (`evnx doctor --fix` adds `.env*` and keeps `.env.example`)
+
+  1 warning
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 0]
-  ok: KNOWN D-27: .env is not in .gitignore and validate says nothing (docs claim a check) (exit 0)
+  ok: FIXED D-27 (DEC-VA1): .env not covered by .gitignore is a warning; warnings alone exit 0 (exit 0)
+  ok: FIXED D-27: validate says so
 
 $ bash -c { sleep 0.3; "$0" validate; } | true; exit ${PIPESTATUS[0]} evnx
 
@@ -18,4 +22,4 @@ $ bash -c { sleep 0.3; "$0" validate; } | true; exit ${PIPESTATUS[0]} evnx
 [exit 141]
   ok: I-028 fixed in 0.10.1: a closed pipe ends validate quietly, exit 141 (exit 141)
 
-================ summary: 2 ok, 0 mismatch   ================
+================ summary: 3 ok, 0 mismatch   ================

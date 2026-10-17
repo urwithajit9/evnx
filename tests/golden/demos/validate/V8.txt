@@ -10,7 +10,11 @@ $ evnx validate
      .env
      →  Fix the value, or relax `format` in [vars.PORT]
 
-  1 error
+  !  [vars.A] lists environment 'prodution' — did you mean 'production'?
+     .evnx.toml
+     →  Correct it in `environments`: as written, 'prodution' matches no file, so the requirement is checked nowhere under that name
+
+  1 error  ·  1 warning
 
 Next steps:
   1. Review and fix the errors above
@@ -20,6 +24,6 @@ Validation failed: 1 error
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]
 B is optional (required=false) so no missing error; PORT format_mismatch expected
-KNOWN I-042: typo 'prodution' in environments is silently accepted; decided: warn
+  ok: FIXED I-042: typo 'prodution' in environments is a warning naming 'production'
 
-================ summary: 0 ok, 0 mismatch   ================
+================ summary: 1 ok, 0 mismatch   ================

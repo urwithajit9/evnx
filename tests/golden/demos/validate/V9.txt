@@ -28,10 +28,13 @@ $ evnx validate
 
   evnx validate  Check environment configuration
 
-✓ All required variables present
-✓ All checks passed
+  !  DB_HOST uses localhost/127.0.0.1
+     .env
+     →  In Docker, use service name instead (e.g., db:5432)
+
+  1 warning
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 0]
-KNOWN I-046: run from sub/ the project's Dockerfile one level up is not seen, so no warning; decided: env file folder, then project root
+  ok: FIXED I-046: run from sub/, the project's Dockerfile one level up is seen
 
-================ summary: 0 ok, 0 mismatch   ================
+================ summary: 1 ok, 0 mismatch   ================

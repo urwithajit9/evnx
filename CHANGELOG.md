@@ -8,6 +8,119 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The patch for `evnx validate` (package R-validate): counts that count what they
+say, one finding per problem, a `--fix` that tells a repair from a placeholder,
+and the checks the review asked for — environment names, Docker files beside
+the env file, and `.gitignore`.
+
+⚠️ **Scripts that read validate's exit code or JSON:**
+
+- In a git repository, an env file **already tracked by git** is an error
+  (exit 1); one that `.gitignore` does not cover is a warning (exit 0). Outside
+  a repository nothing changes (D-27, DEC-VA1).
+- An unknown issue type in `--ignore` or `[validate] ignore` is exit 2, listing
+  the valid types (I-038). It was accepted and ignored nothing.
+- JSON: `fixed` and `summary.fixed_count` hold only completed repairs; the
+  variables `--fix` could only add with a placeholder are in the new
+  `needs_input` array and `summary.needs_input`, and keep their
+  `placeholder_value` finding in `issues` (I-037). `dry_run` is new.
+  `required_present` counts the declared variables that are present (I-034).
+- `SECRET_KEY=changeme` is one finding (the placeholder), not also
+  `weak_secret`, so error counts can drop (I-035).
+
+### validate
+
+- **`required_present` counts declared variables that are there** (I-034). It
+  was `min(variables in .env, variables in .env.example)`: two of eight missing
+  plus one extra read 7 of 8, and a file of extras alone read as complete.
+- **One problem, one finding** (I-035). A placeholder in a secret-shaped name
+  is reported as a placeholder only; "too weak or predictable" is for a real
+  value. `--ignore placeholder_value` still leaves the weak-secret finding.
+- **`--fix` separates "Fixed" from "Needs your input"** (I-037). A variable it
+  could only add with a placeholder is listed once, under "Needs your input",
+  not counted as fixed and not repeated as a fresh error; the run exits 1 until
+  it is filled in. A missing variable gets the template's value (`8080`,
+  `localhost`, or empty for `OPTIONAL_X=`), and the generic placeholder only
+  when its name looks like a secret (D-25). It was `your_value_here` for every
+  name.
+- **`--fix --dry-run`** shows what `--fix` would change and writes nothing — no
+  `.env` change, no backup. The report and exit code are the file's as it
+  stands; a secret it would generate is not shown (S1).
+- **`--fail-on warning|error`**, and `[validate] fail_on` in `.evnx.toml`:
+  `warning` makes warnings exit 1. The flag wins; `--exit-zero` still wins over
+  both (S2).
+- **An unknown `--ignore` type is an error** (I-038), and `--format` takes any
+  case, as `scan` and `doctor` already did (`--format JSON`).
+- **With a contract, `--strict` measures against `[vars]`** (I-039), as its help
+  always said: the message names `[vars]` and suggests declaring the name, not
+  adding it to `.env.example`. A variable whose `environments` exclude this
+  file is reported too — "declared for production only, but set in
+  .env.staging" (I-043).
+- **`environments` names are checked** (I-042): a name that matches no
+  `.env.<name>` file and no common name warns, with the one it was probably
+  meant to be (`prodution` → `production`), and so does a file named close to a
+  listed one (`.env.prod` against `"production"`). Exit code unchanged.
+- **Docker files are looked for beside the env file**, then in each folder up to
+  the repository root, then the current directory (I-046), and
+  `compose.yaml` / `compose.yml` count (I-257). It looked only in the current
+  directory, and only for `docker-compose.*`, `Dockerfile` and `Containerfile`.
+- **`.gitignore`** (D-27, DEC-VA1): new findings `env_not_ignored` (warning)
+  and `env_tracked` (error), from the same git check `doctor` uses.
+- An empty template value that is missing from `.env` says how to make it
+  optional: `evnx spec init`, then `required = false` (I-036, D-29).
+- `--fix` writes `.env` atomically through the shared writer: the file keeps its
+  mode, a symlinked `.env` is written through, and a file others can read gets
+  the same `chmod` warning every other command gives. The backup is written at
+  the original's mode from the start.
+- `DEBUG=True`'s advice says "Use true or 1"; it said "true or 0" (I-261).
+
+### add
+
+- **`evnx add custom NAME --optional`** (I-036, DEC-VA2). With a `[vars]`
+  contract it writes `required = false` — what `add custom` declares by
+  default; the flag says so — and an `(optional)` comment in `.env.example`.
+  Without a contract the variable is still added, and the run says how to make
+  it optional. It conflicts with `--required`.
+
+### doctor
+
+- `docker_config` recognises `compose.yaml` and `compose.yml` (I-257,
+  DEC-VA3).
+
+### Docs
+
+- README and GETTING_STARTED: `--strict` does **not** make warnings exit 1 —
+  both said it did; `--fail-on warning` does. The GETTING_STARTED sample output
+  is real output; the one it replaced was a format evnx never printed. Both
+  list `--fix --dry-run` and `[validate] fail_on`.
+
+### Shared code
+
+One definition each, where commands had their own:
+
+- `core::args::one_of`: a value from a fixed list, any case, or an error listing
+  them — validate's `--format`, `--ignore` and `--fail-on`, scan's `--format`
+  and `--severity`, doctor's `--format`. scan's and doctor's messages are
+  unchanged.
+- `core::project`: the Docker file list and the upward walk to the repository
+  root, for validate and doctor (DEC-VA3).
+- `core::safe_write::backup`: the numbered `.bak` that never overwrites an
+  earlier one, at the original's mode. `utils::fs::backup_file` (never called;
+  it wrote `.backup`) is removed.
+- `core::env_name::abbreviation_of` and `meant`, and
+  `core::spec::environment_problems`, for the environment-name check; the
+  `--env-name` error's "did you mean" uses the same abbreviation rule as
+  before.
+
+### Library
+
+- `commands::validate::run` takes `validate::Options`. `IssueType` gains
+  `UnknownEnvironment`, `EnvNotIgnored`, `EnvTracked` and `IssueType::ALL`;
+  `ValidationResult` gains `dry_run` and `needs_input`, `Summary` gains
+  `needs_input`, `core::config::ValidatePolicy` gains `fail_on`.
+  `validate::fixer::write_fixed_file` returns the backup path and the
+  `safe_write::Written`; `fixer::fill_for_missing` is new.
+
 ## [0.10.7] - 2026-10-17
 
 The patch for the three commands about evnx itself — `commands`, `completions`

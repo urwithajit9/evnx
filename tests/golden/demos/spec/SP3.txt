@@ -41,8 +41,11 @@ format = "int"
   ok: I-176 fixed (DEC-SP1, DEC-G1): the banner is on stderr, stdout is only TOML
 
 $ evnx validate
-✓ All required variables present
-✓ All checks passed
+  !  .env is not covered by .gitignore — `git add .` would commit it
+     .env
+     →  Add it to .gitignore (`evnx doctor --fix` adds `.env*` and keeps `.env.example`)
+
+  1 warning
 [stderr]
   config    .evnx.toml
 

@@ -140,15 +140,27 @@ pub fn check_missing_variables(
     let env_keys: HashSet<_> = env_vars.keys().collect();
 
     example_vars
-        .keys()
-        .filter(|key| !env_keys.contains(key))
-        .map(|key| Issue {
+        .iter()
+        .filter(|(key, _)| !env_keys.contains(key))
+        .map(|(key, template_value)| Issue {
             severity: "error".to_string(),
             issue_type: IssueType::MissingVariable.as_str().to_string(),
             variable: key.to_string(),
             message: format!("Missing required variable: {}", key),
             location: env_path.to_string(),
-            suggestion: Some(format!("Add {}=<value> to {}", key, env_path)),
+            // ⚠️ I-036: `.env.example` cannot say "optional", and an empty
+            // template value is the usual sign of one. The way to say it is
+            // the contract — but a lone `[vars.X]` would switch the whole
+            // project to the contract and stop every other template line
+            // counting as required, so the hint starts from `spec init`.
+            suggestion: Some(if template_value.trim().is_empty() {
+                format!(
+                    "Add {key}=<value> to {env_path}. If it is optional: run `evnx spec init`, \
+                     then set `required = false` under [vars.{key}] in .evnx.toml"
+                )
+            } else {
+                format!("Add {}=<value> to {}", key, env_path)
+            }),
             auto_fixable: true,
         })
         .collect()
@@ -250,6 +262,205 @@ pub fn check_extra_variables(
         .collect()
 }
 
+/// Check 2, with a contract: variables present but not declared **for this
+/// environment** (I-039, I-043). Strict mode only, like the template version.
+///
+/// ⚠️ `--help` says the measure is `[vars]` when the project has a contract,
+/// and the template is not consulted for anything else then — but this kept
+/// comparing with `.env.example` and saying so, and suggested adding the name
+/// to a file the contract had replaced.
+///
+/// A variable whose `environments` exclude this file is extra here too: it was
+/// declared "production only", and that has to mean it is not wanted anywhere
+/// else (the same reading `VarSpec::applies_to` gives requiredness).
+pub fn check_spec_extras(
+    env_vars: &IndexMap<String, String>,
+    spec: &Spec,
+    env_name: Option<&str>,
+    env_path: &str,
+    strict: bool,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if !strict || ignore.contains(IssueType::ExtraVariable.as_str()) {
+        return Vec::new();
+    }
+    let extra = |key: &str, message: String, suggestion: String| Issue {
+        severity: "warning".to_string(),
+        issue_type: IssueType::ExtraVariable.as_str().to_string(),
+        variable: key.to_string(),
+        message,
+        location: env_path.to_string(),
+        suggestion: Some(suggestion),
+        auto_fixable: false,
+    };
+    let mut out = Vec::new();
+    for key in env_vars.keys() {
+        match spec.get(key) {
+            None => out.push(extra(
+                key,
+                format!("Extra variable not declared in [vars]: {key}"),
+                format!("Declare it as [vars.{key}] in .evnx.toml, or remove it from {env_path}"),
+            )),
+            Some(declared) if !declared.applies_to(env_name) => {
+                let only = declared
+                    .environments
+                    .as_deref()
+                    .unwrap_or_default()
+                    .join(", ");
+                out.push(extra(
+                    key,
+                    format!("{key} is declared for {only} only, but set in {env_path}"),
+                    match env_name {
+                        Some(env) => format!(
+                            "Remove it from {env_path}, or add \"{env}\" to `environments` in [vars.{key}]"
+                        ),
+                        None => format!("Remove it from {env_path}"),
+                    },
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+    out
+}
+
+/// One problem, one finding (I-035).
+///
+/// `SECRET_KEY=changeme` is a placeholder *and* "too weak": two findings for
+/// one cause, and the weak-secret advice (rotate at the provider) is wrong for
+/// a value nobody has filled in. The placeholder finding is the actionable one
+/// and stays; the weak one is for a **real** value that is weak.
+///
+/// ⚠️ Done here, on the report, rather than by skipping placeholders inside
+/// the weak check — so `--ignore placeholder_value` still leaves `changeme`
+/// caught as weak.
+pub fn one_finding_per_cause(mut issues: Vec<Issue>) -> Vec<Issue> {
+    let placeholders: HashSet<String> = issues
+        .iter()
+        .filter(|i| i.issue_type == IssueType::PlaceholderValue.as_str())
+        .map(|i| i.variable.clone())
+        .collect();
+    issues.retain(|i| {
+        !(i.issue_type == IssueType::WeakSecret.as_str() && placeholders.contains(&i.variable))
+    });
+    issues
+}
+
+/// The env file and git (D-27, DEC-VA1): `exposure` is
+/// [`crate::core::gitignore::exposure`] of the file, `None` outside a
+/// repository.
+///
+/// Not covered by `.gitignore` is a **warning**: nothing has leaked yet, and a
+/// CI job that writes `.env` into a checkout must not start failing on it.
+/// Already **tracked** is an **error**: the values are in the history, and
+/// only `git rm --cached` plus rotating them helps — the same words `doctor`
+/// uses.
+pub fn check_exposure(
+    exposure: Option<crate::core::gitignore::Exposure>,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    use crate::core::gitignore::Exposure;
+    let (ty, severity, message, suggestion) = match exposure {
+        Some(Exposure::Unignored) => (
+            IssueType::EnvNotIgnored,
+            "warning",
+            format!("{env_path} is not covered by .gitignore — `git add .` would commit it"),
+            "Add it to .gitignore (`evnx doctor --fix` adds `.env*` and keeps `.env.example`)"
+                .to_string(),
+        ),
+        Some(Exposure::Tracked) => (
+            IssueType::EnvTracked,
+            "error",
+            format!("{env_path} is tracked by git: its values are in the repository history"),
+            format!(
+                "git rm --cached {env_path}, commit, then rotate every secret it held \
+                 (`evnx scan .` lists them)"
+            ),
+        ),
+        Some(Exposure::Protected) | None => return Vec::new(),
+    };
+    if ignore.contains(ty.as_str()) {
+        return Vec::new();
+    }
+    vec![Issue {
+        severity: severity.to_string(),
+        issue_type: ty.as_str().to_string(),
+        variable: String::new(),
+        message,
+        location: env_path.to_string(),
+        suggestion: Some(suggestion),
+        auto_fixable: false,
+    }]
+}
+
+/// Names in the contract's `environments` lists that match nothing (I-042):
+/// [`crate::core::spec::environment_problems`] as findings. Warnings — the
+/// contract is still read — but the requirement they describe is not applied.
+pub fn check_environments(
+    spec: &Spec,
+    env_name: Option<&str>,
+    known: &[&str],
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    use crate::core::spec::EnvNameProblem;
+    if ignore.contains(IssueType::UnknownEnvironment.as_str()) {
+        return Vec::new();
+    }
+    let who = |vars: &[String]| match vars {
+        [one] => format!("[vars.{one}]"),
+        [first, rest @ ..] => format!("[vars.{first}] and {} more", rest.len()),
+        [] => "[vars]".to_string(),
+    };
+    crate::core::spec::environment_problems(spec, env_name, known)
+        .into_iter()
+        .map(|p| match p {
+            EnvNameProblem::Unknown { name, vars, meant } => Issue {
+                severity: "warning".to_string(),
+                issue_type: IssueType::UnknownEnvironment.as_str().to_string(),
+                variable: vars[0].clone(),
+                message: match &meant {
+                    Some(m) => format!(
+                        "{} lists environment '{name}' — did you mean '{m}'?",
+                        who(&vars)
+                    ),
+                    None => format!(
+                        "{} lists environment '{name}', which no .env.{name} file or common name matches",
+                        who(&vars)
+                    ),
+                },
+                location: crate::core::config::PROJECT_FILE.to_string(),
+                suggestion: Some(format!(
+                    "Correct it in `environments`: as written, '{name}' matches no file, so \
+                     the requirement is checked nowhere under that name"
+                )),
+                auto_fixable: false,
+            },
+            EnvNameProblem::NearMiss {
+                file_env,
+                listed,
+                vars,
+            } => Issue {
+                severity: "warning".to_string(),
+                issue_type: IssueType::UnknownEnvironment.as_str().to_string(),
+                variable: vars[0].clone(),
+                message: format!(
+                    "{env_path} is not '{listed}': {} limited to '{listed}' {} not checked in it",
+                    crate::utils::string::pluralize(vars.len(), "variable", "variables"),
+                    if vars.len() == 1 { "is" } else { "are" }
+                ),
+                location: env_path.to_string(),
+                suggestion: Some(format!(
+                    "Rename the file .env.{listed}, or add \"{file_env}\" to `environments` in {}",
+                    who(&vars)
+                )),
+                auto_fixable: false,
+            },
+        })
+        .collect()
+}
+
 /// Check 3: Placeholder values
 pub fn check_placeholders(
     env_vars: &IndexMap<String, String>,
@@ -315,10 +526,13 @@ pub fn check_boolean_trap(
             variable: key.clone(),
             message: format!("{} is set to \"{}\" (string, not boolean)", key, value),
             location: env_path.to_string(),
-            suggestion: Some(format!(
-                "Use {} or 0 for proper boolean handling",
-                if value == "False" { "false" } else { "true" }
-            )),
+            // ⚠️ I-261: this said "Use true or 0" for `True` — the opposite
+            // value in its second spelling.
+            suggestion: Some(if value == "False" {
+                "Use false or 0 for proper boolean handling".to_string()
+            } else {
+                "Use true or 1 for proper boolean handling".to_string()
+            }),
             auto_fixable: true,
         })
         .collect()
@@ -691,6 +905,20 @@ mod tests {
         let issues = check_boolean_trap(&env, ".env", &HashSet::new());
         assert_eq!(issues.len(), 1);
         assert!(issues[0].message.contains("string, not boolean"));
+    }
+
+    /// I-261: the advice for `True` named `0`, which is false.
+    #[test]
+    fn t_i261_the_boolean_advice_keeps_the_value() {
+        for (value, advice) in [
+            ("True", "Use true or 1 for proper boolean handling"),
+            ("False", "Use false or 0 for proper boolean handling"),
+        ] {
+            let mut env = IndexMap::new();
+            env.insert("DEBUG".to_string(), value.to_string());
+            let issues = check_boolean_trap(&env, ".env", &HashSet::new());
+            assert_eq!(issues[0].suggestion.as_deref(), Some(advice), "{value}");
+        }
     }
 }
 

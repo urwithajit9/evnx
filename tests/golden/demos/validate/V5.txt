@@ -4,7 +4,8 @@
 $ evnx validate --format json
 {
   "status": "failed",
-  "required_present": 7,
+  "dry_run": false,
+  "required_present": 6,
   "required_total": 8,
   "issues": [
     {
@@ -22,7 +23,7 @@ $ evnx validate --format json
       "variable": "OPTIONAL_X",
       "message": "Missing required variable: OPTIONAL_X",
       "location": ".env",
-      "suggestion": "Add OPTIONAL_X=<value> to .env",
+      "suggestion": "Add OPTIONAL_X=<value> to .env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.OPTIONAL_X] in .evnx.toml",
       "auto_fixable": true
     },
     {
@@ -51,37 +52,30 @@ $ evnx validate --format json
       "location": ".env",
       "suggestion": "Use false or 0 for proper boolean handling",
       "auto_fixable": true
-    },
-    {
-      "severity": "error",
-      "type": "weak_secret",
-      "variable": "SECRET_KEY",
-      "message": "SECRET_KEY is too weak or predictable",
-      "location": ".env",
-      "suggestion": "Run: openssl rand -hex 32",
-      "auto_fixable": true
     }
   ],
   "fixed": [],
+  "needs_input": [],
   "summary": {
-    "errors": 4,
+    "errors": 3,
     "warnings": 2,
     "style": 0,
-    "fixed_count": 0
+    "fixed_count": 0,
+    "needs_input": 0
   }
 }
-Validation failed: 4 errors
+Validation failed: 3 errors
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]
+  ok: FIXED I-034: required_present counts the declared variables that are there (6 of 8)
 
 $ evnx validate --format github-actions
 ::error file=.env,line=1::Missing required variable: STRIPE_KEY%0ASuggestion: Add STRIPE_KEY=<value> to .env
-::error file=.env,line=1::Missing required variable: OPTIONAL_X%0ASuggestion: Add OPTIONAL_X=<value> to .env
+::error file=.env,line=1::Missing required variable: OPTIONAL_X%0ASuggestion: Add OPTIONAL_X=<value> to .env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.OPTIONAL_X] in .evnx.toml
 ::warning file=.env,line=7::A is assigned 2 times (lines 7, 8) — only line 8 takes effect%0ASuggestion: Remove the earlier assignments of A, or rename them if they were meant to differ
 ::error file=.env,line=2::SECRET_KEY looks like a placeholder%0ASuggestion: Run: openssl rand -hex 32
 ::warning file=.env,line=5::DEBUG is set to "False" (string, not boolean)%0ASuggestion: Use false or 0 for proper boolean handling
-::error file=.env,line=2::SECRET_KEY is too weak or predictable%0ASuggestion: Run: openssl rand -hex 32
-Validation failed: 4 errors
+Validation failed: 3 errors
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]
 
@@ -91,6 +85,5 @@ Error: unknown format 'xml' — expected one of: pretty, json, github-actions
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: bad format value is an error (exit 2)
-KNOWN I-034: required_present counts any variable, not the declared ones (see JSON summary above)
 
-================ summary: 1 ok, 0 mismatch   ================
+================ summary: 2 ok, 0 mismatch   ================

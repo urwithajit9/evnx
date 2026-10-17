@@ -13,7 +13,11 @@ $ evnx validate
   ✗  A looks like a placeholder
      .env
 
-  3 errors
+  !  .env is not covered by .gitignore — `git add .` would commit it
+     .env
+     →  Add it to .gitignore (`evnx doctor --fix` adds `.env*` and keeps `.env.example`)
+
+  3 errors  ·  1 warning
 
 Next steps:
   1. Review and fix the errors above
@@ -54,7 +58,11 @@ $ evnx validate
      .env
      →  Fix the value, or relax `format` in [vars.B]
 
-  1 error
+  !  .env is not covered by .gitignore — `git add .` would commit it
+     .env
+     →  Add it to .gitignore (`evnx doctor --fix` adds `.env*` and keeps `.env.example`)
+
+  1 error  ·  1 warning
 
 Next steps:
   1. Review and fix the errors above

@@ -13,6 +13,7 @@ pub mod http;
 pub mod mask;
 pub mod parser;
 pub mod permissions;
+pub mod project;
 pub mod safe_write;
 pub mod shell;
 pub mod spec;

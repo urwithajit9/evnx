@@ -123,13 +123,16 @@ fn f21_validate_fix_exits_0_when_it_fixed_everything() {
     assert_eq!(
         out.status.code(),
         Some(1),
-        "a variable left holding `your_value_here` is not valid config"
+        "a variable left holding a placeholder is not valid config"
     );
+    // I-037 (R-validate): listed once, under "Needs your input" — not as a
+    // fix, and not again as a fresh error below it. (This asserted the old
+    // per-line note, "evnx cannot invent this value".)
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(
-        text.contains("evnx cannot invent this value"),
+        text.contains("Needs your input (1)") && !text.contains("B looks like a placeholder"),
         "the report must not read as a contradiction — \
-         `B → your_value_here` above `B looks like a placeholder`:\n{text}"
+         `B → …` listed as added, then `B looks like a placeholder`:\n{text}"
     );
 
     // And the complement: a problem `--fix` cannot repair must still be 1, or

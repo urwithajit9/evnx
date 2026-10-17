@@ -93,6 +93,7 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
             desc,
             category,
             required,
+            optional,
         } => custom::handle(
             output_path,
             custom::Args {
@@ -100,6 +101,7 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
                 desc,
                 category,
                 required,
+                optional,
             },
             &mode,
         )?,

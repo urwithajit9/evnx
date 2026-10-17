@@ -86,18 +86,21 @@ impl FromStr for OutputFormat {
     /// checking nothing. Failing loudly is the only safe default for a secret
     /// scanner's output contract.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.trim().to_lowercase().as_str() {
-            "pretty" | "text" => Ok(Self::Pretty),
-            "json" => Ok(Self::Json),
-            "sarif" => Ok(Self::Sarif),
-            // `evnx validate` spells this `github-actions`; accept both
-            // everywhere rather than making people remember which is which.
-            "github" | "github-actions" => Ok(Self::Github),
-            other => Err(anyhow::anyhow!(
-                "unknown format '{other}' — expected one of: {}",
-                Self::NAMES.join(", ")
-            )),
-        }
+        crate::core::args::one_of(
+            "format",
+            s,
+            &[
+                ("pretty", Self::Pretty),
+                ("text", Self::Pretty),
+                ("json", Self::Json),
+                ("sarif", Self::Sarif),
+                // `evnx validate` spells this `github-actions`; accept both
+                // everywhere rather than making people remember which is which.
+                ("github", Self::Github),
+                ("github-actions", Self::Github),
+            ],
+            Self::NAMES,
+        )
     }
 }
 

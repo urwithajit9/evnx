@@ -210,6 +210,34 @@ fn validate_strict_json_is_stable() {
     );
 }
 
+/// ⚠️ Neither fixture above is missing a variable, so the counts were only ever
+/// pinned at 3 of 3 — and `required_present` counted *any* variable in `.env`,
+/// not the declared ones, without a test noticing (I-034, T-005). This one has
+/// two of four missing, an extra, a placeholder and a warning; and the same
+/// file after `--fix`, which pins `fixed` and `needs_input` apart (I-037).
+/// Nothing in it is generated, so both are byte-stable.
+#[test]
+fn validate_missing_json_is_stable() {
+    let d = TempDir::new().unwrap();
+    fs::write(
+        d.path().join(".env.example"),
+        "API_PORT=8080\nSECRET_KEY=\nSTRIPE_KEY=\nDEBUG=false\n",
+    )
+    .unwrap();
+    fs::write(d.path().join(".env"), "DEBUG=False\nEXTRA=1\n").unwrap();
+    check(
+        "validate-missing.json",
+        &stdout_of(&d, &["validate", "--format", "json", "--exit-zero"]),
+    );
+    check(
+        "validate-fix.json",
+        &stdout_of(
+            &d,
+            &["validate", "--fix", "--format", "json", "--exit-zero"],
+        ),
+    );
+}
+
 /// `sync --check --format json` — the only machine-readable surface that reports
 /// *what* drifted rather than only that something did.
 #[test]

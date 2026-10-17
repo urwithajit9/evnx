@@ -1,5 +1,6 @@
 {
   "status": "passed",
+  "dry_run": false,
   "required_present": 3,
   "required_total": 3,
   "issues": [
@@ -14,10 +15,12 @@
     }
   ],
   "fixed": [],
+  "needs_input": [],
   "summary": {
     "errors": 0,
     "warnings": 1,
     "style": 0,
-    "fixed_count": 0
+    "fixed_count": 0,
+    "needs_input": 0
   }
 }

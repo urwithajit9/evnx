@@ -6,36 +6,32 @@ $ evnx validate --fix
   evnx validate  Check environment configuration
 
 ✓ Saved fixes to .env — original kept at .env.bak
+! .env is readable by other users (mode 644); evnx keeps the mode you set
+     →  chmod 600 .env
 
-Applied fixes:
-  • STRIPE_KEY: (new) → CHANGE_ME_SECURE_32_CHARS_MIN
-    a placeholder — evnx cannot invent this value, so fill it in
-  • OPTIONAL_X: (new) → your_value_here
-    a placeholder — evnx cannot invent this value, so fill it in
+Fixed (2):
   • SECRET_KEY: "changeme" → <random-hex64>
   • DEBUG: "False" → false
+
+Needs your input (2):
+  • STRIPE_KEY: (new) → CHANGE_ME_SECURE_32_CHARS_MIN
+    →  Get from Stripe Dashboard
+  • OPTIONAL_X: (new) → (empty)
+    evnx cannot invent these values: fill them in, then run validate again
 
   !  A is assigned 2 times (lines 7, 8) — only line 8 takes effect
      .env
      →  Remove the earlier assignments of A, or rename them if they were meant to differ
 
-  ✗  STRIPE_KEY looks like a placeholder
-     .env
-     →  Get from Stripe Dashboard
-     ·  fixable with --fix
-
-  ✗  OPTIONAL_X looks like a placeholder
-     .env
-
-  2 errors  ·  1 warning  ·  4 fixed
+  1 warning  ·  2 fixed  ·  2 need your input
 
 Next steps:
-  1. Review and fix the errors above
-  2. Run with --fix to auto-correct common issues
-  3. Use --ignore issue_type to suppress specific warnings
-Validation failed: 2 errors
+  1. Fill in the values listed under "Needs your input" — evnx cannot invent them
+  2. Run evnx validate again
+Validation failed: 2 need your input
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]
+  ok: FIXED I-037: the placeholders --fix had to add are listed under 'Needs your input', not counted as fixed or repeated as errors
 
 $ ls -A
 .env
@@ -52,7 +48,7 @@ DEBUG=false
 EXTRA_VAR=1
 A=1
 A=2
-OPTIONAL_X=your_value_here
+OPTIONAL_X=
 STRIPE_KEY=CHANGE_ME_SECURE_32_CHARS_MIN
 [exit 0]
 (SECRET_KEY placeholder replaced; non-placeholder values such as DATABASE_URL are never touched; .env.bak kept)
@@ -66,6 +62,56 @@ Usage: evnx validate --fix --rotate-weak-secrets
 For more information, try '--help'.
 [exit 2]
   ok: --rotate-weak-secrets requires --fix (exit 2)
-Gap S1: no --fix --dry-run yet (decided)
 
-================ summary: 1 ok, 0 mismatch   ================
+$ evnx validate --fix --dry-run
+
+  evnx validate  Check environment configuration
+
+  ✗  Missing required variable: STRIPE_KEY
+     .env
+     →  Add STRIPE_KEY=<value> to .env
+     ·  fixable with --fix
+
+  ✗  Missing required variable: OPTIONAL_X
+     .env
+     →  Add OPTIONAL_X=<value> to .env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.OPTIONAL_X] in .evnx.toml
+     ·  fixable with --fix
+
+  !  A is assigned 2 times (lines 7, 8) — only line 8 takes effect
+     .env
+     →  Remove the earlier assignments of A, or rename them if they were meant to differ
+
+  ✗  SECRET_KEY looks like a placeholder
+     .env
+     →  Run: openssl rand -hex 32
+     ·  fixable with --fix
+
+  !  DEBUG is set to "False" (string, not boolean)
+     .env
+     →  Use false or 0 for proper boolean handling
+     ·  fixable with --fix
+
+Would fix (2):
+  • SECRET_KEY: "changeme" → (a new random secret)
+  • DEBUG: "False" → false
+
+Would need your input (2):
+  • STRIPE_KEY: (new) → CHANGE_ME_SECURE_32_CHARS_MIN
+  • OPTIONAL_X: (new) → (empty)
+    evnx cannot invent these values: fill them in, then run validate again
+
+  Dry run — nothing was written: .env is unchanged and no backup was made
+
+  3 errors  ·  2 warnings
+
+Next steps:
+  1. Review and fix the errors above
+  2. Run with --fix to auto-correct common issues
+  3. Use --ignore issue_type to suppress specific warnings
+Validation failed: 3 errors
+  Docs: https://docs.evnx.dev/cli/commands/validate
+[exit 1]
+  ok: FIXED S1: --fix --dry-run shows what it would do; the verdict is the file as it stands (exit 1)
+  ok: FIXED S1: nothing written, no second backup
+
+================ summary: 4 ok, 0 mismatch   ================
