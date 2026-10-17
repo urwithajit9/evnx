@@ -8,6 +8,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-10-17
+
+The `add` patch: the review fixes left after 0.10.3 (package R-add), and one
+0.10.3 regression. Only `add` changed, plus the `DATABASE_URL` that
+`init --blueprint` writes for three blueprints.
+
+⚠️ **If you ran `evnx add custom NAME=value` on 0.10.3 in a git repository that
+had no `.env` yet**, that `.env` was created without a `.gitignore` entry (I-251,
+below). Run `git status` and `git log --all -- .env`; if a `.env` holding a real
+value was committed, rotate that value. `evnx doctor --fix` adds the ignore rule.
+
 ### add
 
 #### Fixed
