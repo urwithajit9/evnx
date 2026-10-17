@@ -8,6 +8,114 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The patch for the three commands about evnx itself — `commands`, `completions`
+and `update` (package R-surface) — plus one HTTP client and one cargo command
+where there were several.
+
+⚠️ **Scripts that read these exit codes or this output:**
+
+- `evnx update --check` exits **1** when a newer release exists (it was 0 either
+  way) and 2 when it could not check. It gains `--json`.
+- `evnx completions` takes its shell from a fixed list, so an unknown one is
+  clap's usage error (exit 2, with the list) instead of evnx's "unsupported
+  shell" line and the "No verdict" banner.
+- `evnx update -q` prints only the upgrade command, and `update --check -q` the
+  status line and the command. `--check`'s "asking api.github.com…" line is on
+  stderr.
+
+### commands (alias `surface`)
+
+- **The closing line counts what it lists** (I-196):
+  `20 commands (83 with sub-commands).` It said `83 commands` under a list of 20.
+- **The warning for a build without `cloud` names no release** (I-197). It said
+  `pip install evnx` lacked the cloud commands "up to and including 0.9.0",
+  which is history and would be wrong on any later such build. It points at
+  `evnx update` for the channels, and at `cargo install evnx --all-features`.
+- `completions` and `update` have a guide entry, so `--json` fills their
+  `docs_url` and their `--help` ends with the guide (I-195). Every top-level
+  command has one.
+- `surface` is the command's name before 0.10.0 and still works as an alias
+  (D-138: no entry said so). `-q` has no effect, as before, and `--help` now
+  says so (DEC-SF5).
+
+### completions
+
+- **`evnx completions bash | head -1` exits 141**, not 101 (I-185).
+  clap_complete panicked on the closed pipe with a message the broken-pipe
+  handler did not match.
+- **Five shells, in any case: `bash`, `zsh`, `fish`, `powershell`, and `elvish`,
+  which is new** (I-194, DEC-SF6). `--help` lists them, says where each shell
+  reads the script, and links the guide. The scripts complete the shell names
+  after `evnx completions` (they offered `<SHELL>`).
+
+### update
+
+- **The cargo upgrade keeps every feature** (I-199):
+  `cargo install evnx --all-features --force`. It was `--features cloud
+  --force`, which rebuilt an `--all-features` install without `migrate`,
+  `backup` and `restore`.
+- **A pip install is recognised by what pip leaves** (I-193): a virtual
+  environment of any name (`pyvenv.cfg` beside `bin/` or `Scripts\`), or an
+  `evnx-*.dist-info` record under the prefix's `site-packages`. `pip install
+  --user` and system pip put the binary in `~/.local/bin` and `/usr/local/bin`,
+  which read as the install script, so pip users were told to run the curl
+  installer. With no such evidence, those two folders get both commands.
+  Checked against the published 0.10.5 wheel.
+- **`--check` answers with its exit code** (I-198, DEC-SF4): 0 for the latest
+  release or newer, 1 when a newer one exists, 2 when it could not check.
+  `--check --json` prints `schema` (1), `installed`, `latest`, `status`,
+  `channel`, `command` and `release_url`. A release with no page link still
+  answers.
+- `--help` names the seven channels it detects — it said "nine install
+  channels" and named none (D-140) — and lists the exit codes.
+- The `--check` message for a build with no network support names
+  `cargo install evnx --all-features` (it said `--features cloud`).
+- Debug builds read `EVNX_UPDATE_URL`, for the tests; a release binary ignores
+  it and always asks api.github.com.
+
+### Every command: `--help` of a build without every feature
+
+- The note at the end of `evnx --help` in a `cargo install evnx` build names
+  what each feature adds (with `org`, which it left out) and gives one cargo
+  line, `--all-features`, instead of one per feature.
+
+### Release checks
+
+- **`scripts/check-build-features.sh <evnx>`** reads the feature list from
+  `evnx commands --json` and exits 1 naming what is missing (I-200). The PyPI
+  wheel check uses it instead of grepping `--help` for four command names, which
+  could not see `migrate` or `backup`; the npm check runs it on the global
+  install; `docs/RELEASING.md` uses it for every channel.
+
+### Docs
+
+- README: sections for `evnx commands`, `evnx completions` and `evnx update`;
+  *Verify* runs `evnx commands` (D-137, D-142); the cargo line for cloud support
+  is `--all-features`, the one `update` prints (D-141).
+
+### Shared code
+
+One definition each, where commands had their own:
+
+- `core::build`: the feature list (`commands`), and `CARGO_INSTALL` and
+  `CARGO_UPGRADE`, the cargo command every message names. Five copies carried
+  three flag sets; a test now fails on any other `cargo install evnx --…`.
+- `core::http` (with `net`): the HTTP client builder and `transport_reason`, for
+  `update --check` and every cloud command, whose copies differed only in the
+  timeout they named. The private-CA fix (I-192, DEC-SF1, still open) will land
+  there once.
+- `utils::term::write_stdout()`: writes an answer and exits 141 on a closed
+  pipe, for output that does not pass through `println!`.
+- Tests: one `commands --json` reader (three files had their own), a
+  closed-stdout runner, and the binary placed in a fake install location.
+
+### Library
+
+- `Commands::Completions { shell }` is a `clap_complete::Shell`, not a `String`.
+- `commands::update::Channel::Script` is `Channel::ScriptOrPip`;
+  `Channel::candidates()`, `Channel::id()` and `Channel::from_install()` are
+  new. `commands::update::run` takes `json` and returns a `Verdict`.
+
 ## [0.10.6] - 2026-10-17
 
 The `spec` patch: the review fixes left after 0.10.3 (package R-spec), the

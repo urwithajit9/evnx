@@ -134,8 +134,11 @@ evnx --version
 
 ```bash
 evnx --version
-evnx --help
+evnx commands      # the features this build has, and every command
 ```
+
+`--version` is the same whether or not a feature is compiled in; `evnx commands`
+says `built with: net, migrate, backup, cloud` for a full build.
 
 ---
 
@@ -469,6 +472,45 @@ evnx restore .env.backup --output .env
 
 ---
 
+### `evnx commands` _(alias `surface`)_
+
+Which build you have: the version, the features it was compiled with, and every
+command, grouped. The answer to "why is `evnx vault` not found?". `--json` emits
+the whole command tree (schema 1) for tooling.
+
+```bash
+evnx commands
+evnx commands --json | jq -e '.features | index("cloud")'   # exit 1 without cloud
+```
+
+---
+
+### `evnx completions`
+
+Prints a completion script for `bash`, `zsh`, `fish`, `powershell` or `elvish`.
+`evnx completions --help` shows where each shell reads it.
+
+```bash
+evnx completions bash > ~/.local/share/bash-completion/completions/evnx
+evnx completions fish > ~/.config/fish/completions/evnx.fish
+```
+
+---
+
+### `evnx update`
+
+How to upgrade, for the channel that installed this binary (cargo, Homebrew,
+Scoop, winget, npm, pip or the install script). It contacts nothing unless you
+pass `--check`, and never replaces its own binary.
+
+```bash
+evnx update                    # the upgrade command for this install
+evnx update --check            # exit 1 when a newer release exists
+evnx update --check --json     # the same answer for CI
+```
+
+---
+
 ## Working with multiple environments
 
 `--env-name` resolves `.env.<name>` across `validate`, `scan`, `diff`, `sync`, `convert`,
@@ -539,10 +581,11 @@ installed evnx any of those ways, `evnx cloud --help` already works.
 > is exactly why this went unnoticed for five releases.
 
 `cargo install` is the other exception, by design, because it compiles from source
-with `default = []`:
+with `default = []`. Build every feature, as the prebuilt binaries are (this is
+also the command `evnx update` prints for a cargo install):
 
 ```bash
-cargo install evnx --features cloud
+cargo install evnx --all-features
 ```
 
 > ⚠️ **If you already installed evnx another way, check which binary you are running.**

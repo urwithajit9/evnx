@@ -624,6 +624,9 @@ jobs:
           reports "npm install -g" "$(evnx --version)"
           echo "✓ @evnx/cli@$VERSION is the 'latest' tag and reports $VERSION from a project install, npx and a global install"
 
+          # 4. Every feature, read from the binary's own list (I-200).
+          ./scripts/check-build-features.sh "$(command -v evnx)"
+
       # ── Append npm note to the GitHub Release ──────────────────────────────
       - name: Add npm install note to GitHub Release
         env:

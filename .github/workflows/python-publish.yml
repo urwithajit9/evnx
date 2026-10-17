@@ -85,25 +85,21 @@ jobs:
       #
       # ⓘ x86_64 only: the runner can run the wheel it just built. A feature-flag
       # mistake is not architecture-specific, so one arch is enough to catch it.
-      - name: Verify the wheel actually contains the cloud commands
+      #
+      # ⚠️ It reads the compiled feature list (`evnx commands --json`), not
+      # `--help`. The grep this replaced checked four command names, so a wheel
+      # without `migrate` or `backup` passed it (I-200).
+      - name: Verify the wheel carries every feature
         if: matrix.target == 'x86_64'
         shell: bash
         run: |
           set -euo pipefail
           python3 -m venv /tmp/wheelcheck
           /tmp/wheelcheck/bin/pip install --quiet --no-index --find-links dist evnx
-          surface=$(/tmp/wheelcheck/bin/evnx --help)
-          missing=()
-          for cmd in auth vault cloud org; do
-            grep -qE "^[[:space:]]+$cmd([[:space:]]|$)" <<<"$surface" || missing+=("$cmd")
-          done
-          if [ ${#missing[@]} -ne 0 ]; then
-            echo "::error::the built wheel is missing: ${missing[*]}"
-            echo "--- evnx --help ---"
-            printf '%s\n' "$surface"
+          if ! ./scripts/check-build-features.sh /tmp/wheelcheck/bin/evnx; then
+            echo "::error::the built wheel is missing a feature; see the line above"
             exit 1
           fi
-          echo "✓ wheel carries: auth vault cloud org"
 
       - name: Upload wheels
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
