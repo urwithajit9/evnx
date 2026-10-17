@@ -23,4 +23,5 @@ demo_scenes!(
     tp9 => "TP9",
     tp10 => "TP10",
     tp11 => "TP11",
+    tp12 => "TP12",
 );

@@ -141,8 +141,7 @@ fn list() -> Result<()> {
 /// terminal, or under `--yes`, `--dry-run` or `--json`, there is no one to
 /// ask: say where the ids are instead. `None`: the user pressed Esc.
 pub(crate) fn pick(mode: &Mode, what: &str, items: &[(String, String)]) -> Result<Option<String>> {
-    use std::io::IsTerminal;
-    if !mode.interactive() || !std::io::stdin().is_terminal() {
+    if !mode.interactive() || !crate::utils::term::interactive() {
         bail!("no {what} given.\n\nGive one, or list them all: evnx add --list");
     }
     let labels: Vec<String> = items

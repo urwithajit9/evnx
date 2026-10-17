@@ -11,7 +11,7 @@ $ evnx template --input t.tpl --output t.out --env t.env --no-gitignore
 
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: KNOWN I-141: the parser drops the character after a bare $NAME (exit 0)
+  ok: FIXED I-141 (0.10.2): the character after a bare $NAME is kept (exit 0)
 --- t.out:
 url=http://localhost/api hostp=http://localhost:8080 site=http://localhost.example.com pass=ahttp://localhost! ok=http://localhost/api
 
@@ -21,6 +21,6 @@ $ bash -c "$0" convert --to json --env t.env | grep -E "URL|OK" evnx
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
-decided: keep the terminator (every command)
+fixed in core::Parser, for every command
 
 ================ summary: 1 ok, 0 mismatch   ================

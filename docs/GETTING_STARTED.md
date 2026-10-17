@@ -19,6 +19,7 @@ Full documentation and guides are available at [evnx.dev](https://www.evnx.dev).
 - [Step 6 — Compare files](#step-6--compare-files)
 - [Step 7 — Convert to another format](#step-7--convert-to-another-format)
 - [Step 8 — Keep files in sync](#step-8--keep-files-in-sync)
+- [Step 9 — Render a config file from a template](#step-9--render-a-config-file-from-a-template)
 - [Set up the pre-commit hook](#set-up-the-pre-commit-hook)
 - [CI/CD integration](#cicd-integration)
 - [Configuration file](#configuration-file)
@@ -412,6 +413,33 @@ cat .env.example
 ```
 
 Commit `.env.example` to your repository. It tells teammates which variables are required without exposing values.
+
+---
+
+## Step 9 — Render a config file from a template
+
+`evnx template` fills a config file (YAML, TOML, JSON, a compose file) with the values in `.env`:
+
+```yaml
+# config.template.yml
+database:
+  host: {{DB_HOST}}
+  port: {{DB_PORT|int}}
+  ssl:  {{DB_SSL|bool}}
+```
+
+```bash
+# Check that it renders, writing nothing; --strict fails on a variable with no value
+evnx template --input config.template.yml --output config.yml --dry-run --strict
+
+# Render it, and keep it out of git
+evnx template --input config.template.yml --output config.yml --gitignore
+```
+
+The rendered file holds real values, so it is created readable by you only (0600). In a
+deploy step, `--output -` prints it to stdout instead, and `--mkdir` creates a missing
+output directory. An unknown filter is an error and nothing is written; the filters are
+listed in `evnx template --help`.
 
 ---
 

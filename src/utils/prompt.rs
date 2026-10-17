@@ -19,8 +19,7 @@ pub fn require_terminal(example: &str) -> Result<()> {
 /// [`require_terminal`] with a hint of the caller's own, for commands where
 /// `--yes` is not the answer.
 pub fn require_terminal_or(hint: &str) -> Result<()> {
-    use std::io::IsTerminal;
-    if !std::io::stdin().is_terminal() {
+    if !crate::utils::term::interactive() {
         return Err(NoTerminal {
             hint: hint.to_string(),
         }

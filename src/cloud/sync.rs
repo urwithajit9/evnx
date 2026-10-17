@@ -152,7 +152,7 @@ fn resolve_env_file(
 /// vault.
 /// Whether `--file` names stdout: exactly `-`, as `template --output -` (DEC-T8).
 fn is_stdout(file: Option<&Path>) -> bool {
-    file == Some(Path::new("-"))
+    file.is_some_and(crate::core::safe_write::is_stdout)
 }
 
 fn report_file(file: &Path, choice: FileChoice, vault_env: &str, action: &str) {

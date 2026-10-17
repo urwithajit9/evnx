@@ -334,25 +334,10 @@ fn refuse_non_empty(dir: &Path, force: bool) -> Result<()> {
     ))
 }
 
-/// Create the export directory, owner-only where the platform expresses that.
-///
-/// 0700 rather than the umask default: every file inside is plaintext secrets,
-/// and a directory others cannot list is one less way to find them.
+/// Create the export directory, owner-only where the platform expresses that
+/// (`core::safe_write::create_dirs_private`, shared with `template --mkdir`).
 fn create_dir_private(dir: &Path) -> Result<()> {
-    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(dir)
-            .with_context(|| format!("reading permissions of {}", dir.display()))?
-            .permissions();
-        perms.set_mode(0o700);
-        std::fs::set_permissions(dir, perms)
-            .with_context(|| format!("setting permissions on {}", dir.display()))?;
-    }
-
-    Ok(())
+    crate::core::safe_write::create_dirs_private(dir).map(drop)
 }
 
 /// Describe what was written, so the directory is not a pile of numbered files.

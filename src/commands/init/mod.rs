@@ -13,7 +13,6 @@ use crate::{
 use anyhow::Result;
 use colored::*;
 use dialoguer::Select;
-use std::io::IsTerminal;
 use std::path::Path;
 
 mod architect;
@@ -110,7 +109,7 @@ pub fn run(
         // each layer), which tells a CI job or an agent nothing about what to do
         // instead. The detected and from-source paths already refuse this way;
         // this was the one door that did not (I-014). Exit code stays 2.
-        if !std::io::stdin().is_terminal() {
+        if !crate::utils::term::interactive() {
             anyhow::bail!(
                 "there is no terminal to show the menu on.\n\n\
                  Name what you want instead:\n  \

@@ -1,0 +1,55 @@
+
+================ TP12 ================
+
+$ evnx template --input config.tpl.yml --output exist.yml --dry-run --gitignore
+✓ Loaded 7 variables from .env
+✓ Read template from config.tpl.yml
+Dry run: nothing was written.
+  would replace exist.yml
+[stderr]
+
+  Generate config from template
+
+[exit 0]
+  ok: DEC-T9: --dry-run says it would replace exist.yml, prints no value, writes nothing (exit 0)
+
+$ bash -c cat exist.yml; test -e .gitignore && echo ".gitignore exists" || echo "no .gitignore"
+old
+no .gitignore
+[exit 0]
+
+$ evnx template --input config.tpl.yml --output deploy/new.yml --dry-run --mkdir --no-gitignore
+✓ Loaded 7 variables from .env
+✓ Read template from config.tpl.yml
+Dry run: nothing was written.
+  would create the directory deploy (--mkdir)
+  would create deploy/new.yml
+[stderr]
+
+  Generate config from template
+
+[exit 0]
+  ok: DEC-T9: with --mkdir it would create the directory; none is created (exit 0)
+
+$ bash -c test -e deploy && echo "deploy exists" || echo "deploy not created"
+deploy not created
+[exit 0]
+
+$ evnx template --input u.tpl --output u.out --dry-run --strict --no-gitignore
+✓ Loaded 7 variables from .env
+✓ Read template from u.tpl
+[stderr]
+
+  Generate config from template
+
+! Variable 'MISSING' referenced in template but not defined in .env
+Error: 1 variable referenced in u.tpl has no value in .env: MISSING
+
+Define it there, or give it a fallback with {{NAME|default:value}}.
+Nothing was written to u.out.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: DEC-T9: a dry run fails where the run would (--strict) (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

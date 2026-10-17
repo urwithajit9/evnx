@@ -6,7 +6,6 @@ use dialoguer::{Confirm, Input, MultiSelect, Select};
 use indexmap::IndexMap;
 use std::collections::HashSet;
 use std::fs;
-use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::cli::{NamingPolicy, SyncDirection};
@@ -596,7 +595,7 @@ fn handle_new_example_file(
 ) -> Result<bool> {
     let use_placeholders = if use_placeholders || force {
         true
-    } else if std::io::stdin().is_terminal() {
+    } else if crate::utils::term::interactive() {
         let choices = [
             "Placeholder values (recommended — safe to commit)",
             "Actual values copied from .env  ! SECURITY RISK",

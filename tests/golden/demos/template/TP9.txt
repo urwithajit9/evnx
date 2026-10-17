@@ -2,7 +2,7 @@
 ================ TP9 ================
 
 $ evnx template --input config.tpl.yml --output p.yml --env-name production --no-gitignore
-✓ Loaded 7 variables from ./.env.production
+✓ Loaded 7 variables from .env.production
 ✓ Read template from config.tpl.yml
 ✓ Generated config at p.yml
 [stderr]
@@ -11,7 +11,7 @@ $ evnx template --input config.tpl.yml --output p.yml --env-name production --no
 
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: --env-name production (exit 0)
+  ok: --env-name production (FIXED I-144: named .env.production, as .env is, without ./) (exit 0)
 
 $ bash -c grep host p.yml
   host: prod.db

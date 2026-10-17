@@ -13,6 +13,7 @@ pub mod permissions;
 pub mod safe_write;
 pub mod shell;
 pub mod spec;
+pub mod value;
 pub mod verdict;
 
 // Re-export commonly used types

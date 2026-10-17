@@ -7,7 +7,6 @@
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use std::io::IsTerminal;
 use std::path::Path;
 
 use super::shared::{aborted, write_env_files_with_outcome, Outcome, WriteOptions};
@@ -217,7 +216,7 @@ pub fn handle_detected(
     // "IO error: not a terminal" — which says nothing about what to do instead.
     // Detection is a *proposal*, so accepting it without a human is opting in,
     // and there has to be a way to say so.
-    if !opts.yes && !std::io::stdin().is_terminal() {
+    if !opts.yes && !crate::utils::term::interactive() {
         anyhow::bail!(
             "detected {} components but there is nobody to confirm with.\n\n\
              Accept them:   evnx init --detect\n\
@@ -396,7 +395,7 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
         );
     }
 
-    if !opts.yes && !std::io::stdin().is_terminal() {
+    if !opts.yes && !crate::utils::term::interactive() {
         anyhow::bail!(
             "found {} variables the code reads that .env.example does not declare, \
              but there is nobody to confirm with.\n\n\

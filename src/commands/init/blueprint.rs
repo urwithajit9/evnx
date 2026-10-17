@@ -37,7 +37,7 @@ pub fn handle(
             if loader::get_blueprint(id).is_none() {
                 // The full list stays (it is how people discover the ids); a
                 // close match is named above it (I-001).
-                let close = component::closest(
+                let close = crate::utils::string::closest(
                     &id.to_lowercase(),
                     blueprints.iter().map(|(bid, _)| (*bid, *bid)),
                 );

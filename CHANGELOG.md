@@ -8,6 +8,78 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The `template` patch: the review fixes left after 0.10.3 (package R-template),
+and code that several commands had their own copy of, moved into one place.
+
+### template
+
+#### Fixed
+
+- **An unknown filter is an error.** `{{PORT|innt}}`, `{{ X | Upper }}` and
+  `{{X|bogus}}` were written into the output unchanged with exit 0. Now the run
+  stops before writing, names every one with its line, and suggests a close
+  name ("did you mean `upper`?"). It applies to any `{{NAME|filter}}`, whether
+  `NAME` is defined or not; `{{ .Values.x | quote }}` (Helm) is not an evnx
+  reference and still passes through (DEC-T7).
+- **Chained filters are an error**, `{{X|upper|json}}`, instead of being
+  written through. Chaining arrives with the one substitution engine in 0.11.0;
+  until then, one filter per placeholder.
+- **`|bool` reads `true yes on 1 y` and `false no off 0 n`**, in any case.
+  Anything else (`enabled`, `maybe`, a typo, an empty value) is an error, as a
+  bad `|int` already was; it was `false`, silently (I-138).
+- **`|title` is title case:** `hello wORLD` → `Hello World` (Jinja's rule). It
+  capitalised the first character only (I-137); that is now `|capitalize`.
+- A bad `|bool` or `|int` value is not printed when its name looks secret
+  (`DB_PASSWORD`).
+- A missing output directory says how to create it (I-144).
+- `--env-name production` names the file `.env.production`, as `.env` is named,
+  not `./.env.production` (I-144). `sync` and `diff` print the same label,
+  and so does the `# Synced from` line `sync` writes into `.env.example`.
+
+#### Added
+
+- **`--dry-run`**: render and say what would be written (the file, new or
+  replaced, through which link, which directory `--mkdir` would create). It
+  fails where the real run would, writes nothing, prints no value and leaves
+  `.gitignore` alone (DEC-T9).
+- **`--mkdir`**: create the output's missing directories, readable by you only
+  (0700), as `cloud export` does (I-144).
+- `|capitalize`, the old `|title`.
+- `--help` lists the reference styles and every filter (D-93).
+
+#### Changed
+
+- The question "add it to .gitignore?" is answered on Enter, like every other
+  evnx question (N-09); it was answered by a raw line read of its own.
+
+#### Docs
+
+- The module documentation no longer shows `-i`/`-o`, which do not exist (D-88),
+  or "configurable in future" for what `--strict` does (D-89). The README has an
+  options table and a filter table (D-91); Getting Started has a template step
+  (D-97); the 0.5.0 notes carry a correction: strictness is opt-in (D-94).
+
+### Shared code
+
+One definition each, where commands had their own (no output changes beyond
+the label above):
+
+- `utils::term::interactive()`: every "is there a terminal?" check (ten of them
+  in add, init, migrate, sync and the shared prompts).
+- `utils::protect`: template's `.gitignore` step, for the commands that write
+  secrets to a path you name. `init`, `add`, `convert -o`, `restore` and
+  `cloud pull --file` adopt it in their own patches.
+- `utils::string::closest()`: the "did you mean" helper, from `init`'s component
+  hints, now also used by template's filters.
+- `core::value::parse_bool()`: the boolean words, for `|bool` now and `spec`'s
+  `format = "bool"` in its own patch.
+- `core::safe_write::{preview, create_dirs, create_dirs_private, is_stdout}`:
+  what a write would do, without writing; directory creation (`init`,
+  `cloud export`, `template --mkdir`); what `-` means for an output
+  (`template --output -`, `cloud pull --file -`).
+- `ui::prompt_yes_no` and `utils::file_ops::ensure_dir` are deprecated: nothing
+  in evnx calls them any more.
+
 ## [0.10.4] - 2026-10-17
 
 The `add` patch: the review fixes left after 0.10.3 (package R-add), and one

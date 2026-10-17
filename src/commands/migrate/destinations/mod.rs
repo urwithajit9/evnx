@@ -29,7 +29,6 @@ pub mod github;
 
 use crate::core::args::{self, Name};
 use anyhow::{anyhow, Result};
-use std::io::IsTerminal;
 
 // Re-export the trait so callers can write `destinations::MigrationDestination`
 // without having to reach back up two levels to `migrate::destination`.
@@ -87,13 +86,13 @@ pub(crate) fn resolve_arg(
         prompt,
         dry_run,
         kind,
-        std::io::stdin().is_terminal(),
+        crate::utils::term::interactive(),
     )
 }
 
 /// The logic, with the terminal decision handed in.
 ///
-/// ⚠️ `resolve_arg` reads `stdin().is_terminal()`, which is ambient process
+/// ⚠️ `resolve_arg` reads `term::interactive()`, which is ambient process
 /// state — so the tests below inherited whatever the invoking shell happened to
 /// provide. Under `cargo test` run from a terminal that is *true*, and
 /// `interact_text()` sat waiting for someone to type, hanging the suite. In CI

@@ -24,6 +24,10 @@ pub const PRIVATE: u32 = 0o600;
 /// Mode for a new file meant to be shared and committed (`.env.example`).
 pub const SHARED: u32 = 0o644;
 
+/// Mode for a directory evnx creates to hold secrets (`cloud export`,
+/// `template --mkdir`): only the owner can list it.
+pub const PRIVATE_DIR: u32 = 0o700;
+
 /// The permission bits of `path` (follows symlinks), or `None` when the file
 /// cannot be read or the platform has no modes.
 pub fn mode(path: &Path) -> Option<u32> {

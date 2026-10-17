@@ -2,20 +2,20 @@
 ================ D5 ================
 
 $ evnx diff --env-name production --against staging
-Missing from ./.env.production (present in ./.env.staging):
+Missing from .env.production (present in .env.staging):
   + STAGING_ONLY
 
-Extra in ./.env.production (not in ./.env.staging):
+Extra in .env.production (not in .env.staging):
   - SENTRY_DSN
 
 Different values:
   ~ DATABASE_URL
   ~ API_PORT
 
-  1 missing from ./.env.production  ·  1 not in ./.env.staging  ·  2 different values
+  1 missing from .env.production  ·  1 not in .env.staging  ·  2 different values
 [stderr]
 
-  evnx diff  ./.env.production ↔ ./.env.staging
+  evnx diff  .env.production ↔ .env.staging
 
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
@@ -25,7 +25,7 @@ $ evnx diff --env-name production --against staging --ignore-keys SENTRY_DSN,STA
 ✓ Files are identical
 [stderr]
 
-  evnx diff  ./.env.production ↔ ./.env.staging
+  evnx diff  .env.production ↔ .env.staging
 
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 0]

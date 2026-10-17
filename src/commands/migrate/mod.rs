@@ -295,11 +295,9 @@ fn select_source() -> String {
 ///
 /// A missing required argument is "could not run", not "pick something".
 fn select_destination() -> Result<String> {
-    use std::io::IsTerminal;
-
     let options = destinations::available_destinations();
 
-    if !std::io::stdin().is_terminal() {
+    if !crate::utils::term::interactive() {
         anyhow::bail!(
             "--to is required when there is no terminal to ask.\n\n\
              \x20 Pass one explicitly:\n\

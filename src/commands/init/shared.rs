@@ -103,8 +103,7 @@ pub(crate) fn write_env_files_with_outcome(
     template_content: &str,
     opts: WriteOptions,
 ) -> Result<Outcome> {
-    fs::create_dir_all(output_path)
-        .with_context(|| format!("Failed to create directory: {}", output_path.display()))?;
+    crate::core::safe_write::create_dirs(output_path)?;
 
     let example_path = output_path.join(".env.example");
 

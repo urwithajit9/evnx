@@ -244,3 +244,184 @@ fn t_dec_t11_a_tracked_output_is_reported() {
     );
     assert!(!p.exists(".gitignore") || !p.read(".gitignore").contains("out.yml"));
 }
+
+/// I-144 (O-12): the file was named `./.env.production` while `.env` had no
+/// `./`, because `--env-name` joined the name onto `.`. Fixed in
+/// `core::env_name`, so every command that takes `--env-name` agrees.
+#[test]
+fn t_i144_env_name_label_has_no_dot_slash() {
+    let p = project().file(".env.production", "DB_HOST=prod.db\nDB_PASSWORD=p\n");
+    let out = run(p.path(), &with(&["--env-name", "production"]));
+    out.assert_code(0)
+        .assert_contains("Loaded 2 variables from .env.production")
+        .assert_not_contains("./.env.production");
+}
+
+/// I-144: a missing output directory was a clear error with no way forward.
+/// It now names `--mkdir`, and still creates nothing without it.
+#[test]
+fn t_i144_a_missing_directory_names_mkdir() {
+    let p = project();
+    run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "config.tpl",
+            "--output",
+            "deploy/out.yml",
+            "--no-gitignore",
+        ],
+    )
+    .assert_code(2)
+    .assert_contains("does not exist")
+    .assert_contains("--mkdir");
+    assert!(!p.exists("deploy"));
+}
+
+/// I-144: `--mkdir` creates the missing directories, owner-only like
+/// `cloud export` (owner, 2026-10-17), and says so.
+#[test]
+fn t_i144_mkdir_creates_the_directories() {
+    let p = project();
+    run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "config.tpl",
+            "--output",
+            "deploy/prod/out.yml",
+            "--mkdir",
+            "--no-gitignore",
+        ],
+    )
+    .assert_code(0)
+    .assert_contains("deploy/prod");
+    assert!(p.read("deploy/prod/out.yml").contains("db.internal"));
+    #[cfg(unix)]
+    {
+        assert_eq!(mode(&p, "deploy/prod/out.yml"), 0o600);
+        assert_eq!(mode(&p, "deploy/prod"), 0o700);
+    }
+}
+
+fn dry(extra: &[&str]) -> Vec<String> {
+    let mut v: Vec<String> = with(&["--dry-run"]).iter().map(|s| s.to_string()).collect();
+    v.extend(extra.iter().map(|s| s.to_string()));
+    v
+}
+
+fn run_dry(p: &Project, extra: &[&str]) -> support::Output {
+    let args = dry(extra);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    run(p.path(), &args)
+}
+
+/// DEC-T9: a dry run renders, reports, and writes nothing — not the output,
+/// not `.gitignore` — and never prints a value.
+#[test]
+fn t_dec_t9_dry_run_writes_nothing_and_shows_no_value() {
+    let p = project().git();
+    let out = run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "config.tpl",
+            "--output",
+            "out.yml",
+            "--dry-run",
+            "--gitignore",
+        ],
+    );
+    out.assert_code(0)
+        .assert_contains("Dry run")
+        .assert_contains("would create out.yml")
+        .assert_contains("nothing was written")
+        .assert_not_contains("s3cr3t")
+        .assert_not_contains("db.internal");
+    assert!(!p.exists("out.yml"));
+    assert!(!p.exists(".gitignore"), "a dry run leaves .gitignore alone");
+}
+
+#[test]
+fn t_dec_t9_dry_run_says_an_existing_output_would_be_replaced() {
+    let p = project().file("out.yml", "old\n");
+    run_dry(&p, &[])
+        .assert_code(0)
+        .assert_contains("would replace out.yml");
+    assert_eq!(p.read("out.yml"), "old\n");
+}
+
+/// Same exit rules as the real run (DEC-T2, error by default, is 0.11.0).
+#[test]
+fn t_dec_t9_dry_run_reports_unresolved_names_and_strict_fails() {
+    let p = project().file("config.tpl", "host: {{DB_HOST}}\nurl: {{MISSING}}\n");
+    run_dry(&p, &[]).assert_code(0).assert_contains("MISSING");
+    run_dry(&p, &["--strict"])
+        .assert_code(2)
+        .assert_contains("MISSING");
+    assert!(!p.exists("out.yml"));
+}
+
+#[test]
+fn t_dec_t9_dry_run_fails_where_the_run_would() {
+    let p = project().file("config.tpl", "x: {{DB_HOST|bogus}}\n");
+    run_dry(&p, &[]).assert_code(2).assert_contains("bogus");
+    let p = project();
+    run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "config.tpl",
+            "--output",
+            "deploy/out.yml",
+            "--dry-run",
+            "--no-gitignore",
+        ],
+    )
+    .assert_code(2)
+    .assert_contains("--mkdir");
+}
+
+#[test]
+fn t_dec_t9_dry_run_with_mkdir_creates_no_directory() {
+    let p = project();
+    run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "config.tpl",
+            "--output",
+            "deploy/out.yml",
+            "--dry-run",
+            "--mkdir",
+            "--no-gitignore",
+        ],
+    )
+    .assert_code(0)
+    .assert_contains("would create the directory deploy");
+    assert!(!p.exists("deploy"));
+}
+
+#[test]
+fn t_dec_t9_dry_run_to_stdout_prints_nothing_there() {
+    let p = project();
+    let out = run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "config.tpl",
+            "--output",
+            "-",
+            "--dry-run",
+        ],
+    );
+    out.assert_code(0);
+    assert_eq!(out.stdout, "", "the rendered text is not printed");
+    assert!(out.stderr.contains("would print"), "{}", out.stderr);
+}

@@ -55,10 +55,28 @@ $ evnx template --input config.tpl.yml --output nodir/x.yml --no-gitignore
 
   Generate config from template
 
-Error: Failed to write generated config to: nodir/x.yml: the directory nodir does not exist
+Error: Failed to write generated config to: nodir/x.yml: the directory nodir does not exist. Add --mkdir to create it.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: missing output directory: clear error (decided: hint and --mkdir) (exit 2)
+  ok: FIXED I-144: a missing output directory names --mkdir (exit 2)
 
-================ summary: 3 ok, 0 mismatch   ================
+$ evnx template --input config.tpl.yml --output nodir/x.yml --mkdir --no-gitignore
+✓ Loaded 7 variables from .env
+✓ Read template from config.tpl.yml
+Created directory nodir
+✓ Generated config at nodir/x.yml
+[stderr]
+
+  Generate config from template
+
+  Docs: https://docs.evnx.dev/cli/commands/template
+[exit 0]
+  ok: FIXED I-144: --mkdir creates it, owner-only (exit 0)
+
+$ bash -c stat -c "nodir mode %a" nodir; stat -c "x.yml mode %a" nodir/x.yml
+nodir mode 700
+x.yml mode 600
+[exit 0]
+
+================ summary: 4 ok, 0 mismatch   ================

@@ -88,6 +88,19 @@ pub fn restore_cursor_on_interrupt() {
 #[cfg(not(unix))]
 pub fn restore_cursor_on_interrupt() {}
 
+/// Whether evnx may ask the person a question: stdin is a terminal.
+///
+/// One definition for every command (C-02). Ten call sites each asked
+/// `std::io::stdin().is_terminal()` themselves; a rule that changes (a
+/// `--no-input` flag, `CI=true`) now changes in one place.
+///
+/// `std::io::IsTerminal`, stable since Rust 1.70, rather than the `atty` crate,
+/// which is unmaintained and carries RUSTSEC-2021-0145.
+pub fn interactive() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdin().is_terminal()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

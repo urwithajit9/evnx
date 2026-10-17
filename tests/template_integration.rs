@@ -4,34 +4,36 @@
 //! exist* and built a regex per key, rather than scanning the template for
 //! placeholders. A form the per-key regex did not match was not reported as
 //! unmatched — it was written to the output file verbatim, with exit 0.
+//!
+//! Built on `tests/support` (T-029, R-template): the file had its own
+//! `project()` and `render()`, a third copy of what the support module does.
 
-use assert_cmd::cargo::cargo_bin_cmd;
-use predicates::prelude::*;
-use std::fs;
-use tempfile::TempDir;
+mod support;
 
-fn project(template: &str) -> TempDir {
-    let d = TempDir::new().unwrap();
-    fs::write(d.path().join(".env"), "PORT=8080\nAPP_ENV=production\n").unwrap();
-    fs::write(d.path().join("in.tmpl"), template).unwrap();
-    d
+use support::{run, Output, Project};
+
+fn project(template: &str) -> Project {
+    Project::new()
+        .env("PORT=8080\nAPP_ENV=production\n")
+        .file("in.tmpl", template)
 }
 
-fn render(d: &TempDir, extra: &[&str]) -> String {
-    let mut cmd = cargo_bin_cmd!("evnx");
-    cmd.current_dir(d.path())
-        .args(["template", "--input", "in.tmpl", "--output", "out.conf"])
-        .args(extra)
-        .assert()
-        .success();
-    fs::read_to_string(d.path().join("out.conf")).unwrap()
+fn template(p: &Project, extra: &[&str]) -> Output {
+    let mut args = vec!["template", "--input", "in.tmpl", "--output", "out.conf"];
+    args.extend_from_slice(extra);
+    run(p.path(), &args)
+}
+
+fn render(p: &Project, extra: &[&str]) -> String {
+    template(p, extra).assert_code(0);
+    p.read("out.conf")
 }
 
 /// ⚠️ `{{ PORT }}` — with the spaces most people write — matched nothing and was
 /// copied into the generated file as literal text.
 #[test]
 fn whitespace_inside_a_placeholder_still_substitutes() {
-    let d = project(
+    let p = project(
         "a={{PORT}}\n\
          b={{ PORT }}\n\
          c=${PORT}\n\
@@ -41,7 +43,7 @@ fn whitespace_inside_a_placeholder_still_substitutes() {
          g={{ APP_ENV | upper }}\n",
     );
 
-    let out = render(&d, &[]);
+    let out = render(&p, &[]);
     for line in out.lines() {
         assert!(
             !line.contains('{') && !line.contains('$'),
@@ -57,13 +59,13 @@ fn whitespace_inside_a_placeholder_still_substitutes() {
 /// `{{NOPE|default:1234}}` into the output.
 #[test]
 fn a_default_applies_when_the_variable_is_absent() {
-    let d = project(
+    let p = project(
         "present={{PORT|default:1234}}\n\
          absent={{NOPE|default:1234}}\n\
          spaced={{ NOPE | default:5678 }}\n",
     );
 
-    let out = render(&d, &[]);
+    let out = render(&p, &[]);
     assert!(
         out.contains("present=8080"),
         "a value beats its default: {out}"
@@ -76,8 +78,8 @@ fn a_default_applies_when_the_variable_is_absent() {
 /// A variable with a fallback is not undefined, so `--strict` must accept it.
 #[test]
 fn strict_accepts_a_placeholder_that_has_a_default() {
-    let d = project("a={{PORT}}\nb={{NOPE|default:ok}}\n");
-    let out = render(&d, &["--strict"]);
+    let p = project("a={{PORT}}\nb={{NOPE|default:ok}}\n");
+    let out = render(&p, &["--strict"]);
     assert_eq!(out, "a=8080\nb=ok\n", "{out}");
 }
 
@@ -86,20 +88,15 @@ fn strict_accepts_a_placeholder_that_has_a_default() {
 /// belongs, and whatever reads it next treats that as the setting.
 #[test]
 fn strict_refuses_and_writes_nothing() {
-    let d = project("url={{DATABASE_URL}}\nport={{PORT}}\n");
+    let p = project("url={{DATABASE_URL}}\nport={{PORT}}\n");
 
-    cargo_bin_cmd!("evnx")
-        .current_dir(d.path())
-        .args([
-            "template", "--input", "in.tmpl", "--output", "out.conf", "--strict",
-        ])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("DATABASE_URL"))
-        .stderr(predicate::str::contains("Nothing was written"));
+    let out = template(&p, &["--strict"]);
+    out.assert_code(2);
+    assert!(out.stderr.contains("DATABASE_URL"), "{}", out.stderr);
+    assert!(out.stderr.contains("Nothing was written"), "{}", out.stderr);
 
     assert!(
-        !d.path().join("out.conf").exists(),
+        !p.exists("out.conf"),
         "a refused run must not leave a half-built config on disk"
     );
 }
@@ -108,40 +105,32 @@ fn strict_refuses_and_writes_nothing() {
 /// working pipeline — but it now says what it did rather than offering a tip.
 #[test]
 fn without_strict_it_writes_through_but_says_so() {
-    let d = project("url={{DATABASE_URL}}\n");
+    let p = project("url={{DATABASE_URL}}\n");
 
-    let assert = cargo_bin_cmd!("evnx")
-        .current_dir(d.path())
-        .args(["template", "--input", "in.tmpl", "--output", "out.conf"])
-        .assert()
-        .success();
+    let out = template(&p, &[]);
+    out.assert_code(0);
 
     // ⚠️ stdout, not stderr: `ui::warning` and `ui::info` use `println!` across
-    // the whole CLI. Fine here — `--output` is required, so `template` never
-    // writes data to stdout — but see the review's note on the inconsistency.
-    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
-    assert!(stdout.contains("unresolved"), "{stdout}");
-    assert!(stdout.contains("--strict"), "{stdout}");
+    // the whole CLI. Fine here — `--output -` keeps them off stdout — but see
+    // the review's note on the inconsistency.
+    assert!(out.stdout.contains("unresolved"), "{}", out.stdout);
+    assert!(out.stdout.contains("--strict"), "{}", out.stdout);
 
-    let out = fs::read_to_string(d.path().join("out.conf")).unwrap();
-    assert_eq!(out, "url={{DATABASE_URL}}\n", "{out}");
+    assert_eq!(p.read("out.conf"), "url={{DATABASE_URL}}\n");
 }
 
 /// `--strict` names every unresolved placeholder, not just the first.
 #[test]
 fn strict_names_all_of_them() {
-    let d = project("a={{ONE}}\nb={{TWO}}\nc={{ THREE }}\n");
+    let p = project("a={{ONE}}\nb={{TWO}}\nc={{ THREE }}\n");
 
-    let assert = cargo_bin_cmd!("evnx")
-        .current_dir(d.path())
-        .args([
-            "template", "--input", "in.tmpl", "--output", "out.conf", "--strict",
-        ])
-        .assert()
-        .failure();
-
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let out = template(&p, &["--strict"]);
+    out.assert_code(2);
     for name in ["ONE", "TWO", "THREE"] {
-        assert!(stderr.contains(name), "{name} missing from: {stderr}");
+        assert!(
+            out.stderr.contains(name),
+            "{name} missing from: {}",
+            out.stderr
+        );
     }
 }

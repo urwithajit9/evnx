@@ -63,6 +63,61 @@ pub fn pluralize(count: usize, singular: &str, plural: &str) -> String {
     }
 }
 
+/// "Did you mean": the candidates within a small edit distance of `input`,
+/// closest first, at most three. `candidates` pairs a name to compare with the id to suggest (they
+/// differ for an alias).
+///
+/// The threshold grows with length: one edit for names of up to four letters,
+/// two above that. A fixed two would make `pg` look like `go` and `aws`, and a
+/// fixed one would miss `postgrsql`.
+///
+/// One helper for every hint (moved from `schema::component` in 0.10.5):
+/// `init`'s component and blueprint ids, `template`'s filter names.
+pub fn closest<'a>(
+    input: &str,
+    candidates: impl Iterator<Item = (&'a str, &'a str)>,
+) -> Vec<&'a str> {
+    let limit = if input.chars().count() <= 4 { 1 } else { 2 };
+    let mut scored: Vec<(usize, &str)> = Vec::new();
+    for (name, id) in candidates {
+        let d = edit_distance(input, name);
+        if d <= limit && !scored.iter().any(|(_, seen)| *seen == id) {
+            scored.push((d, id));
+        }
+    }
+    // Stable sort: equal distances keep catalogue order.
+    scored.sort_by_key(|(d, _)| *d);
+    scored.into_iter().take(3).map(|(_, id)| id).collect()
+}
+
+/// Optimal string alignment distance: insertions, deletions, substitutions and
+/// swaps of two adjacent characters each cost one. Inputs here are a few dozen
+/// short ids, so the plain O(n·m) table is the right size.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let (n, m) = (a.len(), b.len());
+    let mut d = vec![vec![0usize; m + 1]; n + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+    for i in 1..=n {
+        for j in 1..=m {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            d[i][j] = (d[i - 1][j] + 1)
+                .min(d[i][j - 1] + 1)
+                .min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+            }
+        }
+    }
+    d[n][m]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,5 +166,21 @@ mod tests {
     #[test]
     fn test_pluralize_zero() {
         assert_eq!(pluralize(0, "file", "files"), "0 files");
+    }
+
+    #[test]
+    fn edit_distance_counts_a_swap_as_one() {
+        assert_eq!(edit_distance("redis", "redis"), 0);
+        assert_eq!(edit_distance("rdeis", "redis"), 1);
+        assert_eq!(edit_distance("strpe", "stripe"), 1);
+        assert_eq!(edit_distance("", "abc"), 3);
+    }
+
+    #[test]
+    fn closest_keeps_the_candidate_order_and_maps_aliases() {
+        let names = [("upper", "upper"), ("lower", "lower"), ("pg", "postgresql")];
+        assert_eq!(closest("uper", names.into_iter()), vec!["upper"]);
+        assert_eq!(closest("pq", names.into_iter()), vec!["postgresql"]);
+        assert!(closest("json", names.into_iter()).is_empty());
     }
 }

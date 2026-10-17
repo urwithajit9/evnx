@@ -19,9 +19,9 @@ Target: .env.example (action: Add)
 (dry-run: no files were modified)
 [stderr]
 
-  evnx sync  ./.env.production ↔ .env.example  (forward)
+  evnx sync  .env.production ↔ .env.example  (forward)
 
-! ./.env.production has permissive permissions (0o644). Consider: chmod 600 ./.env.production
+! .env.production has permissive permissions (0o644). Consider: chmod 600 .env.production
 · Overly permissive .env files may expose secrets to other users
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
@@ -52,9 +52,9 @@ $ evnx sync --env-name production -f
 ✓ Added 2 variables to .env.example
 [stderr]
 
-  evnx sync  ./.env.production ↔ .env.example  (forward)
+  evnx sync  .env.production ↔ .env.example  (forward)
 
-! ./.env.production has permissive permissions (0o644). Consider: chmod 600 ./.env.production
+! .env.production has permissive permissions (0o644). Consider: chmod 600 .env.production
 · Overly permissive .env files may expose secrets to other users
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
@@ -62,7 +62,7 @@ $ evnx sync --env-name production -f
   ok: header names the files in play (exit 0)
 
 $ bash -c tail -n 3 .env.example
-# Synced from ./.env.production
+# Synced from .env.production
 NEW_FEATURE=YOUR_VALUE_HERE
 stripe_key=YOUR_KEY_HERE
 [exit 0]

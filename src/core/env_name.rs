@@ -46,7 +46,7 @@ pub const DEFAULT_FILE: &str = ".env";
 /// resolves to nothing is a typo and should say so.
 pub fn resolve(dir: &Path, name: Option<&str>) -> Result<PathBuf> {
     let Some(name) = name else {
-        return Ok(dir.join(DEFAULT_FILE));
+        return Ok(in_dir(dir, DEFAULT_FILE));
     };
 
     let name = name.trim();
@@ -71,12 +71,23 @@ pub fn resolve(dir: &Path, name: Option<&str>) -> Result<PathBuf> {
         );
     }
 
-    let path = dir.join(format!(".env.{name}"));
+    let path = in_dir(dir, &format!(".env.{name}"));
     if path.is_file() {
         return Ok(path);
     }
 
     bail!("{}", not_found_message(dir, name));
+}
+
+/// `file` inside `dir`, written the way a person would type it: in the current
+/// directory that is `.env.production`, not `./.env.production` (I-144, O-12).
+/// Every message that names the file then agrees with the one for plain `.env`.
+fn in_dir(dir: &Path, file: &str) -> PathBuf {
+    if dir == Path::new(".") {
+        PathBuf::from(file)
+    } else {
+        dir.join(file)
+    }
 }
 
 /// Choose between an explicit path and a named environment.
@@ -176,6 +187,22 @@ fn not_found_message(dir: &Path, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn t_i144_a_file_in_the_current_directory_has_no_dot_slash() {
+        assert_eq!(
+            in_dir(Path::new("."), ".env.production"),
+            PathBuf::from(".env.production")
+        );
+        assert_eq!(
+            in_dir(Path::new("app"), ".env.production"),
+            PathBuf::from("app/.env.production")
+        );
+        assert_eq!(
+            in_dir(Path::new("./app"), ".env"),
+            PathBuf::from("./app/.env")
+        );
+    }
     use std::fs;
     use tempfile::TempDir;
 

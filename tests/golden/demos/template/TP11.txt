@@ -9,6 +9,6 @@ Usage: evnx template [OPTIONS] --input <INPUT> --output <OUTPUT>
 
 For more information, try '--help'.
 [exit 2]
-  ok: D-88: the module documentation shows -i and -o; they do not exist (exit 2)
+  ok: FIXED D-88: the documentation no longer shows -i and -o, which do not exist (exit 2)
 
 ================ summary: 1 ok, 0 mismatch   ================

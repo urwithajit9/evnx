@@ -120,7 +120,21 @@ pub const TEMPLATE: CommandDoc = CommandDoc {
     command: "template",
     url: "https://docs.evnx.dev/cli/commands/template",
     description: "Generating config files from templates",
-    after_help: "Full guide: https://docs.evnx.dev/cli/commands/template",
+    after_help: "\
+References:\n\
+\x20 {{VAR}}  ${VAR}  $VAR        replaced by the value from the env file\n\
+\n\
+Filters, one per placeholder: {{VAR|filter}}\n\
+\x20 upper  lower                 case\n\
+\x20 title                        Title Case For Each Word\n\
+\x20 capitalize                   First character only\n\
+\x20 bool                         true/yes/on/1/y or false/no/off/0/n; anything else is an error\n\
+\x20 int                          a whole number; anything else is an error\n\
+\x20 json                         a quoted, escaped JSON string\n\
+\x20 default:VALUE                VALUE when VAR is empty or not defined\n\
+An unknown filter, or two chained, is an error and nothing is written.\n\
+\n\
+Full guide: https://docs.evnx.dev/cli/commands/template",
 };
 
 pub const BACKUP: CommandDoc = CommandDoc {

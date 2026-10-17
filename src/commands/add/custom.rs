@@ -17,7 +17,6 @@
 
 use anyhow::{bail, Result};
 use dialoguer::{Input, Password, Select};
-use std::io::IsTerminal;
 use std::path::Path;
 
 use super::shared::{aborted, confirm_and_apply, count, Flow, Mode, Outcome};
@@ -118,7 +117,7 @@ fn from_arguments(
 
     // DQ-A9: a secret without a value is asked for, unseen, when someone is
     // there to ask; otherwise it gets the placeholder like any other name.
-    let can_ask = !yes && std::io::stdin().is_terminal();
+    let can_ask = !yes && crate::utils::term::interactive();
     let mut customs = Vec::new();
     for (name, value) in parsed {
         let value = match value {

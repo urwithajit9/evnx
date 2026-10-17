@@ -2,6 +2,10 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 /// Ensure directory exists, creating it if necessary
+#[deprecated(
+    since = "0.10.5",
+    note = "no caller in evnx; use `core::safe_write::create_dirs`"
+)]
 pub fn ensure_dir(path: &Path) -> Result<()> {
     if !path.exists() {
         std::fs::create_dir_all(path)

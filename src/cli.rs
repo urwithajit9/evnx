@@ -1938,7 +1938,8 @@ Use 'evnx convert' without --to for interactive format selection.
     /// Generate config files from templates.
     #[command(after_help = docs::TEMPLATE.after_help)]
     Template {
-        /// The template to render. `{{ VAR }}` and `${VAR}` are substituted.
+        /// The template to render. `{{VAR}}`, `${VAR}` and `$VAR` are
+        /// substituted; filters are listed below.
         #[arg(long)]
         input: String,
 
@@ -1955,6 +1956,18 @@ Use 'evnx convert' without --to for interactive format selection.
         /// an existing file. Without it a new file is 0600.
         #[arg(long, value_name = "MODE", value_parser = parse_mode)]
         mode: Option<u32>,
+
+        /// Create the output's missing directories, readable by you only (0700).
+        #[arg(long)]
+        mkdir: bool,
+
+        /// Render and report what would be written, and write nothing.
+        ///
+        /// Fails where the real run would (an unknown filter, `--strict` with
+        /// an unresolved placeholder, a missing directory without `--mkdir`).
+        /// Never prints the rendered text, and leaves `.gitignore` alone.
+        #[arg(long)]
+        dry_run: bool,
 
         /// The environment file to take values from.
         ///

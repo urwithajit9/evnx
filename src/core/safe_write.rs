@@ -113,10 +113,7 @@ fn stage(path: &Path, bytes: &[u8], mode: Mode, holds_secrets: bool) -> Result<S
     let (target, through_link) = resolve(path)?;
     existing_file(&target)?;
 
-    let dir = match target.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
-        _ => PathBuf::from("."),
-    };
+    let dir = target_dir(&target);
     if !dir.is_dir() {
         bail!("the directory {} does not exist", dir.display());
     }
@@ -140,6 +137,92 @@ fn stage(path: &Path, bytes: &[u8], mode: Mode, holds_secrets: bool) -> Result<S
         mode,
         holds_secrets,
     })
+}
+
+/// The directory a write to `target` goes through (its temp file lives there).
+fn target_dir(target: &Path) -> PathBuf {
+    match target.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => PathBuf::from("."),
+    }
+}
+
+/// What a write to a path would do, without writing (WP-C6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Preview {
+    /// The path the caller asked for.
+    pub path: PathBuf,
+    /// The file that would be created or replaced: `path`, or a symlink's target.
+    pub target: PathBuf,
+    /// `path` is a symlink and the write would go to its target.
+    pub through_link: bool,
+    /// A file already exists at `target` and would be replaced.
+    pub replaces: bool,
+    /// The directory the file would go in, when it does not exist: the write
+    /// would fail unless it is created first.
+    pub missing_dir: Option<PathBuf>,
+}
+
+/// What [`write_private`] (or its siblings) would do with `path`, worked out
+/// the way the write works it out — the same symlink resolution, the same
+/// directory rule — so a `--dry-run` cannot promise something the write would
+/// not do. An error is one the write would also hit (a directory, or a chain
+/// of links, where the file should be).
+pub fn preview(path: impl AsRef<Path>) -> Result<Preview> {
+    let path = path.as_ref();
+    let (target, through_link) = resolve(path)?;
+    let replaces = existing_file(&target)?.is_some();
+    let dir = target_dir(&target);
+    Ok(Preview {
+        path: path.to_path_buf(),
+        target,
+        through_link,
+        replaces,
+        missing_dir: (!dir.is_dir()).then_some(dir),
+    })
+}
+
+/// Whether an output path means stdout: exactly `-` (`template --output -`,
+/// DEC-T8; `cloud pull --file -`, I-244). One rule, so `./-` stays a file
+/// named `-` everywhere.
+pub fn is_stdout(path: impl AsRef<Path>) -> bool {
+    path.as_ref() == Path::new("-")
+}
+
+/// Create `dir` and every missing parent, as `mkdir -p` does. Returns the
+/// directories that did not exist, outermost first, so a command can say what
+/// it made. One helper for `template --mkdir`, `init` and `cloud export`.
+pub fn create_dirs(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut missing: Vec<PathBuf> = dir
+        .ancestors()
+        .take_while(|a| !a.as_os_str().is_empty() && !a.exists())
+        .map(Path::to_path_buf)
+        .collect();
+    missing.reverse();
+    std::fs::create_dir_all(dir)
+        .with_context(|| format!("Failed to create directory: {}", dir.display()))?;
+    Ok(missing)
+}
+
+/// [`create_dirs`], then `dir` itself owner-only (0700) where the platform
+/// expresses that, whether it was just made or already there. Parents it
+/// creates keep the umask.
+///
+/// 0700 rather than the umask default: every file inside holds plaintext
+/// secrets, and a directory others cannot list is one less way to find them.
+pub fn create_dirs_private(dir: &Path) -> Result<Vec<PathBuf>> {
+    let created = create_dirs(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(dir)
+            .with_context(|| format!("reading permissions of {}", dir.display()))?
+            .permissions();
+        perms.set_mode(permissions::PRIVATE_DIR);
+        std::fs::set_permissions(dir, perms)
+            .with_context(|| format!("setting permissions on {}", dir.display()))?;
+    }
+    Ok(created)
 }
 
 /// The file at `target`, if one exists; an error if something else is there.
@@ -339,6 +422,50 @@ mod tests {
         assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 1);
     }
 
+    #[test]
+    fn is_stdout_is_exactly_a_dash() {
+        assert!(is_stdout("-"));
+        for p in ["./-", "--", "-x", "", "out"] {
+            assert!(!is_stdout(p), "{p}");
+        }
+    }
+
+    #[test]
+    fn preview_says_new_replace_and_missing_directory_and_writes_nothing() {
+        let d = TempDir::new().unwrap();
+        let p = d.path().join("out.yml");
+        let v = preview(&p).unwrap();
+        assert!(!v.replaces && !v.through_link && v.missing_dir.is_none());
+        assert!(!p.exists(), "a preview writes nothing");
+        std::fs::write(&p, "x").unwrap();
+        assert!(preview(&p).unwrap().replaces);
+        let deep = d.path().join("a/b/out.yml");
+        assert_eq!(
+            preview(&deep).unwrap().missing_dir,
+            Some(d.path().join("a/b"))
+        );
+        assert!(!d.path().join("a").exists());
+        assert!(
+            preview(d.path()).is_err(),
+            "a directory where the file goes"
+        );
+    }
+
+    #[test]
+    fn create_dirs_names_what_it_made_outermost_first() {
+        let d = TempDir::new().unwrap();
+        let deep = d.path().join("a/b/c");
+        assert_eq!(
+            create_dirs(&deep).unwrap(),
+            vec![d.path().join("a"), d.path().join("a/b"), deep.clone()]
+        );
+        assert!(deep.is_dir());
+        assert!(
+            create_dirs(&deep).unwrap().is_empty(),
+            "nothing new the second time"
+        );
+    }
+
     #[cfg(unix)]
     mod unix {
         use super::*;
@@ -435,6 +562,24 @@ mod tests {
             assert!(same_file(&a, &d.path().join("hard")));
             assert!(!same_file(&a, &d.path().join("other")));
             assert!(!same_file(&a, &d.path().join("missing")));
+        }
+        #[test]
+        fn preview_follows_a_link_like_the_write() {
+            let d = TempDir::new().unwrap();
+            std::fs::write(d.path().join("real.yml"), "x").unwrap();
+            let link = d.path().join("link.yml");
+            std::os::unix::fs::symlink("real.yml", &link).unwrap();
+            let v = preview(&link).unwrap();
+            assert!(v.through_link && v.replaces);
+            assert_eq!(v.target, d.path().join("real.yml"));
+        }
+
+        #[test]
+        fn create_dirs_private_makes_the_leaf_owner_only() {
+            let d = TempDir::new().unwrap();
+            let deep = d.path().join("a/secrets");
+            create_dirs_private(&deep).unwrap();
+            assert_eq!(mode(&deep), 0o700);
         }
     }
 }

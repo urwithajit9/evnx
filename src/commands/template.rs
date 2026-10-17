@@ -3,7 +3,7 @@
 //! This module provides a flexible template substitution system that supports:
 //!
 //! - Multiple variable syntax styles: `${VAR}`, `{{VAR}}`, `$VAR`
-//! - Filter transformations: `|upper`, `|lower`, `|title`, `|bool`, `|int`, `|json`, `|default:value`
+//! - Filter transformations: `|upper`, `|lower`, `|title`, `|capitalize`, `|bool`, `|int`, `|json`, `|default:value`
 //! - Proper error handling with contextual messages
 //! - Detection of undefined variables with warnings
 //! - Integration with the project's UI utilities for consistent output
@@ -24,13 +24,17 @@
 //!
 //! ```text
 //! {{ENV|upper}}           # Convert to uppercase: "production" → "PRODUCTION"
-//! {{DEBUG|bool}}          # Convert to boolean: "true"/"yes"/"1" → true
+//! {{NAME|title}}          # Title case: "hello wORLD" → "Hello World"
+//! {{NAME|capitalize}}     # First character only: "hello wORLD" → "Hello wORLD"
+//! {{DEBUG|bool}}          # true/yes/on/1/y → true, false/no/off/0/n → false; else an error
 //! {{PORT|int}}            # Convert to integer: "8000" → 8000
 //! {{NAME|json}}           # JSON-escape: hello "world" → "hello \"world\""
 //! {{OPTIONAL|default:foo}} # Use default if undefined or empty
 //! ```
 //!
 //! Filters are processed **before** simple substitution to avoid pattern conflicts.
+//! One filter per placeholder: an unknown filter, or two chained
+//! (`{{X|upper|json}}`), is an error naming its line, and nothing is written.
 //!
 //! # Usage Examples
 //!
@@ -67,18 +71,27 @@
 //! # Generate config from template
 //! evnx template --input config.toml.template --output config.toml --env .env.production
 //!
-//! # With verbose output
-//! evnx template -i template.yaml -o output.yaml --verbose
+//! # Check it renders, without writing anything (CI)
+//! evnx template --input template.yaml --output output.yaml --dry-run --strict
+//!
+//! # Into a directory that does not exist yet, and print to stdout
+//! evnx template --input template.yaml --output deploy/prod/output.yaml --mkdir
+//! evnx template --input template.yaml --output - | kubectl apply -f -
 //! ```
 //!
 //! # Error Handling
 //!
-//! - Undefined variables trigger a warning but don't fail (configurable in future)
-//! - Invalid filter values (e.g., non-integer for `|int`) return an error
+//! - Undefined variables trigger a warning and exit 0; `--strict` makes them an
+//!   error, before anything is written
+//! - Invalid filter values (a non-integer for `|int`, a non-boolean for `|bool`)
+//!   and unknown filters return an error; the value is masked when its name
+//!   looks secret
 //! - File I/O errors include contextual path information
 //!
 //! # Security Considerations
 //!
+//! - The output holds real values: a new file is 0600, and the `.gitignore`
+//!   step (`utils::protect`) offers to keep it out of git
 //! - Variable values are inserted as-is; sanitize if generating shell commands
 //! - Template paths should be validated by the caller to prevent path traversal
 //! - For JSON output, use `|json` filter to properly escape special characters
@@ -88,142 +101,15 @@ use indexmap::IndexMap;
 use regex::Regex;
 use std::collections::HashSet;
 use std::fs;
-use std::io::IsTerminal;
 use std::path::Path;
 
 use colored::Colorize;
 
-use crate::core::gitignore;
 use crate::core::Parser;
 use crate::docs;
+/// How `template` updates `.gitignore`; the flow is shared (`utils::protect`).
+pub use crate::utils::protect::GitignoreMode;
 use crate::utils::ui;
-// ─────────────────────────────────────────────────────────────
-// Gitignore integration
-// ─────────────────────────────────────────────────────────────
-
-/// Controls how `evnx template` updates `.gitignore` after generating output.
-///
-/// This enum is resolved from CLI flags in `src/cli.rs` before `run()` is
-/// called. TTY detection and user prompting happen here — not in `core/gitignore`.
-pub enum GitignoreMode {
-    /// `--gitignore` flag: write without prompting. Suitable for CI scripts.
-    Auto,
-    /// `--no-gitignore` flag: skip all gitignore logic. No warning emitted.
-    Skip,
-    /// No flag: prompt when running interactively (TTY), warn-only in CI.
-    Default,
-}
-
-/// After a successful template generation, offer to protect the output file.
-///
-/// Behaviour depends on `mode` and whether stdin is a terminal:
-/// - `Auto`: always append to `.gitignore` without prompting.
-/// - `Skip`: do nothing and emit no output.
-/// - `Default` + TTY: prompt the user (`Y/n`).
-/// - `Default` + non-TTY (CI): emit a warning, do not modify anything.
-///
-/// Silently skips if:
-/// - No git repository is found (no `.git` ancestor).
-/// - The output path is outside the repository root.
-/// - The entry is already present in `.gitignore`.
-fn handle_gitignore(output: &str, mode: &GitignoreMode) -> anyhow::Result<()> {
-    use std::path::Path;
-
-    if matches!(mode, GitignoreMode::Skip) {
-        return Ok(());
-    }
-
-    // Locate the git root's .gitignore.
-    let cwd = std::env::current_dir()?;
-    let Some(gitignore_path) = gitignore::find_gitignore_path(&cwd) else {
-        if matches!(mode, GitignoreMode::Auto) {
-            ui::warning("Not a git repository — cannot update .gitignore");
-        }
-        return Ok(());
-    };
-
-    let git_root = gitignore_path
-        .parent()
-        .expect(".gitignore path always has a parent directory");
-
-    // Make output path absolute so strip_prefix works correctly.
-    let output_path = {
-        let p = Path::new(output);
-        if p.is_absolute() {
-            p.to_path_buf()
-        } else {
-            cwd.join(p)
-        }
-    };
-
-    // Compute the relative entry string for .gitignore.
-    let Some(entry_path) = gitignore::relative_output_path(git_root, &output_path) else {
-        ui::warning(format!(
-            "'{}' is outside the git repository — .gitignore cannot protect it",
-            output
-        ));
-        return Ok(());
-    };
-    let entry = entry_path.to_string_lossy().to_string();
-
-    // Ask git, not the text of .gitignore (I-139, DEC-T11). An exact-line match
-    // called `out.yml` covered when a later `!out.yml` re-included it, missed
-    // `*.yml` and `config/` (and so added redundant lines), and could not see a
-    // file that is already tracked.
-    match gitignore::exposure(git_root, &entry) {
-        gitignore::Exposure::Protected => {
-            ui::success(format!("'{}' is already ignored by git", entry));
-            return Ok(());
-        }
-        gitignore::Exposure::Tracked => {
-            ui::warning(format!(
-                "'{entry}' is tracked by git: a commit includes it whatever .gitignore says"
-            ));
-            ui::warning_detail(format!("     →  git rm --cached {entry}"));
-            return Ok(());
-        }
-        gitignore::Exposure::Unignored => {}
-    }
-
-    // Decide whether to write based on mode and TTY.
-    let should_write = match mode {
-        GitignoreMode::Auto => true,
-        GitignoreMode::Skip => false, // unreachable, handled above
-        GitignoreMode::Default => {
-            // `std::io::IsTerminal`, stable since Rust 1.70, rather than the
-            // `atty` crate — which is unmaintained and carries RUSTSEC-2021-0145
-            // (potential unaligned read). Same behaviour, one fewer dependency,
-            // and one fewer advisory in the shipped binary.
-            if std::io::stdin().is_terminal() {
-                ui::prompt_yes_no(format!(
-                    "'{}' may contain secrets — add it to .gitignore?",
-                    entry
-                ))
-            } else {
-                ui::warning(format!(
-                    "'{}' may contain secrets and is not in .gitignore",
-                    entry
-                ));
-                false
-            }
-        }
-    };
-
-    if should_write {
-        gitignore::append_entry(&gitignore_path, &entry)?;
-        ui::success(format!("Added '{}' to .gitignore", entry));
-        // A later `!entry` (or a nested .gitignore) can still win: say so,
-        // and leave the user's line alone (G8).
-        if !gitignore::is_protected(git_root, &entry) {
-            ui::warning(format!(
-                "'{entry}' is still not ignored: a later rule re-includes it. \
-                 Check with: git check-ignore -v {entry}"
-            ));
-        }
-    }
-
-    Ok(())
-}
 
 // ─────────────────────────────────────────────────────────────
 // Regex Pattern Helpers (avoid format! brace escaping hell)
@@ -341,7 +227,40 @@ pub fn run_with(
     strict: bool,
     file_mode: Option<u32>,
 ) -> Result<()> {
-    let to_stdout = output == "-";
+    run_options(
+        input,
+        output,
+        env,
+        Options {
+            verbose,
+            gitignore: gitignore_mode,
+            strict,
+            file_mode,
+            mkdir: false,
+            dry_run: false,
+        },
+    )
+}
+
+/// Everything `template` takes besides its three paths.
+pub struct Options {
+    /// `-v`.
+    pub verbose: bool,
+    /// `--gitignore` / `--no-gitignore` / neither.
+    pub gitignore: GitignoreMode,
+    /// `--strict`: refuse to write when a placeholder has no value.
+    pub strict: bool,
+    /// `--mode`: `None` makes a new output 0600 and keeps an existing one's mode.
+    pub file_mode: Option<u32>,
+    /// `--mkdir`: create the output's missing directories, owner-only (I-144).
+    pub mkdir: bool,
+    /// `--dry-run`: render and report, write nothing (DEC-T9).
+    pub dry_run: bool,
+}
+
+/// [`run`] with every option (`--mkdir`, `--dry-run` included).
+pub fn run_options(input: String, output: String, env: String, opts: Options) -> Result<()> {
+    let to_stdout = crate::core::safe_write::is_stdout(&output);
     // With `--output -` stdout is the rendered file, so a status line there
     // would end up inside it (DEC-T8).
     let status = |msg: String| {
@@ -368,7 +287,7 @@ pub fn run_with(
         }
     }
 
-    if verbose {
+    if opts.verbose {
         ui::verbose_stderr("Running template in verbose mode");
     }
 
@@ -392,6 +311,10 @@ pub fn run_with(
 
     status(format!("Read template from {}", input));
 
+    // A filter evnx does not know is a typo shipping into the config: refuse
+    // before anything else is reported (DEC-T7).
+    check_filters(&template_content, &env_file.vars, &input, &output)?;
+
     // Detect undefined variables and warn
     let undefined = detect_undefined_vars(&template_content, &env_file.vars);
     for var in &undefined {
@@ -405,7 +328,7 @@ pub fn run_with(
     // a template once it is written — it becomes a config file that some other
     // program reads as a literal host name. Writing the file and then reporting
     // the problem leaves the broken artefact on disk for whatever runs next.
-    if strict && !undefined.is_empty() {
+    if opts.strict && !undefined.is_empty() {
         anyhow::bail!(
             "{} variable{} referenced in {input} {} no value in {env}: {}\n\n\
              Define {} there, or give {} a fallback with {{{{NAME|default:value}}}}.\n\
@@ -424,15 +347,64 @@ pub fn run_with(
         .context("Failed to process template substitutions")?;
 
     if to_stdout {
+        if opts.dry_run {
+            // ⚠️ stderr: a dry run piped into `kubectl apply -f -` must not
+            // feed the report to it.
+            eprintln!("Dry run: nothing was printed.");
+            eprintln!(
+                "  would print {} to stdout",
+                unresolved_note(result.lines().count(), "line", &undefined)
+            );
+            return Ok(());
+        }
         print!("{result}");
         // No file, so nothing to protect in .gitignore (DEC-T8).
         ui::print_docs_hint(&docs::TEMPLATE);
         return Ok(());
     }
 
+    // What the write would do, worked out the way the write works it out
+    // (core::safe_write::preview): the dry run reports it, the real run checks
+    // the directory before writing.
+    let plan = crate::core::safe_write::preview(&output)
+        .with_context(|| format!("Failed to write generated config to: {}", output))?;
+    if let Some(dir) = &plan.missing_dir {
+        if !opts.mkdir {
+            return Err(anyhow::anyhow!(
+                "the directory {} does not exist. Add --mkdir to create it.",
+                dir.display()
+            ))
+            .with_context(|| format!("Failed to write generated config to: {}", output));
+        }
+    }
+
+    if opts.dry_run {
+        print_dry_run(&plan, &output, &undefined);
+        return Ok(());
+    }
+
+    if let Some(dir) = &plan.missing_dir {
+        let created = crate::core::safe_write::create_dirs_private(dir)?;
+        if !created.is_empty() {
+            ui::say(format!(
+                "Created {} {}",
+                if created.len() == 1 {
+                    "directory"
+                } else {
+                    "directories"
+                },
+                created
+                    .iter()
+                    .map(|d| d.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+    }
+
     // Write output: new 0600, existing keeps its mode, atomic, symlinks written
     // through (I-130, I-140, core::safe_write).
-    let written = match file_mode {
+    let written = match opts.file_mode {
         Some(m) => crate::core::safe_write::write_with_mode(&output, result.as_bytes(), m),
         None => crate::core::safe_write::write_private(&output, result.as_bytes()),
     }
@@ -456,9 +428,136 @@ pub fn run_with(
             }
         ));
     }
-    handle_gitignore(&output, &gitignore_mode)?;
+    crate::utils::protect::protect_output(&output, &opts.gitignore)?;
     ui::print_docs_hint(&docs::TEMPLATE);
     Ok(())
+}
+
+/// `--dry-run` with a file output: what the write would do (DEC-T9). Printed
+/// whatever `-q` says, as `add --dry-run` does: it is the output that was
+/// asked for. Never the rendered text — it holds the values.
+fn print_dry_run(plan: &crate::core::safe_write::Preview, output: &str, undefined: &[String]) {
+    println!("Dry run: nothing was written.");
+    if let Some(dir) = &plan.missing_dir {
+        println!("  would create the directory {} (--mkdir)", dir.display());
+    }
+    let verb = if plan.replaces { "replace" } else { "create" };
+    if plan.through_link {
+        println!(
+            "  would {verb} {} through the link {output}",
+            plan.target.display()
+        );
+    } else {
+        println!("  would {verb} {output}");
+    }
+    if !undefined.is_empty() {
+        println!(
+            "  {}",
+            unresolved_note(undefined.len(), "placeholder", &[]) + " would be left unresolved"
+        );
+    }
+}
+
+/// `3 lines` / `1 placeholder`, plus how many references stay unresolved.
+fn unresolved_note(n: usize, what: &str, undefined: &[String]) -> String {
+    let mut s = format!("{n} {what}{}", if n == 1 { "" } else { "s" });
+    if !undefined.is_empty() {
+        s.push_str(&format!(
+            ", {} placeholder{} unresolved",
+            undefined.len(),
+            if undefined.len() == 1 { "" } else { "s" }
+        ));
+    }
+    s
+}
+
+/// The filters evnx knows, for the error that lists them.
+const FILTERS: &[&str] = &[
+    "upper",
+    "lower",
+    "title",
+    "capitalize",
+    "bool",
+    "int",
+    "json",
+];
+
+/// Refuse a filter evnx does not know, and chained filters, naming each one
+/// with its line (DEC-T7). They used to be written into the output unchanged,
+/// so `{{PORT|innt}}` shipped as literal text with exit 0.
+///
+/// Every `{{ NAME | … }}` counts when NAME is an identifier or a key in the
+/// env file, whether it has a value or not (owner, 2026-10-17). Text that is
+/// not an evnx reference — Helm's `{{ .Values.x | quote }}` — is left alone.
+///
+/// `|default:` takes the rest of the braces as its text, pipes included.
+///
+/// ⚠️ Chained filters (`{{X|upper|json}}`) are refused until the one
+/// substitution engine (T-WP3, 0.11.0) can apply them left to right; going
+/// from an error to working later breaks nobody.
+fn check_filters(
+    template: &str,
+    vars: &IndexMap<String, String>,
+    input: &str,
+    output: &str,
+) -> Result<()> {
+    let re = Regex::new(r"\{\{\s*([^\s{}|]+)\s*\|([^}]*)\}\}").expect("valid filter pattern");
+    let mut problems = Vec::new();
+    for caps in re.captures_iter(template) {
+        let (Some(whole), Some(name), Some(chunk)) = (caps.get(0), caps.get(1), caps.get(2)) else {
+            continue;
+        };
+        if !is_identifier(name.as_str()) && !vars.contains_key(name.as_str()) {
+            continue;
+        }
+        let chunk = chunk.as_str().trim();
+        if chunk.starts_with("default:") {
+            continue;
+        }
+        let line = template[..whole.start()].matches('\n').count() + 1;
+        let placeholder = whole.as_str();
+        if chunk.contains('|') {
+            problems.push(format!(
+                "line {line}: {placeholder}: chained filters are not supported; \
+                 use one filter per placeholder"
+            ));
+        } else if !FILTERS.contains(&chunk) {
+            let mut msg = format!("line {line}: {placeholder}: unknown filter `{chunk}`");
+            let near = crate::utils::string::closest(
+                &chunk.to_lowercase(),
+                FILTERS.iter().map(|f| (*f, *f)),
+            );
+            if let Some(best) = near.first() {
+                msg.push_str(&format!(" — did you mean `{best}`?"));
+            }
+            problems.push(msg);
+        }
+    }
+    if problems.is_empty() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "{input} has {} evnx cannot apply:\n  {}\n\n\
+         Filters: {}, default:VALUE.\n\
+         Nothing was written to {output}.",
+        if problems.len() == 1 {
+            "a filter".to_string()
+        } else {
+            format!("{} filters", problems.len())
+        },
+        problems.join("\n  "),
+        FILTERS.join(", "),
+    )
+}
+
+/// A name the reference patterns treat as a variable: a letter or `_`, then
+/// letters, digits and `_`.
+fn is_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Process a template string with variable substitution and filter transformations.
@@ -628,7 +727,8 @@ type FilterFn = fn(&str) -> String;
 /// |--------|-------------|------------------------|
 /// | `upper` | Convert to uppercase | `"hello"` → `"HELLO"` |
 /// | `lower` | Convert to lowercase | `"HELLO"` → `"hello"` |
-/// | `title` | Capitalize first letter | `"hello"` → `"Hello"` |
+/// | `title` | Title case | `"hello wORLD"` → `"Hello World"` |
+/// | `capitalize` | First character upper | `"hello wORLD"` → `"Hello wORLD"` |
 ///
 /// # Example (internal use only)
 ///
@@ -641,7 +741,9 @@ fn filter_patterns() -> Vec<(&'static str, FilterFn)> {
     vec![
         ("|upper", |v| v.to_uppercase()),
         ("|lower", |v| v.to_lowercase()),
-        ("|title", |v| {
+        ("|title", title_case),
+        // The old `|title`: the first character only, the rest as written.
+        ("|capitalize", |v| {
             let mut c = v.chars();
             match c.next() {
                 None => String::new(),
@@ -649,6 +751,33 @@ fn filter_patterns() -> Vec<(&'static str, FilterFn)> {
             }
         }),
     ]
+}
+
+/// Title case, Jinja's rule (I-137, owner 2026-10-17): each word's first
+/// letter upper and the rest lower; a word starts after whitespace or one of
+/// `-([{<`. `hello wORLD` → `Hello World`, `my API` → `My Api`. The old
+/// behaviour, first character only, is `|capitalize`.
+fn title_case(v: &str) -> String {
+    let mut out = String::with_capacity(v.len());
+    let mut word_start = true;
+    for c in v.chars() {
+        if c.is_whitespace() || matches!(c, '-' | '(' | '{' | '[' | '<') {
+            out.push(c);
+            word_start = true;
+        } else if word_start {
+            out.extend(c.to_uppercase());
+            word_start = false;
+        } else {
+            out.extend(c.to_lowercase());
+        }
+    }
+    out
+}
+
+/// A value for an error message: masked when its name or shape says secret
+/// (`core::mask`), so a bad `|int` on `DB_PASSWORD` does not print it.
+fn shown(key: &str, value: &str) -> String {
+    crate::core::mask::mask(key, value)
 }
 
 /// Process template filters: transformations applied via `{{VAR|filter}}` syntax.
@@ -691,13 +820,21 @@ fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<St
             }
         }
 
-        // Boolean filter: {{VAR|bool}} - converts truthy strings to "true"/"false"
+        // Boolean filter: {{VAR|bool}}. One word list for evnx (core::value);
+        // anything else is an error, as `|int` is (I-138, DEC-T7). It was
+        // `false`, silently, for `on`, `enabled` and every typo.
         let bool_pattern = filter_var_pattern(key, "|bool");
         if let Ok(re) = Regex::new(&bool_pattern) {
             if re.is_match(&result) {
-                let bool_val = value.eq_ignore_ascii_case("true")
-                    || value.eq_ignore_ascii_case("yes")
-                    || value.eq_ignore_ascii_case("1");
+                let bool_val = crate::core::value::parse_bool(value).with_context(|| {
+                    format!(
+                        "Variable '{}' value '{}' is not a boolean for |bool: use {} or {}",
+                        key,
+                        shown(key, value),
+                        crate::core::value::TRUE_WORDS.join("/"),
+                        crate::core::value::FALSE_WORDS.join("/"),
+                    )
+                })?;
                 result = re
                     .replace_all(&result, regex::NoExpand(bool_val.to_string().as_str()))
                     .to_string();
@@ -711,7 +848,8 @@ fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<St
                 let int_val = value.parse::<i64>().with_context(|| {
                     format!(
                         "Variable '{}' value '{}' is not a valid integer for |int filter",
-                        key, value
+                        key,
+                        shown(key, value)
                     )
                 })?;
                 result = re
@@ -957,12 +1095,29 @@ mod tests {
         vars.insert("NAME".to_string(), "hello world".to_string());
 
         let result = process_filters(template, &vars).unwrap();
-        assert_eq!(result, "name=Hello world");
+        assert_eq!(result, "name=Hello World");
+    }
+
+    #[test]
+    fn test_filter_capitalize_keeps_the_rest() {
+        let mut vars = IndexMap::new();
+        vars.insert("NAME".to_string(), "hello wORLD".to_string());
+        let result = process_filters("name={{NAME|capitalize}}", &vars).unwrap();
+        assert_eq!(result, "name=Hello wORLD");
+    }
+
+    #[test]
+    fn title_case_follows_jinja() {
+        assert_eq!(title_case("hello wORLD"), "Hello World");
+        assert_eq!(title_case("my API key"), "My Api Key");
+        assert_eq!(title_case("a-b (c) [d] {e} <f>"), "A-B (C) [D] {E} <F>");
+        assert_eq!(title_case("o'neil x_y"), "O'neil X_y");
+        assert_eq!(title_case(""), "");
     }
 
     #[test]
     fn test_filter_bool_truthy_values() {
-        let test_cases = vec!["true", "True", "TRUE", "yes", "Yes", "1"];
+        let test_cases = vec!["true", "True", "TRUE", "yes", "Yes", "1", "on", "Y"];
         for truthy in test_cases {
             let template = "debug={{DEBUG|bool}}";
             let mut vars = IndexMap::new();
@@ -974,8 +1129,18 @@ mod tests {
     }
 
     #[test]
+    fn test_filter_bool_unknown_words_are_an_error() {
+        for word in ["maybe", "", "enabled"] {
+            let mut vars = IndexMap::new();
+            vars.insert("DEBUG".to_string(), word.to_string());
+            let err = process_filters("debug={{DEBUG|bool}}", &vars).unwrap_err();
+            assert!(err.to_string().contains("not a boolean"), "{word:?}: {err}");
+        }
+    }
+
+    #[test]
     fn test_filter_bool_falsy_values() {
-        let test_cases = vec!["false", "no", "0", "maybe", ""];
+        let test_cases = vec!["false", "no", "0", "off", "N"];
         for falsy in test_cases {
             let template = "debug={{DEBUG|bool}}";
             let mut vars = IndexMap::new();

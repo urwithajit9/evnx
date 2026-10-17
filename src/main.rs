@@ -384,13 +384,15 @@ fn main() -> Result<()> {
             no_gitignore,
             strict,
             mode: file_mode,
+            mkdir,
+            dry_run,
         } => {
             let mode = if gitignore {
-                commands::template::GitignoreMode::Auto
+                evnx::utils::protect::GitignoreMode::Auto
             } else if no_gitignore {
-                commands::template::GitignoreMode::Skip
+                evnx::utils::protect::GitignoreMode::Skip
             } else {
-                commands::template::GitignoreMode::Default
+                evnx::utils::protect::GitignoreMode::Default
             };
             let env = resolve_env(
                 Path::new("."),
@@ -398,7 +400,19 @@ fn main() -> Result<()> {
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
             );
-            commands::template::run_with(input, output, env, cli.verbose, mode, strict, file_mode)
+            commands::template::run_options(
+                input,
+                output,
+                env,
+                commands::template::Options {
+                    verbose: cli.verbose,
+                    gitignore: mode,
+                    strict,
+                    file_mode,
+                    mkdir,
+                    dry_run,
+                },
+            )
         }
 
         // #[cfg(feature = "backup")]

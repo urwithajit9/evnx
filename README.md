@@ -390,7 +390,7 @@ Checks: `.env` exists and has secure permissions, `.env` is in `.gitignore`, `.e
 
 ### `evnx template`
 
-Generates configuration files from templates using `.env` variable substitution.
+Renders a config file from a template, filling in values from `.env`.
 
 ```bash
 evnx template \
@@ -404,7 +404,17 @@ only (0600; `--mode 0640` to choose another). An existing output is replaced and
 keeps its mode. `--output -` prints to stdout instead of writing a file. The
 template and the env file are never overwritten.
 
-Supported inline filters:
+| Option | What it does |
+|---|---|
+| `--input FILE`, `--output FILE` | the template, and where to write (`-` for stdout) |
+| `--env FILE`, `--env-name NAME` | the values: `.env` by default, `.env.NAME` with `--env-name` |
+| `--strict` | refuse to write when a placeholder has no value (the default warns, writes it through and exits 0) |
+| `--dry-run` | render and say what would be written; writes nothing, prints no value, leaves `.gitignore` alone |
+| `--mkdir` | create the output's missing directories (0700) |
+| `--mode MODE` | the output's file mode, new or existing |
+| `--gitignore` / `--no-gitignore` | add the output to `.gitignore` without asking / skip the check. Neither: ask in a terminal, warn in CI |
+
+References are `{{VAR}}`, `${VAR}` and `$VAR`. Filters, one per placeholder:
 
 ```yaml
 database:
@@ -413,6 +423,19 @@ database:
   ssl:  {{DB_SSL|bool}}
   name: {{DB_NAME|upper}}
 ```
+
+| Filter | Result |
+|---|---|
+| `upper`, `lower` | the value in upper or lower case |
+| `title` | Title Case: `hello wORLD` → `Hello World` |
+| `capitalize` | first character only: `hello wORLD` → `Hello wORLD` |
+| `bool` | `true`/`yes`/`on`/`1`/`y` → `true`, `false`/`no`/`off`/`0`/`n` → `false` (any case); anything else is an error |
+| `int` | a whole number; anything else is an error |
+| `json` | a quoted, escaped JSON string |
+| `default:VALUE` | `VALUE` when the variable is empty or not defined |
+
+An unknown filter, or two chained (`{{X|upper|json}}`), is an error naming its
+line, and nothing is written. Exit codes: 0 rendered, 2 nothing written.
 
 ---
 
