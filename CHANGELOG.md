@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.7] - 2026-10-17
+
 The patch for the three commands about evnx itself — `commands`, `completions`
 and `update` (package R-surface) — plus one HTTP client and one cargo command
 where there were several.
