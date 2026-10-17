@@ -146,7 +146,9 @@ answer is no (secrets found, drift, a failed upload), and **2** when they could
 not run — "No verdict: evnx did not finish". `backup` and `restore` are the
 exception: they keep the specific codes their guides list (`restore` exits 3 when
 the backup file is missing). `-q` prints nothing on success; findings and errors
-still print.
+still print. ⚠️ Not yet in the cloud commands: `org`, `vault`, `cloud push`/`pull`/
+`export`/`audit` and `auth`'s token, session and device commands still print their
+progress lines under `-q` (`auth status`, `cloud status` and `cloud unlink` are quiet).
 
 ### `evnx init`
 
@@ -195,6 +197,10 @@ evnx add custom                   # ... or one prompt at a time
 evnx add --list                   # every id
 evnx add service redis --dry-run  # what would be written; --json for scripts
 ```
+
+`--path` names the folder that holds `.env.example` and `.env`. When the project keeps a
+contract, the new names are recorded in the nearest `.evnx.toml` at or above that folder,
+which may be the repository root rather than the folder itself.
 
 ---
 

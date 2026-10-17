@@ -8,6 +8,40 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### add
+
+#### Fixed
+
+- **`add custom` no longer shows a secret on screen.** In the prompt loop, a
+  secret-looking name (`STRIPE_SECRET_KEY`, `ADMIN_PWD`, …) now has its value
+  read without echo, as the argument form already did; it was typed visibly.
+  Both forms use one rule, the shared secret-name rule at its strict level
+  (`*_SECRET`, `*_KEY`, `*_TOKEN`, `*_PASSWORD`, `*_PWD`, …): `ADMIN_PWD` is
+  now asked for hidden in the argument form too, and `SENTRY_DSN`, a public
+  value, no longer is (I-247).
+- The confirm question names every file the run writes: "Add these 5 variables
+  to .env.example and .env?" — it named only `.env.example` while `.env` got the
+  names too (I-247).
+- **Stacks with PostgreSQL write PostgreSQL's `DATABASE_URL`.** `fastapi_ai`,
+  `rust_high_perf` and `django_enterprise` (in `init --blueprint` and
+  `add blueprint`) wrote `DATABASE_URL=https://example.com`, the framework's
+  generic placeholder, because the first value seen won. A service's own
+  default now wins over a framework's, in either order (I-250).
+- Django's `DATABASE_URL` default is `sqlite:///db.sqlite3`, Django's own
+  out-of-the-box database; it was `https://example.com` (N-21).
+
+#### Changed
+
+- "No browser framework found in this project …" is printed only with `-v`.
+  In a backend project it appeared on every add of a service with public
+  values (Stripe, Sentry, Auth0 …). When a framework is found, the line about
+  the copies is unchanged (N-22).
+
+#### Documentation
+
+- README: `-q` is not yet silent in the cloud commands (until CG-06), and
+  `--path` records names in the nearest `.evnx.toml` at or above the folder.
+
 ## [0.10.3] - 2026-10-17
 
 ⚠️ **Why 0.10.3.** By `docs/RELEASING.md` this would be a minor bump: it changes
