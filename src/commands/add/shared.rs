@@ -459,10 +459,19 @@ pub fn confirm_and_apply(
             crate::utils::prompt::require_terminal(example)?;
         }
         (flow.heading)();
-        let (subset, file) = if plan.to_example.vars.is_empty() {
-            (&plan.to_env, ".env")
+        let subset = if plan.to_example.vars.is_empty() {
+            &plan.to_env
         } else {
-            (&plan.to_example, ".env.example")
+            &plan.to_example
+        };
+        // ⚠️ Every file this run writes (I-247). It named only `.env.example`
+        // while `.env` got the names too. A `.env` created afterwards from the
+        // template is asked about on its own.
+        let writes_env = !plan.to_env.vars.is_empty() && (plan.env_exists || plan.create_env_file);
+        let file = match (plan.to_example.vars.is_empty(), writes_env) {
+            (false, true) => ".env.example and .env",
+            (false, false) => ".env.example",
+            (true, _) => ".env",
         };
         println!("{}", (flow.preview)(subset).dimmed());
         if !plan.present.is_empty() {

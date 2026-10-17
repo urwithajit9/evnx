@@ -33,7 +33,14 @@ fn custom_name_and_value(p: &Project, name: &str, value: &str) -> Pty {
     let mut s = Pty::spawn(p.path(), &["add", "custom"]);
     s.wait_for("Variable name");
     s.type_line(name);
-    s.wait_for(".env only; .env.example gets");
+    s.wait_for(&format!("Value for {name} ("));
+    // A secret-looking name is read hidden (I-247): type only once echo is
+    // off, or the input is flushed.
+    if s.try_wait_for("hidden", std::time::Duration::from_millis(500))
+        .is_some()
+    {
+        s.wait_for_echo_off();
+    }
     s.type_line(value);
     s.wait_for("More options?");
     s
@@ -53,7 +60,7 @@ fn custom_writes_the_variable_and_its_section() {
     s.press(&["n", ENTER]);
     s.wait_for("Variable name");
     s.press(&[ENTER]); // empty name: finish
-    s.wait_for("Append these variables to .env.example?");
+    s.wait_for("Append these variables to .env.example and .env?");
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
@@ -79,7 +86,7 @@ fn answering_no_writes_nothing() {
     let before = (p.read(".env.example"), p.read(".env"));
     let mut s = Pty::spawn(p.path(), &["add", "service", "redis"]);
     s.wait_for("Preview:");
-    s.wait_for("Add these 5 variables to .env.example?");
+    s.wait_for("Add these 5 variables to .env.example and .env?");
     s.press(&["n", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
@@ -92,7 +99,7 @@ fn answering_no_writes_nothing() {
 fn yes_at_the_prompt_writes_what_dash_dash_yes_writes() {
     let asked = project();
     let mut s = Pty::spawn(asked.path(), &["add", "service", "redis"]);
-    s.wait_for("Add these 5 variables to .env.example?");
+    s.wait_for("Add these 5 variables to .env.example and .env?");
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
@@ -137,7 +144,7 @@ fn y_enter_answers_exactly_one_question() {
     s.press(&["n", ENTER]);
     s.wait_for("Variable name");
     s.press(&[ENTER]);
-    s.wait_for("Append these variables to .env.example?");
+    s.wait_for("Append these variables to .env.example and .env?");
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
@@ -185,7 +192,7 @@ fn a_secret_name_alone_is_asked_for_unseen() {
     // flushed (see `wait_for_echo_off`).
     s.wait_for_echo_off();
     s.type_line("sk_live_typed_here");
-    s.wait_for("Append these variables to .env.example?");
+    s.wait_for("Append these variables to .env.example and .env?");
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
@@ -258,7 +265,7 @@ fn the_question_counts_only_new_names_and_lists_conflicts() {
 fn an_abort_prints_no_next_steps() {
     let p = project();
     let mut s = Pty::spawn(p.path(), &["add", "blueprint", "mern_v2"]);
-    s.wait_for("Add these 18 variables to .env.example?");
+    s.wait_for("Add these 18 variables to .env.example and .env?");
     s.press(&["n", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
@@ -281,7 +288,7 @@ fn escape_cancels_every_confirmation() {
         let p = project();
         let before = (p.read(".env.example"), p.read(".env"));
         let mut s = Pty::spawn(p.path(), args);
-        s.wait_for("to .env.example?");
+        s.wait_for("to .env.example and .env?");
         s.cancel_yes_no();
         let (rest, code) = s.finish();
         assert_eq!(code, 0, "{args:?}: {rest}");
@@ -340,7 +347,7 @@ fn custom_with_category_only(p: &Project, keys: &[&str]) -> String {
     s.press(&["n", ENTER]);
     s.wait_for("Variable name");
     s.press(&[ENTER]);
-    s.wait_for("Append these variables to .env.example?");
+    s.wait_for("Append these variables to .env.example and .env?");
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
@@ -390,9 +397,82 @@ fn a_missing_id_opens_a_picker() {
     s.wait_for("Which blueprint?");
     s.wait_for("T3 Turbo");
     s.press(&[DOWN, ENTER]); // the second: Modern MERN
-    s.wait_for("Add these 18 variables to .env.example?");
+    s.wait_for("Add these 18 variables to .env.example and .env?");
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
     assert!(p.read(".env.example").contains("Modern MERN"));
+}
+
+// ─────────────────────────────────────────────────────────────
+// 0.10.4 (R-add): I-247
+// ─────────────────────────────────────────────────────────────
+
+/// I-247: in the prompt loop, a secret-looking name's value is read without
+/// echo, as the argument form always did. It was a visible `Input`, so
+/// `sk_live_…` appeared on screen (and in any terminal recording).
+#[test]
+fn t_i247_loop_hides_a_secret_value() {
+    let p = project();
+    let mut s = Pty::spawn(p.path(), &["add", "custom"]);
+    s.wait_for("Variable name");
+    s.type_line("STRIPE_SECRET_KEY");
+    s.wait_for("Value for STRIPE_SECRET_KEY (hidden");
+    s.wait_for_echo_off();
+    s.type_line("sk_live_typed_unseen");
+    s.wait_for("More options?");
+    s.press(&["n", ENTER]);
+    s.wait_for("Variable name");
+    s.press(&[ENTER]);
+    s.wait_for("Append these variables to");
+    s.press(&["y", ENTER]);
+    let (rest, code) = s.finish();
+    assert_eq!(code, 0, "{rest}");
+    assert!(!rest.contains("sk_live_typed_unseen"), "{rest}");
+    assert!(p
+        .read(".env")
+        .contains("\nSTRIPE_SECRET_KEY=sk_live_typed_unseen\n"));
+    assert!(!p.read(".env.example").contains("sk_live_typed_unseen"));
+}
+
+/// I-247: one rule for both forms, `core::classify::is_secret_name` at the
+/// Strict level (owner decision 2026-10-17). `ADMIN_PWD` is a secret under it
+/// and was not under spec's `looks_secret`; `SENTRY_DSN` is the reverse. Given
+/// alone as arguments, only the first is asked for, hidden.
+#[test]
+fn t_i247_argument_form_uses_the_strict_rule() {
+    let p = project();
+    let mut s = Pty::spawn(p.path(), &["add", "custom", "ADMIN_PWD", "SENTRY_DSN"]);
+    let before = s.wait_for("Value for ADMIN_PWD (hidden");
+    assert!(!before.contains("SENTRY_DSN (hidden"), "{before}");
+    s.wait_for_echo_off();
+    s.type_line("pwd-typed-unseen");
+    let shown = s.wait_for("Append these variables to");
+    assert!(!shown.contains("SENTRY_DSN (hidden"), "{shown}");
+    s.press(&["y", ENTER]);
+    let (rest, code) = s.finish();
+    assert_eq!(code, 0, "{rest}");
+    let env = p.read(".env");
+    assert!(env.contains("\nADMIN_PWD=pwd-typed-unseen\n"), "{env}");
+    assert!(env.contains("\nSENTRY_DSN="), "{env}");
+}
+
+/// I-247: the question names every file the run writes. With a `.env` beside
+/// the template, both get the names; it said only ".env.example".
+#[test]
+fn t_i247_question_names_both_files() {
+    let p = project();
+    let mut s = Pty::spawn(p.path(), &["add", "service", "redis"]);
+    s.wait_for("Add these 5 variables to .env.example and .env?");
+    s.press(&["n", ENTER]);
+    let (rest, code) = s.finish();
+    assert_eq!(code, 0, "{rest}");
+
+    // `add custom` in a folder with no `.env` writes the values to a new one.
+    let q = Project::new().example("APP=1\n");
+    let mut s = Pty::spawn(q.path(), &["add", "custom", "API_URL=https://x.example"]);
+    s.wait_for("Append these variables to .env.example and .env?");
+    s.press(&["n", ENTER]);
+    let (rest, code) = s.finish();
+    assert_eq!(code, 0, "{rest}");
 }

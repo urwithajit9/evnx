@@ -224,7 +224,8 @@ fn a10_agent_style() {
 
 /// A11 (interactive): `add custom` through a terminal, the runbook's key
 /// script: name, value, "More options?" yes, a description, no category,
-/// required, then an empty name and yes.
+/// required, then an empty name and yes. `MY_API_KEY` looks like a secret, so
+/// its value is read hidden (I-247), and the question names both files.
 #[cfg(unix)]
 #[test]
 fn a11_custom_interactive() {
@@ -233,7 +234,8 @@ fn a11_custom_interactive() {
     let mut s = Pty::spawn(p.path(), &["add", "custom"]);
     s.wait_for("Variable name");
     s.type_line("MY_API_KEY");
-    s.wait_for(".env only; .env.example gets");
+    s.wait_for("Value for MY_API_KEY (hidden");
+    s.wait_for_echo_off();
     s.type_line("sk_test_xxx");
     s.wait_for("More options?");
     s.press(&["y", ENTER]);
@@ -245,7 +247,7 @@ fn a11_custom_interactive() {
     s.press(&["y", ENTER]);
     s.wait_for("Variable name");
     s.press(&[ENTER]);
-    s.wait_for("Append these variables to .env.example?");
+    s.wait_for("Append these variables to .env.example and .env?");
     s.press(&["y", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");

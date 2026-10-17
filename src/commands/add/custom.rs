@@ -123,7 +123,7 @@ fn from_arguments(
     for (name, value) in parsed {
         let value = match value {
             Some(v) => v,
-            None if can_ask && crate::commands::spec::infer::looks_secret(&name) => {
+            None if can_ask && hides_value(&name) => {
                 let v = Password::new()
                     .with_prompt(format!(
                         "Value for {name} (hidden; Enter for a placeholder)"
@@ -205,12 +205,29 @@ fn prompt_loop(
         // true until DEC-U8-1 (I-245) moved values out of `.env.example`: now
         // this is the real value, and it goes into `.env` only.
         let placeholder = placeholder_for(&name);
-        let value: String = Input::new()
-            .with_prompt(format!(
-                "Value for {name} (.env only; .env.example gets {placeholder})"
-            ))
-            .default(placeholder)
-            .interact_text()?;
+        // ⚠️ A secret-looking name is read without echo, as the argument form
+        // always did (I-247): this was a visible `Input`, so a live key typed
+        // here appeared on screen and in any recording of the terminal.
+        let value: String = if !yes && hides_value(&name) {
+            let v = Password::new()
+                .with_prompt(format!(
+                    "Value for {name} (hidden; .env only; Enter for {placeholder})"
+                ))
+                .allow_empty_password(true)
+                .interact()?;
+            if v.is_empty() {
+                placeholder
+            } else {
+                v
+            }
+        } else {
+            Input::new()
+                .with_prompt(format!(
+                    "Value for {name} (.env only; .env.example gets {placeholder})"
+                ))
+                .default(placeholder)
+                .interact_text()?
+        };
 
         let mut custom = Custom {
             name,
@@ -263,6 +280,17 @@ fn prompt_loop(
         customs.push(custom);
     }
     Ok(Some(customs))
+}
+
+/// Whether `name`'s value is asked for without echo: the shared secret-name
+/// rule, at the Strict level (`*_SECRET`, `*_KEY`, `*_TOKEN`, `*_PASSWORD`,
+/// `*_PWD`, …), for both forms (I-247, owner decision 2026-10-17).
+///
+/// ⚠️ One rule. The argument form used spec's `looks_secret` and the prompt
+/// loop used none, so `ADMIN_PWD` was typed visibly in both and `SENTRY_DSN`
+/// (a public DSN) was hidden in one.
+fn hides_value(name: &str) -> bool {
+    crate::core::classify::is_secret_name(name, crate::core::classify::Strictness::Strict)
 }
 
 /// `--category security` → `Security`; an unknown one is refused with the list.
@@ -410,7 +438,30 @@ fn entry(
 
 #[cfg(test)]
 mod tests {
-    use super::entry;
+    use super::{entry, hides_value};
+
+    /// I-247: the names that get a hidden prompt, by the Strict rule.
+    #[test]
+    fn t_i247_hides_value_follows_the_strict_rule() {
+        for name in [
+            "STRIPE_SECRET_KEY",
+            "ADMIN_PWD",
+            "DB_PASSWORD",
+            "GITHUB_TOKEN",
+            "API_KEY",
+        ] {
+            assert!(hides_value(name), "{name}");
+        }
+        for name in [
+            "SENTRY_DSN",
+            "API_URL",
+            "DEBUG",
+            "TOKEN_EXPIRY_SECONDS",
+            "API_KEY_ID",
+        ] {
+            assert!(!hides_value(name), "{name}");
+        }
+    }
 
     #[test]
     fn plain_entry_is_one_assignment() {
