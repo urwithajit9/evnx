@@ -16,10 +16,10 @@
     {
       "severity": "error",
       "type": "missing_variable",
-      "variable": "SECRET_KEY",
-      "message": "Missing required variable: SECRET_KEY",
+      "variable": "SENDGRID_API_KEY",
+      "message": "Missing required variable: SENDGRID_API_KEY",
       "location": ".env",
-      "suggestion": "Add SECRET_KEY=<value> to .env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.SECRET_KEY] in .evnx.toml",
+      "suggestion": "Add SENDGRID_API_KEY=<value> to .env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.SENDGRID_API_KEY] in .evnx.toml",
       "auto_fixable": true
     },
     {

@@ -27,6 +27,9 @@ the env file, and `.gitignore`.
   `required_present` counts the declared variables that are present (I-034).
 - `SECRET_KEY=changeme` is one finding (the placeholder), not also
   `weak_secret`, so error counts can drop (I-035).
+- `--fix` no longer generates a value for a key a provider issues
+  (`STRIPE_KEY`, `AWS_SECRET_ACCESS_KEY`, `VERCEL_TOKEN`, …), even with
+  `--rotate-weak-secrets`; those findings are `auto_fixable: false` (I-260).
 
 ### validate
 
@@ -73,6 +76,17 @@ the env file, and `.gitignore`.
   the same `chmod` warning every other command gives. The backup is written at
   the original's mode from the start.
 - `DEBUG=True`'s advice says "Use true or 1"; it said "true or 0" (I-261).
+- **`--fix` invents only what nothing else holds** (I-260, DEC-VA4..VA6). It
+  generated 64 random hex characters for every secret-shaped name holding a
+  placeholder, so `STRIPE_KEY=changeme` became a fake Stripe key that then
+  passed validate. It now generates only for the app's own secrets — an exact
+  list: `SECRET_KEY`, `DJANGO_SECRET_KEY`, `FLASK_SECRET_KEY`,
+  `SECRET_KEY_BASE`, `JWT_SECRET`, `NEXTAUTH_SECRET`, `AUTH_SECRET`,
+  `BETTER_AUTH_SECRET`, `SESSION_SECRET`, `COOKIE_SECRET`, `APP_SECRET` — and
+  for passwords (`*_PASSWORD`, `*_PASSWD`, `*_PWD`). Any other key keeps its
+  placeholder and is reported, with "get it from where it is issued";
+  `--rotate-weak-secrets` follows the same rule. A missing secret of that kind
+  is generated in one run instead of a placeholder and a second `--fix`.
 
 ### add
 
@@ -107,6 +121,8 @@ One definition each, where commands had their own:
 - `core::safe_write::backup`: the numbered `.bak` that never overwrites an
   earlier one, at the original's mode. `utils::fs::backup_file` (never called;
   it wrote `.backup`) is removed.
+- `core::classify::may_generate` and `APP_SECRETS`: which secrets evnx may
+  generate (I-260), beside the name and placeholder rules it already holds.
 - `core::env_name::abbreviation_of` and `meant`, and
   `core::spec::environment_problems`, for the environment-name check; the
   `--env-name` error's "did you mean" uses the same abbreviation rule as
@@ -119,7 +135,8 @@ One definition each, where commands had their own:
   `ValidationResult` gains `dry_run` and `needs_input`, `Summary` gains
   `needs_input`, `core::config::ValidatePolicy` gains `fail_on`.
   `validate::fixer::write_fixed_file` returns the backup path and the
-  `safe_write::Written`; `fixer::fill_for_missing` is new.
+  `safe_write::Written`; `fixer::fill_for_missing` and `FixAction::AddSecret`
+  are new.
 
 ## [0.10.7] - 2026-10-17
 

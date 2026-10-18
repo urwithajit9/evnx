@@ -131,6 +131,46 @@ fn lenient_name(key: &str) -> bool {
         || matches!(upper.as_str(), "KEY" | "SECRET" | "PASSWORD")
 }
 
+/// Secrets only the application holds: signing keys and session secrets for
+/// which any strong random value works, because nothing outside the app has
+/// to know it (DEC-VA4). Exact names, upper case.
+///
+/// ⚠️ A list, not a suffix rule. `DJANGO_SECRET_KEY` is the app's own and
+/// `STRIPE_SECRET_KEY` is Stripe's; `JWT_SECRET` is the app's and
+/// `SUPABASE_JWT_SECRET` is issued by Supabase. Nothing in the spelling tells
+/// them apart, and a wrong "yes" invents a credential (I-260). Left out on
+/// purpose: Laravel's `APP_KEY` (`base64:` and a fixed length — use
+/// `php artisan key:generate`) and `ENCRYPTION_KEY` (often a fixed length).
+pub const APP_SECRETS: &[&str] = &[
+    "SECRET_KEY",
+    "DJANGO_SECRET_KEY",
+    "FLASK_SECRET_KEY",
+    "SECRET_KEY_BASE",
+    "JWT_SECRET",
+    "NEXTAUTH_SECRET",
+    "AUTH_SECRET",
+    "BETTER_AUTH_SECRET",
+    "SESSION_SECRET",
+    "COOKIE_SECRET",
+    "APP_SECRET",
+];
+
+/// May evnx **generate** this variable's value (`validate --fix`)?
+///
+/// Yes for the app's own secrets ([`APP_SECRETS`]) and for passwords
+/// (`*_PASSWORD`, `*_PASSWD`, `*_PWD`), which the project chooses (DEC-VA4).
+/// No for everything a provider issues — a Stripe key, an AWS secret, a
+/// deploy token: 64 random hex characters there is a fake credential that
+/// then passes validation (I-260).
+pub fn may_generate(key: &str) -> bool {
+    let upper = key.to_uppercase();
+    APP_SECRETS.contains(&upper.as_str())
+        || matches!(upper.as_str(), "PASSWORD" | "PASSWD")
+        || ["_PASSWORD", "_PASSWD", "_PWD"]
+            .iter()
+            .any(|s| upper.ends_with(s))
+}
+
 /// Whether `key=value` holds a secret, by either the name or the value.
 pub fn holds_secret(key: &str, value: &str) -> bool {
     is_sensitive_key(key) || is_secret_shaped(value) || url_password(value).is_some()
@@ -460,6 +500,41 @@ fn placeholder_pattern(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::Strictness::{Lenient, Strict};
+
+    /// I-260, DEC-VA4: the app's own secrets and passwords, never a key a
+    /// provider issues — whatever its spelling shares with an app secret.
+    #[test]
+    fn t_i260_only_app_secrets_and_passwords_may_be_generated() {
+        for yes in [
+            "SECRET_KEY",
+            "secret_key",
+            "DJANGO_SECRET_KEY",
+            "JWT_SECRET",
+            "NEXTAUTH_SECRET",
+            "SESSION_SECRET",
+            "DB_PASSWORD",
+            "REDIS_PASSWD",
+            "ADMIN_PWD",
+            "PASSWORD",
+        ] {
+            assert!(super::may_generate(yes), "{yes}");
+        }
+        for no in [
+            "STRIPE_SECRET_KEY",
+            "STRIPE_KEY",
+            "STRIPE_WEBHOOK_SECRET",
+            "SUPABASE_JWT_SECRET",
+            "AWS_SECRET_ACCESS_KEY",
+            "CLERK_SECRET_KEY",
+            "VERCEL_TOKEN",
+            "SENDGRID_API_KEY",
+            "APP_KEY",
+            "ENCRYPTION_KEY",
+            "PWD",
+        ] {
+            assert!(!super::may_generate(no), "{no}");
+        }
+    }
 
     /// F6 (DEC-G14): the 8 of U3's 32 names on which the two rules disagreed.
     /// Lenient says yes to all; Strict to the four that name a credential.

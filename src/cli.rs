@@ -1621,10 +1621,13 @@ pub enum Commands {
         /// boolean traps. Only `.env` is written, the template is never touched,
         /// and the original is kept beside it as `.env.bak`.
         ///
-        /// A missing variable gets the template's value, or a placeholder when
-        /// the name looks like a secret: evnx cannot invent it. Those are listed
-        /// under "Needs your input", not as fixed, and the run exits 1 until they
-        /// are filled in.
+        /// A missing variable gets the template's value. A new secret is
+        /// generated only for one the app holds alone — its own signing key
+        /// (`SECRET_KEY`, `JWT_SECRET`, `SESSION_SECRET`, …) or a password; a
+        /// key a provider issues (`STRIPE_KEY`, an AWS secret, a token) gets a
+        /// placeholder, because evnx cannot invent it. Those are listed under
+        /// "Needs your input", not as fixed, and the run exits 1 until they are
+        /// filled in.
         ///
         /// ⛔ **It will not overwrite a value that is not a placeholder.** A
         /// weak secret with a real value behind it is reported and left alone —
@@ -1658,7 +1661,9 @@ pub enum Commands {
         /// you can.
         ///
         /// Rotate at the provider first. A new value here that the provider
-        /// does not have is an outage, not a repair.
+        /// does not have is an outage, not a repair — so a key a provider
+        /// issues is never replaced, even with this flag: only the app's own
+        /// secrets and passwords are.
         #[arg(long, requires = "fix")]
         rotate_weak_secrets: bool,
 

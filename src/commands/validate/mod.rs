@@ -394,19 +394,20 @@ pub fn run(opts: Options) -> Result<()> {
 
         let mut fixes_to_apply = Vec::new();
 
-        // Missing variables: the template's value where evnx may copy it
-        // (I-037, D-25), a placeholder where it may not.
+        // Missing variables: a new secret where evnx may generate one
+        // (DEC-VA6), the template's value where it may copy it (I-037, D-25),
+        // a placeholder where it may do neither.
         for issue in &issues {
             if issue.issue_type == IssueType::MissingVariable.as_str() && issue.auto_fixable {
-                let fill = fixer::fill_for_missing(
-                    &issue.variable,
-                    example_file.vars.get(&issue.variable).map(String::as_str),
-                );
-                fixes_to_apply.push((
-                    issue.variable.clone(),
-                    String::new(),
-                    FixAction::AddMissing(fill),
-                ));
+                let action = if crate::core::classify::may_generate(&issue.variable) {
+                    FixAction::AddSecret
+                } else {
+                    FixAction::AddMissing(fixer::fill_for_missing(
+                        &issue.variable,
+                        example_file.vars.get(&issue.variable).map(String::as_str),
+                    ))
+                };
+                fixes_to_apply.push((issue.variable.clone(), String::new(), action));
             }
         }
 
@@ -499,7 +500,9 @@ pub fn run(opts: Options) -> Result<()> {
                 // ⚠️ A dry run never shows a generated secret: the real run
                 // makes a different one, and a value printed here would be
                 // copied somewhere and match nothing.
-                if opts.dry_run && matches!(action, FixAction::GenerateSecret) {
+                if opts.dry_run
+                    && matches!(action, FixAction::GenerateSecret | FixAction::AddSecret)
+                {
                     fix.new_value = "(a new random secret)".to_string();
                 }
                 fixes_applied.push(fix);

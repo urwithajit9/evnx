@@ -35,6 +35,9 @@ pub enum WeakSecretPolicy {
 #[derive(Debug, Clone)]
 pub enum FixAction {
     GenerateSecret,
+    /// A missing variable evnx may generate a value for (DEC-VA6): added with
+    /// a new secret in one run, rather than a placeholder and a second run.
+    AddSecret,
     ReplacePlaceholder(String),
     FixBoolean(String),
     AddMissing(String),
@@ -63,12 +66,20 @@ pub fn suggest_fix(
 ) -> FixAction {
     match issue_type {
         IssueType::PlaceholderValue => {
-            // ⚠️ The same rule the weak-secret check uses, so `DB_PASSWORD`
-            // and `API_TOKEN` are treated like `SECRET_KEY` rather than falling
-            // through to "evnx cannot invent this".
-            if crate::core::classify::is_secret_name(key, crate::core::classify::Strictness::Strict)
-            {
+            // ⛔ I-260 (DEC-VA4): generated only for a secret nothing outside
+            // the app has to hold — its own signing key, or a password it
+            // chooses. This generated for **every** secret-shaped name, so
+            // `STRIPE_KEY=changeme` became 64 random hex characters that then
+            // passed validate: a fake provider key, reported as fixed.
+            if crate::core::classify::may_generate(key) {
                 FixAction::GenerateSecret
+            } else if crate::core::classify::is_secret_name(
+                key,
+                crate::core::classify::Strictness::Strict,
+            ) {
+                // A key someone else issues. The finding stays, and does not
+                // offer `--fix`; the person fetches the value.
+                FixAction::Skip
             } else if key.contains("PORT") {
                 // `8080` is a **working default**, not a stand-in — a port is
                 // not a credential and the value is immediately usable.
@@ -139,16 +150,26 @@ pub fn suggest_fix(
         // keeps the advice it already carried ("Run: openssl rand -hex 32"),
         // which the person can act on with the old value still in front of
         // them.
+        //
+        // ⛔ And only for a secret evnx may generate at all (I-260): the
+        // `--rotate-weak-secrets` flag included (DEC-VA5). A provider always
+        // holds its key, so a value invented here never matches it.
         IssueType::WeakSecret => {
-            if super::checks::is_placeholder(key, value) || weak_secrets == WeakSecretPolicy::Rotate
+            if crate::core::classify::may_generate(key)
+                && (super::checks::is_placeholder(key, value)
+                    || weak_secrets == WeakSecretPolicy::Rotate)
             {
                 FixAction::GenerateSecret
             } else {
                 FixAction::Skip
             }
         }
-        // A missing variable has no value; the caller that knows the template
-        // uses [`fill_for_missing`] with it.
+        // A missing variable has no value. One evnx may generate is added
+        // with a new secret (DEC-VA6); for the rest, the caller that knows the
+        // template uses [`fill_for_missing`] with it.
+        IssueType::MissingVariable if crate::core::classify::may_generate(key) => {
+            FixAction::AddSecret
+        }
         IssueType::MissingVariable => FixAction::AddMissing(fill_for_missing(key, None)),
         _ => FixAction::Skip,
     }
@@ -158,7 +179,8 @@ pub fn suggest_fix(
 ///
 /// - A secret-shaped name gets the generic placeholder: evnx cannot invent a
 ///   Stripe key, and a template's value for a secret is never copied — a
-///   sample key that does not look like a placeholder would then pass.
+///   sample key that does not look like a placeholder would then pass. (A
+///   secret evnx may generate never gets here: it is `FixAction::AddSecret`.)
 /// - Anything else gets the template's own value, whatever it is: `8080`,
 ///   `localhost`, a documentation URL, or nothing at all for `OPTIONAL_X=`.
 ///   The template is committed, so copying it reveals nothing, and it is what
@@ -275,6 +297,18 @@ pub fn apply_fix(
                 old_value: show.then(|| value.to_string()),
                 old_value_withheld: !show,
                 new_value: new_val.clone(),
+            })
+        }
+        FixAction::AddSecret => {
+            let new_val = generate_secure_secret();
+            env_vars.insert(key.to_string(), new_val.clone());
+            Some(FixApplied {
+                variable: key.to_string(),
+                action: "Added a generated secret".to_string(),
+                // There was no previous value.
+                old_value: None,
+                old_value_withheld: false,
+                new_value: new_val,
             })
         }
         FixAction::AddMissing(new_val) => {
@@ -712,12 +746,48 @@ mod tests {
     #[test]
     fn test_suggest_fix_placeholder_secret() {
         let action = suggest_fix(
-            "API_KEY",
+            "SECRET_KEY",
             "changeme",
             &IssueType::PlaceholderValue,
             WeakSecretPolicy::PlaceholdersOnly,
         );
         assert!(matches!(action, FixAction::GenerateSecret));
+    }
+
+    /// I-260: this test asserted `API_KEY=changeme` → a generated value, which
+    /// is the bug. A key someone else issues is never invented, not even under
+    /// `--rotate-weak-secrets` (DEC-VA5).
+    #[test]
+    fn t_i260_a_provider_key_is_never_generated() {
+        for (ty, policy) in [
+            (
+                IssueType::PlaceholderValue,
+                WeakSecretPolicy::PlaceholdersOnly,
+            ),
+            (IssueType::WeakSecret, WeakSecretPolicy::PlaceholdersOnly),
+            (IssueType::WeakSecret, WeakSecretPolicy::Rotate),
+        ] {
+            let action = suggest_fix("API_KEY", "changeme", &ty, policy);
+            assert!(matches!(action, FixAction::Skip), "{ty:?} {policy:?}");
+        }
+        assert!(matches!(
+            suggest_fix(
+                "STRIPE_KEY",
+                "",
+                &IssueType::MissingVariable,
+                WeakSecretPolicy::PlaceholdersOnly
+            ),
+            FixAction::AddMissing(_)
+        ));
+        assert!(matches!(
+            suggest_fix(
+                "SECRET_KEY",
+                "",
+                &IssueType::MissingVariable,
+                WeakSecretPolicy::PlaceholdersOnly
+            ),
+            FixAction::AddSecret
+        ));
     }
 
     #[test]

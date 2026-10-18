@@ -7,11 +7,11 @@
     {
       "severity": "error",
       "type": "placeholder_value",
-      "variable": "SECRET_KEY",
-      "message": "SECRET_KEY looks like a placeholder",
+      "variable": "SENDGRID_API_KEY",
+      "message": "SENDGRID_API_KEY looks like a placeholder",
       "location": ".env",
-      "suggestion": "Run: openssl rand -hex 32",
-      "auto_fixable": true
+      "suggestion": null,
+      "auto_fixable": false
     },
     {
       "severity": "error",
@@ -20,7 +20,7 @@
       "message": "STRIPE_KEY looks like a placeholder",
       "location": ".env",
       "suggestion": "Get from Stripe Dashboard",
-      "auto_fixable": true
+      "auto_fixable": false
     }
   ],
   "fixed": [
@@ -41,7 +41,7 @@
   ],
   "needs_input": [
     {
-      "variable": "SECRET_KEY",
+      "variable": "SENDGRID_API_KEY",
       "action": "Added missing variable",
       "old_value": null,
       "old_value_withheld": false,

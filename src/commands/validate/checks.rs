@@ -574,18 +574,34 @@ pub fn check_weak_secret(
             // first; a new value evnx invents that the provider does not have
             // is an outage, not a repair. `--fix` deliberately declines that
             // case — see `fixer::suggest_fix`.
+            //
+            // ⚠️ I-260: and a key someone else issues gets neither the
+            // one-liner nor the flag — `--fix` will not generate it under any
+            // flag (DEC-VA5), so naming either sends the person to a dead end.
             suggestion: Some(
-                if is_placeholder(name, value)
-                    || weak_secrets == crate::commands::validate::fixer::WeakSecretPolicy::Rotate
-                {
-                    "Run: openssl rand -hex 32".to_string()
-                } else {
-                    format!(
+                match (
+                    crate::core::classify::may_generate(name),
+                    is_placeholder(name, value),
+                ) {
+                    (true, placeholder)
+                        if placeholder
+                            || weak_secrets
+                                == crate::commands::validate::fixer::WeakSecretPolicy::Rotate =>
+                    {
+                        "Run: openssl rand -hex 32".to_string()
+                    }
+                    (true, _) => format!(
                         "Rotate {name} where it is issued, then replace it here. \
                          `--fix` will not: it cannot tell a real credential from an \
                          unfilled placeholder. Pass --fix --rotate-weak-secrets if \
                          nothing else holds this value"
-                    )
+                    ),
+                    (false, true) => {
+                        format!("Get {name} from where it is issued — evnx cannot invent it")
+                    }
+                    (false, false) => {
+                        format!("Rotate {name} where it is issued, then replace it here")
+                    }
                 },
             ),
             // ⛔ Not `true`. This said `true` for every finding while

@@ -778,3 +778,113 @@ fn t_t005_ignore_from_the_command_line_and_the_config_add_up() {
     assert!(!types.contains(&"boolean_trap".to_string()), "{v}");
     assert!(types.contains(&"placeholder_value".to_string()), "{v}");
 }
+
+// ── I-260, DEC-VA4..VA6: what --fix may invent ───────────────────────────────
+
+/// Every `NAME=value` line of `.env`, as a map.
+fn env_values(p: &Project) -> std::collections::BTreeMap<String, String> {
+    p.read(".env")
+        .lines()
+        .filter_map(|l| l.split_once('='))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+fn is_generated(v: &str) -> bool {
+    v.len() == 64 && v.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// ⛔ The bug: `STRIPE_KEY=changeme` became 64 random hex characters, which
+/// then passed validate — a fake provider key, reported as fixed.
+#[test]
+fn t_i260_a_provider_key_placeholder_is_not_invented() {
+    let p = Project::new()
+        .example("STRIPE_KEY=\nVERCEL_TOKEN=\n")
+        .env("STRIPE_KEY=changeme\nVERCEL_TOKEN=changeme\n");
+    run(p.path(), &["validate", "--fix"]).assert_code(1);
+    let env = env_values(&p);
+    assert_eq!(env["STRIPE_KEY"], "changeme");
+    assert_eq!(env["VERCEL_TOKEN"], "changeme");
+    // And the report does not offer `--fix` for them.
+    let v = json(&p, &[]);
+    for i in of_type(&v, "placeholder_value") {
+        assert_eq!(i["auto_fixable"], false, "{i}");
+    }
+}
+
+/// DEC-VA4: the app's own secrets and passwords are still generated.
+#[test]
+fn t_i260_app_secrets_and_passwords_are_still_generated() {
+    let p = Project::new()
+        .example("SECRET_KEY=\nJWT_SECRET=\nDB_PASSWORD=\n")
+        .env("SECRET_KEY=changeme\nJWT_SECRET=changeme\nDB_PASSWORD=changeme\n");
+    run(p.path(), &["validate", "--fix"]).assert_code(0);
+    let env = env_values(&p);
+    for name in ["SECRET_KEY", "JWT_SECRET", "DB_PASSWORD"] {
+        assert!(is_generated(&env[name]), "{name}={}", env[name]);
+    }
+}
+
+/// DEC-VA6: a missing secret evnx may generate is generated in one run, and
+/// listed as fixed; a missing provider key still needs a person.
+#[test]
+fn t_i260_a_missing_app_secret_is_generated_at_once() {
+    let p = Project::new()
+        .example("SECRET_KEY=\nDB_PASSWORD=\nSTRIPE_KEY=\n")
+        .env("");
+    let out = run(p.path(), &["validate", "--fix", "--format", "json"]);
+    out.assert_code(1);
+    let v: Value = serde_json::from_str(&out.stdout).expect("JSON");
+    assert_eq!(
+        fixed_names(&v, "fixed"),
+        ["SECRET_KEY", "DB_PASSWORD"],
+        "{v}"
+    );
+    assert_eq!(fixed_names(&v, "needs_input"), ["STRIPE_KEY"], "{v}");
+    let env = env_values(&p);
+    assert!(is_generated(&env["SECRET_KEY"]), "{env:?}");
+    assert!(is_generated(&env["DB_PASSWORD"]), "{env:?}");
+    assert_eq!(env["STRIPE_KEY"], "CHANGE_ME_SECURE_32_CHARS_MIN");
+}
+
+/// The second half of the bug: a second `--fix` turned the "Needs your input"
+/// placeholder into random hex.
+#[test]
+fn t_i260_a_second_fix_leaves_a_needs_input_placeholder() {
+    let p = Project::new().example("STRIPE_KEY=\n").env("");
+    run(p.path(), &["validate", "--fix"]).assert_code(1);
+    run(p.path(), &["validate", "--fix"]).assert_code(1);
+    assert_eq!(
+        env_values(&p)["STRIPE_KEY"],
+        "CHANGE_ME_SECURE_32_CHARS_MIN"
+    );
+}
+
+/// DEC-VA5: `--rotate-weak-secrets` follows the same rule. A provider always
+/// holds its key, so a value evnx invents is never right there.
+#[test]
+fn t_i260_rotate_does_not_replace_a_provider_key() {
+    let p = Project::new()
+        .example("STRIPE_SECRET_KEY=\nJWT_SECRET=\n")
+        .env("STRIPE_SECRET_KEY=sk_live_short123\nJWT_SECRET=short\n");
+    let out = run(p.path(), &["validate", "--fix", "--rotate-weak-secrets"]);
+    out.assert_code(1);
+    let env = env_values(&p);
+    assert_eq!(env["STRIPE_SECRET_KEY"], "sk_live_short123");
+    assert!(is_generated(&env["JWT_SECRET"]), "{env:?}");
+    assert!(
+        out.stdout
+            .contains("Rotate STRIPE_SECRET_KEY where it is issued"),
+        "{}",
+        out.stdout
+    );
+    // It must not point at the flag that was just declined.
+    let stripe = out
+        .stdout
+        .lines()
+        .skip_while(|l| !l.contains("STRIPE_SECRET_KEY is too weak"))
+        .take(3)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!stripe.contains("--rotate-weak-secrets"), "{stripe}");
+}

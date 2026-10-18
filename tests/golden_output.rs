@@ -215,13 +215,14 @@ fn validate_strict_json_is_stable() {
 /// not the declared ones, without a test noticing (I-034, T-005). This one has
 /// two of four missing, an extra, a placeholder and a warning; and the same
 /// file after `--fix`, which pins `fixed` and `needs_input` apart (I-037).
-/// Nothing in it is generated, so both are byte-stable.
+/// Nothing in it is generated — both secrets are keys a provider issues
+/// (I-260) — so both are byte-stable.
 #[test]
 fn validate_missing_json_is_stable() {
     let d = TempDir::new().unwrap();
     fs::write(
         d.path().join(".env.example"),
-        "API_PORT=8080\nSECRET_KEY=\nSTRIPE_KEY=\nDEBUG=false\n",
+        "API_PORT=8080\nSENDGRID_API_KEY=\nSTRIPE_KEY=\nDEBUG=false\n",
     )
     .unwrap();
     fs::write(d.path().join(".env"), "DEBUG=False\nEXTRA=1\n").unwrap();
