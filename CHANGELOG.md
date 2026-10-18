@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.8] - 2026-10-18
+
 The patch for `evnx validate` (package R-validate): counts that count what they
 say, one finding per problem, a `--fix` that tells a repair from a placeholder,
 and the checks the review asked for — environment names, Docker files beside
