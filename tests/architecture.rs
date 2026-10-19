@@ -317,3 +317,26 @@ fn t_a13_one_glob_matcher() {
         "glob matching outside core::glob: {offenders:?}"
     );
 }
+
+/// I-264, I-265: one yes/no prompt, `utils::prompt::yes_no`. dialoguer's
+/// `Confirm` either answered on the first key — so the Enter after `y`
+/// answered the next question (N-09) — or, waiting for Enter, never showed
+/// the key pressed. Twelve questions still built their own.
+#[test]
+fn t_i265_one_yes_no_prompt() {
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    for f in &files {
+        let text = std::fs::read_to_string(f).unwrap();
+        for (n, l) in code_lines(&text) {
+            if l.contains("Confirm::new") || l.contains("Confirm::with_theme") {
+                offenders.push(format!("{}:{}: {}", f.display(), n + 1, l.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "yes/no prompts outside utils::prompt::yes_no: {offenders:?}"
+    );
+}

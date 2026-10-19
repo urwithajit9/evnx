@@ -84,6 +84,25 @@ filters use the same globs as `migrate`.
   as they were for `cloud export`; whether it should require names and refuse
   collisions is left to its own patch (R-org-vault-cloud).
 
+### Every command: yes/no questions
+
+- **The key you press shows before Enter** (I-264). At "Generate .env files
+  with these variables? [Y/n]", pressing `n` printed nothing: the cursor was
+  hidden, the key was not echoed, and only the hint's capitals changed
+  (`[Y/n]` ↔ `[y/N]`; under a No default, `n` changed nothing), so a keypress
+  looked ignored until Enter. Now the line reads `[Y/n] n`, Backspace takes
+  the answer back, and Enter answers; Enter alone still takes the default and
+  Esc then Enter still cancels. The line left behind is unchanged
+  (`… ? no`). Reported on `init`; every yes/no question in evnx asks this way.
+- **One Enter answers one question** (I-265). Twelve questions — `sync`
+  (two), `restore`, `cloud pull` (overwrite a file), `cloud delete-version`,
+  `auth token revoke`, `auth sessions revoke` and `revoke-others`,
+  `auth rotate-master-password`, `vault delete`, `vault revoke` and
+  `vault rekey` — were answered on the first key, so the
+  Enter typed after `y` answered the next question too: in `sync`, "Add a
+  comment explaining these variables?" took its default and opened the
+  Comment prompt. They now wait for Enter like init, add and the rest (N-09).
+
 ### Docs
 
 - README and GETTING_STARTED: every target with the flag it needs, which
@@ -116,6 +135,11 @@ One definition each, where commands had their own:
   template (unchanged) and convert. `GitignoreMode::from_flags` for both.
 - `core::args::Name` gains `GcpProject`, `K8sName`, `K8sNamespace`,
   `VarPrefix`.
+
+- `utils::prompt::yes_no` is evnx's own question (on `console`, which
+  dialoguer already uses) rather than dialoguer's `Confirm`; every yes/no in
+  evnx goes through it, and `tests/architecture.rs` keeps it that way.
+  `utils::ui::prompt_yes_no` (deprecated in 0.10.5, no callers) is removed.
 
 ### Library
 
