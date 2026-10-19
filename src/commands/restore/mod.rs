@@ -136,7 +136,6 @@ pub fn run(
     #[cfg(feature = "backup")]
     {
         use anyhow::anyhow;
-        use dialoguer::Confirm;
         use std::path::PathBuf;
         use zeroize::Zeroize;
 
@@ -201,7 +200,7 @@ pub fn run(
                         outcome.write_path.display()
                     ));
 
-                    let overwrite = Confirm::new()
+                    let overwrite = crate::utils::prompt::yes_no()
                         .with_prompt(format!("Overwrite {}?", outcome.write_path.display()))
                         .default(false)
                         .interact()?;

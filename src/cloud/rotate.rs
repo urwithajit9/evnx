@@ -328,7 +328,7 @@ pub fn rotate(
 
     if !yes
         && !password_stdin
-        && !dialoguer::Confirm::new()
+        && !crate::utils::prompt::yes_no()
             .with_prompt("  Continue")
             .default(false)
             .interact()

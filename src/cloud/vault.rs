@@ -312,7 +312,7 @@ pub fn delete(
             vault.version_count
         );
         println!("  {}", "There is no undelete in the CLI.".yellow());
-        let ok = dialoguer::Confirm::new()
+        let ok = crate::utils::prompt::yes_no()
             .with_prompt(format!("Delete {}/{}?", vault.name, vault.environment))
             .default(false)
             .interact()
@@ -1147,7 +1147,7 @@ pub fn revoke(
             );
             println!("  {}", "secrets at their source.".yellow());
         }
-        let ok = dialoguer::Confirm::new()
+        let ok = crate::utils::prompt::yes_no()
             .with_prompt(format!("Remove {user_email} from {label}?"))
             .default(false)
             .interact()
@@ -1341,7 +1341,7 @@ pub fn rekey(
             "  {}",
             "already read — rotate those secrets at their source.".yellow()
         );
-        let ok = dialoguer::Confirm::new()
+        let ok = crate::utils::prompt::yes_no()
             .with_prompt(format!("Rotate the key for {label}?"))
             .default(false)
             .interact()

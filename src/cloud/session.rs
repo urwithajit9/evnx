@@ -127,7 +127,7 @@ pub fn revoke(
     }
 
     if !assume_yes {
-        let ok = dialoguer::Confirm::new()
+        let ok = crate::utils::prompt::yes_no()
             .with_prompt(format!(
                 "Revoke session {}?",
                 session.session_id.chars().take(8).collect::<String>()
@@ -192,7 +192,7 @@ pub fn revoke_others(
 
     if !assume_yes {
         println!("  About to sign out {others} other session(s). This one stays.");
-        let ok = dialoguer::Confirm::new()
+        let ok = crate::utils::prompt::yes_no()
             .with_prompt("Continue?")
             .default(false)
             .interact()

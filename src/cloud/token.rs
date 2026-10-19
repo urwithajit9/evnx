@@ -283,7 +283,7 @@ pub fn revoke(
             "  {}",
             "Anything using it stops working immediately.".yellow()
         );
-        let ok = dialoguer::Confirm::new()
+        let ok = crate::utils::prompt::yes_no()
             .with_prompt(format!("Revoke {}?", token.name))
             .default(false)
             .interact()

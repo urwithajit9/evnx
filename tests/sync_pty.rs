@@ -33,12 +33,14 @@ fn t_i113_existing_template_actual_values_refuses_credentials() {
     s.wait_for("Are you absolutely sure");
     s.wait_for("[y/N]");
     s.wait_for_echo_off();
-    s.press(&["y"]);
+    // Enter answers, since 0.10.9: a bare `y` used to answer this question and
+    // let the Enter after it answer the next one (I-265).
+    s.press(&["y", ENTER]);
     // The warning and audit line print before the next prompt.
     let before = s.wait_for("Add a comment explaining these variables?");
     s.wait_for("[Y/n]");
     s.wait_for_echo_off();
-    s.press(&["n"]);
+    s.press(&["n", ENTER]);
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
     let out = format!("{before}{rest}");

@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use colored::*;
-use dialoguer::{Confirm, Input, MultiSelect, Select};
+use dialoguer::{Input, MultiSelect, Select};
 use indexmap::IndexMap;
 use std::collections::HashSet;
 use std::fs;
@@ -486,7 +486,7 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
                  or contains no sensitive data.",
             );
 
-            let confirm = Confirm::new()
+            let confirm = crate::utils::prompt::yes_no()
                 .with_prompt("Are you absolutely sure you want to add ACTUAL VALUES?")
                 .default(false)
                 .interact()?;
@@ -537,7 +537,7 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
     }
 
     if !dry_run
-        && Confirm::new()
+        && crate::utils::prompt::yes_no()
             .with_prompt("Add a comment explaining these variables?")
             .default(true)
             .interact()?

@@ -41,20 +41,193 @@ pub struct NoTerminal {
     pub hint: String,
 }
 
-/// A yes/no question that is answered on Enter, not on the first keystroke.
+/// A yes/no question that is answered on Enter, not on the first keystroke,
+/// and shows the key as it is pressed.
 ///
-/// ⚠️ dialoguer's default answers the moment `y` or `n` is pressed. People type
-/// `y⏎`, and the Enter then answered the *next* question with its default
-/// without the user seeing it: on 0.10.0, `y⏎` at "Generate .env files?"
-/// silently answered "Overwrite it?" with No, so the stack the user asked for
-/// was never written; on 0.10.1, `y⏎` at `add custom`'s "Is this variable
-/// required?" silently answered "Add another variable?" (N-09). Every yes/no
-/// prompt goes through this. `y`, `yes`, `n`, `no` then need Enter; Enter alone
-/// takes the default.
+/// ⚠️ Two defects this replaces, one on each side of dialoguer's `Confirm`:
 ///
-/// Use it with `interact_opt()`: Esc, then Enter, cancels (`None`).
-pub fn yes_no() -> dialoguer::Confirm<'static> {
-    dialoguer::Confirm::new().wait_for_newline(true)
+/// * Answered on the first key (its default), the Enter people type after `y`
+///   answered the *next* question with its default without the user seeing
+///   it: on 0.10.0, `y⏎` at "Generate .env files?" silently answered
+///   "Overwrite it?" with No; on 0.10.1, `y⏎` at `add custom`'s "Is this
+///   variable required?" answered "Add another variable?" (N-09). Twelve
+///   questions still asked that way until 0.10.9 (I-265).
+/// * Answered on Enter (`wait_for_newline`), it hid the cursor, never printed
+///   the key, and only redrew the hint with the pending answer as its
+///   default — `[Y/n]` ↔ `[y/N]`, and under a No default `n` changed nothing
+///   — so a keypress looked ignored until Enter (I-264, owner report).
+///
+/// So: `y`/`n` (any case) is shown after the hint (`[y/N] n`), Backspace takes
+/// it back, Enter answers; Enter alone takes the default. With
+/// [`YesNo::interact_opt`], Esc (or `q`) then Enter cancels (`None`); the hint
+/// is redrawn as `[y/n]` after Esc, as before. The line left behind is the
+/// same as before: `Question? yes`.
+pub fn yes_no() -> YesNo {
+    YesNo {
+        prompt: String::new(),
+        default: None,
+    }
+}
+
+/// The question built by [`yes_no`].
+#[derive(Debug, Clone)]
+pub struct YesNo {
+    prompt: String,
+    default: Option<bool>,
+}
+
+impl YesNo {
+    /// The question.
+    #[must_use]
+    pub fn with_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.prompt = prompt.into();
+        self
+    }
+
+    /// The answer Enter gives when nothing was typed; shown as `[Y/n]` or
+    /// `[y/N]`.
+    #[must_use]
+    pub fn default(mut self, value: bool) -> Self {
+        self.default = Some(value);
+        self
+    }
+
+    /// Ask until there is an answer. Esc does nothing here.
+    ///
+    /// # Errors
+    ///
+    /// No terminal on stderr, or the terminal failed — as dialoguer's
+    /// `Error`, so a caller's message for that case is unchanged.
+    pub fn interact(self) -> dialoguer::Result<bool> {
+        // Without a cancel, Enter returns only once there is an answer.
+        Ok(self.run(false)?.unwrap_or(false))
+    }
+
+    /// Ask; Esc (or `q`) then Enter cancels with `None`.
+    ///
+    /// # Errors
+    ///
+    /// As [`YesNo::interact`].
+    pub fn interact_opt(self) -> dialoguer::Result<Option<bool>> {
+        self.run(true)
+    }
+
+    fn run(self, allow_cancel: bool) -> dialoguer::Result<Option<bool>> {
+        let term = dialoguer::console::Term::stderr();
+        // ⚠️ dialoguer's own error, word for word: `restore`'s demo locks
+        // "IO error: not a terminal: not a terminal" (I-148, its own patch).
+        if !term.is_term() {
+            return Err(dialoguer::Error::IO(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "not a terminal",
+            )));
+        }
+        let mut pending = Pending::default();
+        term.write_str(&self.line(&pending))?;
+        term.flush()?;
+        loop {
+            match pending.key(term.read_key()?, self.default, allow_cancel) {
+                Step::Ignore => {}
+                Step::Redraw => {
+                    term.clear_line()?;
+                    term.write_str(&self.line(&pending))?;
+                    term.flush()?;
+                }
+                Step::Done(answer) => {
+                    term.clear_line()?;
+                    term.write_line(&self.answered(answer))?;
+                    term.flush()?;
+                    return Ok(answer);
+                }
+            }
+        }
+    }
+
+    /// `Question? [y/N] n`: the hint shows the default (none after Esc), then
+    /// what was typed, where the cursor is.
+    fn line(&self, pending: &Pending) -> String {
+        let default = if pending.cancelled {
+            None
+        } else {
+            self.default
+        };
+        let hint = match default {
+            Some(true) => "[Y/n]",
+            Some(false) => "[y/N]",
+            None => "[y/n]",
+        };
+        let typed = pending.typed.map(String::from).unwrap_or_default();
+        if self.prompt.is_empty() {
+            format!("{hint} {typed}")
+        } else {
+            format!("{} {hint} {typed}", self.prompt)
+        }
+    }
+
+    /// The line left once answered: `Question? yes`, or the question alone
+    /// when cancelled.
+    fn answered(&self, answer: Option<bool>) -> String {
+        let word = match answer {
+            Some(true) => "yes",
+            Some(false) => "no",
+            None => return self.prompt.clone(),
+        };
+        if self.prompt.is_empty() {
+            word.to_string()
+        } else {
+            format!("{} {word}", self.prompt)
+        }
+    }
+}
+
+/// What has been typed at a [`YesNo`] so far.
+#[derive(Debug, Default)]
+struct Pending {
+    /// `y`, `Y`, `n` or `N`, as pressed.
+    typed: Option<char>,
+    /// Esc was pressed (and nothing typed since).
+    cancelled: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Step {
+    Ignore,
+    Redraw,
+    Done(Option<bool>),
+}
+
+impl Pending {
+    fn key(&mut self, key: dialoguer::console::Key, default: Option<bool>, cancel: bool) -> Step {
+        use dialoguer::console::Key;
+        match key {
+            Key::Char(c @ ('y' | 'Y' | 'n' | 'N')) => {
+                self.typed = Some(c);
+                self.cancelled = false;
+                Step::Redraw
+            }
+            Key::Backspace | Key::Del if self.typed.is_some() => {
+                self.typed = None;
+                Step::Redraw
+            }
+            Key::Escape | Key::Char('q') if cancel => {
+                self.typed = None;
+                self.cancelled = true;
+                Step::Redraw
+            }
+            Key::Enter => match self.typed {
+                Some(c) => Step::Done(Some(c.eq_ignore_ascii_case(&'y'))),
+                None if self.cancelled => Step::Done(None),
+                None => match default {
+                    Some(d) => Step::Done(Some(d)),
+                    // No default and nothing typed: `interact_opt` cancels,
+                    // as dialoguer's did; `interact` waits for an answer.
+                    None if cancel => Step::Done(None),
+                    None => Step::Ignore,
+                },
+            },
+            _ => Step::Ignore,
+        }
+    }
 }
 
 /// A destructive action's yes/no, the same way in every command (A-39, DEC-AU7).
@@ -91,5 +264,90 @@ mod tests {
     #[test]
     fn t_i218_yes_never_asks() {
         assert!(confirm("Delete it?", true, "evnx x --yes").unwrap());
+    }
+
+    use dialoguer::console::Key;
+
+    fn press(keys: &[Key], default: Option<bool>, cancel: bool) -> (Pending, Vec<Step>) {
+        let mut p = Pending::default();
+        let steps = keys
+            .iter()
+            .map(|k| p.key(k.clone(), default, cancel))
+            .collect();
+        (p, steps)
+    }
+
+    /// I-264: the key shows on the line, before Enter.
+    #[test]
+    fn t_i264_the_typed_key_is_on_the_line() {
+        let q = yes_no().with_prompt("Generate?").default(true);
+        let (p, steps) = press(&[Key::Char('n')], Some(true), true);
+        assert_eq!(steps, [Step::Redraw]);
+        assert_eq!(q.line(&p), "Generate? [Y/n] n");
+        assert_eq!(q.line(&Pending::default()), "Generate? [Y/n] ");
+    }
+
+    #[test]
+    fn t_i264_enter_answers_backspace_takes_back() {
+        let enter = |keys: &[Key], default| press(keys, default, true).1.pop().unwrap();
+        assert_eq!(
+            enter(&[Key::Char('y'), Key::Enter], Some(false)),
+            Step::Done(Some(true))
+        );
+        assert_eq!(
+            enter(&[Key::Char('N'), Key::Enter], Some(true)),
+            Step::Done(Some(false))
+        );
+        assert_eq!(enter(&[Key::Enter], Some(true)), Step::Done(Some(true)));
+        assert_eq!(
+            enter(&[Key::Char('n'), Key::Backspace, Key::Enter], Some(true)),
+            Step::Done(Some(true)),
+            "Backspace takes the answer back; Enter gives the default"
+        );
+        // Other keys do nothing, and change nothing.
+        assert_eq!(
+            enter(&[Key::Char('x'), Key::Enter], Some(false)),
+            Step::Done(Some(false))
+        );
+    }
+
+    /// Esc then Enter cancels, and the hint loses its default (`[y/n]`), which
+    /// the pty tests wait for.
+    #[test]
+    fn t_i264_escape_cancels_only_where_allowed() {
+        let q = yes_no().with_prompt("Overwrite it?").default(false);
+        let (p, steps) = press(&[Key::Escape], Some(false), true);
+        assert_eq!(steps, [Step::Redraw]);
+        assert_eq!(q.line(&p), "Overwrite it? [y/n] ");
+        assert_eq!(
+            press(&[Key::Escape, Key::Enter], Some(false), true).1[1],
+            Step::Done(None)
+        );
+        // `interact`: Esc is just another key; Enter takes the default.
+        assert_eq!(
+            press(&[Key::Escape, Key::Enter], Some(false), false).1,
+            [Step::Ignore, Step::Done(Some(false))]
+        );
+        // No default, nothing typed: `interact` waits for an answer.
+        assert_eq!(press(&[Key::Enter], None, false).1, [Step::Ignore]);
+    }
+
+    #[test]
+    fn t_i264_the_line_left_behind_is_unchanged() {
+        let q = yes_no().with_prompt("Overwrite it?");
+        assert_eq!(q.answered(Some(true)), "Overwrite it? yes");
+        assert_eq!(q.answered(Some(false)), "Overwrite it? no");
+        assert_eq!(q.answered(None), "Overwrite it?");
+    }
+
+    /// Without a terminal it fails the way dialoguer did, so the callers'
+    /// `require_terminal` guards and messages are unchanged.
+    #[test]
+    fn no_terminal_is_not_connected() {
+        if dialoguer::console::Term::stderr().is_term() {
+            return; // run by hand in a terminal
+        }
+        let dialoguer::Error::IO(err) = yes_no().with_prompt("x").interact_opt().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotConnected);
     }
 }

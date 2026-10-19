@@ -833,7 +833,7 @@ fn confirm_overwrite(file: &Path, incoming: &[u8]) -> Result<bool> {
         "  {} exists and differs from the version being pulled.",
         file.display()
     );
-    let ok = dialoguer::Confirm::new()
+    let ok = crate::utils::prompt::yes_no()
         .with_prompt(format!("Overwrite {}?", file.display()))
         .default(false)
         .interact()
@@ -1136,7 +1136,7 @@ pub fn delete_version(
     println!();
 
     if !yes
-        && !dialoguer::Confirm::new()
+        && !crate::utils::prompt::yes_no()
             .with_prompt(format!("  Delete version {version_num}"))
             .default(false)
             .interact()
