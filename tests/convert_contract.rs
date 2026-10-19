@@ -423,7 +423,6 @@ fn t_i091_no_convert_error_carries_a_prefix() {
 /// the secret exists.
 #[cfg(unix)]
 fn run_gcp_script(describe_rc: i32) -> String {
-    use std::os::unix::fs::PermissionsExt;
     let p = Project::new().env("PORT=8080\n");
     let out = run(
         p.path(),
@@ -440,15 +439,13 @@ fn run_gcp_script(describe_rc: i32) -> String {
     out.assert_code(0);
     std::fs::create_dir(p.join("bin")).unwrap();
     let stub = p.join("bin/gcloud");
-    std::fs::write(
+    support::stub::write_stub(
         &stub,
         "#!/bin/sh\n\
          echo \"ARGS $*\" >> \"$LOG\"\n\
          if [ \"$1 $2\" = \"secrets describe\" ]; then exit \"$DESCRIBE_RC\"; fi\n\
          printf 'STDIN ' >> \"$LOG\"; cat >> \"$LOG\"; echo >> \"$LOG\"\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    );
     let log = p.join("gcloud.log");
     let status = std::process::Command::new("bash")
         .arg(p.join("up.sh"))

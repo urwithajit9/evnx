@@ -19,6 +19,8 @@
 //! values come from **other vault members** — so a hostile value is reachable
 //! by someone who is not the person running the command.
 
+mod support;
+
 use assert_cmd::cargo::cargo_bin_cmd;
 use std::fs;
 use tempfile::TempDir;
@@ -190,26 +192,25 @@ fn generated_cloud_commands_pass_values_through_unchanged() {
     fs::create_dir_all(&bin).unwrap();
     let got_az = d.path().join("az-got");
     let got_gc = d.path().join("gc-got");
-    fs::write(
-        bin.join("az"),
+    // `write_stub` on Unix: a stub written while another test starts a
+    // process can be "Text file busy" when the script runs it.
+    let stub = |name: &str, script: String| {
+        #[cfg(unix)]
+        support::stub::write_stub(&bin.join(name), &script);
+        #[cfg(not(unix))]
+        fs::write(bin.join(name), script).unwrap();
+    };
+    stub(
+        "az",
         format!(
             "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = --value ] && printf %s \"$2\" > '{}'; shift; done\n",
             got_az.display()
         ),
-    )
-    .unwrap();
-    fs::write(
-        bin.join("gcloud"),
+    );
+    stub(
+        "gcloud",
         format!("#!/bin/sh\ncat > '{}'\n", got_gc.display()),
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        for n in ["az", "gcloud"] {
-            fs::set_permissions(bin.join(n), fs::Permissions::from_mode(0o755)).unwrap();
-        }
-    }
+    );
 
     let probe = "/tmp/evnx-cloud-pwned";
     let _ = fs::remove_file(probe);

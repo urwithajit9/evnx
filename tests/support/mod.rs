@@ -48,6 +48,8 @@ pub mod pty;
 pub mod renderers;
 pub mod run;
 pub mod snapshot;
+#[cfg(unix)]
+pub mod stub;
 pub mod surface;
 
 pub use project::Project;

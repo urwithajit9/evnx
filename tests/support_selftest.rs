@@ -240,3 +240,51 @@ fn pty_drives_a_prompt_to_the_end() {
     assert!(rest.contains("No variables added"), "{rest}");
     assert!(!p.exists(".env.example"));
 }
+
+// ── write_stub ──────────────────────────────────────────────────────────────
+
+/// The failure CI hit in `npm_publish.rs`: while any descriptor holds a script
+/// open for writing, running it fails with ETXTBSY ("Text file busy"). Here
+/// the descriptor is held on purpose; in CI it was a child another test
+/// thread had just forked, which inherits the descriptor until its own exec.
+#[test]
+#[cfg(target_os = "linux")]
+fn a_script_held_open_for_writing_cannot_run() {
+    use std::os::unix::fs::PermissionsExt;
+    let p = Project::new();
+    let path = p.join("stub");
+    std::fs::write(&path, "#!/bin/sh\necho hi\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let held = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+    let err = std::process::Command::new(&path).output().unwrap_err();
+    assert_eq!(err.raw_os_error(), Some(libc::ETXTBSY), "{err}");
+    // ⚠️ No "and after `drop(held)` it runs": a process another test thread
+    // started while `held` was open may still carry a copy, so running it
+    // straight away is the same race. Waiting that out is `write_stub`'s job.
+    drop(held);
+}
+
+/// `write_stub` returns only once the stub can run: it waits out a writer
+/// still holding the file, instead of handing the test a script that fails
+/// with "Text file busy".
+#[test]
+#[cfg(target_os = "linux")]
+fn write_stub_waits_until_the_stub_can_run() {
+    let p = Project::new();
+    let path = p.join("stub");
+    std::fs::write(&path, "").unwrap();
+    let held = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        drop(held);
+    });
+    let started = std::time::Instant::now();
+    support::stub::write_stub(&path, "#!/bin/sh\necho stubbed \"$@\"\n");
+    assert!(
+        started.elapsed() >= std::time::Duration::from_millis(250),
+        "returned while the file was still busy"
+    );
+    release.join().unwrap();
+    let out = std::process::Command::new(&path).arg("x").output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "stubbed x\n");
+}

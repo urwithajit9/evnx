@@ -651,7 +651,6 @@ fn t_sf46_check_without_network_support_exits_2() {
 #[cfg(unix)]
 #[test]
 fn t_i200_the_release_gate_reads_the_feature_list() {
-    use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
     if Command::new("jq").arg("--version").output().is_err() {
         return;
@@ -674,12 +673,10 @@ fn t_i200_the_release_gate_reads_the_feature_list() {
 
     let p = Project::new();
     let stub = p.join("evnx");
-    std::fs::write(
+    support::stub::write_stub(
         &stub,
         "#!/bin/sh\necho '{\"evnx_version\":\"9.9.9\",\"features\":[\"net\",\"migrate\",\"backup\"]}'\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    );
     let out = Command::new(gate).arg(&stub).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
