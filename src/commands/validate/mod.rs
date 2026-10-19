@@ -237,10 +237,7 @@ pub fn run(opts: Options) -> Result<()> {
          `evnx sync` (from your .env) or `evnx init`, or point at another file \
          with --example.",
     )?;
-    let env_file = parser.parse_file_or_hint(
-        &env_path,
-        "Create it with `evnx init`, or point at another file with --env.",
-    )?;
+    let env_file = parser.parse_file_or_hint(&env_path, Parser::MISSING_ENV_HINT)?;
 
     pb.finish_with_message("Files parsed ✓");
 

@@ -104,10 +104,7 @@ pub fn run(
 
     let parser = Parser::default();
 
-    let env_file = parser.parse_file_or_hint(
-        &env,
-        "Create it with `evnx init`, or point at another file with --env.",
-    )?;
+    let env_file = parser.parse_file_or_hint(&env, Parser::MISSING_ENV_HINT)?;
 
     let example_file = parser.parse_file_or_hint(
         &example,

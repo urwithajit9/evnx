@@ -19,6 +19,8 @@
 //! values come from **other vault members** — so a hostile value is reachable
 //! by someone who is not the person running the command.
 
+mod support;
+
 use assert_cmd::cargo::cargo_bin_cmd;
 use std::fs;
 use tempfile::TempDir;
@@ -44,7 +46,10 @@ fn fixture() -> TempDir {
 fn convert(d: &TempDir, to: &str) -> String {
     let out = cargo_bin_cmd!("evnx")
         .current_dir(d.path())
-        .args(["convert", "--to", to])
+        // `to` may carry the format's name flags (`kubernetes --name x`), which
+        // convert requires since 0.10.9 (I-084).
+        .args(["convert", "--to"])
+        .args(to.split_whitespace())
         .output()
         .unwrap();
     assert!(out.status.success(), "convert --to {to} failed");
@@ -101,8 +106,9 @@ fn shell_output_parses_runs_nothing_and_keeps_every_value() {
 #[test]
 fn kubernetes_output_is_valid_yaml_with_only_string_values() {
     let d = fixture();
-    let doc: serde_yaml::Value = serde_yaml::from_str(&convert(&d, "kubernetes"))
-        .expect("kubernetes output is not valid YAML");
+    let doc: serde_yaml::Value =
+        serde_yaml::from_str(&convert(&d, "kubernetes --name app-secrets"))
+            .expect("kubernetes output is not valid YAML");
     let sd = doc
         .get("stringData")
         .and_then(|v| v.as_mapping())
@@ -186,39 +192,36 @@ fn generated_cloud_commands_pass_values_through_unchanged() {
     fs::create_dir_all(&bin).unwrap();
     let got_az = d.path().join("az-got");
     let got_gc = d.path().join("gc-got");
-    fs::write(
-        bin.join("az"),
+    // `write_stub` on Unix: a stub written while another test starts a
+    // process can be "Text file busy" when the script runs it.
+    let stub = |name: &str, script: String| {
+        #[cfg(unix)]
+        support::stub::write_stub(&bin.join(name), &script);
+        #[cfg(not(unix))]
+        fs::write(bin.join(name), script).unwrap();
+    };
+    stub(
+        "az",
         format!(
             "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = --value ] && printf %s \"$2\" > '{}'; shift; done\n",
             got_az.display()
         ),
-    )
-    .unwrap();
-    fs::write(
-        bin.join("gcloud"),
+    );
+    stub(
+        "gcloud",
         format!("#!/bin/sh\ncat > '{}'\n", got_gc.display()),
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        for n in ["az", "gcloud"] {
-            fs::set_permissions(bin.join(n), fs::Permissions::from_mode(0o755)).unwrap();
-        }
-    }
+    );
 
     let probe = "/tmp/evnx-cloud-pwned";
     let _ = fs::remove_file(probe);
 
-    for (to, grep, got) in [
-        ("azure", "az keyvault", &got_az),
-        ("gcp", "gcloud secrets", &got_gc),
+    // The whole script, as a person runs it. (This took only the lines naming
+    // the tool; gcp's now go through an `upsert_secret` function, I-099.)
+    for (to, got) in [
+        ("azure --vault-name kv-prod", &got_az),
+        ("gcp --project acme-prod", &got_gc),
     ] {
-        let script: String = convert(&d, to)
-            .lines()
-            .filter(|l| l.contains(grep))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let script = convert(&d, to);
         let status = std::process::Command::new("sh")
             .arg("-c")
             .arg(&script)

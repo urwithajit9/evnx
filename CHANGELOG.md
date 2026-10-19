@@ -8,31 +8,126 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Every command: yes/no questions
+The patch for `evnx convert` (package R-convert): the names a target needs are
+flags instead of placeholders, the gcp script updates as well as creates, a
+format's own renaming can no longer merge two variables in silence, and
+filters use the same globs as `migrate`.
 
-- **The key you press shows before Enter** (I-264). At "Generate .env files
-  with these variables? [Y/n]", pressing `n` printed nothing: the cursor was
-  hidden, the key was not echoed, and only the hint's capitals changed
-  (`[Y/n]` ↔ `[y/N]`; under a No default, `n` changed nothing), so a keypress
-  looked ignored until Enter. Now the line reads `[Y/n] n`, Backspace takes
-  the answer back, and Enter answers; Enter alone still takes the default and
-  Esc then Enter still cancels. The line left behind is unchanged
-  (`… ? no`). Reported on `init`; every yes/no question in evnx asks this way.
-- **One Enter answers one question** (I-265). Twelve questions — `sync`
-  (two), `restore`, `cloud pull` (overwrite a file), `cloud delete-version`,
-  `auth token revoke`, `auth sessions revoke` and `revoke-others`,
-  `auth rotate-master-password`, `vault delete`, `vault revoke` and
-  `vault rekey` — were answered on the first key, so the
-  Enter typed after `y` answered the next question too: in `sync`, "Add a
-  comment explaining these variables?" took its default and opened the
-  Comment prompt. They now wait for Enter like init, add and the rest (N-09).
+⚠️ **Scripts that run `evnx convert`:**
+
+- `gcp-secrets`, `azure-keyvault`, `heroku` and `kubernetes` need the place
+  they write to: `--project`, `--vault-name`, `--heroku-app`, `--name`
+  (`--namespace` is optional). Without it they exit 2 and print nothing; they
+  printed `my-project`, `my-keyvault`, `YOUR_APP_NAME` and `app-secrets` to be
+  edited by hand (I-084, DEC-CV1). A name flag for another format is exit 2 too.
+- A filter that leaves nothing, or an empty `.env`, is exit 2 with stdout empty;
+  it printed `{}` and exited 0. `--allow-empty` keeps the old output (I-089,
+  DEC-CV3).
+- Two names that become one name in the output are exit 2 for every format,
+  not only after `--transform`: gcp-secrets lowercases and hyphenates and
+  terraform lowercases, so `A_B` and `a_b` were two `gcloud secrets create a-b`
+  or two `a_b =` lines; Azure Key Vault and GitHub ignore case, so they were one
+  secret. `--allow-collisions` keeps the last value (I-249, DEC-PL2).
+- `--include` and `--exclude` are `migrate`'s globs: `?` is one character, `*`
+  works in the middle (`DB_*_URL`), and a comma list or a repeated flag gives
+  several patterns. `P?RT` and `PORT,DEBUG` matched nothing before (I-090).
+- An unknown `--transform` is exit 2 listing the modes; it was ignored (I-090).
+- `--prefix` must be letters, digits and `_`, not starting with a digit (I-263).
+- Errors no longer start with `Convert command failed:` (I-091).
+
+### convert
+
+- **The gcp script creates a secret or adds a version** (I-099). It ran
+  `gcloud secrets create` alone, which fails for a secret that exists, so
+  running the script again to update a value failed for every secret. Each
+  value is still printed once and reaches gcloud on stdin.
+- **`--prefix` reached the generated scripts unquoted** (I-263): `--prefix
+  'X;touch PWNED;'` ran `touch` when the azure, heroku, shell or gcp script
+  ran. The prefix is checked, and every name and flag value in a script goes
+  through `core::shell::word`.
+- No terminal and no `--to`: one error naming `--to` and the formats, in
+  `migrate`'s words. It said "Format selection cancelled by user: IO error: not
+  a terminal: not a terminal" under a header for a menu that never opened
+  (I-083).
+- A missing `--env` file gives validate's and diff's error, `.env does not
+  exist` and how to create it, instead of three nested contexts (I-091).
+- `--help` lost two developer notes it printed ("clap strips the markdown
+  fence…", "This said … exactly backwards"), says 14 formats rather than 14+,
+  names the flag each target needs, and lists the exit codes (I-082, D-47,
+  D-49, D-50).
+- The selector's labels say what each format prints: `aws-secrets` is JSON for
+  `create-secret --secret-string` (it said "CLI commands"), `kubernetes` is
+  `stringData` unless `--base64` (it said "base64 encoded"), `github-actions`
+  is text for the web form (I-085, I-087).
+- `doppler`, `vercel` and `railway` are marked experimental in `--help`, the
+  selector and the docs, and say so on stderr when chosen: Doppler documents
+  flat JSON for `doppler secrets upload` (what `--to json` prints), Vercel's
+  API takes `{key, value, type, target}` objects, and Railway documents no
+  import for this JSON (I-087, I-097, DEC-CV4). Their output is unchanged.
+- `--output` in a git repository checks `.gitignore` for the file, as `template
+  --output` does: a question with a terminal, a warning without one,
+  `--gitignore` / `--no-gitignore` to decide without asking. The refusal to
+  write over the input uses template's wording.
+- `kubernetes` gains `--namespace`, written as `metadata.namespace`.
+
+### migrate
+
+- The gcp destination's tip names `--project`: it suggested `evnx convert --to
+  gcp-secrets > upload.sh`, which now exits 2 without it.
+- The "--to is required when there is no terminal" error is unchanged; it comes
+  from the helper `convert` now shares.
+
+### cloud export
+
+- `--to gcp-secrets` writes the create-or-add-version script too (it uses the
+  same converter). Placeholders (`my-project`, …) and unchecked collisions stay
+  as they were for `cloud export`; whether it should require names and refuse
+  collisions is left to its own patch (R-org-vault-cloud).
+
+### Docs
+
+- README and GETTING_STARTED: every target with the flag it needs, which
+  targets are experimental, the glob rules, `--allow-empty`,
+  `--allow-collisions`, `.gitignore` for `--output`, and that the AWS pipe
+  example needs Linux or macOS and that evnx does not run `aws` (D-45, D-46,
+  D-47, D-48, D-53). The README's one-line examples run in a test.
 
 ### Shared code
 
-- `utils::prompt::yes_no` is evnx's own question (on `console`, which
-  dialoguer already uses) rather than dialoguer's `Confirm`; every yes/no in
-  evnx goes through it, and `tests/architecture.rs` keeps it that way.
-  `utils::ui::prompt_yes_no` (deprecated in 0.10.5, no callers) is removed.
+One definition each, where commands had their own:
+
+- `ConvertOptions::prepare` (A-12): the one pipeline every format renders from
+  — filter, prefix and transform, the format's own name rule
+  (`Converter::target_name`, `names_ignore_case`), the collision rule
+  (`Collisions`), base64. The 14 formats each repeated it inline.
+- `core::glob` for convert's filters (A-13). Its own `glob_match` (`*` only at
+  the ends, arguments reversed) is removed; `tests/architecture.rs` keeps one.
+- `formats::FORMATS`: one table of the 14 formats (names, aliases, menu label,
+  extension, experimental note) behind `get_converter`, `format_help`,
+  `extension_for` and the selector; `formats::converter_for` and `Targets` for
+  the name flags.
+- `core::glob::nothing_left`: the "left nothing to …" wording, for `cloud run`
+  (unchanged) and `convert`.
+- `utils::prompt::choice_needed`: a choice with a flag and no terminal, for
+  `migrate --to` (unchanged) and `convert --to`.
+- `Parser::MISSING_ENV_HINT`: the missing `--env` hint, for validate and diff
+  (unchanged) and convert.
+- `core::safe_write::refuse_same_file`: `--output` naming an input, for
+  template (unchanged) and convert. `GitignoreMode::from_flags` for both.
+- `core::args::Name` gains `GcpProject`, `K8sName`, `K8sNamespace`,
+  `VarPrefix`.
+
+### Library
+
+- `ConvertOptions` has `include` / `exclude` lists and `collisions` in place of
+  `include_pattern` / `exclude_pattern`; `check_collisions` is replaced by
+  `prepare` and `collisions_in`. `KeyTransform::parse` is new.
+- `ConvertConfig` gains `targets`, `allow_empty`, `gitignore`; its builder
+  takes `include` / `exclude` / `targets` / `allow_empty` /
+  `allow_collisions` / `gitignore`. `ConvertConfig::validate_input` is removed
+  (the parser reports a missing file).
+- `KubernetesSecretConverter` gains `namespace`. `GitignoreMode` derives
+  `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`.
 
 ## [0.10.8] - 2026-10-18
 

@@ -11,14 +11,10 @@ pub struct DockerComposeConverter;
 
 impl Converter for DockerComposeConverter {
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
-        let filtered = options.filter_vars(vars);
-
         let mut output = String::new();
         output.push_str("environment:\n");
 
-        for (k, v) in filtered.iter() {
-            let key = options.transform_key(k);
-            let value = options.transform_value(v);
+        for (key, value) in options.prepare(vars, self)? {
             // ⛔ The whole `KEY=value` item as one quoted scalar. Unquoted,
             // Compose reads `-` items the same way YAML does — `a: b` turns the
             // item into a map, `#` truncates — and additionally interpolates

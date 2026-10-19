@@ -49,7 +49,10 @@ impl MigrationDestination for GcpDestination {
 
         println!(
             "{}",
-            "Tip: use `evnx convert --to gcp-secrets > upload.sh && bash upload.sh`".dimmed()
+            // `--project` is required by convert since 0.10.9 (I-084, DEC-CV1):
+            // without it the suggested command exits 2.
+            "Tip: use `evnx convert --to gcp-secrets --project <PROJECT> > upload.sh && bash upload.sh`"
+                .dimmed()
         );
         println!("\n{}", "Or run per-secret:".bold());
         println!();

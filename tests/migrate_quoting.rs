@@ -68,10 +68,7 @@ fn stubs(dir: &Path) {
              {{ printf '%s' '{t}'; for a; do printf '\\037%s' \"$a\"; done; \
              printf '\\037STDIN=%s\\036' \"$in\"; }} >> \"$STUB_LOG\"\n"
         );
-        let p = bin.join(t);
-        std::fs::write(&p, script).unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        support::stub::write_stub(&bin.join(t), &script);
     }
 }
 

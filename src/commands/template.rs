@@ -101,7 +101,6 @@ use indexmap::IndexMap;
 use regex::Regex;
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
 
 use colored::Colorize;
 
@@ -278,12 +277,7 @@ pub fn run_options(input: String, output: String, env: String, opts: Options) ->
     // rendered result — real values in, the template gone (I-131, DEC-T4).
     if !to_stdout {
         for (what, path) in [("template", &input), ("env file", &env)] {
-            if crate::core::safe_write::same_file(Path::new(path), Path::new(&output)) {
-                anyhow::bail!(
-                    "--output '{output}' is the same file as the {what} '{path}'. \
-                     Nothing was written; choose another --output."
-                );
-            }
+            crate::core::safe_write::refuse_same_file(&output, what, path)?;
         }
     }
 

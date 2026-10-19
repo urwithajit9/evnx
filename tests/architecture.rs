@@ -293,25 +293,27 @@ fn t_dec_sf11_every_cargo_line_builds_every_feature() {
     );
 }
 
-/// I-264, I-265: one yes/no prompt, `utils::prompt::yes_no`. dialoguer's
-/// `Confirm` either answered on the first key — so the Enter after `y`
-/// answered the next question (N-09) — or, waiting for Enter, never showed
-/// the key pressed. Twelve questions still built their own.
+/// A-13, I-090: one glob matcher. `core/converter.rs` carried a second one
+/// that handled `*` only at the ends and took its arguments the other way
+/// round, so `convert --include` and `migrate --include` matched different
+/// names for the same pattern.
 #[test]
-fn t_i265_one_yes_no_prompt() {
+fn t_a13_one_glob_matcher() {
     let mut files = Vec::new();
     rust_files(&src(), &mut files);
-    let mut offenders = Vec::new();
-    for f in &files {
-        let text = std::fs::read_to_string(f).unwrap();
-        for (n, l) in code_lines(&text) {
-            if l.contains("Confirm::new") || l.contains("Confirm::with_theme") {
-                offenders.push(format!("{}:{}: {}", f.display(), n + 1, l.trim()));
-            }
-        }
-    }
+    let offenders: Vec<String> = files
+        .iter()
+        .filter(|f| !f.ends_with("core/glob.rs"))
+        .filter(|f| {
+            let text = std::fs::read_to_string(f).unwrap();
+            code_lines(&text)
+                .iter()
+                .any(|(_, l)| l.contains("fn glob_match"))
+        })
+        .map(|f| f.display().to_string())
+        .collect();
     assert!(
         offenders.is_empty(),
-        "yes/no prompts outside utils::prompt::yes_no: {offenders:?}"
+        "glob matching outside core::glob: {offenders:?}"
     );
 }

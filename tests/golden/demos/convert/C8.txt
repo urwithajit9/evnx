@@ -32,7 +32,7 @@ Value: $5
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
-KNOWN I-085: prose for a web form; decided: keep, label clearly
+FIXED I-085 (as decided): prose kept; --help and the menu say it is for the GitHub web form
 
 $ evnx convert --to vercel
 {
@@ -110,6 +110,7 @@ $ evnx convert --to vercel
   }
 }
 [stderr]
+! vercel output is experimental: Vercel's API takes {key, value, type, target} objects, not this map.
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
 KNOWN I-092: type is always plain; decided: classifier, after verification V-03
@@ -136,8 +137,9 @@ railway is byte-identical to json
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
   Docs: https://docs.evnx.dev/cli/commands/convert
+! railway output is experimental: it is the JSON --to json prints, and Railway documents no import that takes it.
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
-KNOWN I-087: decided: keep, fix menu labels, railway experimental
+FIXED I-087 (as decided): both kept; menu labels say what each prints; doppler, vercel, railway experimental on stderr and in --help (DEC-CV4)
 
 ================ summary: 0 ok, 0 mismatch   ================

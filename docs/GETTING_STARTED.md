@@ -357,45 +357,46 @@ evnx diff --format patch --show-values   # values are <withheld> without --show-
 `evnx convert` transforms your `.env` into the format a deployment target expects:
 
 ```bash
-evnx convert --to kubernetes --output secret.yaml
+evnx convert --to kubernetes --name myapp-env --output secret.yaml
 ```
 
 The file holds your secrets, so it is created readable by you only (mode 0600).
 If `secret.yaml` already exists, evnx stops and changes nothing; add `--force`
-to replace it.
+to replace it. In a git repository evnx also checks that `.gitignore` covers it.
 
-Available targets:
+Available targets (`evnx convert --help` has the details):
 
 ```bash
 evnx convert --to json
 evnx convert --to yaml
 evnx convert --to shell
 evnx convert --to docker-compose
-evnx convert --to kubernetes
+evnx convert --to kubernetes --name myapp-env
 evnx convert --to terraform
-evnx convert --to github-actions
-evnx convert --to aws-secrets
-evnx convert --to gcp-secrets
-evnx convert --to azure-keyvault
-evnx convert --to heroku
-evnx convert --to vercel
-evnx convert --to railway
-evnx convert --to doppler
+evnx convert --to github-actions          # text to paste into the GitHub web form
+evnx convert --to aws-secrets             # JSON for create-secret --secret-string
+evnx convert --to gcp-secrets --project my-gcp-project
+evnx convert --to azure-keyvault --vault-name my-vault
+evnx convert --to heroku --heroku-app my-app
+evnx convert --to vercel                  # experimental
+evnx convert --to railway                 # experimental
+evnx convert --to doppler                 # experimental
 ```
 
-Advanced filtering:
+Choose and rename variables:
 
 ```bash
-evnx convert --to json \
-  --output secrets.json \
-  --include "AWS_*" \
-  --exclude "*_LOCAL" \
-  --prefix "APP_" \
-  --transform uppercase \
-  --base64
+# Only the database settings
+evnx convert --to json --include "DB_*,DATABASE_URL"
+
+# Namespace every name
+evnx convert --to json --prefix "MYAPP_" --transform uppercase
 ```
 
-Pipe directly to AWS Secrets Manager:
+A filter that leaves nothing is an error unless `--allow-empty`, and two names
+that become one in the output are an error unless `--allow-collisions`.
+
+Pipe directly to AWS Secrets Manager (Linux and macOS; stdout is the JSON alone):
 
 ```bash
 evnx convert --to aws-secrets | \

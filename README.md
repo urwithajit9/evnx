@@ -311,39 +311,57 @@ evnx diff --format patch --show-values   # a patch that applies; without --show-
 
 ### `evnx convert`
 
-Converts your `.env` file to 14+ output formats for various deployment targets.
+Converts your `.env` file to the format one of 14 deployment targets expects.
+`--help` lists them; `k8s`, `tf`, `yml`, `gh-actions` and `compose` are aliases.
 
 ```bash
 evnx convert --to json
 evnx convert --to yaml
 evnx convert --to shell
 evnx convert --to docker-compose
-evnx convert --to kubernetes
+evnx convert --to kubernetes --name myapp-env [--namespace prod]
 evnx convert --to terraform
-evnx convert --to github-actions
-evnx convert --to aws-secrets
-evnx convert --to gcp-secrets
-evnx convert --to azure-keyvault
-evnx convert --to heroku
-evnx convert --to vercel
-evnx convert --to railway
-evnx convert --to doppler
+evnx convert --to github-actions        # text to paste into the GitHub web form
+evnx convert --to aws-secrets           # JSON for create-secret --secret-string
+evnx convert --to gcp-secrets --project my-gcp-project
+evnx convert --to azure-keyvault --vault-name my-vault
+evnx convert --to heroku --heroku-app my-app
+evnx convert --to vercel                # experimental
+evnx convert --to railway               # experimental
+evnx convert --to doppler               # experimental
 ```
 
-Advanced filtering and transformation:
+The formats that write a place into their output need it named: `--project`,
+`--vault-name`, `--heroku-app`, `--name`. There is no placeholder to edit by
+hand. The `gcp-secrets` script creates each secret, or adds a new version when
+it already exists. `doppler`, `vercel` and `railway` are experimental: their
+shapes have not been checked against those services' importers, and evnx says
+so on stderr. For Doppler, `doppler secrets upload` documents the flat JSON
+that `--to json` prints.
+
+Choose and rename variables:
 
 ```bash
-evnx convert --to json \
-  --output secrets.json \
-  --include "AWS_*" \
-  --exclude "*_LOCAL" \
-  --prefix "APP_" \
-  --transform uppercase \
-  --base64
+# Only the database settings, for a per-service Kubernetes Secret
+evnx convert --to kubernetes --name db-env --include "DB_*,DATABASE_URL" -o db-secret.yaml
+
+# Namespace every name for a shared platform
+evnx convert --to json --prefix "MYAPP_" --transform uppercase
 ```
 
-`--output` creates the file readable by you only (0600) and refuses to replace an
-existing one unless `--force` is given. It never writes over the `.env` it reads.
+`--include` and `--exclude` take globs (`*` for any run, `?` for one
+character), matched case-sensitively; repeat the flag or separate patterns
+with commas, and exclude wins. A filter that leaves nothing, or an empty
+`.env`, is an error (exit 2) unless `--allow-empty`. So is a pair of names that
+become one name in the output — `Api` and `API` under `--transform uppercase`,
+or `A_B` and `a_b` for gcp-secrets, terraform, Azure Key Vault or GitHub —
+unless `--allow-collisions` keeps the last value.
+
+`--output` creates the file readable by you only (0600) and refuses to replace
+an existing one unless `--force` is given. It never writes over the `.env` it
+reads. In a git repository it checks `.gitignore` for the file, as
+`evnx template` does: it asks with a terminal, warns without one, and
+`--gitignore` / `--no-gitignore` decide without asking.
 
 Pipe directly to AWS Secrets Manager:
 
@@ -353,6 +371,10 @@ evnx convert --to aws-secrets | \
     --name prod/myapp/config \
     --secret-string file:///dev/stdin
 ```
+
+stdout carries the JSON and nothing else (notices go to stderr), so the
+secret goes straight down the pipe. `file:///dev/stdin` works on Linux and
+macOS, not on Windows. evnx does not run `aws` itself.
 
 ---
 

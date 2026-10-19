@@ -8,25 +8,31 @@ use anyhow::Result;
 use indexmap::IndexMap;
 pub struct KubernetesSecretConverter {
     pub secret_name: String,
+    /// `metadata.namespace`; none means the namespace `kubectl` applies to.
+    pub namespace: Option<String>,
 }
 
+/// ⚠️ `app-secrets` is a placeholder. `convert` requires `--name` (I-084,
+/// DEC-CV1); only `cloud export` still builds this default.
 impl Default for KubernetesSecretConverter {
     fn default() -> Self {
         Self {
             secret_name: "app-secrets".to_string(),
+            namespace: None,
         }
     }
 }
 
 impl Converter for KubernetesSecretConverter {
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
-        let filtered = options.filter_vars(vars);
-
         let mut output = String::new();
         output.push_str("apiVersion: v1\n");
         output.push_str("kind: Secret\n");
         output.push_str("metadata:\n");
         output.push_str(&format!("  name: {}\n", self.secret_name));
+        if let Some(ns) = &self.namespace {
+            output.push_str(&format!("  namespace: {ns}\n"));
+        }
         output.push_str("type: Opaque\n");
 
         if options.base64 {
@@ -35,9 +41,7 @@ impl Converter for KubernetesSecretConverter {
             output.push_str("stringData:\n");
         }
 
-        for (k, v) in filtered.iter() {
-            let key = options.transform_key(k);
-            let value = options.transform_value(v);
+        for (key, value) in options.prepare(vars, self)? {
             // ⛔ A quoted scalar, always. Unquoted, YAML types the value by its
             // shape: `PORT: 8080` is an integer and `BOOL: true` a boolean, both
             // of which kubectl rejects under `stringData:`; `a: b` becomes a

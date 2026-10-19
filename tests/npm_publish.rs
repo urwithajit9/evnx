@@ -12,6 +12,8 @@
 //! token can each be produced on demand. Linux only: the stub is bash.
 #![cfg(target_os = "linux")]
 
+mod support;
+
 use std::path::PathBuf;
 use std::process::{Command, Output};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -59,10 +61,9 @@ struct Registry {
 impl Registry {
     fn new() -> Registry {
         let dir = TempDir::new().unwrap();
-        let npm = dir.path().join("npm");
-        std::fs::write(&npm, STUB).unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&npm, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Through `write_stub`: a stub written while another test starts a
+        // process can be "Text file busy" when the script runs it (CI).
+        support::stub::write_stub(&dir.path().join("npm"), STUB);
         std::fs::create_dir(dir.path().join("state")).unwrap();
         Registry { dir }
     }

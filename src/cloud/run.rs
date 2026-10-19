@@ -158,14 +158,10 @@ pub fn run(
 
     // ⚠️ A filter that matches nothing is almost always a typo, and silently
     // running a deploy with zero secrets is the kind of success that is worse
-    // than a failure. `migrate` has the same shape and exits 0; this does not.
+    // than a failure. `migrate` has the same shape and exits 0; this does not, and
+    // neither does `convert` (one wording, `core::glob::nothing_left`).
     if env_vars.is_empty() && before > 0 {
-        return Err(anyhow!(
-            "--include/--exclude left nothing to inject — all {before} variable(s) were \
-             filtered out.\n\
-             \x20 Check the patterns: they are case-sensitive globs matched against \
-             variable names."
-        ));
+        return Err(anyhow!(crate::core::glob::nothing_left(before, "inject")));
     }
 
     if env_vars.is_empty() {

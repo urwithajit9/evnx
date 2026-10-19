@@ -4,11 +4,10 @@
 // to different output formats.
 
 use anyhow::Result;
-// use std::collections::HashMap;
 use indexmap::IndexMap;
 
 /// Key transformation options
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyTransform {
     /// Transform keys to UPPERCASE
     Uppercase,
@@ -20,16 +19,50 @@ pub enum KeyTransform {
     SnakeCase,
 }
 
+impl KeyTransform {
+    /// `--transform`'s value, by the one list rule ([`crate::core::args::one_of`]).
+    ///
+    /// ⚠️ An unknown mode used to be dropped in silence — `--transform Title`
+    /// converted with the input's names and exited 0, and a test asserted that
+    /// as "succeeds with a warning" when no warning existed (I-090, T-016).
+    /// Case does not matter, as for every other list flag.
+    pub fn parse(value: &str) -> Result<KeyTransform> {
+        crate::core::args::one_of(
+            "transform",
+            value,
+            &[
+                ("uppercase", KeyTransform::Uppercase),
+                ("lowercase", KeyTransform::Lowercase),
+                ("camelcase", KeyTransform::CamelCase),
+                ("snake_case", KeyTransform::SnakeCase),
+            ],
+            &["uppercase", "lowercase", "camelCase", "snake_case"],
+        )
+    }
+}
+
+/// What to do when two names become one name at the target (I-088, I-249).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Collisions {
+    /// Emit every name, duplicates included — what every format did before
+    /// 0.10.9. ⚠️ Only `cloud export` still converts this way; whether it
+    /// should refuse too is recorded for R-org-vault-cloud.
+    #[default]
+    Unchecked,
+    /// Refuse, naming the names: what `convert` does unless told otherwise.
+    Refuse,
+    /// Keep the last value (`--allow-collisions`, DEC-PL2).
+    LastWins,
+}
+
 /// Options for format conversion
-///
-/// ✅ CLIPPY FIX: Uses `#[derive(Default)]` instead of manual implementation
 #[derive(Debug, Clone, Default)]
 pub struct ConvertOptions {
-    /// Include only variables matching this glob pattern
-    pub include_pattern: Option<String>,
+    /// Keep only names matching one of these globs (`core::glob`); empty keeps all.
+    pub include: Vec<String>,
 
-    /// Exclude variables matching this glob pattern
-    pub exclude_pattern: Option<String>,
+    /// Drop names matching one of these globs; exclude wins over include.
+    pub exclude: Vec<String>,
 
     /// Base64-encode all values
     pub base64: bool,
@@ -39,9 +72,44 @@ pub struct ConvertOptions {
 
     /// Key transformation to apply
     pub transform: Option<KeyTransform>,
+
+    /// Two names that become one: refuse, keep the last, or (export) neither.
+    pub collisions: Collisions,
 }
 
-// ✅ CLIPPY FIX: Removed manual impl Default (using #[derive(Default)])
+/// Two or more `.env` names that become one name at the target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Collision {
+    /// The names in the `.env`, in file order.
+    pub from: Vec<String>,
+    /// What each became at the target, in the same order.
+    pub to: Vec<String>,
+}
+
+impl Collision {
+    /// `A_B, a_b → a-b`; `A_B → A-B, a_b → a-b` when the spellings differ and
+    /// only the target's case rule makes them one; `A_B, a_b` when nothing
+    /// renamed them and the target alone ignores case.
+    pub fn describe(&self) -> String {
+        if self.to.iter().all(|t| *t == self.to[0]) {
+            format!("{} → {}", self.from.join(", "), self.to[0])
+        } else if self.from == self.to {
+            self.from.join(", ")
+        } else {
+            self.from
+                .iter()
+                .zip(&self.to)
+                .map(|(f, t)| format!("{f} → {t}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+    }
+
+    /// The name whose value is kept under [`Collisions::LastWins`].
+    pub fn kept(&self) -> &str {
+        self.from.last().map(String::as_str).unwrap_or_default()
+    }
+}
 
 impl ConvertOptions {
     /// Create new default options
@@ -57,22 +125,10 @@ impl ConvertOptions {
             .collect()
     }
 
-    /// Check if a variable should be included
+    /// Check if a variable should be included: `core::glob`, the rule
+    /// `migrate` and `cloud run` use (A-13).
     fn should_include(&self, key: &str) -> bool {
-        // Check exclude pattern first
-        if let Some(ref exclude) = self.exclude_pattern {
-            if glob_match(key, exclude) {
-                return false;
-            }
-        }
-
-        // Check include pattern
-        if let Some(ref include) = self.include_pattern {
-            return glob_match(key, include);
-        }
-
-        // Include by default if no patterns specified
-        true
+        crate::core::glob::admits(key, nonempty(&self.include), nonempty(&self.exclude))
     }
 
     /// Transform a key according to the specified transformation
@@ -92,34 +148,6 @@ impl ConvertOptions {
         }
     }
 
-    /// Refuse when two of `vars`' names become the same name after
-    /// [`ConvertOptions::transform_key`] (I-088, DEC-U8-3).
-    ///
-    /// ⚠️ Each converter renames keys one at a time into its own output, so
-    /// `db_host=a` and `DB_HOST=b` under `--transform uppercase` both became
-    /// `DB_HOST` and the later one silently won. Checked once, before any
-    /// converter runs, over the variables that pass the filters.
-    pub fn check_collisions(&self, vars: &IndexMap<String, String>) -> anyhow::Result<()> {
-        let mut seen: IndexMap<String, Vec<&str>> = IndexMap::new();
-        for key in vars.keys().filter(|k| self.should_include(k)) {
-            seen.entry(self.transform_key(key)).or_default().push(key);
-        }
-        let clashes: Vec<String> = seen
-            .iter()
-            .filter(|(_, from)| from.len() > 1)
-            .map(|(to, from)| format!("{} → {to}", from.join(", ")))
-            .collect();
-        if clashes.is_empty() {
-            return Ok(());
-        }
-        anyhow::bail!(
-            "these names become the same name after renaming, and one value would be \
-             lost:\n  {}\nRename one in the .env, or convert without the transform. \
-             Nothing was written.",
-            clashes.join("\n  ")
-        )
-    }
-
     /// Transform a value (base64 encode if enabled)
     pub fn transform_value(&self, value: &str) -> String {
         if self.base64 {
@@ -128,6 +156,126 @@ impl ConvertOptions {
         } else {
             value.to_string()
         }
+    }
+
+    /// `(name in .env, name at the target, value)` for every variable the
+    /// filters admit, in file order.
+    fn named<'a>(
+        &self,
+        vars: &'a IndexMap<String, String>,
+        converter: &dyn Converter,
+    ) -> Vec<(&'a str, String, &'a str)> {
+        vars.iter()
+            .filter(|(k, _)| self.should_include(k))
+            .map(|(k, v)| {
+                let target = converter.target_name(&self.transform_key(k));
+                (k.as_str(), target, v.as_str())
+            })
+            .collect()
+    }
+
+    /// Groups of indices into `named` that are one name at the target.
+    fn groups(named: &[(&str, String, &str)], converter: &dyn Converter) -> Vec<Vec<usize>> {
+        let mut by_name: IndexMap<String, Vec<usize>> = IndexMap::new();
+        for (i, (_, target, _)) in named.iter().enumerate() {
+            let key = if converter.names_ignore_case() {
+                target.to_lowercase()
+            } else {
+                target.clone()
+            };
+            by_name.entry(key).or_default().push(i);
+        }
+        by_name.into_values().collect()
+    }
+
+    /// Every set of names that become one name in `converter`'s output.
+    pub fn collisions_in(
+        &self,
+        vars: &IndexMap<String, String>,
+        converter: &dyn Converter,
+    ) -> Vec<Collision> {
+        let named = self.named(vars, converter);
+        Self::groups(&named, converter)
+            .into_iter()
+            .filter(|g| g.len() > 1)
+            .map(|g| Collision {
+                from: g.iter().map(|&i| named[i].0.to_string()).collect(),
+                to: g.iter().map(|&i| named[i].1.clone()).collect(),
+            })
+            .collect()
+    }
+
+    /// The one pipeline every format renders from (A-12): filter, prefix and
+    /// transform, the format's own name rule, the collision rule, base64.
+    ///
+    /// ⚠️ Each format used to repeat filter → rename → encode inline, and some
+    /// renamed again on their own (gcp lowercased and hyphenated, terraform
+    /// lowercased), after the only collision check had run. So `A_B` and `a_b`
+    /// became two `gcloud secrets create a-b` and exit 0 (I-249). The names a
+    /// format emits now come from here, and so does the check.
+    pub fn prepare(
+        &self,
+        vars: &IndexMap<String, String>,
+        converter: &dyn Converter,
+    ) -> Result<Vec<(String, String)>> {
+        let named = self.named(vars, converter);
+        let pick = |i: usize| (named[i].1.clone(), self.transform_value(named[i].2));
+        match self.collisions {
+            Collisions::Unchecked => Ok((0..named.len()).map(pick).collect()),
+            Collisions::Refuse => {
+                let clashes = self.collisions_in(vars, converter);
+                if !clashes.is_empty() {
+                    anyhow::bail!(self.collision_message(&clashes, converter));
+                }
+                Ok((0..named.len()).map(pick).collect())
+            }
+            // Where the first of them stood, with the last one's name and value.
+            Collisions::LastWins => Ok(Self::groups(&named, converter)
+                .into_iter()
+                .map(|g| pick(*g.last().expect("a group is never empty")))
+                .collect()),
+        }
+    }
+
+    fn collision_message(&self, clashes: &[Collision], converter: &dyn Converter) -> String {
+        // "after renaming" when `--transform` alone merged them, the format's
+        // name otherwise: the reader needs to know which rule to work around.
+        let by_format = converter.names_ignore_case()
+            || clashes.iter().any(|c| {
+                c.from
+                    .iter()
+                    .zip(&c.to)
+                    .any(|(f, t)| self.transform_key(f) != *t)
+            });
+        let place = if by_format {
+            format!("in {}", converter.name())
+        } else {
+            "after renaming".to_string()
+        };
+        let mut msg = format!(
+            "these names become the same name {place}, and one value would be lost:\n  {}",
+            clashes
+                .iter()
+                .map(Collision::describe)
+                .collect::<Vec<_>>()
+                .join("\n  ")
+        );
+        if converter.names_ignore_case() {
+            msg.push_str(&format!(
+                "\n  ({} treats names that differ only in case as one name.)",
+                converter.name()
+            ));
+        }
+        let without = if self.transform.is_some() {
+            ", convert without the transform"
+        } else {
+            ""
+        };
+        msg.push_str(&format!(
+            "\nRename one in the .env{without}, or pass --allow-collisions to keep the last \
+             value. Nothing was written."
+        ));
+        msg
     }
 }
 
@@ -184,41 +332,28 @@ pub trait Converter {
     ///
     /// Used in help text and interactive selection.
     fn description(&self) -> &str;
+
+    /// The name `key` — already prefixed and transformed — has at the target.
+    ///
+    /// The name as it is, unless the format renames. ⚠️ A format that renames
+    /// says so here rather than in its own loop, so [`ConvertOptions::prepare`]
+    /// can see two names becoming one (I-249).
+    fn target_name(&self, key: &str) -> String {
+        key.to_string()
+    }
+
+    /// Whether the target treats names that differ only in case as one
+    /// (Azure Key Vault, GitHub secrets).
+    fn names_ignore_case(&self) -> bool {
+        false
+    }
 }
 
 // Helper functions
 
-/// Simple glob pattern matching
-///
-/// Supports `*` wildcard matching.
-fn glob_match(text: &str, pattern: &str) -> bool {
-    if pattern == "*" {
-        return true;
-    }
-
-    if pattern.starts_with('*') && pattern.ends_with('*') {
-        let substring = &pattern[1..pattern.len() - 1];
-        return text.contains(substring);
-    }
-
-    // if pattern.starts_with('*') {
-    //     let suffix = &pattern[1..];
-    //     return text.ends_with(suffix);
-    // }
-
-    // if pattern.ends_with('*') {
-    //     let prefix = &pattern[..pattern.len() - 1];
-    //     return text.starts_with(prefix);
-    // }
-    if let Some(suffix) = pattern.strip_prefix('*') {
-        return text.ends_with(suffix);
-    }
-
-    if let Some(prefix) = pattern.strip_suffix('*') {
-        return text.starts_with(prefix);
-    }
-
-    text == pattern
+/// A pattern list for `core::glob::admits`: none when empty.
+fn nonempty(v: &[String]) -> Option<&[String]> {
+    (!v.is_empty()).then_some(v)
 }
 
 /// Convert string to camelCase
@@ -240,27 +375,6 @@ fn to_camel_case(s: &str) -> String {
     }
     result
 }
-
-// Convert string to snake_case
-// fn to_snake_case(s: &str) -> String {
-//     let mut result = String::with_capacity(s.len());
-//     let mut prev_is_upper = false;
-
-//     for (i, ch) in s.chars().enumerate() {
-//         if ch.is_uppercase() {
-//             if i > 0 && !prev_is_upper {
-//                 result.push('_');
-//             }
-//             result.extend(ch.to_lowercase());
-//             prev_is_upper = true;
-//         } else {
-//             result.push(ch);
-//             prev_is_upper = false;
-//         }
-//     }
-
-//     result
-// }
 
 fn to_snake_case(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
@@ -293,68 +407,128 @@ fn to_snake_case(s: &str) -> String {
 mod tests {
     use super::*;
 
+    fn vars(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    /// A format that lowercases and hyphenates, like gcp.
+    struct Hyphens;
+    impl Converter for Hyphens {
+        fn convert(&self, _: &IndexMap<String, String>, _: &ConvertOptions) -> Result<String> {
+            Ok(String::new())
+        }
+        fn name(&self) -> &str {
+            "hyphens"
+        }
+        fn description(&self) -> &str {
+            ""
+        }
+        fn target_name(&self, key: &str) -> String {
+            key.to_lowercase().replace('_', "-")
+        }
+    }
+
+    /// A format whose target ignores case, like Key Vault.
+    struct Folds;
+    impl Converter for Folds {
+        fn convert(&self, _: &IndexMap<String, String>, _: &ConvertOptions) -> Result<String> {
+            Ok(String::new())
+        }
+        fn name(&self) -> &str {
+            "folds"
+        }
+        fn description(&self) -> &str {
+            ""
+        }
+        fn names_ignore_case(&self) -> bool {
+            true
+        }
+    }
+
+    struct Plain;
+    impl Converter for Plain {
+        fn convert(&self, _: &IndexMap<String, String>, _: &ConvertOptions) -> Result<String> {
+            Ok(String::new())
+        }
+        fn name(&self) -> &str {
+            "plain"
+        }
+        fn description(&self) -> &str {
+            ""
+        }
+    }
+
     #[test]
     fn test_default_options() {
         let opts = ConvertOptions::default();
-        assert!(opts.include_pattern.is_none());
-        assert!(opts.exclude_pattern.is_none());
+        assert!(opts.include.is_empty());
+        assert!(opts.exclude.is_empty());
         assert!(!opts.base64);
         assert!(opts.prefix.is_none());
         assert!(opts.transform.is_none());
+        assert_eq!(opts.collisions, Collisions::Unchecked);
     }
 
     #[test]
     fn test_new_options() {
         let opts = ConvertOptions::new();
-        assert!(opts.include_pattern.is_none());
+        assert!(opts.include.is_empty());
     }
 
     #[test]
     fn test_filter_vars_no_pattern() {
-        let mut vars = IndexMap::new();
-        vars.insert("KEY1".to_string(), "value1".to_string());
-        vars.insert("KEY2".to_string(), "value2".to_string());
-
         let opts = ConvertOptions::default();
-        let filtered = opts.filter_vars(&vars);
-
+        let filtered = opts.filter_vars(&vars(&[("KEY1", "value1"), ("KEY2", "value2")]));
         assert_eq!(filtered.len(), 2);
-        assert!(filtered.contains_key("KEY1"));
-        assert!(filtered.contains_key("KEY2"));
     }
 
     #[test]
     fn test_filter_vars_include() {
-        let mut vars = IndexMap::new();
-        vars.insert("AWS_KEY".to_string(), "value1".to_string());
-        vars.insert("DB_KEY".to_string(), "value2".to_string());
-
         let opts = ConvertOptions {
-            include_pattern: Some("AWS_*".to_string()),
+            include: vec!["AWS_*".to_string()],
             ..Default::default()
         };
-        let filtered = opts.filter_vars(&vars);
-
-        assert_eq!(filtered.len(), 1);
-        assert!(filtered.contains_key("AWS_KEY"));
-        assert!(!filtered.contains_key("DB_KEY"));
+        let filtered = opts.filter_vars(&vars(&[("AWS_KEY", "1"), ("DB_KEY", "2")]));
+        assert_eq!(filtered.keys().collect::<Vec<_>>(), ["AWS_KEY"]);
     }
 
     #[test]
     fn test_filter_vars_exclude() {
-        let mut vars = IndexMap::new();
-        vars.insert("KEY1".to_string(), "value1".to_string());
-        vars.insert("KEY2_LOCAL".to_string(), "value2".to_string());
-
         let opts = ConvertOptions {
-            exclude_pattern: Some("*_LOCAL".to_string()),
+            exclude: vec!["*_LOCAL".to_string()],
             ..Default::default()
         };
-        let filtered = opts.filter_vars(&vars);
+        let filtered = opts.filter_vars(&vars(&[("KEY1", "1"), ("KEY2_LOCAL", "2")]));
+        assert_eq!(filtered.keys().collect::<Vec<_>>(), ["KEY1"]);
+    }
 
-        assert_eq!(filtered.len(), 1);
-        assert!(filtered.contains_key("KEY1"));
-        assert!(!filtered.contains_key("KEY2_LOCAL"));
+    /// A-13: the patterns `core::glob` takes — `?`, a `*` in the middle, a
+    /// list — and exclude wins.
+    #[test]
+    fn t_i090_filters_are_core_glob() {
+        let v = vars(&[
+            ("PORT", "1"),
+            ("DB_PRIMARY_URL", "2"),
+            ("DB_PRIMARY_HOST", "3"),
+        ]);
+        let keys = |include: &[&str], exclude: &[&str]| {
+            let opts = ConvertOptions {
+                include: include.iter().map(|s| s.to_string()).collect(),
+                exclude: exclude.iter().map(|s| s.to_string()).collect(),
+                ..Default::default()
+            };
+            opts.filter_vars(&v).keys().cloned().collect::<Vec<_>>()
+        };
+        assert_eq!(keys(&["P?RT"], &[]), ["PORT"]);
+        assert_eq!(keys(&["DB_*_URL"], &[]), ["DB_PRIMARY_URL"]);
+        assert_eq!(
+            keys(&["PORT", "DB_*_HOST"], &[]),
+            ["PORT", "DB_PRIMARY_HOST"]
+        );
+        assert_eq!(keys(&["DB_*"], &["*_HOST"]), ["DB_PRIMARY_URL"]);
     }
 
     #[test]
@@ -363,7 +537,6 @@ mod tests {
             prefix: Some("APP_".to_string()),
             ..Default::default()
         };
-
         assert_eq!(opts.transform_key("DATABASE_URL"), "APP_DATABASE_URL");
     }
 
@@ -373,7 +546,6 @@ mod tests {
             transform: Some(KeyTransform::Uppercase),
             ..Default::default()
         };
-
         assert_eq!(opts.transform_key("database_url"), "DATABASE_URL");
     }
 
@@ -383,7 +555,6 @@ mod tests {
             transform: Some(KeyTransform::Lowercase),
             ..Default::default()
         };
-
         assert_eq!(opts.transform_key("DATABASE_URL"), "database_url");
     }
 
@@ -393,18 +564,90 @@ mod tests {
             base64: true,
             ..Default::default()
         };
-
-        let result = opts.transform_value("hello");
-        assert_eq!(result, "aGVsbG8="); // base64("hello")
+        assert_eq!(opts.transform_value("hello"), "aGVsbG8=");
     }
 
     #[test]
-    fn test_glob_match() {
-        assert!(glob_match("AWS_KEY", "AWS_*"));
-        assert!(glob_match("MY_AWS_KEY", "*_AWS_*"));
-        assert!(glob_match("KEY_LOCAL", "*_LOCAL"));
-        assert!(glob_match("anything", "*"));
-        assert!(!glob_match("AWS_KEY", "DB_*"));
+    fn t_i090_transform_parse_is_the_one_list_rule() {
+        assert_eq!(
+            KeyTransform::parse("CamelCase").unwrap(),
+            KeyTransform::CamelCase
+        );
+        assert_eq!(
+            KeyTransform::parse("snake_case").unwrap(),
+            KeyTransform::SnakeCase
+        );
+        let err = KeyTransform::parse("Title").unwrap_err().to_string();
+        assert!(err.contains("unknown transform 'title'"), "{err}");
+        assert!(
+            err.contains("uppercase, lowercase, camelCase, snake_case"),
+            "{err}"
+        );
+    }
+
+    /// I-249: the format's own rename is part of the check.
+    #[test]
+    fn t_i249_a_format_rename_is_a_collision() {
+        let v = vars(&[("A_B", "one"), ("a_b", "two"), ("PORT", "1")]);
+        let refuse = ConvertOptions {
+            collisions: Collisions::Refuse,
+            ..Default::default()
+        };
+        let err = refuse.prepare(&v, &Hyphens).unwrap_err().to_string();
+        assert!(err.contains("in hyphens"), "{err}");
+        assert!(err.contains("A_B, a_b → a-b"), "{err}");
+        assert!(err.contains("--allow-collisions"), "{err}");
+
+        // The target folds case: two spellings, one name.
+        let err = refuse.prepare(&v, &Folds).unwrap_err().to_string();
+        assert!(err.contains("  A_B, a_b\n"), "{err}");
+        assert!(err.contains("differ only in case"), "{err}");
+
+        // Names kept as they are: no collision.
+        assert_eq!(refuse.prepare(&v, &Plain).unwrap().len(), 3);
+    }
+
+    /// DEC-PL2: the last value, where the first name stood.
+    #[test]
+    fn t_i249_last_wins_keeps_the_last_value_in_the_first_place() {
+        let v = vars(&[("A_B", "one"), ("PORT", "1"), ("a_b", "two")]);
+        let opts = ConvertOptions {
+            collisions: Collisions::LastWins,
+            ..Default::default()
+        };
+        assert_eq!(
+            opts.prepare(&v, &Hyphens).unwrap(),
+            [
+                ("a-b".to_string(), "two".to_string()),
+                ("port".to_string(), "1".to_string())
+            ]
+        );
+        let found = opts.collisions_in(&v, &Hyphens);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kept(), "a_b");
+    }
+
+    /// I-088: the transform alone says "after renaming" and names the flag.
+    #[test]
+    fn t_i088_a_transform_collision_says_after_renaming() {
+        let v = vars(&[("Api", "1"), ("API", "2")]);
+        let opts = ConvertOptions {
+            transform: Some(KeyTransform::Uppercase),
+            collisions: Collisions::Refuse,
+            ..Default::default()
+        };
+        let err = opts.prepare(&v, &Plain).unwrap_err().to_string();
+        assert!(err.contains("after renaming"), "{err}");
+        assert!(err.contains("Api, API → API"), "{err}");
+        assert!(err.contains("convert without the transform"), "{err}");
+    }
+
+    /// `cloud export` converts unchecked: what it printed before 0.10.9.
+    #[test]
+    fn unchecked_keeps_every_name() {
+        let v = vars(&[("A_B", "one"), ("a_b", "two")]);
+        let opts = ConvertOptions::default();
+        assert_eq!(opts.prepare(&v, &Hyphens).unwrap().len(), 2);
     }
 
     #[test]
@@ -423,6 +666,5 @@ mod tests {
         assert_eq!(to_snake_case("MySQLDatabase"), "my_sql_database");
         assert_eq!(to_snake_case("JSONParser"), "json_parser");
         assert_eq!(to_snake_case("Already_snake"), "already_snake");
-        // assert_eq!(to_snake_case("DatabaseURL"), "database_u_r_l");
     }
 }

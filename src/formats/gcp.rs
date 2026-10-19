@@ -11,6 +11,8 @@ pub struct GcpSecretConverter {
     pub project_id: String,
 }
 
+/// ⚠️ `my-project` is a placeholder. `convert` requires `--project` (I-084,
+/// DEC-CV1); only `cloud export` still builds this default.
 impl Default for GcpSecretConverter {
     fn default() -> Self {
         Self {
@@ -21,20 +23,31 @@ impl Default for GcpSecretConverter {
 
 impl Converter for GcpSecretConverter {
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
-        let filtered = options.filter_vars(vars);
+        let project = crate::core::shell::word(&self.project_id);
 
         let mut output = String::new();
         output.push_str("#!/bin/bash\n");
         output.push_str("# Upload secrets to GCP Secret Manager\n");
-        output.push_str(&format!("# Project: {}\n\n", self.project_id));
+        output.push_str(&format!("# Project: {}\n", self.project_id));
+        // ⛔ Create, or add a version when the secret exists (I-099). The
+        // script used `gcloud secrets create` alone, which "will return an
+        // error" for an existing secret (gcloud's own help), so a second run —
+        // the normal way to update a value — failed for every secret. The
+        // value is still printed once, and still reaches gcloud on stdin.
+        output.push_str(
+            "#\n# Creates each secret, or adds a new version when it already exists.\n\n",
+        );
+        output.push_str(&format!(
+            "upsert_secret() {{\n\
+             \x20 if gcloud secrets describe \"$1\" --project={project} </dev/null >/dev/null 2>&1; then\n\
+             \x20   gcloud secrets versions add \"$1\" --data-file=- --project={project}\n\
+             \x20 else\n\
+             \x20   gcloud secrets create \"$1\" --data-file=- --project={project}\n\
+             \x20 fi\n\
+             }}\n\n"
+        ));
 
-        for (k, v) in filtered.iter() {
-            let key = options.transform_key(k);
-            let value = options.transform_value(v);
-
-            // Convert to lowercase with hyphens (GCP naming)
-            let secret_name = key.to_lowercase().replace('_', "-");
-
+        for (secret_name, value) in options.prepare(vars, self)? {
             output.push_str(&format!(
                 // ⛔ `printf '%s'`, not `echo`, and the value quoted by the
                 // shared helper.
@@ -44,10 +57,9 @@ impl Converter for GcpSecretConverter {
                 // `-n` appends a newline, so **every** secret pushed this way
                 // was stored one byte longer than the value — which breaks an
                 // exact comparison and, for a key or token, breaks the key.
-                "printf '%s' {} | gcloud secrets create {} --data-file=- --project={}\n",
+                "printf '%s' {} | upsert_secret {}\n",
                 crate::formats::quoting::shell_single(&value),
-                secret_name,
-                self.project_id
+                crate::core::shell::word(&secret_name),
             ));
         }
 
@@ -60,6 +72,15 @@ impl Converter for GcpSecretConverter {
 
     fn description(&self) -> &str {
         "GCP Secret Manager (gcloud commands)"
+    }
+
+    /// Lowercase with hyphens. ⚠️ GCP does not require it — secret IDs take
+    /// `A-Z a-z 0-9 _ -` — but it is the name every earlier script created, so
+    /// it stays (DEC-CV2), and `A_B`/`a_b` becoming one `a-b` is refused rather
+    /// than printed twice (I-249). Names as they are, like `migrate`, wait for
+    /// the shared target catalogue (I-098).
+    fn target_name(&self, key: &str) -> String {
+        key.to_lowercase().replace('_', "-")
     }
 }
 
@@ -80,7 +101,8 @@ mod tests {
             .convert(&vars, &ConvertOptions::default())
             .unwrap();
 
-        assert!(result.contains("gcloud secrets create"));
-        assert!(result.contains("database-url"));
+        assert!(result.contains("gcloud secrets create \"$1\""));
+        assert!(result.contains("gcloud secrets versions add \"$1\""));
+        assert!(result.contains("| upsert_secret database-url\n"));
     }
 }

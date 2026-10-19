@@ -11,16 +11,8 @@ pub struct RailwayConverter;
 
 impl Converter for RailwayConverter {
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
-        let filtered = options.filter_vars(vars);
-
-        let transformed: IndexMap<String, String> = filtered
-            .iter()
-            .map(|(k, v)| {
-                let key = options.transform_key(k);
-                let value = options.transform_value(v);
-                (key, value)
-            })
-            .collect();
+        let transformed: IndexMap<String, String> =
+            options.prepare(vars, self)?.into_iter().collect();
 
         let json = serde_json::to_string_pretty(&transformed)?;
         Ok(json)

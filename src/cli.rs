@@ -1843,14 +1843,15 @@ pub enum Commands {
 
     /// Transform `.env` files into multiple output formats.
     ///
-    /// Supports 14+ formats including JSON, YAML, cloud configs,
+    /// Supports 14 formats including JSON, YAML, cloud configs,
     /// CI/CD variables, and infrastructure-as-code.
-    ///
-    ///
-    /// ⚠️ The examples live in `after_help` below, not here. clap strips the
-    /// markdown fence and collapses newlines in a doc comment, so a fenced block
-    /// renders as one unusable line with the backslash continuations inline and
-    /// the fence markers still visible. `after_help` is passed through verbatim.
+    //
+    // ⚠️ The examples live in `after_help` below, not here. clap strips the
+    // markdown fence and collapses newlines in a doc comment, so a fenced block
+    // renders as one unusable line with the backslash continuations inline and
+    // the fence markers still visible. `after_help` is passed through verbatim.
+    // (These are `//` comments on purpose: a `///` line here was printed by
+    // `--help`, I-082.)
     #[command(after_help = "\
 Examples:
   # Basic JSON conversion
@@ -1858,26 +1859,34 @@ Examples:
 
   # Kubernetes secret with transformations
   evnx convert \\
-    --to kubernetes \\
+    --to kubernetes --name myapp-env \\
     --include \"PROD_*\" \\
     --prefix \"MYAPP_\" \\
     --transform uppercase \\
     --output k8s-secret.yaml
+
+  # A script that creates or updates every secret in a GCP project
+  evnx convert --to gcp-secrets --project my-gcp-project -o upload.sh
 
   # Interactive mode (opens the format selector)
   evnx convert
 
 Supported formats:
   Generic:        json, yaml, shell
-  Cloud:          aws-secrets, gcp-secrets, azure-keyvault
-  CI/CD:          github-actions
-  Containers:     docker-compose, kubernetes
+  Cloud:          aws-secrets (JSON for create-secret),
+                  gcp-secrets (--project), azure-keyvault (--vault-name)
+  CI/CD:          github-actions (text to paste into the GitHub web form)
+  Containers:     docker-compose, kubernetes (--name, optional --namespace)
   IaC:            terraform
-  Secret Managers: doppler, heroku, vercel, railway
+  Secret Managers: doppler (experimental), heroku (--heroku-app),
+                  vercel (experimental), railway (experimental)
 
 Aliases:
   k8s → kubernetes, tf → terraform, yml → yaml
   gh-actions → github-actions, compose → docker-compose
+
+Exit codes: 0 converted; 2 nothing converted (bad flag, missing file, names that
+collide, a filter or file with no variables).
 
 Use 'evnx convert' without --to for interactive format selection.
 
@@ -1915,28 +1924,51 @@ Use 'evnx convert' without --to for interactive format selection.
         #[arg(long, requires = "output")]
         force: bool,
 
-        /// Include only variables matching this glob pattern
+        /// Add the --output file to .gitignore without asking (no prompt).
         ///
-        /// Examples: "AWS_*", "*_URL", "*_SECRET_*"
-        /// Supports: prefix*, *suffix, *contains*, exact
-        #[arg(long, value_name = "PATTERN")]
-        include: Option<String>,
+        /// The file holds every value from the .env. Without this flag evnx
+        /// asks when there is a terminal, and warns when there is not.
+        #[arg(long, requires = "output", conflicts_with = "no_gitignore")]
+        gitignore: bool,
 
-        /// Exclude variables matching this glob pattern
+        /// Skip the .gitignore check for the --output file.
+        #[arg(long, requires = "output", conflicts_with = "gitignore")]
+        no_gitignore: bool,
+
+        /// Include only variables whose name matches a glob pattern
         ///
+        /// `*` matches any run of characters, `?` exactly one; case-sensitive.
+        /// Repeat the flag or separate patterns with commas.
+        /// Examples: "AWS_*", "*_URL", "DB_*_URL", "PORT,API_*"
+        #[arg(long, value_name = "PATTERN", value_delimiter = ',')]
+        include: Vec<String>,
+
+        /// Exclude variables whose name matches a glob pattern
+        ///
+        /// Same patterns as --include; exclude wins over include.
         /// Examples: "*_DEBUG", "TEST_*"
-        /// Applied after --include filtering
-        #[arg(long, value_name = "PATTERN")]
-        exclude: Option<String>,
+        #[arg(long, value_name = "PATTERN", value_delimiter = ',')]
+        exclude: Vec<String>,
+
+        /// Convert even when no variable is left (an empty .env, or filters
+        /// that match nothing). Without it that is an error, exit 2.
+        #[arg(long)]
+        allow_empty: bool,
+
+        /// When two names become one name in the output, keep the last value.
+        ///
+        /// `--transform` can merge names (`Api` and `API` under uppercase), and
+        /// so can a format's own naming: gcp-secrets lowercases and uses `-`,
+        /// terraform lowercases, and Azure Key Vault and GitHub ignore case.
+        /// Without this flag that is an error naming both, exit 2.
+        #[arg(long)]
+        allow_collisions: bool,
 
         /// Base64-encode all values before output.
         ///
         /// For `kubernetes` this chooses the field: with the flag values are
         /// base64 under `data:`; without it they are literal under
         /// `stringData:`, which Kubernetes encodes itself on apply.
-        ///
-        /// ⚠️ This said "Some formats (e.g., kubernetes) always base64-encode
-        /// regardless of this flag", which was exactly backwards.
         #[arg(long)]
         base64: bool,
 
@@ -1944,6 +1976,9 @@ Use 'evnx convert' without --to for interactive format selection.
         ///
         /// Example: --prefix "APP_" transforms "KEY" → "APP_KEY"
         /// Applied before key casing transformation
+        ///
+        /// Letters, digits and `_`, not starting with a digit, so every name
+        /// stays a variable name.
         #[arg(long, value_name = "PREFIX")]
         prefix: Option<String>,
 
@@ -1957,6 +1992,26 @@ Use 'evnx convert' without --to for interactive format selection.
         ///   "DatabaseURL" --transform snake_case → "database_url"
         #[arg(long, value_name = "MODE")]
         transform: Option<String>,
+
+        /// Google Cloud project for --to gcp-secrets (required there)
+        #[arg(long, value_name = "PROJECT")]
+        project: Option<String>,
+
+        /// Azure Key Vault for --to azure-keyvault (required there)
+        #[arg(long, value_name = "NAME")]
+        vault_name: Option<String>,
+
+        /// Heroku app for --to heroku (required there)
+        #[arg(long, value_name = "APP")]
+        heroku_app: Option<String>,
+
+        /// Name of the Kubernetes Secret for --to kubernetes (required there)
+        #[arg(long, value_name = "NAME")]
+        name: Option<String>,
+
+        /// Kubernetes namespace for --to kubernetes (optional)
+        #[arg(long, value_name = "NAMESPACE")]
+        namespace: Option<String>,
     },
 
     /// Full migration workflow to secret managers.

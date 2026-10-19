@@ -1,7 +1,7 @@
 
 ================ C2 ================
 
-$ evnx convert --to k8s
+$ evnx convert --to k8s --name app-secrets
 apiVersion: v1
 kind: Secret
 metadata:
@@ -59,7 +59,7 @@ Supported formats:
     terraform
 
   Secret managers:
-    doppler, heroku, vercel, railway
+    doppler (experimental), heroku, vercel (experimental), railway (experimental)
 
   Aliases:
     k8s → kubernetes, tf → terraform, yml → yaml

@@ -12,7 +12,7 @@ mode of out.json: 600  (I-081 fixed: a new output is 600)
 
 $ evnx convert --to yaml -o out.json
 [stderr]
-Error: Convert command failed: 'out.json' already exists. Pass --force to replace it.
+Error: 'out.json' already exists. Pass --force to replace it.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
@@ -31,7 +31,7 @@ DATABASE_URL: postgres://admin:s3cr3t@db.internal:5432/app
 
 $ evnx convert --to json -o nodir/out.json
 [stderr]
-Error: Convert command failed: Failed to write output to 'nodir/out.json': the directory nodir does not exist
+Error: Failed to write output to 'nodir/out.json': the directory nodir does not exist
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]

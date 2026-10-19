@@ -33,10 +33,12 @@ For more information, try '--help'.
 
 $ evnx convert --env nope.env --to json
 [stderr]
-Error: Convert command failed: Failed to validate input file: 'nope.env': Input file not found: 'nope.env'
+Error: nope.env does not exist
+
+Create it with `evnx init`, or point at another file with --env.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: KNOWN I-091: missing file error is nested ('Convert command failed: Failed to validate input file: ...'); decided: one line (exit 2)
+  ok: FIXED I-091: one error in validate's and diff's words, no 'Convert command failed:' (exit 2)
 
 ================ summary: 4 ok, 0 mismatch   ================

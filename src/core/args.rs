@@ -34,6 +34,14 @@ pub enum Name {
     Slug,
     /// An evnx organisation slug (the server's rule, migration 010).
     OrgSlug,
+    /// A Google Cloud project ID (`convert --to gcp-secrets --project`).
+    GcpProject,
+    /// A Kubernetes object name: a DNS subdomain (`convert --name`).
+    K8sName,
+    /// A Kubernetes namespace: a DNS label (`convert --namespace`).
+    K8sNamespace,
+    /// The start of an environment variable name (`convert --prefix`, I-263).
+    VarPrefix,
 }
 
 impl Name {
@@ -55,6 +63,22 @@ impl Name {
             Name::Slug => "letters, digits and `._-@+=:/`, no spaces or shell characters",
             Name::OrgSlug => {
                 "1–63 lowercase letters, digits and hyphens, not starting or ending with a hyphen"
+            }
+            Name::GcpProject => {
+                "6–30 lowercase letters, digits and hyphens, starting with a letter and not \
+                 ending with a hyphen (or a legacy `domain:project`)"
+            }
+            Name::K8sName => {
+                "up to 253 lowercase letters, digits, `-` and `.`, starting and ending with a \
+                 letter or digit"
+            }
+            Name::K8sNamespace => {
+                "up to 63 lowercase letters, digits and `-`, starting and ending with a letter \
+                 or digit"
+            }
+            Name::VarPrefix => {
+                "a letter or `_`, then letters, digits and `_`, so every name stays a variable \
+                 name"
             }
         }
     }
@@ -104,6 +128,37 @@ impl Name {
                     && s.chars()
                         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
             }
+            Name::GcpProject => {
+                // Legacy domain-scoped projects (`example.com:my-project`) are
+                // still valid project IDs; refusing one would break a real setup.
+                let id = match s.split_once(':') {
+                    Some((domain, id)) => {
+                        if domain.is_empty()
+                            || !domain.chars().all(|c| {
+                                c.is_ascii_lowercase()
+                                    || c.is_ascii_digit()
+                                    || matches!(c, '.' | '-')
+                            })
+                        {
+                            return false;
+                        }
+                        id
+                    }
+                    None => s,
+                };
+                (6..=30).contains(&id.len())
+                    && id.starts_with(|c: char| c.is_ascii_lowercase())
+                    && !id.ends_with('-')
+                    && id
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            }
+            Name::K8sName => dns_name(s, 253, true),
+            Name::K8sNamespace => dns_name(s, 63, false),
+            Name::VarPrefix => {
+                s.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                    && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            }
             Name::Slug => {
                 (1..=256).contains(&n)
                     && s.chars().all(|c| {
@@ -113,6 +168,17 @@ impl Name {
             }
         }
     }
+}
+
+/// RFC 1123 as Kubernetes applies it: lowercase letters, digits and `-` (and
+/// `.` for a subdomain), starting and ending with a letter or digit.
+fn dns_name(s: &str, max: usize, dots: bool) -> bool {
+    let alnum = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
+    (1..=max).contains(&s.len())
+        && s.starts_with(alnum)
+        && s.ends_with(alnum)
+        && s.chars()
+            .all(|c| alnum(c) || c == '-' || (dots && c == '.'))
 }
 
 /// Refuse `value` for `flag` unless it is a valid `kind` name.
@@ -229,9 +295,55 @@ mod tests {
                 Name::AzureVault,
                 Name::AwsSecretName,
                 Name::Slug,
+                Name::GcpProject,
+                Name::K8sName,
+                Name::K8sNamespace,
+                Name::VarPrefix,
             ] {
                 assert!(!kind.accepts(bad), "{kind:?} accepted {bad:?}");
             }
+        }
+    }
+
+    /// I-084: the names `convert` puts into a script or manifest, by each
+    /// destination's own rule.
+    #[test]
+    fn t_i084_convert_target_names() {
+        for ok in ["acme-prod", "my-project-123", "example.com:acme-prod"] {
+            assert!(Name::GcpProject.accepts(ok), "{ok}");
+        }
+        for bad in [
+            "Acme-Prod",
+            "acme_prod",
+            "short",
+            "1acme-prod",
+            "acme-prod-",
+            ":acme-prod",
+        ] {
+            assert!(!Name::GcpProject.accepts(bad), "{bad}");
+        }
+        for ok in ["web-env", "app.secrets", "a", "0x"] {
+            assert!(Name::K8sName.accepts(ok), "{ok}");
+        }
+        for bad in ["Web_Env", "-web", "web-", "web.", &"a".repeat(254)] {
+            assert!(!Name::K8sName.accepts(bad), "{bad}");
+        }
+        assert!(Name::K8sNamespace.accepts("prod-eu"));
+        assert!(
+            !Name::K8sNamespace.accepts("prod.eu"),
+            "a label has no dots"
+        );
+        assert!(!Name::K8sNamespace.accepts(&"a".repeat(64)));
+    }
+
+    /// I-263: `--prefix` keeps every name a variable name.
+    #[test]
+    fn t_i263_prefix_starts_a_variable_name() {
+        for ok in ["APP_", "_x", "MyApp2_"] {
+            assert!(Name::VarPrefix.accepts(ok), "{ok}");
+        }
+        for bad in ["APP-", "1X_", "A B", "X;touch PWNED;", ""] {
+            assert!(!Name::VarPrefix.accepts(bad), "{bad}");
         }
     }
 

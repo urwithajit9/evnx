@@ -2,6 +2,9 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
+// Only the backup and restore arms colour anything here now; the convert arm
+// that printed "Invalid transform … ignoring" refuses instead (I-090).
+#[cfg(feature = "backup")]
 use colored::Colorize;
 use std::path::Path;
 
@@ -273,24 +276,44 @@ fn main() -> Result<()> {
             to,
             output,
             force,
+            gitignore,
+            no_gitignore,
             include,
             exclude,
+            allow_empty,
+            allow_collisions,
             base64,
             prefix,
             transform,
+            project,
+            vault_name,
+            heroku_app,
+            name,
+            namespace,
         } => {
-            let transform_enum = transform.as_deref().and_then(|t| match t {
-                "uppercase" => Some(KeyTransform::Uppercase),
-                "lowercase" => Some(KeyTransform::Lowercase),
-                "camelCase" => Some(KeyTransform::CamelCase),
-                "snake_case" => Some(KeyTransform::SnakeCase),
-                unknown => {
-                    if cli.verbose {
-                        eprintln!("{} Invalid transform '{}', ignoring", "!".yellow(), unknown);
-                    }
-                    None
-                }
-            });
+            // ⚠️ Checked before anything is read: an unknown --transform was
+            // dropped in silence (I-090), and a --prefix with shell syntax
+            // reached the generated scripts (I-263).
+            let transform = match transform.as_deref().map(KeyTransform::parse).transpose() {
+                Ok(t) => t,
+                Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
+            };
+            let targets = evnx::formats::Targets {
+                project,
+                vault_name,
+                heroku_app,
+                name,
+                namespace,
+            };
+            let early = evnx::core::args::check_opt(
+                "--prefix",
+                prefix.as_deref(),
+                evnx::core::args::Name::VarPrefix,
+            )
+            .and_then(|()| targets.check(to.as_deref().and_then(evnx::formats::find)));
+            if let Err(e) = early {
+                verdict::no_verdict(&e, Stage::BeforeRun);
+            }
 
             let env = resolve_env(
                 Path::new("."),
@@ -302,16 +325,25 @@ fn main() -> Result<()> {
                 .env(env)
                 .target_format(to)
                 .output_path(output)
-                .include_pattern(include)
-                .exclude_pattern(exclude)
+                .include(include)
+                .exclude(exclude)
                 .base64(base64)
                 .prefix(prefix)
-                .transform(transform_enum)
+                .transform(transform)
+                .targets(targets)
+                .allow_empty(allow_empty)
+                .allow_collisions(allow_collisions)
+                .gitignore(evnx::utils::protect::GitignoreMode::from_flags(
+                    gitignore,
+                    no_gitignore,
+                ))
                 .verbose(cli.verbose)
                 .force(force)
                 .build();
 
-            commands::convert::run(config).context("Convert command failed")
+            // No "Convert command failed:" in front: every other command's
+            // error stands on its own, and this one nested three deep (I-091).
+            commands::convert::run(config)
         }
 
         // ── Migrate ───────────────────────────────────────────────────────────
@@ -391,13 +423,7 @@ fn main() -> Result<()> {
             mkdir,
             dry_run,
         } => {
-            let mode = if gitignore {
-                evnx::utils::protect::GitignoreMode::Auto
-            } else if no_gitignore {
-                evnx::utils::protect::GitignoreMode::Skip
-            } else {
-                evnx::utils::protect::GitignoreMode::Default
-            };
+            let mode = evnx::utils::protect::GitignoreMode::from_flags(gitignore, no_gitignore);
             let env = resolve_env(
                 Path::new("."),
                 env.as_deref(),
