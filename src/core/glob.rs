@@ -10,13 +10,10 @@
 //! string utility is the wrong shape, and copying it would have made **three**
 //! implementations in one crate.
 //!
-//! ⚠️ There is still a second one, in `core/converter.rs`, and it is not
-//! equivalent: it handles `*` only at the start, the end, or both, so
-//! `DB_*_URL` falls through to an exact comparison and matches nothing. It also
-//! takes its arguments the other way round — `glob_match(text, pattern)` rather
-//! than `glob_match(pattern, text)` — which is exactly the kind of pair that
-//! gets called wrongly one day. Consolidating it changes what `evnx convert
-//! --include` matches, so it wants its own change and its own tests.
+//! `convert` had a second one in `core/converter.rs` until 0.10.9 (A-13,
+//! I-090): `*` only at the ends and the arguments the other way round, so
+//! `DB_*_URL` matched nothing there and `DB_PRIMARY_URL` here. It uses this one
+//! now, and `tests/architecture.rs` keeps it the only one.
 
 /// Does `text` match `pattern`?
 ///
@@ -62,6 +59,20 @@ pub fn admits(name: &str, include: Option<&[String]>, exclude: Option<&[String]>
     true
 }
 
+/// What to say when `--include`/`--exclude` filtered out every one of
+/// `before` variables. `purpose` finishes "left nothing to …".
+///
+/// ⚠️ One wording for `cloud run` and `convert` (I-089): a filter that matches
+/// nothing is almost always a typo, and the two commands refuse it the same way.
+pub fn nothing_left(before: usize, purpose: &str) -> String {
+    format!(
+        "--include/--exclude left nothing to {purpose} — all {before} variable(s) were \
+         filtered out.\n\
+         \x20 Check the patterns: they are case-sensitive globs matched against \
+         variable names."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,8 +91,8 @@ mod tests {
         assert!(!glob_match("DB_*", "REDIS_URL"));
     }
 
-    /// ⚠️ The case `core/converter.rs`'s matcher gets wrong: a `*` in the middle
-    /// falls through to an exact comparison there and matches nothing.
+    /// ⚠️ The case convert's own matcher got wrong until 0.10.9: a `*` in the
+    /// middle fell through to an exact comparison and matched nothing.
     #[test]
     fn a_star_in_the_middle_works() {
         assert!(glob_match("DB_*_URL", "DB_PRIMARY_URL"));
@@ -123,6 +134,17 @@ mod tests {
         let exc = pats(&["*_LOCAL"]);
         assert!(admits("DB_URL", Some(&inc), Some(&exc)));
         assert!(!admits("DB_URL_LOCAL", Some(&inc), Some(&exc)));
+    }
+
+    /// `cloud run`'s wording, byte for byte as 0.10.8 printed it, now shared
+    /// with `convert` (I-089).
+    #[test]
+    fn nothing_left_keeps_cloud_runs_words() {
+        assert_eq!(
+            nothing_left(3, "inject"),
+            "--include/--exclude left nothing to inject — all 3 variable(s) were filtered out.\n  \
+             Check the patterns: they are case-sensitive globs matched against variable names."
+        );
     }
 
     #[test]

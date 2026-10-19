@@ -402,6 +402,11 @@ impl Parser {
         })
     }
 
+    /// The hint for an `--env` file that does not exist, worded once for every
+    /// command that reads one (`validate`, `diff`, `convert`; I-091).
+    pub const MISSING_ENV_HINT: &'static str =
+        "Create it with `evnx init`, or point at another file with --env.";
+
     /// Parse a file, and say the right thing when it is not there.
     ///
     /// [`Parser::parse_file`] returns a structured error; every caller then

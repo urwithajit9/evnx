@@ -50,7 +50,20 @@ fn cases() -> Vec<Case> {
         case("validate", &["validate"]),
         case("scan", &["scan", "."]),
         case("diff", &["diff"]),
-        case("convert", &["convert", "--to", "json", "-o", "out.json"]),
+        // `-o` in a git repository checks `.gitignore` since 0.10.9 and warns
+        // when out.json is not covered — a warning `-q` keeps (DEC-G2), tested
+        // in convert_contract.rs. `--no-gitignore`, as for template below.
+        case(
+            "convert",
+            &[
+                "convert",
+                "--to",
+                "json",
+                "-o",
+                "out.json",
+                "--no-gitignore",
+            ],
+        ),
         case("sync", &["sync", "-f"]),
         case(
             "template",

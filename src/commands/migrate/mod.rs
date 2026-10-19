@@ -298,17 +298,12 @@ fn select_destination() -> Result<String> {
     let options = destinations::available_destinations();
 
     if !crate::utils::term::interactive() {
-        anyhow::bail!(
-            "--to is required when there is no terminal to ask.\n\n\
-             \x20 Pass one explicitly:\n\
-             \x20   evnx migrate --to <DESTINATION>\n\n\
-             \x20 Available: {}",
-            options
-                .iter()
-                .map(|(id, _)| *id)
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        let ids: Vec<&str> = options.iter().map(|(id, _)| *id).collect();
+        return Err(crate::utils::prompt::choice_needed(
+            "--to",
+            "evnx migrate --to <DESTINATION>",
+            &ids,
+        ));
     }
 
     let labels: Vec<&str> = options.iter().map(|(_, l)| *l).collect();

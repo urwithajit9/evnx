@@ -1,7 +1,7 @@
 //! Convert command — transform `.env` files to multiple output formats.
 //!
 //! This module implements the `evnx convert` subcommand, which parses a `.env`
-//! file and transforms its variables into 14+ target formats including JSON,
+//! file and transforms its variables into 14 target formats including JSON,
 //! YAML, cloud provider configs, CI/CD formats, and infrastructure-as-code.
 //!
 //! # Architecture
@@ -13,10 +13,10 @@
 //! Parser::parse_file() → IndexMap<String, String>
 //!     │
 //!     ▼
-//! ConvertOptions { filter, transform, encode }
-//!     │
+//! ConvertOptions::prepare() → filter, rename, the format's own names,
+//!     │                       collisions, encode — one pipeline (A-12)
 //!     ▼
-//! Converter::convert() → format-specific serialization
+//! Converter::convert() → format-specific layout
 //!     │
 //!     ▼
 //! stdout or output file
@@ -24,7 +24,7 @@
 //!
 //! # Key Features
 //!
-//! - **Filtering**: Include/exclude variables via glob patterns (`AWS_*`, `*_URL`)
+//! - **Filtering**: Include/exclude variables via `core::glob` patterns (`AWS_*`, `DB_*_URL`, `P?RT`)
 //! - **Transformations**: Key casing (`camelCase`, `snake_case`), prefixes, base64 encoding
 //! - **Interactive mode**: TUI format selector when `--to` is omitted
 //! - **Verbose output**: Debug logging with `--verbose` flag
@@ -40,6 +40,8 @@
 //! | IaC | `terraform`, `tfvars`, `tf` |
 //! | Secret Managers | `doppler`, `heroku`, `vercel`, `railway` |
 //!
+//! The list itself is [`crate::formats::FORMATS`].
+//!
 //! # Usage Examples
 //!
 //! ```no_run
@@ -49,7 +51,7 @@
 //! #
 //! # // With transformations
 //! # // evnx convert \
-//! # //   --to kubernetes \
+//! # //   --to kubernetes --name myapp-env \
 //! # //   --include "PROD_*" \
 //! # //   --prefix "MYAPP_" \
 //! # //   --transform uppercase \
@@ -76,14 +78,14 @@ use anyhow::{Context, Result};
 use colored::*;
 use dialoguer::Select;
 // use indexmap::IndexMap;
-use std::path::Path;
 
 use crate::core::{
-    converter::{ConvertOptions, KeyTransform},
+    converter::{Collisions, ConvertOptions, KeyTransform},
     Parser,
 };
 use crate::docs;
-use crate::formats;
+use crate::formats::{self, Targets};
+use crate::utils::protect::GitignoreMode;
 use crate::utils::ui;
 // ─────────────────────────────────────────────────────────────
 // Configuration
@@ -101,7 +103,7 @@ use crate::utils::ui;
 /// let config = ConvertConfig::builder()
 ///     .env(".env.production")
 ///     .target_format(Some("kubernetes"))
-///     .include_pattern(Some("PROD_*"))
+///     .include(vec!["PROD_*".to_string()])
 ///     .prefix(Some("MYAPP_"))
 ///     .base64(true)
 ///     .build();
@@ -120,6 +122,12 @@ pub struct ConvertConfig {
     pub verbose: bool,
     /// Replace an existing output file (`--force`, DEC-G5).
     pub force: bool,
+    /// The names a format writes into its output (`--project`, …; I-084).
+    pub targets: Targets,
+    /// Convert even when no variable is left (`--allow-empty`, I-089).
+    pub allow_empty: bool,
+    /// `.gitignore` handling for `--output` (`--gitignore`, `--no-gitignore`).
+    pub gitignore: GitignoreMode,
 }
 
 impl ConvertConfig {
@@ -159,22 +167,6 @@ impl ConvertConfig {
     pub fn build_options(&self) -> ConvertOptions {
         self.options.clone()
     }
-
-    /// Check if the input file exists and is readable.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the file does not exist or cannot be read.
-    pub fn validate_input(&self) -> Result<()> {
-        let path = Path::new(&self.env_path);
-        if !path.exists() {
-            anyhow::bail!("Input file not found: '{}'", self.env_path);
-        }
-        if !path.is_file() {
-            anyhow::bail!("Input path is not a file: '{}'", self.env_path);
-        }
-        Ok(())
-    }
 }
 
 impl Default for ConvertConfig {
@@ -183,9 +175,15 @@ impl Default for ConvertConfig {
             env_path: ".env".to_string(),
             target_format: None,
             output_path: None,
-            options: ConvertOptions::default(),
+            options: ConvertOptions {
+                collisions: Collisions::Refuse,
+                ..ConvertOptions::default()
+            },
             verbose: false,
             force: false,
+            targets: Targets::default(),
+            allow_empty: false,
+            gitignore: GitignoreMode::Default,
         }
     }
 }
@@ -201,8 +199,8 @@ impl Default for ConvertConfig {
 ///     .env(".env.production")
 ///     .target_format(Some("json"))           // ✅ Wrap in Some()
 ///     .output_path(Some("output.json"))      // ✅ Wrap in Some()
-///     .include_pattern(Some("AWS_*"))        // ✅ Wrap in Some()
-///     .exclude_pattern(Some("*_DEBUG"))      // ✅ Wrap in Some()
+///     .include(vec!["AWS_*".to_string()])
+///     .exclude(vec!["*_DEBUG".to_string()])
 ///     .base64(true)
 ///     .prefix(Some("MYAPP_"))                // ✅ Wrap in Some()
 ///     .transform(Some(KeyTransform::Uppercase))  // ✅ Wrap in Some()
@@ -214,13 +212,17 @@ pub struct ConfigBuilder {
     env_path: Option<String>,
     target_format: Option<String>,
     output_path: Option<String>,
-    include_pattern: Option<String>,
-    exclude_pattern: Option<String>,
+    include: Vec<String>,
+    exclude: Vec<String>,
     base64: bool,
     prefix: Option<String>,
     transform: Option<KeyTransform>,
     verbose: bool,
     force: bool,
+    targets: Targets,
+    allow_empty: bool,
+    allow_collisions: bool,
+    gitignore: Option<GitignoreMode>,
 }
 
 impl ConfigBuilder {
@@ -245,17 +247,45 @@ impl ConfigBuilder {
         self
     }
 
-    /// Set glob pattern to include only matching variables (optional).
+    /// Keep only variables matching one of these globs (empty keeps all).
     #[must_use]
-    pub fn include_pattern<S: Into<String>>(mut self, pattern: Option<S>) -> Self {
-        self.include_pattern = pattern.map(Into::into);
+    pub fn include(mut self, patterns: Vec<String>) -> Self {
+        self.include = patterns;
         self
     }
 
-    /// Set glob pattern to exclude matching variables (optional).
+    /// Drop variables matching one of these globs.
     #[must_use]
-    pub fn exclude_pattern<S: Into<String>>(mut self, pattern: Option<S>) -> Self {
-        self.exclude_pattern = pattern.map(Into::into);
+    pub fn exclude(mut self, patterns: Vec<String>) -> Self {
+        self.exclude = patterns;
+        self
+    }
+
+    /// The names a format writes into its output (I-084).
+    #[must_use]
+    pub fn targets(mut self, targets: Targets) -> Self {
+        self.targets = targets;
+        self
+    }
+
+    /// Convert even when no variable is left (I-089).
+    #[must_use]
+    pub fn allow_empty(mut self, enabled: bool) -> Self {
+        self.allow_empty = enabled;
+        self
+    }
+
+    /// Keep the last value when two names become one (DEC-PL2).
+    #[must_use]
+    pub fn allow_collisions(mut self, enabled: bool) -> Self {
+        self.allow_collisions = enabled;
+        self
+    }
+
+    /// `.gitignore` handling for `--output`.
+    #[must_use]
+    pub fn gitignore(mut self, mode: GitignoreMode) -> Self {
+        self.gitignore = Some(mode);
         self
     }
 
@@ -302,14 +332,22 @@ impl ConfigBuilder {
             target_format: self.target_format,
             output_path: self.output_path,
             options: ConvertOptions {
-                include_pattern: self.include_pattern,
-                exclude_pattern: self.exclude_pattern,
+                include: self.include,
+                exclude: self.exclude,
                 base64: self.base64,
                 prefix: self.prefix,
                 transform: self.transform,
+                collisions: if self.allow_collisions {
+                    Collisions::LastWins
+                } else {
+                    Collisions::Refuse
+                },
             },
             verbose: self.verbose,
             force: self.force,
+            targets: self.targets,
+            allow_empty: self.allow_empty,
+            gitignore: self.gitignore.unwrap_or(GitignoreMode::Default),
         }
     }
 }
@@ -373,22 +411,16 @@ pub fn run(config: ConvertConfig) -> Result<()> {
         );
     }
 
-    // Validate input file exists
-    config
-        .validate_input()
-        .with_context(|| format!("Failed to validate input file: '{}'", config.env_path))?;
-
-    // ⚠️ Before anything is read or converted, so a refusal costs nothing and
-    // writes nothing (I-081, DEC-G5).
-    if let Some(out) = config.output_path.as_deref() {
-        check_output(Path::new(&config.env_path), Path::new(out), config.force)?;
-    }
-
-    // Parse .env file
+    // Parse .env file. A missing one is the error `validate` and `diff` give,
+    // not three nested contexts (I-091).
     let parser = Parser::default();
-    let env_file = parser
-        .parse_file(&config.env_path)
-        .with_context(|| format!("Failed to parse environment file: '{}'", config.env_path))?;
+    let env_file = parser.parse_file_or_hint(&config.env_path, Parser::MISSING_ENV_HINT)?;
+
+    // ⚠️ Before anything is converted, so a refusal writes nothing (I-081,
+    // DEC-G5).
+    if let Some(out) = config.output_path.as_deref() {
+        check_output(&config.env_path, out, config.force)?;
+    }
 
     if config.verbose {
         eprintln!(
@@ -409,26 +441,25 @@ pub fn run(config: ConvertConfig) -> Result<()> {
         None => select_format_interactive(config.verbose)?,
     };
 
-    // Get the appropriate converter.
-    //
-    // ⚠️ The exit lives here, not in the dispatch. `formats::get_converter` now
+    // ⚠️ The exit lives here, not in the dispatch. `formats::get_converter`
     // returns an error so that `cloud export` can reach the same 14 formats
     // without a library function ending the process underneath it — but
     // `convert`'s own contract is unchanged: unknown format, this help, exit 2.
-    let converter = match formats::get_converter(&format_name) {
-        Ok(c) => c,
-        Err(_) => {
-            eprintln!("{} Unknown format: {}", "✗".red(), format_name);
-            eprintln!();
-            eprintln!("{}", "Supported formats:".bold());
-            eprintln!();
-            print_format_help();
-            // 2, not 1: convert was asked for something it cannot produce, so
-            // there is no output — the same "could not run" every other command
-            // reports with 2. Nothing here converted anything badly.
-            std::process::exit(2);
-        }
+    let Some(format) = formats::find(&format_name) else {
+        eprintln!("{} Unknown format: {}", "✗".red(), format_name);
+        eprintln!();
+        eprintln!("{}", "Supported formats:".bold());
+        eprintln!();
+        print_format_help();
+        // 2, not 1: convert was asked for something it cannot produce, so
+        // there is no output — the same "could not run" every other command
+        // reports with 2. Nothing here converted anything badly.
+        std::process::exit(2);
     };
+
+    // The names the format writes into its output, required where it needs
+    // one (I-084, DEC-CV1).
+    let converter = formats::converter_for(format, &config.targets)?;
 
     if config.verbose {
         eprintln!(
@@ -442,20 +473,62 @@ pub fn run(config: ConvertConfig) -> Result<()> {
         );
     }
 
-    // Before converting: two names that become one would lose a value (I-088).
-    config.options.check_collisions(&env_file.vars)?;
+    // Before converting: names that become one name — by `--transform` or by
+    // the format's own naming — are refused unless `--allow-collisions`
+    // (I-088, I-249, DEC-PL2); and nothing left to convert is refused unless
+    // `--allow-empty` (I-089, DEC-CV3).
+    let prepared = config.options.prepare(&env_file.vars, converter.as_ref())?;
+    if prepared.is_empty() && !config.allow_empty {
+        anyhow::bail!(nothing_to_convert(&config.env_path, env_file.vars.len()));
+    }
+    if config.options.collisions == Collisions::LastWins {
+        for c in config
+            .options
+            .collisions_in(&env_file.vars, converter.as_ref())
+        {
+            ui::warning(format!(
+                "{}: kept the value of {} (--allow-collisions)",
+                c.describe(),
+                c.kept()
+            ));
+        }
+    }
 
-    // Perform conversion with options
     let result = converter
         .convert(&env_file.vars, &config.options)
-        .with_context(|| format!("Conversion to '{}' failed", format_name))?;
+        .with_context(|| format!("Conversion to '{}' failed", format.name))?;
+
+    // DEC-CV4: a shape not yet checked against its target says so, on stderr
+    // so a pipe still carries the artefact alone.
+    if let Some(note) = format.experimental {
+        ui::warning(note);
+    }
 
     // Output result
-    write_output(&result, config.output_path.as_deref(), config.verbose)?;
+    write_output(
+        &result,
+        config.output_path.as_deref(),
+        config.verbose,
+        &config.gitignore,
+    )?;
 
     ui::print_docs_hint(&docs::CONVERT);
 
     Ok(())
+}
+
+/// Why nothing is left to convert, and the flag that converts it anyway.
+///
+/// ⚠️ It printed `{}` and exited 0 (I-089), so a pipeline whose `--include`
+/// had a typo uploaded an empty secret and reported success. `cloud run`
+/// refused the same case already; the filter wording is shared with it.
+fn nothing_to_convert(env_path: &str, before: usize) -> String {
+    let why = if before == 0 {
+        format!("{env_path} holds no variables, so there is nothing to convert.")
+    } else {
+        crate::core::glob::nothing_left(before, "convert")
+    };
+    format!("{why}\n\x20 Pass --allow-empty to write the empty output anyway.")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -478,6 +551,18 @@ pub fn run(config: ConvertConfig) -> Result<()> {
 /// - Prints formatted header to stdout
 /// - Blocks waiting for user input via terminal UI
 fn select_format_interactive(verbose: bool) -> Result<String> {
+    // ⚠️ Before the header: with no terminal dialoguer failed with "IO error:
+    // not a terminal", which reached the user as "Format selection cancelled by
+    // user: … not a terminal: not a terminal" under a header for a menu that
+    // never appeared (I-083).
+    if !crate::utils::term::interactive() {
+        return Err(crate::utils::prompt::choice_needed(
+            "--to",
+            "evnx convert --to <FORMAT>",
+            &formats::names(),
+        ));
+    }
+
     if verbose {
         eprintln!(
             "{}",
@@ -500,43 +585,21 @@ fn select_format_interactive(verbose: bool) -> Result<String> {
         Some("Transform .env into different formats"),
     );
 
-    let formats = vec![
-        // Generic formats (always show first)
-        "json - Generic JSON key-value object",
-        "yaml - Generic YAML key-value format",
-        "shell - Shell export script (bash/zsh)",
-        // Cloud providers
-        "aws-secrets - AWS Secrets Manager (CLI commands)",
-        "gcp-secrets - GCP Secret Manager (gcloud commands)",
-        "azure-keyvault - Azure Key Vault (az CLI commands)",
-        // CI/CD platforms
-        "github-actions - GitHub Actions secrets (ready to paste)",
-        // Container platforms
-        "docker-compose - Docker Compose YAML environment",
-        "kubernetes - Kubernetes Secret YAML (base64 encoded)",
-        // Infrastructure as Code
-        "terraform - Terraform .tfvars file",
-        // Secret management platforms
-        "doppler - Doppler secrets JSON format",
-        "heroku - Heroku config vars (CLI commands)",
-        "vercel - Vercel environment variables JSON",
-        "railway - Railway variables JSON format",
-    ];
+    // From the one table, so a label cannot say "CLI commands" for a format
+    // that prints JSON (I-087).
+    let items: Vec<String> = formats::FORMATS
+        .iter()
+        .map(|f| format!("{} - {}", f.name, f.label))
+        .collect();
 
     let selection = Select::new()
         .with_prompt("Select output format")
-        .items(&formats)
+        .items(&items)
         .default(0)
         .interact()
-        .context("Format selection cancelled by user")?;
+        .context("choosing an output format")?;
 
-    // Extract format name (everything before first dash and space)
-    let format = formats[selection]
-        .split('-')
-        .next()
-        .unwrap()
-        .trim()
-        .to_string();
+    let format = formats::FORMATS[selection].name.to_string();
 
     if verbose {
         eprintln!("{}", format!("✓ Selected format: {}", format).dimmed());
@@ -561,20 +624,11 @@ fn print_format_help() {
 /// Refuse an output that would destroy something: the input itself (by any
 /// name — path, symlink or hard link), or an existing file without `--force`
 /// (DEC-G5).
-fn check_output(input: &Path, output: &Path, force: bool) -> Result<()> {
-    if crate::core::safe_write::same_file(input, output) {
-        anyhow::bail!(
-            "'{}' is the same file as the input '{}'; writing it would replace your \
-             .env with its own conversion. Choose another --output.",
-            output.display(),
-            input.display()
-        );
-    }
+fn check_output(input: &str, output: &str, force: bool) -> Result<()> {
+    // template's wording: one rule, read the same way in both (R-template).
+    crate::core::safe_write::refuse_same_file(output, "env file", input)?;
     if !force && std::fs::symlink_metadata(output).is_ok() {
-        anyhow::bail!(
-            "'{}' already exists. Pass --force to replace it.",
-            output.display()
-        );
+        anyhow::bail!("'{}' already exists. Pass --force to replace it.", output);
     }
     Ok(())
 }
@@ -586,12 +640,18 @@ fn check_output(input: &Path, output: &Path, force: bool) -> Result<()> {
 /// * `content` - The formatted output string
 /// * `output_path` - Optional file path (None = stdout)
 /// * `verbose` - If true, emit success messages to stderr
+/// * `gitignore` - What to do about `.gitignore` for a written file
 ///
 /// # Returns
 ///
 /// * `Ok(())` on successful write
 /// * `Err(anyhow::Error)` on I/O failure
-fn write_output(content: &str, output_path: Option<&str>, verbose: bool) -> Result<()> {
+fn write_output(
+    content: &str,
+    output_path: Option<&str>,
+    verbose: bool,
+    gitignore: &GitignoreMode,
+) -> Result<()> {
     // ⚠️ Both paths go through the same normalisation, which is the whole fix.
     // They used to disagree: `fs::write` added nothing and `println!` added a
     // newline, so every format produced different bytes depending on whether
@@ -621,6 +681,9 @@ fn write_output(content: &str, output_path: Option<&str>, verbose: bool) -> Resu
                 ui::say(format!("Replaced {path}"));
             }
             crate::core::safe_write::report(&written);
+            // Every value is in that file: keep it out of git the way
+            // `template --output` does (R-template, `utils::protect`).
+            crate::utils::protect::protect_output(path, gitignore)?;
         }
         None => {
             // `print!`, not `println!` — `content` is already newline-terminated
@@ -661,8 +724,8 @@ mod tests {
             .env(".env.prod")
             .target_format(Some("json")) // ✅ Wrap in Some()
             .output_path(Some("out.json")) // ✅ Wrap in Some()
-            .include_pattern(Some("AWS_*")) // ✅ Wrap in Some()
-            .exclude_pattern(Some("*_DEBUG")) // ✅ Wrap in Some()
+            .include(vec!["AWS_*".to_string()])
+            .exclude(vec!["*_DEBUG".to_string()])
             .base64(true)
             .prefix(Some("APP_")) // ✅ Wrap in Some()
             .transform(Some(KeyTransform::Uppercase)) // ✅ Wrap in Some()
@@ -672,8 +735,8 @@ mod tests {
         assert_eq!(config.env_path, ".env.prod");
         assert_eq!(config.target_format, Some("json".to_string()));
         assert_eq!(config.output_path, Some("out.json".to_string()));
-        assert_eq!(config.options.include_pattern, Some("AWS_*".to_string()));
-        assert_eq!(config.options.exclude_pattern, Some("*_DEBUG".to_string()));
+        assert_eq!(config.options.include, ["AWS_*"]);
+        assert_eq!(config.options.exclude, ["*_DEBUG"]);
         assert!(config.options.base64);
         assert_eq!(config.options.prefix, Some("APP_".to_string()));
         assert!(matches!(
@@ -703,37 +766,6 @@ mod tests {
         assert_eq!(config.options.prefix, Some("TEST_".to_string()));
     }
 
-    #[test]
-    fn test_validate_input_exists() -> Result<()> {
-        let tmp = TempDir::new()?;
-        let env_path = tmp.path().join(".env");
-        fs::write(&env_path, "KEY=value")?;
-
-        let config = ConvertConfig::builder()
-            .env(env_path.to_str().unwrap())
-            .build();
-        assert!(config.validate_input().is_ok());
-        Ok(())
-    }
-
-    #[test]
-    fn test_validate_input_not_found() {
-        let config = ConvertConfig::builder().env("/nonexistent/.env").build();
-        let err = config.validate_input().unwrap_err();
-        assert!(err.to_string().contains("Input file not found"));
-    }
-
-    #[test]
-    fn test_validate_input_not_a_file() -> Result<()> {
-        let tmp = TempDir::new()?;
-        let config = ConvertConfig::builder()
-            .env(tmp.path().to_str().unwrap())
-            .build();
-        let err = config.validate_input().unwrap_err();
-        assert!(err.to_string().contains("not a file"));
-        Ok(())
-    }
-
     // The dispatch tests moved with the dispatch, to `formats::registry_tests`.
     // They grew in the move: every alias is now asserted, and so is the unknown
     // arm, which could not be tested here because it exited the process.
@@ -742,7 +774,7 @@ mod tests {
     fn test_write_output_to_stdout() -> Result<()> {
         let content = "KEY=value\n";
         // Just verify no error when writing to stdout (can't easily capture)
-        assert!(write_output(content, None, false).is_ok());
+        assert!(write_output(content, None, false, &GitignoreMode::Skip).is_ok());
         Ok(())
     }
 
@@ -752,7 +784,12 @@ mod tests {
         let output_path = tmp.path().join("output.txt");
         let content = "KEY=value\n";
 
-        write_output(content, Some(output_path.to_str().unwrap()), false)?;
+        write_output(
+            content,
+            Some(output_path.to_str().unwrap()),
+            false,
+            &GitignoreMode::Skip,
+        )?;
 
         let written = fs::read_to_string(&output_path)?;
         assert_eq!(written, content);
@@ -769,7 +806,12 @@ mod tests {
         let tmp = TempDir::new()?;
         let path = tmp.path().join("out.json");
 
-        write_output("{\"A\":\"1\"}", Some(path.to_str().unwrap()), false)?;
+        write_output(
+            "{\"A\":\"1\"}",
+            Some(path.to_str().unwrap()),
+            false,
+            &GitignoreMode::Skip,
+        )?;
 
         let written = fs::read_to_string(&path)?;
         assert_eq!(written, "{\"A\":\"1\"}\n");
@@ -782,7 +824,12 @@ mod tests {
         let tmp = TempDir::new()?;
         let path = tmp.path().join("out.yaml");
 
-        write_output("A: '1'\n", Some(path.to_str().unwrap()), false)?;
+        write_output(
+            "A: '1'\n",
+            Some(path.to_str().unwrap()),
+            false,
+            &GitignoreMode::Skip,
+        )?;
 
         let written = fs::read_to_string(&path)?;
         assert_eq!(written, "A: '1'\n", "a trailing blank line came back");
@@ -850,7 +897,7 @@ mod tests {
         vars.insert("APP_URL".to_string(), "app_val".to_string());
 
         let options = ConvertOptions {
-            include_pattern: Some("AWS_*".to_string()),
+            include: vec!["AWS_*".to_string()],
             ..Default::default()
         };
 
@@ -867,8 +914,8 @@ mod tests {
             .env(".env")
             .target_format(Option::<String>::None)
             .output_path(Option::<String>::None)
-            .include_pattern(Option::<String>::None)
-            .exclude_pattern(Option::<String>::None)
+            .include(Vec::new())
+            .exclude(Vec::new())
             .base64(false)
             .prefix(Option::<String>::None)
             .transform(None)
@@ -878,8 +925,8 @@ mod tests {
         assert_eq!(config.env_path, ".env");
         assert!(config.target_format.is_none());
         assert!(config.output_path.is_none());
-        assert!(config.options.include_pattern.is_none());
-        assert!(config.options.exclude_pattern.is_none());
+        assert!(config.options.include.is_empty());
+        assert!(config.options.exclude.is_empty());
         assert!(!config.options.base64);
         assert!(config.options.prefix.is_none());
         assert!(config.options.transform.is_none());

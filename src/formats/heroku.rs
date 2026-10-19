@@ -34,8 +34,12 @@ impl HerokuConfigConverter {
 
 impl Converter for HerokuConfigConverter {
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
-        let filtered = options.filter_vars(vars);
         let mut output = String::new();
+
+        // ⚠️ With an app the comments name it too. They said `--app
+        // YOUR_APP_NAME` whatever the app was, so the one place the script
+        // explained itself still carried the placeholder (I-084).
+        let app = self.app_name.as_deref().map(crate::core::shell::word);
 
         output.push_str("#!/bin/bash\n");
         output.push_str("# Heroku Config Vars\n");
@@ -43,7 +47,7 @@ impl Converter for HerokuConfigConverter {
         output.push_str("#\n");
         output.push_str("# Usage:\n");
 
-        if self.app_name.is_some() {
+        if app.is_some() {
             output.push_str("#   bash heroku-config.sh\n");
         } else {
             output.push_str("#   bash heroku-config.sh --app YOUR_APP_NAME\n");
@@ -51,14 +55,16 @@ impl Converter for HerokuConfigConverter {
 
         output.push_str("#\n");
         output.push_str("# Or set variables individually:\n");
-        output.push_str("#   heroku config:set KEY=VALUE --app YOUR_APP_NAME\n");
+        output.push_str(&format!(
+            "#   heroku config:set KEY=VALUE --app {}\n",
+            app.as_deref().unwrap_or("YOUR_APP_NAME")
+        ));
         output.push('\n');
 
         // App name flag
-        let app_flag = if let Some(ref app) = self.app_name {
-            format!(" --app {}", app)
-        } else {
-            " --app ${HEROKU_APP:-YOUR_APP_NAME}".to_string()
+        let app_flag = match &app {
+            Some(app) => format!(" --app {app}"),
+            None => " --app ${HEROKU_APP:-YOUR_APP_NAME}".to_string(),
         };
 
         output.push_str("set -e\n\n");
@@ -66,23 +72,21 @@ impl Converter for HerokuConfigConverter {
         // Generate config:set commands
         output.push_str("echo \"Setting Heroku config vars...\"\n\n");
 
-        for (key, value) in filtered.iter() {
-            let transformed_key = options.transform_key(key);
-            let transformed_value = options.transform_value(value);
-
+        for (transformed_key, transformed_value) in options.prepare(vars, self)? {
             // Escape value for shell
             let escaped_value = transformed_value
                 .replace('\\', "\\\\")
                 .replace('"', "\\\"")
                 .replace('$', "\\$")
                 .replace('`', "\\`");
+            let key = crate::core::shell::word(&transformed_key);
 
             output.push_str(&format!(
                 "heroku config:set {}=\"{}\"{}",
-                transformed_key, escaped_value, app_flag
+                key, escaped_value, app_flag
             ));
             output.push_str(" || echo \"Failed to set ");
-            output.push_str(&transformed_key);
+            output.push_str(&key);
             output.push_str("\"\n");
         }
 

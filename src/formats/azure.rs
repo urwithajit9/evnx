@@ -11,6 +11,8 @@ pub struct AzureKeyVaultConverter {
     pub vault_name: String,
 }
 
+/// ⚠️ `my-keyvault` is a placeholder. `convert` requires `--vault-name`
+/// (I-084, DEC-CV1); only `cloud export` still builds this default.
 impl Default for AzureKeyVaultConverter {
     fn default() -> Self {
         Self {
@@ -21,20 +23,12 @@ impl Default for AzureKeyVaultConverter {
 
 impl Converter for AzureKeyVaultConverter {
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
-        let filtered = options.filter_vars(vars);
-
         let mut output = String::new();
         output.push_str("#!/bin/bash\n");
         output.push_str("# Upload secrets to Azure Key Vault\n");
         output.push_str(&format!("# Vault: {}\n\n", self.vault_name));
 
-        for (k, v) in filtered.iter() {
-            let key = options.transform_key(k);
-            let value = options.transform_value(v);
-
-            // Azure Key Vault naming: alphanumeric and hyphens only
-            let secret_name = key.replace('_', "-");
-
+        for (secret_name, value) in options.prepare(vars, self)? {
             output.push_str(&format!(
                 // ⛔ Quoted by the shared helper, not by wrapping in `'{}'`.
                 // A value containing a single quote closed the quoting and the
@@ -46,8 +40,8 @@ impl Converter for AzureKeyVaultConverter {
                 // which runs when the generated script is run. Verified against
                 // the shipped converter with a stub `az` on PATH.
                 "az keyvault secret set --vault-name {} --name {} --value {}\n",
-                self.vault_name,
-                secret_name,
+                crate::core::shell::word(&self.vault_name),
+                crate::core::shell::word(&secret_name),
                 crate::formats::quoting::shell_single(&value)
             ));
         }
@@ -61,6 +55,17 @@ impl Converter for AzureKeyVaultConverter {
 
     fn description(&self) -> &str {
         "Azure Key Vault (az cli commands)"
+    }
+
+    /// Key Vault names take letters, digits and `-` only.
+    fn target_name(&self, key: &str) -> String {
+        key.replace('_', "-")
+    }
+
+    /// And they ignore case: `A-B` and `a-b` are one secret, so `az keyvault
+    /// secret set` — an upsert — would overwrite the first in silence (I-249).
+    fn names_ignore_case(&self) -> bool {
+        true
     }
 }
 

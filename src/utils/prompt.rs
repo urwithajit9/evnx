@@ -28,6 +28,25 @@ pub fn require_terminal_or(hint: &str) -> Result<()> {
     Ok(())
 }
 
+/// A choice that has a flag, asked for with no flag and no terminal to ask on.
+///
+/// ⚠️ Without this, dialoguer's `Select` fails with "IO error: not a terminal",
+/// which `convert` wrapped into "Format selection cancelled by user: … not a
+/// terminal: not a terminal" — nobody cancelled anything, and the flag that
+/// answers the question went unnamed (I-083). `migrate --to` already said it
+/// this way; one wording for both.
+///
+/// `example` is the command line with the flag, `available` what it accepts.
+pub fn choice_needed(flag: &str, example: &str, available: &[&str]) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{flag} is required when there is no terminal to ask.\n\n\
+         \x20 Pass one explicitly:\n\
+         \x20   {example}\n\n\
+         \x20 Available: {}",
+        available.join(", ")
+    )
+}
+
 /// A prompt was needed and there was no terminal to show it on.
 ///
 /// `main` reports it like any other error — exit 2, "No verdict" — and `hint`

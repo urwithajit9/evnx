@@ -292,3 +292,28 @@ fn t_dec_sf11_every_cargo_line_builds_every_feature() {
         "cargo lines without --all-features: {offenders:?}"
     );
 }
+
+/// A-13, I-090: one glob matcher. `core/converter.rs` carried a second one
+/// that handled `*` only at the ends and took its arguments the other way
+/// round, so `convert --include` and `migrate --include` matched different
+/// names for the same pattern.
+#[test]
+fn t_a13_one_glob_matcher() {
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let offenders: Vec<String> = files
+        .iter()
+        .filter(|f| !f.ends_with("core/glob.rs"))
+        .filter(|f| {
+            let text = std::fs::read_to_string(f).unwrap();
+            code_lines(&text)
+                .iter()
+                .any(|(_, l)| l.contains("fn glob_match"))
+        })
+        .map(|f| f.display().to_string())
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "glob matching outside core::glob: {offenders:?}"
+    );
+}

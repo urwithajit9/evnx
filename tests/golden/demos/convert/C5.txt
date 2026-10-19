@@ -11,12 +11,14 @@ $ evnx convert --to json --include P*
 [exit 0]
   ok: prefix glob: PORT, PRICE (exit 0)
 
-$ evnx convert --to json --include *_URL --exclude DATABASE_*
-{}
+$ evnx convert --to json --include *_URL,DEBUG --exclude DATABASE_*
+{
+  "DEBUG": "true"
+}
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
-  ok: exclude applies after include: nothing left (exit 0)
+  ok: exclude wins over include: DATABASE_URL dropped, DEBUG kept (exit 0)
 
 $ evnx convert --to json --include API_* --prefix APP_ --transform lowercase
 {
@@ -28,31 +30,48 @@ $ evnx convert --to json --include API_* --prefix APP_ --transform lowercase
   ok: prefix before casing: app_api_secret (exit 0)
 
 $ evnx convert --to json --include NOPE_*
+[stderr]
+Error: --include/--exclude left nothing to convert — all 8 variable(s) were filtered out.
+  Check the patterns: they are case-sensitive globs matched against variable names.
+  Pass --allow-empty to write the empty output anyway.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-089: a filter that matches nothing is refused, stdout empty (DEC-CV3) (exit 2)
+
+$ evnx convert --to json --include NOPE_* --allow-empty
 {}
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
-  ok: KNOWN I-089: zero match prints {} and exits 0; decided: exit 1, --allow-empty (exit 0)
+  ok: --allow-empty prints the empty object (exit 0)
 
 $ evnx convert --to json --include PORT,DEBUG
-{}
+{
+  "DEBUG": "true",
+  "PORT": "8080"
+}
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
-KNOWN I-090: comma list matches nothing; decided: repeatable --include
+  ok: FIXED I-090: a comma list (or a repeated --include) (exit 0)
 
 $ evnx convert --to json --include P?RT
-{}
+{
+  "PORT": "8080"
+}
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
-KNOWN I-090: ? is literal today; decided: core::glob
+  ok: FIXED I-090: ? matches one character (core::glob) (exit 0)
 
 $ evnx convert --env empty --to json
-{}
 [stderr]
-  Docs: https://docs.evnx.dev/cli/commands/convert
-[exit 0]
-  ok: KNOWN I-089: empty .env prints {} and exits 0 (exit 0)
+Error: empty holds no variables, so there is nothing to convert.
+  Pass --allow-empty to write the empty output anyway.
 
-================ summary: 5 ok, 0 mismatch   ================
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-089: an empty .env is refused (DEC-CV3) (exit 2)
+
+================ summary: 8 ok, 0 mismatch   ================

@@ -3,8 +3,9 @@
 //!
 //! Moved out of `commands::template` in 0.10.5 (R-template), where it was the
 //! only complete copy. `init` and `add` print their own "still not ignored"
-//! lines, and `convert -o`, `restore` and `cloud pull --file` have no such step
-//! at all; each adopts this module in its own patch (see their `R-` notes).
+//! lines, and `restore` and `cloud pull --file` have no such step at all; each adopts
+//! this module in its own patch (see their `R-` notes). `convert -o` adopted
+//! it in 0.10.9 (R-convert).
 //!
 //! ⚠️ This module asks and prints; [`crate::core::gitignore`] only answers
 //! (finds the file, asks git, appends a line). The split is deliberate: a core
@@ -21,6 +22,7 @@ use crate::utils::ui;
 ///
 /// Resolved from the command's flags before the write; terminal detection and
 /// the question happen in [`protect_output`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitignoreMode {
     /// `--gitignore`: write the entry without asking. Suitable for CI scripts.
     Auto,
@@ -28,6 +30,20 @@ pub enum GitignoreMode {
     Skip,
     /// No flag: ask when there is a terminal, warn only when there is not.
     Default,
+}
+
+impl GitignoreMode {
+    /// From a command's `--gitignore` / `--no-gitignore` pair (`template`,
+    /// `convert`); clap keeps the two exclusive.
+    pub fn from_flags(gitignore: bool, no_gitignore: bool) -> Self {
+        if gitignore {
+            GitignoreMode::Auto
+        } else if no_gitignore {
+            GitignoreMode::Skip
+        } else {
+            GitignoreMode::Default
+        }
+    }
 }
 
 /// After `output` was written, make sure git will not pick it up.

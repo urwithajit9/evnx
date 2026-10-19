@@ -3,39 +3,61 @@
 
 $ evnx convert --to json --transform uppercase
 [stderr]
-Error: Convert command failed: these names become the same name after renaming, and one value would be lost:
+Error: these names become the same name after renaming, and one value would be lost:
   Api, API → API
-Rename one in the .env, or convert without the transform. Nothing was written.
+Rename one in the .env, convert without the transform, or pass --allow-collisions to keep the last value. Nothing was written.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: FIXED I-088: Api and API collide; refused, both named, nothing written (DEC-U8-3) (exit 2)
 
+$ evnx convert --to json --transform uppercase --allow-collisions
+{
+  "API": "2"
+}
+[stderr]
+! Api, API → API: kept the value of API (--allow-collisions)
+  Docs: https://docs.evnx.dev/cli/commands/convert
+[exit 0]
+  ok: DEC-PL2: --allow-collisions keeps the last value and says which (exit 0)
+
 $ evnx convert --to json --transform camelCase
 [stderr]
-Error: Convert command failed: these names become the same name after renaming, and one value would be lost:
+Error: these names become the same name after renaming, and one value would be lost:
   DB_URL, db_url → dbUrl
-Rename one in the .env, or convert without the transform. Nothing was written.
+Rename one in the .env, convert without the transform, or pass --allow-collisions to keep the last value. Nothing was written.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: FIXED I-088: both become dbUrl; refused, both named (a prefix alone cannot collide: it is applied to every key) (exit 2)
 
-$ evnx convert --to json --transform Title
+$ evnx convert --to gcp-secrets --project acme-prod
+[stderr]
+Error: these names become the same name in gcp-secrets, and one value would be lost:
+  A_B, a_b → a-b
+Rename one in the .env, or pass --allow-collisions to keep the last value. Nothing was written.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-249: gcp's own naming makes A_B and a_b one secret a-b; refused (exit 2)
+
+$ evnx convert --to json
 {
-  "APP_NAME": "demo app",
-  "DATABASE_URL": "postgres://admin:s3cr3t@db.internal:5432/app",
-  "API_SECRET": "abc123",
-  "DEBUG": "true",
-  "PORT": "8080",
-  "GREETING": "hello \"world\"",
-  "EMPTY": "",
-  "PRICE": "$5"
+  "A_B": "one",
+  "a_b": "two"
 }
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
-  ok: KNOWN I-090: unknown mode ignored; decided: exit 2 listing modes (exit 0)
+  ok: json keeps both names: no collision (exit 0)
+
+$ evnx convert --to json --transform Title
+[stderr]
+Error: unknown transform 'title' — expected one of: uppercase, lowercase, camelCase, snake_case
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: FIXED I-090: unknown mode refused, the modes listed (exit 2)
 
 $ evnx convert --to json --include DATABASE_URL --transform uppercase
 {
@@ -69,4 +91,4 @@ $ evnx convert --to json --include DATABASE_URL --transform snake_case
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
 
-================ summary: 3 ok, 0 mismatch   ================
+================ summary: 6 ok, 0 mismatch   ================

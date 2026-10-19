@@ -217,7 +217,7 @@ fn bench_convert_with_filtering(c: &mut Criterion) {
     c.bench_function("convert_with_filtering", |b| {
         let converter = JsonConverter;
         let options = ConvertOptions {
-            include_pattern: Some("AWS_*".to_string()),
+            include: vec!["AWS_*".to_string()],
             ..Default::default()
         };
         b.iter(|| {

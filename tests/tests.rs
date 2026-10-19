@@ -540,7 +540,11 @@ fn test_convert_invalid_transform() {
         .args(["convert", "--to", "json", "--transform", "invalid_mode"])
         .current_dir(dir.path())
         .assert()
-        .success(); // Should succeed with warning, not fail
+        // T-016, I-090: this asserted success with the comment "should succeed
+        // with warning", and there was no warning — an unknown mode was dropped
+        // in silence. It is refused now, listing the modes.
+        .code(2)
+        .stderr(predicate::str::contains("unknown transform 'invalid_mode'"));
 }
 
 #[test]
@@ -548,8 +552,9 @@ fn test_convert_file_not_found() {
     cargo_bin_cmd!("evnx")
         .args(["convert", "--to", "json", "--env", "/nonexistent/.env"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("Input file not found"));
+        .code(2)
+        // I-091: validate's and diff's wording, one error rather than three.
+        .stderr(predicate::str::contains("/nonexistent/.env does not exist"));
 }
 
 #[test]

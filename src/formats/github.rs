@@ -21,16 +21,13 @@ impl Default for GitHubActionsConverter {
 
 impl Converter for GitHubActionsConverter {
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
-        let filtered = options.filter_vars(vars);
+        let pairs = options.prepare(vars, self)?;
 
         let mut output = String::new();
         output.push_str("Paste these into Settings → Secrets and variables → Actions:\n\n");
 
-        let count = filtered.len();
-        for (i, (k, v)) in filtered.iter().enumerate() {
-            let key = options.transform_key(k);
-            let value = options.transform_value(v);
-
+        let count = pairs.len();
+        for (i, (key, value)) in pairs.iter().enumerate() {
             output.push_str(&format!("Name: {}\n", key));
             output.push_str(&format!("Value: {}\n", value));
 
@@ -52,6 +49,11 @@ impl Converter for GitHubActionsConverter {
     }
 
     fn description(&self) -> &str {
-        "GitHub Actions secrets format (ready to paste)"
+        "GitHub Actions secrets (text to paste into the web form)"
+    }
+
+    /// GitHub stores secret names in uppercase: `A_B` and `a_b` are one secret.
+    fn names_ignore_case(&self) -> bool {
+        true
     }
 }

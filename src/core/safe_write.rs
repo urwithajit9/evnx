@@ -386,6 +386,22 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
     }
 }
 
+/// Refuse an `--output` that names `input` — by path, symlink or hard link —
+/// which writing would replace with its own result. `what` names the input
+/// ("template", "env file").
+///
+/// One wording for `template` (I-131) and `convert` (I-081), so a person who
+/// meets it twice reads the same rule twice.
+pub fn refuse_same_file(output: &str, what: &str, input: &str) -> Result<()> {
+    if same_file(Path::new(input), Path::new(output)) {
+        bail!(
+            "--output '{output}' is the same file as the {what} '{input}'. \
+             Nothing was written; choose another --output."
+        );
+    }
+    Ok(())
+}
+
 /// Print what the person should know about a write: that it went through a
 /// symlink (DEC-S6), and that a file holding secrets is readable by others
 /// (DEC-G6). Commands print their own success line.

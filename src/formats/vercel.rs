@@ -11,13 +11,10 @@ pub struct VercelEnvConverter;
 
 impl Converter for VercelEnvConverter {
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
-        let filtered = options.filter_vars(vars);
-
-        let transformed: IndexMap<String, serde_json::Value> = filtered
-            .iter()
-            .map(|(k, v)| {
-                let key = options.transform_key(k);
-                let value = options.transform_value(v);
+        let transformed: IndexMap<String, serde_json::Value> = options
+            .prepare(vars, self)?
+            .into_iter()
+            .map(|(key, value)| {
                 (
                     key,
                     serde_json::json!({

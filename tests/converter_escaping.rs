@@ -44,7 +44,10 @@ fn fixture() -> TempDir {
 fn convert(d: &TempDir, to: &str) -> String {
     let out = cargo_bin_cmd!("evnx")
         .current_dir(d.path())
-        .args(["convert", "--to", to])
+        // `to` may carry the format's name flags (`kubernetes --name x`), which
+        // convert requires since 0.10.9 (I-084).
+        .args(["convert", "--to"])
+        .args(to.split_whitespace())
         .output()
         .unwrap();
     assert!(out.status.success(), "convert --to {to} failed");
@@ -101,8 +104,9 @@ fn shell_output_parses_runs_nothing_and_keeps_every_value() {
 #[test]
 fn kubernetes_output_is_valid_yaml_with_only_string_values() {
     let d = fixture();
-    let doc: serde_yaml::Value = serde_yaml::from_str(&convert(&d, "kubernetes"))
-        .expect("kubernetes output is not valid YAML");
+    let doc: serde_yaml::Value =
+        serde_yaml::from_str(&convert(&d, "kubernetes --name app-secrets"))
+            .expect("kubernetes output is not valid YAML");
     let sd = doc
         .get("stringData")
         .and_then(|v| v.as_mapping())
@@ -210,15 +214,13 @@ fn generated_cloud_commands_pass_values_through_unchanged() {
     let probe = "/tmp/evnx-cloud-pwned";
     let _ = fs::remove_file(probe);
 
-    for (to, grep, got) in [
-        ("azure", "az keyvault", &got_az),
-        ("gcp", "gcloud secrets", &got_gc),
+    // The whole script, as a person runs it. (This took only the lines naming
+    // the tool; gcp's now go through an `upsert_secret` function, I-099.)
+    for (to, got) in [
+        ("azure --vault-name kv-prod", &got_az),
+        ("gcp --project acme-prod", &got_gc),
     ] {
-        let script: String = convert(&d, to)
-            .lines()
-            .filter(|l| l.contains(grep))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let script = convert(&d, to);
         let status = std::process::Command::new("sh")
             .arg("-c")
             .arg(&script)
