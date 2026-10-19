@@ -8,10 +8,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.9] - 2026-10-20
+
 The patch for `evnx convert` (package R-convert): the names a target needs are
 flags instead of placeholders, the gcp script updates as well as creates, a
 format's own renaming can no longer merge two variables in silence, and
-filters use the same globs as `migrate`.
+filters use the same globs as `migrate`. And, in every command, a yes/no
+question shows the key you press before Enter, and one Enter answers one
+question (I-264, I-265).
 
 ⚠️ **Scripts that run `evnx convert`:**
 
@@ -34,6 +38,10 @@ filters use the same globs as `migrate`.
 - An unknown `--transform` is exit 2 listing the modes; it was ignored (I-090).
 - `--prefix` must be letters, digits and `_`, not starting with a digit (I-263).
 - Errors no longer start with `Convert command failed:` (I-091).
+
+⚠️ **Scripts that answer evnx's yes/no questions through a pty or `expect`:**
+every question now waits for Enter after `y` or `n`. Twelve of them (in `sync`,
+`restore`, `cloud`, `auth` and `vault`) took the first key alone (I-265).
 
 ### convert
 
