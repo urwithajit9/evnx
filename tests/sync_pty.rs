@@ -90,3 +90,36 @@ fn t_i113_new_template_actual_values_refuses_credentials() {
     );
     assert!(out.contains("[AUDIT]"), "{out}");
 }
+
+/// T-SYNC-43, I-126 (O-4): the comment describes the variables, so it goes
+/// above them — it was appended after the block, in a second write.
+#[test]
+fn t_i126_comment_is_written_before_its_variables() {
+    let p = Project::new().env("A=1\nNEW_ONE=1\n").example("A=\n");
+    let mut s = Pty::spawn(p.path(), &["sync"]);
+    s.wait_for("Add these to .env.example?");
+    s.press(&[ENTER]);
+    s.wait_for("Add a comment explaining these variables?");
+    s.wait_for("[Y/n]");
+    s.wait_for_echo_off();
+    s.press(&["y", ENTER]);
+    s.wait_for("Comment");
+    s.type_line("Team vars");
+    let (out, code) = s.finish();
+    assert_eq!(code, 0, "{out}");
+    let example = p.read(".env.example");
+    let comment = example.find("# Team vars").expect(&example);
+    let var = example.find("NEW_ONE=").expect(&example);
+    assert!(comment < var, "comment above its variables:\n{example}");
+}
+
+/// DEC-S9, DEC-S18: with `CI` set, sync does not ask even at a terminal.
+#[test]
+fn t_i124_ci_set_skips_the_prompt_at_a_terminal() {
+    let p = Project::new().env("A=1\nNEW_ONE=1\n").example("A=\n");
+    let s = Pty::spawn_with(p.path(), &["sync"], &[("CI", "1")]);
+    let (out, code) = s.finish();
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("Add these to"), "no prompt:\n{out}");
+    assert!(p.read(".env.example").contains("NEW_ONE=YOUR_VALUE_HERE"));
+}

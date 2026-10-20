@@ -13,20 +13,6 @@ use evnx::commands;
 use evnx::core::converter::KeyTransform;
 use evnx::core::verdict::{self, Stage};
 
-/// `[sync] naming_policy` arrives as a string; map it to the enum clap parses.
-///
-/// An unrecognised value yields `None`, so it falls through to the built-in
-/// default — and `core::config` has already warned that the key is not
-/// understood, so it is reported rather than silently ignored.
-fn parse_naming_policy(value: &str) -> Option<evnx::cli::NamingPolicy> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "warn" => Some(evnx::cli::NamingPolicy::Warn),
-        "error" => Some(evnx::cli::NamingPolicy::Error),
-        "ignore" => Some(evnx::cli::NamingPolicy::Ignore),
-        _ => None,
-    }
-}
-
 /// Resolve which `.env.<name>` a command operates on, or exit 2.
 ///
 /// ⚠️ **Not `?`**, for the same reason `config::load` below is not. A
@@ -398,34 +384,43 @@ fn main() -> Result<()> {
         })
         .map(verdict::finish),
 
-        Commands::Sync { args } => commands::sync::run(
-            resolve_env(
-                Path::new("."),
-                args.env.as_deref(),
-                args.env_name.as_deref(),
-                cfg.defaults.env_name.as_deref(),
-            ),
-            cfg.example_path(args.example.clone()),
-            args.direction,
-            args.placeholder,
-            cli.verbose,
-            args.dry_run,
-            args.force,
-            args.check,
-            args.format.clone(),
-            args.template_config.clone(),
-            evnx::core::config::pick(
-                args.naming_policy,
-                cfg.sync
-                    .naming_policy
-                    .as_deref()
-                    .and_then(parse_naming_policy),
-                evnx::cli::NamingPolicy::Warn,
-            ),
-            cfg.vars.clone(),
-            args.skip_without_env,
-        )
-        .map(verdict::finish),
+        // ⚠️ `[sync] naming_policy` is checked even when the flag overrides it,
+        // as `[validate] fail_on` is (I-038, I-121): a typo in the file is not
+        // hidden by a flag that happens to be passed today.
+        Commands::Sync { args } => cfg
+            .sync
+            .naming_policy
+            .as_deref()
+            .map(evnx::cli::NamingPolicy::from_config)
+            .transpose()
+            .with_context(|| format!("{} [sync] naming_policy", evnx::core::config::PROJECT_FILE))
+            .and_then(|configured| {
+                commands::sync::run(
+                    resolve_env(
+                        Path::new("."),
+                        args.env.as_deref(),
+                        args.env_name.as_deref(),
+                        cfg.defaults.env_name.as_deref(),
+                    ),
+                    cfg.example_path(args.example.clone()),
+                    args.direction,
+                    args.placeholder,
+                    cli.verbose,
+                    args.dry_run,
+                    args.force,
+                    args.check,
+                    args.format.clone(),
+                    args.template_config.clone(),
+                    evnx::core::config::pick(
+                        args.naming_policy,
+                        configured,
+                        evnx::cli::NamingPolicy::Warn,
+                    ),
+                    cfg.vars.clone(),
+                    args.skip_without_env,
+                )
+            })
+            .map(verdict::finish),
 
         // Commands::Template { input, output, env } => {
         //     commands::template::run(input, output, env, cli.verbose)

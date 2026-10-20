@@ -11,10 +11,16 @@ $ evnx sync --check --format json
     "NEW_FEATURE",
     "stripe_key"
   ],
+  "template_only": [
+    "REDIS_URL"
+  ],
   "summary": {
-    "missing": 2
+    "missing": 2,
+    "template_only": 1
   }
 }
+[stderr]
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
 [exit 1]
   ok: json report: missing keys, sorted (exit 1)
 
@@ -46,15 +52,35 @@ For more information, try '--help'.
   ok: json needs --check (clap error) (exit 2)
 
 $ evnx sync --check --env t.env --example t.example
-✓ .env.example is up to date
+
+┌─ Only in t.example ──────────────────────────────────────────────────────────┐
+│ Found 1 variable in t.example that t.env does not have:                      │
+│   • ONLY_IN_TEMPLATE                                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+
 [stderr]
 
   evnx sync  t.env ↔ t.example  (forward)
 
-! t.env has permissive permissions (0o644). Consider: chmod 600 t.env
-· Overly permissive .env files may expose secrets to other users
+! t.env is readable by other users (mode 644)
+     →  chmod 600 t.env
+  Docs: https://docs.evnx.dev/cli/commands/sync
+
+✗ Out of sync.
+  · 1 variable in t.example is not in t.env: remove it from t.example, or add it to t.env with `evnx sync --direction reverse --env t.env --example t.example`.
+[exit 1]
+  ok: FIXED I-119 (DEC-S3, DEC-S17): without --direction, a key only in the template is drift (exit 1)
+
+$ evnx sync --check --direction forward --env t.env --example t.example
+✓ t.example is up to date
+[stderr]
+
+  evnx sync  t.env ↔ t.example  (forward)
+
+! t.env is readable by other users (mode 644)
+     →  chmod 600 t.env
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
-  ok: KNOWN I-119: a key only in the template is never reported; decided: two-way, exit 1 (exit 0)
+  ok: DEC-S17: a named direction is one-way (CI, the pre-commit hook) (exit 0)
 
-================ summary: 4 ok, 0 mismatch   ================
+================ summary: 5 ok, 0 mismatch   ================

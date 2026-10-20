@@ -12,8 +12,8 @@ Next steps:
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: template created from .env (exit 0)
@@ -21,14 +21,14 @@ Next steps:
 # Generated from .env
 # Replace all placeholder values with real credentials
 
-SUPPORT_EMAIL=8000
-MONKEY_COUNT=YOUR_KEY_HERE
-BYPASS_CACHE=YOUR_PASSWORD_HERE
-GHOST_MODE=localhost
-DEBUG=true
-DB_URL=YOUR_URL_HERE
-MONGO_URL=YOUR_URL_HERE
+SUPPORT_EMAIL=YOUR_VALUE_HERE
+MONKEY_COUNT=YOUR_VALUE_HERE
+BYPASS_CACHE=YOUR_VALUE_HERE
+GHOST_MODE=YOUR_VALUE_HERE
+DEBUG=false
+DB_URL=postgres://user:password@localhost:5432/dbname
+MONGO_URL=mongodb://user:password@localhost:27017/dbname
 API_PORT=8000
-KNOWN I-120: SUPPORT_EMAIL=8000, MONKEY_COUNT=YOUR_KEY_HERE, BYPASS_CACHE=YOUR_PASSWORD_HERE, GHOST_MODE=localhost, DEBUG=true, postgres:// and mongodb:// = YOUR_URL_HERE; decided: whole-token matching, scheme list
+FIXED I-120 (DEC-S10): whole words (SUPPORT_EMAIL, MONKEY_COUNT, BYPASS_CACHE, GHOST_MODE get the default), DEBUG keeps false, postgres:// and mongodb:// get their own placeholders
 
 ================ summary: 1 ok, 0 mismatch   ================

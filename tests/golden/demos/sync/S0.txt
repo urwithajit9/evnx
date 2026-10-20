@@ -8,23 +8,30 @@ evnx <version>
 $ evnx sync
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
-│ Found 2 variable(s) in .env missing from .env.example:                       │
+│ Found 2 variables in .env missing from .env.example:                         │
 │   • NEW_FEATURE                                                              │
 │   • stripe_key                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
 
+
+┌─ Only in .env.example ───────────────────────────────────────────────────────┐
+│ Found 1 variable in .env.example that .env does not have:                    │
+│   • REDIS_URL                                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+· sync only adds: remove it from .env.example by hand if it is stale, or add it to .env with `evnx sync --direction reverse`
+· no terminal: adding with placeholder values
+✓ Added 2 variables to .env.example
 [stderr]
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
-Error: IO error: not a terminal: not a terminal
-
-No verdict: evnx did not finish. This is not a clean result.
-[exit 2]
-  ok: drift but no terminal: 'not a terminal' error (KNOWN I-124; decided: auto-placeholder) (exit 2)
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: FIXED I-124 (DEC-S9): drift and no terminal: placeholders, and it says so (exit 0)
 
 $ evnx sync --env nope.env
 
@@ -35,23 +42,23 @@ $ evnx sync --env nope.env
 │                                                                              │
 │ $ evnx init                                                                  │
 │                                                                              │
-│ Or if you have an existing .env file, place it in this directory and try ... │
+│ Or if you have an existing nope.env file, place it in this directory and ... │
 └──────────────────────────────────────────────────────────────────────────────┘
 
 
 Next steps:
   1. Run 'evnx init' to set up a new project
-  2. Or copy your existing .env file to this directory
+  2. Or copy your existing nope.env file to this directory
   3. Then run 'evnx sync' again
 [stderr]
 
   evnx sync  nope.env ↔ .env.example  (forward)
 
-✗ File not found: .env
-Error: .env file not found - run 'evnx init' to get started
+✗ File not found: nope.env
+Error: nope.env not found - run 'evnx init' to get started
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: missing .env: exit 2 (KNOWN I-125: message names .env, not nope.env) (exit 2)
+  ok: missing .env: exit 2 (FIXED I-125: the message names nope.env) (exit 2)
 
 ================ summary: 2 ok, 0 mismatch   ================

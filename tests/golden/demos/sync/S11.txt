@@ -6,13 +6,14 @@ $ evnx sync --check --env empty.env
 
   evnx sync  empty.env ↔ .env.example  (forward)
 
-! empty.env has permissive permissions (0o644). Consider: chmod 600 empty.env
-· Overly permissive .env files may expose secrets to other users
-! empty.env has no variables, while .env.example has 4. Nothing was copied.
-· If that is unexpected, check you are in the right directory. To fill empty.env from the template instead, run `evnx sync --direction reverse`.
-  Docs: https://docs.evnx.dev/cli/commands/sync
-[exit 0]
-  ok: KNOWN I-127: empty source, full template: warning but exit 0; decided: exit 2 under --check (exit 0)
+! empty.env is readable by other users (mode 644)
+     →  chmod 600 empty.env
+Error: empty.env has no variables, while .env.example has 4: evnx could not verify the pair.
+  An empty empty.env beside a populated template is far more likely a mistake — a truncated file, the wrong directory, a failed secret fetch — than a pair in step.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-127 (DEC-S14): empty source, full template: no verdict under --check (exit 2)
 
 $ evnx sync --check --direction reverse --env nope.env
 · nope.env not found, creating from .env.example
@@ -34,16 +35,28 @@ Target: nope.env (action: Add)
 ! Replace placeholder values with real credentials!
   Docs: https://docs.evnx.dev/cli/commands/sync
 
-✗ Out of sync. Run `evnx sync --direction reverse` and commit the result.
+✗ Out of sync.
+  · 4 variables are missing from nope.env: run `evnx sync --direction reverse --env nope.env` to add them to nope.env.
 [exit 1]
   ok: reverse, .env missing, pretty: out of sync (it would create it) (exit 1)
 
 $ evnx sync --check --format json --direction reverse --env nope.env
-[stderr]
-Error: Failed to parse nope.env: nope.env does not exist
-
-No verdict: evnx did not finish. This is not a clean result.
-[exit 2]
-  ok: KNOWN I-117: same inputs, json says exit 2; decided: one drift computation (exit 2)
+{
+  "in_sync": false,
+  "direction": "reverse",
+  "env": "nope.env",
+  "example": ".env.example",
+  "missing": [
+    "DATABASE_URL",
+    "API_SECRET",
+    "API_PORT",
+    "REDIS_URL"
+  ],
+  "summary": {
+    "missing": 4
+  }
+}
+[exit 1]
+  ok: FIXED I-117: one drift computation: json says 1 as well, every template name missing (exit 1)
 
 ================ summary: 3 ok, 0 mismatch   ================

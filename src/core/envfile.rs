@@ -84,6 +84,20 @@ pub fn count_vars(content: &str) -> Option<usize> {
     reader().parse_content(content).ok().map(|vars| vars.len())
 }
 
+/// The names in `a` that `b` does not have, in `a`'s order.
+///
+/// One answer for "what is on one side only" (R-sync, 0.10.12). `sync`
+/// computed it four times — forward, reverse, the JSON report, and the check
+/// with no `.env` — and the JSON copy drifted from the others (I-117); `diff`
+/// computed its `missing` and `extra` the same way. Source order, never hash
+/// order: `sync` writes this order into a committed file.
+pub fn only_in<V, W>(
+    a: &indexmap::IndexMap<String, V>,
+    b: &indexmap::IndexMap<String, W>,
+) -> Vec<String> {
+    a.keys().filter(|k| !b.contains_key(*k)).cloned().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +193,19 @@ mod tests {
     fn references_do_not_decide() {
         assert!(is_dotenv("A=$B\nB=$A\n"));
         assert!(is_dotenv("A=${MISSING}\n"));
+    }
+
+    #[test]
+    fn only_in_keeps_the_first_maps_order() {
+        let a: indexmap::IndexMap<String, &str> = [("Z", "1"), ("A", "2"), ("M", "3")]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect();
+        let b: indexmap::IndexMap<String, &str> = [("A", "x")]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect();
+        assert_eq!(only_in(&a, &b), ["Z", "M"]);
+        assert!(only_in(&b, &a).is_empty());
     }
 }

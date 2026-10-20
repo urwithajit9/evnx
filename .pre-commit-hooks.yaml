@@ -59,10 +59,15 @@
 # `--skip-without-env` lets a fresh clone commit: with no `.env` and no
 # `[vars]` spec there is nothing to compare, and the hook says it skipped. A
 # spec, when there is one, is still checked (DEC-S4).
+#
+# `--direction forward` makes the check one-way (DEC-S17): only names .env has
+# and the template lacks block the commit. Without it `--check` also counts
+# names only the template has, which is the right local check but would block
+# a teammate whose .env has not caught up with the template yet.
 - id: evnx-sync
   name: evnx — .env.example up to date
   description: Fail the commit when .env has variables .env.example does not declare (skipped with no .env)
-  entry: evnx sync --check --skip-without-env
+  entry: evnx sync --check --direction forward --skip-without-env
   language: rust
   pass_filenames: false
   stages: [pre-commit]

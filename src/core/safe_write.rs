@@ -406,21 +406,21 @@ pub fn refuse_same_file(output: &str, what: &str, input: &str) -> Result<()> {
 /// symlink (DEC-S6), and that a file holding secrets is readable by others
 /// (DEC-G6). Commands print their own success line.
 pub fn report(w: &Written) {
-    use crate::utils::ui;
+    report_link(w);
+    if let Some(m) = w.loose_mode {
+        permissions::readable_warning(&w.path, m, Some("evnx keeps the mode you set"));
+    }
+}
+
+/// The symlink half of [`report`], for a command that has already warned about
+/// the file's mode before writing it (`sync`, I-276).
+pub fn report_link(w: &Written) {
     if w.through_link {
-        ui::info(format!(
+        crate::utils::ui::info(format!(
             "wrote through {} -> {}",
             w.path.display(),
             w.target.display()
         ));
-    }
-    if let Some(m) = w.loose_mode {
-        ui::warning(format!(
-            "{} is readable by other users (mode {:o}); evnx keeps the mode you set",
-            w.path.display(),
-            m
-        ));
-        ui::warning_detail(format!("     →  {}", permissions::chmod_hint(&w.path)));
     }
 }
 

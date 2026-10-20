@@ -131,6 +131,21 @@ fn lenient_name(key: &str) -> bool {
         || matches!(upper.as_str(), "KEY" | "SECRET" | "PASSWORD")
 }
 
+/// Whether `key` has one of `words` as a **whole word**: the name is split at
+/// every character that is not a letter or digit, and case is ignored.
+///
+/// For choosing a placeholder by name (I-120, DEC-S10): `SUPPORT_EMAIL` is not
+/// a `PORT`, `MONKEY_COUNT` not a `KEY`, `BYPASS_CACHE` not a `PASS`,
+/// `GHOST_MODE` not a `HOST` — all four were, by substring.
+///
+/// ⚠️ Not a secret test. [`is_secret_name`]'s Lenient level stays a substring
+/// match on purpose: there a miss prints a credential, and a false hit only
+/// masks a value. A placeholder has neither cost, so it can be exact.
+pub fn has_word(key: &str, words: &[&str]) -> bool {
+    key.split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|w| words.iter().any(|x| w.eq_ignore_ascii_case(x)))
+}
+
 /// Secrets only the application holds: signing keys and session secrets for
 /// which any strong random value works, because nothing outside the app has
 /// to know it (DEC-VA4). Exact names, upper case.
@@ -665,6 +680,16 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn has_word_matches_whole_words_only() {
+        assert!(has_word("API_PORT", &["PORT"]));
+        assert!(has_word("port", &["PORT"]));
+        assert!(has_word("my-db.host", &["HOST"]));
+        assert!(!has_word("SUPPORT_EMAIL", &["PORT"]));
+        assert!(!has_word("MONKEY_COUNT", &["KEY"]));
+        assert!(!has_word("", &["KEY"]));
+    }
 
     #[test]
     fn secret_shaped_values() {

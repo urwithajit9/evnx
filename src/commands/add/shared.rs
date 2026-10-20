@@ -23,6 +23,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::schema::models::VarCollection;
+use crate::utils::string::count;
 use crate::utils::ui;
 use crate::utils::ui::glyph;
 
@@ -83,15 +84,6 @@ pub fn kind_hint(c: &crate::schema::component::Component) -> String {
         format!("{what} component")
     };
     format!("{} is {what}; adding it.", c.id)
-}
-
-/// `1 variable`, `2 variables`: a count with its noun (I-022).
-pub fn count(n: usize, noun: &str) -> String {
-    if n == 1 {
-        format!("1 {noun}")
-    } else {
-        format!("{n} {noun}s")
-    }
 }
 
 /// A name `.env.example` already has, with a different value than the one

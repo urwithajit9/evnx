@@ -190,22 +190,9 @@ fn compute_diff(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
-    let left_keys: HashSet<_> = left_filtered.keys().cloned().collect();
-    let right_keys: HashSet<_> = right_filtered.keys().cloned().collect();
-
-    //  Preserve order: iterate through right_filtered for "missing"
-    let missing: Vec<String> = right_filtered
-        .keys()
-        .filter(|k| !left_keys.contains(*k))
-        .cloned()
-        .collect();
-
-    //  Preserve order: iterate through left_filtered for "extra"
-    let extra: Vec<String> = left_filtered
-        .keys()
-        .filter(|k| !right_keys.contains(*k))
-        .cloned()
-        .collect();
+    // In each side's own order (`core::envfile::only_in`, shared with sync).
+    let missing = crate::core::envfile::only_in(&right_filtered, &left_filtered);
+    let extra = crate::core::envfile::only_in(&left_filtered, &right_filtered);
 
     let mut different = Vec::new();
     for key in left_filtered.keys() {

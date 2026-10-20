@@ -4,11 +4,18 @@
 $ evnx sync -n
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
-│ Found 2 variable(s) in .env missing from .env.example:                       │
+│ Found 2 variables in .env missing from .env.example:                         │
 │   • NEW_FEATURE                                                              │
 │   • stripe_key                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
 
+
+┌─ Only in .env.example ───────────────────────────────────────────────────────┐
+│ Found 1 variable in .env.example that .env does not have:                    │
+│   • REDIS_URL                                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+· sync only adds: remove it from .env.example by hand if it is stale, or add it to .env with `evnx sync --direction reverse`
 
 Preview:
 Target: .env.example (action: Add)
@@ -21,8 +28,8 @@ Target: .env.example (action: Add)
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
@@ -33,8 +40,8 @@ $ evnx sync -n --naming-policy error
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
 Error: Non-standard variable name 'stripe_key'. Expected: UPPERCASE_WITH_UNDERSCORES
 
 No verdict: evnx did not finish. This is not a clean result.
@@ -46,8 +53,8 @@ $ evnx sync --check --naming-policy error
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
 Error: Non-standard variable name 'stripe_key'. Expected: UPPERCASE_WITH_UNDERSCORES
 
 No verdict: evnx did not finish. This is not a clean result.
@@ -57,11 +64,18 @@ No verdict: evnx did not finish. This is not a clean result.
 $ evnx sync -n --naming-policy ignore
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
-│ Found 2 variable(s) in .env missing from .env.example:                       │
+│ Found 2 variables in .env missing from .env.example:                         │
 │   • NEW_FEATURE                                                              │
 │   • stripe_key                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
 
+
+┌─ Only in .env.example ───────────────────────────────────────────────────────┐
+│ Found 1 variable in .env.example that .env does not have:                    │
+│   • REDIS_URL                                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+· sync only adds: remove it from .env.example by hand if it is stale, or add it to .env with `evnx sync --direction reverse`
 
 Preview:
 Target: .env.example (action: Add)
@@ -74,8 +88,8 @@ Target: .env.example (action: Add)
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: ignore: silent (exit 0)

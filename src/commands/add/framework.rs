@@ -4,8 +4,9 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::path::Path;
 
-use super::shared::{confirm_and_apply, count, kind_hint, Flow, Mode, Outcome};
+use super::shared::{confirm_and_apply, kind_hint, Flow, Mode, Outcome};
 use crate::schema::{component, formatter, loader};
+use crate::utils::string::count;
 use crate::utils::ui::info;
 
 /// Handle framework addition.

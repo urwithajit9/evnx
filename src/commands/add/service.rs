@@ -1,8 +1,9 @@
 use anyhow::Result;
 use std::path::Path;
 
-use super::shared::{confirm_and_apply, count, kind_hint, Flow, Mode, Outcome};
+use super::shared::{confirm_and_apply, kind_hint, Flow, Mode, Outcome};
 use crate::schema::{component, formatter};
+use crate::utils::string::count;
 use crate::utils::ui::{info, print_header, print_preview_header};
 
 pub fn handle(service_id: Option<&str>, path: &str, mode: &Mode) -> Result<Outcome> {

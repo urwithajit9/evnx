@@ -4,7 +4,7 @@
 $ evnx sync -f
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
-│ Found 5 variable(s) in .env missing from .env.example:                       │
+│ Found 5 variables in .env missing from .env.example:                         │
 │   • DATABASE_URL                                                             │
 │   • API_SECRET                                                               │
 │   • API_PORT                                                                 │
@@ -12,6 +12,13 @@ $ evnx sync -f
 │   • stripe_key                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
 
+
+┌─ Only in .env.example ───────────────────────────────────────────────────────┐
+│ Found 1 variable in .env.example that .env does not have:                    │
+│   • KEEP                                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+· sync only adds: remove it from .env.example by hand if it is stale, or add it to .env with `evnx sync --direction reverse`
 · Force mode: using placeholder values and skipping prompts
 · wrote through .env.example -> shared/real.example
 ✓ Added 5 variables to .env.example
@@ -19,8 +26,8 @@ $ evnx sync -f
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
@@ -31,7 +38,7 @@ still a symlink
 KEEP=1
 
 # Synced from .env
-DATABASE_URL=YOUR_URL_HERE
+DATABASE_URL=postgres://user:password@localhost:5432/dbname
 API_SECRET=YOUR_KEY_HERE
 API_PORT=8000
 NEW_FEATURE=YOUR_VALUE_HERE
@@ -42,19 +49,26 @@ I-122 fixed (DEC-S6): the link stays and its target is written
 $ evnx sync -f
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
-│ Found 2 variable(s) in .env missing from .env.example:                       │
+│ Found 2 variables in .env missing from .env.example:                         │
 │   • NEW_FEATURE                                                              │
 │   • stripe_key                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
 
+
+┌─ Only in .env.example ───────────────────────────────────────────────────────┐
+│ Found 1 variable in .env.example that .env does not have:                    │
+│   • REDIS_URL                                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+· sync only adds: remove it from .env.example by hand if it is stale, or add it to .env with `evnx sync --direction reverse`
 · Force mode: using placeholder values and skipping prompts
 ✓ Added 2 variables to .env.example
 [stderr]
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]

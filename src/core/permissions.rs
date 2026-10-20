@@ -78,6 +78,35 @@ pub fn chmod_hint(path: &Path) -> String {
     format!("chmod 600 {}", path.display())
 }
 
+/// Warn that `path` is readable by other users, with the `chmod` that fixes
+/// it. `note` ends the first line (`safe_write::report` adds "evnx keeps the
+/// mode you set"). One wording for every command (I-276).
+pub fn readable_warning(path: &Path, mode: u32, note: Option<&str>) {
+    use crate::utils::ui;
+    ui::warning(format!(
+        "{} is readable by other users (mode {:o}){}",
+        path.display(),
+        mode,
+        note.map(|n| format!("; {n}")).unwrap_or_default()
+    ));
+    ui::warning_detail(format!("     →  {}", chmod_hint(path)));
+}
+
+/// [`readable_warning`] for `path` when it exists and group or others can
+/// read it. Returns whether it warned. Nothing on Windows.
+///
+/// ⚠️ `sync` had its own check, worded `(0o644)`, and then `safe_write`
+/// warned again after the write — two warnings for one file (I-126, I-276).
+pub fn warn_if_readable(path: &Path) -> bool {
+    match mode(path) {
+        Some(m) if MODES_APPLY && m & 0o077 != 0 => {
+            readable_warning(path, m, None);
+            true
+        }
+        _ => false,
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;

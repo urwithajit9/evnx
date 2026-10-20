@@ -24,22 +24,29 @@ For more information, try '--help'.
 $ env CI=1 evnx sync
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
-│ Found 2 variable(s) in .env missing from .env.example:                       │
+│ Found 2 variables in .env missing from .env.example:                         │
 │   • NEW_FEATURE                                                              │
 │   • stripe_key                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
 
+
+┌─ Only in .env.example ───────────────────────────────────────────────────────┐
+│ Found 1 variable in .env.example that .env does not have:                    │
+│   • REDIS_URL                                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+· sync only adds: remove it from .env.example by hand if it is stale, or add it to .env with `evnx sync --direction reverse`
+· CI is set: adding with placeholder values
+✓ Added 2 variables to .env.example
 [stderr]
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
-Error: IO error: not a terminal: not a terminal
-
-No verdict: evnx did not finish. This is not a clean result.
-[exit 2]
-  ok: D-74: the docs say CI=1 acts like --force; it does not (decided: honour CI=1) (exit 2)
+  Docs: https://docs.evnx.dev/cli/commands/sync
+[exit 0]
+  ok: FIXED D-74 (DEC-S9, DEC-S18): CI=1 acts like --force, and says so (exit 0)
 
 ================ summary: 3 ok, 0 mismatch   ================

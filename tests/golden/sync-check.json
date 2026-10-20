@@ -6,7 +6,9 @@
   "missing": [
     "EXTRA"
   ],
+  "template_only": [],
   "summary": {
-    "missing": 1
+    "missing": 1,
+    "template_only": 0
   }
 }

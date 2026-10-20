@@ -4,19 +4,17 @@
 $ evnx sync -f --direction reverse
 
 ┌─ Missing Variables ──────────────────────────────────────────────────────────┐
-│ Found 1 variable(s) in .env.example missing from .env:                       │
+│ Found 1 variable missing from .env:                                          │
 │   • REDIS_URL                                                                │
 └──────────────────────────────────────────────────────────────────────────────┘
 
 · Force mode: adding the template's values (placeholders where it has none), skipping prompts
-✓ Added 1 variables to .env
+✓ Added 1 variable to .env
 [stderr]
 
   evnx sync  .env ↔ .env.example  (reverse)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
-! .env is readable by other users (mode 644); evnx keeps the mode you set
+! .env is readable by other users (mode 644)
      →  chmod 600 .env
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
@@ -38,8 +36,7 @@ $ evnx sync -f --direction reverse
 
 Next steps:
   1. Edit .env and replace placeholder values with real credentials
-  2. Run 'chmod 600 .env' to secure the file
-  3. Never commit .env to version control
+  2. Never commit .env to version control
 [stderr]
 
   evnx sync  .env ↔ .env.example  (reverse)
@@ -53,6 +50,6 @@ DATABASE_URL=postgres://user:pass@localhost:5432/app
 API_SECRET=
 API_PORT=8080
 REDIS_URL=redis://localhost:6379
-KNOWN I-129: a template header such as '# Generated from .env' would be copied into the new .env
+FIXED I-129 (DEC-S20): a template's '# Generated from .env' header is not copied into the new .env
 
 ================ summary: 2 ok, 0 mismatch   ================

@@ -120,9 +120,37 @@ pub fn interactive() -> bool {
     std::io::stdin().is_terminal()
 }
 
+/// Whether the run is in a CI job: `CI` is set to anything but empty, `0` or
+/// `false` (any case). GitHub Actions, GitLab CI, CircleCI, Buildkite and
+/// Travis all set `CI=true`.
+///
+/// ⚠️ **Read by `sync` only** (DEC-S9, DEC-S18), where `CI=1` has been
+/// documented as "non-interactive, like `--force`" since before 0.10 and was
+/// never implemented (D-74). It is not folded into [`interactive`]: that would
+/// stop every other command's prompts under `CI=1` even at a terminal, a
+/// change no other command's review has decided.
+pub fn ci() -> bool {
+    std::env::var("CI").is_ok_and(|v| is_ci_value(&v))
+}
+
+fn is_ci_value(v: &str) -> bool {
+    let v = v.trim();
+    !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ci_is_set_by_any_value_but_empty_zero_or_false() {
+        for v in ["true", "1", "yes", "TRUE"] {
+            assert!(is_ci_value(v), "{v}");
+        }
+        for v in ["", " ", "0", "false", "False"] {
+            assert!(!is_ci_value(v), "{v:?}");
+        }
+    }
 
     #[test]
     fn only_a_closed_pipe_is_treated_as_quiet() {

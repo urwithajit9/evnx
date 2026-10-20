@@ -20,9 +20,10 @@ use anyhow::{bail, Result};
 use dialoguer::{Input, Password, Select};
 use std::path::Path;
 
-use super::shared::{aborted, confirm_and_apply, count, Flow, Mode, Outcome};
+use super::shared::{aborted, confirm_and_apply, Flow, Mode, Outcome};
 use crate::schema::models::{VarCollection, VarMetadata, VarSource};
 use crate::utils::prompt::{require_terminal, require_terminal_or, yes_no};
+use crate::utils::string::count;
 use crate::utils::ui::{info, print_header, print_preview_header};
 
 /// The categories a custom variable can be filed under.
@@ -455,10 +456,10 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
 /// What `.env.example` holds for `name`: the same placeholder `sync` writes
 /// (`YOUR_KEY_HERE`, …), never the value typed (I-245, DEC-U8-1).
 fn placeholder_for(name: &str) -> String {
-    crate::commands::sync::placeholder::generate_placeholder(
+    crate::core::placeholder::generate_placeholder(
         name,
         None,
-        &crate::commands::sync::PlaceholderConfig::default(),
+        &crate::core::placeholder::PlaceholderConfig::default(),
     )
 }
 

@@ -92,7 +92,7 @@ fn test_forward_sync_dry_run_adds_preview() -> Result<()> {
     let result = sync::run(
         ".env".to_string(),
         ".env.example".to_string(),
-        SyncDirection::Forward,
+        Some(SyncDirection::Forward),
         true,
         false,
         true,
@@ -141,7 +141,7 @@ fn dry_run_needs_no_terminal_forward() -> Result<()> {
     let result = sync::run(
         ".env".to_string(),
         ".env.example".to_string(),
-        SyncDirection::Forward,
+        Some(SyncDirection::Forward),
         true,
         false,
         true,  // dry_run
@@ -186,7 +186,7 @@ fn dry_run_needs_no_terminal_reverse() -> Result<()> {
     let result = sync::run(
         ".env".to_string(),
         ".env.example".to_string(),
-        SyncDirection::Reverse,
+        Some(SyncDirection::Reverse),
         true,
         false,
         true,  // dry_run
@@ -229,7 +229,7 @@ fn test_reverse_sync_creates_env_with_placeholders() -> Result<()> {
     let result = sync::run(
         ".env".to_string(),
         ".env.example".to_string(),
-        SyncDirection::Reverse,
+        Some(SyncDirection::Reverse),
         true,
         false,
         false,
@@ -272,7 +272,7 @@ fn test_forward_sync_security_warning_with_actual_values() -> Result<()> {
     let result = sync::run(
         ".env".to_string(),
         ".env.example".to_string(),
-        SyncDirection::Forward,
+        Some(SyncDirection::Forward),
         false,
         false,
         false,
@@ -319,7 +319,7 @@ fn test_sync_with_custom_placeholder_config() -> Result<()> {
     let result = sync::run(
         ".env".to_string(),
         ".env.example".to_string(),
-        SyncDirection::Forward,
+        Some(SyncDirection::Forward),
         true,
         false,
         false,
@@ -360,7 +360,7 @@ fn test_forward_sync_missing_env_file() -> Result<()> {
     let result = sync::run(
         ".env".to_string(),
         ".env.example".to_string(),
-        SyncDirection::Forward,
+        Some(SyncDirection::Forward),
         true,
         false,
         false,
@@ -396,7 +396,7 @@ fn test_reverse_sync_missing_example_file() -> Result<()> {
     let result = sync::run(
         ".env".to_string(),
         ".env.example".to_string(),
-        SyncDirection::Reverse,
+        Some(SyncDirection::Reverse),
         true,
         false,
         false,

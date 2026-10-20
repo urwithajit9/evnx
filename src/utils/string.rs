@@ -63,6 +63,20 @@ pub fn pluralize(count: usize, singular: &str, plural: &str) -> String {
     }
 }
 
+/// `1 variable`, `2 variables`: a count with its noun, plural by `s` (I-022).
+///
+/// Moved from `add` in 0.10.12 so `sync` stops writing "Added 1 variables"
+/// (I-126). A noun whose plural is not `+s` uses [`pluralize`].
+///
+/// ```
+/// use evnx::utils::string::count;
+/// assert_eq!(count(1, "variable"), "1 variable");
+/// assert_eq!(count(0, "variable"), "0 variables");
+/// ```
+pub fn count(n: usize, noun: &str) -> String {
+    pluralize(n, noun, &format!("{noun}s"))
+}
+
 /// "Did you mean": the candidates within a small edit distance of `input`,
 /// closest first, at most three. `candidates` pairs a name to compare with the id to suggest (they
 /// differ for an alias).

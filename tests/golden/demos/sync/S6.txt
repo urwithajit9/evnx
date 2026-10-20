@@ -4,11 +4,18 @@
 $ evnx sync -n --template-config tc.json
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
-│ Found 2 variable(s) in .env missing from .env.example:                       │
+│ Found 2 variables in .env missing from .env.example:                         │
 │   • NEW_FEATURE                                                              │
 │   • stripe_key                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
 
+
+┌─ Only in .env.example ───────────────────────────────────────────────────────┐
+│ Found 1 variable in .env.example that .env does not have:                    │
+│   • REDIS_URL                                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+· sync only adds: remove it from .env.example by hand if it is stale, or add it to .env with `evnx sync --direction reverse`
 
 Preview:
 Target: .env.example (action: Add)
@@ -21,8 +28,8 @@ Target: .env.example (action: Add)
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
@@ -33,8 +40,8 @@ $ evnx sync -n --template-config tc2.json
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
 Error: `allow_actual` would copy a real credential into .env.example, which is a committed file. Nothing was written.
 
   DATABASE_URL — Credentials in a connection string
@@ -61,58 +68,22 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: bad regex refused at load (exit 2)
 
 $ evnx sync -n --template-config tc4.json
-
-┌─ Variables to Add ───────────────────────────────────────────────────────────┐
-│ Found 2 variable(s) in .env missing from .env.example:                       │
-│   • NEW_FEATURE                                                              │
-│   • stripe_key                                                               │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-
-Preview:
-Target: .env.example (action: Add)
-
-  · NEW_FEATURE = YOUR_VALUE_HERE
-  · stripe_key = YOUR_KEY_HERE
-
-(dry-run: no files were modified)
 [stderr]
+Error: tc4.json has a key evnx does not read: `allow_actaul` (did you mean `allow_actual`?)
+  Accepted keys: $schema, description, patterns, default, allow_actual, naming_convention.
+  Nothing was written: a misspelt key would leave the setting it names off.
 
-  evnx sync  .env ↔ .env.example  (forward)
-
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
-! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
-  Docs: https://docs.evnx.dev/cli/commands/sync
-[exit 0]
-  ok: KNOWN I-121: misspelt key accepted and ignored (NEW_FEATURE stays YOUR_VALUE_HERE); decided: error, exit 2 (exit 0)
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-121 (DEC-S11): a misspelt key is refused, with the key it meant (exit 2)
 
 $ evnx sync -n
-
-┌─ Variables to Add ───────────────────────────────────────────────────────────┐
-│ Found 2 variable(s) in .env missing from .env.example:                       │
-│   • NEW_FEATURE                                                              │
-│   • stripe_key                                                               │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-
-Preview:
-Target: .env.example (action: Add)
-
-  · NEW_FEATURE = YOUR_VALUE_HERE
-  · stripe_key = YOUR_KEY_HERE
-
-(dry-run: no files were modified)
 [stderr]
   config    .evnx.toml
+Error: .evnx.toml [sync] naming_policy: unknown naming policy 'bogus' — expected one of: warn, error, ignore
 
-  evnx sync  .env ↔ .env.example  (forward)
-
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
-! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
-  Docs: https://docs.evnx.dev/cli/commands/sync
-[exit 0]
-  ok: KNOWN I-121: invalid [sync] naming_policy ignored; decided: error (exit 0)
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-121 (DEC-S11): an invalid [sync] naming_policy is refused, naming the values (exit 2)
 
 ================ summary: 5 ok, 0 mismatch   ================

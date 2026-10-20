@@ -4,18 +4,19 @@ use anyhow::{Context, Result};
 use colored::*;
 use dialoguer::{Input, MultiSelect, Select};
 use indexmap::IndexMap;
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::cli::{NamingPolicy, SyncDirection};
-use crate::core::{envfile, Parser};
+use crate::core::envfile::{self, only_in};
+use crate::core::placeholder::{generate_placeholder, is_generated_value, PlaceholderConfig};
+use crate::core::Parser;
 use crate::docs;
+use crate::utils::string::count;
 use crate::utils::ui;
 
-use super::models::{PlaceholderConfig, SyncAction, SyncPreview, VarChange};
-use super::placeholder::{generate_placeholder, is_generated_value};
-use super::security::{check_env_permissions, log_security_event, validate_var_name};
+use super::models::{SyncAction, SyncPreview, VarChange};
+use super::security::{log_security_event, validate_var_name};
 
 /// Write the env file sync manages: atomic, new files 0600, an existing file
 /// keeps its mode, a symlink is written through (DEC-S6, DEC-S7, core::safe_write).
@@ -23,10 +24,14 @@ use super::security::{check_env_permissions, log_security_event, validate_var_na
 /// ⚠️ This used to force 0600 on every file whose name started with `.env` and
 /// did not contain "example" — including a `.env` the user had set to 0640 —
 /// and the template came out 0600 only because the temp file did (I-123).
+///
+/// ⚠️ Only the symlink half of `safe_write::report`: a readable `.env` was
+/// already reported before the run, and a second warning after the write said
+/// the same thing in other words (I-276).
 fn write_env(path: &Path, content: &str) -> Result<()> {
     let written = crate::core::safe_write::write_private(path, content.as_bytes())
         .with_context(|| format!("Failed to write {}", path.display()))?;
-    crate::core::safe_write::report(&written);
+    crate::core::safe_write::report_link(&written);
     Ok(())
 }
 
@@ -47,7 +52,8 @@ fn write_template(path: &Path, content: &str) -> Result<()> {
 /// ⚠️ These were 37 hardcoded `".env"` / `".env.example"` literals spread across
 /// the module, which is why `sync` was the only command with **no** file flags
 /// at all — `.env.production` was simply unreachable, and there was nowhere to
-/// put a path even if you wanted one.
+/// put a path even if you wanted one. Messages named the literals for longer
+/// still: `--env nope.env` reported "File not found: .env" (I-125).
 #[derive(Debug, Clone)]
 pub(super) struct SyncPaths {
     pub env: PathBuf,
@@ -70,9 +76,15 @@ impl SyncPaths {
 pub(super) struct SyncCtx {
     pub paths: SyncPaths,
     pub direction: SyncDirection,
-    pub placeholder: bool,
+    /// No `--direction` was given (DEC-S17): forward, and `--check` also
+    /// counts names only the template has (DEC-S3). A named direction asks
+    /// one way, as CI and the pre-commit hook do.
+    pub two_way: bool,
     pub verbose: bool,
+    /// `--dry-run`, or `--check`, which implies it.
     pub dry_run: bool,
+    pub check: bool,
+    /// `--force`, or the deprecated `--placeholder` (DEC-S9).
     pub force: bool,
     pub template_config: Option<PathBuf>,
     pub naming_policy: NamingPolicy,
@@ -83,29 +95,237 @@ pub(super) struct SyncCtx {
     pub spec: crate::core::spec::Spec,
 }
 
+// ─────────────────────────────────────────────────────────────
+// The drift: one computation for every output (I-117)
+// ─────────────────────────────────────────────────────────────
+
+/// Where a name the target lacks is declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Origin {
+    /// The source file (`.env` forward, the template in reverse).
+    Source,
+    /// Only `[vars]` in `.evnx.toml`, as a required name (reverse).
+    Spec,
+}
+
+/// What differs between the two files, by name.
+pub(super) struct Drift {
+    /// Names the target lacks, in the source's order; in reverse, the
+    /// template's first, then names only the spec declares (sorted).
+    pub missing: Vec<(String, Origin)>,
+    /// Two-way only (DEC-S17): names only the template has.
+    pub template_only: Vec<String>,
+}
+
+impl Drift {
+    /// Whether `--check` reports drift (exit 1).
+    pub(super) fn out_of_step(&self) -> bool {
+        !self.missing.is_empty() || !self.template_only.is_empty()
+    }
+
+    fn names(&self) -> Vec<&String> {
+        self.missing.iter().map(|(k, _)| k).collect()
+    }
+
+    fn spec_names(&self) -> Vec<String> {
+        self.missing
+            .iter()
+            .filter(|(_, o)| *o == Origin::Spec)
+            .map(|(k, _)| k.clone())
+            .collect()
+    }
+}
+
+/// The two files as read, and the drift between them.
+pub(super) struct Loaded {
+    /// `None` when the file does not exist (reverse may create it).
+    pub env: Option<IndexMap<String, String>>,
+    /// `None` when the file does not exist (forward may create it).
+    pub example: Option<IndexMap<String, String>>,
+    pub drift: Drift,
+}
+
+/// The `--template-config` file, or the built-in rules. A file that does not
+/// load — bad JSON, an unknown key (I-121), a pattern that does not compile —
+/// is an error before anything is read or written.
+pub(super) fn load_config(ctx: &SyncCtx) -> Result<PlaceholderConfig> {
+    Ok(ctx
+        .template_config
+        .as_ref()
+        .map(PlaceholderConfig::from_path)
+        .transpose()?
+        .unwrap_or_default())
+}
+
+/// Read both files and work out what differs: the one computation behind the
+/// preview, the write, the pretty `--check` and the JSON report (I-117).
+///
+/// Refused here, before anything is printed or written:
+/// - a file that will not parse, or a missing source;
+/// - forward: a credential in `allow_actual` (`check_allow_actual`);
+/// - a name `--naming-policy error` refuses (I-116, DEC-S13);
+/// - under `--check`: an empty `.env` beside a populated template (I-127,
+///   DEC-S14) — far more likely a mistake than a steady state, so it is no
+///   verdict rather than a pass.
+///
+/// `pretty` prints the getting-started box before a missing-source error.
+pub(super) fn load(ctx: &SyncCtx, config: &PlaceholderConfig, pretty: bool) -> Result<Loaded> {
+    let p = &ctx.paths;
+    let parse = |path: &Path| -> Result<IndexMap<String, String>> {
+        Ok(Parser::default()
+            .parse_file(path)
+            .with_context(|| format!("Failed to parse {}", path.display()))?
+            .vars)
+    };
+    let empty = IndexMap::new();
+
+    let loaded = match ctx.direction {
+        SyncDirection::Forward => {
+            if !p.env.exists() {
+                if pretty {
+                    env_not_found(p);
+                }
+                anyhow::bail!("{} not found - run 'evnx init' to get started", p.env_str());
+            }
+            let env = parse(&p.env)?;
+            // Before anything is written, and before any of it is printed.
+            check_allow_actual(config, &env, p)?;
+            // ⚠️ "absent" and "will not parse" are different answers.
+            //
+            // This was a single `Err(_) =>` arm, so a `.env.example` that existed
+            // but was corrupt — half-written, bad encoding, an unreadable mode —
+            // was announced as ".env.example not found" and then **overwritten**
+            // by a plain `evnx sync`. The one file in the pair that is meant to
+            // be committed, replaced without a word because it could not be read.
+            let example = p.example.exists().then(|| parse(&p.example)).transpose()?;
+            let target = example.as_ref().unwrap_or(&empty);
+            if ctx.check && env.is_empty() && !target.is_empty() {
+                anyhow::bail!(
+                    "{env} has no variables, while {example} has {n}: evnx could not verify \
+                     the pair.\n  An empty {env} beside a populated template is far more \
+                     likely a mistake — a truncated file, the wrong directory, a failed \
+                     secret fetch — than a pair in step.",
+                    env = p.env_str(),
+                    example = p.example_str(),
+                    n = target.len()
+                );
+            }
+            Drift {
+                // ⚠️ Ordered by the source file, not by hash: `sync` writes this
+                // order into `.env.example`, and a per-process `HashSet` order
+                // gave two developers two different diffs of the same file.
+                missing: only_in(&env, target)
+                    .into_iter()
+                    .map(|k| (k, Origin::Source))
+                    .collect(),
+                template_only: if ctx.two_way {
+                    only_in(target, &env)
+                } else {
+                    Vec::new()
+                },
+            }
+            .into_loaded(Some(env), example)
+        }
+        SyncDirection::Reverse => {
+            if !p.example.exists() {
+                if pretty {
+                    example_not_found(p);
+                }
+                anyhow::bail!(
+                    "{} not found - run 'evnx init' or create it manually",
+                    p.example_str()
+                );
+            }
+            let example = parse(&p.example)?;
+            let env = p.env.exists().then(|| parse(&p.env)).transpose()?;
+            let target = env.as_ref().unwrap_or(&empty);
+            let mut missing: Vec<(String, Origin)> = only_in(&example, target)
+                .into_iter()
+                .map(|k| (k, Origin::Source))
+                .collect();
+            // ⚠️ The template is not the only thing that declares a variable.
+            //
+            // Before this, `evnx validate` would report a spec-declared variable
+            // as missing while `evnx sync --direction reverse` said ".env is up to
+            // date" — two commands contradicting each other about the same
+            // variable. Only variables that are **required** and **apply to this
+            // file** are added: an optional one being absent is permitted by the
+            // contract. A new `.env` gets them too (I-275).
+            let env_path = p.env_str();
+            let label = crate::core::env_name::name_of(&env_path);
+            missing.extend(
+                crate::core::spec::missing_required(
+                    &ctx.spec,
+                    |k| example.contains_key(k) || target.contains_key(k),
+                    label,
+                )
+                .into_iter()
+                .map(|k| (k.to_string(), Origin::Spec)),
+            );
+            Drift {
+                missing,
+                template_only: Vec::new(),
+            }
+            .into_loaded(env, Some(example))
+        }
+    };
+
+    for (key, _) in &loaded.drift.missing {
+        // ⚠️ An `Err`, not `process::exit(1)` (I-116, DEC-S13). A refusal
+        // is "could not run", which is 2; under `--check`, 1 means drift,
+        // so a bad name read as an out-of-date template.
+        validate_var_name(key, ctx.naming_policy).map_err(|msg| anyhow::anyhow!(msg))?;
+    }
+    Ok(loaded)
+}
+
+impl Drift {
+    fn into_loaded(
+        self,
+        env: Option<IndexMap<String, String>>,
+        example: Option<IndexMap<String, String>>,
+    ) -> Loaded {
+        Loaded {
+            env,
+            example,
+            drift: self,
+        }
+    }
+}
+
+/// Why sync will not ask: `None` when it may (DEC-S9, DEC-S18).
+///
+/// ⚠️ Without a terminal every prompt used to fail with "IO error: not a
+/// terminal: not a terminal", naming neither `--force` nor `--dry-run`, and
+/// `CI=1` — documented as "like `--force`" — was never read (I-124, D-74).
+fn no_prompt_reason() -> Option<&'static str> {
+    if crate::utils::term::ci() {
+        Some("CI is set")
+    } else if !crate::utils::term::interactive() {
+        Some("no terminal")
+    } else {
+        None
+    }
+}
+
 /// Main execution entry point (called from mod.rs).
 ///
-/// Returns whether the two files are **out of step** — `true` when variables are
-/// missing from the target, `false` when nothing needs doing. `--check` turns
-/// that into an exit code; every other mode ignores it.
-pub fn execute(ctx: SyncCtx) -> Result<bool> {
+/// Returns whether the two files are **out of step** — names missing from the
+/// target, or (two-way) names only the template has. `--check` turns that
+/// into an exit code; every other mode ignores it.
+pub fn execute(ctx: &SyncCtx) -> Result<bool> {
     if ctx.verbose {
         println!(
             "{}",
             format!(
-                "Running sync in verbose mode [direction={:?}, dry_run={}, force={}]",
-                ctx.direction, ctx.dry_run, ctx.force
+                "Running sync in verbose mode [direction={:?}, two_way={}, dry_run={}, force={}]",
+                ctx.direction, ctx.two_way, ctx.dry_run, ctx.force
             )
             .dimmed()
         );
     }
 
-    let config = ctx
-        .template_config
-        .as_ref()
-        .map(PlaceholderConfig::from_path)
-        .transpose()?
-        .unwrap_or_default();
+    let config = load_config(ctx)?;
 
     // ⚠️ The title is the command, not a sentence about it. `sync` was the one
     // command whose header did not start with `evnx …`, so in a CI log among
@@ -120,40 +340,158 @@ pub fn execute(ctx: SyncCtx) -> Result<bool> {
         )),
     );
 
-    check_env_permissions(&ctx.paths.env_str())?;
+    crate::core::permissions::warn_if_readable(&ctx.paths.env);
 
-    let result = match ctx.direction {
-        SyncDirection::Forward => sync_forward(
-            &ctx.paths,
-            ctx.placeholder,
-            ctx.verbose,
-            ctx.dry_run,
-            ctx.force,
-            &config,
-            ctx.naming_policy,
-        ),
-        SyncDirection::Reverse => sync_reverse(
-            &ctx.paths,
-            ctx.placeholder,
-            ctx.verbose,
-            ctx.dry_run,
-            ctx.force,
-            &config,
-            ctx.naming_policy,
-            &ctx.spec,
-        ),
-    };
-    // Only print hint on success — noise-free error output
-    if result.is_ok() {
-        ui::print_docs_hint(&docs::SYNC);
+    let drift = match ctx.direction {
+        SyncDirection::Forward => sync_forward(ctx, &config),
+        SyncDirection::Reverse => sync_reverse(ctx, &config),
+    }?;
+
+    // Only on success — noise-free error output.
+    ui::print_docs_hint(&docs::SYNC);
+
+    if ctx.check && drift.out_of_step() {
+        print_verdict(ctx, &drift);
     }
+    Ok(drift.out_of_step())
+}
 
-    result
+/// The `--check` verdict: one line per side that drifted, each naming the
+/// command that fixes it (I-118).
+///
+/// ⚠️ It said "Run `evnx sync --direction X` and commit the result" whatever
+/// the direction — but reverse writes `.env`, which is never committed.
+fn print_verdict(ctx: &SyncCtx, drift: &Drift) {
+    let (env, example) = (ctx.paths.env_str(), ctx.paths.example_str());
+    eprintln!();
+    eprintln!("✗ Out of sync.");
+    let n = drift.missing.len();
+    if n > 0 {
+        match ctx.direction {
+            SyncDirection::Forward => eprintln!(
+                "  · {} in {env} {} missing from {example}: run `{}` and commit {example}.",
+                count(n, "variable"),
+                is_are(n),
+                fix_command(&ctx.paths, SyncDirection::Forward)
+            ),
+            SyncDirection::Reverse => eprintln!(
+                "  · {} {} missing from {env}: run `{}` to add {} to {env}.",
+                count(n, "variable"),
+                is_are(n),
+                fix_command(&ctx.paths, SyncDirection::Reverse),
+                it_them(n)
+            ),
+        }
+    }
+    let t = drift.template_only.len();
+    if t > 0 {
+        eprintln!(
+            "  · {} in {example} {} not in {env}: remove {} from {example}, or add {} to {env} \
+             with `{}`.",
+            count(t, "variable"),
+            is_are(t),
+            it_them(t),
+            it_them(t),
+            fix_command(&ctx.paths, SyncDirection::Reverse)
+        );
+    }
+}
+
+/// The command that adds the missing side, with `--env` / `--example` when
+/// they are not the defaults: `evnx sync --direction reverse` run as written
+/// after `--env-name production` would fill `.env`, not `.env.production`.
+fn fix_command(paths: &SyncPaths, direction: SyncDirection) -> String {
+    use crate::core::shell::word;
+    let mut cmd = format!("evnx sync --direction {direction}");
+    if paths.env != Path::new(".env") {
+        cmd.push_str(&format!(" --env {}", word(&paths.env_str())));
+    }
+    if paths.example != Path::new(".env.example") {
+        cmd.push_str(&format!(" --example {}", word(&paths.example_str())));
+    }
+    cmd
+}
+
+fn is_are(n: usize) -> &'static str {
+    if n == 1 {
+        "is"
+    } else {
+        "are"
+    }
+}
+
+fn it_them(n: usize) -> &'static str {
+    if n == 1 {
+        "it"
+    } else {
+        "them"
+    }
+}
+
+/// The names only the template has (two-way, DEC-S17). `sync` only adds, so
+/// they are reported and left alone; under `--check` they are drift.
+fn print_template_only(ctx: &SyncCtx, names: &[String]) {
+    if names.is_empty() {
+        return;
+    }
+    ui::print_box(
+        &format!("Only in {}", ctx.paths.example_str()),
+        &format!(
+            "Found {} in {} that {} does not have:\n{}",
+            count(names.len(), "variable"),
+            ctx.paths.example_str(),
+            ctx.paths.env_str(),
+            names
+                .iter()
+                .map(|k| format!("  • {}", key_highlight(k)))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ),
+    );
+    if !ctx.check {
+        ui::info(format!(
+            "sync only adds: remove {} from {} by hand if {} stale, or add {} to {} with `{}`",
+            it_them(names.len()),
+            ctx.paths.example_str(),
+            if names.len() == 1 {
+                "it is"
+            } else {
+                "they are"
+            },
+            it_them(names.len()),
+            ctx.paths.env_str(),
+            fix_command(&ctx.paths, SyncDirection::Reverse)
+        ));
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
 // Forward Sync: .env → .env.example
 // ─────────────────────────────────────────────────────────────
+
+/// "File not found" for the source of a forward sync, with the way out.
+fn env_not_found(p: &SyncPaths) {
+    ui::error(format!("File not found: {}", p.env_str()));
+    ui::print_box(
+        "Getting started",
+        &format!(
+            "It looks like this project hasn't been initialized yet.\n\n\
+             To create .env and .env.example files, run:\n\n\
+             $ evnx init\n\n\
+             Or if you have an existing {} file, place it in this directory \
+             and try again.",
+            p.env_str()
+        ),
+    );
+    ui::print_next_steps(&[
+        "Run 'evnx init' to set up a new project",
+        &format!(
+            "Or copy your existing {} file to this directory",
+            p.env_str()
+        ),
+        "Then run 'evnx sync' again",
+    ]);
+}
 
 /// Refuse the sync if any `allow_actual` key holds something that looks like a
 /// credential.
@@ -177,7 +515,7 @@ pub fn execute(ctx: SyncCtx) -> Result<bool> {
 /// Before the first write and before the preview, so the answer is all-or-nothing
 /// and names **every** offending key at once. Failing per key as the template is
 /// generated would leave a half-written file and make the operator run the
-/// command once per mistake.
+/// command once per mistake. `--check --format json` runs it too (I-117).
 ///
 /// # What counts as a credential
 ///
@@ -189,9 +527,10 @@ pub fn execute(ctx: SyncCtx) -> Result<bool> {
 /// password**, so this carried its own check. D15 added the rule, so the check was
 /// removed rather than left as a second implementation of one idea — two of those
 /// drifting apart is the shape of half the defects in this codebase.
-pub fn check_allow_actual(
+pub(super) fn check_allow_actual(
     config: &PlaceholderConfig,
     env_vars: &IndexMap<String, String>,
+    paths: &SyncPaths,
 ) -> Result<()> {
     if config.allow_actual.is_empty() {
         return Ok(());
@@ -215,9 +554,10 @@ pub fn check_allow_actual(
         return Ok(());
     }
 
-    let mut message = String::from(
-        "`allow_actual` would copy a real credential into .env.example, which is a \
+    let mut message = format!(
+        "`allow_actual` would copy a real credential into {}, which is a \
          committed file. Nothing was written.\n",
+        paths.example_str()
     );
     for (key, why) in &refused {
         message.push_str(&format!("\n  {key} — {why}"));
@@ -264,13 +604,14 @@ pub(crate) fn credential_keys<'a>(
     Ok(refused)
 }
 
-/// Say which keys were kept out of `.env.example`, and log the ones written
+/// Say which keys were kept out of the template, and log the ones written
 /// with real values (DEC-S1: the audit line always goes to stderr).
-fn report_actual_values(written: &[String], refused: &[(String, String)]) {
+fn report_actual_values(paths: &SyncPaths, written: &[String], refused: &[(String, String)]) {
     if !refused.is_empty() {
         ui::warning(format!(
-            "{} kept out of .env.example: {} a credential, written as {}",
+            "{} kept out of {}: {} a credential, written as {}",
             refused.len(),
+            paths.example_str(),
             if refused.len() == 1 {
                 "it holds"
             } else {
@@ -286,82 +627,47 @@ fn report_actual_values(written: &[String], refused: &[(String, String)]) {
             ui::warning_detail(format!("  • {key} — {why}"));
         }
     }
-    log_security_event(written, true);
+    log_security_event(written, &paths.example_str());
 }
 
-fn sync_forward(
-    paths: &SyncPaths,
-    use_placeholders: bool,
-    verbose: bool,
-    dry_run: bool,
-    force: bool,
-    config: &PlaceholderConfig,
-    naming_policy: NamingPolicy,
-) -> Result<bool> {
-    let parser = Parser::default();
-
-    if !paths.env.exists() {
-        ui::error("File not found: .env");
-        ui::print_box(
-            "Getting started",
-            "It looks like this project hasn't been initialized yet.\n\n\
-             To create .env and .env.example files, run:\n\n\
-             $ evnx init\n\n\
-             Or if you have an existing .env file, place it in this directory \
-             and try again.",
-        );
-        ui::print_next_steps(&[
-            "Run 'evnx init' to set up a new project",
-            "Or copy your existing .env file to this directory",
-            "Then run 'evnx sync' again",
-        ]);
-        anyhow::bail!(".env file not found - run 'evnx init' to get started");
+/// Ask for the optional comment that heads the added block. Asked **before**
+/// the write so it lands above the variables it describes — it was appended
+/// after them, in a second write (I-126, O-4).
+fn ask_comment() -> Result<Option<String>> {
+    if !crate::utils::prompt::yes_no()
+        .with_prompt("Add a comment explaining these variables?")
+        .default(true)
+        .interact()?
+    {
+        return Ok(None);
     }
+    let comment: String = Input::new()
+        .with_prompt("Comment")
+        .default("Additional configuration".to_string())
+        .interact_text()?;
+    Ok(Some(comment))
+}
 
-    let env_file = parser
-        .parse_file(paths.env_str())
-        .context("Failed to parse .env")?;
+fn sync_forward(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<Drift> {
+    let paths = &ctx.paths;
+    let Loaded {
+        env,
+        example,
+        drift,
+    } = load(ctx, config, true)?;
+    let env_vars = env.unwrap_or_default();
 
-    // Before anything is written, and before any of it is printed.
-    check_allow_actual(config, &env_file.vars)?;
-    // ⚠️ "absent" and "will not parse" are different answers.
-    //
-    // This was a single `Err(_) =>` arm, so a `.env.example` that existed but was
-    // corrupt — half-written, bad encoding, an unreadable mode — was announced as
-    // ".env.example not found" and then **overwritten** by a plain `evnx sync`.
-    // The one file in the pair that is meant to be committed, replaced without a
-    // word because it could not be read.
-    let example_file = if paths.example.exists() {
-        parser
-            .parse_file(paths.example_str())
-            .with_context(|| format!("Failed to parse {}", paths.example_str()))?
-    } else {
+    let Some(example_vars) = example else {
         ui::info(format!(
             "{} not found, creating from {}",
             paths.example_str(),
             paths.env_str()
         ));
-        return handle_new_example_file(
-            paths,
-            &env_file.vars,
-            use_placeholders,
-            force,
-            dry_run,
-            config,
-        );
+        handle_new_example_file(ctx, &env_vars, config)?;
+        return Ok(drift);
     };
 
-    // ⚠️ Ordered by the source file, not by hash. `HashSet::difference` yields
-    // hash order and Rust seeds its hasher randomly per process, so the same
-    // `.env` produced a different ordering on every run — and `sync` *writes*
-    // this order into `.env.example`, so two developers syncing the same file
-    // got two different diffs against each other.
-    let example_keys: HashSet<_> = example_file.vars.keys().collect();
-    let missing: Vec<_> = env_file
-        .vars
-        .keys()
-        .filter(|key| !example_keys.contains(key))
-        .collect();
+    let missing = drift.names();
 
     if missing.is_empty() {
         // ⚠️ "Up to date" is true but incurious when the source is empty and
@@ -369,13 +675,14 @@ fn sync_forward(
         // beside a populated `.env.example` is far more likely a mistake — a
         // truncated file, the wrong directory, a failed secret fetch — than a
         // steady state. sync has nothing to copy, so it correctly changes
-        // nothing; it should still say why it did nothing.
-        if env_file.vars.is_empty() && !example_file.vars.is_empty() {
+        // nothing; it should still say why it did nothing. (`--check` refuses
+        // it in `load`, I-127.)
+        if env_vars.is_empty() && !example_vars.is_empty() {
             ui::warning(format!(
                 "{} has no variables, while {} has {}. Nothing was copied.",
                 paths.env_str(),
                 paths.example_str(),
-                example_file.vars.len(),
+                example_vars.len(),
             ));
             ui::warning_detail(format!(
                 "{} If that is unexpected, check you are in the right directory. \
@@ -383,31 +690,21 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
                 ui::glyph::INFO.dimmed(),
                 paths.env_str(),
             ));
-            return Ok(false);
+        } else if drift.template_only.is_empty() {
+            ui::success(format!("{} is up to date", paths.example_str()));
+        } else {
+            print_template_only(ctx, &drift.template_only);
         }
-        ui::success(".env.example is up to date");
-        return Ok(false);
-    }
-
-    // Validate naming conventions
-    let mut warnings = Vec::new();
-    for key in &missing {
-        if let Err(msg) = validate_var_name(key, naming_policy) {
-            // ⚠️ An `Err`, not `process::exit(1)` (I-116, DEC-S13). A refusal
-            // is "could not run", which is 2; under `--check`, 1 means drift,
-            // so a bad name read as an out-of-date template.
-            if naming_policy == NamingPolicy::Error {
-                anyhow::bail!("{msg}");
-            }
-            warnings.push(msg);
-        }
+        return Ok(drift);
     }
 
     ui::print_box(
         "Variables to Add",
         &format!(
-            "Found {} variable(s) in .env missing from .env.example:\n{}",
-            missing.len(),
+            "Found {} in {} missing from {}:\n{}",
+            count(missing.len(), "variable"),
+            paths.env_str(),
+            paths.example_str(),
             missing
                 .iter()
                 .map(|k| format!("  • {}", key_highlight(k)))
@@ -415,10 +712,7 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
                 .join("\n")
         ),
     );
-
-    for warning in &warnings {
-        ui::warning(warning);
-    }
+    print_template_only(ctx, &drift.template_only);
 
     // ⚠️ `--dry-run` implies non-interactive.
     //
@@ -430,23 +724,33 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
     //
     // Previewing the recommended default (placeholders) is the honest answer to
     // "what would this do", since that is option 0 of the prompt being skipped.
-    if force || dry_run {
-        if force && !dry_run {
-            ui::info("Force mode: using placeholder values and skipping prompts");
+    // No terminal, or CI, answers the same way (DEC-S9).
+    let no_prompt = no_prompt_reason();
+    if ctx.force || ctx.dry_run || no_prompt.is_some() {
+        if !ctx.dry_run {
+            match (ctx.force, no_prompt) {
+                (true, _) => ui::info("Force mode: using placeholder values and skipping prompts"),
+                (false, Some(why)) => ui::info(format!("{why}: adding with placeholder values")),
+                (false, None) => {}
+            }
         }
-        let preview = add_with_placeholders_preview(&missing, &env_file.vars, config)?;
-        if dry_run {
+        let preview = add_with_placeholders_preview(&missing, &env_vars, config)?;
+        if ctx.dry_run {
             print_preview(&SyncPreview {
-                target_file: paths.example_str(),
+                target_file: target_label(&paths.example),
                 action: SyncAction::Add,
                 variables: preview,
                 warnings: vec![],
             });
-            return Ok(true);
+            return Ok(drift);
         }
-        add_with_placeholders(paths, &missing, &env_file.vars, config)?;
-        ui::success(format!("Added {} variables to .env.example", missing.len()));
-        return Ok(true);
+        add_with_placeholders(paths, &missing, &env_vars, config, None)?;
+        ui::success(format!(
+            "Added {} to {}",
+            count(missing.len(), "variable"),
+            paths.example_str()
+        ));
+        return Ok(drift);
     }
 
     // Interactive mode
@@ -458,32 +762,27 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
     ];
 
     let selection = Select::new()
-        .with_prompt("Add these to .env.example?")
+        .with_prompt(format!("Add these to {}?", paths.example_str()))
         .items(&choices)
         .default(0)
         .interact()?;
 
-    match selection {
+    let added = match selection {
         0 => {
-            let preview = add_with_placeholders_preview(&missing, &env_file.vars, config)?;
-            if dry_run {
-                print_preview(&SyncPreview {
-                    target_file: paths.example_str(),
-                    action: SyncAction::Add,
-                    variables: preview,
-                    warnings: vec![],
-                });
-                return Ok(true);
-            }
-            add_with_placeholders(paths, &missing, &env_file.vars, config)?;
+            let comment = ask_comment()?;
+            add_with_placeholders(paths, &missing, &env_vars, config, comment.as_deref())?;
+            missing.len()
         }
         1 => {
             ui::print_box(
                 "! SECURITY WARNING",
-                "Adding actual values to .env.example may expose secrets if \
-                 this file is committed to version control.\n\n\
-                 Only proceed if you are certain .env.example is gitignored \
-                 or contains no sensitive data.",
+                &format!(
+                    "Adding actual values to {example} may expose secrets if \
+                     this file is committed to version control.\n\n\
+                     Only proceed if you are certain {example} is gitignored \
+                     or contains no sensitive data.",
+                    example = paths.example_str()
+                ),
             );
 
             let confirm = crate::utils::prompt::yes_no()
@@ -493,80 +792,62 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
 
             if !confirm {
                 ui::info("Aborted: values not added");
-                return Ok(true);
+                return Ok(drift);
             }
 
-            let _ = verbose;
-            let refused = credential_keys(missing.iter().copied(), &env_file.vars, "sync")?;
-            let preview = add_with_actual_values_preview(&missing, &env_file.vars, config)?;
-            if dry_run {
-                print_preview(&SyncPreview {
-                    target_file: paths.example_str(),
-                    action: SyncAction::Add,
-                    variables: preview,
-                    warnings: vec!["! Actual values would be written (security risk)".into()],
-                });
-                return Ok(true);
-            }
-            add_with_actual_values(paths, &missing, &env_file.vars, config)?;
+            let comment = ask_comment()?;
+            add_with_actual_values(paths, &missing, &env_vars, config, comment.as_deref())?;
+            let refused = credential_keys(missing.iter().copied(), &env_vars, "sync")?;
             let written: Vec<String> = missing
                 .iter()
                 .filter(|k| !refused.iter().any(|(r, _)| r == **k))
                 .map(|k| (*k).clone())
                 .collect();
-            report_actual_values(&written, &refused);
+            report_actual_values(paths, &written, &refused);
+            missing.len()
         }
         2 => {
-            let preview = add_interactively_preview(&missing, &env_file.vars, config)?;
-            if dry_run {
-                print_preview(&SyncPreview {
-                    target_file: paths.example_str(),
-                    action: SyncAction::Add,
-                    variables: preview,
-                    warnings: vec![],
-                });
-                return Ok(true);
+            let selected = MultiSelect::new()
+                .with_prompt("Select variables to add")
+                .items(&missing)
+                .interact()?;
+            if selected.is_empty() {
+                ui::info("No changes made");
+                return Ok(drift);
             }
-            add_interactively(paths, &missing, &env_file.vars, config)?;
+            let chosen: Vec<&String> = selected.iter().map(|&i| missing[i]).collect();
+            let comment = ask_comment()?;
+            add_with_placeholders(paths, &chosen, &env_vars, config, comment.as_deref())?;
+            chosen.len()
         }
         3 => {
             ui::info("No changes made");
-            return Ok(true);
+            return Ok(drift);
         }
         _ => unreachable!(),
-    }
-
-    if !dry_run
-        && crate::utils::prompt::yes_no()
-            .with_prompt("Add a comment explaining these variables?")
-            .default(true)
-            .interact()?
-    {
-        let comment: String = Input::new()
-            .with_prompt("Comment")
-            .default("Additional configuration".to_string())
-            .interact_text()?;
-
-        let mut content = fs::read_to_string(&paths.example)?;
-        content.push_str(&format!("\n# {}\n", comment));
-        write_template(&paths.example, &content)?;
-    }
+    };
 
     ui::success(format!(
-        "Updated .env.example (+{} variables)",
-        missing.len()
+        "Updated {} (+{})",
+        paths.example_str(),
+        count(added, "variable")
     ));
 
-    ui::print_next_steps(&[
-        "Review .env.example to ensure no secrets were added",
-        "Commit .env.example to Git (never commit .env)",
-        "Share changes with your team",
-    ]);
+    let review = format!(
+        "Review {} to ensure no secrets were added",
+        paths.example_str()
+    );
+    let commit = format!(
+        "Commit {} to Git (never commit {})",
+        paths.example_str(),
+        paths.env_str()
+    );
+    ui::print_next_steps(&[&review, &commit, "Share changes with your team"]);
 
-    Ok(true)
+    Ok(drift)
 }
 
-/// Create `.env.example` when it does not exist yet.
+/// Create the template when it does not exist yet.
 ///
 /// ⚠️ **Placeholders are the default here, and that is a v0.5.0 change.**
 ///
@@ -583,19 +864,25 @@ To fill {} from the template instead, run `evnx sync --direction reverse`.",
 /// either.
 ///
 /// The choice is still offered when someone is at a terminal to make it. Without
-/// one, it resolves to placeholders and says so, rather than silently picking
-/// the unsafe branch.
+/// one, or with CI set, it resolves to placeholders and says so, rather than
+/// silently picking the unsafe branch.
 fn handle_new_example_file(
-    paths: &SyncPaths,
+    ctx: &SyncCtx,
     vars: &IndexMap<String, String>,
-    use_placeholders: bool,
-    force: bool,
-    dry_run: bool,
     config: &PlaceholderConfig,
-) -> Result<bool> {
-    let use_placeholders = if use_placeholders || force {
+) -> Result<()> {
+    let paths = &ctx.paths;
+    let use_placeholders = if ctx.force {
         true
-    } else if crate::utils::term::interactive() {
+    } else if let Some(why) = no_prompt_reason() {
+        ui::info(format!(
+            "{why}: creating {} with placeholder values",
+            paths.example_str()
+        ));
+        true
+    } else if ctx.dry_run {
+        true
+    } else {
         let choices = [
             "Placeholder values (recommended — safe to commit)",
             "Actual values copied from .env  ! SECURITY RISK",
@@ -606,12 +893,6 @@ fn handle_new_example_file(
             .default(0)
             .interact()?
             == 0
-    } else {
-        ui::info(format!(
-            "no terminal: creating {} with placeholder values",
-            paths.example_str()
-        ));
-        true
     };
 
     // DEC-S1: actual values, except a key holding a credential (I-113).
@@ -639,14 +920,14 @@ fn handle_new_example_file(
             .collect()
     };
 
-    if dry_run {
+    if ctx.dry_run {
         print_preview(&SyncPreview {
-            target_file: paths.example_str(),
+            target_file: target_label(&paths.example),
             action: SyncAction::Add,
             variables: preview,
             warnings: vec!["New file would be created".into()],
         });
-        return Ok(true);
+        return Ok(());
     }
 
     if use_placeholders {
@@ -678,158 +959,154 @@ fn handle_new_example_file(
         }
         write_template(&paths.example, &out)?;
         let written: Vec<String> = vars.keys().filter(|k| !is_refused(k)).cloned().collect();
-        report_actual_values(&written, &refused);
+        report_actual_values(paths, &written, &refused);
     }
 
     ui::success(format!("Created {}", paths.example_str()));
     if use_placeholders {
-        ui::print_next_steps(&[
-            "Review .env.example to ensure the placeholders are appropriate",
-            "Commit .env.example to Git (never commit .env)",
-        ]);
+        let review = format!(
+            "Review {} to ensure the placeholders are appropriate",
+            paths.example_str()
+        );
+        let commit = format!(
+            "Commit {} to Git (never commit {})",
+            paths.example_str(),
+            paths.env_str()
+        );
+        ui::print_next_steps(&[&review, &commit]);
     } else {
         // ⚠️ Do not tell someone to commit a file that holds their real values.
         ui::warning(format!(
-            "{} holds the ACTUAL values from .env, not placeholders",
-            paths.example_str()
+            "{} holds the ACTUAL values from {}, not placeholders",
+            paths.example_str(),
+            paths.env_str()
         ));
         ui::print_next_steps(&[
             "Replace the values before committing — this file is not safe to commit as written",
-            "Or re-create it with `evnx sync --placeholder`",
+            "Or re-create it with `evnx sync --force`",
         ]);
     }
-    Ok(true)
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────
 // Reverse Sync: .env.example → .env
 // ─────────────────────────────────────────────────────────────
 
-#[allow(clippy::too_many_arguments)]
-fn sync_reverse(
-    paths: &SyncPaths,
-    _use_placeholders: bool,
-    verbose: bool,
-    dry_run: bool,
-    force: bool,
-    config: &PlaceholderConfig,
-    naming_policy: NamingPolicy,
-    spec: &crate::core::spec::Spec,
-) -> Result<bool> {
-    if verbose {
-        eprintln!("[DEBUG] Running reverse sync");
-    }
-    let parser = Parser::default();
-
-    if !paths.example.exists() {
-        ui::error("File not found: .env.example");
-        ui::print_box(
-            "Getting started",
-            "The template file .env.example is missing.\n\n\
+/// "File not found" for the template a reverse sync reads.
+fn example_not_found(p: &SyncPaths) {
+    ui::error(format!("File not found: {}", p.example_str()));
+    ui::print_box(
+        "Getting started",
+        &format!(
+            "The template file {example} is missing.\n\n\
              To create it, either:\n\n\
              1. Run 'evnx init' to generate from a blueprint, OR\n\
-             2. Create .env.example manually with your variable names\n\n\
-             Example .env.example:\n\
+             2. Create {example} manually with your variable names\n\n\
+             Example {example}:\n\
              DATABASE_URL=your_database_url\n\
              API_KEY=your_api_key",
-        );
-        ui::print_next_steps(&[
-            "Run 'evnx init' to generate .env.example from a template",
-            "Or create .env.example manually with your variable names",
-            "Then run 'evnx sync --direction reverse' again",
-        ]);
-        anyhow::bail!(".env.example not found - run 'evnx init' or create it manually");
+            example = p.example_str()
+        ),
+    );
+    ui::print_next_steps(&[
+        &format!(
+            "Run 'evnx init' to generate {} from a template",
+            p.example_str()
+        ),
+        &format!(
+            "Or create {} manually with your variable names",
+            p.example_str()
+        ),
+        "Then run 'evnx sync --direction reverse' again",
+    ]);
+}
+
+fn sync_reverse(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<Drift> {
+    if ctx.verbose {
+        eprintln!("[DEBUG] Running reverse sync");
     }
+    let paths = &ctx.paths;
+    let Loaded {
+        env,
+        example,
+        drift,
+    } = load(ctx, config, true)?;
+    let example_vars = example.unwrap_or_default();
 
-    let example_file = parser
-        .parse_file(paths.example_str())
-        .with_context(|| format!("Failed to parse {}", paths.example_str()))?;
-
-    // Same distinction as in `sync_forward` — see the note there.
-    let env_file = if paths.env.exists() {
-        parser
-            .parse_file(paths.env_str())
-            .context("Failed to parse .env")?
-    } else {
+    let Some(_) = env else {
         ui::info(format!(
             "{} not found, creating from {}",
             paths.env_str(),
             paths.example_str()
         ));
-        return handle_new_env_file(paths, &example_file.vars, dry_run, config);
+        handle_new_env_file(ctx, &example_vars, &drift.spec_names(), config)?;
+        return Ok(drift);
     };
 
-    // ⚠️ The template is not the only thing that declares a variable.
-    //
-    // Before this, `evnx validate` would report a spec-declared variable as
-    // missing while `evnx sync --direction reverse` said ".env is up to date" —
-    // two commands contradicting each other about the same variable in the same
-    // project. A contract that `validate` enforces and `sync` cannot satisfy is
-    // half a feature.
-    //
-    // Only variables that are **required** and **apply to this file** are added.
-    // An optional one being absent is permitted by the contract, so inventing a
-    // placeholder for it would be work the project did not ask for.
-    let env_path_owned = paths.env_str();
-    let env_label = crate::core::env_name::name_of(&env_path_owned);
-    let mut declared: Vec<String> = example_file.vars.keys().cloned().collect();
-    for (name, var) in spec {
-        if var.is_required() && var.applies_to(env_label) && !declared.contains(name) {
-            declared.push(name.clone());
-        }
-    }
-
-    let env_keys: HashSet<&String> = env_file.vars.keys().collect();
-    let missing: Vec<&String> = declared.iter().filter(|k| !env_keys.contains(*k)).collect();
-
+    let missing = drift.names();
     if missing.is_empty() {
-        ui::success(".env is up to date");
-        return Ok(false);
+        ui::success(format!("{} is up to date", paths.env_str()));
+        return Ok(drift);
     }
 
-    for key in &missing {
-        if let Err(msg) = validate_var_name(key, naming_policy) {
-            // ⚠️ An `Err`, not `process::exit(1)` (I-116, DEC-S13). A refusal
-            // is "could not run", which is 2; under `--check`, 1 means drift,
-            // so a bad name read as an out-of-date template.
-            if naming_policy == NamingPolicy::Error {
-                anyhow::bail!("{msg}");
-            }
-            ui::warning(&msg);
-        }
-    }
-
+    // ⚠️ Each name says where it is declared. They were all listed as "in
+    // .env.example", including names only `[vars]` requires (I-255).
+    let spec_file = crate::core::config::PROJECT_FILE;
     ui::print_box(
         "Missing Variables",
         &format!(
-            "Found {} variable(s) in .env.example missing from .env:\n{}",
-            missing.len(),
-            missing
+            "Found {} missing from {}:\n{}",
+            count(missing.len(), "variable"),
+            paths.env_str(),
+            drift
+                .missing
                 .iter()
-                .map(|k| format!("  • {}", key_highlight(k)))
+                .map(|(k, origin)| match origin {
+                    Origin::Source => format!("  • {}", key_highlight(k)),
+                    Origin::Spec => {
+                        format!(
+                            "  • {}  (required by [vars] in {spec_file})",
+                            key_highlight(k)
+                        )
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         ),
     );
 
     // `--dry-run` implies non-interactive — see the note in `sync_forward`.
-    if force || dry_run {
-        if force && !dry_run {
-            ui::info("Force mode: adding the template's values (placeholders where it has none), skipping prompts");
+    let no_prompt = no_prompt_reason();
+    if ctx.force || ctx.dry_run || no_prompt.is_some() {
+        if !ctx.dry_run {
+            match (ctx.force, no_prompt) {
+                (true, _) => ui::info(
+                    "Force mode: adding the template's values (placeholders where it has none), skipping prompts",
+                ),
+                (false, Some(why)) => ui::info(format!(
+                    "{why}: adding the template's values (placeholders where it has none)"
+                )),
+                (false, None) => {}
+            }
         }
-        let preview = add_from_example_preview(&missing, &example_file.vars, true, config)?;
-        if dry_run {
+        let preview = add_from_example_preview(&missing, &example_vars, true, config)?;
+        if ctx.dry_run {
             print_preview(&SyncPreview {
-                target_file: paths.env_str(),
+                target_file: target_label(&paths.env),
                 action: SyncAction::Add,
                 variables: preview,
-                warnings: vec!["Remember to replace placeholders with real values".into()],
+                warnings: placeholder_reminder(&missing, &example_vars, config),
             });
-            return Ok(true);
+            return Ok(drift);
         }
-        add_from_example(paths, &missing, &example_file.vars, true, config)?;
-        ui::success(format!("Added {} variables to .env", missing.len()));
-        return Ok(true);
+        add_from_example(paths, &missing, &example_vars, true, config)?;
+        ui::success(format!(
+            "Added {} to {}",
+            count(missing.len(), "variable"),
+            paths.env_str()
+        ));
+        return Ok(drift);
     }
 
     let choices = vec![
@@ -840,7 +1117,7 @@ fn sync_reverse(
     ];
 
     let selection = Select::new()
-        .with_prompt("Add to .env?")
+        .with_prompt(format!("Add to {}?", paths.env_str()))
         .items(&choices)
         .default(0)
         .interact()?;
@@ -849,67 +1126,93 @@ fn sync_reverse(
         0 => true,
         1 => false,
         2 => {
-            let preview =
-                add_from_example_interactive_preview(&missing, &example_file.vars, config)?;
-            if dry_run {
-                print_preview(&SyncPreview {
-                    target_file: paths.env_str(),
-                    action: SyncAction::Add,
-                    variables: preview,
-                    warnings: vec![],
-                });
-                return Ok(true);
-            }
-            add_from_example_interactive(paths, &missing, &example_file.vars, config)?;
-            ui::success("Added selected variables to .env");
-            return Ok(true);
+            add_from_example_interactive(paths, &missing, &example_vars, config)?;
+            ui::success(format!("Added selected variables to {}", paths.env_str()));
+            return Ok(drift);
         }
         3 => {
             ui::info("No changes made");
-            return Ok(true);
+            return Ok(drift);
         }
         _ => unreachable!(),
     };
 
-    let preview = add_from_example_preview(&missing, &example_file.vars, use_placeholders, config)?;
-    if dry_run {
-        print_preview(&SyncPreview {
-            target_file: paths.env_str(),
-            action: SyncAction::Add,
-            variables: preview,
-            warnings: if use_placeholders {
-                vec!["Remember to replace placeholders with real values".into()]
-            } else {
-                vec![]
-            },
-        });
-        return Ok(true);
-    }
+    add_from_example(paths, &missing, &example_vars, use_placeholders, config)?;
+    ui::success(format!(
+        "Added {} to {}",
+        count(missing.len(), "variable"),
+        paths.env_str()
+    ));
 
-    add_from_example(
-        paths,
-        &missing,
-        &example_file.vars,
-        use_placeholders,
-        config,
-    )?;
-    ui::success(format!("Added {} variables to .env", missing.len()));
-
-    if use_placeholders {
+    if use_placeholders && !placeholder_reminder(&missing, &example_vars, config).is_empty() {
         ui::warning("Remember to replace placeholder values with real credentials!");
     }
 
-    Ok(true)
+    Ok(drift)
 }
 
-fn handle_new_env_file(
-    paths: &SyncPaths,
+/// The reminder to replace placeholders, only when something added is one
+/// (I-126: it was printed for a preview of real template values too).
+fn placeholder_reminder(
+    keys: &[&String],
     example_vars: &IndexMap<String, String>,
-    dry_run: bool,
     config: &PlaceholderConfig,
-) -> Result<bool> {
-    if dry_run {
-        let preview: Vec<VarChange> = example_vars
+) -> Vec<String> {
+    if keys
+        .iter()
+        .any(|k| reverse_value(k, example_vars.get(*k), config).1)
+    {
+        vec!["Remember to replace placeholders with real values".into()]
+    } else {
+        Vec::new()
+    }
+}
+
+/// The comment lines sync itself writes at the top of a template it
+/// generates. True for that template; false for a `.env` copied from it.
+const GENERATED_HEADER: &[&str] = &[
+    "# Generated from ",
+    "# Replace all placeholder values with real credentials",
+];
+
+/// The template's text for a new `.env`: sync's own generated header replaced
+/// by one that is true of the new file (I-129, DEC-S20). Everything else —
+/// comments, order, blank lines — is kept.
+fn env_text_from_template(template: &str, example_label: &str) -> String {
+    let mut lines = template.split_inclusive('\n').peekable();
+    let generated = lines
+        .peek()
+        .is_some_and(|l| l.starts_with(GENERATED_HEADER[0]));
+    if !generated {
+        return template.to_string();
+    }
+    lines.next();
+    if lines
+        .peek()
+        .is_some_and(|l| l.trim_end() == GENERATED_HEADER[1])
+    {
+        lines.next();
+    }
+    let mut out = format!("# Created from {example_label} by evnx sync\n");
+    out.extend(lines);
+    out
+}
+
+/// Create `.env` from the template (reverse, no `.env` yet).
+///
+/// DEC-S20: the template's text — comments and order kept, its own values —
+/// with a generated header made true for the new file (I-129), and the
+/// spec's required names it lacks appended (I-275), so the new file is the
+/// one `--check` said it would be.
+fn handle_new_env_file(
+    ctx: &SyncCtx,
+    example_vars: &IndexMap<String, String>,
+    spec_names: &[String],
+    config: &PlaceholderConfig,
+) -> Result<()> {
+    let paths = &ctx.paths;
+    if ctx.dry_run {
+        let mut preview: Vec<VarChange> = example_vars
             .iter()
             .map(|(k, v)| VarChange {
                 key: k.clone(),
@@ -918,38 +1221,75 @@ fn handle_new_env_file(
                 is_placeholder: is_generated_value(v, config),
             })
             .collect();
+        preview.extend(spec_names.iter().map(|k| {
+            let (value, generated) = reverse_value(k, None, config);
+            VarChange {
+                key: k.clone(),
+                old_value: None,
+                new_value: value,
+                is_placeholder: generated,
+            }
+        }));
         print_preview(&SyncPreview {
-            target_file: paths.env_str(),
+            target_file: target_label(&paths.env),
             action: SyncAction::Add,
             variables: preview,
             warnings: vec!["Replace placeholder values with real credentials!".into()],
         });
-        return Ok(true);
+        return Ok(());
     }
 
-    write_env(&paths.env, &fs::read_to_string(&paths.example)?)?;
-    ui::success("Created .env");
+    let template = fs::read_to_string(&paths.example)?;
+    let mut content = env_text_from_template(&template, &paths.example_str());
+    if !spec_names.is_empty() {
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str(&format!(
+            "\n# Added by evnx sync: required by [vars] in {}\n",
+            crate::core::config::PROJECT_FILE
+        ));
+        for key in spec_names {
+            content.push_str(&envfile::line(key, &reverse_value(key, None, config).0));
+            content.push('\n');
+        }
+    }
+    write_env(&paths.env, &content)?;
+    ui::success(format!("Created {}", paths.env_str()));
     ui::warning("Replace placeholder values with real credentials!");
-    ui::print_next_steps(&[
-        "Edit .env and replace placeholder values with real credentials",
-        "Run 'chmod 600 .env' to secure the file",
-        "Never commit .env to version control",
-    ]);
-    Ok(true)
+    let edit = format!(
+        "Edit {} and replace placeholder values with real credentials",
+        paths.env_str()
+    );
+    let never = format!("Never commit {} to version control", paths.env_str());
+    ui::print_next_steps(&[&edit, &never]);
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────
 // Add Functions (Forward Sync Helpers)
 // ─────────────────────────────────────────────────────────────
 
+/// The heading of a block sync appends: where it came from, then the user's
+/// comment when there is one — above the variables it describes (I-126).
+fn block_heading(source: &str, marker: &str, comment: Option<&str>) -> String {
+    let mut heading = format!("\n# Synced from {source}{marker}\n");
+    if let Some(c) = comment {
+        heading.push_str(&format!("# {c}\n"));
+    }
+    heading
+}
+
 fn add_with_placeholders(
     paths: &SyncPaths,
     keys: &[&String],
     values: &IndexMap<String, String>,
     config: &PlaceholderConfig,
+    comment: Option<&str>,
 ) -> Result<()> {
-    let mut content = fs::read_to_string(&paths.example).context("Failed to read .env.example")?;
-    content.push_str(&format!("\n# Synced from {}\n", paths.env_str()));
+    let mut content = fs::read_to_string(&paths.example)
+        .with_context(|| format!("Failed to read {}", paths.example_str()))?;
+    content.push_str(&block_heading(&paths.env_str(), "", comment));
 
     for key in keys {
         let placeholder = generate_placeholder(key, values.get(*key), config);
@@ -987,12 +1327,14 @@ fn add_with_actual_values(
     keys: &[&String],
     values: &IndexMap<String, String>,
     config: &PlaceholderConfig,
+    comment: Option<&str>,
 ) -> Result<()> {
     let refused = credential_keys(keys.iter().copied(), values, "sync")?;
     let mut content = fs::read_to_string(&paths.example)?;
-    content.push_str(&format!(
-        "\n# Synced from {} [! ACTUAL VALUES]\n",
-        paths.env_str()
+    content.push_str(&block_heading(
+        &paths.env_str(),
+        " [! ACTUAL VALUES]",
+        comment,
     ));
 
     for key in keys {
@@ -1010,88 +1352,14 @@ fn add_with_actual_values(
     Ok(())
 }
 
-fn add_with_actual_values_preview(
-    keys: &[&String],
-    values: &IndexMap<String, String>,
-    config: &PlaceholderConfig,
-) -> Result<Vec<VarChange>> {
-    let refused = credential_keys(keys.iter().copied(), values, "sync")?;
-    Ok(keys
-        .iter()
-        .filter_map(|key| {
-            values.get(*key).map(|v| {
-                if refused.iter().any(|(r, _)| r == *key) {
-                    VarChange {
-                        key: (*key).clone(),
-                        old_value: None,
-                        new_value: generate_placeholder(key, Some(v), config),
-                        is_placeholder: true,
-                    }
-                } else {
-                    VarChange {
-                        key: (*key).clone(),
-                        old_value: None,
-                        new_value: v.clone(),
-                        is_placeholder: false,
-                    }
-                }
-            })
-        })
-        .collect())
-}
-
-fn add_interactively(
-    paths: &SyncPaths,
-    keys: &[&String],
-    values: &IndexMap<String, String>,
-    config: &PlaceholderConfig,
-) -> Result<()> {
-    let selected = MultiSelect::new()
-        .with_prompt("Select variables to add")
-        .items(keys)
-        .interact()?;
-
-    let mut content = fs::read_to_string(&paths.example)?;
-    content.push_str(&format!("\n# Synced from {}\n", paths.env_str()));
-
-    for &idx in &selected {
-        let key = keys[idx];
-        let placeholder = generate_placeholder(key, values.get(key), config);
-        content.push_str(&envfile::line(key, &placeholder));
-        content.push('\n');
-    }
-
-    write_template(&paths.example, &content)?;
-    Ok(())
-}
-
-fn add_interactively_preview(
-    keys: &[&String],
-    values: &IndexMap<String, String>,
-    config: &PlaceholderConfig,
-) -> Result<Vec<VarChange>> {
-    Ok(keys
-        .iter()
-        .map(|key| {
-            let placeholder = generate_placeholder(key, values.get(*key), config);
-            VarChange {
-                key: (*key).clone(),
-                old_value: None,
-                new_value: placeholder,
-                is_placeholder: true,
-            }
-        })
-        .collect())
-}
-
 fn convert_to_example(
     paths: &SyncPaths,
     vars: &IndexMap<String, String>,
     config: &PlaceholderConfig,
 ) -> Result<()> {
     let mut content = String::new();
-    content.push_str(&format!("# Generated from {}\n", paths.env_str()));
-    content.push_str("# Replace all placeholder values with real credentials\n\n");
+    content.push_str(&format!("{}{}\n", GENERATED_HEADER[0], paths.env_str()));
+    content.push_str(&format!("{}\n\n", GENERATED_HEADER[1]));
 
     for (key, value) in vars {
         let placeholder = generate_placeholder(key, Some(value), config);
@@ -1216,7 +1484,8 @@ fn add_from_example_interactive(
         .interact()?;
 
     let mut content = fs::read_to_string(&paths.env).unwrap_or_default();
-    content.push_str(&format!("\n# Synced from {}\n", paths.example_str()));
+    // Same heading as the other reverse writes, for the same reason.
+    content.push_str("\n# Added by evnx sync\n");
 
     for &idx in &selected {
         let key = keys[idx];
@@ -1229,28 +1498,19 @@ fn add_from_example_interactive(
     Ok(())
 }
 
-fn add_from_example_interactive_preview(
-    keys: &[&String],
-    example_vars: &IndexMap<String, String>,
-    config: &PlaceholderConfig,
-) -> Result<Vec<VarChange>> {
-    Ok(keys
-        .iter()
-        .map(|key| {
-            let (value, generated) = reverse_value(key, example_vars.get(*key), config);
-            VarChange {
-                key: (*key).clone(),
-                old_value: None,
-                new_value: value,
-                is_placeholder: generated,
-            }
-        })
-        .collect())
-}
-
 // ─────────────────────────────────────────────────────────────
 // Preview Output Helpers
 // ─────────────────────────────────────────────────────────────
+
+/// The file a write to `path` would change, as the preview names it: through
+/// a symlink, the link and its target — worked out by `safe_write::preview`,
+/// the rule the write itself follows (R-template).
+fn target_label(path: &Path) -> String {
+    match crate::core::safe_write::preview(path) {
+        Ok(p) if p.through_link => format!("{} -> {}", path.display(), p.target.display()),
+        _ => path.display().to_string(),
+    }
+}
 
 fn print_preview(preview: &SyncPreview) {
     ui::print_preview_header();
@@ -1426,25 +1686,6 @@ mod tests {
         assert!(preview
             .iter()
             .any(|v| v.key == "PORT" && v.new_value == "8000"));
-    }
-
-    #[test]
-    fn test_add_with_actual_values_preview() {
-        let mut values = IndexMap::new();
-        values.insert("API_KEY".to_string(), "sk_live_123".to_string());
-
-        // ✅ FIXED: Create Vec<&String> properly
-        let keys_vec: Vec<String> = vec!["API_KEY".to_string()];
-        let keys: Vec<&String> = keys_vec.iter().collect();
-
-        let preview =
-            add_with_actual_values_preview(&keys, &values, &PlaceholderConfig::default()).unwrap();
-
-        // DEC-S1 (I-113): a credential is shown as the placeholder it will be
-        // written as, never as its real value.
-        assert_eq!(preview.len(), 1);
-        assert!(preview[0].is_placeholder);
-        assert_ne!(preview[0].new_value, "sk_live_123");
     }
 
     // NEW: Integration-style tests with temp files

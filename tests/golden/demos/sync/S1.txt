@@ -12,8 +12,9 @@ Next steps:
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: no template: created with placeholders (no terminal / -f) (exit 0)
@@ -21,7 +22,7 @@ Next steps:
 # Generated from .env
 # Replace all placeholder values with real credentials
 
-DATABASE_URL=YOUR_URL_HERE
+DATABASE_URL=postgres://user:password@localhost:5432/dbname
 API_SECRET=YOUR_KEY_HERE
 API_PORT=8000
 NEW_FEATURE=YOUR_VALUE_HERE
@@ -33,8 +34,8 @@ $ evnx sync --check
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: second run: in sync (exit 0)
@@ -45,8 +46,8 @@ $ evnx sync -f
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: idempotent: nothing to add (exit 0)

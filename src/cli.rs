@@ -136,11 +136,20 @@ pub struct SyncArgs {
     #[arg(long, value_name = "NAME", conflicts_with = "env")]
     pub env_name: Option<String>,
 
-    /// Direction of sync operation
-    #[arg(long, value_enum, default_value_t = SyncDirection::Forward)]
-    pub direction: SyncDirection,
+    /// Which file to fill: forward (the default) adds to the template,
+    /// reverse adds to `.env`.
+    ///
+    /// Leaving it out also decides how far `--check` looks. Without
+    /// it the check is two-way, for a developer's own pair: a name only the
+    /// template has is drift as well. Naming a direction makes the check
+    /// one-way — only names the target lacks — which is how CI and the
+    /// pre-commit hook ask: `evnx sync --check --direction forward`.
+    #[arg(long, value_enum)]
+    pub direction: Option<SyncDirection>,
 
-    /// Use placeholder values when adding new variables
+    /// Deprecated: does what --force does (placeholders, no prompt).
+    ///
+    /// Without a terminal sync already uses placeholders and says so.
     #[arg(long)]
     pub placeholder: bool,
 
@@ -153,11 +162,19 @@ pub struct SyncArgs {
     /// Implies --dry-run: nothing is ever written. This is the CI gate.
     ///
     ///   0  in sync
-    ///   1  out of sync — commit the result of `evnx sync`
-    ///   2  error — a file is missing, or will not parse
+    ///   1  out of sync — the message names the command that fixes each side
+    ///   2  no verdict — a file is missing or will not parse, the config is
+    ///      wrong, or .env is empty beside a populated template
     ///
-    /// The three codes follow `diff` and `grep`, so a pipeline can tell a stale
-    /// template from a broken run. Plain --dry-run previews and always exits 0.
+    /// Without --direction it looks both ways: names the template lacks, and
+    /// names only the template has. With --direction it looks one way, as CI
+    /// and the pre-commit hook should:
+    ///
+    ///   evnx sync --check --direction forward
+    ///
+    /// With no .env, the template is checked against the required `[vars]` in
+    /// .evnx.toml. The three codes follow `diff` and `grep`. Plain --dry-run
+    /// previews and always exits 0.
     #[arg(long, verbatim_doc_comment)]
     pub check: bool,
 
@@ -176,7 +193,9 @@ pub struct SyncArgs {
     )]
     pub format: String,
 
-    /// Skip interactive prompts (for CI/CD usage)
+    /// Skip the prompts and add placeholder values.
+    ///
+    /// Without a terminal, or with CI set, sync does this anyway and says so.
     #[arg(long, short = 'f')]
     pub force: bool,
 
@@ -191,12 +210,17 @@ pub struct SyncArgs {
     #[arg(long)]
     pub skip_without_env: bool,
 
-    /// Path to custom placeholder template config (JSON)
+    /// A JSON file of placeholder rules: `patterns`, `default`, `allow_actual`.
+    ///
+    /// An unknown key is an error naming the accepted ones, so a misspelt
+    /// setting cannot be silently off.
     #[arg(long, value_name = "PATH")]
     pub template_config: Option<std::path::PathBuf>,
 
-    /// Warn on non-standard env var naming (default: warn)
-    /// Defaults to `warn`, or `[sync] naming_policy` from `.evnx.toml`.
+    /// What to do with a name that is not UPPER_SNAKE_CASE.
+    ///
+    /// Defaults to `[sync] naming_policy` in .evnx.toml, else `warn`. `error`
+    /// stops the run with no verdict (exit 2), in every mode.
     #[arg(long, value_enum)]
     pub naming_policy: Option<NamingPolicy>,
 }
@@ -211,6 +235,28 @@ pub enum NamingPolicy {
     Error,
     /// Ignore naming conventions entirely
     Ignore,
+}
+
+impl NamingPolicy {
+    /// `[sync] naming_policy` from `.evnx.toml`: a value the flag accepts, or
+    /// an error naming them (I-121, DEC-S11). The shared rule for a value from
+    /// a fixed list, as `[validate] fail_on` uses.
+    ///
+    /// ⚠️ An unknown value used to fall through to `warn` without a word, so
+    /// `naming_policy = "eror"` switched off the protection it was written to
+    /// turn on.
+    pub fn from_config(value: &str) -> anyhow::Result<Self> {
+        crate::core::args::one_of(
+            "naming policy",
+            value,
+            &[
+                ("warn", Self::Warn),
+                ("error", Self::Error),
+                ("ignore", Self::Ignore),
+            ],
+            &["warn", "error", "ignore"],
+        )
+    }
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -380,19 +380,39 @@ macOS, not on Windows. evnx does not run `aws` itself.
 
 ### `evnx sync`
 
-Keeps `.env` and `.env.example` aligned, in either direction.
+Keeps `.env` and `.env.example` aligned by variable **name**. It only ever adds: it never
+removes a variable or changes a value (comparing values is `evnx diff`).
 
 ```bash
-# Forward: .env → .env.example (document what you have)
-evnx sync --direction forward --placeholder
+# Forward (the default): add .env's new names to .env.example, as placeholder values
+evnx sync
 
-# Reverse: .env.example → .env — copies the template's values, placeholders where it has none
+# Reverse: add the template's names to .env — its values, placeholders where it has none
 evnx sync --direction reverse
 
-# CI gate: 0 in sync, 1 drift, 2 no verdict. With no .env, the template is
-# checked against the required [vars] in .evnx.toml.
+# Preview: write nothing, ask nothing, exit 0
+evnx sync --dry-run
+
+# Your own check, both ways: names the template lacks, and names only the template has
 evnx sync --check
+
+# CI and pre-commit: one way — exit 1 only when .env has a name the template lacks.
+# With no .env, the template is checked against the required [vars] in .evnx.toml.
+evnx sync --check --direction forward
 ```
+
+| Flag | What it does |
+|---|---|
+| `--direction forward\|reverse` | Which file to fill (default `forward`). With `--check`, naming one makes the check one-way |
+| `-n`, `--dry-run` | Preview; writes nothing, never prompts, exits 0 |
+| `--check` | Exit 0 in sync, 1 out of sync (the message names the command that fixes each side), 2 no verdict. Implies `--dry-run` |
+| `--format json` | With `--check`: `missing`, plus `template_only` when no `--direction` is given |
+| `-f`, `--force` | Skip the prompts and add placeholder values. With no terminal, or `CI` set, sync does this anyway and says so |
+| `--env`, `--env-name`, `--example` | The pair to compare (default `.env` and `.env.example`) |
+| `--template-config FILE` | JSON placeholder rules: `patterns`, `default`, `allow_actual` (real values for configuration such as `LOG_LEVEL`; a credential is refused). An unknown key is an error |
+| `--naming-policy warn\|error\|ignore` | Names that are not `UPPER_SNAKE_CASE`; `error` stops with exit 2 |
+| `--skip-without-env` | For a pre-commit hook: with no `.env` and no spec, skip (exit 0) and say so |
+| `--placeholder` | Deprecated; does what `--force` does |
 
 ---
 
@@ -980,7 +1000,8 @@ ignore           = ["boolean_trap"]
 fail_on          = "error"           # "error" | "warning": the lowest severity that exits 1
 
 [sync]
-naming_policy = "warn"         # "warn" | "error" | "ignore"
+naming_policy = "warn"         # "warn" | "error" | "ignore"; any other value is an error
+                               # placeholder rules are a JSON file: --template-config
 
 [diff]
 ignore_keys = ["BUILD_ID"]

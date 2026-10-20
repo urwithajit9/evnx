@@ -43,7 +43,10 @@ impl Pty {
         cmd.current_dir(dir)
             .args(args)
             .env("NO_COLOR", "1")
-            .env("TERM", "xterm");
+            .env("TERM", "xterm")
+            // A person at a terminal: `sync` skips its prompts when `CI` is
+            // set (DEC-S18), and GitHub Actions sets it for every step.
+            .env_remove("CI");
         for (k, v) in env {
             cmd.env(k, v);
         }

@@ -83,6 +83,9 @@ pub fn run_program(
     cmd.current_dir(dir)
         .args(args)
         .env("NO_COLOR", "1")
+        // `sync` reads `CI` (DEC-S18), and GitHub Actions sets it: a test
+        // that wants it passes it in `env`, so a run means the same anywhere.
+        .env_remove("CI")
         .stdin(if stdin.is_some() {
             Stdio::piped()
         } else {

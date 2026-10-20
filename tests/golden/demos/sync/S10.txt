@@ -1,16 +1,16 @@
 
 ================ S10 ================
 
-$ evnx sync --check --skip-without-env
+$ evnx sync --check --direction forward --skip-without-env
 [stderr]
 · .env not found and no required [vars] to check .env.example against — nothing to check, skipped
 [exit 0]
   ok: FIXED I-128: the shipped hook on a fresh clone (no .env) skips and says so (exit 0)
 
-$ evnx sync --check --skip-without-env
+$ evnx sync --check --direction forward --skip-without-env
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
-│ Found 1 variable(s) in .env missing from .env.example:                       │
+│ Found 1 variable in .env missing from .env.example:                          │
 │   • B                                                                        │
 └──────────────────────────────────────────────────────────────────────────────┘
 
@@ -25,11 +25,12 @@ Target: .env.example (action: Add)
 
   evnx sync  .env ↔ .env.example  (forward)
 
-! .env has permissive permissions (0o644). Consider: chmod 600 .env
-· Overly permissive .env files may expose secrets to other users
+! .env is readable by other users (mode 644)
+     →  chmod 600 .env
   Docs: https://docs.evnx.dev/cli/commands/sync
 
-✗ Out of sync. Run `evnx sync --direction forward` and commit the result.
+✗ Out of sync.
+  · 1 variable in .env is missing from .env.example: run `evnx sync --direction forward` and commit .env.example.
 [exit 1]
   ok: FIXED I-128: with drift the hook blocks with the command that fixes it, no terminal needed (exit 1)
 

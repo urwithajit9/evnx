@@ -6,8 +6,9 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::path::Path;
 
-use super::shared::{confirm_and_apply, count, Flow, Mode, Outcome};
+use super::shared::{confirm_and_apply, Flow, Mode, Outcome};
 use crate::schema::{formatter, loader, resolver};
+use crate::utils::string::count;
 
 /// Handle blueprint addition
 pub fn handle(blueprint_id: Option<&str>, output_path: &Path, mode: &Mode) -> Result<Outcome> {

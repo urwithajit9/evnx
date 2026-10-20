@@ -1,40 +1,11 @@
-//! Security-focused utilities: permissions, naming validation, audit logging.
-
-use anyhow::Result;
-// use colored::*;
+//! Security-focused utilities: naming validation, audit logging.
+//!
+//! The `.env` permission check moved to `core::permissions::warn_if_readable`
+//! in 0.10.12 (I-276): it was worded `(0o644)` here and differently in
+//! `safe_write`, and a reverse sync onto a readable `.env` printed both.
 
 use crate::cli::NamingPolicy;
 use crate::utils::ui;
-
-/// Check if .env file has appropriate permissions (0o600 recommended)
-pub fn check_env_permissions(path: &str) -> Result<()> {
-    let metadata = match std::fs::metadata(path) {
-        Ok(m) => m,
-        Err(_) => return Ok(()), // File doesn't exist yet, skip check
-    };
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = metadata.permissions().mode();
-        // Check if group or others have any permissions
-        if perms & 0o077 != 0 {
-            ui::warning(format!(
-                "{} has permissive permissions (0o{:o}). Consider: chmod 600 {}",
-                path,
-                perms & 0o777,
-                path
-            ));
-            ui::warning_detail(format!(
-                "{} Overly permissive .env files may expose secrets to other users",
-                colored::Colorize::dimmed(ui::glyph::INFO)
-            ));
-        }
-    }
-
-    // On Windows, we could check ACLs, but that's complex; skip for now
-    Ok(())
-}
 
 /// Validate environment variable naming convention
 pub fn validate_var_name(key: &str, policy: NamingPolicy) -> Result<(), String> {
@@ -64,14 +35,14 @@ pub fn validate_var_name(key: &str, policy: NamingPolicy) -> Result<(), String> 
     Ok(())
 }
 
-/// Log a security audit event (for actual-values mode)
-/// One line on stderr naming the keys written to `.env.example` with real
+/// One line on stderr naming the keys written to the template with real
 /// values. DEC-S1: printed whenever that happens, not only with `--verbose`,
-/// and not hidden by `-q` — it records a choice with consequences.
-pub fn log_security_event(keys: &[String], always: bool) {
-    if always && !keys.is_empty() {
+/// and not hidden by `-q` — it records a choice with consequences. It is a
+/// line in the run's output, not a log kept anywhere else (D-83).
+pub fn log_security_event(keys: &[String], template: &str) {
+    if !keys.is_empty() {
         eprintln!(
-            "[AUDIT] actual values written to .env.example for: {}",
+            "[AUDIT] actual values written to {template} for: {}",
             keys.join(", ")
         );
     }
@@ -123,19 +94,9 @@ mod tests {
     }
 
     #[test]
-    fn test_check_env_permissions_nonexistent_file() {
-        // Should not error if file doesn't exist
-        let result = check_env_permissions("/nonexistent/.env");
-        assert!(result.is_ok());
-    }
-
-    // Note: Testing actual permission checks requires creating files with specific modes
-    // This is complex and platform-specific; integration tests are better suited
-
-    #[test]
     fn test_log_security_event_no_panic() {
         // Just ensure the function doesn't panic
-        log_security_event(&["KEY1".to_string(), "KEY2".to_string()], true);
-        log_security_event(&[], false);
+        log_security_event(&["KEY1".to_string(), "KEY2".to_string()], ".env.example");
+        log_security_event(&[], ".env.example");
     }
 }

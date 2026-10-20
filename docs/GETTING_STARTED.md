@@ -425,34 +425,45 @@ The [migrate guide](https://docs.evnx.dev/cli/commands/migrate) lists every dest
 
 ## Step 8 — Keep files in sync
 
-`evnx sync` keeps `.env` and `.env.example` aligned as your project evolves:
+`evnx sync` keeps `.env` and `.env.example` aligned as your project evolves. It compares
+variable names and only adds; it never removes a variable or changes a value.
 
 ```bash
-# Forward: propagate new keys from .env into .env.example (placeholder values, never real ones)
-evnx sync --direction forward --placeholder
+# Forward (the default): add new names from .env to .env.example, as placeholder values
+evnx sync
 
 # Reverse: fill .env from .env.example — the template's values, placeholders where it has none
 evnx sync --direction reverse
 
-# In CI: 0 in sync, 1 drift, 2 no verdict. With no .env, the template is checked
-# against the required [vars] in .evnx.toml.
+# Your own check, both ways: exit 1 if either file has a name the other lacks
 evnx sync --check
+
+# In CI and pre-commit hooks, one way: exit 1 only when .env has a name the template lacks.
+# 0 in sync, 1 drift, 2 no verdict. With no .env, the template is checked against the
+# required [vars] in .evnx.toml.
+evnx sync --check --direction forward
 ```
 
 Generate `.env.example` from your existing `.env` — the forward direction creates it if it
-is missing:
+is missing. Values become placeholders chosen from each name and value, never the real ones:
 
 ```bash
-evnx sync --direction forward
+evnx sync
 
 cat .env.example
-# APP_NAME=
-# DATABASE_URL=
-# AWS_ACCESS_KEY_ID=
-# ...
+# Generated from .env
+# Replace all placeholder values with real credentials
+
+APP_NAME=YOUR_VALUE_HERE
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+AWS_ACCESS_KEY_ID=YOUR_KEY_HERE
+PORT=8000
 ```
 
-Commit `.env.example` to your repository. It tells teammates which variables are required without exposing values.
+In a terminal, sync asks first (placeholders, or real values for keys that are not
+credentials); without one, or with `CI` set, it uses placeholders and says so. Commit
+`.env.example` to your repository. It tells teammates which variables are required without
+exposing values.
 
 ---
 

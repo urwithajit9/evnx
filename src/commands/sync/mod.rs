@@ -12,11 +12,13 @@ use crate::utils::ui;
 
 mod executor;
 mod models;
-pub(crate) mod placeholder;
 mod security;
 
 // Re-export public types for external use (if needed)
-pub use models::{PlaceholderConfig, SyncAction, SyncPreview, VarChange};
+// `PlaceholderConfig` lives in `core::placeholder` since 0.10.12 (DEC-S19);
+// re-exported so `evnx::commands::sync::PlaceholderConfig` keeps working.
+pub use crate::core::placeholder::PlaceholderConfig;
+pub use models::{SyncAction, SyncPreview, VarChange};
 
 /// In sync — nothing to do.
 pub const EXIT_IN_SYNC: i32 = verdict::EXIT_OK;
@@ -49,17 +51,22 @@ pub const EXIT_ERROR: i32 = verdict::EXIT_ERROR;
 /// grep   match → 0   no match  → 1    trouble → 2
 /// ```
 ///
-/// ⚠️ **The contract is opt-in.** Without `--check` nothing changes: errors still
-/// propagate to `main` and exit `1` exactly as before, and `--dry-run` still
-/// previews and exits `0` whatever it finds. Terraform draws the same line with
-/// `-detailed-exitcode`, and for the same reason — silently re-numbering the exit
-/// codes of a command people already script would be a breaking change dressed up
-/// as a fix.
+/// ⚠️ **Drift is reported through the exit code only under `--check`.** Plain
+/// `sync` exits `0` whatever it found, and `--dry-run` previews and exits `0`.
+/// A failure is `2` with the "No verdict" line in every mode (DEC-S8, U4).
+///
+/// # How far `--check` looks (DEC-S3, DEC-S17)
+///
+/// Without `--direction` it is two-way: a name only the template has is drift
+/// too — the check a developer runs on their own pair. A named direction makes
+/// it one-way (only names the target lacks), which is how CI and the shipped
+/// pre-commit hook ask, so a teammate whose `.env` has not caught up with the
+/// template can still commit.
 ///
 /// # Why `--dry-run` is kept
 ///
-/// `--check` and `--dry-run` currently print byte-identical output and differ only
-/// in the exit code, so the case for dropping one is real. Two things keep it:
+/// `--check` and `--dry-run` print the same preview and differ in the exit code
+/// and the verdict lines, so the case for dropping one is real. Two things keep it:
 /// `--dry-run` has shipped since before v0.4.0 and appears throughout the guides;
 /// and `evnx sync --check || true` cannot distinguish `1` from `2`, so a user who
 /// only wants the preview needs a flag that never reports state through the exit
@@ -72,7 +79,9 @@ pub const EXIT_ERROR: i32 = verdict::EXIT_ERROR;
 pub fn run(
     env: String,
     example: String,
-    direction: SyncDirection,
+    // ⚠️ `Option` since 0.10.12 (DEC-S17): whether a direction was *given*
+    // decides how far `--check` looks. `None` is forward, looking both ways.
+    direction: Option<SyncDirection>,
     placeholder: bool,
     verbose: bool,
     dry_run: bool,
@@ -84,6 +93,8 @@ pub fn run(
     spec: crate::core::spec::Spec,
     skip_without_env: bool,
 ) -> Result<Verdict> {
+    let two_way = direction.is_none();
+    let direction = direction.unwrap_or_default();
     let paths = executor::SyncPaths {
         env: PathBuf::from(env),
         example: PathBuf::from(example),
@@ -111,46 +122,40 @@ pub fn run(
         }
     }
 
-    // ⚠️ `--format json` is accepted only with `--check`. Without it `sync`
-    // edits files, and a machine-readable report of an edit already made is
-    // worth less than the edit — clap enforces the pairing, this is the
-    // behaviour behind it.
-    if format == "json" {
-        // ⚠️ The same three codes the pretty path uses, and for the same reason:
-        // under `--check` an error is a *different answer*, not a louder "out of
-        // sync". Propagating the `Err` would exit 1, and a pipeline branching on
-        // the code would read an unparseable template as drift.
-        // `main` turns the `Err` into 2 with the "No verdict" line (U4).
-        return Ok(if check_as_json(&paths, direction)? {
-            Verdict::Findings
-        } else {
-            Verdict::Clean
-        });
+    // DEC-S9: kept so scripts and the old hook entry keep working.
+    if placeholder {
+        ui::warning("--placeholder is deprecated: it does what --force does (placeholder values, no prompt). Use --force.");
     }
 
     let ctx = executor::SyncCtx {
         paths,
         direction,
-        placeholder,
+        two_way,
         verbose,
         // `--check` is a dry run that reports its verdict through the exit code.
         dry_run: dry_run || check,
-        force,
+        check,
+        force: force || placeholder,
         template_config,
         naming_policy,
         spec,
     };
 
-    // Under `--check` an error is a *different answer*, not a louder version of
-    // "out of sync". `main` gives every `Err` 2 and the "No verdict" line, so it
-    // propagates; this used to print its own line and exit here (U4).
-    let out_of_step = executor::execute(ctx)?;
-    if check && out_of_step {
-        eprintln!();
-        eprintln!("✗ Out of sync. Run `evnx sync --direction {direction}` and commit the result.");
-        return Ok(Verdict::Findings);
-    }
-    Ok(Verdict::Clean)
+    // ⚠️ `--format json` is accepted only with `--check` (clap enforces it).
+    // It reads the same drift the pretty output prints (I-117): it was a
+    // second implementation that left out the spec, the naming policy and the
+    // `allow_actual` guard, and gave a missing `.env` in reverse a different
+    // exit code. An `Err` is exit 2 with the "No verdict" line, from `main`.
+    let out_of_step = if format == "json" {
+        check_as_json(&ctx)?
+    } else {
+        executor::execute(&ctx)?
+    };
+    Ok(if check && out_of_step {
+        Verdict::Findings
+    } else {
+        Verdict::Clean
+    })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -165,6 +170,9 @@ mod tests {
     // But if you want to verify the run() function signature compiles:
 
     /// Pins the public signature so a change to it has to be deliberate.
+    ///
+    /// ⚠️ Updated 2026-10-20 (R-sync, DEC-S17): `direction` is an `Option`,
+    /// because whether a direction was given decides how far `--check` looks.
     ///
     /// ⚠️ Updated 2026-10-17 (U8d): `skip_without_env` appended, for the
     /// pre-commit hook on a clone with no `.env` (DEC-U8-5).
@@ -191,15 +199,15 @@ mod tests {
     #[test]
     fn test_run_signature_compiles() {
         let _func: fn(
-            String, // env
-            String, // example
-            crate::cli::SyncDirection,
-            bool,   // placeholder
-            bool,   // verbose
-            bool,   // dry_run
-            bool,   // force
-            bool,   // check
-            String, // format
+            String,                            // env
+            String,                            // example
+            Option<crate::cli::SyncDirection>, // DEC-S17: given or not
+            bool,                              // placeholder
+            bool,                              // verbose
+            bool,                              // dry_run
+            bool,                              // force
+            bool,                              // check
+            String,                            // format
             Option<std::path::PathBuf>,
             crate::cli::NamingPolicy,
             crate::core::spec::Spec,
@@ -214,21 +222,22 @@ mod tests {
 
 /// What `--check --format json` reports.
 ///
-/// ⚠️ Read-only, and deliberately separate from the write paths. `sync` without
-/// `--check` edits files; nothing pipes a file-writing command into `jq`, and
-/// threading a preview back out of `sync_forward` / `sync_reverse` would mean
-/// restructuring both for output nobody consumes.
-///
 /// The shape answers the question a CI gate asks — *what* drifted, not just that
-/// something did. Until now the only answer available was the exit code.
+/// something did.
 #[derive(serde::Serialize)]
 struct CheckReport {
     in_sync: bool,
     direction: &'static str,
     env: String,
     example: String,
-    /// Keys the target is missing, sorted so the output is stable between runs.
+    /// Keys the target is missing, in the source's order (the template's
+    /// first, then names only the spec declares, in reverse).
     missing: Vec<String>,
+    /// Without `--direction` (two-way, DEC-S3, DEC-S17): names only the
+    /// template has. Absent from a one-way report, so its presence means it
+    /// was checked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    template_only: Option<Vec<String>>,
     summary: CheckSummary,
     /// `"spec"` when there was no `.env` and the template was checked against
     /// the required `[vars]` instead (DEC-S4). Absent otherwise, so the report
@@ -240,62 +249,42 @@ struct CheckReport {
 #[derive(serde::Serialize)]
 struct CheckSummary {
     missing: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    template_only: Option<usize>,
 }
 
-/// Compute the drift and print it as JSON. Returns whether the files are in sync.
+/// Print the drift as JSON. Returns whether the files are out of step.
 ///
-/// ⚠️ A file that will not parse is an error, not "nothing missing". Reporting
-/// `in_sync: true` over a template evnx could not read is the fail-open this
-/// release has spent its time removing.
-fn check_as_json(paths: &executor::SyncPaths, direction: SyncDirection) -> Result<bool> {
-    use crate::core::Parser;
-
-    let parser = Parser::default();
-    let env = parser
-        .parse_file(&paths.env)
-        .with_context(|| format!("Failed to parse {}", paths.env_str()))?;
-
-    // A missing template means everything is missing from it, which is a real
-    // answer rather than an error — `sync` itself would create it.
-    let example_vars = if paths.example.exists() {
-        parser
-            .parse_file(&paths.example)
-            .with_context(|| format!("Failed to parse {}", paths.example_str()))?
-            .vars
-    } else {
-        Default::default()
-    };
-
-    let (source, target) = match direction {
-        SyncDirection::Forward => (&env.vars, &example_vars),
-        SyncDirection::Reverse => (&example_vars, &env.vars),
-    };
-
-    let mut missing: Vec<String> = source
-        .keys()
-        .filter(|k| !target.contains_key(*k))
-        .cloned()
-        .collect();
-    missing.sort();
-
+/// ⚠️ The drift comes from [`executor::load`], the computation the pretty
+/// output uses, after the same refusals: an unreadable file, a credential in
+/// `allow_actual`, a name `--naming-policy error` refuses. Each is exit 2 with
+/// nothing on stdout.
+fn check_as_json(ctx: &executor::SyncCtx) -> Result<bool> {
+    let config = executor::load_config(ctx)?;
+    let loaded = executor::load(ctx, &config, false)?;
+    let drift = &loaded.drift;
+    let template_only = (ctx.two_way && ctx.direction == SyncDirection::Forward)
+        .then(|| drift.template_only.clone());
     let report = CheckReport {
-        in_sync: missing.is_empty(),
-        direction: match direction {
+        in_sync: !drift.out_of_step(),
+        direction: match ctx.direction {
             SyncDirection::Forward => "forward",
             SyncDirection::Reverse => "reverse",
         },
-        env: paths.env_str(),
-        example: paths.example_str(),
+        env: ctx.paths.env_str(),
+        example: ctx.paths.example_str(),
+        missing: drift.missing.iter().map(|(k, _)| k.clone()).collect(),
         summary: CheckSummary {
-            missing: missing.len(),
+            missing: drift.missing.len(),
+            template_only: template_only.as_ref().map(Vec::len),
         },
-        missing,
+        template_only,
         compared_with: None,
     };
 
     // stdout, and nothing else on it — the property the golden tests pin.
     println!("{}", serde_json::to_string_pretty(&report)?);
-    Ok(!report.in_sync)
+    Ok(drift.out_of_step())
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -375,8 +364,10 @@ fn check_without_env(
             example: paths.example_str(),
             summary: CheckSummary {
                 missing: missing.len(),
+                template_only: None,
             },
             missing: missing.clone(),
+            template_only: None,
             compared_with: Some("spec"),
         };
         println!("{}", serde_json::to_string_pretty(&report)?);
