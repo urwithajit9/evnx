@@ -2,18 +2,8 @@
 ================ M12 ================
 
 $ evnx migrate --env-name production --to heroku --heroku-app demo-app
-[stderr]
-error: unexpected argument '--env-name' found
 
-  tip: a similar argument exists: '--vault-name'
-
-Usage: evnx migrate --vault-name <VAULT_NAME>
-
-For more information, try '--help'.
-[exit 2]
-  ok: KNOWN S-M1: no --env-name; the clap error points at an unrelated flag; decided: add --env-name (exit 2)
-
-$ evnx migrate --to heroku --heroku-app demo-app -q
+✓ Loaded 1 secret from .env.production
 
 · Heroku Config Vars migration
 · Requires Heroku CLI
@@ -21,6 +11,36 @@ $ evnx migrate --to heroku --heroku-app demo-app -q
 
 Run this command (single bulk set = one restart):
 
+heroku config:set --app demo-app \
+  PROD_ONLY='p'
+
+Summary:
+  ✓  1 command(s) generated
+     nothing has been uploaded — run the commands above
+
+Next steps:
+  1. Verify with `heroku config --app demo-app`.
+  2. The dyno restarts automatically after `config:set`.
+  3. Remove your local .env file.
+[stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: FIXED S-M1: --env-name production reads .env.production (exit 0)
+
+$ evnx migrate --env-name prod --to heroku --heroku-app demo-app
+[stderr]
+Error: .env.prod does not exist — did you mean 'production'?
+
+Available: production
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: an environment with no file: refused, listing the ones there are (exit 2)
+
+$ evnx migrate --to heroku --heroku-app demo-app -q
 heroku config:set --app demo-app \
   APP_NAME='demo app' \
   DATABASE_URL='postgres://admin:s3cr3t@db.internal:5432/app' \
@@ -35,7 +55,7 @@ Summary:
   ✓  8 command(s) generated
      nothing has been uploaded — run the commands above
 [exit 0]
-  ok: KNOWN I-105: -q changes nothing; decided: hides banner and next steps (exit 0)
+  ok: FIXED I-105: -q leaves the commands and the summary (exit 0)
 
 $ evnx migrate --source-file nope.env --to heroku --heroku-app demo-app
 [stderr]
@@ -50,4 +70,4 @@ No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: missing file: one clear line with a hint (exit 2)
 
-================ summary: 3 ok, 0 mismatch   ================
+================ summary: 4 ok, 0 mismatch   ================

@@ -67,6 +67,10 @@ pub struct ConvertOptions {
     /// Base64-encode all values
     pub base64: bool,
 
+    /// Prefix to remove from the front of a name before `prefix` is added
+    /// (`migrate --strip-prefix`). A name that does not start with it is kept.
+    pub strip_prefix: Option<String>,
+
     /// Prefix to add to all keys
     pub prefix: Option<String>,
 
@@ -133,6 +137,10 @@ impl ConvertOptions {
 
     /// Transform a key according to the specified transformation
     pub fn transform_key(&self, key: &str) -> String {
+        let key = match self.strip_prefix.as_deref() {
+            Some(strip) => key.strip_prefix(strip).unwrap_or(key),
+            None => key,
+        };
         let key = if let Some(ref prefix) = self.prefix {
             format!("{}{}", prefix, key)
         } else {
@@ -160,10 +168,10 @@ impl ConvertOptions {
 
     /// `(name in .env, name at the target, value)` for every variable the
     /// filters admit, in file order.
-    fn named<'a>(
+    fn named<'a, N: Naming + ?Sized>(
         &self,
         vars: &'a IndexMap<String, String>,
-        converter: &dyn Converter,
+        converter: &N,
     ) -> Vec<(&'a str, String, &'a str)> {
         vars.iter()
             .filter(|(k, _)| self.should_include(k))
@@ -175,7 +183,10 @@ impl ConvertOptions {
     }
 
     /// Groups of indices into `named` that are one name at the target.
-    fn groups(named: &[(&str, String, &str)], converter: &dyn Converter) -> Vec<Vec<usize>> {
+    fn groups<N: Naming + ?Sized>(
+        named: &[(&str, String, &str)],
+        converter: &N,
+    ) -> Vec<Vec<usize>> {
         let mut by_name: IndexMap<String, Vec<usize>> = IndexMap::new();
         for (i, (_, target, _)) in named.iter().enumerate() {
             let key = if converter.names_ignore_case() {
@@ -189,10 +200,10 @@ impl ConvertOptions {
     }
 
     /// Every set of names that become one name in `converter`'s output.
-    pub fn collisions_in(
+    pub fn collisions_in<N: Naming + ?Sized>(
         &self,
         vars: &IndexMap<String, String>,
-        converter: &dyn Converter,
+        converter: &N,
     ) -> Vec<Collision> {
         let named = self.named(vars, converter);
         Self::groups(&named, converter)
@@ -213,10 +224,22 @@ impl ConvertOptions {
     /// lowercased), after the only collision check had run. So `A_B` and `a_b`
     /// became two `gcloud secrets create a-b` and exit 0 (I-249). The names a
     /// format emits now come from here, and so does the check.
-    pub fn prepare(
+    pub fn prepare<N: Naming + ?Sized>(
         &self,
         vars: &IndexMap<String, String>,
-        converter: &dyn Converter,
+        converter: &N,
+    ) -> Result<Vec<(String, String)>> {
+        self.prepare_with(vars, converter, "Nothing was written.")
+    }
+
+    /// [`prepare`](Self::prepare), ending a refusal with `consequence` — what
+    /// the command did not do. `convert` writes; `migrate` prints or sends
+    /// (I-104), and "Nothing was written" would not say that.
+    pub fn prepare_with<N: Naming + ?Sized>(
+        &self,
+        vars: &IndexMap<String, String>,
+        converter: &N,
+        consequence: &str,
     ) -> Result<Vec<(String, String)>> {
         let named = self.named(vars, converter);
         let pick = |i: usize| (named[i].1.clone(), self.transform_value(named[i].2));
@@ -225,7 +248,7 @@ impl ConvertOptions {
             Collisions::Refuse => {
                 let clashes = self.collisions_in(vars, converter);
                 if !clashes.is_empty() {
-                    anyhow::bail!(self.collision_message(&clashes, converter));
+                    anyhow::bail!(self.collision_message(&clashes, converter, consequence));
                 }
                 Ok((0..named.len()).map(pick).collect())
             }
@@ -237,7 +260,27 @@ impl ConvertOptions {
         }
     }
 
-    fn collision_message(&self, clashes: &[Collision], converter: &dyn Converter) -> String {
+    /// Warn once per collision that `--allow-collisions` resolved, naming the
+    /// value kept. Nothing to say under the other two rules.
+    pub fn announce_kept<N: Naming + ?Sized>(&self, vars: &IndexMap<String, String>, naming: &N) {
+        if self.collisions != Collisions::LastWins {
+            return;
+        }
+        for c in self.collisions_in(vars, naming) {
+            crate::utils::ui::warning(format!(
+                "{}: kept the value of {} (--allow-collisions)",
+                c.describe(),
+                c.kept()
+            ));
+        }
+    }
+
+    fn collision_message<N: Naming + ?Sized>(
+        &self,
+        clashes: &[Collision],
+        converter: &N,
+        consequence: &str,
+    ) -> String {
         // "after renaming" when `--transform` alone merged them, the format's
         // name otherwise: the reader needs to know which rule to work around.
         let by_format = converter.names_ignore_case()
@@ -268,12 +311,14 @@ impl ConvertOptions {
         }
         let without = if self.transform.is_some() {
             ", convert without the transform"
+        } else if self.strip_prefix.is_some() {
+            ", migrate without --strip-prefix"
         } else {
             ""
         };
         msg.push_str(&format!(
             "\nRename one in the .env{without}, or pass --allow-collisions to keep the last \
-             value. Nothing was written."
+             value. {consequence}"
         ));
         msg
     }
@@ -346,6 +391,43 @@ pub trait Converter {
     /// (Azure Key Vault, GitHub secrets).
     fn names_ignore_case(&self) -> bool {
         false
+    }
+}
+
+/// How a destination names what it is given: the part of a [`Converter`]
+/// that [`ConvertOptions::prepare`] needs to see two names becoming one.
+///
+/// ⚠️ Its own trait so `migrate`, whose destinations are not converters, runs
+/// the same pipeline (A-12, I-104). `migrate` had a third copy of
+/// filter → strip → add with no collision check, so `--strip-prefix API_`
+/// on `API_X` and `X` printed one `X` and lost a value. Every converter is a
+/// `Naming` through the impl below; nothing in `formats/` repeats it.
+pub trait Naming {
+    /// Shown in a refusal: "these names become the same name in <name>".
+    fn name(&self) -> &str;
+
+    /// See [`Converter::target_name`].
+    fn target_name(&self, key: &str) -> String {
+        key.to_string()
+    }
+
+    /// See [`Converter::names_ignore_case`].
+    fn names_ignore_case(&self) -> bool {
+        false
+    }
+}
+
+impl<C: Converter + ?Sized> Naming for C {
+    fn name(&self) -> &str {
+        Converter::name(self)
+    }
+
+    fn target_name(&self, key: &str) -> String {
+        Converter::target_name(self, key)
+    }
+
+    fn names_ignore_case(&self) -> bool {
+        Converter::names_ignore_case(self)
     }
 }
 

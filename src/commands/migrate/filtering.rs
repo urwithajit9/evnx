@@ -1,9 +1,24 @@
 //! filtering.rs — include/exclude/prefix transformations for secret keys
 //!
-//! Applied in `mod.rs` before handing the `IndexMap` off to any destination,
-//! so every destination benefits automatically.
+//! ⚠️ `migrate` no longer calls this: it runs `core::converter`'s pipeline,
+//! which `convert` uses too and which refuses two names that become one
+//! (A-12, I-104). This was the third copy of filter → strip → add, and the
+//! only one with no collision check. It stays as a library function, now a
+//! thin wrapper over that pipeline, for callers that want the old map.
 
 use indexmap::IndexMap;
+
+use crate::core::converter::{ConvertOptions, Naming};
+
+/// Names as they are: filtering and renaming only, before a destination is
+/// chosen to fold anything.
+pub(crate) struct AsIs;
+
+impl Naming for AsIs {
+    fn name(&self) -> &str {
+        "migrate"
+    }
+}
 
 /// Apply glob-based include/exclude filters and optional key prefix
 /// transformations to a set of secrets.
@@ -13,6 +28,10 @@ use indexmap::IndexMap;
 /// 2. `exclude` — drop keys matching any glob pattern.
 /// 3. `strip_prefix` — remove a leading prefix from surviving keys.
 /// 4. `add_prefix` — prepend a prefix to surviving keys.
+///
+/// Two keys that become one keep the **last** value, in the first one's place
+/// — what an `IndexMap` insert does. `evnx migrate` refuses that instead,
+/// unless `--allow-collisions`.
 ///
 /// # Arguments
 ///
@@ -52,45 +71,24 @@ pub fn apply_filters(
     strip_prefix: Option<&str>,
     add_prefix: Option<&str>,
 ) -> IndexMap<String, String> {
-    let mut result = IndexMap::new();
-
-    for (key, value) in secrets {
-        // ── include filter ────────────────────────────────────────────────
-        if let Some(patterns) = include {
-            if !patterns.iter().any(|p| glob_match(p, key)) {
-                continue;
-            }
-        }
-
-        // ── exclude filter ────────────────────────────────────────────────
-        if let Some(patterns) = exclude {
-            if patterns.iter().any(|p| glob_match(p, key)) {
-                continue;
-            }
-        }
-
-        // ── key transformation ────────────────────────────────────────────
-        let mut new_key = key.clone();
-
-        if let Some(prefix) = strip_prefix {
-            if new_key.starts_with(prefix) {
-                new_key = new_key[prefix.len()..].to_string();
-            }
-        }
-
-        if let Some(prefix) = add_prefix {
-            new_key = format!("{}{}", prefix, new_key);
-        }
-
-        result.insert(new_key, value.clone());
-    }
-
-    result
+    let options = ConvertOptions {
+        include: include.map(<[String]>::to_vec).unwrap_or_default(),
+        exclude: exclude.map(<[String]>::to_vec).unwrap_or_default(),
+        strip_prefix: strip_prefix.map(str::to_string),
+        prefix: add_prefix.map(str::to_string),
+        ..Default::default()
+    };
+    options
+        .prepare(secrets, &AsIs)
+        .expect("unchecked collisions never refuse")
+        .into_iter()
+        .collect()
 }
 
 // ⚠️ Moved to `core::glob` so `cloud::run` can use the same matcher. A cloud
 // command reaching into a migrate command for a string utility is the wrong
-// shape, and a copy would have made three implementations in one crate.
+// shape, and a copy would have made three implementations in one crate. Its
+// tests live there too; the copies that were here went with A-13.
 pub use crate::core::glob::glob_match;
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -98,27 +96,6 @@ pub use crate::core::glob::glob_match;
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_glob_star() {
-        assert!(glob_match("DB_*", "DB_HOST"));
-        assert!(glob_match("DB_*", "DB_PASSWORD"));
-        assert!(!glob_match("DB_*", "AWS_KEY"));
-        assert!(glob_match("*", "ANYTHING"));
-    }
-
-    #[test]
-    fn test_glob_question_mark() {
-        assert!(glob_match("K?Y", "KEY"));
-        assert!(glob_match("K?Y", "KAY"));
-        assert!(!glob_match("K?Y", "KEEY"));
-    }
-
-    #[test]
-    fn test_glob_exact() {
-        assert!(glob_match("DATABASE_URL", "DATABASE_URL"));
-        assert!(!glob_match("DATABASE_URL", "database_url"));
-    }
 
     #[test]
     fn test_apply_filters_include() {
@@ -180,5 +157,16 @@ mod tests {
         );
         assert_eq!(result.len(), 1);
         assert!(result.contains_key("DB_HOST"));
+    }
+
+    /// The old map: two names that become one keep the last value.
+    #[test]
+    fn t_i104_the_wrapper_keeps_the_last_value() {
+        let mut s = IndexMap::new();
+        s.insert("API_X".into(), "1".into());
+        s.insert("X".into(), "2".into());
+        let result = apply_filters(&s, None, None, Some("API_"), None);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result["X"], "2");
     }
 }

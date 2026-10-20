@@ -1,0 +1,147 @@
+
+================ M13 ================
+
+$ evnx migrate --to vercel --vercel-project prj_1 --include APP_NAME,PRICE --print-only
+printf '%s' 'demo app' | vercel env add APP_NAME production --project prj_1 --force --yes
+printf '%s' '$5' | vercel env add PRICE production --project prj_1 --force --yes
+[stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from .env
+· After filtering: 2 of 8 secrets remain.
+
+· Vercel environment variable migration
+· Requires Vercel CLI
+  Install: npm install -g vercel
+
+Run these commands (each value goes to vercel on stdin):
+
+
+Summary:
+  ✓  2 command(s) generated
+     nothing has been uploaded — run the commands written to stdout
+
+Next steps:
+  1. Run `vercel env pull .env.local` to verify secrets were set.
+  2. Redeploy your project: `vercel --prod`.
+  3. Remove .env from your working directory.
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: shape the tool accepts: vercel --vercel-project prj_1 (exit 0)
+
+$ evnx migrate --to railway --railway-project p-1 --railway-environment production --include APP_NAME,PRICE --print-only
+railway variable set --project p-1 --environment production \
+  APP_NAME='demo app' \
+  PRICE='$5'
+[stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from .env
+· After filtering: 2 of 8 secrets remain.
+
+· Railway migration
+· Requires Railway CLI
+  Install: npm install -g @railway/cli
+
+Upload secrets with:
+
+
+Summary:
+  ✓  2 command(s) generated
+     nothing has been uploaded — run the commands written to stdout
+
+Next steps:
+  1. Login first: `railway login`.
+  2. The command names the project; no `railway link` needed.
+  3. Run the printed `railway variable set` command.
+  4. Setting variables redeploys the service.
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: shape the tool accepts: railway --railway-project p-1 --railway-environment production (exit 0)
+
+$ evnx migrate --to gcp-secret-manager --project my-gcp-project --include APP_NAME,PRICE --print-only
+# Creates each secret, or adds a new version when it already exists.
+upsert_secret() {
+  if gcloud secrets describe "$1" --project=my-gcp-project </dev/null >/dev/null 2>&1; then
+    gcloud secrets versions add "$1" --data-file=- --project=my-gcp-project
+  else
+    gcloud secrets create "$1" --data-file=- --project=my-gcp-project
+  fi
+}
+
+printf '%s' 'demo app' | upsert_secret APP_NAME
+printf '%s' '$5' | upsert_secret PRICE
+[stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
+
+✓ Loaded 8 secrets from .env
+· After filtering: 2 of 8 secrets remain.
+
+· GCP Secret Manager migration
+· Requires Google Cloud CLI (`gcloud`)
+  Install: https://cloud.google.com/sdk/docs/install
+
+Run these commands (each value goes to gcloud on stdin):
+
+
+Summary:
+  ✓  2 command(s) generated
+     nothing has been uploaded — run the commands written to stdout
+
+Next steps:
+  1. Run the printed commands (`gcloud auth login` first).
+  2. Grant service accounts `secretmanager.secretAccessor` on each secret.
+  3. Update your app to call `secretmanager.googleapis.com`.
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: shape the tool accepts: gcp-secret-manager --project my-gcp-project (exit 0)
+
+$ evnx migrate --to railway --railway-project p-1 --include APP_NAME
+
+✓ Loaded 8 secrets from .env
+· After filtering: 1 of 8 secrets remain.
+[stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
+Error: --railway-project needs --railway-environment: Railway asks for the environment whenever a command names the project.
+  evnx migrate --to railway --railway-project <ID> --railway-environment production
+  Or leave both out and run the command in a directory linked with `railway link`.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: Railway needs --environment with --project: refused (DEC-MG1) (exit 2)
+
+$ evnx migrate --to infisical --project p
+
+✓ Loaded 8 secrets from .env
+[stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
+Error: these values cannot be passed to `infisical secrets set` as they are:
+  EMPTY: empty — infisical rejects an empty value
+
+Set them in Infisical directly, or leave them out with --exclude. Nothing was printed.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: infisical: the empty value is refused before printing (I-270) (exit 2)
+
+$ evnx migrate --to gcp-secret-manager --project my-gcp-project --add-prefix X;touch PWNED;
+[stderr]
+Error: --add-prefix "X;touch PWNED;" is not a valid name here.
+
+Expected a letter or `_`, then letters, digits and `_`, so every name stays a variable name. Nothing was printed or sent.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-267: --add-prefix must keep names variable names (exit 2)
+
+================ summary: 6 ok, 0 mismatch   ================

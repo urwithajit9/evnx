@@ -9,8 +9,9 @@
 //!   ├── select_source()                          ← interactive, sources are stable
 //!   ├── destinations::select_destination()       ← reads available_destinations()
 //!   ├── sources::load_secrets()
-//!   ├── filtering::apply_filters()
+//!   ├── ConvertOptions::prepare()                ← filter, strip, add (core::converter)
 //!   ├── destinations::get_destination()          ← registry in destinations/mod.rs
+//!   ├── ConvertOptions::prepare_with()           ← collisions, by the destination's naming
 //!   └── dest.migrate() + print_summary() + print_next_steps()
 //! ```
 //!
@@ -27,11 +28,15 @@ pub mod sources; // load_secrets()
 use anyhow::{Context, Result};
 use colored::Colorize;
 use dialoguer::Select;
+use indexmap::IndexMap;
 
-use destination::{DestinationKind, MigrationOptions};
-use filtering::apply_filters;
+use destination::{DestinationKind, MigrationOptions, Out};
+use filtering::AsIs;
 use sources::load_secrets;
 
+use crate::core::args::{self, Name};
+use crate::core::converter::{Collisions, ConvertOptions};
+use crate::core::parser::is_valid_key;
 use crate::core::verdict::Verdict;
 use crate::docs;
 use crate::utils::ui;
@@ -43,13 +48,19 @@ use crate::utils::ui;
 pub struct MigrateArgs {
     // ── Source ────────────────────────────────────────────────────────────
     pub from: Option<String>,
+    /// The `.env` to read: `--source-file`, else `.env.<--env-name>`, else
+    /// `[defaults] env_name`, else `.env` — resolved by `main` (I-031).
     pub source_file: String,
+    /// `--env-name`, kept to refuse it with `--from environment`.
+    pub env_name: Option<String>,
 
     // ── Destination ───────────────────────────────────────────────────────
     pub to: Option<String>,
 
     // ── Behaviour ─────────────────────────────────────────────────────────
     pub dry_run: bool,
+    /// `--print-only`: stdout holds the commands and nothing else (I-111).
+    pub print_only: bool,
     pub skip_existing: bool,
     pub overwrite: bool,
     pub yes: bool,
@@ -60,36 +71,72 @@ pub struct MigrateArgs {
     pub exclude: Option<Vec<String>>,
     pub strip_prefix: Option<String>,
     pub add_prefix: Option<String>,
+    /// Two names that become one: keep the last (I-104, DEC-PL2).
+    pub allow_collisions: bool,
 
     // ── Destination-specific flags ────────────────────────────────────────
     pub repo: Option<String>, // GitHub owner/repo
     pub github_token: Option<String>,
     pub secret_name: Option<String>, // AWS secret name
     pub aws_profile: Option<String>,
-    pub project: Option<String>,        // Doppler / Infisical project
+    pub project: Option<String>, // Doppler / Infisical / GCP project
     pub doppler_config: Option<String>, // Doppler config (dev/staging/prd)
-    pub infisical_env: Option<String>,  // Infisical environment
-    pub vault_name: Option<String>,     // Azure Key Vault name
+    pub infisical_env: Option<String>, // Infisical environment
+    pub vault_name: Option<String>, // Azure Key Vault name
     pub heroku_app: Option<String>,
     pub vercel_project: Option<String>,
     pub railway_project: Option<String>,
+    pub railway_environment: Option<String>,
+    pub railway_service: Option<String>,
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 pub fn run(args: MigrateArgs) -> Result<Verdict> {
+    // I-267: the prefixes become part of every name, and a name is printed
+    // into commands — gcp printed `gcloud secrets create X;touch PWNED;PORT`.
+    // The rule convert's `--prefix` follows (I-263).
+    args::check_opt("--add-prefix", args.add_prefix.as_deref(), Name::VarPrefix)?;
+    args::check_opt(
+        "--strip-prefix",
+        args.strip_prefix.as_deref(),
+        Name::VarPrefix,
+    )?;
+
+    let out = Out {
+        quiet: ui::is_quiet(),
+        print_only: args.print_only,
+    };
+
     if args.verbose {
-        println!("{}", "Running migrate in verbose mode".dimmed());
+        out.status("Running migrate in verbose mode".dimmed());
     }
 
     print_banner();
 
     // ── Resolve source and destination ────────────────────────────────────
-    let source = args.from.clone().unwrap_or_else(select_source);
+    let source = match args.from.clone() {
+        Some(s) => s,
+        None => select_source()?,
+    };
+    if source == "environment" && args.env_name.is_some() {
+        anyhow::bail!(
+            "--env-name names a .env file, and --from environment reads the process \
+             environment instead. Drop one of them."
+        );
+    }
     let destination = match args.to.clone() {
         Some(d) => d,
         None => select_destination()?,
     };
+    // I-111: `--print-only` is about printed commands. The one destination
+    // that uploads prints none, so the flag could only be ignored there.
+    if args.print_only && destinations::uploads(&destination) {
+        anyhow::bail!(
+            "--print-only applies to destinations evnx prints commands for. \
+             `{destination}` uploads; drop --print-only, or preview with --dry-run."
+        );
+    }
 
     // ── Load secrets from source ──────────────────────────────────────────
     // I-103: the environment is read only with `--include` selecting from it.
@@ -98,12 +145,20 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
     }
     let raw = load_secrets(&source, &args.source_file, args.verbose)?;
 
-    ui::say(format!(
+    // `source` is the source *kind* ("env-file"); the path is what says which
+    // environment was read, now that `--env-name` and `[defaults] env_name`
+    // can choose it (I-031).
+    let what = if source == "environment" {
+        "the process environment".to_string()
+    } else {
+        args.source_file.clone()
+    };
+    out.status(format!(
         "\n{} Loaded {} secret{} from {}",
         "✓".green(),
         raw.len(),
         if raw.len() == 1 { "" } else { "s" },
-        source,
+        what,
     ));
 
     if raw.is_empty() {
@@ -113,13 +168,6 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         // this branch. Naming the source is the part that distinguishes "the
         // file really is empty" from "I am in the wrong directory".
         ui::print_docs_hint(&docs::MIGRATE);
-        // `source` is the source *kind* ("env-file"); the path is what the
-        // user needs in order to see they are in the wrong directory.
-        let what = if source == "environment" {
-            "the process environment".to_string()
-        } else {
-            args.source_file.clone()
-        };
         anyhow::bail!(
             "{what} holds no variables, so there is nothing to migrate.\n\n\
              Check you are in the right directory, or point at another file \
@@ -127,18 +175,38 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         );
     }
 
-    // ── Apply filters / transforms ────────────────────────────────────────
-    let secrets = apply_filters(
-        &raw,
-        args.include.as_deref(),
-        args.exclude.as_deref(),
-        args.strip_prefix.as_deref(),
-        args.add_prefix.as_deref(),
-    );
+    // ── Filter and rename: the pipeline convert uses (A-12) ──────────────
+    let mut options = ConvertOptions {
+        include: args.include.clone().unwrap_or_default(),
+        exclude: args.exclude.clone().unwrap_or_default(),
+        strip_prefix: args.strip_prefix.clone(),
+        prefix: args.add_prefix.clone(),
+        ..Default::default()
+    };
+    let renamed = options.prepare(&raw, &AsIs)?;
+
+    // I-267: `--strip-prefix` can take a whole name, or leave one starting
+    // with a digit. No destination takes either; heroku printed `''='x'`.
+    let unnamed: Vec<String> = options
+        .filter_vars(&raw)
+        .keys()
+        .filter_map(|k| {
+            let to = options.transform_key(k);
+            (!is_valid_key(&to)).then(|| format!("{k} → '{to}'"))
+        })
+        .collect();
+    if !unnamed.is_empty() {
+        anyhow::bail!(
+            "these names are not variable names after renaming:\n  {}\n\n\
+             No destination takes them. Leave them out with --exclude, or change \
+             --strip-prefix. Nothing was printed or sent.",
+            unnamed.join("\n  ")
+        );
+    }
 
     // I-103: say which names leave the environment, before anything is printed.
     if source == "environment" {
-        let names: Vec<&str> = secrets.keys().map(String::as_str).collect();
+        let names: Vec<&str> = renamed.iter().map(|(n, _)| n.as_str()).collect();
         ui::warning(format!(
             "Sending {} variable{} from the environment: {}",
             names.len(),
@@ -147,16 +215,16 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         ));
     }
 
-    if secrets.len() != raw.len() {
-        println!(
+    if renamed.len() != raw.len() {
+        out.status(format!(
             "{} After filtering: {} of {} secrets remain.",
             "·".cyan(),
-            secrets.len(),
+            renamed.len(),
             raw.len()
-        );
+        ));
     }
 
-    if secrets.is_empty() {
+    if renamed.is_empty() {
         // Same rule, and the same one `evnx cloud run` already follows: a
         // filter that matches nothing is a mistake in the filter, not a run
         // with zero secrets that happened to succeed.
@@ -170,29 +238,6 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
             args.source_file
         );
     }
-
-    // ── Build shared options ──────────────────────────────────────────────
-    let opts = MigrationOptions {
-        dry_run: args.dry_run,
-        skip_existing: args.skip_existing,
-        overwrite: args.overwrite,
-        yes: args.yes,
-        verbose: args.verbose,
-        include: args.include.clone(),
-        exclude: args.exclude.clone(),
-        strip_prefix: args.strip_prefix.clone(),
-        add_prefix: args.add_prefix.clone(),
-        repo: args.repo.clone(),
-        github_token: args.github_token.clone(),
-        secret_name: args.secret_name.clone(),
-        aws_profile: args.aws_profile.clone(),
-        project: args.project.clone(),
-        doppler_config: args.doppler_config.clone(),
-        vault_name: args.vault_name.clone(),
-        heroku_app: args.heroku_app.clone(),
-        vercel_project: args.vercel_project.clone(),
-        ..Default::default()
-    };
 
     // ── Dispatch to destination registry ─────────────────────────────────
     let dest = destinations::get_destination(&destination, &args)?;
@@ -219,20 +264,59 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         );
     }
 
+    // ── Collisions, by the destination's own naming (I-104) ──────────────
+    // ⚠️ `--strip-prefix API_` on `API_X` and `X` printed one `X` and said
+    // "1 of 2 secrets remain"; one value was gone. And Azure Key Vault and
+    // GitHub ignore case, so `A_B` and `a_b` are one secret there.
+    options.collisions = if args.allow_collisions {
+        Collisions::LastWins
+    } else {
+        Collisions::Refuse
+    };
+    let secrets: IndexMap<String, String> = options
+        .prepare_with(&raw, dest.as_ref(), "Nothing was printed or sent.")?
+        .into_iter()
+        .collect();
+    options.announce_kept(&raw, dest.as_ref());
+
+    // ── Build shared options ──────────────────────────────────────────────
+    let opts = MigrationOptions {
+        dry_run: args.dry_run,
+        skip_existing: args.skip_existing,
+        overwrite: args.overwrite,
+        yes: args.yes,
+        verbose: args.verbose,
+        out,
+        include: args.include.clone(),
+        exclude: args.exclude.clone(),
+        strip_prefix: args.strip_prefix.clone(),
+        add_prefix: args.add_prefix.clone(),
+        repo: args.repo.clone(),
+        github_token: args.github_token.clone(),
+        secret_name: args.secret_name.clone(),
+        aws_profile: args.aws_profile.clone(),
+        project: args.project.clone(),
+        doppler_config: args.doppler_config.clone(),
+        vault_name: args.vault_name.clone(),
+        heroku_app: args.heroku_app.clone(),
+        vercel_project: args.vercel_project.clone(),
+        ..Default::default()
+    };
+
     let result = dest.migrate(&secrets, &opts)?;
 
-    result.print_summary(dest.kind(), args.dry_run);
+    result.print_summary(dest.kind(), args.dry_run, out);
     if args.dry_run {
         // ⚠️ Deliberately *not* `print_next_steps()`. Every destination's next
         // steps are written for a migration that happened — "verify secrets
         // were set", "redeploy your project" — and printing them directly under
         // "nothing was uploaded" contradicts the line above them (F12).
-        ui::say("\nNext step:");
-        ui::say("  Re-run without --dry-run to apply this.");
-    } else if result.failed == 0 && !ui::is_quiet() {
-        // `-q` hides the banner and next steps (I-105, accepted as proposed).
-        // The destinations' own intro lines move with `--print-only` (I-111).
-        dest.print_next_steps();
+        out.status("\nNext step:");
+        out.status("  Re-run without --dry-run to apply this.");
+    } else if result.failed == 0 {
+        // Status lines: `-q` hides them (I-105), `--print-only` moves them to
+        // stderr (I-111).
+        dest.print_next_steps(out);
     }
     ui::print_docs_hint(&docs::MIGRATE);
     // ⚠️ A run with failed uploads is a "no" (I-106). It printed "✗ 1 failed"
@@ -264,9 +348,16 @@ fn print_banner() {
     );
 }
 
-/// Interactive source picker — stays in mod.rs because sources are not
-/// user-extensible in the same way destinations are.
-fn select_source() -> String {
+/// Ask which source, or take `env-file` when there is no terminal to ask —
+/// what `--from`'s help says (I-105).
+///
+/// ⚠️ This ended `.interact().unwrap_or(0)`, the shape `select_destination`
+/// below shed: any failure of the menu became "env-file", silently. The
+/// terminal decision is now made first, so a failure at the menu is an error.
+fn select_source() -> Result<String> {
+    if !crate::utils::term::interactive() {
+        return Ok("env-file".to_string());
+    }
     let options: &[(&str, &str)] = &[
         ("env-file", "env-file    — Read from .env file"),
         (
@@ -280,8 +371,8 @@ fn select_source() -> String {
         .items(&labels)
         .default(0)
         .interact()
-        .unwrap_or(0);
-    options[idx].0.to_string()
+        .context("choosing what to migrate from")?;
+    Ok(options[idx].0.to_string())
 }
 
 /// Interactive destination picker — delegates to the registry so new

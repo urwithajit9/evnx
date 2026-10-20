@@ -335,6 +335,7 @@ impl ConfigBuilder {
                 include: self.include,
                 exclude: self.exclude,
                 base64: self.base64,
+                strip_prefix: None,
                 prefix: self.prefix,
                 transform: self.transform,
                 collisions: if self.allow_collisions {
@@ -481,18 +482,9 @@ pub fn run(config: ConvertConfig) -> Result<()> {
     if prepared.is_empty() && !config.allow_empty {
         anyhow::bail!(nothing_to_convert(&config.env_path, env_file.vars.len()));
     }
-    if config.options.collisions == Collisions::LastWins {
-        for c in config
-            .options
-            .collisions_in(&env_file.vars, converter.as_ref())
-        {
-            ui::warning(format!(
-                "{}: kept the value of {} (--allow-collisions)",
-                c.describe(),
-                c.kept()
-            ));
-        }
-    }
+    config
+        .options
+        .announce_kept(&env_file.vars, converter.as_ref());
 
     let result = converter
         .convert(&env_file.vars, &config.options)

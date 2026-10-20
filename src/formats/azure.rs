@@ -21,6 +21,13 @@ impl Default for AzureKeyVaultConverter {
     }
 }
 
+/// `key` as a Key Vault secret name: `_` becomes `-`, since names take
+/// letters, digits and `-` only. The one rule for `convert --to
+/// azure-keyvault` and `migrate --to azure-keyvault`.
+pub fn secret_name(key: &str) -> String {
+    key.replace('_', "-")
+}
+
 impl Converter for AzureKeyVaultConverter {
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
         let mut output = String::new();
@@ -59,7 +66,7 @@ impl Converter for AzureKeyVaultConverter {
 
     /// Key Vault names take letters, digits and `-` only.
     fn target_name(&self, key: &str) -> String {
-        key.replace('_', "-")
+        secret_name(key)
     }
 
     /// And they ignore case: `A-B` and `a-b` are one secret, so `az keyvault

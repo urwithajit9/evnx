@@ -3,7 +3,7 @@
 
 $ evnx migrate --to heroku --heroku-app demo-app --skip-existing
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 [stderr]
 
   evnx migrate  Generate destination commands from your .env
@@ -20,7 +20,7 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx migrate --to heroku --heroku-app demo-app --overwrite
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 [stderr]
 
   evnx migrate  Generate destination commands from your .env

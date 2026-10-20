@@ -16,7 +16,7 @@ use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
 
-use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult};
+use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};
 
 pub struct AwsDestination {
     /// AWS Secrets Manager secret name, e.g. `prod/myapp/config`.
@@ -46,10 +46,11 @@ impl MigrationDestination for AwsDestination {
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!(
+        let out = opts.out;
+        out.status(format!(
             "\n{} AWS Secrets Manager migration",
             crate::utils::ui::glyph::INFO.cyan()
-        );
+        ));
 
         let json = serde_json::to_string_pretty(secrets)?;
         let profile_flag = self
@@ -59,16 +60,16 @@ impl MigrationDestination for AwsDestination {
             .unwrap_or_default();
 
         if opts.dry_run {
-            println!(
+            out.result(format!(
                 "\n{}",
                 "Dry-run — would upload to AWS Secrets Manager:".bold()
-            );
-            println!("  Secret name : {}", self.secret_name);
-            println!("  Secrets     : {}", secrets.len());
-            println!("\n  JSON preview (first 300 chars):");
-            println!("  {}", json.chars().take(300).collect::<String>());
+            ));
+            out.result(format!("  Secret name : {}", self.secret_name));
+            out.result(format!("  Secrets     : {}", secrets.len()));
+            out.result("\n  JSON preview (first 300 chars):");
+            out.result(format!("  {}", json.chars().take(300).collect::<String>()));
             if json.len() > 300 {
-                println!("  … ({} more chars)", json.len() - 300);
+                out.result(format!("  … ({} more chars)", json.len() - 300));
             }
             return Ok(MigrationResult {
                 skipped: secrets.len(),
@@ -81,17 +82,17 @@ impl MigrationDestination for AwsDestination {
         let secret_string = shell::quote(&json);
         let name = shell::word(&self.secret_name);
 
-        println!("\n{}", "Run one of the following commands:".bold());
-        println!();
-        println!("{}", "# Create a new secret:".dimmed());
-        println!("aws secretsmanager create-secret \\");
-        println!("  {}--name {} \\", profile_flag, name);
-        println!("  --secret-string {}", secret_string);
-        println!();
-        println!("{}", "# Or update an existing secret:".dimmed());
-        println!("aws secretsmanager update-secret \\");
-        println!("  {}--secret-id {} \\", profile_flag, name);
-        println!("  --secret-string {}", secret_string);
+        out.status(format!("\n{}", "Run one of the following commands:".bold()));
+        out.status("");
+        out.command("# Create a new secret:".dimmed());
+        out.command("aws secretsmanager create-secret \\");
+        out.command(format!("  {}--name {} \\", profile_flag, name));
+        out.command(format!("  --secret-string {}", secret_string));
+        out.command("");
+        out.command("# Or update an existing secret:".dimmed());
+        out.command("aws secretsmanager update-secret \\");
+        out.command(format!("  {}--secret-id {} \\", profile_flag, name));
+        out.command(format!("  --secret-string {}", secret_string));
 
         // We print CLI commands; we don't upload directly, so mark as "uploaded"
         // conceptually (the operator will run the commands).
@@ -101,12 +102,12 @@ impl MigrationDestination for AwsDestination {
         })
     }
 
-    fn print_next_steps(&self) {
-        println!("\n{}", "Next steps:".bold());
-        println!("  1. Run the printed `aws secretsmanager` command.");
-        println!("  2. Grant IAM roles/users access to the new secret.");
-        println!("  3. Update your application to read from Secrets Manager.");
-        println!("  4. Remove or encrypt your local .env file.");
+    fn print_next_steps(&self, out: Out) {
+        out.status(format!("\n{}", "Next steps:".bold()));
+        out.status("  1. Run the printed `aws secretsmanager` command.");
+        out.status("  2. Grant IAM roles/users access to the new secret.");
+        out.status("  3. Update your application to read from Secrets Manager.");
+        out.status("  4. Remove or encrypt your local .env file.");
     }
 }
 

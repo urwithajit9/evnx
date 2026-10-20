@@ -6,30 +6,36 @@ evnx <version>
 [exit 0]
 
 $ evnx migrate --help
-Full migration workflow to secret managers.
+Move a .env into a secret manager: print the commands, or upload to GitHub.
 
-Supports: github-actions, aws-secrets-manager, doppler, infisical, gcp-secret-manager, azure-keyvault, vercel, heroku, railway
-
-Examples: evnx migrate --to github-actions --repo owner/repo evnx migrate --to aws-secrets-manager --secret-name prod/myapp/config evnx migrate --to doppler --project myapp --doppler-config dev --dry-run
+For eight destinations evnx prints the commands for you to run and contacts nothing; only github-actions uploads (over the GitHub API).
 
 Usage: evnx migrate [OPTIONS]
 
 Options:
       --from <FROM>
-          Source system: `env-file` (default) or `environment`
+          Source system: `env-file` or `environment`
           
-          `environment` requires `--include`: a shell's or CI job's environment holds tokens you did not mean to send. evnx lists the names it will send.
+          Without --from, evnx asks in a terminal and uses `env-file` without one. `environment` requires `--include`: a shell's or CI job's environment holds tokens you did not mean to send. evnx lists the names it will send.
 
-      --source-file <SOURCE_FILE>
-          Path to the source .env file (used when --from env-file)
+      --source-file <PATH>
+          The .env file to read (default: .env, or `[defaults] env_name`)
+
+      --env-name <NAME>
+          Read `.env.<NAME>` instead of `.env`.
           
-          [default: .env]
+          `--env-name production` reads `.env.production`. A name whose file does not exist is an error listing the environments that do. Without it, `[defaults] env_name` in `.evnx.toml` applies, as for the other commands.
 
       --to <TO>
           Destination system: github-actions | aws-secrets-manager | doppler | infisical | gcp-secret-manager | azure-keyvault | vercel | heroku | railway
 
       --dry-run
           Preview what would be migrated without making any changes
+
+      --print-only
+          Write only the commands to stdout; everything else goes to stderr.
+          
+          `evnx migrate --to heroku --heroku-app my-app --print-only > run.sh` saves a script you can read, then run. Not for github-actions, which uploads instead of printing.
 
       --skip-existing
           Skip secrets that already exist at the destination
@@ -54,13 +60,16 @@ Options:
       --add-prefix <ADD_PREFIX>
           Add this prefix to key names before uploading. Example: --add-prefix "PROD_"
 
+      --allow-collisions
+          When two names become one, keep the last value.
+          
+          `--strip-prefix` and `--add-prefix` can merge names (`API_X` and `X` under `--strip-prefix API_`), and Azure Key Vault and GitHub ignore case. Without this flag that is an error naming both, exit 2.
+
       --repo <REPO>
           GitHub repository in owner/repo format
 
       --github-token <GITHUB_TOKEN>
-          GitHub Personal Access Token (or set GITHUB_TOKEN env var)
-          
-          [env: GITHUB_TOKEN]
+          GitHub token. Prefer exporting GITHUB_TOKEN: evnx reads it when this flag is absent, and a flag value lands in shell history
 
       --secret-name <SECRET_NAME>
           AWS Secrets Manager secret name, e.g. prod/myapp/config
@@ -69,7 +78,7 @@ Options:
           AWS CLI named profile
 
       --project <PROJECT>
-          Doppler project slug or Infisical project ID
+          Doppler project, Infisical project ID, or GCP project ID (required for gcp-secret-manager)
 
       --doppler-config <DOPPLER_CONFIG>
           Doppler config name (dev / staging / prd)
@@ -77,26 +86,32 @@ Options:
       --infisical-env <INFISICAL_ENV>
           Infisical environment name (dev / staging / prod)
 
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
       --vault-name <VAULT_NAME>
           Azure Key Vault name
 
       --heroku-app <HEROKU_APP>
           Heroku application name
 
-  -v, --verbose
-          Enable verbose output
-
-      --vercel-project <VERCEL_PROJECT>
-          Vercel project ID or name
-
-  -q, --quiet
-          Print nothing on success. Findings, warnings, errors and requested data still print
-
-      --railway-project <RAILWAY_PROJECT>
-          Railway project ID
-
       --no-color
           Disable colored output
+
+      --vercel-project <VERCEL_PROJECT>
+          Vercel project ID or name (default: the linked project)
+
+      --railway-project <RAILWAY_PROJECT>
+          Railway project ID (default: the linked project). Needs --railway-environment, as Railway does
+
+      --railway-environment <RAILWAY_ENVIRONMENT>
+          Railway environment, e.g. production
+
+      --railway-service <RAILWAY_SERVICE>
+          Railway service (default: the linked service, or the project's only one)
 
   -h, --help
           Print help (see a summary with '-h')
@@ -104,7 +119,32 @@ Options:
   -V, --version
           Print version
 
-Full guide: https://docs.evnx.dev/cli/commands/migrate
+Examples:
+  # Print the commands, read them, then run them
+  evnx migrate --to heroku --heroku-app my-app
+
+  # Save only the commands, as a script
+  evnx migrate --to gcp-secret-manager --project my-gcp-project --print-only > upload.sh
+
+  # Another environment: .env.production
+  evnx migrate --env-name production --to azure-keyvault --vault-name prod-vault
+
+  # Upload to GitHub Actions from CI (token from GITHUB_TOKEN)
+  evnx migrate --to github-actions --repo owner/repo --yes --skip-existing
+
+  # Preview: no commands printed, nothing uploaded
+  evnx migrate --to doppler --project myapp --doppler-config dev --dry-run
+
+Destinations:
+  Prints commands: aws-secrets-manager (--secret-name), gcp-secret-manager (--project),
+                   azure-keyvault (--vault-name), heroku (--heroku-app), vercel,
+                   doppler, infisical, railway
+  Uploads:         github-actions (--repo; GITHUB_TOKEN)
+
+Exit codes: 0 done; 1 some GitHub uploads failed; 2 could not run (bad flag, missing
+file, names that collide, a filter that leaves nothing).
+
+📖  Full guide: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
 
 $ evnx migrate

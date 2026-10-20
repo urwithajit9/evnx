@@ -2,16 +2,16 @@
 ================ M7 ================
 
 --- printed for vercel --vercel-project p:
-printf '%s' '$5' | vercel env add PRICE production --project-id p 
-printf '%s' '$HOME' | vercel env add HOME_X production --project-id p 
-printf '%s' '$(echo INJECTED)' | vercel env add CMD production --project-id p 
+printf '%s' '$5' | vercel env add PRICE production --project p --force --yes
+printf '%s' '$HOME' | vercel env add HOME_X production --project p --force --yes
+printf '%s' '$(echo INJECTED)' | vercel env add CMD production --project p --force --yes
 
 $ bash -c HOME=/home/demo PATH="$PWD/bin:$PATH" sh run.sh
-stub vercel args: <env> <add> <PRICE> <production> <--project-id> <p>
+stub vercel args: <env> <add> <PRICE> <production> <--project> <p> <--force> <--yes>
   stdin: $5
-stub vercel args: <env> <add> <HOME_X> <production> <--project-id> <p>
+stub vercel args: <env> <add> <HOME_X> <production> <--project> <p> <--force> <--yes>
   stdin: $HOME
-stub vercel args: <env> <add> <CMD> <production> <--project-id> <p>
+stub vercel args: <env> <add> <CMD> <production> <--project> <p> <--force> <--yes>
   stdin: $(echo INJECTED)
 [exit 0]
 

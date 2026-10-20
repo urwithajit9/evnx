@@ -14,7 +14,7 @@ use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
 
-use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult};
+use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};
 
 pub struct HerokuDestination {
     pub app: String,
@@ -37,17 +37,18 @@ impl MigrationDestination for HerokuDestination {
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!(
+        let out = opts.out;
+        out.status(format!(
             "\n{} Heroku Config Vars migration",
             crate::utils::ui::glyph::INFO.cyan()
-        );
-        println!("{} Requires Heroku CLI", "·".cyan());
-        println!("  Install: https://devcenter.heroku.com/articles/heroku-cli");
+        ));
+        out.status(format!("{} Requires Heroku CLI", "·".cyan()));
+        out.status("  Install: https://devcenter.heroku.com/articles/heroku-cli");
 
         if opts.dry_run {
-            println!("\n{}", "Dry-run — would upload to Heroku:".bold());
-            println!("  App     : {}", self.app);
-            println!("  Secrets : {}", secrets.len());
+            out.result(format!("\n{}", "Dry-run — would upload to Heroku:".bold()));
+            out.result(format!("  App     : {}", self.app));
+            out.result(format!("  Secrets : {}", secrets.len()));
             return Ok(MigrationResult {
                 skipped: secrets.len(),
                 ..Default::default()
@@ -56,17 +57,16 @@ impl MigrationDestination for HerokuDestination {
 
         // Build a single bulk `heroku config:set` command — much faster than
         // individual calls and only triggers one dyno restart.
-        println!(
+        out.status(format!(
             "\n{}",
             "Run this command (single bulk set = one restart):".bold()
-        );
-        println!();
-        print!("heroku config:set --app {}", shell::word(&self.app));
-
+        ));
+        out.status("");
+        let mut command = format!("heroku config:set --app {}", shell::word(&self.app));
         for (key, value) in secrets {
-            print!(" \\\n  {}", shell::assignment(key, value));
+            command.push_str(&format!(" \\\n  {}", shell::assignment(key, value)));
         }
-        println!();
+        out.command(command);
 
         Ok(MigrationResult {
             uploaded: secrets.len(),
@@ -74,14 +74,14 @@ impl MigrationDestination for HerokuDestination {
         })
     }
 
-    fn print_next_steps(&self) {
-        println!("\n{}", "Next steps:".bold());
-        println!(
+    fn print_next_steps(&self, out: Out) {
+        out.status(format!("\n{}", "Next steps:".bold()));
+        out.status(format!(
             "  1. Verify with `heroku config --app {}`.",
             shell::word(&self.app)
-        );
-        println!("  2. The dyno restarts automatically after `config:set`.");
-        println!("  3. Remove your local .env file.");
+        ));
+        out.status("  2. The dyno restarts automatically after `config:set`.");
+        out.status("  3. Remove your local .env file.");
     }
 }
 

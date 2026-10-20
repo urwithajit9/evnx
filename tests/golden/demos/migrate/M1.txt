@@ -3,7 +3,7 @@
 
 $ evnx migrate --to heroku --heroku-app demo-app --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 
 · Heroku Config Vars migration
 · Requires Heroku CLI
@@ -29,7 +29,7 @@ Next step:
 
 $ evnx migrate --to aws-secrets-manager --secret-name prod/app --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 
 · AWS Secrets Manager migration
 
@@ -63,13 +63,16 @@ Next step:
 [exit 0]
   ok: dry run: aws-secrets-manager --secret-name prod/app (exit 0)
 
-$ evnx migrate --to gcp-secret-manager --project p --dry-run
+$ evnx migrate --to gcp-secret-manager --project my-gcp-project --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 
 · GCP Secret Manager migration
+· Requires Google Cloud CLI (`gcloud`)
+  Install: https://cloud.google.com/sdk/docs/install
 
 Dry-run — would upload to GCP Secret Manager:
+  Project : my-gcp-project
   Secrets : 8
 
 Summary:
@@ -84,11 +87,11 @@ Next step:
 
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
-  ok: dry run: gcp-secret-manager --project p (exit 0)
+  ok: dry run: gcp-secret-manager --project my-gcp-project (exit 0)
 
 $ evnx migrate --to azure-keyvault --vault-name demo-vault --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 
 · Azure Key Vault migration
 · Requires Azure CLI (`az`)
@@ -114,7 +117,7 @@ Next step:
 
 $ evnx migrate --to vercel --vercel-project p --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 
 · Vercel environment variable migration
 · Requires Vercel CLI
@@ -141,7 +144,7 @@ Next step:
 
 $ evnx migrate --to doppler --project p --doppler-config dev --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 
 · Doppler migration
 · Requires Doppler CLI
@@ -166,9 +169,10 @@ Next step:
 [exit 0]
   ok: dry run: doppler --project p --doppler-config dev (exit 0)
 
-$ evnx migrate --to infisical --project p --infisical-env dev --dry-run
+$ evnx migrate --to infisical --project p --infisical-env dev --exclude EMPTY --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
+· After filtering: 7 of 8 secrets remain.
 
 · Infisical migration
 · Requires Infisical CLI
@@ -177,6 +181,33 @@ $ evnx migrate --to infisical --project p --infisical-env dev --dry-run
 Dry-run — would upload to Infisical:
   Project     : p
   Environment : dev
+  Secrets     : 7
+
+Summary:
+  ·  7 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+Next step:
+  Re-run without --dry-run to apply this.
+[stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: dry run: infisical --project p --infisical-env dev --exclude EMPTY (exit 0)
+
+$ evnx migrate --to railway --railway-project p --railway-environment production --dry-run
+
+✓ Loaded 8 secrets from .env
+
+· Railway migration
+· Requires Railway CLI
+  Install: npm install -g @railway/cli
+
+Dry-run — would upload to Railway:
+  Project     : p
+  Environment : production
   Secrets     : 8
 
 Summary:
@@ -191,37 +222,11 @@ Next step:
 
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
-  ok: dry run: infisical --project p --infisical-env dev (exit 0)
-
-$ evnx migrate --to railway --railway-project p --dry-run
-
-✓ Loaded 8 secrets from env-file
-
-· Railway migration
-· Requires Railway CLI
-  Install: npm install -g @railway/cli
-
-Dry-run — would upload to Railway:
-  Project : p
-  Secrets : 8
-
-Summary:
-  ·  8 secret(s) previewed
-     dry run — nothing was uploaded and nothing was written
-
-Next step:
-  Re-run without --dry-run to apply this.
-[stderr]
-
-  evnx migrate  Generate destination commands from your .env
-
-  Docs: https://docs.evnx.dev/cli/commands/migrate
-[exit 0]
-  ok: dry run: railway --railway-project p (exit 0)
+  ok: dry run: railway --railway-project p --railway-environment production (exit 0)
 
 $ evnx migrate --to github-actions --repo o/r --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 
 · Migrating to GitHub Actions Secrets…
 

@@ -3,7 +3,7 @@
 
 $ evnx migrate --to aws-secrets-manager --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 [stderr]
 
   evnx migrate  Generate destination commands from your .env
@@ -16,9 +16,24 @@ No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: dry run still needs the name it would print: aws-secrets-manager (exit 2)
 
+$ evnx migrate --to gcp-secret-manager --dry-run
+
+✓ Loaded 8 secrets from .env
+[stderr]
+
+  evnx migrate  Generate destination commands from your .env
+
+Error: GCP project ID is required for this destination. Pass `--project`.
+  --dry-run still needs it: without it evnx would print a command
+  with a placeholder where the name should be.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: dry run still needs the name it would print: gcp-secret-manager (exit 2)
+
 $ evnx migrate --to azure-keyvault --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 [stderr]
 
   evnx migrate  Generate destination commands from your .env
@@ -33,7 +48,7 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx migrate --to heroku --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 [stderr]
 
   evnx migrate  Generate destination commands from your .env
@@ -48,7 +63,7 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx migrate --to github-actions --dry-run
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 [stderr]
 
   evnx migrate  Generate destination commands from your .env
@@ -61,4 +76,4 @@ No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: dry run still needs the name it would print: github-actions (exit 2)
 
-================ summary: 4 ok, 0 mismatch   ================
+================ summary: 5 ok, 0 mismatch   ================

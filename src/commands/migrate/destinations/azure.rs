@@ -12,11 +12,12 @@
 //! Install Azure CLI: <https://learn.microsoft.com/cli/azure/install-azure-cli>
 
 use crate::core::shell;
+use crate::formats::azure::secret_name;
 use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
 
-use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult};
+use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};
 
 pub struct AzureDestination {
     /// Azure Key Vault name (e.g. `my-prod-vault`).
@@ -35,22 +36,33 @@ impl MigrationDestination for AzureDestination {
         "Azure Key Vault"
     }
 
+    /// Key Vault names ignore case: `A-B` and `a-b` are one secret, and
+    /// `az keyvault secret set` — an upsert — would overwrite the first in
+    /// silence (I-104; I-249 in convert).
+    fn names_ignore_case(&self) -> bool {
+        true
+    }
+
     fn migrate(
         &self,
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!(
+        let out = opts.out;
+        out.status(format!(
             "\n{} Azure Key Vault migration",
             crate::utils::ui::glyph::INFO.cyan()
-        );
-        println!("{} Requires Azure CLI (`az`)", "·".cyan());
-        println!("  Install: https://learn.microsoft.com/cli/azure/install-azure-cli");
+        ));
+        out.status(format!("{} Requires Azure CLI (`az`)", "·".cyan()));
+        out.status("  Install: https://learn.microsoft.com/cli/azure/install-azure-cli");
 
         if opts.dry_run {
-            println!("\n{}", "Dry-run — would upload to Azure Key Vault:".bold());
-            println!("  Vault   : {}", self.vault_name);
-            println!("  Secrets : {}", secrets.len());
+            out.result(format!(
+                "\n{}",
+                "Dry-run — would upload to Azure Key Vault:".bold()
+            ));
+            out.result(format!("  Vault   : {}", self.vault_name));
+            out.result(format!("  Secrets : {}", secrets.len()));
             return Ok(MigrationResult {
                 skipped: secrets.len(),
                 ..Default::default()
@@ -58,34 +70,34 @@ impl MigrationDestination for AzureDestination {
         }
 
         // Azure Key Vault secret names must use only alphanumerics and hyphens.
-        // Underscores are not allowed — we convert them automatically.
-        println!("\n{}", "Run these commands:".bold());
-        println!(
-            "{}",
-            "# Note: underscores in keys are converted to hyphens for AKV compatibility".dimmed()
+        // Underscores are not allowed — we convert them automatically, by the
+        // rule `convert --to azure-keyvault` uses.
+        out.status(format!("\n{}", "Run these commands:".bold()));
+        out.command(
+            "# Note: underscores in keys are converted to hyphens for AKV compatibility".dimmed(),
         );
-        println!();
+        out.command("");
 
         let mut warnings = vec![];
 
         for (key, value) in secrets {
-            let akv_name = key.replace('_', "-");
+            let akv_name = secret_name(key);
             if akv_name != *key {
                 warnings.push(format!("  {} → {} (underscores → hyphens)", key, akv_name));
             }
-            println!(
+            out.command(format!(
                 "az keyvault secret set --vault-name {} --name {} --value {}",
                 shell::word(&self.vault_name),
                 shell::word(&akv_name),
                 shell::quote(value)
-            );
+            ));
         }
 
         if !warnings.is_empty() {
-            println!();
-            println!("{}", "Key renames applied:".yellow());
+            out.status("");
+            out.status("Key renames applied:".yellow());
             for w in &warnings {
-                println!("{}", w);
+                out.status(w);
             }
         }
 
@@ -95,11 +107,11 @@ impl MigrationDestination for AzureDestination {
         })
     }
 
-    fn print_next_steps(&self) {
-        println!("\n{}", "Next steps:".bold());
-        println!("  1. Ensure you are logged in: `az login`.");
-        println!("  2. Run the printed `az keyvault secret set` commands.");
-        println!("  3. Grant your app a Managed Identity with Key Vault Secrets User role.");
+    fn print_next_steps(&self, out: Out) {
+        out.status(format!("\n{}", "Next steps:".bold()));
+        out.status("  1. Ensure you are logged in: `az login`.");
+        out.status("  2. Run the printed `az keyvault secret set` commands.");
+        out.status("  3. Grant your app a Managed Identity with Key Vault Secrets User role.");
     }
 }
 
@@ -109,9 +121,7 @@ mod tests {
 
     #[test]
     fn test_underscore_conversion() {
-        let key = "DB_URL".to_string();
-        let akv_name = key.replace('_', "-");
-        assert_eq!(akv_name, "DB-URL");
+        assert_eq!(secret_name("DB_URL"), "DB-URL");
     }
 
     #[test]

@@ -244,8 +244,8 @@ fn code_lines(text: &str) -> Vec<(usize, &str)> {
 /// `transport_reason`, so a fix for the proxy CA (I-192) would have had to be
 /// made twice and could land once.
 ///
-/// ⚠️ `migrate`'s GitHub destination still calls `Client::new()` with no
-/// timeout. Moving it adds one, which changes `migrate`: recorded in R-migrate.
+/// `Client::new()` counts too: `migrate`'s GitHub destination built one per
+/// request, with no timeout, until R-migrate moved it here (DEC-MG3, I-112).
 #[test]
 fn t_sf50_one_http_client_builder_and_one_transport_reason() {
     let mut files = Vec::new();
@@ -254,7 +254,12 @@ fn t_sf50_one_http_client_builder_and_one_transport_reason() {
     for f in files.iter().filter(|f| !f.ends_with("core/http.rs")) {
         let text = std::fs::read_to_string(f).unwrap();
         for (n, l) in code_lines(&text) {
-            if l.contains("Client::builder(") || l.contains("fn transport_reason(") {
+            if l.contains("Client::builder(")
+                // reqwest's, which takes nothing; `cloud::Client::new(server)`
+                // is evnx's own wrapper over the shared builder.
+                || l.contains("Client::new()")
+                || l.contains("fn transport_reason(")
+            {
                 offenders.push(format!("{}:{}", f.display(), n + 1));
             }
         }

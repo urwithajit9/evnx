@@ -354,9 +354,25 @@ fn main() -> Result<()> {
         #[cfg(feature = "migrate")]
         Commands::Migrate(opts) => commands::migrate::run(commands::migrate::MigrateArgs {
             from: opts.from.clone(),
-            source_file: opts.source_file.clone(),
+            // I-031, S-M1: the file every other command would read. Migrate
+            // took `.env` whatever `[defaults] env_name` said, so with
+            // `env_name = "staging"` it pushed development values while
+            // `validate`, `diff` and `sync` all checked `.env.staging`. The
+            // process environment has no file, so nothing to resolve there.
+            source_file: if opts.from.as_deref() == Some("environment") {
+                opts.source_file.clone().unwrap_or_default()
+            } else {
+                resolve_env(
+                    Path::new("."),
+                    opts.source_file.as_deref(),
+                    opts.env_name.as_deref(),
+                    cfg.defaults.env_name.as_deref(),
+                )
+            },
+            env_name: opts.env_name.clone(),
             to: opts.to.clone(),
             dry_run: opts.dry_run,
+            print_only: opts.print_only,
             skip_existing: opts.skip_existing,
             overwrite: opts.overwrite,
             yes: opts.yes,
@@ -365,6 +381,7 @@ fn main() -> Result<()> {
             exclude: opts.exclude.clone(),
             strip_prefix: opts.strip_prefix.clone(),
             add_prefix: opts.add_prefix.clone(),
+            allow_collisions: opts.allow_collisions,
             repo: opts.repo.clone(),
             github_token: opts.github_token.clone(),
             secret_name: opts.secret_name.clone(),
@@ -376,6 +393,8 @@ fn main() -> Result<()> {
             heroku_app: opts.heroku_app.clone(),
             vercel_project: opts.vercel_project.clone(),
             railway_project: opts.railway_project.clone(),
+            railway_environment: opts.railway_environment.clone(),
+            railway_service: opts.railway_service.clone(),
         })
         .map(verdict::finish),
 

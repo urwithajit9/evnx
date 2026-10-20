@@ -226,16 +226,25 @@ pub enum NamingPolicy {
 #[derive(Args, Debug)]
 pub struct MigrateOptions {
     // ── Source ────────────────────────────────────────────────────────────────
-    /// Source system: `env-file` (default) or `environment`
+    /// Source system: `env-file` or `environment`
     ///
+    /// Without --from, evnx asks in a terminal and uses `env-file` without one.
     /// `environment` requires `--include`: a shell's or CI job's environment holds
     /// tokens you did not mean to send. evnx lists the names it will send.
     #[arg(long)]
     pub from: Option<String>,
 
-    /// Path to the source .env file (used when --from env-file)
-    #[arg(long, default_value = ".env")]
-    pub source_file: String,
+    /// The .env file to read (default: .env, or `[defaults] env_name`)
+    #[arg(long, value_name = "PATH", conflicts_with = "env_name")]
+    pub source_file: Option<String>,
+
+    /// Read `.env.<NAME>` instead of `.env`.
+    ///
+    /// `--env-name production` reads `.env.production`. A name whose file does
+    /// not exist is an error listing the environments that do. Without it,
+    /// `[defaults] env_name` in `.evnx.toml` applies, as for the other commands.
+    #[arg(long, value_name = "NAME")]
+    pub env_name: Option<String>,
 
     // ── Destination ───────────────────────────────────────────────────────────
     /// Destination system: github-actions | aws-secrets-manager | doppler |
@@ -247,6 +256,14 @@ pub struct MigrateOptions {
     /// Preview what would be migrated without making any changes
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Write only the commands to stdout; everything else goes to stderr.
+    ///
+    /// `evnx migrate --to heroku --heroku-app my-app --print-only > run.sh`
+    /// saves a script you can read, then run. Not for github-actions, which
+    /// uploads instead of printing.
+    #[arg(long, conflicts_with = "dry_run")]
+    pub print_only: bool,
 
     /// Skip secrets that already exist at the destination
     #[arg(long)]
@@ -285,6 +302,14 @@ pub struct MigrateOptions {
     #[arg(long)]
     pub add_prefix: Option<String>,
 
+    /// When two names become one, keep the last value.
+    ///
+    /// `--strip-prefix` and `--add-prefix` can merge names (`API_X` and `X`
+    /// under `--strip-prefix API_`), and Azure Key Vault and GitHub ignore case.
+    /// Without this flag that is an error naming both, exit 2.
+    #[arg(long)]
+    pub allow_collisions: bool,
+
     // ── GitHub Actions ────────────────────────────────────────────────────────
     /// GitHub repository in owner/repo format
     #[arg(long)]
@@ -301,10 +326,15 @@ pub struct MigrateOptions {
     // value does not.
     //
     // ⚠️ Passing the token as `--github-token` also puts it in argv, visible in
-    // `ps` and in shell history. The env var is the better path; the one-line
-    // help below says so and stays short because clap shows it to users.
-    /// GitHub Personal Access Token (or set GITHUB_TOKEN env var)
-    #[arg(long, env = "GITHUB_TOKEN", hide_env_values = true)]
+    // `ps` and in shell history (I-108). evnx warns when the flag is used, which
+    // is why there is no `env = "GITHUB_TOKEN"` here any more: with it, clap
+    // filled this field from the variable too, and a warning could not tell a
+    // typed token from an exported one. The registry reads GITHUB_TOKEN itself.
+    // That also retires the `hide_env_values` guard: nothing here can print the
+    // variable's value now.
+    /// GitHub token. Prefer exporting GITHUB_TOKEN: evnx reads it when this flag
+    /// is absent, and a flag value lands in shell history
+    #[arg(long)]
     pub github_token: Option<String>,
 
     // ── AWS Secrets Manager ───────────────────────────────────────────────────
@@ -317,7 +347,8 @@ pub struct MigrateOptions {
     pub aws_profile: Option<String>,
 
     // ── Doppler / Infisical ───────────────────────────────────────────────────
-    /// Doppler project slug or Infisical project ID
+    /// Doppler project, Infisical project ID, or GCP project ID (required for
+    /// gcp-secret-manager)
     #[arg(long)]
     pub project: Option<String>,
 
@@ -340,14 +371,23 @@ pub struct MigrateOptions {
     pub heroku_app: Option<String>,
 
     // ── Vercel ────────────────────────────────────────────────────────────────
-    /// Vercel project ID or name
+    /// Vercel project ID or name (default: the linked project)
     #[arg(long)]
     pub vercel_project: Option<String>,
 
     // ── Railway ───────────────────────────────────────────────────────────────
-    /// Railway project ID
+    /// Railway project ID (default: the linked project). Needs
+    /// --railway-environment, as Railway does
     #[arg(long)]
     pub railway_project: Option<String>,
+
+    /// Railway environment, e.g. production
+    #[arg(long)]
+    pub railway_environment: Option<String>,
+
+    /// Railway service (default: the linked service, or the project's only one)
+    #[arg(long)]
+    pub railway_service: Option<String>,
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -2014,17 +2054,43 @@ Use 'evnx convert' without --to for interactive format selection.
         namespace: Option<String>,
     },
 
-    /// Full migration workflow to secret managers.
+    /// Move a .env into a secret manager: print the commands, or upload to GitHub.
     ///
-    /// Supports: github-actions, aws-secrets-manager, doppler, infisical,
-    /// gcp-secret-manager, azure-keyvault, vercel, heroku, railway
-    ///
-    /// Examples:
-    ///   evnx migrate --to github-actions --repo owner/repo
-    ///   evnx migrate --to aws-secrets-manager --secret-name prod/myapp/config
-    ///   evnx migrate --to doppler --project myapp --doppler-config dev --dry-run
+    /// For eight destinations evnx prints the commands for you to run and
+    /// contacts nothing; only github-actions uploads (over the GitHub API).
+    // ⚠️ The first line said "Full migration workflow to secret managers", and
+    // the banner "Generate destination commands" — true for eight of nine
+    // (D-59). The examples were a `///` block, which clap folded into one line
+    // (D-60, as convert's I-082); `after_help` is printed as written.
     #[cfg(feature = "migrate")]
-    #[command(after_help = docs::MIGRATE.after_help)]
+    #[command(after_help = "\
+Examples:
+  # Print the commands, read them, then run them
+  evnx migrate --to heroku --heroku-app my-app
+
+  # Save only the commands, as a script
+  evnx migrate --to gcp-secret-manager --project my-gcp-project --print-only > upload.sh
+
+  # Another environment: .env.production
+  evnx migrate --env-name production --to azure-keyvault --vault-name prod-vault
+
+  # Upload to GitHub Actions from CI (token from GITHUB_TOKEN)
+  evnx migrate --to github-actions --repo owner/repo --yes --skip-existing
+
+  # Preview: no commands printed, nothing uploaded
+  evnx migrate --to doppler --project myapp --doppler-config dev --dry-run
+
+Destinations:
+  Prints commands: aws-secrets-manager (--secret-name), gcp-secret-manager (--project),
+                   azure-keyvault (--vault-name), heroku (--heroku-app), vercel,
+                   doppler, infisical, railway
+  Uploads:         github-actions (--repo; GITHUB_TOKEN)
+
+Exit codes: 0 done; 1 some GitHub uploads failed; 2 could not run (bad flag, missing
+file, names that collide, a filter that leaves nothing).
+
+📖  Full guide: https://docs.evnx.dev/cli/commands/migrate
+")]
     Migrate(Box<MigrateOptions>),
 
     /// Keep .env and .env.example in sync.

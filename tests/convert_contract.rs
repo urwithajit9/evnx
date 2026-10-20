@@ -741,14 +741,43 @@ fn t_d45_readme_convert_examples_run() {
     assert!(ran >= 14, "only {ran} examples found");
 }
 
-/// `migrate --to gcp-secret-manager` suggests convert's script; since
-/// `--project` is required (DEC-CV1) the suggestion must carry it, or the
-/// command it prints exits 2.
+/// I-100 (T-SHARE-12): `migrate --to gcp-secret-manager` suggested convert's
+/// script (I-084 kept that suggestion runnable) while printing a different
+/// one of its own. It prints convert's now — the same `upsert_secret`, from
+/// `formats::gcp` — so the suggestion is gone.
 #[test]
 #[cfg(feature = "migrate")]
-fn t_i084_migrate_suggests_a_convert_command_that_runs() {
+fn t_i100_migrate_and_convert_print_one_gcp_function() {
     let p = Project::new().env("PORT=8080\n");
-    let out = run(p.path(), &["migrate", "--to", "gcp-secret-manager"]);
-    out.assert_code(0)
-        .assert_contains("evnx convert --to gcp-secrets --project <PROJECT>");
+    let function = |stdout: &str| -> String {
+        let start = stdout.find("upsert_secret() {").expect(stdout);
+        let end = start + stdout[start..].find("\n}\n").expect(stdout) + 3;
+        stdout[start..end].to_string()
+    };
+    let convert = run(
+        p.path(),
+        &[
+            "convert",
+            "--to",
+            "gcp-secrets",
+            "--project",
+            "my-gcp-project",
+        ],
+    );
+    convert.assert_code(0);
+    let migrate = run(
+        p.path(),
+        &[
+            "migrate",
+            "--to",
+            "gcp-secret-manager",
+            "--project",
+            "my-gcp-project",
+            "--print-only",
+        ],
+    );
+    migrate
+        .assert_code(0)
+        .assert_not_contains("evnx convert --to gcp-secrets");
+    assert_eq!(function(&migrate.stdout), function(&convert.stdout));
 }

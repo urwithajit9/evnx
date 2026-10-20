@@ -398,26 +398,49 @@ evnx sync --check
 
 ### `evnx migrate` _(requires `--features migrate`)_
 
-Migrates secrets directly to cloud secret managers.
+Moves a `.env` into a secret manager. For **eight** destinations evnx **prints the
+commands** for you to read and run, and contacts nothing; only **`github-actions`
+uploads**, over the GitHub API.
+
+| Destination | What evnx prints or does | Needs |
+|---|---|---|
+| `aws-secrets-manager` | `create-secret` and `update-secret`, all keys as one JSON secret | `--secret-name` |
+| `gcp-secret-manager` | a script that creates each secret or adds a version | `--project` |
+| `azure-keyvault` | `az keyvault secret set` per key (`_` becomes `-`) | `--vault-name` |
+| `heroku` | one `heroku config:set` (one restart) | `--heroku-app` |
+| `vercel` | `vercel env add … --force` per key, value on stdin | `--vercel-project` or a linked directory |
+| `doppler`, `infisical` | `secrets set` per key | `--project`, optional config / env |
+| `railway` | one `railway variable set` | `--railway-project` with `--railway-environment`, or a linked directory |
+| `github-actions` | uploads each secret, encrypted for the repository | `--repo`, `GITHUB_TOKEN` |
 
 ```bash
-# GitHub Actions secrets (asks before uploading)
-evnx migrate --from env-file --to github-actions \
-  --repo owner/repo --github-token $GITHUB_TOKEN
-
-# The same in CI: --yes skips the question; existing secrets still need
-# --overwrite or --skip-existing. Exit 1 if any upload failed.
-evnx migrate --from env-file --to github-actions --repo owner/repo --yes --skip-existing
-
-# AWS Secrets Manager
+# Print the commands, read them, run them
 evnx migrate --to aws-secrets-manager --secret-name prod/myapp/config
+
+# Only the commands on stdout: a script to review, then run
+evnx migrate --to gcp-secret-manager --project my-gcp-project --print-only > upload.sh
+
+# Another environment: reads .env.production ([defaults] env_name works too)
+evnx migrate --env-name production --to heroku --heroku-app my-app
 
 # From the process environment: --include is required, and evnx lists what it sends
 evnx migrate --from environment --include 'APP_*,DATABASE_URL' --to heroku --heroku-app my-app
 
-# Doppler (with dry run)
-evnx migrate --to doppler --dry-run
+# Preview what would happen: nothing printed to run, nothing uploaded
+evnx migrate --to doppler --project myapp --dry-run
+
+# GitHub Actions from CI. The token comes from GITHUB_TOKEN; --github-token works
+# but puts it in shell history. --yes skips the question; existing secrets still
+# need --overwrite or --skip-existing. Exit 1 if any upload failed.
+evnx migrate --to github-actions --repo owner/repo --yes --skip-existing
 ```
+
+`--include` / `--exclude` take comma-separated globs; `--strip-prefix` and `--add-prefix`
+rename. Two names that end up as one — by renaming, or because Azure Key Vault and GitHub
+ignore case — are refused (exit 2) unless `--allow-collisions` keeps the last value.
+`--skip-existing` and `--overwrite` only apply to `github-actions`; the destinations evnx
+prints commands for are refused them, since evnx cannot see what is already there.
+Exit codes: 0 done, 1 some GitHub uploads failed, 2 could not run.
 
 ---
 
@@ -538,7 +561,7 @@ evnx update --check --json     # the same answer for CI
 ## Working with multiple environments
 
 `--env-name` resolves `.env.<name>` across `validate`, `scan`, `diff`, `sync`, `convert`,
-`backup` and `template`:
+`migrate`, `backup` and `template`:
 
 ```bash
 evnx validate --env-name production            # operates on .env.production
@@ -570,8 +593,9 @@ push **next** — including for a vault you never shared. Fixing it needs signed
 wraps and locally pinned identities, which are not built.
 
 ⚠️ **Cloud sync is therefore beta.** Do not put secrets there that you could not
-rotate. The rest of evnx — validate, scan, diff, sync, convert, migrate — runs
-entirely offline and is not affected.
+rotate. The rest of evnx — validate, scan, diff, sync, convert, and the commands
+`migrate` prints — runs entirely offline and is not affected. (`migrate --to
+github-actions` is the exception: it calls the GitHub API, and talks to nothing else.)
 
 ⓘ This README previously said "not after a breach". That was wrong, and the
 correction is tracked in [`SECURITY.md`](./SECURITY.md#what-the-threat-model-actually-claims).
@@ -1039,10 +1063,14 @@ Feature flags:
 ```toml
 [features]
 default = []
-migrate = ["reqwest", "base64", "indicatif"]
-backup  = ["aes-gcm", "argon2", "rand"]
+net     = ["dep:reqwest"]                    # update --check
+migrate = ["net", "dep:crypto_box"]          # migrate (GitHub upload uses both)
+backup  = ["dep:aes-gcm", "dep:argon2"]
+cloud   = ["net", "dep:evnx-crypto", …]      # auth, vault, cloud, org
 full    = ["migrate", "backup"]
 ```
+
+The prebuilt binaries are built with `--all-features`.
 
 ---
 

@@ -111,9 +111,9 @@ fn run_printed(args: &[&str]) -> (Project, Vec<Call>, String) {
         p.path().join("bin").display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    // ⚠️ The stubs are on PATH for evnx too: doppler, infisical and railway
-    // refuse a real run when their CLI is missing (I-110, a separate item).
-    // The probe's own call lands in the log and matches no value.
+    // The stubs are on PATH for evnx too. Until I-110, doppler, infisical and
+    // railway refused a real run when their CLI was missing; a probe's call
+    // would land in this log, not in the one the commands write.
     let probe_log = p.path().join("probe.log");
     let out = run_with(
         p.path(),
@@ -215,7 +215,15 @@ fn t_mig_04_heroku_doppler_infisical_railway_stay_exact() {
         &["--to", "heroku", "--heroku-app", "app"][..],
         &["--to", "doppler", "--project", "p"][..],
         &["--to", "infisical", "--project", "p"][..],
-        &["--to", "railway", "--railway-project", "p"][..],
+        // DEC-MG1: a project needs its environment (I-269).
+        &[
+            "--to",
+            "railway",
+            "--railway-project",
+            "p",
+            "--railway-environment",
+            "production",
+        ][..],
     ] {
         let (p, calls, report) = run_printed(args);
         assert_exact(&p, &calls, &report, &same);

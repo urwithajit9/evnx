@@ -3,7 +3,7 @@
 
 $ bash -c "$0" migrate --to "$1" "$2" "x;echo_PWNED" </dev/null evnx heroku --heroku-app
 
-✓ Loaded 1 secret from env-file
+✓ Loaded 1 secret from .env
 [stderr]
 
   evnx migrate  Generate destination commands from your .env
@@ -18,7 +18,7 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ bash -c "$0" migrate --to "$1" "$2" "x;echo_PWNED" </dev/null evnx vercel --vercel-project
 
-✓ Loaded 1 secret from env-file
+✓ Loaded 1 secret from .env
 [stderr]
 
   evnx migrate  Generate destination commands from your .env
@@ -33,7 +33,7 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ bash -c "$0" migrate --to "$1" "$2" "x;echo_PWNED" </dev/null evnx azure-keyvault --vault-name
 
-✓ Loaded 1 secret from env-file
+✓ Loaded 1 secret from .env
 [stderr]
 
   evnx migrate  Generate destination commands from your .env

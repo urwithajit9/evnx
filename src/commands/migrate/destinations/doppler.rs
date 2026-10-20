@@ -1,22 +1,27 @@
 //! doppler.rs — Migrate secrets to Doppler
 //!
-//! Wraps the Doppler CLI (`doppler secrets set …`).
+//! Prints Doppler CLI commands (`doppler secrets set …`) for you to run.
+//!
+//! ⚠️ It used to run `doppler --version` first and refuse without the CLI —
+//! on a real run only, never on a dry run — so commands could not be
+//! generated on a machine that would not run them (I-110). Printing needs no
+//! tool; whether one is installed is the reader's business.
 //!
 //! # Usage
 //!
 //! ```bash
-//! evnx migrate --to doppler --project myapp --config dev
+//! evnx migrate --to doppler --project myapp --doppler-config dev
 //! evnx migrate --to doppler --dry-run
 //! ```
 //!
 //! Install Doppler CLI: <https://docs.doppler.com/docs/cli>
 
 use crate::core::shell;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use colored::Colorize;
 use indexmap::IndexMap;
 
-use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult};
+use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};
 
 pub struct DopplerDestination {
     /// Doppler project slug (optional — falls back to CLI's current project).
@@ -41,37 +46,27 @@ impl MigrationDestination for DopplerDestination {
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!(
+        let out = opts.out;
+        out.status(format!(
             "\n{} Doppler migration",
             crate::utils::ui::glyph::INFO.cyan()
-        );
-        println!("{} Requires Doppler CLI", "·".cyan());
-        println!("  Install: https://docs.doppler.com/docs/cli");
+        ));
+        out.status(format!("{} Requires Doppler CLI", "·".cyan()));
+        out.status("  Install: https://docs.doppler.com/docs/cli");
 
         if opts.dry_run {
-            println!("\n{}", "Dry-run — would upload to Doppler:".bold());
+            out.result(format!("\n{}", "Dry-run — would upload to Doppler:".bold()));
             if let Some(p) = &self.project {
-                println!("  Project : {}", p);
+                out.result(format!("  Project : {}", p));
             }
             if let Some(c) = &self.config {
-                println!("  Config  : {}", c);
+                out.result(format!("  Config  : {}", c));
             }
-            println!("  Secrets : {}", secrets.len());
+            out.result(format!("  Secrets : {}", secrets.len()));
             return Ok(MigrationResult {
                 skipped: secrets.len(),
                 ..Default::default()
             });
-        }
-
-        // Check CLI is available
-        if std::process::Command::new("doppler")
-            .arg("--version")
-            .output()
-            .is_err()
-        {
-            return Err(anyhow!(
-                "Doppler CLI not found. Install from https://docs.doppler.com/docs/cli"
-            ));
         }
 
         // Build optional project/config flags
@@ -84,15 +79,15 @@ impl MigrationDestination for DopplerDestination {
             (None, None) => String::new(),
         };
 
-        println!("\n{}", "Upload secrets with:".bold());
-        println!();
+        out.status(format!("\n{}", "Upload secrets with:".bold()));
+        out.status("");
 
         for (key, value) in secrets {
-            println!(
+            out.command(format!(
                 "doppler secrets set {}{}",
                 project_flags,
                 shell::assignment(key, value)
-            );
+            ));
         }
 
         Ok(MigrationResult {
@@ -101,11 +96,11 @@ impl MigrationDestination for DopplerDestination {
         })
     }
 
-    fn print_next_steps(&self) {
-        println!("\n{}", "Next steps:".bold());
-        println!("  1. Run the printed `doppler secrets set` commands.");
-        println!("  2. Replace `.env` references in your app with `doppler run --`.");
-        println!("  3. Add `doppler run -- <your-command>` to your CI/CD pipeline.");
+    fn print_next_steps(&self, out: Out) {
+        out.status(format!("\n{}", "Next steps:".bold()));
+        out.status("  1. Run the printed `doppler secrets set` commands.");
+        out.status("  2. Replace `.env` references in your app with `doppler run --`.");
+        out.status("  3. Add `doppler run -- <your-command>` to your CI/CD pipeline.");
     }
 }
 

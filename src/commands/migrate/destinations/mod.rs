@@ -147,6 +147,18 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                     ArgKind::Identifier,
                 )?;
                 args::check("--repo", &repo, Name::GitHubRepo)?;
+                // I-108: a token typed as a flag sits in shell history and in
+                // `ps` for as long as the upload runs. Said, not refused — the
+                // flag has always worked, and it is the token's owner's call.
+                // ⚠️ The flag no longer has clap's `env = "GITHUB_TOKEN"`, so
+                // `Some` here means it was typed, never that it was exported.
+                if args.github_token.is_some() {
+                    crate::utils::ui::warning(
+                        "--github-token puts the token in your shell history and in `ps` \
+                         while evnx runs. Export GITHUB_TOKEN instead: evnx reads it when \
+                         the flag is absent.",
+                    );
+                }
                 // ⚠️ `GITHUB_TOKEN` stays ahead of the prompt. Inside a GitHub
                 // Actions job that variable is already set, and this is the one
                 // destination that really uploads — losing the fallback would
@@ -209,7 +221,20 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 args.infisical_env.clone(),
             )))
         }
-        "gcp-secret-manager" | "gcp" => Ok(Box::new(gcp::GcpDestination::new())),
+        // DEC-MG2: required, as `convert --to gcp-secrets` requires it (DEC-CV1).
+        // It is printed into every command; gcloud's configured project is a
+        // guess about where the reader's shell will point.
+        "gcp-secret-manager" | "gcp" => {
+            let project = resolve_arg(
+                args.project.clone(),
+                "--project",
+                "GCP project ID",
+                args.dry_run,
+                ArgKind::Identifier,
+            )?;
+            args::check("--project", &project, Name::GcpProject)?;
+            Ok(Box::new(gcp::GcpDestination::new(project)))
+        }
         "azure-keyvault" | "azure" => {
             let name = resolve_arg(
                 args.vault_name.clone(),
@@ -250,8 +275,34 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 args.railway_project.as_deref(),
                 Name::Slug,
             )?;
+            args::check_opt(
+                "--railway-environment",
+                args.railway_environment.as_deref(),
+                Name::Slug,
+            )?;
+            args::check_opt(
+                "--railway-service",
+                args.railway_service.as_deref(),
+                Name::Slug,
+            )?;
+            // DEC-MG1, I-269: Railway refuses `--project` without
+            // `--environment` ("--environment is required when using
+            // --project"), so a command printed with one and not the other
+            // would fail when run.
+            if args.railway_project.is_some() && args.railway_environment.is_none() {
+                return Err(anyhow!(
+                    "--railway-project needs --railway-environment: Railway asks for \
+                     the environment whenever a command names the project.\n\
+                     \x20 evnx migrate --to railway --railway-project <ID> \
+                     --railway-environment production\n\
+                     \x20 Or leave both out and run the command in a directory linked \
+                     with `railway link`."
+                ));
+            }
             Ok(Box::new(railway::RailwayDestination::new(
                 args.railway_project.clone(),
+                args.railway_environment.clone(),
+                args.railway_service.clone(),
             )))
         }
 
@@ -260,6 +311,14 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
             other
         )),
     }
+}
+
+/// Whether `slug` names the destination that uploads rather than prints —
+/// asked before it is built, which may prompt (`--print-only`, I-111). The
+/// test `uploads_agrees_with_kind` keeps it in step with
+/// [`MigrationDestination::kind`].
+pub fn uploads(slug: &str) -> bool {
+    matches!(slug, "github-actions" | "github")
 }
 
 /// Ordered `(slug, display-label)` pairs used by the interactive picker in
@@ -311,7 +370,10 @@ mod tests {
             from: None,
             to: None,
             source_file: ".env".into(),
+            env_name: None,
             dry_run: false,
+            print_only: false,
+            allow_collisions: false,
             skip_existing: false,
             overwrite: false,
             yes: false,
@@ -332,6 +394,8 @@ mod tests {
             heroku_app: Some("test-app".into()),
             vercel_project: None,
             railway_project: None,
+            railway_environment: None,
+            railway_service: None,
         }
     }
 
@@ -525,6 +589,27 @@ mod tests {
         };
         let dest = get_destination("github-actions", &args).unwrap();
         assert_eq!(dest.kind(), DestinationKind::Uploads);
+    }
+
+    /// `uploads()` answers before a destination is built; `kind()` after.
+    #[cfg(feature = "migrate")]
+    #[test]
+    fn uploads_agrees_with_kind() {
+        use crate::commands::migrate::destination::DestinationKind;
+        let args = MigrateArgs {
+            repo: Some("owner/repo".into()),
+            github_token: Some("ghp_test".into()),
+            ..full_args()
+        };
+        for (slug, _) in available_destinations() {
+            let dest = get_destination(slug, &args).unwrap();
+            assert_eq!(
+                uploads(slug),
+                dest.kind() == DestinationKind::Uploads,
+                "{slug}"
+            );
+        }
+        assert!(uploads("github"));
     }
 
     /// Headless, no `--repo`, not a dry run: refuse and say which flag.

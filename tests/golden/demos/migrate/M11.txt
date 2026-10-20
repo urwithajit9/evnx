@@ -2,7 +2,7 @@
 ================ M11 ================
 first 6 lines of run.sh:
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 
 · Heroku Config Vars migration
 · Requires Heroku CLI
@@ -12,7 +12,20 @@ $ sh -n run.sh
 [stderr]
 run.sh: 8: Syntax error: "(" unexpected
 [exit 2]
-  ok: the saved file is not a script (exit 2)
-KNOWN I-111: the banner and status lines are on stdout, so the saved file is not a script; decided: --print-only
+  ok: without --print-only the saved file is the full report, not a script (unchanged by decision) (exit 2)
+run.sh with --print-only:
+heroku config:set --app demo-app \
+  APP_NAME='demo app' \
+  DATABASE_URL='postgres://admin:s3cr3t@db.internal:5432/app' \
+  API_SECRET='abc123' \
+  DEBUG='true' \
+  PORT='8080' \
+  GREETING='hello "world"' \
+  EMPTY='' \
+  PRICE='$5'
 
-================ summary: 1 ok, 0 mismatch   ================
+$ sh -n run.sh
+[exit 0]
+  ok: FIXED I-111: --print-only writes only the commands to stdout (exit 0)
+
+================ summary: 2 ok, 0 mismatch   ================

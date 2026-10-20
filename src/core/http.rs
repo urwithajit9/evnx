@@ -8,9 +8,9 @@
 //! the trusted root certificates are set, so a fix lands for every caller at
 //! once.
 //!
-//! ⚠️ `migrate`'s GitHub destination still builds `Client::new()` with no
-//! timeout. Moving it here would give it one, which changes `migrate`: that is
-//! R-migrate's decision, and `tests/architecture.rs` records it.
+//! `migrate`'s GitHub destination built `Client::new()` per request, with no
+//! timeout and the user agent `evnx`. It uses this builder since 0.10.10
+//! (DEC-MG3, I-112); `tests/architecture.rs` keeps it the only one.
 
 use std::time::Duration;
 

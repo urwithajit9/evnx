@@ -6,6 +6,56 @@
 
 use anyhow::Result;
 use indexmap::IndexMap;
+use std::fmt::Display;
+
+// ─── Where each line goes ────────────────────────────────────────────────────
+
+/// Where a destination's lines go (I-105, I-111).
+///
+/// ⚠️ The commands shared stdout with everything else — the load line, "Run
+/// these commands:", "Requires Heroku CLI", the summary — so
+/// `evnx migrate … > run.sh` saved a file `sh` could not run (I-111). Three
+/// kinds of line, three rules:
+///
+/// | kind | default | `-q` | `--print-only` |
+/// |---|---|---|---|
+/// | [`command`](Out::command) | stdout | stdout | stdout |
+/// | [`status`](Out::status) | stdout | hidden | stderr |
+/// | [`result`](Out::result) | stdout | stdout | stderr |
+///
+/// With neither flag every line is where it always was.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Out {
+    /// `-q`: status lines are hidden.
+    pub quiet: bool,
+    /// `--print-only`: stdout holds commands and nothing else.
+    pub print_only: bool,
+}
+
+impl Out {
+    /// A command, or a comment or blank line that belongs to the commands.
+    pub fn command(&self, line: impl Display) {
+        println!("{line}");
+    }
+
+    /// A line about the run — what is being done, what to install, what was
+    /// renamed. `-q` hides it.
+    pub fn status(&self, line: impl Display) {
+        if !self.quiet {
+            self.result(line);
+        }
+    }
+
+    /// What the run came to: the summary, a dry run's preview. Shown under
+    /// `-q`; on stderr with `--print-only`.
+    pub fn result(&self, line: impl Display) {
+        if self.print_only {
+            eprintln!("{line}");
+        } else {
+            println!("{line}");
+        }
+    }
+}
 
 // ─── Result type returned by every destination ───────────────────────────────
 
@@ -40,13 +90,13 @@ pub enum DestinationKind {
 }
 
 impl MigrationResult {
-    /// Pretty-print the summary table.
+    /// Pretty-print the summary table, as result lines (see [`Out`]).
     ///
     /// `kind` decides the wording, because "uploaded" is only true for a
     /// destination that actually uploaded.
-    pub fn print_summary(&self, kind: DestinationKind, dry_run: bool) {
+    pub fn print_summary(&self, kind: DestinationKind, dry_run: bool, out: Out) {
         use colored::Colorize;
-        println!("\n{}", "Summary:".bold());
+        out.result(format!("\n{}", "Summary:".bold()));
 
         // ⚠️ A dry run neither generates nor skips.
         //
@@ -63,15 +113,15 @@ impl MigrationResult {
         // the false `✓ N uploaded` did not reach these counters.
         if dry_run {
             let covered = self.uploaded + self.skipped;
-            println!("  ·  {covered} secret(s) previewed");
-            println!(
+            out.result(format!("  ·  {covered} secret(s) previewed"));
+            out.result(format!(
                 "     {}",
                 "dry run — nothing was uploaded and nothing was written".yellow()
-            );
+            ));
             if self.failed > 0 {
-                println!("  ✗  {} would fail", self.failed);
+                out.result(format!("  ✗  {} would fail", self.failed));
                 for e in &self.errors {
-                    println!("      • {}", e);
+                    out.result(format!("      • {}", e));
                 }
             }
             return;
@@ -79,23 +129,27 @@ impl MigrationResult {
 
         match kind {
             DestinationKind::Uploads => {
-                println!("  ✓  {} uploaded", self.uploaded);
+                out.result(format!("  ✓  {} uploaded", self.uploaded));
             }
             DestinationKind::EmitsCommands => {
-                println!("  ✓  {} command(s) generated", self.uploaded);
-                println!(
-                    "     {}",
-                    "nothing has been uploaded — run the commands above".yellow()
-                );
+                out.result(format!("  ✓  {} command(s) generated", self.uploaded));
+                // With `--print-only` the commands went to stdout — a file,
+                // usually — and this line to stderr, so they are not "above".
+                let run = if out.print_only {
+                    "nothing has been uploaded — run the commands written to stdout"
+                } else {
+                    "nothing has been uploaded — run the commands above"
+                };
+                out.result(format!("     {}", run.yellow()));
             }
         }
         if self.skipped > 0 {
-            println!("  ⊘  {} skipped", self.skipped);
+            out.result(format!("  ⊘  {} skipped", self.skipped));
         }
         if self.failed > 0 {
-            println!("  ✗  {} failed", self.failed);
+            out.result(format!("  ✗  {} failed", self.failed));
             for e in &self.errors {
-                println!("      • {}", e);
+                out.result(format!("      • {}", e));
             }
         }
     }
@@ -116,6 +170,8 @@ pub struct MigrationOptions {
     pub yes: bool,
     /// Emit extra diagnostic output.
     pub verbose: bool,
+    /// Where lines go: `-q` and `--print-only` (I-105, I-111).
+    pub out: Out,
 
     // ── Filtering ──────────────────────────────────────────────────────────
     /// Glob patterns; only secrets whose key matches are uploaded.
@@ -206,6 +262,13 @@ pub trait MigrationDestination {
         DestinationKind::EmitsCommands
     }
 
+    /// Whether the platform treats names that differ only in case as one
+    /// (Azure Key Vault, GitHub). Two such names are one secret there, the
+    /// second overwriting the first, so the collision check folds case (I-104).
+    fn names_ignore_case(&self) -> bool {
+        false
+    }
+
     /// Perform (or simulate) the migration.
     ///
     /// Implementations must honour `opts.dry_run`: when true they must not
@@ -216,6 +279,23 @@ pub trait MigrationDestination {
         opts: &MigrationOptions,
     ) -> Result<MigrationResult>;
 
-    /// Optional: print platform-specific "next steps" after a successful migration.
-    fn print_next_steps(&self) {}
+    /// Optional: platform-specific "next steps" after a successful migration,
+    /// as status lines.
+    fn print_next_steps(&self, _out: Out) {}
+}
+
+/// A destination's naming, for the shared collision check
+/// ([`ConvertOptions::prepare`](crate::core::converter::ConvertOptions::prepare)).
+///
+/// The names are compared as `migrate` will hand them over; only case folding
+/// is the platform's. Azure's `_` → `-` cannot merge two variable names (they
+/// hold no `-`), so folding case is the whole of its rule here.
+impl crate::core::converter::Naming for dyn MigrationDestination + '_ {
+    fn name(&self) -> &str {
+        MigrationDestination::name(self)
+    }
+
+    fn names_ignore_case(&self) -> bool {
+        MigrationDestination::names_ignore_case(self)
+    }
 }

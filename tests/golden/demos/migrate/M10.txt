@@ -17,7 +17,7 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ bash -c env -i PATH=/usr/bin:/bin HOME=/x API_TOKEN=tok-demo OTHER=1 "$(command -v "$0")" migrate --from environment --include OTHER --to heroku --heroku-app demo-app --dry-run evnx
 
-✓ Loaded 2 secrets from environment
+✓ Loaded 2 secrets from the process environment
 · After filtering: 1 of 2 secrets remain.
 
 · Heroku Config Vars migration

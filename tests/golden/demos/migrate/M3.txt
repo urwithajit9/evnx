@@ -3,7 +3,7 @@
 
 $ evnx migrate --to heroku --heroku-app demo-app
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 
 · Heroku Config Vars migration
 · Requires Heroku CLI
@@ -39,36 +39,74 @@ Next steps:
 
 $ evnx migrate --to doppler --project p --doppler-config dev
 
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 
 · Doppler migration
 · Requires Doppler CLI
   Install: https://docs.doppler.com/docs/cli
+
+Upload secrets with:
+
+doppler secrets set --project p --config dev APP_NAME='demo app'
+doppler secrets set --project p --config dev DATABASE_URL='postgres://admin:s3cr3t@db.internal:5432/app'
+doppler secrets set --project p --config dev API_SECRET='abc123'
+doppler secrets set --project p --config dev DEBUG='true'
+doppler secrets set --project p --config dev PORT='8080'
+doppler secrets set --project p --config dev GREETING='hello "world"'
+doppler secrets set --project p --config dev EMPTY=''
+doppler secrets set --project p --config dev PRICE='$5'
+
+Summary:
+  ✓  8 command(s) generated
+     nothing has been uploaded — run the commands above
+
+Next steps:
+  1. Run the printed `doppler secrets set` commands.
+  2. Replace `.env` references in your app with `doppler run --`.
+  3. Add `doppler run -- <your-command>` to your CI/CD pipeline.
 [stderr]
 
   evnx migrate  Generate destination commands from your .env
 
-Error: Doppler CLI not found. Install from https://docs.doppler.com/docs/cli
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: FIXED I-110: printing doppler commands needs no doppler installed (exit 0)
 
-No verdict: evnx did not finish. This is not a clean result.
-[exit 2]
-  ok: KNOWN I-110: doppler needs the tool installed to PRINT commands on a real run (not on a dry run); decided: opt-in --check (exit 2)
+$ evnx migrate --to railway --railway-project p --railway-environment production
 
-$ evnx migrate --to railway --railway-project p
-
-✓ Loaded 8 secrets from env-file
+✓ Loaded 8 secrets from .env
 
 · Railway migration
 · Requires Railway CLI
   Install: npm install -g @railway/cli
+
+Upload secrets with:
+
+railway variable set --project p --environment production \
+  APP_NAME='demo app' \
+  DATABASE_URL='postgres://admin:s3cr3t@db.internal:5432/app' \
+  API_SECRET='abc123' \
+  DEBUG='true' \
+  PORT='8080' \
+  GREETING='hello "world"' \
+  EMPTY='' \
+  PRICE='$5'
+
+Summary:
+  ✓  8 command(s) generated
+     nothing has been uploaded — run the commands above
+
+Next steps:
+  1. Login first: `railway login`.
+  2. The command names the project; no `railway link` needed.
+  3. Run the printed `railway variable set` command.
+  4. Setting variables redeploys the service.
 [stderr]
 
   evnx migrate  Generate destination commands from your .env
 
-Error: Railway CLI not found. Install with: npm install -g @railway/cli
-
-No verdict: evnx did not finish. This is not a clean result.
-[exit 2]
-  ok: KNOWN I-110: same for railway (and infisical) (exit 2)
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: FIXED I-110: same for railway (and infisical) (exit 0)
 
 ================ summary: 3 ok, 0 mismatch   ================

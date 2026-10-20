@@ -19,19 +19,125 @@
 //! "not empty", both of which the placeholder satisfied. A ciphertext test has to
 //! decrypt.
 
+use crate::core::http;
 use crate::utils::prompt;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use indexmap::IndexMap;
 
 use indicatif::{ProgressBar, ProgressStyle};
-use reqwest::blocking::Client;
+use reqwest::blocking::{Client, RequestBuilder, Response};
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::time::Duration;
 
 use super::super::destination::{
-    DestinationKind, MigrationDestination, MigrationOptions, MigrationResult,
+    DestinationKind, MigrationDestination, MigrationOptions, MigrationResult, Out,
 };
+
+// ─── How evnx talks to the GitHub REST API (DEC-MG3) ─────────────────────────
+
+/// The REST API version every request names.
+///
+/// ⚠️ Not the newer `2026-03-10`: GitHub Enterprise Server, which
+/// `GITHUB_API_URL` reaches, may not know it, and none of its breaking changes
+/// touch these three endpoints. `2022-11-28` is what GitHub assumes when no
+/// version is sent, supported until 2028-03-10 — naming it means a change of
+/// default cannot move evnx without a release.
+const API_VERSION: &str = "2022-11-28";
+
+/// Per request, and to connect. ⚠️ Each request used to build its own
+/// `Client::new()`, which has no timeout: an unanswered connection hung the
+/// upload for as long as the operating system allowed (I-112).
+const TIMEOUT: Duration = Duration::from_secs(30);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Between two uploads. GitHub asks for at least a second between writes, and
+/// counts a secret upload against a secondary limit of 80 a minute; at 100 ms
+/// a repository with more than 80 secrets ran into it and the rest failed.
+const PAUSE: Duration = Duration::from_secs(1);
+
+/// GitHub's largest page of the secrets list.
+const PER_PAGE: usize = 100;
+
+/// A repository holds at most 100 secrets; past this many pages the server is
+/// not GitHub, or not answering as GitHub does.
+const MAX_PAGES: usize = 20;
+
+/// The largest value GitHub stores in one secret.
+const MAX_VALUE_BYTES: usize = 48 * 1024;
+
+/// [`PAUSE`], unless a **debug** build is told otherwise by
+/// `EVNX_GITHUB_PAUSE_MS` — so the tests do not wait a second per secret. A
+/// release binary always waits (as `update` treats `EVNX_UPDATE_URL`, DEC-SF10).
+fn pause() -> Duration {
+    #[cfg(debug_assertions)]
+    if let Some(ms) = std::env::var("EVNX_GITHUB_PAUSE_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+    {
+        return Duration::from_millis(ms);
+    }
+    PAUSE
+}
+
+/// What GitHub would refuse in `secrets`, one line each, checked before any
+/// request (I-267). A refusal used to cost one failed upload per name, after
+/// the others had gone.
+///
+/// The character rules — letters, digits and `_`, no leading digit — hold for
+/// every name `migrate` hands over (`mod.rs` checks them for all
+/// destinations). What is left is GitHub's own: the `GITHUB_` prefix is
+/// reserved, in any case, and a value is at most 48 KB.
+pub fn refused_by_github(secrets: &IndexMap<String, String>) -> Vec<String> {
+    let mut refused = Vec::new();
+    for (name, value) in secrets {
+        if name.to_ascii_uppercase().starts_with("GITHUB_") {
+            refused.push(format!("{name}: names starting with GITHUB_ are reserved"));
+        } else if value.len() > MAX_VALUE_BYTES {
+            refused.push(format!(
+                "{name}: {} bytes; a GitHub secret holds at most 48 KB",
+                value.len()
+            ));
+        }
+    }
+    refused
+}
+
+/// One repository's secrets endpoints, through one client.
+struct Api<'a> {
+    client: &'a Client,
+    base: &'a str,
+    repo: &'a str,
+    token: &'a str,
+}
+
+impl Api<'_> {
+    /// `…/repos/{repo}/actions/secrets{path}`, with the token, the media type
+    /// GitHub documents, and the API version. The user agent is the shared
+    /// client's (`evnx/<version>`).
+    fn request(&self, method: Method, path: &str) -> RequestBuilder {
+        self.client
+            .request(
+                method,
+                format!("{}/repos/{}/actions/secrets{}", self.base, self.repo, path),
+            )
+            .header("Authorization", format!("Bearer {}", self.token))
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", API_VERSION)
+    }
+
+    /// Send, wording a request that never completed as `core::http` does.
+    fn send(&self, request: RequestBuilder) -> Result<Response> {
+        request.send().map_err(|e| {
+            anyhow!(
+                "could not reach the GitHub API: {}",
+                http::transport_reason(&e, TIMEOUT)
+            )
+        })
+    }
+}
 
 // ─── Destination struct ───────────────────────────────────────────────────────
 
@@ -93,15 +199,36 @@ impl MigrationDestination for GitHubDestination {
         DestinationKind::Uploads
     }
 
+    /// GitHub stores secret names in uppercase: `db_url` is `DB_URL` (I-104).
+    fn names_ignore_case(&self) -> bool {
+        true
+    }
+
     fn migrate(
         &self,
         secrets: &IndexMap<String, String>,
         opts: &MigrationOptions,
     ) -> Result<MigrationResult> {
-        println!(
+        // ── What GitHub would refuse, before anything else (I-267) ────────────
+        let refused = refused_by_github(secrets);
+        if !refused.is_empty() {
+            anyhow::bail!(
+                "GitHub would refuse {}:\n  {}\n\n\
+                 Rename them in the .env, add a prefix with --add-prefix, or leave \
+                 them out with --exclude. Nothing was uploaded.",
+                if refused.len() == 1 {
+                    "this secret"
+                } else {
+                    "these secrets"
+                },
+                refused.join("\n  ")
+            );
+        }
+
+        opts.out.status(format!(
             "\n{} Migrating to GitHub Actions Secrets…",
             crate::utils::ui::glyph::INFO.cyan()
-        );
+        ));
 
         // ── Ask first, or refuse (I-109) ──────────────────────────────────────
         // ⚠️ Before any request. Without a terminal the confirmation below
@@ -116,11 +243,21 @@ impl MigrationDestination for GitHubDestination {
             ))?;
         }
 
+        // ── One client for the whole run (DEC-MG3) ────────────────────────────
+        let client =
+            http::client(TIMEOUT, Some(CONNECT_TIMEOUT)).context("building the HTTP client")?;
+        let api = Api {
+            client: &client,
+            base: &self.api_base,
+            repo: &self.repository,
+            token: &self.token,
+        };
+
         // ── Fetch existing secrets (skip in dry-run to avoid network calls) ──
-        let existing: Vec<String> = if !opts.dry_run {
-            fetch_existing_secrets(&self.api_base, &self.repository, &self.token, opts.verbose)?
+        let existing: HashSet<String> = if !opts.dry_run {
+            fetch_existing_secrets(&api, opts.verbose)?
         } else {
-            vec![]
+            HashSet::new()
         };
 
         // ── Classify each secret ──────────────────────────────────────────────
@@ -130,7 +267,10 @@ impl MigrationDestination for GitHubDestination {
         let mut undecided: Vec<&str> = Vec::new();
 
         for (key, value) in secrets {
-            if existing.contains(key) {
+            // ⚠️ Uppercase on both sides: GitHub stores `db_url` as `DB_URL`, so
+            // an exact comparison called an existing secret new and replaced it
+            // under `--skip-existing` (I-266).
+            if existing.contains(&key.to_ascii_uppercase()) {
                 if opts.skip_existing {
                     to_skip.push(key.clone());
                 } else if opts.yes && !opts.overwrite {
@@ -219,19 +359,14 @@ impl MigrationDestination for GitHubDestination {
 
         // One key for the whole run. It belongs to the repository, not to the
         // secret, so fetching it per secret only doubled the request count.
-        let public_key = fetch_public_key(&self.api_base, &self.repository, &self.token)?;
+        let public_key = fetch_public_key(&api)?;
 
-        for (key, value) in &to_upload {
+        for (i, (key, value)) in to_upload.iter().enumerate() {
+            if i > 0 {
+                std::thread::sleep(pause());
+            }
             pb.set_message(key.clone());
-            match upload_secret(
-                &self.api_base,
-                &self.repository,
-                &self.token,
-                &public_key,
-                key,
-                value,
-                opts.verbose,
-            ) {
+            match upload_secret(&api, &public_key, key, value, opts.verbose) {
                 Ok(()) => {
                     result.uploaded += 1;
                     pb.println(format!("  {} {}", "✓".green(), key));
@@ -243,57 +378,37 @@ impl MigrationDestination for GitHubDestination {
                 }
             }
             pb.inc(1);
-            std::thread::sleep(Duration::from_millis(100)); // avoid rate-limiting
         }
 
         pb.finish_with_message("Done");
         Ok(result)
     }
 
-    fn print_next_steps(&self) {
-        println!("\n{}", "Next steps:".bold());
-        println!("  1. Update your GitHub Actions workflows to reference these secrets.");
-        println!("  2. Revoke / delete your local .env file or encrypt it with `evnx backup`.");
-        println!("  3. Regenerate .env.example if secret names changed.");
+    fn print_next_steps(&self, out: Out) {
+        out.status(format!("\n{}", "Next steps:".bold()));
+        out.status("  1. Update your GitHub Actions workflows to reference these secrets.");
+        out.status("  2. Revoke / delete your local .env file or encrypt it with `evnx backup`.");
+        out.status("  3. Regenerate .env.example if secret names changed.");
     }
 }
 // ─── GitHub REST API helpers ──────────────────────────────────────────────────
 
-/// GET /repos/{owner}/{repo}/actions/secrets
+/// GET /repos/{owner}/{repo}/actions/secrets, every page, as uppercase names.
 ///
-/// BUG FIX: original had `"repos/  {}"` with stray spaces.
-fn fetch_existing_secrets(
-    api_base: &str,
-    repo: &str,
-    token: &str,
-    verbose: bool,
-) -> Result<Vec<String>> {
+/// ⚠️ One request with no `per_page` read GitHub's default page of **30**
+/// names, so a repository with more looked as if the rest did not exist, and
+/// `--skip-existing` replaced them (I-266). Now `per_page=100` — GitHub's
+/// largest, and a repository's limit — and every page until one comes back
+/// short or `total_count` is reached.
+fn fetch_existing_secrets(api: &Api, verbose: bool) -> Result<HashSet<String>> {
     if verbose {
-        println!("  Fetching existing secrets from {}", repo);
-    }
-
-    // ✅ No stray spaces in URL
-    let url = format!("{}/repos/{}/actions/secrets", api_base, repo);
-
-    let client = Client::new();
-    let resp = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github.v3+json")
-        .header("User-Agent", "evnx")
-        .send()
-        .context("Failed to reach GitHub API")?;
-
-    if !resp.status().is_success() {
-        return Err(anyhow!(
-            "GitHub API error {}: {}",
-            resp.status(),
-            resp.text().unwrap_or_default()
-        ));
+        println!("  Fetching existing secrets from {}", api.repo);
     }
 
     #[derive(Deserialize)]
     struct SecretsPage {
+        #[serde(default)]
+        total_count: Option<usize>,
         secrets: Vec<SecretItem>,
     }
     #[derive(Deserialize)]
@@ -301,23 +416,42 @@ fn fetch_existing_secrets(
         name: String,
     }
 
-    let page: SecretsPage = resp.json()?;
-    Ok(page.secrets.into_iter().map(|s| s.name).collect())
+    let mut names = HashSet::new();
+    for page_number in 1..=MAX_PAGES {
+        let resp = api.send(api.request(
+            Method::GET,
+            &format!("?per_page={PER_PAGE}&page={page_number}"),
+        ))?;
+        if !resp.status().is_success() {
+            return Err(anyhow!(
+                "GitHub API error {}: {}",
+                resp.status(),
+                resp.text().unwrap_or_default()
+            ));
+        }
+        let page: SecretsPage = resp
+            .json()
+            .context("reading the list of secrets from GitHub")?;
+        let short = page.secrets.len() < PER_PAGE;
+        names.extend(
+            page.secrets
+                .into_iter()
+                .map(|s| s.name.to_ascii_uppercase()),
+        );
+        if short || page.total_count.is_some_and(|total| names.len() >= total) {
+            return Ok(names);
+        }
+    }
+    Err(anyhow!(
+        "GitHub listed more than {} secrets for {}, and kept going. Nothing was uploaded.",
+        MAX_PAGES * PER_PAGE,
+        api.repo
+    ))
 }
 
 /// GET /repos/{owner}/{repo}/actions/secrets/public-key
-///
-/// BUG FIX: original URL had stray spaces.
-fn fetch_public_key(api_base: &str, repo: &str, token: &str) -> Result<PublicKey> {
-    // ✅ No stray spaces in URL
-    let url = format!("{}/repos/{}/actions/secrets/public-key", api_base, repo);
-    let client = Client::new();
-    let resp = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github.v3+json")
-        .header("User-Agent", "evnx")
-        .send()?;
+fn fetch_public_key(api: &Api) -> Result<PublicKey> {
+    let resp = api.send(api.request(Method::GET, "/public-key"))?;
 
     if !resp.status().is_success() {
         return Err(anyhow!("Failed to get public key: {}", resp.status()));
@@ -332,30 +466,15 @@ struct PublicKey {
 }
 
 /// PUT /repos/{owner}/{repo}/actions/secrets/{secret_name}
-///
-/// BUG FIX: original URL had stray spaces.
-fn upload_secret(
-    api_base: &str,
-    repo: &str,
-    token: &str,
-    pk: &PublicKey,
-    key: &str,
-    value: &str,
-    verbose: bool,
-) -> Result<()> {
+fn upload_secret(api: &Api, pk: &PublicKey, key: &str, value: &str, verbose: bool) -> Result<()> {
     if verbose {
         println!("  Uploading '{}'", key);
     }
 
     // ⚠️ The key is fetched once by the caller and passed in. This used to call
-    // fetch_public_key() itself, so uploading N secrets made 2N requests — and
-    // the 100ms sleep in `migrate`'s upload loop exists to survive the rate
-    // limiting that caused, rather than to address the cause. The sleep stays:
-    // it is cheap and still polite, but it is no longer load-bearing.
+    // fetch_public_key() itself, so uploading N secrets made 2N requests. The
+    // pause between uploads is GitHub's ask for writes (see `PAUSE`).
     let encrypted = encrypt_for_github(&pk.key, value)?;
-
-    // ✅ No stray spaces in URL
-    let url = format!("{}/repos/{}/actions/secrets/{}", api_base, repo, key);
 
     #[derive(Serialize)]
     struct Payload {
@@ -363,17 +482,10 @@ fn upload_secret(
         key_id: String,
     }
 
-    let client = Client::new();
-    let resp = client
-        .put(&url)
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github.v3+json")
-        .header("User-Agent", "evnx")
-        .json(&Payload {
-            encrypted_value: encrypted,
-            key_id: pk.key_id.clone(),
-        })
-        .send()?;
+    let resp = api.send(api.request(Method::PUT, &format!("/{key}")).json(&Payload {
+        encrypted_value: encrypted,
+        key_id: pk.key_id.clone(),
+    }))?;
 
     if resp.status().is_success() || resp.status() == reqwest::StatusCode::CREATED {
         Ok(())
@@ -519,6 +631,19 @@ mod tests {
     // only one that could not be tested without a live token and a real repo —
     // which is exactly how the placeholder encryption survived to ship.
 
+    fn test_client() -> Client {
+        http::client(TIMEOUT, Some(CONNECT_TIMEOUT)).unwrap()
+    }
+
+    fn api<'a>(client: &'a Client, base: &'a str, token: &'a str) -> Api<'a> {
+        Api {
+            client,
+            base,
+            repo: "owner/repo",
+            token,
+        }
+    }
+
     fn key_response(sk: &SecretKey) -> String {
         format!(
             r#"{{"key_id":"kid-1","key":"{}"}}"#,
@@ -537,7 +662,8 @@ mod tests {
             .with_body(key_response(&sk))
             .create();
 
-        let pk = fetch_public_key(&server.url(), "owner/repo", "tok").unwrap();
+        let (client, url) = (test_client(), server.url());
+        let pk = fetch_public_key(&api(&client, &url, "tok")).unwrap();
         assert_eq!(pk.key_id, "kid-1");
         m.assert();
     }
@@ -547,12 +673,20 @@ mod tests {
         let mut server = mockito::Server::new();
         let m = server
             .mock("GET", "/repos/owner/repo/actions/secrets")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("per_page".into(), "100".into()),
+                mockito::Matcher::UrlEncoded("page".into(), "1".into()),
+            ]))
             .with_status(200)
-            .with_body(r#"{"secrets":[{"name":"API_KEY"},{"name":"DB_URL"}]}"#)
+            .with_body(r#"{"secrets":[{"name":"API_KEY"},{"name":"db_url"}]}"#)
             .create();
 
-        let names = fetch_existing_secrets(&server.url(), "owner/repo", "tok", false).unwrap();
-        assert_eq!(names, vec!["API_KEY", "DB_URL"]);
+        let (client, url) = (test_client(), server.url());
+        let names = fetch_existing_secrets(&api(&client, &url, "tok"), false).unwrap();
+        assert_eq!(
+            names,
+            HashSet::from(["API_KEY".to_string(), "DB_URL".to_string()])
+        );
         m.assert();
     }
 
@@ -582,10 +716,9 @@ mod tests {
             })
             .create();
 
+        let (client, url) = (test_client(), server.url());
         upload_secret(
-            &server.url(),
-            "owner/repo",
-            "tok",
+            &api(&client, &url, "tok"),
             &pk,
             "API_KEY",
             "sk_live_SUPER_SECRET",
@@ -604,12 +737,27 @@ mod tests {
         let mut server = mockito::Server::new();
         server
             .mock("GET", "/repos/owner/repo/actions/secrets")
+            .match_query(mockito::Matcher::Any)
             .with_status(401)
             .with_body(r#"{"message":"Bad credentials"}"#)
             .create();
 
-        let err = fetch_existing_secrets(&server.url(), "owner/repo", "bad", false).unwrap_err();
+        let (client, url) = (test_client(), server.url());
+        let err = fetch_existing_secrets(&api(&client, &url, "bad"), false).unwrap_err();
         assert!(err.to_string().contains("401"), "{err}");
+    }
+
+    /// I-267: GitHub's own rules, checked before any request.
+    #[test]
+    fn t_i267_reserved_names_and_oversized_values_are_named() {
+        let mut s = IndexMap::new();
+        s.insert("github_token_copy".to_string(), "x".to_string());
+        s.insert("BIG".to_string(), "x".repeat(MAX_VALUE_BYTES + 1));
+        s.insert("OK".to_string(), "x".repeat(MAX_VALUE_BYTES));
+        let refused = refused_by_github(&s);
+        assert_eq!(refused.len(), 2, "{refused:?}");
+        assert!(refused[0].starts_with("github_token_copy:"), "{refused:?}");
+        assert!(refused[1].starts_with("BIG:"), "{refused:?}");
     }
 
     /// GITHUB_API_URL is what makes evnx work against Enterprise Server, and what
