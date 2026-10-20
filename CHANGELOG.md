@@ -8,6 +8,86 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The patch for `evnx backup` and `evnx restore` (package R-backup-restore).
+Neither can be pointed at a file it would destroy any more, a new backup needs
+an 8-character passphrase from every source, a script can replace an existing
+`.env` with `restore --yes`, and a backup that cannot be opened says why.
+
+⚠️ **Scripts that run `evnx backup` or `evnx restore`:**
+
+- **A key file or `EVNX_PASSWORD` under 8 characters is refused by `backup`**,
+  exit 2, as the prompt always was (I-147, DEC-B2). `restore` takes any length,
+  so a backup made earlier with a shorter one still opens.
+- `backup --output` naming the source file — by path, symlink or hard link —
+  is refused with exit 2: it turned the `.env` into ciphertext and left the
+  plaintext only in `.env.1` (I-146). So is an output whose rotation would move
+  the source (`backup out.1 --output out`), a directory at the output (exit 2,
+  was 5) or in a rotation slot (DEC-B3). `restore --output` naming the backup
+  itself is refused too.
+- **`restore --yes`** (alias `--force`, `-y`) replaces an existing output
+  without asking, for scripts (I-148, DEC-B1). Without it and without a terminal
+  the run stops with exit 2 and a line naming `--yes` and `--output`, instead of
+  "IO error: not a terminal". Whichever way the replacement is confirmed, the
+  replaced file is kept as `<output>.bak` (`.bak.2`, … when one exists), with its
+  mode (DEC-B11). An output that already holds exactly the backup's content is
+  left alone: no question, no write, exit 0, "already up to date" (DEC-B12).
+- `restore cloud://…` is an ordinary missing file, **exit 3**, with a line
+  pointing at `evnx cloud pull`; it was exit 6, "evnx-cloud restore is not yet
+  available in this build" (DEC-B4). Exit 6 is retired for `restore`.
+- A backup that cannot be opened says why: not an evnx backup, truncated, or
+  made by a newer evnx ("Upgrade evnx to restore it"). All of them read "Wrong
+  password or corrupt backup" before; a wrong password and a tampered file still
+  do, deliberately (I-149, DEC-B6). Still exit 2.
+- With both `--key-file` and `EVNX_PASSWORD` set, a warning says the key file
+  won and the variable was not used (I-155).
+- `restore`'s key-file line is `backup`'s: "Using key file for decryption
+  (non-interactive mode)", no longer a "less secure" warning; `EVNX_PASSWORD`
+  keeps its warning. With no key file, no variable and no terminal, both
+  commands name `--key-file` and `EVNX_PASSWORD` instead of "IO error: not a
+  terminal".
+
+### backup
+
+- Rotating through a symlinked `--output` rotates the file it points to; it
+  renamed the link itself to `.1`, so the output's name stopped existing.
+- `--help` lists the exit codes `backup` produces: no 1, and 2 is "could not
+  run", not only "source not found" (DEC-B9, D-101). `--verify` costs "a fraction
+  of a second to about a second", not "~1 s" (D-103); `--keep` says which file
+  the shift replaces (D-104).
+
+### restore
+
+- The `.restored` fallback no longer prints "✓ Restored 0 variable(s)" beside
+  exit 5; a warning says where the content went (I-154, DEC-B5).
+- In a git repository the restored file gets the `.gitignore` step `template`
+  and `convert -o` have: asked with a terminal, a warning without one,
+  `--gitignore` to add it, `--no-gitignore` to skip.
+- `--help` describes `<BACKUP>` and `--output`, the overwrite rule and the exit
+  codes, and says a backup file is not a vault (D-108, D-109, D-112, D-113).
+
+### Docs
+
+- README: the backup/restore section, which was two lines — the passphrase
+  sources, rotation, replacing a file, a CI recipe, the exit codes, and a table
+  of `backup`/`restore` against `cloud push`/`pull` (D-111, D-113). The module
+  headers' `--env` example and exit-1 rows are gone (D-107, D-110).
+
+### Shared code
+
+- `utils::secret_source`: the passphrase from a key file, `EVNX_PASSWORD` or a
+  prompt, with the floor, the notices and the no-terminal message, for `backup`
+  and `restore` (DEC-B13). `read_key_file` moved here from `backup`. The cloud
+  master-password prompts are not on it yet (B-WP3, 0.11.0).
+- `zeroize::Zeroizing<String>` replaces the two private `ZeroizeOnDrop` guards;
+  the restored plaintext is zeroized on the cancel and up-to-date paths too.
+- One `KdfParams::V1` for encrypt and decrypt, where the Argon2id numbers were
+  written twice. The 0.10.0 and 0.10.2 golden backups still open, and a 0.10.10
+  backup made with a 3-character key joins them as a fixture.
+- `core::env_name`: copies are not environments. `--env-name`'s "Available"
+  list showed `.env.bak` (from `validate --fix`), `.env.1` and `.env.restored`
+  as `bak`, `1`, `restored`, and `validate` counted them as known environments
+  (I-272).
+
 ## [0.10.10] - 2026-10-20
 
 The patch for `evnx migrate` (package R-migrate). Every destination was checked
