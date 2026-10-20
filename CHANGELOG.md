@@ -8,6 +8,90 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The patch for `evnx sync` (package R-sync). `--check` gives one verdict whatever
+the output format, looks both ways for a developer and one way for CI and the
+pre-commit hook, and every run without a terminal finishes instead of failing on
+a prompt.
+
+⚠️ **Scripts, CI jobs and hooks that run `evnx sync`:**
+
+- **`sync --check` without `--direction` is two-way** (DEC-S3, DEC-S17): a name
+  only `.env.example` has — a stale entry, or a `.env` that has not caught up —
+  is drift, exit 1. Naming a direction keeps the old one-way check, and that is
+  the form for CI and hooks: `evnx sync --check --direction forward`. The
+  shipped `evnx-sync` pre-commit hook now runs exactly that, so a teammate whose
+  `.env` lacks a template name can still commit. `--format json` adds
+  `template_only` and `summary.template_only` to two-way reports (I-119).
+- **`--check --format json` is the same verdict as the pretty output** (I-117).
+  It now includes the names `[vars]` requires in reverse, refuses a credential
+  in `allow_actual` and a name `--naming-policy error` refuses (both exit 2, was
+  1), and reports a missing `.env` in reverse as drift, exit 1 (was 2), listing
+  every name.
+- `--check` with an empty `.env` beside a populated template is **exit 2**, no
+  verdict (I-127, DEC-S14); it passed with a warning. Plain `sync` still warns.
+- **No terminal, or `CI` set** (to anything but empty, `0` or `false`): sync uses
+  placeholder values on an existing template and in reverse too, and says so,
+  instead of failing with "IO error: not a terminal" (I-124, DEC-S9, DEC-S18).
+  Only `sync` reads `CI`. `--placeholder` is deprecated and does what `--force`
+  does, with a notice.
+- A misspelt key in a `--template-config` file (`allow_actaul`) and an invalid
+  `[sync] naming_policy` in `.evnx.toml` are **exit 2**, naming the accepted
+  values; both were ignored without a word (I-121, DEC-S11). The file's value is
+  checked even when `--naming-policy` overrides it, as `[validate] fail_on` is.
+- `--direction` has no default in the parser any more (it is still forward):
+  `evnx::commands::sync::run` takes `Option<SyncDirection>`.
+
+### sync
+
+- Placeholders are chosen by whole words of the name (I-120, DEC-S10):
+  `SUPPORT_EMAIL` got `8000`, `MONKEY_COUNT` `YOUR_KEY_HERE`, `BYPASS_CACHE` a
+  password placeholder and `GHOST_MODE` `localhost`; now `YOUR_VALUE_HERE`.
+  `DEBUG=false` stays `false` (it became `true`). A URL placeholder follows the
+  value's scheme — `postgres`, `postgresql`, `mysql`, `mongodb`(`+srv`), `amqp`(`s`),
+  `redis`, `rediss`, `http(s)` — where only `postgresql://`, `redis://` and
+  `http(s)://` were recognised; `URI` and `DSN` names count as URLs. `add custom`
+  writes the same placeholders.
+- Reverse with no `.env`: the template's own "# Generated from .env" header is
+  not copied into the new `.env` (I-129), and names the spec requires are added
+  under "# Added by evnx sync" (I-275, DEC-S20) — they were left out, so the new
+  file failed `validate`.
+- Reverse lists a name that only `[vars]` requires as such, not as "in
+  .env.example" (I-255).
+- The `--check` verdict names the command that fixes each side, with
+  `--env`/`--example` when they are not the defaults; reverse no longer says
+  "commit the result" of writing a git-ignored `.env` (I-118).
+- Messages name the files in play: `--env nope.env` said "File not found: .env",
+  and "Created", "Updated", "Failed to parse" named `.env`/`.env.example`
+  whatever was passed (I-125).
+- "Added 1 variable", not "1 variables"; one warning for a readable `.env`,
+  worded as everywhere else ("readable by other users (mode 644)" and the
+  `chmod`), where reverse printed two, one in `0o644` form (I-126, I-276).
+- An interactive comment is written above the variables it describes, in the
+  same write; it was appended after them (I-126).
+- The `--dry-run` preview names a symlinked file's target, as the write does.
+- The "replace placeholders" reminder appears only when something added is one.
+
+### Docs
+
+- README: the sync section lists every flag, the two `--check` forms and what
+  each is for (D-66, D-67); the `[sync]` config line says a bad value is an
+  error and where placeholder rules go (D-71). Getting Started step 8 shows the
+  template sync really writes (D-64). `--help` reworded for `--direction`,
+  `--check`, `--force`, `--template-config` and `--naming-policy` (D-69).
+
+### Shared code
+
+- `core::placeholder`: the placeholder generator and `PlaceholderConfig`, moved
+  from `commands::sync` so `add` no longer imports from another command
+  (DEC-S19). `commands::sync::PlaceholderConfig` is re-exported. `init` and
+  `validate --fix` keep their own placeholder shapes.
+- `core::classify::has_word`, `core::envfile::only_in` (now also behind
+  `diff`'s missing/extra lists, output unchanged), `utils::term::ci`,
+  `utils::string::count` (moved from `add`), `core::permissions::warn_if_readable`
+  and `readable_warning` (`safe_write::report` prints through it, unchanged;
+  `report_link` is its symlink half), `NamingPolicy::from_config` on
+  `core::args::one_of`.
+
 ## [0.10.11] - 2026-10-20
 
 The patch for `evnx backup` and `evnx restore` (package R-backup-restore).
