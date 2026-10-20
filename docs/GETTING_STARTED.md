@@ -405,6 +405,22 @@ evnx convert --to aws-secrets | \
     --secret-string file:///dev/stdin
 ```
 
+### Or move them into a secret manager
+
+`evnx migrate` prints the commands that put your `.env` into a secret manager —
+AWS, GCP, Azure Key Vault, Heroku, Vercel, Doppler, Infisical, Railway — for you to
+read and run; evnx itself contacts none of them. GitHub Actions is the exception:
+evnx uploads there directly (`--repo`, token from `GITHUB_TOKEN`).
+
+```bash
+evnx migrate --to heroku --heroku-app my-app --dry-run   # what would be sent
+evnx migrate --to heroku --heroku-app my-app             # the command, to run yourself
+evnx migrate --env-name production --to gcp-secret-manager --project my-gcp-project \
+  --print-only > upload.sh                                # only the commands, as a script
+```
+
+The [migrate guide](https://docs.evnx.dev/cli/commands/migrate) lists every destination.
+
 ---
 
 ## Step 8 — Keep files in sync

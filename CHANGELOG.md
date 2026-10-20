@@ -8,6 +8,97 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The patch for `evnx migrate` (package R-migrate). Every destination was checked
+against its tool's latest release on 2026-10-20: two printed commands their tool
+rejects, gcp printed no values, and the GitHub upload replaced secrets that
+`--skip-existing` promised to keep. Names that a rename or a case-blind
+platform turns into one are refused, `--print-only` saves a runnable script, and
+`--env-name` reads the environment every other command reads.
+
+⚠️ **Scripts that run `evnx migrate`:**
+
+- **`--to github-actions --skip-existing` (and `--yes` without `--overwrite`)
+  replaced existing secrets** past the first 30 in GitHub's list, or spelled in
+  another case (I-266). Every page is read now and names are compared as GitHub
+  stores them, uppercase, so those secrets are skipped, or refused under `--yes`.
+- `--to vercel --vercel-project P` printed `--project-id P`, which vercel does not
+  have; it prints `--project P --force --yes` (I-268). `--force` replaces a
+  variable that exists, as every other destination's command does.
+- `--to railway` printed `railway --project P variables set …`, which does not
+  parse; it prints `railway variable set --project P --environment E …`.
+  `--railway-project` now needs the new `--railway-environment`, as Railway does;
+  `--railway-service` is optional (I-269, DEC-MG1).
+- `--to gcp-secret-manager` needs `--project`, as `convert --to gcp-secrets` does,
+  and prints the value: `printf '%s' 'VALUE' | upsert_secret NAME`, the script
+  convert prints. It printed `echo -n "${NAME}"`, which sent whatever your shell
+  held under that name — usually nothing, so an empty secret — created only, so a
+  second run failed, and dropped `--project` (I-100, DEC-MG2). Names stay as in
+  the `.env`.
+- `--to infisical` refuses a value that is empty or starts with `@`: the CLI
+  rejects the first, and reads the second as a **file path** when signed in with
+  `infisical login` (I-270, DEC-MG4).
+- Two names that become one are exit 2, naming both: `--strip-prefix API_` on
+  `API_X` and `X` printed one `X` and lost a value, and Azure Key Vault and GitHub
+  ignore case, so `A_B` and `a_b` were one secret there. `--allow-collisions`
+  keeps the last value (I-104, DEC-PL2).
+- `--add-prefix` and `--strip-prefix` must keep names variable names (letters,
+  digits, `_`, not starting with a digit): `--add-prefix 'X;touch PWNED;'` ran
+  `touch` through the gcp commands, and a strip could leave an empty name
+  (I-267). Names GitHub reserves (`GITHUB_…`) and values over 48 KB are refused
+  before anything is uploaded.
+- With `[defaults] env_name` in `.evnx.toml`, migrate reads `.env.<name>`, like
+  every other command; it read `.env` (I-031). `--source-file` still wins.
+- doppler, infisical and railway no longer need their CLI installed to print the
+  commands (I-110).
+- The load line names the file it read (`Loaded 3 secrets from .env.staging`),
+  not `env-file`.
+
+### migrate
+
+- **`--print-only`** (I-111): stdout holds only the commands, so
+  `evnx migrate … --print-only > upload.sh` is a script `sh` runs; the header,
+  status lines and summary go to stderr. Without the flag the output is where it
+  was. Not for github-actions, which prints no commands, nor with `--dry-run`.
+- **`--env-name NAME`** reads `.env.NAME` (S-M1); a name with no file is an error
+  listing the environments there are. Not with `--from environment`.
+- `-q` also hides each destination's own lines ("Requires Heroku CLI",
+  "Install: …", "Run this command…"), leaving the commands and the summary
+  (I-105). `--from`'s help says what happens with no terminal: `env-file`.
+- `--github-token` on the command line gets a warning: it is in your shell history
+  and in `ps`. `GITHUB_TOKEN` is read when the flag is absent, without one (I-108).
+- The GitHub upload uses evnx's one HTTP client: a 30 s timeout per request
+  (there was none), user agent `evnx/<version>`, `X-GitHub-Api-Version:
+  2022-11-28`, and one second between uploads, as GitHub asks for writes; at
+  100 ms, more than 80 secrets ran into its secondary rate limit (I-112,
+  DEC-MG3).
+- `--help` says what migrate does — prints commands for eight destinations,
+  uploads to one — with examples laid out as written, the flag each destination
+  needs, and the exit codes (D-59, D-60). The "use `evnx convert`" gcp tip is
+  gone: migrate prints that script itself.
+
+### Docs
+
+- README: what each destination prints or does and needs, `--print-only`,
+  `--env-name`, collisions, the flags that only apply to github-actions, exit
+  codes; `GITHUB_TOKEN` rather than `--github-token $GITHUB_TOKEN`; the feature
+  table as `Cargo.toml` has it; migrate in the `--env-name` list; "migrate runs
+  entirely offline" corrected for github-actions (D-54..D-58, D-61, D-63). The
+  README's one-line migrate examples run in a test.
+- GETTING_STARTED: a migrate step (D-62).
+
+### Shared code
+
+- `core::converter`: `ConvertOptions::prepare` takes any `Naming` — a
+  converter, or a migrate destination — and gains `strip_prefix`,
+  `prepare_with` (the refusal says what was not done) and `announce_kept`
+  (convert's `--allow-collisions` warning). migrate's `filtering::apply_filters`,
+  the third filter → strip → add pipeline and the only one with no collision
+  check, is now a wrapper over it. convert's output is unchanged.
+- `formats::gcp::{upsert_function, upsert_line}` and `formats::azure::secret_name`:
+  one gcp script and one Key Vault name rule for convert and migrate.
+- `core::http::client` for the GitHub upload; the architecture guard now flags
+  reqwest's `Client::new()` as well as `Client::builder()`.
+
 ## [0.10.9] - 2026-10-20
 
 The patch for `evnx convert` (package R-convert): the names a target needs are
