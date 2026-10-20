@@ -824,7 +824,7 @@ dependencies = [
 
 [[package]]
 name = "evnx"
-version = "0.10.11"
+version = "0.10.12"
 dependencies = [
  "aes-gcm",
  "anyhow",

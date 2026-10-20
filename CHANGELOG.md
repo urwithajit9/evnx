@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.12] - 2026-10-20
+
 The patch for `evnx sync` (package R-sync). `--check` gives one verdict whatever
 the output format, looks both ways for a developer and one way for CI and the
 pre-commit hook, and every run without a terminal finishes instead of failing on
