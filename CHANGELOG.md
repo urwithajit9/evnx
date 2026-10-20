@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.10] - 2026-10-20
+
 The patch for `evnx migrate` (package R-migrate). Every destination was checked
 against its tool's latest release on 2026-10-20: two printed commands their tool
 rejects, gcp printed no values, and the GitHub upload replaced secrets that
