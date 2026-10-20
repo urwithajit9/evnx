@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.11] - 2026-10-20
+
 The patch for `evnx backup` and `evnx restore` (package R-backup-restore).
 Neither can be pointed at a file it would destroy any more, a new backup needs
 an 8-character passphrase from every source, a script can replace an existing
