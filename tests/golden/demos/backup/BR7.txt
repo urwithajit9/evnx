@@ -3,6 +3,28 @@
 
 $ evnx restore .env.backup --key-file pw
 ✓ Read backup from .env.backup
+· Using key file for decryption (non-interactive mode)
+
+Backup information:
+  Schema version: v1
+  Original file : .env
+  Created at    : <date>Z
+  Tool version  : evnx v<version>
+  Variables     : 11
+✓ Decryption successful
+  ✓ Decryption key cleared from memory
+✓ .env is already up to date — nothing was written
+[stderr]
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+  Docs: https://docs.evnx.dev/cli/commands/restore
+[exit 0]
+  ok: FIXED (DEC-B12): .env already holds the backup's content: nothing asked, nothing written (exit 0)
+
+$ evnx restore .env.backup --key-file pw
+✓ Read backup from .env.backup
+· Using key file for decryption (non-interactive mode)
 
 Backup information:
   Schema version: v1
@@ -16,17 +38,51 @@ Backup information:
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
 ! Output file already exists: .env
-Error: IO error: not a terminal: not a terminal
+Error: there is no terminal to confirm with.
+
+Add --yes to replace it (the current file is kept as a .bak copy), or restore somewhere else with --output <path>:
+  evnx restore .env.backup --yes
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: KNOWN I-148: existing .env, no terminal: 'not a terminal', 'No verdict'; decided: --yes (alias --force) and a line naming it (exit 2)
+  ok: FIXED I-148: a different .env, no terminal: one line naming --yes and --output (exit 2)
+  ok: and the .env is untouched
+
+$ evnx restore .env.backup --key-file pw --yes
+✓ Read backup from .env.backup
+· Using key file for decryption (non-interactive mode)
+
+Backup information:
+  Schema version: v1
+  Original file : .env
+  Created at    : <date>Z
+  Tool version  : evnx v<version>
+  Variables     : 11
+✓ Decryption successful
+  ✓ Decryption key cleared from memory
+· Kept the previous .env as .env.bak
+
+✓ Restored 11 variable(s) to .env
+
+Next steps:
+  1. Run: evnx validate --env .env
+  2. Verify your application starts correctly
+  3. Delete the backup file once you have confirmed the restore
+[stderr]
+
+  evnx restore  Decrypt and restore from an encrypted backup
+
+! .env is readable by other users (mode 644); evnx keeps the mode you set
+     →  chmod 600 .env
+  Docs: https://docs.evnx.dev/cli/commands/restore
+[exit 0]
+  ok: FIXED I-148 (DEC-B1): --yes replaces it (exit 0)
+  ok: DEC-B11: the replaced .env is kept as .env.bak
 
 $ evnx restore .env.backup --key-file pw --output .env.new
 ✓ Read backup from .env.backup
+· Using key file for decryption (non-interactive mode)
 
 Backup information:
   Schema version: v1
@@ -47,11 +103,9 @@ Next steps:
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
   Docs: https://docs.evnx.dev/cli/commands/restore
 [exit 0]
-  ok: today's workaround: a new path, then mv (exit 0)
+  ok: a new path needs no flag (exit 0)
   ok: identical content
 
-================ summary: 3 ok, 0 mismatch   ================
+================ summary: 7 ok, 0 mismatch   ================

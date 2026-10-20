@@ -26,6 +26,7 @@ $ evnx backup ex.env --key-file pw --output ex.bak
 
 $ evnx restore ex.bak --key-file pw --inspect
 ✓ Read backup from ex.bak
+· Using key file for decryption (non-interactive mode)
 
 Backup information:
   Schema version: v1
@@ -45,13 +46,12 @@ Variables in this backup (names only — values never shown):
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
 [exit 0]
   ok: inspect uses the real parser: three names, no values (exit 0)
 
 $ evnx restore b.bak --key-file pw --dry-run
 ✓ Read backup from b.bak
+· Using key file for decryption (non-interactive mode)
 
 Backup information:
   Schema version: v1
@@ -67,14 +67,13 @@ Backup information:
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
 [exit 0]
   ok: dry-run: nothing written (exit 0)
   ok: no file created by dry-run
 
 $ evnx restore b.bak --key-file pw --inspect --dry-run
 ✓ Read backup from b.bak
+· Using key file for decryption (non-interactive mode)
 
 Backup information:
   Schema version: v1
@@ -102,8 +101,6 @@ Variables in this backup (names only — values never shown):
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
 [exit 0]
   ok: both flags: inspect wins (exit 0)
   ok: no value reaches the output

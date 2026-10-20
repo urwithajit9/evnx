@@ -142,14 +142,20 @@ pub const BACKUP: CommandDoc = CommandDoc {
     url: "https://docs.evnx.dev/cli/commands/backup",
     description: "AES-256-GCM encrypted backups",
     after_help: "\
+Passphrase: --key-file, then EVNX_PASSWORD, then a prompt (asked twice). A new\n\
+backup needs at least 8 characters from any of them.\n\
+\n\
 Exit codes:\n\
-  0  Success\n\
-  1  Generic error (IO, unexpected failure)\n\
-  2  Source file not found or not a regular file\n\
-  3  Password confirmation did not match\n\
-  4  Encryption failed\n\
-  5  Failed to write backup file\n\
-  6  Post-write integrity check failed (--verify)\n\
+\x20 0  Backup written (and verified, with --verify)\n\
+\x20 2  Could not run: source file, key file or passphrase, an output that is the\n\
+\x20    source or a directory, no terminal to ask on\n\
+\x20 3  Password confirmation did not match\n\
+\x20 4  Encryption failed\n\
+\x20 5  Could not write the backup file\n\
+\x20 6  Integrity check failed after writing (--verify)\n\
+\n\
+A backup is a file you keep, behind a passphrase you choose; it needs no account\n\
+and no network. To share and version secrets instead, see `evnx cloud push`.\n\
 \n\
 📖  Full guide: https://docs.evnx.dev/cli/commands/backup",
 };
@@ -158,7 +164,24 @@ pub const RESTORE: CommandDoc = CommandDoc {
     command: "restore",
     url: "https://docs.evnx.dev/cli/commands/restore",
     description: "Restoring from encrypted backups",
-    after_help: "Full guide: https://docs.evnx.dev/cli/commands/restore",
+    after_help: "\
+Replacing a file: an existing --output is never replaced silently. With a\n\
+terminal evnx asks; without one, pass --yes (alias --force). Either way the\n\
+replaced file is kept beside it as <output>.bak. Content identical to the\n\
+backup is left alone.\n\
+\n\
+Exit codes:\n\
+\x20 0  Restored, inspected, checked (--dry-run), or already up to date\n\
+\x20 2  Could not run: wrong password, unreadable backup, output problem, no\n\
+\x20    terminal to ask on\n\
+\x20 3  Backup file not found\n\
+\x20 4  Cancelled at the overwrite question\n\
+\x20 5  Not a .env evnx can read: written to <output>.restored instead\n\
+\n\
+A backup file is not a vault. For evnx cloud, use `evnx cloud pull` (one\n\
+version) or `evnx cloud export` (all of them).\n\
+\n\
+Full guide: https://docs.evnx.dev/cli/commands/restore",
 };
 
 pub const CLOUD: CommandDoc = CommandDoc {

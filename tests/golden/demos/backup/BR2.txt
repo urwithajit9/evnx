@@ -26,6 +26,7 @@ $ evnx backup --key-file bin.key --output b1.bak
 
 $ evnx restore b1.bak --key-file bin.key --inspect
 ✓ Read backup from b1.bak
+· Using key file for decryption (non-interactive mode)
 
 Backup information:
   Schema version: v1
@@ -53,8 +54,6 @@ Variables in this backup (names only — values never shown):
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Reading password from file: bin.key
-  Less secure than interactive prompt — avoid in shared environments.
 [exit 0]
   ok: same file under restore's spelling opens it (F7) (exit 0)
 
@@ -127,9 +126,10 @@ $ env EVNX_PASSWORD=env-passphrase-1 evnx backup --key-file pw --output b5.bak
 
   evnx backup  Encrypt and back up your .env file
 
+! EVNX_PASSWORD is set as well; the key file wins, so EVNX_PASSWORD was not used
   Docs: https://docs.evnx.dev/cli/commands/backup
 [exit 0]
-  ok: KNOWN I-155: file and env both set, the file wins with no notice (exit 0)
+  ok: FIXED I-155: file and env both set: the file wins, and a warning says so (exit 0)
 
 $ env EVNX_PASSWORD=env-passphrase-1 evnx restore b5.bak --inspect
 ✓ Read backup from b5.bak
@@ -145,26 +145,17 @@ Error: Wrong password or corrupt backup — decryption failed
 
 $ evnx backup --key-file short.key --output b6.bak
 ✓ Read 258 bytes from .env
-· Using key file for encryption (non-interactive mode)
-
-✓ Backup created successfully
-  Source  : .env
-  Backup  : b6.bak
-  Size    : 620 bytes (encrypted + Base64)
-  Verified: no
-
-! Important:
-  • Keep your password (or key file) safe — it cannot be recovered
-  • Store the backup in a secure, separate location
-  • To restore: evnx restore b6.bak --output .env
-  • Test the restore before deleting the original .env
 [stderr]
 
   evnx backup  Encrypt and back up your .env file
 
-  Docs: https://docs.evnx.dev/cli/commands/backup
-[exit 0]
-  ok: KNOWN I-147: a one-character secret is accepted; decided: floor 8 for new backups (exit 0)
+Error: The key file short.key must be at least 8 characters (got 1)
+
+  Only a new backup needs it: one made earlier with a shorter passphrase still restores.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-147: a one-character key file is refused (8 characters for a new backup, DEC-B2) (exit 2)
 
 $ evnx backup --output b7.bak
 ✓ Read 258 bytes from .env
@@ -172,10 +163,14 @@ $ evnx backup --output b7.bak
 
   evnx backup  Encrypt and back up your .env file
 
-Error: IO error: not a terminal: not a terminal
+Error: there is no terminal to ask for the passphrase on.
+
+  Give it without a prompt, from a file or the environment:
+    evnx backup .env --key-file <path>
+    EVNX_PASSWORD=… evnx backup .env
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: KNOWN I-148/D-101: no terminal, no secret: 'not a terminal'; decided: a line naming --key-file and EVNX_PASSWORD (exit 2)
+  ok: FIXED D-101: no terminal, no secret: a line naming --key-file and EVNX_PASSWORD (exit 2)
 
 ================ summary: 9 ok, 0 mismatch   ================

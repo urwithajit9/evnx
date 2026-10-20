@@ -2,15 +2,14 @@
 //!
 //! # Overview
 //!
-//! Reads a Base64-encoded AES-256-GCM backup (local file or, once available,
-//! an evnx-cloud reference), derives the decryption key from the
-//! user-supplied password using Argon2id, decrypts the payload, and writes
-//! the recovered `.env` content to disk.
+//! Reads a Base64-encoded AES-256-GCM backup file, derives the decryption key
+//! from the user-supplied password using Argon2id, decrypts the payload, and
+//! writes the recovered `.env` content to disk.
 //!
 //! This file is the **CLI adapter**: it owns all TTY interaction — the
-//! decorative header, the password prompt, and the overwrite confirmation.
-//! Pure restore logic (decryption, path selection, writing) lives in
-//! [`core`] and is independently testable without a terminal.
+//! decorative header, the password prompt, the overwrite question and the
+//! `.gitignore` question. Pure restore logic (decryption, path selection,
+//! writing) lives in [`core`] and is independently testable without a terminal.
 //!
 //! # Module layout
 //!
@@ -18,53 +17,70 @@
 //! |----------|------------------------------------------------------|
 //! | `mod.rs` | CLI adapter — header, prompts, orchestration         |
 //! | `core`   | Pure logic — decrypt, validate, write                |
-//! | `source` | Backup source — local path or cloud reference        |
+//! | `source` | Reading the backup file                              |
 //! | `error`  | Typed error variants and process exit code mapping   |
 //!
 //! # Safety behaviours
 //!
 //! ## Password resolution order
 //!
-//! Passwords are resolved in this priority order:
+//! [`crate::utils::secret_source`], the same rule `backup` uses:
 //!
-//! 1. `--password-file <path>` — read from a file (CI/CD friendly).
+//! 1. `--password-file <path>` (also `--key-file`) — read from a file (CI/CD friendly).
 //! 2. `EVNX_PASSWORD` environment variable — read and immediately unset.
 //! 3. Interactive prompt — default; most secure.
 //!
-//! Options 1 and 2 are clearly less secure than the interactive prompt
-//! (the password may appear in process listings, shell history, or CI logs)
-//! and are documented as opt-in for non-interactive environments.
+//! There is no length floor here (DEC-B2): a backup made before `backup`
+//! required 8 characters still opens.
 //!
-//! ## Overwrite protection
+//! ## Replacing an existing output
 //!
-//! If the output file already exists the user is **always prompted** before
-//! it is overwritten. There is intentionally no `--force` flag.
+//! Never silently. When the output already holds exactly what the backup
+//! holds, nothing is asked or written ("already up to date", DEC-B12).
+//! Otherwise, with a terminal, evnx asks (default No); without one, `--yes`
+//! (alias `--force`, as in `cloud pull`) answers, and without it the run
+//! stops with exit 2 naming `--yes` and `--output` (DEC-B1, I-148). Either way
+//! the replaced file is kept as `<output>.bak` (DEC-B11). The output may not be
+//! the backup itself (DEC-B3).
+//!
+//! ⚠️ The module header once said "there is intentionally no `--force`
+//! flag". Without one a script had no way past an existing file but
+//! `--output <new>` and `mv`, and with no terminal the question failed as
+//! "IO error: not a terminal" — exit 2, not the documented 4.
 //!
 //! ## Validation failure fallback
 //!
-//! When the decrypted content does not pass the `.env` validation heuristic,
-//! the file is written to `<o>.restored` instead of `<o>`. The typed error
+//! When the decrypted content is not a `.env` evnx can read, the file is
+//! written to `<o>.restored` instead of `<o>`. The typed error
 //! [`RestoreError::ValidationFallback`] is returned so `main.rs` can use exit
 //! code 5 without printing a redundant error message.
 //!
 //! ## Memory safety
 //!
-//! The password is moved into a `ZeroizeOnDrop` guard in `core::prepare_restore`
-//! the moment it is passed over — cleared on every exit path, including
-//! `?`-propagated errors and panics. The encoded ciphertext blob is explicitly
-//! zeroized in this file after `prepare_restore` returns.
+//! The password and the decrypted content are [`zeroize::Zeroizing`] strings,
+//! cleared on every exit path, including `?`-propagated errors and panics.
+//! The encoded ciphertext blob is explicitly zeroized in this file after
+//! `prepare_restore` returns.
 //!
 //! # Exit codes
 //!
 //! | Code | Meaning                                              |
 //! |------|------------------------------------------------------|
-//! | 0    | Success                                              |
-//! | 1    | Generic error (IO, encoding, etc.)                   |
-//! | 2    | Wrong password or corrupt backup                     |
+//! | 0    | Success (or inspected, dry run, already up to date)  |
+//! | 2    | Could not run or could not decrypt — "No verdict"    |
 //! | 3    | Backup file not found                                |
 //! | 4    | User cancelled overwrite prompt                      |
 //! | 5    | Restored to `.restored` fallback (bad content)       |
-//! | 6    | evnx-cloud restore not yet available                 |
+//!
+//! Exit 1 is never produced (DEC-B9). Exit 6 was "evnx-cloud restore not yet
+//! available" and is retired with `cloud://` (DEC-B4).
+//!
+//! # A backup is not a vault
+//!
+//! `restore` reads files `evnx backup` wrote: a passphrase you chose, no
+//! account, no network. A vault in evnx cloud is restored with
+//! `evnx cloud pull --version N` (one version) or `evnx cloud export` (every
+//! version). Neither reads the other's files.
 //!
 //! # Examples
 //!
@@ -75,11 +91,11 @@
 //! # Inspect key names without restoring
 //! evnx restore .env.backup --inspect
 //!
-//! # Non-interactive via env var (CI/CD)
-//! EVNX_PASSWORD=mypass evnx restore .env.backup --output .env.production
+//! # Non-interactive via env var (CI/CD), replacing an existing .env
+//! EVNX_PASSWORD=mypass evnx restore .env.backup --yes
 //!
 //! # Non-interactive via password file
-//! evnx restore .env.backup --password-file /run/secrets/evnx-pass
+//! evnx restore .env.backup --password-file /run/secrets/evnx-pass --output .env.production
 //!
 //! # Validate without writing
 //! evnx restore .env.backup --dry-run
@@ -99,34 +115,35 @@ pub use error::RestoreError;
 
 use anyhow::Result;
 
+/// Everything `restore` takes besides the backup path.
+#[derive(Debug, Clone)]
+pub struct Options {
+    /// Destination path (default `.env`).
+    pub output: String,
+    /// Emit a diagnostic line at each pipeline stage.
+    pub verbose: bool,
+    /// Decrypt and validate, but do not write any files.
+    pub dry_run: bool,
+    /// List variable names (never values), do not write.
+    pub inspect: bool,
+    /// Read the decryption password from this file instead of prompting
+    /// (`EVNX_PASSWORD` is checked when this is `None`).
+    pub password_file: Option<String>,
+    /// Replace an existing output without asking (`--yes`, `--force`).
+    pub yes: bool,
+    /// The `.gitignore` step for the written file.
+    pub gitignore: crate::utils::protect::GitignoreMode,
+}
+
 /// Entry point for the `restore` subcommand.
 ///
 /// When the `backup` feature is **not** enabled this prints a helpful message
 /// and exits cleanly without returning an error.
-///
-/// # Arguments
-///
-/// * `backup`        — Local path or `cloud://project[/id]` reference.
-/// * `output`        — Destination path (default `.env`).
-/// * `verbose`       — Emit a diagnostic line at each pipeline stage.
-/// * `dry_run`       — Decrypt and validate, but do not write any files.
-/// * `inspect`       — List variable names (never values), do not write.
-/// * `password_file` — Read the decryption password from this file instead
-///   of prompting interactively. Less secure than the interactive prompt —
-///   use only in non-interactive environments (CI/CD).
-///   `EVNX_PASSWORD` env var is checked first if this is `None`.
-pub fn run(
-    backup: String,
-    output: String,
-    verbose: bool,
-    dry_run: bool,
-    inspect: bool,
-    password_file: Option<String>,
-) -> Result<()> {
+pub fn run(backup: String, opts: Options) -> Result<()> {
     // ── Feature-disabled stub ─────────────────────────────────────────────────
     #[cfg(not(feature = "backup"))]
     {
-        let _ = (&backup, &output, verbose, dry_run, inspect, &password_file);
+        let _ = (&backup, &opts);
         eprintln!("✗ Backup/restore feature not enabled");
         eprintln!("Rebuild with: cargo build --features backup");
         Ok(())
@@ -135,17 +152,26 @@ pub fn run(
     // ── Full implementation ───────────────────────────────────────────────────
     #[cfg(feature = "backup")]
     {
-        use anyhow::anyhow;
         use std::path::PathBuf;
         use zeroize::Zeroize;
 
-        use self::core::{commit_restore, prepare_restore, PrepareResult, RestoreOptions};
+        use self::core::{
+            commit_restore, existing_output, finish, keep_previous, prepare_restore, Existing,
+            PrepareResult, RestoreOptions,
+        };
         use self::error::RestoreError;
-        use self::source::BackupSource;
+        use crate::utils::secret_source::{self, Purpose};
         use crate::utils::ui;
 
-        // ── Parse source ──────────────────────────────────────────────────────
-        let src = BackupSource::parse(&backup);
+        let Options {
+            output,
+            verbose,
+            dry_run,
+            inspect,
+            password_file,
+            yes,
+            gitignore,
+        } = opts;
 
         // ── Header ────────────────────────────────────────────────────────────
         ui::print_header(
@@ -154,23 +180,42 @@ pub fn run(
         );
 
         if verbose {
-            ui::verbose_stderr(format!("Source : {}", src.display_path()));
+            ui::verbose_stderr(format!("Source : {backup}"));
             ui::verbose_stderr(format!("Inspect: {inspect}"));
             ui::verbose_stderr(format!("Dry-run: {dry_run}"));
         }
 
         // ── Fetch encoded blob ────────────────────────────────────────────────
-        let mut encoded = src.fetch()?;
-        ui::success(format!("Read backup from {}", src.display_path()));
+        let mut encoded = source::fetch(&backup)?;
+        ui::success(format!("Read backup from {backup}"));
+
+        // ── The output may not be the backup itself (DEC-B3) ──────────────────
+        // Restoring a backup over itself replaces the only copy of the
+        // ciphertext with the plaintext. `--inspect` and `--dry-run` write
+        // nothing, so where `--output` points does not matter to them.
+        if !inspect && !dry_run {
+            let check = crate::core::safe_write::refuse_same_file(&output, "backup", &backup)
+                .and_then(|()| crate::core::safe_write::preview(&output).map(drop));
+            if let Err(e) = check {
+                encoded.zeroize();
+                return Err(e);
+            }
+        }
 
         // ── Password resolution ───────────────────────────────────────────────
-        // Priority: --password-file > EVNX_PASSWORD > interactive prompt.
-        let password = resolve_password(password_file.as_deref(), verbose)?;
-
-        if password.is_empty() {
-            encoded.zeroize();
-            return Err(anyhow!("Password must not be empty"));
-        }
+        // Key file, then EVNX_PASSWORD, then the prompt — `backup`'s rule.
+        let password = match secret_source::resolve(
+            password_file.as_deref(),
+            Purpose::Decrypt,
+            &format!("evnx restore {backup}"),
+            verbose,
+        ) {
+            Ok(pw) => pw,
+            Err(e) => {
+                encoded.zeroize();
+                return Err(e);
+            }
+        };
 
         // ── Core restore logic ────────────────────────────────────────────────
         let options = RestoreOptions {
@@ -185,23 +230,51 @@ pub fn run(
         // Zeroize the ciphertext blob unconditionally.
         encoded.zeroize();
 
-        match result? {
+        let outcome = match result? {
             // ── Inspect: key names printed, nothing written ───────────────────
-            PrepareResult::Inspect => Ok(()),
+            PrepareResult::Inspect => return Ok(()),
 
             // ── Dry-run: nothing to write ─────────────────────────────────────
-            PrepareResult::DryRun => Ok(()),
+            PrepareResult::DryRun => return Ok(()),
 
-            // ── Normal path: check for overwrite then write ───────────────────
-            PrepareResult::Ready(outcome) => {
-                if outcome.write_path.exists() {
-                    ui::warning(format!(
-                        "Output file already exists: {}",
-                        outcome.write_path.display()
-                    ));
+            PrepareResult::Ready(outcome) => outcome,
+        };
+        let path = outcome.write_path.display().to_string();
 
+        // ── An existing output: identical, or replaced only on a yes ─────────
+        match existing_output(&outcome)? {
+            Existing::Absent => {}
+            Existing::Same => {
+                // DEC-B12 (S-B4): nothing to ask and nothing to write — and no
+                // "next steps", which are about a file that was just written.
+                ui::success(format!(
+                    "{path} is already up to date — nothing was written"
+                ));
+                if !outcome.used_fallback {
+                    ui::print_docs_hint(&crate::docs::RESTORE);
+                    return Ok(());
+                }
+                // Still not a `.env` evnx can read: exit 5, with its steps.
+                let restored = core::Restored {
+                    path: outcome.write_path.clone(),
+                    used_fallback: true,
+                };
+                return finish(&restored, &options);
+            }
+            Existing::Differs(previous) => {
+                if !yes {
+                    ui::warning(format!("Output file already exists: {path}"));
+                    // I-148: dialoguer's "IO error: not a terminal" named
+                    // neither way out.
+                    crate::utils::prompt::require_terminal_or(&format!(
+                        "Add --yes to replace it (the current file is kept as a .bak copy), \
+                         or restore somewhere else with --output <path>:\n  \
+                         evnx restore {backup} --yes"
+                    ))?;
                     let overwrite = crate::utils::prompt::yes_no()
-                        .with_prompt(format!("Overwrite {}?", outcome.write_path.display()))
+                        .with_prompt(format!(
+                            "Overwrite {path}? (the current file is kept as a .bak copy)"
+                        ))
                         .default(false)
                         .interact()?;
 
@@ -211,80 +284,16 @@ pub fn run(
                         return Err(RestoreError::Cancelled.into());
                     }
                 }
-
-                commit_restore(outcome, &options)
+                // DEC-B11: what was there is kept, whichever way the yes came.
+                let kept = keep_previous(&outcome, &previous)?;
+                ui::info(format!("Kept the previous {path} as {}", kept.display()));
             }
         }
+
+        let restored = commit_restore(outcome, &options)?;
+        // The restored file holds plaintext: keep it out of git, the step
+        // `template` and `convert -o` take (R-template).
+        crate::utils::protect::protect_output(&restored.path.to_string_lossy(), &gitignore)?;
+        finish(&restored, &options)
     }
-}
-
-// ─── Password resolution ──────────────────────────────────────────────────────
-
-/// Resolve the decryption password from, in priority order:
-///
-/// 1. `--password-file <path>` — file contents, trailing newline stripped.
-/// 2. `EVNX_PASSWORD` env var — read and immediately removed from the
-///    process environment to reduce the exposure window.
-/// 3. Interactive prompt (default) — no echo, most secure.
-///
-/// # Security notes
-///
-/// - `--password-file` and `EVNX_PASSWORD` are less secure than the
-///   interactive prompt: the password may appear in process listings, shell
-///   history, or CI log output. Both options print a warning to stderr.
-/// - `EVNX_PASSWORD` is removed via [`std::env::remove_var`] immediately
-///   after reading. This is best-effort: the value was already in the
-///   process environment and may have been captured by monitoring tools.
-///
-/// # Errors
-///
-/// Returns an error if the password file cannot be read.
-/// An empty password is returned as-is and rejected by the caller.
-#[cfg(feature = "backup")]
-fn resolve_password(password_file: Option<&str>, verbose: bool) -> anyhow::Result<String> {
-    use crate::utils::ui;
-    use dialoguer::Password;
-
-    // ── 1. --password-file ────────────────────────────────────────────────────
-    if let Some(path) = password_file {
-        ui::warning(format!(
-            "Reading password from file: {path}\n  \
-             Less secure than interactive prompt — avoid in shared environments."
-        ));
-        if verbose {
-            ui::verbose_stderr(format!("Password source: --password-file {path}"));
-        }
-
-        // ⚠️ The same reader `backup --key-file` uses, not a local one. It
-        // decides what string Argon2id sees, so a second implementation here
-        // means a file that encrypts a backup cannot always decrypt it — which
-        // is what happened before 2026-09-24 for binary key files and for any
-        // file with leading or trailing whitespace (F7).
-        let pw = crate::commands::backup::read_key_file(std::path::Path::new(path))?;
-        return Ok(pw);
-    }
-
-    // ── 2. EVNX_PASSWORD env var ──────────────────────────────────────────────
-    if let Ok(pw) = std::env::var("EVNX_PASSWORD") {
-        ui::warning(
-            "Reading password from EVNX_PASSWORD environment variable.\n  \
-             Less secure than interactive prompt — avoid in shared environments.",
-        );
-        if verbose {
-            ui::verbose_stderr("Password source: EVNX_PASSWORD env var");
-        }
-        // Best-effort removal: reduces window but cannot guarantee it was
-        // not already captured by the shell, a process monitor, or CI logs.
-        std::env::remove_var("EVNX_PASSWORD");
-        return Ok(pw);
-    }
-
-    // ── 3. Interactive prompt ─────────────────────────────────────────────────
-    if verbose {
-        ui::verbose_stderr("Password source: interactive prompt");
-    }
-    let pw = Password::new()
-        .with_prompt("Enter decryption password")
-        .interact()?;
-    Ok(pw)
 }

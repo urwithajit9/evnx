@@ -6,12 +6,16 @@ $ evnx restore cloud://myproject --key-file pw
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-Error: evnx-cloud restore is not yet available in this build
-[exit 6]
-  ok: KNOWN D-112: cloud:// exits 6 'not yet available'; decided (DEC-B4): removed, hint 'use evnx cloud pull' (exit 6)
+Error: Backup file not found: cloud://myproject
+
+  restore reads a file made by `evnx backup`; it does not read from evnx cloud.
+  For a vault, use:  evnx cloud pull --vault <name>
+[exit 3]
+  ok: FIXED D-112 (DEC-B4): cloud:// is a missing file (exit 3) with a hint for evnx cloud pull (exit 3)
 
 $ evnx restore .env.backup --key-file pw --output lnk.env
 ✓ Read backup from .env.backup
+· Using key file for decryption (non-interactive mode)
 
 Backup information:
   Schema version: v1
@@ -33,8 +37,6 @@ Next steps:
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
   Docs: https://docs.evnx.dev/cli/commands/restore
 [exit 0]
   ok: I-151 fixed (DEC-B7): restore writes through the symlink with a notice (exit 0)

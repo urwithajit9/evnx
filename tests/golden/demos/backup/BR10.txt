@@ -3,6 +3,7 @@
 
 $ evnx restore golden.bak --key-file golden.key --output golden.out
 ✓ Read backup from golden.bak
+· Using key file for decryption (non-interactive mode)
 
 Backup information:
   Schema version: v1
@@ -23,8 +24,6 @@ Next steps:
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Reading password from file: golden.key
-  Less secure than interactive prompt — avoid in shared environments.
   Docs: https://docs.evnx.dev/cli/commands/restore
 [exit 0]
   ok: FORMAT LOCK: the backup made by 0.10.0 opens in this version (exit 0)

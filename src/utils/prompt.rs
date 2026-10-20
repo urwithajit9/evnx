@@ -133,8 +133,10 @@ impl YesNo {
 
     fn run(self, allow_cancel: bool) -> dialoguer::Result<Option<bool>> {
         let term = dialoguer::console::Term::stderr();
-        // ⚠️ dialoguer's own error, word for word: `restore`'s demo locks
-        // "IO error: not a terminal: not a terminal" (I-148, its own patch).
+        // ⚠️ dialoguer's own error, word for word, for a caller that reaches
+        // the question without checking first (`cloud pull`'s overwrite
+        // question does). `restore` checks with `require_terminal_or` since
+        // 0.10.11 and names `--yes` instead (I-148).
         if !term.is_term() {
             return Err(dialoguer::Error::IO(std::io::Error::new(
                 std::io::ErrorKind::NotConnected,

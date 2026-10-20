@@ -6,6 +6,7 @@ pub mod git;
 pub mod patterns;
 pub mod prompt;
 pub mod protect;
+pub mod secret_source;
 pub mod string;
 pub mod term;
 pub mod ui;

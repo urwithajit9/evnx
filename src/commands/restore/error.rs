@@ -8,21 +8,28 @@
 //!
 //! | Code | Variant                 | Meaning                                        |
 //! |------|-------------------------|------------------------------------------------|
-//! | 2    | `WrongPassword`         | Decryption failed — wrong password or corrupt  |
+//! | 2    | `WrongPassword`         | Decryption failed — wrong password or tampered |
+//! | 2    | `Unreadable`            | Not a backup, truncated, or a newer format (I-149) |
 //! | 3    | `FileNotFound`          | Backup file does not exist at the given path   |
+//! | 3    | `CloudReference`        | A `cloud://…` argument: not a file (DEC-B4)    |
 //! | 4    | `Cancelled`             | User declined the overwrite prompt             |
 //! | 5    | `ValidationFallback`    | Restored, but to `.restored` path (bad content)|
-//! | 6    | `CloudNotAvailable`     | evnx-cloud restore not yet implemented         |
 //!
-//! Exit code `1` is reserved for all other errors (IO failures, corrupt UTF-8,
-//! etc.) propagated as plain `anyhow` errors without a typed variant.
+//! Every other error — a key file that cannot be read, an output that is the
+//! backup itself, no terminal to ask on — is a plain `anyhow` error, which
+//! `main` reports as exit **2** with the "No verdict" line, as for every other
+//! command (DEC-B9). Exit 1 is never produced.
+//!
+//! ⚠️ Exit 6 was `CloudNotAvailable`, for a `cloud://` source that was parsed
+//! and then refused. It is retired with that source (DEC-B4), and the number
+//! stays reserved so a script that branched on it is not handed a new meaning.
 //!
 //! # Usage in `main.rs`
 //!
 //! ```rust,ignore
 //! use evnx::commands::restore::RestoreError;
 //!
-//! if let Err(e) = commands::restore::run(backup, output, verbose, dry_run) {
+//! if let Err(e) = commands::restore::run(backup, options) {
 //!     if let Some(re) = e.downcast_ref::<RestoreError>() {
 //!         // Cancelled and ValidationFallback already printed their own
 //!         // inline messages — do not add a second error line.
@@ -31,9 +38,7 @@
 //!         }
 //!         std::process::exit(re.exit_code());
 //!     }
-//!     // Generic anyhow error — exit 1.
-//!     eprintln!("{} {}", "✗".red(), e);
-//!     std::process::exit(1);
+//!     // Anything else: exit 2, "No verdict".
 //! }
 //! ```
 
@@ -56,9 +61,27 @@ pub enum RestoreError {
     /// intentionally not exposed to avoid leaking implementation details.
     WrongPassword,
 
+    /// The backup could not be opened for a reason that is known and is not
+    /// the password: not a backup, truncated, or made by a newer evnx (I-149).
+    /// The message says which.
+    Unreadable(
+        /// What is wrong, from [`DecryptError`](crate::commands::backup::DecryptError).
+        String,
+    ),
+
     /// The backup path does not exist on the local filesystem.
     FileNotFound(
         /// Human-readable path string, included in the error message.
+        String,
+    ),
+
+    /// The argument is a `cloud://` reference and no such file exists.
+    ///
+    /// `restore` reads files made by `evnx backup`. It once parsed
+    /// `cloud://project[/id]` and refused it with exit 6, "not yet available";
+    /// the vault commands do that job, so the message names them (DEC-B4).
+    CloudReference(
+        /// The argument as given.
         String,
     ),
 
@@ -78,9 +101,6 @@ pub enum RestoreError {
         /// The path the file was actually written to (e.g. `.env.restored`).
         fallback_path: String,
     },
-
-    /// evnx-cloud restore is not yet implemented in this build.
-    CloudNotAvailable,
 }
 
 impl RestoreError {
@@ -89,11 +109,10 @@ impl RestoreError {
     /// See the [module-level exit code table](self) for the full mapping.
     pub fn exit_code(&self) -> i32 {
         match self {
-            Self::WrongPassword => 2,
-            Self::FileNotFound(_) => 3,
+            Self::WrongPassword | Self::Unreadable(_) => 2,
+            Self::FileNotFound(_) | Self::CloudReference(_) => 3,
             Self::Cancelled => 4,
             Self::ValidationFallback { .. } => 5,
-            Self::CloudNotAvailable => 6,
         }
     }
 
@@ -115,15 +134,25 @@ impl fmt::Display for RestoreError {
             Self::WrongPassword => {
                 write!(f, "Wrong password or corrupt backup — decryption failed")
             }
+            Self::Unreadable(why) => write!(f, "{why}"),
             Self::FileNotFound(path) => write!(f, "Backup file not found: {path}"),
+            Self::CloudReference(arg) => write!(
+                f,
+                "Backup file not found: {arg}\n\n\
+                 \x20 restore reads a file made by `evnx backup`; it does not read from \
+                 evnx cloud.\n\
+                 \x20 For a vault, use:  evnx cloud pull --vault <name>{}",
+                if cfg!(feature = "cloud") {
+                    ""
+                } else {
+                    "\n  (the cloud commands need a build with the `cloud` feature)"
+                }
+            ),
             Self::Cancelled => write!(f, "Restore cancelled — no files were modified"),
             Self::ValidationFallback { fallback_path } => write!(
                 f,
                 "Restored to fallback path {fallback_path} (content did not pass .env validation)"
             ),
-            Self::CloudNotAvailable => {
-                write!(f, "evnx-cloud restore is not yet available in this build")
-            }
         }
     }
 }
@@ -150,7 +179,11 @@ mod tests {
             .exit_code(),
             5
         );
-        assert_eq!(RestoreError::CloudNotAvailable.exit_code(), 6);
+        assert_eq!(RestoreError::Unreadable("x".into()).exit_code(), 2);
+        assert_eq!(
+            RestoreError::CloudReference("cloud://p".into()).exit_code(),
+            3
+        );
     }
 
     // ── is_silent ─────────────────────────────────────────────────────────────
@@ -168,7 +201,8 @@ mod tests {
     fn other_variants_are_not_silent() {
         assert!(!RestoreError::WrongPassword.is_silent());
         assert!(!RestoreError::FileNotFound("f".into()).is_silent());
-        assert!(!RestoreError::CloudNotAvailable.is_silent());
+        assert!(!RestoreError::Unreadable("x".into()).is_silent());
+        assert!(!RestoreError::CloudReference("cloud://p".into()).is_silent());
     }
 
     // ── Display ───────────────────────────────────────────────────────────────

@@ -171,8 +171,6 @@ fn t_i195_completions_and_update_help_name_their_guide() {
 const NO_HELP_YET: &[(&str, &str, &str)] = &[
     ("scan", "path", "R-scan"),
     ("scan", "exclude", "R-scan"),
-    ("restore", "backup", "R-backup-restore"),
-    ("restore", "output", "R-backup-restore"),
     ("org members", "org", "R-org-vault-cloud"),
     ("org invite", "org", "R-org-vault-cloud"),
     ("org invites", "org", "R-org-vault-cloud"),

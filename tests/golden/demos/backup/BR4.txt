@@ -2,15 +2,15 @@
 ================ BR4 ================
 
 $ evnx backup --key-file pw --output odir
-✓ Read 258 bytes from .env
-· Using key file for encryption (non-interactive mode)
 [stderr]
 
   evnx backup  Encrypt and back up your .env file
 
-Error: Failed to write backup file: odir exists and is not a regular file
-[exit 5]
-  ok: I-146 partly fixed (U2): an existing directory is refused and nothing is renamed; DEC-B3 wants exit 2 (open) (exit 5)
+Error: odir exists and is not a regular file
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-146/DEC-B3: an existing directory is refused (exit 2) and nothing is renamed (exit 2)
 
 $ bash -c for f in odir odir.1; do if [ -e "$f" ]; then stat -c "%F %n" "$f"; else echo "$f: absent"; fi; done
 directory odir
@@ -18,33 +18,19 @@ odir.1: absent
 [exit 0]
 
 $ evnx backup src.env --key-file pw --output src.env
-✓ Read 258 bytes from src.env
-· Using key file for encryption (non-interactive mode)
-
-✓ Backup created successfully
-  Source  : src.env
-  Backup  : src.env
-  Size    : 624 bytes (encrypted + Base64)
-  Verified: no
-
-! Important:
-  • Keep your password (or key file) safe — it cannot be recovered
-  • Store the backup in a secure, separate location
-  • To restore: evnx restore src.env --output src.env
-  • Test the restore before deleting the original .env
 [stderr]
 
   evnx backup  Encrypt and back up your .env file
 
-  Docs: https://docs.evnx.dev/cli/commands/backup
-[exit 0]
-  ok: KNOWN I-146: output equals source: the .env is now ciphertext (exit 0)
+Error: --output 'src.env' is the same file as the env file 'src.env'. Nothing was written; choose another --output.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-146: output equals source: refused, the .env stays plaintext (exit 2)
 
 $ bash -c ls src.env*; grep -c "^DB_URL=" src.env || echo "src.env no longer holds DB_URL= (it is ciphertext); the plaintext is only in src.env.1"
 src.env
-src.env.1
-0
-src.env no longer holds DB_URL= (it is ciphertext); the plaintext is only in src.env.1
+1
 [exit 0]
 
 $ evnx backup --key-file pw --output nodir/x.bak

@@ -83,6 +83,11 @@ fn cases() -> Vec<Case> {
         v.push(case("backup", &["backup", "--key-file", "pw"]));
         v.push(Case {
             path: "restore",
+            // `--no-gitignore`, as for convert and template above: the restored
+            // file gets the same `.gitignore` check since 0.10.11, and its
+            // warning is one `-q` keeps (tested in restore_integration.rs).
+            // The key-file line is backup's info line since 0.10.11 (DEC-B13),
+            // not a warning, so `-q` hides it and stderr is empty.
             args: &[
                 "restore",
                 ".env.backup",
@@ -90,10 +95,9 @@ fn cases() -> Vec<Case> {
                 "pw",
                 "--output",
                 "restored.env",
+                "--no-gitignore",
             ],
-            // Printed on every run that reads a password file; a warning, so
-            // `-q` keeps it (DEC-G2).
-            warning: Some("Reading password from file"),
+            warning: None,
             needs_backup: true,
         });
     }

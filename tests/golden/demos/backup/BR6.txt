@@ -12,6 +12,7 @@ restore of valid-looking inputs (named path vs .restored):
 
 $ evnx restore prose.txt.backup --key-file pw --output r.env
 ✓ Read backup from prose.txt.backup
+· Using key file for decryption (non-interactive mode)
 
 Backup information:
   Schema version: v1
@@ -22,8 +23,6 @@ Backup information:
 ✓ Decryption successful
   ✓ Decryption key cleared from memory
 
-✓ Restored 0 variable(s) to r.env.restored
-
 Next steps:
   1. Inspect the restored file:  cat r.env.restored
   2. If the content is correct:  mv r.env.restored r.env
@@ -32,15 +31,14 @@ Next steps:
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
 ! Decrypted content does not look like a valid .env file.
   Writing to r.env.restored instead of r.env to protect your current file.
   Inspect the file manually, then rename it if the content looks correct:
     mv r.env.restored r.env
+! Wrote the backup's content to r.env.restored, not to r.env
   Docs: https://docs.evnx.dev/cli/commands/restore
 [exit 5]
   ok: fallback: .restored, exit 5 (exit 5)
-KNOWN I-154: the line above says Restored 0 variable(s) with a tick next to exit 5
+  ok: FIXED I-154: no Restored tick next to exit 5; a warning names where the content went
 
-================ summary: 1 ok, 0 mismatch   ================
+================ summary: 2 ok, 0 mismatch   ================

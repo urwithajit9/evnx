@@ -121,8 +121,8 @@ pub fn select(
 
 /// Every `.env.<something>` present in `dir` that holds real values.
 ///
-/// The `.env.example` family and `evnx backup` artefacts are left out: neither is
-/// a thing you would pass to `--env-name`.
+/// The `.env.example` family and copies evnx leaves behind are left out: neither
+/// is a thing you would pass to `--env-name`.
 pub fn available(dir: &Path) -> Vec<String> {
     const TEMPLATES: &[&str] = &["example", "sample", "template"];
 
@@ -136,12 +136,33 @@ pub fn available(dir: &Path) -> Vec<String> {
         .filter_map(|e| e.file_name().into_string().ok())
         .filter_map(|n| n.strip_prefix(".env.").map(str::to_owned))
         .filter(|n| !TEMPLATES.contains(&n.as_str()))
-        .filter(|n| !n.contains("backup"))
+        .filter(|n| !is_copy(n))
         .collect();
 
     names.sort();
     names.dedup();
     names
+}
+
+/// A copy of an env file, not an environment: what follows `.env.` is one
+/// evnx (or a person) names copies with (I-272).
+///
+/// | Suffix | Left by |
+/// |---|---|
+/// | `backup`, `backup.N`, `production.backup` | `evnx backup` and its rotation |
+/// | `bak`, `bak.N`, `production.bak` | `validate --fix`, `restore --yes` ([`crate::core::safe_write::backup`]) |
+/// | `restored`, `production.restored` | `restore`, for content that is not a `.env` |
+/// | `1`, `production.2` | numbered copies |
+///
+/// ⚠️ Until 0.10.11 only `backup` was left out, so `--env-name`'s "Available"
+/// list read `1, bak`, and `validate`'s known environments took `bak` for one.
+fn is_copy(name: &str) -> bool {
+    name.contains("backup")
+        || name.split('.').any(|part| {
+            part == "bak"
+                || part == "restored"
+                || (!part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+        })
 }
 
 /// The first candidate `name` abbreviates: `prod` → `production`.
@@ -369,6 +390,24 @@ mod tests {
         ]);
 
         assert_eq!(available(dir.path()), vec!["production", "test"]);
+    }
+
+    /// I-272: copies evnx leaves behind are not environments.
+    #[test]
+    fn t_i272_copies_are_not_environments() {
+        let dir = project(&[
+            ".env.production",
+            ".env.bak",
+            ".env.bak.2",
+            ".env.production.bak",
+            ".env.restored",
+            ".env.1",
+            ".env.production.2",
+            ".env.backup.3",
+            ".env.v2",
+        ]);
+
+        assert_eq!(available(dir.path()), vec!["production", "v2"]);
     }
 }
 

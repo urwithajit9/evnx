@@ -12,7 +12,7 @@
 //!         ▼
 //!   prepare_restore()
 //!         │
-//!         ├─ ZeroizeOnDrop guard wraps password immediately
+//!         ├─ password arrives as Zeroizing<String>: cleared on every exit path
 //!         ├─ spinner starts          (suppressed in verbose mode)
 //!         ├─ decrypt_content()       (Argon2id + AES-256-GCM)
 //!         ├─ spinner stops
@@ -26,29 +26,35 @@
 //!                                          ▼
 //!                                    PrepareResult::Ready(RestoreOutcome)
 //!                                          │
-//!                             (mod.rs prompts for overwrite if needed)
+//!                      existing_output(): absent / same bytes / differs
+//!                                          │
+//!            (mod.rs: same → "already up to date"; differs → --yes or the
+//!             question, then keep_previous() → <output>.bak)
 //!                                          │
 //!                                          ▼
 //!                                    commit_restore()
 //!                                          │
 //!                                    safe_write::write_private() → zeroize content
 //!                                          │
-//!                                    Ok(()) — or Err(ValidationFallback)
+//!                    (mod.rs: the .gitignore step, utils::protect)
+//!                                          │
+//!                                          ▼
+//!                                    finish() → Ok(()) — or Err(ValidationFallback)
 //!                                    when .restored path was used
 //! ```
 //!
 //! # Error types
 //!
 //! Failures that deserve a distinct exit code are returned as
-//! [`RestoreError`](super::error::RestoreError) variants wrapped in
+//! [`RestoreError`] variants wrapped in
 //! `anyhow::Error`. Generic IO errors propagate as plain `anyhow` errors
-//! and map to exit code 1 in `main.rs`.
+//! and map to exit code 2 in `main.rs`, with the "No verdict" line.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use colored::*;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use crate::utils::ui;
 
@@ -143,34 +149,12 @@ pub struct RestoreOutcome {
     /// decrypted content did not pass the `.env` validation heuristic.
     pub used_fallback: bool,
 
-    /// Decrypted `.env` content — consumed and zeroized by [`commit_restore`].
-    pub(crate) content: String,
+    /// Decrypted `.env` content. Zeroized when the outcome is dropped, on
+    /// every path: written, cancelled, or already up to date.
+    pub(crate) content: Zeroizing<String>,
 
     /// Metadata embedded in the backup by `evnx backup`.
     pub metadata: crate::commands::backup::BackupMetadata,
-}
-
-// ─── RAII password guard ──────────────────────────────────────────────────────
-
-/// Owns a `String` and zeroizes it on drop, covering every exit path:
-/// normal return, `?`-propagated error, and panic.
-///
-/// Implements `Deref<Target = str>` so the inner value can be borrowed
-/// as `&str` without moving out.
-struct ZeroizeOnDrop(String);
-
-impl Drop for ZeroizeOnDrop {
-    fn drop(&mut self) {
-        self.0.zeroize();
-    }
-}
-
-impl std::ops::Deref for ZeroizeOnDrop {
-    type Target = str;
-
-    fn deref(&self) -> &str {
-        &self.0
-    }
 }
 
 // ─── Core functions ───────────────────────────────────────────────────────────
@@ -183,8 +167,8 @@ impl std::ops::Deref for ZeroizeOnDrop {
 ///
 /// # Steps
 ///
-/// 1. Moves `password` into a [`ZeroizeOnDrop`] guard that fires on every
-///    exit path, including `?`-propagated errors and panics.
+/// 1. `password` is a [`Zeroizing`] string: cleared on every exit path,
+///    including `?`-propagated errors and panics.
 /// 2. Starts an Argon2id progress spinner (suppressed when `verbose = true`).
 /// 3. Decrypts `encoded` with Argon2id key derivation + AES-256-GCM.
 /// 4. Stops the spinner unconditionally.
@@ -197,21 +181,20 @@ impl std::ops::Deref for ZeroizeOnDrop {
 ///
 /// # Security notes
 ///
-/// - `password` is zeroized via `ZeroizeOnDrop` regardless of outcome.
-/// - A decryption failure returns [`RestoreError::WrongPassword`].
+/// - `password` is zeroized regardless of outcome.
+/// - A wrong password and a tampered file are one error, deliberately.
 ///
 /// # Errors
 ///
-/// - [`RestoreError::WrongPassword`] — wrong password or corrupt backup.
+/// - [`RestoreError::WrongPassword`] — wrong password or tampered backup.
+/// - [`RestoreError::Unreadable`] — not a backup, truncated, or made by a
+///   newer evnx; the message says which (I-149).
 /// - Other `anyhow` errors — unexpected IO or encoding failures.
 pub fn prepare_restore(
     encoded: &str,
-    password: String,
+    password: Zeroizing<String>,
     options: &RestoreOptions,
 ) -> Result<PrepareResult> {
-    // ── Zeroize password on every exit path ───────────────────────────────────
-    let pw_guard = ZeroizeOnDrop(password);
-
     if options.verbose {
         ui::verbose_stderr("Restore pipeline starting");
         ui::verbose_stderr(format!("Output path  : {}", options.output.display()));
@@ -232,12 +215,19 @@ pub fn prepare_restore(
     };
 
     // ── Decrypt ───────────────────────────────────────────────────────────────
+    // ⚠️ Every failure used to become "Wrong password or corrupt backup", so a
+    // backup from a newer evnx never said "upgrade" (I-149). Only a failed
+    // authentication tag still reads that way (DEC-B6).
     let decrypt_result =
-        crate::commands::backup::decrypt_content(encoded, &pw_guard).map_err(|e| {
+        crate::commands::backup::decrypt_content(encoded, &password).map_err(|e| {
+            use crate::commands::backup::DecryptError;
             if options.verbose {
                 ui::verbose_stderr(format!("Decrypt error detail: {e:#}"));
             }
-            anyhow::Error::from(RestoreError::WrongPassword)
+            anyhow::Error::from(match e.downcast_ref::<DecryptError>() {
+                Some(DecryptError::WrongPasswordOrTampered) | None => RestoreError::WrongPassword,
+                Some(known) => RestoreError::Unreadable(known.to_string()),
+            })
         });
 
     // Stop spinner unconditionally — before any further output and before
@@ -246,7 +236,8 @@ pub fn prepare_restore(
         sp.finish_and_clear();
     }
 
-    let (mut content, metadata) = decrypt_result?;
+    let (content, metadata) = decrypt_result?;
+    let content = Zeroizing::new(content);
 
     if options.verbose {
         ui::verbose_stderr(format!(
@@ -270,14 +261,12 @@ pub fn prepare_restore(
     // overwrite check needed, and the content is zeroized immediately after.
     if options.inspect {
         print_inspect(&content);
-        content.zeroize();
         return Ok(PrepareResult::Inspect);
     }
 
     // ── Dry-run ───────────────────────────────────────────────────────────────
     if options.dry_run {
         print_validation_result(crate::utils::looks_like_dotenv(&content));
-        content.zeroize();
         println!(
             "\n{}",
             "✓ Dry-run complete — no files were written".green().bold()
@@ -298,26 +287,64 @@ pub fn prepare_restore(
         content,
         metadata,
     }))
-    // pw_guard drops here → password zeroized
+}
+
+/// What is at the path a restore would write, compared with what it would
+/// write (DEC-B12, S-B4).
+#[derive(Debug)]
+pub enum Existing {
+    /// Nothing: the write creates the file.
+    Absent,
+    /// The same bytes: there is nothing to do.
+    Same,
+    /// Something else, which the write would replace. The bytes are kept so a
+    /// copy can be made from exactly what was there (DEC-B11).
+    Differs(Zeroizing<Vec<u8>>),
+}
+
+/// Compare the file at `outcome.write_path` with the restored content.
+///
+/// # Errors
+///
+/// The file exists and cannot be read.
+pub fn existing_output(outcome: &RestoreOutcome) -> Result<Existing> {
+    match std::fs::read(&outcome.write_path) {
+        Ok(bytes) if bytes == outcome.content.as_bytes() => Ok(Existing::Same),
+        Ok(bytes) => Ok(Existing::Differs(Zeroizing::new(bytes))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Existing::Absent),
+        Err(e) => Err(e).with_context(|| format!("reading {}", outcome.write_path.display())),
+    }
+}
+
+/// Keep `previous` — what the output held — beside it as `<output>.bak`
+/// (`.bak.2` … when earlier copies exist), with the file's mode, before it is
+/// replaced. The helper `validate --fix` keeps its copies with (DEC-B11).
+///
+/// # Errors
+///
+/// The copy could not be written; the output is then left as it was.
+pub fn keep_previous(outcome: &RestoreOutcome, previous: &[u8]) -> Result<PathBuf> {
+    crate::core::safe_write::backup(&outcome.write_path, previous)
+}
+
+/// What [`commit_restore`] wrote, for the steps after it.
+#[derive(Debug)]
+pub struct Restored {
+    /// The file written: the output, or `<output>.restored`.
+    pub path: PathBuf,
+    /// `path` is the `.restored` fallback.
+    pub used_fallback: bool,
 }
 
 /// Write the decrypted content to `outcome.write_path` and print confirmation.
 ///
-/// Called by `mod.rs` **after** the user has confirmed any overwrite prompt.
-/// Zeroizes `outcome.content` after writing.
-///
-/// # Return value
-///
-/// Returns `Ok(())` when content was written to the requested output path.
-/// Returns `Err(`[`RestoreError::ValidationFallback`]`)` when the `.restored`
-/// fallback path was used — the write still succeeded, but the typed error
-/// signals `main.rs` to use exit code 5.
+/// Called by `mod.rs` **after** any overwrite question was answered.
+/// The content is zeroized when `outcome` drops, here.
 ///
 /// # Errors
 ///
-/// - [`RestoreError::ValidationFallback`] — write succeeded but to fallback path.
-/// - Other `anyhow` errors — IO failure writing the file.
-pub fn commit_restore(mut outcome: RestoreOutcome, options: &RestoreOptions) -> Result<()> {
+/// IO failure writing the file.
+pub fn commit_restore(outcome: RestoreOutcome, options: &RestoreOptions) -> Result<Restored> {
     let var_count = crate::utils::count_dotenv_vars(&outcome.content);
 
     // ⚠️ Atomic (I-151, DEC-B7). `write_secure` truncated the file in place, so
@@ -335,33 +362,56 @@ pub fn commit_restore(mut outcome: RestoreOutcome, options: &RestoreOptions) -> 
             })?;
     crate::core::safe_write::report(&written);
 
-    outcome.content.zeroize();
-
     if options.verbose {
         ui::verbose_stderr("Plaintext content zeroized from memory");
     }
 
-    // `-q`: nothing on success (DEC-G4, I-153). A fallback write is not a plain
-    // success (exit 5), so its steps print regardless.
-    if !ui::is_quiet() || outcome.used_fallback {
-        println!(
+    if outcome.used_fallback {
+        // ⚠️ Not "✓ Restored N variable(s)": it printed beside exit 5, and for
+        // a file that is not a `.env` the count was usually 0 (I-154). A
+        // warning, so `-q` keeps it (DEC-G2).
+        ui::warning(format!(
+            "Wrote the backup's content to {}, not to {}",
+            outcome.write_path.display(),
+            options.output.display(),
+        ));
+    } else {
+        // `-q`: nothing on success (DEC-G4, I-153).
+        ui::say(format!(
             "\n{} Restored {} variable(s) to {}",
             "✓".green(),
             var_count,
             outcome.write_path.display(),
-        );
+        ));
+    }
 
-        print_next_steps(&outcome.write_path, &options.output, outcome.used_fallback);
+    Ok(Restored {
+        path: outcome.write_path,
+        used_fallback: outcome.used_fallback,
+    })
+}
+
+/// The next steps and the docs line, then the exit code: exit 5
+/// ([`RestoreError::ValidationFallback`]) when the `.restored` fallback was
+/// written.
+///
+/// # Errors
+///
+/// [`RestoreError::ValidationFallback`], silent: everything was printed.
+pub fn finish(restored: &Restored, options: &RestoreOptions) -> Result<()> {
+    // A fallback write is not a plain success (exit 5), so its steps print
+    // under `-q` too.
+    if !ui::is_quiet() || restored.used_fallback {
+        print_next_steps(&restored.path, &options.output, restored.used_fallback);
     }
     ui::print_docs_hint(&crate::docs::RESTORE);
 
-    if outcome.used_fallback {
+    if restored.used_fallback {
         return Err(RestoreError::ValidationFallback {
-            fallback_path: outcome.write_path.display().to_string(),
+            fallback_path: restored.path.display().to_string(),
         }
         .into());
     }
-
     Ok(())
 }
 
@@ -602,20 +652,9 @@ mod tests {
         assert!(keys.contains(&"GOOD".to_string()));
     }
     use super::*;
-    use crate::utils::dotenv_validation;
 
-    // ── ZeroizeOnDrop ─────────────────────────────────────────────────────────
-
-    #[test]
-    fn zeroize_guard_deref_gives_inner_str() {
-        let guard = ZeroizeOnDrop("secret-value".to_owned());
-        assert_eq!(&*guard, "secret-value");
-    }
-
-    #[test]
-    fn zeroize_guard_drops_without_panic() {
-        let guard = ZeroizeOnDrop("sensitive".to_owned());
-        drop(guard);
+    fn pw(s: &str) -> Zeroizing<String> {
+        Zeroizing::new(s.to_owned())
     }
 
     // ── extract_key_names ─────────────────────────────────────────────────────
@@ -683,67 +722,6 @@ mod tests {
         assert!(!used_fallback);
     }
 
-    // ── looks_like_dotenv ─────────────────────────────────────────────────────
-
-    #[test]
-    fn looks_like_dotenv_accepts_valid_content() {
-        assert!(dotenv_validation::looks_like_dotenv(
-            "KEY=value\nOTHER=123\n# comment\n"
-        ));
-    }
-
-    #[test]
-    fn looks_like_dotenv_accepts_empty_string() {
-        assert!(dotenv_validation::looks_like_dotenv(""));
-        assert!(dotenv_validation::looks_like_dotenv("   \n  "));
-    }
-
-    #[test]
-    fn looks_like_dotenv_rejects_pure_prose() {
-        assert!(!dotenv_validation::looks_like_dotenv(
-            "This is a plain text file.\nIt contains no env vars.\nNone at all."
-        ));
-    }
-
-    /// ⚠️ Flipped in U5 (C-01, I-145). The 80% heuristic accepted this; the
-    /// parser does not, so evnx could not have read the restored file anyway.
-    /// It now goes to `.restored`, the side that cannot overwrite a good `.env`.
-    #[test]
-    fn looks_like_dotenv_refuses_a_line_the_parser_cannot_read() {
-        assert!(!dotenv_validation::looks_like_dotenv(
-            "KEY=value\nOTHER=123\n# comment\nFOO=bar\nnot-a-valid-line\n"
-        ));
-    }
-
-    #[test]
-    fn looks_like_dotenv_rejects_majority_noise() {
-        assert!(!dotenv_validation::looks_like_dotenv(
-            "KEY=value\nFOO=bar\nnot valid\nalso invalid\nstill wrong\nnope\n"
-        ));
-    }
-
-    // ── count_dotenv_vars ─────────────────────────────────────────────────────
-
-    #[test]
-    fn count_vars_in_normal_file() {
-        let content = "# Comment\nKEY=value\nOTHER=123\n\n# Another\nFOO=bar\n";
-        assert_eq!(dotenv_validation::count_dotenv_vars(content), 3);
-    }
-
-    #[test]
-    fn count_vars_empty_and_comments_only() {
-        assert_eq!(dotenv_validation::count_dotenv_vars(""), 0);
-        assert_eq!(
-            dotenv_validation::count_dotenv_vars("# Only comments\n\n"),
-            0
-        );
-    }
-
-    #[test]
-    fn count_vars_only_assignments() {
-        assert_eq!(dotenv_validation::count_dotenv_vars("A=1\nB=2\nC=3\n"), 3);
-    }
-
     // ── Integration tests (feature = "backup") ────────────────────────────────
 
     #[test]
@@ -769,7 +747,7 @@ mod tests {
             verbose: false,
         };
 
-        let result = prepare_restore(&encoded_str, "inspectpass".to_owned(), &options);
+        let result = prepare_restore(&encoded_str, pw("inspectpass"), &options);
 
         assert!(result.is_ok(), "prepare_restore failed: {:?}", result.err());
         assert!(
@@ -804,7 +782,7 @@ mod tests {
             verbose: false,
         };
 
-        let result = prepare_restore(&encoded_str, "testpass123".to_owned(), &options);
+        let result = prepare_restore(&encoded_str, pw("testpass123"), &options);
 
         assert!(result.is_ok(), "prepare_restore failed: {:?}", result.err());
         assert!(
@@ -838,7 +816,7 @@ mod tests {
             verbose: false,
         };
 
-        let result = prepare_restore(&encoded_str, "wrong_password".to_owned(), &options);
+        let result = prepare_restore(&encoded_str, pw("wrong_password"), &options);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -873,7 +851,7 @@ mod tests {
             verbose: false,
         };
 
-        let result = prepare_restore(&encoded_str, "roundtrippass".to_owned(), &options)
+        let result = prepare_restore(&encoded_str, pw("roundtrippass"), &options)
             .expect("prepare_restore should succeed");
 
         let outcome = match result {
@@ -881,7 +859,8 @@ mod tests {
             other => panic!("expected Ready, got {:?}", other),
         };
 
-        commit_restore(outcome, &options).expect("commit_restore should succeed");
+        let restored = commit_restore(outcome, &options).expect("commit_restore should succeed");
+        finish(&restored, &options).expect("a plain restore finishes with Ok");
 
         let written = std::fs::read_to_string(&output_path).unwrap();
         assert_eq!(written, env_content, "written content must match original");
@@ -889,7 +868,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "backup")]
-    fn commit_restore_returns_validation_fallback_error_for_non_dotenv_content() {
+    fn finish_returns_validation_fallback_error_for_non_dotenv_content() {
         use tempfile::TempDir;
 
         let dir = TempDir::new().unwrap();
@@ -910,7 +889,7 @@ mod tests {
             verbose: false,
         };
 
-        let result = prepare_restore(&encoded_str, "pass".to_owned(), &options)
+        let result = prepare_restore(&encoded_str, pw("pass"), &options)
             .expect("prepare_restore should succeed despite bad content");
 
         let outcome = match result {
@@ -918,10 +897,12 @@ mod tests {
             other => panic!("expected Ready, got {:?}", other),
         };
 
-        let commit_result = commit_restore(outcome, &options);
-        assert!(commit_result.is_err());
+        let restored = commit_restore(outcome, &options).expect("the fallback is written");
+        assert!(restored.used_fallback);
+        let finish_result = finish(&restored, &options);
+        assert!(finish_result.is_err());
 
-        let err = commit_result.unwrap_err();
+        let err = finish_result.unwrap_err();
         let typed = err.downcast_ref::<RestoreError>();
         assert!(
             matches!(typed, Some(RestoreError::ValidationFallback { .. })),

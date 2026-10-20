@@ -11,6 +11,11 @@
 //!
 //! Both encrypt `golden.env` with the key file `golden.key`.
 //!
+//! `golden-0.10.10-short-key.backup` (evnx 0.10.10 release, key file
+//! `golden-short.key`, 3 characters) encrypts the same file with a secret a new
+//! backup now refuses (I-147); `restore_integration.rs` checks it still opens
+//! (DEC-B2).
+//!
 //! ⚠️ **Test material only.** `golden.key` is a published test passphrase
 //! (`demo-golden-passphrase-NOT-A-SECRET`) and `golden.env` holds synthetic
 //! values. Neither protects anything.

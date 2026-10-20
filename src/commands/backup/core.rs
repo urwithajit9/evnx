@@ -12,12 +12,13 @@
 //!         ▼
 //!   backup_inner()
 //!         │
-//!         ├─ ZeroizeOnDrop guard wraps password immediately
+//!         ├─ password arrives as Zeroizing<String>: cleared on every exit path
 //!         ├─ spinner starts          (suppressed in verbose mode)
 //!         ├─ encrypt_content()       (Argon2id + AES-256-GCM)
 //!         ├─ spinner stops
 //!         ├─ safe_write::stage_private()  (temp file beside the output, 0o600)
-//!         ├─ rotate_backups()        (only now: rename existing, warn beyond --keep)
+//!         ├─ rotate_backups()        (only now: rename existing, warn beyond --keep;
+//!         │                            through a symlink, the target's copies rotate)
 //!         ├─ Staged::commit()        (rename into place — DEC-B7, I-150)
 //!         ├─ verify_backup()         (optional — only when --verify is set)
 //!         └─ Ok(output_path)         password zeroized on drop
@@ -36,6 +37,10 @@
 //! | [`BackupError::EncryptionFailed`] | Argon2id / AES-256-GCM failure |
 //! | [`BackupError::WriteFailed`] | Could not write backup to disk |
 //! | [`BackupError::VerifyFailed`] | Post-write integrity check failed |
+//! | [`DecryptError`] | Why a backup could not be opened (I-149), for `restore` |
+//!
+//! [`check_output`] runs before any of this, in the CLI adapter: it refuses an
+//! output the write or the rotation would destroy (I-146, DEC-B3).
 //!
 //! [`BackupError::EncryptionFailed`]: super::error::BackupError::EncryptionFailed
 //! [`BackupError::WriteFailed`]: super::error::BackupError::WriteFailed
@@ -47,7 +52,7 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "backup")]
 use anyhow::{Context, Result};
 #[cfg(feature = "backup")]
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 #[cfg(feature = "backup")]
 use crate::utils::ui;
@@ -109,36 +114,11 @@ pub struct BackupOptions {
     ///
     /// A mismatch returns [`BackupError::VerifyFailed`] (exit code 6) and
     /// leaves the backup file on disk for manual inspection. The check costs
-    /// one additional Argon2id round-trip (~1 s).
+    /// one additional Argon2id round: a fraction of a second to about a second,
+    /// depending on the machine (D-103).
     pub verify: bool,
     // ── Planned flags — not yet wired to the CLI ─────────────────────────────
     // pub recipient: Option<String>,   // --recipient (asymmetric encryption)
-}
-
-// ─── RAII password guard ──────────────────────────────────────────────────────
-
-/// Owns a `String` and zeroizes it on drop, covering every exit path:
-/// normal return, `?`-propagated error, and panic.
-///
-/// Implements `Deref<Target = str>` so the inner value can be borrowed
-/// as `&str` without moving out.
-#[cfg(feature = "backup")]
-struct ZeroizeOnDrop(String);
-
-#[cfg(feature = "backup")]
-impl Drop for ZeroizeOnDrop {
-    fn drop(&mut self) {
-        self.0.zeroize();
-    }
-}
-
-#[cfg(feature = "backup")]
-impl std::ops::Deref for ZeroizeOnDrop {
-    type Target = str;
-
-    fn deref(&self) -> &str {
-        &self.0
-    }
 }
 
 // ─── Core function ────────────────────────────────────────────────────────────
@@ -147,19 +127,23 @@ impl std::ops::Deref for ZeroizeOnDrop {
 ///
 /// This is the primary testable entry point for backup logic. The caller
 /// is responsible only for supplying the file content and the password —
-/// no TTY interaction occurs here.
+/// no TTY interaction occurs here. The caller has already run
+/// [`check_output`].
 ///
 /// # Steps
 ///
-/// 1. Moves `password` into a [`ZeroizeOnDrop`] guard — fires on every exit
-///    path including `?`-propagated errors and panics.
-/// 2. Rotates existing backups according to `options.keep`.
-/// 3. Starts an Argon2id progress spinner (suppressed when `verbose = true`).
-/// 4. Encrypts `content` with Argon2id + AES-256-GCM.
-/// 5. Stops the spinner unconditionally.
-/// 6. Writes the encrypted blob to `options.output` with `0o600` permissions.
+/// 1. Starts an Argon2id progress spinner (suppressed when `verbose = true`).
+/// 2. Encrypts `content` with Argon2id + AES-256-GCM.
+/// 3. Stops the spinner unconditionally.
+/// 4. Stages the encrypted blob beside `options.output` (0o600).
+/// 5. Rotates existing backups according to `options.keep` — only now, once
+///    the new one is safely on disk (I-150).
+/// 6. Renames the staged file into place.
 /// 7. If `options.verify`: re-decrypts the file and compares content.
 /// 8. Returns the path that was written.
+///
+/// `password` is a [`Zeroizing`] string, so it is cleared on every exit path,
+/// `?`-propagated errors and panics included.
 ///
 /// # Errors
 ///
@@ -169,10 +153,11 @@ impl std::ops::Deref for ZeroizeOnDrop {
 /// - Other `anyhow` errors — unexpected encoding failures (non-UTF-8 paths,
 ///   rotation rename failures).
 #[cfg(feature = "backup")]
-pub fn backup_inner(content: &str, password: String, options: &BackupOptions) -> Result<PathBuf> {
-    // ── Zeroize password on every exit path ───────────────────────────────────
-    let pw_guard = ZeroizeOnDrop(password);
-
+pub fn backup_inner(
+    content: &str,
+    password: Zeroizing<String>,
+    options: &BackupOptions,
+) -> Result<PathBuf> {
     if options.verbose {
         ui::verbose_stderr("Backup pipeline starting");
         ui::verbose_stderr(format!("Source       : {}", options.env.display()));
@@ -204,7 +189,7 @@ pub fn backup_inner(content: &str, password: String, options: &BackupOptions) ->
 
     // Capture the error before stopping the spinner so the terminal is always
     // left in a clean state regardless of outcome.
-    let encrypt_result = encrypt_content(content, &pw_guard, original_filename)
+    let encrypt_result = encrypt_content(content, &password, original_filename)
         .map_err(|e| BackupError::EncryptionFailed(e.to_string()));
 
     // ── Stop spinner unconditionally ──────────────────────────────────────────
@@ -225,10 +210,18 @@ pub fn backup_inner(content: &str, password: String, options: &BackupOptions) ->
     // and writing, so any failure after it left the previous backup at `.1`
     // and no backup at the name the user knows. Now the new backup is fully
     // on disk (a temp file beside the output) before anything is renamed.
+    //
+    // ⚠️ Rotation works on the file the output names: a symlink's target. The
+    // write goes through a link (DEC-B7), and rotating the link itself would
+    // move it to `.1` and leave the new backup in a file nothing points at by
+    // the name the user gave.
+    let base = crate::core::safe_write::preview(&options.output)
+        .map_err(|e| BackupError::WriteFailed(format!("{e:#}")))?
+        .target;
     let staged = crate::core::safe_write::stage_private(&options.output, encrypted.as_bytes())
         .map_err(|e| BackupError::WriteFailed(format!("{e:#}")))?;
     if options.keep > 0 {
-        rotate_backups(&options.output, options.keep)?;
+        rotate_backups(&base, options.keep)?;
     }
     let written = staged
         .commit()
@@ -241,20 +234,71 @@ pub fn backup_inner(content: &str, password: String, options: &BackupOptions) ->
 
     // ── Post-write integrity check ────────────────────────────────────────────
     // Re-decrypts the file just written and compares it byte-for-byte with the
-    // original content. Costs one additional Argon2id round (~1 s) but proves
-    // the backup is readable before the user discards the source.
+    // original content. Costs one more Argon2id round, but proves the backup
+    // is readable before the user discards the source.
     if options.verify {
         if options.verbose {
             ui::verbose_stderr("Verifying backup integrity…");
         }
-        verify_backup(&options.output, content, &pw_guard)?;
+        verify_backup(&options.output, content, &password)?;
         if options.verbose {
             ui::verbose_stderr("Integrity check passed");
         }
     }
 
     Ok(options.output.clone())
-    // pw_guard drops here → password zeroized
+}
+
+// ─── Output checks (I-146, DEC-B3) ───────────────────────────────────────────
+
+/// Refuse an output that writing or rotating would destroy. Run before the
+/// passphrase is asked for, so nothing is typed for a run that cannot finish.
+///
+/// The files a backup touches are the output (replaced, or renamed to `.1`)
+/// and, with `keep > 0`, each `.1` … `.{keep}` slot (renamed one place up;
+/// the last is replaced) — all beside the file the output names, a symlink's
+/// target included. None of them may be the source: `--output .env` turned the
+/// `.env` into ciphertext, and `backup out.1 --output out` moved the source to
+/// `out.2` (I-146). None of them may be a directory: rotation renamed one
+/// (DEC-B3).
+///
+/// A missing directory is not refused here; the write reports it (exit 5).
+///
+/// # Errors
+///
+/// Plain `anyhow` errors: "could not run", exit 2.
+#[cfg(feature = "backup")]
+pub fn check_output(source: &Path, output: &Path, keep: u32) -> Result<()> {
+    use crate::core::safe_write;
+
+    // The same wording `template` and `convert` use for their own input.
+    safe_write::refuse_same_file(
+        &output.to_string_lossy(),
+        "env file",
+        &source.to_string_lossy(),
+    )?;
+    // A directory (or anything else that is not a file) where the backup goes.
+    let base = safe_write::preview(output)?.target;
+
+    for n in 1..=keep {
+        let slot = numbered_backup_path(&base, n);
+        if safe_write::same_file(source, &slot) {
+            anyhow::bail!(
+                "--output '{}' would rotate '{}', which is the env file being backed up. \
+                 Nothing was written; choose another --output.",
+                output.display(),
+                slot.display()
+            );
+        }
+        if std::fs::symlink_metadata(&slot).is_ok_and(|m| m.is_dir()) {
+            anyhow::bail!(
+                "{} is a directory, and rotation would move it. \
+                 Nothing was written; move it away or choose another --output.",
+                slot.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 // ─── Rotation ─────────────────────────────────────────────────────────────────
@@ -263,24 +307,17 @@ pub fn backup_inner(content: &str, password: String, options: &BackupOptions) ->
 ///
 /// Renames in reverse order to avoid overwriting:
 /// ```text
-/// output.{keep-2} → output.{keep-1}
+/// output.{keep-1} → output.{keep}
 ///         ⋮
 /// output.1        → output.2
 /// output          → output.1
 /// ```
-/// Files at position `keep` and beyond are warned about but **never deleted**.
+/// The file at position `keep` is replaced by the shift, with a warning;
+/// files beyond it are never touched.
 ///
-/// # Example
-///
-/// With `keep = 3` and files `.env.backup`, `.env.backup.1`, `.env.backup.2`,
-/// `.env.backup.3` present:
-/// - `.env.backup.3` — warned ("exceeds --keep 3, delete manually")
-/// - `.env.backup.2` — renamed to `.env.backup.3` … wait, we never delete,
-///   so we only rename up to position `keep - 1`.
-///
-/// Actually: files at position >= `keep` (e.g. `.env.backup.3` when keep=3)
-/// are warned. Positions 1..keep-1 are shifted up by one. Position 0 (the
-/// base file) shifts to position 1.
+/// With `keep = 3` and `.env.backup` … `.env.backup.3` present: `.env.backup.3`
+/// is warned about and replaced by `.env.backup.2`, `.1` moves to `.2`, and the
+/// base file to `.1`.
 #[cfg(feature = "backup")]
 fn rotate_backups(output: &Path, keep: u32) -> Result<()> {
     // Warn about the file at position `keep` — it will be overwritten when
@@ -329,9 +366,8 @@ fn numbered_backup_path(base: &Path, n: u32) -> PathBuf {
 
 /// Re-decrypt `path` and assert that its content matches `original`.
 ///
-/// Called by [`backup_inner`] when `options.verify = true`. Uses the same
-/// `password` that was used for encryption (borrowed from the `ZeroizeOnDrop`
-/// guard still in scope).
+/// Called by [`backup_inner`] when `options.verify = true`, with the same
+/// `password` that was used for encryption.
 ///
 /// Returns [`BackupError::VerifyFailed`] if:
 /// - the file cannot be read back from disk,
@@ -366,6 +402,148 @@ fn verify_backup(path: &Path, original: &str, password: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+// ─── Format ───────────────────────────────────────────────────────────────────
+
+/// The binary format version this evnx writes, and the only one it reads.
+#[cfg(feature = "backup")]
+const FORMAT_V1: u8 = 1;
+#[cfg(feature = "backup")]
+const SALT_LEN: usize = 32;
+#[cfg(feature = "backup")]
+const NONCE_LEN: usize = 12;
+#[cfg(feature = "backup")]
+const KEY_LEN: usize = 32;
+/// `version || salt || nonce`, before the ciphertext.
+#[cfg(feature = "backup")]
+const HEADER_LEN: usize = 1 + SALT_LEN + NONCE_LEN;
+
+/// The smallest file `evnx backup` has ever written, in bytes after Base64.
+///
+/// The header and the GCM tag (61 bytes), plus the JSON envelope, which is
+/// never shorter than 124 bytes: every field is always present, the file name
+/// is at least one character and the tool version at least `0.1.0`. 100 leaves
+/// room for that; anything shorter was cut off (I-149).
+#[cfg(feature = "backup")]
+const MIN_LEN: usize = HEADER_LEN + 16 + 100;
+
+/// Argon2id cost parameters, tied to the format version byte (T-SHARE-28).
+///
+/// ⚠️ **Format-locked.** Changing [`KdfParams::V1`] makes every existing
+/// backup unreadable: the golden files in `tests/golden/backup/` would stop
+/// opening, which `tests/backup_format_lock.rs` exists to catch. A different
+/// cost is a new format version with its own constant, and `V1` stays.
+///
+/// ⚠️ **Not evnx-crypto's.** The cloud master key is Argon2id too, with other
+/// parameters (4 lanes) and another purpose; neither may follow the other.
+///
+/// These were written out twice, in encrypt and in decrypt, with a comment
+/// asking whoever changed one to change the other.
+#[cfg(feature = "backup")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KdfParams {
+    /// Memory, in KiB.
+    pub memory_kib: u32,
+    /// Passes over the memory.
+    pub iterations: u32,
+    /// Lanes.
+    pub lanes: u32,
+}
+
+#[cfg(feature = "backup")]
+impl KdfParams {
+    /// Format 1: 64 MiB, 3 passes, 1 lane. Every backup evnx has written.
+    pub const V1: KdfParams = KdfParams {
+        memory_kib: 65_536,
+        iterations: 3,
+        lanes: 1,
+    };
+
+    /// The parameters for a format version byte; `None` for a version this
+    /// evnx does not know (a newer one).
+    pub fn for_format(version: u8) -> Option<KdfParams> {
+        (version == FORMAT_V1).then_some(Self::V1)
+    }
+}
+
+/// The AES-256 key for `password` and `salt`: the one derivation both
+/// [`encrypt_content`] and [`decrypt_content`] use.
+#[cfg(feature = "backup")]
+fn derive_key(password: &str, salt: &[u8], params: KdfParams) -> Result<Zeroizing<[u8; KEY_LEN]>> {
+    use anyhow::anyhow;
+    use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version};
+
+    let argon2_params = Params::new(
+        params.memory_kib,
+        params.iterations,
+        params.lanes,
+        Some(KEY_LEN),
+    )
+    .map_err(|e| anyhow!("Invalid Argon2 params: {}", e))?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon2_params);
+
+    let salt_string = argon2::password_hash::SaltString::encode_b64(salt)
+        .map_err(|e| anyhow!("Failed to encode salt for Argon2: {}", e))?;
+    let password_hash = argon2
+        .hash_password(password.as_bytes(), &salt_string)
+        .map_err(|e| anyhow!("Argon2id key derivation failed: {}", e))?;
+    let hash_output = password_hash
+        .hash
+        .ok_or_else(|| anyhow!("Argon2id did not produce a hash output"))?;
+
+    let bytes = hash_output.as_bytes();
+    if bytes.len() < KEY_LEN {
+        return Err(anyhow!(
+            "Derived key too short: {} bytes (expected {KEY_LEN})",
+            bytes.len()
+        ));
+    }
+    let mut key = Zeroizing::new([0u8; KEY_LEN]);
+    key.copy_from_slice(&bytes[..KEY_LEN]);
+    Ok(key)
+}
+
+/// Why a backup could not be opened, where that is known (I-149, DEC-B6).
+///
+/// `restore` showed "Wrong password or corrupt backup" for every one of these,
+/// so a backup from a newer evnx never said "upgrade". A wrong password and a
+/// tampered file stay one variant: telling them apart would say which part of
+/// the authentication failed.
+#[cfg(feature = "backup")]
+#[derive(Debug, thiserror::Error)]
+pub enum DecryptError {
+    /// Not Base64 text at all.
+    #[error("This file is not an evnx backup: it is not the Base64 text evnx backup writes")]
+    NotABackup,
+    /// Cut off: too short, or Base64 that stops part-way.
+    #[error("The backup file is truncated or damaged ({detail})")]
+    Truncated {
+        /// What was found.
+        detail: String,
+    },
+    /// A format version byte this evnx does not know.
+    #[error(
+        "This backup uses format version {version}, made by a newer evnx; this version reads \
+         format {FORMAT_V1}. Upgrade evnx to restore it."
+    )]
+    NewerFormat {
+        /// The version byte.
+        version: u8,
+    },
+    /// The authentication tag did not match.
+    #[error("Decryption failed. The password may be incorrect or the backup file is corrupt.")]
+    WrongPasswordOrTampered,
+    /// The envelope's schema is newer than this evnx.
+    #[error("This backup's contents use schema version {schema}, made by a newer evnx. Upgrade evnx to restore it.")]
+    NewerSchema {
+        /// The envelope's `schema_version`.
+        schema: u64,
+    },
+    /// It decrypted, so the password was right, but the contents are not
+    /// what evnx writes.
+    #[error("The backup decrypted, but {0}")]
+    Corrupt(String),
 }
 
 // ─── Encryption ───────────────────────────────────────────────────────────────
@@ -403,10 +581,7 @@ pub(crate) fn encrypt_content(
         aead::{rand_core::RngCore, Aead, KeyInit, OsRng},
         Aes256Gcm, Nonce,
     };
-    use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version};
     use base64::{engine::general_purpose, Engine as _};
-
-    use anyhow::anyhow;
 
     // ── JSON metadata envelope ────────────────────────────────────────────────
     // Stored inside the ciphertext so it is confidential and tamper-evident.
@@ -419,65 +594,33 @@ pub(crate) fn encrypt_content(
         "tool_version": env!("CARGO_PKG_VERSION"),
         "content": plaintext,
     });
-    let envelope_bytes =
-        serde_json::to_vec(&envelope).context("Failed to serialise metadata envelope")?;
+    let envelope_bytes = Zeroizing::new(
+        serde_json::to_vec(&envelope).context("Failed to serialise metadata envelope")?,
+    );
 
     // ── Argon2id key derivation ───────────────────────────────────────────────
     // A fresh 32-byte salt is generated for every backup so two encryptions of
     // the same file with the same password produce different ciphertext.
-    //
-    // | Parameter   | Value    | Rationale                                   |
-    // |-------------|----------|---------------------------------------------|
-    // | variant     | Argon2id | Resistant to GPU and side-channel attacks   |
-    // | memory      | 64 MiB   | Slows brute-force on commodity hardware     |
-    // | iterations  | 3        | Adds time cost on top of memory cost        |
-    // | parallelism | 1        | Single-threaded CLI usage                   |
-    // | output len  | 32 B     | Exactly one AES-256 key                     |
-    let mut salt_bytes = [0u8; 32];
+    let mut salt_bytes = [0u8; SALT_LEN];
     OsRng.fill_bytes(&mut salt_bytes);
-
-    let params =
-        Params::new(65536, 3, 1, Some(32)).map_err(|e| anyhow!("Invalid Argon2 params: {}", e))?;
-    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-
-    let salt_string = argon2::password_hash::SaltString::encode_b64(&salt_bytes)
-        .map_err(|e| anyhow!("Failed to encode salt for Argon2: {}", e))?;
-
-    let password_hash = argon2
-        .hash_password(password.as_bytes(), &salt_string)
-        .map_err(|e| anyhow!("Argon2id key derivation failed: {}", e))?;
-
-    let hash_output = password_hash
-        .hash
-        .ok_or_else(|| anyhow!("Argon2id did not produce a hash output"))?;
-
-    let key_bytes = hash_output.as_bytes();
-    if key_bytes.len() < 32 {
-        return Err(anyhow!(
-            "Derived key too short: {} bytes (expected 32)",
-            key_bytes.len()
-        ));
-    }
-    let key: &[u8; 32] = key_bytes[..32]
-        .try_into()
-        .map_err(|_| anyhow!("Key slice conversion failed"))?;
+    let key = derive_key(password, &salt_bytes, KdfParams::V1)?;
 
     // ── AES-256-GCM encryption ────────────────────────────────────────────────
-    let cipher = Aes256Gcm::new(key.into());
+    let cipher = Aes256Gcm::new((&*key).into());
 
-    let mut nonce_bytes = [0u8; 12];
+    let mut nonce_bytes = [0u8; NONCE_LEN];
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     let ciphertext = cipher
-        .encrypt(nonce, envelope_bytes.as_ref())
-        .map_err(|e| anyhow!("AES-256-GCM encryption failed: {}", e))?;
+        .encrypt(nonce, envelope_bytes.as_slice())
+        .map_err(|e| anyhow::anyhow!("AES-256-GCM encryption failed: {}", e))?;
 
     // ── Assemble binary envelope ──────────────────────────────────────────────
     // Layout: version(1) || salt(32) || nonce(12) || ciphertext(variable)
     // Increment the version byte when the format changes; never break v1 decryption.
-    let mut result: Vec<u8> = Vec::with_capacity(1 + 32 + 12 + ciphertext.len());
-    result.push(1u8);
+    let mut result: Vec<u8> = Vec::with_capacity(HEADER_LEN + ciphertext.len());
+    result.push(FORMAT_V1);
     result.extend_from_slice(&salt_bytes);
     result.extend_from_slice(&nonce_bytes);
     result.extend_from_slice(&ciphertext);
@@ -487,15 +630,14 @@ pub(crate) fn encrypt_content(
 
 // ─── Decryption (pub — used by restore) ──────────────────────────────────────
 
-/// Decrypt a backup envelope produced by [`encrypt_content`].
+/// Decrypt a backup envelope produced by `encrypt_content`.
 ///
 /// This function is `pub` so that `restore/core.rs` can call it directly.
 /// Both commands share the same binary format; keeping decrypt logic here
 /// means a format bump requires changes in exactly one place.
 ///
-/// If the binary format ever changes, increment the version byte in
-/// [`encrypt_content`] and add a new match arm here — do **not** break
-/// decryption of existing version-1 files.
+/// If the binary format ever changes, add a version to [`KdfParams::for_format`]
+/// and a branch here — do **not** break decryption of existing version-1 files.
 ///
 /// # Returns
 ///
@@ -506,115 +648,95 @@ pub(crate) fn encrypt_content(
 ///
 /// # Errors
 ///
-/// Returns a descriptive [`anyhow::Error`] for:
-/// - Base64 decode failure (not an evnx backup, or file is truncated).
-/// - Unknown format version (backup made by a newer tool version).
-/// - Argon2id key derivation failure (should not occur with valid inputs).
-/// - AES-256-GCM decryption failure — almost always wrong password or tampered
-///   file; the error message deliberately does not distinguish these two cases
-///   to avoid leaking information.
-/// - JSON deserialisation failure (encrypted payload is internally corrupt).
+/// A [`DecryptError`] inside the `anyhow::Error` for everything a person can
+/// act on: not Base64, truncated, a newer format or schema, a wrong password
+/// or tampered file (one variant, deliberately), damaged contents. An Argon2id
+/// failure, which valid inputs never produce, is a plain error.
 #[cfg(feature = "backup")]
 pub fn decrypt_content(encoded: &str, password: &str) -> Result<(String, BackupMetadata)> {
     use aes_gcm::{
         aead::{Aead, KeyInit},
         Aes256Gcm, Nonce,
     };
-    use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version};
-    use base64::{engine::general_purpose, Engine as _};
-
-    use anyhow::anyhow;
+    use base64::{engine::general_purpose, DecodeError, Engine as _};
 
     // ── Base64 decode ─────────────────────────────────────────────────────────
+    let text = encoded.trim();
     let raw = general_purpose::STANDARD
-        .decode(encoded.trim())
-        .with_context(|| {
-            "Failed to decode backup file: not valid Base64 or file truncated".to_string()
+        .decode(text)
+        .map_err(|e| match e {
+            // A character Base64 does not have: this was never a backup.
+            DecodeError::InvalidByte(..) => DecryptError::NotABackup,
+            // Valid characters that stop short of a whole group: cut off.
+            _ => DecryptError::Truncated {
+                detail: format!(
+                    "{} characters of Base64, which does not end where a backup does",
+                    text.chars().count()
+                ),
+            },
         })?;
 
-    // Minimum valid size: 1 (version) + 32 (salt) + 12 (nonce) + 16 (GCM tag)
-    const MIN_LEN: usize = 1 + 32 + 12 + 16;
-    if raw.len() < MIN_LEN {
-        return Err(anyhow!(
-            "Backup file is too short ({} bytes, minimum {}). File may be corrupt.",
-            raw.len(),
-            MIN_LEN
-        ));
-    }
-
     // ── Parse binary envelope ─────────────────────────────────────────────────
-    let version = raw[0];
-    if version != 1 {
-        return Err(anyhow!(
-            "Unsupported backup format version: {}. \
-             This backup was created by a newer version of evnx. \
-             Please upgrade the tool and try again.",
-            version
-        ));
+    // The version byte first: a later format may lay out the rest differently,
+    // so its length is not judged by version 1's (I-149).
+    let Some(&version) = raw.first() else {
+        return Err(DecryptError::Truncated {
+            detail: "the file is empty".into(),
+        }
+        .into());
+    };
+    let Some(params) = KdfParams::for_format(version) else {
+        return Err(DecryptError::NewerFormat { version }.into());
+    };
+    if raw.len() < MIN_LEN {
+        return Err(DecryptError::Truncated {
+            detail: format!(
+                "{} bytes after decoding; an evnx backup is at least {MIN_LEN}",
+                raw.len()
+            ),
+        }
+        .into());
     }
 
     // Slice layout mirrors encrypt_content exactly.
-    let salt_bytes = &raw[1..33]; // 32 bytes
-    let nonce_bytes = &raw[33..45]; // 12 bytes
-    let ciphertext = &raw[45..]; // remainder = GCM ciphertext + 16-byte tag
+    let salt_bytes = &raw[1..1 + SALT_LEN];
+    let nonce_bytes = &raw[1 + SALT_LEN..HEADER_LEN];
+    let ciphertext = &raw[HEADER_LEN..]; // GCM ciphertext + 16-byte tag
 
     // ── Argon2id key re-derivation ────────────────────────────────────────────
-    // Same parameters as encrypt_content. If these ever change, add a version
-    // branch above and keep the old params here for backward compatibility.
-    let params =
-        Params::new(65536, 3, 1, Some(32)).map_err(|e| anyhow!("Invalid Argon2 params: {}", e))?;
-    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-
-    let salt_string = argon2::password_hash::SaltString::encode_b64(salt_bytes)
-        .map_err(|e| anyhow!("Failed to encode salt: {}", e))?;
-
-    let password_hash = argon2
-        .hash_password(password.as_bytes(), &salt_string)
-        .map_err(|e| anyhow!("Argon2id key derivation failed: {}", e))?;
-
-    let hash_output = password_hash
-        .hash
-        .ok_or_else(|| anyhow!("Argon2id did not produce a hash output"))?;
-
-    let key_bytes = hash_output.as_bytes();
-    if key_bytes.len() < 32 {
-        return Err(anyhow!("Derived key too short: {} bytes", key_bytes.len()));
-    }
-    let key: &[u8; 32] = key_bytes[..32]
-        .try_into()
-        .map_err(|_| anyhow!("Key slice conversion failed"))?;
+    let key = derive_key(password, salt_bytes, params)?;
 
     // ── AES-256-GCM decryption ────────────────────────────────────────────────
-    let cipher = Aes256Gcm::new(key.into());
+    let cipher = Aes256Gcm::new((&*key).into());
     let nonce = Nonce::from_slice(nonce_bytes);
 
     // Intentionally vague error — distinguishing "wrong password" from "tampered
     // file" would leak information about which part of authentication failed.
-    let plaintext_bytes = cipher.decrypt(nonce, ciphertext).map_err(|_| {
-        anyhow!("Decryption failed. The password may be incorrect or the backup file is corrupt.")
-    })?;
+    let plaintext_bytes = Zeroizing::new(
+        cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| DecryptError::WrongPasswordOrTampered)?,
+    );
 
     // ── Deserialise JSON envelope ─────────────────────────────────────────────
     let envelope: serde_json::Value = serde_json::from_slice(&plaintext_bytes)
-        .context("Decrypted payload is not valid JSON. The backup envelope may be corrupt.")?;
+        .map_err(|_| DecryptError::Corrupt("its contents are not the JSON evnx writes".into()))?;
 
     // ── Validate JSON schema version ──────────────────────────────────────────
     let schema_version = envelope["schema_version"].as_u64().unwrap_or(0);
     if schema_version != 1 {
-        return Err(anyhow!(
-            "Unsupported metadata schema version: {}. \
-             This backup requires a newer version of evnx.",
-            schema_version
-        ));
+        return Err(DecryptError::NewerSchema {
+            schema: schema_version,
+        }
+        .into());
     }
 
     let content = envelope["content"]
         .as_str()
         .ok_or_else(|| {
-            anyhow!(
-                "Backup envelope (schema v{}) is missing 'content' field",
-                schema_version
-            )
+            DecryptError::Corrupt(format!(
+                "its contents (schema v{schema_version}) have no 'content' field"
+            ))
         })?
         .to_string();
 
@@ -665,51 +787,68 @@ pub struct BackupMetadata {
 #[cfg(all(test, feature = "backup"))]
 mod tests {
     use super::*;
-    use crate::utils::dotenv_validation;
 
-    // ── ZeroizeOnDrop ─────────────────────────────────────────────────────────
+    fn pw(s: &str) -> Zeroizing<String> {
+        Zeroizing::new(s.to_owned())
+    }
 
+    // ── Format (T-SHARE-28, I-149) ────────────────────────────────────────────
+
+    /// The one set of Argon2id parameters, as every backup since 0.1 used
+    /// them. The golden files (`tests/backup_format_lock.rs`) prove the
+    /// derivation; this pins the numbers so a change reads as one.
     #[test]
-    #[cfg(feature = "backup")]
-    fn zeroize_guard_deref_gives_inner_str() {
-        let guard = ZeroizeOnDrop("secret-value".to_owned());
-        assert_eq!(&*guard, "secret-value");
+    fn kdf_params_v1_are_the_format_1_parameters() {
+        assert_eq!(
+            KdfParams::V1,
+            KdfParams {
+                memory_kib: 65_536,
+                iterations: 3,
+                lanes: 1
+            }
+        );
+        assert_eq!(KdfParams::for_format(1), Some(KdfParams::V1));
+        assert_eq!(KdfParams::for_format(2), None);
+    }
+
+    /// The smallest backup evnx can write is not called truncated.
+    #[test]
+    fn t_i149_the_smallest_backup_is_not_too_short() {
+        use base64::{engine::general_purpose, Engine as _};
+        let encoded = encrypt_content("", "password-123", "a").unwrap();
+        let raw = general_purpose::STANDARD.decode(&encoded).unwrap();
+        assert!(raw.len() >= MIN_LEN, "{} < {MIN_LEN}", raw.len());
+        assert_eq!(decrypt_content(&encoded, "password-123").unwrap().0, "");
     }
 
     #[test]
-    #[cfg(feature = "backup")]
-    fn zeroize_guard_drops_without_panic() {
-        let guard = ZeroizeOnDrop("sensitive".to_owned());
-        drop(guard);
-    }
+    fn t_i149_each_damage_has_its_own_error() {
+        let kind = |encoded: &str| {
+            let e = decrypt_content(encoded, "password-123").unwrap_err();
+            match e.downcast_ref::<DecryptError>() {
+                Some(DecryptError::NotABackup) => "not a backup",
+                Some(DecryptError::Truncated { .. }) => "truncated",
+                Some(DecryptError::NewerFormat { version: 2 }) => "newer",
+                Some(DecryptError::WrongPasswordOrTampered) => "wrong password",
+                other => panic!("unexpected {other:?}"),
+            }
+        };
+        use base64::{engine::general_purpose, Engine as _};
+        let good = encrypt_content("A=1\n", "password-123", ".env").unwrap();
+        let mut raw = general_purpose::STANDARD.decode(&good).unwrap();
 
-    // ── looks_like_dotenv ─────────────────────────────────────────────────────
-
-    #[test]
-    fn test_looks_like_dotenv_valid() {
-        assert!(dotenv_validation::looks_like_dotenv(
-            "# Database\nDATABASE_URL=postgresql://localhost\nSECRET_KEY=abc123\n"
-        ));
-    }
-
-    #[test]
-    fn test_looks_like_dotenv_empty() {
-        assert!(dotenv_validation::looks_like_dotenv(""));
-        assert!(dotenv_validation::looks_like_dotenv("  \n  "));
-    }
-
-    #[test]
-    fn test_looks_like_dotenv_rejects_prose() {
-        assert!(!dotenv_validation::looks_like_dotenv(
-            "This is just a plain text file.\nWith no env vars at all.\nWhatsoever."
-        ));
-    }
-
-    #[test]
-    fn test_looks_like_dotenv_comments_and_blanks() {
-        assert!(dotenv_validation::looks_like_dotenv(
-            "# Comment\n\n# Another\nKEY=value\n"
-        ));
+        assert_eq!(kind("not base64 at all!"), "not a backup");
+        assert_eq!(kind(""), "truncated");
+        assert_eq!(kind(&good[..100]), "truncated");
+        assert_eq!(kind(&good[..101]), "truncated");
+        raw[0] = 2;
+        assert_eq!(kind(&general_purpose::STANDARD.encode(&raw)), "newer");
+        raw[0] = 1;
+        raw[60] ^= 1;
+        assert_eq!(
+            kind(&general_purpose::STANDARD.encode(&raw)),
+            "wrong password"
+        );
     }
 
     // ── Encrypt / decrypt roundtrip ───────────────────────────────────────────
@@ -796,31 +935,6 @@ mod tests {
         assert_eq!(meta.tool_version, env!("CARGO_PKG_VERSION"));
     }
 
-    #[test]
-    #[cfg(feature = "backup")]
-    fn test_backup_file_has_restrictive_permissions() {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            use tempfile::NamedTempFile;
-
-            let temp_env = NamedTempFile::new().unwrap();
-            std::fs::write(&temp_env, "KEY=value\n").unwrap();
-
-            let temp_backup = temp_env.path().with_extension("backup");
-            let result = crate::core::safe_write::write_private(&temp_backup, b"test");
-            assert!(result.is_ok());
-
-            let metadata = std::fs::metadata(&temp_backup).unwrap();
-            let mode = metadata.permissions().mode();
-            assert_eq!(
-                mode & 0o777,
-                0o600,
-                "Backup file should have 0o600 permissions"
-            );
-        }
-    }
-
     // ── backup_inner ──────────────────────────────────────────────────────────
 
     #[test]
@@ -841,7 +955,7 @@ mod tests {
             verify: false,
         };
 
-        let written_path = backup_inner(env_content, "test-password-123".to_owned(), &options)
+        let written_path = backup_inner(env_content, pw("test-password-123"), &options)
             .expect("backup_inner must succeed");
 
         assert_eq!(written_path, output_path);
@@ -873,7 +987,7 @@ mod tests {
             verify: false,
         };
 
-        backup_inner("KEY=value\n", "verbosepass123".to_owned(), &options)
+        backup_inner("KEY=value\n", pw("verbosepass123"), &options)
             .expect("backup_inner in verbose mode must not panic");
     }
 
@@ -905,7 +1019,7 @@ mod tests {
             keep: 3,
             verify: false,
         };
-        let result = backup_inner("A=1\n", "test-password-123".to_owned(), &options);
+        let result = backup_inner("A=1\n", pw("test-password-123"), &options);
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
 
         assert!(result.is_err());
@@ -1002,7 +1116,7 @@ mod tests {
             verify: true, // ← enabled
         };
 
-        backup_inner(content, "verifypass123".to_owned(), &options)
+        backup_inner(content, pw("verifypass123"), &options)
             .expect("backup_inner with --verify must succeed on valid write");
     }
 

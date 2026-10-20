@@ -30,6 +30,7 @@ $ modes .env.backup
 
 $ evnx restore .env.backup --key-file pw
 ✓ Read backup from .env.backup
+· Using key file for decryption (non-interactive mode)
 
 Backup information:
   Schema version: v1
@@ -50,8 +51,6 @@ Next steps:
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Reading password from file: pw
-  Less secure than interactive prompt — avoid in shared environments.
   Docs: https://docs.evnx.dev/cli/commands/restore
 [exit 0]
   ok: restore with no .env present (exit 0)

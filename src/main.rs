@@ -464,8 +464,6 @@ fn main() -> Result<()> {
             )
         }
 
-        // #[cfg(feature = "backup")]
-        // Commands::Backup { env, output } => commands::backup::run(env, output, cli.verbose),
         #[cfg(feature = "backup")]
         Commands::Backup {
             env,
@@ -499,27 +497,31 @@ fn main() -> Result<()> {
             }
         },
 
-        // #[cfg(feature = "backup")]
-        // Commands::Restore {
-        //     backup,
-        //     output,
-        //     dry_run,
-        // } => commands::restore::run(backup, output, cli.verbose, dry_run),
         #[cfg(feature = "backup")]
         Commands::Restore {
             backup,
             output,
+            yes,
+            gitignore,
+            no_gitignore,
             dry_run,
             inspect,
             password_file,
         } => {
             match commands::restore::run(
                 backup,
-                output,
-                cli.verbose,
-                dry_run,
-                inspect,
-                password_file,
+                commands::restore::Options {
+                    output,
+                    verbose: cli.verbose,
+                    dry_run,
+                    inspect,
+                    password_file,
+                    yes,
+                    gitignore: evnx::utils::protect::GitignoreMode::from_flags(
+                        gitignore,
+                        no_gitignore,
+                    ),
+                },
             ) {
                 Ok(()) => Ok(()),
                 Err(e) => {

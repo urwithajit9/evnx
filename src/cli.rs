@@ -2192,11 +2192,14 @@ file, names that collide, a filter that leaves nothing).
         ///
         /// Enables non-interactive / CI usage. The file's contents are read and
         /// fed into Argon2id in place of a typed password. UTF-8 content is used
-        /// as-is (trimmed); binary content is Base64-encoded first.
+        /// with leading and trailing whitespace trimmed; binary content is
+        /// Base64-encoded first. It must come to at least 8 characters, as a
+        /// typed passphrase must.
         ///
         /// Also accepted as --password-file, which is what `evnx restore` calls
         /// the same thing. EVNX_PASSWORD is honoured too, at lower priority,
-        /// so a scheduled backup needs no passphrase on disk.
+        /// so a scheduled backup needs no passphrase on disk; when both are
+        /// set, the key file wins and a warning says so.
         ///
         /// Examples:
         ///   evnx backup --key-file /run/secrets/evnx-pass
@@ -2206,18 +2209,19 @@ file, names that collide, a filter that leaves nothing).
 
         /// Number of previous backups to retain alongside the new one.
         ///
-        /// Before writing, existing backups are rotated:
-        /// <output> → <output>.1 → <output>.2 → … → <output>.{keep-1}.
-        /// Files beyond this limit are warned about but never deleted.
-        /// Set to 0 to disable rotation (overwrite silently).
+        /// Once the new backup is written, existing ones shift up one place:
+        /// <output> → <output>.1 → … → <output>.N. The one already at <output>.N
+        /// is replaced by the shift (with a warning); files past it are never
+        /// touched. Set to 0 to disable rotation (overwrite silently).
         /// Defaults to `3`, or `[backup] keep` from `.evnx.toml`.
         #[arg(long, value_name = "N")]
         keep: Option<u32>,
 
         /// Re-decrypt the backup after writing and verify content integrity.
         ///
-        /// Costs one additional Argon2id round (~1 s) but proves the backup is
-        /// readable before you discard the source file. Exit code 6 on failure.
+        /// Costs one more Argon2id round (a fraction of a second to about a
+        /// second, depending on the machine) but proves the backup is readable
+        /// before you discard the source file. Exit code 6 on failure.
         #[arg(long)]
         verify: bool,
     },
@@ -2226,9 +2230,36 @@ file, names that collide, a filter that leaves nothing).
     #[cfg(feature = "backup")]
     #[command(after_help = docs::RESTORE.after_help)]
     Restore {
+        /// The backup file to decrypt, as written by `evnx backup`.
+        ///
+        /// A file on disk. For a vault in evnx cloud, use `evnx cloud pull`.
         backup: String,
+
+        /// Where to write the restored file.
+        ///
+        /// An existing file is never replaced silently: evnx asks, or takes
+        /// --yes, and keeps the replaced file as <output>.bak. Content that is
+        /// not a .env evnx can read goes to <output>.restored instead (exit 5).
         #[arg(long, default_value = ".env")]
         output: String,
+
+        /// Replace an existing --output without asking.
+        ///
+        /// For scripts and CI, where there is no terminal to ask on. The file
+        /// it replaces is kept beside it as <output>.bak (.bak.2, … when one
+        /// exists). Without it, and without a terminal, an existing output
+        /// stops the run (exit 2). Also accepted as --force, as in `cloud pull`.
+        #[arg(long, short = 'y', visible_alias = "force")]
+        yes: bool,
+
+        /// Add the restored file to .gitignore without asking (no prompt).
+        #[arg(long, conflicts_with = "no_gitignore")]
+        gitignore: bool,
+
+        /// Skip the .gitignore check for the restored file.
+        #[arg(long, conflicts_with = "gitignore")]
+        no_gitignore: bool,
+
         /// Decrypt and validate but do not write any files.
         #[arg(long)]
         dry_run: bool,
@@ -2246,8 +2277,8 @@ file, names that collide, a filter that leaves nothing).
 
         /// Read the decryption password from a file instead of prompting.
         ///
-        /// The file should contain only the password, with an optional
-        /// trailing newline (stripped automatically). Intended for CI/CD
+        /// The file should contain only the password; leading and trailing
+        /// whitespace, such as a final newline, is trimmed. Intended for CI/CD
         /// pipelines where interactive prompts are not possible.
         ///
         /// Security: less secure than the interactive prompt. The file path
@@ -2255,7 +2286,8 @@ file, names that collide, a filter that leaves nothing).
         /// manager or a tmpfs-backed path (e.g. /run/secrets/) in production.
         ///
         /// EVNX_PASSWORD environment variable is also accepted and takes
-        /// lower priority than --password-file.
+        /// lower priority than --password-file; when both are set, the file
+        /// wins and a warning says so.
         ///
         /// Also accepted as --key-file, which is what `evnx backup` calls the
         /// same thing. Either spelling reads the file identically on both

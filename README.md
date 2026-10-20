@@ -147,8 +147,8 @@ says `built with: net, migrate, backup, cloud` for a full build.
 Commands exit **0** when they ran and found nothing, **1** when they ran and the
 answer is no (secrets found, drift, a failed upload), and **2** when they could
 not run — "No verdict: evnx did not finish". `backup` and `restore` are the
-exception: they keep the specific codes their guides list (`restore` exits 3 when
-the backup file is missing). `-q` prints nothing on success; findings and errors
+exception: they keep the specific codes listed in their section below (`restore`
+exits 3 when the backup file is missing) and never exit 1. `-q` prints nothing on success; findings and errors
 still print. ⚠️ Not yet in the cloud commands: `org`, `vault`, `cloud push`/`pull`/
 `export`/`audit` and `auth`'s token, session and device commands still print their
 progress lines under `-q` (`auth status`, `cloud status` and `cloud unlink` are quiet).
@@ -510,12 +510,66 @@ line, and nothing is written. Exit codes: 0 rendered, 2 nothing written.
 
 ### `evnx backup` / `evnx restore` _(requires `--features backup`)_
 
-Creates and restores AES-256-GCM encrypted backups using Argon2 key derivation.
+`backup` encrypts a `.env` into one file (AES-256-GCM, key from Argon2id over a
+passphrase you choose, mode 0600); `restore` decrypts it. No account, no network.
 
 ```bash
-evnx backup .env --output .env.backup
-evnx restore .env.backup --output .env
+evnx backup                                  # .env → .env.backup, asks for a passphrase twice
+evnx backup --env-name production --verify   # .env.production → .env.production.backup, then re-read it
+evnx restore .env.backup --inspect           # variable names only, never values
+evnx restore .env.backup --dry-run           # decrypt and check, write nothing
+evnx restore .env.backup --output .env       # asks before replacing an existing .env
 ```
+
+**The passphrase** comes from `--key-file` (also spelled `--password-file`), then
+`EVNX_PASSWORD`, then a prompt. A new backup needs at least 8 characters from any
+of them; `restore` takes any length, so an older backup made with a shorter one
+still opens. A key file is trimmed of surrounding whitespace, or Base64-encoded
+when it is binary. When both a key file and `EVNX_PASSWORD` are set, the file
+wins and a warning says so.
+
+**Rotation:** each `backup` shifts the previous ones to `.1`, `.2` … up to
+`--keep` (default 3, or `[backup] keep` in `.evnx.toml`); the one at the last
+place is replaced, and older files are left alone. `--keep 0` overwrites. The
+output may not be the source file, or a directory.
+
+**Replacing a file:** `restore` never replaces an existing output silently. With
+a terminal it asks; in a script pass `--yes` (alias `--force`). Either way the
+replaced file is kept as `<output>.bak`. An output that already holds exactly the
+backup's content is left alone. Content that is not a `.env` evnx can read goes
+to `<output>.restored`, exit 5. In a git repository the restored file gets the
+same `.gitignore` check as `template` (`--gitignore`, `--no-gitignore`).
+
+In CI:
+
+```bash
+EVNX_PASSWORD="$BACKUP_PASSPHRASE" evnx backup --output "backups/env-$(date +%F).backup" --keep 0 --verify
+evnx restore backups/env-2026-10-20.backup --key-file /run/secrets/backup-key --yes
+```
+
+| Exit | `backup` | `restore` |
+|---|---|---|
+| 0 | written (and verified) | restored, inspected, checked, or already up to date |
+| 2 | could not run: source, key file or passphrase, output path, no terminal | could not run, or could not decrypt (wrong password, truncated, a newer format) |
+| 3 | passphrase confirmation did not match | backup file not found |
+| 4 | encryption failed | cancelled at the overwrite question |
+| 5 | could not write the backup | content written to `<output>.restored` |
+| 6 | `--verify` failed | — |
+
+**A backup is not a vault.** They solve different problems and do not read each
+other's files:
+
+| | `backup` / `restore` | `cloud push` / `cloud pull` |
+|---|---|---|
+| Where the ciphertext lives | a file you keep | the evnx server, as versions |
+| Secret | a passphrase or key file you choose | your account's master password |
+| History | `--keep N` numbered files | server versions: `--version N`, `history`, `diff` |
+| Non-interactive | `--key-file`, `EVNX_PASSWORD` | `--password-stdin` |
+| Replacing a file | `--yes` (alias `--force`), keeps `.bak` | `--force` |
+| Works with no account or network | yes | no |
+| Everything back at once | the file is the backup | `cloud export` |
+
+For a vault, use `evnx cloud pull`; `restore cloud://…` is not supported.
 
 ---
 
@@ -932,7 +986,7 @@ naming_policy = "warn"         # "warn" | "error" | "ignore"
 ignore_keys = ["BUILD_ID"]
 
 [backup]
-keep = 3
+keep = 3                       # backups kept by `evnx backup` rotation; --keep wins
 
 [cloud]
 vault = "my-app/production"    # written by `evnx cloud link`
