@@ -110,6 +110,10 @@ pub fn run(
         );
     }
 
+    // Before every branch, so a bad `--template-config` is exit 2 with or
+    // without a `.env` — the check below returned before it was read (I-279).
+    let config = executor::load_config(template_config.as_ref())?;
+
     // ⚠️ No `.env` is the normal state of CI and of a fresh clone, so it is
     // answered here rather than as "file not found" (DEC-S4, I-128).
     if direction == SyncDirection::Forward && !paths.env.exists() {
@@ -136,7 +140,6 @@ pub fn run(
         dry_run: dry_run || check,
         check,
         force: force || placeholder,
-        template_config,
         naming_policy,
         spec,
     };
@@ -147,9 +150,9 @@ pub fn run(
     // `allow_actual` guard, and gave a missing `.env` in reverse a different
     // exit code. An `Err` is exit 2 with the "No verdict" line, from `main`.
     let out_of_step = if format == "json" {
-        check_as_json(&ctx)?
+        check_as_json(&ctx, &config)?
     } else {
-        executor::execute(&ctx)?
+        executor::execute(&ctx, &config)?
     };
     Ok(if check && out_of_step {
         Verdict::Findings
@@ -259,9 +262,11 @@ struct CheckSummary {
 /// output uses, after the same refusals: an unreadable file, a credential in
 /// `allow_actual`, a name `--naming-policy error` refuses. Each is exit 2 with
 /// nothing on stdout.
-fn check_as_json(ctx: &executor::SyncCtx) -> Result<bool> {
-    let config = executor::load_config(ctx)?;
-    let loaded = executor::load(ctx, &config, false)?;
+fn check_as_json(
+    ctx: &executor::SyncCtx,
+    config: &crate::core::placeholder::PlaceholderConfig,
+) -> Result<bool> {
+    let loaded = executor::load(ctx, config, false)?;
     let drift = &loaded.drift;
     let template_only = (ctx.two_way && ctx.direction == SyncDirection::Forward)
         .then(|| drift.template_only.clone());
@@ -333,11 +338,12 @@ fn check_without_env(
         anyhow::bail!(
             "nothing to compare: {env} does not exist, and .evnx.toml declares no required \
              [vars] to check {example} against.\n\n\
-             Create {env} (`evnx sync --direction reverse`), declare the contract with \
+             Create {env} (`{create}`), declare the contract with \
              `evnx spec init`, or — in a pre-commit hook, where a missing {env} is expected — \
              pass --skip-without-env.",
             env = env_path,
-            example = paths.example_str()
+            example = paths.example_str(),
+            create = executor::fix_command(paths, SyncDirection::Reverse)
         );
     }
 

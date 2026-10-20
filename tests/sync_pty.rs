@@ -123,3 +123,67 @@ fn t_i124_ci_set_skips_the_prompt_at_a_terminal() {
     assert!(!out.contains("Add these to"), "no prompt:\n{out}");
     assert!(p.read(".env.example").contains("NEW_ONE=YOUR_VALUE_HERE"));
 }
+
+/// I-277: the new-template "actual values" choice rewrote `.env` line by line,
+/// so a refused key's continuation lines (a PEM block) and a line written
+/// `export<TAB>KEY=…` reached `.env.example` — while the run said both were
+/// kept out. The template is now built from the parsed values.
+#[test]
+fn t_i277_new_template_actual_values_never_copies_a_refused_value() {
+    let env = "APP_NAME=demo\n\
+               PRIVATE_KEY=\"-----BEGIN RSA PRIVATE KEY-----\n\
+               MIIEpAIBAAKCAQEA7ZQ9uX0Fh3sH2LkP8mRk\n\
+               -----END RSA PRIVATE KEY-----\"\n\
+               export\tSTRIPE_KEY=sk_live_51H1234567890abcdefghijk\n";
+    let p = Project::new().env(env);
+    let mut s = Pty::spawn(p.path(), &["sync"]);
+    s.wait_for("Create .env.example with");
+    s.press(&[DOWN, ENTER]);
+    let (out, code) = s.finish();
+    assert_eq!(code, 0, "{out}");
+
+    let example = p.read(".env.example");
+    for leaked in ["MIIEpAIBAAKCAQEA", "END RSA PRIVATE KEY", "sk_live_51H"] {
+        assert!(!example.contains(leaked), "{leaked} written:\n{example}");
+    }
+    assert!(example.lines().any(|l| l == "APP_NAME=demo"), "{example}");
+    assert!(example.contains("PRIVATE_KEY="), "{example}");
+    assert!(example.contains("STRIPE_KEY="), "{example}");
+    // I-278: the advice is a command that does what it says.
+    assert!(
+        !out.contains("re-create it with `evnx sync --force`"),
+        "{out}"
+    );
+    assert!(out.contains("delete .env.example"), "{out}");
+}
+
+/// I-280: dialoguer draws on stderr. With stdin a terminal and stderr sent to
+/// a file, the prompt failed "IO error: not a terminal" (I-124's message).
+#[test]
+fn t_i280_no_prompt_when_stderr_is_not_a_terminal() {
+    let p = Project::new().env("A=1\nNEW_ONE=1\n").example("A=\n");
+    let s = Pty::spawn_shell(p.path(), "\"$EVNX\" sync 2>err.txt; echo \"rc=$?\"");
+    let (out, code) = s.finish();
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("rc=0"), "{out}");
+    let err = p.read("err.txt");
+    assert!(!err.contains("not a terminal"), "{err}");
+    assert!(p.read(".env.example").contains("NEW_ONE=YOUR_VALUE_HERE"));
+}
+
+/// Reverse, "Let me choose individually", nothing chosen: nothing is
+/// written — it appended an empty "# Added by evnx sync" heading.
+#[test]
+fn t_i283_reverse_empty_selection_writes_nothing() {
+    let p = Project::new().env("A=1\n").example("A=\nB=\n");
+    let before = p.read(".env");
+    let mut s = Pty::spawn(p.path(), &["sync", "--direction", "reverse"]);
+    s.wait_for("Add to .env?");
+    s.press(&[DOWN, DOWN, ENTER]);
+    s.wait_for("Select variables to add");
+    s.press(&[ENTER]);
+    let (out, code) = s.finish();
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("No changes made"), "{out}");
+    assert_eq!(p.read(".env"), before);
+}

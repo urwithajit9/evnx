@@ -164,7 +164,7 @@ pub struct SyncArgs {
     ///   0  in sync
     ///   1  out of sync — the message names the command that fixes each side
     ///   2  no verdict — a file is missing or will not parse, the config is
-    ///      wrong, or .env is empty beside a populated template
+    ///      wrong, or (forward) .env is empty beside a populated template
     ///
     /// Without --direction it looks both ways: names the template lacks, and
     /// names only the template has. With --direction it looks one way, as CI

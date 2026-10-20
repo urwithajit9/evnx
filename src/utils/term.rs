@@ -120,6 +120,18 @@ pub fn interactive() -> bool {
     std::io::stdin().is_terminal()
 }
 
+/// Whether a prompt can be **shown and answered**: stdin is a terminal (the
+/// answer comes from it) and so is stderr (dialoguer draws the prompt there).
+///
+/// ⚠️ [`interactive`] checks stdin only, so `evnx sync 2>log` at a terminal
+/// reached a prompt it could not draw and failed "IO error: not a terminal"
+/// (I-280). Used by `sync`; the other callers of [`interactive`] are recorded
+/// in their R- notes.
+pub fn can_prompt() -> bool {
+    use std::io::IsTerminal;
+    interactive() && std::io::stderr().is_terminal()
+}
+
 /// Whether the run is in a CI job: `CI` is set to anything but empty, `0` or
 /// `false` (any case). GitHub Actions, GitLab CI, CircleCI, Buildkite and
 /// Travis all set `CI=true`.

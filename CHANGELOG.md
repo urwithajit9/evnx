@@ -57,6 +57,29 @@ a prompt.
   file failed `validate`.
 - Reverse lists a name that only `[vars]` requires as such, not as "in
   .env.example" (I-255).
+- The naming policy also covers the names sync writes into a new
+  `.env.example`; it skipped them, so `--naming-policy error` let a template
+  with a lowercase name through on its first run.
+- ⛔ **Creating `.env.example` with actual values no longer copies a refused
+  credential** (I-277). The template was `.env`'s text rewritten line by line,
+  so a multi-line value's continuation lines (a PEM private key's body) and a
+  line written `export<TAB>KEY=…` were copied as they were — while the run
+  said those keys were "kept out" and written as placeholders. The file is now
+  built from the parsed values, as every other write to the template is; it no
+  longer carries `.env`'s comments. Its advice to "re-create it with `evnx sync
+  --force`" did nothing on the existing file; it now says to delete it first
+  (I-278).
+- With no `.env`, `--check` and `--skip-without-env` load `--template-config`
+  too: a misspelt key or a missing file is exit 2 in CI as it is locally
+  (I-279).
+- A prompt needs stderr to be a terminal as well as stdin: `evnx sync 2>log`
+  failed "IO error: not a terminal" (I-280). It uses placeholders and says so.
+- `--check` and `--dry-run` say a missing file "would" be created rather than
+  "creating" it (I-281). The empty-`.env` warning and the no-`.env` check name
+  the files in the command they suggest (I-282). A new `.env` keeps a first
+  line of the template's own that starts "# Generated from"; only the two
+  lines sync writes are replaced; and choosing no names in reverse writes
+  nothing (I-283).
 - The `--check` verdict names the command that fixes each side, with
   `--env`/`--example` when they are not the defaults; reverse no longer says
   "commit the result" of writing a git-ignored `.env` (I-118).
@@ -85,6 +108,8 @@ a prompt.
   from `commands::sync` so `add` no longer imports from another command
   (DEC-S19). `commands::sync::PlaceholderConfig` is re-exported. `init` and
   `validate --fix` keep their own placeholder shapes.
+- `utils::term::can_prompt`: stdin and stderr are both terminals (I-280);
+  `sync` uses it, the other prompts still check stdin only.
 - `core::classify::has_word`, `core::envfile::only_in` (now also behind
   `diff`'s missing/extra lists, output unchanged), `utils::term::ci`,
   `utils::string::count` (moved from `add`), `core::permissions::warn_if_readable`

@@ -59,6 +59,26 @@ impl Pty {
         Pty { session }
     }
 
+    /// `sh -c <script>` on the pty, with `EVNX` naming the binary: for runs a
+    /// command line has to shape, such as stdin on the terminal and stderr
+    /// sent to a file (`"$EVNX" sync 2>err.txt`).
+    pub fn spawn_shell(dir: &Path, script: &str) -> Pty {
+        let mut cmd = Command::new("sh");
+        cmd.current_dir(dir)
+            .args(["-c", script])
+            .env("EVNX", super::evnx_bin())
+            .env("NO_COLOR", "1")
+            .env("TERM", "xterm")
+            .env_remove("CI");
+        let mut session = Session::spawn(cmd).expect("spawn sh in a pty");
+        session.set_expect_timeout(Some(Duration::from_secs(15)));
+        session
+            .get_process_mut()
+            .set_window_size(110, 40)
+            .expect("set pty size");
+        Pty { session }
+    }
+
     /// Wait until `text` has been printed; returns everything printed before it.
     #[track_caller]
     pub fn wait_for(&mut self, text: &str) -> String {

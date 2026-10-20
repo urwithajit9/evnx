@@ -86,7 +86,6 @@ pub(super) struct SyncCtx {
     pub check: bool,
     /// `--force`, or the deprecated `--placeholder` (DEC-S9).
     pub force: bool,
-    pub template_config: Option<PathBuf>,
     pub naming_policy: NamingPolicy,
     /// The project's declared contract, when it has one.
     ///
@@ -148,10 +147,12 @@ pub(super) struct Loaded {
 /// The `--template-config` file, or the built-in rules. A file that does not
 /// load — bad JSON, an unknown key (I-121), a pattern that does not compile —
 /// is an error before anything is read or written.
-pub(super) fn load_config(ctx: &SyncCtx) -> Result<PlaceholderConfig> {
-    Ok(ctx
-        .template_config
-        .as_ref()
+///
+/// ⚠️ Loaded once, by `mod.rs`, before every branch: with no `.env` the
+/// `--check` path returned before it, so the same command passed in CI (no
+/// `.env`) and failed locally (I-279).
+pub(super) fn load_config(path: Option<&PathBuf>) -> Result<PlaceholderConfig> {
+    Ok(path
         .map(PlaceholderConfig::from_path)
         .transpose()?
         .unwrap_or_default())
@@ -301,7 +302,8 @@ impl Drift {
 fn no_prompt_reason() -> Option<&'static str> {
     if crate::utils::term::ci() {
         Some("CI is set")
-    } else if !crate::utils::term::interactive() {
+    } else if !crate::utils::term::can_prompt() {
+        // stdin to answer on, and stderr to draw on (I-280).
         Some("no terminal")
     } else {
         None
@@ -313,7 +315,7 @@ fn no_prompt_reason() -> Option<&'static str> {
 /// Returns whether the two files are **out of step** — names missing from the
 /// target, or (two-way) names only the template has. `--check` turns that
 /// into an exit code; every other mode ignores it.
-pub fn execute(ctx: &SyncCtx) -> Result<bool> {
+pub fn execute(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<bool> {
     if ctx.verbose {
         println!(
             "{}",
@@ -324,8 +326,6 @@ pub fn execute(ctx: &SyncCtx) -> Result<bool> {
             .dimmed()
         );
     }
-
-    let config = load_config(ctx)?;
 
     // ⚠️ The title is the command, not a sentence about it. `sync` was the one
     // command whose header did not start with `evnx …`, so in a CI log among
@@ -343,8 +343,8 @@ pub fn execute(ctx: &SyncCtx) -> Result<bool> {
     crate::core::permissions::warn_if_readable(&ctx.paths.env);
 
     let drift = match ctx.direction {
-        SyncDirection::Forward => sync_forward(ctx, &config),
-        SyncDirection::Reverse => sync_reverse(ctx, &config),
+        SyncDirection::Forward => sync_forward(ctx, config),
+        SyncDirection::Reverse => sync_reverse(ctx, config),
     }?;
 
     // Only on success — noise-free error output.
@@ -400,7 +400,7 @@ fn print_verdict(ctx: &SyncCtx, drift: &Drift) {
 /// The command that adds the missing side, with `--env` / `--example` when
 /// they are not the defaults: `evnx sync --direction reverse` run as written
 /// after `--env-name production` would fill `.env`, not `.env.production`.
-fn fix_command(paths: &SyncPaths, direction: SyncDirection) -> String {
+pub(super) fn fix_command(paths: &SyncPaths, direction: SyncDirection) -> String {
     use crate::core::shell::word;
     let mut cmd = format!("evnx sync --direction {direction}");
     if paths.env != Path::new(".env") {
@@ -658,9 +658,15 @@ fn sync_forward(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<Drift> {
     let env_vars = env.unwrap_or_default();
 
     let Some(example_vars) = example else {
+        // ⚠️ A preview says what *would* happen (I-281).
         ui::info(format!(
-            "{} not found, creating from {}",
+            "{} not found, {} from {}",
             paths.example_str(),
+            if ctx.dry_run {
+                "would create it"
+            } else {
+                "creating"
+            },
             paths.env_str()
         ));
         handle_new_example_file(ctx, &env_vars, config)?;
@@ -686,9 +692,10 @@ fn sync_forward(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<Drift> {
             ));
             ui::warning_detail(format!(
                 "{} If that is unexpected, check you are in the right directory. \
-To fill {} from the template instead, run `evnx sync --direction reverse`.",
+To fill {} from the template instead, run `{}`.",
                 ui::glyph::INFO.dimmed(),
                 paths.env_str(),
+                fix_command(paths, SyncDirection::Reverse),
             ));
         } else if drift.template_only.is_empty() {
             ui::success(format!("{} is up to date", paths.example_str()));
@@ -872,7 +879,8 @@ fn handle_new_example_file(
     config: &PlaceholderConfig,
 ) -> Result<()> {
     let paths = &ctx.paths;
-    let use_placeholders = if ctx.force {
+    // A preview never asks and never says it is creating anything (I-281).
+    let use_placeholders = if ctx.force || ctx.dry_run {
         true
     } else if let Some(why) = no_prompt_reason() {
         ui::info(format!(
@@ -880,12 +888,13 @@ fn handle_new_example_file(
             paths.example_str()
         ));
         true
-    } else if ctx.dry_run {
-        true
     } else {
         let choices = [
-            "Placeholder values (recommended — safe to commit)",
-            "Actual values copied from .env  ! SECURITY RISK",
+            "Placeholder values (recommended — safe to commit)".to_string(),
+            format!(
+                "Actual values copied from {}  ! SECURITY RISK",
+                paths.env_str()
+            ),
         ];
         Select::new()
             .with_prompt(format!("Create {} with", paths.example_str()))
@@ -933,29 +942,27 @@ fn handle_new_example_file(
     if use_placeholders {
         convert_to_example(paths, vars, config)?;
     } else {
-        // The `.env` text as it is — comments and order kept — with each
-        // credential's line rewritten to its placeholder.
-        let text = fs::read_to_string(&paths.env)?;
-        let mut out = String::with_capacity(text.len());
-        for line in text.split_inclusive('\n') {
-            let body = line.trim_start();
-            let body = body.strip_prefix("export ").unwrap_or(body);
-            let key = body.split('=').next().unwrap_or("").trim();
-            if body.contains('=') && is_refused(key) {
-                let eol = if line.ends_with("\r\n") {
-                    "\r\n"
-                } else if line.ends_with('\n') {
-                    "\n"
-                } else {
-                    ""
-                };
-                out.push_str(&format!(
-                    "{key}={}{eol}",
-                    generate_placeholder(key, vars.get(key), config)
-                ));
+        // ⛔ Built from the parsed values, like every other write to the
+        // template — never from `.env`'s text. That rewrote the text line by
+        // line and missed what a line scan cannot see: the continuation lines
+        // of a multi-line value (a PEM key's body) and `export<TAB>KEY=…`,
+        // so a refused credential reached the committed file while the run
+        // said it was kept out (I-277). Comments are not carried over; the
+        // placeholder template never carried them either.
+        let mut out = format!(
+            "{}{}\n{}\n\n",
+            GENERATED_HEADER[0],
+            paths.env_str(),
+            ACTUAL_VALUES_NOTE
+        );
+        for (key, value) in vars {
+            let value = if is_refused(key) {
+                generate_placeholder(key, Some(value), config)
             } else {
-                out.push_str(line);
-            }
+                value.clone()
+            };
+            out.push_str(&envfile::line(key, &value));
+            out.push('\n');
         }
         write_template(&paths.example, &out)?;
         let written: Vec<String> = vars.keys().filter(|k| !is_refused(k)).cloned().collect();
@@ -981,9 +988,15 @@ fn handle_new_example_file(
             paths.example_str(),
             paths.env_str()
         ));
+        // ⚠️ `evnx sync --force` alone does nothing here: the template now
+        // exists and has every name (I-278).
+        let recreate = format!(
+            "Or delete {} and run `evnx sync --force` to create it with placeholders",
+            paths.example_str()
+        );
         ui::print_next_steps(&[
             "Replace the values before committing — this file is not safe to commit as written",
-            "Or re-create it with `evnx sync --force`",
+            &recreate,
         ]);
     }
     Ok(())
@@ -1036,8 +1049,13 @@ fn sync_reverse(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<Drift> {
 
     let Some(_) = env else {
         ui::info(format!(
-            "{} not found, creating from {}",
+            "{} not found, {} from {}",
             paths.env_str(),
+            if ctx.dry_run {
+                "would create it"
+            } else {
+                "creating"
+            },
             paths.example_str()
         ));
         handle_new_env_file(ctx, &example_vars, &drift.spec_names(), config)?;
@@ -1126,8 +1144,9 @@ fn sync_reverse(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<Drift> {
         0 => true,
         1 => false,
         2 => {
-            add_from_example_interactive(paths, &missing, &example_vars, config)?;
-            ui::success(format!("Added selected variables to {}", paths.env_str()));
+            if add_from_example_interactive(paths, &missing, &example_vars, config)? {
+                ui::success(format!("Added selected variables to {}", paths.env_str()));
+            }
             return Ok(drift);
         }
         3 => {
@@ -1175,22 +1194,33 @@ const GENERATED_HEADER: &[&str] = &[
     "# Replace all placeholder values with real credentials",
 ];
 
+/// The second header line of a template created with actual values (I-277).
+const ACTUAL_VALUES_NOTE: &str = "# ! ACTUAL VALUES: replace them before committing this file";
+
 /// The template's text for a new `.env`: sync's own generated header replaced
 /// by one that is true of the new file (I-129, DEC-S20). Everything else —
 /// comments, order, blank lines — is kept.
-fn env_text_from_template(template: &str, example_label: &str) -> String {
+fn env_text_from_template(template: &str, example_label: &str, env_label: &str) -> String {
+    // ⚠️ Replaced when it is sync's own header — "# Generated from <this
+    // .env>", which is false of the `.env` being created (I-129), or the two
+    // lines sync writes — and kept otherwise: a first line of the user's own,
+    // "# Generated from terraform output", is not sync's to drop (I-283).
     let mut lines = template.split_inclusive('\n').peekable();
-    let generated = lines
+    let Some(first) = lines.peek().map(|l| l.trim_end().to_string()) else {
+        return template.to_string();
+    };
+    let names_this_env = first == format!("{}{env_label}", GENERATED_HEADER[0]);
+    let mut rest = lines.clone();
+    rest.next();
+    let sync_note = rest
         .peek()
-        .is_some_and(|l| l.starts_with(GENERATED_HEADER[0]));
-    if !generated {
+        .map(|l| l.trim_end())
+        .is_some_and(|l| l == GENERATED_HEADER[1] || l == ACTUAL_VALUES_NOTE);
+    if !(names_this_env || first.starts_with(GENERATED_HEADER[0]) && sync_note) {
         return template.to_string();
     }
     lines.next();
-    if lines
-        .peek()
-        .is_some_and(|l| l.trim_end() == GENERATED_HEADER[1])
-    {
+    if sync_note {
         lines.next();
     }
     let mut out = format!("# Created from {example_label} by evnx sync\n");
@@ -1240,7 +1270,7 @@ fn handle_new_env_file(
     }
 
     let template = fs::read_to_string(&paths.example)?;
-    let mut content = env_text_from_template(&template, &paths.example_str());
+    let mut content = env_text_from_template(&template, &paths.example_str(), &paths.env_str());
     if !spec_names.is_empty() {
         if !content.is_empty() && !content.ends_with('\n') {
             content.push('\n');
@@ -1472,16 +1502,23 @@ fn add_from_example_preview(
         .collect())
 }
 
+/// Returns whether anything was chosen (and written).
 fn add_from_example_interactive(
     paths: &SyncPaths,
     keys: &[&String],
     example_vars: &IndexMap<String, String>,
     config: &PlaceholderConfig,
-) -> Result<()> {
+) -> Result<bool> {
     let selected = MultiSelect::new()
         .with_prompt("Select variables to add")
         .items(keys)
         .interact()?;
+    if selected.is_empty() {
+        // As forward does: nothing chosen, nothing written — not an empty
+        // heading (I-283).
+        ui::info("No changes made");
+        return Ok(false);
+    }
 
     let mut content = fs::read_to_string(&paths.env).unwrap_or_default();
     // Same heading as the other reverse writes, for the same reason.
@@ -1495,7 +1532,7 @@ fn add_from_example_interactive(
     }
 
     write_env(&paths.env, &content)?;
-    Ok(())
+    Ok(true)
 }
 
 // ─────────────────────────────────────────────────────────────

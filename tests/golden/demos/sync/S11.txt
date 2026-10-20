@@ -16,7 +16,7 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: FIXED I-127 (DEC-S14): empty source, full template: no verdict under --check (exit 2)
 
 $ evnx sync --check --direction reverse --env nope.env
-· nope.env not found, creating from .env.example
+· nope.env not found, would create it from .env.example
 
 Preview:
 Target: nope.env (action: Add)
