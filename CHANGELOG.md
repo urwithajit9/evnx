@@ -8,8 +8,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.13] - 2026-10-21
+
 The patch for `evnx diff` (package R-diff). Against a template, `diff` compares
 key names only; between two environments it compares values too.
+
+It also updates the TLS certificate checks that the cloud commands,
+`migrate --to github-actions` and `update` rely on: two advisories published
+after 0.10.12 apply to every earlier prebuilt binary (see "Security —
+dependency" below).
 
 ⚠️ **Scripts, CI jobs and hooks that run `evnx diff`:**
 
