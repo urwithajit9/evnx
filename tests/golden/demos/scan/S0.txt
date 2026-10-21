@@ -12,11 +12,26 @@ Usage: evnx scan [OPTIONS] [PATH]...
 
 Arguments:
   [PATH]...
+          Files or folders to scan. Repeatable; defaults to the current folder.
+          
+          A folder is walked. A file named here is always read — whatever `--exclude`, `--extensions` or the size limit say — and always reported in full, even one git ignores.
+          
           [default: .]
 
 Options:
       --exclude <EXCLUDE>
+          Skip paths in a folder walk. Repeatable; adds to `[scan] exclude`.
+          
+          A value with `*`, `?` or `[` is a glob, matched against the path from the folder and against the file name: `'fixtures/**'`, `'*.log'`. Any other value matches a whole path component, or several in a row: `--exclude test` skips `test/` and a file named `test`, not `latest/` or `contest.py`; `vendor/cache` skips that folder wherever it is.
+          
+          ⚠️ This narrows the scan. `.git`, `node_modules`, `target`, `dist`, `build` and the `.env.example` family are skipped whatever this says, and a file named on the command line is read regardless.
+          
           [default: .env.example]
+
+      --max-file-size <SIZE>
+          Skip walked files larger than this: `500K`, `5MB`, `2MiB`.
+          
+          Defaults to 1 MiB, or `[scan] max_file_size` from `.evnx.toml`. A skipped file is counted and, with `-v`, listed. A file named on the command line is read whatever its size.
 
       --extensions <EXT>
           Read only files with these extensions in folders (comma-separated: `env,yml,json`). By default every file is read, and binary or very large files are skipped with a note.
@@ -37,10 +52,13 @@ Options:
           
           `changeme`, `your_api_key_here`, `xxx` and similar. Useful on a first run over a template-heavy repository; prefer `--severity high` if the goal is simply less noise.
 
+      --no-ignore-placeholders
+          Report filler-looking values even when `[scan] ignore_placeholders` is `true`. The last of the two flags wins
+
       --severity <LEVEL>
           Lowest confidence worth reporting: high, medium or low.
           
-          Filters what is reported, counted and exited on — all three describe the same set. `--severity high` reports only detections that matched a format — a provider's, or one this project declared under `[[scan.patterns]]` — which is the usual choice for a blocking CI gate; the default reports everything. Defaults to `low` (report everything), or `[scan] severity` from `.evnx.toml` when that is set.
+          Filters what is reported, counted and exited on — all three describe the same set. `--severity high` keeps values that matched a format — a provider's, or one this project declared under `[[scan.patterns]]` — and long values in a variable named like a secret (`JWT_SECRET`, `DB_PASSWORD`), so a committed one still fails the gate. It is the usual choice for a blocking CI gate; the default reports everything. Defaults to `low` (report everything), or `[scan] severity` from `.evnx.toml` when that is set.
 
       --format <FORMAT>
           Output format: `pretty`, `json`, `sarif` or `github`.
@@ -53,6 +71,11 @@ Options:
           Always exit 0, even when secrets are found.
           
           ⚠️ Suppresses exit 1 only. A scan that could not run still exits 2 — the flag means "do not fail my build over findings", not "never tell me the scan was impossible".
+
+      --include-ignored
+          Report findings in files git ignores and does not track.
+          
+          In a git repository a folder walk counts what git would commit: a filled-in `.env` that `.gitignore` covers is where secrets belong, so its findings are summarised in one line and do not fail the run. This lists them as findings instead. A file named on the command line, and any folder outside a repository, is always reported in full.
 
   -v, --verbose
           Enable verbose output
@@ -69,6 +92,24 @@ Options:
   -V, --version
           Print version
 
+What a folder walk reads:
+  every file, except .git, node_modules, target, dist and build, the
+  .env.example family, editor swap files, binary files, and files over
+  1 MiB (--max-file-size). A file named on the command line is always read.
+  In a git repository, findings in files git ignores and does not track
+  are summarised, not counted (--include-ignored counts them).
+
+Rules, by the names [scan] disable takes:
+  AWS Access Key, AWS Temporary Access Key (STS), GitHub Token,
+  GitHub Fine-grained PAT, Slack Token, Google API Key, JSON Web Token,
+  Stripe Secret Key (LIVE), Stripe Secret Key (test), OpenAI API Key,
+  Anthropic API Key, Private Key, Credentials in a connection string;
+  and the heuristics: Sensitive config key, High-entropy string,
+  AWS Secret Access Key.
+
+Exit codes: 0 nothing at or above --severity; 1 findings, or a file that
+could not be read; 2 could not run (bad path, flag or config, nothing scanned).
+
 Full guide: https://docs.evnx.dev/cli/commands/scan
 [exit 0]
 
@@ -76,9 +117,9 @@ $ evnx scan .
 
   evnx scan  Checking for exposed secrets
 
-Error: nothing was scanned — every path given was filtered out.
+Error: nothing was scanned — every file in the paths given was skipped or excluded.
 
-Directory walks skip .git, node_modules, target, dist and build by default. Name a file directly to scan it regardless, or widen the walk with --include.
+Folder walks always skip .git, node_modules, target, dist and build, the .env.example family, and what --exclude or [scan] exclude names. Name a file directly to scan it regardless.
 
 Paths given: .
 

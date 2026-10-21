@@ -343,6 +343,35 @@ pub const URL_PLACEHOLDERS: &[(&str, &str)] = &[
     ("https", "https://your-api-url-here.com"),
 ];
 
+/// Whether `value` is a URL in the shape [`URL_PLACEHOLDERS`] writes: the
+/// words `user` and `password` as credentials, on `localhost` or a
+/// documentation domain (N-20).
+///
+/// `scan` asks, because since I-250 three blueprints write
+/// `postgresql://user:password@localhost:5432/dbname` into a new `.env`, and
+/// the connection-string rule reported evnx's own placeholder as a live
+/// credential. The host matters: `user:password@db.prod.company.io` is not
+/// something evnx wrote, so it stays a finding.
+pub fn is_url_placeholder(value: &str) -> bool {
+    let v = value.trim();
+    let Some((_, rest)) = v.split_once("://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let Some((userinfo, host)) = authority.rsplit_once('@') else {
+        return false;
+    };
+    let host = host
+        .rsplit_once(':')
+        .map_or(host, |(h, _)| h)
+        .to_ascii_lowercase();
+    let local = matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]");
+    let documentation = ["example.com", "example.org", "example.net"]
+        .iter()
+        .any(|d| host == *d || host.ends_with(&format!(".{d}")));
+    userinfo == "user:password" && (local || documentation)
+}
+
 /// The placeholder for a URL by its scheme, or `None` for a scheme not in
 /// [`URL_PLACEHOLDERS`].
 fn url_placeholder(value: &str) -> Option<&'static str> {

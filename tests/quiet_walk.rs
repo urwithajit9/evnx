@@ -252,9 +252,11 @@ fn t_share_60_quiet_still_prints_findings() {
     out.assert_code(1);
     out.assert_contains(".gitignore");
 
-    // scan: a key-shaped value.
+    // scan: a key-shaped value in a file git would commit. ⚠️ Not in `.env`:
+    // this project's `.gitignore` covers it, and since DEC-SC1 (I-285) a walk
+    // summarises a gitignored, untracked file instead of counting it.
     let p = healthy_project();
-    std::fs::write(p.join(".env"), "AWS_ACCESS_KEY_ID=AKIA4OZRMFJ3VREALKEY\n").unwrap();
+    std::fs::write(p.join("app.yml"), "key: AKIA4OZRMFJ3VREALKEY\n").unwrap();
     let out = run(p.path(), &["-q", "scan", "."]);
     out.assert_code(1);
     out.assert_contains("AWS Access Key");

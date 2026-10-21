@@ -78,7 +78,28 @@ pub const SCAN: CommandDoc = CommandDoc {
     command: "scan",
     url: "https://docs.evnx.dev/cli/commands/scan",
     description: "Secret detection patterns and entropy analysis",
-    after_help: "Full guide: https://docs.evnx.dev/cli/commands/scan",
+    // ⚠️ The rule names are the ones `[scan] disable` takes (I-056). A test in
+    // `utils::patterns` fails when a built-in is missing here.
+    after_help: "\
+What a folder walk reads:\n\
+\x20 every file, except .git, node_modules, target, dist and build, the\n\
+\x20 .env.example family, editor swap files, binary files, and files over\n\
+\x20 1 MiB (--max-file-size). A file named on the command line is always read.\n\
+\x20 In a git repository, findings in files git ignores and does not track\n\
+\x20 are summarised, not counted (--include-ignored counts them).\n\
+\n\
+Rules, by the names [scan] disable takes:\n\
+\x20 AWS Access Key, AWS Temporary Access Key (STS), GitHub Token,\n\
+\x20 GitHub Fine-grained PAT, Slack Token, Google API Key, JSON Web Token,\n\
+\x20 Stripe Secret Key (LIVE), Stripe Secret Key (test), OpenAI API Key,\n\
+\x20 Anthropic API Key, Private Key, Credentials in a connection string;\n\
+\x20 and the heuristics: Sensitive config key, High-entropy string,\n\
+\x20 AWS Secret Access Key.\n\
+\n\
+Exit codes: 0 nothing at or above --severity; 1 findings, or a file that\n\
+could not be read; 2 could not run (bad path, flag or config, nothing scanned).\n\
+\n\
+Full guide: https://docs.evnx.dev/cli/commands/scan",
 };
 
 pub const DIFF: CommandDoc = CommandDoc {

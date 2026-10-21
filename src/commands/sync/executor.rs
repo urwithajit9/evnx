@@ -583,9 +583,9 @@ pub(crate) fn credential_keys<'a>(
     // ⚠️ `DetectorRegistry::new()` alone is NOT the set `evnx scan` uses; see
     // `check_allow_actual`. `with_patterns` adds the provider rules.
     let patterns =
-        crate::commands::scan::PatternSet::compile(&crate::utils::patterns::builtin_rules())
+        crate::core::secretscan::PatternSet::compile(&crate::utils::patterns::builtin_rules())
             .map_err(|e| anyhow::anyhow!("the built-in secret patterns failed to compile: {e}"))?;
-    let registry = crate::commands::scan::DetectorRegistry::new().with_patterns(patterns);
+    let registry = crate::core::secretscan::DetectorRegistry::new().with_patterns(patterns);
     let mut refused = Vec::new();
     for key in keys {
         let Some(value) = env_vars.get(key) else {

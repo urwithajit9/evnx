@@ -69,14 +69,44 @@ pub struct ScanRunner {
     verbose: bool,
     /// Lowest confidence worth reporting. `Low` reports everything.
     min_confidence: Confidence,
-    /// How many custom patterns are active, for verbose output. The patterns
-    /// themselves live in the registry.
-    custom_patterns: usize,
+    /// `(built-in, custom)` rule counts and every rule's name, for `-v`
+    /// (I-058). The rules themselves live in the registry.
+    rule_counts: (usize, usize),
+    rule_names: Vec<String>,
     /// Where an extension list came from, for the run's announcement.
     extensions_from: &'static str,
+    /// Report findings in walked files git ignores and does not track
+    /// (`--include-ignored`). Off: they are summarised and not counted (I-285).
+    include_ignored: bool,
 }
 
 impl ScanRunner {
+    /// What `[scan] disable` turned off beyond the rule list (I-056): see
+    /// [`DetectorRegistry::with_disabled`].
+    pub fn with_disabled(
+        mut self,
+        formats: super::patternset::PatternSet,
+        names: &[String],
+    ) -> Self {
+        self.registry = self.registry.with_disabled(formats, names);
+        self
+    }
+
+    /// Count findings in files git ignores, as `--include-ignored` asks.
+    pub fn with_include_ignored(mut self, include_ignored: bool) -> Self {
+        self.include_ignored = include_ignored;
+        self
+    }
+
+    /// Skip walked files larger than `bytes` (`--max-file-size`,
+    /// `[scan] max_file_size`); `None` keeps [`super::filters::MAX_WALK_BYTES`].
+    pub fn with_max_file_size(mut self, bytes: Option<u64>) -> Self {
+        if let Some(bytes) = bytes {
+            self.filter = self.filter.with_max_bytes(bytes);
+        }
+        self
+    }
+
     /// Limit folder walks to `extensions`, announcing it as coming from
     /// `from` (`--extensions`, `.evnx.toml [scan] extensions`). `None` reads
     /// every file (I-047, DEC-U8-2).
@@ -162,7 +192,8 @@ impl ScanRunner {
         spec: crate::core::spec::Spec,
         patterns: super::patternset::PatternSet,
     ) -> Self {
-        let custom_patterns = patterns.len();
+        let rule_counts = patterns.counts();
+        let rule_names = patterns.names().into_iter().map(str::to_string).collect();
         Self {
             registry: DetectorRegistry::new()
                 .with_spec(spec)
@@ -171,8 +202,10 @@ impl ScanRunner {
             ignore_placeholders,
             verbose,
             min_confidence,
-            custom_patterns,
+            rule_counts,
+            rule_names,
             extensions_from: "",
+            include_ignored: false,
         }
     }
 
@@ -217,10 +250,22 @@ impl ScanRunner {
             ui::verbose_stderr("Starting scan...");
         }
 
+        // I-058: the 13 built-ins were announced as "13 custom pattern(s)", and
+        // the first line counted the paths given and called them files.
         if self.verbose {
-            ui::verbose_stderr(format!("Scanning {} files...", paths.len()));
-            if self.custom_patterns > 0 {
-                ui::verbose_stderr(format!("{} custom pattern(s) active", self.custom_patterns));
+            use crate::utils::string::pluralize;
+            ui::verbose_stderr(format!(
+                "Scanning {}...",
+                pluralize(paths.len(), "path", "paths")
+            ));
+            let (builtin, custom) = self.rule_counts;
+            ui::verbose_stderr(format!(
+                "{}, {}",
+                pluralize(builtin, "built-in rule", "built-in rules"),
+                pluralize(custom, "custom pattern", "custom patterns")
+            ));
+            if !self.rule_names.is_empty() {
+                ui::verbose_stderr(format!("rules: {}", self.rule_names.join(", ")));
             }
         }
 
@@ -254,11 +299,33 @@ impl ScanRunner {
         // is "could not run" rather than "ran and found nothing". A `--severity`
         // threshold that hides every finding is a different case and still 0.
         if files.is_empty() {
+            // ⚠️ Names what was set aside and why (I-048, I-289). This said
+            // "filtered out" and advised `--include`, a flag that never
+            // existed — and when the walk had skipped a file for its size, the
+            // reason it gave (`.git`, `node_modules`) was not the one that
+            // applied.
+            let mut why = String::new();
+            if !collected.skipped.is_empty() {
+                why.push_str("Skipped:\n");
+                for (path, reason) in &collected.skipped {
+                    why.push_str(&format!("  {}  {reason}\n", display_portable(path)));
+                }
+                why.push_str(
+                    "--max-file-size raises the size limit; a binary file is never read.\n\n",
+                );
+            }
+            if let Some(list) = self.filter.extensions() {
+                why.push_str(&format!(
+                    "{} limits folder walks to files ending in {}.\n\n",
+                    self.extensions_from,
+                    list.join(", ")
+                ));
+            }
             anyhow::bail!(
-                "nothing was scanned — every path given was filtered out.\n\n\
-                 Directory walks skip .git, node_modules, target, dist and build \
-                 by default. Name a file directly to scan it regardless, or widen \
-                 the walk with --include.\n\n\
+                "nothing was scanned — every file in the paths given was skipped or excluded.\n\n\
+                 {why}Folder walks always skip .git, node_modules, target, dist and build, \
+                 the .env.example family, and what --exclude or [scan] exclude names. \
+                 Name a file directly to scan it regardless.\n\n\
                  Paths given: {}",
                 paths.join(", ")
             );
@@ -279,18 +346,46 @@ impl ScanRunner {
             });
         }
 
+        // What git says about each file (I-285): asked once per repository.
+        // `None` everywhere outside one, which leaves the report as it was.
+        let git = crate::core::gitignore::exposures(&files);
+
         // The files actually read: `scanning …` must not name one that was
         // then set aside as binary.
         let mut read = Vec::with_capacity(files.len());
-        for file in &files {
+        for (file, view) in files.iter().zip(&git) {
             if self.verbose {
                 ui::scanning_file_stderr(file);
             }
             let walked = !collected.named.contains(file);
             let before = results.skipped.len();
+            let first = results.findings.len();
             self.scan_file(file, walked, &mut results)?;
             if results.skipped.len() == before {
                 read.push(file.clone());
+            }
+            // I-062: line, then rule. A `.env` is read twice — parsed, then the
+            // lines the parser dropped — so a commented-out key on line 1 used
+            // to come after a finding on line 5.
+            results.findings[first..]
+                .sort_by(|a, b| (a.line, &a.pattern).cmp(&(b.line, &b.pattern)));
+
+            // ⚠️ Held back only when git positively says ignored **and** not
+            // tracked, and only for a walk. A tracked file is in the
+            // repository whatever `.gitignore` says now (I-157); a file the
+            // user named is the file they asked about; and no answer from git
+            // is not "ignored". Each of those is reported exactly as before.
+            let ignored = view.as_ref().map(|v| v.exposure)
+                == Some(crate::core::gitignore::Exposure::Protected);
+            if walked && ignored && !self.include_ignored {
+                results.hold_back(first, display_portable(file));
+                continue;
+            }
+            if let Some(view) = view {
+                for finding in &mut results.findings[first..] {
+                    finding.git = Some(view.exposure.into());
+                    finding.repo_path = Some(view.repo_path.clone());
+                }
             }
         }
 
@@ -298,7 +393,7 @@ impl ScanRunner {
         render(&results, format, &read)?;
         // After the report, so the note is not wedged between the stderr
         // header and the stdout file list.
-        report_skipped(&results, self.verbose);
+        report_skipped(&results, self.verbose, self.filter.max_bytes());
 
         // Return status for caller to handle exit code
         // ⛔ An unreadable file fails the scan.
@@ -766,10 +861,20 @@ impl ScanRunner {
         }
 
         let judged_value = detection.judged_value;
-        let finding = Finding::new(
+        // I-052: a connection string is not a provider key, so say which kind
+        // of URL holds the password rather than "matches a live key format".
+        let note = (detection.pattern == CONNECTION_STRING_RULE)
+            .then(|| detection.matched_value.split_once("://"))
+            .flatten()
+            .map(|(scheme, _)| format!("a password in a {scheme}:// URL, not a placeholder"));
+        // I-051: `----…----` said nothing. A PEM header is a label, not key
+        // material, so it is shown whole — the body never reaches a detection.
+        let preview = pem_header(&detection.matched_value)
+            .unwrap_or_else(|| truncate_value(&detection.matched_value));
+        let mut finding = Finding::new(
             detection.pattern,
             detection.confidence,
-            truncate_value(&detection.matched_value),
+            preview,
             if let Some(ref var) = variable {
                 format!("{}:{} ({})", display_portable(path), line, var)
             } else {
@@ -780,6 +885,8 @@ impl ScanRunner {
         )
         .judged_value(judged_value)
         .public_prefix(public.map(|(prefix, _)| prefix.to_string()));
+        finding.note = note;
+        finding.line = line;
 
         results.add_finding(finding);
     }
@@ -817,6 +924,21 @@ impl ScanRunner {
     //         "└──────────────────────────────────────────────────────┘".cyan()
     //     );
     // }
+}
+
+/// The built-in rule for a password inside a URL (`utils::patterns`).
+const CONNECTION_STRING_RULE: &str = "Credentials in a connection string";
+
+/// `-----BEGIN RSA PRIVATE KEY-----` when `value` is exactly a PEM private-key
+/// header — what the Private Key rule matches — and `None` otherwise (I-051).
+fn pem_header(value: &str) -> Option<String> {
+    let v = value.trim();
+    (v.starts_with("-----BEGIN ")
+        && v.ends_with("-----")
+        && v.contains("PRIVATE KEY")
+        && v.len() <= 80
+        && !v.contains('\n'))
+    .then(|| v.to_string())
 }
 
 /// Truncate a value for safe display.
@@ -868,14 +990,14 @@ pub fn truncate_value(value: &str) -> String {
 
 /// Say what a walk did not read (I-047, DEC-U8-2): a count always, each file
 /// with `-v`. On stderr, so `--format json` stays one document.
-fn report_skipped(results: &ScanResults, verbose: bool) {
+fn report_skipped(results: &ScanResults, verbose: bool, max_bytes: u64) {
     if results.skipped.is_empty() {
         return;
     }
     eprintln!(
-        "  skipped {} file(s) that are not text or are over {} KiB{}",
+        "  skipped {} file(s) that are not text or are over {}{}",
         results.skipped.len(),
-        super::filters::MAX_WALK_BYTES / 1024,
+        super::filters::size_label(max_bytes),
         if verbose { ":" } else { " (-v lists them)" }
     );
     if verbose {
@@ -898,11 +1020,15 @@ fn report_skipped(results: &ScanResults, verbose: bool) {
 /// Those parse as nothing useful, and the raw fallback only looks at lines
 /// containing `=`, so `STRIPE_SECRET_KEY: sk_live_…` in a `.env.yaml` was
 /// scanned by neither path and reported clean.
-fn named_like_dotenv(path: &Path) -> bool {
+pub(super) fn named_like_dotenv(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
-    if name != ".env" && !name.starts_with(".env.") {
+    // ⚠️ `app.env` and `production.env` too (I-254): the name Docker Compose's
+    // `env_file:` and many deploy tools use. Read as plain text, a `[vars]`
+    // declaration never applied to them — `secret = true` reported nothing.
+    let suffixed = name.len() > ".env".len() && name.ends_with(".env");
+    if name != ".env" && !name.starts_with(".env.") && !suffixed {
         return false;
     }
     // ⓘ `.env.yaml` is YAML that happens to be named after `.env`. Anything with

@@ -16,6 +16,7 @@ pub mod permissions;
 pub mod placeholder;
 pub mod project;
 pub mod safe_write;
+pub mod secretscan;
 pub mod shell;
 pub mod spec;
 pub mod value;

@@ -19,7 +19,7 @@ $ evnx scan utf16.env
   scanning utf16.env
 
   ✗  AWS Access Key                              high
-     utf16.env:1  AKIA…LKEY
+     utf16.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
@@ -28,7 +28,7 @@ $ evnx scan utf16.env
 
 Next steps:
   1. Revoke or rotate the keys above — assume they are compromised
-  2. Remove them from history: git filter-repo --path .env --invert-paths
+  2. Remove them from history: git filter-repo --path utf16.env --invert-paths
   3. Force push, after coordinating with everyone who has a clone
   Docs: https://docs.evnx.dev/cli/commands/scan
 [exit 1]

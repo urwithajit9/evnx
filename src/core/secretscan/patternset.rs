@@ -54,7 +54,7 @@
 //! is that `[scan.patterns]` in a committed `.evnx.toml` is not a denial-of-
 //! service vector against everyone who clones the repository.
 
-use super::models::Confidence;
+use super::Confidence;
 use crate::core::config::PatternRule;
 use anyhow::{anyhow, bail, Context, Result};
 use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
@@ -74,6 +74,11 @@ struct CompiledRule {
     confidence: Confidence,
     url: Option<String>,
     regex: Regex,
+    /// The expression as written, so a match lying inside its own text — the
+    /// declaration in `.evnx.toml` — can be set aside (D-36).
+    source: String,
+    /// One of `utils::patterns::builtin_rules`, unchanged (I-058).
+    builtin: bool,
 }
 
 /// What a custom pattern found.
@@ -128,6 +133,7 @@ impl PatternSet {
 
         let mut compiled = Vec::with_capacity(rules.len());
         let mut sources = Vec::with_capacity(rules.len());
+        let builtins = crate::utils::patterns::builtin_rules();
 
         for (i, rule) in rules.iter().enumerate() {
             let name = rule.name.trim();
@@ -178,6 +184,8 @@ impl PatternSet {
                 confidence,
                 url: rule.url.clone(),
                 regex,
+                source: source.to_string(),
+                builtin: builtins.contains(rule),
             });
             sources.push(source.to_string());
         }
@@ -208,6 +216,19 @@ impl PatternSet {
         self.rules.len()
     }
 
+    /// `(built-in, custom)`: rules evnx ships, unchanged, and everything else —
+    /// `--pattern`, `[[scan.patterns]]`, and a built-in a project re-rated
+    /// (I-058).
+    pub fn counts(&self) -> (usize, usize) {
+        let builtin = self.rules.iter().filter(|r| r.builtin).count();
+        (builtin, self.rules.len() - builtin)
+    }
+
+    /// Every rule's name, in the order they are tried.
+    pub fn names(&self) -> Vec<&str> {
+        self.rules.iter().map(|r| r.name.as_str()).collect()
+    }
+
     /// Every distinct match in `haystack`, in the order the rules were declared.
     ///
     /// Repeated matches of the same rule on the same text are reported once: a
@@ -230,6 +251,21 @@ impl PatternSet {
             for found in rule.regex.find_iter(haystack) {
                 let value = found.as_str();
                 if value.is_empty() {
+                    continue;
+                }
+                // D-36: a pattern of literal text matches its own declaration,
+                // `regex = "ACME-INTERNAL-TOKEN"` in `.evnx.toml`. A match lying
+                // inside the rule's own source text, where that text is the
+                // value of a `regex =` assignment, is the declaration, not a
+                // secret. ⚠️ Only there: a literal pattern's every real match
+                // equals its source too. Every other rule still reads the line.
+                let (start, end) = (found.start(), found.end());
+                if haystack
+                    .match_indices(rule.source.as_str())
+                    .any(|(at, text)| {
+                        at <= start && end <= at + text.len() && declares(&haystack[..at])
+                    })
+                {
                     continue;
                 }
                 if out.iter().any(|m| m.name == rule.name && m.value == value) {
@@ -264,7 +300,14 @@ impl PatternSet {
         // Anthropic's rule than under a looser one, so the specific rule wins
         // whatever order they were declared in. Ties beyond that fall to
         // declaration order, which is the local-first order `merge` produces.
-        self.find_all(haystack).into_iter().reduce(|best, next| {
+        Self::strongest_of(self.find_all(haystack))
+    }
+
+    /// [`PatternSet::strongest`] over matches already found — for a caller
+    /// that sets some aside first, as the rule detector does with stand-ins
+    /// (I-050).
+    pub fn strongest_of(matches: impl IntoIterator<Item = PatternMatch>) -> Option<PatternMatch> {
+        matches.into_iter().reduce(|best, next| {
             // ⚠️ `url.is_some()` is part of the rank, and omitting it regressed
             // a real case the suite caught: a user's `--pattern` that happens to
             // match an AWS key claimed the finding and reported it as "Custom
@@ -283,6 +326,17 @@ impl PatternSet {
             }
         })
     }
+}
+
+/// Does `before` end a `regex = "` / `regex = '` assignment — the text in front
+/// of a rule's own expression in `[[scan.patterns]]` (D-36)?
+fn declares(before: &str) -> bool {
+    let Some(rest) = before.strip_suffix(['"', '\'']) else {
+        return false;
+    };
+    rest.trim_end()
+        .strip_suffix('=')
+        .is_some_and(|key| key.trim_end().ends_with("regex"))
 }
 
 impl Default for PatternSet {

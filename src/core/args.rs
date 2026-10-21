@@ -265,6 +265,33 @@ pub fn parse_days(raw: &str) -> Result<i64, String> {
     }
 }
 
+/// A size in bytes: a whole number with an optional unit — `500`, `512K`,
+/// `5MB`, `1MiB`, `2G`. Units are binary (`K` = 1024) whichever spelling is
+/// used, because the scan reports its limit in KiB. At least one byte (I-061).
+///
+/// For clap's `value_parser` and for `[scan] max_file_size`, so the flag and
+/// the config give the same one message.
+pub fn parse_size(raw: &str) -> Result<u64, String> {
+    let bad = || {
+        format!("{raw:?} is not a size: use a whole number of bytes, or one with K, M or G (512K, 5MB, 1MiB)")
+    };
+    let t = raw.trim();
+    let split = t.find(|c: char| !c.is_ascii_digit()).unwrap_or(t.len());
+    let (digits, unit) = t.split_at(split);
+    let n: u64 = digits.parse().map_err(|_| bad())?;
+    let scale: u64 = match unit.trim().to_ascii_lowercase().as_str() {
+        "" | "b" => 1,
+        "k" | "kb" | "kib" => 1 << 10,
+        "m" | "mb" | "mib" => 1 << 20,
+        "g" | "gb" | "gib" => 1 << 30,
+        _ => return Err(bad()),
+    };
+    match n.checked_mul(scale) {
+        Some(bytes) if bytes > 0 => Ok(bytes),
+        _ => Err(bad()),
+    }
+}
+
 /// `now` minus `days`, or `None` if `days` is outside 1–[`MAX_DAYS`].
 ///
 /// ⚠️ Checked arithmetic. `chrono::Duration::days` **panics** out of range, and

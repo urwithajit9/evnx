@@ -180,8 +180,31 @@ pub struct ScanPolicy {
     /// Read only files with these extensions in folder walks. Unset: every
     /// file (I-047, DEC-U8-2). ⚠️ Narrows the scan, so it is announced.
     pub extensions: Option<Vec<String>>,
+    /// Skip walked files larger than this: `"5MB"`, `"512K"`, or a number of
+    /// bytes (I-061, DEC-SC4). ⚠️ Below the 1 MiB default it narrows the scan,
+    /// so it is announced.
+    pub max_file_size: Option<SizeSetting>,
     #[serde(flatten)]
     extra: Extra,
+}
+
+/// A size in `.evnx.toml`: `max_file_size = "5MB"` or `= 5000000`.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum SizeSetting {
+    Bytes(u64),
+    Text(String),
+}
+
+impl SizeSetting {
+    /// The size in bytes, by [`crate::core::args::parse_size`]'s rules.
+    pub fn bytes(&self) -> Result<u64, String> {
+        match self {
+            SizeSetting::Bytes(0) => crate::core::args::parse_size("0"),
+            SizeSetting::Bytes(n) => Ok(*n),
+            SizeSetting::Text(t) => crate::core::args::parse_size(t),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
@@ -300,6 +323,15 @@ impl Config {
         if self.scan.builtins == Some(false) {
             out.push("scan.builtins=false (no built-in rules)".to_string());
         }
+        // A limit below the default skips files a plain walk would read.
+        if let Some(Ok(bytes)) = self.scan.max_file_size.as_ref().map(SizeSetting::bytes) {
+            if bytes < 1024 * 1024 {
+                out.push(format!(
+                    "scan.max_file_size={} (larger files in folders are not scanned)",
+                    bytes
+                ));
+            }
+        }
         // ⚠️ `secret = false` retracts a name-based finding, and this file is
         // committed — so one line silences a warning for everyone who clones.
         // It cannot retract a match on the value (see `SecretDetector::
@@ -381,6 +413,24 @@ pub fn pick<T: Clone>(flag: Option<T>, configured: Option<T>, fallback: T) -> T 
 /// for a tool whose booleans are all guards.
 pub fn any(flag: bool, configured: Option<bool>) -> bool {
     flag || configured.unwrap_or(false)
+}
+
+/// A `--x` / `--no-x` pair as one choice for [`pick`]: `Some(true)`,
+/// `Some(false)`, or `None` when neither was given, so the config decides.
+///
+/// ⚠️ For a boolean that **loosens** a scan (I-057). [`any`] lets a flag only
+/// tighten what config set, which is the safe reading for a guard; for
+/// `ignore_placeholders` the safe direction is the other one, and a project's
+/// `true` must be undoable for one run. clap's `overrides_with` keeps only the
+/// last of the pair, so both are never set.
+pub fn either(on: bool, off: bool) -> Option<bool> {
+    if off {
+        Some(false)
+    } else if on {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 /// Append configured entries to whatever the flag supplied.

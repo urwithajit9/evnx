@@ -8,7 +8,7 @@ $ evnx scan .
   scanning ./config/id_rsa.pem, ./src/main.py
 
   ✗  Private Key                                 high
-     ./config/id_rsa.pem:1  ----…----
+     ./config/id_rsa.pem:1  -----BEGIN RSA PRIVATE KEY-----
      !  matches a live key format, not a placeholder
 
   ·  High-entropy string (possible secret)       low
@@ -24,7 +24,7 @@ $ evnx scan .
 
 Next steps:
   1. Revoke or rotate the keys above — assume they are compromised
-  2. Remove them from history: git filter-repo --path .env --invert-paths
+  2. Remove them from history: git filter-repo --path config/id_rsa.pem --path src/main.py --invert-paths
   3. Force push, after coordinating with everyone who has a clone
   Docs: https://docs.evnx.dev/cli/commands/scan
 [exit 1]
@@ -38,7 +38,7 @@ $ evnx scan config/id_rsa.pem
   scanning config/id_rsa.pem
 
   ✗  Private Key                                 high
-     config/id_rsa.pem:1  ----…----
+     config/id_rsa.pem:1  -----BEGIN RSA PRIVATE KEY-----
      !  matches a live key format, not a placeholder
 
   ·  High-entropy string (possible secret)       low
@@ -49,7 +49,7 @@ $ evnx scan config/id_rsa.pem
 
 Next steps:
   1. Revoke or rotate the keys above — assume they are compromised
-  2. Remove them from history: git filter-repo --path .env --invert-paths
+  2. Remove them from history: git filter-repo --path config/id_rsa.pem --invert-paths
   3. Force push, after coordinating with everyone who has a clone
   Docs: https://docs.evnx.dev/cli/commands/scan
 [exit 1]
@@ -59,10 +59,10 @@ $ evnx scan . .
 
   evnx scan  Checking for exposed secrets
 
-  scanning ./config/id_rsa.pem, ./src/main.py, ./config/id_rsa.pem and 1 other file
+  scanning ./config/id_rsa.pem, ./src/main.py
 
   ✗  Private Key                                 high
-     ./config/id_rsa.pem:1  ----…----
+     ./config/id_rsa.pem:1  -----BEGIN RSA PRIVATE KEY-----
      !  matches a live key format, not a placeholder
 
   ·  High-entropy string (possible secret)       low
@@ -73,27 +73,15 @@ $ evnx scan . .
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
-  ✗  Private Key                                 high
-     ./config/id_rsa.pem:1  ----…----
-     !  matches a live key format, not a placeholder
-
-  ·  High-entropy string (possible secret)       low
-     ./config/id_rsa.pem:2  MIIB…t8Qu
-
-  ✗  AWS Access Key                              high
-     ./src/main.py:1  AKIA…LKEY
-     !  matches a live key format, not a placeholder
-     →  revoke at https://console.aws.amazon.com/iam
-
-  6 findings  ·  4 high  ·  2 low
+  3 findings  ·  2 high  ·  1 low
 
 
 Next steps:
   1. Revoke or rotate the keys above — assume they are compromised
-  2. Remove them from history: git filter-repo --path .env --invert-paths
+  2. Remove them from history: git filter-repo --path config/id_rsa.pem --path src/main.py --invert-paths
   3. Force push, after coordinating with everyone who has a clone
   Docs: https://docs.evnx.dev/cli/commands/scan
 [exit 1]
-KNOWN I-054: same path twice doubles findings; decided: dedupe
+FIXED I-054 (R-scan): the same path twice is scanned once
 
 ================ summary: 2 ok, 0 mismatch   ================

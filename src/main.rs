@@ -79,7 +79,13 @@ fn main() -> Result<()> {
         Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
     };
     if let Some(source) = &loaded.source {
-        evnx::utils::ui::config_banner(source, &loaded.config.security_overrides(), cli.quiet);
+        let overrides = loaded.config.security_overrides();
+        // I-060: `-q` is findings only — except, for `scan`, the line saying a
+        // committed config weakens the scan. Every override is a `[scan]` or
+        // `[vars] secret` setting, so for any other command it stays hidden.
+        let quiet =
+            cli.quiet && !(matches!(cli.command, Commands::Scan { .. }) && !overrides.is_empty());
+        evnx::utils::ui::config_banner(source, &overrides, quiet);
     }
     for warning in &loaded.warnings {
         evnx::utils::ui::config_warning(warning, cli.quiet);
@@ -174,37 +180,60 @@ fn main() -> Result<()> {
         Commands::Scan {
             path,
             exclude,
+            max_file_size,
             extensions,
             pattern,
             ignore_placeholders,
+            no_ignore_placeholders,
             severity,
             format,
             exit_zero,
-        } => commands::scan::run(
-            path,
-            evnx::core::config::extend(exclude, cfg.scan.exclude),
+            include_ignored,
+        } => commands::scan::run(commands::scan::ScanOptions {
+            paths: path,
+            exclude: evnx::core::config::extend(exclude, cfg.scan.exclude),
             // Additive, like `exclude` above: `--pattern` is this run's rule and
             // `[[scan.patterns]]` is the project's standing set.
-            commands::scan::patternset::merge(
+            disable: cfg.scan.disable.clone().unwrap_or_default(),
+            patterns: commands::scan::patternset::merge(
                 pattern,
                 cfg.scan.patterns,
                 cfg.scan.builtins.unwrap_or(true),
                 cfg.scan.disable,
             ),
-            evnx::core::config::any(ignore_placeholders, cfg.scan.ignore_placeholders),
-            evnx::core::config::pick(severity, cfg.scan.severity, "low".to_string()),
+            // `--no-ignore-placeholders` can undo a project's `true` (I-057).
+            ignore_placeholders: evnx::core::config::pick(
+                evnx::core::config::either(ignore_placeholders, no_ignore_placeholders),
+                cfg.scan.ignore_placeholders,
+                false,
+            ),
+            // The flag beats `[scan] max_file_size`; a bad config value is
+            // "could not run", like a bad `--max-file-size` (I-061).
+            max_file_size: match max_file_size {
+                Some(bytes) => Some(bytes),
+                None => match cfg.scan.max_file_size.as_ref().map(|s| s.bytes()) {
+                    Some(Ok(bytes)) => Some(bytes),
+                    Some(Err(e)) => verdict::no_verdict(
+                        &anyhow::anyhow!(".evnx.toml [scan] max_file_size: {e}"),
+                        Stage::BeforeRun,
+                    ),
+                    None => None,
+                },
+            },
+            severity: evnx::core::config::pick(severity, cfg.scan.severity, "low".to_string()),
             format,
             exit_zero,
-            cli.verbose,
-            cfg.vars.clone(),
+            verbose: cli.verbose,
+            spec: cfg.vars.clone(),
             // The flag wins; either way the run announces the limit (DEC-U8-2).
-            extensions.map(|e| (e, "--extensions")).or_else(|| {
+            extensions: extensions.map(|e| (e, "--extensions")).or_else(|| {
                 cfg.scan
                     .extensions
                     .clone()
                     .map(|e| (e, ".evnx.toml [scan] extensions"))
             }),
-        ),
+            include_ignored,
+        }),
 
         Commands::Diff {
             env,

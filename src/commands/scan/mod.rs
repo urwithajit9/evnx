@@ -22,18 +22,11 @@
 //! use evnx::commands::scan;
 //!
 //! // CLI-compatible entry point
-//! scan::run(
-//!     vec!["./src".to_string()],  // paths
-//!     vec![],                      // exclude
-//!     vec![],                      // custom patterns — none
-//!     false,                       // ignore_placeholders
-//!     "low".to_string(),           // severity — lowest confidence reported
-//!     "pretty".to_string(),        // format
-//!     false,                       // exit_zero
-//!     false,                       // verbose
-//!     Default::default(),          // spec — empty means heuristics only
-//!     None,                        // extensions — None reads every file
-//! ).unwrap();
+//! scan::run(scan::ScanOptions {
+//!     paths: vec!["./src".to_string()],
+//!     severity: "low".to_string(),   // lowest confidence reported
+//!     ..Default::default()           // pretty output, no patterns, no spec
+//! }).unwrap();
 //! ```
 //!
 //! # Adding New Detectors
@@ -60,12 +53,13 @@
 //! }
 //! ```
 
-pub mod detector;
 pub mod filters;
 pub mod models;
 pub mod output;
-pub mod patternset;
 pub mod runner;
+// The rule engine lives in `core::secretscan` so `sync` can ask it without
+// importing a command (A-09). Its old paths keep working.
+pub use crate::core::secretscan::{detector, patternset};
 
 use crate::docs;
 use crate::utils::ui;
@@ -84,19 +78,65 @@ pub const EXIT_FOUND: i32 = 1;
 /// The scan could not be completed, so there is no verdict.
 pub const EXIT_ERROR: i32 = 2;
 
+/// Everything `evnx scan` was asked to do, resolved from flags and `.evnx.toml`.
+///
+/// `Default` is the bare command: the current folder, every confidence,
+/// pretty output, built-ins only through `patterns` (empty here), no spec.
+#[derive(Debug, Clone)]
+pub struct ScanOptions {
+    /// Files or folders to scan.
+    pub paths: Vec<String>,
+    /// Exclusion patterns for folder walks (`--exclude` plus `[scan] exclude`).
+    pub exclude: Vec<String>,
+    /// Secret formats in force: `--pattern` merged with `[[scan.patterns]]`
+    /// and the built-ins. See [`patternset::merge`](self::patternset::merge).
+    pub patterns: Vec<crate::core::config::PatternRule>,
+    /// Skip values that look like filler.
+    pub ignore_placeholders: bool,
+    /// Lowest confidence reported: `high`, `medium` or `low`.
+    pub severity: String,
+    /// `pretty`, `json`, `sarif` or `github`.
+    pub format: String,
+    /// Exit 0 even with findings (never hides exit 2).
+    pub exit_zero: bool,
+    /// Progress lines on stderr.
+    pub verbose: bool,
+    /// `[vars]` from `.evnx.toml`, if any.
+    pub spec: crate::core::spec::Spec,
+    /// An extension list for folder walks and where it came from; `None`
+    /// reads every file (I-047).
+    pub extensions: Option<(Vec<String>, &'static str)>,
+    /// Report findings in files git ignores and does not track (I-285).
+    pub include_ignored: bool,
+    /// Skip walked files larger than this many bytes; `None` is 1 MiB (I-061).
+    pub max_file_size: Option<u64>,
+    /// `[scan] disable`, as written: built-in rule names and
+    /// [`detector::HEURISTIC_NAMES`] (I-056). The rules themselves are already
+    /// out of `patterns`; this also silences the heuristics for their values.
+    pub disable: Vec<String>,
+}
+
+impl Default for ScanOptions {
+    fn default() -> Self {
+        Self {
+            paths: vec![".".to_string()],
+            exclude: Vec::new(),
+            patterns: Vec::new(),
+            ignore_placeholders: false,
+            severity: "low".to_string(),
+            format: "pretty".to_string(),
+            exit_zero: false,
+            verbose: false,
+            spec: Default::default(),
+            extensions: None,
+            include_ignored: false,
+            max_file_size: None,
+            disable: Vec::new(),
+        }
+    }
+}
+
 /// Run the scan command (CLI entry point).
-///
-/// # Arguments
-///
-/// * `paths` - Paths to scan (files or directories)
-/// * `exclude` - Exclusion patterns (glob or substring)
-/// * `patterns` - Secret formats this project declared: `--pattern` merged with
-///   `[[scan.patterns]]` from `.evnx.toml`. See
-///   [`patternset::merge`](self::patternset::merge)
-/// * `ignore_placeholders` - Skip placeholder values
-/// * `format` - Output format (pretty/json/sarif)
-/// * `exit_zero` - Always exit 0 (for CI pipelines)
-/// * `verbose` - Enable verbose output
 ///
 /// # Exit codes
 ///
@@ -124,51 +164,42 @@ pub const EXIT_ERROR: i32 = 2;
 /// ```no_run
 /// use evnx::commands::scan;
 ///
-/// scan::run(
-///     vec!["./src".to_string()],
-///     vec!["node_modules".to_string()],
-///     vec![],                  // custom patterns — none
-///     false,                   // ignore_placeholders
-///     "low".to_string(),       // severity
-///     "pretty".to_string(),    // format
-///     false,                   // exit_zero
-///     false,                   // verbose
-///     Default::default(),      // spec — `[vars]` from .evnx.toml, if any
-///     None,                    // extensions — None reads every file (I-047)
-/// ).unwrap();
+/// scan::run(scan::ScanOptions {
+///     paths: vec!["./src".to_string()],
+///     exclude: vec!["node_modules".to_string()],
+///     ..Default::default()
+/// }).unwrap();
 /// ```
-#[allow(clippy::too_many_arguments)]
-pub fn run(
-    paths: Vec<String>,
-    exclude: Vec<String>,
-    patterns: Vec<crate::core::config::PatternRule>,
-    ignore_placeholders: bool,
-    severity: String,
-    format: String,
-    exit_zero: bool,
-    verbose: bool,
-    spec: crate::core::spec::Spec,
-    extensions: Option<(Vec<String>, &'static str)>,
-) -> Result<(), anyhow::Error> {
+pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
     // Trouble prints here and exits 2 rather than propagating to `main`, which
     // would format it as a generic error and collapse it onto 1 — the code that
     // already means "secrets found".
     let scan = || -> Result<bool, anyhow::Error> {
-        let min_confidence: Confidence = severity.parse()?;
-        let output_format: OutputFormat = format.parse()?;
+        let min_confidence: Confidence = opts.severity.parse()?;
+        let output_format: OutputFormat = opts.format.parse()?;
         // Compiled before anything is printed, so a broken expression cannot be
         // mistaken for a finished scan.
-        let compiled = PatternSet::compile(&patterns)?;
+        let compiled = PatternSet::compile(&opts.patterns)?;
+        let off: Vec<String> = opts.disable.iter().map(|n| n.to_lowercase()).collect();
+        let disabled = PatternSet::compile(
+            &crate::utils::patterns::builtin_rules()
+                .into_iter()
+                .filter(|r| off.contains(&r.name.to_lowercase()))
+                .collect::<Vec<_>>(),
+        )?;
         let runner = ScanRunner::with_spec_and_patterns(
-            &exclude,
-            ignore_placeholders,
-            verbose,
+            &opts.exclude,
+            opts.ignore_placeholders,
+            opts.verbose,
             min_confidence,
-            spec.clone(),
+            opts.spec.clone(),
             compiled,
         )
-        .with_extensions(extensions.clone());
-        runner.run(paths, output_format)
+        .with_extensions(opts.extensions.clone())
+        .with_include_ignored(opts.include_ignored)
+        .with_max_file_size(opts.max_file_size)
+        .with_disabled(disabled, &opts.disable);
+        runner.run(opts.paths.clone(), output_format)
     };
 
     let secrets_found = match scan() {
@@ -184,7 +215,7 @@ pub fn run(
     // Always print — eprintln never pollutes stdout
     ui::print_docs_hint(&docs::SCAN);
 
-    if secrets_found && !exit_zero {
+    if secrets_found && !opts.exit_zero {
         std::process::exit(EXIT_FOUND);
     }
 

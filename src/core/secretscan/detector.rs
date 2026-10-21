@@ -90,7 +90,7 @@
 //! let detections = registry.scan_kv("AWS_KEY", "AKIA1234567890EXAMPLE", "test:1");
 //! ```
 
-use super::models::Confidence;
+use super::Confidence;
 use crate::utils::patterns;
 use std::path::Path;
 
@@ -277,7 +277,7 @@ pub trait SecretDetector: Send + Sync {
     /// Returns a `Vec` because one line can carry several unrelated secrets,
     /// unlike a single value where one finding is the answer.
     ///
-    /// [`ScanRunner::extract_tokens`]: super::runner::ScanRunner
+    /// [`ScanRunner::extract_tokens`]: crate::commands::scan::runner::ScanRunner
     fn scan_line(&self, _line: &str, _location: &str) -> Vec<Detection> {
         Vec::new()
     }
@@ -327,11 +327,26 @@ fn value_is_worth_reporting(value: &str) -> bool {
         || upper.contains("EXAMPLE"))
 }
 
+/// The checks that are not format rules, as `[scan] disable` names them
+/// (I-056). Matched case-insensitively against the start of a finding's name,
+/// so `Sensitive config key` covers `Sensitive config key: DB_PASSWORD`.
+pub const HEURISTIC_NAMES: &[&str] = &[
+    "Sensitive config key",
+    "High-entropy string",
+    "AWS Secret Access Key",
+];
+
 pub struct DetectorRegistry {
     detectors: Vec<Box<dyn SecretDetector>>,
     /// The project's declared contract, when it has one. Empty otherwise, which
     /// means every heuristic behaves exactly as it did before specs existed.
     spec: crate::core::spec::Spec,
+    /// Built-in formats `[scan] disable` turned off (I-056). A value one of
+    /// them matches is not reported by name or entropy either: the project
+    /// said values of that shape are not findings here.
+    disabled_formats: super::patternset::PatternSet,
+    /// Heuristics `[scan] disable` turned off, lower case.
+    disabled_heuristics: Vec<String>,
 }
 
 impl DetectorRegistry {
@@ -352,6 +367,8 @@ impl DetectorRegistry {
         let mut registry = Self {
             detectors: Vec::new(),
             spec: Default::default(),
+            disabled_formats: super::patternset::PatternSet::empty(),
+            disabled_heuristics: Vec::new(),
         };
         // Register default detectors
         registry.register(HeuristicDetector);
@@ -388,7 +405,7 @@ impl DetectorRegistry {
     /// An empty set registers nothing, which now means only
     /// `scan.builtins = false` with no project rules of its own.
     ///
-    /// [`ScanRunner::best`]: super::runner::ScanRunner
+    /// [`ScanRunner::best`]: crate::commands::scan::runner::ScanRunner
     pub fn with_patterns(mut self, patterns: super::patternset::PatternSet) -> Self {
         if !patterns.is_empty() {
             self.detectors
@@ -412,6 +429,34 @@ impl DetectorRegistry {
     /// registry.register(MyDetector);
     ///
     /// ```
+    /// What `[scan] disable` turned off (I-056): the built-in formats, compiled,
+    /// and any of [`HEURISTIC_NAMES`] by name.
+    pub fn with_disabled(
+        mut self,
+        formats: super::patternset::PatternSet,
+        names: &[String],
+    ) -> Self {
+        self.disabled_formats = formats;
+        self.disabled_heuristics = names
+            .iter()
+            .map(|n| n.to_lowercase())
+            .filter(|n| HEURISTIC_NAMES.iter().any(|h| h.to_lowercase() == *n))
+            .collect();
+        self
+    }
+
+    /// Whether `[scan] disable` silences a detection from a detector other
+    /// than the rules: its heuristic is off by name, or `value` has the shape
+    /// of a disabled format.
+    fn silenced(&self, pattern: &str, value: &str) -> bool {
+        let lower = pattern.to_lowercase();
+        self.disabled_heuristics
+            .iter()
+            .any(|h| lower.starts_with(h.as_str()))
+            || (!self.disabled_formats.is_empty()
+                && !self.disabled_formats.find_all(value).is_empty())
+    }
+
     pub fn register(&mut self, detector: impl SecretDetector + 'static) {
         self.detectors.push(Box::new(detector));
     }
@@ -459,9 +504,13 @@ impl DetectorRegistry {
             .filter_map(|d| {
                 d.scan_kv(key, value, location).map(|mut found| {
                     found.judged_value = d.judges_value();
-                    found
+                    (d.name() == RULES, found)
                 })
             })
+            // I-056: a rule the project kept still reports; a heuristic does
+            // not, for a value of a disabled shape or once switched off.
+            .filter(|(rule, f)| *rule || !self.silenced(&f.pattern, value))
+            .map(|(_, f)| f)
             .collect();
 
         if suppress_name_based {
@@ -503,6 +552,7 @@ impl DetectorRegistry {
         self.detectors
             .iter()
             .filter_map(|d| d.scan_token(token, location))
+            .filter(|f| !self.silenced(&f.pattern, token))
             .collect()
     }
 
@@ -664,6 +714,19 @@ impl RuleDetector {
     pub fn new(patterns: super::patternset::PatternSet) -> Self {
         Self { patterns }
     }
+
+    /// Every match in `text` except stand-ins (I-050, N-20): a format rule
+    /// that matched `sk_live_xxxx…` or evnx's own `user:password@localhost`
+    /// URL has found something that cannot be a working credential, and the
+    /// name and entropy heuristics already drop those. See
+    /// [`crate::core::classify::is_stand_in`].
+    fn live_matches(&self, text: &str) -> Vec<super::patternset::PatternMatch> {
+        self.patterns
+            .find_all(text)
+            .into_iter()
+            .filter(|m| !crate::core::classify::is_stand_in(&m.value))
+            .collect()
+    }
 }
 
 impl From<super::patternset::PatternMatch> for Detection {
@@ -678,9 +741,13 @@ impl From<super::patternset::PatternMatch> for Detection {
     }
 }
 
+/// [`RuleDetector`]'s name: the one detector `[scan] disable` does not filter
+/// after the fact, because disabling a rule removes it from the set.
+const RULES: &str = "custom-pattern";
+
 impl SecretDetector for RuleDetector {
     fn name(&self) -> &str {
-        "custom-pattern"
+        RULES
     }
 
     /// The expression is tested against the **value**, so `secret = false`
@@ -691,7 +758,7 @@ impl SecretDetector for RuleDetector {
     }
 
     fn scan_kv(&self, _key: &str, value: &str, _location: &str) -> Option<Detection> {
-        self.patterns.strongest(value).map(Into::into)
+        super::patternset::PatternSet::strongest_of(self.live_matches(value)).map(Into::into)
     }
 
     /// Always `None` — custom patterns answer [`scan_line`] instead, which sees
@@ -706,8 +773,7 @@ impl SecretDetector for RuleDetector {
     }
 
     fn scan_line(&self, line: &str, _location: &str) -> Vec<Detection> {
-        self.patterns
-            .find_all(line)
+        self.live_matches(line)
             .into_iter()
             .map(Into::into)
             .collect()

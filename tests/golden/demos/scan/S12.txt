@@ -1,0 +1,144 @@
+
+================ S12 ================
+
+$ evnx scan
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./.env, ./.env.bak, ./.gitignore
+
+  ✓  No secrets in files git would commit
+
+  3 files scanned
+  ·  git ignores ./.env and ./.env.bak — 8 findings there are not counted, because they are not committed (--include-ignored lists them)
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 0]
+  ok: FIXED I-285: a gitignored, untracked .env is summarised, not counted (exit 0)
+
+$ evnx scan .env
+
+  evnx scan  Checking for exposed secrets
+
+  scanning .env
+
+  ✗  AWS Access Key                              high
+     .env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  ✗  Stripe Secret Key (LIVE)                    high
+     .env:2 (STRIPE_SECRET_KEY)  sk_l…hijk
+     !  matches a live key format, not a placeholder
+     →  revoke at https://dashboard.stripe.com/apikeys
+
+  ✗  GitHub Token                                high
+     .env:3 (GITHUB_TOKEN)  ghp_…Q7r8
+     !  matches a live key format, not a placeholder
+     →  revoke at https://github.com/settings/tokens
+
+  ✗  Credentials in a connection string          high
+     .env:4 (DATABASE_URL)  post…5432
+     !  a password in a postgres:// URL, not a placeholder
+
+  4 findings  ·  4 high
+
+
+Next steps:
+  1. git ignores .env and does not track it, so nothing was committed
+  2. Rotate a key only if the file was shared another way — a copy, an archive, a container image
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: a named file is reported in full; I-286: nothing was committed, so no history advice (exit 1)
+
+$ evnx scan --include-ignored --severity high
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./.env, ./.env.bak, ./.gitignore
+
+  ✗  AWS Access Key                              high
+     ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  ✗  Stripe Secret Key (LIVE)                    high
+     ./.env:2 (STRIPE_SECRET_KEY)  sk_l…hijk
+     !  matches a live key format, not a placeholder
+     →  revoke at https://dashboard.stripe.com/apikeys
+
+  ✗  GitHub Token                                high
+     ./.env:3 (GITHUB_TOKEN)  ghp_…Q7r8
+     !  matches a live key format, not a placeholder
+     →  revoke at https://github.com/settings/tokens
+
+  ✗  Credentials in a connection string          high
+     ./.env:4 (DATABASE_URL)  post…5432
+     !  a password in a postgres:// URL, not a placeholder
+
+  ✗  AWS Access Key                              high
+     ./.env.bak:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  ✗  Stripe Secret Key (LIVE)                    high
+     ./.env.bak:2 (STRIPE_SECRET_KEY)  sk_l…hijk
+     !  matches a live key format, not a placeholder
+     →  revoke at https://dashboard.stripe.com/apikeys
+
+  ✗  GitHub Token                                high
+     ./.env.bak:3 (GITHUB_TOKEN)  ghp_…Q7r8
+     !  matches a live key format, not a placeholder
+     →  revoke at https://github.com/settings/tokens
+
+  ✗  Credentials in a connection string          high
+     ./.env.bak:4 (DATABASE_URL)  post…5432
+     !  a password in a postgres:// URL, not a placeholder
+
+  8 findings  ·  8 high
+
+
+Next steps:
+  1. git ignores ./.env and ./.env.bak and does not track them, so nothing was committed
+  2. Rotate a key only if the file was shared another way — a copy, an archive, a container image
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: --include-ignored counts them (exit 1)
+
+$ evnx scan --severity high
+
+  evnx scan  Checking for exposed secrets
+
+  scanning ./.env, ./.env.bak, ./.gitignore
+
+  ✗  AWS Access Key                              high
+     ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
+     !  matches a live key format, not a placeholder
+     →  revoke at https://console.aws.amazon.com/iam
+
+  ✗  Stripe Secret Key (LIVE)                    high
+     ./.env:2 (STRIPE_SECRET_KEY)  sk_l…hijk
+     !  matches a live key format, not a placeholder
+     →  revoke at https://dashboard.stripe.com/apikeys
+
+  ✗  GitHub Token                                high
+     ./.env:3 (GITHUB_TOKEN)  ghp_…Q7r8
+     !  matches a live key format, not a placeholder
+     →  revoke at https://github.com/settings/tokens
+
+  ✗  Credentials in a connection string          high
+     ./.env:4 (DATABASE_URL)  post…5432
+     !  a password in a postgres:// URL, not a placeholder
+
+  4 findings  ·  4 high
+  ·  git ignores ./.env.bak — 4 findings there are not counted, because it is not committed (--include-ignored lists them)
+
+
+Next steps:
+  1. Revoke or rotate the keys above — assume they are compromised
+  2. Remove them from history: git filter-repo --path .env --invert-paths
+  3. Force push, after coordinating with everyone who has a clone
+  Docs: https://docs.evnx.dev/cli/commands/scan
+[exit 1]
+  ok: a committed .env is reported with history advice naming it (exit 1)
+
+================ summary: 4 ok, 0 mismatch   ================

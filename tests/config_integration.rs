@@ -129,11 +129,14 @@ fn unknown_keys_are_named_but_do_not_fail_the_run() {
 
 #[test]
 fn quiet_suppresses_the_banner() {
+    // ⚠️ Not with `[scan] severity`: since I-060 `scan -q` keeps the line that
+    // says a committed config weakens the scan (`tests/scan_config.rs`). A
+    // banner with nothing to announce, or another command, stays quiet.
     let d = project("[scan]\nseverity = \"high\"\n");
 
     cargo_bin_cmd!("evnx")
         .current_dir(d.path())
-        .args(["scan", ".", "--quiet", "--exit-zero"])
+        .args(["validate", "--quiet"])
         .assert()
         .stderr(predicate::str::contains(".evnx.toml").not());
 }

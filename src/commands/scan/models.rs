@@ -22,6 +22,11 @@
 //!     // `Some("VITE_")` when the name carries a build-time public prefix, which
 //!     // changes the remedy: the variable has to be renamed, not just rotated.
 //!     public_prefix: None,
+//!     // What git says about the file, inside a repository (I-285).
+//!     git: None,
+//!     repo_path: None,
+//!     note: None,
+//!     line: 15,
 //! };
 //!
 //! let mut results = ScanResults::new(100);
@@ -30,102 +35,9 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Confidence level for a detected secret.
-///
-/// Used to prioritize remediation efforts. High confidence findings
-/// should be addressed immediately as they likely represent real credentials.
-///
-/// # Note
-///
-/// This enum mirrors `crate::utils::patterns::Confidence` for the scan module.
-/// Conversion is automatic via `From` trait implementation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Confidence {
-    /// Highly likely to be a real secret (e.g., matches known pattern + context)
-    High,
-    /// Possibly a secret, needs manual verification
-    Medium,
-    /// Low likelihood, could be false positive
-    Low,
-}
-
-impl Confidence {
-    /// Rank for threshold comparisons — higher means more confident.
-    ///
-    /// Declared explicitly rather than derived. `derive(Ord)` follows *declaration*
-    /// order, which here reads `High, Medium, Low` and would therefore make `High`
-    /// the **smallest** value — a `--severity high` filter that silently kept
-    /// everything. Naming the ranks makes the intent unmissable and survives
-    /// someone reordering the variants.
-    pub fn rank(self) -> u8 {
-        match self {
-            Confidence::Low => 0,
-            Confidence::Medium => 1,
-            Confidence::High => 2,
-        }
-    }
-}
-
-impl PartialOrd for Confidence {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Confidence {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.rank().cmp(&other.rank())
-    }
-}
-
-impl std::str::FromStr for Confidence {
-    type Err = anyhow::Error;
-
-    /// Parses the `--severity` threshold. Unknown values are an **error**, not a
-    /// silent default: a typo in a CI flag must not quietly widen or narrow what
-    /// the scanner reports.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        crate::core::args::one_of(
-            "severity",
-            s,
-            &[
-                ("high", Confidence::High),
-                ("medium", Confidence::Medium),
-                ("med", Confidence::Medium),
-                ("low", Confidence::Low),
-                ("all", Confidence::Low),
-            ],
-            &["high", "medium", "low"],
-        )
-    }
-}
-
-impl std::fmt::Display for Confidence {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Confidence::High => "high",
-                Confidence::Medium => "medium",
-                Confidence::Low => "low",
-            }
-        )
-    }
-}
-
-/// Convert from `patterns::Confidence` to `models::Confidence`.
-///
-/// This allows seamless integration with the existing pattern detection logic.
-impl From<crate::utils::patterns::Confidence> for Confidence {
-    fn from(conf: crate::utils::patterns::Confidence) -> Self {
-        match conf {
-            crate::utils::patterns::Confidence::High => Confidence::High,
-            crate::utils::patterns::Confidence::Medium => Confidence::Medium,
-            crate::utils::patterns::Confidence::Low => Confidence::Low,
-        }
-    }
-}
+/// How sure a detection is. Defined with the rule engine in
+/// [`crate::core::secretscan`]; re-exported here, where it has always been.
+pub use crate::core::secretscan::Confidence;
 
 /// A single detected secret with contextual metadata.
 ///
@@ -191,6 +103,52 @@ pub struct Finding {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub public_prefix: Option<String>,
+
+    /// What git says about the file this was found in (I-285): `tracked`,
+    /// `unignored` (the next `git add .` takes it) or `ignored`. Absent
+    /// outside a repository, where nothing is known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub git: Option<GitState>,
+
+    /// The file's path from the repository root, for `git filter-repo
+    /// --path` (I-286). Display only.
+    #[serde(skip)]
+    pub repo_path: Option<String>,
+
+    /// What to say about a value match in place of the generic "matches a
+    /// live key format" line — `a password in a postgres:// URL` (I-052).
+    /// Display only.
+    #[serde(skip)]
+    pub note: Option<String>,
+
+    /// The line the finding is on, for sorting (I-062). Display only; the
+    /// line is also in `location`.
+    #[serde(skip)]
+    pub line: usize,
+}
+
+/// [`crate::core::gitignore::Exposure`], as a finding reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GitState {
+    /// In the index: the secret is in the repository.
+    Tracked,
+    /// Neither ignored nor tracked: the next `git add .` takes it.
+    Unignored,
+    /// Ignored and not tracked: a commit leaves it out.
+    Ignored,
+}
+
+impl From<crate::core::gitignore::Exposure> for GitState {
+    fn from(e: crate::core::gitignore::Exposure) -> Self {
+        use crate::core::gitignore::Exposure;
+        match e {
+            Exposure::Tracked => GitState::Tracked,
+            Exposure::Unignored => GitState::Unignored,
+            Exposure::Protected => GitState::Ignored,
+        }
+    }
 }
 
 /// `#[serde(skip)]` would otherwise deserialize to `false` and make every
@@ -280,6 +238,10 @@ impl Finding {
             action_url,
             judged_value: true,
             public_prefix: None,
+            git: None,
+            repo_path: None,
+            note: None,
+            line: 0,
         }
     }
 }
@@ -323,6 +285,12 @@ pub struct ScanResults {
     /// `unreadable` they do not fail the scan — they are not files a scanner
     /// is expected to read.
     pub skipped: Vec<UnreadableFile>,
+    /// Walked files git ignores and does not track, and how many findings
+    /// each held (I-285). Not counted anywhere else: those findings are not in
+    /// `findings`, the totals or the exit code. Empty with `--include-ignored`,
+    /// outside a repository, and for files named on the command line.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub ignored_by_git: Vec<IgnoredFile>,
     pub secrets_found: usize,
     pub findings: Vec<Finding>,
     pub high_confidence: usize,
@@ -357,6 +325,23 @@ pub struct Summary {
     pub files_unreadable: usize,
     /// Files a folder walk passed over (binary, or over the size limit).
     pub files_skipped: usize,
+    /// Findings not counted because git ignores their file (I-285). Absent
+    /// when there are none, so a scan outside a repository prints the same
+    /// summary as before.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub ignored_by_git: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
+/// A walked file git ignores and does not track, with the number of findings
+/// it held (I-285).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IgnoredFile {
+    pub path: String,
+    pub findings: usize,
 }
 
 /// A file the scan selected and could not read.
@@ -377,6 +362,7 @@ impl ScanResults {
             files_scanned: self.files_scanned,
             files_unreadable: self.unreadable.len(),
             files_skipped: self.skipped.len(),
+            ignored_by_git: self.ignored_by_git.iter().map(|f| f.findings).sum(),
         }
     }
 }
@@ -401,6 +387,7 @@ impl ScanResults {
             files_scanned,
             unreadable: Vec::new(),
             skipped: Vec::new(),
+            ignored_by_git: Vec::new(),
             secrets_found: 0,
             findings: Vec::new(),
             high_confidence: 0,
@@ -451,6 +438,29 @@ impl ScanResults {
     /// ```
     pub fn has_critical_findings(&self) -> bool {
         self.high_confidence > 0 || self.medium_confidence > 0
+    }
+
+    /// Move the findings from `start` on — one file's — out of the report and
+    /// into [`ScanResults::ignored_by_git`] under `path` (I-285). The counts
+    /// go down by exactly what was added, so the totals, the JSON summary and
+    /// the exit code all describe what is left.
+    pub fn hold_back(&mut self, start: usize, path: String) {
+        let held: Vec<Finding> = self.findings.split_off(start);
+        if held.is_empty() {
+            return;
+        }
+        for f in &held {
+            match f.confidence {
+                Confidence::High => self.high_confidence -= 1,
+                Confidence::Medium => self.medium_confidence -= 1,
+                Confidence::Low => self.low_confidence -= 1,
+            }
+        }
+        self.secrets_found -= held.len();
+        self.ignored_by_git.push(IgnoredFile {
+            path,
+            findings: held.len(),
+        });
     }
 }
 

@@ -169,8 +169,6 @@ fn t_i195_completions_and_update_help_name_their_guide() {
 /// (DEC-SF12). An entry is removed when its help is written; the test fails if
 /// an entry here has help, so the list cannot outlive the gap.
 const NO_HELP_YET: &[(&str, &str, &str)] = &[
-    ("scan", "path", "R-scan"),
-    ("scan", "exclude", "R-scan"),
     ("org members", "org", "R-org-vault-cloud"),
     ("org invite", "org", "R-org-vault-cloud"),
     ("org invites", "org", "R-org-vault-cloud"),

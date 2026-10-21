@@ -46,17 +46,47 @@ use walkdir::WalkDir;
 /// println!("Found {} files to scan", files.len());
 /// ```
 pub struct FileFilter {
-    exclude_patterns: Vec<String>,
+    /// Plain `--exclude` values, as path components (I-053): `test` is
+    /// `["test"]`, `vendor/cache/` is `["vendor", "cache"]`.
+    exclude_components: Vec<Vec<String>>,
     compiled_globs: Vec<Pattern>,
     /// The opt-in extension list (`--extensions`, `[scan] extensions`).
     /// `None`, the default, reads every file a walk finds (I-047, DEC-U8-2).
     extensions: Option<Vec<String>>,
+    /// A walked file larger than this is skipped and said (I-061).
+    max_bytes: u64,
 }
 
-/// A walked file larger than this is skipped, and the scan says so (I-047).
-/// A `.env` or config file is a few kilobytes; a megabyte of text is a log, a
-/// bundle or data — and named on the command line it is still read.
+/// The default limit on a walked file, which `--max-file-size` and
+/// `[scan] max_file_size` change (I-061, DEC-SC4). A `.env` or config file is a
+/// few kilobytes; a megabyte of text is a log, a bundle or data — and named on
+/// the command line it is still read.
 pub const MAX_WALK_BYTES: u64 = 1024 * 1024;
+
+/// Does `value` hold a glob metacharacter? Then `--exclude` reads it as a glob.
+fn is_glob(value: &str) -> bool {
+    value.contains(['*', '?', '['])
+}
+
+/// `1024 KiB`, `5120 KiB`, `500 bytes`: the limit as the skip note says it.
+pub fn size_label(bytes: u64) -> String {
+    if bytes >= 1024 && bytes % 1024 == 0 {
+        format!("{} KiB", bytes / 1024)
+    } else {
+        format!("{bytes} bytes")
+    }
+}
+
+/// `path`'s names, without `.` and the root — what a plain `--exclude` value
+/// is compared against, one whole component at a time.
+fn names(path: &Path) -> Vec<String> {
+    path.components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(n) => Some(n.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect()
+}
 
 /// What a walk found: the files to read, and the ones it passed over and why.
 #[derive(Debug, Default)]
@@ -88,15 +118,43 @@ impl FileFilter {
     pub fn new(exclude: &[String]) -> Self {
         let compiled_globs = exclude
             .iter()
-            .filter(|p| p.contains('*'))
+            .filter(|p| is_glob(p))
             .filter_map(|p| Pattern::new(p).ok())
+            .collect();
+        // ⚠️ Split on `/` only, like the patterns people copy from
+        // `.gitignore`. A `\` stays part of a name, so on Unix — where it is a
+        // legal filename character — `vendor\cache` names one odd component
+        // rather than widening into two.
+        let exclude_components = exclude
+            .iter()
+            .filter(|p| !is_glob(p))
+            .map(|p| {
+                p.split('/')
+                    .filter(|part| !part.is_empty() && *part != ".")
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|parts| !parts.is_empty())
             .collect();
 
         Self {
-            exclude_patterns: exclude.to_vec(),
+            exclude_components,
             compiled_globs,
             extensions: None,
+            max_bytes: MAX_WALK_BYTES,
         }
+    }
+
+    /// Skip walked files larger than `bytes` (I-061). Named files are read
+    /// whatever their size.
+    pub fn with_max_bytes(mut self, bytes: u64) -> Self {
+        self.max_bytes = bytes;
+        self
+    }
+
+    /// The size limit in force for walked files.
+    pub fn max_bytes(&self) -> u64 {
+        self.max_bytes
     }
 
     /// Limit a folder walk to these extensions (without the dot, any case).
@@ -139,15 +197,36 @@ impl FileFilter {
     /// files were named, so the scan can say what it did not read.
     pub fn collect(&self, paths: &[String]) -> Result<Collected> {
         let mut collected = Collected::default();
-        let mut files = Vec::new();
+        let mut files: Vec<PathBuf> = Vec::new();
         // ⚠️ Collected rather than bailed on immediately, so `evnx scan a b c`
         // names every bad path in one run instead of one per invocation.
         let mut unreadable = Vec::new();
+
+        // I-054: one entry per file however it was reached — `scan . .`,
+        // `scan . .env`, `scan a a/b`. Keyed on the canonical path; the first
+        // spelling is the one shown.
+        let mut seen: std::collections::HashMap<PathBuf, usize> = std::collections::HashMap::new();
+        let canonical = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
 
         for path_str in paths {
             let path = Path::new(path_str);
 
             if path.is_file() {
+                // Already reached by a walk: it is now a named file too, which
+                // decides how it is reported (I-285), but it is read once.
+                match seen.get(&canonical(path)).copied() {
+                    // A walk set it aside for size; named, it is read anyway.
+                    Some(usize::MAX) => {
+                        let key = canonical(path);
+                        collected.skipped.retain(|(f, _)| canonical(f) != key);
+                    }
+                    Some(at) => {
+                        collected.named.insert(files[at].clone());
+                        continue;
+                    }
+                    None => {}
+                }
+                seen.insert(canonical(path), files.len());
                 // ⚠️ A path the user **named** is always scanned. Neither the
                 // default exclusions nor the extension allowlist apply to it.
                 //
@@ -192,16 +271,21 @@ impl FileFilter {
                     // extension allow-list never opened `config/id_rsa.pem` or a
                     // key in `app.swift`, and the scan reported clean. What it
                     // does not read, it says — see `Collected::skipped`.
+                    if seen.contains_key(&canonical(entry_path)) {
+                        continue;
+                    }
                     if self.extensions.is_none() {
                         let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                        if size > MAX_WALK_BYTES {
+                        if size > self.max_bytes {
+                            seen.insert(canonical(entry_path), usize::MAX);
                             collected.skipped.push((
                                 entry_path.to_path_buf(),
-                                format!("larger than {} KiB", MAX_WALK_BYTES / 1024),
+                                format!("larger than {}", size_label(self.max_bytes)),
                             ));
                             continue;
                         }
                     }
+                    seen.insert(canonical(entry_path), files.len());
                     files.push(entry_path.to_path_buf());
                 }
             } else {
@@ -215,6 +299,11 @@ impl FileFilter {
             }
         }
 
+        // I-062: by path, so output does not depend on the order paths were
+        // given. Compared name by name, which is the order a walk already
+        // produces — `a/x` before `a.txt` — so a single walk is unchanged.
+        files.sort_by_key(|f| names(f));
+        collected.skipped.sort_by_key(|(f, _)| names(f));
         collected.files = files;
         if !unreadable.is_empty() {
             let detail = unreadable
@@ -313,15 +402,24 @@ impl FileFilter {
             }
         }
 
-        // Check substring patterns.
+        // Plain values: whole path components (I-053).
         //
-        // ⓘ One spelling, because `path_str` above is already portable. #146
-        // matched the raw string *and* a normalised copy, which fixed Windows
-        // but quietly widened Unix: a file genuinely named `a\b` would start
-        // matching `--exclude a/b`. Normalising only on the platform where `\`
-        // cannot appear in a filename keeps Unix behaviour exactly as it was.
-        for pattern in &self.exclude_patterns {
-            if !pattern.contains('*') && path_str.contains(pattern) {
+        // ⛔ This was a **substring of the whole path**: `--exclude env` dropped
+        // `.env`, and `--exclude test` dropped `latest/` and `contest.py` — a
+        // safe-looking exclusion hiding the file most worth scanning. A plain
+        // name now matches a whole component, and `vendor/cache` the two
+        // consecutive components, wherever they sit.
+        //
+        // ⓘ Components come from the platform's own parser, so `\` separates
+        // on Windows and is part of a name on Unix — the distinction #146 and
+        // the test below it pin.
+        if !self.exclude_components.is_empty() {
+            let have = names(path);
+            if self
+                .exclude_components
+                .iter()
+                .any(|want| have.windows(want.len()).any(|w| w == want.as_slice()))
+            {
                 return true;
             }
         }
@@ -542,7 +640,7 @@ mod tests {
     #[test]
     fn test_file_filter_new() {
         let filter = FileFilter::new(&["test".to_string(), "*.log".to_string()]);
-        assert_eq!(filter.exclude_patterns.len(), 2);
+        assert_eq!(filter.exclude_components, vec![vec!["test".to_string()]]);
         assert_eq!(filter.compiled_globs.len(), 1); // Only *.log is a glob
     }
 
@@ -551,6 +649,21 @@ mod tests {
         let filter = FileFilter::new(&["node_modules".to_string()]);
         assert!(filter.should_exclude(Path::new("project/node_modules/package.json")));
         assert!(!filter.should_exclude(Path::new("project/src/main.rs")));
+    }
+
+    /// I-053: a plain value is a whole component, never a substring.
+    #[test]
+    fn t_i053_a_plain_value_is_a_component_not_a_substring() {
+        let filter = FileFilter::new(&["env".to_string(), "test".to_string()]);
+        for kept in [".env", "latest/a.py", "contest.py", "src/.env.test"] {
+            assert!(!filter.should_exclude(Path::new(kept)), "{kept}");
+        }
+        for gone in ["test/a.py", "src/test", "a/env/b.txt", "./test/x"] {
+            assert!(filter.should_exclude(Path::new(gone)), "{gone}");
+        }
+        let filter = FileFilter::new(&["./fixtures/".to_string()]);
+        assert!(filter.should_exclude(Path::new("./fixtures/.env")));
+        assert!(!filter.should_exclude(Path::new("./my-fixtures/.env")));
     }
 
     #[test]

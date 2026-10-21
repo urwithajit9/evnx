@@ -24,7 +24,7 @@ $ evnx scan . --exit-zero
 
   ✗  Credentials in a connection string          high
      ./.env:4 (DATABASE_URL)  post…5432
-     !  matches a live key format, not a placeholder
+     !  a password in a postgres:// URL, not a placeholder
 
   4 findings  ·  4 high
 
@@ -55,19 +55,20 @@ $ evnx scan . --no-color -q
 
   ✗  Credentials in a connection string          high
      ./.env:4 (DATABASE_URL)  post…5432
-     !  matches a live key format, not a placeholder
+     !  a password in a postgres:// URL, not a placeholder
 
   4 findings  ·  4 high
 
 [exit 1]
-KNOWN I-049: -q does not change the pretty output
+FIXED I-049 (0.10.3 + R-scan): -q drops the banner and the next steps; findings only
 
 $ evnx scan . -v
 
   evnx scan  Checking for exposed secrets
 
-⋯ Scanning 1 files...
-⋯ 13 custom pattern(s) active
+⋯ Scanning 1 path...
+⋯ 13 built-in rules, 0 custom patterns
+⋯ rules: AWS Access Key, AWS Temporary Access Key (STS), GitHub Fine-grained PAT, Slack Token, Google API Key, JSON Web Token, Stripe Secret Key (LIVE), Stripe Secret Key (test), GitHub Token, OpenAI API Key, Anthropic API Key, Private Key, Credentials in a connection string
 ⋯ Found 1 files to scan
 ⋯ Scanning: ./.env
   scanning ./.env
@@ -89,7 +90,7 @@ $ evnx scan . -v
 
   ✗  Credentials in a connection string          high
      ./.env:4 (DATABASE_URL)  post…5432
-     !  matches a live key format, not a placeholder
+     !  a password in a postgres:// URL, not a placeholder
 
   4 findings  ·  4 high
 
@@ -100,6 +101,6 @@ Next steps:
   3. Force push, after coordinating with everyone who has a clone
   Docs: https://docs.evnx.dev/cli/commands/scan
 [exit 1]
-KNOWN I-058: -v calls the 13 built-in rules custom patterns
+FIXED I-058 (R-scan): -v counts the 13 built-in rules and the custom patterns apart
 
 ================ summary: 1 ok, 0 mismatch   ================

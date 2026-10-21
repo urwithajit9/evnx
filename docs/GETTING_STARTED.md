@@ -208,28 +208,42 @@ evnx doctor --fix
 evnx scan
 ```
 
-Sample output:
+Sample output, in a git repository whose `.gitignore` covers `.env`, with a key also
+pasted into a source file:
 
 ```
-[SCAN] Scanning .env...
+  evnx scan  Checking for exposed secrets
 
-[ERROR]   AWS_ACCESS_KEY_ID — matches pattern: aws_access_key_id
-          Value: AKIAIOSFODNN7EXAMPLE
-          Risk: HIGH — AWS access keys can be used to access your AWS account
+  scanning ./.env, ./.gitignore, ./src/billing.py
 
-[ERROR]   AWS_SECRET_ACCESS_KEY — high entropy string detected
-          Risk: HIGH
+  ✗  Stripe Secret Key (LIVE)                    high
+     ./src/billing.py:1  sk_l…hijk
+     !  matches a live key format, not a placeholder
+     →  revoke at https://dashboard.stripe.com/apikeys
 
-[WARNING] STRIPE_SECRET_KEY — matches pattern: stripe_live_key
-          Risk: MEDIUM — live Stripe key detected (looks like a placeholder)
+  1 finding  ·  1 high
+  ·  git ignores ./.env — 3 findings there are not counted, because it is not committed (--include-ignored lists them)
 
-[SUMMARY] 2 errors, 1 warning
+
+Next steps:
+  1. Move the values out of ./src/billing.py before you commit — into a file git ignores, such as .env, read at run time
+  2. If one was pushed or shared before, revoke or rotate it
 ```
 
-Detected patterns include: AWS access keys, Stripe live and test keys, GitHub personal access tokens, OpenAI and Anthropic API keys, RSA/EC/OpenSSH private keys, high-entropy strings, and generic API key patterns.
+Values are never printed whole (`sk_l…hijk`). **In a git repository a folder scan counts
+what git would commit**: `.env` is where secrets belong, so its findings are one line and
+do not fail the run. A tracked file is reported with advice to rewrite its history; name a
+file (`evnx scan .env`) or add `--include-ignored` to see every finding.
 
-**Exit codes:** `0` clean, `1` secrets found, `2` the scan could not be completed —
-a path that does not exist, an unreadable file, a `--pattern` that will not compile.
+Detected: AWS access keys (long-term and STS), GitHub tokens (classic and fine-grained),
+Slack tokens, Google API keys, JSON Web Tokens, Stripe live and test keys, OpenAI and
+Anthropic API keys, private keys (RSA, EC, OpenSSH, PKCS#8), passwords in connection
+strings, values in variables named like secrets, and high-entropy strings.
+Placeholders such as `sk_live_xxxx…` or `user:password@localhost` are not findings.
+
+**Exit codes:** `0` clean, `1` secrets found or a file that could not be read, `2` the
+scan could not be completed — a path that does not exist, a `--pattern` that will not
+compile, nothing left to scan.
 
 ⚠️ **`2` is not a louder `1`.** "I found nothing" and "I could not look" are different
 answers, and collapsing them is what let `evnx scan ./typo` report success on older
@@ -237,8 +251,8 @@ versions. `--exit-zero` suppresses `1` only; trouble still exits `2`, because th
 means "do not fail my build over findings", not "never tell me the scan was impossible".
 
 A folder scan reads **every** file, so a key in `config/id_rsa.pem` or `app.swift` is
-found. Binary files and files over 1024 KiB are skipped, and the scan says how many
-(`-v` lists them). To read only some file types, opt in with
+found. Binary files and files over 1 MiB (`--max-file-size`) are skipped, and the scan
+says how many (`-v` lists them). To read only some file types, opt in with
 `--extensions env,yml,json` — the run then says it is limited.
 
 Scan specific paths — positional and repeatable:

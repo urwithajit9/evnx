@@ -24,7 +24,7 @@ $ evnx scan .
 
   ✗  Credentials in a connection string          high
      ./.env:4 (DATABASE_URL)  post…5432
-     !  matches a live key format, not a placeholder
+     !  a password in a postgres:// URL, not a placeholder
 
   4 findings  ·  4 high
 
@@ -60,7 +60,7 @@ $ evnx scan . --exclude nothing-matches
 
   ✗  Credentials in a connection string          high
      ./.env:4 (DATABASE_URL)  post…5432
-     !  matches a live key format, not a placeholder
+     !  a password in a postgres:// URL, not a placeholder
 
   4 findings  ·  4 high
 
@@ -79,21 +79,12 @@ $ evnx scan .env.example
 
   scanning .env.example
 
-  ✗  Stripe Secret Key (LIVE)                    high
-     .env.example:1 (STRIPE_KEY)  sk_l…xxxx
-     !  matches a live key format, not a placeholder
-     →  revoke at https://dashboard.stripe.com/apikeys
+  ✓  No secrets detected
 
-  1 finding  ·  1 high
-
-
-Next steps:
-  1. Revoke or rotate the keys above — assume they are compromised
-  2. Remove them from history: git filter-repo --path .env --invert-paths
-  3. Force push, after coordinating with everyone who has a clone
+  1 file scanned
   Docs: https://docs.evnx.dev/cli/commands/scan
-[exit 1]
-  ok: named file is always scanned (exit 1)
+[exit 0]
+  ok: named file is scanned (1 file scanned); FIXED I-050: sk_live_xxxx is a placeholder, not a finding (exit 0)
 
 $ evnx scan .env.example --ignore-placeholders
 
@@ -106,6 +97,6 @@ $ evnx scan .env.example --ignore-placeholders
   1 file scanned
   Docs: https://docs.evnx.dev/cli/commands/scan
 [exit 0]
-KNOWN I-050: sk_live_xxxx is still high even with --ignore-placeholders
+FIXED I-050 (R-scan): a run of x after sk_live_ is a stand-in with or without --ignore-placeholders
 
 ================ summary: 2 ok, 0 mismatch   ================

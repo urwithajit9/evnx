@@ -374,6 +374,70 @@ mod name_rule_tests {
         }
     }
 
+    /// I-287: the name list is a substring match (`AUTH`, `TOKEN`, `SECRET`),
+    /// which is right for masking and wrong for a high finding when the value
+    /// is plainly an address — reported on a real Next.js `.env`.
+    #[test]
+    fn t_i287_a_value_that_is_plainly_an_address_is_not_reported() {
+        for (k, v) in [
+            ("NEXTAUTH_URL", "http://localhost:3000"),
+            ("AUTH0_DOMAIN", "myapp.us.auth0.com"),
+            ("TOKEN_URL", "https://oauth2.googleapis.com/token"),
+            ("OAUTH_CALLBACK_URL", "https://app.company.io/auth/callback"),
+            ("AUTH_HOST", "localhost:8080"),
+            ("SECRET_MANAGER_REGION", "us-east-1"),
+            ("SECRETS_REGION", "europe-west1"),
+            ("AUTH_EMAIL", "ops@company.io"),
+        ] {
+            assert!(
+                !name_suggests_secret(k, v),
+                "{k}={v} is an address, not a credential"
+            );
+        }
+    }
+
+    /// The half that keeps I-287 safe: a URL whose path or query carries the
+    /// secret, and a secret that merely contains dots, are still reported.
+    #[test]
+    fn t_i287_a_url_that_carries_a_secret_is_still_reported() {
+        for (k, v) in [
+            (
+                "SLACK_WEBHOOK_TOKEN",
+                "https://hooks.slack.com/services/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",
+            ),
+            (
+                "DISCORD_WEBHOOK_SECRET",
+                "https://discord.com/api/webhooks/1234567890/Ab3dEf9hIj2lMn5pQr8tUv",
+            ),
+            (
+                "AUTH_URL",
+                "https://api.company.io/v1?token=abcd1234efgh5678",
+            ),
+            ("JWT_SECRET", "6e5a1c9f0b2d4e8a7c3f5d1b9e0a2c4d"),
+            ("SESSION_SECRET", "Kx9.mQ2.vB7.zR4.pL1"),
+            ("ADMIN_PASSWORD", "correct-horse-battery"),
+        ] {
+            assert!(name_suggests_secret(k, v), "{k}={v} must still be reported");
+        }
+    }
+
+    /// I-056: `scan --help` lists every name `[scan] disable` takes, so the
+    /// list cannot fall behind the rules.
+    #[test]
+    fn t_i056_help_names_every_rule_disable_takes() {
+        let help = crate::docs::SCAN.after_help.replace("\n  ", " ");
+        for rule in builtin_rules() {
+            assert!(
+                help.contains(&rule.name),
+                "{} missing from scan --help",
+                rule.name
+            );
+        }
+        for name in crate::core::secretscan::detector::HEURISTIC_NAMES {
+            assert!(help.contains(name), "{name} missing from scan --help");
+        }
+    }
+
     /// The free-text token path passes an empty key. It must not start
     /// reporting every long word it meets.
     #[test]
@@ -441,7 +505,96 @@ pub fn name_suggests_secret(key: &str, value: &str) -> bool {
     let is_path = v.starts_with('/') || v.starts_with("./") || v.starts_with("~/");
     let is_number = v.bytes().all(|b| b.is_ascii_digit());
 
-    v.len() >= 8 && !is_ref && !is_path && !is_number
+    v.len() >= 8 && !is_ref && !is_path && !is_number && !plainly_an_address(v)
+}
+
+/// `NEXTAUTH_URL=http://localhost:3000`, `AUTH0_DOMAIN=myapp.us.auth0.com`,
+/// `SECRET_MANAGER_REGION=us-east-1`: the name matched (`AUTH`, `SECRET`) and
+/// the value is an address (I-287).
+///
+/// ⚠️ The name list stays a substring match on purpose — for masking a false
+/// hit only hides a value. For `scan` a false hit is a **high finding**, so the
+/// value gets a look before the name alone can raise one.
+///
+/// ⛔ Narrow, because a miss prints nothing. A URL counts only with no
+/// password, no query or fragment, and no path segment that could be a token:
+/// a Slack or Discord webhook URL **is** the secret, and its secret is a long
+/// path segment. A host counts only in lower case with an alphabetic top-level
+/// label, so a dotted mixed-case secret is not one.
+fn plainly_an_address(v: &str) -> bool {
+    if let Some((scheme, rest)) = v.split_once("://") {
+        let scheme_ok = !scheme.is_empty()
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'));
+        if !scheme_ok
+            || crate::core::classify::url_password(v).is_some()
+            || rest.contains(['?', '#'])
+        {
+            return false;
+        }
+        let path = rest.split_once('/').map_or("", |(_, p)| p);
+        let could_be_a_token = |seg: &str| {
+            seg.len() >= 20
+                || (seg.len() >= 12
+                    && seg.bytes().any(|b| b.is_ascii_digit())
+                    && seg.bytes().any(|b| b.is_ascii_alphabetic()))
+        };
+        return !path.split('/').any(could_be_a_token);
+    }
+    is_host(v) || is_cloud_region(v) || is_email(v)
+}
+
+/// `localhost`, `db.internal:5432`, `myapp.us.auth0.com`, `10.0.0.1`.
+fn is_host(v: &str) -> bool {
+    let host = v
+        .rsplit_once(':')
+        .filter(|(_, port)| !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()))
+        .map_or(v, |(h, _)| h);
+    if host == "localhost" {
+        return true;
+    }
+    let labels: Vec<&str> = host.split('.').collect();
+    if labels.len() == 4 && labels.iter().all(|l| l.parse::<u8>().is_ok()) {
+        return true;
+    }
+    labels.len() >= 2
+        && labels.iter().all(|l| {
+            !l.is_empty()
+                && l.len() <= 63
+                && l.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
+        && labels
+            .last()
+            .is_some_and(|tld| tld.len() >= 2 && tld.bytes().all(|b| b.is_ascii_lowercase()))
+}
+
+/// `us-east-1`, `europe-west1`, `ap-southeast-2` — AWS and Google Cloud region
+/// names, by their prefixes, so `pass-word-12` is not one.
+fn is_cloud_region(v: &str) -> bool {
+    static REGION: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    REGION
+        .get_or_init(|| {
+            Regex::new(
+                r"^(?:us|eu|ap|sa|ca|me|af|il|mx|cn|europe|asia|australia|northamerica|southamerica|africa)(?:-[a-z]+)*-(?:[a-z]+)?[0-9]{1,2}$",
+            )
+            .expect("the region pattern compiles")
+        })
+        .is_match(v)
+}
+
+/// `ops@company.io`.
+fn is_email(v: &str) -> bool {
+    let Some((local, domain)) = v.split_once('@') else {
+        return false;
+    };
+    !local.is_empty()
+        && local
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b".-_+%".contains(&b))
+        && is_host(&domain.to_ascii_lowercase())
+        && !domain.contains(':')
 }
 
 /// Would a human call this finding obvious noise?
@@ -681,7 +834,7 @@ mod tests {
     /// `evnx scan` does.
     #[test]
     fn the_connection_string_rule_catches_a_password_and_only_a_password() {
-        use crate::commands::scan::patternset::PatternSet;
+        use crate::core::secretscan::PatternSet;
         let set = PatternSet::compile(&builtin_rules()).expect("built-ins must compile");
         let hit = |v: &str| {
             set.strongest(v)
@@ -718,7 +871,7 @@ mod tests {
 
     #[test]
     fn builtin_rules_recognise_the_providers_they_name() {
-        use crate::commands::scan::patternset::PatternSet;
+        use crate::core::secretscan::PatternSet;
         let set = PatternSet::compile(&builtin_rules()).expect("built-ins must compile");
 
         for (value, expected) in [

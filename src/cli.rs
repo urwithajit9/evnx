@@ -1793,10 +1793,36 @@ pub enum Commands {
     /// Detect secrets that look real (AWS keys, tokens, etc.).
     #[command(after_help = docs::SCAN.after_help)]
     Scan {
+        /// Files or folders to scan. Repeatable; defaults to the current folder.
+        ///
+        /// A folder is walked. A file named here is always read — whatever
+        /// `--exclude`, `--extensions` or the size limit say — and always
+        /// reported in full, even one git ignores.
         #[arg(default_value = ".")]
         path: Vec<String>,
+
+        /// Skip paths in a folder walk. Repeatable; adds to `[scan] exclude`.
+        ///
+        /// A value with `*`, `?` or `[` is a glob, matched against the path
+        /// from the folder and against the file name: `'fixtures/**'`,
+        /// `'*.log'`. Any other value matches a whole path component, or
+        /// several in a row: `--exclude test` skips `test/` and a file named
+        /// `test`, not `latest/` or `contest.py`; `vendor/cache` skips that
+        /// folder wherever it is.
+        ///
+        /// ⚠️ This narrows the scan. `.git`, `node_modules`, `target`, `dist`,
+        /// `build` and the `.env.example` family are skipped whatever this
+        /// says, and a file named on the command line is read regardless.
         #[arg(long, default_value = ".env.example")]
         exclude: Vec<String>,
+
+        /// Skip walked files larger than this: `500K`, `5MB`, `2MiB`.
+        ///
+        /// Defaults to 1 MiB, or `[scan] max_file_size` from `.evnx.toml`. A
+        /// skipped file is counted and, with `-v`, listed. A file named on the
+        /// command line is read whatever its size.
+        #[arg(long, value_name = "SIZE", value_parser = crate::core::args::parse_size, allow_hyphen_values = true)]
+        max_file_size: Option<u64>,
 
         /// Read only files with these extensions in folders (comma-separated:
         /// `env,yml,json`). By default every file is read, and binary or very
@@ -1829,16 +1855,22 @@ pub enum Commands {
         /// `changeme`, `your_api_key_here`, `xxx` and similar. Useful on a first
         /// run over a template-heavy repository; prefer `--severity high` if the
         /// goal is simply less noise.
-        #[arg(long)]
+        #[arg(long, overrides_with = "no_ignore_placeholders")]
         ignore_placeholders: bool,
+
+        /// Report filler-looking values even when `[scan] ignore_placeholders`
+        /// is `true`. The last of the two flags wins.
+        #[arg(long, overrides_with = "ignore_placeholders")]
+        no_ignore_placeholders: bool,
 
         /// Lowest confidence worth reporting: high, medium or low.
         ///
         /// Filters what is reported, counted and exited on — all three describe
-        /// the same set. `--severity high` reports only detections that matched
-        /// a format — a provider's, or one this project declared under
-        /// `[[scan.patterns]]` — which is the usual choice for a blocking CI
-        /// gate; the default reports everything.
+        /// the same set. `--severity high` keeps values that matched a format —
+        /// a provider's, or one this project declared under `[[scan.patterns]]`
+        /// — and long values in a variable named like a secret (`JWT_SECRET`,
+        /// `DB_PASSWORD`), so a committed one still fails the gate. It is the
+        /// usual choice for a blocking CI gate; the default reports everything.
         /// Defaults to `low` (report everything), or `[scan] severity` from
         /// `.evnx.toml` when that is set.
         #[arg(long, value_name = "LEVEL")]
@@ -1860,6 +1892,16 @@ pub enum Commands {
         /// me the scan was impossible".
         #[arg(long)]
         exit_zero: bool,
+
+        /// Report findings in files git ignores and does not track.
+        ///
+        /// In a git repository a folder walk counts what git would commit: a
+        /// filled-in `.env` that `.gitignore` covers is where secrets belong, so
+        /// its findings are summarised in one line and do not fail the run. This
+        /// lists them as findings instead. A file named on the command line, and
+        /// any folder outside a repository, is always reported in full.
+        #[arg(long)]
+        include_ignored: bool,
     },
 
     /// Compare two env files: keys missing or extra, and values between environments.

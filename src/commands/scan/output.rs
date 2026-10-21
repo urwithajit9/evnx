@@ -174,7 +174,16 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
             if quiet {
                 return Ok(());
             }
-            println!("  {}  No secrets detected", glyph::OK.green());
+            // ⚠️ Not "No secrets detected" when an ignored file held some: they
+            // were detected, and the line below says where (I-285).
+            if results.ignored_by_git.is_empty() {
+                println!("  {}  No secrets detected", glyph::OK.green());
+            } else {
+                println!(
+                    "  {}  No secrets in files git would commit",
+                    glyph::OK.green()
+                );
+            }
         } else {
             // Not a tick. Nothing was found, and that is not the same as clean.
             println!(
@@ -184,6 +193,7 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
             );
         }
         println!("\n  {}", files_line(results).dimmed());
+        print_ignored_by_git(results);
         return Ok(());
     }
 
@@ -233,11 +243,11 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
                 "flagged by variable name — the value was not checked".dimmed()
             );
         } else if finding.confidence == Confidence::High {
-            println!(
-                "     {}  {}",
-                glyph::WARN.yellow(),
-                "matches a live key format, not a placeholder".dimmed()
-            );
+            let why = finding
+                .note
+                .as_deref()
+                .unwrap_or("matches a live key format, not a placeholder");
+            println!("     {}  {}", glyph::WARN.yellow(), why.dimmed());
         }
         // ⚠️ Printed before the revoke link on purpose. For a variable the
         // bundler publishes, revoking is not the first thing to do and is not
@@ -302,6 +312,7 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
         parts.push(format!("{} low", results.low_confidence));
     }
     println!("  {}", parts.join("  ·  ").bold());
+    print_ignored_by_git(results);
 
     if results.has_critical_findings() {
         println!();
@@ -332,39 +343,219 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
         // provider format carries an `action_url`, shape alone does not.
         let any_named_provider = public.iter().any(|f| f.action_url.is_some());
 
-        if !public.is_empty() && any_named_provider {
-            ui::print_next_steps(&[
+        // ⚠️ History advice names the files it is about (I-286). It said
+        // `git filter-repo --path .env` whatever file held the key, so a key in
+        // `src/main.py` came with a command that rewrote the wrong file.
+        let committed_public = paths_where(public.iter().copied(), may_be_committed);
+        let then_history = (!committed_public.is_empty()).then(|| {
+            format!(
+                "Then, for anything that was ALSO committed: {}, and force push after \
+                 coordinating with everyone who has a clone",
+                filter_repo(&committed_public)
+            )
+        });
+
+        let steps: Vec<String> = if !public.is_empty() && any_named_provider {
+            let mut steps = vec![
                 "Rename the public-prefixed variables above and read them server-side \
-                 — while the name carries the prefix, every build republishes the value",
+                 — while the name carries the prefix, every build republishes the value"
+                    .to_string(),
                 "Revoke and reissue those keys — they have been readable by every \
-                 visitor to your site, so treat them as public, not merely leaked",
-                "Then, for anything that was ALSO committed: git filter-repo --path .env \
-                 --invert-paths, and force push after coordinating with everyone who has a clone",
-            ]);
+                 visitor to your site, so treat them as public, not merely leaked"
+                    .to_string(),
+            ];
+            steps.extend(then_history);
+            steps
         } else if !public.is_empty() {
             // Nothing matched a known provider format, so evnx cannot tell a
             // deliberately publishable key from an unrecognised secret. Say that,
             // rather than prescribing a rotation that may be pointless work.
-            ui::print_next_steps(&[
+            let mut steps = vec![
                 "Check whether these are meant to be public — analytics and \
                  error-reporting keys are designed to ship in the bundle, and \
-                 evnx cannot tell those from a secret it does not recognise",
+                 evnx cannot tell those from a secret it does not recognise"
+                    .to_string(),
                 "If one is NOT meant to be public, rename it to drop the prefix and \
                  read it server-side, then revoke and reissue it — it has been \
-                 readable by every visitor to your site",
-                "Then, for anything that was ALSO committed: git filter-repo --path .env \
-                 --invert-paths, and force push after coordinating with everyone who has a clone",
-            ]);
+                 readable by every visitor to your site"
+                    .to_string(),
+            ];
+            steps.extend(then_history);
+            steps
         } else {
-            ui::print_next_steps(&[
-                "Revoke or rotate the keys above — assume they are compromised",
-                "Remove them from history: git filter-repo --path .env --invert-paths",
-                "Force push, after coordinating with everyone who has a clone",
-            ]);
-        }
+            git_steps(results)
+        };
+        let steps: Vec<&str> = steps.iter().map(String::as_str).collect();
+        ui::print_next_steps(&steps);
     }
 
     Ok(())
+}
+
+/// The one line about walked files git ignores (I-285): which, how many
+/// findings they held, and that those are not counted. Not under `-q`, which
+/// keeps findings only.
+fn print_ignored_by_git(results: &ScanResults) {
+    if results.ignored_by_git.is_empty() || crate::utils::ui::is_quiet() {
+        return;
+    }
+    let held: usize = results.ignored_by_git.iter().map(|f| f.findings).sum();
+    let paths: Vec<&str> = results
+        .ignored_by_git
+        .iter()
+        .map(|f| f.path.as_str())
+        .collect();
+    let (it, is) = if paths.len() == 1 {
+        ("it is", if held == 1 { "is" } else { "are" })
+    } else {
+        ("they are", if held == 1 { "is" } else { "are" })
+    };
+    println!(
+        "  {}  {}",
+        glyph::INFO.dimmed(),
+        format!(
+            "git ignores {} — {} there {is} not counted, because {it} not committed \
+             (--include-ignored lists them)",
+            name_files(&paths),
+            pluralize(held, "finding", "findings"),
+        )
+        .dimmed()
+    );
+}
+
+/// `a`, `a and b`, `a, b and c`, `a, b, c and 2 other files`.
+fn name_files(paths: &[&str]) -> String {
+    match paths {
+        [] => String::new(),
+        [one] => (*one).to_string(),
+        [init @ .., last] if paths.len() <= 3 => format!("{} and {last}", init.join(", ")),
+        _ => format!(
+            "{} and {}",
+            paths[..3].join(", "),
+            pluralize(paths.len() - 3, "other file", "other files")
+        ),
+    }
+}
+
+/// Whether the file a finding is in may be in git history: tracked, or
+/// nothing is known (outside a repository the old advice stands).
+fn may_be_committed(f: &super::models::Finding) -> bool {
+    matches!(f.git, None | Some(super::models::GitState::Tracked))
+}
+
+/// The distinct files among `findings` that `keep` selects, in order, as
+/// `git filter-repo` names them: from the repository root when git said so,
+/// else as shown without a leading `./`.
+fn paths_where<'a>(
+    findings: impl Iterator<Item = &'a super::models::Finding>,
+    keep: fn(&super::models::Finding) -> bool,
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for f in findings.filter(|f| keep(f)) {
+        let path = match &f.repo_path {
+            Some(p) => p.clone(),
+            None => {
+                let (file, _) = split_location(&f.location);
+                file.strip_prefix("./").unwrap_or(file).to_string()
+            }
+        };
+        if !out.contains(&path) {
+            out.push(path);
+        }
+    }
+    out
+}
+
+/// The distinct files among `findings` in `state`, as the report shows them.
+fn shown_in(results: &ScanResults, state: super::models::GitState) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for f in results.findings.iter().filter(|f| f.git == Some(state)) {
+        let (file, _) = split_location(&f.location);
+        if !out.iter().any(|p| p == file) {
+            out.push(file.to_string());
+        }
+    }
+    out
+}
+
+/// `git filter-repo --path a --path b --invert-paths`, for up to three files.
+fn filter_repo(paths: &[String]) -> String {
+    if paths.len() <= 3 {
+        let args: String = paths.iter().map(|p| format!("--path {p} ")).collect();
+        format!("git filter-repo {args}--invert-paths")
+    } else {
+        format!(
+            "git filter-repo --path <file> --invert-paths, with one --path for each of the {} files above",
+            paths.len()
+        )
+    }
+}
+
+/// The steps for findings with no public prefix, by what git knows (I-286).
+///
+/// * May be in history (tracked, or no repository): revoke, rewrite the
+///   history of exactly those files, force push — the old advice.
+/// * Not ignored and not tracked: nothing is committed yet, so keep it so.
+/// * Ignored and not tracked (a file named on the command line, or
+///   `--include-ignored`): nothing was committed.
+fn git_steps(results: &ScanResults) -> Vec<String> {
+    use super::models::GitState;
+    let history = paths_where(results.findings.iter(), may_be_committed);
+    let uncommitted = shown_in(results, GitState::Unignored);
+    let ignored = shown_in(results, GitState::Ignored);
+    let names = |v: &[String]| name_files(&v.iter().map(String::as_str).collect::<Vec<_>>());
+
+    let mut steps = Vec::new();
+    if !history.is_empty() {
+        steps.push("Revoke or rotate the keys above — assume they are compromised".to_string());
+        steps.push(format!(
+            "Remove them from history: {}",
+            filter_repo(&history)
+        ));
+        steps.push("Force push, after coordinating with everyone who has a clone".to_string());
+    }
+    if !uncommitted.is_empty() {
+        // ⚠️ Two remedies: an env file is gitignored; a source file is not —
+        // its value moves out of it. "Add src/billing.py to .gitignore" would
+        // stop the source being committed, not the secret.
+        let (env, source): (Vec<String>, Vec<String>) = uncommitted
+            .iter()
+            .cloned()
+            .partition(|p| super::runner::named_like_dotenv(std::path::Path::new(p)));
+        let them = |v: &[String]| if v.len() == 1 { "it" } else { "them" };
+        if !env.is_empty() {
+            steps.push(format!(
+                "Keep them out of git: git would commit {} — add {} to .gitignore",
+                names(&env),
+                them(&env)
+            ));
+        }
+        if !source.is_empty() {
+            steps.push(format!(
+                "Move the values out of {} before you commit — into a file git ignores, \
+                 such as .env, read at run time",
+                names(&source)
+            ));
+        }
+        if history.is_empty() {
+            steps.push("If one was pushed or shared before, revoke or rotate it".to_string());
+        }
+    }
+    if !ignored.is_empty() {
+        steps.push(format!(
+            "git ignores {} and does not track {}, so nothing was committed",
+            names(&ignored),
+            if ignored.len() == 1 { "it" } else { "them" }
+        ));
+        if history.is_empty() && uncommitted.is_empty() {
+            steps.push(
+                "Rotate a key only if the file was shared another way — a copy, an \
+                 archive, a container image"
+                    .to_string(),
+            );
+        }
+    }
+    steps
 }
 
 /// Render results in JSON format.

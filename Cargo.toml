@@ -182,6 +182,11 @@ criterion          = { version = "0.5", features = ["html_reports"] }
 
 pretty_assertions  = "1"
 serial_test        = "3.0"
+# Validates `scan --format sarif` against the official SARIF 2.1.0 schema,
+# vendored in tests/schemas/ (T-SCAN-62, decided 2026-10-11). Default features
+# off: they fetch remote `$ref`s over HTTP, which a vendored schema never needs,
+# and would add a second TLS stack to the test build.
+jsonschema         = { version = "0.58.6", default-features = false }
 
 # Drives `evnx init`'s menus through a real pseudo-terminal (`tests/init_pty.rs`).
 # dialoguer refuses a piped stdin, so the four interactive tests that fed keys

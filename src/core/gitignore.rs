@@ -492,6 +492,153 @@ pub fn exposure(project_root: &Path, filename: &str) -> Exposure {
     }
 }
 
+/// What git says about one file a command is about to read: its [`Exposure`],
+/// and its path from the repository root with `/` separators (what
+/// `git filter-repo --path` takes).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitView {
+    pub exposure: Exposure,
+    pub repo_path: String,
+}
+
+/// [`exposure`] for many files at once, in the order given (I-285).
+///
+/// `None` for a file outside a work tree, or wherever git cannot answer — no
+/// git, a path that cannot be resolved, a command that fails. A caller treats
+/// `None` as "no information", never as "ignored".
+///
+/// ⚠️ Two git processes per **repository**, not two per file. [`exposure`]
+/// runs `ls-files` and `check-ignore` for its one file, which is right for
+/// `validate` and `doctor` and would be thousands of processes for a walk.
+/// Here every file is grouped under the nearest folder holding a `.git` (a
+/// directory, or a file for a submodule or worktree), and that repository is
+/// asked once: `ls-files -z` for what is tracked, `check-ignore -z --stdin` for
+/// what is ignored. `check-ignore` does not report a tracked file, which is the
+/// same order [`exposure`] decides in.
+pub fn exposures(files: &[PathBuf]) -> Vec<Option<GitView>> {
+    use std::collections::HashMap;
+
+    let mut out: Vec<Option<GitView>> = vec![None; files.len()];
+    // Repository root → (index into `files`, path from that root).
+    let mut groups: HashMap<PathBuf, Vec<(usize, String)>> = HashMap::new();
+    let mut root_of: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
+
+    for (i, file) in files.iter().enumerate() {
+        let Ok(abs) = fs::canonicalize(file) else {
+            continue;
+        };
+        let Some(dir) = abs.parent() else { continue };
+        let root = root_of
+            .entry(dir.to_path_buf())
+            .or_insert_with(|| {
+                dir.ancestors()
+                    .find(|a| a.join(".git").exists())
+                    .map(Path::to_path_buf)
+            })
+            .clone();
+        let Some(root) = root else { continue };
+        let Ok(rel) = abs.strip_prefix(&root) else {
+            continue;
+        };
+        let rel = rel
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        groups.entry(root).or_default().push((i, rel));
+    }
+
+    for (root, members) in groups {
+        let Some((tracked, ignored)) = ask_repository(&root, &members) else {
+            continue;
+        };
+        for (i, rel) in members {
+            let exposure = if tracked.contains(&rel) {
+                Exposure::Tracked
+            } else if ignored.contains(&rel) {
+                Exposure::Protected
+            } else {
+                Exposure::Unignored
+            };
+            out[i] = Some(GitView {
+                exposure,
+                repo_path: rel,
+            });
+        }
+    }
+    out
+}
+
+/// The tracked and the ignored paths among `members`, from git itself, or
+/// `None` when git cannot answer for `root`.
+fn ask_repository(
+    root: &Path,
+    members: &[(usize, String)],
+) -> Option<(
+    std::collections::HashSet<String>,
+    std::collections::HashSet<String>,
+)> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    // ⚠️ The folder must be the work tree's top, not merely contain a `.git`:
+    // a stray file named `.git` would otherwise make git answer for whatever
+    // repository sits above it, with paths relative to the wrong root.
+    let top = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let top = PathBuf::from(String::from_utf8_lossy(&top.stdout).trim());
+    if fs::canonicalize(&top).ok()? != root {
+        return None;
+    }
+
+    let split = |bytes: &[u8]| -> std::collections::HashSet<String> {
+        bytes
+            .split(|b| *b == 0)
+            .filter(|p| !p.is_empty())
+            .map(|p| String::from_utf8_lossy(p).into_owned())
+            .collect()
+    };
+
+    let listed = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "-z"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let tracked = split(&listed.stdout);
+
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["check-ignore", "-z", "--stdin"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    {
+        let mut stdin = child.stdin.take()?;
+        for (_, rel) in members {
+            stdin.write_all(rel.as_bytes()).ok()?;
+            stdin.write_all(&[0]).ok()?;
+        }
+    }
+    let answered = child.wait_with_output().ok()?;
+    // 0: some paths are ignored, 1: none are. Anything else is no answer — the
+    // same reading as `is_gitignored`, where collapsing 128 onto "not ignored"
+    // once reported every env file in a plain folder as exposed.
+    if !matches!(answered.status.code(), Some(0 | 1)) {
+        return None;
+    }
+    Some((tracked, split(&answered.stdout)))
+}
+
 /// Whether `dir` is inside a git work tree. `false` when git cannot answer.
 pub fn in_work_tree(dir: &Path) -> bool {
     Command::new("git")
@@ -663,6 +810,108 @@ mod tests {
         let plain = tempfile::TempDir::new().unwrap();
         fs::write(plain.path().join(".gitignore"), ".env*\n").unwrap();
         assert_eq!(exposure(plain.path(), ".env"), Exposure::Protected);
+    }
+
+    // ── exposures: the batched form, for a walk (I-285) ──────────────────────
+
+    fn exposure_of(views: &[Option<GitView>], i: usize) -> Option<Exposure> {
+        views[i].as_ref().map(|v| v.exposure)
+    }
+
+    /// One answer per file, each the same as [`exposure`] gives for it alone.
+    #[test]
+    fn t_i285_exposures_agree_with_exposure_for_each_file() {
+        let Some(d) = git_repo() else { return };
+        let root = d.path();
+        fs::write(root.join(".gitignore"), ".env*\n!.env.example\nsecrets/\n").unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("secrets")).unwrap();
+        for f in [
+            ".env",
+            ".env.example",
+            "src/app.py",
+            "secrets/a.txt",
+            "done.txt",
+        ] {
+            fs::write(root.join(f), "A=1\n").unwrap();
+        }
+        git(root, &["add", "done.txt"]);
+        git(root, &["commit", "-qm", "x"]);
+
+        let files: Vec<PathBuf> = [
+            ".env",
+            ".env.example",
+            "src/app.py",
+            "secrets/a.txt",
+            "done.txt",
+        ]
+        .iter()
+        .map(|f| root.join(f))
+        .collect();
+        let views = exposures(&files);
+        assert_eq!(exposure_of(&views, 0), Some(Exposure::Protected));
+        assert_eq!(exposure_of(&views, 1), Some(Exposure::Unignored));
+        assert_eq!(exposure_of(&views, 2), Some(Exposure::Unignored));
+        // A file inside an ignored directory is ignored too.
+        assert_eq!(exposure_of(&views, 3), Some(Exposure::Protected));
+        assert_eq!(exposure_of(&views, 4), Some(Exposure::Tracked));
+        assert_eq!(views[2].as_ref().unwrap().repo_path, "src/app.py");
+    }
+
+    /// I-157 through the batch: committed first and ignored later is tracked.
+    #[test]
+    fn t_i285_exposures_a_committed_then_ignored_file_is_tracked() {
+        let Some(d) = git_repo() else { return };
+        fs::write(d.path().join(".env"), "A=1\n").unwrap();
+        git(d.path(), &["add", ".env"]);
+        git(d.path(), &["commit", "-qm", "x"]);
+        fs::write(d.path().join(".gitignore"), ".env\n").unwrap();
+        let views = exposures(&[d.path().join(".env")]);
+        assert_eq!(exposure_of(&views, 0), Some(Exposure::Tracked));
+    }
+
+    /// Outside a work tree there is no answer — not "ignored", whatever a
+    /// `.gitignore` lying in the folder says.
+    #[test]
+    fn t_i285_exposures_outside_a_repository_is_no_answer() {
+        let plain = tempfile::TempDir::new().unwrap();
+        fs::write(plain.path().join(".gitignore"), ".env*\n").unwrap();
+        fs::write(plain.path().join(".env"), "A=1\n").unwrap();
+        assert_eq!(exposures(&[plain.path().join(".env")]), vec![None]);
+        // A path that does not resolve is no answer too.
+        assert_eq!(exposures(&[plain.path().join("missing")]), vec![None]);
+    }
+
+    /// A path spelled with `.` and `..`, as a walk or an argument gives it, gets
+    /// the same answer and the same repository path.
+    #[test]
+    fn t_i285_exposures_accepts_dotted_spellings() {
+        let Some(d) = git_repo() else { return };
+        fs::create_dir_all(d.path().join("sub")).unwrap();
+        fs::write(d.path().join(".gitignore"), ".env\n").unwrap();
+        fs::write(d.path().join(".env"), "A=1\n").unwrap();
+        let views = exposures(&[d.path().join("./.env"), d.path().join("sub/../.env")]);
+        for i in 0..2 {
+            assert_eq!(exposure_of(&views, i), Some(Exposure::Protected));
+            assert_eq!(views[i].as_ref().unwrap().repo_path, ".env");
+        }
+    }
+
+    /// Two repositories in one call — a nested one is its own repository.
+    #[test]
+    fn t_i285_exposures_a_nested_repository_answers_for_itself() {
+        let Some(d) = git_repo() else { return };
+        let inner = d.path().join("inner");
+        fs::create_dir_all(&inner).unwrap();
+        git(&inner, &["init", "-q"]);
+        // The outer repository ignores nothing; the inner one ignores `.env`.
+        fs::write(inner.join(".gitignore"), ".env\n").unwrap();
+        fs::write(inner.join(".env"), "A=1\n").unwrap();
+        fs::write(d.path().join(".env"), "A=1\n").unwrap();
+        let views = exposures(&[d.path().join(".env"), inner.join(".env")]);
+        assert_eq!(exposure_of(&views, 0), Some(Exposure::Unignored));
+        assert_eq!(exposure_of(&views, 1), Some(Exposure::Protected));
+        assert_eq!(views[1].as_ref().unwrap().repo_path, ".env");
     }
 
     #[test]

@@ -16,18 +16,16 @@
 use std::ops::Range;
 use std::sync::OnceLock;
 
-use regex::Regex;
-
 use crate::utils::patterns;
 
-/// The built-in provider rules, compiled once.
-fn rules() -> &'static [Regex] {
-    static RULES: OnceLock<Vec<Regex>> = OnceLock::new();
+/// The built-in provider rules, compiled once by the engine `scan` uses
+/// ([`crate::core::secretscan::PatternSet`]), rather than a second time here
+/// as plain expressions (R-scan).
+fn rules() -> &'static crate::core::secretscan::PatternSet {
+    static RULES: OnceLock<crate::core::secretscan::PatternSet> = OnceLock::new();
     RULES.get_or_init(|| {
-        patterns::builtin_rules()
-            .iter()
-            .filter_map(|r| Regex::new(&r.regex).ok())
-            .collect()
+        crate::core::secretscan::PatternSet::compile(&patterns::builtin_rules())
+            .expect("the built-in rules compile; utils::patterns tests them")
     })
 }
 
@@ -39,7 +37,7 @@ pub fn is_secret_shaped(value: &str) -> bool {
     if v.is_empty() || patterns::is_placeholder(v) {
         return false;
     }
-    rules().iter().any(|r| r.is_match(v)) || patterns::detect_heuristic(v, "").is_some()
+    !rules().find_all(v).is_empty() || patterns::detect_heuristic(v, "").is_some()
 }
 
 /// Whether the **name** says the value is a credential, at the Lenient level
@@ -184,6 +182,39 @@ pub fn may_generate(key: &str) -> bool {
         || ["_PASSWORD", "_PASSWD", "_PWD"]
             .iter()
             .any(|s| upper.ends_with(s))
+}
+
+/// Whether a value a **format rule** matched cannot be a working credential
+/// (I-050, N-20): a placeholder (Lenient, no key), a run of one filler
+/// character after the prefix (`sk_live_xxxx…`, `ghp_0000…`, `AKIA****…`), or
+/// the `user:password@localhost` URL evnx writes into new projects.
+///
+/// ⚠️ For rule matches only. The name and entropy heuristics already drop
+/// placeholders; the format rules did not, so `sk_live_xxxxxxxx…` was reported
+/// high with "matches a live key format, not a placeholder".
+///
+/// ⛔ A run of **eight** identical characters: a real key is random, and eight
+/// in a row is not something randomness produces in a key's length.
+pub fn is_stand_in(value: &str) -> bool {
+    let v = value.trim();
+    if is_placeholder("", v, Strictness::Lenient) || crate::core::placeholder::is_url_placeholder(v)
+    {
+        return true;
+    }
+    let mut run = 0usize;
+    let mut last = None;
+    for c in v.chars() {
+        if Some(c) == last {
+            run += 1;
+        } else {
+            run = 1;
+            last = Some(c);
+        }
+        if run >= 8 && matches!(c, 'x' | 'X' | '*' | '0' | '#') {
+            return true;
+        }
+    }
+    false
 }
 
 /// Whether `key=value` holds a secret, by either the name or the value.
@@ -515,6 +546,33 @@ fn placeholder_pattern(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::Strictness::{Lenient, Strict};
+
+    /// I-050, N-20: what a format rule may match and still not report.
+    #[test]
+    fn t_i050_stand_ins_cannot_be_live() {
+        for v in [
+            "sk_live_xxxxxxxxxxxxxxxxxxxxxxxx",
+            "ghp_000000000000000000000000000000000000",
+            "AKIA****************",
+            "AKIAIOSFODNN7EXAMPLE",
+            "postgresql://user:password@localhost:5432",
+            "mongodb+srv://user:password@cluster.example.net",
+            "amqp://user:password@127.0.0.1:5672",
+        ] {
+            assert!(super::is_stand_in(v), "{v}");
+        }
+        for v in [
+            "sk_live_51H1234567890abcdefghijk",
+            "AKIA4OZRMFJ3VREALKEY",
+            "postgres://user:password@db.prod.company.io:5432",
+            "postgres://app:password1@localhost:5432",
+            "postgres://admin:s3cr3t@localhost:5432",
+            // seven in a row is not enough
+            "sk_live_51Hxxxxxxx1234567890abcdefghijk",
+        ] {
+            assert!(!super::is_stand_in(v), "{v}");
+        }
+    }
 
     /// I-260, DEC-VA4: the app's own secrets and passwords, never a key a
     /// provider issues — whatever its spelling shares with an app secret.

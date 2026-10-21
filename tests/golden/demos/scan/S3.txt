@@ -24,7 +24,7 @@ $ evnx scan . --severity high
 
   ✗  Credentials in a connection string          high
      ./.env:4 (DATABASE_URL)  post…5432
-     !  matches a live key format, not a placeholder
+     !  a password in a postgres:// URL, not a placeholder
 
   4 findings  ·  4 high
 
@@ -60,7 +60,7 @@ $ evnx scan . --severity all
 
   ✗  Credentials in a connection string          high
      ./.env:4 (DATABASE_URL)  post…5432
-     !  matches a live key format, not a placeholder
+     !  a password in a postgres:// URL, not a placeholder
 
   4 findings  ·  4 high
 

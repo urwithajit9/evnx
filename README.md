@@ -285,11 +285,22 @@ evnx scan --exit-zero                  # warn but do not fail CI
 evnx scan --extensions env,yml,json    # opt-in: read only these files in folders (the run says so)
 ```
 
-A folder scan reads **every** file. Binary files and files over 1024 KiB are
-skipped, and the scan says how many (`-v` lists them). A file you name is always
-read.
+A folder scan reads **every** file. Binary files and files over 1 MiB
+(`--max-file-size`) are skipped, and the scan says how many (`-v` lists them). A
+file you name is always read.
 
-Detects: AWS Access Keys, Stripe keys (live and test), GitHub tokens, OpenAI and Anthropic API keys, RSA/EC/OpenSSH private keys, high-entropy strings, and generic API key patterns — plus any format you declare with `--pattern` or `[[scan.patterns]]`.
+**In a git repository a folder scan counts what git would commit.** A filled-in
+`.env` that `.gitignore` covers is where secrets belong: its findings are summarised
+in one line and do not fail the run. A tracked file, or one the next `git add .`
+would take, is reported. Name the file (`evnx scan .env`) or add `--include-ignored`
+to see every finding.
+
+Detects: AWS access keys (long-term and STS), GitHub tokens (classic and
+fine-grained), Slack tokens, Google API keys, JSON Web Tokens, Stripe keys (live and
+test), OpenAI and Anthropic API keys, private keys (RSA, EC, OpenSSH, PKCS#8),
+passwords in connection strings, values in variables named like secrets, and
+high-entropy strings — plus any format you declare with `--pattern` or
+`[[scan.patterns]]`. `evnx scan --help` lists the rule names `[scan] disable` takes.
 
 **Exit codes are `0` clean, `1` secrets found, `2` the scan could not be completed.** `2` is not a louder `1`: "I found nothing" and "I could not look" are different answers. `--exit-zero` suppresses `1` only.
 
@@ -647,8 +658,9 @@ evnx update --check --json     # the same answer for CI
 
 ## Working with multiple environments
 
-`--env-name` resolves `.env.<name>` across `validate`, `scan`, `diff`, `sync`, `convert`,
-`migrate`, `backup` and `template`:
+`--env-name` resolves `.env.<name>` across `validate`, `diff`, `sync`, `convert`,
+`migrate`, `backup` and `template`. `scan` has no `--env-name`: it reads every `.env`
+variant a folder walk finds, or the file you name.
 
 ```bash
 evnx validate --env-name production            # operates on .env.production
@@ -1122,7 +1134,7 @@ A `--lenient` flag for extended syntax is under consideration — see [open issu
 
 **Multiple environments are supported as of v0.5.0.** `evnx scan` reads every `.env`
 variant it walks past, and `--env-name production` resolves to `.env.production` across
-`validate`, `scan`, `diff`, `sync`, `convert`, `backup` and `template`.
+`validate`, `diff`, `sync`, `convert`, `backup` and `template`.
 
 ⚠️ Before v0.5.0, `evnx scan` silently skipped `.env.production`, `.env.local`,
 `.env.staging` and every other dotted variant, and reported "no secrets detected" without
