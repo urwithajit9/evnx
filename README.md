@@ -297,15 +297,27 @@ Detects: AWS Access Keys, Stripe keys (live and test), GitHub tokens, OpenAI and
 
 ### `evnx diff`
 
-Compares `.env` and `.env.example` and shows what is missing, extra, or mismatched.
+Compares two env files. Against the template (`.env.example`) it compares **key names
+only** — which keys `.env` lacks and which ones the template does not declare — because
+every filled-in value differs from its placeholder. Between two environments
+(`--against`) it compares values too.
 
 ```bash
-evnx diff                     # compare .env vs .env.example
-evnx diff --show-values       # include values (secrets stay masked, e.g. postgres://admin:***@db)
+evnx diff                     # keys missing from .env, or not in .env.example
+evnx diff --fail-on missing   # exit 1 only when .env lacks a key the template has
+evnx diff --env-name production --against staging   # two environments: keys and values
+evnx diff --values            # compare values against the template too
+evnx diff --show-values       # print values (secrets stay masked, e.g. postgres://admin:***@db)
 evnx diff --reverse           # swap comparison direction
-evnx diff --format json       # JSON output
-evnx diff --format patch --show-values   # a patch that applies; without --show-values values are <withheld>
+evnx diff --ignore-keys BUILD_ID   # leave keys out (exact case; adds to [diff] ignore_keys)
+evnx diff --format json       # JSON output (schema_version 1)
+evnx diff --format patch --show-values   # values are <withheld> without --show-values
 ```
+
+Exit codes: `0` nothing `--fail-on` counts (default: missing, extra, different), `1`
+differences found, `2` could not run. ⚠️ `--format patch --show-values` and
+`--interactive --show-values` print real secrets; without `--show-values` they print
+`<withheld>`. `--interactive` writes nothing yet.
 
 ---
 
@@ -381,7 +393,8 @@ macOS, not on Windows. evnx does not run `aws` itself.
 ### `evnx sync`
 
 Keeps `.env` and `.env.example` aligned by variable **name**. It only ever adds: it never
-removes a variable or changes a value (comparing values is `evnx diff`).
+removes a variable or changes a value (comparing values between two environments is
+`evnx diff`).
 
 ```bash
 # Forward (the default): add .env's new names to .env.example, as placeholder values
@@ -645,8 +658,8 @@ evnx diff --env-name production --against staging
 A name whose file does not exist is an error listing the ones that do — it never quietly
 falls back to `.env`. Set a project default with `[defaults] env_name` in `.evnx.toml`.
 
-Comparing two real environments is the useful diff; the default compares against the
-template, where every filled-in value differs by construction.
+Between two real environments `diff` compares values too; against the template it compares
+key names only, because every filled-in value differs from its placeholder.
 
 ---
 
@@ -960,7 +973,7 @@ repos:
     hooks:
       - id: evnx-scan        # blocks commit if secrets found
       - id: evnx-validate    # blocks commit if .env misconfigured
-      - id: evnx-diff        # warns on .env/.env.example drift
+      - id: evnx-diff        # blocks commit if .env lacks a key .env.example declares (skips with no .env)
       - id: evnx-sync        # blocks commit if .env.example lacks a variable from .env (skips with no .env)
       - id: evnx-scan-push   # strict scan on push
 ```

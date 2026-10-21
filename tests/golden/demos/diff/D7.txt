@@ -8,15 +8,8 @@ $ evnx diff --format patch
 
 # Remove these from .env:
 - EXTRA_DEBUG=<withheld>
-
-# Update these in .env:
-- DATABASE_URL=<withheld>
-+ DATABASE_URL=<withheld>
-- API_SECRET=<withheld>
-+ API_SECRET=<withheld>
-- API_PORT=<withheld>
-+ API_PORT=<withheld>
 [stderr]
+  values not compared against a template (--values to compare them)
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
 
@@ -25,6 +18,7 @@ $ bash -c "$0" diff --format patch > changes.patch 2>/dev/null; patch -p1 --dry-
 patch: **** Only garbage was found in the patch input.
 [exit 2]
 I-071 fixed (DEC-G7): values are <withheld> unless --show-values
+FIXED I-078: against the template the patch has no update section, which replaced real values with placeholders
 KNOWN I-072: patch(1) rejects the output and headings always say .env; decided: dotenv fragment with real file names
 
 ================ summary: 0 ok, 0 mismatch   ================

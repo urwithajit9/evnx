@@ -55,12 +55,15 @@ fn t_f6_validate_leaves_settings_alone() {
 }
 
 /// Lenient is unchanged: `diff --show-values` still masks all eight.
+///
+/// `--values`: against a template only key names are compared (I-078), and a
+/// test of how values are masked needs values in the output.
 #[test]
 fn t_f6_masking_stays_lenient() {
     let p = Project::new()
         .env("ADMIN_PWD=hunter2xyz\nAUTH_ENABLED=topsecretvalue\n")
         .example("ADMIN_PWD=\nAUTH_ENABLED=\n");
-    let out = run(p.path(), &["diff", "--show-values"]);
+    let out = run(p.path(), &["diff", "--values", "--show-values"]);
     assert!(!out.all().contains("hunter2xyz"), "{}", out.all());
     assert!(!out.all().contains("topsecretvalue"), "{}", out.all());
 }

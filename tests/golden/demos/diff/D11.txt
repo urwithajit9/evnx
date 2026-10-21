@@ -9,18 +9,11 @@ Missing from .env (present in .env.example):
 Extra in .env (not in .env.example):
   - EXTRA_DEBUG
 
-Different values:
-  ~ DATABASE_URL
-  ~ API_SECRET
-    .env.example: ***
-    .env: ***
-  ~ API_PORT
-
-  2 missing from .env  ·  1 not in .env.example  ·  3 different values
+  2 missing from .env  ·  1 not in .env.example
 [exit 1]
-KNOWN I-079: -q changes nothing; decided: hides header and footer
+FIXED I-079: -q hides the header, the footer and the template note
 
-$ evnx diff -v
+$ evnx -v diff
 Missing from .env (present in .env.example):
   + REDIS_URL
   + FEATURE_X
@@ -28,34 +21,33 @@ Missing from .env (present in .env.example):
 Extra in .env (not in .env.example):
   - EXTRA_DEBUG
 
-Different values:
-  ~ DATABASE_URL
-  ~ API_SECRET
-    .env.example: ***
-    .env: ***
-  ~ API_PORT
-
-  2 missing from .env  ·  1 not in .env.example  ·  3 different values
+  2 missing from .env  ·  1 not in .env.example
 [stderr]
-Running diff in verbose mode
 
   evnx diff  .env ↔ .env.example
 
+⋯ comparing .env (4 keys) with .env.example (5 keys)
+⋯ .env.example is a template: key names only (--values compares values)
+⋯ fails on: missing, extra, different
+  values not compared against a template (--values to compare them)
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
-(verbose adds one stderr line today)
+FIXED I-079: -v names the files, what is compared and what fails
 
 $ evnx diff
 [stderr]
-
-  evnx diff  .env ↔ .env.example
-
 Error: .env does not exist
 
 Create it with `evnx init`, or point at another file with --env.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: KNOWN D-39: this is what the pre-commit hook evnx-diff does in a fresh clone (exit 2)
+  ok: no .env: could not run (exit 2)
 
-================ summary: 1 ok, 0 mismatch   ================
+$ evnx diff --fail-on missing --skip-without-env
+[stderr]
+· .env not found — nothing to check, skipped
+[exit 0]
+  ok: FIXED D-39: the evnx-diff hook skips a fresh clone and says so (exit 0)
+
+================ summary: 2 ok, 0 mismatch   ================

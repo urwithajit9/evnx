@@ -51,6 +51,17 @@ pub fn finish(verdict: Verdict) {
     }
 }
 
+/// Announce a check that had nothing to check and passed for that reason: one
+/// line on stderr, the same shape in every command.
+///
+/// `what` says why, e.g. `.env not found`. For pre-commit hooks on a fresh
+/// clone (`sync --skip-without-env`, `diff --skip-without-env`), where exit 2
+/// would block every new contributor's first commit. A skip is said, never
+/// silent: a clean exit that checked nothing must not read like a pass.
+pub fn skipped(what: &str) {
+    eprintln!("· {what} — nothing to check, skipped");
+}
+
 /// How far a command got before it failed. Only the wording differs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {

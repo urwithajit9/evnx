@@ -1862,7 +1862,15 @@ pub enum Commands {
         exit_zero: bool,
     },
 
-    /// Compare .env vs .env.example — show missing/extra vars.
+    /// Compare two env files: keys missing or extra, and values between environments.
+    ///
+    /// Against a template (`.env.example`) only key names are compared; between
+    /// two environments (`--against`) values are compared too.
+    //
+    // ⚠️ The first line said "Compare .env vs .env.example — show missing/extra
+    // vars", and the command compared values against the template as well, so
+    // a filled-in `.env` exited 1 on every real project (I-078). The rule is
+    // in `after_help` (`docs::DIFF`), where clap prints it as written.
     #[command(after_help = docs::DIFF.after_help)]
     Diff {
         /// The environment file on the left of the comparison.
@@ -1871,11 +1879,11 @@ pub enum Commands {
         #[arg(long)]
         env: Option<String>,
 
-        /// The file on the right of the comparison.
+        /// The template on the right of the comparison: key names only.
         ///
-        /// Defaults to `.env.example`. Comparing against a template shows every
-        /// filled-in value as different by construction — `--against` compares
-        /// two real environments instead.
+        /// Defaults to `.env.example`, or `[defaults] example`. A template holds
+        /// placeholders, so its values are not compared unless `--values` is
+        /// given. To compare two real environments use `--against`.
         #[arg(long)]
         example: Option<String>,
 
@@ -1887,14 +1895,21 @@ pub enum Commands {
         #[arg(long, value_name = "NAME", conflicts_with = "env")]
         env_name: Option<String>,
 
-        /// Compare against `.env.<NAME>` instead of `.env.example`.
+        /// Compare against the environment `.env.<NAME>`: keys and values.
         ///
-        /// Comparing two real environments is the useful diff —
-        /// `evnx diff --env-name production --against staging`. The default
-        /// compares against the template, where every filled-in value differs by
-        /// construction.
+        /// `evnx diff --env-name production --against staging` lists the keys
+        /// one environment lacks and the keys whose values differ (values are
+        /// shown only with `--show-values`).
         #[arg(long, value_name = "NAME", conflicts_with = "example")]
         against: Option<String>,
+
+        /// Compare values against a template too, not only key names.
+        ///
+        /// Every filled-in value differs from its placeholder, so expect each
+        /// one to be listed. `--against` compares values without it.
+        #[arg(long)]
+        values: bool,
+
         /// Print the values, not just which keys differ.
         ///
         /// In `pretty` and `json` a secret stays masked: by its name, or by the
@@ -1910,19 +1925,53 @@ pub enum Commands {
         /// Output format: `pretty`, `json` or `patch`.
         ///
         /// An unrecognised value is an error (exit 2), not a silent fall back
-        /// to `pretty` (I-074).
+        /// to `pretty` (I-074). `patch` lists add, remove and update lines; it
+        /// is not input for `patch(1)`.
         #[arg(long, default_value = "pretty", value_parser = ["pretty", "json", "patch"])]
         format: String,
+
         /// Swap the two sides: compare the example against the environment.
         #[arg(long)]
         reverse: bool,
-        /// Ignore these keys (comma-separated) — useful for env-specific vars
-        #[arg(long, value_delimiter = ',')]
+
+        /// Leave these keys out of the comparison (comma-separated, exact case).
+        ///
+        /// Added to `[diff] ignore_keys` from `.evnx.toml`. The summary says how
+        /// many keys were ignored; `-v` lists names that matched nothing.
+        #[arg(long, value_delimiter = ',', value_name = "KEYS")]
         ignore_keys: Vec<String>,
-        /// Include extended statistics in JSON output
+
+        /// What fails the run (exit 1): `missing`, `extra`, `different`.
+        ///
+        /// Comma-separated; all three by default. Only the exit code changes —
+        /// the report lists everything. `--fail-on missing` fails only when the
+        /// left file lacks a key the right one has. `different` needs values to
+        /// be compared (`--against`, or `--values`).
+        #[arg(
+            long,
+            value_delimiter = ',',
+            value_name = "WHAT",
+            value_parser = ["missing", "extra", "different"]
+        )]
+        fail_on: Vec<String>,
+
+        /// With no `.env`, skip (exit 0) and say so.
+        ///
+        /// For pre-commit hooks: a fresh clone has a template and no `.env`, and
+        /// a hook that exits 2 there blocks every new contributor's first
+        /// commit. Only the left file is skipped; a missing template is still
+        /// an error. ⚠️ Not for CI, where a check that never ran must not pass.
+        #[arg(long)]
+        skip_without_env: bool,
+
+        /// Add a `stats` object to the JSON (`--format json` only).
         #[arg(long, default_value_t = false)]
         with_stats: bool,
-        /// Enable interactive merge mode (patch format only)
+
+        /// Prompt for each change (`--format patch` only).
+        ///
+        /// ⚠️ Nothing is written: the answers are listed, not applied (I-073,
+        /// planned for 0.11.0).
         #[arg(short, long, default_value_t = false)]
         interactive: bool,
     },

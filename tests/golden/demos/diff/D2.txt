@@ -9,20 +9,15 @@ Missing from .env (present in .env.example):
 Extra in .env (not in .env.example):
   - EXTRA_DEBUG
 
-Different values:
-  ~ DATABASE_URL
-  ~ API_SECRET
-    .env.example: ***
-    .env: ***
-  ~ API_PORT
-
-  2 missing from .env  ·  1 not in .env.example  ·  3 different values
+  2 missing from .env  ·  1 not in .env.example
 [stderr]
 
   evnx diff  .env ↔ .env.example
 
+  values not compared against a template (--values to compare them)
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
-  ok: any difference exits 1 (missing, extra, different values) (exit 1)
+  ok: missing and extra keys exit 1 (exit 1)
+FIXED I-078: against the template only key names are compared; DATABASE_URL, API_SECRET and API_PORT are not listed
 
 ================ summary: 1 ok, 0 mismatch   ================

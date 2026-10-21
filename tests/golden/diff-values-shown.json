@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "compared": "values",
+  "missing": [],
+  "extra": [
+    "EXTRA"
+  ],
+  "different": [
+    {
+      "key": "DB_HOST",
+      "example_value": "",
+      "env_value": "localhost",
+      "value_state": "shown",
+      "values_redacted": false
+    },
+    {
+      "key": "AWS_KEY",
+      "example_value": "***",
+      "env_value": "***",
+      "value_state": "masked",
+      "values_redacted": true
+    },
+    {
+      "key": "PORT",
+      "example_value": "",
+      "env_value": "8080",
+      "value_state": "shown",
+      "values_redacted": false
+    }
+  ],
+  "ignored": [],
+  "summary": {
+    "missing": 0,
+    "extra": 1,
+    "different": 3,
+    "total": 4
+  }
+}

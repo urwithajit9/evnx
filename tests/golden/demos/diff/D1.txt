@@ -2,13 +2,14 @@
 ================ D1 ================
 
 $ evnx diff
-✓ Files are identical
+✓ .env and .env.example have the same keys
 [stderr]
 
   evnx diff  .env ↔ .env.example
 
+  values not compared against a template (--values to compare them)
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 0]
-  ok: same keys and values in another order are identical (exit 0)
+  ok: same keys in another order: the same keys (exit 0)
 
 ================ summary: 1 ok, 0 mismatch   ================

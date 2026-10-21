@@ -267,6 +267,26 @@ fn diff_json_is_stable() {
     check("diff.json", &stdout_of(&d, &["diff", "--format", "json"]));
 }
 
+/// R-diff (I-078): against a template the default compares key names only,
+/// so `different` is empty in `diff.json`. This pins the shape of a value
+/// comparison — `value_state` beside `values_redacted` (I-076b) — with
+/// values withheld and with `--show-values`.
+#[test]
+fn diff_values_json_is_stable() {
+    let d = fixture();
+    check(
+        "diff-values.json",
+        &stdout_of(&d, &["diff", "--format", "json", "--values"]),
+    );
+    check(
+        "diff-values-shown.json",
+        &stdout_of(
+            &d,
+            &["diff", "--format", "json", "--values", "--show-values"],
+        ),
+    );
+}
+
 /// The property the golden file cannot assert on its own: whatever that output
 /// becomes, **no value from the fixture may appear in it**.
 ///
@@ -281,6 +301,8 @@ fn diff_json_contains_no_value_from_the_fixture() {
     for format in [
         vec!["diff", "--format", "json"],
         vec!["diff", "--format", "json", "--show-values"],
+        vec!["diff", "--format", "json", "--values"],
+        vec!["diff", "--format", "json", "--values", "--show-values"],
     ] {
         let out = stdout_of(&d, &format);
         for line in env.lines() {

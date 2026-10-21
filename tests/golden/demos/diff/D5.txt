@@ -22,7 +22,7 @@ Different values:
   ok: two real environments (exit 1)
 
 $ evnx diff --env-name production --against staging --ignore-keys SENTRY_DSN,STAGING_ONLY,DATABASE_URL,API_PORT
-✓ Files are identical
+✓ Files are identical (4 keys ignored)
 [stderr]
 
   evnx diff  .env.production ↔ .env.staging

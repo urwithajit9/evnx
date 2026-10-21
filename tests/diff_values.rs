@@ -7,6 +7,9 @@
 //! - I-076, DEC-G9: `--show-values` masked by key name only, so
 //!   `DATABASE_URL=postgres://admin:s3cr3t@db` printed the password. Masking now
 //!   reads the value: a URL keeps its structure, a token is masked whole.
+//!
+//! ⚠️ R-diff (I-078): against a template only key names are compared, so the
+//! tests that read a changed value pass `--values`.
 
 mod support;
 
@@ -38,7 +41,10 @@ fn t_i071_patch_withholds_values_by_default() {
 #[test]
 fn t_dec_g7_show_values_gives_an_exact_patch_and_a_warning() {
     let p = project();
-    let out = run(p.path(), &["diff", "--format", "patch", "--show-values"]);
+    let out = run(
+        p.path(),
+        &["diff", "--format", "patch", "--values", "--show-values"],
+    );
     assert!(
         out.stdout.contains(&format!("- DATABASE_URL={DB_URL_ENV}")),
         "{}",
@@ -65,7 +71,10 @@ fn t_i071_interactive_withholds_values_by_default() {
 fn t_i076_show_values_masks_credentials_inside_values() {
     let p = project();
     for format in ["pretty", "json"] {
-        let out = run(p.path(), &["diff", "--format", format, "--show-values"]);
+        let out = run(
+            p.path(),
+            &["diff", "--format", format, "--values", "--show-values"],
+        );
         for s in SECRETS {
             assert!(
                 !out.all().contains(s),

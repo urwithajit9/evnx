@@ -1,7 +1,7 @@
 
 ================ D10 ================
 
-$ evnx diff --env left --example right --show-values
+$ evnx diff --env left --example right --values --show-values
 Missing from left (present in right):
   + H = 
 

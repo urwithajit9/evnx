@@ -2,8 +2,7 @@
 //!
 //! | Situation | Shown as |
 //! |---|---|
-//! | values not requested, name looks secret | `***` |
-//! | values not requested, anything else | nothing (withheld) |
+//! | values not requested | nothing (withheld), whatever the name |
 //! | values requested, URL with a password | `postgres://admin:***@db/app` — structure kept (DEC-G9) |
 //! | values requested, secret by name or value | `***` |
 //! | values requested, plain value | the value |
@@ -22,6 +21,19 @@ pub const MASK: &str = "***";
 
 /// What stands in for a value that was not requested (DEC-G7).
 pub const WITHHELD: &str = "<withheld>";
+
+/// Why a value is or is not in the output: what a JSON report says beside it
+/// (`value_state`, I-076b), so a `null` cannot be mistaken for a mask.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ValueState {
+    /// Not requested (`--show-values` was not passed).
+    Withheld,
+    /// Requested, and printed with its secret part replaced.
+    Masked,
+    /// Requested, and printed as it is.
+    Shown,
+}
 
 /// How much of a value a command may show.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +59,15 @@ impl Disclosure {
     pub fn is_masked(&self) -> bool {
         matches!(self, Disclosure::Masked(_))
     }
+
+    /// The [`ValueState`] a report records for this value.
+    pub fn state(&self) -> ValueState {
+        match self {
+            Disclosure::Withheld => ValueState::Withheld,
+            Disclosure::Masked(_) => ValueState::Masked,
+            Disclosure::Shown(_) => ValueState::Shown,
+        }
+    }
 }
 
 /// `value` with every secret part replaced: a URL's password by [`MASK`]
@@ -69,16 +90,17 @@ pub fn mask(key: &str, value: &str) -> String {
 /// What to show for `key=value`. `show_values` is the user's request
 /// (`--show-values`).
 ///
-/// Without it, nothing about the value is shown: a secret-looking name gets
-/// [`MASK`] so the reader knows a value is there, everything else is withheld.
+/// Without it, nothing about the value is shown, whatever the key is called.
 /// With it, the value is shown, masked where it holds a secret (I-076).
+///
+/// ⚠️ Without it, a secret-looking name used to get [`MASK`] "so the reader
+/// knows a value is there". In `diff` that printed `SECRET_KEY = ***` beside
+/// `ALLOWED_HOSTS` with nothing, and two `***` lines under a changed
+/// `JWT_SECRET`: lines that say nothing, in a mode that promises key names
+/// only (owner, 2026-10-21). `diff` is the only caller.
 pub fn disclose(key: &str, value: &str, show_values: bool) -> Disclosure {
     if !show_values {
-        return if classify::is_sensitive_key(key) {
-            Disclosure::Masked(MASK.to_string())
-        } else {
-            Disclosure::Withheld
-        };
+        return Disclosure::Withheld;
     }
     let masked = mask(key, value);
     if masked == value {
@@ -127,8 +149,10 @@ mod tests {
     #[test]
     fn disclose_follows_the_request() {
         assert_eq!(disclose("PORT", "8080", false), Disclosure::Withheld);
+        // Not requested is not requested, whatever the name (owner, 2026-10-21).
+        assert_eq!(disclose("DB_PASSWORD", "pw", false), Disclosure::Withheld);
         assert_eq!(
-            disclose("DB_PASSWORD", "pw", false),
+            disclose("DB_PASSWORD", "pw", true),
             Disclosure::Masked(MASK.into())
         );
         assert_eq!(
@@ -143,6 +167,18 @@ mod tests {
         assert_eq!(
             disclose("DATABASE_URL", "postgres://u:pw@h/db", false),
             Disclosure::Withheld
+        );
+    }
+
+    /// I-076b: the state a report prints beside the value.
+    #[test]
+    fn t_i076b_state_follows_the_disclosure() {
+        assert_eq!(disclose("PORT", "1", false).state(), ValueState::Withheld);
+        assert_eq!(disclose("PORT", "1", true).state(), ValueState::Shown);
+        assert_eq!(disclose("API_KEY", "x", true).state(), ValueState::Masked);
+        assert_eq!(
+            serde_json::to_string(&ValueState::Withheld).unwrap(),
+            "\"withheld\""
         );
     }
 }

@@ -298,11 +298,11 @@ fn check_as_json(
 
 /// The skip's one line, on stderr: a skipped check must not read as a pass.
 fn say_skipped(paths: &executor::SyncPaths) {
-    eprintln!(
-        "· {} not found and no required [vars] to check {} against — nothing to check, skipped",
+    crate::core::verdict::skipped(&format!(
+        "{} not found and no required [vars] to check {} against",
         paths.env_str(),
         paths.example_str()
-    );
+    ));
 }
 
 /// Forward `--check` with no `.env`.

@@ -211,41 +211,54 @@ fn main() -> Result<()> {
             env_name,
             example,
             against,
+            values,
             show_values,
             format,
             reverse,
             ignore_keys,
+            fail_on,
+            skip_without_env,
             with_stats,
             interactive,
         } => {
+            use commands::diff::{Compare, DiffOptions, FailOn};
             let here = Path::new(".");
-            match commands::diff::run(
-                resolve_env(
-                    here,
-                    env.as_deref(),
-                    env_name.as_deref(),
-                    cfg.defaults.env_name.as_deref(),
-                ),
-                // The right-hand side: --example, then --against as a name,
-                // then [defaults] example. `env_name` is not consulted here —
-                // it names the *left* side.
-                match (&example, &against) {
-                    (Some(path), _) => path.clone(),
-                    (None, Some(_)) => resolve_env(here, None, against.as_deref(), None),
-                    (None, None) => cfg
-                        .defaults
-                        .example
-                        .clone()
-                        .unwrap_or_else(|| ".env.example".to_string()),
-                },
+            let env = resolve_env(
+                here,
+                env.as_deref(),
+                env_name.as_deref(),
+                cfg.defaults.env_name.as_deref(),
+            );
+            // The right-hand side, and with it what is compared (I-078):
+            // `--against` names an environment, so values are compared too;
+            // otherwise it is the template — `--example`, `[defaults] example`
+            // or `.env.example`, by the rule validate, sync and spec use — and
+            // only key names are, unless `--values`. `env_name` is not
+            // consulted here: it names the *left* side.
+            let (example, compare) = match against.as_deref() {
+                Some(name) => (resolve_env(here, None, Some(name), None), Compare::Values),
+                None if values => (cfg.example_path(example), Compare::Values),
+                None => (cfg.example_path(example), Compare::Keys),
+            };
+            if let Err(e) =
+                commands::diff::check_flags(&format, with_stats, interactive, compare, &fail_on)
+            {
+                verdict::no_verdict(&e, Stage::BeforeRun);
+            }
+            match commands::diff::run(DiffOptions {
+                env,
+                example,
+                compare,
                 show_values,
                 format,
                 reverse,
-                cli.verbose,
-                evnx::core::config::extend(ignore_keys, cfg.diff.ignore_keys),
+                verbose: cli.verbose,
+                ignore_keys: evnx::core::config::extend(ignore_keys, cfg.diff.ignore_keys),
+                fail_on: FailOn::from_names(&fail_on),
                 with_stats,
                 interactive,
-            ) {
+                skip_without_env,
+            }) {
                 Ok(exit_code) => std::process::exit(exit_code),
                 // ⚠️ Through `no_verdict`, which prints `{:#}`: with `{}` only
                 // the outermost context printed, so `diff` reported "Failed to

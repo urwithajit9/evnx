@@ -3,6 +3,8 @@
 
 $ evnx diff --format json
 {
+  "schema_version": 1,
+  "compared": "keys",
   "missing": [
     "REDIS_URL",
     "FEATURE_X"
@@ -10,31 +12,13 @@ $ evnx diff --format json
   "extra": [
     "EXTRA_DEBUG"
   ],
-  "different": [
-    {
-      "key": "DATABASE_URL",
-      "example_value": null,
-      "env_value": null,
-      "values_redacted": false
-    },
-    {
-      "key": "API_SECRET",
-      "example_value": "***",
-      "env_value": "***",
-      "values_redacted": true
-    },
-    {
-      "key": "API_PORT",
-      "example_value": null,
-      "env_value": null,
-      "values_redacted": false
-    }
-  ],
+  "different": [],
+  "ignored": [],
   "summary": {
     "missing": 2,
     "extra": 1,
-    "different": 3,
-    "total": 6
+    "different": 0,
+    "total": 3
   }
 }
 [stderr]
@@ -43,6 +27,38 @@ $ evnx diff --format json
 
 $ evnx diff --format json --with-stats
 {
+  "schema_version": 1,
+  "compared": "keys",
+  "missing": [
+    "REDIS_URL",
+    "FEATURE_X"
+  ],
+  "extra": [
+    "EXTRA_DEBUG"
+  ],
+  "different": [],
+  "ignored": [],
+  "stats": {
+    "total_keys_env": 4,
+    "total_keys_example": 5,
+    "overlap_count": 3,
+    "similarity_percent": 66.67
+  },
+  "summary": {
+    "missing": 2,
+    "extra": 1,
+    "different": 0,
+    "total": 3
+  }
+}
+[stderr]
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 1]
+
+$ evnx diff --format json --values
+{
+  "schema_version": 1,
+  "compared": "values",
   "missing": [
     "REDIS_URL",
     "FEATURE_X"
@@ -55,27 +71,25 @@ $ evnx diff --format json --with-stats
       "key": "DATABASE_URL",
       "example_value": null,
       "env_value": null,
+      "value_state": "withheld",
       "values_redacted": false
     },
     {
       "key": "API_SECRET",
-      "example_value": "***",
-      "env_value": "***",
-      "values_redacted": true
+      "example_value": null,
+      "env_value": null,
+      "value_state": "withheld",
+      "values_redacted": false
     },
     {
       "key": "API_PORT",
       "example_value": null,
       "env_value": null,
+      "value_state": "withheld",
       "values_redacted": false
     }
   ],
-  "stats": {
-    "total_keys_env": 4,
-    "total_keys_example": 5,
-    "overlap_count": 3,
-    "similarity_percent": 66.67
-  },
+  "ignored": [],
   "summary": {
     "missing": 2,
     "extra": 1,
@@ -99,6 +113,6 @@ error: invalid value 'xml' for '--format <FORMAT>'
 For more information, try '--help'.
 [exit 2]
   ok: FIXED I-074: an unknown format is refused with the valid values (exit 2)
-KNOWN I-076b: null values with values_redacted false; decided: value_state
+FIXED I-076b: value_state says withheld, masked or shown beside values_redacted
 
 ================ summary: 2 ok, 0 mismatch   ================

@@ -1,7 +1,7 @@
 
 ================ D3 ================
 
-$ evnx diff --show-values
+$ evnx diff --values --show-values
 Missing from .env (present in .env.example):
   + REDIS_URL = redis://localhost:6379
   + FEATURE_X = false

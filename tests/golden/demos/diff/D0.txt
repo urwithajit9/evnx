@@ -6,7 +6,9 @@ evnx <version>
 [exit 0]
 
 $ evnx diff --help
-Compare .env vs .env.example — show missing/extra vars
+Compare two env files: keys missing or extra, and values between environments.
+
+Against a template (`.env.example`) only key names are compared; between two environments (`--against`) values are compared too.
 
 Usage: evnx diff [OPTIONS]
 
@@ -17,9 +19,9 @@ Options:
           Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
 
       --example <EXAMPLE>
-          The file on the right of the comparison.
+          The template on the right of the comparison: key names only.
           
-          Defaults to `.env.example`. Comparing against a template shows every filled-in value as different by construction — `--against` compares two real environments instead.
+          Defaults to `.env.example`, or `[defaults] example`. A template holds placeholders, so its values are not compared unless `--values` is given. To compare two real environments use `--against`.
 
       --env-name <NAME>
           Operate on `.env.<NAME>` instead of `.env`.
@@ -27,9 +29,14 @@ Options:
           `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do — it never falls back to `.env`.
 
       --against <NAME>
-          Compare against `.env.<NAME>` instead of `.env.example`.
+          Compare against the environment `.env.<NAME>`: keys and values.
           
-          Comparing two real environments is the useful diff — `evnx diff --env-name production --against staging`. The default compares against the template, where every filled-in value differs by construction.
+          `evnx diff --env-name production --against staging` lists the keys one environment lacks and the keys whose values differ (values are shown only with `--show-values`).
+
+      --values
+          Compare values against a template too, not only key names.
+          
+          Every filled-in value differs from its placeholder, so expect each one to be listed. `--against` compares values without it.
 
       --show-values
           Print the values, not just which keys differ.
@@ -41,7 +48,7 @@ Options:
       --format <FORMAT>
           Output format: `pretty`, `json` or `patch`.
           
-          An unrecognised value is an error (exit 2), not a silent fall back to `pretty` (I-074).
+          An unrecognised value is an error (exit 2), not a silent fall back to `pretty` (I-074). `patch` lists add, remove and update lines; it is not input for `patch(1)`.
           
           [default: pretty]
           [possible values: pretty, json, patch]
@@ -49,14 +56,30 @@ Options:
       --reverse
           Swap the two sides: compare the example against the environment
 
-      --ignore-keys <IGNORE_KEYS>
-          Ignore these keys (comma-separated) — useful for env-specific vars
+      --ignore-keys <KEYS>
+          Leave these keys out of the comparison (comma-separated, exact case).
+          
+          Added to `[diff] ignore_keys` from `.evnx.toml`. The summary says how many keys were ignored; `-v` lists names that matched nothing.
+
+      --fail-on <WHAT>
+          What fails the run (exit 1): `missing`, `extra`, `different`.
+          
+          Comma-separated; all three by default. Only the exit code changes — the report lists everything. `--fail-on missing` fails only when the left file lacks a key the right one has. `different` needs values to be compared (`--against`, or `--values`).
+          
+          [possible values: missing, extra, different]
+
+      --skip-without-env
+          With no `.env`, skip (exit 0) and say so.
+          
+          For pre-commit hooks: a fresh clone has a template and no `.env`, and a hook that exits 2 there blocks every new contributor's first commit. Only the left file is skipped; a missing template is still an error. ⚠️ Not for CI, where a check that never ran must not pass.
 
       --with-stats
-          Include extended statistics in JSON output
+          Add a `stats` object to the JSON (`--format json` only)
 
   -i, --interactive
-          Enable interactive merge mode (patch format only)
+          Prompt for each change (`--format patch` only).
+          
+          ⚠️ Nothing is written: the answers are listed, not applied (I-073, planned for 0.11.0).
 
   -v, --verbose
           Enable verbose output
@@ -73,14 +96,27 @@ Options:
   -V, --version
           Print version
 
+What is compared:
+  .env against a template (.env.example, [defaults] example, or --example)
+      key names only: a filled-in value differs from its placeholder by design.
+      --values compares the values too.
+  two environments (--env-name production --against staging)
+      key names, and which values differ (values hidden unless --show-values).
+
+Examples:
+  evnx diff                                  # keys .env lacks, or the template lacks
+  evnx diff --fail-on missing                # fail only when .env lacks a template key
+  evnx diff --env-name production --against staging
+  evnx diff --format json | jq -e '.summary.missing == 0'
+
+Exit codes: 0 nothing --fail-on counts (default: missing, extra, different);
+1 differences found; 2 could not run (missing file, unknown name, bad flag).
+
 Full guide: https://docs.evnx.dev/cli/commands/diff
 [exit 0]
 
 $ evnx diff
 [stderr]
-
-  evnx diff  .env ↔ .env.example
-
 Error: .env does not exist
 
 Create it with `evnx init`, or point at another file with --env.

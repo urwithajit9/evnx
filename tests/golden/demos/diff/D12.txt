@@ -1,0 +1,71 @@
+
+================ D12 ================
+
+$ evnx diff --fail-on missing
+Extra in .env (not in .env.example):
+  - LOCAL_ONLY
+
+  1 not in .env.example
+[stderr]
+
+  evnx diff  .env ↔ .env.example
+
+  values not compared against a template (--values to compare them)
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 0]
+  ok: FIXED I-078: values differ from the template by design; only a missing key fails with --fail-on missing (exit 0)
+
+$ evnx diff --values
+Extra in .env (not in .env.example):
+  - LOCAL_ONLY
+
+Different values:
+  ~ JWT_SECRET
+  ~ DEBUG
+
+  1 not in .env.example  ·  2 different values
+[stderr]
+
+  evnx diff  .env ↔ .env.example
+
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 1]
+  ok: --values compares them, and lists every filled-in value (exit 1)
+
+$ evnx diff --fail-on different
+[stderr]
+Error: --fail-on different needs values to be compared, and against a template diff compares key names only.
+
+Add --values to compare them, or compare two environments with --against NAME.
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: different needs values: refused against a template (exit 2)
+
+$ evnx diff --with-stats
+[stderr]
+Error: --with-stats adds a `stats` object to JSON output: use it with --format json
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: FIXED I-075: --with-stats needs --format json (exit 2)
+
+$ evnx diff --interactive
+[stderr]
+Error: --interactive prompts for the changes in a patch: use it with --format patch
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: FIXED I-075: --interactive needs --format patch (exit 2)
+
+$ evnx diff --env nope
+[stderr]
+Error: nope does not exist
+
+Create it with `evnx init`, or point at another file with --env.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-080: the error is not preceded by a header (exit 2)
+
+================ summary: 6 ok, 0 mismatch   ================

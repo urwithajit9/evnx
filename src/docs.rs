@@ -85,7 +85,26 @@ pub const DIFF: CommandDoc = CommandDoc {
     command: "diff",
     url: "https://docs.evnx.dev/cli/commands/diff",
     description: "Comparing .env vs .env.example",
-    after_help: "Full guide: https://docs.evnx.dev/cli/commands/diff",
+    // ⚠️ The rule for what is compared lives here, beside the exit codes,
+    // because it decides the exit code (I-078, owner 2026-10-21).
+    after_help: "\
+What is compared:\n\
+\x20 .env against a template (.env.example, [defaults] example, or --example)\n\
+\x20     key names only: a filled-in value differs from its placeholder by design.\n\
+\x20     --values compares the values too.\n\
+\x20 two environments (--env-name production --against staging)\n\
+\x20     key names, and which values differ (values hidden unless --show-values).\n\
+\n\
+Examples:\n\
+\x20 evnx diff                                  # keys .env lacks, or the template lacks\n\
+\x20 evnx diff --fail-on missing                # fail only when .env lacks a template key\n\
+\x20 evnx diff --env-name production --against staging\n\
+\x20 evnx diff --format json | jq -e '.summary.missing == 0'\n\
+\n\
+Exit codes: 0 nothing --fail-on counts (default: missing, extra, different);\n\
+1 differences found; 2 could not run (missing file, unknown name, bad flag).\n\
+\n\
+Full guide: https://docs.evnx.dev/cli/commands/diff",
 };
 
 pub const CONVERT: CommandDoc = CommandDoc {

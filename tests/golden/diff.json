@@ -1,32 +1,16 @@
 {
+  "schema_version": 1,
+  "compared": "keys",
   "missing": [],
   "extra": [
     "EXTRA"
   ],
-  "different": [
-    {
-      "key": "DB_HOST",
-      "example_value": null,
-      "env_value": null,
-      "values_redacted": false
-    },
-    {
-      "key": "AWS_KEY",
-      "example_value": "***",
-      "env_value": "***",
-      "values_redacted": true
-    },
-    {
-      "key": "PORT",
-      "example_value": null,
-      "env_value": null,
-      "values_redacted": false
-    }
-  ],
+  "different": [],
+  "ignored": [],
   "summary": {
     "missing": 0,
     "extra": 1,
-    "different": 3,
-    "total": 4
+    "different": 0,
+    "total": 1
   }
 }

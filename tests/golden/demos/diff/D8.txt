@@ -8,24 +8,14 @@ Prompts: (y)es, (n)o, (s)kip rest
 
 Add REDIS_URL=<withheld>? [y/n/s]:    ✓ Queued: + REDIS_URL=<withheld>
 Add FEATURE_X=<withheld>? [y/n/s]:    ✓ Queued: + FEATURE_X=<withheld>
-Update DATABASE_URL?
-   - <withheld>
-   + <withheld>? [y/n/s]:    ✓ Queued: + DATABASE_URL=<withheld>
-Update API_SECRET?
-   - <withheld>
-   + <withheld>? [y/n/s]:    ✓ Queued: + API_SECRET=<withheld>
-Update API_PORT?
-   - <withheld>
-   + <withheld>? [y/n/s]:    ✗ Skipped
 
 Applied changes:
   + REDIS_URL=<withheld>
   + FEATURE_X=<withheld>
-  ~ DATABASE_URL=<withheld>
-  ~ API_SECRET=<withheld>
 
   →  save it and apply with: patch -p1 < changes.patch
 [stderr]
+  values not compared against a template (--values to compare them)
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
   .env is byte-identical after answering y to every prompt

@@ -9,41 +9,49 @@ Missing from .env (present in .env.example):
 Extra in .env (not in .env.example):
   - EXTRA_DEBUG
 
-Different values:
-  ~ DATABASE_URL
-  ~ API_SECRET
-    .env.example: ***
-    .env: ***
-  ~ API_PORT
-
-  2 missing from .env  ·  1 not in .env.example  ·  3 different values
+  2 missing from .env  ·  1 not in .env.example
 [stderr]
 
   evnx diff  .env ↔ .env.example
 
+  values not compared against a template (--values to compare them)
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
-  ok: KNOWN I-077: ignore-keys is case-sensitive and silent about names that match nothing (exit 1)
+  ok: ignore-keys is case-sensitive: extra_debug ignores nothing (exit 1)
+
+$ evnx -v diff --ignore-keys extra_debug,EXTRA_DEBUG
+Missing from .env (present in .env.example):
+  + REDIS_URL
+  + FEATURE_X
+
+  2 missing from .env  ·  1 key ignored
+[stderr]
+
+  evnx diff  .env ↔ .env.example
+
+⋯ comparing .env (4 keys) with .env.example (5 keys)
+⋯ .env.example is a template: key names only (--values compares values)
+⋯ fails on: missing, extra, different
+⋯ ignored: EXTRA_DEBUG
+⋯ ignore names that matched no key (case counts): extra_debug
+  values not compared against a template (--values to compare them)
+  Docs: https://docs.evnx.dev/cli/commands/diff
+[exit 1]
+  ok: FIXED I-077: the summary counts ignored keys; -v lists names that matched nothing (exit 1)
 
 $ evnx diff --ignore-keys REDIS_URL
 Missing from .env (present in .env.example):
   + FEATURE_X
 
-Different values:
-  ~ DATABASE_URL
-  ~ API_SECRET
-    .env.example: ***
-    .env: ***
-  ~ API_PORT
-
-  1 missing from .env  ·  3 different values
+  1 missing from .env  ·  2 keys ignored
 [stderr]
   config    .evnx.toml
 
   evnx diff  .env ↔ .env.example
 
+  values not compared against a template (--values to compare them)
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
   ok: config and flag add up (union); the config line is printed (exit 1)
 
-================ summary: 2 ok, 0 mismatch   ================
+================ summary: 3 ok, 0 mismatch   ================

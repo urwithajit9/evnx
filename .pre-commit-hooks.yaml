@@ -31,10 +31,22 @@
   stages: [pre-commit]
   files: \.env$|\.env\.\w+$
 
+# ⛔ Not plain `evnx diff` (D-39, owner 2026-10-21).
+#
+# That compared values against the template, and every filled-in value
+# differs from its placeholder, so the hook blocked every commit on a working
+# setup; in a fresh clone with no `.env` it exited 2 and blocked that too. The
+# README said it "warns".
+#
+# Against a template `diff` compares key names only (since 0.10.13).
+# `--fail-on missing` blocks the commit when `.env.example` has a key your
+# `.env` lacks — add it, then commit. Keys only in `.env` are listed but do not
+# block: the `evnx-sync` hook is the one that asks for them in the template.
+# `--skip-without-env` lets a fresh clone commit, and says it skipped.
 - id: evnx-diff
-  name: evnx — .env Drift Check
-  description: Ensure .env and .env.example are in sync
-  entry: evnx diff
+  name: evnx — .env has every key in .env.example
+  description: Fail the commit when .env lacks a key .env.example declares (skipped with no .env)
+  entry: evnx diff --fail-on missing --skip-without-env
   language: rust
   pass_filenames: false
   stages: [pre-commit]

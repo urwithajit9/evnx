@@ -303,7 +303,7 @@ fn test_diff_help() {
         .args(["diff", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Compare .env vs .env.example"));
+        .stdout(predicate::str::contains("Compare two env files"));
 }
 
 #[test]
@@ -330,7 +330,11 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
         .current_dir(dir.path())
         .assert()
         .success() // ✅ Now exits 0 because files are truly identical
-        .stdout(predicate::str::contains("Files are identical"));
+        // Against the template only key names are compared (I-078), and the
+        // message says so rather than claiming values it did not check.
+        .stdout(predicate::str::contains(
+            ".env and .env.example have the same keys",
+        ));
 }
 
 #[test]

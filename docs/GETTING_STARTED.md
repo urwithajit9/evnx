@@ -325,30 +325,63 @@ Later, `evnx spec init --merge` adds only the names `[vars]` does not declare ye
 
 ## Step 6 — Compare files
 
-`evnx diff` shows what is missing, extra, or mismatched between `.env` and `.env.example`:
+`evnx diff` shows which keys `.env` lacks and which ones `.env.example` does not
+declare yet:
 
 ```bash
 evnx diff
 ```
 
-Sample output:
+Sample output (with `.env.example` declaring `OLD_API_KEY`, and `.env` holding two
+keys the template lacks):
 
 ```
-[DIFF] Comparing .env and .env.example
+  evnx diff  .env ↔ .env.example
 
-+ NEW_FEATURE_FLAG  (in .env only — missing from .env.example)
-+ REDIS_URL         (in .env only — missing from .env.example)
-- OLD_API_KEY       (in .env.example only — no longer in .env)
+Missing from .env (present in .env.example):
+  + OLD_API_KEY
+
+Extra in .env (not in .env.example):
+  - NEW_FEATURE_FLAG
+  - REDIS_URL
+
+  1 missing from .env  ·  2 not in .env.example
+  values not compared against a template (--values to compare them)
 ```
+
+`+` is a key to add to `.env`, `-` a key the template does not declare. Against a
+template only key names are compared: every filled-in value differs from its
+placeholder by design. Between two real environments, values are compared too:
+
+```bash
+evnx diff --env-name production --against staging
+```
+
+Exit codes: `0` nothing `--fail-on` counts, `1` differences found, `2` could not run.
 
 Options:
 
 ```bash
-evnx diff --show-values     # include values; secrets stay masked
-evnx diff --reverse         # swap the comparison direction
-evnx diff --format json     # JSON output for scripting
-evnx diff --format patch --show-values   # values are <withheld> without --show-values
+evnx diff --fail-on missing             # exit 1 only when .env lacks a template key
+evnx diff --values                      # compare values against the template too
+evnx diff --show-values                 # print values; secrets stay masked (postgres://admin:***@db)
+evnx diff --reverse                     # swap the comparison direction
+evnx diff --ignore-keys BUILD_ID        # leave keys out (exact case; adds to [diff] ignore_keys)
+evnx diff --format json                 # JSON for scripting (schema_version 1)
+evnx diff --format patch --show-values  # values are <withheld> without --show-values
 ```
+
+A CI gate on missing keys only:
+
+```bash
+evnx diff --fail-on missing
+# or, from the JSON:
+evnx diff --format json | jq -e '.summary.missing == 0'
+```
+
+The JSON has `missing` and `extra` (key names), `different` (one object per changed
+key, with `value_state`: `withheld`, `masked` or `shown`), `ignored`, `compared`
+(`keys` or `values`) and `summary` counts.
 
 ---
 
