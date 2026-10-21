@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.14] - 2026-10-21
+
 The patch for `evnx scan` (package R-scan). In a git repository a folder walk
 counts what git would commit, so a filled-in `.env` that `.gitignore` covers no
 longer fails the scan. Placeholders and addresses are no longer reported as
