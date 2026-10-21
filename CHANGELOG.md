@@ -72,6 +72,15 @@ key names only; between two environments it compares values too.
   (`diff` is its only caller), and `core::mask::ValueState` names the three
   states a report prints.
 
+### Security — dependency
+
+- `rustls-webpki` 0.103.15 → 0.103.16 and `webpki-roots` 1.0.6 → 1.0.10
+  (through `reqwest`, used by the cloud commands, `migrate --to github-actions`
+  and `update`): RUSTSEC-2026-0382 (certificate verification could accept a
+  distrusted intermediate) and RUSTSEC-2026-0381 (the bundled roots trusted the
+  distrusted emSign intermediates). Both were published after 0.10.12 shipped and
+  are in every prebuilt binary up to it, which are built with `--all-features`.
+
 ## [0.10.12] - 2026-10-20
 
 The patch for `evnx sync` (package R-sync). `--check` gives one verdict whatever
