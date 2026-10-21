@@ -8,6 +8,70 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The patch for `evnx diff` (package R-diff). Against a template, `diff` compares
+key names only; between two environments it compares values too.
+
+⚠️ **Scripts, CI jobs and hooks that run `evnx diff`:**
+
+- **Against a template only key names are compared** (I-078, DEC-DF1). That
+  means the default `.env.example`, `[defaults] example` or `--example`. A
+  filled-in `.env` differs from its placeholders in every value,
+  so `evnx diff` exited 1 on every real project. A `.env` with exactly the
+  template's keys now exits 0 and says "have the same keys", not "Files are
+  identical". `--values` compares values against a template as before.
+  `--against NAME` compares two environments, values included, and is
+  unchanged. `--format json` reports `"compared": "keys"` or `"values"`; with
+  `keys`, `different` is empty. `--format patch` has no update section against
+  a template (it replaced real values with placeholders), and `--interactive`
+  asks no update questions.
+- **`--fail-on missing,extra,different`** (I-078) chooses what exits 1. The
+  default is all three; the report is the same either way. `--fail-on missing`
+  fails only when `.env` lacks a key the template has. `different` against a
+  template without `--values` is exit 2: it could never fail.
+- **The `evnx-diff` pre-commit hook** runs `evnx diff --fail-on missing
+  --skip-without-env` (D-39, DEC-DF3). Plain `evnx diff` blocked every commit on a
+  working setup, and exited 2 in a fresh clone; the README said it "warns". It
+  now blocks only when `.env` lacks a key `.env.example` declares, and skips a
+  clone with no `.env`, saying so. `--skip-without-env` is new: with no `.env`
+  it exits 0 and says it skipped; a missing template is still exit 2.
+- **Flags that did nothing are exit 2** (I-075): `--with-stats` without
+  `--format json`, `--interactive` without `--format patch`.
+- **Without `--show-values` no value is shown, not even `***`** (DEC-DF2). A
+  secret-named key printed `SECRET_KEY = ***`, and two `***`
+  lines under a changed value, beside plain keys that printed their name only.
+  In JSON its `example_value`/`env_value` are now `null` and `values_redacted`
+  is `false` unless values were asked for.
+- **JSON** gains `schema_version` (1), `compared`, `ignored` (the ignored keys
+  that were in either file, I-077) and, per changed key, `value_state`:
+  `withheld`, `masked` or `shown` (I-076b). `values_redacted` stays for one
+  release; `value_state == "masked"` is the same test.
+
+### diff
+
+- The summary counts ignored keys (`1 key ignored`) (I-077). `-v` lists ignore
+  names that matched no key; `--ignore-keys` is case-sensitive, and the help
+  now says so and that it adds to `[diff] ignore_keys`.
+- `-v` says which files were compared, with how many keys, whether values were
+  compared and what fails the run (I-079). It printed "Running diff in verbose
+  mode". `-q` also hides the new "values not compared" note.
+- An error is no longer printed under a header announcing the comparison
+  (I-080): both files are read before the header. With `--reverse` the header
+  names the files in the order compared (`.env.example ↔ .env`).
+- `--help` states what is compared, the exit codes and examples; `--format
+  patch` says it is not `patch(1)` input, and `--interactive` that it writes
+  nothing yet (D-44; I-073 is planned for 0.11.0).
+
+### Shared
+
+- `diff` takes its template from `Config::example_path()`, the rule `validate`,
+  `sync` and `spec init` use (`--example`, `[defaults] example`,
+  `.env.example`); the result is the same as its own copy.
+- `core::verdict::skipped` prints the one-line skip notice for `sync` and
+  `diff` (`sync`'s output is unchanged).
+- `core::mask::disclose` withholds every value that was not asked for
+  (`diff` is its only caller), and `core::mask::ValueState` names the three
+  states a report prints.
+
 ## [0.10.12] - 2026-10-20
 
 The patch for `evnx sync` (package R-sync). `--check` gives one verdict whatever
