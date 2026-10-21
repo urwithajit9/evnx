@@ -8,6 +8,90 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The patch for `evnx scan` (package R-scan). In a git repository a folder walk
+counts what git would commit, so a filled-in `.env` that `.gitignore` covers no
+longer fails the scan. Placeholders and addresses are no longer reported as
+secrets, and the advice under the findings names the real files.
+
+⚠️ **Scripts, CI jobs and hooks that run `evnx scan`:**
+
+- **Files git ignores and does not track are summarised, not counted**
+  (I-285, DEC-SC1). In a git repository a folder walk still reads them, but
+  their findings are one line — `git ignores ./.env — 4 findings there are not
+  counted, because it is not committed` — and do not make the run exit 1. A
+  tracked file is reported whatever `.gitignore` says now; a file git would
+  take on the next `git add .` is reported. A file named on the command line,
+  `--include-ignored`, and any folder outside a repository report everything,
+  as before. In CI the checkout has no ignored files, so a gate there is
+  unchanged. JSON gains `ignored_by_git` (per file) and
+  `summary.ignored_by_git`, and each finding a `git` field (`tracked`,
+  `unignored`, `ignored`) — all absent outside a repository. SARIF and
+  `--format github` leave ignored files out.
+- **Stand-ins are not findings** (I-050, N-20). A format match on a run of
+  filler (`sk_live_xxxx…`, `ghp_0000…`), the documented AWS example key, or the
+  `user:password@localhost` URL evnx itself writes into new projects is no
+  longer reported, with or without `--ignore-placeholders`. `init --blueprint
+  fastapi_ai` (or `rust_high_perf`, `django_enterprise`) then `scan` is clean.
+- **A name-only finding needs a value that could be a secret** (I-287,
+  DEC-SC2). `NEXTAUTH_URL=http://localhost:3000`, `AUTH0_DOMAIN=…auth0.com`,
+  `TOKEN_URL=https://…/token`, `SECRET_MANAGER_REGION=us-east-1` and an email
+  address are no longer reported for the `AUTH`/`TOKEN`/`SECRET` in their
+  names. A URL with a password, a query string or a token-like path segment
+  (a Slack or Discord webhook) still is.
+- **`--exclude NAME` matches whole path components** (I-053). It was a
+  substring of the whole path: `--exclude env` dropped `.env`, and `--exclude
+  test` dropped `latest/` and `contest.py`. A value with `*`, `?` or `[` is a
+  glob, as before.
+- **`[scan] disable` silences the name-based finding too** (I-056). Disabling
+  `GitHub Token` left `Sensitive config key: GITHUB_TOKEN`, high, for the same
+  value. The heuristics can be disabled by name: `Sensitive config key`,
+  `High-entropy string`, `AWS Secret Access Key`. `scan --help` lists every
+  name `disable` takes.
+- **`*.env` files are read as `.env`** (I-254): `app.env`, `production.env`.
+  `[vars]` applies to them, and findings name the variable
+  (`app.env:2 (APP_NAME)`).
+- **Output is sorted** by path, then line, then rule (I-062), and a path given
+  twice, or a file inside a folder also given, is scanned once (I-054).
+- **`-q` keeps the line saying the project config weakens the scan** (I-060):
+  `config .evnx.toml (scan.severity=high, …)`. Otherwise `-q` is findings only.
+
+### scan
+
+- **"Next steps" follow what git knows** (I-286). History rewriting is advised
+  only for files that may have been committed, as `git filter-repo --path
+  <file>` with the real file — it said `--path .env` whatever held the key.
+  A file git would commit gets "keep it out of git"; an ignored file named on
+  the command line gets "nothing was committed".
+- New flags: `--include-ignored` (above); `--max-file-size SIZE` and
+  `[scan] max_file_size` (`500K`, `5MB`, `2MiB`; default 1 MiB, DEC-SC4) for the
+  walk's size limit, announced when a project sets it lower (I-061);
+  `--no-ignore-placeholders` undoes `[scan] ignore_placeholders = true` for one
+  run (I-057).
+- "Nothing was scanned" names the files a walk skipped and why, and no longer
+  advises `--include`, a flag that never existed (I-048, I-289).
+- A private key's preview shows its header, `-----BEGIN RSA PRIVATE KEY-----`,
+  not `----…----` (I-051); a connection-string finding says `a password in a
+  postgres:// URL` instead of "matches a live key format" (I-052).
+- A `[[scan.patterns]]` rule no longer reports its own `regex = "…"`
+  declaration in `.evnx.toml` (D-36); the file is still scanned.
+- `-v` counts built-in rules and custom patterns apart and names them (I-058):
+  it called the 13 built-ins "13 custom pattern(s)".
+- `--help`: `path` and `--exclude` have help text (DEC-SF12); `--severity
+  high` is described correctly — it keeps long values under secret-like names
+  too, so a committed `JWT_SECRET` still fails the gate (I-288, DEC-SC3); a new
+  epilogue says what a walk reads, the rule names and the exit codes.
+
+### Internal
+
+- The rule engine (`PatternSet`, `DetectorRegistry`, `Confidence`) moved from
+  `commands::scan` to `core::secretscan` (A-09); the old paths re-export it.
+  `sync` no longer imports a command, and `core::classify` uses the same
+  compiled rules instead of compiling them a second time.
+- `core::gitignore::exposures` answers for many files at once, two git
+  processes per repository. `core::classify::is_stand_in`,
+  `core::placeholder::is_url_placeholder`, `core::args::parse_size` and
+  `core::config::either` are new shared helpers.
+
 ## [0.10.13] - 2026-10-21
 
 The patch for `evnx diff` (package R-diff). Against a template, `diff` compares
