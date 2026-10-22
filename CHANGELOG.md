@@ -63,6 +63,13 @@ reported by name instead of stopping the run.
   link and `--fix` chmod'ed its target outside the project. It is now listed as
   `.env (symlink to …)`, checked like a file, and `--fix` changes a target only
   inside the project; outside, it prints the `chmod` to run.
+- **The template is the project's, not always `.env.example`** (I-294). The
+  `env_example` check uses `[defaults] example` from `.evnx.toml` — the rule
+  `validate`, `sync`, `diff` and `spec init` follow — else the first of
+  `.env.example`, `.env.sample`, `.env.template`. A project using `.env.sample`
+  was told ".env.example not found". `doctor PATH` reads PATH's own
+  `.evnx.toml`. The JSON check keeps its name and description; `details` names
+  the file, and the verbose line says `.env.example is tracked in Git`.
 - `EVNX_AUTO_FIX=1` says on stderr that it turned repair on (I-167, DEC-D12).
 - `--help` has Environment, Examples and Exit codes sections (D-118, DEC-D12),
   and `--fix`'s help says what it changes (D-119).
