@@ -22,6 +22,14 @@ The patch for `evnx auth` (package R-auth).
   with the `evnx org release` that frees it. `-q` leaves it out, and if
   `GET /orgs` fails the block is left out rather than failing `status`.
   app.evnx.dev shows the same notice.
+- **No second sign-in after verifying your email** (I-301, DEC-AU301). The
+  session's access token carries `email_verified` from when it was issued, so
+  for up to 15 minutes after the link was opened every vault command said
+  "your email address is not verified yet" while `evnx auth status` said
+  `verified  yes`. When the server answers EMAIL_NOT_VERIFIED to a signed-in
+  session, the CLI now refreshes the session once and retries the request; the
+  refreshed token is issued from the database. Still unverified after that,
+  the message is as before. API tokens have no refresh and are unchanged.
 
 ## [0.10.16] - 2026-10-22
 

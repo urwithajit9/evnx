@@ -13,6 +13,10 @@
 //! - I-212, DEC-AU10: `status` did not say which credential it used, and
 //!   `logout` with only `EVNX_TOKEN` said "nothing to do" while the token stays
 //!   valid until revoked.
+//! - I-301, DEC-AU301: right after the verification link was opened, vault
+//!   commands still said "not verified" — the session's access token carried
+//!   `email_verified` from before — while `auth status` said "verified yes".
+//!   A session is now refreshed once and the request retried.
 //! - I-321: a customer whose organisation pays for Team, and who holds no seat
 //!   in it, saw `plan (free)` with no reason. Paying for seats hands none out —
 //!   an organisation's owner is created without one — so `status` now names
@@ -412,4 +416,88 @@ fn t_i321_status_says_nothing_when_there_is_nothing_to_explain() {
         );
         assert!(out.stdout.contains("plan ("), "{case}:\n{}", out.stdout);
     }
+}
+
+// ─── I-301: verified after the session was issued ─────────────────────────────
+
+const NOT_VERIFIED: &str =
+    r#"{"error":"Please verify your email first","code":"EMAIL_NOT_VERIFIED"}"#;
+
+/// The reported sequence: sign in, open the link, run a vault command.
+#[test]
+fn t_i301_vault_list_works_right_after_verifying() {
+    use evnx::cloud::creds::{SecretString, Session, Store};
+    let p = Project::new();
+    let mut server = mockito::Server::new();
+    let url = server.url();
+    let cfg = p.path().join("cfg");
+    std::fs::create_dir_all(&cfg).unwrap();
+    let mut store = Store::default();
+    store.set_session(
+        &url,
+        Session {
+            email: "me@example.com".into(),
+            access_token: SecretString::new("issued-before-verifying"),
+            access_expires_at: 4_000_000_000,
+            refresh_token: SecretString::new("refresh-1"),
+        },
+    );
+    store.save_to(&cfg.join("credentials.json")).unwrap();
+
+    server
+        .mock("GET", "/api/v1/vaults")
+        .match_header("authorization", "Bearer issued-before-verifying")
+        .with_status(403)
+        .with_body(NOT_VERIFIED)
+        .create();
+    // JWT-shaped with a readable `exp` (4_000_000_000), or the client treats the
+    // reissued token as stale at once and refreshes a second time.
+    let reissued = "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjQwMDAwMDAwMDB9.sig";
+    let refresh = server
+        .mock("POST", "/api/v1/auth/refresh")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"access_token":"{reissued}","refresh_token":"refresh-2"}}"#
+        ))
+        .expect(1)
+        .create();
+    server
+        .mock("GET", "/api/v1/vaults")
+        .match_header("authorization", format!("Bearer {reissued}").as_str())
+        .with_status(200)
+        .with_body(
+            r#"{"vaults":[{"id":"v-1","name":"my-app","environment":"production",
+            "role":"owner","version_count":0,"updated_at":"2026-10-23T00:00:00Z"}]}"#,
+        )
+        .create();
+
+    let out = evnx(&p, &url, None, &["vault", "list"]);
+    out.assert_code(0);
+    assert!(out.stdout.contains("my-app"), "{}", out.all());
+    assert!(!out.all().contains("not verified"), "{}", out.all());
+    refresh.assert();
+}
+
+/// An API token has no refresh path: it gets the refusal, and no refresh is
+/// attempted.
+#[test]
+fn t_i301_an_api_token_is_not_refreshed() {
+    let p = Project::new();
+    let mut server = mockito::Server::new();
+    let url = server.url();
+    server
+        .mock("GET", "/api/v1/vaults")
+        .with_status(403)
+        .with_body(NOT_VERIFIED)
+        .expect(1)
+        .create();
+    let refresh = server
+        .mock("POST", "/api/v1/auth/refresh")
+        .expect(0)
+        .create();
+
+    let out = evnx(&p, &url, Some(TOKEN), &["vault", "list"]);
+    assert_ne!(out.code, Some(0), "{}", out.all());
+    assert!(out.all().contains("not verified"), "{}", out.all());
+    refresh.assert();
 }
