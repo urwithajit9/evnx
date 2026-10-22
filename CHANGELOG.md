@@ -8,10 +8,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.15] - 2026-10-22
+
 The patch for `evnx doctor` (package R-doctor). Doctor now checks every env
 file, plaintext copies included, and stops calling `.envrc` one. Syntax errors
 and a template without `.env` are errors, and a check that cannot run is
-reported by name instead of stopping the run.
+reported by name instead of stopping the run. The template is the project's
+own: `[defaults] example` in `.evnx.toml`, else `.env.example`, `.env.sample`
+or `.env.template` (#215).
 
 ⚠️ **Scripts, CI jobs and hooks that run `evnx doctor`:**
 
