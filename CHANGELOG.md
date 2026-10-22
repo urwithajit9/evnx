@@ -8,6 +8,63 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The first half of the patch for `evnx init` (package R-init): what
+`--from-source` finds, browser names for the framework the stack uses,
+`compose.yaml`, the target folder's own `.evnx.toml`, and when init may ask.
+
+⚠️ **Scripts and CI jobs that run `evnx init`:**
+
+- **`CI` set means no questions** (DQ-30). With `CI` set (GitHub Actions,
+  GitLab CI and most others set `CI=true`), init refuses its menu and its
+  confirmations the way it does without a terminal: exit 2, naming the flags.
+  Runs that pass `--yes`, `--with`, `--blueprint` or `--detect` are unchanged;
+  `CI=false` and `CI=0` are not CI. A terminal on stdin with stderr redirected
+  (`evnx init 2>log`) is refused the same way: it failed with `IO error: not a
+  terminal: not a terminal` (I-299).
+- **The target folder's `.evnx.toml` is read** (I-298). With `-p <dir>`, a
+  malformed `.evnx.toml` or a bare `evnx.toml` there stops init before anything
+  is written (exit 2), as it already did in the working folder. When the
+  target's config is another file than the working folder's, its `config` line
+  and its warnings are printed too.
+- **`NEXT_PUBLIC_*` names only on Next.js** (I-002b, DQ-23). Clerk's
+  `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and Vercel's `NEXT_PUBLIC_VERCEL_ENV` are
+  written only when the stack has Next.js. Another browser framework gets
+  Clerk's key under its own prefix (`VITE_CLERK_PUBLISHABLE_KEY`, …), as before;
+  a server stack gets neither. The same for `--detect`, `add service` and
+  `add blueprint`: the `content_marketing` blueprint (Nuxt) has one variable
+  fewer. Existing files are never edited.
+
+### init
+
+- **`--from-source` finds more of what the code reads** (I-236, DQ-22):
+  destructuring — `const { API_KEY, DB_URL: db, PORT = 3000 } = process.env`,
+  and the same from `import.meta.env` and `Bun.env`, over several lines or with
+  a TypeScript annotation; a rest element names nothing —, a member access split
+  across lines (`process` ⏎ `.env.X`) and `process.env?.X`; `os.getenv("X")`
+  (Python), `ENV.fetch("X")` (Ruby), `getenv("X")` (PHP), and `env!("X")`,
+  `option_env!("X")` and `env::var_os("X")` (Rust). Each is reported at the line
+  the name is on.
+- **`--detect` reads `compose.yaml`** (I-257), the name Docker Compose prefers.
+  It read `docker-compose.yml`, `docker-compose.yaml` and `compose.yml` only. The
+  four names are now one list with validate's and doctor's (`core::project`).
+- **An unknown blueprint gets the hint a component gets** (I-235):
+  `--blueprint mern` suggests `mern_v2` (a prefix or substring, then a near
+  spelling). A blueprint id given to `--with` says `t3_modern is a blueprint:
+  use --blueprint t3_modern`; a component id given to `--blueprint` says
+  `postgresql is a component: use --with postgresql`.
+- The menu asks `How do you want to start?`, without a colon after the
+  question mark.
+
+### add
+
+- `add blueprint` with an unknown id prints the same "Did you mean" line as
+  `init --blueprint` (I-235): the two commands share one message.
+- `add service clerk`, `add service vercel` and `add blueprint` write
+  `NEXT_PUBLIC_*` names only in a Next.js project (I-002b, above): `add service
+  vercel` in a project without Next.js adds 3 variables, not 4.
+- Its menus (`add` with no target, `add custom`'s category) no longer add a
+  colon after a question: `Which framework?`, not `Which framework?:`.
+
 ## [0.10.15] - 2026-10-22
 
 The patch for `evnx doctor` (package R-doctor). Doctor now checks every env
