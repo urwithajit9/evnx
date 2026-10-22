@@ -6,16 +6,17 @@
 //! use evnx::commands::doctor::run;
 //!
 //! fn main() -> Result<()> {
-//!     // path, verbose, fix, strict, format
-//!     run("./my-app".into(), true, false, false, None)?;
+//!     // path, verbose, fix, strict, format, skip_without_env
+//!     run("./my-app".into(), true, false, false, None, false)?;
 //!     // ...or ask for machine-readable output:
-//!     run("./my-app".into(), false, false, true, Some("json".into()))?;
+//!     run("./my-app".into(), false, false, true, Some("json".into()), false)?;
 //!     Ok(())
 //! }
 //! ```
 //!
 //! # Exit codes
-//! - `0` healthy · `1` problems found · `2` doctor could not run
+//! - `0` healthy · `1` problems found · `2` doctor could not run, or a check
+//!   could not finish
 //!
 //! # Environment Variables
 //! - `EVNX_OUTPUT_JSON=1` — Same as `--format json`, kept because it shipped first

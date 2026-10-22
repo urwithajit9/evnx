@@ -25,7 +25,7 @@ Options:
       --fix
           Repair what can be repaired, instead of only reporting it.
           
-          Fixes are conservative and local: `.gitignore` gains the `.env*` entries `evnx init` writes, and a world-readable `.env` is chmod'd to 0600. Nothing is deleted, nothing is committed, and no file holding secrets is edited.
+          Fixes are conservative and local: `.gitignore` gains the `.env*` entries `evnx init` writes, and every env file other users can read is set to 0600 — a symlinked one only when its target is inside the project. Every fix is checked again afterwards; one that did not work says "not fixed". Nothing is deleted, nothing is committed, and no file's contents are edited.
           
           ⚠️ `EVNX_AUTO_FIX=1` does the same thing and still works. Either saying yes is enough — a flag can turn repair on, never off.
 
@@ -33,6 +33,11 @@ Options:
           Count warnings as problems, so they affect the exit code.
           
           Without it, warnings are reported and exit 0 — a missing `.env.example` should not fail a build that never asked it to.
+
+      --skip-without-env
+          With no env file, skip (exit 0) and say so.
+          
+          For pre-commit hooks: a fresh clone has a template and no `.env`, and doctor calls that an error, which would block every new contributor's first commit. ⚠️ Not for CI, where a check that never ran must not pass.
 
       --format <FORMAT>
           Output format: `pretty` or `json`.
@@ -56,9 +61,27 @@ Options:
   -V, --version
           Print version
 
+Env files: .env and .env.<name> (not .envrc), and plaintext copies such as
+.env.bak; each must be ignored by git and not tracked, valid dotenv, and
+private (no access for group or others). The .env.example family is the
+template, meant to be committed.
+
+Environment:
+  EVNX_AUTO_FIX=1     same as --fix (stderr says so when it turns repair on)
+  EVNX_OUTPUT_JSON=1  same as --format json; an explicit --format wins
+
+Examples:
+  evnx doctor --fix                       # repair .gitignore and file modes
+  evnx doctor --strict --format json      # a CI gate: warnings fail too
+  evnx doctor --skip-without-env          # a pre-commit hook on a fresh clone
+
+Exit codes: 0 healthy (warnings pass unless --strict); 1 problems found;
+2 could not run (bad path or flag, nothing to diagnose), or a check could
+not finish.
+
 Full guide: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
-  ok: KNOWN D-118: --help has no 'Exit codes' section (decided: it gets one; this check then flips)
+  ok: FIXED D-118 (R-doctor): --help has an 'Exit codes' section, and an Environment one
 
 $ evnx doctor --format yaml
 [stderr]

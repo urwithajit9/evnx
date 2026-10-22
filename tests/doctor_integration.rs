@@ -6,6 +6,8 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
+/// ⚠️ T-038: this asserted `.success()` on a template with no `.env`, which
+/// DEC-D8 makes an error (I-162). The JSON still prints, with the verdict.
 #[test]
 fn test_doctor_json_output() {
     let dir = TempDir::new().unwrap();
@@ -13,15 +15,15 @@ fn test_doctor_json_output() {
     fs::write(dir.path().join(".env.example"), "FOO=bar\n").unwrap();
     fs::write(dir.path().join(".gitignore"), ".env\n").unwrap();
 
-    // Replace Command::cargo_bin() with cargo_bin_cmd!()
-    cargo_bin_cmd!("evnx") // ← UPDATED
+    cargo_bin_cmd!("evnx")
         .arg("doctor")
         .arg(dir.path())
         .env("EVNX_OUTPUT_JSON", "1")
         .assert()
-        .success()
+        .code(1)
         .stdout(predicate::str::contains(r#""summary""#))
-        .stdout(predicate::str::contains(r#""checks""#));
+        .stdout(predicate::str::contains(r#""checks""#))
+        .stdout(predicate::str::contains(".env not found"));
 }
 
 #[test]
@@ -44,16 +46,21 @@ fn test_doctor_verbose_mode() {
 ///
 /// It now asserts what the command is actually for: a project with no `.env`
 /// gets told so, by name.
+///
+/// ⚠️ T-038, T-039: the folder was empty, which DEC-D8 makes "nothing to
+/// diagnose" (exit 2), and `contains(".env")` matched the header. A project
+/// marker keeps it a project; the assertion names the message.
 #[test]
 fn test_doctor_missing_env_warning() {
     let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("package.json"), "{}\n").unwrap();
 
     cargo_bin_cmd!("evnx")
         .arg("doctor")
         .arg(dir.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(".env"));
+        .stdout(predicate::str::contains(".env not found"));
 }
 
 /// ⚠️ The regression this exists to prevent.

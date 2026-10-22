@@ -494,10 +494,30 @@ Runs a health check on your environment configuration setup.
 
 ```bash
 evnx doctor                          # check current directory
-evnx doctor --path /path/to/project
+evnx doctor path/to/project          # or --path path/to/project
+evnx doctor --fix                    # repair .gitignore and file modes, then check again
+evnx doctor --strict --format json   # a CI gate: warnings fail too
+evnx doctor --skip-without-env       # a pre-commit hook: a fresh clone with no .env passes
 ```
 
-Checks: `.env` exists and has secure permissions, `.env` is in `.gitignore`, `.env.example` is tracked by Git, and project structure detection.
+Checks, for every env file (`.env` and `.env.<name>`, and plaintext copies such as
+`.env.bak`; not `.envrc`): git ignores it and does not track it, it is valid dotenv, and
+no other user can read it (mode 600). Also: `.env.example` exists and is tracked, the
+project type, and Docker files. A tracked env file, an unignored one and a syntax error
+are errors; a readable file and a missing `.env.example` are warnings.
+
+`--fix` adds the `.env*` entries `evnx init` writes to `.gitignore` and sets each
+readable env file to 600 (a symlinked one only when its target is inside the project).
+It checks again afterwards and says "not fixed" when the problem remains. It never runs
+git: a tracked file needs `git rm --cached`, which doctor prints.
+
+`EVNX_AUTO_FIX=1` does what `--fix` does, and says so on stderr; `EVNX_OUTPUT_JSON=1`
+does what `--format json` does. The JSON report has `checks[]` (`name`, `description`,
+`severity`, `details`, `fixable`, `fixed`, `ran`) and `summary`.
+
+Exit codes: 0 healthy (warnings pass unless `--strict`), 1 problems found, 2 could not
+run — a bad path or flag, a folder with nothing to diagnose, or a check that could not
+finish (`ran: false`).
 
 ---
 

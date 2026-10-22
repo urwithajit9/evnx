@@ -42,7 +42,7 @@ $ evnx doctor --verbose
      No Docker configuration detected
 
   ✓  Check file permissions for sensitive files
-     Permissions: 600 (secure)
+     .env: permissions 600 (private)
 
   3 checks passed
 [stderr]
@@ -63,7 +63,8 @@ $ evnx doctor --format json
       "severity": "ok",
       "details": null,
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "env_example",
@@ -71,7 +72,8 @@ $ evnx doctor --format json
       "severity": "ok",
       "details": null,
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "project_structure",
@@ -79,7 +81,8 @@ $ evnx doctor --format json
       "severity": "info",
       "details": "No recognized project configuration",
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "docker_config",
@@ -87,7 +90,8 @@ $ evnx doctor --format json
       "severity": "info",
       "details": "No Docker configuration detected",
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "file_permissions",
@@ -95,7 +99,8 @@ $ evnx doctor --format json
       "severity": "ok",
       "details": null,
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     }
   ],
   "summary": {

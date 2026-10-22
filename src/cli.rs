@@ -2515,9 +2515,11 @@ file, names that collide, a filter that leaves nothing).
         /// Repair what can be repaired, instead of only reporting it.
         ///
         /// Fixes are conservative and local: `.gitignore` gains the `.env*`
-        /// entries `evnx init` writes, and a world-readable `.env` is chmod'd to
-        /// 0600. Nothing is deleted, nothing is committed, and no file holding
-        /// secrets is edited.
+        /// entries `evnx init` writes, and every env file other users can read
+        /// is set to 0600 — a symlinked one only when its target is inside the
+        /// project. Every fix is checked again afterwards; one that did not
+        /// work says "not fixed". Nothing is deleted, nothing is committed, and
+        /// no file's contents are edited.
         ///
         /// ⚠️ `EVNX_AUTO_FIX=1` does the same thing and still works. Either
         /// saying yes is enough — a flag can turn repair on, never off.
@@ -2530,6 +2532,15 @@ file, names that collide, a filter that leaves nothing).
         /// `.env.example` should not fail a build that never asked it to.
         #[arg(long)]
         strict: bool,
+
+        /// With no env file, skip (exit 0) and say so.
+        ///
+        /// For pre-commit hooks: a fresh clone has a template and no `.env`,
+        /// and doctor calls that an error, which would block every new
+        /// contributor's first commit. ⚠️ Not for CI, where a check that never
+        /// ran must not pass.
+        #[arg(long)]
+        skip_without_env: bool,
 
         /// Output format: `pretty` or `json`.
         ///

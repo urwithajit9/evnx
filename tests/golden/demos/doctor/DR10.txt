@@ -73,7 +73,7 @@ $ evnx doctor --verbose
      No Docker configuration detected
 
   ✓  Check file permissions for sensitive files
-     Permissions: 600 (secure)
+     .env: permissions 600 (private)
 
   2 warnings  ·  2 checks passed
 [stderr]
@@ -102,7 +102,7 @@ $ evnx doctor --verbose
      Found: Dockerfile
 
   ✓  Check file permissions for sensitive files
-     Permissions: 600 (secure)
+     .env: permissions 600 (private)
 
   1 warning  ·  3 checks passed
 [stderr]

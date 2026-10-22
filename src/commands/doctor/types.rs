@@ -48,13 +48,23 @@ impl Severity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckResult {
     pub name: String,
+    /// What the check looks at. Fixed per check: the state goes in `details`
+    /// (I-166 — a skipped check used to replace it with "Skipped: …").
     pub description: String,
     pub severity: Severity,
     pub details: Option<String>,
     pub fixable: bool,
     pub fixed: bool,
+    /// `false` when the check could not run (DEC-D9). Its severity is then
+    /// `error`, `details` says why, and the run has no complete verdict.
+    #[serde(default = "ran_by_default")]
+    pub ran: bool,
     #[serde(skip)]
     pub fix_action: Option<FixFn>,
+}
+
+fn ran_by_default() -> bool {
+    true
 }
 
 /// Function type for auto-fix operations

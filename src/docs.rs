@@ -153,7 +153,29 @@ pub const DOCTOR: CommandDoc = CommandDoc {
     command: "doctor",
     url: "https://docs.evnx.dev/cli/commands/doctor",
     description: "Diagnosing setup and gitignore issues",
-    after_help: "Full guide: https://docs.evnx.dev/cli/commands/doctor",
+    // ⚠️ The exit codes and the two variables are here because nothing else
+    // said them (D-118, DEC-D12): a CI image exporting EVNX_AUTO_FIX=1 turns
+    // every doctor run into a repair run.
+    after_help: "\
+Env files: .env and .env.<name> (not .envrc), and plaintext copies such as\n\
+.env.bak; each must be ignored by git and not tracked, valid dotenv, and\n\
+private (no access for group or others). The .env.example family is the\n\
+template, meant to be committed.\n\
+\n\
+Environment:\n\
+\x20 EVNX_AUTO_FIX=1     same as --fix (stderr says so when it turns repair on)\n\
+\x20 EVNX_OUTPUT_JSON=1  same as --format json; an explicit --format wins\n\
+\n\
+Examples:\n\
+\x20 evnx doctor --fix                       # repair .gitignore and file modes\n\
+\x20 evnx doctor --strict --format json      # a CI gate: warnings fail too\n\
+\x20 evnx doctor --skip-without-env          # a pre-commit hook on a fresh clone\n\
+\n\
+Exit codes: 0 healthy (warnings pass unless --strict); 1 problems found;\n\
+2 could not run (bad path or flag, nothing to diagnose), or a check could\n\
+not finish.\n\
+\n\
+Full guide: https://docs.evnx.dev/cli/commands/doctor",
 };
 
 pub const TEMPLATE: CommandDoc = CommandDoc {

@@ -51,10 +51,15 @@
   pass_filenames: false
   stages: [pre-commit]
 
+# Errors fail the commit: an env file git would commit or already tracks, and
+# a `.env` that is not valid dotenv (since 0.10.15). Warnings — a file other
+# users can read, a missing `.env.example` — are printed and do not; add
+# `--strict` in `args:` to fail on them too. `--skip-without-env` lets a fresh
+# clone (template, no `.env`) commit, and says it skipped (DEC-D11, DEC-D17).
 - id: evnx-doctor
   name: evnx — Setup Doctor
-  description: Check .gitignore includes .env and file permissions are safe
-  entry: evnx doctor
+  description: Fail the commit on doctor errors (env files git would commit, invalid .env); warnings do not fail; skipped with no .env
+  entry: evnx doctor --skip-without-env
   language: rust
   pass_filenames: false
   stages: [pre-commit]

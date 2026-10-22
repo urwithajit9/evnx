@@ -601,6 +601,7 @@ fn main() -> Result<()> {
             project_path,
             fix,
             strict,
+            skip_without_env,
             format,
             verbose,
         } => evnx::commands::doctor::run(
@@ -611,6 +612,7 @@ fn main() -> Result<()> {
             fix,
             strict,
             format,
+            skip_without_env,
         ),
 
         Commands::Spec { action } => match action {

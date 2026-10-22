@@ -408,8 +408,13 @@ fn doctor_reports_permissions_as_skipped_on_windows() {
         check["severity"], "info",
         "skipping is not a warning: {check}"
     );
+    // I-166: the description stays the check's own; the reason is a detail.
+    assert_eq!(
+        check["description"], "Check file permissions for sensitive files",
+        "{check}"
+    );
     assert!(
-        check["description"]
+        check["details"]
             .as_str()
             .unwrap_or_default()
             .contains("Skipped"),

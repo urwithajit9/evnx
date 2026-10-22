@@ -23,17 +23,17 @@
 //! EVNX_OUTPUT_JSON=1 evnx doctor | jq '.summary.errors'  # CI/CD integration
 //! ```
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use colored::*;
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 // Import existing UI utilities from project
 use super::types::*;
-use crate::core::gitignore;
+use crate::core::env_name::{self, FileKind};
+use crate::core::{gitignore, permissions, verdict};
 use crate::docs;
 use crate::utils::string::pluralize;
 use crate::utils::ui;
@@ -48,6 +48,8 @@ use crate::utils::ui::glyph;
 /// # Arguments
 /// * `path` - Project directory to analyze (defaults to "." from CLI)
 /// * `verbose` - Enable detailed output when true
+/// * `skip_without_env` - With no env file, say so and exit 0 (a pre-commit
+///   hook on a fresh clone, DEC-D17)
 ///
 /// # Returns
 /// * `Ok(())` on success, `Err` on IO or parsing failures
@@ -58,7 +60,7 @@ use crate::utils::ui::glyph;
 /// |------|---------|
 /// | 0 | healthy — no errors, and no warnings under `--strict` |
 /// | 1 | problems found |
-/// | 2 | doctor could not run |
+/// | 2 | doctor could not run, or a check could not finish |
 ///
 /// ⚠️ **2 is not a louder 1**, the same distinction `scan` and `sync --check`
 /// make. A directory that cannot be read and a directory that is merely unhealthy
@@ -77,6 +79,7 @@ pub fn run(
     fix: bool,
     strict: bool,
     format: Option<String>,
+    skip_without_env: bool,
 ) -> Result<()> {
     let project_root = PathBuf::from(&path);
 
@@ -84,14 +87,10 @@ pub fn run(
     // would otherwise report "no .env file" — a finding about the project rather
     // than about the path, which is the shape of fail-open `scan` just had fixed.
     if !project_root.is_dir() {
-        eprintln!(
-            "{} {} is not a directory evnx can read",
-            "Error:".on_red().bold(),
+        no_verdict(format!(
+            "{} is not a directory evnx can read",
             project_root.display()
-        );
-        eprintln!();
-        eprintln!("No verdict: doctor examined nothing. This is not a clean result.");
-        std::process::exit(EXIT_ERROR);
+        ));
     }
 
     // ⚠️ Precedence, not "either wins" — unlike `fix` below. A format is a
@@ -107,12 +106,7 @@ pub fn run(
             &["pretty", "json"],
         ) {
             Ok(json) => json,
-            Err(e) => {
-                eprintln!("{} {e}", "Error:".on_red().bold());
-                eprintln!();
-                eprintln!("No verdict: doctor examined nothing. This is not a clean result.");
-                std::process::exit(EXIT_ERROR);
-            }
+            Err(e) => no_verdict(e.to_string()),
         },
         None => std::env::var("EVNX_OUTPUT_JSON")
             .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "json"))
@@ -121,15 +115,36 @@ pub fn run(
 
     // Either source saying yes is enough. `EVNX_AUTO_FIX` shipped first and is
     // documented, so it keeps working; a flag can turn repair on, never off.
-    let auto_fix = fix
-        || std::env::var("EVNX_AUTO_FIX")
-            .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true"))
-            .unwrap_or(false);
+    let from_env = std::env::var("EVNX_AUTO_FIX")
+        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true"))
+        .unwrap_or(false);
+    let auto_fix = fix || from_env;
+
+    // No env file is a verdict of its own (I-162, DEC-D8), decided before any
+    // check: a folder with nothing in it was "healthy", exit 0, so a CI step
+    // pointed at the wrong checkout passed.
+    if env_files(&project_root).is_empty() {
+        if skip_without_env {
+            verdict::skipped(&format!("no env file in {}", project_root.display()));
+            return Ok(());
+        }
+        if templates_in(&project_root).is_empty() && !is_a_project(&project_root) {
+            no_verdict(format!(
+                "{} has no env file, no .env.example and no project files: nothing to \
+                 diagnose here",
+                project_root.display()
+            ));
+        }
+    }
+
+    // DEC-D12: a variable in a CI image turning every `doctor` into a repair
+    // run is surprising, so it says so. Not for `--fix`, which was asked for.
+    let notice = from_env && !fix;
 
     let result = if json_output {
-        run_json(&project_root, verbose, auto_fix, strict)
+        run_json(&project_root, verbose, auto_fix, strict, notice)
     } else {
-        run_text(&project_root, verbose, auto_fix, strict)
+        run_text(&project_root, verbose, auto_fix, strict, notice)
     };
 
     // ✅ Always print — eprintln never pollutes stdout
@@ -139,11 +154,19 @@ pub fn run(
 }
 
 /// Healthy — no errors, and no warnings under `--strict`.
-pub const EXIT_HEALTHY: i32 = 0;
+pub const EXIT_HEALTHY: i32 = verdict::EXIT_OK;
 /// Problems found.
-pub const EXIT_PROBLEMS: i32 = 1;
+pub const EXIT_PROBLEMS: i32 = verdict::EXIT_FINDINGS;
 /// Doctor could not run, so there is no verdict.
-pub const EXIT_ERROR: i32 = 2;
+pub const EXIT_ERROR: i32 = verdict::EXIT_ERROR;
+
+/// Say why doctor examined nothing, on stderr, and exit 2.
+fn no_verdict(message: String) -> ! {
+    eprintln!("{} {message}", "Error:".on_red().bold());
+    eprintln!();
+    eprintln!("No verdict: doctor examined nothing. This is not a clean result.");
+    std::process::exit(EXIT_ERROR);
+}
 
 /// Drop a detail line's marker when it only repeats the check's own severity.
 ///
@@ -174,13 +197,77 @@ fn is_failure(summary: &Summary, strict: bool) -> bool {
     summary.errors > 0 || (strict && summary.warnings > 0)
 }
 
+/// Run every check, in order, and hand each result to `each` as it completes.
+///
+/// ⚠️ One loop for both renderers (I-169). `run_text` and `run_json` each had
+/// their own copy; every change to how a check runs or is fixed had to be made
+/// twice, and a check that could not run (I-163) would have been a third.
+fn build_report(
+    project_root: &Path,
+    verbose: bool,
+    auto_fix: bool,
+    mut each: impl FnMut(&CheckResult),
+) -> DiagnosticReport {
+    let mut report = DiagnosticReport {
+        project_path: project_root.to_string_lossy().to_string(),
+        checks: Vec::new(),
+        summary: Summary::new(),
+        timestamp: Utc::now().to_rfc3339(),
+    };
+    for check in get_all_checks() {
+        let mut result = run_check(check.as_ref(), project_root, verbose, auto_fix);
+        normalise_details(&mut result);
+        report.summary.add(&result);
+        each(&result);
+        report.checks.push(result);
+    }
+    report
+}
+
+/// Exit with the report's verdict: 2 when a check could not run (DEC-D9),
+/// 1 on problems, otherwise return.
+fn finish(report: &DiagnosticReport, strict: bool) -> Result<()> {
+    let not_run = report.checks.iter().filter(|c| !c.ran).count();
+    if not_run > 0 {
+        eprintln!();
+        eprintln!(
+            "No complete verdict: {} could not run. This is not a clean result.",
+            pluralize(not_run, "check", "checks")
+        );
+        std::process::exit(EXIT_ERROR);
+    }
+    if is_failure(&report.summary, strict) {
+        std::process::exit(EXIT_PROBLEMS);
+    }
+    Ok(())
+}
+
+/// DEC-D12. On stderr, so `--format json` keeps stdout as JSON; hidden by `-q`.
+fn auto_fix_notice() {
+    if !ui::is_quiet() {
+        eprintln!(
+            "{} auto-fix enabled by EVNX_AUTO_FIX: repairs are made as with --fix",
+            glyph::INFO.dimmed()
+        );
+    }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Text Output Mode (uses existing ui:: functions)
 // ─────────────────────────────────────────────────────────────
 
-fn run_text(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) -> Result<()> {
+fn run_text(
+    project_root: &Path,
+    verbose: bool,
+    auto_fix: bool,
+    strict: bool,
+    notice: bool,
+) -> Result<()> {
     // Use existing UI header function (requires subtitle param)
     ui::print_header("evnx doctor", Some("Diagnosing environment setup"));
+    if notice {
+        auto_fix_notice();
+    }
 
     if verbose {
         ui::info(format!("Project path: {}", project_root.display()));
@@ -193,27 +280,12 @@ fn run_text(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) ->
         println!();
     }
 
-    let mut report = DiagnosticReport {
-        project_path: project_root.to_string_lossy().to_string(),
-        checks: Vec::new(),
-        summary: Summary::new(),
-        timestamp: Utc::now().to_rfc3339(),
-    };
-
-    // Run all checks
-    let checks = get_all_checks();
-    for check in checks {
-        let mut result = run_check(check.as_ref(), project_root, verbose, auto_fix)?;
-
-        normalise_details(&mut result);
-        report.summary.add(&result);
-        report.checks.push(result.clone());
-
-        // Print immediate result using existing UI utilities
+    // Print each result as it completes, using existing UI utilities
+    let report = build_report(project_root, verbose, auto_fix, |result| {
         if !quiet {
-            print_check_result_text(&result, verbose);
+            print_check_result_text(result, verbose);
         }
-    }
+    });
 
     if quiet {
         // No errors and no warnings cannot be a failure, even under `--strict`.
@@ -234,44 +306,31 @@ fn run_text(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) ->
         print_recommendations_text(&report.checks, auto_fix);
     }
 
-    if is_failure(&report.summary, strict) {
-        std::process::exit(EXIT_PROBLEMS);
-    }
-
-    Ok(())
+    finish(&report, strict)
 }
 
 // ─────────────────────────────────────────────────────────────
 // JSON Output Mode (for CI/CD integration)
 // ─────────────────────────────────────────────────────────────
 
-fn run_json(project_root: &Path, verbose: bool, auto_fix: bool, strict: bool) -> Result<()> {
-    let mut report = DiagnosticReport {
-        project_path: project_root.to_string_lossy().to_string(),
-        checks: Vec::new(),
-        summary: Summary::new(),
-        timestamp: Utc::now().to_rfc3339(),
-    };
-
-    let checks = get_all_checks();
-    for check in checks {
-        let mut result = run_check(check.as_ref(), project_root, verbose, auto_fix)?;
-
-        normalise_details(&mut result);
-        report.summary.add(&result);
-        report.checks.push(result);
+fn run_json(
+    project_root: &Path,
+    verbose: bool,
+    auto_fix: bool,
+    strict: bool,
+    notice: bool,
+) -> Result<()> {
+    if notice {
+        auto_fix_notice();
     }
+    let report = build_report(project_root, verbose, auto_fix, |_| {});
 
     // Output JSON to stdout (machine-readable for CI/CD)
     let json =
         serde_json::to_string_pretty(&report).context("Failed to serialize diagnostic report")?;
     println!("{}", json);
 
-    if is_failure(&report.summary, strict) {
-        std::process::exit(EXIT_PROBLEMS);
-    }
-
-    Ok(())
+    finish(&report, strict)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -283,35 +342,66 @@ trait DiagnosticCheck: Send + Sync {
     fn name(&self) -> &'static str;
     fn description(&self) -> &'static str;
     fn run(&self, project_root: &Path, verbose: bool) -> Result<CheckResult>;
+
+    /// This check's result, with nothing to fix. The description is always
+    /// the check's own (I-166).
+    fn result(&self, severity: Severity, details: Option<String>) -> CheckResult {
+        CheckResult {
+            name: self.name().to_string(),
+            description: self.description().to_string(),
+            severity,
+            details,
+            fixable: false,
+            fixed: false,
+            ran: true,
+            fix_action: None,
+        }
+    }
 }
 
-/// Registry of all available checks
+/// `lines` as a check's `details`: one per line, `None` when there are none.
+fn details(lines: Vec<String>) -> Option<String> {
+    (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
 /// Run `check`; under `--fix`, apply its fix and **run it again** (DEC-D1).
 ///
 /// ⚠️ A fix used to count as done when the fix function returned `true`, and the
 /// check was then shown as ✓ with exit 0. `.gitignore` reading `.env*` then
 /// `!.env` was "fixed" that way while git still committed `.env` (I-156). Now
-/// the check is the judge: still an error after the fix means "not fixed",
+/// the check is the judge: still failing after the fix means "not fixed",
 /// exit 1, and doctor stops offering `--fix` for it.
+///
+/// ⚠️ A check that fails to run is a result, not an abort (I-163, DEC-D9). A
+/// directory named `requirements.txt` used to stop the whole run at the second
+/// check with `Error: Is a directory (os error 21)`: no check name, no path,
+/// no summary. A fix that fails is a result too — "not fixed", with why.
 fn run_check(
     check: &dyn DiagnosticCheck,
     project_root: &Path,
     verbose: bool,
     auto_fix: bool,
-) -> Result<CheckResult> {
-    let result = check.run(project_root, verbose)?;
+) -> CheckResult {
+    let result = match check.run(project_root, verbose) {
+        Ok(result) => result,
+        Err(e) => return could_not_run(check, &e),
+    };
     let fix_fn = match result.fix_action {
         Some(f) if auto_fix && result.fixable && !result.fixed => f,
-        _ => return Ok(result),
+        _ => return result,
     };
-    let changed = fix_fn(project_root, verbose)?;
-    let mut after = check.run(project_root, verbose)?;
-    if after.severity == Severity::Error {
+    let outcome = fix_fn(project_root, verbose);
+    let mut after = match check.run(project_root, verbose) {
+        Ok(after) => after,
+        Err(e) => return could_not_run(check, &e),
+    };
+    let changed = matches!(outcome, Ok(true));
+    if after.fixable || after.severity == Severity::Error {
         after.fixable = false;
-        let note = if changed {
-            "--fix changed what it could; the problem above remains"
-        } else {
-            "--fix could not change this; the problem above remains"
+        let note = match &outcome {
+            Err(e) => format!("--fix could not change this: {e:#}"),
+            Ok(true) => "--fix changed what it could; the problem above remains".into(),
+            Ok(false) => "--fix could not change this; the problem above remains".into(),
         };
         after.details = Some(match after.details.take() {
             Some(d) => format!("{d}\n! not fixed: {note}"),
@@ -320,7 +410,15 @@ fn run_check(
     } else if changed {
         after.fixed = true;
     }
-    Ok(after)
+    after
+}
+
+/// The result of a check that stopped before it could answer (DEC-D9).
+fn could_not_run(check: &dyn DiagnosticCheck, error: &anyhow::Error) -> CheckResult {
+    CheckResult {
+        ran: false,
+        ..check.result(Severity::Error, Some(format!("could not run: {error:#}")))
+    }
 }
 
 /// One "Fixed:" line per change (DEC-D1). On stderr, so `--format json` keeps
@@ -357,45 +455,68 @@ impl DiagnosticCheck for EnvFileCheck {
     }
 
     fn run(&self, project_root: &Path, verbose: bool) -> Result<CheckResult> {
-        // ⚠️ Every `.env*` file, not only `.env`.
+        // ⚠️ Every env file, not only `.env`.
         //
         // This check looked at `.env` alone, so a project with `.env.production`
         // sitting unignored got a green tick — evnx actively reported that the
         // setup was fine while the file holding production credentials was
         // committable. Reporting "healthy" over a real exposure is worse than
         // saying nothing.
-        let env_files = secret_bearing_env_files(project_root);
+        let env_files = env_files(project_root);
 
         if env_files.is_empty() {
-            return Ok(CheckResult {
-                name: self.name().to_string(),
-                description: self.description().to_string(),
-                severity: Severity::Warning,
-                details: Some(".env file not found - create from .env.example".into()),
-                fixable: false,
-                fixed: false,
-                fix_action: None,
+            // DEC-D8: beside a template, a missing `.env` is the project not
+            // set up — an error. Without one it is only worth saying.
+            return Ok(match templates_in(project_root).first() {
+                Some(template) => self.result(
+                    Severity::Error,
+                    details(vec![
+                        format!(
+                            ".env not found, though {template} is here: this project expects one"
+                        ),
+                        format!(
+                            "→ create it from the template: {}",
+                            create_from_template(project_root, template)
+                        ),
+                    ]),
+                ),
+                None => self.result(
+                    Severity::Warning,
+                    Some(".env not found, and there is no .env.example to create it from".into()),
+                ),
             });
         }
 
-        let mut details = Vec::new();
+        let mut lines = Vec::new();
         let mut severity = Severity::Ok;
 
         // Fixable only when a file is merely unignored: `--fix` edits
         // `.gitignore` and never runs git (DEC-D2), so a tracked file is not
         // something it can repair.
         let mut fixable = false;
-        for name in &env_files {
+        for file in &env_files {
+            let name = &file.name;
+            // A plaintext copy exposes what the file it copies does (DEC-D18).
+            let copy = if file.copy {
+                ": a plaintext copy of an env file"
+            } else {
+                ""
+            };
+            if let Some(target) = &file.link {
+                lines.push(format!("· {name} is a symlink to {}", target.display()));
+            }
+            // ⓘ Git is asked about the name in the project, never a symlink's
+            // target: git tracks and ignores the link itself.
             match gitignore::exposure(project_root, name) {
                 gitignore::Exposure::Tracked => {
                     // ⚠️ I-157: this said "NOT in .gitignore", which is false
                     // when .gitignore covers it, and sent the user to the one
                     // place that cannot help. The values are already in git.
                     severity = Severity::Error;
-                    details.push(format!(
-                        "✗ {name} is tracked by git: its values are in the repository history"
+                    lines.push(format!(
+                        "✗ {name} is tracked by git: its values are in the repository history{copy}"
                     ));
-                    details.push(format!(
+                    lines.push(format!(
                         "→ git rm --cached {name}, commit, then rotate every secret it held \
                          (`evnx scan .` lists them)"
                     ));
@@ -405,66 +526,168 @@ impl DiagnosticCheck for EnvFileCheck {
                     fixable = true;
                     // Wording unchanged: `doctor --format json` carries it
                     // and other programs parse that output.
-                    details.push(format!("✗ {name} is NOT in .gitignore (security risk)"));
+                    lines.push(format!(
+                        "✗ {name} is NOT in .gitignore (security risk){copy}"
+                    ));
                 }
                 gitignore::Exposure::Protected => {
                     if verbose {
-                        details.push(format!("✓ {name} is properly ignored by git"));
+                        lines.push(format!("✓ {name} is properly ignored by git"));
                     }
                 }
             }
 
-            match validate_env_syntax(&project_root.join(name)) {
-                Ok(_) if verbose => details.push(format!("✓ {name} syntax is valid")),
-                Ok(_) => {}
-                Err(e) => {
-                    if severity == Severity::Ok {
-                        severity = Severity::Warning;
-                    }
-                    details.push(format!("! {name}: {e}"));
+            // A copy is not loaded by anything, so its syntax is no one's
+            // problem; structured files are not dotenv at all (DEC-D19).
+            if file.copy || env_name::is_structured(name) {
+                continue;
+            }
+            // DEC-D7: the verdict `validate` gives — a file the parser rejects,
+            // or cannot read, is an error, not a warning that exits 0 (I-161).
+            match read_text(&project_root.join(name), name) {
+                Err(why) => {
+                    severity = Severity::Error;
+                    lines.push(format!("✗ {why}"));
                 }
+                Ok(content) => match syntax_problems(&content) {
+                    problems if problems.is_empty() => {
+                        if verbose {
+                            lines.push(format!("✓ {name} syntax is valid"));
+                        }
+                    }
+                    problems => {
+                        severity = Severity::Error;
+                        lines.push(format!("✗ {name}: {}", problems.join("; ")));
+                    }
+                },
             }
         }
 
         Ok(CheckResult {
-            name: self.name().to_string(),
-            description: self.description().to_string(),
-            severity,
-            details: if details.is_empty() {
-                None
-            } else {
-                Some(details.join("\n"))
-            },
             fixable,
-            fixed: false,
             fix_action: Some(fix_env_gitignore),
+            ..self.result(severity, details(lines))
         })
     }
 }
 
-/// Every `.env*` in `project_root` that is meant to hold real values.
-///
-/// The `.env.example` / `.env.sample` / `.env.template` family is excluded: those
-/// are supposed to be committed, so "not gitignored" is correct for them. So are
-/// `evnx backup` artefacts, which are ciphertext.
-fn secret_bearing_env_files(project_root: &Path) -> Vec<String> {
-    const TEMPLATES: &[&str] = &[".env.example", ".env.sample", ".env.template"];
+/// One env file doctor checks: in the project folder, by name.
+struct EnvFile {
+    name: String,
+    /// A plaintext copy (`.env.bak`, `.env.backup`, …), not the file itself
+    /// (DEC-D5). An `evnx backup` is ciphertext and never listed.
+    copy: bool,
+    /// Where the name points, as the link says, when it is a symlink (DEC-D6).
+    link: Option<PathBuf>,
+}
 
+impl EnvFile {
+    /// The file as a finding names it: a symlink says where it points.
+    fn label(&self) -> String {
+        match &self.link {
+            Some(target) => format!("{} (symlink to {})", self.name, target.display()),
+            None => self.name.clone(),
+        }
+    }
+}
+
+/// Every env file in `project_root` that holds, or may hold, real values
+/// (`core::env_name::kind`), in name order.
+///
+/// ⚠️ **By the shared classifier, not `starts_with(".env")`** (I-173, DEC-D3):
+/// that took `.envrc` — a direnv script teams commit on purpose — for an env
+/// file, reported it unignored as a security error, and its `layout python`
+/// line as invalid syntax.
+///
+/// ⚠️ **Copies are read** (I-160, DEC-D5): every name containing `.backup` was
+/// skipped because evnx's backups are ciphertext, so `cp .env .env.backup` was
+/// never checked. Now an `evnx backup` is recognised by its content.
+///
+/// ⚠️ **Symlinks are listed** (I-159, DEC-D6). Only regular files were, so a
+/// symlinked `.env` was "not found" here while the permission check followed
+/// the link — and `--fix` chmod'ed a target outside the project.
+fn env_files(project_root: &Path) -> Vec<EnvFile> {
     let Ok(entries) = fs::read_dir(project_root) else {
         return Vec::new();
     };
 
-    let mut names: Vec<String> = entries
+    let mut files: Vec<EnvFile> = entries
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|n| n.starts_with(".env"))
-        .filter(|n| !TEMPLATES.contains(&n.as_str()))
-        .filter(|n| !n.contains(".backup"))
+        .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
+            let kind = env_name::kind(&name);
+            if !matches!(kind, FileKind::Env | FileKind::Copy) {
+                return None;
+            }
+            let path = entry.path();
+            let link = match entry.file_type().ok()? {
+                t if t.is_symlink() => Some(fs::read_link(&path).ok()?),
+                t if t.is_file() => None,
+                // A directory named `.env` (a Python virtualenv) is not one.
+                _ => return None,
+            };
+            if path.is_dir() {
+                return None;
+            }
+            let copy = kind == FileKind::Copy;
+            if copy && is_ciphertext(&path) {
+                return None;
+            }
+            Some(EnvFile { name, copy, link })
+        })
         .collect();
 
-    names.sort();
-    names
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
+}
+
+/// Whether `path` holds an `evnx backup`. A file that cannot be read cannot
+/// be shown to be ciphertext, so it is checked like a plaintext copy.
+fn is_ciphertext(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .map(|content| crate::core::envfile::is_evnx_backup(&content))
+        .unwrap_or(false)
+}
+
+/// The templates (`.env.example`, `.env.sample`, `.env.template`) present in
+/// `project_root`, in that order.
+fn templates_in(project_root: &Path) -> Vec<String> {
+    env_name::TEMPLATE_SUFFIXES
+        .iter()
+        .map(|suffix| format!(".env.{suffix}"))
+        .filter(|name| project_root.join(name).is_file())
+        .collect()
+}
+
+/// Whether `project_root` shows a project: a known project type or a Docker
+/// file. A folder with neither, and no env file or template, has nothing for
+/// doctor to diagnose (DEC-D8).
+fn is_a_project(project_root: &Path) -> bool {
+    detect_project_type(project_root).is_some()
+        || !crate::core::project::docker_files_in(project_root).is_empty()
+}
+
+/// The command that creates `.env` from `template` in `project_root`: the one
+/// `sync` names for the same case.
+fn create_from_template(project_root: &Path, template: &str) -> String {
+    use crate::core::shell::word;
+    let here = project_root == Path::new(".");
+    let mut cmd = String::from("evnx sync --direction reverse");
+    if !here {
+        cmd.push_str(&format!(
+            " --env {}",
+            word(&project_root.join(".env").to_string_lossy())
+        ));
+    }
+    if !here || template != ".env.example" {
+        let path = if here {
+            template.to_string()
+        } else {
+            project_root.join(template).to_string_lossy().into_owned()
+        };
+        cmd.push_str(&format!(" --example {}", word(&path)));
+    }
+    cmd
 }
 
 fn fix_env_gitignore(project_root: &Path, _verbose: bool) -> Result<bool> {
@@ -500,64 +723,31 @@ impl DiagnosticCheck for EnvExampleCheck {
         let example_path = project_root.join(".env.example");
 
         if !example_path.exists() {
-            return Ok(CheckResult {
-                name: self.name().to_string(),
-                description: self.description().to_string(),
-                severity: Severity::Warning,
-                details: Some(".env.example not found - consider creating a template".into()),
-                fixable: false,
-                fixed: false,
-                fix_action: None,
-            });
+            return Ok(self.result(
+                Severity::Warning,
+                Some(".env.example not found - consider creating a template".into()),
+            ));
         }
 
-        let is_tracked = Command::new("git")
-            .args([
-                "-C",
-                project_root.to_string_lossy().as_ref(),
-                "ls-files",
-                "--error-unmatch",
-                ".env.example",
-            ])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        if !is_tracked {
-            Ok(CheckResult {
-                name: self.name().to_string(),
-                description: self.description().to_string(),
-                severity: Severity::Warning,
-                // ⚠️ Not `fixable`. It was, with a `fix_action` that only printed
-                // advice and returned `Ok(false)` — so the summary counted a fix
-                // that could never happen. Harmless while auto-fix was an
-                // undocumented environment variable; a lie once `--fix` is a flag
-                // someone runs expecting the count to go down.
-                //
-                // Staging a file is also not doctor's call. `git add` puts
-                // content in the next commit, and a tool that does that
-                // unasked is one you stop trusting near a repository.
-                details: Some(
-                    ".env.example is not tracked in Git — run: git add .env.example".into(),
-                ),
-                fixable: false,
-                fixed: false,
-                fix_action: None,
-            })
+        if !gitignore::is_tracked(project_root, ".env.example") {
+            // ⚠️ Not `fixable`. It was, with a `fix_action` that only printed
+            // advice and returned `Ok(false)` — so the summary counted a fix
+            // that could never happen. Harmless while auto-fix was an
+            // undocumented environment variable; a lie once `--fix` is a flag
+            // someone runs expecting the count to go down.
+            //
+            // Staging a file is also not doctor's call. `git add` puts
+            // content in the next commit, and a tool that does that
+            // unasked is one you stop trusting near a repository.
+            Ok(self.result(
+                Severity::Warning,
+                Some(".env.example is not tracked in Git — run: git add .env.example".into()),
+            ))
         } else {
-            Ok(CheckResult {
-                name: self.name().to_string(),
-                description: self.description().to_string(),
-                severity: Severity::Ok,
-                details: if verbose {
-                    Some("✓ File is tracked in Git".into())
-                } else {
-                    None
-                },
-                fixable: false,
-                fixed: false,
-                fix_action: None,
-            })
+            Ok(self.result(
+                Severity::Ok,
+                verbose.then(|| "✓ File is tracked in Git".into()),
+            ))
         }
     }
 }
@@ -575,41 +765,41 @@ impl DiagnosticCheck for ProjectStructureCheck {
 
     fn run(&self, project_root: &Path, verbose: bool) -> Result<CheckResult> {
         let detected = detect_project_type(project_root);
-        let mut details = Vec::new();
+        let mut lines = Vec::new();
         let mut severity = Severity::Info;
         let mut warnings = 0usize;
 
         if let Some(project_type) = detected.as_deref() {
             if project_type.starts_with("Python") {
-                details.push(format!("✓ Detected Python project ({})", project_type));
+                lines.push(format!("✓ Detected Python project ({})", project_type));
                 if project_type.contains("requirements") {
                     if !check_requirements_txt_has_dotenv(project_root)? {
-                        details.push("! python-dotenv not in requirements.txt".into());
+                        lines.push("! python-dotenv not in requirements.txt".into());
                         warnings += 1;
                     } else if verbose {
-                        details.push("✓ python-dotenv dependency found".into());
+                        lines.push("✓ python-dotenv dependency found".into());
                     }
                 } else if verbose && !check_python_manifest_has_dotenv(project_root)? {
-                    details.push("· Consider adding python-dotenv or pydantic-settings".into());
+                    lines.push("· Consider adding python-dotenv or pydantic-settings".into());
                 }
             } else if project_type == "Node.js" {
-                details.push("✓ Detected Node.js project".into());
+                lines.push("✓ Detected Node.js project".into());
                 if verbose && !check_package_json_has_dotenv(project_root)? {
-                    details.push("· Consider adding 'dotenv' package".into());
+                    lines.push("· Consider adding 'dotenv' package".into());
                 }
             } else if project_type == "Rust" {
-                details.push("✓ Detected Rust project".into());
+                lines.push("✓ Detected Rust project".into());
                 if verbose && !check_cargo_has_dotenv(project_root)? {
-                    details.push("· Consider adding 'dotenvy' crate".into());
+                    lines.push("· Consider adding 'dotenvy' crate".into());
                 }
             } else {
-                details.push(format!("✓ Detected {} project", project_type));
+                lines.push(format!("✓ Detected {} project", project_type));
             }
             severity = Severity::Ok;
         } else {
-            details.push("· No recognized project configuration".into());
+            lines.push("· No recognized project configuration".into());
             if verbose {
-                details.push("Supported: requirements.txt, pyproject.toml, Pipfile, poetry.lock, package.json, Cargo.toml, go.mod, composer.json".into());
+                lines.push("Supported: requirements.txt, pyproject.toml, Pipfile, poetry.lock, package.json, Cargo.toml, go.mod, composer.json".into());
             }
         }
 
@@ -617,19 +807,7 @@ impl DiagnosticCheck for ProjectStructureCheck {
             severity = Severity::Warning;
         }
 
-        Ok(CheckResult {
-            name: self.name().to_string(),
-            description: self.description().to_string(),
-            severity,
-            details: if details.is_empty() {
-                None
-            } else {
-                Some(details.join("\n"))
-            },
-            fixable: false,
-            fixed: false,
-            fix_action: None,
-        })
+        Ok(self.result(severity, details(lines)))
     }
 }
 
@@ -650,29 +828,15 @@ impl DiagnosticCheck for DockerCheck {
         let found = crate::core::project::docker_files_in(project_root);
 
         if found.is_empty() {
-            Ok(CheckResult {
-                name: self.name().to_string(),
-                description: self.description().to_string(),
-                severity: Severity::Info,
-                details: Some("No Docker configuration detected".into()),
-                fixable: false,
-                fixed: false,
-                fix_action: None,
-            })
+            Ok(self.result(
+                Severity::Info,
+                Some("No Docker configuration detected".into()),
+            ))
         } else {
-            Ok(CheckResult {
-                name: self.name().to_string(),
-                description: self.description().to_string(),
-                severity: Severity::Ok,
-                details: if verbose {
-                    Some(format!("Found: {}", found.join(", ")))
-                } else {
-                    None
-                },
-                fixable: false,
-                fixed: false,
-                fix_action: None,
-            })
+            Ok(self.result(
+                Severity::Ok,
+                verbose.then(|| format!("Found: {}", found.join(", "))),
+            ))
         }
     }
 }
@@ -688,110 +852,146 @@ impl DiagnosticCheck for PermissionCheck {
         "Check file permissions for sensitive files"
     }
 
+    /// Every env file and plaintext copy, each named (I-158, DEC-D4); private
+    /// means `core::permissions`' rule — no group or other bits — so 700
+    /// passes (I-170). A template is never checked: it is meant to be shared.
     fn run(&self, project_root: &Path, verbose: bool) -> Result<CheckResult> {
-        let env_path = project_root.join(".env");
+        let files = env_files(project_root);
 
-        if !env_path.exists() {
-            return Ok(CheckResult {
-                name: self.name().to_string(),
-                description: "Skipped: .env not found".into(),
-                severity: Severity::Info,
-                details: None,
-                fixable: false,
-                fixed: false,
-                fix_action: None,
-            });
+        // ⚠️ The reason goes in `details`. It replaced the description, so the
+        // JSON `description` changed with the state and the line had no
+        // check name (I-166).
+        if files.is_empty() {
+            return Ok(self.result(Severity::Info, Some("Skipped: no env file to check".into())));
+        }
+        if !permissions::MODES_APPLY {
+            return Ok(self.result(
+                Severity::Info,
+                Some(
+                    "Skipped: Windows platform — permission checks need a Unix-like system".into(),
+                ),
+            ));
         }
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            match fs::metadata(&env_path) {
-                Ok(metadata) => {
-                    let mode = metadata.permissions().mode() & 0o777;
-                    let is_secure = mode == 0o600 || mode == 0o400;
-
-                    if is_secure {
-                        Ok(CheckResult {
-                            name: self.name().to_string(),
-                            description: self.description().to_string(),
-                            severity: Severity::Ok,
-                            details: if verbose {
-                                Some(format!("Permissions: {:o} (secure)", mode))
-                            } else {
-                                None
-                            },
-                            fixable: false,
-                            fixed: false,
-                            fix_action: None,
-                        })
-                    } else {
-                        Ok(CheckResult {
-                            name: self.name().to_string(),
-                            description: self.description().to_string(),
-                            severity: Severity::Warning,
-                            details: Some(format!("Permissions: {:o} (recommended: 600)", mode)),
-                            fixable: true,
-                            fixed: false,
-                            fix_action: Some(fix_file_permissions),
-                        })
+        let root = fs::canonicalize(project_root).ok();
+        let mut lines = Vec::new();
+        let mut severity = Severity::Ok;
+        let mut fixable = false;
+        for file in &files {
+            let path = project_root.join(&file.name);
+            let label = file.label();
+            match permissions::mode(&path) {
+                None => {
+                    severity = Severity::Warning;
+                    lines.push(format!("! {label}: could not read its permissions"));
+                }
+                Some(mode) if permissions::is_private_mode(mode) => {
+                    if verbose {
+                        lines.push(format!("✓ {label}: permissions {mode:o} (private)"));
                     }
                 }
-                Err(e) => Ok(CheckResult {
-                    name: self.name().to_string(),
-                    description: self.description().to_string(),
-                    severity: Severity::Warning,
-                    details: Some(format!("Could not check permissions: {}", e)),
-                    fixable: false,
-                    fixed: false,
-                    fix_action: None,
-                }),
+                Some(mode) => {
+                    severity = Severity::Warning;
+                    lines.push(format!(
+                        "! {label}: permissions {mode:o} (recommended: 600)"
+                    ));
+                    // DEC-D6: a target outside the project is not doctor's to
+                    // change; it says what to run instead.
+                    if inside(root.as_deref(), &path) {
+                        fixable = true;
+                    } else {
+                        lines.push(format!(
+                            "→ the target is outside the project, so --fix leaves it: {}",
+                            permissions::chmod_hint(&link_target(project_root, file))
+                        ));
+                    }
+                }
             }
         }
 
-        #[cfg(not(unix))]
-        {
-            Ok(CheckResult {
-                name: self.name().to_string(),
-                description: "Skipped: Windows platform".into(),
-                severity: Severity::Info,
-                details: if verbose {
-                    Some("Permission checks require Unix-like system".into())
-                } else {
-                    None
-                },
-                fixable: false,
-                fixed: false,
-                fix_action: None,
-            })
-        }
+        Ok(CheckResult {
+            fixable,
+            fix_action: Some(fix_file_permissions),
+            ..self.result(severity, details(lines))
+        })
     }
 }
 
-#[cfg(unix)]
-fn fix_file_permissions(project_root: &Path, verbose: bool) -> Result<bool> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let env_path = project_root.join(".env");
-    if !env_path.exists() {
-        return Ok(false);
+/// Whether `path`, followed through any symlink, is inside `root` (canonical).
+fn inside(root: Option<&Path>, path: &Path) -> bool {
+    match (root, fs::canonicalize(path)) {
+        (Some(root), Ok(real)) => real.starts_with(root),
+        _ => false,
     }
+}
 
-    let _ = verbose;
-    let current = fs::metadata(&env_path)?.permissions().mode() & 0o777;
-    if current == crate::core::permissions::PRIVATE {
-        return Ok(false);
+/// A symlinked env file's target, as a person would type it from where they
+/// ran doctor: the link as written, joined to the project folder if relative.
+fn link_target(project_root: &Path, file: &EnvFile) -> PathBuf {
+    match &file.link {
+        Some(target) if target.is_absolute() || project_root == Path::new(".") => target.clone(),
+        Some(target) => project_root.join(target),
+        None => project_root.join(&file.name),
     }
-    crate::core::permissions::make_private(&env_path)?;
-    report_fix(format!(".env mode {current:o} → 600"));
-    Ok(true)
+}
+
+fn fix_file_permissions(project_root: &Path, _verbose: bool) -> Result<bool> {
+    let root = fs::canonicalize(project_root).ok();
+    let mut changed = false;
+    let mut failed = Vec::new();
+    for file in env_files(project_root) {
+        let path = project_root.join(&file.name);
+        let Some(mode) = permissions::mode(&path) else {
+            continue;
+        };
+        if permissions::is_private_mode(mode) || !inside(root.as_deref(), &path) {
+            continue;
+        }
+        match permissions::make_private(&path) {
+            Ok(_) => {
+                report_fix(format!("{} mode {mode:o} → 600", file.label()));
+                changed = true;
+            }
+            Err(e) => failed.push(format!("{e:#}")),
+        }
+    }
+    if !failed.is_empty() {
+        return Err(anyhow!(failed.join("; ")));
+    }
+    Ok(changed)
 }
 
 // ─────────────────────────────────────────────────────────────
 // Helper Functions
 // ─────────────────────────────────────────────────────────────
 
-/// Is every line of this file something `core::Parser` will accept?
+/// `err` as a person reads it: the message without its `(os error N)`.
+fn io_cause(err: &std::io::Error) -> String {
+    let text = err.to_string();
+    match err.raw_os_error() {
+        Some(code) => text
+            .strip_suffix(&format!(" (os error {code})"))
+            .unwrap_or(&text)
+            .to_string(),
+        None => text,
+    }
+}
+
+/// `file` in the project as text, or why not as `<cause> (<file>)` — the shape
+/// a check that could not run reports (DEC-D9).
+fn read_project_file(project_root: &Path, file: &str) -> Result<String> {
+    fs::read_to_string(project_root.join(file)).map_err(|e| anyhow!("{} ({file})", io_cause(&e)))
+}
+
+/// An env file's text, or a sentence saying why it cannot be read (DEC-D7):
+/// a permission problem and a file that is not UTF-8 are different answers.
+fn read_text(path: &Path, name: &str) -> std::result::Result<String, String> {
+    let bytes =
+        fs::read(path).map_err(|e| format!("{name} could not be read: {}", io_cause(&e)))?;
+    String::from_utf8(bytes).map_err(|e| format!("{name} is not valid UTF-8: {}", e.utf8_error()))
+}
+
+/// Every line of `content` that `core::Parser` would refuse, as messages.
 ///
 /// ⚠️ **This must agree with the parser, and it did not.** The pattern omitted
 /// the optional `export` prefix, so `export FOO=bar` — which the parser's own
@@ -814,14 +1014,15 @@ fn fix_file_permissions(project_root: &Path, verbose: bool) -> Result<bool> {
 /// that `validate`, `convert` and `scan` all accepted. That was bug B6. The
 /// multiline state is now tracked with the parser's own `closes_multiline` and
 /// `line_opens_multiline`, so the two cannot disagree about where a value ends.
-fn validate_env_syntax(path: &Path) -> Result<()> {
+fn syntax_problems(content: &str) -> Vec<String> {
     use crate::core::parser::{closes_multiline, line_opens_multiline};
+    use std::sync::OnceLock;
 
-    let content =
-        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
-
-    let line_re = Regex::new(r"^(?:\s*$|\s*#.*|\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=.*)$")
-        .context("Invalid regex pattern")?;
+    static LINE: OnceLock<Regex> = OnceLock::new();
+    let line_re = LINE.get_or_init(|| {
+        Regex::new(r"^(?:\s*$|\s*#.*|\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=.*)$")
+            .expect("a valid pattern")
+    });
 
     let mut bad: Vec<String> = Vec::new();
     // The quote a multiline value is open under, and the line it opened on.
@@ -865,11 +1066,7 @@ fn validate_env_syntax(path: &Path) -> Result<()> {
         ));
     }
 
-    if bad.is_empty() {
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!(bad.join("; ")))
-    }
+    bad
 }
 
 fn detect_project_type(project_root: &Path) -> Option<String> {
@@ -908,7 +1105,7 @@ fn detect_project_type(project_root: &Path) -> Option<String> {
 }
 
 fn check_requirements_txt_has_dotenv(project_root: &Path) -> Result<bool> {
-    let content = fs::read_to_string(project_root.join("requirements.txt"))?;
+    let content = read_project_file(project_root, "requirements.txt")?;
     Ok(content
         .lines()
         .map(str::trim)
@@ -931,11 +1128,10 @@ fn check_requirements_txt_has_dotenv(project_root: &Path) -> Result<bool> {
 fn check_python_manifest_has_dotenv(project_root: &Path) -> Result<bool> {
     let mut found = false;
     for manifest in ["pyproject.toml", "Pipfile"] {
-        let path = project_root.join(manifest);
-        if !path.is_file() {
+        if !project_root.join(manifest).is_file() {
             continue;
         }
-        let content = fs::read_to_string(&path)?;
+        let content = read_project_file(project_root, manifest)?;
         found |= content.contains("python-dotenv")
             || content.contains("pydantic-settings")
             || content.contains("dynaconf");
@@ -944,7 +1140,7 @@ fn check_python_manifest_has_dotenv(project_root: &Path) -> Result<bool> {
 }
 
 fn check_package_json_has_dotenv(project_root: &Path) -> Result<bool> {
-    let content = fs::read_to_string(project_root.join("package.json"))?;
+    let content = read_project_file(project_root, "package.json")?;
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
         let deps = json
             .get("dependencies")
@@ -957,7 +1153,7 @@ fn check_package_json_has_dotenv(project_root: &Path) -> Result<bool> {
 }
 
 fn check_cargo_has_dotenv(project_root: &Path) -> Result<bool> {
-    let content = fs::read_to_string(project_root.join("Cargo.toml"))?;
+    let content = read_project_file(project_root, "Cargo.toml")?;
     Ok(content.contains("dotenvy") || content.contains("dotenv"))
 }
 
@@ -1064,18 +1260,26 @@ mod tests {
 
     #[test]
     fn test_validate_env_syntax_valid() {
-        let dir = TempDir::new().unwrap();
-        let env_path = dir.path().join(".env");
-        fs::write(&env_path, "FOO=bar\n# comment\nEMPTY=\n").unwrap();
-        assert!(validate_env_syntax(&env_path).is_ok());
+        assert!(syntax_problems("FOO=bar\n# comment\nEMPTY=\n").is_empty());
     }
 
     #[test]
     fn test_validate_env_syntax_invalid() {
+        assert_eq!(
+            syntax_problems("INVALID LINE\n"),
+            ["Line 1: invalid syntax 'INVALID LINE'"]
+        );
+    }
+
+    /// DEC-D9: the cause, without the OS's error number, then the file.
+    #[test]
+    fn t_i163_a_project_file_that_cannot_be_read_names_itself() {
         let dir = TempDir::new().unwrap();
-        let env_path = dir.path().join(".env");
-        fs::write(&env_path, "INVALID LINE\n").unwrap();
-        assert!(validate_env_syntax(&env_path).is_err());
+        fs::create_dir(dir.path().join("requirements.txt")).unwrap();
+        let err = read_project_file(dir.path(), "requirements.txt").unwrap_err();
+        let text = err.to_string();
+        assert!(text.ends_with(" (requirements.txt)"), "{text}");
+        assert!(!text.contains("os error"), "{text}");
     }
 
     #[test]
@@ -1116,6 +1320,10 @@ mod env_file_coverage_tests {
     use super::*;
     use tempfile::TempDir;
 
+    fn names(dir: &std::path::Path) -> Vec<String> {
+        env_files(dir).into_iter().map(|f| f.name).collect()
+    }
+
     #[test]
     fn picks_up_every_secret_bearing_env_file() {
         let dir = TempDir::new().unwrap();
@@ -1130,7 +1338,7 @@ mod env_file_coverage_tests {
             fs::write(dir.path().join(n), "A=1\n").unwrap();
         }
 
-        let found = secret_bearing_env_files(dir.path());
+        let found = names(dir.path());
         assert_eq!(found.len(), 6, "{found:?}");
         assert!(found.contains(&".env.production".to_string()));
         assert!(found.contains(&".env.prod".to_string()));
@@ -1139,36 +1347,68 @@ mod env_file_coverage_tests {
     /// The template family is meant to be committed, so "not gitignored" is the
     /// correct state for it — flagging it would train people to ignore the check.
     #[test]
-    fn leaves_out_the_template_family_and_backups() {
+    fn leaves_out_the_template_family() {
         let dir = TempDir::new().unwrap();
-        for n in [
-            ".env",
-            ".env.example",
-            ".env.sample",
-            ".env.template",
-            ".env.backup",
-            ".env.production.backup",
-        ] {
+        for n in [".env", ".env.example", ".env.sample", ".env.template"] {
             fs::write(dir.path().join(n), "A=1\n").unwrap();
         }
 
+        assert_eq!(names(dir.path()), [".env"]);
+    }
+
+    /// I-160, DEC-D5 (T-038: this test used to lock the opposite). A
+    /// plaintext copy is listed, as a copy; an `evnx backup` is not.
+    #[test]
+    fn t_i160_reads_plaintext_copies_and_leaves_out_evnx_backups() {
+        use base64::{engine::general_purpose, Engine as _};
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".env"), "A=1\n").unwrap();
+        fs::write(dir.path().join(".env.backup"), "A=1\n").unwrap();
+        let blob = general_purpose::STANDARD.encode([1u8; 120]);
+        fs::write(dir.path().join(".env.production.backup"), blob).unwrap();
+
+        let files = env_files(dir.path());
         assert_eq!(
-            secret_bearing_env_files(dir.path()),
-            vec![".env".to_string()]
+            files
+                .iter()
+                .map(|f| (f.name.as_str(), f.copy))
+                .collect::<Vec<_>>(),
+            [(".env", false), (".env.backup", true)]
         );
+    }
+
+    /// I-173: names that only start with `.env`.
+    #[test]
+    fn t_i173_leaves_out_lookalikes() {
+        let dir = TempDir::new().unwrap();
+        for n in [".env", ".envrc", ".environment", ".env-notes.md"] {
+            fs::write(dir.path().join(n), "A=1\n").unwrap();
+        }
+        assert_eq!(names(dir.path()), [".env"]);
     }
 
     #[test]
     fn ignores_directories_and_unrelated_files() {
         let dir = TempDir::new().unwrap();
         fs::create_dir(dir.path().join(".envoy")).unwrap();
+        fs::create_dir(dir.path().join(".env.d")).unwrap();
         fs::write(dir.path().join("README.md"), "x").unwrap();
         fs::write(dir.path().join(".env"), "A=1\n").unwrap();
 
-        assert_eq!(
-            secret_bearing_env_files(dir.path()),
-            vec![".env".to_string()]
-        );
+        assert_eq!(names(dir.path()), [".env"]);
+    }
+
+    /// I-159: a symlink is listed with where it points.
+    #[cfg(unix)]
+    #[test]
+    fn t_i159_lists_a_symlink_with_its_target() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("real.env"), "A=1\n").unwrap();
+        std::os::unix::fs::symlink("real.env", dir.path().join(".env")).unwrap();
+
+        let files = env_files(dir.path());
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].label(), ".env (symlink to real.env)");
     }
 }
 

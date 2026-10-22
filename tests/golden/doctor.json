@@ -7,7 +7,8 @@
       "severity": "error",
       "details": ".env is NOT in .gitignore (security risk)",
       "fixable": true,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "env_example",
@@ -15,7 +16,8 @@
       "severity": "warning",
       "details": ".env.example is not tracked in Git — run: git add .env.example",
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "project_structure",
@@ -23,7 +25,8 @@
       "severity": "info",
       "details": "No recognized project configuration",
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "docker_config",
@@ -31,15 +34,17 @@
       "severity": "info",
       "details": "No Docker configuration detected",
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "file_permissions",
       "description": "Check file permissions for sensitive files",
       "severity": "warning",
-      "details": "Permissions: 644 (recommended: 600)",
+      "details": ".env: permissions 644 (recommended: 600)",
       "fixable": true,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     }
   ],
   "summary": {

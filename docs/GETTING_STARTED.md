@@ -178,24 +178,39 @@ Before anything else, run `doctor` to check whether your environment setup is co
 evnx doctor
 ```
 
-Sample output:
+Sample output, for a project `evnx init` set up whose `.env.example` is not committed yet:
 
 ```
-[DOCTOR] Running environment health check...
-[OK]      File permissions look good (600)
-[OK]      .env is in .gitignore
-[WARNING] No .env.example found
-[WARNING] .env.example is out of sync with .env — 2 variables differ
-[INFO]    2 warnings, 0 errors
-[TIP]     Run 'evnx doctor --fix' to auto-fix gitignore issues
+  evnx doctor  Diagnosing environment setup
+
+  ✓  Validate .env file existence, security, and syntax
+
+  !  Check .env.example exists and is Git-tracked
+     .env.example is not tracked in Git — run: git add .env.example
+
+  ✓  Detect project type and validate dependencies
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  !  Check file permissions for sensitive files
+     .env: permissions 644 (recommended: 600)
+
+  2 warnings  ·  2 checks passed
 ```
 
-`doctor` checks: whether `.env` is tracked by git, whether `.gitignore` covers `.env`, whether `.env.example` exists and is in sync, and file permissions on `.env`.
+`doctor` checks every env file — `.env`, `.env.<name>` and plaintext copies such as
+`.env.bak`: that git ignores it and does not track it, that it is valid dotenv, and that
+no other user can read it. It also checks that `.env.example` exists and is tracked by
+git. It does not compare the two files' keys: `evnx sync --check` does that (Step 8), and
+so does `evnx diff`. Errors exit 1; warnings exit 0 unless you pass `--strict`.
 
-Run with `--fix` to auto-resolve gitignore and permissions issues:
+Run with `--fix` to repair the `.gitignore` entries and file permissions. Each repair is
+printed, and checked again afterwards:
 
 ```bash
 evnx doctor --fix
+# ✓ Fixed: .env mode 644 → 600
 ```
 
 ---

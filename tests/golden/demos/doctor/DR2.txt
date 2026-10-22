@@ -16,7 +16,7 @@ $ evnx doctor
      No Docker configuration detected
 
   !  Check file permissions for sensitive files
-     Permissions: 644 (recommended: 600)
+     .env: permissions 644 (recommended: 600)
 
   1 error  ·  2 warnings
 

@@ -12,7 +12,8 @@ $ env EVNX_OUTPUT_JSON=1 evnx doctor
       "severity": "ok",
       "details": null,
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "env_example",
@@ -20,7 +21,8 @@ $ env EVNX_OUTPUT_JSON=1 evnx doctor
       "severity": "ok",
       "details": null,
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "project_structure",
@@ -28,7 +30,8 @@ $ env EVNX_OUTPUT_JSON=1 evnx doctor
       "severity": "info",
       "details": "No recognized project configuration",
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "docker_config",
@@ -36,7 +39,8 @@ $ env EVNX_OUTPUT_JSON=1 evnx doctor
       "severity": "info",
       "details": "No Docker configuration detected",
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     },
     {
       "name": "file_permissions",
@@ -44,7 +48,8 @@ $ env EVNX_OUTPUT_JSON=1 evnx doctor
       "severity": "ok",
       "details": null,
       "fixable": false,
-      "fixed": false
+      "fixed": false,
+      "ran": true
     }
   ],
   "summary": {
@@ -107,6 +112,7 @@ $ env EVNX_AUTO_FIX=1 evnx doctor
 
   evnx doctor  Diagnosing environment setup
 
+· auto-fix enabled by EVNX_AUTO_FIX: repairs are made as with --fix
 ✓ Fixed: .env mode 644 → 600
 [exit 1]
   ok: I-167 fixed: the mode repair prints a Fixed: notice on stderr; exit 1 because this scene committed .env (tracked, I-157) (exit 1)

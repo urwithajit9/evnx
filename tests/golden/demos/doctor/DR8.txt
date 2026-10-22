@@ -2,34 +2,18 @@
 ================ DR8 ================
 
 $ evnx doctor
-
-  !  Validate .env file existence, security, and syntax
-     .env file not found - create from .env.example
-
-  !  Check .env.example exists and is Git-tracked
-     .env.example not found - consider creating a template
-
-  ·  Detect project type and validate dependencies
-     No recognized project configuration
-
-  ·  Check for Docker configuration files
-     No Docker configuration detected
-
-  ·  Skipped: .env not found
-
-  2 warnings
 [stderr]
+Error: . has no env file, no .env.example and no project files: nothing to diagnose here
 
-  evnx doctor  Diagnosing environment setup
-
-  Docs: https://docs.evnx.dev/cli/commands/doctor
-[exit 0]
-  ok: KNOWN I-162: an empty directory exits 0; decided: exit 2 'nothing to diagnose' (exit 0)
+No verdict: doctor examined nothing. This is not a clean result.
+[exit 2]
+  ok: FIXED I-162 (DEC-D8): an empty directory is exit 2, nothing to diagnose (exit 2)
 
 $ evnx doctor
 
-  !  Validate .env file existence, security, and syntax
-     .env file not found - create from .env.example
+  ✗  Validate .env file existence, security, and syntax
+     .env not found, though .env.example is here: this project expects one
+     → create it from the template: evnx sync --direction reverse
 
   ✓  Check .env.example exists and is Git-tracked
 
@@ -39,39 +23,47 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ·  Skipped: .env not found
+  ·  Check file permissions for sensitive files
+     Skipped: no env file to check
 
-  1 warning  ·  1 check passed
-[stderr]
-
-  evnx doctor  Diagnosing environment setup
-
-  Docs: https://docs.evnx.dev/cli/commands/doctor
-[exit 0]
-  ok: KNOWN I-162: template but no .env is a warning; decided: error, exit 1 (exit 0)
-
-$ evnx doctor --strict
-
-  !  Validate .env file existence, security, and syntax
-     .env file not found - create from .env.example
-
-  ✓  Check .env.example exists and is Git-tracked
-
-  ·  Detect project type and validate dependencies
-     No recognized project configuration
-
-  ·  Check for Docker configuration files
-     No Docker configuration detected
-
-  ·  Skipped: .env not found
-
-  1 warning  ·  1 check passed
+  1 error  ·  1 check passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
 
 [exit 1]
-  ok: ...--strict makes it fail (exit 1)
+  ok: FIXED I-162 (DEC-D8): template but no .env is an error, exit 1 (exit 1)
+
+$ evnx doctor --strict
+
+  ✗  Validate .env file existence, security, and syntax
+     .env not found, though .env.example is here: this project expects one
+     → create it from the template: evnx sync --direction reverse
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ·  Check file permissions for sensitive files
+     Skipped: no env file to check
+
+  1 error  ·  1 check passed
+[stderr]
+
+  evnx doctor  Diagnosing environment setup
+
+[exit 1]
+  ok: ...and with --strict (exit 1)
+
+$ evnx doctor --skip-without-env
+[stderr]
+· no env file in . — nothing to check, skipped
+[exit 0]
+  ok: DEC-D17: --skip-without-env passes a fresh clone and says it skipped (the pre-commit hook) (exit 0)
 
 $ evnx doctor
 
@@ -81,15 +73,91 @@ $ evnx doctor
   !  Check .env.example exists and is Git-tracked
      .env.example not found - consider creating a template
 
+  ✗  Detect project type and validate dependencies
+     could not run: Is a directory (requirements.txt)
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check file permissions for sensitive files
+
+  2 errors  ·  1 warning  ·  1 check passed
+
+  →  1 issue evnx doctor --fix can repair:
+     ·  Validate .env file existence, security, and syntax
 [stderr]
 
   evnx doctor  Diagnosing environment setup
 
-  Docs: https://docs.evnx.dev/cli/commands/doctor
-Error: Is a directory (os error 21)
 
-No verdict: evnx did not finish. This is not a clean result.
+No complete verdict: 1 check could not run. This is not a clean result.
 [exit 2]
-  ok: KNOWN I-163: a directory named requirements.txt aborts the run: bare OS error, no check name, no path, no summary; decided: 'could not run' entry, rest finish, exit 2 (exit 2)
+  ok: FIXED I-163 (DEC-D9): the check that cannot run is named with its path, the rest finish, exit 2 with No complete verdict (exit 2)
 
-================ summary: 4 ok, 0 mismatch   ================
+$ evnx doctor --format json
+{
+  "project_path": ".",
+  "checks": [
+    {
+      "name": "env_file",
+      "description": "Validate .env file existence, security, and syntax",
+      "severity": "error",
+      "details": ".env is NOT in .gitignore (security risk)",
+      "fixable": true,
+      "fixed": false,
+      "ran": true
+    },
+    {
+      "name": "env_example",
+      "description": "Check .env.example exists and is Git-tracked",
+      "severity": "warning",
+      "details": ".env.example not found - consider creating a template",
+      "fixable": false,
+      "fixed": false,
+      "ran": true
+    },
+    {
+      "name": "project_structure",
+      "description": "Detect project type and validate dependencies",
+      "severity": "error",
+      "details": "could not run: Is a directory (requirements.txt)",
+      "fixable": false,
+      "fixed": false,
+      "ran": false
+    },
+    {
+      "name": "docker_config",
+      "description": "Check for Docker configuration files",
+      "severity": "info",
+      "details": "No Docker configuration detected",
+      "fixable": false,
+      "fixed": false,
+      "ran": true
+    },
+    {
+      "name": "file_permissions",
+      "description": "Check file permissions for sensitive files",
+      "severity": "ok",
+      "details": null,
+      "fixable": false,
+      "fixed": false,
+      "ran": true
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "errors": 2,
+    "warnings": 1,
+    "passed": 1,
+    "info": 1,
+    "fixable": 1
+  },
+  "timestamp": "<date>+00:00"
+}
+[stderr]
+
+No complete verdict: 1 check could not run. This is not a clean result.
+[exit 2]
+  ok: FIXED I-163: JSON still prints, the check has ran: false (exit 2)
+
+================ summary: 6 ok, 0 mismatch   ================
