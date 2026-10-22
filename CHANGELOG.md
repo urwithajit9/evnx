@@ -8,6 +8,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The patch for `evnx auth` (package R-auth).
+
+- **`evnx auth status` says why a paid organisation is not raising your plan**
+  (I-321). The server applies the plan of the organisation you hold a seat in,
+  else your own, and paying for seats hands none out: an organisation's owner
+  is created without one. A customer whose organisation pays for Team saw
+  `plan (free)` and nothing else, which reads like a failed payment. Under the
+  plan block, `status` now names each organisation on a higher plan where you
+  hold no seat, and the next step: `evnx org assign <you> --org <slug>` for an
+  owner or admin with a seat free; release one or raise the count when every
+  seat is taken; who to ask, for a member; and that your one seat is elsewhere,
+  with the `evnx org release` that frees it. `-q` leaves it out, and if
+  `GET /orgs` fails the block is left out rather than failing `status`.
+  app.evnx.dev shows the same notice.
+
 ## [0.10.16] - 2026-10-22
 
 The patch for `evnx init` (package R-init: #217, #218, #219). init now keeps

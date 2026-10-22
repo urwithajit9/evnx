@@ -47,7 +47,7 @@ struct OrgList {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-struct OrgSummary {
+pub(crate) struct OrgSummary {
     id: String,
     name: String,
     slug: String,
@@ -58,7 +58,7 @@ struct OrgSummary {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-struct Seats {
+pub(crate) struct Seats {
     used: i64,
     purchased: Option<i64>,
 }
@@ -140,9 +140,104 @@ fn require_login(client: &Client, _server: &str) -> Result<()> {
     )
 }
 
-fn fetch_orgs(client: &Client) -> Result<Vec<OrgSummary>> {
+pub(crate) fn fetch_orgs(client: &Client) -> Result<Vec<OrgSummary>> {
     let listed: OrgList = client.get("/api/v1/orgs").map_err(|e| anyhow!("{e}"))?;
     Ok(listed.organizations)
+}
+
+/// Higher is more. `None` for a plan this build does not know, which then
+/// outranks nothing and is outranked by nothing.
+fn plan_rank(plan: &str) -> Option<u8> {
+    match plan {
+        "free" => Some(0),
+        "team" => Some(1),
+        "enterprise" => Some(2),
+        _ => None,
+    }
+}
+
+/// Why a paid organisation is not raising your plan, and the way to a seat
+/// (I-321). Empty when there is nothing to explain.
+///
+/// ⚠️ **Paying for seats hands none out.** The server applies the plan of the
+/// organisation you hold a seat in, else your own, and creates an
+/// organisation's owner *without* a seat — so the person who just paid sees
+/// `plan (free)`, which reads exactly like a failed payment. This names the
+/// organisation and the next step.
+///
+/// Only organisations on a plan **above** `plan` count: no seat in a free
+/// organisation, or in one on the plan you already have, changes nothing.
+/// `plan_via` is the organisation your current plan comes from, if any.
+///
+/// ⓘ The same rule as app.evnx.dev's seat notice
+/// (`components/settings/seat-notice.tsx`); keep the two in step.
+pub(crate) fn seat_notice(
+    orgs: &[OrgSummary],
+    plan: &str,
+    plan_via: Option<&str>,
+    email: &str,
+) -> Vec<String> {
+    let Some(mine) = plan_rank(plan) else {
+        return Vec::new();
+    };
+    // At most one: the database makes a second seat unstorable.
+    let seated_in = orgs.iter().find(|o| o.you_hold_a_seat);
+    let whose = match plan_via {
+        Some(slug) => format!("{slug}'s {plan} plan"),
+        None => format!("your own {plan} plan"),
+    };
+
+    let mut lines = Vec::new();
+    for o in orgs
+        .iter()
+        .filter(|o| !o.you_hold_a_seat && plan_rank(&o.plan).is_some_and(|r| r > mine))
+    {
+        lines.push(String::new());
+        lines.push(format!(
+            "  {} {} is on the {} plan, but you hold no seat there — so {whose} applies.",
+            "!".yellow(),
+            o.slug,
+            o.plan
+        ));
+        let can_assign = o.your_role == "owner" || o.your_role == "admin";
+        let who = format!("an owner or an admin of {} to assign you one.", o.slug);
+
+        // ⚠️ One seat per person, so a seat elsewhere is the first thing in the
+        // way — `assign` would only be refused.
+        if let Some(other) = seated_in {
+            lines.push(format!(
+                "    Your seat is in {} ({} plan) — release it first:  evnx org release {email} --org {}",
+                other.slug, other.plan, other.slug
+            ));
+            if !can_assign {
+                lines.push(format!("    then ask {who}"));
+            }
+            continue;
+        }
+        if !can_assign {
+            lines.push(format!("    Ask {who}"));
+            continue;
+        }
+        match o.seats.purchased {
+            Some(p) if o.seats.used >= p => {
+                let taken = if p == 1 {
+                    "The only seat is assigned".to_string()
+                } else {
+                    format!("All {p} seats are assigned")
+                };
+                lines.push(format!(
+                    "    {taken} — release one with `evnx org release <email> --org {}`,",
+                    o.slug
+                ));
+                lines.push("    or raise the count at https://app.evnx.dev/billing/".to_string());
+            }
+            _ => lines.push(format!(
+                "    Take one:  evnx org assign {email} --org {}",
+                o.slug
+            )),
+        }
+    }
+    lines
 }
 
 /// Decide which organisation a command acts on.
