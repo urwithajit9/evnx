@@ -8,11 +8,40 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-The first half of the patch for `evnx init` (package R-init): what
-`--from-source` finds, browser names for the framework the stack uses,
-`compose.yaml`, the target folder's own `.evnx.toml`, and when init may ask.
+The patch for `evnx init` (package R-init). init now keeps the `.evnx.toml`
+contract, writes into the template the project already uses, catches an
+existing `.env` up, sets up a fresh clone under `--yes`, says which env files it
+leaves alone, and has `--dry-run` and `--json`. Also: what `--from-source`
+finds, browser names for the framework the stack uses, `compose.yaml`, the
+target folder's own `.evnx.toml`, when init may ask, and five new components.
 
 ⚠️ **Scripts and CI jobs that run `evnx init`:**
+
+- **init writes `.evnx.toml`** (I-242, DQ-17, DQ-18, DQ-26, DQ-27). With none
+  at or above the target, one is created in the target folder (below the
+  repository root too, so a package's variables are not required of its
+  siblings), with a `[vars]` entry for each variable — the entries
+  `spec init --with` writes — and an empty `[vars]` for a blank init. A config
+  that has `[vars]` gets the new names recorded, as `evnx add` records them; one
+  without gets `[vars]` entries appended, its other sections kept byte for
+  byte. Commit it with the template. Every evnx command in that folder then
+  prints its `config .evnx.toml` line, `validate` checks against the contract,
+  and `spec init` refuses the file (it has `[vars]`): use `spec init --merge`.
+- **`init --yes` on a fresh clone succeeds** (DQ-31). With the template there
+  and no stack named, it keeps the template, creates `.env` from it (0600) and
+  exits 0; it exited 2 ("refusing to overwrite"). With `.env` there too it says
+  "already set up". `--with` or `--blueprint` over an existing template still
+  exits 2 unless `--force`.
+- **The project's template** (I-295, DQ-28): `[defaults] example` in
+  `.evnx.toml`, else `.env.example`, `.env.sample` or `.env.template`, else a new
+  `.env.example` — the rule doctor follows. Beside a `.env.sample`, init wrote a
+  second template, `.env.example`; now `--with x --yes` refuses over
+  `.env.sample` like over `.env.example`, and `--force` replaces it. `add`
+  appends to it too.
+- **An existing `.env` catches up** (I-297, DQ-29): the names the new template
+  has and `.env` lacks are appended below its values, with placeholders, through
+  add's writer; a name `.env` has is never touched. It kept 2 names beside a
+  10-variable template, while "Next steps" told the user to replace placeholders.
 
 - **`CI` set means no questions** (DQ-30). With `CI` set (GitHub Actions,
   GitLab CI and most others set `CI=true`), init refuses its menu and its
@@ -36,6 +65,35 @@ The first half of the patch for `evnx init` (package R-init): what
 
 ### init
 
+- **`--dry-run` and `--json`** (IN-16, DQ-21). `--dry-run` lists what the run
+  would write — the template, `.env`, `.gitignore`, `.evnx.toml` and the notices
+  — and writes nothing; it asks no confirmation (a menu is still shown when
+  nothing was named), and refuses over an existing template as `--yes` does.
+  `--json` prints the result, or with `--dry-run` the plan, as one document with
+  `add --json`'s fields (`template`, `gitignore`, `contract`, `notices` are new
+  in both); like add's, it needs `--yes` or `--dry-run`.
+- **The env files init does not write are named** (I-296, DQ-32): `not changed:
+  .env.production, .env.staging — check one with: evnx validate --env-name
+  production`; `.env.local` is said to be read before `.env` by Next.js and
+  Vite; a `[defaults] env_name` pointing at another file is a warning.
+  `--env-name` for init is planned for 0.11.0.
+- **`.envrc`** (I-174, DQ-33) stays ignored by `.env*`; when an untracked one is
+  there, one line says so and how to commit it (`!.envrc`).
+- **Five components** (IN-14, DQ-25): Astro (browser prefix `PUBLIC_`; `HOST`,
+  `PORT` for `@astrojs/node`), Hono, Neon (`DATABASE_URL` pooled,
+  `DATABASE_URL_UNPOOLED` direct), Cloudflare Turnstile (the site key is
+  browser-safe and gets prefixed copies, the secret key does not; the
+  descriptions name Cloudflare's test keys) and Fly.io (`FLY_API_TOKEN`).
+  `--detect` reads `astro`, `hono`, `@neondatabase/serverless` and `fly.toml`.
+  `--list-components` lists 56; each new entry is last in its group, so in the
+  Architect services list the items after the databases move down one.
+- "Next steps" says to commit the template and `.evnx.toml`.
+- `--from-source` with nothing new to add creates `.env` from the template when
+  there is none, as its other paths do (N-06).
+- **A `.env` git would still commit** gets the shared warning (E6): `'.env' is
+  still not ignored: a later rule re-includes it`, or, for a tracked `.env`,
+  `'.env' is tracked by git` with `git rm --cached .env`; it was told a rule
+  re-included it.
 - **`--from-source` finds more of what the code reads** (I-236, DQ-22):
   destructuring — `const { API_KEY, DB_URL: db, PORT = 3000 } = process.env`,
   and the same from `import.meta.env` and `Bun.env`, over several lines or with
@@ -57,6 +115,17 @@ The first half of the patch for `evnx init` (package R-init): what
 
 ### add
 
+- **The project's template** (I-295, DQ-28): `add` appends to `[defaults]
+  example`, or the `.env.example`, `.env.sample` or `.env.template` the folder
+  has, and names it in its messages; it always wrote `.env.example`. A
+  `.evnx.toml` in `--path` that does not parse stops `add` before it writes
+  (it wrote, then said it could not update `[vars]`).
+- **`--json`** gains `template`, `gitignore` (entries a new `.env` added),
+  `contract` (`action`, `file`, `added`) and `notices`, the fields `init --json`
+  prints (DQ-21).
+- **A `.env` git would commit** gets the shared warning (E6): `'.env' may
+  contain secrets and is not in .gitignore`, then `evnx doctor --fix`; it said
+  `.env is not covered by .gitignore`.
 - `add blueprint` with an unknown id prints the same "Did you mean" line as
   `init --blueprint` (I-235): the two commands share one message.
 - `add service clerk`, `add service vercel` and `add blueprint` write
@@ -64,6 +133,21 @@ The first half of the patch for `evnx init` (package R-init): what
   vercel` in a project without Next.js adds 3 variables, not 4.
 - Its menus (`add` with no target, `add custom`'s category) no longer add a
   colon after a question: `Which framework?`, not `Which framework?:`.
+
+### scan
+
+- A variable the contract declares `secret = true` is not reported when its
+  value is a stand-in: evnx's own `postgresql://user:password@localhost…`, a run
+  of `x` after a key prefix, the placeholders the other rules already drop
+  (`core::classify::is_stand_in`). With init declaring `DATABASE_URL` secret, a
+  new project's `.env` was a high "Declared secret" and no longer scanned clean
+  (N-20).
+
+### Tests
+
+- `backup_pty`'s two `t_br32` tests wait 60 s for the question restore asks
+  after deriving the key: two debug-build Argon2 derivations came before it, and
+  they timed out once on a macOS runner (I-300).
 
 ## [0.10.15] - 2026-10-22
 

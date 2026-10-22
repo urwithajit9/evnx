@@ -8,6 +8,7 @@ $ evnx init --with vite,supabase,clerk,vercel --yes
 ✓ Created .env from template
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
 ✓ Created .env.example with 15 variables from 4 components
+  ✓ created .evnx.toml with 15 variable(s) in [vars]
 
 Next steps:
   1. Edit .env and replace placeholder values

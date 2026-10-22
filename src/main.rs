@@ -105,16 +105,19 @@ fn main() -> Result<()> {
             detect,
             from_source,
             force,
+            dry_run,
+            json,
         } => {
             // The target's own config, before anything is written (I-298).
             // `--list-components` is about evnx, not a project.
-            if !list_components {
-                if let Err(e) =
-                    commands::init::target_config(Path::new(&path), config_source.as_deref())
-                {
-                    verdict::no_verdict(&e, Stage::BeforeRun);
+            let target_config = if list_components {
+                evnx::core::config::Config::default()
+            } else {
+                match commands::init::target_config(Path::new(&path), config_source.as_deref()) {
+                    Ok(loaded) => loaded.config,
+                    Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
                 }
-            }
+            };
             commands::init::run(
                 path,
                 yes,
@@ -125,6 +128,9 @@ fn main() -> Result<()> {
                 detect,
                 from_source,
                 cli.verbose,
+                target_config,
+                dry_run,
+                json,
             )
         }
 

@@ -23,6 +23,7 @@ $ evnx init --from-source --yes
 ✓ Created .env from template
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
 ✓ Added 8 variables from the source
+  ✓ created .evnx.toml with 8 variable(s) in [vars]
 [exit 0]
   ok: from-source (exit 0)
   ok: FIXED I-236 (R-init, DQ-22): destructured names are found, plain, renamed and defaulted

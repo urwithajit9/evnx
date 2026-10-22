@@ -6,32 +6,41 @@ $ evnx init --with nextjs,postgresql --yes -p old
 
   evnx init  Set up environment variables for your project
 
+! old/.env is readable by other users (mode 644); evnx keeps the mode you set
+     →  chmod 600 old/.env
+✓ Added 9 variables to .env; the values already there are kept
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
 ✓ Created .env.example with 10 variables from 2 components
+  ✓ created old/.evnx.toml with 10 variable(s) in [vars]
 
 Next steps:
   1. Edit .env and replace placeholder values
-  2. Never commit .env to version control
+  2. Commit .env.example and .evnx.toml; never commit .env
   3. Run 'evnx validate' to check configuration
   4. Use 'evnx add' to add more variables later
   Docs: https://docs.evnx.dev/cli/commands/init
 [exit 0]
   ok: beside a real .env (exit 0)
   ok: .env values kept
-  ok: KNOWN I-297: .env keeps only its 2 names (decided DQ-29: the missing ones appended)
+  ok: FIXED I-297 (R-init, DQ-29): .env has every name the template has
 
 $ evnx init --yes -p clone
 
   evnx init  Set up environment variables for your project
 
-Error: clone/.env.example already exists.
+· .env.example is the project's template: kept as it is
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env from .env.example
+  ✓ created clone/.evnx.toml with 2 variable(s) in [vars]
 
-Refusing to overwrite it without being asked to — it is a tracked file and the contents may be hand-maintained.
-Re-run with --force to replace it, or remove it first.
-
-No verdict: evnx did not finish. This is not a clean result.
-[exit 2]
-  ok: KNOWN DQ-31: init --yes on a fresh clone refuses (decided: keep the template, create .env, exit 0) (exit 2)
-  ok: KNOWN DQ-31: no .env
+Next steps:
+  1. Edit .env and replace placeholder values
+  2. Commit .env.example and .evnx.toml; never commit .env
+  3. Run 'evnx validate' to check configuration
+  4. Use 'evnx add' to add more variables later
+  Docs: https://docs.evnx.dev/cli/commands/init
+[exit 0]
+  ok: FIXED DQ-31 (R-init): init --yes on a fresh clone keeps the template and creates .env (exit 0)
+  ok: FIXED DQ-31: .env is a copy of the template
 
 ================ summary: 5 ok, 0 mismatch   ================
