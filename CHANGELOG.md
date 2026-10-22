@@ -8,12 +8,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-The patch for `evnx init` (package R-init). init now keeps the `.evnx.toml`
-contract, writes into the template the project already uses, catches an
-existing `.env` up, sets up a fresh clone under `--yes`, says which env files it
-leaves alone, and has `--dry-run` and `--json`. Also: what `--from-source`
-finds, browser names for the framework the stack uses, `compose.yaml`, the
-target folder's own `.evnx.toml`, when init may ask, and five new components.
+## [0.10.16] - 2026-10-22
+
+The patch for `evnx init` (package R-init: #217, #218, #219). init now keeps
+the `.evnx.toml` contract, writes into the template the project already uses,
+catches an existing `.env` up, sets up a fresh clone under `--yes`, says which
+env files it leaves alone, and has `--dry-run` and `--json`. Also: what
+`--from-source` finds, browser names for the framework the stack uses,
+`compose.yaml`, the target folder's own `.evnx.toml`, when init may ask, and
+five new components.
 
 ⚠️ **Scripts and CI jobs that run `evnx init`:**
 
@@ -42,7 +45,6 @@ target folder's own `.evnx.toml`, when init may ask, and five new components.
   has and `.env` lacks are appended below its values, with placeholders, through
   add's writer; a name `.env` has is never touched. It kept 2 names beside a
   10-variable template, while "Next steps" told the user to replace placeholders.
-
 - **`CI` set means no questions** (DQ-30). With `CI` set (GitHub Actions,
   GitLab CI and most others set `CI=true`), init refuses its menu and its
   confirmations the way it does without a terminal: exit 2, naming the flags.
@@ -61,7 +63,7 @@ target folder's own `.evnx.toml`, when init may ask, and five new components.
   Clerk's key under its own prefix (`VITE_CLERK_PUBLISHABLE_KEY`, …), as before;
   a server stack gets neither. The same for `--detect`, `add service` and
   `add blueprint`: the `content_marketing` blueprint (Nuxt) has one variable
-  fewer. Existing files are never edited.
+  fewer. A name already in your files is not removed.
 
 ### init
 
