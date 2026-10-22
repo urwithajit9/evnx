@@ -502,9 +502,11 @@ evnx doctor --skip-without-env       # a pre-commit hook: a fresh clone with no 
 
 Checks, for every env file (`.env` and `.env.<name>`, and plaintext copies such as
 `.env.bak`; not `.envrc`): git ignores it and does not track it, it is valid dotenv, and
-no other user can read it (mode 600). Also: `.env.example` exists and is tracked, the
-project type, and Docker files. A tracked env file, an unignored one and a syntax error
-are errors; a readable file and a missing `.env.example` are warnings.
+no other user can read it (mode 600). Also: the template exists and is tracked, the
+project type, and Docker files. The template is `[defaults] example` in `.evnx.toml` if
+set, else the first of `.env.example`, `.env.sample`, `.env.template`. A tracked env
+file, an unignored one and a syntax error are errors; a readable file and a missing
+template are warnings.
 
 `--fix` adds the `.env*` entries `evnx init` writes to `.gitignore` and sets each
 readable env file to 600 (a symlinked one only when its target is inside the project).

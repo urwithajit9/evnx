@@ -120,6 +120,15 @@ pub fn run(
         .unwrap_or(false);
     let auto_fix = fix || from_env;
 
+    // `doctor PATH` reads PATH's own `.evnx.toml`, as the other commands read
+    // the one governing where they run (I-294). A malformed one is no verdict,
+    // as it is for every command.
+    let config = match crate::core::config::load(&project_root) {
+        Ok(loaded) => loaded.config,
+        Err(e) => no_verdict(format!("{e:#}")),
+    };
+    let template = Template::of(&project_root, &config);
+
     // No env file is a verdict of its own (I-162, DEC-D8), decided before any
     // check: a folder with nothing in it was "healthy", exit 0, so a CI step
     // pointed at the wrong checkout passed.
@@ -128,7 +137,10 @@ pub fn run(
             verdict::skipped(&format!("no env file in {}", project_root.display()));
             return Ok(());
         }
-        if templates_in(&project_root).is_empty() && !is_a_project(&project_root) {
+        if !template.exists(&project_root)
+            && templates_in(&project_root).is_empty()
+            && !is_a_project(&project_root)
+        {
             no_verdict(format!(
                 "{} has no env file, no .env.example and no project files: nothing to \
                  diagnose here",
@@ -142,9 +154,9 @@ pub fn run(
     let notice = from_env && !fix;
 
     let result = if json_output {
-        run_json(&project_root, verbose, auto_fix, strict, notice)
+        run_json(&project_root, &template, verbose, auto_fix, strict, notice)
     } else {
-        run_text(&project_root, verbose, auto_fix, strict, notice)
+        run_text(&project_root, &template, verbose, auto_fix, strict, notice)
     };
 
     // ✅ Always print — eprintln never pollutes stdout
@@ -204,6 +216,7 @@ fn is_failure(summary: &Summary, strict: bool) -> bool {
 /// twice, and a check that could not run (I-163) would have been a third.
 fn build_report(
     project_root: &Path,
+    template: &Template,
     verbose: bool,
     auto_fix: bool,
     mut each: impl FnMut(&CheckResult),
@@ -214,7 +227,7 @@ fn build_report(
         summary: Summary::new(),
         timestamp: Utc::now().to_rfc3339(),
     };
-    for check in get_all_checks() {
+    for check in get_all_checks(template) {
         let mut result = run_check(check.as_ref(), project_root, verbose, auto_fix);
         normalise_details(&mut result);
         report.summary.add(&result);
@@ -258,6 +271,7 @@ fn auto_fix_notice() {
 
 fn run_text(
     project_root: &Path,
+    template: &Template,
     verbose: bool,
     auto_fix: bool,
     strict: bool,
@@ -281,7 +295,7 @@ fn run_text(
     }
 
     // Print each result as it completes, using existing UI utilities
-    let report = build_report(project_root, verbose, auto_fix, |result| {
+    let report = build_report(project_root, template, verbose, auto_fix, |result| {
         if !quiet {
             print_check_result_text(result, verbose);
         }
@@ -315,6 +329,7 @@ fn run_text(
 
 fn run_json(
     project_root: &Path,
+    template: &Template,
     verbose: bool,
     auto_fix: bool,
     strict: bool,
@@ -323,7 +338,7 @@ fn run_json(
     if notice {
         auto_fix_notice();
     }
-    let report = build_report(project_root, verbose, auto_fix, |_| {});
+    let report = build_report(project_root, template, verbose, auto_fix, |_| {});
 
     // Output JSON to stdout (machine-readable for CI/CD)
     let json =
@@ -429,10 +444,14 @@ fn report_fix(line: String) {
     }
 }
 
-fn get_all_checks() -> Vec<Box<dyn DiagnosticCheck>> {
+fn get_all_checks(template: &Template) -> Vec<Box<dyn DiagnosticCheck>> {
     vec![
-        Box::new(EnvFileCheck),
-        Box::new(EnvExampleCheck),
+        Box::new(EnvFileCheck {
+            template: template.clone(),
+        }),
+        Box::new(EnvExampleCheck {
+            template: template.clone(),
+        }),
         Box::new(ProjectStructureCheck),
         Box::new(DockerCheck),
         Box::new(PermissionCheck),
@@ -444,7 +463,9 @@ fn get_all_checks() -> Vec<Box<dyn DiagnosticCheck>> {
 // ─────────────────────────────────────────────────────────────
 
 /// Check: .env file existence, gitignore status, and syntax
-struct EnvFileCheck;
+struct EnvFileCheck {
+    template: Template,
+}
 
 impl DiagnosticCheck for EnvFileCheck {
     fn name(&self) -> &'static str {
@@ -467,8 +488,9 @@ impl DiagnosticCheck for EnvFileCheck {
         if env_files.is_empty() {
             // DEC-D8: beside a template, a missing `.env` is the project not
             // set up — an error. Without one it is only worth saying.
-            return Ok(match templates_in(project_root).first() {
-                Some(template) => self.result(
+            let template = &self.template.name;
+            return Ok(match self.template.exists(project_root) {
+                true => self.result(
                     Severity::Error,
                     details(vec![
                         format!(
@@ -480,9 +502,11 @@ impl DiagnosticCheck for EnvFileCheck {
                         ),
                     ]),
                 ),
-                None => self.result(
+                false => self.result(
                     Severity::Warning,
-                    Some(".env not found, and there is no .env.example to create it from".into()),
+                    Some(format!(
+                        ".env not found, and there is no {template} to create it from"
+                    )),
                 ),
             });
         }
@@ -659,6 +683,47 @@ fn templates_in(project_root: &Path) -> Vec<String> {
         .collect()
 }
 
+/// The project's template, by one rule (I-294): `[defaults] example` in the
+/// project's `.evnx.toml`, else the first of `.env.example`, `.env.sample`,
+/// `.env.template` present, else `.env.example`.
+///
+/// ⚠️ The `env_example` check looked for `.env.example` alone, so a project
+/// whose template is `.env.sample`, or one that names its template in
+/// `.evnx.toml` — the rule validate, sync, diff and spec init follow
+/// (`Config::example_path`, I-189) — was told ".env.example not found" and
+/// checked against a file it does not use.
+#[derive(Debug, Clone)]
+struct Template {
+    /// As a person names it from the project folder.
+    name: String,
+    /// Named by `[defaults] example`, so it is the template even when missing.
+    configured: bool,
+}
+
+impl Template {
+    fn of(project_root: &Path, config: &crate::core::config::Config) -> Template {
+        match &config.defaults.example {
+            Some(name) => Template {
+                name: name.clone(),
+                configured: true,
+            },
+            None => Template {
+                name: templates_in(project_root)
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| ".env.example".to_string()),
+                configured: false,
+            },
+        }
+    }
+
+    /// Relative to the project folder, as if doctor ran there; an absolute
+    /// path is used as written.
+    fn exists(&self, project_root: &Path) -> bool {
+        project_root.join(&self.name).is_file()
+    }
+}
+
 /// Whether `project_root` shows a project: a known project type or a Docker
 /// file. A folder with neither, and no env file or template, has nothing for
 /// doctor to diagnose (DEC-D8).
@@ -709,7 +774,13 @@ fn fix_env_gitignore(project_root: &Path, _verbose: bool) -> Result<bool> {
 }
 
 /// Check: .env.example existence and Git tracking
-struct EnvExampleCheck;
+///
+/// ⓘ `name` and `description` say `.env.example` whatever the template is:
+/// they are what `--format json` consumers match on (I-166). `details` names
+/// the real file.
+struct EnvExampleCheck {
+    template: Template,
+}
 
 impl DiagnosticCheck for EnvExampleCheck {
     fn name(&self) -> &'static str {
@@ -720,16 +791,23 @@ impl DiagnosticCheck for EnvExampleCheck {
     }
 
     fn run(&self, project_root: &Path, verbose: bool) -> Result<CheckResult> {
-        let example_path = project_root.join(".env.example");
+        let name = &self.template.name;
 
-        if !example_path.exists() {
+        if !self.template.exists(project_root) {
             return Ok(self.result(
                 Severity::Warning,
-                Some(".env.example not found - consider creating a template".into()),
+                Some(if self.template.configured {
+                    format!(
+                        "{name} not found - [defaults] example in .evnx.toml names it as the \
+                         template"
+                    )
+                } else {
+                    format!("{name} not found - consider creating a template")
+                }),
             ));
         }
 
-        if !gitignore::is_tracked(project_root, ".env.example") {
+        if !gitignore::is_tracked(project_root, name) {
             // ⚠️ Not `fixable`. It was, with a `fix_action` that only printed
             // advice and returned `Ok(false)` — so the summary counted a fix
             // that could never happen. Harmless while auto-fix was an
@@ -741,12 +819,15 @@ impl DiagnosticCheck for EnvExampleCheck {
             // unasked is one you stop trusting near a repository.
             Ok(self.result(
                 Severity::Warning,
-                Some(".env.example is not tracked in Git — run: git add .env.example".into()),
+                Some(format!(
+                    "{name} is not tracked in Git — run: git add {}",
+                    crate::core::shell::word(name)
+                )),
             ))
         } else {
             Ok(self.result(
                 Severity::Ok,
-                verbose.then(|| "✓ File is tracked in Git".into()),
+                verbose.then(|| format!("✓ {name} is tracked in Git")),
             ))
         }
     }

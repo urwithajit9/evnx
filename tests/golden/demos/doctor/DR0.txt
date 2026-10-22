@@ -63,8 +63,9 @@ Options:
 
 Env files: .env and .env.<name> (not .envrc), and plaintext copies such as
 .env.bak; each must be ignored by git and not tracked, valid dotenv, and
-private (no access for group or others). The .env.example family is the
-template, meant to be committed.
+private (no access for group or others). The template, meant to be
+committed: [defaults] example in .evnx.toml, else .env.example, .env.sample
+or .env.template, whichever is there.
 
 Environment:
   EVNX_AUTO_FIX=1     same as --fix (stderr says so when it turns repair on)

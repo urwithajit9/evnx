@@ -159,8 +159,9 @@ pub const DOCTOR: CommandDoc = CommandDoc {
     after_help: "\
 Env files: .env and .env.<name> (not .envrc), and plaintext copies such as\n\
 .env.bak; each must be ignored by git and not tracked, valid dotenv, and\n\
-private (no access for group or others). The .env.example family is the\n\
-template, meant to be committed.\n\
+private (no access for group or others). The template, meant to be\n\
+committed: [defaults] example in .evnx.toml, else .env.example, .env.sample\n\
+or .env.template, whichever is there.\n\
 \n\
 Environment:\n\
 \x20 EVNX_AUTO_FIX=1     same as --fix (stderr says so when it turns repair on)\n\

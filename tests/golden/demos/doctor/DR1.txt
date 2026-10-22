@@ -32,7 +32,7 @@ $ evnx doctor --verbose
      .env syntax is valid
 
   ✓  Check .env.example exists and is Git-tracked
-     File is tracked in Git
+     .env.example is tracked in Git
 
   ·  Detect project type and validate dependencies
      No recognized project configuration
