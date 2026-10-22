@@ -11,6 +11,8 @@ $ evnx init --list-components
     nest                     NestJS
     nuxt                     Nuxt
     sveltekit                SvelteKit
+    astro                    Astro
+    hono                     Hono
   python
     django                   Django
     fastapi_flask            FastAPI / Flask (also: fastapi, flask)
@@ -34,6 +36,7 @@ $ evnx init --list-components
     elasticsearch            Elasticsearch
     supabase                 Supabase
     firebase                 Firebase
+    neon                     Neon
   messaging_queues
     rabbitmq                 RabbitMQ
     kafka                    Apache Kafka
@@ -42,6 +45,7 @@ $ evnx init --list-components
     auth0                    Auth0
     clerk                    Clerk
     google_oauth             Google OAuth
+    turnstile                Cloudflare Turnstile
   storage
     aws_s3                   AWS S3
     cloudinary               Cloudinary
@@ -75,12 +79,13 @@ $ evnx init --list-components
     azure_devops             Azure DevOps
     aws_advanced             AWS (Advanced)
     docker_advanced          Docker (Advanced)
+    fly                      Fly.io
 
   →  evnx init --with nextjs,postgresql,stripe
 
 [exit 0]
   ok: list components (exit 0)
-  ok: 51 components
+  ok: 56 components (R-init, IN-14: astro, hono, neon, turnstile, fly)
   ok: aliases are listed
 
 ================ summary: 3 ok, 0 mismatch   ================

@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
 use colored::*;
 use dialoguer::Select;
-use std::path::Path;
 
-use super::shared::{aborted, write_env_files_with_outcome, Outcome, WriteOptions};
+use super::shared::{aborted, write, Outcome, Target, WriteOptions};
 use crate::schema::{component, formatter, loader};
 use crate::utils::ui::{print_header, print_preview_header, success};
 
@@ -18,7 +17,7 @@ use crate::utils::ui::{print_header, print_preview_header, success};
 /// to be first" silently changes meaning the day a blueprint is added. A script
 /// that wants a stack should name it.
 pub fn handle(
-    path: String,
+    target: &Target,
     opts: WriteOptions,
     verbose: bool,
     requested: Option<&str>,
@@ -134,17 +133,18 @@ pub fn handle(
     let example_content = formatter::format_env_example(&vars, true)?;
     let template_content = formatter::format_env_template(&vars)?;
 
-    let output_path = Path::new(&path);
-    let outcome =
-        write_env_files_with_outcome(output_path, &example_content, &template_content, opts)?;
-    if outcome != Outcome::Written {
-        return Ok(outcome);
-    }
-
-    success(format!(
-        "Created .env.example with {} variables",
-        vars.vars.len()
-    ));
-
-    Ok(Outcome::Written)
+    write(
+        target,
+        &vars,
+        &example_content,
+        &template_content,
+        opts,
+        &|| {
+            success(format!(
+                "Created {} with {} variables",
+                target.template_name(),
+                vars.vars.len()
+            ))
+        },
+    )
 }

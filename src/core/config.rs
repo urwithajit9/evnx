@@ -394,6 +394,71 @@ impl Config {
     }
 }
 
+/// The templates (`.env.example`, `.env.sample`, `.env.template`) present in
+/// `project_root`, in that order.
+pub fn templates_in(project_root: &Path) -> Vec<String> {
+    super::env_name::TEMPLATE_SUFFIXES
+        .iter()
+        .map(|suffix| format!(".env.{suffix}"))
+        .filter(|name| project_root.join(name).is_file())
+        .collect()
+}
+
+/// A project's template, by one rule (I-294, DQ-28): `[defaults] example` in
+/// the project's `.evnx.toml`, else the first of `.env.example`, `.env.sample`,
+/// `.env.template` present, else `.env.example`.
+///
+/// ⚠️ Written for doctor (I-294) and moved here in 0.10.16 (R-init) so the
+/// commands that *write* a template follow it too. `init` and `add` wrote
+/// `.env.example` whatever the project used: beside a `.env.sample` that was a
+/// second template, and with `[defaults] example` set, `validate` right after
+/// compared against a file init had not written (I-295). validate, sync, diff
+/// and spec init still use [`Config::example_path`] (no fallback to the other
+/// two names); switching them is recorded in their R- notes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Template {
+    /// As a person names it from the project folder.
+    pub name: String,
+    /// Named by `[defaults] example`, so it is the template even when missing.
+    pub configured: bool,
+}
+
+impl Default for Template {
+    fn default() -> Self {
+        Template {
+            name: ".env.example".to_string(),
+            configured: false,
+        }
+    }
+}
+
+impl Template {
+    pub fn of(project_root: &Path, config: &Config) -> Template {
+        match &config.defaults.example {
+            Some(name) => Template {
+                name: name.clone(),
+                configured: true,
+            },
+            None => Template {
+                name: templates_in(project_root)
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| ".env.example".to_string()),
+                configured: false,
+            },
+        }
+    }
+
+    /// Relative to the project folder; an absolute name is used as written.
+    pub fn path(&self, project_root: &Path) -> PathBuf {
+        project_root.join(&self.name)
+    }
+
+    pub fn exists(&self, project_root: &Path) -> bool {
+        self.path(project_root).is_file()
+    }
+}
+
 /// Combine a flag with a config value and a built-in default.
 ///
 /// **Precedence: flag > config > default.** The flag is `Option` precisely so
@@ -663,6 +728,23 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    /// DQ-28: `[defaults] example`, else the first template present, else
+    /// `.env.example`.
+    #[test]
+    fn t_i295_the_template_rule() {
+        let d = tempfile::TempDir::new().unwrap();
+        let none = Config::default();
+        assert_eq!(Template::of(d.path(), &none), Template::default());
+        std::fs::write(d.path().join(".env.template"), "").unwrap();
+        std::fs::write(d.path().join(".env.sample"), "").unwrap();
+        assert_eq!(Template::of(d.path(), &none).name, ".env.sample");
+        let named: Config = toml::from_str("[defaults]\nexample = \"config/env.tpl\"\n").unwrap();
+        let t = Template::of(d.path(), &named);
+        assert_eq!((t.name.as_str(), t.configured), ("config/env.tpl", true));
+        assert!(!t.exists(d.path()));
+        assert_eq!(t.path(d.path()), d.path().join("config/env.tpl"));
+    }
 
     fn write(dir: &Path, body: &str) -> PathBuf {
         let p = dir.join(PROJECT_FILE);

@@ -155,7 +155,7 @@ progress lines under `-q` (`auth status`, `cloud status` and `cloud unlink` are 
 
 ### `evnx init`
 
-Interactive project setup. Creates `.env` and `.env.example` files for your project through a guided TUI.
+Interactive project setup. Creates `.env`, the project's template (`.env.example`) and the `.evnx.toml` contract through a guided TUI.
 
 ```
 evnx init
@@ -174,16 +174,27 @@ No flags are required: the interactive flow handles stack and service selection.
 
 | Flag | Does |
 |---|---|
-| `--yes`, `-y` | no prompts; blank files unless `--blueprint` or `--with` is given |
+| `--yes`, `-y` | no prompts; blank files unless `--blueprint` or `--with` is given; in a fresh clone, keeps the template and creates `.env` from it |
 | `--blueprint <id>` | a named stack (an unknown id lists the ten valid ones) |
 | `--with <a,b,c>` | name the components directly |
 | `--list-components` | print every name `--with` accepts |
 | `--detect` | accept what `package.json`, compose files and other manifests declare |
 | `--from-source` | add the variables the code reads; never removes |
-| `--force` | replace an existing `.env.example` (`.env` is never overwritten); not with `--from-source` |
+| `--force` | replace an existing template (`.env` is never overwritten); not with `--from-source` |
 | `--path <dir>`, `-p` | write somewhere other than `.` |
+| `--dry-run` | say what would be written (template, `.env`, `.gitignore`, `.evnx.toml`); write nothing |
+| `--json` | the result as one JSON document, the fields `evnx add --json` prints (with `--yes` or `--dry-run`) |
 
-Short names work too (`postgres`, `pg`, `mongo`, `next`, `k8s` and others; see `--list-components`), and browser frameworks get prefixed copies of public values (`VITE_SUPABASE_URL` next to `SUPABASE_URL`). Full reference: [docs.evnx.dev/cli/commands/init](https://docs.evnx.dev/cli/commands/init).
+Short names work too (`postgres`, `pg`, `mongo`, `next`, `k8s` and others; see `--list-components`), and browser frameworks get prefixed copies of public values (`VITE_SUPABASE_URL` next to `SUPABASE_URL`); a `NEXT_PUBLIC_` name is written only on Next.js.
+
+What init writes, in a project that already has files:
+
+- **The template the project uses**: `[defaults] example` in `.evnx.toml`, else `.env.example`, `.env.sample` or `.env.template`, else a new `.env.example`. It is replaced only with `--force`.
+- **`.env`**, created `0600`, or, when it exists, given the names the new template has and it lacks; a value already there is never touched.
+- **`.evnx.toml`**: created with one `[vars]` entry per variable (in the folder `--path` names, also below the repository root), or the new names recorded into the one in force, as `evnx add` records them. Commit it with the template.
+- Other env files (`.env.production`, `.env.local` …) are left alone and listed, with the command that checks one; `[defaults] env_name` is named when `.env` is not the file it points at.
+
+With `CI` set, init asks nothing: a run that would show the menu stops with exit 2 and names the flags. Full reference: [docs.evnx.dev/cli/commands/init](https://docs.evnx.dev/cli/commands/init).
 
 ---
 
@@ -211,7 +222,8 @@ which may be the repository root rather than the folder itself.
 
 Declares what each variable **is** — something `.env.example` cannot express. Written
 into `[vars]` in the project's `.evnx.toml`, and read by `validate`, `scan` and `sync`;
-`evnx add` records the variables it introduces there too, and never rewrites an entry.
+`evnx init` writes a first one, and `evnx init` and `evnx add` record the variables they
+introduce there, never rewriting an entry.
 
 ```bash
 evnx spec init                            # infer the contract from .env.example and .env

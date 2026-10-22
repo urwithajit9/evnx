@@ -42,6 +42,9 @@ pub enum Outcome {
     NoSpec { config: PathBuf },
     /// Every name was already declared.
     AlreadyDeclared,
+    /// A new `.evnx.toml` with these names in `[vars]` (`init`, IN-15);
+    /// none: an empty `[vars]`.
+    Created { names: Vec<String>, config: PathBuf },
     /// Names appended to `[vars]`.
     Wrote {
         names: Vec<String>,
@@ -60,35 +63,16 @@ pub enum Outcome {
 /// above it, which is also where `spec init` writes (SH-LOC). It never creates
 /// one: a project that has not opted in is left alone.
 pub fn record(start: &Path, vars: &VarCollection) -> Result<Outcome> {
-    let loaded = config::load(start)?;
-    let Some(config_path) = loaded.source else {
-        return Ok(Outcome::NoConfig);
+    let (outcome, text) = pending(start, vars)?;
+    let Outcome::Wrote {
+        names: new_names,
+        config: config_path,
+        ..
+    } = outcome
+    else {
+        return Ok(outcome);
     };
-
-    let text = std::fs::read_to_string(&config_path)
-        .with_context(|| format!("reading {}", config_path.display()))?;
-
-    // ⚠️ Any form of `[vars]` counts, an inline table included (DEC-SP7). One
-    // that cannot be extended is then refused by `config::save` with the reason,
-    // rather than reported as "no [vars] section".
-    if !config::has_vars_section(&text) {
-        return Ok(Outcome::NoSpec {
-            config: config_path,
-        });
-    }
-
-    let declared = loaded.config.vars;
-    let mut new_names: Vec<String> = vars
-        .vars
-        .keys()
-        .filter(|k| !declared.contains_key(*k))
-        .cloned()
-        .collect();
-    new_names.sort();
-
-    if new_names.is_empty() {
-        return Ok(Outcome::AlreadyDeclared);
-    }
+    let text = text.expect("pending reads the config it would write");
 
     let mut block = String::new();
     for name in &new_names {
@@ -121,6 +105,71 @@ pub fn record(start: &Path, vars: &VarCollection) -> Result<Outcome> {
     })
 }
 
+/// What [`record`] would do, without writing: [`Outcome::Wrote`] names the
+/// entries it would add (for `--dry-run` and `--json`), and the config's text
+/// comes with it for the write.
+pub fn pending(start: &Path, vars: &VarCollection) -> Result<(Outcome, Option<String>)> {
+    let loaded = config::load(start)?;
+    let Some(config_path) = loaded.source else {
+        return Ok((Outcome::NoConfig, None));
+    };
+
+    let text = std::fs::read_to_string(&config_path)
+        .with_context(|| format!("reading {}", config_path.display()))?;
+
+    // ⚠️ Any form of `[vars]` counts, an inline table included (DEC-SP7). One
+    // that cannot be extended is then refused by `config::save` with the reason,
+    // rather than reported as "no [vars] section".
+    if !config::has_vars_section(&text) {
+        return Ok((
+            Outcome::NoSpec {
+                config: config_path,
+            },
+            None,
+        ));
+    }
+
+    let declared = loaded.config.vars;
+    let mut new_names: Vec<String> = vars
+        .vars
+        .keys()
+        .filter(|k| !declared.contains_key(*k))
+        .cloned()
+        .collect();
+    new_names.sort();
+
+    if new_names.is_empty() {
+        return Ok((Outcome::AlreadyDeclared, None));
+    }
+    Ok((
+        Outcome::Wrote {
+            names: new_names,
+            config: config_path,
+            through: None,
+        },
+        Some(text),
+    ))
+}
+
+impl Outcome {
+    /// The `contract` field of `add --json` and `init --json` (DQ-21): which
+    /// file, what happened to it, which names. One shape for both commands.
+    pub fn json(&self) -> serde_json::Value {
+        let (action, file, added): (&str, Option<&Path>, &[String]) = match self {
+            Outcome::NoConfig => ("none", None, &[]),
+            Outcome::NoSpec { config } => ("no_vars_section", Some(config), &[]),
+            Outcome::AlreadyDeclared => ("unchanged", None, &[]),
+            Outcome::Created { names, config } => ("created", Some(config), names),
+            Outcome::Wrote { names, config, .. } => ("recorded", Some(config), names),
+        };
+        serde_json::json!({
+            "action": action,
+            "file": file.map(ui::short_path),
+            "added": added,
+        })
+    }
+}
+
 /// Say what happened, at the volume it deserves.
 ///
 /// ⚠️ Silent when there is no `.evnx.toml`. The overwhelming majority of
@@ -149,6 +198,30 @@ pub fn report(outcome: &Outcome, verbose: bool) {
                 eprintln!("  every variable was already declared in [vars]");
             }
         }
+        Outcome::Created { names, config } => {
+            if ui::is_quiet() {
+                return;
+            }
+            if names.is_empty() {
+                eprintln!(
+                    "  {} created {} with an empty [vars]: evnx add records new variables there",
+                    ui::glyph::OK.green(),
+                    ui::short_path(config)
+                );
+            } else {
+                eprintln!(
+                    "  {} created {} with {} variable(s) in [vars]",
+                    ui::glyph::OK.green(),
+                    ui::short_path(config),
+                    names.len()
+                );
+            }
+            if verbose {
+                for n in names {
+                    eprintln!("     {n}");
+                }
+            }
+        }
         Outcome::Wrote {
             names,
             config,
@@ -156,6 +229,14 @@ pub fn report(outcome: &Outcome, verbose: bool) {
         } => {
             // A success, not a finding: `-q` hides it (add DQ-A6).
             if ui::is_quiet() {
+                return;
+            }
+            if names.is_empty() {
+                eprintln!(
+                    "  {} added an empty [vars] to {}",
+                    ui::glyph::OK.green(),
+                    ui::short_path(config)
+                );
                 return;
             }
             eprintln!(

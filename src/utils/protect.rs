@@ -135,10 +135,7 @@ pub fn protect_output(output: &str, mode: &GitignoreMode) -> Result<()> {
 /// command now would report an error for a run that did its job.
 fn ask_to_add(entry: &str) -> bool {
     let unprotected = || {
-        ui::warning(format!(
-            "'{}' may contain secrets and is not in .gitignore",
-            entry
-        ));
+        warn_not_in_gitignore(entry);
         false
     };
     if !crate::utils::term::interactive() {
@@ -155,6 +152,46 @@ fn ask_to_add(entry: &str) -> bool {
         Ok(answer) => answer.unwrap_or(false),
         Err(_) => unprotected(),
     }
+}
+
+/// Say what git would do with `entry`, a file of real values in
+/// `project_root` that a command just wrote, when it would not leave it out
+/// of a commit. Returns its [`gitignore::Exposure`].
+///
+/// One wording for `init`, `add` and the output commands (R-template's note,
+/// R-init E6). init said ".env is still not ignored: a later line in
+/// .gitignore re-includes it" — also for a `.env` that was tracked, where no
+/// rule was at fault and only `git rm --cached` helps — and add said ".env is
+/// not covered by .gitignore" in its own words.
+pub fn warn_if_exposed(project_root: &Path, entry: &str) -> gitignore::Exposure {
+    let exposure = gitignore::exposure(project_root, entry);
+    match exposure {
+        gitignore::Exposure::Protected => {}
+        gitignore::Exposure::Tracked => warn_tracked(entry),
+        gitignore::Exposure::Unignored => {
+            let gitignore_path = project_root.join(".gitignore");
+            let has_rule = |rule: &str| {
+                matches!(
+                    gitignore::check_ignored(&gitignore_path, rule),
+                    Ok(gitignore::GitignoreStatus::AlreadyIgnored)
+                )
+            };
+            if has_rule(entry) || (entry.starts_with(".env") && has_rule(".env*")) {
+                warn_still_unignored(entry);
+            } else {
+                warn_not_in_gitignore(entry);
+            }
+        }
+    }
+    exposure
+}
+
+/// `entry` holds values and no `.gitignore` rule covers it.
+pub fn warn_not_in_gitignore(entry: &str) {
+    ui::warning(format!(
+        "'{}' may contain secrets and is not in .gitignore",
+        entry
+    ));
 }
 
 /// `entry` is tracked by git: `.gitignore` cannot help, `git rm --cached` can.

@@ -1,7 +1,12 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use colored::*;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use crate::core::config::{Config, Template};
+use crate::schema::models::{VarCollection, VarMetadata, VarSource};
+use crate::utils::string::pluralize;
+use crate::utils::ui;
 
 /// Entries `init` adds to `.gitignore`, in this order — the negations must
 /// follow the pattern they carve out of.
@@ -24,13 +29,64 @@ use std::path::Path;
 /// project invents, rather than only the names evnx happens to know.
 use crate::core::gitignore::ENV_ENTRIES as GITIGNORE_ENTRIES;
 
-/// How to treat an existing `.env.example`.
+/// The folder init writes to, and what governs it (R-init).
+///
+/// ⚠️ Every path used to be `path.join(".env.example")`, whatever the project
+/// named its template (I-295), and nothing read the target's `.evnx.toml`
+/// (I-298). The template is now [`Template::of`] the target and its config,
+/// the rule doctor follows, and the config is the one `main` loaded for the
+/// target ([`target_config`]).
+pub struct Target {
+    pub root: PathBuf,
+    pub config: Config,
+    pub template: Template,
+    pub verbose: bool,
+}
+
+impl Target {
+    pub fn new(root: &Path, config: Config, verbose: bool) -> Target {
+        let template = Template::of(root, &config);
+        Target {
+            root: root.to_path_buf(),
+            config,
+            template,
+            verbose,
+        }
+    }
+
+    pub fn template_path(&self) -> PathBuf {
+        self.template.path(&self.root)
+    }
+
+    /// The template as a person names it: `.env.example`, `.env.sample`, …
+    pub fn template_name(&self) -> &str {
+        &self.template.name
+    }
+}
+
+/// How to treat an existing template.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WriteOptions {
     /// Non-interactive: no prompts may be issued.
     pub yes: bool,
-    /// Overwrite an existing `.env.example` without asking.
+    /// Overwrite an existing template without asking.
     pub force: bool,
+    /// `--dry-run`: say what would be written, write nothing (IN-16).
+    pub dry_run: bool,
+    /// `--json`: the result as one document on stdout (IN-16).
+    pub json: bool,
+}
+
+impl WriteOptions {
+    /// What `--yes` and `--force` say, and nothing else.
+    pub fn new(yes: bool, force: bool) -> WriteOptions {
+        WriteOptions {
+            yes,
+            force,
+            dry_run: false,
+            json: false,
+        }
+    }
 }
 
 /// Write `.env.example` and `.env`, then make sure `.gitignore` covers them.
@@ -52,9 +108,17 @@ pub fn write_env_files(
     template_content: &str,
     opts: WriteOptions,
 ) -> Result<()> {
-    // Public signature kept: this is reachable as library API. The outcome is
-    // what `init` itself needs, through `write_env_files_with_outcome`.
-    write_env_files_with_outcome(output_path, example_content, template_content, opts).map(|_| ())
+    // Public signature kept: this is reachable as library API. Files only, as
+    // before: the template the folder uses, `.env`, `.gitignore`; no contract.
+    let target = Target::new(output_path, Config::default(), false);
+    write_files(
+        &target,
+        &VarCollection::default(),
+        example_content,
+        template_content,
+        opts,
+    )
+    .map(|_| ())
 }
 
 /// What a write did, so the caller can say so truthfully.
@@ -71,6 +135,8 @@ pub enum Outcome {
     KeptExisting,
     /// The user cancelled; nothing was written.
     Aborted,
+    /// `--dry-run`: the plan was printed; nothing was written.
+    DryRun,
 }
 
 // Moved to `utils::prompt` in 0.10.2 so `add` shares it; re-exported so
@@ -127,6 +193,227 @@ pub fn aborted() -> Outcome {
     Outcome::Aborted
 }
 
+/// Write the files, say what was written (`report`, the caller's own line),
+/// then keep the contract and say what init left alone ([`finish`]).
+pub(crate) fn write(
+    target: &Target,
+    vars: &VarCollection,
+    example_content: &str,
+    env_content: &str,
+    opts: WriteOptions,
+    report: &dyn Fn(),
+) -> Result<Outcome> {
+    // Worked out before any write, from the state the writes will see: printed
+    // instead of writing (--dry-run), or as the result (--json). Neither asks,
+    // so an existing template is refused here exactly as under --yes.
+    let planned = if opts.dry_run || opts.json {
+        if target.template_path().exists() && !opts.force {
+            return Err(refusal(&target.template_path()));
+        }
+        Some(super::report::plan_write(target, vars)?)
+    } else {
+        None
+    };
+    if opts.dry_run {
+        emit(planned.as_ref(), opts, &target.root);
+        return Ok(Outcome::DryRun);
+    }
+    let outcome = write_files(target, vars, example_content, env_content, opts)?;
+    match outcome {
+        Outcome::Written => {
+            report();
+            finish(target, vars, vars)?;
+        }
+        Outcome::KeptExisting => {
+            finish(target, &VarCollection::default(), &template_vars(target)?)?
+        }
+        Outcome::Aborted | Outcome::DryRun => {}
+    }
+    emit(planned.as_ref(), opts, &target.root);
+    Ok(outcome)
+}
+
+/// Print a plan the way the flags ask: the dry-run listing, the JSON
+/// document, or nothing.
+pub(crate) fn emit(planned: Option<&super::report::Planned>, opts: WriteOptions, root: &Path) {
+    let Some(p) = planned else { return };
+    if opts.json {
+        super::report::print_json(p, opts.dry_run, root);
+    } else if opts.dry_run {
+        super::report::print_dry_run(p);
+    }
+}
+
+/// The error for a template that would be overwritten with nobody to ask.
+fn refusal(example_path: &Path) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{} already exists.\n\n\
+         Refusing to overwrite it without being asked to — it is a tracked file \
+         and the contents may be hand-maintained.\n\
+         Re-run with --force to replace it, or remove it first.",
+        example_path.display()
+    )
+}
+
+/// After the files: the `.evnx.toml` contract (IN-15), then the notices for
+/// what init does not write (DQ-32, DQ-33).
+///
+/// `written` are the names this run introduced, recorded into a `[vars]` that
+/// already exists (DQ-17); `whole` is everything the template now declares,
+/// for a contract that is created or gains its first `[vars]` (DQ-18, DQ-27).
+pub(crate) fn finish(
+    target: &Target,
+    written: &VarCollection,
+    whole: &VarCollection,
+) -> Result<()> {
+    super::contract::record(target, written, whole);
+    notices(target);
+    Ok(())
+}
+
+/// The template's own variables, for a contract made from a template init
+/// kept rather than wrote: every name required, its value the sample — what
+/// `spec init` reads from a template.
+pub(crate) fn template_vars(target: &Target) -> Result<VarCollection> {
+    let mut vars = VarCollection::default();
+    let Some(map) = crate::commands::add::shared::read_assignments(&target.template_path())? else {
+        return Ok(vars);
+    };
+    for (name, value) in map {
+        vars.vars.insert(
+            name,
+            VarMetadata {
+                example_value: value,
+                description: None,
+                category: None,
+                required: true,
+                source: VarSource::BlueprintOverride,
+            },
+        );
+    }
+    Ok(vars)
+}
+
+/// `init --yes` with no stack named, in a folder that has its template: a
+/// fresh clone (DQ-31). Keep the template, create `.env` from it when there
+/// is none, keep the contract; nothing is generated.
+///
+/// ⚠️ This refused with exit 2 ("refusing to overwrite"), so the one command a
+/// teammate or a CI job runs after cloning failed, and there was no
+/// non-interactive way to get `.env` from the template except `cp`.
+pub(crate) fn set_up_from_template(target: &Target, opts: WriteOptions) -> Result<Outcome> {
+    let name = target.template_name();
+    let planned = if opts.dry_run || opts.json {
+        Some(super::report::plan_keep(target, &template_vars(target)?)?)
+    } else {
+        None
+    };
+    if opts.dry_run {
+        emit(planned.as_ref(), opts, &target.root);
+        return Ok(Outcome::DryRun);
+    }
+    let outcome = set_up(target, name)?;
+    emit(planned.as_ref(), opts, &target.root);
+    Ok(outcome)
+}
+
+fn set_up(target: &Target, name: &str) -> Result<Outcome> {
+    if target.root.join(".env").exists() {
+        let gitignore_line = update_gitignore(&target.root)?;
+        if let Some(line) = gitignore_line {
+            ui::say(line);
+        }
+        ui::success(format!(
+            "already set up: {name} and .env are here; nothing was generated"
+        ));
+        warn_if_env_is_still_committable(&target.root);
+        finish(target, &VarCollection::default(), &template_vars(target)?)?;
+        return Ok(Outcome::KeptExisting);
+    }
+    ui::info(format!("{name} is the project's template: kept as it is"));
+    env_from_template(&target.root, &target.template, false)?;
+    warn_if_env_is_still_committable(&target.root);
+    finish(target, &VarCollection::default(), &template_vars(target)?)?;
+    Ok(Outcome::Written)
+}
+
+/// The env files init does not write, and a direnv `.envrc` its `.gitignore`
+/// rule now hides (I-296, DQ-32, DQ-33). Said, never acted on.
+///
+/// ⚠️ init writes `.env` only. With `[defaults] env_name = "local"` every
+/// reading command reads `.env.local`, and `validate` right after init exited 2
+/// (".env.local does not exist"); beside `.env.production` and the rest, every
+/// new name was missing there. `--env-name` for init is MEC-2 (0.11.0); until
+/// then the run says which files it left unchanged and how to check one.
+pub(crate) fn notices(target: &Target) {
+    for (warning, line) in notices_of(target) {
+        if warning {
+            ui::warning(line);
+        } else {
+            ui::info(line);
+        }
+    }
+}
+
+/// The notices as text, for `--dry-run` and `--json`.
+pub(crate) fn notice_lines(target: &Target) -> Vec<String> {
+    notices_of(target)
+        .into_iter()
+        .map(|(_, line)| line)
+        .collect()
+}
+
+/// Each notice, and whether it is a warning (shown under `-q`).
+fn notices_of(target: &Target) -> Vec<(bool, String)> {
+    let root = &target.root;
+    let mut out = Vec::new();
+    if let Some(name) = &target.config.defaults.env_name {
+        out.push((
+            true,
+            format!(
+                ".evnx.toml sets env_name = \"{name}\": validate, sync and diff read .env.{name}, \
+                 not the .env init wrote"
+            ),
+        ));
+    }
+    let others = crate::core::env_name::available(root);
+    if let Some(first) = others.first() {
+        let files: Vec<String> = others.iter().map(|n| format!(".env.{n}")).collect();
+        out.push((
+            false,
+            format!(
+                "not changed: {} — check one with: evnx validate --env-name {first}",
+                files.join(", ")
+            ),
+        ));
+    }
+    if others.iter().any(|n| n == "local") {
+        out.push((
+            false,
+            ".env.local is read before .env by Next.js and Vite: a value there wins".to_string(),
+        ));
+    }
+    // Ignored now, or once this run adds `.env*`: the same line before and
+    // after the write, so a dry run lists it too.
+    let envrc_ignored = || {
+        crate::core::gitignore::env_file_is_protected(root, ".envrc")
+            || super::report::gitignore_pending(root)
+                .iter()
+                .any(|e| e == ".env*")
+    };
+    if root.join(".envrc").is_file()
+        && !crate::core::gitignore::is_tracked(root, ".envrc")
+        && envrc_ignored()
+    {
+        out.push((
+            false,
+            ".envrc is ignored by the .env* rule in .gitignore; to commit it, add !.envrc there"
+                .to_string(),
+        ));
+    }
+    out
+}
+
 /// [`write_env_files`], returning what happened.
 ///
 /// # Order: protect first, write second, talk last
@@ -140,47 +427,44 @@ pub fn aborted() -> Outcome {
 /// Now `.gitignore` is updated before any env file exists, and nothing is
 /// printed until every write has finished. The lines printed, and their order,
 /// are the same as before. A failed print can only lose a message, never a rule.
-pub(crate) fn write_env_files_with_outcome(
-    output_path: &Path,
+pub(crate) fn write_files(
+    target: &Target,
+    vars: &VarCollection,
     example_content: &str,
     template_content: &str,
     opts: WriteOptions,
 ) -> Result<Outcome> {
+    let output_path = target.root.as_path();
     crate::core::safe_write::create_dirs(output_path)?;
 
-    let example_path = output_path.join(".env.example");
+    let example_path = target.template_path();
+    let name = target.template_name();
 
     // Questions before writes: a refusal or a cancel leaves nothing behind.
     if example_path.exists() && !opts.force {
         if opts.yes {
-            bail!(
-                "{} already exists.\n\n\
-                 Refusing to overwrite it without being asked to — it is a tracked file \
-                 and the contents may be hand-maintained.\n\
-                 Re-run with --force to replace it, or remove it first.",
-                example_path.display()
-            );
+            return Err(refusal(&example_path));
         }
 
         let overwrite = yes_no()
             .with_prompt(format!("{} exists. Overwrite it?", example_path.display()))
             .default(false)
             .interact_opt()
-            .context("could not ask whether to overwrite .env.example")?;
+            .with_context(|| format!("could not ask whether to overwrite {name}"))?;
 
         match overwrite {
             None => return Ok(aborted()),
             Some(false) => {
                 let gitignore_line = update_gitignore(output_path)?;
                 crate::utils::ui::say(
-                    "Kept the existing .env.example. Nothing was generated.".yellow(),
+                    format!("Kept the existing {name}. Nothing was generated.").yellow(),
                 );
                 if let Some(line) = gitignore_line {
                     crate::utils::ui::say(line);
                 }
                 // Keeping the template used to end here with no `.env`, while
                 // the closing lines told the user to edit one (N-01, DQ-4).
-                env_from_template(output_path, true)?;
+                env_from_template(output_path, &target.template, true)?;
                 warn_if_env_is_still_committable(output_path);
                 return Ok(Outcome::KeptExisting);
             }
@@ -207,16 +491,27 @@ pub(crate) fn write_env_files_with_outcome(
     .with_context(|| format!("Failed to write: {}", example_path.display()))?;
     crate::core::safe_write::report(&example);
 
-    // `.env` holds real values, so it is never replaced — only created.
+    // `.env` holds real values, so it is never replaced. It is created, or
+    // given the names the new template has and it lacks (DQ-29).
     let env_path = output_path.join(".env");
     let created_env = !env_path.exists();
+    let mut caught_up = 0;
     if created_env {
         create_env(&env_path, template_content.as_bytes())?;
+    } else {
+        caught_up = catch_up_env(&env_path, vars)?;
     }
 
     // 3. Talk, in the order these lines have always appeared.
     if created_env {
         crate::utils::ui::say(format!("{} Created .env from template", "✓".green()));
+    }
+    if caught_up > 0 {
+        crate::utils::ui::say(format!(
+            "{} Added {} to .env; the values already there are kept",
+            "✓".green(),
+            pluralize(caught_up, "variable", "variables")
+        ));
     }
     if let Some(line) = gitignore_line {
         crate::utils::ui::say(line);
@@ -224,6 +519,33 @@ pub(crate) fn write_env_files_with_outcome(
     warn_if_env_is_still_committable(output_path);
 
     Ok(Outcome::Written)
+}
+
+/// Append to an existing `.env` the names in `vars` it does not have, with
+/// the template's placeholders, through add's writer. Returns how many.
+///
+/// ⚠️ A project with a `.env` and no template got a 10-variable template while
+/// `.env` kept its 2, and nothing said so; "Next steps" told the user to
+/// replace placeholders that were not there (I-297). A name `.env` has is
+/// never touched, so no placeholder lands below a real value (N-11).
+fn catch_up_env(env_path: &Path, vars: &VarCollection) -> Result<usize> {
+    if vars.vars.is_empty() {
+        return Ok(0);
+    }
+    let have = crate::commands::add::shared::read_assignments(env_path)?.unwrap_or_default();
+    let mut missing = VarCollection::default();
+    for (name, meta) in &vars.vars {
+        if !have.contains_key(name) {
+            missing.vars.insert(name.clone(), meta.clone());
+        }
+    }
+    if missing.vars.is_empty() {
+        return Ok(0);
+    }
+    let addition = crate::schema::formatter::format_addition_from(&missing, "evnx init")?;
+    let existing = crate::commands::add::shared::read(env_path)?;
+    crate::commands::add::shared::append_block(env_path, &existing, &addition)?;
+    Ok(missing.vars.len())
 }
 
 /// Every new `.env` that init or add creates comes through here: 0600 on Unix,
@@ -236,7 +558,7 @@ fn create_env(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Create `.env` from an existing `.env.example`: a byte copy, the same as
+/// Create `.env` from the project's template: a byte copy, the same as
 /// `cp .env.example .env` (DQ-4a). Returns whether it was created.
 ///
 /// Used where a template exists but `.env` does not: after the user keeps their
@@ -245,11 +567,15 @@ fn create_env(path: &Path, bytes: &[u8]) -> Result<()> {
 /// without it, as under `--yes`, the file is created (DQ-14).
 ///
 /// ⚠️ Never replaces an existing `.env`, and updates `.gitignore` before the
-/// file exists, for the same reason as `write_env_files_with_outcome` (I-008).
+/// file exists, for the same reason as [`write_files`] (I-008).
 /// Esc at the question creates nothing and is not an error: the template the
 /// user chose to keep stays as it was.
-pub(crate) fn env_from_template(output_path: &Path, ask: bool) -> Result<bool> {
-    let example_path = output_path.join(".env.example");
+pub(crate) fn env_from_template(
+    output_path: &Path,
+    template: &Template,
+    ask: bool,
+) -> Result<bool> {
+    let example_path = template.path(output_path);
     let env_path = output_path.join(".env");
     if env_path.exists() || !example_path.exists() {
         return Ok(false);
@@ -257,7 +583,7 @@ pub(crate) fn env_from_template(output_path: &Path, ask: bool) -> Result<bool> {
 
     if ask {
         let create = yes_no()
-            .with_prompt("Create .env from your .env.example?")
+            .with_prompt(format!("Create .env from your {}?", template.name))
             .default(true)
             .interact_opt()
             .context("could not ask whether to create .env")?;
@@ -267,14 +593,18 @@ pub(crate) fn env_from_template(output_path: &Path, ask: bool) -> Result<bool> {
     }
 
     let gitignore_line = update_gitignore(output_path)?;
-    let template = fs::read(&example_path)
+    let bytes = fs::read(&example_path)
         .with_context(|| format!("Failed to read: {}", example_path.display()))?;
-    create_env(&env_path, &template)?;
+    create_env(&env_path, &bytes)?;
 
     if let Some(line) = gitignore_line {
         crate::utils::ui::say(line);
     }
-    crate::utils::ui::say(format!("{} Created .env from .env.example", "✓".green()));
+    crate::utils::ui::say(format!(
+        "{} Created .env from {}",
+        "✓".green(),
+        template.name
+    ));
     Ok(true)
 }
 
@@ -287,12 +617,8 @@ pub(crate) fn env_from_template(output_path: &Path, ask: bool) -> Result<bool> {
 /// `.env` is actually ignored. It warns and never edits: the negation is the
 /// user's line, and may be deliberate. A warning, so `-q` does not hide it.
 fn warn_if_env_is_still_committable(output_path: &Path) {
-    if !crate::core::gitignore::env_file_is_protected(output_path, ".env") {
-        crate::utils::ui::warning(
-            ".env is still not ignored: a later line in .gitignore re-includes it. \
-             Check with: git check-ignore -v .env",
-        );
-    }
+    // The shared wording (E6): a tracked `.env` is told `git rm --cached`.
+    crate::utils::protect::warn_if_exposed(output_path, ".env");
 }
 
 /// Ensure `.gitignore` actually ignores the env files. Returns the line to print,
@@ -327,7 +653,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn opts(yes: bool, force: bool) -> WriteOptions {
-        WriteOptions { yes, force }
+        WriteOptions::new(yes, force)
     }
 
     /// I-008: `.gitignore` is written before any env file, so a failure (or a
@@ -354,8 +680,14 @@ mod tests {
     #[test]
     fn the_outcome_says_what_happened() {
         let dir = TempDir::new().unwrap();
-        let outcome =
-            write_env_files_with_outcome(dir.path(), "A=1", "A=\n", opts(true, false)).unwrap();
+        let outcome = write_files(
+            &Target::new(dir.path(), Config::default(), false),
+            &VarCollection::default(),
+            "A=1",
+            "A=\n",
+            opts(true, false),
+        )
+        .unwrap();
         assert_eq!(outcome, Outcome::Written);
     }
 

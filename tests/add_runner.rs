@@ -49,12 +49,12 @@ fn a2_existing_env_and_the_gitignore_warning() {
     let p = Project::new().env("KEEP=1\n").git();
     run(p.path(), &["add", "service", "stripe", "--yes"])
         .assert_code(0)
-        .assert_contains(".env is not covered by .gitignore");
+        .assert_contains("'.env' may contain secrets and is not in .gitignore");
     assert!(p.read(".env").starts_with("KEEP=1\n"));
     std::fs::write(p.join(".gitignore"), ".env\n").unwrap();
     run(p.path(), &["add", "service", "redis", "--yes"])
         .assert_code(0)
-        .assert_not_contains("not covered by .gitignore");
+        .assert_not_contains("is not in .gitignore");
 }
 
 /// A3: frameworks. `--language` is optional and checked when given (I-017).

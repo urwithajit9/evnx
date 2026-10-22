@@ -390,7 +390,7 @@ fn add_is_quiet_when_env_is_already_ignored() {
 
         let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
         assert!(
-            !out.contains("not covered by .gitignore"),
+            !out.contains("is not in .gitignore"),
             "warned despite {gitignore:?}:\n{out}"
         );
     }
@@ -413,7 +413,7 @@ fn add_says_nothing_when_there_is_no_env_file() {
         .success();
 
     let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
-    assert!(!out.contains("not covered by .gitignore"), "{out}");
+    assert!(!out.contains("is not in .gitignore"), "{out}");
 }
 
 // ── What `add` writes into the file people then read and edit ───────────────
@@ -1498,7 +1498,7 @@ fn t_i251_custom_protects_the_env_it_creates() {
     run(p.path(), &["add", "custom", "MY_KEY=value", "--yes"])
         .assert_code(0)
         .assert_contains("Created .gitignore")
-        .assert_not_contains("not covered by .gitignore");
+        .assert_not_contains("is not in .gitignore");
     assert!(p.read(".env").contains("MY_KEY=value"));
     assert!(p.read(".gitignore").contains(".env*"));
     assert!(!p.git_cmd(&["status", "--porcelain"]).contains(".env\n"));

@@ -673,56 +673,9 @@ fn is_ciphertext(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// The templates (`.env.example`, `.env.sample`, `.env.template`) present in
-/// `project_root`, in that order.
-fn templates_in(project_root: &Path) -> Vec<String> {
-    env_name::TEMPLATE_SUFFIXES
-        .iter()
-        .map(|suffix| format!(".env.{suffix}"))
-        .filter(|name| project_root.join(name).is_file())
-        .collect()
-}
-
-/// The project's template, by one rule (I-294): `[defaults] example` in the
-/// project's `.evnx.toml`, else the first of `.env.example`, `.env.sample`,
-/// `.env.template` present, else `.env.example`.
-///
-/// ⚠️ The `env_example` check looked for `.env.example` alone, so a project
-/// whose template is `.env.sample`, or one that names its template in
-/// `.evnx.toml` — the rule validate, sync, diff and spec init follow
-/// (`Config::example_path`, I-189) — was told ".env.example not found" and
-/// checked against a file it does not use.
-#[derive(Debug, Clone)]
-struct Template {
-    /// As a person names it from the project folder.
-    name: String,
-    /// Named by `[defaults] example`, so it is the template even when missing.
-    configured: bool,
-}
-
-impl Template {
-    fn of(project_root: &Path, config: &crate::core::config::Config) -> Template {
-        match &config.defaults.example {
-            Some(name) => Template {
-                name: name.clone(),
-                configured: true,
-            },
-            None => Template {
-                name: templates_in(project_root)
-                    .into_iter()
-                    .next()
-                    .unwrap_or_else(|| ".env.example".to_string()),
-                configured: false,
-            },
-        }
-    }
-
-    /// Relative to the project folder, as if doctor ran there; an absolute
-    /// path is used as written.
-    fn exists(&self, project_root: &Path) -> bool {
-        project_root.join(&self.name).is_file()
-    }
-}
+// The template rule (I-294) moved to `core::config::Template` in 0.10.16
+// (R-init, DQ-28), so `init` and `add` write to the template doctor checks.
+use crate::core::config::{templates_in, Template};
 
 /// Whether `project_root` shows a project: a known project type or a Docker
 /// file. A folder with neither, and no env file or template, has nothing for

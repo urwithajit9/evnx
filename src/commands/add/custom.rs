@@ -75,7 +75,15 @@ pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
             "Give the variables as arguments instead:\n  \
              evnx add custom NAME=value OTHER_NAME=value --yes",
         )?;
-        match prompt_loop(yes, args.desc, category, args.required, args.optional)? {
+        let template = super::shared::template_of(output_path);
+        match prompt_loop(
+            yes,
+            args.desc,
+            category,
+            args.required,
+            args.optional,
+            &template.name,
+        )? {
             Some(customs) => customs,
             None => return Ok(aborted()),
         }
@@ -123,8 +131,9 @@ fn say_how_to_make_optional(output_path: &Path, customs: &[Custom]) {
         return;
     }
     crate::utils::ui::warning(format!(
-        "{} not marked optional: .env.example cannot say it, and there is no [vars] contract",
-        optional.join(", ")
+        "{} not marked optional: {} cannot say it, and there is no [vars] contract",
+        optional.join(", "),
+        super::shared::template_of(output_path).name
     ));
     crate::utils::ui::warning_detail(format!(
         "     →  run `evnx spec init`, then set `required = false` under [vars.{}]",
@@ -218,6 +227,7 @@ fn prompt_loop(
     category: Option<String>,
     required: bool,
     optional: bool,
+    template: &str,
 ) -> Result<Option<Vec<Custom>>> {
     print_header(
         "Custom Variables",
@@ -283,7 +293,7 @@ fn prompt_loop(
         } else {
             Input::new()
                 .with_prompt(format!(
-                    "Value for {name} (.env only; .env.example gets {placeholder})"
+                    "Value for {name} (.env only; {template} gets {placeholder})"
                 ))
                 .default(placeholder)
                 .interact_text()?

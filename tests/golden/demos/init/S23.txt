@@ -6,19 +6,34 @@ $ evnx init --with postgresql --yes -p sample
 
   evnx init  Set up environment variables for your project
 
+Error: sample/.env.sample already exists.
+
+Refusing to overwrite it without being asked to — it is a tracked file and the contents may be hand-maintained.
+Re-run with --force to replace it, or remove it first.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-295 (R-init, DQ-28): .env.sample is the template; a stack over it is refused, as over .env.example (exit 2)
+  ok: FIXED I-295: no second template
+
+$ evnx init --with postgresql --yes --force -p sample
+
+  evnx init  Set up environment variables for your project
+
 ✓ Created .env from template
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
-✓ Created .env.example with 6 variables from 1 component
+✓ Created .env.sample with 6 variables from 1 component
+  ✓ created sample/.evnx.toml with 6 variable(s) in [vars]
 
 Next steps:
   1. Edit .env and replace placeholder values
-  2. Never commit .env to version control
+  2. Commit .env.sample and .evnx.toml; never commit .env
   3. Run 'evnx validate' to check configuration
   4. Use 'evnx add' to add more variables later
   Docs: https://docs.evnx.dev/cli/commands/init
 [exit 0]
-  ok: beside .env.sample (exit 0)
-  ok: KNOWN I-295: a second template .env.example is written (decided DQ-28: the project's template)
+  ok: --force replaces .env.sample (exit 0)
+  ok: the stack is in .env.sample
 
 $ evnx init --with redis --yes -p cfg
   config    cfg/.evnx.toml
@@ -27,16 +42,17 @@ $ evnx init --with redis --yes -p cfg
 
 ✓ Created .env from template
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
-✓ Created .env.example with 5 variables from 1 component
+✓ Created .env.template with 5 variables from 1 component
+  ✓ added 5 variable(s) to [vars] in cfg/.evnx.toml
 
 Next steps:
   1. Edit .env and replace placeholder values
-  2. Never commit .env to version control
+  2. Commit .env.template and .evnx.toml; never commit .env
   3. Run 'evnx validate' to check configuration
   4. Use 'evnx add' to add more variables later
   Docs: https://docs.evnx.dev/cli/commands/init
 [exit 0]
-  ok: [defaults] example names .env.template (exit 0)
-  ok: KNOWN I-295: [defaults] example is ignored, .env.example is written
+  ok: [defaults] example names .env.template, not there yet (exit 0)
+  ok: FIXED I-295: [defaults] example is the file written; no .env.example
 
-================ summary: 4 ok, 0 mismatch   ================
+================ summary: 6 ok, 0 mismatch   ================

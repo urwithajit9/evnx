@@ -9,10 +9,11 @@ $ evnx init --with next,pg --yes
 ✓ Created .env from template
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
 ✓ Created .env.example with 10 variables from 2 components
+  ✓ created .evnx.toml with 10 variable(s) in [vars]
 
 Next steps:
   1. Edit .env and replace placeholder values
-  2. Never commit .env to version control
+  2. Commit .env.example and .evnx.toml; never commit .env
   3. Run 'evnx validate' to check configuration
   4. Use 'evnx add' to add more variables later
   Docs: https://docs.evnx.dev/cli/commands/init
@@ -21,6 +22,7 @@ Next steps:
   ok: same file as nextjs,postgresql
 
 $ evnx init --blueprint t3modern --yes
+  config    .evnx.toml
 
   evnx init  Set up environment variables for your project
 

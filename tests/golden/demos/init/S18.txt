@@ -17,6 +17,7 @@ $ evnx init --from-source --yes
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
 ✓ Created .env from .env.example
 ✓ Added 1 variable from the source
+  ✓ created .evnx.toml with 2 variable(s) in [vars]
 [exit 0]
   ok: from-source beside a template (exit 0)
   ok: .env is a copy of the template

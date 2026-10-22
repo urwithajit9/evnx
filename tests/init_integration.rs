@@ -177,9 +177,11 @@ fn init_yes_refuses_to_overwrite_an_existing_example() {
     let example = dir.path().join(".env.example");
     std::fs::write(&example, "MY_CAREFULLY_WRITTEN_TEMPLATE=1\n").unwrap();
 
+    // A stack named over an existing template (DQ-31: plain `--yes` keeps the
+    // template and creates `.env` from it instead of refusing).
     cargo_bin_cmd!("evnx")
         .arg("init")
-        .arg("--yes")
+        .args(["--with", "redis", "--yes"])
         .arg("--path")
         .arg(dir.path())
         .assert()
@@ -888,7 +890,8 @@ fn a_refusal_exits_exactly_2_and_leaves_the_template_untouched() {
     let original = "# mine\nKEEP_ME=1\n";
     std::fs::write(d.path().join(".env.example"), original).unwrap();
 
-    let out = init_in(d.path(), &["--yes"]);
+    // A stack named, so something would be generated over it (DQ-31).
+    let out = init_in(d.path(), &["--with", "redis", "--yes"]);
 
     assert_eq!(out.status.code(), Some(2), "{}", text_of(&out));
     assert_eq!(
@@ -1040,10 +1043,11 @@ fn list_components_prints_the_whole_catalogue_once() {
     let mut b: Vec<String> = listed.iter().map(|s| s.to_string()).collect();
     b.sort();
     assert_eq!(a, b, "catalogue and --list-components disagree");
+    // 56 since 0.10.16: astro, hono, neon, turnstile, fly (IN-14, DQ-25).
     assert_eq!(
         ids.len(),
-        51,
-        "catalogue size moved; update the docs that say 51"
+        56,
+        "catalogue size moved; update the docs that say 56"
     );
 }
 
@@ -1569,8 +1573,9 @@ fn a_gitignore_that_re_includes_env_is_reported() {
             .unwrap();
         assert!(out.status.success());
         let text = text_of(&out);
+        // The shared wording since 0.10.16 (utils::protect, E6).
         assert!(
-            text.contains(".env is still not ignored"),
+            text.contains("'.env' is still not ignored: a later rule re-includes it"),
             "git={with_git}: {text}"
         );
         assert_eq!(

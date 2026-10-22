@@ -88,7 +88,7 @@ The following steps walk through the core evnx workflow on a new project. Each s
 
 ## Step 1 — Initialize your project
 
-`evnx init` creates `.env` and `.env.example` for your project through a guided interactive TUI. Run it with no arguments:
+`evnx init` creates `.env`, the template (`.env.example`) and the `.evnx.toml` contract for your project through a guided interactive TUI. Run it with no arguments:
 
 ```bash
 cd my-project
@@ -106,7 +106,7 @@ How do you want to start?
 
 ### Blank mode
 
-Creates minimal empty `.env` and `.env.example` files. Use this when you want a clean starting point with no pre-filled variables.
+Creates minimal empty `.env` and `.env.example` files, and an `.evnx.toml` with an empty `[vars]`. Use this when you want a clean starting point with no pre-filled variables.
 
 ### Blueprint mode
 
@@ -127,9 +127,15 @@ Generate .env files with these variables? yes
 ✓ Created .env.example with 28 variables
 ```
 
+Since 0.10.16 the run also writes the contract, one `[vars]` entry per variable:
+
+```
+  ✓ created .evnx.toml with 28 variable(s) in [vars]
+```
+
 Next.js stacks also get `NEXT_PUBLIC_` copies of service values that are meant for the
-browser (here the Stripe publishable key); Vite, SvelteKit, Nuxt and Laravel stacks get
-their own prefixes. In the menus, Blank is pre-selected, yes/no questions take their answer
+browser (here the Stripe publishable key); Vite, SvelteKit, Astro, Nuxt and Laravel stacks
+get their own prefixes, and a `NEXT_PUBLIC_` name is written only on Next.js. In the menus, Blank is pre-selected, yes/no questions take their answer
 on Enter, and Esc cancels without writing anything.
 
 The `×` counts are variables by where they come from (framework, services, infrastructure), not numbers of components.
@@ -143,18 +149,21 @@ Lets you compose a custom stack by selecting a language, framework, and individu
 For scripting or CI, name what you want; nothing is guessed. `--yes` alone writes **blank** files (it has meant Blank since v0.5.0, not "the first blueprint"):
 
 ```bash
-evnx init --yes                                  # blank .env.example, .env and .gitignore rules
+evnx init --yes                                  # blank .env.example, .env, .evnx.toml and .gitignore rules
 evnx init --yes --blueprint t3_modern            # a named stack
 evnx init --yes --with nextjs,postgresql,stripe  # name the components directly
 evnx init --list-components                      # every name --with accepts
 evnx init --detect                               # accept what package.json, compose files etc. declare
 evnx init --from-source --yes                    # add the variables the code reads
 evnx init --yes --path ./packages/api            # write into another directory
+evnx init --with redis --dry-run                 # what would be written; --json for scripts
 ```
 
-Re-running is safe: `.env` is never overwritten, and an existing `.env.example` is replaced only with `--force` (under `--yes` without `--force`, init stops with exit 2). Without a terminal, plain `evnx init` cannot show its menu, so pass one of the flags above.
+Re-running is safe: `.env` is never overwritten (names the new template has and `.env` lacks are appended below your values), and an existing template is replaced only with `--force`. In a fresh clone, with the template and no `.env`, `evnx init --yes` keeps the template and creates `.env` from it; naming a stack with `--with` or `--blueprint` over an existing template stops with exit 2 unless `--force`. Without a terminal, or with `CI` set, plain `evnx init` cannot show its menu, so pass one of the flags above.
 
-After `init`, edit `.env` and replace placeholder values with your real credentials. Never commit `.env` — it is added to `.gitignore` automatically.
+init writes into the template the project already uses: `[defaults] example` in `.evnx.toml`, else `.env.example`, `.env.sample` or `.env.template`. It writes `.env` only: other env files (`.env.production`, `.env.local` …) are listed as unchanged, with the command that checks one.
+
+After `init`, edit `.env` and replace placeholder values with your real credentials. Never commit `.env` — it is added to `.gitignore` automatically. Commit the template and `.evnx.toml`.
 
 ---
 
@@ -338,7 +347,8 @@ evnx validate --format github-actions   # inline PR annotations
 ### Declare the contract
 
 `.env.example` cannot say that a variable is optional, a port, or a secret. `[vars]` in
-`.evnx.toml` can, and `evnx spec init` writes a first one from the files you already have:
+`.evnx.toml` can. `evnx init` writes it for the components it sets up; in a project init
+did not set up, `evnx spec init` writes a first one from the files you already have:
 
 ```bash
 evnx spec init            # infer from .env.example and .env, write .evnx.toml

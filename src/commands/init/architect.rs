@@ -1,14 +1,13 @@
 use anyhow::{Context, Result};
 use colored::*;
 use dialoguer::{MultiSelect, Select};
-use std::path::Path;
 
-use super::shared::{aborted, write_env_files_with_outcome, Outcome, WriteOptions};
+use super::shared::{aborted, write, Outcome, Target, WriteOptions};
 use crate::schema::{formatter, loader, resolver};
 use crate::utils::ui::{info, print_header, print_preview_header, success};
 
 /// Handle Architect mode: step-by-step custom stack building
-pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<Outcome> {
+pub fn handle(target: &Target, opts: WriteOptions, verbose: bool) -> Result<Outcome> {
     // Header for Architect mode
     if !opts.yes {
         print_header(
@@ -168,24 +167,20 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<Outcome
     let example_content = formatter::format_env_example(&vars, true)?;
     let template_content = formatter::format_env_template(&vars)?;
 
-    let output_path = Path::new(&path);
-    let outcome =
-        write_env_files_with_outcome(output_path, &example_content, &template_content, opts)?;
-    if outcome != Outcome::Written {
-        return Ok(outcome);
-    }
-
-    // println!(
-    //     "{} Created .env.example with {} variables",
-    //     "✓".green(),
-    //     vars.vars.len()
-    // );
-    success(format!(
-        "Created .env.example with {} variables",
-        vars.vars.len()
-    ));
-
-    Ok(Outcome::Written)
+    write(
+        target,
+        &vars,
+        &example_content,
+        &template_content,
+        opts,
+        &|| {
+            success(format!(
+                "Created {} with {} variables",
+                target.template_name(),
+                vars.vars.len()
+            ))
+        },
+    )
 }
 
 fn format_language_display(id: &str) -> String {

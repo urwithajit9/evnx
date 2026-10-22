@@ -21,7 +21,7 @@
 //! # Names are a compatibility surface
 //!
 //! ⚠️ Once `--with postgresql` is something people put in a script, renaming
-//! `postgresql` to `postgres` breaks it. The 51 ids here are `schema.json`'s
+//! `postgresql` to `postgres` breaks it. The 56 ids here are `schema.json`'s
 //! existing keys, unchanged, and they should be treated as public from now on.
 //! [`catalogue`] is what a deprecation would have to go through.
 
@@ -173,6 +173,7 @@ pub const CLIENT_PREFIX: &[(&str, &str)] = &[
     ("sveltekit", "PUBLIC_"),
     ("nuxt", "NUXT_PUBLIC_"),
     ("laravel", "VITE_"),
+    ("astro", "PUBLIC_"),
 ];
 
 /// Service variables their vendor designs to be shipped to the browser.
@@ -198,6 +199,9 @@ pub const CLIENT_SAFE: &[&str] = &[
     "STRIPE_PUBLIC_KEY",
     "RAZORPAY_KEY_ID",
     "CLOUDINARY_CLOUD_NAME",
+    // The widget's site key is public by Cloudflare's design; the secret key
+    // is not, and is not here (IN-14).
+    "TURNSTILE_SITE_KEY",
 ];
 
 /// Drop a service's browser name for a framework the stack does not use

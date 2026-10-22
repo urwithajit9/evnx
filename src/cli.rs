@@ -1542,12 +1542,17 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Interactive project setup — generates .env.example.
+    /// Interactive project setup — the template, .env and the .evnx.toml contract.
     ///
     /// Three modes available:
     /// • Blank: Create empty .env files (add variables later with `evnx add`)
     /// • Blueprint: Use a pre-configured stack like "T3 Turbo" or "Rust High-Perf"
     /// • Architect: Build your stack step-by-step (language → framework → services → infra)
+    ///
+    /// Writes into the template the project uses (`[defaults] example`, else
+    /// .env.example, .env.sample or .env.template). `.env` is never replaced:
+    /// names it lacks are appended. `.evnx.toml` gets a [vars] entry per
+    /// variable, or the new names are recorded into the one in force.
     #[command(after_help = docs::INIT.after_help)]
     Init {
         /// Output path for .env files.
@@ -1626,6 +1631,17 @@ pub enum Commands {
         /// Not valid with --from-source, which only appends.
         #[arg(long)]
         force: bool,
+
+        /// Show what would be written — the template, `.env`, `.gitignore` and
+        /// `.evnx.toml` — and write nothing. Asks no confirmation; a menu is
+        /// still shown when nothing was named.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Print the result as one JSON document on stdout (needs --yes or
+        /// --dry-run: it never asks). The same fields as `evnx add --json`.
+        #[arg(long)]
+        json: bool,
     },
 
     /// Add environment variables to existing .env files.

@@ -19,7 +19,9 @@ mod architect;
 mod blank;
 mod blueprint;
 pub(crate) mod components;
+mod contract;
 pub(crate) mod detect;
+mod report;
 pub(crate) mod shared;
 mod source;
 
@@ -51,6 +53,9 @@ pub fn run(
     detect_flag: bool,
     from_source: bool,
     verbose: bool,
+    config: crate::core::config::Config,
+    dry_run: bool,
+    json: bool,
 ) -> Result<()> {
     // ⚠️ Before the header and before any project is touched. Listing is a
     // question about evnx, not about this directory — it has to work with no
@@ -60,12 +65,35 @@ pub fn run(
         return components::list();
     }
 
+    // `--json` never asks, as for `add`: a question would land in the middle
+    // of the document a script is about to parse (IN-16).
+    if json && !yes && !dry_run {
+        anyhow::bail!("--json needs --yes or --dry-run: it never asks.");
+    }
+    if json {
+        // Headers, hints and result lines would share stdout with the JSON.
+        crate::utils::ui::set_quiet(true);
+    }
+    // No confirmation under --dry-run or --json: the plan is printed instead
+    // of asked about. A menu still asks under --dry-run when nothing was named.
+    let no_questions = yes || json;
+
     // Source scanning answers a different question from the rest of `init`: not
     // "what stack is this?" but "what does this code read?". It runs before the
     // mode selection because it replaces it entirely.
+    // The folder init writes to: its template (DQ-28) and the config `main`
+    // loaded for it (I-298).
+    let target = shared::Target::new(Path::new(&path), config, verbose);
+
     if from_source {
         print_init_header();
-        return components::handle_from_source(path, WriteOptions { yes, force }, verbose);
+        let opts = WriteOptions {
+            yes: yes || dry_run || json,
+            force,
+            dry_run,
+            json,
+        };
+        return components::handle_from_source(&target, opts, verbose);
     }
 
     if verbose {
@@ -77,8 +105,10 @@ pub fn run(
     // `--detect` accepts the proposal without asking, which is the same
     // no-prompt contract `--yes` carries everywhere else.
     let opts = WriteOptions {
-        yes: yes || detect_flag,
+        yes: yes || detect_flag || dry_run || json,
         force,
+        dry_run,
+        json,
     };
 
     // ⚠️ Detection runs before the menu, and only when nothing was asked for
@@ -88,8 +118,8 @@ pub fn run(
     //
     // Nothing detected falls through to exactly the menu that was there before,
     // so a project evnx cannot read is no worse off than it was.
-    let detected = if with.is_empty() && blueprint.is_none() && (!yes || detect_flag) {
-        detect::detect(Path::new(&path)).unwrap_or_default()
+    let detected = if with.is_empty() && blueprint.is_none() && (!no_questions || detect_flag) {
+        detect::detect(&target.root).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -101,7 +131,7 @@ pub fn run(
         Mode::Blueprint
     } else if detect_flag || !detected.is_empty() {
         Mode::Detected
-    } else if yes {
+    } else if no_questions {
         Mode::Blank
     } else {
         // ⚠️ Check before drawing the menu. dialoguer cannot run without a
@@ -153,11 +183,11 @@ pub fn run(
 
     // Step 2: Route to handler
     let outcome = match mode {
-        Mode::Blank => blank::handle(path, opts, verbose)?,
-        Mode::Components => components::handle(path, opts, verbose, &with)?,
-        Mode::Detected => components::handle_detected(path, opts, verbose, &detected)?,
-        Mode::Blueprint => self::blueprint::handle(path, opts, verbose, blueprint.as_deref())?,
-        Mode::Architect => architect::handle(path, opts, verbose)?,
+        Mode::Blank => blank::handle(&target, opts, verbose)?,
+        Mode::Components => components::handle(&target, opts, verbose, &with)?,
+        Mode::Detected => components::handle_detected(&target, opts, verbose, &detected)?,
+        Mode::Blueprint => self::blueprint::handle(&target, opts, verbose, blueprint.as_deref())?,
+        Mode::Architect => architect::handle(&target, opts, verbose)?,
     };
 
     // ⚠️ "Next steps: Edit .env" only when something was written. It used to
@@ -165,7 +195,7 @@ pub fn run(
     // times about a `.env` that did not exist (I-013, N-01). Exit code is 0 in
     // all three cases (DQ-3).
     if outcome == shared::Outcome::Written {
-        print_next_steps_ui();
+        print_next_steps_ui(target.template_name());
     }
     print_docs_hint(&docs::INIT);
     Ok(())
@@ -190,10 +220,12 @@ fn print_init_header() {
     );
 }
 
-fn print_next_steps_ui() {
+fn print_next_steps_ui(template: &str) {
+    // The contract init now keeps is committed with the template (IN-15).
+    let commit = format!("Commit {template} and .evnx.toml; never commit .env");
     print_next_steps(&[
         "Edit .env and replace placeholder values",
-        "Never commit .env to version control",
+        &commit,
         "Run 'evnx validate' to check configuration",
         "Use 'evnx add' to add more variables later",
     ]);

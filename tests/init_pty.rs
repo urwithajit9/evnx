@@ -101,9 +101,10 @@ fn architect_from_the_menu_equals_with() {
     run.wait_for("Select your framework");
     run.press(&[DOWN, ENTER]); // Vite
     run.wait_for("Select services you'll use");
-    // Supabase is the 6th item, Clerk the 12th (Down ×5, then ×6 more).
+    // Supabase is the 6th item, Clerk the 13th (Down ×5, then ×7 more): Neon
+    // joined the end of the databases in 0.10.16 (IN-14).
     run.press(&[DOWN, DOWN, DOWN, DOWN, DOWN, SPACE]);
-    run.press(&[DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, SPACE, ENTER]);
+    run.press(&[DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, SPACE, ENTER]);
     run.wait_for("Select deployment/infrastructure");
     run.press(&[DOWN, SPACE, ENTER]); // vercel, the 2nd item
     run.wait_for("Generate .env files with these variables?");

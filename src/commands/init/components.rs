@@ -5,19 +5,17 @@
 //! structurally one of these lists, so this is the general case and blueprints
 //! are the shorthand.
 
-use anyhow::{Context, Result};
-use colored::Colorize;
-use std::path::Path;
-
-use super::shared::{aborted, write_env_files_with_outcome, Outcome, WriteOptions};
+use super::shared::{aborted, write, Outcome, Target, WriteOptions};
 use crate::schema::models::{VarCollection, VarMetadata, VarSource};
 use crate::schema::{component, formatter};
 use crate::utils::string::pluralize;
 use crate::utils::ui::{self, glyph};
+use anyhow::{Context, Result};
+use colored::Colorize;
 
 /// Generate from an explicit component list.
 pub fn handle(
-    path: String,
+    target: &Target,
     opts: WriteOptions,
     verbose: bool,
     components: &[String],
@@ -73,18 +71,21 @@ pub fn handle(
 
     let example_content = formatter::format_env_example(&vars, true)?;
     let template_content = formatter::format_env_template(&vars)?;
-    let outcome =
-        write_env_files_with_outcome(Path::new(&path), &example_content, &template_content, opts)?;
-    if outcome != Outcome::Written {
-        return Ok(outcome);
-    }
-
-    ui::success(format!(
-        "Created .env.example with {} from {}",
-        pluralize(vars.vars.len(), "variable", "variables"),
-        pluralize(components.len(), "component", "components")
-    ));
-    Ok(Outcome::Written)
+    write(
+        target,
+        &vars,
+        &example_content,
+        &template_content,
+        opts,
+        &|| {
+            ui::success(format!(
+                "Created {} with {} from {}",
+                target.template_name(),
+                pluralize(vars.vars.len(), "variable", "variables"),
+                pluralize(components.len(), "component", "components")
+            ))
+        },
+    )
 }
 
 /// Print every component `--with` accepts, grouped by kind.
@@ -148,7 +149,7 @@ pub fn print_catalogue() -> Result<()> {
 /// printed beside every component so the proposal can be checked rather than
 /// taken on faith.
 pub fn handle_detected(
-    path: String,
+    target: &Target,
     opts: WriteOptions,
     verbose: bool,
     found: &[super::detect::Detected],
@@ -158,7 +159,7 @@ pub fn handle_detected(
 
     // What detection saw and chose not to propose (I-240: sqlx with SQLite or
     // no database feature), so an absent database is explained, not a mystery.
-    for note in super::detect::notes(Path::new(&path)) {
+    for note in super::detect::notes(&target.root) {
         ui::say(format!("  {}  {}", glyph::INFO.dimmed(), note.dimmed()));
     }
 
@@ -175,16 +176,19 @@ pub fn handle_detected(
         ));
         let example_content = formatter::format_env_example(&vars, true)?;
         let template_content = formatter::format_env_template(&vars)?;
-        let outcome = write_env_files_with_outcome(
-            Path::new(&path),
+        return write(
+            target,
+            &vars,
             &example_content,
             &template_content,
             opts,
-        )?;
-        if outcome == Outcome::Written {
-            ui::success("Created .env.example (no variables yet)");
-        }
-        return Ok(outcome);
+            &|| {
+                ui::success(format!(
+                    "Created {} (no variables yet)",
+                    target.template_name()
+                ))
+            },
+        );
     }
 
     // The proposal is part of the question when init is about to ask; under
@@ -256,17 +260,20 @@ pub fn handle_detected(
 
     let example_content = formatter::format_env_example(&vars, true)?;
     let template_content = formatter::format_env_template(&vars)?;
-    let outcome =
-        write_env_files_with_outcome(Path::new(&path), &example_content, &template_content, opts)?;
-    if outcome != Outcome::Written {
-        return Ok(outcome);
-    }
-
-    ui::success(format!(
-        "Created .env.example with {}",
-        pluralize(vars.vars.len(), "variable", "variables")
-    ));
-    Ok(Outcome::Written)
+    write(
+        target,
+        &vars,
+        &example_content,
+        &template_content,
+        opts,
+        &|| {
+            ui::success(format!(
+                "Created {} with {}",
+                target.template_name(),
+                pluralize(vars.vars.len(), "variable", "variables")
+            ))
+        },
+    )
 }
 
 /// `evnx init --from-source` — build the template from what the code reads.
@@ -275,10 +282,11 @@ pub fn handle_detected(
 /// else, "required" means "present in `.env.example`", which is circular: the
 /// template cannot notice an entry the code stopped reading three refactors ago,
 /// nor one it started reading last week. The source can.
-pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Result<()> {
-    let root = Path::new(&path);
+pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) -> Result<()> {
+    let root = target.root.as_path();
+    let name = target.template_name();
     let scan = super::source::scan(root).context("Failed to scan the project's source")?;
-    let example = root.join(".env.example");
+    let example = target.template_path();
     let drift = super::source::compare(&scan, &example)?;
 
     let skipped = if scan.symlinked_dirs_skipped > 0 {
@@ -312,6 +320,16 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
             glyph::INFO.dimmed(),
             "Name them instead: evnx init --with <a,b,c>".dimmed()
         ));
+        if opts.json {
+            println!(
+                "{:#}",
+                serde_json::json!({"dry_run": opts.dry_run, "written": false, "added": [],
+                    "skipped": [], "conflicts": [], "env_added": [], "env_created": false,
+                    "env_committable": false, "template": name, "gitignore": [],
+                    "contract": {"action": "unchanged", "file": null, "added": []},
+                    "notices": []})
+            );
+        }
         return Ok(());
     }
 
@@ -365,7 +383,7 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
         }
     }
 
-    let mut summary = vec![format!("{} already in .env.example", drift.matched)];
+    let mut summary = vec![format!("{} already in {name}", drift.matched)];
     if !drift.missing.is_empty() {
         summary.push(format!("{} new", drift.missing.len()));
     }
@@ -382,17 +400,31 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
     // A partial scan cannot say a name is used nowhere, so it says nothing.
     for name in drift.unused.iter().filter(|_| !scan.truncated) {
         println!(
-            "     {}  {} is in .env.example but named nowhere in the source",
+            "     {}  {} is in {} but named nowhere in the source",
             glyph::WARN.yellow(),
-            name
+            name,
+            target.template_name()
         );
     }
 
     if drift.missing.is_empty() {
         ui::say(format!(
-            "\n  {}  .env.example already covers the source.",
+            "\n  {}  {name} already covers the source.",
             glyph::OK.green()
         ));
+        // Nothing to add, and still a project init set up: `.env` from the
+        // template when there is none (N-06), and the contract.
+        let whole = super::shared::template_vars(target)?;
+        let planned = if opts.dry_run || opts.json {
+            Some(super::report::plan_keep(target, &whole)?)
+        } else {
+            None
+        };
+        if !opts.dry_run {
+            super::shared::env_from_template(root, &target.template, !opts.yes)?;
+            super::shared::finish(target, &VarCollection::default(), &whole)?;
+        }
+        super::shared::emit(planned.as_ref(), opts, root);
         return Ok(());
     }
 
@@ -406,7 +438,7 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
 
     if !opts.yes && !super::shared::can_ask() {
         anyhow::bail!(
-            "found {} variables the code reads that .env.example does not declare, \
+            "found {} variables the code reads that {name} does not declare, \
              but there is nobody to confirm with.\n\n\
              Accept them:  evnx init --from-source --yes",
             drift.missing.len()
@@ -414,10 +446,7 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
     }
     if !opts.yes {
         let confirm = super::shared::yes_no()
-            .with_prompt(format!(
-                "Add these {} to .env.example?",
-                drift.missing.len()
-            ))
+            .with_prompt(format!("Add these {} to {name}?", drift.missing.len()))
             .default(true)
             .interact_opt()?;
         if confirm != Some(true) {
@@ -428,18 +457,36 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
 
     // ⚠️ Append, never replace. These are the variables the template is
     // *missing*, so writing them as a whole file would delete the ones it
-    // already had — and an existing `.env.example` is a tracked, hand-maintained
+    // already had — and an existing template is a tracked, hand-maintained
     // file. The first version of this did exactly that, turning a 21-variable
     // template into a 5-variable one.
+    let added = || {
+        ui::success(format!(
+            "Added {} from the source",
+            pluralize(drift.missing.len(), "variable", "variables")
+        ))
+    };
     if example.exists() {
+        // Through `add`'s planner, so a name the user already set in `.env`
+        // is not appended there again below their real value (N-11). Not its
+        // `[vars]` write-back: init keeps the contract itself, below.
+        let plan = crate::commands::add::shared::plan(root, &vars)?;
+        let mut whole = super::shared::template_vars(target)?;
+        whole.vars.extend(plan.to_example.vars.clone());
+        let planned = if opts.dry_run || opts.json {
+            Some(super::report::plan_append(target, &plan, &whole)?)
+        } else {
+            None
+        };
+        if opts.dry_run {
+            super::shared::emit(planned.as_ref(), opts, root);
+            return Ok(());
+        }
         // Protect before writing, as every init path does (I-008). `add` only
         // warns about `.gitignore`, because it runs in someone else's project;
         // `init` owns these rules (N-06, DQ-10).
         let gitignore_line = super::shared::update_gitignore(root)?;
-        // Through `add`'s planner, so a name the user already set in `.env`
-        // is not appended there again below their real value (N-11).
-        let plan = crate::commands::add::shared::plan(root, &vars)?;
-        crate::commands::add::shared::apply(
+        crate::commands::add::shared::apply_files(
             root,
             &plan,
             &|v| formatter::format_addition_from(v, "evnx init --from-source"),
@@ -453,18 +500,23 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
         }
         // A template with no `.env` beside it: create one from it, asking first
         // when there is someone to ask (DQ-10, DQ-14).
-        super::shared::env_from_template(root, !opts.yes)?;
+        super::shared::env_from_template(root, &target.template, !opts.yes)?;
+        added();
+        super::shared::finish(target, &plan.requested, &whole)?;
+        super::shared::emit(planned.as_ref(), opts, root);
     } else {
         let example_content = formatter::format_env_example(&vars, true)?;
         let template_content = formatter::format_env_template(&vars)?;
         // No template yet, so nothing to ask about: this writes `.gitignore`
-        // first and `.env.example` and `.env` after it (I-008).
-        write_env_files_with_outcome(root, &example_content, &template_content, opts)?;
+        // first and the template and `.env` after it (I-008).
+        write(
+            target,
+            &vars,
+            &example_content,
+            &template_content,
+            opts,
+            &added,
+        )?;
     }
-
-    ui::success(format!(
-        "Added {} from the source",
-        pluralize(drift.missing.len(), "variable", "variables")
-    ));
     Ok(())
 }

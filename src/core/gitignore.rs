@@ -440,6 +440,18 @@ fn append_new_section(content: &str, entry: &str) -> String {
 /// and a negation placed above the pattern it carves out of does nothing.
 pub const ENV_ENTRIES: &[&str] = &[".env*", "!.env.example", "!.env.sample", "!.env.template"];
 
+/// The [`ENV_ENTRIES`] `.gitignore` in `project_root` does not hold as a line:
+/// what [`append_entries`] would add there, said before it does (`--dry-run`,
+/// `--json` of `init` and `add`).
+pub fn pending_entries(project_root: &Path) -> Vec<String> {
+    let path = project_root.join(".gitignore");
+    ENV_ENTRIES
+        .iter()
+        .filter(|e| !matches!(check_ignored(&path, e), Ok(GitignoreStatus::AlreadyIgnored)))
+        .map(|e| e.to_string())
+        .collect()
+}
+
 /// Whether git would ignore `filename` under `project_root`.
 ///
 /// ⚠️ Not [`check_ignored`], which compares `.gitignore` lines for exact string

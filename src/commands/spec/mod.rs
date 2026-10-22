@@ -174,7 +174,14 @@ fn entry(
 /// This is the higher-quality source: `VarMetadata` already carries `required`
 /// and `description`, so nothing has to be guessed except the format.
 fn from_components(ids: &[String]) -> Result<(Vec<Entry>, LeftOut)> {
-    let collection = component::resolve(ids)?;
+    from_collection(&component::resolve(ids)?)
+}
+
+/// Entries for a resolved set of variables: [`from_components`]' half after
+/// the catalogue lookup, shared with `init`'s contract (IN-15).
+fn from_collection(
+    collection: &crate::schema::models::VarCollection,
+) -> Result<(Vec<Entry>, LeftOut)> {
     // The catalogue has no order of its own; alphabetical, as before.
     let mut names: Vec<&String> = collection.vars.keys().collect();
     names.sort();
@@ -395,6 +402,17 @@ fn toml_string(s: &str) -> String {
 /// ⛔ Nothing is written that does not parse: [`config::save`] checks, and a
 /// failure leaves the file as it was (I-179).
 fn write_into(path: &Path, entries: &[Entry], merge: bool) -> Result<usize> {
+    write_into_with(path, entries, merge, GENERATED, MERGED)
+}
+
+/// [`write_into`] with the comment block the caller's entries go under.
+fn write_into_with(
+    path: &Path,
+    entries: &[Entry],
+    merge: bool,
+    generated: &str,
+    merged: &str,
+) -> Result<usize> {
     let existing = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -437,13 +455,65 @@ fn write_into(path: &Path, entries: &[Entry], merge: bool) -> Result<usize> {
     }
     out.push_str(&render(
         new.iter().copied(),
-        if has_vars { MERGED } else { GENERATED },
+        if has_vars { merged } else { generated },
     ));
 
     let written = config::save(path, &out)?;
     // A symlinked config is written through to its target, and said (DEC-SP13).
     crate::core::safe_write::report(&written);
     Ok(new.len())
+}
+
+/// The comment above the `[vars]` entries `evnx init` writes.
+const INIT_GENERATED: &str =
+    "\n# ── Variable contract ───────────────────────────────────────────────\n\
+     # Written by `evnx init` for the variables it set up: `evnx validate`\n\
+     # checks the project against it. Review it, then commit it.\n";
+
+/// `[vars]` for the variables `init` set up, written into the `.evnx.toml` at
+/// `path` — created when it does not exist, appended to when it has no
+/// `[vars]` yet (IN-15, DQ-18, DQ-27). Returns the names written.
+///
+/// ⚠️ The same entries `spec init --with` writes (catalogue `required` and
+/// `description`, a format only when the sample fits, `secret` by the strict
+/// name rule) through the same writer, so the contract does not depend on
+/// which command made it. With nothing to declare, an empty `[vars]` is
+/// written: the project has a contract, and `evnx add` records into it.
+/// A file that already has `[vars]` is `writeback::record`'s, not this.
+pub(crate) fn contract_into(
+    path: &Path,
+    vars: &crate::schema::models::VarCollection,
+) -> Result<Vec<String>> {
+    let (entries, left_out) = from_collection(vars)?;
+    for (name, format) in &left_out {
+        ui::warning(format!(
+            "{name}: left out `format = \"{}\"` in [vars] — the sample value is not {}",
+            format_name(format),
+            format.describe()
+        ));
+    }
+    if entries.is_empty() {
+        let existing = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(e).with_context(|| format!("Failed to read {}", path.display())),
+        };
+        if config::has_vars_section(&existing) {
+            return Ok(Vec::new());
+        }
+        let mut out = existing;
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(INIT_GENERATED);
+        out.push_str("\n[vars]\n");
+        let written = config::save(path, &out)?;
+        crate::core::safe_write::report(&written);
+        return Ok(Vec::new());
+    }
+    let names = entries.iter().map(|e| e.name.clone()).collect();
+    write_into_with(path, &entries, true, INIT_GENERATED, MERGED)?;
+    Ok(names)
 }
 
 #[cfg(test)]

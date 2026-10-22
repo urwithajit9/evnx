@@ -189,9 +189,10 @@ pub fn may_generate(key: &str) -> bool {
 /// character after the prefix (`sk_live_xxxx…`, `ghp_0000…`, `AKIA****…`), or
 /// the `user:password@localhost` URL evnx writes into new projects.
 ///
-/// ⚠️ For rule matches only. The name and entropy heuristics already drop
-/// placeholders; the format rules did not, so `sk_live_xxxxxxxx…` was reported
-/// high with "matches a live key format, not a placeholder".
+/// ⚠️ For rule matches, and for a value the contract declares secret (R-init).
+/// The name and entropy heuristics already drop placeholders; the format rules
+/// did not, so `sk_live_xxxxxxxx…` was reported high with "matches a live key
+/// format, not a placeholder".
 ///
 /// ⛔ A run of **eight** identical characters: a real key is random, and eight
 /// in a row is not something randomness produces in a key's length.

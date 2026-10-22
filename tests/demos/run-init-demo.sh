@@ -24,10 +24,10 @@ scene() { echo; echo "================ $1 ================"; D="$DEMO_ROOT/$1"; 
 S0() { scene S0; run "$EVNX" --version; run "$EVNX" init --help | head -n 30 >/dev/null; echo "(help truncated; see slide 'Flag reference')"; }
 S1() { scene S1; run "$EVNX" init --yes; expect 0 "blank init"; run ls -A; run cat .env.example; run cat .gitignore
   check "says 'no variables yet', not 'empty'" bash -c "'$EVNX' init --yes --force | grep -q 'no variables yet'"; }
-S2() { scene S2; run "$EVNX" init --yes; run "$EVNX" init --yes; expect 2 "second init refuses"; echo "KEEP=1" > .env; run "$EVNX" init --yes --force; expect 0 "--force replaces .env.example"; run cat .env
+S2() { scene S2; run "$EVNX" init --yes; run "$EVNX" init --yes; expect 0 "FIXED DQ-31 (R-init): a second init --yes is already set up, not a refusal"; echo "KEEP=1" > .env; run "$EVNX" init --yes --force; expect 0 "--force replaces .env.example"; run cat .env
   check ".env still holds KEEP=1 (never overwritten)" grep -qx 'KEEP=1' .env; }
 S3() { scene S3; run "$EVNX" init --list-components; expect 0 "list components"
-  check "51 components" bash -c "[ \$('$EVNX' init --list-components | grep -cE '^    [a-z_0-9]+ ') -eq 51 ]"
+  check "56 components (R-init, IN-14: astro, hono, neon, turnstile, fly)" bash -c "[ \$('$EVNX' init --list-components | grep -cE '^    [a-z_0-9]+ ') -eq 56 ]"
   check "aliases are listed" bash -c "'$EVNX' init --list-components | grep -q 'PostgreSQL (also: postgres, pg)'"; }
 S4() { scene S4; run "$EVNX" init --with vite,supabase,clerk,vercel --yes; expect 0 "pulse stack"; run cat .env.example
   check "15 variables (R-init, I-002b: Clerk's and Vercel's NEXT_PUBLIC_ names are Next.js only)" bash -c "[ \$(grep -cE '^[A-Z][A-Z0-9_]*=' .env.example) -eq 15 ]"
@@ -100,36 +100,38 @@ S21() { scene S21; echo "Browser names on a Vite stack; compose.yaml"; run "$EVN
   run "$EVNX" init --detect -p compose; expect 0 "detect beside compose.yaml"
   check "FIXED I-257 (R-init): compose.yaml is read (core::project::compose_files)" grep -q '^DATABASE_URL=' compose/.env.example; }
 S22() { scene S22; echo "The contract: .evnx.toml"; repo new; run "$EVNX" init --with redis --yes -p new; expect 0 "init in a repo"
-  check "KNOWN I-242: no .evnx.toml is created (decided DQ-18: always)" test ! -e new/.evnx.toml
+  check "FIXED I-242 (R-init, DQ-18): .evnx.toml is created with [vars]" grep -q '^\[vars.REDIS_URL\]' new/.evnx.toml
   repo vars; printf '[vars.EXISTING]\nrequired = true\n' > vars/.evnx.toml; run "$EVNX" init --with redis --yes -p vars; expect 0 "beside a contract"
-  check "KNOWN I-242: new names are not recorded into [vars] (decided DQ-17)" bash -c "! grep -q 'REDIS' vars/.evnx.toml"
+  check "FIXED I-242 (DQ-17): new names are recorded into [vars]; the entry there is kept" bash -c "grep -q '^\[vars.REDIS_URL\]' vars/.evnx.toml && head -2 vars/.evnx.toml | grep -qx 'required = true'"
   repo novars; printf '[scan]\nseverity = "high"\n' > novars/.evnx.toml; run "$EVNX" init --with redis --yes -p novars; expect 0 "beside a config without [vars]"
-  check "KNOWN DQ-27: a config without [vars] gets none (decided: [vars.NAME] tables appended)" bash -c "! grep -q '^\[vars' novars/.evnx.toml"
+  check "FIXED DQ-27 (R-init): [vars.NAME] tables are appended, [scan] kept" bash -c "grep -q '^\[vars.REDIS_URL\]' novars/.evnx.toml && head -1 novars/.evnx.toml | grep -qx '\[scan\]'"
   repo mono; mkdir -p mono/apps/web; run "$EVNX" init --with nextjs --yes -p mono/apps/web; expect 0 "a package below the git root"
-  check "KNOWN DQ-26: no .evnx.toml in apps/web or at the root (decided: in the target folder)" bash -c "[ ! -e mono/apps/web/.evnx.toml ] && [ ! -e mono/.evnx.toml ]"; }
+  check "FIXED DQ-26 (R-init): the package gets its own .evnx.toml, the root none" bash -c "[ -e mono/apps/web/.evnx.toml ] && [ ! -e mono/.evnx.toml ]"; }
 S23() { scene S23; echo "The project's own template"; repo sample; printf 'FROM_SAMPLE=x\n' > sample/.env.sample
-  run "$EVNX" init --with postgresql --yes -p sample; expect 0 "beside .env.sample"
-  check "KNOWN I-295: a second template .env.example is written (decided DQ-28: the project's template)" test -e sample/.env.example
-  repo cfg; printf '[defaults]\nexample = ".env.template"\n' > cfg/.evnx.toml; printf 'TPL=1\n' > cfg/.env.template
-  run "$EVNX" init --with redis --yes -p cfg; expect 0 "[defaults] example names .env.template"
-  check "KNOWN I-295: [defaults] example is ignored, .env.example is written" test -e cfg/.env.example; }
+  run "$EVNX" init --with postgresql --yes -p sample; expect 2 "FIXED I-295 (R-init, DQ-28): .env.sample is the template; a stack over it is refused, as over .env.example"
+  check "FIXED I-295: no second template" test ! -e sample/.env.example
+  run "$EVNX" init --with postgresql --yes --force -p sample; expect 0 "--force replaces .env.sample"
+  check "the stack is in .env.sample" grep -q '^DATABASE_URL=' sample/.env.sample
+  repo cfg; printf '[defaults]\nexample = ".env.template"\n' > cfg/.evnx.toml
+  run "$EVNX" init --with redis --yes -p cfg; expect 0 "[defaults] example names .env.template, not there yet"
+  check "FIXED I-295: [defaults] example is the file written; no .env.example" bash -c "grep -q '^REDIS_URL=' cfg/.env.template && [ ! -e cfg/.env.example ]"; }
 S24() { scene S24; echo "Other env files"; repo named; printf '[defaults]\nenv_name = "local"\n' > named/.evnx.toml
   logrun named.out "$EVNX" init --yes -p named; expect 0 "[defaults] env_name = local"
-  check "KNOWN I-296: nothing says the project reads .env.local (decided DQ-32: one notice line)" bash -c "! grep -q 'env.local' named.out"
+  check "FIXED I-296 (R-init, DQ-32): the run says env_name points at .env.local" grep -q 'env.local' named.out
   repo multi; for n in production staging test; do printf "APP_ENV=%s\n" "$n" > "multi/.env.$n"; done
   logrun multi.out "$EVNX" init --with stripe --yes -p multi; expect 0 ".env.production, .env.staging, .env.test present"
-  check "KNOWN I-296: nothing names the env files left unchanged" bash -c "! grep -q 'env.production' multi.out"
+  check "FIXED I-296: the env files left unchanged are named, with how to check one" bash -c "grep -q 'env.production' multi.out && grep -q 'validate --env-name production' multi.out"
   repo rc; printf 'export A=1\n' > rc/.envrc
   logrun rc.out "$EVNX" init --yes -p rc; expect 0 "beside a direnv .envrc"
   check ".envrc is ignored by .env* (stays, DQ-33)" git -C rc check-ignore -q .envrc
-  check "KNOWN I-174: nothing says .envrc is now ignored (decided DQ-33: one line)" bash -c "! grep -q 'envrc' rc.out"; }
+  check "FIXED I-174 (R-init, DQ-33): one line says so, and how to commit it" grep -q '!.envrc' rc.out; }
 S25() { scene S25; echo "An existing .env; a fresh clone"; repo old; printf 'DATABASE_URL=postgres://real@db/app\nSECRET_KEY=s3cr3t\n' > old/.env
   run "$EVNX" init --with nextjs,postgresql --yes -p old; expect 0 "beside a real .env"
-  check ".env values kept" grep -qx 'SECRET_KEY=s3cr3t' old/.env
-  check "KNOWN I-297: .env keeps only its 2 names (decided DQ-29: the missing ones appended)" bash -c "[ \$(grep -cE '^[A-Z][A-Z0-9_]*=' old/.env) -eq 2 ]"
+  check ".env values kept" bash -c "grep -qx 'SECRET_KEY=s3cr3t' old/.env && [ \$(grep -c '^DATABASE_URL=' old/.env) -eq 1 ]"
+  check "FIXED I-297 (R-init, DQ-29): .env has every name the template has" bash -c 'for n in $(grep -oE "^[A-Z][A-Z0-9_]*" old/.env.example); do grep -q "^$n=" old/.env || exit 1; done'
   repo clone; printf 'A=\nB=\n' > clone/.env.example
-  run "$EVNX" init --yes -p clone; expect 2 "KNOWN DQ-31: init --yes on a fresh clone refuses (decided: keep the template, create .env, exit 0)"
-  check "KNOWN DQ-31: no .env" test ! -e clone/.env; }
+  run "$EVNX" init --yes -p clone; expect 0 "FIXED DQ-31 (R-init): init --yes on a fresh clone keeps the template and creates .env"
+  check "FIXED DQ-31: .env is a copy of the template" cmp -s clone/.env clone/.env.example; }
 S26() { scene S26; echo "The target's .evnx.toml, run from another folder"; repo broken; printf '[vars\nbroken' > broken/.evnx.toml
   run "$EVNX" init --yes -p broken; expect 2 "FIXED I-298 (R-init): a malformed .evnx.toml at the target stops init"
   check "FIXED I-298: nothing written beside it" bash -c "[ ! -e broken/.env.example ] && [ ! -e broken/.env ] && [ ! -e broken/.gitignore ]"

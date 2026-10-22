@@ -313,9 +313,16 @@ pub const DECLARED_SECRET: &str = "Declared secret";
 /// declaration says "this variable holds a secret", not "every string ever
 /// found here is one" — flagging `API_KEY=` because the spec declares it would
 /// train people to ignore the scanner.
+///
+/// ⚠️ Also not a stand-in ([`crate::core::classify::is_stand_in`]), the rule
+/// every other path of the scanner drops: once `evnx init` declared
+/// `DATABASE_URL` secret in the contract it writes (R-init, IN-15), the
+/// `postgresql://user:password@localhost:5432/dbname` it had just put in `.env`
+/// was a high "Declared secret", and a new project no longer scanned clean
+/// (N-20).
 fn value_is_worth_reporting(value: &str) -> bool {
     let v = value.trim();
-    if v.is_empty() {
+    if v.is_empty() || crate::core::classify::is_stand_in(v) {
         return false;
     }
     let upper = v.to_ascii_uppercase();
@@ -783,6 +790,21 @@ impl SecretDetector for RuleDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// N-20 with a contract (R-init): a declared secret holding the stand-in
+    /// `evnx init` writes is not reported; a value that could be real is.
+    #[test]
+    fn t_n20_a_declared_secret_holding_a_stand_in_is_not_reported() {
+        assert!(!value_is_worth_reporting(
+            "postgresql://user:password@localhost:5432/dbname"
+        ));
+        assert!(!value_is_worth_reporting("your_db_password_value"));
+        assert!(!value_is_worth_reporting("sk_live_xxxxxxxxxxxxxxxx"));
+        assert!(value_is_worth_reporting("9f3a7c21b85e4d0fa62c"));
+        assert!(value_is_worth_reporting(
+            "postgresql://app:S3cr3t-pw@db.internal:5432/app"
+        ));
+    }
 
     #[test]
     fn test_registry_new_has_default_detectors() {

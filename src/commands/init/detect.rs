@@ -62,6 +62,8 @@ fn package_table() -> BTreeMap<&'static str, &'static str> {
         ("fastify", "express_fastify"),
         ("@nestjs/core", "nest"),
         ("@sveltejs/kit", "sveltekit"),
+        ("astro", "astro"),
+        ("hono", "hono"),
         // ── Python ──
         ("django", "django"),
         ("fastapi", "fastapi_flask"),
@@ -92,6 +94,7 @@ fn package_table() -> BTreeMap<&'static str, &'static str> {
         ("redis", "redis"),
         ("ioredis", "redis"),
         ("@elastic/elasticsearch", "elasticsearch"),
+        ("@neondatabase/serverless", "neon"),
         ("@supabase/supabase-js", "supabase"),
         ("@supabase/ssr", "supabase"),
         ("firebase", "firebase"),
@@ -204,6 +207,7 @@ pub fn detect(root: &Path) -> Result<Vec<Detected>> {
     for (marker, component) in [
         (".github/workflows", "github_actions"),
         ("vercel.json", "vercel"),
+        ("fly.toml", "fly"),
         ("Dockerfile", "docker"),
     ] {
         if root.join(marker).exists() {

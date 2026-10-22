@@ -113,6 +113,10 @@ pub struct Plan {
     /// `.env` does not exist yet and will be created to hold the values
     /// (`add custom`, DEC-U8-1): a missing `.env` is planned as empty.
     pub create_env_file: bool,
+    /// The project's template (DQ-28): `[defaults] example`, else the
+    /// `.env.example`, `.env.sample` or `.env.template` present, else
+    /// `.env.example`. It was always `.env.example` (I-295).
+    pub template: crate::core::config::Template,
 }
 
 impl Plan {
@@ -134,6 +138,16 @@ impl Plan {
         names.sort_unstable();
         names
     }
+}
+
+/// The project's template in `output_path` (DQ-28), for a message that names
+/// it before there is a plan. A config that does not parse names nothing here;
+/// the plan reports it.
+pub fn template_of(output_path: &Path) -> crate::core::config::Template {
+    let config = crate::core::config::load(output_path)
+        .map(|l| l.config)
+        .unwrap_or_default();
+    crate::core::config::Template::of(output_path, &config)
 }
 
 /// Sort `requested` against what `.env.example` and `.env` in `output_path`
@@ -159,7 +173,9 @@ pub fn plan_with(
     requested: &VarCollection,
     create_env_file: bool,
 ) -> Result<Plan> {
-    let example = read_assignments(&output_path.join(".env.example"))?;
+    let config = crate::core::config::load(output_path)?.config;
+    let template = crate::core::config::Template::of(output_path, &config);
+    let example = read_assignments(&template.path(output_path))?;
     let env_path = output_path.join(".env");
     let mut env = read_assignments(&env_path)?;
     let create_env_file = create_env_file && env.is_none();
@@ -171,6 +187,7 @@ pub fn plan_with(
         requested: requested.clone(),
         env_exists: env_path.exists(),
         create_env_file,
+        template,
         ..Plan::default()
     };
 
@@ -211,7 +228,7 @@ pub fn plan_with(
 /// the parser refuses (a typo halfway down a hand-edited `.env`) is read line by
 /// line instead, so a syntax error elsewhere does not stop `add`, as it never
 /// did.
-fn read_assignments(path: &Path) -> Result<Option<IndexMap<String, String>>> {
+pub(crate) fn read_assignments(path: &Path) -> Result<Option<IndexMap<String, String>>> {
     if !path.exists() {
         return Ok(None);
     }
@@ -273,8 +290,33 @@ pub fn apply(
     create_env: Option<bool>,
     announce: bool,
 ) -> Result<Applied> {
+    let applied = apply_files(
+        output_path,
+        plan,
+        render,
+        example_render,
+        verbose,
+        create_env,
+        announce,
+    )?;
+    record_contract(output_path, plan, verbose);
+    Ok(applied)
+}
+
+/// [`apply`] without the `[vars]` write-back: for `init`, which keeps the
+/// contract itself (IN-15) and would otherwise be told to run `spec init`
+/// about a file it is about to write.
+pub fn apply_files(
+    output_path: &Path,
+    plan: &Plan,
+    render: &dyn Fn(&VarCollection) -> Result<String>,
+    example_render: Option<&Render<'_>>,
+    verbose: bool,
+    create_env: Option<bool>,
+    announce: bool,
+) -> Result<Applied> {
     let mut applied = Applied::default();
-    let example_path = output_path.join(".env.example");
+    let example_path = plan.template.path(output_path);
     let env_path = output_path.join(".env");
     let write_example = !plan.to_example.vars.is_empty();
     let write_env = (plan.env_exists || plan.create_env_file) && !plan.to_env.vars.is_empty();
@@ -322,17 +364,19 @@ pub fn apply(
             }
             String::new()
         };
-        let body = addition.trim();
-        let updated = if existing.trim().is_empty() {
-            format!("{body}\n")
-        } else {
-            let tail = in_line_endings_of(&existing, format!("\n\n{body}\n"));
-            format!("{}{tail}", existing.trim_end())
-        };
-        write_private(&env_path, updated)?;
+        append_block(&env_path, &existing, &addition)?;
         applied.env_committable = env_is_committable(output_path);
         if announce && applied.env_committable {
-            warn_env_is_committable();
+            // The shared wording (E6), then add's way out when no rule covers it.
+            if crate::utils::protect::warn_if_exposed(output_path, ".env")
+                == crate::core::gitignore::Exposure::Unignored
+            {
+                ui::warning_detail(format!(
+                    "     {}  {}",
+                    glyph::ARROW.dimmed(),
+                    "evnx doctor --fix".cyan()
+                ));
+            }
         }
         if verbose {
             // ⚠️ Said "with TODO placeholders" until 0.10.2, two releases after
@@ -342,17 +386,34 @@ pub fn apply(
     } else if !plan.env_exists {
         if let Some(ask) = create_env {
             applied.env_created =
-                crate::commands::init::shared::env_from_template(output_path, ask)?;
+                crate::commands::init::shared::env_from_template(output_path, &plan.template, ask)?;
         }
     }
 
-    // 4. The contract, when the project keeps one.
+    Ok(applied)
+}
+
+/// The contract, when the project keeps one: new names into `[vars]`.
+pub fn record_contract(output_path: &Path, plan: &Plan, verbose: bool) {
     match crate::commands::spec::writeback::record(output_path, &plan.requested) {
         Ok(outcome) => crate::commands::spec::writeback::report(&outcome, verbose),
         Err(e) => eprintln!("  could not update [vars]: {e:#}"),
     }
+}
 
-    Ok(applied)
+/// Append `addition` to the env file at `path`, whose text is `existing`: a
+/// blank line, the block, the file's own line endings; 0600 when new, an
+/// existing file's mode kept. Shared with `init`, which catches an existing
+/// `.env` up with a new template (DQ-29).
+pub(crate) fn append_block(path: &Path, existing: &str, addition: &str) -> Result<()> {
+    let body = addition.trim();
+    let updated = if existing.trim().is_empty() {
+        format!("{body}\n")
+    } else {
+        let tail = in_line_endings_of(existing, format!("\n\n{body}\n"));
+        format!("{}{tail}", existing.trim_end())
+    };
+    write_private(path, updated)
 }
 
 /// Fail now, naming the file, if `path` cannot be written later.
@@ -372,7 +433,7 @@ fn check_writable(path: &Path, dir: &Path) -> Result<()> {
 
 // ⚠️ Both name the file. A bare `?` printed only `Permission denied (os error
 // 13)`, with nothing to say which file (N-14b).
-fn read(path: &Path) -> Result<String> {
+pub(crate) fn read(path: &Path) -> Result<String> {
     fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))
 }
 
@@ -430,18 +491,25 @@ pub fn confirm_and_apply(
     mode: &Mode,
 ) -> Result<Outcome> {
     let plan = plan_with(output_path, requested, flow.env_from_values)?;
+    // For `--json`, worked out before the write, as `init` does (DQ-21): the
+    // `.gitignore` entries a new `.env` brings, and the `[vars]` record.
+    let extra = if mode.json {
+        Some(JsonExtra::of(output_path, &plan)?)
+    } else {
+        None
+    };
 
     if mode.dry_run {
-        if mode.json {
-            print_json(&plan, true, &Applied::default());
+        if let Some(extra) = &extra {
+            print_json(&plan, true, &Applied::default(), extra);
         } else {
             print_dry_run(&plan, flow);
         }
         return Ok(Outcome::Unchanged);
     }
     if plan.is_empty() {
-        if mode.json {
-            print_json(&plan, false, &Applied::default());
+        if let Some(extra) = &extra {
+            print_json(&plan, false, &Applied::default(), extra);
         } else {
             report(&plan, flow, true);
         }
@@ -466,15 +534,17 @@ pub fn confirm_and_apply(
         // while `.env` got the names too. A `.env` created afterwards from the
         // template is asked about on its own.
         let writes_env = !plan.to_env.vars.is_empty() && (plan.env_exists || plan.create_env_file);
+        let both = format!("{} and .env", plan.template.name);
         let file = match (plan.to_example.vars.is_empty(), writes_env) {
-            (false, true) => ".env.example and .env",
-            (false, false) => ".env.example",
+            (false, true) => both.as_str(),
+            (false, false) => plan.template.name.as_str(),
             (true, _) => ".env",
         };
         println!("{}", (flow.preview)(subset).dimmed());
         if !plan.present.is_empty() {
             ui::info(format!(
-                "Already in .env.example, skipped: {}",
+                "Already in {}, skipped: {}",
+                plan.template.name,
                 plan.present.join(", ")
             ));
         }
@@ -497,8 +567,8 @@ pub fn confirm_and_apply(
         Some(mode.interactive()),
         !mode.json,
     )?;
-    if mode.json {
-        print_json(&plan, false, &applied);
+    if let Some(extra) = &extra {
+        print_json(&plan, false, &applied, extra);
     } else {
         // Asked: the conflicts were shown with the question.
         report(&plan, flow, !mode.interactive());
@@ -524,10 +594,11 @@ fn print_dry_run(plan: &Plan, flow: &Flow) {
         }
     );
     if plan.to_example.vars.is_empty() {
-        println!("  .env.example: nothing to add");
+        println!("  {}: nothing to add", plan.template.name);
     } else {
         println!(
-            "  .env.example: would add {}: {}",
+            "  {}: would add {}: {}",
+            plan.template.name,
             count(plan.to_example.vars.len(), "variable"),
             names(&plan.to_example)
         );
@@ -556,17 +627,23 @@ fn print_dry_run(plan: &Plan, flow: &Flow) {
             names(&plan.to_env)
         );
     } else if !plan.is_empty() {
-        println!("  .env: would be created from .env.example (with .gitignore first)");
+        println!(
+            "  .env: would be created from {} (with .gitignore first)",
+            plan.template.name
+        );
     }
 }
 
 /// `--json`: the result as one document. Names only, and conflicts with the
 /// `.env.example` values they compare; nothing from `.env`, ever.
 ///
-/// Stable fields (I-026): `dry_run`, `written`, `added` (to `.env.example`),
+/// Stable fields (I-026): `dry_run`, `written`, `added` (to the template),
 /// `skipped` (already there, same value), `conflicts` (`name`, `existing`,
-/// `new`; kept), `env_added`, `env_created`, `env_committable`.
-fn print_json(plan: &Plan, dry_run: bool, applied: &Applied) {
+/// `new`; kept), `env_added`, `env_created`, `env_committable`; and since
+/// 0.10.16, shared with `init --json` (DQ-21, T-INIT-36): `template`,
+/// `gitignore` (entries added), `contract` (`action`, `file`, `added`),
+/// `notices`.
+fn print_json(plan: &Plan, dry_run: bool, applied: &Applied, extra: &JsonExtra) {
     fn sorted(v: &VarCollection) -> Vec<&str> {
         let mut n: Vec<&str> = v.vars.keys().map(String::as_str).collect();
         n.sort_unstable();
@@ -585,8 +662,39 @@ fn print_json(plan: &Plan, dry_run: bool, applied: &Applied) {
         "env_added": sorted(&plan.to_env),
         "env_created": applied.env_created,
         "env_committable": applied.env_committable,
+        "template": plan.template.name,
+        "gitignore": if dry_run || applied.env_created || plan.create_env_file {
+            extra.gitignore.clone()
+        } else {
+            Vec::new()
+        },
+        "contract": extra.contract,
+        "notices": Vec::<String>::new(),
     });
     println!("{doc:#}");
+}
+
+/// The `--json` fields worked out before the write.
+pub struct JsonExtra {
+    /// What `.gitignore` gains if this run creates `.env`.
+    gitignore: Vec<String>,
+    contract: serde_json::Value,
+}
+
+impl JsonExtra {
+    fn of(output_path: &Path, plan: &Plan) -> Result<JsonExtra> {
+        let creates_env = !plan.env_exists && !plan.is_empty();
+        Ok(JsonExtra {
+            gitignore: if creates_env {
+                crate::core::gitignore::pending_entries(output_path)
+            } else {
+                Vec::new()
+            },
+            contract: crate::commands::spec::writeback::pending(output_path, &plan.requested)?
+                .0
+                .json(),
+        })
+    }
 }
 
 /// Print what [`apply`] did: the conflicts (when `show_conflicts`), then one
@@ -614,15 +722,17 @@ pub fn report(plan: &Plan, flow: &Flow, show_conflicts: bool) {
         ui::success(format!("Added {}{tail}", sentence(added)));
     } else if plan.to_env.vars.is_empty() {
         ui::info(format!(
-            "Nothing to add: {} already in .env.example",
-            sentence(plan.requested.vars.len())
+            "Nothing to add: {} already in {}",
+            sentence(plan.requested.vars.len()),
+            plan.template.name
         ));
     }
     let env_only = plan.env_only();
     if plan.env_exists && !env_only.is_empty() {
         ui::info(format!(
-            "Added {} to .env that .env.example already had: {}",
+            "Added {} to .env that {} already had: {}",
             count(env_only.len(), "variable"),
+            plan.template.name,
             env_only.join(", ")
         ));
     }
@@ -635,8 +745,9 @@ pub fn print_conflicts(plan: &Plan) {
         return;
     }
     ui::warning(format!(
-        "{} with a different value in .env.example: kept as it is",
-        count(plan.conflicts.len(), "variable")
+        "{} with a different value in {}: kept as it is",
+        count(plan.conflicts.len(), "variable"),
+        plan.template.name
     ));
     for c in &plan.conflicts {
         ui::warning_detail(format!(
@@ -688,15 +799,6 @@ pub fn format_var_line(
 
 fn env_is_committable(project_root: &Path) -> bool {
     !crate::core::gitignore::env_file_is_protected(project_root, ".env")
-}
-
-fn warn_env_is_committable() {
-    ui::warning(".env is not covered by .gitignore — it can be committed");
-    ui::warning_detail(format!(
-        "     {}  {}",
-        glyph::ARROW.dimmed(),
-        "evnx doctor --fix".cyan()
-    ));
 }
 
 #[cfg(test)]

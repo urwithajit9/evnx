@@ -80,6 +80,30 @@
           "defaults": {
             "ORIGIN": "http://localhost:5173"
           }
+        },
+        "astro": {
+          "display_name": "Astro",
+          "vars": ["PUBLIC_API_URL", "HOST", "PORT"],
+          "descriptions": {
+            "PUBLIC_API_URL": "Base URL the browser calls (only PUBLIC_ variables reach client code)",
+            "HOST": "Host the @astrojs/node standalone server listens on",
+            "PORT": "Port the @astrojs/node standalone server listens on"
+          },
+          "defaults": {
+            "HOST": "localhost",
+            "PORT": "4321"
+          }
+        },
+        "hono": {
+          "display_name": "Hono",
+          "vars": ["PORT", "NODE_ENV"],
+          "descriptions": {
+            "PORT": "Port the server listens on (Hono reads none itself: pass it to serve())"
+          },
+          "defaults": {
+            "PORT": "3000",
+            "NODE_ENV": "development"
+          }
         }
       }
     },
@@ -324,6 +348,20 @@
           "FIREBASE_STORAGE_BUCKET"
         ],
         "category": "Backend-as-a-Service"
+      },
+      "neon": {
+        "display_name": "Neon",
+        "vars": ["DATABASE_URL", "DATABASE_URL_UNPOOLED"],
+        "defaults": {
+          "DATABASE_URL": "postgresql://user:password@ep-example-123456-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require",
+          "DATABASE_URL_UNPOOLED": "postgresql://user:password@ep-example-123456.us-east-2.aws.neon.tech/neondb?sslmode=require"
+        },
+        "descriptions": {
+          "DATABASE_URL": "Pooled connection (the -pooler host): for the app and serverless functions",
+          "DATABASE_URL_UNPOOLED": "Direct connection: for migrations and pg_dump"
+        },
+        "category": "Database",
+        "required": ["DATABASE_URL"]
       }
     },
 
@@ -387,6 +425,15 @@
           "GOOGLE_CALLBACK_URL"
         ],
         "category": "Authentication"
+      },
+      "turnstile": {
+        "display_name": "Cloudflare Turnstile",
+        "vars": ["TURNSTILE_SITE_KEY", "TURNSTILE_SECRET_KEY"],
+        "descriptions": {
+          "TURNSTILE_SITE_KEY": "Site key for the widget, public (Cloudflare's always-pass test key: 1x00000000000000000000AA)",
+          "TURNSTILE_SECRET_KEY": "Secret key for server-side Siteverify (test key: 1x0000000000000000000000000000000AA; never deploy it)"
+        },
+        "category": "Bot protection"
       }
     },
 
@@ -614,6 +661,14 @@
         "DOCKER_DEFAULT_PLATFORM": "linux/amd64"
       },
       "category": "Containerization"
+    },
+    "fly": {
+      "display_name": "Fly.io",
+      "vars": ["FLY_API_TOKEN"],
+      "descriptions": {
+        "FLY_API_TOKEN": "Deploy token flyctl reads in CI (fly tokens create deploy); FLY_APP_NAME and FLY_REGION are set by Fly itself"
+      },
+      "category": "Deployment Platform"
     }
   },
 
