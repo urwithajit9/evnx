@@ -55,7 +55,8 @@ S12() { scene S12; run bash -c "echo '1' | '$EVNX' init"; expect 2 "no terminal 
   check "...says to add --yes" bash -c "'$EVNX' init --with stripe </dev/null 2>&1 | grep -q 'evnx init --with stripe --yes'"; }
 S13() { scene S13; run "$EVNX" -q init --yes; expect 0 "quiet init"
   check "-q prints nothing" bash -c "rm -f .env* .gitignore; [ -z \"\$('$EVNX' -q init --yes 2>&1)\" ]"; }
-S14() { scene S14; echo "Agent-style run: no terminal, flags only, machine-checkable exit codes"; run "$EVNX" init --with nextjs,postgresql,stripe --yes </dev/null; expect 0 "agent init"; run "$EVNX" init --with nextjs --yes </dev/null; expect 2 "agent re-run is refused, not silently overwritten"; }
+S14() { scene S14; echo "Agent-style run: no terminal, flags only, machine-checkable exit codes"; run "$EVNX" init --with nextjs,postgresql,stripe --yes </dev/null; expect 0 "agent init"; run "$EVNX" init --with nextjs --yes </dev/null; expect 2 "agent re-run is refused, not silently overwritten"
+  check "FIXED I-302 (R-init): the refusal names evnx add, which keeps the template" bash -c "'$EVNX' init --with nextjs --yes </dev/null 2>&1 | grep -q 'evnx add blueprint <id> or evnx add service <id>'"; }
 S15() { scene S15; echo "Aliases write exactly what the id writes"; run "$EVNX" init --with next,pg --yes; expect 0 "aliases next,pg"
   mkdir ids && (cd ids && "$EVNX" init --with nextjs,postgresql --yes >/dev/null 2>&1)
   check "same file as nextjs,postgresql" bash -c "diff <(grep -v '^# Generated' .env.example) <(grep -v '^# Generated' ids/.env.example)"

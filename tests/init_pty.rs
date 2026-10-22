@@ -551,3 +551,35 @@ fn t_dq30_ci_false_still_shows_the_menu() {
     let (_, code) = run.finish();
     assert_eq!(code, 0);
 }
+
+/// I-303: under `CI` at a real terminal the refusal gives `CI` as the
+/// reason; it said "there is no terminal", which was not why.
+#[test]
+fn t_i303_ci_is_named_as_the_reason() {
+    let d = TempDir::new().unwrap();
+    let s = Pty::spawn_shell(d.path(), "CI=true \"$EVNX\" init; echo \"rc=$?\"");
+    let (out, _) = s.finish();
+    assert!(out.contains("rc=2"), "{out}");
+    assert!(out.contains("CI is set, so init does not ask"), "{out}");
+    assert!(!out.contains("no terminal"), "{out}");
+
+    let s = Pty::spawn_shell(d.path(), "CI=1 \"$EVNX\" init --with redis; echo \"rc=$?\"");
+    let (out, _) = s.finish();
+    assert!(out.contains("rc=2"), "{out}");
+    assert!(out.contains("CI is set, so init does not ask"), "{out}");
+    assert!(out.contains("evnx init --with redis --yes"), "{out}");
+}
+
+/// I-303: without `CI` the refusal still names the missing terminal.
+#[test]
+fn t_i303_without_ci_a_missing_terminal_is_the_reason() {
+    let d = TempDir::new().unwrap();
+    let s = Pty::spawn_shell(d.path(), "\"$EVNX\" init 2>err.txt; echo \"rc=$?\"");
+    let (out, _) = s.finish();
+    assert!(out.contains("rc=2"), "{out}");
+    let err = std::fs::read_to_string(d.path().join("err.txt")).unwrap();
+    assert!(
+        err.contains("there is no terminal to show the menu on"),
+        "{err}"
+    );
+}

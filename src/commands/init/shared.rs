@@ -158,10 +158,32 @@ pub fn can_ask() -> bool {
 /// Stop before a confirmation that cannot be asked ([`can_ask`]), naming the
 /// same command with `--yes`.
 pub fn require_terminal(example: &str) -> anyhow::Result<()> {
+    if crate::utils::term::ci() {
+        return Err(anyhow::anyhow!(
+            "{CI_REASON}.\n\nAdd --yes to write without asking:\n  {example}"
+        ));
+    }
     if !can_ask() {
         return Err(crate::utils::prompt::no_terminal(example));
     }
     Ok(())
+}
+
+/// The reason init gives for not asking when `CI` is set (I-303).
+const CI_REASON: &str = "CI is set, so init does not ask";
+
+/// The reason for a refusal's first line: `CI` when it is set, else the
+/// caller's own words for the missing terminal.
+///
+/// ⚠️ Under `CI=true` at a real terminal the refusal said "there is no
+/// terminal to show the menu on": DQ-30 refuses on `CI` alone, so that was not
+/// the reason, and someone at a terminal was told they had none (I-303).
+pub(crate) fn no_question_reason(no_terminal: &str) -> &str {
+    if crate::utils::term::ci() {
+        CI_REASON
+    } else {
+        no_terminal
+    }
 }
 
 /// The `.evnx.toml` governing the folder init writes to (I-298).
@@ -245,12 +267,18 @@ pub(crate) fn emit(planned: Option<&super::report::Planned>, opts: WriteOptions,
 }
 
 /// The error for a template that would be overwritten with nobody to ask.
+///
+/// ⚠️ It named `--force` and removing the file, both of which lose what is
+/// there. The way to add a stack's variables to a template you keep is
+/// `evnx add`, and the refusal did not say so (I-302).
 fn refusal(example_path: &Path) -> anyhow::Error {
     anyhow::anyhow!(
         "{} already exists.\n\n\
          Refusing to overwrite it without being asked to — it is a tracked file \
          and the contents may be hand-maintained.\n\
-         Re-run with --force to replace it, or remove it first.",
+         Re-run with --force to replace it, or remove it first.\n\
+         To add the variables to it instead, keeping what is there: \
+         evnx add blueprint <id> or evnx add service <id>.",
         example_path.display()
     )
 }

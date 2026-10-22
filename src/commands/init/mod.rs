@@ -142,12 +142,13 @@ pub fn run(
         // terminal" means stdin and stderr, outside CI (I-299, DQ-30).
         if !shared::can_ask() {
             anyhow::bail!(
-                "there is no terminal to show the menu on.\n\n\
+                "{}.\n\n\
                  Name what you want instead:\n  \
                  evnx init --yes                     blank files\n  \
                  evnx init --yes --blueprint <id>    a named stack\n  \
                  evnx init --yes --with <a,b,c>      components (evnx init --list-components)\n  \
-                 evnx init --detect                  what the project's manifests declare"
+                 evnx init --detect                  what the project's manifests declare",
+                shared::no_question_reason("there is no terminal to show the menu on")
             );
         }
 

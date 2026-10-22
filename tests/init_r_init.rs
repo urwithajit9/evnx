@@ -817,3 +817,17 @@ fn t_init_37_detect_proposes_the_new_components() {
     }
     assert!(p.read(".env.example").contains("FLY_API_TOKEN="));
 }
+
+// ── I-302: the refusal over a template points to `evnx add` ───────────
+
+/// A stack named over an existing template is refused; the refusal says how
+/// to add the stack's variables to it instead (PLAN-INIT-0.10.16 §2, S04).
+#[test]
+fn t_i302_the_refusal_over_a_template_names_evnx_add() {
+    let p = Project::new().example("MINE=1\n");
+    run(p.path(), &["init", "--with", "redis", "--yes"])
+        .assert_code(2)
+        .assert_contains("--force")
+        .assert_contains("evnx add blueprint <id> or evnx add service <id>");
+    assert_eq!(p.read(".env.example"), "MINE=1\n");
+}

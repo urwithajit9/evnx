@@ -29,9 +29,11 @@ Error: ./.env.example already exists.
 
 Refusing to overwrite it without being asked to — it is a tracked file and the contents may be hand-maintained.
 Re-run with --force to replace it, or remove it first.
+To add the variables to it instead, keeping what is there: evnx add blueprint <id> or evnx add service <id>.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: agent re-run is refused, not silently overwritten (exit 2)
+  ok: FIXED I-302 (R-init): the refusal names evnx add, which keeps the template
 
-================ summary: 2 ok, 0 mismatch   ================
+================ summary: 3 ok, 0 mismatch   ================
