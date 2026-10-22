@@ -8,6 +8,88 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The patch for `evnx doctor` (package R-doctor). Doctor now checks every env
+file, plaintext copies included, and stops calling `.envrc` one. Syntax errors
+and a template without `.env` are errors, and a check that cannot run is
+reported by name instead of stopping the run.
+
+⚠️ **Scripts, CI jobs and hooks that run `evnx doctor`:**
+
+- **A syntax error is an error** (I-161, DEC-D7): exit 1, the verdict `validate`
+  gives. It was a warning, so a `.env` the parser rejects passed with exit 0. A
+  file doctor cannot read — no permission, not UTF-8 — is an error that says
+  which.
+- **No env file is a verdict of its own** (I-162, DEC-D8). Beside a template
+  (`.env.example`) a missing `.env` is an error, exit 1, with the command that
+  creates it (`evnx sync --direction reverse`). In a project without a template
+  it stays a warning. A folder with no env file, no template and no project
+  files is exit 2, "nothing to diagnose here": an empty or wrong checkout used
+  to be "healthy".
+- **`--skip-without-env`** (DEC-D17): with no env file, say so on stderr and
+  exit 0, as for `diff` and `sync`. **The `evnx-doctor` pre-commit hook** now
+  runs `evnx doctor --skip-without-env`, so a fresh clone can commit; its
+  description says what fails a commit (errors) and what does not (warnings,
+  D-120).
+- **A check that cannot run no longer stops the others** (I-163, DEC-D9). A
+  directory named `requirements.txt` ended the run with `Error: Is a directory
+  (os error 21)`: no check name, no path, no summary, and in JSON mode nothing on
+  stdout. That check now reads `could not run: Is a directory
+  (requirements.txt)`, the rest finish, and the run exits 2 with "No complete
+  verdict". JSON gains `ran` on every check (`false` for one that could not
+  run). A fix that cannot write — a read-only folder — is "not fixed", with the
+  reason, exit 1; it aborted the run too.
+- **`.envrc`, `.environment` and `.env-notes.md` are not env files** (I-173,
+  DEC-D3): only `.env` and `.env.<name>` are. A committed direnv `.envrc` was a
+  security error with exit 1. ⓘ `--fix` still writes `.env*`, which also
+  matches `.envrc`; that is `init`'s decision (I-174).
+- **Plaintext copies are checked** (I-160, DEC-D5, DEC-D18). `.env.backup`,
+  `.env.bak`, `.env.old`, `.env.save` and `.env~` that hold plain text are
+  errors until git ignores them, like the file they copy, and their permissions
+  are checked. An `evnx backup` file is recognised by its content and skipped:
+  every name containing `.backup` used to be skipped, so `cp .env .env.backup`
+  was never checked.
+- **Structured files named after `.env`** (`.env.json`, `.env.yaml`) are
+  checked for ignore and permissions, but not as dotenv (DEC-D19).
+
+### doctor
+
+- **Every env file's permissions** (I-158, DEC-D4), each named:
+  `.env.production: permissions 644 (recommended: 600)`. Only `.env` was
+  checked, so `.env.production` at 644 gave "checks passed". `--fix` sets each
+  readable one to 600, never a template. Private means no access for group or
+  others (I-170): `700` and `500` pass; doctor accepted exactly 600 and 400.
+- **Symlinked env files are seen** (I-159, DEC-D6). A symlinked `.env` was "not
+  found" (no ignore or syntax check), while the permission check followed the
+  link and `--fix` chmod'ed its target outside the project. It is now listed as
+  `.env (symlink to …)`, checked like a file, and `--fix` changes a target only
+  inside the project; outside, it prints the `chmod` to run.
+- `EVNX_AUTO_FIX=1` says on stderr that it turned repair on (I-167, DEC-D12).
+- `--help` has Environment, Examples and Exit codes sections (D-118, DEC-D12),
+  and `--fix`'s help says what it changes (D-119).
+- A skipped permission check keeps its description; the reason is in `details`
+  (I-166).
+- README and Getting Started describe what doctor checks; the Getting Started
+  sample is real output (D-114, D-115, D-116, D-117).
+
+### `--env-name`
+
+- `.env.old` and `.env.save` are copies, not environments (DEC-D20): the
+  "Available" list in an `--env-name` error and `validate`'s known environments
+  no longer offer `old` or `save`. One copy rule with `doctor`.
+
+### Internal
+
+- `core::env_name::kind` classifies a file name (env, template, copy, other)
+  for `doctor`, `--env-name` and `scan`; `TEMPLATE_SUFFIXES` and
+  `STRUCTURED_EXTENSIONS` are the one list each (scan output unchanged).
+  `core::envfile::is_evnx_backup` recognises a backup without the `backup`
+  feature; `core::permissions::is_private_mode` is the one rule.
+  `utils::fs::{has,set}_secure_permissions` are deprecated wrappers over
+  `core::permissions` (I-170). `doctor`'s and `scan`'s exit codes are
+  `core::verdict`'s. `core::gitignore::is_tracked` is public; doctor used its
+  own `git ls-files`.
+- One loop builds doctor's report for both renderers (I-169).
+
 ## [0.10.14] - 2026-10-21
 
 The patch for `evnx scan` (package R-scan). In a git repository a folder walk
