@@ -88,6 +88,13 @@ target folder's own `.evnx.toml`, when init may ask, and five new components.
   `--list-components` lists 56; each new entry is last in its group, so in the
   Architect services list the items after the databases move down one.
 - "Next steps" says to commit the template and `.evnx.toml`.
+- **A stack refused over an existing template** (I-302) now also says how to
+  add its variables to the template instead, keeping what is there: `evnx add
+  blueprint <id>` or `evnx add service <id>`. It named only `--force` and
+  removing the file.
+- **Under `CI`, the refusal gives `CI` as the reason** (I-303): `CI is set, so
+  init does not ask`. At a real terminal it said "there is no terminal to show
+  the menu on".
 - `--from-source` with nothing new to add creates `.env` from the template when
   there is none, as its other paths do (N-06).
 - **A `.env` git would still commit** gets the shared warning (E6): `'.env' is
