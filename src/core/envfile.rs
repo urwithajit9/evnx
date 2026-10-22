@@ -84,6 +84,40 @@ pub fn count_vars(content: &str) -> Option<usize> {
     reader().parse_content(content).ok().map(|vars| vars.len())
 }
 
+/// The first byte of an `evnx backup` file after Base64: its format version.
+/// `backup` writes it and `restore` reads it; defined here so a command built
+/// without the `backup` feature can still recognise a backup.
+pub const BACKUP_FORMAT_V1: u8 = 1;
+
+/// Whether `content` is an `evnx backup` file: one run of Base64 whose first
+/// byte is a format version evnx writes, at least as long as the header and
+/// the authentication tag (61 bytes, 84 characters).
+///
+/// ⚠️ By content, not by name. `doctor` skipped every `.env*.backup` because
+/// evnx's backups are ciphertext, so a plaintext `cp .env .env.backup` was
+/// never checked for ignore or permissions (I-160). A truncated backup still
+/// counts: it is ciphertext, whatever `restore` makes of it.
+pub fn is_evnx_backup(content: &str) -> bool {
+    use base64::{engine::general_purpose, Engine as _};
+
+    let text = content.trim();
+    let body = text.trim_end_matches('=');
+    if text.len() < 84
+        || text.len() - body.len() > 2
+        || !body
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
+    {
+        return false;
+    }
+    // Four characters decode to the first three bytes; the first is the version.
+    general_purpose::STANDARD
+        .decode(&text[..4])
+        .ok()
+        .and_then(|bytes| bytes.first().copied())
+        == Some(BACKUP_FORMAT_V1)
+}
+
 /// The names in `a` that `b` does not have, in `a`'s order.
 ///
 /// One answer for "what is on one side only" (R-sync, 0.10.12). `sync`
@@ -193,6 +227,25 @@ mod tests {
     fn references_do_not_decide() {
         assert!(is_dotenv("A=$B\nB=$A\n"));
         assert!(is_dotenv("A=${MISSING}\n"));
+    }
+
+    /// I-160: a plaintext copy is not a backup. What `backup` really writes is
+    /// recognised: `commands::backup::core`'s `t_i160_core_recognises_a_backup`.
+    #[test]
+    fn t_i160_plaintext_is_not_a_backup() {
+        for content in [
+            "",
+            "A=1\n",
+            "DATABASE_URL=postgres://u:p@db/app\nSECRET_KEY=abc\n",
+            // Base64 of a different first byte.
+            &"QUJD".repeat(30),
+            // Base64-shaped but short.
+            "AQID",
+        ] {
+            assert!(!is_evnx_backup(content), "{content:?}");
+        }
+        // A version-1 prefix inside a dotenv line is not a backup.
+        assert!(!is_evnx_backup(&format!("KEY=AQ{}", "A".repeat(100))));
     }
 
     #[test]

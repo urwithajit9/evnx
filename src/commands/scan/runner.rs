@@ -1033,11 +1033,9 @@ pub(super) fn named_like_dotenv(path: &Path) -> bool {
     }
     // ⓘ `.env.yaml` is YAML that happens to be named after `.env`. Anything with
     // a known structured-format extension is left to the content detectors,
-    // which read it as text rather than as assignments.
-    const NOT_DOTENV: &[&str] = &[
-        ".yaml", ".yml", ".json", ".toml", ".ini", ".xml", ".md", ".py", ".js", ".ts",
-    ];
-    !NOT_DOTENV.iter().any(|ext| name.ends_with(ext))
+    // which read it as text rather than as assignments. One list with
+    // `doctor`, which skips its dotenv syntax check for the same files.
+    !crate::core::env_name::is_structured(name)
 }
 
 // ─────────────────────────────────────────────────────────────

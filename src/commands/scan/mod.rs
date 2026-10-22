@@ -71,12 +71,13 @@ pub use output::{render, OutputFormat};
 pub use patternset::{PatternMatch, PatternSet};
 pub use runner::{truncate_value, ScanRunner};
 
+// The codes are `core::verdict`'s, as in `sync`; these names stay for callers.
 /// Nothing at or above `--severity`.
-pub const EXIT_CLEAN: i32 = 0;
+pub const EXIT_CLEAN: i32 = crate::core::verdict::EXIT_OK;
 /// Secrets found.
-pub const EXIT_FOUND: i32 = 1;
+pub const EXIT_FOUND: i32 = crate::core::verdict::EXIT_FINDINGS;
 /// The scan could not be completed, so there is no verdict.
-pub const EXIT_ERROR: i32 = 2;
+pub const EXIT_ERROR: i32 = crate::core::verdict::EXIT_ERROR;
 
 /// Everything `evnx scan` was asked to do, resolved from flags and `.evnx.toml`.
 ///

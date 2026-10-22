@@ -52,7 +52,13 @@ pub fn is_private(path: &Path) -> bool {
     if !MODES_APPLY {
         return true;
     }
-    mode(path).is_some_and(|m| m & 0o077 == 0)
+    mode(path).is_some_and(is_private_mode)
+}
+
+/// The rule itself, for a caller that already holds the mode to print it:
+/// no bits for group or others. `700` and `400` are private; `640` is not.
+pub fn is_private_mode(mode: u32) -> bool {
+    mode & 0o077 == 0
 }
 
 /// Set `path` to [`PRIVATE`]. Returns `false` on Windows, where nothing was
@@ -99,7 +105,7 @@ pub fn readable_warning(path: &Path, mode: u32, note: Option<&str>) {
 /// warned again after the write — two warnings for one file (I-126, I-276).
 pub fn warn_if_readable(path: &Path) -> bool {
     match mode(path) {
-        Some(m) if MODES_APPLY && m & 0o077 != 0 => {
+        Some(m) if MODES_APPLY && !is_private_mode(m) => {
             readable_warning(path, m, None);
             true
         }
@@ -125,6 +131,9 @@ mod tests {
         for (m, private) in [
             (0o600, true),
             (0o400, true),
+            // I-170: doctor accepted exactly 600 and 400, so 700 warned there.
+            (0o700, true),
+            (0o500, true),
             (0o640, false),
             (0o644, false),
             (0o604, false),

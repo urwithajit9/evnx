@@ -407,8 +407,9 @@ fn verify_backup(path: &Path, original: &str, password: &str) -> Result<()> {
 // ─── Format ───────────────────────────────────────────────────────────────────
 
 /// The binary format version this evnx writes, and the only one it reads.
+/// Defined in `core::envfile`, which recognises a backup without this feature.
 #[cfg(feature = "backup")]
-const FORMAT_V1: u8 = 1;
+const FORMAT_V1: u8 = crate::core::envfile::BACKUP_FORMAT_V1;
 #[cfg(feature = "backup")]
 const SALT_LEN: usize = 32;
 #[cfg(feature = "backup")]
@@ -790,6 +791,18 @@ mod tests {
 
     fn pw(s: &str) -> Zeroizing<String> {
         Zeroizing::new(s.to_owned())
+    }
+
+    /// I-160: `core::envfile::is_evnx_backup` knows what this module writes,
+    /// so `doctor` can skip a backup and still read a plaintext copy.
+    #[test]
+    fn t_i160_core_recognises_a_backup() {
+        use crate::core::envfile::is_evnx_backup;
+        let blob = encrypt_content("A=1\n", "correct horse", ".env").unwrap();
+        assert!(is_evnx_backup(&blob));
+        assert!(is_evnx_backup(&format!("{blob}\n")), "a trailing newline");
+        // Cut short: still ciphertext.
+        assert!(is_evnx_backup(&blob[..100]));
     }
 
     // ── Format (T-SHARE-28, I-149) ────────────────────────────────────────────

@@ -2,10 +2,10 @@
 //!
 //! # Platform notes
 //!
-//! Permission-related functions (`has_secure_permissions`, `set_secure_permissions`)
-//! are only meaningful on Unix. On Windows they compile to no-ops that always
-//! return `true` / `Ok(())` so the rest of the codebase does not need `#[cfg]`
-//! guards at every call site.
+//! The permission functions (`has_secure_permissions`, `set_secure_permissions`)
+//! are deprecated wrappers over `core::permissions`, which holds the one
+//! definition of a private file (I-170). On Windows they answer `true` /
+//! `Ok(())`.
 //!
 //! # Future work
 //!
@@ -21,47 +21,29 @@ use std::path::Path;
 
 // ── Permissions ───────────────────────────────────────────────────────────────
 
-/// Return `true` if `path` has owner-only permissions (`600`) on Unix.
-///
-/// A `.env` file should never be world- or group-readable because it contains
-/// credentials. Use [`set_secure_permissions`] to fix an insecure file.
+/// Return `true` if `path` has owner-only permissions on Unix.
 ///
 /// Always returns `true` on non-Unix platforms where the concept does not apply.
-#[cfg(unix)]
+#[deprecated(
+    since = "0.10.15",
+    note = "use `core::permissions::is_private`, the one definition of a private file (A-29, I-170)"
+)]
 pub fn has_secure_permissions(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::metadata(path)
-        .map(|m| (m.permissions().mode() & 0o077) == 0)
-        .unwrap_or(false)
+    crate::core::permissions::is_private(path)
 }
 
-/// Non-Unix stub — permissions are not applicable on this platform.
-#[cfg(not(unix))]
-pub fn has_secure_permissions(_path: &Path) -> bool {
-    true
-}
-
-/// Set `path` to owner-read/write only (`chmod 600`) on Unix.
+/// Set `path` to owner-read/write only (`chmod 600`) on Unix; a no-op elsewhere.
 ///
 /// # Errors
 ///
-/// Returns an error if the file metadata cannot be read or the permissions
-/// cannot be applied (e.g. the caller does not own the file).
-#[cfg(unix)]
+/// Returns an error if the permissions cannot be applied (e.g. the caller does
+/// not own the file).
+#[deprecated(
+    since = "0.10.15",
+    note = "use `core::permissions::make_private` (A-29, I-170)"
+)]
 pub fn set_secure_permissions(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let mut perms = fs::metadata(path)?.permissions();
-    perms.set_mode(0o600);
-    fs::set_permissions(path, perms)?;
-    Ok(())
-}
-
-/// Non-Unix stub — no-op, always succeeds.
-#[cfg(not(unix))]
-pub fn set_secure_permissions(_path: &Path) -> Result<()> {
-    Ok(())
+    crate::core::permissions::make_private(path).map(|_| ())
 }
 
 // ── File operations ───────────────────────────────────────────────────────────
@@ -249,6 +231,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
+    #[allow(deprecated)]
     fn test_set_and_check_secure_permissions() {
         use std::os::unix::fs::PermissionsExt;
 

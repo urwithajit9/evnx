@@ -308,7 +308,11 @@ impl Staged {
         sync_dir(&self.dir);
 
         let loose_mode = match (self.holds_secrets, &existing, final_mode) {
-            (true, Some(_), Some(m)) if permissions::MODES_APPLY && m & 0o077 != 0 => Some(m),
+            (true, Some(_), Some(m))
+                if permissions::MODES_APPLY && !permissions::is_private_mode(m) =>
+            {
+                Some(m)
+            }
             _ => None,
         };
         Ok(Written {

@@ -124,8 +124,6 @@ pub fn select(
 /// The `.env.example` family and copies evnx leaves behind are left out: neither
 /// is a thing you would pass to `--env-name`.
 pub fn available(dir: &Path) -> Vec<String> {
-    const TEMPLATES: &[&str] = &["example", "sample", "template"];
-
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -134,14 +132,71 @@ pub fn available(dir: &Path) -> Vec<String> {
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
         .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| kind(n) == FileKind::Env)
         .filter_map(|n| n.strip_prefix(".env.").map(str::to_owned))
-        .filter(|n| !TEMPLATES.contains(&n.as_str()))
-        .filter(|n| !is_copy(n))
         .collect();
 
     names.sort();
     names.dedup();
     names
+}
+
+/// What follows `.env.` in a template: a file meant to be committed, holding
+/// names and no values.
+///
+/// ⚠️ One list. `available`, [`name_of`], `doctor` and `scan` each kept their
+/// own copy of these three names (R-doctor). `core::gitignore::ENV_ENTRIES`
+/// spells them out as negations, and a test there holds it to this list.
+pub const TEMPLATE_SUFFIXES: &[&str] = &["example", "sample", "template"];
+
+/// Extensions that make a file named after `.env` structured data rather than
+/// dotenv: `.env.yaml`, `.env.json`. Read as text, never parsed as
+/// assignments (moved from `scan`, R-doctor DEC-D19).
+pub const STRUCTURED_EXTENSIONS: &[&str] = &[
+    ".yaml", ".yml", ".json", ".toml", ".ini", ".xml", ".md", ".py", ".js", ".ts",
+];
+
+/// What a file is, by its name alone (DEC-D3, DEC-D20).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileKind {
+    /// `.env` or `.env.<name>`: holds real values.
+    Env,
+    /// `.env.example`, `.env.sample`, `.env.template`.
+    Template,
+    /// A copy of an env file ([`is_copy`]). Plaintext or an `evnx backup`;
+    /// only the content can tell ([`crate::core::envfile::is_evnx_backup`]).
+    Copy,
+    /// Not an env file, though the name starts with `.env`: `.envrc` (a direnv
+    /// script, often committed on purpose), `.environment`, `.env-notes.md`.
+    Other,
+}
+
+/// [`FileKind`] of a file name (not a path).
+///
+/// ⚠️ `.env` or `.env.` and something, never just "starts with `.env`".
+/// `doctor` took every `.env*` name, so a committed `.envrc` was a security
+/// error with exit 1, and its `layout python` line "invalid syntax" (I-173).
+pub fn kind(file_name: &str) -> FileKind {
+    if file_name == ".env" {
+        return FileKind::Env;
+    }
+    if file_name == ".env~" {
+        return FileKind::Copy;
+    }
+    match file_name.strip_prefix(".env.") {
+        None | Some("") => FileKind::Other,
+        Some(rest) if TEMPLATE_SUFFIXES.contains(&rest) => FileKind::Template,
+        Some(rest) if is_copy(rest) => FileKind::Copy,
+        Some(_) => FileKind::Env,
+    }
+}
+
+/// Whether `file_name` is structured data named after `.env` (`.env.yaml`):
+/// see [`STRUCTURED_EXTENSIONS`].
+pub fn is_structured(file_name: &str) -> bool {
+    STRUCTURED_EXTENSIONS
+        .iter()
+        .any(|ext| file_name.ends_with(ext))
 }
 
 /// A copy of an env file, not an environment: what follows `.env.` is one
@@ -153,14 +208,17 @@ pub fn available(dir: &Path) -> Vec<String> {
 /// | `bak`, `bak.N`, `production.bak` | `validate --fix`, `restore --yes` ([`crate::core::safe_write::backup`]) |
 /// | `restored`, `production.restored` | `restore`, for content that is not a `.env` |
 /// | `1`, `production.2` | numbered copies |
+/// | `old`, `save`, a trailing `~` | a person, or an editor |
 ///
 /// ⚠️ Until 0.10.11 only `backup` was left out, so `--env-name`'s "Available"
 /// list read `1, bak`, and `validate`'s known environments took `bak` for one.
+/// `old`, `save` and `~` joined with `doctor`'s list (DEC-D20), which reads
+/// these copies because a plaintext one exposes what `.env` does (I-160).
 fn is_copy(name: &str) -> bool {
     name.contains("backup")
+        || name.ends_with('~')
         || name.split('.').any(|part| {
-            part == "bak"
-                || part == "restored"
+            matches!(part, "bak" | "restored" | "old" | "save")
                 || (!part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
         })
 }
@@ -409,6 +467,59 @@ mod tests {
 
         assert_eq!(available(dir.path()), vec!["production", "v2"]);
     }
+
+    /// DEC-D20: one copy rule with `doctor`, so `.old`, `.save` and `~` are
+    /// copies here too.
+    #[test]
+    fn t_dec_d20_old_and_save_are_copies_not_environments() {
+        let dir = project(&[".env.production", ".env.old", ".env.production.save"]);
+        assert_eq!(available(dir.path()), vec!["production"]);
+    }
+
+    /// I-173, DEC-D3: `.env` or `.env.<name>`; the rest only looks like one.
+    #[test]
+    fn t_i173_which_names_are_env_files() {
+        use FileKind::*;
+        for (name, want) in [
+            (".env", Env),
+            (".env.local", Env),
+            (".env.production", Env),
+            (".env.production.local", Env),
+            (".env.yaml", Env),
+            (".env.example", Template),
+            (".env.sample", Template),
+            (".env.template", Template),
+            (".env.backup", Copy),
+            (".env.backup.2", Copy),
+            (".env.production.backup", Copy),
+            (".env.bak", Copy),
+            (".env.old", Copy),
+            (".env.save", Copy),
+            (".env.restored", Copy),
+            (".env.1", Copy),
+            (".env~", Copy),
+            (".env.production~", Copy),
+            (".envrc", Other),
+            (".environment", Other),
+            (".env-notes.md", Other),
+            (".envoy.yaml", Other),
+            (".env.", Other),
+            ("app.env", Other),
+            ("env", Other),
+        ] {
+            assert_eq!(kind(name), want, "{name}");
+        }
+    }
+
+    #[test]
+    fn structured_names_are_not_dotenv() {
+        for name in [".env.yaml", ".env.yml", ".env.json", ".env.toml"] {
+            assert!(is_structured(name), "{name}");
+        }
+        for name in [".env", ".env.local", ".env.production"] {
+            assert!(!is_structured(name), "{name}");
+        }
+    }
 }
 
 /// The environment name a resolved path refers to, if any.
@@ -425,7 +536,7 @@ pub fn name_of(path: &str) -> Option<&str> {
     let rest = file.strip_prefix(".env.")?;
     // `.env.example` and `.env.local.bak` are not environments anyone declares
     // rules for; an empty remainder is not a name at all.
-    if rest.is_empty() || rest == "example" || rest == "sample" || rest == "template" {
+    if rest.is_empty() || TEMPLATE_SUFFIXES.contains(&rest) {
         return None;
     }
     // Re-borrow from `path` so the lifetime is the caller's.

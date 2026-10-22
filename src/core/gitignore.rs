@@ -651,7 +651,7 @@ pub fn in_work_tree(dir: &Path) -> bool {
 }
 
 /// Whether git's index holds `filename`. `false` when git cannot answer.
-fn is_tracked(project_root: &Path, filename: &str) -> bool {
+pub fn is_tracked(project_root: &Path, filename: &str) -> bool {
     Command::new("git")
         .arg("-C")
         .arg(project_root)
@@ -944,6 +944,17 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    /// The negations carve out exactly the template family `core::env_name`
+    /// names, so the two lists cannot drift apart.
+    #[test]
+    fn env_entries_negate_the_template_family() {
+        let negated: Vec<&str> = ENV_ENTRIES
+            .iter()
+            .filter_map(|e| e.strip_prefix("!.env."))
+            .collect();
+        assert_eq!(negated, crate::core::env_name::TEMPLATE_SUFFIXES);
+    }
 
     // ── helpers ───────────────────────────────────────────────────────────────
 

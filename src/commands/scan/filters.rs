@@ -450,7 +450,6 @@ impl FileFilter {
         // come **before** the name. `my-node_modules-notes/` was *not*
         // affected, because the trailing `-notes` breaks the substring.
         const ALWAYS_EXCLUDE_DIRS: &[&str] = &[".git", "node_modules", "target", "dist", "build"];
-        const ALWAYS_EXCLUDE_FILES: &[&str] = &[".env.example", ".env.sample", ".env.template"];
 
         if path
             .components()
@@ -468,7 +467,8 @@ impl FileFilter {
             .file_name()
             .map(|n| n.to_string_lossy())
             .unwrap_or(std::borrow::Cow::Borrowed(""));
-        if ALWAYS_EXCLUDE_FILES.iter().any(|f| name == *f) {
+        // The template family, by the one list (`core::env_name`).
+        if crate::core::env_name::kind(&name) == crate::core::env_name::FileKind::Template {
             return true;
         }
 
