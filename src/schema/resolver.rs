@@ -67,6 +67,10 @@ pub fn resolve_blueprint(blueprint: &StackBlueprint) -> Result<VarCollection> {
 
     // 4. Client-prefixed copies (I-002), so `evnx add blueprint` writes what
     // `evnx init --blueprint` writes: a blueprint is exactly its component list.
+    super::component::browser_names_for(
+        &mut collection,
+        &[blueprint.components.framework.as_str()],
+    );
     super::component::add_client_copies(&mut collection, &blueprint.components.framework);
 
     Ok(collection)
@@ -105,6 +109,7 @@ pub fn resolve_architect_selection(
 
     // The same client-prefixed copies `--with` adds, so the Architect menu and
     // the equivalent `--with` list keep writing byte-identical files (I-002).
+    super::component::browser_names_for(&mut collection, &[framework_id]);
     super::component::add_client_copies(&mut collection, framework_id);
 
     Ok(collection)

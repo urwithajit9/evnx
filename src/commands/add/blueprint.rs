@@ -42,15 +42,9 @@ pub fn handle(blueprint_id: Option<&str>, output_path: &Path, mode: &Mode) -> Re
     let blueprint = match loader::get_blueprint(blueprint_id) {
         Some(found) => found,
         None => {
-            let available = loader::list_blueprints();
             return Err(anyhow::anyhow!(
-                "Unknown blueprint '{}'.\n\nAvailable blueprints:\n{}",
-                blueprint_id,
-                available
-                    .iter()
-                    .map(|(bid, name)| format!("  {bid:<22} {name}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
+                "{}",
+                loader::unknown_blueprint(blueprint_id)
             ));
         }
     };

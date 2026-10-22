@@ -8,8 +8,9 @@
 //! `evnx validate --env packages/api/.env` from the repository root missed the
 //! Dockerfile beside the file it was checking (I-046).
 //!
-//! `init`'s detector reads compose files for their services, which is a
-//! different question, and keeps its own list (recorded in R-init's notes).
+//! `init`'s detector reads the compose files among them for their services
+//! ([`compose_files`]); it kept its own list, without `compose.yaml`, until
+//! 0.10.16 (I-257).
 
 use std::path::{Path, PathBuf};
 
@@ -24,6 +25,12 @@ pub const DOCKER_FILES: &[&str] = &[
     "Containerfile",
     ".dockerignore",
 ];
+
+/// The compose files among [`DOCKER_FILES`], in the order Docker Compose
+/// itself prefers them: what `init --detect` reads for services.
+pub fn compose_files() -> &'static [&'static str] {
+    &DOCKER_FILES[..4]
+}
 
 /// The [`DOCKER_FILES`] present in `dir`, in list order.
 pub fn docker_files_in(dir: &Path) -> Vec<&'static str> {
@@ -70,6 +77,20 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    /// I-257: the compose names, all four, and nothing else from the list.
+    #[test]
+    fn t_i257_compose_files_are_the_four_compose_names() {
+        assert_eq!(
+            compose_files(),
+            [
+                "compose.yaml",
+                "compose.yml",
+                "docker-compose.yml",
+                "docker-compose.yaml"
+            ]
+        );
+    }
 
     #[test]
     fn t_i257_compose_v2_names_are_docker_files() {

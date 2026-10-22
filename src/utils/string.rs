@@ -77,6 +77,33 @@ pub fn count(n: usize, noun: &str) -> String {
     pluralize(n, noun, &format!("{noun}s"))
 }
 
+/// The names to offer under "Did you mean": ids that start with or contain
+/// `input` (up to six, in the order given), else the ids and aliases within a
+/// small edit distance ([`closest`]), each alias suggesting its id.
+///
+/// One rule for every "unknown X" message that has a list to suggest from —
+/// components and blueprints (I-235). Prefix and substring cover an
+/// abbreviation (`mern` for `mern_v2`) and the wrong half of a two-word name;
+/// edit distance covers a transposition, a dropped or a doubled letter. The
+/// second is consulted only when the first finds nothing.
+pub fn suggest<'a>(input: &str, ids: &[&'a str], aliases: &[(&'a str, &'a str)]) -> Vec<&'a str> {
+    let near: Vec<&str> = ids
+        .iter()
+        .copied()
+        .filter(|id| id.starts_with(input) || id.contains(input))
+        .take(6)
+        .collect();
+    if !near.is_empty() {
+        return near;
+    }
+    closest(
+        input,
+        ids.iter()
+            .map(|id| (*id, *id))
+            .chain(aliases.iter().copied()),
+    )
+}
+
 /// "Did you mean": the candidates within a small edit distance of `input`,
 /// closest first, at most three. `candidates` pairs a name to compare with the id to suggest (they
 /// differ for an alias).

@@ -90,6 +90,7 @@ fn main() -> Result<()> {
     for warning in &loaded.warnings {
         evnx::utils::ui::config_warning(warning, cli.quiet);
     }
+    let config_source = loaded.source.clone();
     let cfg = loaded.config;
 
     // Route to command handler
@@ -104,17 +105,28 @@ fn main() -> Result<()> {
             detect,
             from_source,
             force,
-        } => commands::init::run(
-            path,
-            yes,
-            force,
-            blueprint,
-            with,
-            list_components,
-            detect,
-            from_source,
-            cli.verbose,
-        ),
+        } => {
+            // The target's own config, before anything is written (I-298).
+            // `--list-components` is about evnx, not a project.
+            if !list_components {
+                if let Err(e) =
+                    commands::init::target_config(Path::new(&path), config_source.as_deref())
+                {
+                    verdict::no_verdict(&e, Stage::BeforeRun);
+                }
+            }
+            commands::init::run(
+                path,
+                yes,
+                force,
+                blueprint,
+                with,
+                list_components,
+                detect,
+                from_source,
+                cli.verbose,
+            )
+        }
 
         Commands::Add {
             target,

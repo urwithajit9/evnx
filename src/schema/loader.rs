@@ -86,6 +86,32 @@ pub fn list_blueprints() -> Vec<(&'static str, &'static str)> {
         .collect()
 }
 
+/// The error for a blueprint id that is not one: a near match when there is
+/// one, then every blueprint, since the list is how people find the ids.
+///
+/// ⚠️ One message for `init --blueprint` and `add blueprint` (I-235). init's
+/// copy matched by edit distance only, so `mern` (for `mern_v2`) got no hint;
+/// add's copy gave none at all. Now both use [`crate::utils::string::suggest`],
+/// the rule `--with` uses for components.
+pub fn unknown_blueprint(id: &str) -> String {
+    let blueprints = list_blueprints();
+    let ids: Vec<&str> = blueprints.iter().map(|(bid, _)| *bid).collect();
+    let near = crate::utils::string::suggest(&id.to_lowercase(), &ids, &[]);
+    let hint = if near.is_empty() {
+        String::new()
+    } else {
+        format!("Did you mean: {}\n\n", near.join(", "))
+    };
+    format!(
+        "Unknown blueprint '{id}'.\n\n{hint}Available blueprints:\n{}",
+        blueprints
+            .iter()
+            .map(|(bid, name)| format!("  {bid:<22} {name}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
+}
+
 /// Get frameworks for a language as (id, display_name) pairs
 pub fn get_frameworks_for_language(language_id: &str) -> Option<Vec<(&'static str, String)>> {
     let schema = schema().ok()?;

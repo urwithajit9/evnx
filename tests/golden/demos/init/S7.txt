@@ -12,11 +12,11 @@ $ evnx init --detect --yes
   ✓  Stripe                 stripe                  package.json
   ✓  Vite                   vite                    package.json
 
-  17 variables from 4 components
+  16 variables from 4 components
 
 ✓ Created .env from template
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
-✓ Created .env.example with 17 variables
+✓ Created .env.example with 16 variables
 
 Next steps:
   1. Edit .env and replace placeholder values

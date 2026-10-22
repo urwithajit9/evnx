@@ -150,7 +150,7 @@ pub(crate) fn pick(mode: &Mode, what: &str, items: &[(String, String)]) -> Resul
         .iter()
         .map(|(id, name)| format!("{name}  ({id})"))
         .collect();
-    let picked = dialoguer::Select::new()
+    let picked = dialoguer::Select::with_theme(&crate::utils::prompt::MENU)
         .with_prompt(format!("Which {what}?"))
         .items(&labels)
         .default(0)

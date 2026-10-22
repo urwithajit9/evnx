@@ -13,7 +13,19 @@ use anyhow::Result;
 ///
 /// `example` is the command line that would work: the same one with `--yes`.
 pub fn require_terminal(example: &str) -> Result<()> {
-    require_terminal_or(&format!("Add --yes to write without asking:\n  {example}"))
+    if !crate::utils::term::interactive() {
+        return Err(no_terminal(example));
+    }
+    Ok(())
+}
+
+/// The error [`require_terminal`] returns, for a caller with its own rule for
+/// when a question can be asked (`init`: stderr too, and not under `CI`).
+pub fn no_terminal(example: &str) -> anyhow::Error {
+    NoTerminal {
+        hint: format!("Add --yes to write without asking:\n  {example}"),
+    }
+    .into()
 }
 
 /// [`require_terminal`] with a hint of the caller's own, for commands where
@@ -58,6 +70,62 @@ pub fn choice_needed(flag: &str, example: &str, available: &[&str]) -> anyhow::E
 pub struct NoTerminal {
     /// What to do instead, usually the same command with `--yes`.
     pub hint: String,
+}
+
+/// The look of a menu (`Select`, `MultiSelect`): dialoguer's default theme,
+/// except that a prompt ending in `?` or `:` is not given a second mark.
+///
+/// ⚠️ The default theme writes `{prompt}:` before the items and
+/// `{prompt}: {choice}` after, so a question read `How do you want to
+/// start?:`. Every other prompt prints exactly as before. Used by `init` and
+/// `add`; `migrate` and `sync` ask questions the same way and adopt it in their
+/// own patches (recorded in their R- notes).
+pub struct MenuTheme;
+
+/// The one [`MenuTheme`]: `Select::with_theme(&MENU)`.
+pub static MENU: MenuTheme = MenuTheme;
+
+impl MenuTheme {
+    fn marked(prompt: &str) -> bool {
+        prompt.ends_with('?') || prompt.ends_with(':')
+    }
+}
+
+impl dialoguer::theme::Theme for MenuTheme {
+    fn format_prompt(&self, f: &mut dyn std::fmt::Write, prompt: &str) -> std::fmt::Result {
+        if Self::marked(prompt) {
+            write!(f, "{prompt}")
+        } else {
+            write!(f, "{prompt}:")
+        }
+    }
+
+    fn format_input_prompt_selection(
+        &self,
+        f: &mut dyn std::fmt::Write,
+        prompt: &str,
+        sel: &str,
+    ) -> std::fmt::Result {
+        if Self::marked(prompt) {
+            write!(f, "{prompt} {sel}")
+        } else {
+            write!(f, "{prompt}: {sel}")
+        }
+    }
+
+    fn format_multi_select_prompt_selection(
+        &self,
+        f: &mut dyn std::fmt::Write,
+        prompt: &str,
+        selections: &[&str],
+    ) -> std::fmt::Result {
+        if Self::marked(prompt) {
+            write!(f, "{prompt} ")?;
+        } else {
+            write!(f, "{prompt}: ")?;
+        }
+        write!(f, "{}", selections.join(", "))
+    }
 }
 
 /// A yes/no question that is answered on Enter, not on the first keystroke,
@@ -280,6 +348,48 @@ pub fn confirm(question: &str, yes: bool, example: &str) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dialoguer::theme::Theme;
+
+    /// T-INIT-48: a question keeps its own `?`; every other prompt is
+    /// dialoguer's, colon included.
+    #[test]
+    fn t_init_48_menu_theme_adds_no_colon_after_a_question() {
+        let render = |f: &dyn Fn(&mut String) -> std::fmt::Result| {
+            let mut s = String::new();
+            f(&mut s).unwrap();
+            s
+        };
+        let m = &MENU;
+        assert_eq!(
+            render(&|s| m.format_select_prompt(s, "How do you want to start?")),
+            "How do you want to start?"
+        );
+        assert_eq!(
+            render(&|s| m.format_select_prompt(s, "Choose a stack blueprint")),
+            "Choose a stack blueprint:"
+        );
+        assert_eq!(
+            render(&|s| m.format_select_prompt_selection(s, "Which framework?", "Next.js")),
+            "Which framework? Next.js"
+        );
+        assert_eq!(
+            render(&|s| m.format_select_prompt_selection(s, "Category", "Database")),
+            "Category: Database"
+        );
+        assert_eq!(
+            render(&|s| m.format_multi_select_prompt_selection(s, "Select services", &["a", "b"])),
+            "Select services: a, b"
+        );
+        let plain = dialoguer::theme::SimpleTheme;
+        assert_eq!(
+            render(&|s| plain.format_multi_select_prompt_selection(
+                s,
+                "Select services",
+                &["a", "b"]
+            )),
+            "Select services: a, b"
+        );
+    }
 
     /// `--yes` answers without touching stdin — whatever stdin is.
     #[test]

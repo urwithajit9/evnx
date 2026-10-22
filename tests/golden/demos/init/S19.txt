@@ -1,0 +1,41 @@
+
+================ S19 ================
+A blueprint id where a component is expected, and a prefix of one
+
+$ evnx init --blueprint mern --yes
+
+  evnx init  Set up environment variables for your project
+
+Error: Unknown blueprint 'mern'.
+
+Did you mean: mern_v2
+
+Available blueprints:
+  t3_modern              T3 Turbo (Next.js + Clerk + Prisma)
+  mern_v2                Modern MERN (Vite + Express + MongoDB)
+  fastapi_ai             AI/ML Backend (FastAPI + Redis + S3)
+  rust_high_perf         Rust Speedstack (Axum + SQLx + Postgres)
+  laravel_monolith       Laravel V-Stack (Laravel + Vue + MySQL)
+  go_microservice        Go Cloud Native (Gin + Kafka + Postgres)
+  supabase_fullstack     Supabase Starter (Next.js + Supabase)
+  django_enterprise      Django Secure (Django + Postgres + Celery)
+  firebase_mobile        App Backend (Node + Firebase)
+  content_marketing      SEO Content Stack (Nuxt + S3 + Stripe)
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: unknown blueprint (exit 2)
+  ok: FIXED I-235 (R-init): a prefix of mern_v2 is suggested, by the component matcher
+
+$ evnx init --with t3_modern --yes
+
+  evnx init  Set up environment variables for your project
+
+Error: t3_modern is a blueprint: use --blueprint t3_modern
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: a blueprint id given to --with (exit 2)
+  ok: FIXED I-235 (R-init): a blueprint id in --with names --blueprint t3_modern
+
+================ summary: 4 ok, 0 mismatch   ================

@@ -387,7 +387,9 @@ fn dependencies(root: &Path) -> Vec<(String, String)> {
 fn compose_images(root: &Path) -> Vec<(String, String)> {
     let mut out = Vec::new();
 
-    for name in ["docker-compose.yml", "docker-compose.yaml", "compose.yml"] {
+    // The one list (I-257): `compose.yaml`, the name Docker Compose prefers,
+    // was missing here, so a project using it had no services detected.
+    for name in crate::core::project::compose_files() {
         let Ok(text) = std::fs::read_to_string(root.join(name)) else {
             continue;
         };

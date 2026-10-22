@@ -125,7 +125,7 @@ pub fn scan(root: &Path) -> Result<Scan> {
     // Direct access, anywhere. High confidence, low recall — it is the 14%.
     let direct = Regex::new(
         r#"(?x)
-        env::var \s* \( \s* "(?<a>[A-Z][A-Z0-9_]{2,})"        # Rust
+        env::var(?:_os)? \s* \( \s* "(?<a>[A-Z][A-Z0-9_]{2,})"  # Rust
         | process\.env\.(?<b>[A-Z][A-Z0-9_]{2,})               # Node, dotted
         | process\.env\[\s*["'](?<c>[A-Z][A-Z0-9_]{2,})["']    # Node, indexed
         | os\.environ(?:\.get)?[\[\(]\s*["'](?<d>[A-Z][A-Z0-9_]{2,})["']  # Python
@@ -137,12 +137,19 @@ pub fn scan(root: &Path) -> Result<Scan> {
         | Deno\.env\.get\( \s* ["'](?<j>[A-Z][A-Z0-9_]{2,})["']  # Deno
         | Bun\.env\.(?<k>[A-Z][A-Z0-9_]{2,})                    # Bun, dotted
         | Bun\.env\[\s*["'](?<l>[A-Z][A-Z0-9_]{2,})["']        # Bun, indexed
+        | \bgetenv\( \s* ["'](?<m>[A-Z][A-Z0-9_]{2,})["']       # Python os.getenv, PHP, C
+        | ENV\.fetch\( \s* ["'](?<n>[A-Z][A-Z0-9_]{2,})["']     # Ruby
+        | \b(?:option_)?env! \s* \( \s* "(?<o>[A-Z][A-Z0-9_]{2,})" # Rust, at compile time
         "#,
     )?;
 
     // Any SCREAMING_SNAKE literal, but only where configuration lives. This is
     // the pass that actually works; see the module docs for the measurements.
     let literal = Regex::new(r#"["'](?<name>[A-Z][A-Z0-9_]{2,})["']"#)?;
+
+    // Reads a line at a time cannot see (I-236, DQ-22): read over the whole
+    // file, reported at the line the name is on.
+    let statements = Statements::new()?;
 
     // Keyed by name so the first sighting wins and repeats collapse.
     let mut found: BTreeMap<String, SourceVar> = BTreeMap::new();
@@ -170,10 +177,8 @@ pub fn scan(root: &Path) -> Result<Scan> {
             let at = format!("{relative}:{}", n + 1);
 
             for caps in direct.captures_iter(line) {
-                if let Some(name) = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]
-                    .iter()
-                    .find_map(|k| caps.name(k))
-                {
+                // The one group that matched: each alternative has its own.
+                if let Some(name) = caps.iter().skip(1).flatten().next() {
                     // I-239: a name the code reads is a name the code mentions.
                     // Without this, `process.env.X` — no quotes, so the literal
                     // pass never sees it — was "named nowhere in the source".
@@ -205,6 +210,21 @@ pub fn scan(root: &Path) -> Result<Scan> {
                 }
             }
         }
+
+        // After the file's own lines, so a name a line already found keeps
+        // that location; before the next file, so file order still decides.
+        for read in statements.reads(&text) {
+            mentioned.insert(read.name.clone());
+            if read.import_meta && IMPORT_META_BUILTINS.contains(&read.name.as_str()) {
+                continue;
+            }
+            let line = text[..read.offset].matches('\n').count() + 1;
+            found.entry(read.name.clone()).or_insert(SourceVar {
+                location: format!("{relative}:{line}"),
+                name: read.name,
+                context: "read from the environment".into(),
+            });
+        }
     }
 
     Ok(Scan {
@@ -214,6 +234,85 @@ pub fn scan(root: &Path) -> Result<Scan> {
         symlinked_dirs_skipped: walk.symlinked_dirs_skipped,
         truncated: walk.truncated,
     })
+}
+
+/// A read found over a whole file rather than one line.
+struct Read {
+    name: String,
+    /// Byte offset of the name in the file, for its line number.
+    offset: usize,
+    /// Through `import.meta.env`, where the framework's built-ins live.
+    import_meta: bool,
+}
+
+/// The reads a line-at-a-time match cannot see (I-236, DQ-22).
+///
+/// ⚠️ `const { API_KEY, DB_URL: db, PORT = 3000 } = process.env` names its
+/// variables before the object they come from, often over several lines, and
+/// `process\n  .env.X` splits one member access across two. Neither was
+/// found, so `--from-source` proposed nothing for code written that way.
+/// Destructuring counts only from `process.env`, `import.meta.env` and
+/// `Bun.env` — a `{ A } = settings` is not a read — and a rest element
+/// (`...rest`) or a nested pattern names no variable.
+struct Statements {
+    destructure: Regex,
+    split: Regex,
+    key: Regex,
+}
+
+impl Statements {
+    fn new() -> Result<Statements> {
+        Ok(Statements {
+            // `{ … }`, an optional TypeScript annotation, `=`, the object.
+            destructure: Regex::new(
+                r"(?x)
+                \{ (?<body>[^{}]*) \}
+                \s* (?: : [^=;{}]* )?
+                = \s* (?<src> process\s*\.\s*env | import\s*\.\s*meta\s*\.\s*env | Bun\s*\.\s*env ) \b
+                ",
+            )?,
+            // A dotted read with whitespace (a line break) around a dot, or
+            // optional chaining (`process.env?.X`).
+            split: Regex::new(
+                r"(?x)
+                \b (?<src> process\s*\.\s*env | import\s*\.\s*meta\s*\.\s*env | Bun\s*\.\s*env )
+                \s* \?? \. \s* (?<name>[A-Z][A-Z0-9_]{2,}) \b
+                ",
+            )?,
+            // One element of the pattern: its key, quoted or not, before any
+            // `: rename` or `= default`.
+            key: Regex::new(r#"^\s*["']?(?<name>[A-Z][A-Z0-9_]{2,})["']?\s*(?:[:=]|$)"#)?,
+        })
+    }
+
+    fn reads(&self, text: &str) -> Vec<Read> {
+        let mut out = Vec::new();
+        for caps in self.destructure.captures_iter(text) {
+            let body = caps.name("body").expect("group in the pattern");
+            let import_meta = caps["src"].contains("meta");
+            let mut at = body.start();
+            for element in body.as_str().split(',') {
+                if let Some(key) = self.key.captures(element) {
+                    let name = key.name("name").expect("group in the pattern");
+                    out.push(Read {
+                        name: name.as_str().to_string(),
+                        offset: at + name.start(),
+                        import_meta,
+                    });
+                }
+                at += element.len() + 1;
+            }
+        }
+        for caps in self.split.captures_iter(text) {
+            let name = caps.name("name").expect("group in the pattern");
+            out.push(Read {
+                name: name.as_str().to_string(),
+                offset: name.start(),
+                import_meta: caps["src"].contains("meta"),
+            });
+        }
+        out
+    }
 }
 
 /// Files where configuration is read, by convention across ecosystems.
@@ -393,6 +492,106 @@ mod tests {
         let s = scan(d.path()).unwrap();
         let v = s.found.iter().find(|v| v.name == "API_TOKEN").unwrap();
         assert_eq!(v.location, "m00.py:1");
+    }
+
+    fn location_of<'a>(scan: &'a Scan, name: &str) -> &'a str {
+        scan.found
+            .iter()
+            .find(|v| v.name == name)
+            .map(|v| v.location.as_str())
+            .unwrap_or_else(|| panic!("{name} not found in {:?}", names(scan)))
+    }
+
+    /// I-236 (T-INIT-26, DQ-22): a destructured read, plain, renamed or
+    /// defaulted, from each of the three objects; a rest element names
+    /// nothing.
+    #[test]
+    fn t_i236_destructured_reads_are_found() {
+        let d = project(&[
+            (
+                "a.js",
+                "const { API_KEY, DB_URL: db, PORT = 3000, ...rest } = process.env;\n",
+            ),
+            ("b.ts", "const { 'QUOTED_KEY': q } = import.meta.env;\n"),
+            ("c.ts", "let { BUN_ONE } = Bun.env;\n"),
+        ]);
+        let s = scan(d.path()).unwrap();
+        for name in ["API_KEY", "DB_URL", "PORT", "QUOTED_KEY", "BUN_ONE"] {
+            assert!(
+                names(&s).contains(&name.to_string()),
+                "{name}: {:?}",
+                names(&s)
+            );
+        }
+        assert_eq!(s.found.len(), 5, "{:?}", names(&s));
+    }
+
+    /// I-236: a pattern over several lines, and a TypeScript annotation; each
+    /// name is reported at its own line.
+    #[test]
+    fn t_i236_a_destructuring_over_lines_reports_each_line() {
+        let d = project(&[(
+            "env.ts",
+            "// config\nconst {\n  FIRST_ONE,\n  SECOND_ONE: second,\n}: Record<string, string> = process.env;\n",
+        )]);
+        let s = scan(d.path()).unwrap();
+        assert_eq!(location_of(&s, "FIRST_ONE"), "env.ts:3");
+        assert_eq!(location_of(&s, "SECOND_ONE"), "env.ts:4");
+    }
+
+    /// I-236: a member access split across lines, and optional chaining.
+    #[test]
+    fn t_i236_a_split_member_access_is_found() {
+        let d = project(&[(
+            "a.js",
+            "const a = process\n  .env\n  .SPLIT_LINE;\nconst b = process.env?.OPTIONAL_ONE;\n",
+        )]);
+        let s = scan(d.path()).unwrap();
+        assert_eq!(location_of(&s, "SPLIT_LINE"), "a.js:3");
+        assert_eq!(location_of(&s, "OPTIONAL_ONE"), "a.js:4");
+    }
+
+    /// I-236: the access forms other languages use.
+    #[test]
+    fn t_i236_other_languages_are_found() {
+        let d = project(&[
+            ("a.py", "import os\nv = os.getenv(\"PY_GETENV\", \"x\")\n"),
+            ("b.rb", "k = ENV.fetch(\"RUBY_FETCH\") { 'x' }\n"),
+            ("c.php", "<?php $k = getenv('PHP_GETENV');\n"),
+            ("d.rs", "const K: &str = env!(\"RUST_ENV\");\nconst O: Option<&str> = option_env!(\"RUST_OPTION_ENV\");\nlet v = std::env::var_os(\"RUST_VAR_OS\");\n"),
+        ]);
+        let s = scan(d.path()).unwrap();
+        for name in [
+            "PY_GETENV",
+            "RUBY_FETCH",
+            "PHP_GETENV",
+            "RUST_ENV",
+            "RUST_OPTION_ENV",
+            "RUST_VAR_OS",
+        ] {
+            assert!(
+                names(&s).contains(&name.to_string()),
+                "{name}: {:?}",
+                names(&s)
+            );
+        }
+    }
+
+    /// I-236: a destructuring from another object is not a read, and the
+    /// framework's built-ins destructured from `import.meta.env` are not
+    /// proposed (I-246) — but still count as mentioned.
+    #[test]
+    fn t_i236_only_env_objects_and_no_builtins() {
+        let d = project(&[
+            ("a.js", "const { NOT_ENV } = settings;\n"),
+            (
+                "b.ts",
+                "const { MODE, DEV, VITE_REAL } = import.meta.env;\n",
+            ),
+        ]);
+        let s = scan(d.path()).unwrap();
+        assert_eq!(names(&s), vec!["VITE_REAL".to_string()]);
+        assert!(s.mentioned.contains(&"MODE".to_string()));
     }
 
     #[test]

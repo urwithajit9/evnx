@@ -1,0 +1,27 @@
+
+================ S26 ================
+The target's .evnx.toml, run from another folder
+
+$ evnx init --yes -p broken
+Error: parsing <dir>/scenes/S26/broken/.evnx.toml: TOML parse error at line 1, column 6
+  |
+1 | [vars
+  |      ^
+invalid table header
+expected `.`, `]`
+
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: FIXED I-298 (R-init): a malformed .evnx.toml at the target stops init (exit 2)
+  ok: FIXED I-298: nothing written beside it
+
+$ evnx init --yes -p bare
+Error: <dir>/scenes/S26/bare/evnx.toml is not read: evnx reads only .evnx.toml, with the leading dot.
+  rename it:  mv evnx.toml .evnx.toml
+
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: FIXED I-298: a bare evnx.toml at the target stops init, naming the rename (exit 2)
+
+================ summary: 3 ok, 0 mismatch   ================

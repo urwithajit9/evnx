@@ -318,7 +318,7 @@ fn prompt_loop(
                 // "None" first, so Enter alone files nothing (N-18).
                 let mut items = vec!["None"];
                 items.extend_from_slice(CATEGORIES);
-                let Some(idx) = Select::new()
+                let Some(idx) = Select::with_theme(&crate::utils::prompt::MENU)
                     .with_prompt("Category")
                     .items(&items)
                     .default(0)

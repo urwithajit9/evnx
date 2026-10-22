@@ -22,6 +22,15 @@ pub fn handle(
     verbose: bool,
     components: &[String],
 ) -> Result<Outcome> {
+    // A stack named where components were expected says which flag takes it
+    // (I-235): "unknown component" sent people looking for a typo.
+    for id in components {
+        let id = id.trim();
+        if component::find(id)?.is_none() && crate::schema::loader::get_blueprint(id).is_some() {
+            anyhow::bail!("{id} is a blueprint: use --blueprint {id}");
+        }
+    }
+
     // ⚠️ Resolve before anything is printed or written. An unknown name fails
     // here, with suggestions, rather than after a preview has implied it worked.
     let vars = component::resolve(components).context("Failed to resolve components")?;
@@ -216,7 +225,7 @@ pub fn handle_detected(
     // "IO error: not a terminal" — which says nothing about what to do instead.
     // Detection is a *proposal*, so accepting it without a human is opting in,
     // and there has to be a way to say so.
-    if !opts.yes && !crate::utils::term::interactive() {
+    if !opts.yes && !super::shared::can_ask() {
         anyhow::bail!(
             "detected {} components but there is nobody to confirm with.\n\n\
              Accept them:   evnx init --detect\n\
@@ -395,7 +404,7 @@ pub fn handle_from_source(path: String, opts: WriteOptions, verbose: bool) -> Re
         );
     }
 
-    if !opts.yes && !crate::utils::term::interactive() {
+    if !opts.yes && !super::shared::can_ask() {
         anyhow::bail!(
             "found {} variables the code reads that .env.example does not declare, \
              but there is nobody to confirm with.\n\n\

@@ -23,7 +23,7 @@ pub(crate) mod detect;
 pub(crate) mod shared;
 mod source;
 
-pub use shared::{write_env_files, WriteOptions};
+pub use shared::{target_config, write_env_files, WriteOptions};
 
 /// Main entry point for `evnx init`
 ///
@@ -108,8 +108,9 @@ pub fn run(
         // terminal and says only "IO error: not a terminal" (twice, once from
         // each layer), which tells a CI job or an agent nothing about what to do
         // instead. The detected and from-source paths already refuse this way;
-        // this was the one door that did not (I-014). Exit code stays 2.
-        if !crate::utils::term::interactive() {
+        // this was the one door that did not (I-014). Exit code stays 2. "A
+        // terminal" means stdin and stderr, outside CI (I-299, DQ-30).
+        if !shared::can_ask() {
             anyhow::bail!(
                 "there is no terminal to show the menu on.\n\n\
                  Name what you want instead:\n  \
@@ -126,7 +127,7 @@ pub fn run(
             "Architect  — build a custom stack",
         ];
 
-        let selection = Select::new()
+        let selection = Select::with_theme(&crate::utils::prompt::MENU)
             .with_prompt("How do you want to start?")
             .items(&modes)
             // Blank, not Blueprint (DQ-6). Enter-Enter used to write a 27-variable

@@ -35,27 +35,13 @@ pub fn handle(
     let selected_id = match requested {
         Some(id) => {
             if loader::get_blueprint(id).is_none() {
-                // The full list stays (it is how people discover the ids); a
-                // close match is named above it (I-001).
-                let close = crate::utils::string::closest(
-                    &id.to_lowercase(),
-                    blueprints.iter().map(|(bid, _)| (*bid, *bid)),
-                );
-                let hint = if close.is_empty() {
-                    String::new()
-                } else {
-                    format!("Did you mean: {}\n\n", close.join(", "))
-                };
-                return Err(anyhow::anyhow!(
-                    "Unknown blueprint '{}'.\n\n{}Available blueprints:\n{}",
-                    id,
-                    hint,
-                    blueprints
-                        .iter()
-                        .map(|(bid, name)| format!("  {bid:<22} {name}"))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                ));
+                // A component named where a stack was expected says which flag
+                // takes it (I-235); anything else gets the near match and the
+                // full list, which is how people discover the ids (I-001).
+                if crate::schema::component::find(id)?.is_some() {
+                    return Err(anyhow::anyhow!("{id} is a component: use --with {id}"));
+                }
+                return Err(anyhow::anyhow!("{}", loader::unknown_blueprint(id)));
             }
             id
         }
@@ -80,7 +66,7 @@ pub fn handle(
                 })
                 .collect();
 
-            let Some(selection) = Select::new()
+            let Some(selection) = Select::with_theme(&crate::utils::prompt::MENU)
                 .with_prompt("Choose a stack blueprint")
                 .items(&display_items)
                 .default(0)

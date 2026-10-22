@@ -1,0 +1,79 @@
+
+================ S22 ================
+The contract: .evnx.toml
+
+$ evnx init --with redis --yes -p new
+
+  evnx init  Set up environment variables for your project
+
+✓ Created .env from template
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env.example with 5 variables from 1 component
+
+Next steps:
+  1. Edit .env and replace placeholder values
+  2. Never commit .env to version control
+  3. Run 'evnx validate' to check configuration
+  4. Use 'evnx add' to add more variables later
+  Docs: https://docs.evnx.dev/cli/commands/init
+[exit 0]
+  ok: init in a repo (exit 0)
+  ok: KNOWN I-242: no .evnx.toml is created (decided DQ-18: always)
+
+$ evnx init --with redis --yes -p vars
+  config    vars/.evnx.toml
+
+  evnx init  Set up environment variables for your project
+
+✓ Created .env from template
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env.example with 5 variables from 1 component
+
+Next steps:
+  1. Edit .env and replace placeholder values
+  2. Never commit .env to version control
+  3. Run 'evnx validate' to check configuration
+  4. Use 'evnx add' to add more variables later
+  Docs: https://docs.evnx.dev/cli/commands/init
+[exit 0]
+  ok: beside a contract (exit 0)
+  ok: KNOWN I-242: new names are not recorded into [vars] (decided DQ-17)
+
+$ evnx init --with redis --yes -p novars
+  config    novars/.evnx.toml (scan.severity=high)
+
+  evnx init  Set up environment variables for your project
+
+✓ Created .env from template
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env.example with 5 variables from 1 component
+
+Next steps:
+  1. Edit .env and replace placeholder values
+  2. Never commit .env to version control
+  3. Run 'evnx validate' to check configuration
+  4. Use 'evnx add' to add more variables later
+  Docs: https://docs.evnx.dev/cli/commands/init
+[exit 0]
+  ok: beside a config without [vars] (exit 0)
+  ok: KNOWN DQ-27: a config without [vars] gets none (decided: [vars.NAME] tables appended)
+
+$ evnx init --with nextjs --yes -p mono/apps/web
+
+  evnx init  Set up environment variables for your project
+
+✓ Created .env from template
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env.example with 4 variables from 1 component
+
+Next steps:
+  1. Edit .env and replace placeholder values
+  2. Never commit .env to version control
+  3. Run 'evnx validate' to check configuration
+  4. Use 'evnx add' to add more variables later
+  Docs: https://docs.evnx.dev/cli/commands/init
+[exit 0]
+  ok: a package below the git root (exit 0)
+  ok: KNOWN DQ-26: no .evnx.toml in apps/web or at the root (decided: in the target folder)
+
+================ summary: 8 ok, 0 mismatch   ================

@@ -515,7 +515,9 @@ fn assignments(text: &str) -> usize {
 fn add_service_happy_path_for_each_group() {
     for (id, said) in [
         ("postgresql", "Added 6 variables for PostgreSQL"),
-        ("vercel", "Added 4 variables for Vercel"),
+        // 3, not 4: `NEXT_PUBLIC_VERCEL_ENV` only in a Next.js project
+        // (I-002b, DQ-23); this one has no framework.
+        ("vercel", "Added 3 variables for Vercel"),
         ("nextjs", "Added 4 variables for Next.js"),
     ] {
         let p = Project::new();

@@ -73,10 +73,53 @@ pub enum Outcome {
     Aborted,
 }
 
-// Moved to `utils::prompt` in 0.10.2 so `add` shares them; re-exported so
+// Moved to `utils::prompt` in 0.10.2 so `add` shares it; re-exported so
 // init's call sites read as before.
-pub use crate::utils::prompt::require_terminal;
 pub(crate) use crate::utils::prompt::yes_no;
+
+/// Whether init may ask: stdin and stderr are terminals, and this is not a CI
+/// job (DQ-30).
+///
+/// ⚠️ Stdin alone was the test, so `evnx init 2>log` at a terminal reached a
+/// menu dialoguer could not draw — it draws on stderr — and failed with "IO
+/// error: not a terminal: not a terminal" (I-299; sync's I-280). And under
+/// `CI=1` a runner that happened to have a terminal showed the menu; CI now
+/// gets the same refusal, naming the flags, as no terminal at all.
+pub fn can_ask() -> bool {
+    crate::utils::term::can_prompt() && !crate::utils::term::ci()
+}
+
+/// Stop before a confirmation that cannot be asked ([`can_ask`]), naming the
+/// same command with `--yes`.
+pub fn require_terminal(example: &str) -> anyhow::Result<()> {
+    if !can_ask() {
+        return Err(crate::utils::prompt::no_terminal(example));
+    }
+    Ok(())
+}
+
+/// The `.evnx.toml` governing the folder init writes to (I-298).
+///
+/// ⚠️ `main` loads the working folder's config, and with `-p` that is not the
+/// target's: a malformed or bare `evnx.toml` beside the files init was about
+/// to write was never read, and they were written. Loaded here before
+/// anything is written; an error stops the run (exit 2, "did not run"). When
+/// it is a different file from the one `main` announced, it is announced too,
+/// with its warnings.
+pub fn target_config(path: &Path, announced: Option<&Path>) -> Result<crate::core::config::Loaded> {
+    let loaded = crate::core::config::load(path)?;
+    if let Some(source) = &loaded.source {
+        let same = announced.is_some_and(|a| crate::core::safe_write::same_file(a, source));
+        if !same {
+            let quiet = crate::utils::ui::is_quiet();
+            crate::utils::ui::config_banner(source, &loaded.config.security_overrides(), quiet);
+            for warning in &loaded.warnings {
+                crate::utils::ui::config_warning(warning, quiet);
+            }
+        }
+    }
+    Ok(loaded)
+}
 
 /// Print the one line every cancel path shares, and say so in the type.
 pub fn aborted() -> Outcome {

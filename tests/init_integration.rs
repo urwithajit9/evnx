@@ -1284,8 +1284,9 @@ fn a_mistyped_blueprint_is_pointed_at() {
 }
 
 /// I-002 (fixed in 0.10.1, group H; was `known_i002_*`): a Vite stack gets the
-/// `VITE_` names its browser code reads. Additive only (DQ-2): the original
-/// names stay, and so does Clerk's Next.js name (removing it is not planned).
+/// `VITE_` names its browser code reads. Additive (DQ-2): the original names
+/// stay. Clerk's Next.js name does not: DQ-23 (0.10.16, I-002b) reversed
+/// DQ-2's "removing it is not planned", so it is written on Next.js only.
 #[test]
 fn a_vite_stack_gets_vite_client_variables() {
     let d = TempDir::new().unwrap();
@@ -1302,7 +1303,6 @@ fn a_vite_stack_gets_vite_client_variables() {
         "SUPABASE_URL",
         "SUPABASE_ANON_KEY",
         "CLERK_PUBLISHABLE_KEY",
-        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
     ] {
         assert!(
             example.contains(&format!("\n{name}=")),
@@ -1314,6 +1314,7 @@ fn a_vite_stack_gets_vite_client_variables() {
         "VITE_SUPABASE_SERVICE_ROLE_KEY",
         "VITE_SUPABASE_JWT_SECRET",
         "VITE_CLERK_SECRET_KEY",
+        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
     ] {
         assert!(!example.contains(never), "{never} written:\n{example}");
     }

@@ -31,7 +31,7 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<Outcome
     let lang_idx = if opts.yes {
         0
     } else {
-        match Select::new()
+        match Select::with_theme(&crate::utils::prompt::MENU)
             .with_prompt("Select your primary language")
             .items(&lang_display)
             .default(0)
@@ -55,7 +55,7 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<Outcome
     let fw_idx = if opts.yes {
         0
     } else {
-        match Select::new()
+        match Select::with_theme(&crate::utils::prompt::MENU)
             .with_prompt("Select your framework")
             .items(&fw_display)
             .default(0)
@@ -82,7 +82,7 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<Outcome
         // Default: select first service from first group
         vec![0]
     } else {
-        match MultiSelect::new()
+        match MultiSelect::with_theme(&crate::utils::prompt::MENU)
             .with_prompt("Select services you'll use (Space to toggle, Enter to confirm)")
             .items(&service_items)
             .interact_opt()?
@@ -115,7 +115,7 @@ pub fn handle(path: String, opts: WriteOptions, verbose: bool) -> Result<Outcome
     let selected_infra_indices = if opts.yes {
         vec![] // Default: no infra in non-interactive
     } else {
-        match MultiSelect::new()
+        match MultiSelect::with_theme(&crate::utils::prompt::MENU)
             .with_prompt("Select deployment/infrastructure (optional)")
             .items(&infra_display)
             .interact_opt()?

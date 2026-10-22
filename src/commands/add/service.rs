@@ -73,6 +73,12 @@ pub fn handle(service_id: Option<&str>, path: &str, mode: &Mode) -> Result<Outco
 /// ([`component::CLIENT_SAFE`]); a service with none of them is left alone and
 /// nothing is said.
 fn add_browser_copies(vars: &mut crate::schema::models::VarCollection, root: &Path, verbose: bool) {
+    let detected = crate::commands::init::detect::detect(root).unwrap_or_default();
+    // A browser name for a framework this project does not use is dropped,
+    // as `init` drops it (I-002b, DQ-23): Clerk's NEXT_PUBLIC_ key outside
+    // Next.js.
+    let found: Vec<&str> = detected.iter().map(|d| d.component.as_str()).collect();
+    component::browser_names_for(vars, &found);
     let has_public = vars
         .vars
         .keys()
@@ -80,7 +86,6 @@ fn add_browser_copies(vars: &mut crate::schema::models::VarCollection, root: &Pa
     if !has_public {
         return;
     }
-    let detected = crate::commands::init::detect::detect(root).unwrap_or_default();
     let mut found_any = false;
     for d in &detected {
         let Some((_, prefix)) = component::CLIENT_PREFIX

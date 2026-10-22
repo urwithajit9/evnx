@@ -1,0 +1,63 @@
+
+================ S24 ================
+Other env files
+
+$ evnx init --yes -p named
+  config    named/.evnx.toml
+
+  evnx init  Set up environment variables for your project
+
+✓ Created .env from template
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env.example (no variables yet)
+· Tip: Run 'evnx add' to add variables interactively
+
+Next steps:
+  1. Edit .env and replace placeholder values
+  2. Never commit .env to version control
+  3. Run 'evnx validate' to check configuration
+  4. Use 'evnx add' to add more variables later
+  Docs: https://docs.evnx.dev/cli/commands/init
+[exit 0]
+  ok: [defaults] env_name = local (exit 0)
+  ok: KNOWN I-296: nothing says the project reads .env.local (decided DQ-32: one notice line)
+
+$ evnx init --with stripe --yes -p multi
+
+  evnx init  Set up environment variables for your project
+
+✓ Created .env from template
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env.example with 3 variables from 1 component
+
+Next steps:
+  1. Edit .env and replace placeholder values
+  2. Never commit .env to version control
+  3. Run 'evnx validate' to check configuration
+  4. Use 'evnx add' to add more variables later
+  Docs: https://docs.evnx.dev/cli/commands/init
+[exit 0]
+  ok: .env.production, .env.staging, .env.test present (exit 0)
+  ok: KNOWN I-296: nothing names the env files left unchanged
+
+$ evnx init --yes -p rc
+
+  evnx init  Set up environment variables for your project
+
+✓ Created .env from template
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .env.example (no variables yet)
+· Tip: Run 'evnx add' to add variables interactively
+
+Next steps:
+  1. Edit .env and replace placeholder values
+  2. Never commit .env to version control
+  3. Run 'evnx validate' to check configuration
+  4. Use 'evnx add' to add more variables later
+  Docs: https://docs.evnx.dev/cli/commands/init
+[exit 0]
+  ok: beside a direnv .envrc (exit 0)
+  ok: .envrc is ignored by .env* (stays, DQ-33)
+  ok: KNOWN I-174: nothing says .envrc is now ignored (decided DQ-33: one line)
+
+================ summary: 7 ok, 0 mismatch   ================

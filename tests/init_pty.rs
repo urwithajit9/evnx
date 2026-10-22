@@ -480,3 +480,73 @@ fn y_enter_answers_exactly_one_question() {
         "not overwritten:\n{example}"
     );
 }
+
+// ─────────────────────────────────────────────────────────────
+// 0.10.16 (R-init): who can be asked
+// ─────────────────────────────────────────────────────────────
+
+/// T-INIT-48: the menu question is not followed by a colon (`start?:`).
+#[test]
+fn t_init_48_a_question_prompt_has_no_trailing_colon() {
+    let d = TempDir::new().unwrap();
+    let mut run = run_init(d.path(), &[]);
+    run.wait_for("How do you want to start?");
+    // ⚠️ `wait_for` returns the text *before* its match, so the character
+    // after the question is the first one of the text before the first item.
+    let between = run.wait_for("Blank");
+    run.press(&[ESC]);
+    let (_, code) = run.finish();
+    assert_eq!(code, 0);
+    assert!(!between.starts_with(':'), "after the question: {between:?}");
+}
+
+/// I-299 (T-INIT-42): stdin is a terminal but stderr is a file. dialoguer
+/// draws on stderr, so the menu could not be shown and init failed with
+/// "IO error: not a terminal: not a terminal"; it now refuses the way it does
+/// with no terminal, naming the flags (sync fixed the same in I-280).
+#[test]
+fn t_i299_stderr_not_a_terminal_refuses_with_the_flag_hint() {
+    let d = TempDir::new().unwrap();
+    let s = Pty::spawn_shell(d.path(), "\"$EVNX\" init 2>err.txt; echo \"rc=$?\"");
+    let (out, _) = s.finish();
+    assert!(out.contains("rc=2"), "{out}");
+    let err = std::fs::read_to_string(d.path().join("err.txt")).unwrap();
+    assert!(!err.contains("not a terminal: not a terminal"), "{err}");
+    assert!(err.contains("evnx init --yes --with <a,b,c>"), "{err}");
+    assert!(!d.path().join(".env.example").exists());
+}
+
+/// DQ-30 (T-INIT-42): `CI=1` at a terminal is no terminal for init's
+/// prompts: the same refusal and flag hint, exit 2, nothing written.
+#[test]
+fn t_dq30_ci_at_a_terminal_refuses_the_menu() {
+    let d = TempDir::new().unwrap();
+    let s = Pty::spawn_shell(d.path(), "CI=true \"$EVNX\" init; echo \"rc=$?\"");
+    let (out, _) = s.finish();
+    assert!(out.contains("rc=2"), "{out}");
+    assert!(out.contains("evnx init --yes --with <a,b,c>"), "{out}");
+    assert!(!out.contains("Blank      —"), "the menu was drawn:\n{out}");
+    assert!(!d.path().join(".env.example").exists());
+}
+
+/// DQ-30: `--with` without `--yes` under `CI=1` refuses before its question.
+#[test]
+fn t_dq30_ci_at_a_terminal_refuses_a_confirmation() {
+    let d = TempDir::new().unwrap();
+    let s = Pty::spawn_shell(d.path(), "CI=1 \"$EVNX\" init --with redis; echo \"rc=$?\"");
+    let (out, _) = s.finish();
+    assert!(out.contains("rc=2"), "{out}");
+    assert!(out.contains("evnx init --with redis --yes"), "{out}");
+    assert!(!d.path().join(".env.example").exists());
+}
+
+/// DQ-30: `CI=false` and `CI=0` are not CI; the menu is shown.
+#[test]
+fn t_dq30_ci_false_still_shows_the_menu() {
+    let d = TempDir::new().unwrap();
+    let mut run = Pty::spawn_with(d.path(), &["init"], &[("CI", "false")]);
+    run.wait_for("How do you want to start?");
+    run.press(&[ESC]);
+    let (_, code) = run.finish();
+    assert_eq!(code, 0);
+}

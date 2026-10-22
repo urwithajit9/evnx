@@ -1,0 +1,32 @@
+
+================ S20 ================
+--from-source: destructuring, split lines, other languages
+
+$ evnx init --from-source --yes
+
+  evnx init  Set up environment variables for your project
+
+
+  scanned 5 source files
+
+  8 variables read by the code
+     API_KEY                      src/a.js:1
+     DB_URL                       src/a.js:1
+     PHP_GETENV                   src/d.php:1
+     PORT                         src/a.js:1
+     PY_GETENV                    src/b.py:2
+     RUBY_FETCH                   src/c.rb:1
+     RUST_ENV_MACRO               src/e.rs:1
+     SPLIT_LINE                   src/a.js:3
+
+  0 already in .env.example  ·  8 new
+✓ Created .env from template
+✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Added 8 variables from the source
+[exit 0]
+  ok: from-source (exit 0)
+  ok: FIXED I-236 (R-init, DQ-22): destructured names are found, plain, renamed and defaulted
+  ok: FIXED I-236 (R-init): access split across lines is found
+  ok: FIXED I-236 (R-init): os.getenv, ENV.fetch, getenv and env! are found
+
+================ summary: 4 ok, 0 mismatch   ================

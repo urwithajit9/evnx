@@ -28,9 +28,9 @@
 use anyhow::{bail, Result};
 
 use super::loader::schema;
-use super::models::VarCollection;
+use super::models::{VarCollection, VarSource};
 use super::resolver::{add_framework_vars, add_infra_vars, add_service_vars};
-use crate::utils::string::closest;
+use crate::utils::string::suggest;
 
 /// What kind of thing a component is — for grouping in a listing, and for
 /// telling the user where a name came from.
@@ -200,6 +200,31 @@ pub const CLIENT_SAFE: &[&str] = &[
     "CLOUDINARY_CLOUD_NAME",
 ];
 
+/// Drop a service's browser name for a framework the stack does not use
+/// (I-002b, DQ-23).
+///
+/// ⚠️ Clerk lists `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and Vercel
+/// `NEXT_PUBLIC_VERCEL_ENV` in the catalogue, so a Vite, Nuxt or Express stack
+/// got a Next.js name its code can never read, beside the `VITE_` copy it can.
+/// A service or infrastructure variable carrying a framework's prefix
+/// ([`CLIENT_PREFIX`]) is now kept only when a framework with that prefix is in
+/// `frameworks`; on another browser framework [`add_client_copies`] gives the
+/// public value under that framework's own prefix. A framework's own variables
+/// are never touched.
+pub(crate) fn browser_names_for(collection: &mut VarCollection, frameworks: &[&str]) {
+    collection.vars.retain(|name, meta| {
+        if matches!(meta.source, VarSource::Framework(_)) {
+            return true;
+        }
+        let Some((_, prefix)) = CLIENT_PREFIX.iter().find(|(_, p)| name.starts_with(p)) else {
+            return true;
+        };
+        CLIENT_PREFIX
+            .iter()
+            .any(|(id, p)| p == prefix && frameworks.contains(id))
+    });
+}
+
 /// Add the client-prefixed copy of each browser-safe variable in `collection`,
 /// for a framework that needs one (I-002, phase A of DQ-2).
 ///
@@ -321,6 +346,7 @@ pub fn resolve(ids: &[String]) -> Result<VarCollection> {
         .copied()
         .filter(|id| all.iter().any(|c| c.id == *id && c.kind == Kind::Framework))
         .collect();
+    browser_names_for(&mut collection, &frameworks);
     for framework in frameworks {
         add_client_copies(&mut collection, framework);
     }
@@ -386,25 +412,12 @@ pub fn declaring(var_name: &str) -> Result<Option<Component>> {
 /// actually make — an abbreviation, and the wrong half of a two-word name.
 fn unknown_message(id: &str, all: &[Component]) -> String {
     let lower = id.to_lowercase();
-    let mut near: Vec<&str> = all
-        .iter()
-        .filter(|c| c.id.starts_with(&lower) || c.id.contains(&lower))
-        .map(|c| c.id.as_str())
-        .take(6)
-        .collect();
-
-    // Prefix and substring miss the commonest typos: a transposition
-    // (`supabse`), a dropped letter (`strpe`), a doubled one (`stripee`).
-    // Only consulted when they found nothing, so every hint that worked before
-    // reads exactly as it did (I-001). Aliases are candidates too, and suggest
-    // the id they stand for.
-    if near.is_empty() {
-        let names = all
-            .iter()
-            .map(|c| (c.id.as_str(), c.id.as_str()))
-            .chain(ALIASES.iter().copied());
-        near = closest(&lower, names);
-    }
+    // Prefix and substring, then edit distance for the commonest typos — a
+    // transposition (`supabse`), a dropped letter (`strpe`), a doubled one
+    // (`stripee`) — with aliases suggesting the id they stand for (I-001). The
+    // same rule now answers an unknown blueprint (I-235).
+    let ids: Vec<&str> = all.iter().map(|c| c.id.as_str()).collect();
+    let near = suggest(&lower, &ids, ALIASES);
 
     let mut msg = format!("unknown component '{id}'");
     if !near.is_empty() {
