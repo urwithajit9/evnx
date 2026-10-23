@@ -29,6 +29,12 @@ answer with `{error, code}`; plan limits add `"reason": "PLAN_LIMIT"`; login
 starts are limited to 30 per 15 minutes per address (wrong passwords still lock
 it after 5). This release behaves the same against the server before and after.
 
+🔒 **Security:** `ctutils` 0.4.2 → 0.4.5 (RUSTSEC-2026-0385, published
+2026-10-23: non-constant-time mask generation and `u128` comparisons). It sits
+under `ml-kem`, the post-quantum half of the key wrap `evnx vault share` uses,
+so the fix is a timing side channel in work done on your own machine. No
+change to what is encrypted or how; nothing to rotate.
+
 - **`evnx auth status` says why a paid organisation is not raising your plan**
   (I-321). The server applies the plan of the organisation you hold a seat in,
   else your own, and paying for seats hands none out: an organisation's owner
