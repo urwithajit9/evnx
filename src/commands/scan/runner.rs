@@ -1173,7 +1173,7 @@ fn looks_like_text(text: &str) -> bool {
 
 /// Decode UTF-16 code units into a `String`.
 fn from_utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16, label: &str) -> Decoded {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Decoded::Unreadable {
             reason: format!("looks like {label} but has an odd number of bytes"),
         };

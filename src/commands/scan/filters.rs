@@ -70,7 +70,7 @@ fn is_glob(value: &str) -> bool {
 
 /// `1024 KiB`, `5120 KiB`, `500 bytes`: the limit as the skip note says it.
 pub fn size_label(bytes: u64) -> String {
-    if bytes >= 1024 && bytes % 1024 == 0 {
+    if bytes >= 1024 && bytes.is_multiple_of(1024) {
         format!("{} KiB", bytes / 1024)
     } else {
         format!("{bytes} bytes")

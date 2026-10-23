@@ -2,11 +2,12 @@
 name        = "evnx"
 version     = "0.10.17"
 edition     = "2021"
-# Verified by building on it, not assumed: cargo +1.85.0 check passes for the
+# Verified by building on it, not assumed: cargo +1.87.0 check passes for the
 # default feature set, --features cloud and --all-features. The floor comes from
-# evnx-crypto (zeroize_derive needs edition2024); it is declared at package level
-# because Cargo has no per-feature MSRV.
-rust-version = "1.85"
+# ctutils 0.4.4+ (under evnx-crypto's ml-kem), the first release fixing
+# RUSTSEC-2026-0385; before 0.10.17 it was 1.85 (zeroize_derive, edition2024).
+# Declared at package level because Cargo has no per-feature MSRV.
+rust-version = "1.87"
 authors     = ["Ajit Kumar <ajitkumar.pu@gmail.com>"]
 description = "Manage .env files — validate, scan for secrets, convert formats, and sync them end-to-end encrypted"
 repository  = "https://github.com/urwithajit9/evnx"

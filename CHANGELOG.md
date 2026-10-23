@@ -35,6 +35,11 @@ under `ml-kem`, the post-quantum half of the key wrap `evnx vault share` uses,
 so the fix is a timing side channel in work done on your own machine. No
 change to what is encrypted or how; nothing to rotate.
 
+⚠️ **Building from source now needs Rust 1.87** (`rust-version` was 1.85).
+Every fixed `ctutils` release requires it. Only `cargo install evnx` on an older
+toolchain is affected; the npm, Homebrew, Scoop, winget, PyPI and GitHub
+Release binaries are built on stable as before.
+
 - **`evnx auth status` says why a paid organisation is not raising your plan**
   (I-321). The server applies the plan of the organisation you hold a seat in,
   else your own, and paying for seats hands none out: an organisation's owner
