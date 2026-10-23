@@ -544,6 +544,21 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
             }
             return Ok(());
         }
+        // I-302: the same, for an API token — it does not expire as a session
+        // does, and the fix is a new token rather than a login.
+        Err(crate::cloud::client::ApiError::TokenRejected) => {
+            if !quiet {
+                println!("{}", "evnx account".bold());
+            }
+            println!("  server    {server}");
+            println!("  using     API token (from {})", super::client::ENV_TOKEN);
+            println!("  status    {}", "API token refused".yellow());
+            if !quiet {
+                println!("  It has been revoked, has expired, or is mistyped. Create a new one");
+                println!("  on a signed-in machine with `evnx auth token create`.");
+            }
+            return Ok(());
+        }
         Err(e) => return Err(anyhow!("{e}")),
     };
 

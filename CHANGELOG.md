@@ -30,6 +30,14 @@ The patch for `evnx auth` (package R-auth).
   session, the CLI now refreshes the session once and retries the request; the
   refreshed token is issued from the database. Still unverified after that,
   the message is as before. API tokens have no refresh and are unchanged.
+- **A refused API token says so** (I-302, DEC-AU302; the auth I-302 in the
+  review's `issues.csv` — #219 reused the number for `init`). A revoked,
+  expired or mistyped `EVNX_TOKEN` was reported as "your session has expired.
+  Run `evnx auth login`", the wrong cause and a fix a CI job cannot run. It now
+  reads "the API token in EVNX_TOKEN was refused", with `evnx auth token
+  create` as the fix, and `evnx auth status` shows `status  API token refused`
+  instead of `session expired`. The exit code is unchanged (2; `status` 0). An
+  expired login still says to run `evnx auth login`.
 
 ## [0.10.16] - 2026-10-22
 

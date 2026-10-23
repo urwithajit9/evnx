@@ -89,6 +89,19 @@ pub enum ApiError {
     #[error("your session has expired. Run `evnx auth login` to sign in again.")]
     Unauthorized,
 
+    /// 401 to an `EVNX_TOKEN` API token (I-302, DEC-AU302).
+    ///
+    /// ⚠️ Not [`ApiError::Unauthorized`]. A token has no session to expire and
+    /// no refresh, and the job that holds one usually cannot run `evnx auth
+    /// login` — so "your session has expired" named the wrong cause and a fix
+    /// it could not carry out.
+    #[error(
+        "the API token in EVNX_TOKEN was refused — it has been revoked, has expired, \
+         or is mistyped. Create a new one on a signed-in machine with \
+         `evnx auth token create`, and replace the secret where this job reads it."
+    )]
+    TokenRejected,
+
     /// 403 `EMAIL_NOT_VERIFIED`.
     #[error(
         "your email address is not verified yet — check your inbox for the link from evnx. \
@@ -585,7 +598,7 @@ impl Client {
         if self.is_api_token() {
             // A 401 on an API token means revoked, expired, or wrong — none of
             // which a refresh could fix. Retrying would just repeat it.
-            return Err(ApiError::Unauthorized);
+            return Err(ApiError::TokenRejected);
         }
 
         let refresh_token = {

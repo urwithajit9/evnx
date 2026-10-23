@@ -17,6 +17,10 @@
 //!   commands still said "not verified" — the session's access token carried
 //!   `email_verified` from before — while `auth status` said "verified yes".
 //!   A session is now refreshed once and the request retried.
+//! - I-302, DEC-AU302 (the auth I-302 in `plan/issues.csv`; #219 reused the
+//!   number for init): a revoked, expired or mistyped `EVNX_TOKEN` was reported
+//!   as "your session has expired. Run `evnx auth login`" — the wrong cause,
+//!   and a fix a CI job cannot run.
 //! - I-321: a customer whose organisation pays for Team, and who holds no seat
 //!   in it, saw `plan (free)` with no reason. Paying for seats hands none out —
 //!   an organisation's owner is created without one — so `status` now names
@@ -500,4 +504,107 @@ fn t_i301_an_api_token_is_not_refreshed() {
     assert_ne!(out.code, Some(0), "{}", out.all());
     assert!(out.all().contains("not verified"), "{}", out.all());
     refresh.assert();
+}
+
+// ─── I-302: a refused API token is not an expired session ─────────────────────
+
+const REFUSED: &str = r#"{"error":"Authentication failed","code":"UNAUTHORIZED"}"#;
+
+#[test]
+fn t_i302_a_refused_api_token_says_to_create_a_new_one() {
+    let p = Project::new();
+    let mut server = mockito::Server::new();
+    let url = server.url();
+    server
+        .mock("GET", "/api/v1/vaults")
+        .with_status(401)
+        .with_body(REFUSED)
+        .expect(1)
+        .create();
+    let refresh = server
+        .mock("POST", "/api/v1/auth/refresh")
+        .expect(0)
+        .create();
+
+    let out = evnx(&p, &url, Some(TOKEN), &["vault", "list"]);
+    out.assert_code(2);
+    assert!(
+        out.stderr
+            .contains("the API token in EVNX_TOKEN was refused"),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.contains("evnx auth token create"),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        !out.stderr.contains("session has expired"),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.stderr.contains("evnx auth login"), "{}", out.stderr);
+    refresh.assert();
+}
+
+/// `status` reports it as a state, as it does an expired session.
+#[test]
+fn t_i302_status_reports_a_refused_api_token() {
+    let p = Project::new();
+    let mut server = mockito::Server::new();
+    let url = server.url();
+    server
+        .mock("GET", "/api/v1/auth/me")
+        .with_status(401)
+        .with_body(REFUSED)
+        .create();
+
+    let out = evnx(&p, &url, Some(TOKEN), &["auth", "status"]);
+    out.assert_code(0);
+    assert!(out.stdout.contains("API token refused"), "{}", out.stdout);
+    assert!(
+        out.stdout.contains("evnx auth token create"),
+        "{}",
+        out.stdout
+    );
+    assert!(!out.stdout.contains("session expired"), "{}", out.stdout);
+}
+
+/// The other half is unchanged: a dead session still says to sign in again.
+#[test]
+fn t_i302_an_expired_session_still_says_sign_in_again() {
+    use evnx::cloud::creds::{SecretString, Session, Store};
+    let p = Project::new();
+    let mut server = mockito::Server::new();
+    let url = server.url();
+    let cfg = p.path().join("cfg");
+    std::fs::create_dir_all(&cfg).unwrap();
+    let mut store = Store::default();
+    store.set_session(
+        &url,
+        Session {
+            email: "me@example.com".into(),
+            access_token: SecretString::new("access"),
+            access_expires_at: 4_000_000_000,
+            refresh_token: SecretString::new("dead"),
+        },
+    );
+    store.save_to(&cfg.join("credentials.json")).unwrap();
+    server
+        .mock("GET", "/api/v1/vaults")
+        .with_status(401)
+        .with_body(REFUSED)
+        .create();
+    server
+        .mock("POST", "/api/v1/auth/refresh")
+        .with_status(401)
+        .with_body(REFUSED)
+        .create();
+
+    let out = evnx(&p, &url, None, &["vault", "list"]);
+    out.assert_code(2);
+    assert!(out.stderr.contains("session has expired"), "{}", out.stderr);
+    assert!(out.stderr.contains("evnx auth login"), "{}", out.stderr);
+    assert!(!out.stderr.contains("API token"), "{}", out.stderr);
 }
