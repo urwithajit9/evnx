@@ -24,6 +24,9 @@
 //! - D-150, DEC-AU9: the README named 3 of the 19 `evnx auth` commands. Its
 //!   table is now checked against the CLI in both directions, so a command
 //!   added or renamed later fails here instead of drifting.
+//! - I-306: an error code this build does not know (the server may add one)
+//!   printed "unexpected response from …: HTTP 403" and dropped the server's
+//!   sentence. The sentence is kept now.
 //! - I-321: a customer whose organisation pays for Team, and who holds no seat
 //!   in it, saw `plan (free)` with no reason. Paying for seats hands none out —
 //!   an organisation's owner is created without one — so `status` now names
@@ -711,5 +714,32 @@ fn t_d148_the_readme_names_the_config_folder_on_every_platform() {
     assert!(
         !readme.contains("`server = \"...\"` in `~/.config/evnx/config.toml`"),
         "the Linux-only path is still given as the only one"
+    );
+}
+
+// ─── I-306: a code this build does not know keeps its sentence ─────────────────
+
+#[test]
+fn t_i306_an_unknown_error_code_prints_the_servers_sentence() {
+    let p = Project::new();
+    let mut server = mockito::Server::new();
+    let url = server.url();
+    server
+        .mock("GET", "/api/v1/vaults")
+        .with_status(403)
+        .with_body(r#"{"error":"your plan (free) allows 3 vaults.","code":"PLAN_LIMIT"}"#)
+        .create();
+
+    let out = evnx(&p, &url, Some(TOKEN), &["vault", "list"]);
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("your plan (free) allows 3 vaults."),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        !out.stderr.contains("unexpected response"),
+        "{}",
+        out.stderr
     );
 }

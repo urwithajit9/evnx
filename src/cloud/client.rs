@@ -183,6 +183,18 @@ pub enum ApiError {
         reason: String,
     },
 
+    /// A refusal with a code this build does not know, and a sentence that
+    /// says what was wrong (I-306). The sentence is the message: the server
+    /// writes it for the person reading, and a code added after this build was
+    /// released is no reason to drop it.
+    #[error("{message}")]
+    Refused {
+        /// Status returned.
+        status: u16,
+        /// The server's sentence.
+        message: String,
+    },
+
     /// A status or body this client does not know how to interpret.
     #[error("unexpected response from {server}: HTTP {status}")]
     Unexpected {
@@ -679,6 +691,8 @@ impl Client {
             error: String::new(),
             code: String::new(),
         });
+        // A real sentence from the server, as opposed to the placeholder below.
+        let has_sentence = !parsed.error.trim().is_empty();
         let message = if parsed.error.is_empty() {
             format!("HTTP {}", status.as_u16())
         } else {
@@ -715,6 +729,11 @@ impl Client {
                     server: self.server.clone(),
                     status: s,
                 },
+                // ⚠️ I-306: a code this build does not know, with a sentence —
+                // keep the sentence. It said "unexpected response: HTTP 403"
+                // and dropped it, which is what made a new code impossible to
+                // add without breaking every installed CLI.
+                s if has_sentence => ApiError::Refused { status: s, message },
                 s => ApiError::Unexpected {
                     server: self.server.clone(),
                     status: s,
@@ -1028,6 +1047,69 @@ mod tests {
         assert!(matches!(err, ApiError::EmailNotVerified), "{err:?}");
         vaults.assert();
         refresh.assert();
+    }
+
+    // ─── I-306: a code this build does not know ─────────────────────────────
+
+    /// A code added to the server after this build (`PLAN_LIMIT` was the first
+    /// one considered) fell back to the status, and 403 printed "unexpected
+    /// response from …: HTTP 403" — the sentence explaining the refusal lost.
+    #[test]
+    #[serial]
+    fn t_i306_an_unknown_code_keeps_the_servers_sentence() {
+        let _g = ConfigDirGuard::new();
+        let mut server = mockito::Server::new();
+        signed_in(&server.url(), 4_000_000_000).save().unwrap();
+        let client = Client::new(server.url()).unwrap();
+
+        for (status, path, body, said) in [
+            (
+                403,
+                "/api/v1/a",
+                r#"{"error":"your plan (free) allows 3 vaults.","code":"PLAN_LIMIT"}"#,
+                "your plan (free) allows 3 vaults.",
+            ),
+            (
+                418,
+                "/api/v1/b",
+                r#"{"error":"a sentence from a newer server","code":"SOMETHING_NEW"}"#,
+                "a sentence from a newer server",
+            ),
+        ] {
+            let m = server
+                .mock("GET", path)
+                .with_status(status)
+                .with_body(body)
+                .create();
+            let err = client.get::<serde_json::Value>(path).unwrap_err();
+            assert_eq!(err.to_string(), said, "{err:?}");
+            m.assert();
+        }
+    }
+
+    /// No sentence to keep — a proxy's error page — still names the status.
+    #[test]
+    #[serial]
+    fn t_i306_a_body_without_a_sentence_still_names_the_status() {
+        let _g = ConfigDirGuard::new();
+        let mut server = mockito::Server::new();
+        signed_in(&server.url(), 4_000_000_000).save().unwrap();
+        let client = Client::new(server.url()).unwrap();
+
+        let m = server
+            .mock("GET", "/api/v1/vaults")
+            .with_status(403)
+            .with_header("content-type", "text/html")
+            .with_body("<html><body>Forbidden by proxy</body></html>")
+            .create();
+        let err = client
+            .get::<serde_json::Value>("/api/v1/vaults")
+            .unwrap_err();
+        assert!(
+            matches!(err, ApiError::Unexpected { status: 403, .. }),
+            "{err:?}"
+        );
+        m.assert();
     }
 
     #[test]

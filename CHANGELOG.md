@@ -50,6 +50,15 @@ The patch for `evnx auth` (package R-auth).
   and Windows, `EVNX_CONFIG_DIR`, `config.toml` and `credentials.json` (mode
   0600), and the three environment variables. A test checks the table against
   the CLI in both directions, so a command added or renamed later fails it.
+- **An error code this build does not know keeps the server's sentence**
+  (I-306). It printed "unexpected response from …: HTTP 403" and dropped the
+  sentence that said what was wrong — which is why the server could not give
+  plan limits a code of their own without breaking every installed CLI. A
+  refusal with an unrecognised code and a sentence now prints the sentence;
+  one with no sentence (a proxy's error page) still names the status. The
+  server marks plan limits with `"reason": "PLAN_LIMIT"` beside `code:
+  FORBIDDEN` (evnx-server, SV-4), which every version of the CLI reads as
+  before.
 
 ## [0.10.16] - 2026-10-22
 
