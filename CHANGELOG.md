@@ -43,6 +43,13 @@ The patch for `evnx auth` (package R-auth).
   pipeline wired to `login` found out only when it stopped for a code. Both
   now point unattended jobs at `evnx auth token create` and `EVNX_TOKEN`. Help
   text only; the one-line summaries in `evnx auth --help` are unchanged.
+- **README: the whole of `evnx auth`, and where it keeps your login** (D-148,
+  D-150, DEC-AU9). The README named 3 of the 19 auth commands and gave
+  `~/.config/evnx/config.toml` as the only config path, which is right on Linux
+  alone. A new "Your account" section lists all 19, the folder on Linux, macOS
+  and Windows, `EVNX_CONFIG_DIR`, `config.toml` and `credentials.json` (mode
+  0600), and the three environment variables. A test checks the table against
+  the CLI in both directions, so a command added or renamed later fails it.
 
 ## [0.10.16] - 2026-10-22
 

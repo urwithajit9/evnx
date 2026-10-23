@@ -907,6 +907,65 @@ form does not belong in a terminal.
 refused, because inviting people and assigning seats changes what the account is
 billed.
 
+### Your account (`evnx auth`)
+
+Nineteen commands in five groups. Each one's `--help` says more, and the full
+guide is at [docs.evnx.dev/cli/commands/auth](https://docs.evnx.dev/cli/commands/auth).
+
+| Command | What it does |
+|---|---|
+| **Account** | |
+| `evnx auth register` | Create an evnx cloud account |
+| `evnx auth login` | Sign in on this machine. CI uses an API token instead ([below](#cicd)) |
+| `evnx auth logout` | Sign out. The stored login is removed even if the server cannot be reached |
+| `evnx auth status` | Your account as the server sees it: verified, 2FA, plan and usage |
+| **API tokens**, for CI/CD | |
+| `evnx auth token create <name>` | Mint a token. Shown once, then only revocable |
+| `evnx auth token list` | List the account's live tokens |
+| `evnx auth token revoke <name-or-id>` | Revoke a token |
+| **Two-factor** | |
+| `evnx auth totp enable` | Turn on two-factor authentication, and get ten recovery codes |
+| `evnx auth totp disable` | Turn it off. Needs a current code, not just a session |
+| `evnx auth totp recovery-codes` | Issue fresh recovery codes, invalidating the old ones |
+| **Sessions and devices** | |
+| `evnx auth sessions list` | List active sessions |
+| `evnx auth sessions revoke <id>` | Revoke one session |
+| `evnx auth sessions revoke-others` | Revoke every session except this one |
+| `evnx auth devices list` | Networks and browsers this account has signed in from |
+| `evnx auth devices disavow <device-id>` | Report that a device was not you |
+| **Master password and data** | |
+| `evnx auth rotate-master-password` | Change your master password |
+| `evnx auth undo-password-change` | Undo a change, by proving the previous password |
+| `evnx auth download-data` | Everything the server holds about your account, as JSON |
+| `evnx auth delete-account` | Delete your account and everything only you can reach |
+
+#### Where the CLI keeps your login
+
+One folder, which depends on the platform:
+
+| Platform | Folder |
+|---|---|
+| Linux | `~/.config/evnx` (or `$XDG_CONFIG_HOME/evnx`) |
+| macOS | `~/Library/Application Support/evnx` |
+| Windows | `%APPDATA%\evnx` |
+
+`EVNX_CONFIG_DIR` replaces the folder entirely, which is also how to keep a work
+and a personal account apart on one machine.
+
+| File | Holds | Written by |
+|---|---|---|
+| `config.toml` | `server = "..."` and other preferences | you, by hand |
+| `credentials.json` | your email and the session's access and refresh tokens | only the CLI, at mode `0600` in a folder kept at `0700` (Linux and macOS) |
+
+Neither file holds your master password or any key that opens a vault: those
+are never written to disk, so every command that decrypts asks for the password.
+
+| Variable | Effect |
+|---|---|
+| `EVNX_SERVER` | The server for this run. `--server` beats it; it beats `config.toml`; the default is `https://api.evnx.dev` |
+| `EVNX_TOKEN` | An API token, used instead of the stored login ([CI/CD](#cicd)) |
+| `EVNX_CONFIG_DIR` | The folder above |
+
 ### CI/CD
 
 Mint a token scoped to one vault, read-only:
@@ -942,7 +1001,8 @@ is visible in process listings and tends to end up in logs.
 evnx cloud status --server https://evnx.internal.example
 ```
 
-or set `EVNX_SERVER`, or `server = "..."` in `~/.config/evnx/config.toml`. The
+or set `EVNX_SERVER`, or `server = "..."` in `config.toml` in the CLI's folder
+([where that is](#where-the-cli-keeps-your-login)). The
 server is [open source](https://github.com/urwithajit9/evnx-server) and ships a
 Docker stack. Plain `http://` is refused for anything but a loopback address,
 because tokens travel in request headers.

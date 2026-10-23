@@ -21,6 +21,9 @@
 //!   number for init): a revoked, expired or mistyped `EVNX_TOKEN` was reported
 //!   as "your session has expired. Run `evnx auth login`" — the wrong cause,
 //!   and a fix a CI job cannot run.
+//! - D-150, DEC-AU9: the README named 3 of the 19 `evnx auth` commands. Its
+//!   table is now checked against the CLI in both directions, so a command
+//!   added or renamed later fails here instead of drifting.
 //! - I-321: a customer whose organisation pays for Team, and who holds no seat
 //!   in it, saw `plan (free)` with no reason. Paying for seats hands none out —
 //!   an organisation's owner is created without one — so `status` now names
@@ -607,4 +610,106 @@ fn t_i302_an_expired_session_still_says_sign_in_again() {
     assert!(out.stderr.contains("session has expired"), "{}", out.stderr);
     assert!(out.stderr.contains("evnx auth login"), "{}", out.stderr);
     assert!(!out.stderr.contains("API token"), "{}", out.stderr);
+}
+
+// ─── D-150: the README's auth table is the CLI's auth commands ────────────────
+
+/// The subcommands `evnx <path> --help` lists, without `help`.
+fn subcommands(p: &Project, path: &[&str]) -> Vec<String> {
+    let mut args = path.to_vec();
+    args.push("--help");
+    let out = run_with(p.path(), &args, &[("NO_COLOR", "1")], None);
+    out.assert_code(0);
+    out.stdout
+        .lines()
+        .skip_while(|l| !l.starts_with("Commands:"))
+        .skip(1)
+        .take_while(|l| !l.trim().is_empty())
+        .filter_map(|l| l.split_whitespace().next())
+        .filter(|c| *c != "help")
+        .map(str::to_string)
+        .collect()
+}
+
+/// Every runnable `evnx auth …` command, as `"token create"` and so on.
+fn real_auth_commands(p: &Project) -> std::collections::BTreeSet<String> {
+    let mut all = std::collections::BTreeSet::new();
+    for top in subcommands(p, &["auth"]) {
+        let subs = subcommands(p, &["auth", &top]);
+        if subs.is_empty() {
+            all.insert(top);
+        } else {
+            for sub in subs {
+                all.insert(format!("{top} {sub}"));
+            }
+        }
+    }
+    all
+}
+
+/// The `evnx auth …` commands the README's account section names, each cut at
+/// its first argument (`<name>`, `--flag`, `[…]`).
+fn readme_auth_commands() -> std::collections::BTreeSet<String> {
+    let readme =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md")).unwrap();
+    let section = readme
+        .split("### Your account (`evnx auth`)")
+        .nth(1)
+        .and_then(|s| s.split("\n### ").next())
+        .expect("README has an account section");
+    section
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .filter_map(|code| code.strip_prefix("evnx auth "))
+        .map(|rest| {
+            rest.split_whitespace()
+                .take_while(|w| !w.starts_with(['<', '-', '[']))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .filter(|c| !c.is_empty())
+        .collect()
+}
+
+#[test]
+fn t_d150_the_readme_lists_every_auth_command_and_only_real_ones() {
+    let p = Project::new();
+    let real = real_auth_commands(&p);
+    assert!(real.len() >= 19, "only {} found: {real:?}", real.len());
+    let readme = readme_auth_commands();
+
+    let missing: Vec<_> = real.difference(&readme).collect();
+    let unknown: Vec<_> = readme.difference(&real).collect();
+    assert!(
+        missing.is_empty() && unknown.is_empty(),
+        "README account section is out of step with `evnx auth`.\n\
+         not in the README: {missing:?}\nnot a real command: {unknown:?}"
+    );
+}
+
+/// D-148: the config folder is named for every platform, with its override.
+#[test]
+fn t_d148_the_readme_names_the_config_folder_on_every_platform() {
+    let readme =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md")).unwrap();
+    let section = readme
+        .split("### Your account (`evnx auth`)")
+        .nth(1)
+        .and_then(|s| s.split("\n### ").next())
+        .expect("README has an account section");
+    for needle in [
+        "~/.config/evnx",
+        "~/Library/Application Support/evnx",
+        "%APPDATA%\\evnx",
+        "EVNX_CONFIG_DIR",
+        "credentials.json",
+        "0600",
+    ] {
+        assert!(section.contains(needle), "missing {needle:?}");
+    }
+    assert!(
+        !readme.contains("`server = \"...\"` in `~/.config/evnx/config.toml`"),
+        "the Linux-only path is still given as the only one"
+    );
 }
