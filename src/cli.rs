@@ -652,6 +652,11 @@ pub enum AuthCommands {
     ///
     /// Runs the SRP-6a exchange: the password is never sent, and the server has
     /// to prove it holds your verifier before any session is stored.
+    ///
+    /// For CI and other unattended jobs, use an API token instead: create one
+    /// with `evnx auth token create` and set it as `EVNX_TOKEN`. A login can ask
+    /// for a two-factor code, which no pipeline can type.
+    // DEC-AU11: no unattended second factor; the help says CI uses API tokens.
     Login {
         /// Email address. Prompted for when omitted.
         #[arg(long, value_name = "EMAIL")]
@@ -675,6 +680,11 @@ pub enum AuthCommands {
     },
 
     /// Manage two-factor authentication.
+    ///
+    /// Two-factor applies to `evnx auth login`. Unattended jobs use an API token
+    /// (`evnx auth token create`, then `EVNX_TOKEN`), which never asks for a
+    /// code — a second factor cannot be scripted, by design.
+    // DEC-AU11, as on `Login`.
     Totp {
         #[command(subcommand)]
         command: TotpCommands,

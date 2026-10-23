@@ -38,6 +38,11 @@ The patch for `evnx auth` (package R-auth).
   create` as the fix, and `evnx auth status` shows `status  API token refused`
   instead of `session expired`. The exit code is unchanged (2; `status` 0). An
   expired login still says to run `evnx auth login`.
+- **`evnx auth login --help` and `evnx auth totp --help` say CI uses API
+  tokens** (DEC-AU11). A second factor cannot be scripted, by design, and a
+  pipeline wired to `login` found out only when it stopped for a code. Both
+  now point unattended jobs at `evnx auth token create` and `EVNX_TOKEN`. Help
+  text only; the one-line summaries in `evnx auth --help` are unchanged.
 
 ## [0.10.16] - 2026-10-22
 
