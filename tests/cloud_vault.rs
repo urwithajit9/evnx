@@ -234,3 +234,218 @@ fn t_i309_by_name_a_token_is_told_to_pass_the_id() {
         out.stderr
     );
 }
+
+/// A server with one vault, `app/development`, whose members are `members`
+/// (JSON), and nothing else: a key lookup or a POST is a test failure.
+fn share_server(your_role: &str, members: &str) -> (mockito::ServerGuard, Vec<mockito::Mock>) {
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"development",
+            "role":"{your_role}","version_count":1,"updated_at":"2026-10-20T09:00:00Z"}}]}}"#
+        ))
+        .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/members").as_str())
+        .with_status(200)
+        .with_body(format!(r#"{{"members":[{members}]}}"#))
+        .create();
+    let never = vec![
+        s.mock("GET", mockito::Matcher::Regex("^/api/v1/users/".into()))
+            .expect(0)
+            .create(),
+        s.mock("GET", mockito::Matcher::Regex("/my-key$".into()))
+            .expect(0)
+            .create(),
+        s.mock("POST", mockito::Matcher::Any).expect(0).create(),
+    ];
+    (s, never)
+}
+
+fn member(email: &str, role: &str, you: bool) -> String {
+    format!(
+        r#"{{"user_id":"u-{role}","email":"{email}","role":"{role}",
+        "granted_at":"2026-10-20T09:00:00Z","has_mlkem_key":true,"is_you":{you}}}"#
+    )
+}
+
+/// I-313 (DEC-VL3): sharing with your own address rewrote your own row — an
+/// owner became a developer and could no longer delete the vault. Refused
+/// before the key lookup and before the password; nothing is sent.
+#[test]
+fn t_i313_sharing_with_yourself_is_refused_before_the_password() {
+    for role in ["owner", "admin"] {
+        let members = format!(
+            "{},{}",
+            member("me@example.com", role, true),
+            member("bob@example.com", "developer", false)
+        );
+        let (s, never) = share_server(role, &members);
+        let out = signed_in(
+            &Project::new(),
+            &s.url(),
+            &["vault", "share", "app", "--with", " ME@example.com "],
+            None,
+        );
+        out.assert_code(2);
+        assert!(
+            out.stderr.contains(&format!(
+                "That is you: you already hold app/development as {role}. \
+                 Sharing cannot change your own role."
+            )),
+            "{role}:\n{}",
+            out.stderr
+        );
+        for m in never {
+            m.assert();
+        }
+    }
+}
+
+/// I-313: an admin "sharing" with the owner is how the owner's row was
+/// rewritten and the owner then removed. The same sentence as the server's 409.
+#[test]
+fn t_i313_an_admin_sharing_with_the_owner_is_refused() {
+    let members = format!(
+        "{},{}",
+        member("boss@example.com", "owner", false),
+        member("me@example.com", "admin", true)
+    );
+    let (s, never) = share_server("admin", &members);
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "vault",
+            "share",
+            "app",
+            "--with",
+            "boss@example.com",
+            "--role",
+            "viewer",
+        ],
+        None,
+    );
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains(
+            "boss@example.com owns app/development. Sharing cannot change the owner's role or key."
+        ),
+        "{}",
+        out.stderr
+    );
+    for m in never {
+        m.assert();
+    }
+}
+
+/// I-314 (DEC-VL4): sharing with a member silently changed their role and
+/// printed "shared". A different role is a role change, so `vault role` is
+/// named, with the arguments that would do it.
+#[test]
+fn t_i314_sharing_with_a_member_points_at_vault_role() {
+    let members = format!(
+        "{},{}",
+        member("me@example.com", "owner", true),
+        member("bob@example.com", "developer", false)
+    );
+    let (s, never) = share_server("owner", &members);
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "vault",
+            "share",
+            "app",
+            "--with",
+            "bob@example.com",
+            "--role",
+            "viewer",
+        ],
+        None,
+    );
+    out.assert_code(2);
+    assert!(
+        out.stderr
+            .contains("bob@example.com is already a developer on app/development."),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        out.stderr
+            .contains("evnx vault role app --user bob@example.com --role viewer"),
+        "{}",
+        out.stderr
+    );
+    for m in never {
+        m.assert();
+    }
+}
+
+/// I-314, owner's choice: asking for the role they already hold changes
+/// nothing and is not an error, as `vault role` already treats the same role.
+#[test]
+fn t_i314_sharing_again_at_the_same_role_changes_nothing() {
+    let members = format!(
+        "{},{}",
+        member("me@example.com", "owner", true),
+        member("bob@example.com", "developer", false)
+    );
+    let (s, never) = share_server("owner", &members);
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["vault", "share", "app", "--with", "Bob@Example.com"],
+        None,
+    );
+    out.assert_code(0);
+    assert!(
+        out.stdout.contains(
+            "bob@example.com is already a developer on app/development — nothing changed."
+        ),
+        "{}",
+        out.stdout
+    );
+    for m in never {
+        m.assert();
+    }
+}
+
+/// Guard: someone who is not a member still gets as far as the key lookup.
+#[test]
+fn t_i314_a_new_member_still_reaches_the_key_lookup() {
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"development",
+            "role":"owner","version_count":1,"updated_at":"2026-10-20T09:00:00Z"}}]}}"#
+        ))
+        .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/members").as_str())
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"members":[{}]}}"#,
+            member("me@example.com", "owner", true)
+        ))
+        .create();
+    let keys = s
+        .mock("GET", "/api/v1/users/new%40example.com/public-key")
+        .with_status(404)
+        .with_body(r#"{"error":"Not found","code":"NOT_FOUND"}"#)
+        .expect(1)
+        .create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["vault", "share", "app", "--with", "new@example.com"],
+        None,
+    );
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("no evnx account for new@example.com"),
+        "{}",
+        out.stderr
+    );
+    keys.assert();
+}

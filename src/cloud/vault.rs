@@ -415,6 +415,55 @@ pub fn share(
     )?;
 
     let vault = list_and_pick(&client, &target)?;
+    let label = format!("{}/{}", vault.name, vault.environment);
+
+    // ── Already a member? Before the key lookup and the password ─────────────
+    //
+    // ⚠️ A share to a member rewrote their row, role and key (I-313, I-314):
+    // sharing with your own address turned an owner into a developer who could
+    // no longer delete the vault, and an admin "sharing" with the owner was the
+    // first step to removing them. The server refuses both since SV-3; refusing
+    // here spares the password prompt and says what would work instead.
+    let people: MemberList = client
+        .get(&api_path(&["vaults", &vault.id, "members"])?)
+        .map_err(|e| anyhow!("{e}"))?;
+    if let Some(m) = people
+        .members
+        .iter()
+        .find(|m| m.email.to_lowercase() == recipient_email)
+    {
+        if m.is_you {
+            return Err(anyhow!(
+                "That is you: you already hold {label} as {}. Sharing cannot change \
+                 your own role.",
+                m.role
+            ));
+        }
+        if m.role == "owner" {
+            return Err(anyhow!(
+                "{} owns {label}. Sharing cannot change the owner's role or key.",
+                m.email
+            ));
+        }
+        // The role they already hold: nothing to do, as `vault role` says for
+        // the same case — a script that shares twice stays green.
+        if m.role == role {
+            println!(
+                "  {} is already {} {role} on {label} — nothing changed.",
+                m.email,
+                article(&role)
+            );
+            return Ok(());
+        }
+        return Err(anyhow!(
+            "{} is already {} {} on {label}.\n\
+             \x20 To make them {role}:  evnx vault role {target} --user {} --role {role}",
+            m.email,
+            article(&m.role),
+            m.role,
+            m.email
+        ));
+    }
 
     // ── The recipient's keys, before asking for a password ───────────────────
     //
@@ -541,6 +590,15 @@ struct MyWrappedKey {
     eph_pub_key: Option<String>,
     #[serde(default)]
     mlkem_ciphertext: Option<String>,
+}
+
+/// "a" or "an" before a role: an admin, a developer.
+fn article(role: &str) -> &'static str {
+    if role.starts_with(['a', 'e', 'i', 'o', 'u']) {
+        "an"
+    } else {
+        "a"
+    }
 }
 
 /// Find the vault a user meant.

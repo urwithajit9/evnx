@@ -23,6 +23,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   token is told to pass the id. A vault named by id is shown by its id in the
   header, with a token or a login. The vault commands now find a vault one way
   (`list_and_pick`), where six of them had their own copy.
+- 🔒 **`evnx vault share` no longer rewrites an existing member** (I-313,
+  I-314). Sharing with someone already in the vault replaced their role and
+  their key and printed "shared": with your own address an owner became a
+  developer and could no longer delete the vault, and an admin could demote the
+  owner on the way to removing them. `share` now reads the member list first,
+  before the key lookup and the password: yourself and the owner are refused;
+  someone at another role is pointed at `evnx vault role` with the arguments
+  that would do it; someone already at the role asked for gets "already … —
+  nothing changed." and exit 0, as `vault role` does. evnx-server refuses the
+  same requests with a 409 since SV-3, for older CLIs and the app.
 
 ## [0.10.17] - 2026-10-23
 
