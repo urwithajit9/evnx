@@ -150,13 +150,59 @@ fn resolve_env_file(
 /// plain `.env` that was not asked for by name. That is the shape of "I forgot
 /// the flag", and it is the one that puts development secrets in a production
 /// vault.
+/// The default `.env` into a production vault: asked on a terminal, `--yes`
+/// without one (I-234, DEC-CL9).
+///
+/// ⚠️ A forgotten `--file` pushed local development secrets into production —
+/// encrypted, versioned, shared with everyone holding a key — with only the
+/// warning `report_file` prints. CI cannot answer a question, so there it is a
+/// refusal naming `--yes`; nothing has been read or sent yet.
+///
+/// By id the environment is not known: a vault-scoped token cannot list vaults.
+/// A signed-in session can, and looks the id up for this question only — the
+/// file stays `.env` (owner, 2026-10-25). A token by id is not asked.
+fn confirm_production_push(
+    client: &Client,
+    vault_ref: &VaultRef,
+    file: &Path,
+    vault_target: &str,
+) -> Result<bool> {
+    let known = if vault_ref.environment.is_empty() && !client.is_api_token() {
+        vault::resolve_id(client, &vault_ref.id).ok()
+    } else {
+        None
+    };
+    let (environment, label) = match &known {
+        Some(v) => (v.environment.as_str(), v.label()),
+        None => (vault_ref.environment.as_str(), vault_ref.label()),
+    };
+    if environment != "production" {
+        return Ok(true);
+    }
+    crate::utils::prompt::require_terminal_or(&format!(
+        "{} is the default file and {label} is a production vault, so this is asked \
+         first. Name the file you mean (--file or --env-name), or add --yes:\n  \
+         evnx cloud push --vault {vault_target} --yes",
+        file.display()
+    ))?;
+    let ok = crate::utils::prompt::yes_no()
+        .with_prompt(format!(
+            "Push {} into production vault {label}?",
+            file.display()
+        ))
+        .default(false)
+        .interact_opt()?
+        .unwrap_or(false);
+    Ok(ok)
+}
+
 /// Whether `--file` names stdout: exactly `-`, as `template --output -` (DEC-T8).
 fn is_stdout(file: Option<&Path>) -> bool {
     file.is_some_and(crate::core::safe_write::is_stdout)
 }
 
 fn report_file(file: &Path, choice: FileChoice, vault_env: &str, action: &str) {
-    println!("  file      {} ({})", file.display(), choice.note());
+    crate::say!("  file      {} ({})", file.display(), choice.note());
 
     if choice == FileChoice::Default && vault_env == "production" {
         println!(
@@ -223,6 +269,16 @@ struct MeId {
     user_id: String,
 }
 
+/// Your user id, to tell your own pushes from a teammate's (`history`,
+/// `watch`). `None` when `/auth/me` cannot be read; callers then treat every
+/// push as someone else's.
+pub(crate) fn my_user_id(client: &Client) -> Option<String> {
+    client
+        .get::<MeId>("/api/v1/auth/me")
+        .ok()
+        .map(|m| m.user_id)
+}
+
 #[derive(Deserialize)]
 struct MyKey {
     encrypted_vault_key: String,
@@ -245,6 +301,7 @@ pub fn push(
     file: Option<PathBuf>,
     env_name: Option<String>,
     password_stdin: bool,
+    yes: bool,
     verbose: bool,
 ) -> Result<()> {
     use evnx_crypto::{b64_encode, encrypt_vault, vault_aad};
@@ -265,6 +322,13 @@ pub fn push(
         &vault_ref.environment,
     )?;
     report_file(&file, choice, &vault_ref.environment, "pushing");
+    if choice == FileChoice::Default
+        && !yes
+        && !confirm_production_push(&client, &vault_ref, &file, &vault_target)?
+    {
+        println!("  Nothing was pushed.");
+        return Ok(());
+    }
 
     // Still read before the password prompt: a missing file should fail
     // instantly, not after a second of Argon2id.
@@ -301,7 +365,7 @@ pub fn push(
         )
         .map_err(|e| push_error(e, current))?;
 
-    println!(
+    crate::say!(
         "  {} pushed {} to {} as version {}",
         "✓".green(),
         file.display(),
@@ -342,6 +406,7 @@ pub fn pull(
     version: Option<i32>,
     force: bool,
     password_stdin: bool,
+    gitignore: crate::utils::protect::GitignoreMode,
     verbose: bool,
 ) -> Result<()> {
     let vault_target = resolve_target(vault_target)?;
@@ -366,7 +431,9 @@ pub fn pull(
     )?;
     if to_stdout {
         // Status on stderr: stdout carries the file and nothing else.
-        eprintln!("  file      - (stdout)");
+        if !crate::utils::ui::is_quiet() {
+            eprintln!("  file      - (stdout)");
+        }
     } else {
         report_file(&file, choice, &vault_ref.environment, "writing");
     }
@@ -377,7 +444,8 @@ pub fn pull(
             let latest = current_version(&client, &vault_ref)?;
             if latest == 0 {
                 return Err(anyhow!(
-                    "{} has no versions yet. Push one with `evnx cloud push`.",
+                    "{} has no versions yet. Push one with `evnx cloud push --vault {}`.",
+                    vault_ref.label(),
                     vault_ref.label()
                 ));
             }
@@ -402,11 +470,13 @@ pub fn pull(
         let mut out = std::io::stdout().lock();
         out.write_all(&plaintext).context("writing to stdout")?;
         out.flush().context("writing to stdout")?;
-        eprintln!(
-            "  {} pulled version {version} of {} to stdout",
-            "✓".green(),
-            vault_ref.label()
-        );
+        if !crate::utils::ui::is_quiet() {
+            eprintln!(
+                "  {} pulled version {version} of {} to stdout",
+                "✓".green(),
+                vault_ref.label()
+            );
+        }
         return Ok(());
     }
 
@@ -417,7 +487,7 @@ pub fn pull(
     super::creds::write_atomic_secure(&file, &plaintext)
         .with_context(|| format!("writing {}", file.display()))?;
 
-    println!(
+    crate::say!(
         "  {} pulled version {version} of {} into {}",
         "✓".green(),
         vault_ref.label(),
@@ -433,6 +503,9 @@ pub fn pull(
             crate::utils::file_permissions::describe_permissions()
         );
     }
+    // Plaintext secrets in the project: keep them out of git, the way
+    // `template`, `convert` and `restore` do (owner, 2026-10-17).
+    crate::utils::protect::protect_output(&file.to_string_lossy(), &gitignore)?;
     Ok(())
 }
 
@@ -470,7 +543,15 @@ pub(crate) fn fetch_blob(
             &version.to_string(),
             "blob",
         ])?)
-        .map_err(|e| anyhow!("{e}"))?;
+        .map_err(|e| match e {
+            // I-303 (DEC-CL11): this read "not found on …: /api/v1/vaults/<uuid>/…".
+            ApiError::NotFound { .. } => anyhow!(
+                "version {version} of {label} does not exist.\n\
+                 \x20 `evnx cloud history --vault {label}` lists the versions it has.",
+                label = vault_ref.label()
+            ),
+            other => anyhow!("{other}"),
+        })?;
 
     if blob_bytes.len() <= NONCE_LEN {
         return Err(anyhow!(
@@ -535,24 +616,39 @@ pub fn history(
 
     if versions.is_empty() {
         println!("  {} has no versions yet.", vault_ref.label());
-        println!("  Push one with:  {}", "evnx cloud push".cyan());
+        crate::say!(
+            "  Push one with:  {}",
+            format!("evnx cloud push --vault {}", vault_ref.label()).cyan()
+        );
         return Ok(());
     }
 
-    // `pushed_by` is a user id and nothing can turn it into a name — the API has
-    // no id-to-email lookup. For a vault you created it is always you, so say so
-    // and fall back to a short id otherwise. Worth revisiting when sharing ships.
-    let me: Option<String> = client
-        .get::<MeId>("/api/v1/auth/me")
-        .ok()
-        .map(|m| m.user_id);
+    // `pushed_by` is a user id. You are "you"; anyone else is named by email
+    // from the member list (I-319) — it showed an 8-character id. Someone who
+    // has since left is no longer listed and keeps the short id.
+    let me = my_user_id(&client);
+    let emails = vault::member_emails(&client, &vault_ref.id);
 
     let mut rows: Vec<&VersionSummary> = versions.iter().collect();
     rows.sort_by_key(|v| std::cmp::Reverse(v.version_num));
     let shown = rows.len().min(limit);
+    let who = |v: &VersionSummary| -> String {
+        match (&me, emails.get(&v.pushed_by)) {
+            (Some(id), _) if *id == v.pushed_by => "you".to_string(),
+            (_, Some(email)) => email.clone(),
+            _ => v.pushed_by.chars().take(8).collect(),
+        }
+    };
+    let width = rows
+        .iter()
+        .take(shown)
+        .map(|v| who(v).chars().count())
+        .chain(std::iter::once(10))
+        .max()
+        .unwrap_or(10);
 
     println!(
-        "  {:>7}  {:>4}  {:>7}  {:<10}  {}",
+        "  {:>7}  {:>4}  {:>7}  {:<width$}  {}",
         "VERSION".bold(),
         "KEYS".bold(),
         "SIZE".bold(),
@@ -560,21 +656,13 @@ pub fn history(
         "PUSHED".bold()
     );
     for v in rows.iter().take(shown) {
-        let who = match &me {
-            Some(id) if *id == v.pushed_by => "you".to_string(),
-            _ => v.pushed_by.chars().take(8).collect(),
-        };
         println!(
-            "  {:>7}  {:>4}  {:>7}  {:<10}  {}",
+            "  {:>7}  {:>4}  {:>7}  {:<width$}  {}",
             v.version_num,
             v.key_count,
             human_size(v.blob_size_bytes),
-            who,
-            v.pushed_at
-                .replace('T', " ")
-                .chars()
-                .take(16)
-                .collect::<String>()
+            who(v),
+            super::when::stamp(&v.pushed_at)
         );
         if verbose {
             println!("           keys: {}", v.key_names.join(", "));
@@ -587,8 +675,8 @@ pub fn history(
             rows.len() - shown
         );
     }
-    println!();
-    println!(
+    crate::say!();
+    crate::say!(
         "  Restore one with:  {}",
         format!("evnx cloud pull --version {}", rows[0].version_num).cyan()
     );
@@ -802,7 +890,7 @@ fn confirm_overwrite(file: &Path, incoming: &[u8]) -> Result<bool> {
     };
 
     if existing == incoming {
-        println!("  {} is already up to date.", file.display());
+        crate::say!("  {} is already up to date.", file.display());
         return Ok(false);
     }
 
@@ -810,11 +898,17 @@ fn confirm_overwrite(file: &Path, incoming: &[u8]) -> Result<bool> {
         "  {} exists and differs from the version being pulled.",
         file.display()
     );
+    // No terminal: say how to go on (I-218), as every other cloud prompt does.
+    // `pull` says `--force`, not `--yes`.
+    crate::utils::prompt::require_terminal_or(&format!(
+        "Add --force to replace {} without being asked.",
+        file.display()
+    ))?;
     let ok = crate::utils::prompt::yes_no()
         .with_prompt(format!("Overwrite {}?", file.display()))
         .default(false)
-        .interact()
-        .context("reading the confirmation")?;
+        .interact_opt()?
+        .unwrap_or(false);
     if !ok {
         println!("  Cancelled; {} was not changed.", file.display());
     }
@@ -1094,31 +1188,29 @@ pub fn delete_version(
         ));
     }
 
-    println!();
+    crate::say!();
     println!("  {}", "This deletes one version, permanently.".yellow());
-    println!("  vault     {}", vault_ref.label());
-    println!("  version   {version_num}");
-    println!(
+    crate::say!("  vault     {}", vault_ref.label());
+    crate::say!("  version   {version_num}");
+    crate::say!(
         "  contents  {} key(s), {}, pushed {}",
         target.key_count,
         human_size(target.blob_size_bytes),
         target.pushed_at
     );
-    println!(
+    crate::say!(
         "  {}",
         "The encrypted blob is removed from storage. The server never held anything \
          that could rebuild it, so there is no undo."
             .dimmed()
     );
-    println!();
+    crate::say!();
 
-    if !yes
-        && !crate::utils::prompt::yes_no()
-            .with_prompt(format!("  Delete version {version_num}"))
-            .default(false)
-            .interact()
-            .context("reading the confirmation")?
-    {
+    if !crate::utils::prompt::confirm(
+        &format!("  Delete version {version_num}"),
+        yes,
+        &format!("evnx cloud delete-version {version_num} --vault {vault_target} --yes"),
+    )? {
         println!("  Nothing was deleted.");
         return Ok(());
     }
@@ -1132,7 +1224,7 @@ pub fn delete_version(
         ])?)
         .map_err(delete_version_error)?;
 
-    println!("  {} deleted version {version_num}", "✓".green());
+    crate::say!("  {} deleted version {version_num}", "✓".green());
     if verbose {
         println!("  latest is still {latest}");
     }
@@ -1253,7 +1345,10 @@ pub fn diff(
             if versions.len() == 1 { "" } else { "s" }
         );
         if versions.len() == 1 {
-            println!("  Push another with:  {}", "evnx cloud push".cyan());
+            crate::say!(
+                "  Push another with:  {}",
+                format!("evnx cloud push --vault {}", vault_ref.label()).cyan()
+            );
         }
         return Ok(());
     }
@@ -1369,6 +1464,6 @@ pub fn diff(
         );
     }
 
-    println!("{}", crate::docs::CLOUD.hint_line());
+    crate::say!("{}", crate::docs::CLOUD.hint_line());
     Ok(())
 }

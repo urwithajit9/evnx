@@ -204,10 +204,10 @@ pub fn rotate(
         .get("/api/v1/auth/me")
         .map_err(|e| anyhow!("could not read the account: {e}"))?;
 
-    println!();
-    println!("  {}", "Changing your evnx master password.".bold());
-    println!("  account   {}", me.email);
-    println!();
+    crate::say!();
+    crate::say!("  {}", "Changing your evnx master password.".bold());
+    crate::say!("  account   {}", me.email);
+    crate::say!();
 
     // ── Open everything with the current password ───────────────────────────
     //
@@ -217,7 +217,7 @@ pub fn rotate(
 
     let old_salt = salt_from_base64(&me.argon2_salt)
         .map_err(|e| anyhow!("the server sent an unusable argon2_salt: {e}"))?;
-    println!("  Deriving your current key on this machine…");
+    crate::say!("  Deriving your current key on this machine…");
     let auth::Unlocked {
         master_key: old_master,
         keypair,
@@ -320,11 +320,11 @@ pub fn rotate(
 
     if !yes
         && !password_stdin
-        && !crate::utils::prompt::yes_no()
-            .with_prompt("  Continue")
-            .default(false)
-            .interact()
-            .context("reading the confirmation")?
+        && !crate::utils::prompt::confirm(
+            "  Continue",
+            false,
+            "evnx auth rotate-master-password --yes",
+        )?
     {
         println!("  Nothing was changed.");
         return Ok(());
@@ -345,7 +345,7 @@ pub fn rotate(
     }
 
     // ── Re-derive and re-wrap ───────────────────────────────────────────────
-    println!("  Deriving your new key on this machine…");
+    crate::say!("  Deriving your new key on this machine…");
     let new_srp_salt = generate_salt();
     let new_argon2_salt = generate_salt();
 
@@ -379,7 +379,9 @@ pub fn rotate(
     // ⚠️ Not optional, and not a debug aid. The server cannot do this — it holds
     // ciphertext — so a wrong-but-well-formed wrap would reach the database and
     // be discovered by a user who can no longer open anything.
-    print!("  Verifying the new wraps open… ");
+    if !crate::utils::ui::is_quiet() {
+        print!("  Verifying the new wraps open… ");
+    }
     verify_rewrap(
         &new_master,
         &keypair,
@@ -387,7 +389,7 @@ pub fn rotate(
         &wraps,
         &opened,
     )?;
-    println!("{}", "ok".green());
+    crate::say!("{}", "ok".green());
 
     // ── Write the way back, before sending anything ─────────────────────────
     //
@@ -459,7 +461,9 @@ pub fn rotate(
     //
     // Everything above proved the wraps open locally. This proves the ones the
     // server now holds are the ones that were sent.
-    print!("  Confirming against the server… ");
+    if !crate::utils::ui::is_quiet() {
+        print!("  Confirming against the server… ");
+    }
     let mut confirmed = 0usize;
     for v in &opened {
         let my_key: MyWrappedKey = client
@@ -497,13 +501,13 @@ pub fn rotate(
         }
         confirmed += 1;
     }
-    println!("{}", format!("{confirmed} ok").green());
+    crate::say!("{}", format!("{confirmed} ok").green());
 
-    println!();
-    println!("  {} master password changed", "✓".green());
-    println!("  {} vault key(s) re-wrapped", out.vaults_rewrapped);
+    crate::say!();
+    crate::say!("  {} master password changed", "✓".green());
+    crate::say!("  {} vault key(s) re-wrapped", out.vaults_rewrapped);
     if out.sessions_revoked > 0 {
-        println!("  {} other session(s) signed out", out.sessions_revoked);
+        crate::say!("  {} other session(s) signed out", out.sessions_revoked);
     }
     match out.undo_available_until {
         Some(deadline) => {
@@ -570,14 +574,14 @@ pub fn undo(
         (None, None) => auth::normalize_email(&auth::prompt_email()?),
     };
 
-    println!();
-    println!("  {}", "Undoing a master password change.".bold());
-    println!("  account   {email}");
-    println!(
+    crate::say!();
+    crate::say!("  {}", "Undoing a master password change.".bold());
+    crate::say!("  account   {email}");
+    crate::say!(
         "  {}",
         "Enter the password you used BEFORE the change.".dimmed()
     );
-    println!();
+    crate::say!();
 
     let old = auth::read_password(password_stdin, "Previous master password")?;
 
@@ -594,7 +598,7 @@ pub fn undo(
         )
         .map_err(|e| anyhow!("{e}"))?;
 
-    println!("  Deriving your previous key on this machine…");
+    crate::say!("  Deriving your previous key on this machine…");
     let srp_salt = salt_from_base64(&init.srp_salt)
         .map_err(|e| anyhow!("the server sent an unusable srp_salt: {e}"))?;
     let server_public = hex::decode(&init.server_public)
@@ -630,11 +634,11 @@ pub fn undo(
         println!("  server proof verified (mutual authentication)");
     }
 
-    println!();
-    println!("  {} previous master password restored", "✓".green());
-    println!("  {} vault key(s) restored", out.vaults_restored);
+    crate::say!();
+    crate::say!("  {} previous master password restored", "✓".green());
+    crate::say!("  {} vault key(s) restored", out.vaults_restored);
     if out.sessions_revoked > 0 {
-        println!("  {} session(s) signed out", out.sessions_revoked);
+        crate::say!("  {} session(s) signed out", out.sessions_revoked);
     }
     if !out.vaults_not_in_snapshot.is_empty() {
         println!();
@@ -653,8 +657,8 @@ pub fn undo(
                 .dimmed()
         );
     }
-    println!();
-    println!("  Run `evnx auth login` with the restored password.");
+    crate::say!();
+    crate::say!("  Run `evnx auth login` with the restored password.");
     Ok(())
 }
 

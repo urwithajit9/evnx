@@ -14,7 +14,8 @@ mod support;
 
 use evnx_crypto::{
     b64_encode, derive_master_key, encrypt_private_key, encrypt_vault, generate_keypair,
-    generate_salt, salt_to_base64, vault_aad, wrap_vault_key_with_master_key, MasterKey, VaultKey,
+    generate_salt, salt_to_base64, vault_aad, wrap_vault_key_for_user,
+    wrap_vault_key_with_master_key, MasterKey, UserKeypair, UserPublicKeys, VaultKey,
 };
 use support::cloud::signed_in;
 use support::Project;
@@ -32,20 +33,20 @@ const WRONG: &str = "that master password did not open your keypair, so it is no
 struct Account {
     me: String,
     salt: [u8; 32],
+    keypair: UserKeypair,
 }
 
 fn account(password: &str) -> Account {
     let salt = generate_salt();
     let master = derive_master_key(password.as_bytes(), &salt).unwrap();
-    let sealed = encrypt_private_key(&generate_keypair(), &master)
-        .unwrap()
-        .to_base64();
+    let keypair = generate_keypair();
+    let sealed = encrypt_private_key(&keypair, &master).unwrap().to_base64();
     let me = format!(
         r#"{{"user_id":"u-me","email":"me@example.com","argon2_salt":"{}",
         "encrypted_private_key":"{sealed}","totp_enabled":false,"has_mlkem_key":true}}"#,
         salt_to_base64(&salt)
     );
-    Account { me, salt }
+    Account { me, salt, keypair }
 }
 
 fn master(password: &str, a: &Account) -> MasterKey {
@@ -137,6 +138,13 @@ fn t_i316_vault_create_with_the_right_password_still_creates() {
         "{}",
         out.stdout
     );
+    // I-320: the hint pushed nowhere — `vault create` binds no directory.
+    assert!(
+        out.stdout
+            .contains("evnx cloud push --vault app/development"),
+        "{}",
+        out.stdout
+    );
     create.assert();
 }
 
@@ -220,4 +228,367 @@ fn t_i316_pull_with_the_right_password_still_decrypts() {
     let out = pull(&s, RIGHT);
     out.assert_code(0);
     assert_eq!(out.stdout, "A=1\n");
+}
+
+/// I-311 (DEC-VL5): an admin holds a copy shared to them — the hybrid wrap —
+/// and `share` refused it ("re-sharing is not supported") after the password,
+/// though the server lets admins share. It is opened with the keypair, as
+/// `vault rekey` already did, and re-wrapped for the recipient.
+#[test]
+fn t_i311_an_admin_shares_a_vault_shared_with_them() {
+    let admin = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mine = wrap_vault_key_for_user(
+        &vk,
+        &UserPublicKeys::from_base64(
+            &admin.keypair.x25519_public_base64(),
+            &admin.keypair.mlkem_public_base64(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let recipient = generate_keypair();
+
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &admin);
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"development",
+            "role":"admin","version_count":1,"updated_at":"2026-10-20T09:00:00Z"}}]}}"#
+        ))
+        .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/members").as_str())
+        .with_status(200)
+        .with_body(
+            r#"{"members":[
+            {"user_id":"u-boss","email":"boss@example.com","role":"owner","granted_at":"2026-10-20T09:00:00Z","has_mlkem_key":true,"is_you":false},
+            {"user_id":"u-me","email":"me@example.com","role":"admin","granted_at":"2026-10-20T09:00:00Z","has_mlkem_key":true,"is_you":true}]}"#,
+        )
+        .create();
+    s.mock("GET", "/api/v1/users/new%40example.com/public-key")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"x25519_public_key":"{}","mlkem_public_key":"{}"}}"#,
+            recipient.x25519_public_base64(),
+            recipient.mlkem_public_base64()
+        ))
+        .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"encrypted_vault_key":"{}","eph_pub_key":"{}","mlkem_ciphertext":"{}"}}"#,
+            mine.encrypted_vault_key_base64(),
+            mine.eph_pub_key_base64(),
+            mine.mlkem_ciphertext_base64()
+        ))
+        .create();
+    let add = s
+        .mock(
+            "POST",
+            format!("/api/v1/vaults/{VAULT_ID}/members").as_str(),
+        )
+        .match_body(mockito::Matcher::PartialJson(serde_json::json!({
+            "user_email": "new@example.com",
+            "role": "developer"
+        })))
+        .with_status(201)
+        .expect(1)
+        .create();
+
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "vault",
+            "share",
+            "app",
+            "--with",
+            "new@example.com",
+            "--password-stdin",
+        ],
+        Some(format!("{RIGHT}\n").as_bytes()),
+    );
+    out.assert_code(0);
+    assert!(
+        out.stdout
+            .contains("shared app/development with new@example.com as developer"),
+        "{}",
+        out.stdout
+    );
+    add.assert();
+}
+
+/// I-218: `cloud pull` over a different `.env` asks first; with no terminal it
+/// failed "IO error: not a terminal". Now it names `--force`, and the file is
+/// left as it was.
+#[test]
+fn t_i218_pull_over_a_different_file_names_force_without_a_terminal() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &a);
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/1/blob").as_str(),
+    )
+    .with_status(200)
+    .with_body(blob(&vk, b"A=1\n"))
+    .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, &a)))
+        .create();
+    let p = Project::new();
+    std::fs::write(p.path().join(".env"), "A=local\n").unwrap();
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &[
+            "cloud",
+            "pull",
+            "--vault",
+            VAULT_ID,
+            "--version",
+            "1",
+            "--password-stdin",
+        ],
+        Some(format!("{RIGHT}\n").as_bytes()),
+    );
+    out.assert_code(2);
+    assert!(out.stderr.contains("--force"), "{}", out.stderr);
+    assert!(
+        !out.stderr.contains("not a terminal: not a terminal"),
+        "{}",
+        out.stderr
+    );
+    assert_eq!(
+        std::fs::read_to_string(p.path().join(".env")).unwrap(),
+        "A=local\n"
+    );
+}
+
+/// I-225 (DEC-CL3): with real keys, `-q` silences `vault create` and
+/// `cloud push`, and `cloud pull --file -` prints the file and nothing else.
+#[test]
+fn t_i225_quiet_create_push_and_pull() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &a);
+    s.mock("POST", "/api/v1/vaults")
+        .with_status(201)
+        .with_body(format!(
+            r#"{{"vault_id":"{VAULT_ID}","name":"app","environment":"development"}}"#
+        ))
+        .create();
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/latest").as_str(),
+    )
+    .with_status(404)
+    .with_body(r#"{"error":"Not found","code":"NOT_FOUND"}"#)
+    .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, &a)))
+        .create();
+    s.mock(
+        "POST",
+        format!("/api/v1/vaults/{VAULT_ID}/versions").as_str(),
+    )
+    .with_status(201)
+    .with_body(r#"{"version_num":1,"pushed_at":"2026-10-24T09:00:00Z"}"#)
+    .create();
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/1/blob").as_str(),
+    )
+    .with_status(200)
+    .with_body(blob(&vk, b"A=1\n"))
+    .create();
+
+    let p = Project::new();
+    std::fs::write(p.path().join(".env"), "A=1\n").unwrap();
+    let stdin = format!("{RIGHT}\n");
+    for args in [
+        &["-q", "vault", "create", "app", "--password-stdin"][..],
+        &[
+            "-q",
+            "cloud",
+            "push",
+            "--vault",
+            VAULT_ID,
+            "--password-stdin",
+        ][..],
+    ] {
+        let out = signed_in(&p, &s.url(), args, Some(stdin.as_bytes()));
+        out.assert_code(0);
+        assert_eq!(out.stdout, "", "{args:?}");
+        assert_eq!(out.stderr, "", "{args:?}");
+    }
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &[
+            "-q",
+            "cloud",
+            "pull",
+            "--vault",
+            VAULT_ID,
+            "--version",
+            "1",
+            "--file",
+            "-",
+            "--password-stdin",
+        ],
+        Some(stdin.as_bytes()),
+    );
+    out.assert_code(0);
+    assert_eq!(out.stdout, "A=1\n");
+    assert_eq!(out.stderr, "");
+}
+
+/// R-template (owner, 2026-10-17): `cloud pull` writes plaintext secrets into
+/// the project and did nothing about git. It now takes the shared step
+/// `template`, `convert` and `restore` use: in a repository, a file git would
+/// pick up is warned about without a terminal, or added with `--gitignore`.
+/// `--file -` writes no file and checks nothing.
+#[test]
+fn t_dec_t11_pull_protects_the_file_it_writes() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &a);
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/1/blob").as_str(),
+    )
+    .with_status(200)
+    .with_body(blob(&vk, b"A=1\n"))
+    .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, &a)))
+        .create();
+    let p = Project::new().git();
+    let stdin = format!("{RIGHT}\n");
+    let pull = |extra: &[&str]| {
+        let mut args = vec![
+            "cloud",
+            "pull",
+            "--vault",
+            VAULT_ID,
+            "--version",
+            "1",
+            "--password-stdin",
+        ];
+        args.extend_from_slice(extra);
+        signed_in(&p, &s.url(), &args, Some(stdin.as_bytes()))
+    };
+
+    let out = pull(&[]);
+    out.assert_code(0);
+    assert!(
+        out.stderr
+            .contains("'.env' may contain secrets and is not in .gitignore"),
+        "{}",
+        out.stderr
+    );
+
+    let out = pull(&["--file", "prod.env", "--gitignore"]);
+    out.assert_code(0);
+    let ignore = std::fs::read_to_string(p.path().join(".gitignore")).unwrap_or_default();
+    assert!(ignore.lines().any(|l| l == "prod.env"), "{ignore}");
+
+    let out = pull(&["--file", "-"]);
+    out.assert_code(0);
+    assert!(!out.stderr.contains(".gitignore"), "{}", out.stderr);
+}
+
+/// A server holding one production vault, `app/production`, for the I-234
+/// push tests: its list, an account, the vault's own copy, and a push target.
+fn production_server(a: &Account, vk: &VaultKey) -> (mockito::ServerGuard, mockito::Mock) {
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, a);
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"production",
+            "role":"owner","version_count":0,"updated_at":"2026-10-20T09:00:00Z"}}]}}"#
+        ))
+        .create();
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/latest").as_str(),
+    )
+    .with_status(404)
+    .with_body(r#"{"error":"Not found","code":"NOT_FOUND"}"#)
+    .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(vk, &master(RIGHT, a)))
+        .create();
+    let push = s
+        .mock(
+            "POST",
+            format!("/api/v1/vaults/{VAULT_ID}/versions").as_str(),
+        )
+        .with_status(201)
+        .with_body(r#"{"version_num":1,"pushed_at":"2026-10-24T09:00:00Z"}"#)
+        .create();
+    (s, push)
+}
+
+/// I-234 (DEC-CL9): a forgotten `--file` pushed local development secrets
+/// into production, with only a warning. On a terminal it now asks; without
+/// one it is refused unless `--yes` — before the password, nothing sent. By id,
+/// a signed-in session looks the environment up for this question (owner,
+/// 2026-10-25); the file stays `.env`.
+#[test]
+fn t_i234_a_default_env_push_to_production_needs_yes_without_a_terminal() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    for target in ["app/production", VAULT_ID] {
+        let (s, push) = production_server(&a, &vk);
+        let p = Project::new();
+        std::fs::write(p.path().join(".env"), "A=dev\n").unwrap();
+        let out = signed_in(
+            &p,
+            &s.url(),
+            &["cloud", "push", "--vault", target, "--password-stdin"],
+            Some(format!("{RIGHT}\n").as_bytes()),
+        );
+        out.assert_code(2);
+        assert!(out.stderr.contains("--yes"), "{target}:\n{}", out.stderr);
+        assert!(
+            out.stderr.contains("production"),
+            "{target}:\n{}",
+            out.stderr
+        );
+        push.expect(0).assert();
+    }
+}
+
+/// Guards: `--yes` pushes it, and a file named on purpose is not asked about.
+#[test]
+fn t_i234_yes_or_a_named_file_pushes_to_production() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    for extra in [&["--yes"][..], &["--file", ".env"][..]] {
+        let (s, push) = production_server(&a, &vk);
+        let p = Project::new();
+        std::fs::write(p.path().join(".env"), "A=dev\n").unwrap();
+        let mut args = vec![
+            "cloud",
+            "push",
+            "--vault",
+            "app/production",
+            "--password-stdin",
+        ];
+        args.extend_from_slice(extra);
+        let out = signed_in(&p, &s.url(), &args, Some(format!("{RIGHT}\n").as_bytes()));
+        out.assert_code(0);
+        push.expect(1).assert();
+    }
 }

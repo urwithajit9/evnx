@@ -740,7 +740,13 @@ evnx vault create app --env production   # a vault holds one .env, versioned
 evnx cloud link app/production           # bind this directory to it
 evnx cloud push                          # encrypt locally, upload ciphertext
 evnx cloud pull                          # download, decrypt, write .env
+evnx cloud status                        # server, sign-in, this directory's binding
+evnx cloud unlink                        # forget the binding
 ```
+
+A vault name is lower-case letters, digits and hyphens. `-q` silences what a
+cloud command says it did; errors, warnings and anything you asked for — a
+table, a new token, `pull --file -` — still print.
 
 ### Installing with cloud support
 
@@ -802,11 +808,35 @@ evnx auth totp enable
 Every push is a new version. Nothing is overwritten.
 
 ```bash
-evnx cloud history                  # what changed, when, and who pushed it
-evnx cloud pull --version 3         # restore an earlier version
-evnx cloud diff                     # what differs between two versions
-evnx cloud export --out ./backup    # every version to disk, decrypted
+evnx cloud history                                  # what changed, when, and who pushed it
+evnx cloud pull --version 3                         # restore an earlier version
+evnx cloud diff                                     # what differs between two versions
+evnx cloud export --output ../backup --all-versions # every version to disk, decrypted
+evnx cloud delete-version 2 --vault app/production  # remove one version for good
 ```
+
+`cloud export` writes the latest version unless `--all-versions` is given, into
+`./evnx-export/` unless `--output` (`-o`) names a directory. Inside a git work
+tree it refuses the default directory unless `--force`, and writes a
+`.gitignore` there either way: these are plaintext secrets. `cloud
+delete-version` never removes the latest version, and needs a sign-in rather than
+an API token.
+
+### Which file push and pull use
+
+`push` and `pull` use `.env.<environment>` when that file exists —
+`.env.production` for an `app/production` vault — and `.env` otherwise;
+`--file` or `--env-name` names one outright. Each says which file it used.
+
+Pushing the **default** `.env` into a **production** vault asks first; with no
+terminal to ask on (CI), it is refused unless `--yes`. A file named with `--file`
+or `--env-name` is not asked about. Addressed by id, a vault's environment is
+not known for choosing the file (the file is `.env`); a signed-in session still
+looks it up to ask, a vault-scoped token cannot and is not asked.
+
+`pull` writing a file inside a git repository checks that git ignores it: it asks
+on a terminal, warns without one, adds it with `--gitignore`, and skips the check
+with `--no-gitignore`. Over a file that differs it asks first, or `--force`.
 
 ⚠️ `cloud diff` compares **key names**, not values. The server holds ciphertext
 and a list of names, so it can tell you a variable appeared, disappeared or
@@ -837,6 +867,10 @@ evnx cloud audit --vault app/production   # who pushed, pulled, shared, revoked
 evnx cloud watch --vault app/production   # notify when someone else pushes
 ```
 
+`cloud watch` skips your own pushes; `--include-mine` shows them too. A failed
+poll is a blip; from the third in a row it says so on stderr, and after ten in a
+row it stops with exit 2 and what to check.
+
 ⛔ `cloud watch` **notifies and never pulls.** Pulling automatically would
 overwrite local edits without being asked, and it would mean holding the vault
 key in memory for as long as the watch runs. It tells you; you decide.
@@ -855,7 +889,31 @@ evnx vault share app/production --with teammate@example.com --role developer
 evnx vault members app/production
 evnx vault role app/production --user teammate@example.com --role viewer
 evnx vault revoke app/production --user teammate@example.com
+evnx vault rekey app/production      # rotate the key, nobody removed
+evnx vault leave app/production      # leave a vault shared with you
+evnx vault list --verbose            # every vault you can reach, with ids
+evnx vault delete app/production     # the owner only; no undelete
 ```
+
+| | viewer | developer | admin | owner |
+|---|---|---|---|---|
+| pull, run, export, history, diff, watch, audit, members | ✓ | ✓ | ✓ | ✓ |
+| push | — | ✓ | ✓ | ✓ |
+| share | — | — | as viewer or developer | ✓ |
+| change a role | — | — | below their own, for someone they outrank | ✓ (not their own) |
+| revoke | — | — | someone they outrank | ✓ (not themselves) |
+| rekey, delete a version | — | — | ✓ | ✓ |
+| delete the vault | — | — | — | ✓ |
+| leave | ✓ | ✓ | ✓ | — (delete it instead) |
+
+Sharing with someone who is already a member is refused before the password:
+another role is a role change (`vault role`), the same role changes nothing.
+Sharing with yourself, or with the owner, is refused.
+
+`revoke` re-keys by default: every version is re-encrypted and re-wrapped for
+whoever stays. `--no-rekey` only removes them, and they keep the key they had —
+use it only when you re-key separately. Leaving does not re-key either; someone
+who stays can run `vault rekey`.
 
 The vault key is wrapped for the recipient with a **hybrid X25519 + ML-KEM-768** scheme,
 so a share is not opened by a future quantum computer harvesting today's traffic. There is
@@ -885,6 +943,24 @@ evnx org invite colleague@example.com --role member
 evnx org assign colleague@example.com      # their limits become the org's
 evnx org billing                           # what the plan is, and until when
 ```
+
+The rest of `evnx org`:
+
+```bash
+evnx org list                               # the organisations you are in
+evnx org members                            # who is in it, and who holds a seat
+evnx org invites                            # open invitations
+evnx org uninvite <invite-id>               # withdraw one
+evnx org accept <token>                     # join, from an invitation
+evnx org seats                              # seat count (--set N / --unlimited before billing)
+evnx org release colleague@example.com      # give a seat back
+evnx org role colleague@example.com --set admin
+evnx org remove colleague@example.com
+evnx org delete                             # the owner only
+evnx org leave                              # anyone but the owner
+```
+
+`--org <slug>` picks the organisation when you belong to more than one.
 
 > ⛔ **An organisation does not give anyone access to a vault.** It is a plan and a
 > directory, and that is the whole feature. The server cannot wrap a vault key —
@@ -988,7 +1064,11 @@ Two things to understand:
   radius: scoped to one vault and `read`, it reaches that vault and nothing else.
 - **Use the vault id, not `name/environment`.** A vault-scoped token is refused
   permission to list vaults — by design — so it cannot resolve a name. Get the id
-  from `evnx vault list --verbose`.
+  from `evnx vault list --verbose`. By id, a vault-scoped token works with
+  `cloud pull`, `run`, `export`, `history`, `diff`, `watch`, `audit` and `vault
+  members`, and with `cloud push` when it is `read_write`. Sharing, roles,
+  revoking, re-keying, leaving, deleting a vault or a version need a signed-in
+  person: a token is refused before anything is sent.
 
 Pipe the password rather than exporting it where you can: an environment variable
 is visible in process listings and tends to end up in logs.

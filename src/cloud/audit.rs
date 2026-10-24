@@ -159,9 +159,9 @@ pub fn run(
         })
         .collect();
 
-    println!();
-    println!("  {}  {}", "evnx cloud audit".bold(), vault_ref.label());
-    println!();
+    crate::say!();
+    crate::say!("  {}  {}", "evnx cloud audit".bold(), vault_ref.label());
+    crate::say!();
 
     if rows.is_empty() {
         if res.events.is_empty() {
@@ -195,8 +195,8 @@ pub fn run(
                 detail(e)
             );
         }
-        println!();
-        println!(
+        crate::say!();
+        crate::say!(
             "  {} event{} shown",
             rows.len(),
             if rows.len() == 1 { "" } else { "s" }
@@ -256,8 +256,8 @@ pub fn run(
         );
     }
 
-    println!();
-    println!("{}", crate::docs::CLOUD.hint_line());
+    crate::say!();
+    crate::say!("{}", crate::docs::CLOUD.hint_line());
     Ok(())
 }
 

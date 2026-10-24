@@ -17,7 +17,7 @@
 //! the command is a login alert you did not recognise.
 
 use crate::cloud::client::api_path;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use colored::Colorize;
 use serde::Deserialize;
 
@@ -88,12 +88,12 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
         }
     }
 
-    println!();
-    println!(
+    crate::say!();
+    crate::say!(
         "  Do not recognise one?  {}",
         "evnx auth sessions revoke <id>".cyan()
     );
-    println!(
+    crate::say!(
         "  Sign out everywhere else:  {}",
         "evnx auth sessions revoke-others".cyan()
     );
@@ -127,14 +127,14 @@ pub fn revoke(
     }
 
     if !assume_yes {
-        let ok = crate::utils::prompt::yes_no()
-            .with_prompt(format!(
+        let ok = crate::utils::prompt::confirm(
+            &format!(
                 "Revoke session {}?",
                 session.session_id.chars().take(8).collect::<String>()
-            ))
-            .default(false)
-            .interact()
-            .context("reading the confirmation")?;
+            ),
+            false,
+            &format!("evnx auth sessions revoke {target} --yes"),
+        )?;
         if !ok {
             println!("  Cancelled; nothing was revoked.");
             return Ok(());
@@ -149,12 +149,12 @@ pub fn revoke(
         ])?)
         .map_err(|e| anyhow!("{e}"))?;
 
-    println!(
+    crate::say!(
         "  {} revoked session {}",
         "✓".green(),
         session.session_id.chars().take(8).collect::<String>()
     );
-    println!("  Its access token stopped working immediately, not when it expires.");
+    crate::say!("  Its access token stopped working immediately, not when it expires.");
     if session.current {
         // ⚠️ Remove the stored login too. This printed "signed out" while
         // credentials.json still held the dead session, so the next command
@@ -162,7 +162,7 @@ pub fn revoke(
         let mut store = super::creds::Store::load()?;
         store.remove_session(&server);
         store.save()?;
-        println!("  You are now signed out on this machine — run `evnx auth login`.");
+        crate::say!("  You are now signed out on this machine — run `evnx auth login`.");
     }
     if verbose {
         println!("  session id  {}", session.session_id);
@@ -186,17 +186,17 @@ pub fn revoke_others(
     let others = listed.sessions.iter().filter(|s| !s.current).count();
 
     if others == 0 {
-        println!("  This is your only active session; nothing else to revoke.");
+        crate::say!("  This is your only active session; nothing else to revoke.");
         return Ok(());
     }
 
     if !assume_yes {
         println!("  About to sign out {others} other session(s). This one stays.");
-        let ok = crate::utils::prompt::yes_no()
-            .with_prompt("Continue?")
-            .default(false)
-            .interact()
-            .context("reading the confirmation")?;
+        let ok = crate::utils::prompt::confirm(
+            "Continue?",
+            false,
+            "evnx auth sessions revoke-others --yes",
+        )?;
         if !ok {
             println!("  Cancelled; nothing was revoked.");
             return Ok(());
@@ -207,8 +207,8 @@ pub fn revoke_others(
         .delete("/api/v1/auth/sessions/others")
         .map_err(|e| anyhow!("{e}"))?;
 
-    println!("  {} revoked {others} other session(s)", "✓".green());
-    println!("  Their access tokens stopped working immediately.");
+    crate::say!("  {} revoked {others} other session(s)", "✓".green());
+    crate::say!("  Their access tokens stopped working immediately.");
     Ok(())
 }
 

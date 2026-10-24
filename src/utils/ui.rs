@@ -102,6 +102,20 @@ pub fn say(line: impl std::fmt::Display) {
     }
 }
 
+/// [`say`] with `println!`'s arguments, so a status line moves under `-q`
+/// without its text changing (A-44, DEC-CL3: the cloud commands' output handle).
+///
+/// Data a command was asked for — a table, a new token, recovery codes — and
+/// warnings stay on `println!`/`eprintln!`.
+#[macro_export]
+macro_rules! say {
+    ($($arg:tt)*) => {
+        if !$crate::utils::ui::is_quiet() {
+            println!($($arg)*);
+        }
+    };
+}
+
 /// Print a command header (to stderr; hidden by `-q`).
 ///
 /// ```text

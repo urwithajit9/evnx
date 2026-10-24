@@ -470,6 +470,7 @@ pub enum OrgCommands {
 
     /// Who is in an organisation, and who holds a seat.
     Members {
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
     },
@@ -487,12 +488,15 @@ pub enum OrgCommands {
         #[arg(long, value_name = "ROLE")]
         role: Option<String>,
 
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
+
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
     },
 
     /// Invitations sent but not yet redeemed.
     Invites {
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
     },
@@ -501,6 +505,8 @@ pub enum OrgCommands {
     Uninvite {
         /// Invitation id, from `evnx org invites`.
         invite_id: String,
+
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
 
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
@@ -523,6 +529,7 @@ pub enum OrgCommands {
     /// question a terminal is actually the right place for: *why are my limits
     /// what they are?*
     Billing {
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
     },
@@ -540,6 +547,8 @@ pub enum OrgCommands {
         #[arg(long)]
         unlimited: bool,
 
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
+
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
     },
@@ -550,6 +559,8 @@ pub enum OrgCommands {
     Assign {
         /// Email address, or user id.
         who: String,
+
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
 
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
@@ -562,6 +573,8 @@ pub enum OrgCommands {
     Release {
         /// Email address, or user id.
         who: String,
+
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
 
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
@@ -576,6 +589,8 @@ pub enum OrgCommands {
         #[arg(long, value_name = "ROLE")]
         set: String,
 
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
+
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
     },
@@ -588,6 +603,8 @@ pub enum OrgCommands {
         /// Skip the confirmation prompt.
         #[arg(long, short = 'y')]
         yes: bool,
+
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
 
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
@@ -609,6 +626,8 @@ pub enum OrgCommands {
         #[arg(long, short = 'y')]
         yes: bool,
 
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
+
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
     },
@@ -620,6 +639,8 @@ pub enum OrgCommands {
         /// Skip the confirmation prompt.
         #[arg(long, short = 'y')]
         yes: bool,
+
+        /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
 
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
@@ -960,7 +981,7 @@ pub enum VaultCommands {
     /// A fresh 256-bit key is generated here and wrapped under your master key
     /// before it leaves the machine. The server stores only the wrapped form.
     Create {
-        /// Vault name — letters, digits and hyphens.
+        /// Vault name — lower-case letters, digits and hyphens.
         name: String,
 
         /// One of: production, staging, development, test.
@@ -1110,6 +1131,21 @@ pub enum VaultCommands {
         #[arg(long)]
         password_stdin: bool,
     },
+
+    /// Leave a vault that was shared with you.
+    ///
+    /// Deletes your copy of its key from the server. Anything you already
+    /// pulled stays on this machine, and the vault key is not rotated — someone
+    /// who stays can run `vault rekey`. The owner cannot leave; delete the vault
+    /// instead.
+    Leave {
+        /// Vault: `name`, `name/environment`, or an id.
+        target: String,
+
+        /// Skip the confirmation prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
 }
 
 /// Subcommands for `evnx cloud`.
@@ -1153,6 +1189,12 @@ pub enum CloudCommands {
         /// Read the master password from stdin instead of prompting.
         #[arg(long)]
         password_stdin: bool,
+
+        /// Push the default `.env` into a production vault without asking.
+        ///
+        /// Only that case asks: a file named with --file or --env-name never does.
+        #[arg(long, short = 'y')]
+        yes: bool,
     },
 
     /// Download a version and decrypt it.
@@ -1186,7 +1228,7 @@ pub enum CloudCommands {
         env_name: Option<String>,
 
         /// Version to pull. Defaults to the latest.
-        #[arg(long, value_name = "N")]
+        #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..))]
         version: Option<i32>,
 
         /// Overwrite the target without asking.
@@ -1196,6 +1238,14 @@ pub enum CloudCommands {
         /// Read the master password from stdin instead of prompting.
         #[arg(long)]
         password_stdin: bool,
+
+        /// Add the pulled file to .gitignore without asking (no prompt).
+        #[arg(long, conflicts_with = "no_gitignore")]
+        gitignore: bool,
+
+        /// Skip the .gitignore check for the pulled file.
+        #[arg(long, conflicts_with = "gitignore")]
+        no_gitignore: bool,
     },
 
     /// Run a command with a vault's variables in its environment.
@@ -1224,7 +1274,7 @@ pub enum CloudCommands {
         vault: Option<String>,
 
         /// Version to inject. Defaults to the latest.
-        #[arg(long, value_name = "N")]
+        #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..))]
         version: Option<i32>,
 
         /// Inject only variables whose name matches one of these globs.
@@ -1311,6 +1361,10 @@ pub enum CloudCommands {
         /// Check once and exit instead of looping. For scripts and tests.
         #[arg(long)]
         once: bool,
+
+        /// Report your own pushes too. By default only someone else's are shown.
+        #[arg(long)]
+        include_mine: bool,
     },
 
     /// What changed between two versions — key names only, never values.
@@ -1392,7 +1446,7 @@ pub enum CloudCommands {
         /// auto-generated `--version` flag. `value_name` keeps the help reading
         /// `<VERSION>`. Caught by `cli_definition_is_valid`, which exists because
         /// this same collision once shipped and only appeared at runtime.
-        #[arg(value_name = "VERSION")]
+        #[arg(value_name = "VERSION", value_parser = clap::value_parser!(i32).range(1..))]
         version_num: i32,
 
         /// Vault to act on. Optional in a bound directory.

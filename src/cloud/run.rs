@@ -71,7 +71,8 @@ pub fn run(
             let latest = super::sync::current_version(&client, &vault_ref)?;
             if latest == 0 {
                 return Err(anyhow!(
-                    "{} has no versions yet. Push one with `evnx cloud push`.",
+                    "{} has no versions yet. Push one with `evnx cloud push --vault {}`.",
+                    vault_ref.label(),
                     vault_ref.label()
                 ));
             }
@@ -132,11 +133,13 @@ pub fn run(
         ));
     } else if !skipped.is_empty() {
         // Names only, and on stderr, so it does not pollute a piped stdout.
-        eprintln!(
-            "  {} {} of {before} variable(s) filtered out",
-            "·".cyan(),
-            skipped.len()
-        );
+        if !ui::is_quiet() {
+            eprintln!(
+                "  {} {} of {before} variable(s) filtered out",
+                "·".cyan(),
+                skipped.len()
+            );
+        }
     }
 
     if verbose {

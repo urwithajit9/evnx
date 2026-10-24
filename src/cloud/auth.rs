@@ -107,8 +107,8 @@ fn register_with_password(
     validate_email(email)?;
     check_password_strength(password)?;
 
-    println!();
-    println!("  Deriving keys on this machine…");
+    crate::say!();
+    crate::say!("  Deriving keys on this machine…");
     if verbose {
         println!("  (Argon2id, 64 MiB, t=3, p=4 — twice, with separate salts)");
     }
@@ -120,17 +120,17 @@ fn register_with_password(
         .post_public("/api/v1/auth/register", &body)
         .map_err(|e| anyhow!("{e}"))?;
 
-    println!("  {} account created on {server}", "✓".green());
+    crate::say!("  {} account created on {server}", "✓".green());
     if verbose {
         println!("  user id   {}", resp.user_id);
     }
-    println!();
-    println!("  {} check your inbox", "Next:".bold());
-    println!("  A verification link was sent to {email}.");
-    println!("  Vault commands stay unavailable until you open it.");
-    println!();
-    println!("  Then sign in with:  {}", "evnx auth login".cyan());
-    println!();
+    crate::say!();
+    crate::say!("  {} check your inbox", "Next:".bold());
+    crate::say!("  A verification link was sent to {email}.");
+    crate::say!("  Vault commands stay unavailable until you open it.");
+    crate::say!();
+    crate::say!("  Then sign in with:  {}", "evnx auth login".cyan());
+    crate::say!();
     println!(
         "  {} your master password is the only thing that can open your vaults.",
         "Remember:".yellow().bold()
@@ -338,7 +338,7 @@ fn login_with_password(
     if verbose {
         println!("  srp session {}", init.session_id);
     }
-    println!("  Deriving your key on this machine…");
+    crate::say!("  Deriving your key on this machine…");
 
     // ── Step 2: prove we know the password ───────────────────────────────────
     let srp_salt = salt_from_base64(&init.srp_salt)
@@ -432,7 +432,7 @@ fn login_with_password(
         backfill_mlkem_key(&authed, password, verbose);
     }
 
-    println!("  {} signed in as {email}", "✓".green());
+    crate::say!("  {} signed in as {email}", "✓".green());
     if let Some(n) = remaining {
         // Warn while there is still time to act. Running out means the next lost
         // phone is a permanently locked account.
@@ -472,7 +472,7 @@ pub fn logout(server_override: Option<&str>, verbose: bool) -> Result<()> {
             );
             println!("  from a signed-in machine with `evnx auth token revoke <name>`.");
         } else {
-            println!("  Not signed in to {server}; nothing to do.");
+            crate::say!("  Not signed in to {server}; nothing to do.");
         }
         return Ok(());
     }
@@ -486,9 +486,9 @@ pub fn logout(server_override: Option<&str>, verbose: bool) -> Result<()> {
     store.save()?;
 
     match server_result {
-        Ok(()) => println!("  {} signed out of {server}", "✓".green()),
+        Ok(()) => crate::say!("  {} signed out of {server}", "✓".green()),
         Err(e) => {
-            println!("  {} local credentials removed", "✓".green());
+            crate::say!("  {} local credentials removed", "✓".green());
             println!("  {} the server was not told: {e}", "warning:".yellow());
             println!("  The session may still be usable until it expires. Revoke it from");
             println!("  another signed-in machine with `evnx auth sessions list`.");
@@ -1193,9 +1193,9 @@ pub fn delete_account(
     store.remove_session(&server);
     store.save()?;
 
-    println!();
-    println!("  {} account deleted", "✓".green());
-    println!(
+    crate::say!();
+    crate::say!("  {} account deleted", "✓".green());
+    crate::say!(
         "  {}",
         "Local credentials removed. Any secrets that were in those vaults should \
          be rotated at their source if anyone else ever held them."
@@ -1291,13 +1291,13 @@ pub fn download_data(
     let tokens = body["api_tokens"].as_array().map_or(0, |v| v.len());
     let events = body["audit_events"].as_array().map_or(0, |v| v.len());
 
-    println!();
-    println!(
+    crate::say!();
+    crate::say!(
         "  {} wrote {}",
         "✓".green(),
         path.display().to_string().bold()
     );
-    println!("  {vaults} vault(s), {tokens} API token(s), {events} audit event(s)");
+    crate::say!("  {vaults} vault(s), {tokens} API token(s), {events} audit event(s)");
     println!();
     println!(
         "  {}",

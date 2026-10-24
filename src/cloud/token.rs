@@ -30,7 +30,7 @@
 //! says so before making the request, so the reason is legible.
 
 use crate::cloud::client::api_path;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
@@ -114,35 +114,35 @@ pub fn create(
         )
         .map_err(|e| anyhow!("{e}"))?;
 
-    println!("  {} created token {}", "✓".green(), name.trim().bold());
-    println!();
+    crate::say!("  {} created token {}", "✓".green(), name.trim().bold());
+    crate::say!();
     println!("  {}", created.raw_token.bold());
-    println!();
-    println!(
+    crate::say!();
+    crate::say!(
         "  {} this is the only time it is shown. It is stored hashed, so it",
         "Save it now:".yellow().bold()
     );
-    println!("  cannot be recovered — only revoked and replaced.");
-    println!();
-    println!("  scope     {scope}");
+    crate::say!("  cannot be recovered — only revoked and replaced.");
+    crate::say!();
+    crate::say!("  scope     {scope}");
     match &vault_ref {
-        Some(v) => println!("  vault     {}/{} only", v.name, v.environment),
-        None => println!(
+        Some(v) => crate::say!("  vault     {}/{} only", v.name, v.environment),
+        None => crate::say!(
             "  vault     {} — reaches every vault on the account",
             "unscoped".yellow()
         ),
     }
     match &created.expires_at {
-        Some(e) => println!("  expires   {}", e.split('T').next().unwrap_or(e)),
-        None => println!("  expires   {}", "never".yellow()),
+        Some(e) => crate::say!("  expires   {}", e.split('T').next().unwrap_or(e)),
+        None => crate::say!("  expires   {}", "never".yellow()),
     }
     if verbose {
         println!("  token id  {}", created.id);
     }
-    println!();
-    println!("  Use it in CI:");
-    println!("    export {ENV_TOKEN}={}", "evnx_tok_…".dimmed());
-    println!(
+    crate::say!();
+    crate::say!("  Use it in CI:");
+    crate::say!("    export {ENV_TOKEN}={}", "evnx_tok_…".dimmed());
+    crate::say!(
         "    echo \"$EVNX_PASSWORD\" | evnx cloud pull --vault {} --password-stdin",
         vault_ref
             .as_ref()
@@ -153,14 +153,14 @@ pub fn create(
             .unwrap_or_else(|| "<vault>".into())
     );
     if vault_ref.is_some() {
-        println!(
+        crate::say!(
             "    {}",
             "(the id, not the name — a scoped token may not list vaults)".dimmed()
         );
     }
-    println!();
-    println!("  The token authenticates; it does not decrypt. The master password");
-    println!("  is still required, so treat it as the more sensitive of the two.");
+    crate::say!();
+    crate::say!("  The token authenticates; it does not decrypt. The master password");
+    crate::say!("  is still required, so treat it as the more sensitive of the two.");
     Ok(())
 }
 
@@ -176,7 +176,7 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
 
     if listed.tokens.is_empty() {
         println!("  No API tokens on {server}.");
-        println!(
+        crate::say!(
             "  Create one with:  {}",
             "evnx auth token create <name>".cyan()
         );
@@ -283,11 +283,11 @@ pub fn revoke(
             "  {}",
             "Anything using it stops working immediately.".yellow()
         );
-        let ok = crate::utils::prompt::yes_no()
-            .with_prompt(format!("Revoke {}?", token.name))
-            .default(false)
-            .interact()
-            .context("reading the confirmation")?;
+        let ok = crate::utils::prompt::confirm(
+            &format!("Revoke {}?", token.name),
+            false,
+            &format!("evnx auth token revoke {target} --yes"),
+        )?;
         if !ok {
             println!("  Cancelled; nothing was revoked.");
             return Ok(());
@@ -298,7 +298,7 @@ pub fn revoke(
         .delete(&api_path(&["auth", "tokens", &token.id.to_string()])?)
         .map_err(|e| anyhow!("{e}"))?;
 
-    println!("  {} revoked {}", "✓".green(), token.name);
+    crate::say!("  {} revoked {}", "✓".green(), token.name);
     if verbose {
         println!("  token id  {}", token.id);
     }

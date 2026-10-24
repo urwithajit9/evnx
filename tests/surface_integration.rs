@@ -168,20 +168,7 @@ fn t_i195_completions_and_update_help_name_their_guide() {
 /// Arguments that still have no help text, each with the package that fixes it
 /// (DEC-SF12). An entry is removed when its help is written; the test fails if
 /// an entry here has help, so the list cannot outlive the gap.
-const NO_HELP_YET: &[(&str, &str, &str)] = &[
-    ("org members", "org", "R-org-vault-cloud"),
-    ("org invite", "org", "R-org-vault-cloud"),
-    ("org invites", "org", "R-org-vault-cloud"),
-    ("org uninvite", "org", "R-org-vault-cloud"),
-    ("org billing", "org", "R-org-vault-cloud"),
-    ("org seats", "org", "R-org-vault-cloud"),
-    ("org assign", "org", "R-org-vault-cloud"),
-    ("org release", "org", "R-org-vault-cloud"),
-    ("org role", "org", "R-org-vault-cloud"),
-    ("org remove", "org", "R-org-vault-cloud"),
-    ("org delete", "org", "R-org-vault-cloud"),
-    ("org leave", "org", "R-org-vault-cloud"),
-];
+const NO_HELP_YET: &[(&str, &str, &str)] = &[];
 
 /// T-061, I-194, DEC-SF12: every argument has help text, positionals included
 /// (the `--help` test in devrel_review only reads `--flag` lines, so

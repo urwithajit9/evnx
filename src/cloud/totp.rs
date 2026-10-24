@@ -84,8 +84,8 @@ pub fn enable(server_override: Option<&str>, verbose: bool) -> Result<()> {
         )
         .map_err(confirm_error)?;
 
-    println!();
-    println!("  {} two-factor authentication is on", "✓".green());
+    crate::say!();
+    crate::say!("  {} two-factor authentication is on", "✓".green());
     print_codes(&confirmed.backup_codes, false);
     Ok(())
 }
@@ -107,8 +107,8 @@ pub fn disable(server_override: Option<&str>, _verbose: bool) -> Result<()> {
         )
         .map_err(|e| anyhow!("{e}"))?;
 
-    println!("  {} two-factor authentication is off", "✓".green());
-    println!("  Your recovery codes were deleted along with it.");
+    crate::say!("  {} two-factor authentication is off", "✓".green());
+    crate::say!("  Your recovery codes were deleted along with it.");
     Ok(())
 }
 
@@ -129,8 +129,8 @@ pub fn regenerate(server_override: Option<&str>, _verbose: bool) -> Result<()> {
         )
         .map_err(|e| anyhow!("{e}"))?;
 
-    println!();
-    println!("  {} new recovery codes issued", "✓".green());
+    crate::say!();
+    crate::say!("  {} new recovery codes issued", "✓".green());
     print_codes(&fresh.backup_codes, true);
     Ok(())
 }

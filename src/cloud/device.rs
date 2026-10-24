@@ -120,22 +120,22 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
         );
     }
 
-    println!();
-    println!(
+    crate::say!();
+    crate::say!(
         "  {}",
         "A device is a network and browser, not a place. evnx stores a hash of".dimmed()
     );
-    println!(
+    crate::say!(
         "  {}",
         "each and cannot tell where you were — a new row can just be a phone".dimmed()
     );
-    println!("  {}", "that reconnected.".dimmed());
-    println!();
-    println!(
+    crate::say!("  {}", "that reconnected.".dimmed());
+    crate::say!();
+    crate::say!(
         "  Do not recognise one?  {}",
         "evnx auth devices disavow <id>".cyan()
     );
-    println!(
+    crate::say!(
         "  Live sessions instead:  {}",
         "evnx auth sessions list".cyan()
     );
@@ -188,8 +188,8 @@ pub fn disavow(
         )
         .map_err(|e| anyhow!("{e}"))?;
 
-    println!();
-    println!(
+    crate::say!();
+    crate::say!(
         "  {} recorded, and {} session(s) revoked.",
         "✓".green(),
         resp.sessions_revoked

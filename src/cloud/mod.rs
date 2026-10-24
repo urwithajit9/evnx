@@ -82,12 +82,14 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             file,
             env_name,
             password_stdin,
+            yes,
         } => sync::push(
             server_override,
             vault,
             file,
             env_name,
             password_stdin,
+            yes,
             verbose,
         ),
         CloudCommands::Pull {
@@ -97,6 +99,8 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             version,
             force,
             password_stdin,
+            gitignore,
+            no_gitignore,
         } => sync::pull(
             server_override,
             vault,
@@ -105,6 +109,7 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             version,
             force,
             password_stdin,
+            crate::utils::protect::GitignoreMode::from_flags(gitignore, no_gitignore),
             verbose,
         ),
         CloudCommands::Run {
@@ -130,7 +135,15 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             vault,
             interval,
             once,
-        } => watch::run(server_override, vault, interval, once, verbose),
+            include_mine,
+        } => watch::run(
+            server_override,
+            vault,
+            interval,
+            once,
+            include_mine,
+            verbose,
+        ),
         CloudCommands::Diff { vault, from, to } => {
             sync::diff(server_override, vault, from, to, verbose)
         }
@@ -353,6 +366,7 @@ pub fn run_vault(
             yes,
             password_stdin,
         } => vault::rekey(server_override, target, yes, password_stdin, verbose),
+        VaultCommands::Leave { target, yes } => vault::leave(server_override, target, yes, verbose),
     }
 }
 

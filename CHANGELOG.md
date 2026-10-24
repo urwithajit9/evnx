@@ -51,6 +51,78 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that same typo**, this release refuses the typo at the check. evnx 0.10.17
   still opens it with the typo: export its versions with 0.10.17, then delete
   the vault and create it again.
+- **Admins can share from the CLI** (I-311, DEC-VL5). An admin holds a copy
+  shared to them, and `vault share` refused it ("re-sharing is not supported")
+  after the password, though the server allows admins to share. It is opened
+  with your keypair, as `vault rekey` already did. A developer or viewer is told
+  that sharing needs admin or owner, and an admin asking for `--role admin` that
+  only the owner can make an admin — both before the password.
+- **`evnx vault leave <vault>`** (I-312, I-318, DEC-VL6). A member could not
+  leave a vault from the CLI, though the server allows it; `vault revoke --user
+  <yourself>` said "ask an admin to remove you" — to the owner too. `leave`
+  confirms (`-y` without a terminal), deletes your membership and says the key
+  was not rotated. The owner cannot leave; revoking yourself points at `leave`,
+  or tells the owner why not.
+- **Revoking the owner is refused before any work** (I-317). An admin revoking
+  the owner re-encrypted every version and only then heard the server refuse,
+  leaving the staged blobs in storage.
+- **A vault name is lower-case letters, digits and hyphens, checked before the
+  password** (I-315, DEC-VL8). Upper case passed the CLI and came back from the
+  server as "name: name: only alphanumeric and hyphens". The refusal suggests
+  the lower-case name.
+- **`--version` is 1 or more** for `cloud pull`, `run` and `delete-version`, and
+  a version that does not exist is named, with `evnx cloud history` to look
+  (I-303, DEC-CL11). `--version 0` went to the server and came back as a raw API
+  path.
+- **`cloud history` names who pushed by email** (I-319); it showed an
+  8-character id for everyone but you. Someone who has left keeps the short id.
+- **The push hints name the vault** (I-320). `vault create`, `history`, `diff`,
+  `pull`, `run` and `export` said "Push one with `evnx cloud push`", which fails
+  where no directory is bound; they say `evnx cloud push --vault <vault>`. By
+  name, a vault-scoped token is told to pass the vault's id without naming
+  `--vault`, which `vault members` does not take.
+- **Every cloud confirmation names `--yes` when there is no terminal** (I-218).
+  `vault delete`, `revoke` and `rekey`, `cloud delete-version`, `auth sessions
+  revoke` and `revoke-others`, `auth token revoke` and
+  `rotate-master-password` failed with "IO error: not a terminal: not a
+  terminal"; `cloud pull` over a different file names `--force`. Nothing was or
+  is sent before the answer.
+- **`-q` for every cloud command** (I-225, DEC-CL3, A-44). It reached only the
+  config banner and `cloud status`/`unlink`. Now `auth`, `org`, `vault`,
+  `cloud`, `auth token`, `sessions`, `devices`, `totp` and
+  `rotate-master-password` print nothing on success under `-q`; tables, a new
+  token (alone on stdout), recovery codes, warnings and errors still print. A
+  `crate::say!` macro is the shared output handle.
+- **`cloud watch` reports failed polls and skips your own pushes** (I-229,
+  DEC-CL5). Failures showed only with `-v`, so an expired login looked like a
+  quiet vault. From the third failed poll in a row it says so on stderr, after
+  ten it stops with exit 2, and it says when polling works again. Your own
+  pushes are skipped unless `--include-mine`.
+- **`cloud pull` keeps the file it writes out of git** (owner, 2026-10-17): the
+  `.gitignore` step `template`, `convert` and `restore` use, with `--gitignore`
+  and `--no-gitignore`. `--file -` writes no file and checks nothing.
+- **Pushing the default `.env` into a production vault asks first** (I-234,
+  DEC-CL9). A forgotten `--file` pushed development secrets into production with
+  only a warning. On a terminal it asks; without one it is refused unless
+  `--yes` (`-y`, new on `push`). A file named with `--file` or `--env-name` is
+  not asked about. By id, a signed-in session looks the environment up for the
+  question; a vault-scoped token cannot and is not asked.
+- **README: the whole of `vault`, `cloud` and `org`** (D-155 … D-158, D-301,
+  D-302, DEC-VL9): the role table, `rekey`, `--no-rekey`, `leave`,
+  `delete-version`, `unlink`, every `org` command, which file push and pull use,
+  what works by id with a vault-scoped token, and `cloud export --output` (it
+  said `--out`). A test checks the commands against the CLI both ways.
+- `org` subcommands' `--org <slug>` have help text (DEC-SF12).
+
+⚠️ **Scripts:**
+- `cloud push` of the default `.env` into a production vault with no terminal
+  now exits 2 unless `--yes` (or `--file`/`--env-name`).
+- Under `-q`, cloud commands print far less: a script that read a status line
+  ("✓ pushed …") from stdout under `-q` gets nothing.
+- `vault create` with upper case exits 2 before the password prompt.
+- `cloud history`'s `PUSHED BY` holds emails, and its width follows them.
+- `cloud pull` into a git repository may print a `.gitignore` question or
+  warning; `--no-gitignore` skips it.
 
 ## [0.10.17] - 2026-10-23
 
