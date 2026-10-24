@@ -122,3 +122,56 @@ fn t_i219_invite_expiry_is_readable() {
     assert!(out.stdout.contains("2026-10-20 09:00"), "{}", out.stdout);
     assert!(!out.stdout.contains("09:00:00.123456Z"), "{}", out.stdout);
 }
+
+/// DEC-VL10 (A-303): an organisation role is read the way a vault role is —
+/// spaces trimmed, any case — and a role that is not one gets the same shape of
+/// message. The reason `owner` cannot be granted is kept.
+#[test]
+fn t_dec_vl10_org_roles_are_read_like_vault_roles() {
+    let mut s = org_server(0);
+    let invite = s
+        .mock("POST", format!("/api/v1/orgs/{ORG_ID}/invites").as_str())
+        .match_body(mockito::Matcher::Json(
+            serde_json::json!({ "email": "new@example.com", "role": "admin" }),
+        ))
+        .with_status(201)
+        .with_body(r#"{"email":"new@example.com","role":"admin","token":"t","expires_in_days":7}"#)
+        .expect(1)
+        .create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["org", "invite", "new@example.com", "--role", " Admin "],
+        None,
+    );
+    out.assert_code(0);
+    invite.assert();
+
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["org", "role", "bob@example.com", "--set", "developer"],
+        None,
+    );
+    out.assert_code(2);
+    assert!(
+        out.stderr
+            .contains("role must be one of: member, admin. Got `developer`."),
+        "{}",
+        out.stderr
+    );
+
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["org", "invite", "new@example.com", "--role", "owner"],
+        None,
+    );
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("`owner` cannot be granted.")
+            && out.stderr.contains("exactly one owner"),
+        "{}",
+        out.stderr
+    );
+}

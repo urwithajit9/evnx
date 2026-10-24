@@ -10,6 +10,7 @@
 
 mod support;
 
+use support::cloud::signed_in;
 use support::{run_with, Project};
 
 const TOKEN: &str = "evnx_tok_00000000000000000000000000000000";
@@ -109,7 +110,12 @@ fn t_i223_roles_are_case_insensitive() {
             "owner",
         ],
     );
-    assert!(out.stderr.contains("role must be one of"), "{}", out.stderr);
+    // `owner` is still refused, now with the reason (DEC-VL10).
+    assert!(
+        out.stderr.contains("`owner` cannot be granted"),
+        "{}",
+        out.stderr
+    );
 }
 
 /// DEC-VL1: what CI does stays open to a token — it reaches the server.
@@ -125,4 +131,48 @@ fn t_i220_a_token_still_lists_vaults() {
     let out = with_token(&s.url(), &["vault", "list"]);
     out.assert_code(0);
     list.assert();
+}
+
+/// DEC-VL10 (A-303): one role parser for `vault` and `org`. `owner` is refused
+/// with the reason by every command that grants a role — `vault share` used to
+/// give only "role must be one of …" — and before any request.
+#[test]
+fn t_dec_vl10_a_vault_owner_role_is_refused_with_the_reason() {
+    let mut s = mockito::Server::new();
+    let any: Vec<_> = ["GET", "POST", "PATCH"]
+        .iter()
+        .map(|m| s.mock(m, mockito::Matcher::Any).expect(0).create())
+        .collect();
+    for args in [
+        &[
+            "vault",
+            "share",
+            "v",
+            "--with",
+            "bob@example.com",
+            "--role",
+            "Owner",
+        ][..],
+        &[
+            "vault",
+            "role",
+            "v",
+            "--user",
+            "bob@example.com",
+            "--role",
+            "owner",
+        ][..],
+    ] {
+        let out = signed_in(&Project::new(), &s.url(), args, None);
+        out.assert_code(2);
+        assert!(
+            out.stderr
+                .contains("`owner` cannot be granted. A vault has one owner"),
+            "{args:?}:\n{}",
+            out.stderr
+        );
+    }
+    for m in any {
+        m.assert();
+    }
 }

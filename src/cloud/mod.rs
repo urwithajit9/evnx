@@ -52,6 +52,7 @@ pub mod creds;
 pub mod device;
 pub mod export;
 pub mod org;
+pub(crate) mod role;
 pub mod rotate;
 pub mod run;
 pub mod session;

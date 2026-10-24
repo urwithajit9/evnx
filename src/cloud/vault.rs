@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use super::auth;
 use super::client::{ApiError, Client};
 use super::config::CloudConfig;
+use super::role::{parse_role, VAULT_OWNER, VAULT_ROLES};
 
 /// AES-GCM nonce length — the prefix every stored blob carries.
 const NONCE_LEN: usize = 12;
@@ -391,14 +392,7 @@ pub fn share(
     use evnx_crypto::{unwrap_vault_key_with_master_key, wrap_vault_key_for_user, UserPublicKeys};
 
     // Case-insensitive, like `--env` (I-223, DEC-CL8): `--role Admin` was refused.
-    let role = role.trim().to_lowercase();
-    let valid_roles = ["viewer", "developer", "admin"];
-    if !valid_roles.contains(&role.as_str()) {
-        return Err(anyhow!(
-            "role must be one of: {}. Got `{role}`.",
-            valid_roles.join(", ")
-        ));
-    }
+    let role = parse_role(&role, VAULT_ROLES, VAULT_OWNER)?;
 
     let recipient_email = recipient_email.trim().to_lowercase();
 
@@ -903,15 +897,7 @@ pub fn set_role(
     role: String,
     verbose: bool,
 ) -> Result<()> {
-    let role = role.trim().to_lowercase(); // I-223
-    let valid = ["viewer", "developer", "admin"];
-    if !valid.contains(&role.as_str()) {
-        return Err(anyhow!(
-            "role must be one of: {}. Got `{role}`.\n\
-             \x20 `owner` is not assignable — it is set once, by whoever created the vault.",
-            valid.join(", ")
-        ));
-    }
+    let role = parse_role(&role, VAULT_ROLES, VAULT_OWNER)?; // I-223, A-303
     let user_email = user_email.trim().to_lowercase();
 
     let server = CloudConfig::resolve_server(server_override)?;

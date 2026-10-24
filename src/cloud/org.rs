@@ -35,6 +35,7 @@ use serde::Deserialize;
 
 use super::client::Client;
 use super::config::CloudConfig;
+use super::role::{parse_role, ORG_OWNER, ORG_ROLES};
 
 /// The sentence that has to survive every copy edit in this module.
 const NOT_VAULT_ACCESS: &str =
@@ -300,22 +301,6 @@ fn members_of(client: &Client, org_id: &str) -> Result<Vec<MemberSummary>> {
     Ok(listed.members)
 }
 
-/// ⚠️ Refused client-side as well as by the server and by migration 010's CHECK.
-/// Three layers, because an organisation has exactly one owner and an invitation
-/// is a link somebody can forward.
-fn validate_role(raw: &str) -> Result<String> {
-    match raw.to_lowercase().as_str() {
-        "member" => Ok("member".into()),
-        "admin" => Ok("admin".into()),
-        "owner" => Err(anyhow!(
-            "`owner` cannot be granted. An organisation has exactly one owner, set\n\
-             \x20 when it is created — handing it out through an invitation or a role\n\
-             \x20 change would leave two, and nothing could then remove either."
-        )),
-        other => Err(anyhow!("role must be `member` or `admin`, not {other:?}")),
-    }
-}
-
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 /// `evnx org create <name> --slug <slug>`
@@ -461,7 +446,7 @@ pub fn invite(
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
-    let role = validate_role(role.unwrap_or("member"))?;
+    let role = parse_role(role.unwrap_or("member"), ORG_ROLES, ORG_OWNER)?; // A-303
     let target = resolve_org(&client, org)?;
 
     let created: CreatedInvite = client
@@ -930,7 +915,7 @@ pub fn set_role(
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
-    let role = validate_role(role)?;
+    let role = parse_role(role, ORG_ROLES, ORG_OWNER)?; // A-303
     let target = resolve_org(&client, org)?;
     let members = members_of(&client, &target.id)?;
     let member = resolve_member(&members, who)?;
@@ -1168,6 +1153,7 @@ mod tests {
     /// ⚠️ `owner` must be refused before the request is made, with a reason.
     #[test]
     fn owner_is_not_a_grantable_role() {
+        let validate_role = |raw| parse_role(raw, ORG_ROLES, ORG_OWNER);
         assert_eq!(validate_role("member").unwrap(), "member");
         assert_eq!(validate_role("ADMIN").unwrap(), "admin");
 

@@ -8,6 +8,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **A role is read the same way by `vault` and `org`** (A-303, DEC-VL10).
+  `vault share`, `vault role`, `org invite` and `org role` had three copies of
+  the rule: `org` did not trim spaces, `vault share --role owner` was refused
+  without saying why, and each worded the refusal its own way. One parser now:
+  spaces trimmed, any case, `owner` refused with the reason ("A vault has one
+  owner, set once by whoever created it." / the organisation's), anything else
+  as "role must be one of: … Got `x`.". Only the refusals' wording changed;
+  every role accepted before is accepted now.
+
 ## [0.10.17] - 2026-10-23
 
 The patch for `evnx auth` (package R-auth, #221). `evnx auth status` says why a
