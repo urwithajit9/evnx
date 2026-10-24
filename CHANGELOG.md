@@ -8,11 +8,43 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.18] - 2026-10-25
+
+The patch for `evnx org`, `vault` and `cloud` (package R-org-vault-cloud,
+#223). Sharing no longer rewrites an existing member; every command proves the
+master password before using it, so `vault create` no longer seals a vault
+under a typo; admins can share and members can leave; every confirmation names
+`--yes` when there is no terminal; `-q` works for every cloud command; `cloud
+watch` reports failed polls and skips your own pushes; pushing the default
+`.env` into a production vault asks first; and the README covers all of
+`vault`, `cloud` and `org`, checked against the CLI.
+
+⚠️ **Scripts:**
+- `cloud push` of the default `.env` into a production vault with no terminal
+  now exits 2 unless `--yes` (or `--file`/`--env-name`).
+- Under `-q`, cloud commands print far less: a script that read a status line
+  ("✓ pushed …") from stdout under `-q` gets nothing.
+- `vault create` with upper case exits 2 before the password prompt.
+- `cloud history`'s `PUSHED BY` holds emails, and its width follows them.
+- `cloud pull` into a git repository may print a `.gitignore` question or
+  warning; `--no-gitignore` skips it.
+
+ⓘ **Shipped separately, on evnx-server** (`d2663fa`, live since
+2026-10-25): sharing with someone already in a vault is a 409 and writes
+nothing — for every client, older CLIs and the app included — and a refused
+vault name says "lower-case letters, digits and hyphens" once. This release
+behaves the same against the server before and after it.
+
 🔒 **Security:** `tokio` 1.49.0 → 1.53.3 (RUSTSEC-2026-0386, published
 2026-10-13, informational "unsound": `AsyncFd::new` and related constructors
 violate I/O safety, which can lead to a use-after-free). evnx never calls
 `AsyncFd`; tokio is there for `reqwest`'s HTTP client. 1.53.3 needs `mio` 1.2,
 `socket2` 0.6.3 and, through `mio`, `libc` 0.2.183, so those move too.
+
+🔒 Sharing with someone already in a vault rewrote their role and key —
+the owner's too, so an admin could demote the owner and then remove them
+(I-313). Fixed on the server (above); this release also refuses it before the
+password.
 
 - **A role is read the same way by `vault` and `org`** (A-303, DEC-VL10).
   `vault share`, `vault role`, `org invite` and `org role` had three copies of
@@ -119,16 +151,6 @@ violate I/O safety, which can lead to a use-after-free). evnx never calls
   what works by id with a vault-scoped token, and `cloud export --output` (it
   said `--out`). A test checks the commands against the CLI both ways.
 - `org` subcommands' `--org <slug>` have help text (DEC-SF12).
-
-⚠️ **Scripts:**
-- `cloud push` of the default `.env` into a production vault with no terminal
-  now exits 2 unless `--yes` (or `--file`/`--env-name`).
-- Under `-q`, cloud commands print far less: a script that read a status line
-  ("✓ pushed …") from stdout under `-q` gets nothing.
-- `vault create` with upper case exits 2 before the password prompt.
-- `cloud history`'s `PUSHED BY` holds emails, and its width follows them.
-- `cloud pull` into a git repository may print a `.gitignore` question or
-  warning; `--no-gitignore` skips it.
 
 ## [0.10.17] - 2026-10-23
 
