@@ -28,7 +28,6 @@
 //! difference between this and every `export`-based workaround. There is a test
 //! that checks exactly that by reading `/proc`.
 
-use crate::cloud::client::api_path;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use indexmap::IndexMap;
@@ -37,7 +36,6 @@ use zeroize::Zeroize;
 
 use super::client::Client;
 use super::config::CloudConfig;
-use super::sync::NONCE_LEN;
 use super::{auth, vault};
 use crate::utils::ui;
 
@@ -57,8 +55,6 @@ pub fn run(
     verbose: bool,
     command: Vec<String>,
 ) -> Result<()> {
-    use evnx_crypto::{decrypt_vault, vault_aad, EncryptedBlob};
-
     let (program, args) = command
         .split_first()
         .ok_or_else(|| anyhow!("no command given. Usage: evnx cloud run --vault <V> -- <cmd>"))?;
@@ -83,53 +79,18 @@ pub fn run(
         }
     };
 
-    let blob_bytes = client
-        .get_bytes(&api_path(&[
-            "vaults",
-            &vault_ref.id.to_string(),
-            "versions",
-            &version.to_string(),
-            "blob",
-        ])?)
-        .map_err(|e| anyhow!("{e}"))?;
-
-    if blob_bytes.len() <= NONCE_LEN {
-        return Err(anyhow!(
-            "the server returned {} bytes, too short to be a blob",
-            blob_bytes.len()
-        ));
-    }
-    let (nonce_bytes, ciphertext) = blob_bytes.split_at(NONCE_LEN);
-    let mut nonce = [0u8; NONCE_LEN];
-    nonce.copy_from_slice(nonce_bytes);
+    // Fetched before the password is asked for, as `cloud pull` does: a version
+    // that does not exist answers 404 rather than wasting the typing.
+    let blob = super::sync::fetch_blob(&client, &vault_ref, version)?;
 
     // ⚠️ The password is read before the child is spawned, and it is read from
     // *our* stdin. Whatever remains on stdin is inherited by the child, so a
     // command that also reads stdin sees the rest of the stream, not the
     // password line.
     let password = auth::read_password(password_stdin, "Master password")?;
-    let master_key = auth::derive_master_key_for_account(&client, &password)?;
-    let vault_key = super::sync::unwrap_vault_key(&client, &vault_ref, &master_key)?;
-
-    let aad = vault_aad(&vault_ref.id, version as u32);
-    let mut plaintext = decrypt_vault(
-        &EncryptedBlob {
-            nonce,
-            ciphertext: ciphertext.to_vec(),
-        },
-        &vault_key,
-        &aad,
-    )
-    .map_err(|_| {
-        anyhow!(
-            "could not decrypt version {version} of {}.\n\
-             \x20 Either the master password is wrong, or the server served a different \
-             version than it claimed — the version number is authenticated into the \
-             ciphertext, so a substituted blob fails here rather than decrypting to \
-             stale secrets.",
-            vault_ref.label()
-        )
-    })?;
+    let unlocked = auth::unlock(&client, &password)?;
+    let vault_key = super::sync::unwrap_vault_key(&client, &vault_ref, &unlocked)?;
+    let mut plaintext = super::sync::decrypt_version(&blob, &vault_ref, version, &vault_key)?;
 
     // ── Parse, then destroy the whole-file plaintext ────────────────────────
     //

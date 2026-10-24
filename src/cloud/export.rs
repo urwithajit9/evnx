@@ -145,12 +145,12 @@ pub fn export(
     println!();
 
     let password = auth::read_password(password_stdin, "Master password")?;
-    let master_key = auth::derive_master_key_for_account(&client, &password)?;
+    let unlocked = auth::unlock(&client, &password)?;
 
     // Opened **once** and reused for every version. The key is per vault, not
     // per version, so unwrapping it in the loop would be one needless round trip
     // per version and would make a 40-version export forty times as chatty.
-    let vault_key = sync::unwrap_vault_key(&client, &vault_ref, &master_key)?;
+    let vault_key = sync::unwrap_vault_key(&client, &vault_ref, &unlocked)?;
 
     create_dir_private(&dir)?;
     // Everything in an export is plaintext: ignore all of it, wherever it lands

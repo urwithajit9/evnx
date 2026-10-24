@@ -33,6 +33,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that would do it; someone already at the role asked for gets "already … —
   nothing changed." and exit 0, as `vault role` does. evnx-server refuses the
   same requests with a 409 since SV-3, for older CLIs and the app.
+- **The master password is checked before it is used** (I-316, A-302). Every
+  command that asks for it (`vault create`, `share`, `revoke`, `rekey`,
+  `cloud push`, `pull`, `run`, `export`) derived a key from whatever was typed
+  and found out later, at a vault key, saying the password was "probably
+  wrong". `vault create` opens no vault key, so it sealed a new vault under the
+  typo: created, counted against the plan, never openable with the real
+  password. Now the password opens your account's sealed keypair first, and a
+  wrong one is refused right after the prompt with the sentence
+  `rotate-master-password` already used ("that master password did not open
+  your keypair … Nothing has been changed."). A vault whose own copy still will
+  not open with a proven password was created with a typo; the message says so
+  and how to get out of it. Opening a vault shared with you no longer fetches
+  and opens your keypair a second time.
+
+  ⚠️ **If you created a vault with a mistyped password and pushed to it with
+  that same typo**, this release refuses the typo at the check. evnx 0.10.17
+  still opens it with the typo: export its versions with 0.10.17, then delete
+  the vault and create it again.
 
 ## [0.10.17] - 2026-10-23
 

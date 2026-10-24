@@ -381,3 +381,42 @@ fn t_a301_a_vault_target_is_resolved_in_one_place() {
         "vault.rs resolves a target at lines {sites:?}"
     );
 }
+
+/// The master password is proven in one place (A-302, I-316, DEC-VL7):
+/// `auth::unlock` derives the key and opens the account's sealed keypair with
+/// it, so a wrong password is caught before anything uses the key.
+/// `derive_master_key_for_account` derived without checking, and three more
+/// copies opened the keypair on their own, each with its own message.
+///
+/// Allowed elsewhere: `auth.rs` itself (register, unlock, the login backfill)
+/// and `rotate.rs`, which derives the *new* key and re-opens what it sealed —
+/// but proves the *current* password through `auth::unlock_with`.
+#[test]
+fn t_a302_the_master_password_is_proven_in_one_place() {
+    let mut files = Vec::new();
+    rust_files(&src().join("cloud"), &mut files);
+    let mut offenders = Vec::new();
+    for f in &files {
+        let name = f.file_name().unwrap().to_string_lossy().to_string();
+        let text = std::fs::read_to_string(f).unwrap();
+        if text.contains("fn derive_master_key_for_account") {
+            offenders.push(format!("{name}: fn derive_master_key_for_account"));
+        }
+        if name == "rotate.rs" && !text.contains("auth::unlock_with(") {
+            offenders.push("rotate.rs: does not use auth::unlock_with".into());
+        }
+        if name == "auth.rs" || name == "rotate.rs" {
+            continue;
+        }
+        for (n, l) in text.lines().enumerate() {
+            let code = !l.trim_start().starts_with("//");
+            if code && (l.contains("derive_master_key(") || l.contains("decrypt_private_key(")) {
+                offenders.push(format!("{name}:{}", n + 1));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "the master key outside auth::unlock: {offenders:?}"
+    );
+}

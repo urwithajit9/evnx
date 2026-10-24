@@ -188,9 +188,9 @@ pub fn rotate(
     verbose: bool,
 ) -> Result<()> {
     use evnx_crypto::{
-        b64_decode, b64_encode, compute_verifier, decrypt_private_key, derive_master_key,
-        derive_srp_password, encrypt_private_key, generate_salt, salt_from_base64, salt_to_base64,
-        unwrap_vault_key_with_master_key, wrap_vault_key_with_master_key, EncryptedPrivateKey,
+        b64_decode, b64_encode, compute_verifier, derive_master_key, derive_srp_password,
+        encrypt_private_key, generate_salt, salt_from_base64, salt_to_base64,
+        unwrap_vault_key_with_master_key, wrap_vault_key_with_master_key,
     };
 
     let server = CloudConfig::resolve_server(server_override)?;
@@ -218,18 +218,10 @@ pub fn rotate(
     let old_salt = salt_from_base64(&me.argon2_salt)
         .map_err(|e| anyhow!("the server sent an unusable argon2_salt: {e}"))?;
     println!("  Deriving your current key on this machine…");
-    let old_master = derive_master_key(current.as_bytes(), &old_salt)
-        .map_err(|e| anyhow!("deriving the master key: {e}"))?;
-
-    let sealed = EncryptedPrivateKey::from_base64(&me.encrypted_private_key)
-        .map_err(|e| anyhow!("the server sent an unusable encrypted_private_key: {e}"))?;
-    let keypair = decrypt_private_key(&sealed, &old_master).map_err(|_| {
-        anyhow!(
-            "that master password did not open your keypair, so it is not the one this \
-             account was registered with. Nothing has been changed.\n\
-             \x20 If you have already changed it on another machine, use the new one."
-        )
-    })?;
+    let auth::Unlocked {
+        master_key: old_master,
+        keypair,
+    } = auth::unlock_with(&me.argon2_salt, &me.encrypted_private_key, &current)?;
 
     // ── Every vault key wrapped under the master key ────────────────────────
     //

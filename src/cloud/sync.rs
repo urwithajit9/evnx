@@ -277,8 +277,8 @@ pub fn push(
     let target_version = current + 1;
 
     let password = auth::read_password(password_stdin, "Master password")?;
-    let master_key = auth::derive_master_key_for_account(&client, &password)?;
-    let vault_key = unwrap_vault_key(&client, &vault_ref, &master_key)?;
+    let unlocked = auth::unlock(&client, &password)?;
+    let vault_key = unwrap_vault_key(&client, &vault_ref, &unlocked)?;
 
     let (key_names, parse_note) = read_key_names(&plaintext);
 
@@ -392,8 +392,8 @@ pub fn pull(
     let blob = fetch_blob(&client, &vault_ref, version)?;
 
     let password = auth::read_password(password_stdin, "Master password")?;
-    let master_key = auth::derive_master_key_for_account(&client, &password)?;
-    let vault_key = unwrap_vault_key(&client, &vault_ref, &master_key)?;
+    let unlocked = auth::unlock(&client, &password)?;
+    let vault_key = unwrap_vault_key(&client, &vault_ref, &unlocked)?;
 
     let plaintext = decrypt_version(&blob, &vault_ref, version, &vault_key)?;
 
@@ -507,10 +507,9 @@ pub(crate) fn decrypt_version(
     decrypt_vault(blob, vault_key, &aad).map_err(|_| {
         anyhow!(
             "could not decrypt version {version} of {}.\n\
-             \x20 Either the master password is wrong, or the server served a different \
-             version than it claimed — the version number is authenticated into the \
-             ciphertext, so a substituted blob fails here rather than decrypting to \
-             stale secrets.",
+             \x20 The server served a different version than it claimed, or altered \
+             it — the version number is authenticated into the ciphertext, so a \
+             substituted blob fails here rather than decrypting to stale secrets.",
             vault_ref.label()
         )
     })
@@ -695,7 +694,7 @@ pub(crate) fn current_version(client: &Client, vault_ref: &VaultRef) -> Result<i
 pub(crate) fn unwrap_vault_key(
     client: &Client,
     vault_ref: &VaultRef,
-    master_key: &evnx_crypto::MasterKey,
+    unlocked: &auth::Unlocked,
 ) -> Result<evnx_crypto::VaultKey> {
     use evnx_crypto::{b64_decode, unwrap_vault_key_with_master_key};
 
@@ -706,9 +705,8 @@ pub(crate) fn unwrap_vault_key(
     match (&my_key.eph_pub_key, &my_key.mlkem_ciphertext) {
         // Shared with us: open it with the hybrid path.
         (Some(eph), Some(ct)) => unwrap_shared_vault_key(
-            client,
             vault_ref,
-            master_key,
+            &unlocked.keypair,
             &my_key.encrypted_vault_key,
             eph,
             ct,
@@ -719,12 +717,8 @@ pub(crate) fn unwrap_vault_key(
             let wrapped = b64_decode(&my_key.encrypted_vault_key, "encrypted_vault_key")
                 .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
 
-            unwrap_vault_key_with_master_key(&wrapped, master_key).map_err(|_| {
-                anyhow!(
-                    "could not unwrap the key for {} — the master password is probably wrong.",
-                    vault_ref.label()
-                )
-            })
+            unwrap_vault_key_with_master_key(&wrapped, &unlocked.master_key)
+                .map_err(|_| auth::own_copy_will_not_open(&vault_ref.label()))
         }
 
         // ⚠️ Half a wrap. An ephemeral with no ML-KEM ciphertext is a
@@ -747,33 +741,16 @@ pub(crate) fn unwrap_vault_key(
 
 /// Open a vault key that was shared with us — hybrid X25519 + ML-KEM-768.
 ///
-/// Needs the account keypair, not just the master key, so it fetches and unseals
-/// the Ed25519 seed. Both derived keys come from that one seed.
+/// Needs the account keypair, not just the master key: both derived keys come
+/// from the one Ed25519 seed, which [`auth::unlock`] has already opened.
 fn unwrap_shared_vault_key(
-    client: &Client,
     vault_ref: &VaultRef,
-    master_key: &evnx_crypto::MasterKey,
+    keypair: &evnx_crypto::UserKeypair,
     encrypted_vault_key_b64: &str,
     eph_pub_key_b64: &str,
     mlkem_ciphertext_b64: &str,
 ) -> Result<evnx_crypto::VaultKey> {
-    use evnx_crypto::{
-        decrypt_private_key, unwrap_vault_key, EncryptedPrivateKey, WrappedVaultKey,
-    };
-
-    #[derive(Deserialize)]
-    struct MeSeed {
-        encrypted_private_key: String,
-    }
-
-    let me: MeSeed = client
-        .get("/api/v1/auth/me")
-        .map_err(|e| anyhow!("fetching your sealed keypair: {e}"))?;
-
-    let sealed = EncryptedPrivateKey::from_base64(&me.encrypted_private_key)
-        .map_err(|e| anyhow!("the server sent an unusable encrypted_private_key: {e}"))?;
-    let keypair = decrypt_private_key(&sealed, master_key)
-        .map_err(|_| anyhow!("could not open your keypair — the master password is wrong."))?;
+    use evnx_crypto::{unwrap_vault_key, WrappedVaultKey};
 
     let wrapped = WrappedVaultKey::from_base64(
         encrypted_vault_key_b64,
@@ -782,7 +759,7 @@ fn unwrap_shared_vault_key(
     )
     .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
 
-    unwrap_vault_key(&wrapped, &keypair).map_err(|_| {
+    unwrap_vault_key(&wrapped, keypair).map_err(|_| {
         anyhow!(
             "could not open the key for {}.\n\
              \x20 The wrapped key does not verify. Either it was not wrapped for \n\

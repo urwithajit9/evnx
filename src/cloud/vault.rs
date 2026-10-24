@@ -205,10 +205,10 @@ pub fn create(
     // vault key asks for the password. Caching it on disk would defeat the point
     // of the server never holding one.
     let password = auth::read_password(password_stdin, "Master password")?;
-    let master_key = auth::derive_master_key_for_account(&client, &password)?;
+    let unlocked = auth::unlock(&client, &password)?;
 
     let vault_key = VaultKey::generate();
-    let wrapped = wrap_vault_key_with_master_key(&vault_key, &master_key)
+    let wrapped = wrap_vault_key_with_master_key(&vault_key, &unlocked.master_key)
         .map_err(|e| anyhow!("wrapping the vault key: {e}"))?;
 
     let created: CreateVaultResponse = client
@@ -506,7 +506,7 @@ pub fn share(
 
     // ── Open our copy, re-wrap for them ──────────────────────────────────────
     let password = auth::read_password(password_stdin, "Master password")?;
-    let master_key = auth::derive_master_key_for_account(&client, &password)?;
+    let unlocked = auth::unlock(&client, &password)?;
 
     let my_key: MyWrappedKey = client
         .get(&api_path(&["vaults", &vault.id.to_string(), "my-key"])?)
@@ -527,14 +527,8 @@ pub fn share(
     let wrapped_for_me =
         evnx_crypto::b64_decode(&my_key.encrypted_vault_key, "encrypted_vault_key")
             .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
-    let vault_key =
-        unwrap_vault_key_with_master_key(&wrapped_for_me, &master_key).map_err(|_| {
-            anyhow!(
-                "could not open the key for {}/{} — the master password is probably wrong.",
-                vault.name,
-                vault.environment
-            )
-        })?;
+    let vault_key = unwrap_vault_key_with_master_key(&wrapped_for_me, &unlocked.master_key)
+        .map_err(|_| auth::own_copy_will_not_open(&label))?;
 
     let wrapped = wrap_vault_key_for_user(&vault_key, &recipient)
         .map_err(|e| anyhow!("wrapping the vault key for {recipient_email}: {e}"))?;
@@ -1237,13 +1231,13 @@ pub fn revoke(
     // that swaps the key, so there is no window where they are still a member of a
     // vault whose key has already moved, nor one where they are gone but it has not.
     let password = auth::read_password(password_stdin, "Master password")?;
-    let master_key = auth::derive_master_key_for_account(&client, &password)?;
+    let unlocked = auth::unlock(&client, &password)?;
 
     let total = rotate_vault_key(
         &client,
         &vault,
         &label,
-        &master_key,
+        &unlocked,
         &remaining,
         Some(&leaving.user_id),
         verbose,
@@ -1405,20 +1399,12 @@ pub fn rekey(
     }
 
     let password = auth::read_password(password_stdin, "Master password")?;
-    let master_key = auth::derive_master_key_for_account(&client, &password)?;
+    let unlocked = auth::unlock(&client, &password)?;
 
     // `None` — nobody is being removed, which is the whole difference from
     // `revoke`. The field is omitted from the request entirely, and the server
     // treats an absent `remove_user_id` as a pure rotation.
-    let total = rotate_vault_key(
-        &client,
-        &vault,
-        &label,
-        &master_key,
-        &everyone,
-        None,
-        verbose,
-    )?;
+    let total = rotate_vault_key(&client, &vault, &label, &unlocked, &everyone, None, verbose)?;
 
     println!();
     println!("  {} rotated the key for {label}", "\u{2713}".green());
@@ -1488,7 +1474,7 @@ fn rotate_vault_key(
     client: &Client,
     vault: &VaultSummary,
     label: &str,
-    master_key: &evnx_crypto::MasterKey,
+    unlocked: &auth::Unlocked,
     wrap_for: &[&MemberSummary],
     remove_user_id: Option<&str>,
     verbose: bool,
@@ -1508,19 +1494,13 @@ fn rotate_vault_key(
             let wrapped =
                 evnx_crypto::b64_decode(&my_key.encrypted_vault_key, "encrypted_vault_key")
                     .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
-            unwrap_vault_key_with_master_key(&wrapped, master_key)
-                .map_err(|_| anyhow!("could not open your key for {label} — wrong password?"))?
+            unwrap_vault_key_with_master_key(&wrapped, &unlocked.master_key)
+                .map_err(|_| auth::own_copy_will_not_open(label))?
         }
         (Some(eph), Some(ct)) => {
-            let sealed = evnx_crypto::EncryptedPrivateKey::from_base64(&fetch_sealed_private_key(
-                client,
-            )?)
-            .map_err(|e| anyhow!("the server sent an unusable encrypted_private_key: {e}"))?;
-            let keypair = evnx_crypto::decrypt_private_key(&sealed, master_key)
-                .map_err(|_| anyhow!("could not open your keypair — wrong password?"))?;
             let wrapped = WrappedVaultKey::from_base64(&my_key.encrypted_vault_key, eph, ct)
                 .map_err(|e| anyhow!("the server sent an unusable wrapped key: {e}"))?;
-            unwrap_vault_key(&wrapped, &keypair)
+            unwrap_vault_key(&wrapped, &unlocked.keypair)
                 .map_err(|_| anyhow!("could not open your key for {label}."))?
         }
         _ => {
@@ -1605,7 +1585,7 @@ fn rotate_vault_key(
         if m.is_you {
             // Our own copy stays sealed under the master key: symmetric, no key
             // agreement, and the shape a vault creator's copy has always had.
-            let wrapped = wrap_vault_key_with_master_key(&new_key, master_key)
+            let wrapped = wrap_vault_key_with_master_key(&new_key, &unlocked.master_key)
                 .map_err(|e| anyhow!("wrapping the new key for yourself: {e}"))?;
             wraps.push(RekeyedMember {
                 user_id: m.user_id.clone(),
@@ -1649,16 +1629,4 @@ fn rotate_vault_key(
         .map_err(|e| anyhow!("{e}"))?;
 
     Ok(total)
-}
-
-/// The account's sealed Ed25519 seed, for opening a shared vault key.
-fn fetch_sealed_private_key(client: &Client) -> Result<String> {
-    #[derive(Deserialize)]
-    struct MeSeed {
-        encrypted_private_key: String,
-    }
-    let me: MeSeed = client
-        .get("/api/v1/auth/me")
-        .map_err(|e| anyhow!("fetching your sealed keypair: {e}"))?;
-    Ok(me.encrypted_private_key)
 }
