@@ -8,6 +8,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+🔒 **Security:** `tokio` 1.49.0 → 1.53.3 (RUSTSEC-2026-0386, published
+2026-10-13, informational "unsound": `AsyncFd::new` and related constructors
+violate I/O safety, which can lead to a use-after-free). evnx never calls
+`AsyncFd`; tokio is there for `reqwest`'s HTTP client. 1.53.3 needs `mio` 1.2,
+`socket2` 0.6.3 and, through `mio`, `libc` 0.2.183, so those move too.
+
 - **A role is read the same way by `vault` and `org`** (A-303, DEC-VL10).
   `vault share`, `vault role`, `org invite` and `org role` had three copies of
   the rule: `org` did not trim spaces, `vault share --role owner` was refused
