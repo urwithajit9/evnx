@@ -11,7 +11,7 @@
 A CLI tool for managing `.env` files — validation, secret scanning, format conversion, and
 migration to cloud secret managers. It also syncs them end-to-end encrypted, so the server
 stores only ciphertext it cannot read — with a limit worth knowing before you rely
-on it, in [Cloud sync](#cloud-sync-requires---features-cloud).
+on it, in [Cloud sync](#cloud-sync).
 
 [Website](https://www.evnx.dev) | [Getting Started](./docs/GETTING_STARTED.md) | [Changelog](./CHANGELOG.md)
 
@@ -709,7 +709,9 @@ key names only, because every filled-in value differs from its placeholder.
 
 ---
 
-## Cloud sync _(requires `--features cloud`)_
+## Cloud sync
+
+_In every prebuilt binary; `cargo install` needs `--all-features`._
 
 Push your `.env` to the cloud and pull it on any machine or in any pipeline.
 Encryption and decryption happen on your machine; the server stores ciphertext and
@@ -1151,16 +1153,18 @@ default_install_hook_types: [pre-commit, pre-push]
 
 repos:
   - repo: https://github.com/urwithajit9/evnx
-    # ⚠️ Pin 0.10.0 or newer. Before it, these hooks ran `evnx scan` with no
-    # arguments and `always_run: true`, so every commit scanned the whole working
-    # tree — including the real, gitignored `.env` a developer necessarily has.
-    # That found secrets, exited 1, and blocked the commit. Every commit.
-    rev: v0.10.0
+    # ⚠️ Pin 0.10.15 or newer: the comments below describe the hooks as they
+    # are from then on. Before 0.10.13 evnx-diff blocked on any difference, and
+    # before 0.10.15 evnx-doctor had no --skip-without-env. Before 0.10.0 the
+    # scan hook scanned the whole working tree on every commit, including the
+    # real, gitignored `.env`, and blocked every commit.
+    rev: v0.10.18
     hooks:
-      - id: evnx-scan        # blocks commit if secrets found
+      - id: evnx-scan        # blocks commit if secrets found in the staged files
       - id: evnx-validate    # blocks commit if .env misconfigured
       - id: evnx-diff        # blocks commit if .env lacks a key .env.example declares (skips with no .env)
       - id: evnx-sync        # blocks commit if .env.example lacks a variable from .env (skips with no .env)
+      - id: evnx-doctor      # blocks commit on doctor errors; warnings pass (skips with no .env)
       - id: evnx-scan-push   # strict scan on push
 ```
 
