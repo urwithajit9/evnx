@@ -176,3 +176,61 @@ fn t_dec_vl10_a_vault_owner_role_is_refused_with_the_reason() {
         m.assert();
     }
 }
+
+const VAULT_ID: &str = "0b8a1f8e-3c2d-4e5f-8a9b-1c2d3e4f5a6b";
+
+/// I-309 (A-301, DEC-CL12): `vault members <id>` with a vault-scoped token
+/// listed every vault first, which such a token is refused by design, so it
+/// failed before asking for the one thing it may see. An id needs no lookup.
+#[test]
+fn t_i309_a_vault_scoped_token_lists_members_by_id() {
+    let mut s = mockito::Server::new();
+    let list = s
+        .mock("GET", "/api/v1/vaults")
+        .with_status(403)
+        .with_body(r#"{"error":"Insufficient permissions","code":"FORBIDDEN"}"#)
+        .expect(0)
+        .create();
+    let members = s
+        .mock("GET", format!("/api/v1/vaults/{VAULT_ID}/members").as_str())
+        .with_status(200)
+        .with_body(
+            r#"{"members":[{"user_id":"u-1","email":"ci-owner@example.com","role":"owner",
+            "granted_at":"2026-10-20T09:00:00Z","has_mlkem_key":true,"is_you":false}]}"#,
+        )
+        .expect(1)
+        .create();
+    let out = with_token(&s.url(), &["vault", "members", VAULT_ID]);
+    out.assert_code(0);
+    assert!(
+        out.stdout.contains(&format!("{VAULT_ID} — 1 member(s)")),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains("ci-owner@example.com"),
+        "{}",
+        out.stdout
+    );
+    list.assert();
+    members.assert();
+}
+
+/// I-309: by name, a vault-scoped token cannot list, so it is told to pass the
+/// id — as `cloud pull` already says — not shown a bare "Insufficient
+/// permissions".
+#[test]
+fn t_i309_by_name_a_token_is_told_to_pass_the_id() {
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(403)
+        .with_body(r#"{"error":"Insufficient permissions","code":"FORBIDDEN"}"#)
+        .create();
+    let out = with_token(&s.url(), &["vault", "members", "app"]);
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("Pass the vault id instead"),
+        "{}",
+        out.stderr
+    );
+}

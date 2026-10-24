@@ -345,3 +345,39 @@ fn t_i265_one_yes_no_prompt() {
         "yes/no prompts outside utils::prompt::yes_no: {offenders:?}"
     );
 }
+
+/// A vault target is turned into a vault in one place (A-301, DEC-VL10). Six
+/// commands listed the vaults and picked one themselves, so `vault members` by
+/// id with a vault-scoped token failed at a list call `cloud pull` had long
+/// stopped making (I-309), and a refused list was reported bare.
+///
+/// Counted in `vault.rs`, where `resolve` lives: a call of `resolve` itself (not
+/// `fetch_and_resolve`) that picks from a list by the user's `target`. Its unit
+/// tests call it with literals, and `token.rs` and `session.rs` have resolvers of
+/// their own for other things.
+#[test]
+fn t_a301_a_vault_target_is_resolved_in_one_place() {
+    let path = src().join("cloud").join("vault.rs");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let calls_resolve = |l: &str| {
+        l.match_indices("resolve(&").any(|(i, _)| {
+            !l[..i]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_')
+        })
+    };
+    let sites: Vec<usize> = text
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| {
+            !l.trim_start().starts_with("//") && calls_resolve(l) && l.contains("target)")
+        })
+        .map(|(n, _)| n + 1)
+        .collect();
+    assert_eq!(
+        sites.len(),
+        1,
+        "vault.rs resolves a target at lines {sites:?}"
+    );
+}

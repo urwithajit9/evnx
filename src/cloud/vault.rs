@@ -78,8 +78,28 @@ pub(crate) fn fetch_and_resolve(client: &Client, target: &str) -> Result<VaultRe
         });
     }
 
-    let listed: VaultList = match client.get("/api/v1/vaults") {
-        Ok(l) => l,
+    let v = list_and_pick(client, target)?;
+    Ok(VaultRef {
+        id: v.id,
+        name: v.name,
+        environment: v.environment,
+    })
+}
+
+/// `GET /vaults`: every vault this account can reach.
+fn list_vaults(client: &Client) -> std::result::Result<Vec<VaultSummary>, ApiError> {
+    client.get::<VaultList>("/api/v1/vaults").map(|l| l.vaults)
+}
+
+/// List the vaults and pick the one `target` names: a name, `name/environment`,
+/// or an id among them.
+///
+/// The one place a target is looked up in the list (A-301). `vault members` and
+/// six other copies used to list and pick themselves, so a refused list came back
+/// bare, and an id was looked up although it needed no lookup (I-309).
+fn list_and_pick(client: &Client, target: &str) -> Result<VaultSummary> {
+    let vaults = match list_vaults(client) {
+        Ok(v) => v,
         Err(ApiError::Forbidden { .. }) if client.is_api_token() => {
             return Err(anyhow!(
                 "a vault-scoped API token cannot list vaults, so {target:?} cannot be \
@@ -92,12 +112,24 @@ pub(crate) fn fetch_and_resolve(client: &Client, target: &str) -> Result<VaultRe
         }
         Err(e) => return Err(anyhow!("{e}")),
     };
+    resolve(&vaults, target).cloned()
+}
 
-    let v = resolve(&listed.vaults, target)?;
+/// The name and environment of the vault with `id`, from `GET /vaults`.
+///
+/// For where a person will read the result (`cloud link`, I-221). An error if
+/// the id is not among the caller's vaults or the list cannot be fetched — a
+/// vault-scoped token cannot list, and then the name is not knowable.
+pub(crate) fn resolve_id(client: &Client, id: &str) -> Result<VaultRef> {
+    let vaults = list_vaults(client).map_err(|e| anyhow!("could not look up vault {id}: {e}"))?;
+    let v = vaults
+        .into_iter()
+        .find(|v| v.id == id)
+        .ok_or_else(|| anyhow!("no vault {id} among yours. Run `evnx vault list` to see them."))?;
     Ok(VaultRef {
-        id: v.id.clone(),
-        name: v.name.clone(),
-        environment: v.environment.clone(),
+        id: v.id,
+        name: v.name,
+        environment: v.environment,
     })
 }
 
@@ -106,26 +138,6 @@ pub(crate) fn fetch_and_resolve(client: &Client, target: &str) -> Result<VaultRe
 /// Deliberately strict: a loose check that accepted a vault *name* would send the
 /// name straight to the API as an id and produce a 404 instead of the much more
 /// useful "no vault called …".
-/// The name and environment of the vault with `id`, from `GET /vaults`.
-///
-/// For where a person will read the result (`cloud link`, I-221). An error if
-/// the id is not among the caller's vaults or the list cannot be fetched — a
-/// vault-scoped token cannot list, and then the name is not knowable.
-pub(crate) fn resolve_id(client: &Client, id: &str) -> Result<VaultRef> {
-    let listed: VaultList = client
-        .get("/api/v1/vaults")
-        .map_err(|e| anyhow!("could not look up vault {id}: {e}"))?;
-    let v =
-        listed.vaults.iter().find(|v| v.id == id).ok_or_else(|| {
-            anyhow!("no vault {id} among yours. Run `evnx vault list` to see them.")
-        })?;
-    Ok(VaultRef {
-        id: v.id.clone(),
-        name: v.name.clone(),
-        environment: v.environment.clone(),
-    })
-}
-
 pub(crate) fn looks_like_vault_id(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 36
@@ -302,8 +314,7 @@ pub fn delete(
         "\x20 Deleting a vault is for a signed-in member, not a pipeline — a leaked\n\x20 CI token must not be able to destroy it.\n",
     )?;
 
-    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
-    let vault = resolve(&listed.vaults, &target)?;
+    let vault = list_and_pick(&client, &target)?;
 
     if !assume_yes {
         println!(
@@ -403,8 +414,7 @@ pub fn share(
         "\x20 Sharing decides who can read these secrets; a leaked CI token must\n\x20 not be able to add a reader.\n",
     )?;
 
-    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
-    let vault = resolve(&listed.vaults, &target)?;
+    let vault = list_and_pick(&client, &target)?;
 
     // ── The recipient's keys, before asking for a password ───────────────────
     //
@@ -845,19 +855,20 @@ pub fn members(server_override: Option<&str>, target: String, verbose: bool) -> 
     let client = Client::new(server.clone())?;
     client.require_credential()?;
 
-    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
-    let vault = resolve(&listed.vaults, &target)?;
+    // An id needs no lookup (I-309): a vault-scoped token may read this vault's
+    // members but is refused the list of vaults, so listing first failed it.
+    let vault = fetch_and_resolve(&client, &target)?;
 
     let people: MemberList = client
-        .get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)
+        .get(&api_path(&["vaults", &vault.id, "members"])?)
         .map_err(|e| anyhow!("{e}"))?;
 
-    println!(
-        "  {}/{} — {} member(s)",
-        vault.name.bold(),
-        vault.environment,
-        people.members.len()
-    );
+    let label = if vault.name.is_empty() {
+        vault.id.bold().to_string()
+    } else {
+        format!("{}/{}", vault.name.bold(), vault.environment)
+    };
+    println!("  {label} — {} member(s)", people.members.len());
     println!();
 
     for m in &people.members {
@@ -907,8 +918,7 @@ pub fn set_role(
         "\x20 Roles decide who can push, share and revoke; a leaked CI token must\n\x20 not be able to promote anyone.\n",
     )?;
 
-    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
-    let vault = resolve(&listed.vaults, &target)?;
+    let vault = list_and_pick(&client, &target)?;
 
     let people: MemberList = client
         .get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)
@@ -1052,8 +1062,7 @@ pub fn revoke(
         "\x20 Revoking re-keys the vault for everyone left; a leaked CI token must\n\x20 not be able to remove members or lock them out.\n",
     )?;
 
-    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
-    let vault = resolve(&listed.vaults, &target)?;
+    let vault = list_and_pick(&client, &target)?;
     let label = format!("{}/{}", vault.name, vault.environment);
 
     let people: MemberList = client
@@ -1174,7 +1183,7 @@ pub fn revoke(
 
     let total = rotate_vault_key(
         &client,
-        vault,
+        &vault,
         &label,
         &master_key,
         &remaining,
@@ -1265,8 +1274,7 @@ pub fn rekey(
         "\x20 A re-key the server cannot check can lock every member out for good;\n\x20 it takes a signed-in member.\n",
     )?;
 
-    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
-    let vault = resolve(&listed.vaults, &target)?;
+    let vault = list_and_pick(&client, &target)?;
     let label = format!("{}/{}", vault.name, vault.environment);
 
     let people: MemberList = client
@@ -1346,7 +1354,7 @@ pub fn rekey(
     // treats an absent `remove_user_id` as a pure rotation.
     let total = rotate_vault_key(
         &client,
-        vault,
+        &vault,
         &label,
         &master_key,
         &everyone,

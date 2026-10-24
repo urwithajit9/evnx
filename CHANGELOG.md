@@ -16,6 +16,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   owner, set once by whoever created it." / the organisation's), anything else
   as "role must be one of: … Got `x`.". Only the refusals' wording changed;
   every role accepted before is accepted now.
+- **`evnx vault members <id>` works with a vault-scoped API token** (I-309,
+  A-301). It listed every vault before asking for the members, and such a token
+  is refused the list by design, so it failed with a bare "Insufficient
+  permissions". An id now needs no lookup, as in `cloud pull`; by name, the
+  token is told to pass the id. A vault named by id is shown by its id in the
+  header, with a token or a login. The vault commands now find a vault one way
+  (`list_and_pick`), where six of them had their own copy.
 
 ## [0.10.17] - 2026-10-23
 
