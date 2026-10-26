@@ -770,13 +770,21 @@ fn output_pretty(result: &ValidationResult, env_path: &str) -> Result<()> {
         println!("  {}", parts.join("  ·  "));
     }
 
-    // Next steps if there are errors
+    // Next steps if there are errors. `--fix` is named only when a finding
+    // above is one it fixes (RM-09): offering it for a format mismatch alone
+    // sent people to a run that changed nothing.
     if shown_errors > 0 {
-        ui::print_next_steps(&[
-            "Review and fix the errors above",
-            "Run with --fix to auto-correct common issues",
-            "Use --ignore issue_type to suppress specific warnings",
-        ]);
+        let fixable = result.issues.iter().any(|i| {
+            i.auto_fixable
+                && !(hidden.contains(i.variable.as_str())
+                    && i.issue_type == IssueType::PlaceholderValue.as_str())
+        });
+        let mut steps = vec!["Review and fix the errors above"];
+        if fixable {
+            steps.push("Run with --fix to auto-correct common issues");
+        }
+        steps.push("Use --ignore issue_type to suppress specific warnings");
+        ui::print_next_steps(&steps);
     } else if !hidden.is_empty() {
         ui::print_next_steps(&[
             "Fill in the values listed under \"Needs your input\" — evnx cannot invent them",
