@@ -1594,3 +1594,26 @@ fn a_gitignore_that_re_includes_env_is_reported() {
         text_of(&out)
     );
 }
+
+/// I-333: under `-p`, the dry run names every file with its folder, as it
+/// already did `.evnx.toml`; `.env.example` and `.gitignore` were bare.
+#[test]
+fn i333_dry_run_under_path_names_every_file_with_its_folder() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join("deploy/compose")).unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["init", "--dry-run", "--yes", "-p", "deploy/compose"])
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for file in [".env.example", ".env", ".gitignore", ".evnx.toml"] {
+        assert!(
+            stdout.contains(&format!("  deploy/compose/{file}: ")),
+            "{file}:\n{stdout}"
+        );
+    }
+    assert!(!dir.path().join("deploy/compose/.env").exists());
+}

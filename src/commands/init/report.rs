@@ -196,11 +196,18 @@ pub(crate) fn plan_append(
 
 /// `--dry-run`: what the run would write, file by file. Printed whatever `-q`
 /// says: it is the output that was asked for.
-pub(crate) fn print_dry_run(p: &Planned) {
+pub(crate) fn print_dry_run(p: &Planned, root: &Path) {
     let names = |n: &[String]| n.join(", ");
     let count = |n: usize| crate::utils::string::count(n, "variable");
+    // Every file as the contract line already shows it: `.env` here,
+    // `deploy/compose/.env` under `-p deploy/compose` (I-333).
+    let at = |name: &str| {
+        let path = root.join(name);
+        ui::short_path(&std::path::absolute(&path).unwrap_or(path))
+    };
     println!("Dry run: nothing was written.");
-    let t = &p.template;
+    let t = &at(&p.template);
+    let env = at(".env");
     match p.template_action {
         TemplateAction::Create => {
             println!(
@@ -225,21 +232,22 @@ pub(crate) fn print_dry_run(p: &Planned) {
     }
     match p.env {
         EnvAction::Create => println!(
-            "  .env: would be created (0600) with {}",
+            "  {env}: would be created (0600) with {}",
             count(p.env_added.len())
         ),
-        EnvAction::Copy => println!("  .env: would be created (0600) as a copy of {t}"),
+        EnvAction::Copy => println!("  {env}: would be created (0600) as a copy of {t}"),
         EnvAction::Append => println!(
-            "  .env: would add {} it lacks: {}",
+            "  {env}: would add {} it lacks: {}",
             count(p.env_added.len()),
             names(&p.env_added)
         ),
-        EnvAction::Unchanged => println!("  .env: unchanged"),
+        EnvAction::Unchanged => println!("  {env}: unchanged"),
     }
+    let gitignore = at(".gitignore");
     if p.gitignore.is_empty() {
-        println!("  .gitignore: unchanged");
+        println!("  {gitignore}: unchanged");
     } else {
-        println!("  .gitignore: would add {}", p.gitignore.join(", "));
+        println!("  {gitignore}: would add {}", p.gitignore.join(", "));
     }
     let file = p
         .contract

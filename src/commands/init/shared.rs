@@ -265,7 +265,7 @@ pub(crate) fn emit(planned: Option<&super::report::Planned>, opts: WriteOptions,
     if opts.json {
         super::report::print_json(p, opts.dry_run, root);
     } else if opts.dry_run {
-        super::report::print_dry_run(p);
+        super::report::print_dry_run(p, root);
     }
 }
 
