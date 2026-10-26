@@ -1608,7 +1608,8 @@ fn i333_dry_run_under_path_names_every_file_with_its_folder() {
         .output()
         .unwrap();
     assert!(out.status.success());
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Windows shows the folder as `deploy\compose`.
+    let stdout = String::from_utf8_lossy(&out.stdout).replace('\\', "/");
     for file in [".env.example", ".env", ".gitignore", ".evnx.toml"] {
         assert!(
             stdout.contains(&format!("  deploy/compose/{file}: ")),
