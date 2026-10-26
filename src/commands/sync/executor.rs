@@ -12,7 +12,7 @@ use crate::core::envfile::{self, only_in};
 use crate::core::placeholder::{generate_placeholder, is_generated_value, PlaceholderConfig};
 use crate::core::Parser;
 use crate::docs;
-use crate::utils::string::count;
+use crate::utils::string::{count, pluralize};
 use crate::utils::ui;
 
 use super::models::{SyncAction, SyncPreview, VarChange};
@@ -735,9 +735,14 @@ To fill {} from the template instead, run `{}`.",
     let no_prompt = no_prompt_reason();
     if ctx.force || ctx.dry_run || no_prompt.is_some() {
         if !ctx.dry_run {
+            let actual = and_actual(actual_keys(missing.iter().copied(), &env_vars, config).len());
             match (ctx.force, no_prompt) {
-                (true, _) => ui::info("Force mode: using placeholder values and skipping prompts"),
-                (false, Some(why)) => ui::info(format!("{why}: adding with placeholder values")),
+                (true, _) => ui::info(format!(
+                    "Force mode: using placeholder values{actual} and skipping prompts"
+                )),
+                (false, Some(why)) => {
+                    ui::info(format!("{why}: adding with placeholder values{actual}"))
+                }
                 (false, None) => {}
             }
         }
@@ -884,8 +889,9 @@ fn handle_new_example_file(
         true
     } else if let Some(why) = no_prompt_reason() {
         ui::info(format!(
-            "{why}: creating {} with placeholder values",
-            paths.example_str()
+            "{why}: creating {} with placeholder values{}",
+            paths.example_str(),
+            and_actual(actual_keys(vars.keys(), vars, config).len())
         ));
         true
     } else {
@@ -1310,6 +1316,32 @@ fn block_heading(source: &str, marker: &str, comment: Option<&str>) -> String {
     heading
 }
 
+/// The keys among `keys` that a placeholder write fills with the **real**
+/// value, because the project lists them in `allow_actual`. They were written
+/// with no `[AUDIT]` line, and the run said "placeholder values" (RM-05, I-284).
+fn actual_keys<'a>(
+    keys: impl IntoIterator<Item = &'a String>,
+    values: &IndexMap<String, String>,
+    config: &PlaceholderConfig,
+) -> Vec<String> {
+    keys.into_iter()
+        .filter(|k| values.contains_key(*k) && config.allow_actual.iter().any(|a| a == *k))
+        .cloned()
+        .collect()
+}
+
+/// ", and real values for N keys in allow_actual", or nothing.
+fn and_actual(n: usize) -> String {
+    if n == 0 {
+        String::new()
+    } else {
+        format!(
+            ", and real values for {} in allow_actual",
+            pluralize(n, "key", "keys")
+        )
+    }
+}
+
 fn add_with_placeholders(
     paths: &SyncPaths,
     keys: &[&String],
@@ -1328,6 +1360,10 @@ fn add_with_placeholders(
     }
 
     write_template(&paths.example, &content)?;
+    log_security_event(
+        &actual_keys(keys.iter().copied(), values, config),
+        &paths.example_str(),
+    );
     Ok(())
 }
 
@@ -1344,7 +1380,7 @@ fn add_with_placeholders_preview(
                 key: (*key).clone(),
                 old_value: None,
                 new_value: placeholder,
-                is_placeholder: true,
+                is_placeholder: actual_keys([*key], values, config).is_empty(),
             }
         })
         .collect())
@@ -1398,6 +1434,10 @@ fn convert_to_example(
     }
 
     write_template(&paths.example, &content)?;
+    log_security_event(
+        &actual_keys(vars.keys(), vars, config),
+        &paths.example_str(),
+    );
     Ok(())
 }
 
@@ -1413,7 +1453,7 @@ fn convert_to_example_preview(
                 key: k.clone(),
                 old_value: None,
                 new_value: placeholder,
-                is_placeholder: true,
+                is_placeholder: actual_keys([k], vars, config).is_empty(),
             }
         })
         .collect())

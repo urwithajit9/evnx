@@ -1033,6 +1033,53 @@ fn d2_allow_actual_writes_configuration_values_through() -> Result<()> {
     Ok(())
 }
 
+/// RM-05 (I-284): a real value written through `allow_actual` gets the
+/// `[AUDIT]` line, the run says so, and the preview marks it as real.
+#[test]
+#[serial]
+fn rm05_allow_actual_writes_are_audited_and_said() -> Result<()> {
+    let f = SyncTestFixture::new()?;
+    f.write_config(r#"{ "default": "REPLACE_ME", "allow_actual": ["LOG_LEVEL"] }"#)?;
+    f.write_env("LOG_LEVEL=debug\nOTHER=x\n")?;
+    // No terminal and no --force: the run says what it is about to write.
+    let args = ["sync", "--template-config", "placeholders.json"];
+
+    let preview = cargo_bin_cmd!("evnx")
+        .current_dir(f.temp_dir.path())
+        .args(args)
+        .arg("--dry-run")
+        .env("NO_COLOR", "1")
+        .output()?;
+    let out = String::from_utf8_lossy(&preview.stdout);
+    let line = out
+        .lines()
+        .find(|l| l.contains("LOG_LEVEL"))
+        .unwrap_or_default();
+    assert!(
+        line.trim_start().starts_with('!'),
+        "real value marked as real:\n{out}"
+    );
+
+    let run = cargo_bin_cmd!("evnx")
+        .current_dir(f.temp_dir.path())
+        .args(args)
+        .env("NO_COLOR", "1")
+        .output()?;
+    assert_eq!(run.status.code(), Some(0));
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(all.contains("[AUDIT] actual values written to"), "{all}");
+    assert!(all.contains("LOG_LEVEL"), "{all}");
+    assert!(
+        all.contains("real values for 1 key in allow_actual"),
+        "{all}"
+    );
+    Ok(())
+}
+
 /// The guard that makes `allow_actual` safe to have at all.
 #[test]
 #[serial]

@@ -14,6 +14,7 @@ Next steps:
 
 ! .env is readable by other users (mode 644)
      →  chmod 600 .env
+[AUDIT] actual values written to .env.example for: APP_NAME, LOG_LEVEL
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: allow_actual writes the real values (exit 0)

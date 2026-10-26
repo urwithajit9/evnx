@@ -20,7 +20,7 @@ $ evnx sync -n --template-config tc.json
 Preview:
 Target: .env.example (action: Add)
 
-  · NEW_FEATURE = true
+  ! NEW_FEATURE = true
   · stripe_key = <stripe>
 
 (dry-run: no files were modified)
