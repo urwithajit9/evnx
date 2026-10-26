@@ -29,6 +29,7 @@
 //! guess.
 
 use crate::cloud::client::api_path;
+use crate::core::shell::word;
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 use serde::Deserialize;
@@ -976,8 +977,14 @@ pub fn remove(
         }
         println!("  {}", "Nothing they already pulled is recalled.".dimmed());
         println!();
-        if !crate::utils::prompt::confirm("Remove them?", false, "evnx org remove <member> --yes")?
-        {
+        // The hint names the member and the org: a literal `<member>` (RM-02)
+        // was not a command anyone could run.
+        let example = format!(
+            "evnx org remove {} --org {} --yes",
+            word(&member.email),
+            word(&target.slug)
+        );
+        if !crate::utils::prompt::confirm("Remove them?", false, &example)? {
             println!("  Cancelled.");
             return Ok(());
         }
@@ -1045,7 +1052,11 @@ pub fn delete(
             "Nothing anyone already pulled is recalled, and no vault is touched.".dimmed()
         );
         println!();
-        if !crate::utils::prompt::confirm("Delete it?", false, "evnx org delete --yes")? {
+        if !crate::utils::prompt::confirm(
+            "Delete it?",
+            false,
+            &format!("evnx org delete --org {} --yes", word(&target.slug)),
+        )? {
             println!("  Cancelled.");
             return Ok(());
         }
@@ -1103,7 +1114,11 @@ pub fn leave(
             );
         }
         println!();
-        if !crate::utils::prompt::confirm("Leave it?", false, "evnx org leave --yes")? {
+        if !crate::utils::prompt::confirm(
+            "Leave it?",
+            false,
+            &format!("evnx org leave --org {} --yes", word(&target.slug)),
+        )? {
             println!("  Cancelled.");
             return Ok(());
         }

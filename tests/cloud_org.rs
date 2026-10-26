@@ -96,13 +96,17 @@ fn t_i215_t_i216_bad_slug_name_and_email_are_refused_before_any_request() {
 fn t_i218_piped_yes_does_not_confirm_a_removal() {
     let mut s = org_server(0);
     let del = no_delete(&mut s);
-    for args in [
-        &["org", "remove", "bob@example.com"][..],
-        &["org", "delete"][..],
+    // RM-02: the hint is a command that runs, member and org included.
+    for (args, example) in [
+        (
+            &["org", "remove", "bob@example.com"][..],
+            "evnx org remove bob@example.com --org acme --yes",
+        ),
+        (&["org", "delete"][..], "evnx org delete --org acme --yes"),
     ] {
         let out = signed_in(&Project::new(), &s.url(), args, Some(b"y\n"));
         out.assert_code(2);
-        assert!(out.stderr.contains("--yes"), "{args:?}:\n{}", out.stderr);
+        assert!(out.stderr.contains(example), "{args:?}:\n{}", out.stderr);
     }
     del.assert();
 }
