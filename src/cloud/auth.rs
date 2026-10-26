@@ -202,8 +202,52 @@ pub(crate) fn prompt_email() -> Result<String> {
         .context("reading the email address")
 }
 
+/// Refuse before dialoguer does: with no terminal it fails "IO error: not a
+/// terminal", which names neither the cause nor `--password-stdin` (I-330).
+/// `can_prompt`, not `interactive`: the prompt is drawn on stderr (I-280).
+fn require_password_terminal() -> Result<()> {
+    if crate::utils::term::can_prompt() {
+        return Ok(());
+    }
+    // `args_os`: `args` panics on an argument that is not UTF-8.
+    let command = command_words(
+        std::env::args_os()
+            .skip(1)
+            .map(|a| a.to_string_lossy().into_owned()),
+    );
+    Err(anyhow!(
+        "no terminal to ask for the master password: pipe it with --password-stdin\n\n\
+         \x20 {}",
+        stdin_example(&command)
+    ))
+}
+
+/// The pipe to show for `command`. `rotate-master-password` reads two lines,
+/// current then new. `printf`, not `echo`: dash's `echo` rewrites backslashes.
+fn stdin_example(command: &str) -> String {
+    let feed = if command.ends_with("rotate-master-password") {
+        r#"printf '%s\n%s\n' "$CURRENT_PASSWORD" "$NEW_PASSWORD""#
+    } else {
+        r#"printf '%s\n' "$EVNX_PASSWORD""#
+    };
+    format!("{feed} | {command} --password-stdin")
+}
+
+/// `evnx` and the command as typed, up to its first flag. Flag values, and
+/// `cloud run`'s child command, are never echoed into the hint.
+fn command_words(args: impl Iterator<Item = String>) -> String {
+    let words = args
+        .skip_while(|a| a.starts_with('-'))
+        .take_while(|a| !a.starts_with('-'));
+    std::iter::once("evnx".to_string())
+        .chain(words.map(|w| crate::core::shell::word(&w)))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Ask for the password twice, without echoing it.
 pub(crate) fn prompt_new_password() -> Result<Zeroizing<String>> {
+    require_password_terminal()?;
     let pw = dialoguer::Password::new()
         .with_prompt("Master password")
         .with_confirmation("Confirm master password", "The passwords did not match")
@@ -296,6 +340,7 @@ pub fn login(
     let password = if password_stdin {
         read_password_from_stdin()?
     } else {
+        require_password_terminal()?;
         Zeroizing::new(
             dialoguer::Password::new()
                 .with_prompt("Master password")
@@ -761,6 +806,7 @@ pub(crate) fn read_password(from_stdin: bool, prompt: &str) -> Result<Zeroizing<
     if from_stdin {
         read_password_from_stdin()
     } else {
+        require_password_terminal()?;
         Ok(Zeroizing::new(
             dialoguer::Password::new()
                 .with_prompt(prompt)
@@ -1360,6 +1406,32 @@ mod tests {
     use super::*;
     use crate::cloud::testutil::ConfigDirGuard;
     use serial_test::serial;
+
+    #[test]
+    fn i330_the_hint_echoes_the_command_and_no_flag_value() {
+        let words = |a: &[&str]| command_words(a.iter().map(|s| s.to_string()));
+        assert_eq!(
+            words(&["-q", "cloud", "pull", "--vault", "app"]),
+            "evnx cloud pull"
+        );
+        assert_eq!(
+            words(&["vault", "share", "my app", "--with", "b@x.io"]),
+            "evnx vault share 'my app'"
+        );
+        assert_eq!(
+            words(&["cloud", "run", "--vault", "a", "--", "deploy", "TOKEN=x"]),
+            "evnx cloud run"
+        );
+        assert_eq!(words(&[]), "evnx");
+        assert_eq!(
+            stdin_example("evnx cloud pull"),
+            r#"printf '%s\n' "$EVNX_PASSWORD" | evnx cloud pull --password-stdin"#
+        );
+        assert_eq!(
+            stdin_example("evnx auth rotate-master-password"),
+            r#"printf '%s\n%s\n' "$CURRENT_PASSWORD" "$NEW_PASSWORD" | evnx auth rotate-master-password --password-stdin"#
+        );
+    }
 
     fn pw(s: &str) -> Zeroizing<String> {
         Zeroizing::new(s.to_string())

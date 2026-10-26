@@ -8,6 +8,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **A master-password prompt with no terminal names `--password-stdin`**
+  (I-330, RM-01). `cloud push`, `pull`, `run` and `export`, `vault create`,
+  `share`, `revoke` and `rekey`, and `auth login`, `register`,
+  `rotate-master-password` and `undo-password-change`, run in CI without the
+  flag, failed with "reading the master password: IO error: not a terminal".
+  They now say "no terminal to ask for the master password: pipe it with
+  --password-stdin" and show the command with the flag added. Exit code
+  unchanged (2).
+
 ## [0.10.18] - 2026-10-25
 
 The patch for `evnx org`, `vault` and `cloud` (package R-org-vault-cloud,

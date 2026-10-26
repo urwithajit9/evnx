@@ -107,3 +107,79 @@ fn t_i218_every_cloud_confirmation_names_yes_without_a_terminal() {
         password.assert();
     }
 }
+
+/// Every master-password prompt, reached with no terminal, names
+/// `--password-stdin` and the command to add it to (I-330). Before, each one
+/// failed "reading the master password: IO error: not a terminal". The cases
+/// cover all three prompts in `cloud::auth` (`read_password`, `login`'s own and
+/// `prompt_new_password`); push, pull, run and share reach `read_password` too,
+/// after server calls this mock does not answer.
+#[test]
+fn t_i330_every_master_password_prompt_names_password_stdin_without_a_terminal() {
+    for (args, signed, example) in [
+        (
+            &["cloud", "export", "--vault", "app", "-o", "out"][..],
+            true,
+            "evnx cloud export --password-stdin",
+        ),
+        (
+            &["vault", "create", "newv"][..],
+            true,
+            "evnx vault create newv --password-stdin",
+        ),
+        (
+            &[
+                "vault",
+                "revoke",
+                "app",
+                "--user",
+                "bob@example.com",
+                "--yes",
+            ][..],
+            true,
+            "evnx vault revoke app --password-stdin",
+        ),
+        (
+            &["vault", "rekey", "app", "--yes"][..],
+            true,
+            "evnx vault rekey app --password-stdin",
+        ),
+        (
+            &["auth", "undo-password-change", "--email", "me@example.com"][..],
+            false,
+            "evnx auth undo-password-change --password-stdin",
+        ),
+        (
+            &["auth", "login", "--email", "me@example.com"][..],
+            false,
+            "evnx auth login --password-stdin",
+        ),
+        (
+            &["auth", "register", "--email", "new@example.com"][..],
+            false,
+            "evnx auth register --password-stdin",
+        ),
+    ] {
+        let s = vault_server();
+        let p = Project::new();
+        let out = if signed {
+            signed_in(&p, &s.url(), args, None)
+        } else {
+            support::run::run_with(p.path(), args, &[("EVNX_SERVER", &s.url())], None)
+        };
+        out.assert_code(2);
+        assert!(
+            !out.stderr.contains("not a terminal"),
+            "{args:?}:\n{}",
+            out.stderr
+        );
+        assert!(
+            out.stderr.contains(
+                "no terminal to ask for the master password: pipe it with --password-stdin"
+            ),
+            "{args:?}:\n{}",
+            out.stderr
+        );
+        assert!(out.stderr.contains(example), "{args:?}:\n{}", out.stderr);
+    }
+}
