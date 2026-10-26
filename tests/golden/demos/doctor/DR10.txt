@@ -86,33 +86,83 @@ $ evnx doctor --verbose
 [exit 0]
   ok: FIXED RM-23: every detected type is reported
 
-$ evnx doctor --verbose
-· Project path: .
+$ evnx doctor
 
   ✓  Validate .env file existence, security, and syntax
-     .env is properly ignored by git
-     .env syntax is valid
 
   !  Check .env.example exists and is Git-tracked
      .env.example not found - consider creating a template
 
   ·  Detect project type and validate dependencies
      No recognized project configuration
-     Supported: requirements.txt, pyproject.toml, Pipfile, poetry.lock, package.json, Cargo.toml, go.mod, composer.json
 
-  ✓  Check for Docker configuration files
-     Found: Dockerfile
+  !  Check for Docker configuration files
+     Dockerfile with no .dockerignore: a `COPY . .` copies .env into the image
+     → evnx doctor --fix adds .env* to .dockerignore
 
   ✓  Check file permissions for sensitive files
-     .env: permissions 600 (private)
 
-  1 warning  ·  3 checks passed
+  2 warnings  ·  2 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
 
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
-  ok: KNOWN S-D5: Dockerfile with COPY . . and no .dockerignore is 'Found: Dockerfile', no warning; decided: warn, --fix adds .env* (exit 0)
+  ok: FIXED S-D5 (RM-22): Dockerfile with no .dockerignore is a warning (exit 0)
+  ok: FIXED RM-22: missing .dockerignore is named
 
-================ summary: 4 ok, 0 mismatch   ================
+$ evnx doctor
+
+  ✓  Validate .env file existence, security, and syntax
+
+  !  Check .env.example exists and is Git-tracked
+     .env.example not found - consider creating a template
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  !  Check for Docker configuration files
+     .dockerignore does not exclude .env*: a `COPY . .` copies .env into the image
+     → evnx doctor --fix adds .env* to .dockerignore
+
+  ✓  Check file permissions for sensitive files
+
+  2 warnings  ·  2 checks passed
+[stderr]
+
+  evnx doctor  Diagnosing environment setup
+
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: RM-22: a .dockerignore without .env* is a warning (exit 0)
+  ok: RM-22: incomplete .dockerignore is named
+
+$ evnx doctor --fix
+
+  ✓  Validate .env file existence, security, and syntax
+
+  !  Check .env.example exists and is Git-tracked
+     .env.example not found - consider creating a template
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ✓  Check for Docker configuration files
+
+  ✓  Check file permissions for sensitive files
+
+  1 warning  ·  3 checks passed
+[stderr]
+
+  evnx doctor  Diagnosing environment setup
+
+✓ Fixed: .dockerignore: added .env*, !.env.example, !.env.sample, !.env.template
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: RM-22: --fix adds .env* to .dockerignore (exit 0)
+  ok: RM-22: a second --fix changes nothing
+  ok: RM-22: a correct .dockerignore is not warned about
+
+================ summary: 10 ok, 0 mismatch   ================
+/home/ajit/Pictures/ajit/evnx-cloud/evnx/tests/demos/run-doctor-demo.sh: line 53: show: command not found

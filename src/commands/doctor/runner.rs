@@ -863,17 +863,67 @@ impl DiagnosticCheck for DockerCheck {
         let found = crate::core::project::docker_files_in(project_root);
 
         if found.is_empty() {
-            Ok(self.result(
+            return Ok(self.result(
                 Severity::Info,
                 Some("No Docker configuration detected".into()),
-            ))
-        } else {
-            Ok(self.result(
-                Severity::Ok,
-                verbose.then(|| format!("Found: {}", found.join(", "))),
-            ))
+            ));
+        }
+        // RM-22: `COPY . .` puts `.env` in an image layer, and `.gitignore`
+        // does not apply to the build context; only `.dockerignore` does.
+        if project_root.join("Dockerfile").exists() && !dockerignore_excludes_env(project_root) {
+            let why = if project_root.join(".dockerignore").exists() {
+                ".dockerignore does not exclude .env*"
+            } else {
+                "Dockerfile with no .dockerignore"
+            };
+            return Ok(CheckResult {
+                fixable: true,
+                fix_action: Some(fix_dockerignore),
+                ..self.result(
+                    Severity::Warning,
+                    details(vec![
+                        format!("! {why}: a `COPY . .` copies .env into the image"),
+                        "→ evnx doctor --fix adds .env* to .dockerignore".into(),
+                    ]),
+                )
+            });
+        }
+        Ok(self.result(
+            Severity::Ok,
+            verbose.then(|| format!("Found: {}", found.join(", "))),
+        ))
+    }
+}
+
+/// Whether `.dockerignore` keeps `.env` out of the build context.
+///
+/// shortcut: matches whole lines that cover `.env` at the context root
+/// (`.env*`, `.env`, `**/.env*`, `*`, …) and a later `!.env` re-include; it does
+/// not evaluate Docker's full pattern rules. Upgrade if a real file is misjudged.
+fn dockerignore_excludes_env(project_root: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(project_root.join(".dockerignore")) else {
+        return false;
+    };
+    let mut excluded = false;
+    for line in text.lines().map(str::trim) {
+        match line.strip_prefix('/').unwrap_or(line) {
+            ".env*" | ".env" | "**/.env*" | "**/.env" | "*" => excluded = true,
+            "!.env" | "!.env*" => excluded = false,
+            _ => {}
         }
     }
+    excluded
+}
+
+fn fix_dockerignore(project_root: &Path, _verbose: bool) -> Result<bool> {
+    // The same entries `.gitignore` gets, through the same writer: `.env*`,
+    // with the committable templates carved back out.
+    let added =
+        gitignore::append_entries(&project_root.join(".dockerignore"), gitignore::ENV_ENTRIES)?;
+    if !added.is_empty() {
+        report_fix(format!(".dockerignore: added {}", added.join(", ")));
+    }
+    Ok(!added.is_empty())
 }
 
 /// Check: File permissions for sensitive files (Unix only)
@@ -1320,6 +1370,28 @@ mod tests {
         let text = err.to_string();
         assert!(text.ends_with(" (requirements.txt)"), "{text}");
         assert!(!text.contains("os error"), "{text}");
+    }
+
+    /// RM-22: missing, incomplete and correct `.dockerignore`, and `--fix` twice.
+    #[test]
+    fn rm22_dockerignore_is_judged_and_fixed_once() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        assert!(!dockerignore_excludes_env(root), "missing");
+        fs::write(root.join(".dockerignore"), "node_modules\n").unwrap();
+        assert!(!dockerignore_excludes_env(root), "incomplete");
+        fs::write(root.join(".dockerignore"), "node_modules\n/.env\n").unwrap();
+        assert!(dockerignore_excludes_env(root), "a rooted .env counts");
+        fs::write(root.join(".dockerignore"), ".env*\n!.env\n").unwrap();
+        assert!(!dockerignore_excludes_env(root), "re-included");
+
+        fs::write(root.join(".dockerignore"), "node_modules\n").unwrap();
+        assert!(fix_dockerignore(root, false).unwrap());
+        assert!(dockerignore_excludes_env(root));
+        assert!(!fix_dockerignore(root, false).unwrap(), "idempotent");
+        let text = fs::read_to_string(root.join(".dockerignore")).unwrap();
+        assert!(text.starts_with("node_modules\n"), "{text}");
+        assert!(text.contains("!.env.example"), "{text}");
     }
 
     #[test]
