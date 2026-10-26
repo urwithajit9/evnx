@@ -1056,7 +1056,7 @@ Then in the pipeline:
 
 ```bash
 export EVNX_TOKEN=evnx_tok_...
-echo "$EVNX_PASSWORD" | evnx cloud pull --vault <VAULT_ID> --password-stdin
+printf '%s\n' "$EVNX_PASSWORD" | evnx cloud pull --vault <VAULT_ID> --password-stdin
 ```
 
 Two things to understand:

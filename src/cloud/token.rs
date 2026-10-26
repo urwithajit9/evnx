@@ -7,7 +7,7 @@
 //! *and* the master password:
 //!
 //! ```text
-//! echo "$EVNX_PASSWORD" | evnx cloud pull --vault app/production --password-stdin
+//! printf '%s\n' "$EVNX_PASSWORD" | evnx cloud pull --vault app/production --password-stdin
 //! # with EVNX_TOKEN=evnx_tok_... in the environment
 //! ```
 //!
