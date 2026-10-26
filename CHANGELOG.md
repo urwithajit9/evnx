@@ -16,6 +16,34 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   They now say "no terminal to ask for the master password: pipe it with
   --password-stdin" and show the command with the flag added. Exit code
   unchanged (2).
+- **`init` writes `.evnx.toml` before printing anything** (RM-03). `init
+  --blueprint t3_modern --yes | head -n 1` exited 141 with `.env`,
+  `.env.example` and `.gitignore` written but no `.evnx.toml`. All four are now
+  written first; the lines printed, and their order, are unchanged.
+- **`sync` audits real values written through `allow_actual`** (RM-05, I-284).
+  They were written with no `[AUDIT]` line while the run said "placeholder
+  values" and the dry-run marked them `·`. The `[AUDIT]` line now prints, the
+  message says "and real values for N keys in allow_actual", and the preview
+  marks them `!`.
+- **`doctor` reports every detected project type** (RM-23), not the first:
+  `requirements.txt` beside `package.json` gets the Python and the Node.js
+  checks.
+- **`validate` suggests `--fix` only when a finding shown is fixable** (RM-09).
+- **Hints and messages that named the wrong thing:**
+  - `org remove`, `delete` and `leave` with no terminal name the member and
+    `--org <slug>`; `remove` printed a literal `<member>` (RM-02).
+  - `template --output -` refused with "Nothing was written to -."; it now says
+    "Nothing was printed." (RM-13).
+  - `scan`: one held-back finding says "lists it" (I-290);
+    `scan.max_file_size` is announced in KiB, as the skip note says it (I-291);
+    `scan.disable` counts "built-in detector(s)", since the names include
+    heuristics (I-292).
+  - `init --dry-run -p DIR` names every file with its folder (I-333).
+- **Help texts that described old behaviour** (RM-21): `auth register` (three
+  public keys, ML-KEM-768 included), `auth rotate-master-password` (`evnx vault
+  rekey` exists), `auth download-data` (`cloud export` has shipped), `add custom`
+  (`*_PWD` is hidden too), and `validate --rotate-weak-secrets`, whose example
+  rendered as one flattened line.
 
 ## [0.10.18] - 2026-10-25
 
