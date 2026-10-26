@@ -62,7 +62,7 @@ pub enum AddTarget {
     ///   evnx add custom            (asks for each variable)
     ///
     /// A name without `=value` gets a placeholder. When it looks like a secret
-    /// (`*_SECRET`, `*_TOKEN`, `*_KEY`, `*_PASSWORD`, …) and there is a
+    /// (`*_SECRET`, `*_TOKEN`, `*_KEY`, `*_PASSWORD`, `*_PWD`, …) and there is a
     /// terminal, its value is asked for without echo instead. A value given as
     /// an argument lands in your shell history.
     Custom {
@@ -653,8 +653,9 @@ pub enum AuthCommands {
     /// Create an evnx cloud account.
     ///
     /// Keys are derived on this machine. The master password is never sent —
-    /// the server receives an SRP verifier, two salts, two public keys, and the
-    /// private key sealed under the master key.
+    /// the server receives an SRP verifier, two salts, three public keys
+    /// (Ed25519, X25519 and ML-KEM-768), and the private key sealed under the
+    /// master key.
     Register {
         /// Email address. Prompted for when omitted.
         #[arg(long, value_name = "EMAIL")]
@@ -749,8 +750,8 @@ pub enum AuthCommands {
     /// hold under your own master key. What it does not: touch vaults shared
     /// *with* you (those are wrapped to your keypair, which this re-seals rather
     /// than replaces), and it does not re-key a vault — a former member who kept
-    /// a key is unaffected. Rotating a vault key is what `evnx vault revoke`
-    /// does when it removes someone; there is no standalone re-key command.
+    /// a key is unaffected. Rotating a vault key is what `evnx vault rekey`
+    /// does, and what `evnx vault revoke` does when it removes someone.
     ///
     /// ⚠️ **API tokens keep working, but CI breaks.** A token authenticates; it
     /// does not decrypt. Any pipeline holding your master password as a secret
@@ -824,7 +825,7 @@ pub enum AuthCommands {
     /// names, vault names, and the email of everyone you share with. Treat it
     /// as sensitive even though no secret value appears in it.
     ///
-    /// ⚠️ Deliberately NOT called `export`. `evnx cloud export` is planned as the
+    /// ⚠️ Deliberately NOT called `export`. `evnx cloud export` is the
     /// anti-lock-in escape hatch — it writes every vault's secrets, DECRYPTED, to
     /// disk. Two commands named `export` with opposite risk profiles would mean
     /// anyone who learned "export holds no secrets" here carried that belief to
@@ -1812,12 +1813,9 @@ pub enum Commands {
         /// With `--fix`, also replace weak secrets that hold a **real value**.
         ///
         /// ⛔ **This destroys credentials, and that is what it is for.** Until
-        /// 2026-10-07 `--fix` did it unasked:
-        ///
-        /// ```text
-        /// DATABASE_PASSWORD="p@ss word#1"  →  DATABASE_PASSWORD=ad0da713…c508
-        ///   ✓ All checks passed
-        /// ```
+        /// 2026-10-07 `--fix` did it unasked: `DATABASE_PASSWORD="p@ss word#1"`
+        /// became `DATABASE_PASSWORD=ad0da713…c508`, and the run reported "All
+        /// checks passed".
         ///
         /// The check behind it judges length and wording. It cannot tell a
         /// placeholder nobody filled in from the real password, short because
