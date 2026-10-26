@@ -210,39 +210,38 @@ fn require_password_terminal() -> Result<()> {
         return Ok(());
     }
     // `args_os`: `args` panics on an argument that is not UTF-8.
-    let command = command_words(
-        std::env::args_os()
-            .skip(1)
-            .map(|a| a.to_string_lossy().into_owned()),
-    );
+    let args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     Err(anyhow!(
         "no terminal to ask for the master password: pipe it with --password-stdin\n\n\
          \x20 {}",
-        stdin_example(&command)
+        stdin_example(&args)
     ))
 }
 
-/// The pipe to show for `command`. `rotate-master-password` reads two lines,
-/// current then new. `printf`, not `echo`: dash's `echo` rewrites backslashes.
-fn stdin_example(command: &str) -> String {
-    let feed = if command.ends_with("rotate-master-password") {
+/// The command as typed with `--password-stdin` added, piped from `printf`.
+///
+/// Every flag is kept: dropping `--vault` made a copied hint act on the vault
+/// bound by `cloud link` instead. Nothing after `--` (`cloud run`'s child
+/// command) is echoed. `rotate-master-password` reads two lines, current then
+/// new. `printf`, not `echo`: dash's `echo` rewrites backslashes.
+fn stdin_example(args: &[String]) -> String {
+    let (own, child) = match args.iter().position(|a| a == "--") {
+        Some(i) => (&args[..i], " -- …"),
+        None => (args, ""),
+    };
+    let feed = if own.iter().any(|a| a == "rotate-master-password") {
         r#"printf '%s\n%s\n' "$CURRENT_PASSWORD" "$NEW_PASSWORD""#
     } else {
         r#"printf '%s\n' "$EVNX_PASSWORD""#
     };
-    format!("{feed} | {command} --password-stdin")
-}
-
-/// `evnx` and the command as typed, up to its first flag. Flag values, and
-/// `cloud run`'s child command, are never echoed into the hint.
-fn command_words(args: impl Iterator<Item = String>) -> String {
-    let words = args
-        .skip_while(|a| a.starts_with('-'))
-        .take_while(|a| !a.starts_with('-'));
-    std::iter::once("evnx".to_string())
-        .chain(words.map(|w| crate::core::shell::word(&w)))
-        .collect::<Vec<_>>()
-        .join(" ")
+    let command: Vec<String> = std::iter::once("evnx".to_string())
+        .chain(own.iter().map(|a| crate::core::shell::word(a)))
+        .chain(std::iter::once("--password-stdin".to_string()))
+        .collect();
+    format!("{feed} | {}{child}", command.join(" "))
 }
 
 /// Ask for the password twice, without echoing it.
@@ -1408,27 +1407,27 @@ mod tests {
     use serial_test::serial;
 
     #[test]
-    fn i330_the_hint_echoes_the_command_and_no_flag_value() {
-        let words = |a: &[&str]| command_words(a.iter().map(|s| s.to_string()));
+    fn i330_the_hint_is_the_command_as_typed_with_the_flag_added() {
+        let hint = |a: &[&str]| stdin_example(&a.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        const ONE: &str = r#"printf '%s\n' "$EVNX_PASSWORD" | "#;
+        // Every flag is kept: without `--vault` the copied line would act on
+        // the vault `cloud link` bound here instead.
         assert_eq!(
-            words(&["-q", "cloud", "pull", "--vault", "app"]),
-            "evnx cloud pull"
+            hint(&["-q", "cloud", "push", "--vault", "app/production"]),
+            format!("{ONE}evnx -q cloud push --vault app/production --password-stdin")
         );
         assert_eq!(
-            words(&["vault", "share", "my app", "--with", "b@x.io"]),
-            "evnx vault share 'my app'"
+            hint(&["vault", "share", "my app", "--with", "b@x.io"]),
+            format!("{ONE}evnx vault share 'my app' --with b@x.io --password-stdin")
         );
+        // `cloud run`'s child command is never echoed.
         assert_eq!(
-            words(&["cloud", "run", "--vault", "a", "--", "deploy", "TOKEN=x"]),
-            "evnx cloud run"
+            hint(&["cloud", "run", "--vault", "a", "--", "deploy", "TOKEN=x"]),
+            format!("{ONE}evnx cloud run --vault a --password-stdin -- …")
         );
-        assert_eq!(words(&[]), "evnx");
+        assert_eq!(hint(&[]), format!("{ONE}evnx --password-stdin"));
         assert_eq!(
-            stdin_example("evnx cloud pull"),
-            r#"printf '%s\n' "$EVNX_PASSWORD" | evnx cloud pull --password-stdin"#
-        );
-        assert_eq!(
-            stdin_example("evnx auth rotate-master-password"),
+            hint(&["auth", "rotate-master-password"]),
             r#"printf '%s\n%s\n' "$CURRENT_PASSWORD" "$NEW_PASSWORD" | evnx auth rotate-master-password --password-stdin"#
         );
     }

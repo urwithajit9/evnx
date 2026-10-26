@@ -120,7 +120,7 @@ fn t_i330_every_master_password_prompt_names_password_stdin_without_a_terminal()
         (
             &["cloud", "export", "--vault", "app", "-o", "out"][..],
             true,
-            "evnx cloud export --password-stdin",
+            "evnx cloud export --vault app -o out --password-stdin",
         ),
         (
             &["vault", "create", "newv"][..],
@@ -137,27 +137,27 @@ fn t_i330_every_master_password_prompt_names_password_stdin_without_a_terminal()
                 "--yes",
             ][..],
             true,
-            "evnx vault revoke app --password-stdin",
+            "evnx vault revoke app --user bob@example.com --yes --password-stdin",
         ),
         (
             &["vault", "rekey", "app", "--yes"][..],
             true,
-            "evnx vault rekey app --password-stdin",
+            "evnx vault rekey app --yes --password-stdin",
         ),
         (
             &["auth", "undo-password-change", "--email", "me@example.com"][..],
             false,
-            "evnx auth undo-password-change --password-stdin",
+            "evnx auth undo-password-change --email me@example.com --password-stdin",
         ),
         (
             &["auth", "login", "--email", "me@example.com"][..],
             false,
-            "evnx auth login --password-stdin",
+            "evnx auth login --email me@example.com --password-stdin",
         ),
         (
             &["auth", "register", "--email", "new@example.com"][..],
             false,
-            "evnx auth register --password-stdin",
+            "evnx auth register --email new@example.com --password-stdin",
         ),
     ] {
         let s = vault_server();
