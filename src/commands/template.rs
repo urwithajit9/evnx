@@ -326,13 +326,14 @@ pub fn run_options(input: String, output: String, env: String, opts: Options) ->
         anyhow::bail!(
             "{} variable{} referenced in {input} {} no value in {env}: {}\n\n\
              Define {} there, or give {} a fallback with {{{{NAME|default:value}}}}.\n\
-             Nothing was written to {output}.",
+             {}",
             undefined.len(),
             if undefined.len() == 1 { "" } else { "s" },
             if undefined.len() == 1 { "has" } else { "have" },
             undefined.join(", "),
             if undefined.len() == 1 { "it" } else { "them" },
             if undefined.len() == 1 { "it" } else { "each" },
+            nothing_written(&output),
         );
     }
 
@@ -546,7 +547,7 @@ fn check_filters(
     anyhow::bail!(
         "{input} has {} evnx cannot apply:\n  {}\n\n\
          Filters: {}, default:VALUE.\n\
-         Nothing was written to {output}.",
+         {}",
         if problems.len() == 1 {
             "a filter".to_string()
         } else {
@@ -554,7 +555,18 @@ fn check_filters(
         },
         problems.join("\n  "),
         FILTERS.join(", "),
+        nothing_written(output),
     )
+}
+
+/// The last line of a refusal. `-` is stdout, so "written to -" named no file
+/// (RM-13); the wording matches `--dry-run`'s "nothing was printed".
+fn nothing_written(output: &str) -> String {
+    if crate::core::safe_write::is_stdout(output) {
+        "Nothing was printed.".to_string()
+    } else {
+        format!("Nothing was written to {output}.")
+    }
 }
 
 /// A name the reference patterns treat as a variable: a letter or `_`, then

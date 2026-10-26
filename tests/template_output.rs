@@ -502,3 +502,20 @@ fn t_i252_dot_dot_in_the_output_is_resolved_for_gitignore() {
         p.read(".gitignore")
     );
 }
+
+/// RM-13: `--output -` is stdout. A refusal said "Nothing was written to -.",
+/// which names no file; it now says what did not happen.
+#[test]
+fn rm13_a_refusal_to_stdout_says_nothing_was_printed() {
+    for (tpl, extra) in [
+        ("url: {{MISSING}}\n", &["--strict"][..]),
+        ("x: {{DB_HOST|bogus}}\n", &[][..]),
+    ] {
+        let p = project().file("config.tpl", tpl);
+        let mut args = vec!["template", "--input", "config.tpl", "--output", "-"];
+        args.extend_from_slice(extra);
+        let out = run(p.path(), &args);
+        out.assert_code(2).assert_contains("Nothing was printed.");
+        assert!(!out.stderr.contains("written to -"), "{}", out.stderr);
+    }
+}
