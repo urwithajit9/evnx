@@ -118,7 +118,7 @@ pub fn write_env_files(
         template_content,
         opts,
     )
-    .map(|_| ())
+    .map(|(_, talk)| talk())
 }
 
 /// What a write did, so the caller can say so truthfully.
@@ -240,15 +240,18 @@ pub(crate) fn write(
         emit(planned.as_ref(), opts, &target.root);
         return Ok(Outcome::DryRun);
     }
-    let outcome = write_files(target, vars, example_content, env_content, opts)?;
+    let (outcome, talk) = write_files(target, vars, example_content, env_content, opts)?;
     match outcome {
-        Outcome::Written => {
+        Outcome::Written => finish(target, vars, vars, || {
+            talk();
             report();
-            finish(target, vars, vars)?;
-        }
-        Outcome::KeptExisting => {
-            finish(target, &VarCollection::default(), &template_vars(target)?)?
-        }
+        })?,
+        Outcome::KeptExisting => finish(
+            target,
+            &VarCollection::default(),
+            &template_vars(target)?,
+            || {},
+        )?,
         Outcome::Aborted | Outcome::DryRun => {}
     }
     emit(planned.as_ref(), opts, &target.root);
@@ -283,8 +286,10 @@ fn refusal(example_path: &Path) -> anyhow::Error {
     )
 }
 
-/// After the files: the `.evnx.toml` contract (IN-15), then the notices for
-/// what init does not write (DQ-32, DQ-33).
+/// After the files: the `.evnx.toml` contract (IN-15), then `say` (the
+/// caller's own lines), the contract's line, and the notices for what init
+/// does not write (DQ-32, DQ-33). The contract is written before `say` prints
+/// anything (RM-03).
 ///
 /// `written` are the names this run introduced, recorded into a `[vars]` that
 /// already exists (DQ-17); `whole` is everything the template now declares,
@@ -293,10 +298,26 @@ pub(crate) fn finish(
     target: &Target,
     written: &VarCollection,
     whole: &VarCollection,
+    say: impl FnOnce(),
 ) -> Result<()> {
-    super::contract::record(target, written, whole);
-    notices(target);
+    let done = keep(target, written, whole);
+    say();
+    done();
     Ok(())
+}
+
+/// Write the contract now; the returned closure prints its line and the
+/// notices. For a caller whose own writes and lines come in between.
+pub(crate) fn keep<'a>(
+    target: &'a Target,
+    written: &VarCollection,
+    whole: &VarCollection,
+) -> impl FnOnce() + 'a {
+    let recorded = super::contract::record(target, written, whole);
+    move || {
+        recorded();
+        notices(target);
+    }
 }
 
 /// The template's own variables, for a contract made from a template init
@@ -348,20 +369,27 @@ pub(crate) fn set_up_from_template(target: &Target, opts: WriteOptions) -> Resul
 fn set_up(target: &Target, name: &str) -> Result<Outcome> {
     if target.root.join(".env").exists() {
         let gitignore_line = update_gitignore(&target.root)?;
-        if let Some(line) = gitignore_line {
-            ui::say(line);
-        }
-        ui::success(format!(
-            "already set up: {name} and .env are here; nothing was generated"
-        ));
-        warn_if_env_is_still_committable(&target.root);
-        finish(target, &VarCollection::default(), &template_vars(target)?)?;
+        finish(
+            target,
+            &VarCollection::default(),
+            &template_vars(target)?,
+            || {
+                if let Some(line) = gitignore_line {
+                    ui::say(line);
+                }
+                ui::success(format!(
+                    "already set up: {name} and .env are here; nothing was generated"
+                ));
+                warn_if_env_is_still_committable(&target.root);
+            },
+        )?;
         return Ok(Outcome::KeptExisting);
     }
+    let done = keep(target, &VarCollection::default(), &template_vars(target)?);
     ui::info(format!("{name} is the project's template: kept as it is"));
     env_from_template(&target.root, &target.template, false)?;
     warn_if_env_is_still_committable(&target.root);
-    finish(target, &VarCollection::default(), &template_vars(target)?)?;
+    done();
     Ok(Outcome::Written)
 }
 
@@ -461,7 +489,7 @@ pub(crate) fn write_files(
     example_content: &str,
     template_content: &str,
     opts: WriteOptions,
-) -> Result<Outcome> {
+) -> Result<(Outcome, Talk)> {
     let output_path = target.root.as_path();
     crate::core::safe_write::create_dirs(output_path)?;
 
@@ -481,7 +509,7 @@ pub(crate) fn write_files(
             .with_context(|| format!("could not ask whether to overwrite {name}"))?;
 
         match overwrite {
-            None => return Ok(aborted()),
+            None => return Ok((aborted(), Box::new(|| {}))),
             Some(false) => {
                 let gitignore_line = update_gitignore(output_path)?;
                 crate::utils::ui::say(
@@ -494,7 +522,7 @@ pub(crate) fn write_files(
                 // the closing lines told the user to edit one (N-01, DQ-4).
                 env_from_template(output_path, &target.template, true)?;
                 warn_if_env_is_still_committable(output_path);
-                return Ok(Outcome::KeptExisting);
+                return Ok((Outcome::KeptExisting, Box::new(|| {})));
             }
             Some(true) => {}
         }
@@ -517,7 +545,6 @@ pub(crate) fn write_files(
         format!("{}\n", example_content.trim_start().trim_end()).as_bytes(),
     )
     .with_context(|| format!("Failed to write: {}", example_path.display()))?;
-    crate::core::safe_write::report(&example);
 
     // `.env` holds real values, so it is never replaced. It is created, or
     // given the names the new template has and it lacks (DQ-29).
@@ -530,24 +557,33 @@ pub(crate) fn write_files(
         caught_up = catch_up_env(&env_path, vars)?;
     }
 
-    // 3. Talk, in the order these lines have always appeared.
-    if created_env {
-        crate::utils::ui::say(format!("{} Created .env from template", "✓".green()));
-    }
-    if caught_up > 0 {
-        crate::utils::ui::say(format!(
-            "{} Added {} to .env; the values already there are kept",
-            "✓".green(),
-            pluralize(caught_up, "variable", "variables")
-        ));
-    }
-    if let Some(line) = gitignore_line {
-        crate::utils::ui::say(line);
-    }
-    warn_if_env_is_still_committable(output_path);
+    // 3. Talk, in the order these lines have always appeared — returned, not
+    // printed, so the caller can write the contract first (RM-03).
+    let root = output_path.to_path_buf();
+    let talk: Talk = Box::new(move || {
+        crate::core::safe_write::report(&example);
+        if created_env {
+            crate::utils::ui::say(format!("{} Created .env from template", "✓".green()));
+        }
+        if caught_up > 0 {
+            crate::utils::ui::say(format!(
+                "{} Added {} to .env; the values already there are kept",
+                "✓".green(),
+                pluralize(caught_up, "variable", "variables")
+            ));
+        }
+        if let Some(line) = gitignore_line {
+            crate::utils::ui::say(line);
+        }
+        warn_if_env_is_still_committable(&root);
+    });
 
-    Ok(Outcome::Written)
+    Ok((Outcome::Written, talk))
 }
+
+/// What [`write_files`] has to say about its writes, printed when the caller
+/// has finished writing.
+pub(crate) type Talk = Box<dyn FnOnce()>;
 
 /// Append to an existing `.env` the names in `vars` it does not have, with
 /// the template's placeholders, through add's writer. Returns how many.
@@ -715,7 +751,8 @@ mod tests {
             "A=\n",
             opts(true, false),
         )
-        .unwrap();
+        .unwrap()
+        .0;
         assert_eq!(outcome, Outcome::Written);
     }
 

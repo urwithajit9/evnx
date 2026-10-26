@@ -422,8 +422,9 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
             None
         };
         if !opts.dry_run {
+            let done = super::shared::keep(target, &VarCollection::default(), &whole);
             super::shared::env_from_template(root, &target.template, !opts.yes)?;
-            super::shared::finish(target, &VarCollection::default(), &whole)?;
+            done();
         }
         super::shared::emit(planned.as_ref(), opts, root);
         return Ok(());
@@ -497,6 +498,7 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
             None, // init creates `.env` itself, just below
             true,
         )?;
+        let done = super::shared::keep(target, &plan.requested, &whole);
         if let Some(line) = gitignore_line {
             ui::say(line);
         }
@@ -504,7 +506,7 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
         // when there is someone to ask (DQ-10, DQ-14).
         super::shared::env_from_template(root, &target.template, !opts.yes)?;
         added();
-        super::shared::finish(target, &plan.requested, &whole)?;
+        done();
         super::shared::emit(planned.as_ref(), opts, root);
     } else {
         let example_content = formatter::format_env_example(&vars, true)?;

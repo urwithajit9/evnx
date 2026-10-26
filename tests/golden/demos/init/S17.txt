@@ -9,5 +9,7 @@ $ bash -c { sleep 0.3; 'evnx' init --with nextjs --yes; } | true; exit ${PIPESTA
 [exit 141]
   ok: exit 141 on a closed pipe
   ok: .gitignore exists whenever .env does
+  ok: RM-03: all four files, .evnx.toml included
+  ok: RM-03: the same for a blueprint
 
-================ summary: 2 ok, 0 mismatch   ================
+================ summary: 4 ok, 0 mismatch   ================

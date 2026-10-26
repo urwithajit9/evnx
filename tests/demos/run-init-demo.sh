@@ -69,8 +69,11 @@ S16() { scene S16; echo "Browser copies: public values only"; run "$EVNX" init -
 # U0-EDIT (2026-10-14): S17 reader is `true` after a 0.3 s delay instead of `head -n 1`, so the pipe is
 # closed before evnx writes. With head, whether evnx hit the closed pipe depended on timing (T-067).
 S17() { scene S17; echo "Piped into head: files complete, quiet exit 141"; run bash -c "{ sleep 0.3; '$EVNX' init --with nextjs --yes; } | true; exit \${PIPESTATUS[0]}"
-  check "exit 141 on a closed pipe" bash -c "rm -rf p && mkdir p && cd p && { sleep 0.3; '$EVNX' init --with nextjs --yes; } | true; [ \${PIPESTATUS[0]} -eq 141 ]"
-  check ".gitignore exists whenever .env does" bash -c "cd p && [ ! -f .env ] || grep -qx '.env\\*' .gitignore"; }
+  check "exit 141 on a closed pipe" bash -c "rm -rf p && mkdir p && cd p && git init -q && { sleep 0.3; '$EVNX' init --with nextjs --yes; } | true; [ \${PIPESTATUS[0]} -eq 141 ]"
+  check ".gitignore exists whenever .env does" bash -c "cd p && [ ! -f .env ] || grep -qx '.env\\*' .gitignore"
+  # p and q are repositories so the contract is theirs, not the scene folder's.
+  check "RM-03: all four files, .evnx.toml included" bash -c "cd p && [ -f .env ] && [ -f .env.example ] && [ -f .gitignore ] && [ -f .evnx.toml ]"
+  check "RM-03: the same for a blueprint" bash -c "rm -rf q && mkdir q && cd q && git init -q && { sleep 0.3; '$EVNX' init --blueprint t3_modern --yes; } | true; [ -f .env ] && [ -f .env.example ] && [ -f .gitignore ] && [ -f .evnx.toml ]"; }
 S18() { scene S18; echo ".env from a template you already have"; mkdir src; printf 'const a = process.env.NEW_ONE;\n' > src/a.ts; printf 'HAND=1\n' > .env.example
   run "$EVNX" init --from-source --yes; expect 0 "from-source beside a template"
   check ".env is a copy of the template" cmp -s .env .env.example

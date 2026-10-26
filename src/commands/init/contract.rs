@@ -31,34 +31,39 @@ use crate::utils::ui;
 use super::shared::Target;
 
 /// Keep the contract for `target` after a run. See the module docs.
-pub(crate) fn record(target: &Target, written: &VarCollection, whole: &VarCollection) {
-    match plan(target) {
-        Ok(Contract::Record(path)) => match writeback::record(&target.root, written) {
-            Ok(outcome) => writeback::report(&outcome, target.verbose),
-            Err(e) => could_not(&path, &e),
-        },
-        Ok(Contract::Create(path)) => match crate::commands::spec::contract_into(&path, whole) {
-            Ok(names) => writeback::report(
-                &Outcome::Created {
-                    names,
-                    config: path,
-                },
-                target.verbose,
-            ),
-            Err(e) => could_not(&path, &e),
-        },
-        Ok(Contract::Append(path)) => match crate::commands::spec::contract_into(&path, whole) {
-            Ok(names) => writeback::report(
-                &Outcome::Wrote {
-                    names,
-                    config: path,
-                    through: None,
-                },
-                target.verbose,
-            ),
-            Err(e) => could_not(&path, &e),
-        },
-        Err(e) => could_not(&target.root, &e),
+///
+/// Writes now and says so later: the returned closure prints the line. Every
+/// file is written before init prints anything (RM-03): `init … | head -n 1`
+/// closed stdout at the first line, and the contract, written after it, was
+/// never written at all.
+pub(crate) fn record(
+    target: &Target,
+    written: &VarCollection,
+    whole: &VarCollection,
+) -> impl FnOnce() {
+    let verbose = target.verbose;
+    let done: Result<Outcome, (std::path::PathBuf, anyhow::Error)> = match plan(target) {
+        Ok(Contract::Record(path)) => {
+            writeback::record(&target.root, written).map_err(|e| (path, e))
+        }
+        Ok(Contract::Create(path)) => crate::commands::spec::contract_into(&path, whole)
+            .map(|names| Outcome::Created {
+                names,
+                config: path.clone(),
+            })
+            .map_err(|e| (path, e)),
+        Ok(Contract::Append(path)) => crate::commands::spec::contract_into(&path, whole)
+            .map(|names| Outcome::Wrote {
+                names,
+                config: path.clone(),
+                through: None,
+            })
+            .map_err(|e| (path, e)),
+        Err(e) => Err((target.root.clone(), e)),
+    };
+    move || match done {
+        Ok(outcome) => writeback::report(&outcome, verbose),
+        Err((path, e)) => could_not(&path, &e),
     }
 }
 
