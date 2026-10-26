@@ -68,6 +68,8 @@ $ evnx doctor --verbose
   !  Detect project type and validate dependencies
      ✓ Detected Python project (Python (requirements))
      python-dotenv not in requirements.txt
+     ✓ Detected Node.js project
+     · Consider adding 'dotenv' package
 
   ·  Check for Docker configuration files
      No Docker configuration detected
@@ -82,7 +84,7 @@ $ evnx doctor --verbose
 
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
-KNOWN: only the first match is reported (decided: every detected type)
+  ok: FIXED RM-23: every detected type is reported
 
 $ evnx doctor --verbose
 · Project path: .
@@ -113,4 +115,4 @@ $ evnx doctor --verbose
 [exit 0]
   ok: KNOWN S-D5: Dockerfile with COPY . . and no .dockerignore is 'Found: Dockerfile', no warning; decided: warn, --fix adds .env* (exit 0)
 
-================ summary: 3 ok, 0 mismatch   ================
+================ summary: 4 ok, 0 mismatch   ================

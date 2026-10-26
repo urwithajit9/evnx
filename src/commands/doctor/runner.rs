@@ -681,7 +681,7 @@ use crate::core::config::{templates_in, Template};
 /// file. A folder with neither, and no env file or template, has nothing for
 /// doctor to diagnose (DEC-D8).
 fn is_a_project(project_root: &Path) -> bool {
-    detect_project_type(project_root).is_some()
+    !detect_project_types(project_root).is_empty()
         || !crate::core::project::docker_files_in(project_root).is_empty()
 }
 
@@ -798,12 +798,12 @@ impl DiagnosticCheck for ProjectStructureCheck {
     }
 
     fn run(&self, project_root: &Path, verbose: bool) -> Result<CheckResult> {
-        let detected = detect_project_type(project_root);
+        let detected = detect_project_types(project_root);
         let mut lines = Vec::new();
         let mut severity = Severity::Info;
         let mut warnings = 0usize;
 
-        if let Some(project_type) = detected.as_deref() {
+        for project_type in detected.iter().map(String::as_str) {
             if project_type.starts_with("Python") {
                 lines.push(format!("✓ Detected Python project ({})", project_type));
                 if project_type.contains("requirements") {
@@ -830,7 +830,8 @@ impl DiagnosticCheck for ProjectStructureCheck {
                 lines.push(format!("✓ Detected {} project", project_type));
             }
             severity = Severity::Ok;
-        } else {
+        }
+        if detected.is_empty() {
             lines.push("· No recognized project configuration".into());
             if verbose {
                 lines.push("Supported: requirements.txt, pyproject.toml, Pipfile, poetry.lock, package.json, Cargo.toml, go.mod, composer.json".into());
@@ -1103,8 +1104,26 @@ fn syntax_problems(content: &str) -> Vec<String> {
     bad
 }
 
-fn detect_project_type(project_root: &Path) -> Option<String> {
-    // Python ecosystem (priority order)
+/// Every project type `project_root` holds, Python first (RM-23). A folder
+/// with `requirements.txt` beside `package.json` is both, and reporting only
+/// the first match skipped the other's checks.
+fn detect_project_types(project_root: &Path) -> Vec<String> {
+    let mut found: Vec<String> = python_type(project_root).into_iter().collect();
+    for (file, name) in [
+        ("package.json", "Node.js"),
+        ("Cargo.toml", "Rust"),
+        ("go.mod", "Go"),
+        ("composer.json", "PHP"),
+    ] {
+        if project_root.join(file).exists() {
+            found.push(name.to_string());
+        }
+    }
+    found
+}
+
+/// The one Python flavour, by the manifest that defines it (priority order).
+fn python_type(project_root: &Path) -> Option<String> {
     if project_root.join("poetry.lock").exists()
         || (project_root.join("pyproject.toml").exists()
             && fs::read_to_string(project_root.join("pyproject.toml"))
@@ -1121,19 +1140,6 @@ fn detect_project_type(project_root: &Path) -> Option<String> {
     }
     if project_root.join("requirements.txt").exists() {
         return Some("Python (requirements)".to_string());
-    }
-    // Other languages
-    if project_root.join("package.json").exists() {
-        return Some("Node.js".to_string());
-    }
-    if project_root.join("Cargo.toml").exists() {
-        return Some("Rust".to_string());
-    }
-    if project_root.join("go.mod").exists() {
-        return Some("Go".to_string());
-    }
-    if project_root.join("composer.json").exists() {
-        return Some("PHP".to_string());
     }
     None
 }
@@ -1321,8 +1327,14 @@ mod tests {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("requirements.txt"), "flask\n").unwrap();
         assert_eq!(
-            detect_project_type(dir.path()),
-            Some("Python (requirements)".to_string())
+            detect_project_types(dir.path()),
+            vec!["Python (requirements)".to_string()]
+        );
+        // RM-23: a second manifest adds a type rather than being ignored.
+        fs::write(dir.path().join("package.json"), "{}\n").unwrap();
+        assert_eq!(
+            detect_project_types(dir.path()),
+            vec!["Python (requirements)".to_string(), "Node.js".to_string()]
         );
     }
 
