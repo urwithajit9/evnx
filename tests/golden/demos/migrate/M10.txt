@@ -24,7 +24,7 @@ $ bash -c env -i PATH=/usr/bin:/bin HOME=/x API_TOKEN=tok-demo OTHER=1 "$(comman
 · Requires Heroku CLI
   Install: https://devcenter.heroku.com/articles/heroku-cli
 
-Dry-run — would upload to Heroku:
+Dry-run — would print commands for Heroku:
   App     : demo-app
   Secrets : 1
 

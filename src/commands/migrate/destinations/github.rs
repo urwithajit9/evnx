@@ -366,15 +366,28 @@ impl MigrationDestination for GitHubDestination {
                 std::thread::sleep(pause());
             }
             pb.set_message(key.clone());
+            // ⚠️ A hidden bar (no terminal, so every CI log) prints nothing
+            // through `pb.println`: the log said "1 failed" and named no secret
+            // (I-274). The lines go through `Out` then; a failure shows under -q.
             match upload_secret(&api, &public_key, key, value, opts.verbose) {
                 Ok(()) => {
                     result.uploaded += 1;
-                    pb.println(format!("  {} {}", "✓".green(), key));
+                    let line = format!("  {} {}", "✓".green(), key);
+                    if pb.is_hidden() {
+                        opts.out.status(line);
+                    } else {
+                        pb.println(line);
+                    }
                 }
                 Err(e) => {
                     result.failed += 1;
                     result.errors.push(format!("{}: {}", key, e));
-                    pb.println(format!("  {} {} — {}", "✗".red(), key, e));
+                    let line = format!("  {} {} — {}", "✗".red(), key, e);
+                    if pb.is_hidden() {
+                        opts.out.result(line);
+                    } else {
+                        pb.println(line);
+                    }
                 }
             }
             pb.inc(1);

@@ -89,7 +89,10 @@ impl MigrationDestination for RailwayDestination {
         out.status("  Install: npm install -g @railway/cli");
 
         if opts.dry_run {
-            out.result(format!("\n{}", "Dry-run — would upload to Railway:".bold()));
+            out.result(format!(
+                "\n{}",
+                "Dry-run — would print commands for Railway:".bold()
+            ));
             if let Some(p) = &self.project {
                 out.result(format!("  Project     : {}", p));
             }

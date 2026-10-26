@@ -46,7 +46,10 @@ impl MigrationDestination for HerokuDestination {
         out.status("  Install: https://devcenter.heroku.com/articles/heroku-cli");
 
         if opts.dry_run {
-            out.result(format!("\n{}", "Dry-run — would upload to Heroku:".bold()));
+            out.result(format!(
+                "\n{}",
+                "Dry-run — would print commands for Heroku:".bold()
+            ));
             out.result(format!("  App     : {}", self.app));
             out.result(format!("  Secrets : {}", secrets.len()));
             return Ok(MigrationResult {

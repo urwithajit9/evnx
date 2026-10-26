@@ -366,7 +366,7 @@ fn select_source() -> Result<String> {
         ),
     ];
     let labels: Vec<&str> = options.iter().map(|(_, l)| *l).collect();
-    let idx = Select::new()
+    let idx = Select::with_theme(&crate::utils::prompt::MENU)
         .with_prompt("What are you migrating from?")
         .items(&labels)
         .default(0)
@@ -398,7 +398,7 @@ fn select_destination() -> Result<String> {
     }
 
     let labels: Vec<&str> = options.iter().map(|(_, l)| *l).collect();
-    let idx = Select::new()
+    let idx = Select::with_theme(&crate::utils::prompt::MENU)
         .with_prompt("What are you migrating to?")
         .items(&labels)
         .default(0)

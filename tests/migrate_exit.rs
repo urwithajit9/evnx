@@ -187,6 +187,23 @@ fn t_i109_yes_uploads_without_a_terminal() {
     bad.assert();
 }
 
+/// I-274 (RM-08): with no terminal the progress bar is hidden, and its
+/// `println` printed nothing, so a CI log said "1 failed" and named no secret.
+/// Each secret is named; under -q only the failure is.
+#[test]
+fn t_i274_a_ci_log_names_each_secret() {
+    let server = github(Some("BAD_ONE"));
+    let out = migrate_piped(&server, &["--yes"]);
+    out.assert_code(1);
+    assert!(out.stdout.contains("✓ GOOD_ONE"), "{}", out.stdout);
+    assert!(out.stdout.contains("✗ BAD_ONE"), "{}", out.stdout);
+
+    let quiet = migrate_piped(&server, &["--yes", "-q"]);
+    quiet.assert_code(1);
+    assert!(!quiet.stdout.contains("GOOD_ONE"), "{}", quiet.stdout);
+    assert!(quiet.stdout.contains("✗ BAD_ONE"), "{}", quiet.stdout);
+}
+
 /// `--yes` answers "Proceed?", not "overwrite a secret that is already
 /// there?". That needs its own flag, so nothing is replaced by habit.
 #[test]

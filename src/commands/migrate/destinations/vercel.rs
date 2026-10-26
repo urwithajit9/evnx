@@ -86,7 +86,10 @@ impl MigrationDestination for VercelDestination {
         out.status("  Install: npm install -g vercel");
 
         if opts.dry_run {
-            out.result(format!("\n{}", "Dry-run — would upload to Vercel:".bold()));
+            out.result(format!(
+                "\n{}",
+                "Dry-run — would print commands for Vercel:".bold()
+            ));
             if let Some(p) = &self.project {
                 out.result(format!("  Project     : {}", p));
             }

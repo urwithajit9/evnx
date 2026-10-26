@@ -9,7 +9,7 @@ $ evnx migrate --to heroku --heroku-app demo-app --dry-run
 · Requires Heroku CLI
   Install: https://devcenter.heroku.com/articles/heroku-cli
 
-Dry-run — would upload to Heroku:
+Dry-run — would print commands for Heroku:
   App     : demo-app
   Secrets : 8
 
@@ -33,7 +33,7 @@ $ evnx migrate --to aws-secrets-manager --secret-name prod/app --dry-run
 
 · AWS Secrets Manager migration
 
-Dry-run — would upload to AWS Secrets Manager:
+Dry-run — would print commands for AWS Secrets Manager:
   Secret name : prod/app
   Secrets     : 8
 
@@ -71,7 +71,7 @@ $ evnx migrate --to gcp-secret-manager --project my-gcp-project --dry-run
 · Requires Google Cloud CLI (`gcloud`)
   Install: https://cloud.google.com/sdk/docs/install
 
-Dry-run — would upload to GCP Secret Manager:
+Dry-run — would print commands for GCP Secret Manager:
   Project : my-gcp-project
   Secrets : 8
 
@@ -97,7 +97,7 @@ $ evnx migrate --to azure-keyvault --vault-name demo-vault --dry-run
 · Requires Azure CLI (`az`)
   Install: https://learn.microsoft.com/cli/azure/install-azure-cli
 
-Dry-run — would upload to Azure Key Vault:
+Dry-run — would print commands for Azure Key Vault:
   Vault   : demo-vault
   Secrets : 8
 
@@ -123,7 +123,7 @@ $ evnx migrate --to vercel --vercel-project p --dry-run
 · Requires Vercel CLI
   Install: npm install -g vercel
 
-Dry-run — would upload to Vercel:
+Dry-run — would print commands for Vercel:
   Project     : p
   Environment : production
   Secrets     : 8
@@ -150,7 +150,7 @@ $ evnx migrate --to doppler --project p --doppler-config dev --dry-run
 · Requires Doppler CLI
   Install: https://docs.doppler.com/docs/cli
 
-Dry-run — would upload to Doppler:
+Dry-run — would print commands for Doppler:
   Project : p
   Config  : dev
   Secrets : 8
@@ -178,7 +178,7 @@ $ evnx migrate --to infisical --project p --infisical-env dev --exclude EMPTY --
 · Requires Infisical CLI
   Install: https://infisical.com/docs/cli/overview
 
-Dry-run — would upload to Infisical:
+Dry-run — would print commands for Infisical:
   Project     : p
   Environment : dev
   Secrets     : 7
@@ -205,7 +205,7 @@ $ evnx migrate --to railway --railway-project p --railway-environment production
 · Requires Railway CLI
   Install: npm install -g @railway/cli
 
-Dry-run — would upload to Railway:
+Dry-run — would print commands for Railway:
   Project     : p
   Environment : production
   Secrets     : 8

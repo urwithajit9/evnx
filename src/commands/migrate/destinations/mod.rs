@@ -51,7 +51,9 @@ pub(crate) enum ArgKind {
     /// A credential. Never printed, and never needed by `--dry-run`, which
     /// uploads nothing — so a placeholder here costs nothing and keeping it is
     /// what lets `--dry-run` work on a machine with no credentials at all.
-    Credential,
+    /// `env` is the variable that supplies it, named first when it is missing:
+    /// the flag is the form evnx warns against (I-273).
+    Credential { env: &'static str },
 }
 
 /// Resolve a destination identifier that may come from a flag, a prompt, or
@@ -109,7 +111,7 @@ pub(crate) fn resolve_arg_with(
     if let Some(v) = value {
         return Ok(v);
     }
-    if dry_run && kind == ArgKind::Credential {
+    if dry_run && matches!(kind, ArgKind::Credential { .. }) {
         return Ok(format!("<{flag} not set>"));
     }
     if dry_run {
@@ -124,8 +126,12 @@ pub(crate) fn resolve_arg_with(
             .with_prompt(prompt)
             .interact_text()?);
     }
+    let how = match kind {
+        ArgKind::Credential { env } => format!("Set `{env}`, or pass `{flag}`"),
+        ArgKind::Identifier => format!("Pass `{flag}`"),
+    };
     Err(anyhow!(
-        "{prompt} is required. Pass `{flag}`.\n\
+        "{prompt} is required. {how}.\n\
          \x20 evnx would normally ask, but stdin is not a terminal."
     ))
 }
@@ -170,7 +176,9 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                     "--github-token",
                     "GitHub personal access token",
                     args.dry_run,
-                    ArgKind::Credential,
+                    ArgKind::Credential {
+                        env: "GITHUB_TOKEN",
+                    },
                 )?;
                 Ok(Box::new(github::GitHubDestination::new(repo, token)))
             }
@@ -491,11 +499,35 @@ mod tests {
             "--github-token",
             "Token",
             true,
-            ArgKind::Credential,
+            ArgKind::Credential {
+                env: "GITHUB_TOKEN",
+            },
             false,
         )
         .unwrap();
         assert_eq!(got, "<--github-token not set>");
+    }
+
+    /// I-273: a missing credential names the variable first; the flag is the
+    /// form evnx warns against.
+    #[test]
+    fn a_missing_credential_names_the_variable_first() {
+        let err = resolve_arg_with(
+            None,
+            "--github-token",
+            "GitHub personal access token",
+            false,
+            ArgKind::Credential {
+                env: "GITHUB_TOKEN",
+            },
+            false,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("Set `GITHUB_TOKEN`, or pass `--github-token`"),
+            "{err}"
+        );
     }
 
     /// ⚠️ An **identifier** is different: it is printed into the command evnx

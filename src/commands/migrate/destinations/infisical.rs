@@ -99,7 +99,7 @@ impl MigrationDestination for InfisicalDestination {
         if opts.dry_run {
             out.result(format!(
                 "\n{}",
-                "Dry-run — would upload to Infisical:".bold()
+                "Dry-run — would print commands for Infisical:".bold()
             ));
             if let Some(p) = &self.project {
                 out.result(format!("  Project     : {}", p));

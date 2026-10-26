@@ -55,7 +55,10 @@ impl MigrationDestination for DopplerDestination {
         out.status("  Install: https://docs.doppler.com/docs/cli");
 
         if opts.dry_run {
-            out.result(format!("\n{}", "Dry-run — would upload to Doppler:".bold()));
+            out.result(format!(
+                "\n{}",
+                "Dry-run — would print commands for Doppler:".bold()
+            ));
             if let Some(p) = &self.project {
                 out.result(format!("  Project : {}", p));
             }

@@ -62,7 +62,7 @@ impl MigrationDestination for GcpDestination {
         if opts.dry_run {
             out.result(format!(
                 "\n{}",
-                "Dry-run — would upload to GCP Secret Manager:".bold()
+                "Dry-run — would print commands for GCP Secret Manager:".bold()
             ));
             out.result(format!("  Project : {}", self.project));
             out.result(format!("  Secrets : {}", secrets.len()));

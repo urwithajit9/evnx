@@ -59,7 +59,7 @@ impl MigrationDestination for AzureDestination {
         if opts.dry_run {
             out.result(format!(
                 "\n{}",
-                "Dry-run — would upload to Azure Key Vault:".bold()
+                "Dry-run — would print commands for Azure Key Vault:".bold()
             ));
             out.result(format!("  Vault   : {}", self.vault_name));
             out.result(format!("  Secrets : {}", secrets.len()));

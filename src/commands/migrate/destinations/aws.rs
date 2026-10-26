@@ -62,7 +62,7 @@ impl MigrationDestination for AwsDestination {
         if opts.dry_run {
             out.result(format!(
                 "\n{}",
-                "Dry-run — would upload to AWS Secrets Manager:".bold()
+                "Dry-run — would print commands for AWS Secrets Manager:".bold()
             ));
             out.result(format!("  Secret name : {}", self.secret_name));
             out.result(format!("  Secrets     : {}", secrets.len()));
