@@ -2,7 +2,7 @@
 ================ S7 ================
 
 $ evnx scan .
-  config    .evnx.toml (scan.severity=high, scan.exclude=1 patterns, scan.ignore_placeholders=true, scan.disable=1 built-in rule(s), vars.secret=false on 1 variable(s))
+  config    .evnx.toml (scan.severity=high, scan.exclude=1 patterns, scan.ignore_placeholders=true, scan.disable=1 built-in detector(s), vars.secret=false on 1 variable(s))
 
   evnx scan  Checking for exposed secrets
 
@@ -34,7 +34,7 @@ Next steps:
   ok: config merges: weakening is announced on screen (exit 1)
 
 $ evnx scan . -q
-  config    .evnx.toml (scan.severity=high, scan.exclude=1 patterns, scan.ignore_placeholders=true, scan.disable=1 built-in rule(s), vars.secret=false on 1 variable(s))
+  config    .evnx.toml (scan.severity=high, scan.exclude=1 patterns, scan.ignore_placeholders=true, scan.disable=1 built-in detector(s), vars.secret=false on 1 variable(s))
   ✗  AWS Access Key                              high
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder
@@ -55,7 +55,7 @@ $ evnx scan . -q
 FIXED I-060/I-049 (R-scan): -q is findings only, and keeps the line saying the config weakens the scan
 
 $ evnx scan . --severity low
-  config    .evnx.toml (scan.severity=high, scan.exclude=1 patterns, scan.ignore_placeholders=true, scan.disable=1 built-in rule(s), vars.secret=false on 1 variable(s))
+  config    .evnx.toml (scan.severity=high, scan.exclude=1 patterns, scan.ignore_placeholders=true, scan.disable=1 built-in detector(s), vars.secret=false on 1 variable(s))
 
   evnx scan  Checking for exposed secrets
 

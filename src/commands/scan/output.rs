@@ -415,9 +415,10 @@ fn print_ignored_by_git(results: &ScanResults) {
         glyph::INFO.dimmed(),
         format!(
             "git ignores {} — {} there {is} not counted, because {it} not committed \
-             (--include-ignored lists them)",
+             (--include-ignored lists {})",
             name_files(&paths),
             pluralize(held, "finding", "findings"),
+            if held == 1 { "it" } else { "them" },
         )
         .dimmed()
     );

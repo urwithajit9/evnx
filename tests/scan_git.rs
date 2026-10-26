@@ -339,3 +339,20 @@ fn t_i286_outside_a_repository_the_history_advice_names_the_file() {
         "{stdout}"
     );
 }
+
+/// I-290: one held-back finding is "it", not "them".
+#[test]
+fn t_i290_one_held_back_finding_is_it() {
+    let Some(d) = repo(
+        &[
+            (".gitignore", ".env*\n"),
+            (".env", &format!("GITHUB_TOKEN={GH}\n")),
+        ],
+        &[".gitignore"],
+    ) else {
+        return;
+    };
+    let (_, stdout, _) = scan(&d, &[]);
+    assert!(stdout.contains("1 finding there is"), "{stdout}");
+    assert!(stdout.contains("(--include-ignored lists it)"), "{stdout}");
+}

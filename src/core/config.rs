@@ -308,7 +308,9 @@ impl Config {
         // one line.
         match self.scan.disable.as_deref() {
             Some(names) if !names.is_empty() => {
-                out.push(format!("scan.disable={} built-in rule(s)", names.len()));
+                // "detector", not "rule": the names include heuristics such as
+                // `Sensitive config key`, which are not rules (I-292).
+                out.push(format!("scan.disable={} built-in detector(s)", names.len()));
             }
             _ => {}
         }
@@ -328,7 +330,7 @@ impl Config {
             if bytes < 1024 * 1024 {
                 out.push(format!(
                     "scan.max_file_size={} (larger files in folders are not scanned)",
-                    bytes
+                    crate::utils::string::size_label(bytes)
                 ));
             }
         }
@@ -1072,6 +1074,30 @@ vault = "my-api/production"
         assert!(
             !overrides.iter().any(|o| o.contains("validate")),
             "validate.strict tightens; only loosening is announced: {overrides:?}"
+        );
+    }
+
+    /// I-291: the size reads as the skip note says it, and I-292: a disabled
+    /// heuristic is a detector, not a rule.
+    #[test]
+    fn i291_i292_overrides_say_sizes_and_detectors_plainly() {
+        let dir = TempDir::new().unwrap();
+        write(
+            dir.path(),
+            "[scan]\nmax_file_size = 524288\ndisable = [\"Sensitive config key\"]\n",
+        );
+        let overrides = load(dir.path()).unwrap().config.security_overrides();
+        assert!(
+            overrides
+                .iter()
+                .any(|o| o.starts_with("scan.max_file_size=512 KiB")),
+            "{overrides:?}"
+        );
+        assert!(
+            overrides
+                .iter()
+                .any(|o| o == "scan.disable=1 built-in detector(s)"),
+            "{overrides:?}"
         );
     }
 

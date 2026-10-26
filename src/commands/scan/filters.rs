@@ -68,14 +68,8 @@ fn is_glob(value: &str) -> bool {
     value.contains(['*', '?', '['])
 }
 
-/// `1024 KiB`, `5120 KiB`, `500 bytes`: the limit as the skip note says it.
-pub fn size_label(bytes: u64) -> String {
-    if bytes >= 1024 && bytes.is_multiple_of(1024) {
-        format!("{} KiB", bytes / 1024)
-    } else {
-        format!("{bytes} bytes")
-    }
-}
+// In `utils` so `core::config` can say a size the way the skip note does (I-291).
+pub use crate::utils::string::size_label;
 
 /// `path`'s names, without `.` and the root — what a plain `--exclude` value
 /// is compared against, one whole component at a time.

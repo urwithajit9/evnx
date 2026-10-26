@@ -159,6 +159,15 @@ fn edit_distance(a: &str, b: &str) -> usize {
     d[n][m]
 }
 
+/// `1024 KiB`, `5120 KiB`, `500 bytes`: a size as `scan`'s skip note says it.
+pub fn size_label(bytes: u64) -> String {
+    if bytes >= 1024 && bytes.is_multiple_of(1024) {
+        format!("{} KiB", bytes / 1024)
+    } else {
+        format!("{bytes} bytes")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
