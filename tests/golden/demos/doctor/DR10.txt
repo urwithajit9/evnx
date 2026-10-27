@@ -161,8 +161,18 @@ $ evnx doctor --fix
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: RM-22: --fix adds .env* to .dockerignore (exit 0)
+
+$ cat .dockerignore
+node_modules
+
+# ── evnx generated ─────────────────────────────────────────
+# Written by evnx. These files may contain secrets — do not commit.
+.env*
+!.env.example
+!.env.sample
+!.env.template
+[exit 0]
   ok: RM-22: a second --fix changes nothing
   ok: RM-22: a correct .dockerignore is not warned about
 
 ================ summary: 10 ok, 0 mismatch   ================
-/home/ajit/Pictures/ajit/evnx-cloud/evnx/tests/demos/run-doctor-demo.sh: line 53: show: command not found

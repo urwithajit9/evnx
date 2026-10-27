@@ -50,7 +50,7 @@ DR10() { scene DR10; repo; printf 'A=1\n' > .env; chmod 600 .env; good_ignore; c
   check '"$EVNX" doctor 2>&1 | grep -q "Dockerfile with no .dockerignore"' "FIXED RM-22: missing .dockerignore is named"
   printf 'node_modules\n' > .dockerignore; run "$EVNX" doctor; expect 0 "RM-22: a .dockerignore without .env* is a warning"
   check '"$EVNX" doctor 2>&1 | grep -q ".dockerignore does not exclude .env"' "RM-22: incomplete .dockerignore is named"
-  run "$EVNX" doctor --fix; expect 0 "RM-22: --fix adds .env* to .dockerignore"; show .dockerignore
+  run "$EVNX" doctor --fix; expect 0 "RM-22: --fix adds .env* to .dockerignore"; run cat .dockerignore
   check 'cp .dockerignore before && "$EVNX" doctor --fix >/dev/null 2>&1; cmp -s before .dockerignore' "RM-22: a second --fix changes nothing"
   check '! "$EVNX" doctor 2>&1 | grep -q "dockerignore"' "RM-22: a correct .dockerignore is not warned about"; }
 
