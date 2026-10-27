@@ -910,7 +910,6 @@ dependencies = [
  "indexmap",
  "indicatif",
  "jsonschema",
- "lazy_static",
  "libc",
  "mockito",
  "predicates",

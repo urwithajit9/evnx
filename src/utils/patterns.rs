@@ -4,8 +4,8 @@ use crate::core::config::PatternRule;
 /// This module contains regex patterns and entropy calculation for detecting
 /// accidentally committed secrets. Patterns are based on real-world secret formats
 /// from AWS, Stripe, GitHub, OpenAI, and other major services.
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
 /// Confidence level for secret detection
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,20 +25,19 @@ impl std::fmt::Display for Confidence {
     }
 }
 
-lazy_static! {
-    /// AWS Secret Access Key — the one regex that is **not** a rule.
-    ///
-    /// ⚠️ Every other provider pattern moved into [`builtin_rules`]. This one
-    /// cannot: its shape is just 40 base64 characters, so on its own it matches
-    /// any 40-character token. It is only a finding when the variable's *name*
-    /// says AWS and the value's entropy is high, which a `PatternRule` has no way
-    /// to express — see [`detect_heuristic`].
-    ///
-    /// The others were deleted rather than kept beside the rules. Keeping both
-    /// would have rebuilt the duplication this change removed: two copies of one
-    /// pattern, with unit tests asserting the copy production no longer reads.
-    pub static ref AWS_SECRET_KEY: Regex = Regex::new(r"[0-9a-zA-Z/+=]{40}").unwrap();
-}
+/// AWS Secret Access Key — the one regex that is **not** a rule.
+///
+/// ⚠️ Every other provider pattern moved into [`builtin_rules`]. This one
+/// cannot: its shape is just 40 base64 characters, so on its own it matches
+/// any 40-character token. It is only a finding when the variable's *name*
+/// says AWS and the value's entropy is high, which a `PatternRule` has no way
+/// to express — see [`detect_heuristic`].
+///
+/// The others were deleted rather than kept beside the rules. Keeping both
+/// would have rebuilt the duplication this change removed: two copies of one
+/// pattern, with unit tests asserting the copy production no longer reads.
+pub static AWS_SECRET_KEY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[0-9a-zA-Z/+=]{40}").unwrap());
 
 /// The detectors evnx ships, as ordinary [`PatternRule`]s.
 ///

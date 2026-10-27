@@ -3,8 +3,8 @@
 //! All functions in this module are side-effect free and return
 //! collections of issues. They do not modify files or print output.
 
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 // use serde_json::value::Index;
 use indexmap::IndexMap;
 use std::collections::HashSet;
@@ -15,12 +15,11 @@ use super::types::{Issue, IssueType};
 // Regex Patterns for Format Validation
 // ─────────────────────────────────────────────────────────────
 
-lazy_static! {
-    pub static ref PORT_REGEX: Regex = Regex::new(r"^\d{1,5}$").expect("Port regex is valid");
-    pub static ref EMAIL_REGEX: Regex =
-        Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
-            .expect("Email regex is valid");
-}
+pub static PORT_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d{1,5}$").expect("Port regex is valid"));
+pub static EMAIL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").expect("Email regex is valid")
+});
 
 // ─────────────────────────────────────────────────────────────
 // Helper Predicates
