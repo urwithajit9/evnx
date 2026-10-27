@@ -21,9 +21,11 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  1 warning  ·  3 checks passed
+  1 warning  ·  4 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -44,9 +46,11 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  1 warning  ·  3 checks passed
+  1 warning  ·  4 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -74,10 +78,13 @@ $ evnx doctor --verbose
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+     No AI coding agent configuration detected
+
   ✓  Check file permissions for sensitive files
      .env: permissions 600 (private)
 
-  2 warnings  ·  2 checks passed
+  2 warnings  ·  3 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -100,9 +107,11 @@ $ evnx doctor
      Dockerfile with no .dockerignore: a `COPY . .` copies .env into the image
      → evnx doctor --fix adds .env* to .dockerignore
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  2 warnings  ·  2 checks passed
+  2 warnings  ·  3 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -126,9 +135,11 @@ $ evnx doctor
      .dockerignore does not exclude .env*: a `COPY . .` copies .env into the image
      → evnx doctor --fix adds .env* to .dockerignore
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  2 warnings  ·  2 checks passed
+  2 warnings  ·  3 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -150,9 +161,11 @@ $ evnx doctor --fix
 
   ✓  Check for Docker configuration files
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  1 warning  ·  3 checks passed
+  1 warning  ·  4 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup

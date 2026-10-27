@@ -38,6 +38,15 @@
       "ran": true
     },
     {
+      "name": "ai_agents",
+      "description": "Check that AI coding agents cannot read .env",
+      "severity": "ok",
+      "details": null,
+      "fixable": false,
+      "fixed": false,
+      "ran": true
+    },
+    {
       "name": "file_permissions",
       "description": "Check file permissions for sensitive files",
       "severity": "warning",
@@ -48,10 +57,10 @@
     }
   ],
   "summary": {
-    "total": 5,
+    "total": 6,
     "errors": 1,
     "warnings": 2,
-    "passed": 0,
+    "passed": 1,
     "info": 2,
     "fixable": 2
   },

@@ -174,7 +174,8 @@ fn t_i163_json_still_prints_and_marks_the_check_as_not_run() {
     let out = run(p.path(), &["doctor", "--format", "json"]);
     out.assert_code(2);
     let report = json(&out);
-    assert_eq!(report["checks"].as_array().unwrap().len(), 5);
+    // Six since RM-25 added ai_agents.
+    assert_eq!(report["checks"].as_array().unwrap().len(), 6);
     let failed = check(&report, "project_structure");
     assert_eq!(failed["ran"], false);
     assert_eq!(failed["severity"], "error");
@@ -182,6 +183,7 @@ fn t_i163_json_still_prints_and_marks_the_check_as_not_run() {
         "env_file",
         "env_example",
         "docker_config",
+        "ai_agents",
         "file_permissions",
     ] {
         assert_eq!(check(&report, name)["ran"], true, "{name}");

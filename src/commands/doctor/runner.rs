@@ -454,6 +454,7 @@ fn get_all_checks(template: &Template) -> Vec<Box<dyn DiagnosticCheck>> {
         }),
         Box::new(ProjectStructureCheck),
         Box::new(DockerCheck),
+        Box::new(AgentCheck),
         Box::new(PermissionCheck),
     ]
 }
@@ -901,7 +902,13 @@ impl DiagnosticCheck for DockerCheck {
 /// (`.env*`, `.env`, `**/.env*`, `*`, …) and a later `!.env` re-include; it does
 /// not evaluate Docker's full pattern rules. Upgrade if a real file is misjudged.
 fn dockerignore_excludes_env(project_root: &Path) -> bool {
-    let Ok(text) = fs::read_to_string(project_root.join(".dockerignore")) else {
+    ignore_file_excludes_env(&project_root.join(".dockerignore"))
+}
+
+/// Whether the gitignore-syntax file at `path` excludes `.env`: the rule
+/// `.dockerignore` and the agents' ignore files share (see above).
+fn ignore_file_excludes_env(path: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(path) else {
         return false;
     };
     let mut excluded = false;
@@ -924,6 +931,198 @@ fn fix_dockerignore(project_root: &Path, _verbose: bool) -> Result<bool> {
         report_fix(format!(".dockerignore: added {}", added.join(", ")));
     }
     Ok(!added.is_empty())
+}
+
+/// Check: can an AI coding agent read `.env`? (RM-25)
+///
+/// Only for an agent whose own configuration is already in the project; none
+/// is created for a tool the project does not use. Formats checked against
+/// each vendor's docs on 2026-10-27:
+///
+/// - Claude Code reads any file unless `permissions.deny` in
+///   `.claude/settings.json` (or `settings.local.json`) blocks it, `.gitignore`
+///   or not.
+/// - Cursor, Gemini CLI and Windsurf honour `.gitignore` by default, and
+///   Aider's repo map comes from git; each also has its own gitignore-syntax
+///   file. `.env` is reachable when neither excludes it.
+/// - Copilot's content exclusion is an organisation setting: not checkable here.
+///
+/// ⚠️ This is about accidental exposure. An agent allowed to run shell
+/// commands can read anything the process can; no ignore file stops that.
+struct AgentCheck;
+
+/// An agent that reads gitignore-syntax ignore files: its name, the files
+/// that show the project uses it, and its own ignore file.
+struct IgnoreAgent {
+    name: &'static str,
+    markers: &'static [&'static str],
+    ignore_file: &'static str,
+}
+
+const IGNORE_AGENTS: &[IgnoreAgent] = &[
+    IgnoreAgent {
+        name: "Cursor",
+        markers: &[".cursor", ".cursorrules", ".cursorignore"],
+        ignore_file: ".cursorignore",
+    },
+    IgnoreAgent {
+        name: "Aider",
+        markers: &[".aider.conf.yml", ".aiderignore", ".aider.chat.history.md"],
+        ignore_file: ".aiderignore",
+    },
+    IgnoreAgent {
+        name: "Gemini CLI",
+        markers: &[".gemini", "GEMINI.md", ".geminiignore"],
+        ignore_file: ".geminiignore",
+    },
+    IgnoreAgent {
+        name: "Windsurf",
+        markers: &[".windsurf", ".windsurfrules", ".codeiumignore"],
+        ignore_file: ".codeiumignore",
+    },
+];
+
+const CLAUDE_MARKERS: &[&str] = &[".claude", "CLAUDE.md"];
+const CLAUDE_FILES: &[&str] = &[".claude/settings.json", ".claude/settings.local.json"];
+
+fn uses(project_root: &Path, markers: &[&str]) -> bool {
+    markers.iter().any(|m| project_root.join(m).exists())
+}
+
+impl IgnoreAgent {
+    /// `.env` is out of this agent's reach: ignored by git, or by its own file.
+    fn excludes_env(&self, project_root: &Path) -> bool {
+        gitignore::env_file_is_protected(project_root, ".env")
+            || ignore_file_excludes_env(&project_root.join(self.ignore_file))
+    }
+}
+
+/// Whether Claude Code's `permissions.deny` covers `.env` and `.env.*`.
+///
+/// shortcut: recognises the spellings the docs use (`Read(./.env)`,
+/// `Read(./.env.*)`) and the one-rule forms `Read(./.env*)` and
+/// `Read(**/.env*)`; it does not evaluate Claude Code's full path matching.
+/// Upgrade if a real settings file is misjudged.
+fn claude_denies_env(project_root: &Path) -> Result<bool> {
+    let mut rules: Vec<String> = Vec::new();
+    for file in CLAUDE_FILES {
+        let path = project_root.join(file);
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let json: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| anyhow::anyhow!("{file} is not valid JSON: {e}"))?;
+        if let Some(deny) = json.pointer("/permissions/deny").and_then(|d| d.as_array()) {
+            rules.extend(deny.iter().filter_map(|r| r.as_str()).map(|r| {
+                r.replace(' ', "")
+                    .trim_start_matches("Read(")
+                    .trim_end_matches(')')
+                    .trim_start_matches("./")
+                    .trim_start_matches("**/")
+                    .to_string()
+            }));
+        }
+    }
+    let has = |p: &str| rules.iter().any(|r| r == p);
+    Ok(has(".env*") || (has(".env") && has(".env.*")))
+}
+
+impl DiagnosticCheck for AgentCheck {
+    fn name(&self) -> &'static str {
+        "ai_agents"
+    }
+    fn description(&self) -> &'static str {
+        "Check that AI coding agents cannot read .env"
+    }
+
+    fn run(&self, project_root: &Path, verbose: bool) -> Result<CheckResult> {
+        let mut lines = Vec::new();
+        let mut reachable = false;
+        let mut fixable = false;
+
+        if uses(project_root, CLAUDE_MARKERS) {
+            if claude_denies_env(project_root)? {
+                lines.push("✓ Claude Code: permissions.deny covers .env".to_string());
+            } else {
+                reachable = true;
+                lines.push(
+                    "! Claude Code can read .env: add to permissions.deny in \
+                     .claude/settings.json:"
+                        .to_string(),
+                );
+                lines.push(r#"    "Read(./.env)", "Read(./.env.*)""#.to_string());
+            }
+        }
+        for agent in IGNORE_AGENTS {
+            if !uses(project_root, agent.markers) {
+                continue;
+            }
+            if agent.excludes_env(project_root) {
+                lines.push(format!(
+                    "✓ {}: .env is excluded (.gitignore or {})",
+                    agent.name, agent.ignore_file
+                ));
+            } else {
+                reachable = true;
+                fixable = true;
+                lines.push(format!(
+                    "! {} can read .env: neither .gitignore nor {} excludes it",
+                    agent.name, agent.ignore_file
+                ));
+            }
+        }
+        if project_root
+            .join(".github/copilot-instructions.md")
+            .exists()
+        {
+            lines.push(
+                "· Copilot: content exclusion is an organisation setting; it cannot be \
+                 checked from the repository"
+                    .to_string(),
+            );
+        }
+
+        // A pass, not an info line: most projects use no agent, and a line in
+        // every report would be noise.
+        if lines.is_empty() {
+            return Ok(self.result(
+                Severity::Ok,
+                verbose.then(|| "No AI coding agent configuration detected".into()),
+            ));
+        }
+        if !reachable {
+            return Ok(self.result(Severity::Ok, details(lines)));
+        }
+        if fixable {
+            lines.push("→ evnx doctor --fix adds .env* to each agent's ignore file".into());
+        }
+        lines.push("  (an agent allowed to run shell commands can still read it)".to_string());
+        Ok(CheckResult {
+            fixable,
+            fix_action: fixable.then_some(fix_agent_ignores as FixFn),
+            ..self.result(Severity::Warning, details(lines))
+        })
+    }
+}
+
+/// Add `.env*` to the ignore file of each agent that can read `.env`. Claude
+/// Code's settings are JSON the team owns: printed, never rewritten.
+fn fix_agent_ignores(project_root: &Path, _verbose: bool) -> Result<bool> {
+    let mut changed = false;
+    for agent in IGNORE_AGENTS {
+        if !uses(project_root, agent.markers) || agent.excludes_env(project_root) {
+            continue;
+        }
+        let added = gitignore::append_entries(
+            &project_root.join(agent.ignore_file),
+            gitignore::ENV_ENTRIES,
+        )?;
+        if !added.is_empty() {
+            report_fix(format!("{}: added {}", agent.ignore_file, added.join(", ")));
+            changed = true;
+        }
+    }
+    Ok(changed)
 }
 
 /// Check: File permissions for sensitive files (Unix only)

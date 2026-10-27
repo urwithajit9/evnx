@@ -23,10 +23,12 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+
   ·  Check file permissions for sensitive files
      Skipped: no env file to check
 
-  1 error  ·  1 check passed
+  1 error  ·  2 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -48,10 +50,12 @@ $ evnx doctor --strict
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+
   ·  Check file permissions for sensitive files
      Skipped: no env file to check
 
-  1 error  ·  1 check passed
+  1 error  ·  2 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -79,9 +83,11 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  2 errors  ·  1 warning  ·  1 check passed
+  2 errors  ·  1 warning  ·  2 checks passed
 
   →  1 issue evnx doctor --fix can repair:
      ·  Validate .env file existence, security, and syntax
@@ -135,6 +141,15 @@ $ evnx doctor --format json
       "ran": true
     },
     {
+      "name": "ai_agents",
+      "description": "Check that AI coding agents cannot read .env",
+      "severity": "ok",
+      "details": null,
+      "fixable": false,
+      "fixed": false,
+      "ran": true
+    },
+    {
       "name": "file_permissions",
       "description": "Check file permissions for sensitive files",
       "severity": "ok",
@@ -145,10 +160,10 @@ $ evnx doctor --format json
     }
   ],
   "summary": {
-    "total": 5,
+    "total": 6,
     "errors": 2,
     "warnings": 1,
-    "passed": 1,
+    "passed": 2,
     "info": 1,
     "fixable": 1
   },

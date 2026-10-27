@@ -13,9 +13,11 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  3 checks passed
+  4 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -41,10 +43,13 @@ $ evnx doctor --verbose
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+     No AI coding agent configuration detected
+
   ✓  Check file permissions for sensitive files
      .env: permissions 600 (private)
 
-  3 checks passed
+  4 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -94,6 +99,15 @@ $ evnx doctor --format json
       "ran": true
     },
     {
+      "name": "ai_agents",
+      "description": "Check that AI coding agents cannot read .env",
+      "severity": "ok",
+      "details": null,
+      "fixable": false,
+      "fixed": false,
+      "ran": true
+    },
+    {
       "name": "file_permissions",
       "description": "Check file permissions for sensitive files",
       "severity": "ok",
@@ -104,10 +118,10 @@ $ evnx doctor --format json
     }
   ],
   "summary": {
-    "total": 5,
+    "total": 6,
     "errors": 0,
     "warnings": 0,
-    "passed": 3,
+    "passed": 4,
     "info": 2,
     "fixable": 0
   },
@@ -117,7 +131,7 @@ $ evnx doctor --format json
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: json (exit 0)
-  ok: JSON on stdout only: 5 checks, 0 errors
+  ok: JSON on stdout only: 6 checks (ai_agents since RM-25), 0 errors
   ok: no colour escapes when piped
 
 ================ summary: 5 ok, 0 mismatch   ================

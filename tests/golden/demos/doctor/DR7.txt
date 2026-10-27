@@ -14,9 +14,11 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  1 error  ·  2 checks passed
+  1 error  ·  3 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -37,9 +39,11 @@ $ evnx doctor --strict
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  1 error  ·  2 checks passed
+  1 error  ·  3 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -59,9 +63,11 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  3 checks passed
+  4 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -83,9 +89,11 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  1 error  ·  2 checks passed
+  1 error  ·  3 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -106,9 +114,11 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
+  ✓  Check that AI coding agents cannot read .env
+
   ✓  Check file permissions for sensitive files
 
-  1 error  ·  2 checks passed
+  1 error  ·  3 checks passed
 [stderr]
 
   evnx doctor  Diagnosing environment setup
