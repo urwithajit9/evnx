@@ -896,17 +896,20 @@ fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<St
         let default_pattern = default_var_pattern(key);
         if let Ok(re) = Regex::new(&default_pattern) {
             if re.is_match(&result) {
-                let replacement = if value.trim().is_empty() {
-                    // Extract default value from capture group 1
-                    re.captures(&result)
-                        .and_then(|caps| caps.get(1))
-                        .map(|m| m.as_str().to_string())
-                        .unwrap_or_default()
-                } else {
-                    value.clone()
-                };
+                // ⚠️ Per match (I-134): each `|default:` stands for its own
+                // text. Taking the first match's capture for all of them made
+                // `{{E|default:one}} {{E|default:two}}` render `one one`.
+                // A closure's return is verbatim, so a `$` in it stays.
                 result = re
-                    .replace_all(&result, regex::NoExpand(replacement.as_str()))
+                    .replace_all(&result, |caps: &regex::Captures| {
+                        if value.trim().is_empty() {
+                            caps.get(1)
+                                .map(|m| m.as_str().to_string())
+                                .unwrap_or_default()
+                        } else {
+                            value.clone()
+                        }
+                    })
                     .to_string();
             }
         }
@@ -943,10 +946,15 @@ fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<St
 /// assert_eq!(undefined, vec!["HOST"]);
 /// ```
 pub fn detect_undefined_vars(template: &str, vars: &IndexMap<String, String>) -> Vec<String> {
-    // Regex pattern matching all supported variable reference styles:
+    // The reference styles that are always references (DEC-T3):
     // - ${VAR}: shell-style with braces
     // - {{VAR}} or {{VAR|filter}}: template-style with optional filter
-    // - $VAR: simple prefix style with word boundary
+    //
+    // ⛔ Not bare `$VAR` (I-135). It is substituted when the variable is
+    // defined, and otherwise left alone: in nginx, shell or Makefile text
+    // (`$host`, `$document_root`, `$1`) it is that program's syntax, not a
+    // missing variable. Once an unresolved reference became an error (RM-14),
+    // reporting it failed every such template.
     // ⚠️ `\s*` throughout. Without it this agreed with the substituter's blind
     // spot — `{{ PORT }}` was neither substituted nor reported, so the one signal
     // that something was wrong was silent for exactly the forms that failed.
@@ -954,7 +962,7 @@ pub fn detect_undefined_vars(template: &str, vars: &IndexMap<String, String>) ->
     // Group 3 captures the filter chunk so a `|default:` can be recognised: a
     // placeholder with a fallback is resolved, not undefined.
     let re = Regex::new(
-        r"(?:\$\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\})|(?:\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*(\|[^}]*)?\}\})|(?:\$([A-Za-z_][A-Za-z0-9_]*))\b"
+        r"(?:\$\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\})|(?:\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*(\|[^}]*)?\}\})"
     ).expect("Variable detection regex is valid");
 
     let mut undefined = Vec::new();
@@ -966,11 +974,10 @@ pub fn detect_undefined_vars(template: &str, vars: &IndexMap<String, String>) ->
             continue;
         }
 
-        // Variable name could be in capture group 1, 2, or 4 depending on style
+        // Variable name is in capture group 1 or 2 depending on style
         let var_name = caps
             .get(1)
             .or_else(|| caps.get(2))
-            .or_else(|| caps.get(4))
             .map(|m| m.as_str().to_string());
 
         if let Some(name) = var_name {
@@ -1233,18 +1240,16 @@ mod tests {
         let template = "${UNDEF1} {{UNDEF2}} $UNDEF3 {{DEFINED|upper}}";
         let mut vars = IndexMap::new();
         vars.insert("DEFINED".to_string(), "value".to_string());
-        // UNDEF1, UNDEF2, UNDEF3 are not defined
 
+        // I-135, DEC-T3: bare `$UNDEF3` is another program's syntax, not a
+        // missing variable.
         let undefined = detect_undefined_vars(template, &vars);
-        assert_eq!(undefined.len(), 3);
-        assert!(undefined.contains(&"UNDEF1".to_string()));
-        assert!(undefined.contains(&"UNDEF2".to_string()));
-        assert!(undefined.contains(&"UNDEF3".to_string()));
+        assert_eq!(undefined, vec!["UNDEF1", "UNDEF2"]);
     }
 
     #[test]
     fn test_detect_undefined_vars_no_duplicates() {
-        let template = "${VAR} {{VAR}} $VAR";
+        let template = "${VAR} {{VAR}} ${ VAR }";
         let vars = IndexMap::new(); // VAR not defined
 
         let undefined = detect_undefined_vars(template, &vars);

@@ -11,9 +11,9 @@ $ evnx template --input t.tpl --output t.out --env t.env --no-gitignore
 
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: KNOWN I-134: the second default reuses the first (exit 0)
+  ok: FIXED I-134: each default uses its own text (exit 0)
 --- t.out:
-a=one b=one
+a=one b=two
 
 $ evnx template --input r.tpl --output r.out --env r.env --no-gitignore
 ✓ Loaded 2 variables from r.env

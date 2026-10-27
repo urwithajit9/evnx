@@ -33,7 +33,7 @@ $ evnx template --input e.tpl --output e.out --no-gitignore
 
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: KNOWN I-136/I-135: the bash default is written through silently; no escape (exit 0)
+  ok: KNOWN I-136: the bash default is written through silently; no escape (DEC-T5, v0.12.0) (exit 0)
 --- e.out:
 b: ${DB_HOST:-dflt}
 d: \db.internal

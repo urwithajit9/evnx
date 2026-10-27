@@ -9,10 +9,8 @@ $ evnx template --input u.tpl --output u.out --no-gitignore
   Generate config from template
 
 ! Variable 'MISSING' referenced in template but not defined in .env
-! Variable 'ALSO' referenced in template but not defined in .env
 ! Variable 'NOPE2' referenced in template but not defined in .env
-! Variable 'HOME' referenced in template but not defined in .env
-Error: 4 variables referenced in u.tpl have no value in .env: MISSING, ALSO, NOPE2, HOME
+Error: 2 variables referenced in u.tpl have no value in .env: MISSING, NOPE2
 
 Define them there, or give each a fallback with {{NAME|default:value}}.
 To write unresolved placeholders through as they are: --allow-unresolved.
@@ -26,15 +24,13 @@ $ evnx template --input u.tpl --output u1.out --allow-unresolved --no-gitignore
 ✓ Loaded 7 variables from .env
 ✓ Read template from u.tpl
 ✓ Generated config at u1.out
-· 4 placeholders were left unresolved and written through literally (--allow-unresolved).
+· 2 placeholders were left unresolved and written through literally (--allow-unresolved).
 [stderr]
 
   Generate config from template
 
 ! Variable 'MISSING' referenced in template but not defined in .env
-! Variable 'ALSO' referenced in template but not defined in .env
 ! Variable 'NOPE2' referenced in template but not defined in .env
-! Variable 'HOME' referenced in template but not defined in .env
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
   ok: RM-14: --allow-unresolved writes them through and says so (exit 0)
@@ -48,10 +44,8 @@ $ evnx template --input u.tpl --output u2.out --strict --no-gitignore
   Generate config from template
 
 ! Variable 'MISSING' referenced in template but not defined in .env
-! Variable 'ALSO' referenced in template but not defined in .env
 ! Variable 'NOPE2' referenced in template but not defined in .env
-! Variable 'HOME' referenced in template but not defined in .env
-Error: 4 variables referenced in u.tpl have no value in .env: MISSING, ALSO, NOPE2, HOME
+Error: 2 variables referenced in u.tpl have no value in .env: MISSING, NOPE2
 
 Define them there, or give each a fallback with {{NAME|default:value}}.
 To write unresolved placeholders through as they are: --allow-unresolved.
@@ -59,7 +53,7 @@ Nothing was written to u2.out.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: --strict, now the default: accepted with a notice; names all four (including $HOME: KNOWN I-135), writes nothing (exit 2)
+  ok: --strict, now the default: accepted with a notice; names {{MISSING}} and ${NOPE2}, and leaves bare $ALSO and $HOME alone (FIXED I-135, DEC-T3), writes nothing (exit 2)
 
 $ bash -c test -e u2.out && echo "u2.out exists" || echo "u2.out not created"
 u2.out not created
