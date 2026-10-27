@@ -150,6 +150,15 @@ jobs:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
+    # ⚠️ Job-level permissions replace the workflow's, so `contents: write`
+    # (creating the Release) is repeated here. The other three are what
+    # attest-build-provenance v4 needs: an OIDC token to sign with Sigstore,
+    # and the right to store the attestation (RM-26).
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -165,6 +174,18 @@ jobs:
           find artifacts -name "*.zip*"    -exec cp {} release-assets/ \;
           echo "Release assets:"
           ls -lh release-assets/
+
+      # RM-26: a Sigstore-signed SLSA provenance statement for every archive,
+      # stored by GitHub and tied to this workflow run and commit (SLSA Build
+      # L2). No asset is added or renamed, so Homebrew, Scoop, winget, npm and
+      # PyPI see the same files as before. Before the Release exists, so a
+      # failure here publishes nothing.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            release-assets/*.tar.gz
+            release-assets/*.zip
 
       - name: Extract version
         id: version
@@ -258,6 +279,15 @@ jobs:
           SHA256 checksums are provided for each binary. Verify after download:
           \`\`\`bash
           sha256sum -c evnx-*.tar.gz.sha256
+          \`\`\`
+
+          ## Provenance
+
+          Every archive has a signed build provenance attestation, which ties it
+          to the workflow run and commit that built it. Verify one with the
+          GitHub CLI:
+          \`\`\`bash
+          gh attestation verify evnx-x86_64-unknown-linux-musl.tar.gz -R ${{ github.repository }}
           \`\`\`
           EOF
 
