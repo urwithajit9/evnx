@@ -2129,7 +2129,7 @@ pub enum Commands {
         /// Prompt for each change (`--format patch` only).
         ///
         /// ⚠️ Nothing is written: the answers are listed, not applied (I-073,
-        /// planned for 0.11.0).
+        /// planned for 0.12.0). Needs a terminal.
         #[arg(short, long, default_value_t = false)]
         interactive: bool,
     },

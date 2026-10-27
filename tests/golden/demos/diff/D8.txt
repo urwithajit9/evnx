@@ -2,25 +2,16 @@
 ================ D8 ================
 
 $ bash -c "$0" diff --format patch --interactive < answers evnx
-
-Interactive merge
-Prompts: (y)es, (n)o, (s)kip rest
-
-Add REDIS_URL=<withheld>? [y/n/s]:    ✓ Queued: + REDIS_URL=<withheld>
-Add FEATURE_X=<withheld>? [y/n/s]:    ✓ Queued: + FEATURE_X=<withheld>
-
-Applied changes:
-  + REDIS_URL=<withheld>
-  + FEATURE_X=<withheld>
-
-  →  save it and apply with: patch -p1 < changes.patch
 [stderr]
-  values not compared against a template (--values to compare them)
-  Docs: https://docs.evnx.dev/cli/commands/diff
-[exit 1]
-  .env is byte-identical after answering y to every prompt
-.env .env.before .env.example .env.production .env.staging answers 
-I-071 fixed (DEC-G7): the prompts withhold values unless --show-values
-KNOWN I-073: 'Applied changes' but nothing is written and no changes.patch exists; decided: write the file with .env.bak
+Error: there is no terminal to confirm with.
 
-================ summary: 0 ok, 0 mismatch   ================
+--interactive asks about each change. Without a terminal, leave it out: `evnx diff --format patch` prints every change.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-073, the honest half (RM-40): piped answers are not a terminal, so --interactive refuses and names evnx diff --format patch (exit 2)
+  .env is byte-identical
+.env .env.before .env.example .env.production .env.staging answers 
+At a terminal it lists the chosen changes under 'Chosen (nothing was written)' with values withheld (I-071): tests/diff_pty.rs. Decided for v0.12.0: write the file with .env.bak
+
+================ summary: 1 ok, 0 mismatch   ================

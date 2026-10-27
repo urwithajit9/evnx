@@ -276,7 +276,7 @@ pub fn run(opts: DiffOptions) -> Result<i32> {
                 ));
             }
             if opts.interactive {
-                output_patch_interactive(&diff_result, left, right, right_name, opts.show_values)?;
+                output_patch_interactive(&diff_result, left, right, left_name, opts.show_values)?;
             } else {
                 output_patch(&diff_result, left, right, opts.compare, opts.show_values)?;
             }
@@ -696,15 +696,28 @@ fn shown(value: &str, show_values: bool) -> &str {
     }
 }
 
-// Interactive merge mode for patch format
+/// Interactive merge mode for patch format: asks about each change and lists
+/// the ones chosen.
+///
+/// ⚠️ It writes nothing (I-073, the honest half; RM-40). It said "Applied
+/// changes" and "apply with: patch -p1 < changes.patch", naming a file it
+/// never wrote, while `target_file` was left untouched. Writing it, with a
+/// `.bak`, is RM-40 in v0.12.0; until then it says what it did.
 fn output_patch_interactive(
     diff: &DiffResult,
     left: &IndexMap<String, String>,
     right: &IndexMap<String, String>,
-    _target_file: &str,
+    target_file: &str,
     show_values: bool,
 ) -> Result<()> {
     use std::io::{self, Write};
+
+    // The shared no-terminal rule (I-218): piped answers used to be read as
+    // replies, and a closed stdin skipped every change.
+    crate::utils::prompt::require_terminal_or(
+        "--interactive asks about each change. Without a terminal, leave it out: \
+         `evnx diff --format patch` prints every change.",
+    )?;
 
     println!("\n{}", "Interactive merge".bold());
     println!("Prompts: (y)es, (n)o, (s)kip rest\n");
@@ -763,9 +776,9 @@ fn output_patch_interactive(
         }
     }
 
-    // Summary of applied changes
+    // Summary of the chosen changes
     if !applied.is_empty() {
-        println!("\n{}", "Applied changes:".bold());
+        println!("\n{}", "Chosen (nothing was written):".bold());
         for (op, key, val) in &applied {
             let icon = match op {
                 '+' => "+".green(),
@@ -775,11 +788,14 @@ fn output_patch_interactive(
             println!("  {} {}={}", icon, key, val);
         }
         println!(
-            "\n  {}  save it and apply with: patch -p1 < changes.patch",
+            "\n  {}  evnx did not change {target_file}: add these lines to it yourself",
             glyph::ARROW.dimmed()
         );
     } else {
-        println!("\n{}", "· No changes applied".dimmed());
+        println!(
+            "\n{}",
+            format!("· Nothing chosen; {target_file} was not changed").dimmed()
+        );
     }
 
     Ok(())
