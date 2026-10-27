@@ -33,6 +33,7 @@ release() { # version
 }
 release 0.10.18
 release 0.10.15
+release 0.11.0
 
 # ── Stubs ────────────────────────────────────────────────────────────────────
 STUBS="$WORK/stubs"
@@ -63,7 +64,22 @@ EOF
 printf '#!/bin/sh\ncase "$1" in -s) echo Linux ;; -m) echo x86_64 ;; *) /usr/bin/uname "$@" ;; esac\n' > "$STUBS/uname"
 printf '#!/bin/sh\necho "ldd (GNU libc) 2.39"\n' > "$STUBS/ldd"
 printf '#!/bin/sh\necho "sudo called: $*" >&2\nexit 99\n' > "$STUBS/sudo"
+# gh (RM-83): STUB_GH=ok | fail | noauth | old. Logs its arguments.
+cat > "$STUBS/gh" <<EOF
+#!/bin/sh
+echo "gh \$*" >> "$WORK/gh.log"
+case "\$1 \$2 \$3" in
+    "attestation verify --help") [ "\$STUB_GH" = old ] && exit 1; exit 0 ;;
+    "auth status "*) [ "\$STUB_GH" = noauth ] && exit 1; exit 0 ;;
+    "attestation verify "*)
+        [ "\$STUB_GH" = ok ] && { echo "Verification succeeded!"; exit 0; }
+        echo "no attestations found for subject"; exit 1 ;;
+esac
+exit 2
+EOF
 chmod +x "$STUBS"/*
+# By default a case sees no gh at all: GitHub's runners ship a real one.
+NOGH="$STUBS/no-such-gh"
 
 # ── One case ─────────────────────────────────────────────────────────────────
 # Sets CASE (its folder), HOME_ (its home) and SYS (unwritable system dir).
@@ -79,7 +95,7 @@ fresh() {
 install() {
     local front="$1"; shift
     OUT=$(cd "$CASE" && env -i HOME="$HOME_" PATH="$front$STUBS:/usr/bin:/bin" \
-        _EVNX_SYSTEM_DIR="$SYS" "$@" bash "$SCRIPT" 2>&1)
+        _EVNX_SYSTEM_DIR="$SYS" _EVNX_GH="$NOGH" "$@" bash "$SCRIPT" 2>&1)
     CODE=$?
 }
 
@@ -183,6 +199,51 @@ cp "$WORK/good.sha256" "$RELEASES/v0.10.18/$ASSET.sha256"
 if [ $CODE -eq 1 ] && has "CHECKSUM MISMATCH" && [ ! -e "$HOME_/.local/bin/evnx" ]; then
     ok "a checksum mismatch installs nothing"
 else bad "checksum"; fi
+
+# RM-83: provenance is checked when gh can, from v0.11.0 on.
+fresh p-ok
+: > "$WORK/gh.log"
+install "$HOME_/.local/bin:" EVNX_VERSION=0.11.0 _EVNX_GH="$STUBS/gh" STUB_GH=ok
+if [ $CODE -eq 0 ] && has "Provenance verified" && [ -x "$HOME_/.local/bin/evnx" ] \
+    && grep -q -- "--signer-workflow urwithajit9/evnx/.github/workflows/release.yml" "$WORK/gh.log" \
+    && grep -q -- "--source-ref refs/tags/v0.11.0" "$WORK/gh.log"; then
+    ok "RM-83: a verified archive installs; the check names release.yml and the tag"
+else bad "RM-83: verified"; fi
+
+fresh p-fail
+install "$HOME_/.local/bin:" EVNX_VERSION=0.11.0 _EVNX_GH="$STUBS/gh" STUB_GH=fail
+if [ $CODE -eq 1 ] && has "PROVENANCE CHECK FAILED" && has "no attestations found" \
+    && [ ! -e "$HOME_/.local/bin/evnx" ]; then
+    ok "RM-83: a failed provenance check installs nothing"
+else bad "RM-83: failed check"; fi
+
+fresh p-nogh
+install "$HOME_/.local/bin:" EVNX_VERSION=0.11.0
+if [ $CODE -eq 0 ] && has "Provenance not checked: the GitHub CLI (gh) is not installed" \
+    && has "gh attestation verify" && [ -x "$HOME_/.local/bin/evnx" ]; then
+    ok "RM-83: no gh is one line, with the command to check by hand"
+else bad "RM-83: no gh"; fi
+
+fresh p-noauth
+install "$HOME_/.local/bin:" EVNX_VERSION=0.11.0 _EVNX_GH="$STUBS/gh" STUB_GH=noauth
+if [ $CODE -eq 0 ] && has "gh is not signed in" && ! has "PROVENANCE CHECK FAILED" \
+    && [ -x "$HOME_/.local/bin/evnx" ]; then
+    ok "RM-83: gh not signed in is 'not checked', not a failure"
+else bad "RM-83: gh not signed in"; fi
+
+fresh p-old
+install "$HOME_/.local/bin:" EVNX_VERSION=0.11.0 _EVNX_GH="$STUBS/gh" STUB_GH=old
+if [ $CODE -eq 0 ] && has "no 'attestation' command" && [ -x "$HOME_/.local/bin/evnx" ]; then
+    ok "RM-83: a gh without 'attestation' is 'not checked'"
+else bad "RM-83: old gh"; fi
+
+fresh p-pre011
+: > "$WORK/gh.log"
+install "$HOME_/.local/bin:" EVNX_VERSION=0.10.15 _EVNX_GH="$STUBS/gh" STUB_GH=fail
+if [ $CODE -eq 0 ] && has "releases before v0.11.0 carry no attestation" \
+    && [ ! -s "$WORK/gh.log" ] && [ -x "$HOME_/.local/bin/evnx" ]; then
+    ok "RM-83: a release before v0.11.0 is never checked, so never refused"
+else bad "RM-83: pre-0.11.0"; fi
 
 echo
 echo "== $pass ok, $fail failed =="

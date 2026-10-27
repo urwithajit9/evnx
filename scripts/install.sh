@@ -198,6 +198,43 @@ if ! $SHA_VERIFY checksum.sha256; then
 fi
 info "Checksum verified ✓"
 
+# ── Verify provenance when the GitHub CLI can (RM-83) ────────────────────────
+#
+# The checksum comes from the same release as the archive, so it proves the
+# download is intact, not where it came from. Each archive from v0.11.0 on has
+# a Sigstore-signed attestation from release.yml (RM-26, RM-81); `gh` checks
+# it. A failed check stops the install. Anything that only means "cannot
+# check" (no gh, a gh too old for `attestation`, gh not signed in, a release
+# from before v0.11.0) prints one line and carries on (owner, 2026-10-27).
+# `_EVNX_GH` is a test hook, like `_EVNX_SYSTEM_DIR`: GitHub's runners ship a
+# real gh, which the harness must never reach.
+GH="${_EVNX_GH:-gh}"
+VERIFY_CMD="gh attestation verify $ARCHIVE_NAME -R $REPO --signer-workflow $REPO/.github/workflows/release.yml --source-ref refs/tags/$LATEST"
+REL="${LATEST#v}"
+REL_MAJOR="${REL%%.*}"
+REL_MINOR="${REL#*.}"
+REL_MINOR="${REL_MINOR%%[!0-9]*}"
+if [ "$REL_MAJOR" = "0" ] && [ -n "$REL_MINOR" ] && [ "$REL_MINOR" -lt 11 ]; then
+    info "Provenance not checked: releases before v0.11.0 carry no attestation"
+elif ! command -v "$GH" >/dev/null 2>&1; then
+    info "Provenance not checked: the GitHub CLI (gh) is not installed. To check: $VERIFY_CMD"
+elif ! "$GH" attestation verify --help >/dev/null 2>&1; then
+    info "Provenance not checked: this gh has no 'attestation' command (gh 2.49 or later needed)"
+elif GH_OUT=$("$GH" attestation verify "$ARCHIVE_NAME" -R "$REPO" \
+        --signer-workflow "$REPO/.github/workflows/release.yml" \
+        --source-ref "refs/tags/$LATEST" \
+        --deny-self-hosted-runners 2>&1); then
+    info "Provenance verified ✓ (built by $REPO's release workflow from $LATEST)"
+elif ! "$GH" auth status >/dev/null 2>&1; then
+    info "Provenance not checked: gh is not signed in (gh auth login). To check: $VERIFY_CMD"
+else
+    error "PROVENANCE CHECK FAILED for $ARCHIVE_NAME.
+       It was not verified as built by $REPO's release workflow from $LATEST.
+       gh said:
+$(printf '%s\n' "$GH_OUT" | sed 's/^/         /')
+       Nothing was installed. If gh reported a network error, run the installer again."
+fi
+
 info "Extracting..."
 tar -xzf "$ARCHIVE_NAME"
 
