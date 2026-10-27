@@ -425,3 +425,17 @@ fn t_d66_readme_sync_section_matches_help() {
         );
     }
 }
+
+/// RM-11: both lists are sorted, as the guide says. 0.10.12 to 0.10.18 printed
+/// source order (`ZED` before `ALPHA`), unannounced.
+#[test]
+fn rm11_json_lists_are_sorted() {
+    let p = Project::new()
+        .env("ZED=1\nALPHA=2\n")
+        .example("YAK=\nBETA=\n");
+    let out = run(p.path(), &["sync", "--check", "--format", "json"]);
+    out.assert_code(1);
+    let j = json_of(&out);
+    assert_eq!(j["missing"], json!(["ALPHA", "ZED"]), "{}", out.stdout);
+    assert_eq!(j["template_only"], json!(["BETA", "YAK"]), "{}", out.stdout);
+}

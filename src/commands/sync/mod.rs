@@ -233,12 +233,12 @@ struct CheckReport {
     direction: &'static str,
     env: String,
     example: String,
-    /// Keys the target is missing, in the source's order (the template's
-    /// first, then names only the spec declares, in reverse).
+    /// Keys the target is missing, sorted: the order the docs promise and a
+    /// CI diff needs (RM-11; 0.10.12 to 0.10.18 printed source order).
     missing: Vec<String>,
     /// Without `--direction` (two-way, DEC-S3, DEC-S17): names only the
     /// template has. Absent from a one-way report, so its presence means it
-    /// was checked.
+    /// was checked. Sorted, like `missing`.
     #[serde(skip_serializing_if = "Option::is_none")]
     template_only: Option<Vec<String>>,
     summary: CheckSummary,
@@ -256,6 +256,11 @@ struct CheckSummary {
     template_only: Option<usize>,
 }
 
+fn sorted(mut names: Vec<String>) -> Vec<String> {
+    names.sort();
+    names
+}
+
 /// Print the drift as JSON. Returns whether the files are out of step.
 ///
 /// ⚠️ The drift comes from [`executor::load`], the computation the pretty
@@ -269,7 +274,7 @@ fn check_as_json(
     let loaded = executor::load(ctx, config, false)?;
     let drift = &loaded.drift;
     let template_only = (ctx.two_way && ctx.direction == SyncDirection::Forward)
-        .then(|| drift.template_only.clone());
+        .then(|| sorted(drift.template_only.clone()));
     let report = CheckReport {
         in_sync: !drift.out_of_step(),
         direction: match ctx.direction {
@@ -278,7 +283,7 @@ fn check_as_json(
         },
         env: ctx.paths.env_str(),
         example: ctx.paths.example_str(),
-        missing: drift.missing.iter().map(|(k, _)| k.clone()).collect(),
+        missing: sorted(drift.missing.iter().map(|(k, _)| k.clone()).collect()),
         summary: CheckSummary {
             missing: drift.missing.len(),
             template_only: template_only.as_ref().map(Vec::len),
@@ -372,7 +377,7 @@ fn check_without_env(
                 missing: missing.len(),
                 template_only: None,
             },
-            missing: missing.clone(),
+            missing: sorted(missing.clone()),
             template_only: None,
             compared_with: Some("spec"),
         };

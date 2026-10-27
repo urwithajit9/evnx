@@ -125,8 +125,8 @@ pub fn interactive() -> bool {
 ///
 /// ⚠️ [`interactive`] checks stdin only, so `evnx sync 2>log` at a terminal
 /// reached a prompt it could not draw and failed "IO error: not a terminal"
-/// (I-280). Used by `sync`; the other callers of [`interactive`] are recorded
-/// in their R- notes.
+/// (I-280). Used by `sync`, `init` and the cloud password prompt; the other
+/// callers of [`interactive`] are recorded in their R- notes.
 pub fn can_prompt() -> bool {
     use std::io::IsTerminal;
     interactive() && std::io::stderr().is_terminal()
@@ -136,9 +136,9 @@ pub fn can_prompt() -> bool {
 /// `false` (any case). GitHub Actions, GitLab CI, CircleCI, Buildkite and
 /// Travis all set `CI=true`.
 ///
-/// ⚠️ **Read by `sync` only** (DEC-S9, DEC-S18), where `CI=1` has been
-/// documented as "non-interactive, like `--force`" since before 0.10 and was
-/// never implemented (D-74). It is not folded into [`interactive`]: that would
+/// ⚠️ **Read by `sync` and `init` only** (DEC-S9, DEC-S18; `init` since
+/// 0.10.16), where `CI=1` has been documented as "non-interactive, like
+/// `--force`" since before 0.10 and was never implemented (D-74). It is not folded into [`interactive`]: that would
 /// stop every other command's prompts under `CI=1` even at a terminal, a
 /// change no other command's review has decided.
 pub fn ci() -> bool {

@@ -47,9 +47,9 @@ $ evnx sync --check --format json --direction reverse --env nope.env
   "env": "nope.env",
   "example": ".env.example",
   "missing": [
-    "DATABASE_URL",
-    "API_SECRET",
     "API_PORT",
+    "API_SECRET",
+    "DATABASE_URL",
     "REDIS_URL"
   ],
   "summary": {
