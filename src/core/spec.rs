@@ -55,7 +55,7 @@ pub enum Format {
     Port,
     Bool,
     Email,
-    /// Anything else is a regex, anchored by the author if they want it anchored.
+    /// `regex:<pattern>`, anchored by the author if they want it anchored.
     Pattern(Box<regex::Regex>),
 }
 
@@ -116,6 +116,11 @@ impl Format {
     /// ⚠️ A bad regex fails **here**, at load, rather than the first time a value
     /// happens to be checked against it. A contract that cannot be applied is
     /// broken whether or not anyone has tripped over it yet.
+    ///
+    /// ⚠️ **A pattern is written `regex:<pattern>`** (RM-15, DEC-SP6). Anything
+    /// else not named was compiled as a regex, so a typo — `urll` — became the
+    /// regex `urll`, and every value then "failed to match urll": a mistake in
+    /// the contract looked like bad data. An unknown name is now a load error.
     pub fn parse(s: &str) -> Result<Self, String> {
         Ok(match s {
             "url" => Format::Url,
@@ -124,12 +129,35 @@ impl Format {
             "bool" | "boolean" => Format::Bool,
             "email" => Format::Email,
             other => {
-                let re = regex::Regex::new(other).map_err(|e| {
-                    format!("`{other}` is neither a known format nor a valid regex: {e}")
-                })?;
+                let Some(pattern) = other.strip_prefix("regex:") else {
+                    return Err(Self::unknown(other));
+                };
+                let re = regex::Regex::new(pattern)
+                    .map_err(|e| format!("`{other}` is not a valid regex: {e}"))?;
                 Format::Pattern(Box::new(re))
             }
         })
+    }
+
+    /// The load error for a name that is neither a format nor `regex:…`.
+    fn unknown(name: &str) -> String {
+        let guess = crate::utils::string::closest(
+            name,
+            Self::NAMED
+                .iter()
+                .chain(&["integer", "boolean"])
+                .map(|n| (*n, *n)),
+        );
+        let mean = guess
+            .first()
+            .map(|g| format!(" — did you mean `{g}`?"))
+            .unwrap_or_default();
+        format!(
+            "`{name}` is not a format{mean}\n\
+             Formats: {}. A regular expression is written `regex:{name}` \
+             (bare patterns were read as regexes before 0.11.0).",
+            Self::NAMED.join(", ")
+        )
     }
 
     /// The names that are not regexes, for error messages.
@@ -469,21 +497,29 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_format_is_treated_as_a_regex() {
-        let f = Format::parse("^sk_(test|live)_").unwrap();
+    fn a_regex_is_written_with_its_prefix() {
+        let f = Format::parse("regex:^sk_(test|live)_").unwrap();
         assert!(f.matches("sk_live_abc"));
         assert!(!f.matches("pk_live_abc"));
+    }
+
+    /// RM-15 (I-188): a typo is a load error with a suggestion, not a regex;
+    /// a bare pattern is told how to keep working.
+    #[test]
+    fn rm15_an_unknown_format_is_an_error_not_a_regex() {
+        let err = Format::parse("urll").unwrap_err();
+        assert!(err.contains("did you mean `url`?"), "{err}");
+        let err = Format::parse("^sk_(test|live)_").unwrap_err();
+        assert!(err.contains("regex:^sk_(test|live)_"), "{err}");
+        assert!(!err.contains("did you mean"), "{err}");
     }
 
     /// ⚠️ At load, not at first use. A contract that cannot be applied is broken
     /// whether or not a value has been checked against it yet.
     #[test]
     fn a_broken_regex_fails_when_the_spec_is_read() {
-        let err = Format::parse("([unclosed").unwrap_err();
-        assert!(
-            err.contains("neither a known format nor a valid regex"),
-            "{err}"
-        );
+        let err = Format::parse("regex:([unclosed").unwrap_err();
+        assert!(err.contains("is not a valid regex"), "{err}");
 
         #[derive(Debug, Deserialize)]
         struct W {
@@ -491,7 +527,7 @@ mod tests {
             #[allow(dead_code)]
             vars: Spec,
         }
-        let e = toml::from_str::<W>("[vars.A]\nformat = \"([unclosed\"\n").unwrap_err();
+        let e = toml::from_str::<W>("[vars.A]\nformat = \"regex:([unclosed\"\n").unwrap_err();
         assert!(e.to_string().contains("valid regex"), "{e}");
     }
 

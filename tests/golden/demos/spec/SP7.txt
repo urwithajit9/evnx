@@ -53,27 +53,18 @@ $ evnx scan
   ok: FIXED I-187: every command names 'secrett' (did you mean `secret`?); B is not declared secret until it is spelt right
 
 $ evnx validate
-  ✗  B is not a match for /urll/
-     .env
-     →  Fix the value, or relax `format` in [vars.B]
-
-  !  .env is not covered by .gitignore — `git add .` would commit it
-     .env
-     →  Add it to .gitignore (`evnx doctor --fix` adds `.env*` and keeps `.env.example`)
-
-  1 error  ·  1 warning
-
-Next steps:
-  1. Review and fix the errors above
-  2. Use --ignore issue_type to suppress specific warnings
 [stderr]
-  config    .evnx.toml
+Error: parsing <dir>/scenes/SP7/.evnx.toml: TOML parse error at line 2, column 10
+  |
+2 | format = "urll"
+  |          ^^^^^^
+`urll` is not a format — did you mean `url`?
+Formats: url, int, port, bool, email. A regular expression is written `regex:urll` (bare patterns were read as regexes before 0.11.0).
 
-  evnx validate  Check environment configuration
 
-Validation failed: 1 error
-  Docs: https://docs.evnx.dev/cli/commands/validate
-[exit 1]
-KNOWN I-188: 'urll' became a regex and matched nothing sensible (decided DEC-SP6: unknown name is an error)
+No verdict: evnx did not run. This is not a clean result.
+[exit 2]
+  ok: FIXED I-188 (RM-15, DEC-SP6): 'urll' is an error when the contract is read, not a regex (exit 2)
+  ok: FIXED I-188: the error suggests url and names regex: for patterns
 
-================ summary: 3 ok, 0 mismatch   ================
+================ summary: 5 ok, 0 mismatch   ================

@@ -380,7 +380,7 @@ fn an_environment_scoped_variable_only_applies_there() {
 /// be applied is broken whether or not anyone has tripped over it.
 #[test]
 fn a_spec_with_a_broken_regex_is_refused_at_load() {
-    let d = project("[vars.A]\nformat = \"([unclosed\"\n");
+    let d = project("[vars.A]\nformat = \"regex:([unclosed\"\n");
 
     cargo_bin_cmd!("evnx")
         .current_dir(d.path())
