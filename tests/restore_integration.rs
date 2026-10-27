@@ -392,3 +392,45 @@ fn t_br23_a_new_restored_file_is_0600() {
     restore(&p, &["--output", "new.env"]).assert_code(0);
     assert_eq!(mode(&p, "new.env"), 0o600);
 }
+
+/// RM-18 (I-029): with no `--output`, a backup of `.env.staging` restores to
+/// `.env.staging`, not over the development `.env`; `--output` still wins.
+#[test]
+fn rm18_restore_writes_back_to_the_file_the_backup_came_from() {
+    let p = Project::new()
+        .env("DEV=1\n")
+        .file(".env.staging", "STAGE=1\n")
+        .file("pw", PW);
+    run(
+        p.path(),
+        &["backup", "--env-name", "staging", "--key-file", "pw"],
+    )
+    .assert_code(0);
+    std::fs::remove_file(p.join(".env.staging")).unwrap();
+
+    let restore = |extra: &[&str]| {
+        let mut args = vec!["restore", ".env.staging.backup", "--key-file", "pw"];
+        args.extend_from_slice(extra);
+        run(p.path(), &args)
+    };
+    restore(&[])
+        .assert_code(0)
+        .assert_contains("Restoring to .env.staging, the file this backup was made from");
+    assert_eq!(p.read(".env.staging"), "STAGE=1\n");
+    assert_eq!(
+        p.read(".env"),
+        "DEV=1\n",
+        "the development file is untouched"
+    );
+
+    restore(&["--output", "elsewhere.env"]).assert_code(0);
+    assert_eq!(p.read("elsewhere.env"), "STAGE=1\n");
+}
+
+/// RM-18: a backup of `.env` still restores to `.env`.
+#[test]
+fn rm18_a_backup_of_dot_env_restores_to_dot_env() {
+    let p = backed_up();
+    restore(&p, &[]).assert_code(0);
+    assert_eq!(p.read(".env"), ENV);
+}

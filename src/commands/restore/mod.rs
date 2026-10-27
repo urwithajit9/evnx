@@ -118,8 +118,8 @@ use anyhow::Result;
 /// Everything `restore` takes besides the backup path.
 #[derive(Debug, Clone)]
 pub struct Options {
-    /// Destination path (default `.env`).
-    pub output: String,
+    /// Destination path. `None`: the file the backup was made from (RM-18).
+    pub output: Option<String>,
     /// Emit a diagnostic line at each pipeline stage.
     pub verbose: bool,
     /// Decrypt and validate, but do not write any files.
@@ -193,10 +193,10 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
         // Restoring a backup over itself replaces the only copy of the
         // ciphertext with the plaintext. `--inspect` and `--dry-run` write
         // nothing, so where `--output` points does not matter to them.
-        if !inspect && !dry_run {
-            let check = crate::core::safe_write::refuse_same_file(&output, "backup", &backup)
-                .and_then(|()| crate::core::safe_write::preview(&output).map(drop));
-            if let Err(e) = check {
+        // Without `--output` the destination is in the backup, so the same
+        // check runs once it is decrypted, below, before anything is written.
+        if let Some(output) = output.as_deref().filter(|_| !inspect && !dry_run) {
+            if let Err(e) = writable_destination(output, &backup) {
                 encoded.zeroize();
                 return Err(e);
             }
@@ -219,7 +219,7 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
 
         // ── Core restore logic ────────────────────────────────────────────────
         let options = RestoreOptions {
-            output: PathBuf::from(&output),
+            output: output.as_deref().map(PathBuf::from),
             inspect,
             dry_run,
             verbose,
@@ -239,6 +239,9 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
 
             PrepareResult::Ready(outcome) => outcome,
         };
+        if options.output.is_none() {
+            writable_destination(&outcome.output.to_string_lossy(), &backup)?;
+        }
         let path = outcome.write_path.display().to_string();
 
         // ── An existing output: identical, or replaced only on a yes ─────────
@@ -258,8 +261,9 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
                 let restored = core::Restored {
                     path: outcome.write_path.clone(),
                     used_fallback: true,
+                    output: outcome.output.clone(),
                 };
-                return finish(&restored, &options);
+                return finish(&restored);
             }
             Existing::Differs(previous) => {
                 if !yes {
@@ -294,6 +298,15 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
         // The restored file holds plaintext: keep it out of git, the step
         // `template` and `convert -o` take (R-template).
         crate::utils::protect::protect_output(&restored.path.to_string_lossy(), &gitignore)?;
-        finish(&restored, &options)
+        finish(&restored)
     }
+}
+
+/// The output may not be the backup itself (DEC-B3), and must be a path a
+/// write can reach. Restoring a backup over itself replaces the only copy of
+/// the ciphertext with the plaintext.
+#[cfg(feature = "backup")]
+fn writable_destination(output: &str, backup: &str) -> anyhow::Result<()> {
+    crate::core::safe_write::refuse_same_file(output, "backup", backup)
+        .and_then(|()| crate::core::safe_write::preview(output).map(drop))
 }

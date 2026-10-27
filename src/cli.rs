@@ -2468,11 +2468,16 @@ file, names that collide, a filter that leaves nothing).
 
         /// Where to write the restored file.
         ///
+        /// Defaults to the file the backup was made from — `.env.staging` for a
+        /// backup of `.env.staging` — in the current folder (since 0.11.0; it
+        /// was always `.env`). A recorded name that is not `.env` or `.env.<name>`
+        /// restores to `.env`.
+        ///
         /// An existing file is never replaced silently: evnx asks, or takes
         /// --yes, and keeps the replaced file as <output>.bak. Content that is
         /// not a .env evnx can read goes to <output>.restored instead (exit 5).
-        #[arg(long, default_value = ".env")]
-        output: String,
+        #[arg(long)]
+        output: Option<String>,
 
         /// Replace an existing --output without asking.
         ///

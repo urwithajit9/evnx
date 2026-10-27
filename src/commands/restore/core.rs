@@ -70,15 +70,17 @@ use super::error::RestoreError;
 ///
 /// # Defaults
 ///
-/// All booleans default to `false`; `output` defaults to `.env`.
-#[derive(Debug, Clone)]
+/// All booleans default to `false`; `output` to `None` (the file the backup
+/// was made from).
+#[derive(Debug, Clone, Default)]
 pub struct RestoreOptions {
-    /// Destination path for the restored `.env` file.
+    /// Destination path for the restored `.env` file. `None`: the file the
+    /// backup was made from, in the current folder (RM-18, I-029).
     ///
     /// A `.restored` suffix is appended automatically when the decrypted
     /// content fails `looks_like_dotenv` validation, to protect any
     /// existing live file.
-    pub output: PathBuf,
+    pub output: Option<PathBuf>,
 
     /// If `true`, decrypt and list variable *names* (never values) without
     /// writing any files. Cheaper than `--dry-run`: no overwrite prompt,
@@ -98,17 +100,6 @@ pub struct RestoreOptions {
     // pub print_to_stdout: bool,        // --print  (decrypt and emit to stdout)
     // pub select: Option<Vec<String>>,  // --select KEY1,KEY2 (partial restore)
     // pub merge: bool,                  // --merge (add missing keys, prompt on conflict)
-}
-
-impl Default for RestoreOptions {
-    fn default() -> Self {
-        Self {
-            output: PathBuf::from(".env"),
-            inspect: false,
-            dry_run: false,
-            verbose: false,
-        }
-    }
 }
 
 // ─── Result types ─────────────────────────────────────────────────────────────
@@ -141,11 +132,11 @@ pub enum PrepareResult {
 pub struct RestoreOutcome {
     /// Resolved destination path.
     ///
-    /// Equals `options.output` when content passed validation, or
-    /// `options.output + ".restored"` when the fallback was triggered.
+    /// Equals `output` when content passed validation, or
+    /// `output + ".restored"` when the fallback was triggered.
     pub write_path: PathBuf,
 
-    /// `true` when `write_path` differs from `options.output` because the
+    /// `true` when `write_path` differs from `output` because the
     /// decrypted content did not pass the `.env` validation heuristic.
     pub used_fallback: bool,
 
@@ -155,6 +146,10 @@ pub struct RestoreOutcome {
 
     /// Metadata embedded in the backup by `evnx backup`.
     pub metadata: crate::commands::backup::BackupMetadata,
+
+    /// The file the restore is for: `--output`, or the one the backup was
+    /// made from. `write_path` is this, or this plus `.restored`.
+    pub output: PathBuf,
 }
 
 // ─── Core functions ───────────────────────────────────────────────────────────
@@ -197,7 +192,15 @@ pub fn prepare_restore(
 ) -> Result<PrepareResult> {
     if options.verbose {
         ui::verbose_stderr("Restore pipeline starting");
-        ui::verbose_stderr(format!("Output path  : {}", options.output.display()));
+        ui::verbose_stderr(format!(
+            "Output path  : {}",
+            options
+                .output
+                .as_deref()
+                .map_or("(the file the backup was made from)".into(), |p| p
+                    .display()
+                    .to_string())
+        ));
         ui::verbose_stderr(format!("Dry-run      : {}", options.dry_run));
         ui::verbose_stderr(format!("Inspect      : {}", options.inspect));
         ui::verbose_stderr("Argon2id key derivation in progress…");
@@ -279,14 +282,49 @@ pub fn prepare_restore(
     ui::say(format!("  {} Decryption key cleared from memory", "✓".green()).dimmed());
 
     // ── Choose write path ─────────────────────────────────────────────────────
-    let (write_path, used_fallback) = choose_write_path(&options.output, &content, options.verbose);
+    let output = match &options.output {
+        Some(path) => path.clone(),
+        None => {
+            let output = recorded_output(&metadata.original_file);
+            // Said when it is not `.env`, the destination before 0.11.0.
+            if output != Path::new(crate::core::env_name::DEFAULT_FILE) {
+                ui::info(format!(
+                    "Restoring to {}, the file this backup was made from (--output to choose another)",
+                    output.display()
+                ));
+            }
+            output
+        }
+    };
+    let (write_path, used_fallback) = choose_write_path(&output, &content, options.verbose);
 
     Ok(PrepareResult::Ready(RestoreOutcome {
         write_path,
         used_fallback,
         content,
         metadata,
+        output,
     }))
+}
+
+/// Where a restore with no `--output` writes: the file the backup was made
+/// from, by name, in the current folder (RM-18, I-029). It was always `.env`,
+/// so a backup of `.env.staging` landed over the development file.
+///
+/// ⚠️ The name comes from the backup. It is authenticated (inside the
+/// ciphertext), but it is still only taken when it is `.env` or a valid
+/// `.env.<name>` — the rule `--env-name` uses — and never with a directory.
+/// Anything else is `.env`, as before.
+pub(crate) fn recorded_output(original_file: &str) -> PathBuf {
+    let name = Path::new(original_file)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    let file = match name.strip_prefix(".env.") {
+        Some(env) => crate::core::env_name::file_name(Some(env)).ok(),
+        None => (name == ".env").then(|| name.to_string()),
+    };
+    PathBuf::from(file.unwrap_or_else(|| crate::core::env_name::DEFAULT_FILE.to_string()))
 }
 
 /// What is at the path a restore would write, compared with what it would
@@ -334,6 +372,8 @@ pub struct Restored {
     pub path: PathBuf,
     /// `path` is the `.restored` fallback.
     pub used_fallback: bool,
+    /// The file the restore is for (see [`RestoreOutcome::output`]).
+    pub output: PathBuf,
 }
 
 /// Write the decrypted content to `outcome.write_path` and print confirmation.
@@ -373,7 +413,7 @@ pub fn commit_restore(outcome: RestoreOutcome, options: &RestoreOptions) -> Resu
         ui::warning(format!(
             "Wrote the backup's content to {}, not to {}",
             outcome.write_path.display(),
-            options.output.display(),
+            outcome.output.display(),
         ));
     } else {
         // `-q`: nothing on success (DEC-G4, I-153).
@@ -388,6 +428,7 @@ pub fn commit_restore(outcome: RestoreOutcome, options: &RestoreOptions) -> Resu
     Ok(Restored {
         path: outcome.write_path,
         used_fallback: outcome.used_fallback,
+        output: outcome.output,
     })
 }
 
@@ -398,11 +439,11 @@ pub fn commit_restore(outcome: RestoreOutcome, options: &RestoreOptions) -> Resu
 /// # Errors
 ///
 /// [`RestoreError::ValidationFallback`], silent: everything was printed.
-pub fn finish(restored: &Restored, options: &RestoreOptions) -> Result<()> {
+pub fn finish(restored: &Restored) -> Result<()> {
     // A fallback write is not a plain success (exit 5), so its steps print
     // under `-q` too.
     if !ui::is_quiet() || restored.used_fallback {
-        print_next_steps(&restored.path, &options.output, restored.used_fallback);
+        print_next_steps(&restored.path, &restored.output, restored.used_fallback);
     }
     ui::print_docs_hint(&crate::docs::RESTORE);
 
@@ -592,6 +633,26 @@ fn print_next_steps(write_path: &Path, output: &Path, used_fallback: bool) {
 #[cfg(test)]
 mod tests {
 
+    /// RM-18: the recorded name is used only when it is an env file name, and
+    /// never with its directory; anything else restores to `.env`.
+    #[test]
+    fn rm18_recorded_output_takes_only_env_file_names() {
+        use super::recorded_output;
+        use std::path::PathBuf;
+        assert_eq!(
+            recorded_output(".env.staging"),
+            PathBuf::from(".env.staging")
+        );
+        assert_eq!(recorded_output(".env"), PathBuf::from(".env"));
+        assert_eq!(
+            recorded_output("deploy/.env.prod"),
+            PathBuf::from(".env.prod")
+        );
+        assert_eq!(recorded_output("../../.bashrc"), PathBuf::from(".env"));
+        assert_eq!(recorded_output("prod.env"), PathBuf::from(".env"));
+        assert_eq!(recorded_output(""), PathBuf::from(".env"));
+    }
+
     /// ⛔ **`--inspect` printed private-key bodies under a heading that says
     /// "values never shown".**
     ///
@@ -741,7 +802,7 @@ mod tests {
         let output_path = dir.path().join(".env");
 
         let options = RestoreOptions {
-            output: output_path.clone(),
+            output: Some(output_path.clone()),
             inspect: true,
             dry_run: false,
             verbose: false,
@@ -776,7 +837,7 @@ mod tests {
         let encoded_str = std::fs::read_to_string(&backup_path).unwrap();
         let output_path = dir.path().join(".env");
         let options = RestoreOptions {
-            output: output_path.clone(),
+            output: Some(output_path.clone()),
             inspect: false,
             dry_run: true,
             verbose: false,
@@ -810,7 +871,7 @@ mod tests {
 
         let encoded_str = std::fs::read_to_string(&backup_path).unwrap();
         let options = RestoreOptions {
-            output: dir.path().join(".env"),
+            output: Some(dir.path().join(".env")),
             inspect: false,
             dry_run: false,
             verbose: false,
@@ -845,7 +906,7 @@ mod tests {
 
         let encoded_str = std::fs::read_to_string(&backup_path).unwrap();
         let options = RestoreOptions {
-            output: output_path.clone(),
+            output: Some(output_path.clone()),
             inspect: false,
             dry_run: false,
             verbose: false,
@@ -860,7 +921,7 @@ mod tests {
         };
 
         let restored = commit_restore(outcome, &options).expect("commit_restore should succeed");
-        finish(&restored, &options).expect("a plain restore finishes with Ok");
+        finish(&restored).expect("a plain restore finishes with Ok");
 
         let written = std::fs::read_to_string(&output_path).unwrap();
         assert_eq!(written, env_content, "written content must match original");
@@ -883,7 +944,7 @@ mod tests {
 
         let encoded_str = std::fs::read_to_string(&backup_path).unwrap();
         let options = RestoreOptions {
-            output: output_path.clone(),
+            output: Some(output_path.clone()),
             inspect: false,
             dry_run: false,
             verbose: false,
@@ -899,7 +960,7 @@ mod tests {
 
         let restored = commit_restore(outcome, &options).expect("the fallback is written");
         assert!(restored.used_fallback);
-        let finish_result = finish(&restored, &options);
+        let finish_result = finish(&restored);
         assert!(finish_result.is_err());
 
         let err = finish_result.unwrap_err();
