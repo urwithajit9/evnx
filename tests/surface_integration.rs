@@ -346,6 +346,38 @@ fn t_sf30_each_package_manager_location_names_its_channel() {
     }
 }
 
+/// UP-1 (E4): a pipx install was read as pip and told
+/// `pip install --upgrade evnx`, which does not upgrade it. Recognised by
+/// pipx's folder, and by the `pipx_metadata.json` pipx leaves in its venv.
+#[test]
+fn up1_a_pipx_install_is_upgraded_with_pipx() {
+    for install in [
+        Install::at(".local/pipx/venvs/evnx/bin"),
+        Install::at("tools/evnx/bin")
+            .file("tools/evnx/pyvenv.cfg")
+            .file("tools/evnx/pipx_metadata.json"),
+    ] {
+        install
+            .run(&["update"])
+            .assert_contains("Installed via pipx. Upgrade with:")
+            .assert_contains("pipx upgrade evnx")
+            .assert_not_contains(PIP);
+    }
+}
+
+/// UP-2, DEC-UP1 (E1): a shared folder with no pip record is the install
+/// script's. 0.10.18 printed pip first, which a PEP 668 system refuses.
+#[test]
+fn up2_a_shared_folder_without_a_pip_record_is_the_install_script() {
+    for bin in [".local/bin", "usr/local/bin"] {
+        Install::at(bin)
+            .run(&["update"])
+            .assert_contains("Installed via the install script. Upgrade with:")
+            .assert_contains(SCRIPT)
+            .assert_not_contains(PIP);
+    }
+}
+
 /// I-199, DEC-SF2: the cargo command was `--features cloud --force`, which
 /// drops `migrate` and `backup` from an `--all-features` install.
 #[test]
@@ -397,19 +429,6 @@ fn t_i193_any_virtual_environment_is_pip() {
     }
 }
 
-/// I-193, DEC-SF3: with no Python evidence, the two folders the install script
-/// and pip share get both commands, never a lone guess.
-#[test]
-fn t_i193_a_shared_bin_without_evidence_names_both_commands() {
-    for bin in [".local/bin", "usr/local/bin"] {
-        let out = Install::at(bin).run(&["update"]);
-        out.assert_code(0)
-            .assert_contains(SCRIPT)
-            .assert_contains(PIP)
-            .assert_not_contains("Installed via the install script.");
-    }
-}
-
 /// T-SF-33: an unrecognised location lists every channel and guesses none.
 #[test]
 fn t_sf33_an_unknown_location_lists_every_channel() {
@@ -431,12 +450,12 @@ fn t_dec_sf5_update_q_prints_only_the_upgrade_command() {
     assert_eq!(one.stdout, "cargo install evnx --all-features --force\n");
     assert_eq!(one.stderr, "");
 
-    let both = Install::at(".local/bin").run(&["-q", "update"]);
-    assert_eq!(both.stdout.lines().count(), 2, "{}", both.stdout);
-    assert!(both.stdout.contains(SCRIPT) && both.stdout.contains(PIP));
+    // DEC-UP1: a shared folder with no pip record is one channel now.
+    let script = Install::at(".local/bin").run(&["-q", "update"]);
+    assert_eq!(script.stdout, format!("{SCRIPT}\n"));
 
     let all = Install::at("opt/tools").run(&["-q", "update"]);
-    assert_eq!(all.stdout.lines().count(), 7, "{}", all.stdout);
+    assert_eq!(all.stdout.lines().count(), 8, "{}", all.stdout);
     assert!(!all.stdout.contains("could not tell"), "{}", all.stdout);
 }
 
@@ -515,6 +534,22 @@ mod check {
             .assert_contains("a newer release is available")
             .assert_contains("cargo install evnx --all-features --force")
             .assert_contains("releases/tag/v99.0.0");
+    }
+
+    /// UP-4: the lag note is printed for a registry, never for the install
+    /// script, which downloads from the release `--check` reads.
+    #[test]
+    fn up4_the_lag_note_only_where_a_channel_can_lag() {
+        let (_s, url) = server(200, &release("v99.0.0"));
+        check(&url, &[]).assert_contains("can lag behind the release");
+        Install::at(".local/bin")
+            .run_with(
+                &["update", "--check"],
+                &[("EVNX_UPDATE_URL", url.as_str()), NO_PROXY],
+            )
+            .assert_code(1)
+            .assert_contains(SCRIPT)
+            .assert_not_contains("can lag");
     }
 
     /// I-198, DEC-SF4: a build newer than the latest release is not behind.
@@ -670,4 +705,33 @@ fn t_i200_the_release_gate_reads_the_feature_list() {
         Command::new(gate).arg(&stub).status().unwrap().code(),
         Some(2)
     );
+}
+
+/// UP-3: `update`, `commands` and `completions` describe the binary, not the
+/// project, so they do not read `.evnx.toml`. A broken one stopped all three
+/// with exit 2; a valid one printed a `config` line before the completions.
+#[test]
+fn up3_commands_about_the_binary_do_not_read_the_project_config() {
+    for (toml, label) in [
+        ("[scan\n", "broken"),
+        ("[scan]\nseverity = \"high\"\n", "valid"),
+    ] {
+        let p = Project::new().file(".evnx.toml", toml);
+        for args in [
+            &["update"][..],
+            &["commands"][..],
+            &["completions", "bash"][..],
+        ] {
+            let out = run(p.path(), args);
+            out.assert_code(0);
+            assert!(
+                !out.stderr.contains("config ") && !out.all().contains("parse error"),
+                "{label} config, evnx {args:?}:\n{}",
+                out.all()
+            );
+        }
+    }
+    // Every other command still reads it.
+    let p = Project::new().file(".evnx.toml", "[scan\n");
+    run(p.path(), &["validate"]).assert_code(2);
 }

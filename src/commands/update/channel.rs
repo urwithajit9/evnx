@@ -31,8 +31,19 @@
 //! pip-managed binary (I-193). The path cannot tell them apart; the files pip
 //! leaves can: a virtual environment has `pyvenv.cfg` one level above `bin/`,
 //! and every pip install records itself in an `evnx-<version>.dist-info` folder
-//! under the prefix's `site-packages`. With neither, those two folders get
-//! [`Channel::ScriptOrPip`] and both commands, not a guess (DEC-SF3).
+//! under the prefix's `site-packages`. With neither, those two folders are the
+//! install script's (DEC-UP1, 0.11.0). Until then they got both commands
+//! (DEC-SF3), and pip came first — on a system Python that refuses pip
+//! (PEP 668) that was the one command that could not work (E1).
+//!
+//! # pipx, and a Python that refuses pip
+//!
+//! pipx installs into its own venv, so the venv's `pyvenv.cfg` read as pip and
+//! `pip install --upgrade evnx` was printed, which does not upgrade a pipx
+//! install (E4). pipx leaves `pipx_metadata.json` in that venv, checked first
+//! (UP-1). And a pip install outside any venv, under a Python marked
+//! `EXTERNALLY-MANAGED`, cannot be upgraded with pip at all: it is told to move
+//! to pipx instead, never `--break-system-packages` (UP-2).
 
 use std::path::{Path, PathBuf};
 
@@ -45,9 +56,14 @@ pub enum Channel {
     Winget,
     Npm,
     PyPI,
-    /// `~/.local/bin` or `/usr/local/bin` with no sign of pip: `install.sh`
-    /// writes there, and so does pip without leaving a record evnx can find.
-    ScriptOrPip,
+    /// pipx's own venv (UP-1).
+    Pipx,
+    /// pip, outside a venv, under a Python that refuses pip (PEP 668): pip
+    /// cannot upgrade it, so the answer is to move to pipx (UP-2).
+    PipSystem,
+    /// `~/.local/bin` or `/usr/local/bin` with no pip record: `install.sh`
+    /// writes there (DEC-UP1).
+    Script,
     /// Nothing matched. Not a failure — see the module docs.
     Unknown,
 }
@@ -61,6 +77,7 @@ impl Channel {
         ("winget", "winget upgrade urwithajit9.evnx"),
         ("npm", "npm install -g @evnx/cli@latest"),
         ("pip", "pip install --upgrade evnx"),
+        ("pipx", "pipx upgrade evnx"),
         (
             "script",
             "curl -fsSL https://dotenv.space/install.sh | bash",
@@ -86,7 +103,7 @@ impl Channel {
     /// it. So the canonicalise is insurance for a platform not available here. The
     /// property it provides is asserted directly by
     /// `a_symlink_is_resolved_to_its_target_before_matching`, which checks both
-    /// halves — the link reads as `ScriptOrPip`, the target as `Homebrew` — and
+    /// halves — the link reads as `Script`, the target as `Homebrew` — and
     /// that test is platform-independent.
     pub fn detect() -> Self {
         let Ok(exe) = std::env::current_exe() else {
@@ -96,10 +113,35 @@ impl Channel {
         Self::from_install(&resolved)
     }
 
-    /// [`Channel::from_path`], after looking for what pip leaves beside the
-    /// binary (see the module docs). Evidence on disk wins over a path pattern.
+    /// [`Channel::from_path`], after looking for what pipx and pip leave beside
+    /// the binary (see the module docs). Evidence on disk wins over a path
+    /// pattern.
     pub fn from_install(exe: &Path) -> Self {
+        // Only the system Python's prefixes: `pip --user` (`~/.local`) and a
+        // system pip (`/usr/local`, `/usr`). A pip `--prefix` elsewhere is not
+        // governed by the system's marker.
+        let prefix = exe.parent().and_then(Path::parent);
+        let home_local = std::env::var_os("HOME").map(|h| Path::new(&h).join(".local"));
+        let system = prefix.is_some_and(|p| {
+            p == Path::new("/usr/local")
+                || p == Path::new("/usr")
+                || home_local.as_deref() == Some(p)
+        });
+        Self::from_install_in(exe, system.then_some(Path::new("/usr/lib")))
+    }
+
+    /// [`Channel::from_install`] with the system Python's `lib` folder named
+    /// when `exe` is in one of its prefixes, so a test can stand one up.
+    fn from_install_in(exe: &Path, system_lib: Option<&Path>) -> Self {
+        let prefix = exe.parent().and_then(Path::parent);
+        if prefix.is_some_and(|p| p.join("pipx_metadata.json").is_file()) {
+            return Self::Pipx;
+        }
         if pip_installed(exe) {
+            let in_venv = prefix.is_some_and(|p| p.join("pyvenv.cfg").is_file());
+            if !in_venv && system_lib.is_some_and(externally_managed) {
+                return Self::PipSystem;
+            }
             return Self::PyPI;
         }
         Self::from_path(exe)
@@ -137,13 +179,17 @@ impl Channel {
         if p.contains("/node_modules/") || p.contains("/npm/") || p.contains("/.npm-global/") {
             return Self::Npm;
         }
-        if p.contains("/site-packages/") || p.contains("/pipx/") || p.contains("/.venv/") {
+        if p.contains("/pipx/") {
+            return Self::Pipx;
+        }
+        if p.contains("/site-packages/") || p.contains("/.venv/") {
             return Self::PyPI;
         }
-        // Last, because these are the least distinctive paths there are, and
-        // shared by two channels: see the module docs.
+        // Last, because these are the least distinctive paths there are. pip
+        // writes here too, but leaves a record, which `from_install` reads
+        // first: see the module docs.
         if p.contains("/usr/local/bin/") || p.contains("/.local/bin/") {
-            return Self::ScriptOrPip;
+            return Self::Script;
         }
 
         Self::Unknown
@@ -158,7 +204,9 @@ impl Channel {
             Self::Winget => "winget",
             Self::Npm => "npm",
             Self::PyPI => "pip",
-            Self::ScriptOrPip => "the install script or pip",
+            Self::Pipx => "pipx",
+            Self::PipSystem => "pip, into a Python that refuses pip",
+            Self::Script => "the install script",
             Self::Unknown => "an unrecognised location",
         }
     }
@@ -172,14 +220,15 @@ impl Channel {
             Self::Winget => "winget",
             Self::Npm => "npm",
             Self::PyPI => "pip",
-            Self::ScriptOrPip => "script-or-pip",
+            Self::Pipx => "pipx",
+            Self::PipSystem => "pip-externally-managed",
+            Self::Script => "script",
             Self::Unknown => "unknown",
         }
     }
 
     /// The upgrade commands that fit, labelled as in [`Channel::ALL_COMMANDS`]:
-    /// one for a channel evnx recognised, two where the install script and pip
-    /// share a folder, every one when it could not tell.
+    /// one for a channel evnx recognised, every one when it could not tell.
     pub fn candidates(self) -> Vec<(&'static str, &'static str)> {
         let labels: &[&str] = match self {
             Self::Cargo => &["cargo"],
@@ -188,7 +237,10 @@ impl Channel {
             Self::Winget => &["winget"],
             Self::Npm => &["npm"],
             Self::PyPI => &["pip"],
-            Self::ScriptOrPip => &["pip", "script"],
+            Self::Pipx => &["pipx"],
+            // Not an upgrade but a move: pip cannot write here (UP-2).
+            Self::PipSystem => return vec![("pipx", "pipx install evnx")],
+            Self::Script => &["script"],
             Self::Unknown => return Self::ALL_COMMANDS.to_vec(),
         };
         Self::ALL_COMMANDS
@@ -196,6 +248,13 @@ impl Channel {
             .filter(|(l, _)| labels.contains(l))
             .copied()
             .collect()
+    }
+
+    /// Whether this channel can be behind the GitHub Release `--check` reads
+    /// (UP-4). The install script downloads from that release, so it cannot;
+    /// every registry derives from it later, and an unknown one might.
+    pub fn can_lag(self) -> bool {
+        self != Self::Script
     }
 
     /// The command that upgrades this installation, when exactly one can be
@@ -242,6 +301,17 @@ fn site_packages(prefix: &Path) -> Vec<PathBuf> {
     dirs
 }
 
+/// A Python under `system_lib` marked `EXTERNALLY-MANAGED` (PEP 668), as
+/// Debian, Ubuntu and Fedora mark theirs: `pip install` is refused there.
+fn externally_managed(system_lib: &Path) -> bool {
+    std::fs::read_dir(system_lib).is_ok_and(|entries| {
+        entries.flatten().any(|e| {
+            e.file_name().to_string_lossy().starts_with("python3")
+                && e.path().join("EXTERNALLY-MANAGED").is_file()
+        })
+    })
+}
+
 /// An `evnx-<version>.dist-info` folder in `dir`.
 fn has_record(dir: &Path) -> bool {
     std::fs::read_dir(dir).is_ok_and(|entries| {
@@ -284,10 +354,10 @@ mod tests {
                 "/usr/lib/python3.12/site-packages/evnx/bin/evnx",
                 Channel::PyPI,
             ),
-            ("/home/ajit/.local/pipx/venvs/evnx/bin/evnx", Channel::PyPI),
-            // Shared by install.sh and pip: see `pip_evidence_decides_a_shared_folder`.
-            ("/usr/local/bin/evnx", Channel::ScriptOrPip),
-            ("/home/ajit/.local/bin/evnx", Channel::ScriptOrPip),
+            ("/home/ajit/.local/pipx/venvs/evnx/bin/evnx", Channel::Pipx),
+            // pip writes here too, with a record: see `pip_evidence_decides_a_shared_folder`.
+            ("/usr/local/bin/evnx", Channel::Script),
+            ("/home/ajit/.local/bin/evnx", Channel::Script),
             // Windows, with backslashes and mixed case
             (
                 r"C:\Users\Ajit\scoop\apps\evnx\current\evnx.exe",
@@ -335,7 +405,7 @@ mod tests {
         std::fs::copy(&target, &link).unwrap();
 
         // The link's own path reads as the folder install.sh shares with pip …
-        assert_eq!(Channel::from_path(&link), Channel::ScriptOrPip);
+        assert_eq!(Channel::from_path(&link), Channel::Script);
 
         // … and resolving it, which `detect` does, reads as Homebrew.
         #[cfg(unix)]
@@ -356,9 +426,63 @@ mod tests {
         // mapping assertion rather than an ordering one.
         assert_eq!(
             detect("/home/ajit/.local/pipx/venvs/evnx/bin/evnx"),
+            Channel::Pipx
+        );
+        assert_eq!(detect("/home/ajit/.local/bin/evnx"), Channel::Script);
+    }
+
+    /// UP-1 (E4): pipx's venv has `pyvenv.cfg` like any venv, so it read as
+    /// pip and was told `pip install --upgrade evnx`. `pipx_metadata.json`
+    /// is checked first, wherever pipx keeps its venvs.
+    #[test]
+    fn up1_a_pipx_venv_is_upgraded_with_pipx() {
+        let root = tempfile::TempDir::new().unwrap();
+        let venv = root.path().join("tools/evnx");
+        std::fs::create_dir_all(venv.join("bin")).unwrap();
+        for f in ["pyvenv.cfg", "pipx_metadata.json", "bin/evnx"] {
+            std::fs::write(venv.join(f), b"").unwrap();
+        }
+        let channel = Channel::from_install(&venv.join("bin/evnx"));
+        assert_eq!(channel, Channel::Pipx);
+        assert_eq!(channel.upgrade_command(), Some("pipx upgrade evnx"));
+    }
+
+    /// UP-2 (E1): pip outside a venv under a Python that refuses pip is
+    /// told to move to pipx, never to run pip. Inside a venv pip still works.
+    #[test]
+    fn up2_a_python_that_refuses_pip_is_told_to_move_to_pipx() {
+        let root = tempfile::TempDir::new().unwrap();
+        let sys = root.path().join("usr/lib");
+        std::fs::create_dir_all(sys.join("python3.12")).unwrap();
+        std::fs::write(sys.join("python3.12/EXTERNALLY-MANAGED"), b"").unwrap();
+        let user = root.path().join(".local");
+        let record = user.join("lib/python3.12/site-packages/evnx-0.10.5.dist-info");
+        std::fs::create_dir_all(&record).unwrap();
+        std::fs::create_dir_all(user.join("bin")).unwrap();
+        std::fs::write(user.join("bin/evnx"), b"").unwrap();
+
+        let channel = Channel::from_install_in(&user.join("bin/evnx"), Some(&sys));
+        assert_eq!(channel, Channel::PipSystem);
+        assert_eq!(channel.upgrade_command(), Some("pipx install evnx"));
+        assert!(channel
+            .candidates()
+            .iter()
+            .all(|(_, c)| !c.starts_with("pip ")));
+
+        // Without the marker, or outside the system's prefixes: plain pip.
+        let other = root.path().join("no-marker");
+        for lib in [Some(other.as_path()), None] {
+            assert_eq!(
+                Channel::from_install_in(&user.join("bin/evnx"), lib),
+                Channel::PyPI
+            );
+        }
+        // In a venv the marker does not apply.
+        std::fs::write(user.join("pyvenv.cfg"), b"").unwrap();
+        assert_eq!(
+            Channel::from_install_in(&user.join("bin/evnx"), Some(&sys)),
             Channel::PyPI
         );
-        assert_eq!(detect("/home/ajit/.local/bin/evnx"), Channel::ScriptOrPip);
     }
 
     /// I-193, DEC-SF3: what pip leaves beside the binary decides a shared
@@ -378,7 +502,7 @@ mod tests {
             (root, exe)
         };
         for (bin, files, want) in [
-            (".local/bin", &[][..], Channel::ScriptOrPip),
+            (".local/bin", &[][..], Channel::Script),
             (
                 ".local/bin",
                 &[".local/lib/python3.12/site-packages/evnx-0.10.5.dist-info/RECORD"][..],
@@ -393,7 +517,7 @@ mod tests {
             (
                 "usr/local/bin",
                 &["usr/local/lib/python3.11/dist-packages/evnxtra-1.0.dist-info/RECORD"][..],
-                Channel::ScriptOrPip,
+                Channel::Script,
             ),
             ("venv/bin", &["venv/pyvenv.cfg"][..], Channel::PyPI),
             ("env/Scripts", &["env/pyvenv.cfg"][..], Channel::PyPI),
@@ -405,20 +529,38 @@ mod tests {
             ("venv/bin", &[][..], Channel::Unknown),
         ] {
             let (_root, exe) = make(bin, files);
-            assert_eq!(Channel::from_install(&exe), want, "{bin} {files:?}");
+            // No system Python: this test is about the record.
+            assert_eq!(
+                Channel::from_install_in(&exe, None),
+                want,
+                "{bin} {files:?}"
+            );
         }
     }
 
-    /// DEC-SF3: a shared folder offers both commands and names neither alone.
+    /// DEC-UP1 (UP-2, E1): a shared folder with no pip record is the install
+    /// script's, and only its command is printed. DEC-SF3 offered pip first,
+    /// which a PEP 668 system refuses.
     #[test]
-    fn a_shared_folder_offers_the_script_and_pip() {
-        let labels: Vec<&str> = Channel::ScriptOrPip
-            .candidates()
-            .iter()
-            .map(|(l, _)| *l)
-            .collect();
-        assert_eq!(labels, ["pip", "script"]);
-        assert_eq!(Channel::ScriptOrPip.upgrade_command(), None);
+    fn up2_a_shared_folder_without_a_pip_record_is_the_script() {
+        assert_eq!(
+            Channel::Script.upgrade_command(),
+            Some("curl -fsSL https://dotenv.space/install.sh | bash")
+        );
+    }
+
+    /// UP-4: the lag note is for channels that can lag.
+    #[test]
+    fn up4_only_the_install_script_cannot_lag() {
+        assert!(!Channel::Script.can_lag());
+        for c in [
+            Channel::Cargo,
+            Channel::Npm,
+            Channel::Pipx,
+            Channel::Unknown,
+        ] {
+            assert!(c.can_lag(), "{c:?}");
+        }
     }
 
     #[test]
@@ -446,6 +588,9 @@ mod tests {
             Channel::Winget,
             Channel::Npm,
             Channel::PyPI,
+            Channel::Pipx,
+            Channel::PipSystem,
+            Channel::Script,
         ] {
             assert!(
                 channel.upgrade_command().is_some(),
@@ -454,7 +599,7 @@ mod tests {
         }
         assert_eq!(
             Channel::ALL_COMMANDS.len(),
-            7,
+            8,
             "a channel was added without a command, or vice versa"
         );
     }

@@ -214,13 +214,17 @@ impl Report {
             super::print_upgrade(self.channel, false);
             println!();
             println!("  Release notes: {}", self.release_url.dimmed());
-            // ⚠️ Said every time, because it is the one way this output can mislead.
-            println!();
-            println!(
-                "  {} a channel can lag behind the release by minutes or days. If the",
-                "note:".yellow()
-            );
-            println!("  command above cannot find it yet, it has not propagated.");
+            // ⚠️ Said wherever it can happen, because it is the one way this
+            // output can mislead. Not for the install script, which downloads
+            // from this very release (UP-4).
+            if self.channel.can_lag() {
+                println!();
+                println!(
+                    "  {} a channel can lag behind the release by minutes or days. If the",
+                    "note:".yellow()
+                );
+                println!("  command above cannot find it yet, it has not propagated.");
+            }
         }
         println!();
     }
@@ -352,9 +356,7 @@ mod tests {
                 "release_url": "u",
             })
         );
-        for channel in [Channel::ScriptOrPip, Channel::Unknown] {
-            let r = Report::new("0.6.0", &release("v0.7.0", Some("u")), channel);
-            assert!(serde_json::to_value(r.payload()).unwrap()["command"].is_null());
-        }
+        let r = Report::new("0.6.0", &release("v0.7.0", Some("u")), Channel::Unknown);
+        assert!(serde_json::to_value(r.payload()).unwrap()["command"].is_null());
     }
 }

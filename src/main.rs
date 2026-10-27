@@ -74,9 +74,22 @@ fn main() -> Result<()> {
     // 2 is the code every command with a three-value contract already uses for
     // "no verdict", so a broken config reports the same thing everywhere rather
     // than impersonating whatever failure that command happens to number 1.
-    let loaded = match evnx::core::config::load(&here) {
-        Ok(loaded) => loaded,
-        Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
+    //
+    // ⚠️ Not read at all by the commands that describe the binary rather than
+    // the project (UP-3): a half-edited `.evnx.toml` stopped `evnx update` and
+    // `evnx completions bash` with exit 2, and a valid one put a `config` line
+    // in front of the completion script.
+    let describes_the_binary = matches!(
+        cli.command,
+        Commands::Update { .. } | Commands::Surface { .. } | Commands::Completions { .. }
+    );
+    let loaded = if describes_the_binary {
+        evnx::core::config::Loaded::default()
+    } else {
+        match evnx::core::config::load(&here) {
+            Ok(loaded) => loaded,
+            Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
+        }
     };
     if let Some(source) = &loaded.source {
         let overrides = loaded.config.security_overrides();

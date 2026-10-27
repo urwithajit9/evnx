@@ -115,21 +115,28 @@ fn print_upgrade(channel: Channel, list_unknown: bool) {
             println!();
             print_list(&candidates);
         }
+        (Channel::PipSystem, [(_, command)]) => {
+            // UP-2: `pip install --upgrade` is refused here, and
+            // `--break-system-packages` is never the advice.
+            println!(
+                "  Installed via pip, into a Python that refuses {} (PEP 668),",
+                "pip install".cyan()
+            );
+            println!("  so pip cannot upgrade it. Move to pipx, which keeps its own environment:");
+            println!();
+            println!("      {}", command.bold());
+            println!();
+            let here = std::env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "this one".to_string());
+            println!("  Then remove the old copy ({here}), so the two do not shadow each other.");
+        }
         (_, [(_, command)]) => {
             println!("  Installed via {}. Upgrade with:", channel.label().cyan());
             println!();
             println!("      {}", command.bold());
         }
-        _ => {
-            // DEC-SF3: two channels write here and nothing on disk says which.
-            println!(
-                "  Installed via {}: both write to this folder.",
-                channel.label().cyan()
-            );
-            println!("  Upgrade with the one you used:");
-            println!();
-            print_list(&candidates);
-        }
+        _ => print_list(&candidates),
     }
 }
 
