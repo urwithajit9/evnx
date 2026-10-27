@@ -52,7 +52,9 @@ instead of `.env`. Pass `--env-name` to choose another.
   - A fresh account installs into `~/.local/bin`, created if missing, instead of
     asking for `sudo`.
   - A folder not on `PATH` ends with the `export` line and exit 0, not
-    "Installation failed".
+    "Installation failed". Another copy on `PATH` is then named as the one
+    `evnx` still runs, and never offered for removal: the first version of
+    this change told the user to `rm` what could be their only working copy.
   - `EVNX_VERSION=0.10.18` pins a release; `EVNX_INSTALL_DIR=…` picks the
     folder.
 - **`cloud export --to` takes `convert`'s names and collision rule** (RM-07).

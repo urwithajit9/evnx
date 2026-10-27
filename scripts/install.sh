@@ -328,25 +328,41 @@ case ":$PATH:" in
     *) ON_PATH=false ;;
 esac
 
+OTHER=""
 if [ -n "$FIRST" ] && ! [ "$FIRST" -ef "$TARGET_FILE" ]; then
     OTHER=$("$FIRST" --version 2>/dev/null | awk '{print $2}' || true)
-    warn "Another evnx comes first on your PATH, so typing \`evnx\` runs it, not this one:
-       $FIRST  (version ${OTHER:-unknown})
-       Remove it:  $(removal_hint "$FIRST")
-       Then check: type -a evnx"
+    OTHER="$FIRST (version ${OTHER:-unknown})"
 fi
 
 if [ "$ON_PATH" = false ]; then
     # ⚠️ Exit 0: the install worked. This used to end "Installation failed",
     # and the hint below it was never reached (UP-11d).
+    #
+    # ⚠️ No removal hint here. The copy on PATH may be the only working one,
+    # and `export PATH="<dir>:$PATH"` puts this folder first anyway. Advising
+    # `rm` on it left the user with no `evnx` at all.
     if [ "$INSTALL_DIR" = "$LOCAL_DIR" ]; then
+        # shellcheck disable=SC2016  # written for the profile, unexpanded
         LINE='export PATH="$HOME/.local/bin:$PATH"'
     else
         LINE="export PATH=\"$INSTALL_DIR:\$PATH\""
     fi
-    warn "$INSTALL_DIR is not on your PATH. Add this line to your shell profile
+    if [ -n "$OTHER" ]; then
+        NOW="so \`evnx\` still runs $OTHER.
+       To use this copy, add"
+    else
+        NOW="so \`evnx\` is not found yet.
+       Add"
+    fi
+    warn "$INSTALL_DIR is not on your PATH, $NOW this line to your shell profile
        (~/.bashrc, ~/.zshrc, …), then open a new terminal:
          $LINE"
+elif [ -n "$OTHER" ]; then
+    # Both on PATH and the other wins: that copy is the one to remove.
+    warn "Another evnx comes first on your PATH, so typing \`evnx\` runs it, not this one:
+       $OTHER
+       Remove it:  $(removal_hint "$FIRST")
+       Then check: type -a evnx"
 fi
 
 echo

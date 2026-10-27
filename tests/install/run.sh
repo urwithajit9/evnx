@@ -112,9 +112,22 @@ install "$CASE/npm/bin:$HOME_/.local/bin:"
 if [ $CODE -eq 0 ] && has "Installed evnx 0.10.18" && ! has "Installed evnx 0.10.0"; then
     ok "a: the shadowing copy's version is not reported as installed"
 else bad "a: shadowed report"; fi
-if has "$CASE/npm/bin/evnx  (version 0.10.0)" && has "npm uninstall -g @evnx/cli"; then
+if has "$CASE/npm/bin/evnx (version 0.10.0)" && has "npm uninstall -g @evnx/cli"; then
     ok "b: the copy that wins on PATH is named, with npm's removal command"
 else bad "b: shadow warning"; fi
+
+# b, d: the new folder is not on PATH and another copy is. That copy may be
+# the only working one, so it is named but never offered for removal (the
+# live run of #233 told the owner to `rm ~/.local/bin/evnx`).
+fresh bd
+mkdir -p "$CASE/old/bin"
+printf '#!/bin/sh\necho "evnx 0.10.18"\n' > "$CASE/old/bin/evnx"
+chmod +x "$CASE/old/bin/evnx"
+install "$CASE/old/bin:" EVNX_INSTALL_DIR="$CASE/new/bin"
+if [ $CODE -eq 0 ] && has "still runs $CASE/old/bin/evnx (version 0.10.18)" \
+    && has "export PATH=\"$CASE/new/bin:\$PATH\"" && ! has "Remove it" && ! has "rm $CASE"; then
+    ok "b, d: not on PATH: the copy that runs is named, never offered for removal"
+else bad "b, d: not on PATH with another copy"; fi
 
 # c: a Homebrew link is never replaced.
 fresh c-brew
