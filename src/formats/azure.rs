@@ -66,10 +66,13 @@ impl Converter for AzureKeyVaultConverter {
         output.push_str("# Upload secrets to Azure Key Vault\n");
         output.push_str(&format!("# Vault: {}\n\n", self.vault_name));
 
-        for (secret_name, value) in options.prepare(vars, self)? {
-            output.push_str(&set_secret_script(&self.vault_name, &secret_name, &value));
-            output.push('\n');
-        }
+        // One block per secret, a blank line between them.
+        let blocks: Vec<String> = options
+            .prepare(vars, self)?
+            .into_iter()
+            .map(|(secret_name, value)| set_secret_script(&self.vault_name, &secret_name, &value))
+            .collect();
+        output.push_str(&blocks.join("\n"));
 
         Ok(output)
     }

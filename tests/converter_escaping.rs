@@ -203,7 +203,8 @@ fn generated_cloud_commands_pass_values_through_unchanged() {
     stub(
         "az",
         format!(
-            "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = --value ] && printf %s \"$2\" > '{}'; shift; done\n",
+            // RM-06: the value arrives in the file `--file` names.
+            "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = --file ] && cat \"$2\" > '{}'; shift; done\n",
             got_az.display()
         ),
     );

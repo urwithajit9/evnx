@@ -125,7 +125,6 @@ $5
 EVNX_VALUE
 az keyvault secret set --vault-name kv-prod --name PRICE --file "$f" --encoding utf-8
 )
-
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
