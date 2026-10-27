@@ -27,12 +27,36 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now restores to `.env.staging`, in the current folder. A recorded name that is
   not `.env` or `.env.<name>` still restores to `.env`. *Migrate:* pass
   `--output .env` to keep the old destination.
+- **A relative `[defaults] example` is read from the folder holding
+  `.evnx.toml`** (I-332), the way `.gitignore` and `docker-compose.yml` read
+  their paths. A root `.evnx.toml` naming `deploy/compose/.env.example` used to
+  send a command run inside `deploy/compose` to
+  `deploy/compose/deploy/compose/.env.example`. Nothing changes for a command
+  run in the folder that holds the file. *Migrate:* a path written relative to
+  a subfolder you run commands from should be rewritten relative to the
+  `.evnx.toml`.
 
 ⚠️ **`init` and `add` honour `[defaults] env_name`.** A project whose
 `.evnx.toml` sets `env_name = "production"` now has `init` and `add` write
 `.env.production`, the file `validate`, `sync` and `diff` already read there,
 instead of `.env`. Pass `--env-name` to choose another.
 
+- **`cloud export --to` takes `convert`'s names and collision rule** (RM-07).
+  `--to gcp-secrets`, `azure-keyvault`, `heroku` and `kubernetes` wrote
+  `my-project`, `my-keyvault`, `YOUR_APP_NAME` and `app-secrets`, and two names
+  the format merges were both written. They now need `--project`,
+  `--vault-name`, `--heroku-app` or `--name` (`--namespace` optional), refused
+  before any request when missing; a collision is refused unless
+  `--allow-collisions` is given. The file is what `evnx convert` prints for the
+  same input and flags.
+- **`sync --check --format json` sorts `missing` and `template_only` again**
+  (RM-11). 0.10.12 to 0.10.18 printed them in file order, unannounced, while
+  the guide said "Keys are sorted".
+- **`init` names a `.env` in a subfolder** (I-331). In a monorepo, `init` at the
+  root now says that `deploy/compose/.env` exists, that commands run at the
+  root read the root's file, and how to set up the subfolder
+  (`evnx init -p deploy/compose`). Dependency, build and hidden folders are
+  skipped.
 - **`init --env-name NAME` and `add … --env-name NAME`** (RM-17, MEC-2, I-027,
   I-033). `init` creates or fills `.env.NAME` from the template; `add` writes
   `.env.NAME` and the template, and no other env file. One file per run: loop
