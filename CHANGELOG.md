@@ -8,6 +8,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+⚠️ **`init` and `add` honour `[defaults] env_name`.** A project whose
+`.evnx.toml` sets `env_name = "production"` now has `init` and `add` write
+`.env.production`, the file `validate`, `sync` and `diff` already read there,
+instead of `.env`. Pass `--env-name` to choose another.
+
+- **`init --env-name NAME` and `add … --env-name NAME`** (RM-17, MEC-2, I-027,
+  I-033). `init` creates or fills `.env.NAME` from the template; `add` writes
+  `.env.NAME` and the template, and no other env file. One file per run: loop
+  over names for several. A name is checked as on the read side (`../x` is
+  refused). The hint for a missing `.env.NAME` — "Create it with `evnx init`",
+  which wrote `.env` — now says `evnx init --env-name NAME` (C-2).
+- **One "did you mean" for every `--env-name`** (RM-17): an abbreviation, then
+  the closest spelling, so `prodution` suggests `production`.
+- 🔒 **Azure secrets never reach a command line** (RM-06, I-086). `convert --to
+  azure-keyvault` and `migrate --to azure-keyvault` printed `az keyvault secret
+  set --value <secret>`, visible in `ps`, shell history and `set -x` logs. Each
+  secret is now written to a private temp file through a quoted heredoc and
+  read with `--file … --encoding utf-8`; the file is removed afterwards.
+- **`doctor` warns when `.dockerignore` lets `.env` into an image** (RM-22). With
+  a `Dockerfile`, a missing `.dockerignore`, or one that does not exclude
+  `.env*`, is a warning; `--fix` adds `.env*` and the template exceptions.
+- **`migrate` in CI names each secret** (RM-08, I-274): with no terminal, the
+  per-secret `✓`/`✗` lines were swallowed by the hidden progress bar, so a log
+  said "1 failed" and named nothing. A missing token now says "Set
+  `GITHUB_TOKEN`, or pass `--github-token`" (I-273); `--dry-run` says "would
+  print commands for" for the destinations evnx does not upload to; menus no
+  longer end in `?:`.
 - **A master-password prompt with no terminal names `--password-stdin`**
   (I-330, RM-01). `cloud push`, `pull`, `run` and `export`, `vault create`,
   `share`, `revoke` and `rekey`, and `auth login`, `register`,
