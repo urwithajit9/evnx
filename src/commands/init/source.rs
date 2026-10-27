@@ -52,7 +52,7 @@ pub struct SourceVar {
 
 /// Directories never worth reading: dependencies, build output, and evnx's own
 /// artefacts.
-const SKIP_DIRS: &[&str] = &[
+pub(crate) const SKIP_DIRS: &[&str] = &[
     "node_modules",
     "target",
     "dist",

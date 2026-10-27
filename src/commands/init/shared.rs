@@ -476,6 +476,29 @@ fn notices_of(target: &Target) -> Vec<(bool, String)> {
             ".env.local is read before .env by Next.js and Vite: a value there wins".to_string(),
         ));
     }
+    // I-331: in a monorepo the subfolder's file is invisible from here, and the
+    // one at this level is what every later command run here reads.
+    let nested = nested_env_files(root, &target.env_file);
+    if let Some(first) = nested.first() {
+        let dir = first
+            .rsplit_once('/')
+            .map_or(".", |(dir, _)| dir)
+            .to_string();
+        out.push((
+            true,
+            format!(
+                "{} {}: commands run here read {}, not that one — to set up that folder \
+                 instead: evnx init -p {dir}",
+                nested.join(", "),
+                if nested.len() == 1 {
+                    "also exists"
+                } else {
+                    "also exist"
+                },
+                target.env_file
+            ),
+        ));
+    }
     // Ignored now, or once this run adds `.env*`: the same line before and
     // after the write, so a dry run lists it too.
     let envrc_ignored = || {
@@ -495,6 +518,31 @@ fn notices_of(target: &Target) -> Vec<(bool, String)> {
         ));
     }
     out
+}
+
+/// `file` in subfolders of `root`, at most three levels down, as `a/b/.env`.
+/// Dependency, build and hidden folders are skipped, as `--from-source` skips
+/// them.
+fn nested_env_files(root: &Path, file: &str) -> Vec<String> {
+    let mut found: Vec<String> = walkdir::WalkDir::new(root)
+        // Not `min_depth`: `filter_entry` never sees the levels it skips.
+        .max_depth(4)
+        .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            e.depth() == 0
+                || !e.file_type().is_dir()
+                || !(super::source::SKIP_DIRS.contains(&name.as_ref()) || name.starts_with('.'))
+        })
+        .filter_map(Result::ok)
+        .filter(|e| e.depth() >= 2 && e.file_type().is_file() && e.file_name() == file)
+        .filter_map(|e| {
+            let rel = e.path().strip_prefix(root).ok()?;
+            Some(rel.to_string_lossy().replace('\\', "/"))
+        })
+        .collect();
+    found.sort();
+    found
 }
 
 /// [`write_env_files`], returning what happened.

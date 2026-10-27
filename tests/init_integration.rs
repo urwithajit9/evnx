@@ -1674,3 +1674,42 @@ fn rm17_the_missing_env_hint_names_init_env_name() {
     );
     assert!(all.contains("evnx init --env-name staging"), "{all}");
 }
+
+/// I-331: `init` at a monorepo root names the `.env` a subfolder already has,
+/// since every command run at the root reads the new one. Dependency and
+/// hidden folders are not reported. 0.10.18 said nothing.
+#[test]
+fn i331_init_names_a_nested_env_file() {
+    let dir = TempDir::new().unwrap();
+    for sub in ["deploy/compose", "node_modules/pkg", ".cache/x"] {
+        std::fs::create_dir_all(dir.path().join(sub)).unwrap();
+        std::fs::write(dir.path().join(sub).join(".env"), "A=1\n").unwrap();
+    }
+    let run = |extra: &[&str]| {
+        let mut args = vec!["init", "--yes"];
+        args.extend_from_slice(extra);
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(&args)
+            .env("NO_COLOR", "1")
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    };
+    let dry = run(&["--dry-run"]);
+    assert!(dry.contains("deploy/compose/.env also exists"), "{dry}");
+    assert!(dry.contains("evnx init -p deploy/compose"), "{dry}");
+    assert!(
+        !dry.contains("node_modules") && !dry.contains(".cache"),
+        "{dry}"
+    );
+
+    let all = run(&[]);
+    assert!(all.contains("deploy/compose/.env also exists"), "{all}");
+    assert!(dir.path().join(".env").exists());
+}
