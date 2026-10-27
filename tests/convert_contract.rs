@@ -781,3 +781,79 @@ fn t_i100_migrate_and_convert_print_one_gcp_function() {
         .assert_not_contains("evnx convert --to gcp-secrets");
     assert_eq!(function(&migrate.stdout), function(&convert.stdout));
 }
+
+/// RM-06 (I-086): the Azure script keeps every value off the command line.
+/// Run under `bash -x` with a stub `az`: the trace never shows a value, `az`
+/// receives each one exactly through `--file`, and no temp file is left.
+#[cfg(unix)]
+#[test]
+fn rm06_azure_values_never_reach_a_command_line() {
+    // Single quotes: literal for the parser, so these are the exact values.
+    const VALUES: [&str; 2] = ["$5 off `x` \"q\"", "line one"];
+    let p = Project::new().file(
+        ".env",
+        &format!("DB_PASSWORD='{}'\nTOKEN='{}'\n", VALUES[0], VALUES[1]),
+    );
+    let out = run(
+        p.path(),
+        &[
+            "convert",
+            "--to",
+            "azure-keyvault",
+            "--vault-name",
+            "kv-prod",
+        ],
+    );
+    out.assert_code(0);
+    std::fs::write(p.path().join("run.sh"), &out.stdout).unwrap();
+
+    // The stub logs `<file bytes>␞<file path>␟` for each `--file`.
+    let bin = p.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    support::stub::write_stub(
+        &bin.join("az"),
+        "#!/bin/sh\nprev=; for a; do if [ \"$prev\" = --file ]; then \
+         cat \"$a\"; printf '\\036%s\\037' \"$a\"; fi; prev=$a; done >> \"$AZ_LOG\"\n",
+    );
+    let log = p.path().join("az.log");
+    let sh = std::process::Command::new("bash")
+        .args(["-x", "run.sh"])
+        .current_dir(p.path())
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                bin.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("AZ_LOG", &log)
+        .output()
+        .unwrap();
+    assert!(
+        sh.status.success(),
+        "{}",
+        String::from_utf8_lossy(&sh.stderr)
+    );
+    let trace = String::from_utf8_lossy(&sh.stderr);
+    let got = std::fs::read_to_string(&log).unwrap();
+    let records: Vec<(&str, &str)> = got
+        .split('\u{1f}')
+        .filter(|r| !r.is_empty())
+        .map(|r| r.split_once('\u{1e}').unwrap())
+        .collect();
+    assert_eq!(
+        records.iter().map(|(v, _)| *v).collect::<Vec<_>>(),
+        VALUES,
+        "az must receive each value exactly, no trailing newline"
+    );
+    for v in VALUES {
+        assert!(!trace.contains(v), "{v:?} in the `set -x` trace:\n{trace}");
+    }
+    for (_, path) in records {
+        assert!(
+            !std::path::Path::new(path).exists(),
+            "temp file left: {path}"
+        );
+    }
+}

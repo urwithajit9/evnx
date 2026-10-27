@@ -62,10 +62,13 @@ fn stubs(dir: &Path) {
     let bin = dir.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     for t in TOOLS {
+        // A `--file` argument is followed by `FILE=` and the file's exact bytes
+        // (RM-06: az reads the value from a file, not from its arguments).
         let script = format!(
             "#!/bin/sh\n\
              in=$(cat)\n\
-             {{ printf '%s' '{t}'; for a; do printf '\\037%s' \"$a\"; done; \
+             {{ printf '%s' '{t}'; prev=; for a; do printf '\\037%s' \"$a\"; \
+             if [ \"$prev\" = --file ]; then printf '\\037FILE='; cat \"$a\"; fi; prev=$a; done; \
              printf '\\037STDIN=%s\\036' \"$in\"; }} >> \"$STUB_LOG\"\n"
         );
         support::stub::write_stub(&bin.join(t), &script);
@@ -169,7 +172,9 @@ fn assert_exact(p: &Project, calls: &[Call], report: &str, key_of: &dyn Fn(&str)
         let key = key_of(k);
         let arrived = calls.iter().any(|c| {
             c.stdin == *v
-                || c.args.iter().any(|a| a == v || *a == format!("{key}={v}"))
+                || c.args
+                    .iter()
+                    .any(|a| a == v || *a == format!("{key}={v}") || *a == format!("FILE={v}"))
                 || c.args.iter().any(|a| {
                     serde_json::from_str::<serde_json::Value>(a)
                         .map(|j| j[*k] == **v)
@@ -206,6 +211,28 @@ fn t_mig_02_i101_vercel_passes_values_exactly() {
 fn t_mig_03_i101_azure_passes_values_exactly() {
     let (p, calls, report) = run_printed(&["--to", "azure-keyvault", "--vault-name", "vlt"]);
     assert_exact(&p, &calls, &report, &same);
+    // RM-06 (I-086): through `--file`, exactly, never as an argument; and the
+    // temp files are gone afterwards.
+    for (_, v) in VALUES {
+        assert!(
+            calls
+                .iter()
+                .any(|c| c.args.iter().any(|a| *a == format!("FILE={v}"))),
+            "{v:?} did not arrive through --file\n{report}"
+        );
+        assert!(
+            !calls.iter().any(|c| c.args.iter().any(|a| a == v)),
+            "{v:?} was on the command line\n{report}"
+        );
+    }
+    for c in &calls {
+        if let Some(i) = c.args.iter().position(|a| a == "--file") {
+            assert!(
+                !Path::new(&c.args[i + 1]).exists(),
+                "temp file left\n{report}"
+            );
+        }
+    }
 }
 
 /// T-MIG-04: these four were right; this locks them.

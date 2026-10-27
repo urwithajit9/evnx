@@ -28,6 +28,37 @@ pub fn secret_name(key: &str) -> String {
     key.replace('_', "-")
 }
 
+/// The commands that store `value` as `name` in `vault`, with the value kept
+/// off every command line (RM-06, I-086).
+///
+/// `--value <secret>` put it in `ps`, in shell history and in a `set -x` log.
+/// Now a quoted heredoc writes it to a private temp file — no expansion, and
+/// `set -x` traces only the `head` line — and `az` reads it with `--file`.
+/// `head -c <bytes>` drops the newline every heredoc ends with, which `az`
+/// would otherwise store as part of the secret; only the length is on argv.
+/// The subshell's trap removes the file whatever `az` does.
+pub fn set_secret_script(vault: &str, name: &str, value: &str) -> String {
+    // A delimiter that is not a line of the value, or the heredoc ends early.
+    let mut end = String::from("EVNX_VALUE");
+    while value.lines().any(|l| l == end) {
+        end.push('_');
+    }
+    format!(
+        "# {name}: through a private temp file, not the command line\n\
+         (\n\
+         umask 077; f=$(mktemp) || exit 1; trap 'rm -f \"$f\"' EXIT\n\
+         head -c {len} > \"$f\" <<'{end}'\n\
+         {value}\n\
+         {end}\n\
+         az keyvault secret set --vault-name {vault} --name {quoted} --file \"$f\" --encoding utf-8\n\
+         )\n",
+        name = name,
+        len = value.len(),
+        vault = crate::core::shell::word(vault),
+        quoted = crate::core::shell::word(name),
+    )
+}
+
 impl Converter for AzureKeyVaultConverter {
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
         let mut output = String::new();
@@ -36,21 +67,8 @@ impl Converter for AzureKeyVaultConverter {
         output.push_str(&format!("# Vault: {}\n\n", self.vault_name));
 
         for (secret_name, value) in options.prepare(vars, self)? {
-            output.push_str(&format!(
-                // ⛔ Quoted by the shared helper, not by wrapping in `'{}'`.
-                // A value containing a single quote closed the quoting and the
-                // rest of it became shell:
-                //
-                //   PWNED=x';touch /tmp/pwned;'
-                //   → az … --value 'x';touch /tmp/pwned;''
-                //
-                // which runs when the generated script is run. Verified against
-                // the shipped converter with a stub `az` on PATH.
-                "az keyvault secret set --vault-name {} --name {} --value {}\n",
-                crate::core::shell::word(&self.vault_name),
-                crate::core::shell::word(&secret_name),
-                crate::formats::quoting::shell_single(&value)
-            ));
+            output.push_str(&set_secret_script(&self.vault_name, &secret_name, &value));
+            output.push('\n');
         }
 
         Ok(output)
@@ -92,5 +110,18 @@ mod tests {
 
         assert!(result.contains("az keyvault secret set"));
         assert!(result.contains("API-KEY"));
+        // RM-06: never on the command line.
+        assert!(!result.contains("--value"), "{result}");
+        assert!(
+            result.contains("--file \"$f\" --encoding utf-8"),
+            "{result}"
+        );
+    }
+
+    /// A value holding the delimiter as a line cannot end the heredoc early.
+    #[test]
+    fn rm06_the_delimiter_is_never_a_line_of_the_value() {
+        let script = set_secret_script("kv", "X", "a\nEVNX_VALUE\nb");
+        assert!(script.contains("<<'EVNX_VALUE_'"), "{script}");
     }
 }

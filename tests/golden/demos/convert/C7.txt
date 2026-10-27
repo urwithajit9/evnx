@@ -54,19 +54,83 @@ $ evnx convert --to azure-keyvault --vault-name kv-prod
 # Upload secrets to Azure Key Vault
 # Vault: kv-prod
 
-az keyvault secret set --vault-name kv-prod --name APP-NAME --value 'demo app'
-az keyvault secret set --vault-name kv-prod --name DATABASE-URL --value 'postgres://admin:s3cr3t@db.internal:5432/app'
-az keyvault secret set --vault-name kv-prod --name API-SECRET --value 'abc123'
-az keyvault secret set --vault-name kv-prod --name DEBUG --value 'true'
-az keyvault secret set --vault-name kv-prod --name PORT --value '8080'
-az keyvault secret set --vault-name kv-prod --name GREETING --value 'hello "world"'
-az keyvault secret set --vault-name kv-prod --name EMPTY --value ''
-az keyvault secret set --vault-name kv-prod --name PRICE --value '$5'
+# APP-NAME: through a private temp file, not the command line
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 8 > "$f" <<'EVNX_VALUE'
+demo app
+EVNX_VALUE
+az keyvault secret set --vault-name kv-prod --name APP-NAME --file "$f" --encoding utf-8
+)
+
+# DATABASE-URL: through a private temp file, not the command line
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 44 > "$f" <<'EVNX_VALUE'
+postgres://admin:s3cr3t@db.internal:5432/app
+EVNX_VALUE
+az keyvault secret set --vault-name kv-prod --name DATABASE-URL --file "$f" --encoding utf-8
+)
+
+# API-SECRET: through a private temp file, not the command line
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 6 > "$f" <<'EVNX_VALUE'
+abc123
+EVNX_VALUE
+az keyvault secret set --vault-name kv-prod --name API-SECRET --file "$f" --encoding utf-8
+)
+
+# DEBUG: through a private temp file, not the command line
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 4 > "$f" <<'EVNX_VALUE'
+true
+EVNX_VALUE
+az keyvault secret set --vault-name kv-prod --name DEBUG --file "$f" --encoding utf-8
+)
+
+# PORT: through a private temp file, not the command line
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 4 > "$f" <<'EVNX_VALUE'
+8080
+EVNX_VALUE
+az keyvault secret set --vault-name kv-prod --name PORT --file "$f" --encoding utf-8
+)
+
+# GREETING: through a private temp file, not the command line
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 13 > "$f" <<'EVNX_VALUE'
+hello "world"
+EVNX_VALUE
+az keyvault secret set --vault-name kv-prod --name GREETING --file "$f" --encoding utf-8
+)
+
+# EMPTY: through a private temp file, not the command line
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 0 > "$f" <<'EVNX_VALUE'
+
+EVNX_VALUE
+az keyvault secret set --vault-name kv-prod --name EMPTY --file "$f" --encoding utf-8
+)
+
+# PRICE: through a private temp file, not the command line
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 2 > "$f" <<'EVNX_VALUE'
+$5
+EVNX_VALUE
+az keyvault secret set --vault-name kv-prod --name PRICE --file "$f" --encoding utf-8
+)
+
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
   ok: the vault named (exit 0)
-KNOWN I-086: secret on the command line (visible in ps while it runs); decided: stdin/file if az supports it
+FIXED I-086 (RM-06): each value goes through a private temp file and az --file, never the command line
 
 $ evnx convert --to heroku
 [stderr]

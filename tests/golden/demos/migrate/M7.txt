@@ -16,14 +16,40 @@ stub vercel args: <env> <add> <CMD> <production> <--project> <p> <--force> <--ye
 [exit 0]
 
 --- printed for azure-keyvault --vault-name demo-vault:
-az keyvault secret set --vault-name demo-vault --name PRICE --value '$5'
-az keyvault secret set --vault-name demo-vault --name HOME-X --value '$HOME'
-az keyvault secret set --vault-name demo-vault --name CMD --value '$(echo INJECTED)'
+# Note: underscores in keys are converted to hyphens for AKV compatibility
+
+# PRICE: through a private temp file, not the command line
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 2 > "$f" <<'EVNX_VALUE'
+$5
+EVNX_VALUE
+az keyvault secret set --vault-name demo-vault --name PRICE --file "$f" --encoding utf-8
+)
+
+# HOME-X: through a private temp file, not the command line
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 5 > "$f" <<'EVNX_VALUE'
+$HOME
+EVNX_VALUE
+az keyvault secret set --vault-name demo-vault --name HOME-X --file "$f" --encoding utf-8
+)
+
+# CMD: through a private temp file, not the command line
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 16 > "$f" <<'EVNX_VALUE'
+$(echo INJECTED)
+EVNX_VALUE
+az keyvault secret set --vault-name demo-vault --name CMD --file "$f" --encoding utf-8
+)
+
 
 $ bash -c HOME=/home/demo PATH="$PWD/bin:$PATH" sh run.sh
-stub az args: <keyvault> <secret> <set> <--vault-name> <demo-vault> <--name> <PRICE> <--value> <$5>
-stub az args: <keyvault> <secret> <set> <--vault-name> <demo-vault> <--name> <HOME-X> <--value> <$HOME>
-stub az args: <keyvault> <secret> <set> <--vault-name> <demo-vault> <--name> <CMD> <--value> <$(echo INJECTED)>
+stub az args: <keyvault> <secret> <set> <--vault-name> <demo-vault> <--name> <PRICE> <--file> <file:$5> <--encoding> <utf-8>
+stub az args: <keyvault> <secret> <set> <--vault-name> <demo-vault> <--name> <HOME-X> <--file> <file:$HOME> <--encoding> <utf-8>
+stub az args: <keyvault> <secret> <set> <--vault-name> <demo-vault> <--name> <CMD> <--file> <file:$(echo INJECTED)> <--encoding> <utf-8>
 [exit 0]
 FIXED I-101: every value reaches the tool exactly as written (single quotes, printf); nothing expands or runs
 

@@ -30,7 +30,9 @@ X
 }
 stubs() { # fake tools that print their arguments (and stdin for vercel)
   mkdir -p bin
-  for t in aws az heroku; do printf '#!/bin/sh\nprintf "stub %s args:"; for a; do printf " <%%s>" "$a"; done; echo\n' $t > bin/$t; chmod +x bin/$t; done
+  for t in aws heroku; do printf '#!/bin/sh\nprintf "stub %s args:"; for a; do printf " <%%s>" "$a"; done; echo\n' $t > bin/$t; chmod +x bin/$t; done
+  # az: a --file argument prints as <file:CONTENT>, not its random temp path (RM-06)
+  printf '#!/bin/sh\nprintf "stub az args:"; p=; for a; do if [ "$p" = --file ]; then printf " <file:%%s>" "$(cat "$a")"; else printf " <%%s>" "$a"; fi; p=$a; done; echo\n' > bin/az; chmod +x bin/az
   printf '#!/bin/sh\nprintf "stub vercel args:"; for a; do printf " <%%s>" "$a"; done; echo; echo "  stdin: $(cat)"\n' > bin/vercel; chmod +x bin/vercel
 }
 cmds() { grep -E "^(aws|az|vercel|heroku|echo|  [A-Z_]+=|  --|\\$)" "$1"; }
@@ -44,7 +46,7 @@ M5() { scene M5; fixture; run "$EVNX" migrate --to heroku --heroku-app demo-app 
 M6() { scene M6; stubs; printf "A=it's\nB=\$5\nC=\$(echo INJECTED)\nD=two words\n" > .env; "$EVNX" migrate --to heroku --heroku-app demo-app > out.txt 2>/dev/null </dev/null; sed -n '/^heroku config:set/,/^$/p' out.txt > run.sh; run bash -c 'PATH="$PWD/bin:$PATH" sh run.sh'; expect 0 "heroku (and doppler, infisical, railway) quote correctly: every value arrives exactly as written, nothing is executed"; }
 # U6-EDIT (2026-10-15): M7, M8, M9 flipped on purpose (I-101, I-094, I-102); dummy names
 # `a` and `v` are now `demo-app` and `demo-vault`, which Heroku and Azure accept (A-17).
-M7() { scene M7; stubs; printf 'PRICE=$5\nHOME_X=$HOME\nCMD=$(echo INJECTED)\n' > .env; for d in "vercel --vercel-project p" "azure-keyvault --vault-name demo-vault"; do "$EVNX" migrate --to $d > out.txt 2>/dev/null </dev/null; grep -E '^(echo|printf|az)' out.txt > run.sh; echo; echo "--- printed for $d:"; cat run.sh; run bash -c 'HOME=/home/demo PATH="$PWD/bin:$PATH" sh run.sh'; done; echo "FIXED I-101: every value reaches the tool exactly as written (single quotes, printf); nothing expands or runs"; }
+M7() { scene M7; stubs; printf 'PRICE=$5\nHOME_X=$HOME\nCMD=$(echo INJECTED)\n' > .env; for d in "vercel --vercel-project p" "azure-keyvault --vault-name demo-vault"; do "$EVNX" migrate --to $d --print-only > run.sh 2>/dev/null </dev/null; echo; echo "--- printed for $d:"; cat run.sh; run bash -c 'HOME=/home/demo PATH="$PWD/bin:$PATH" sh run.sh'; done; echo "FIXED I-101: every value reaches the tool exactly as written (single quotes, printf); nothing expands or runs"; }
 M8() { scene M8; stubs; printf "A=it's\n" > .env; "$EVNX" migrate --to aws-secrets-manager --secret-name s > out.txt 2>/dev/null </dev/null; sed -n '/^aws secretsmanager create-secret/,/^}/p' out.txt > run.sh; echo "--- printed create-secret command:"; cat run.sh; run bash -c 'PATH="$PWD/bin:$PATH" sh run.sh 2>&1; echo "sh exit: $?"'; echo "FIXED I-094: the apostrophe is written '\\'' and the command runs"; }
 M9() { scene M9; printf 'A=1\n' > .env; for pair in "heroku --heroku-app" "vercel --vercel-project" "azure-keyvault --vault-name"; do set -- $pair; run bash -c '"$0" migrate --to "$1" "$2" "x;echo_PWNED" </dev/null' "$EVNX" "$1" "$2"; expect 2 "FIXED I-102: refused, naming the flag: $1"; done; }
 # U6-EDIT (2026-10-15): M10 flipped on purpose (I-103).

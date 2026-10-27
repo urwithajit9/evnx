@@ -11,7 +11,6 @@
 //!
 //! Install Azure CLI: <https://learn.microsoft.com/cli/azure/install-azure-cli>
 
-use crate::core::shell;
 use crate::formats::azure::secret_name;
 use anyhow::Result;
 use colored::Colorize;
@@ -85,11 +84,11 @@ impl MigrationDestination for AzureDestination {
             if akv_name != *key {
                 warnings.push(format!("  {} → {} (underscores → hyphens)", key, akv_name));
             }
-            out.command(format!(
-                "az keyvault secret set --vault-name {} --name {} --value {}",
-                shell::word(&self.vault_name),
-                shell::word(&akv_name),
-                shell::quote(value)
+            // RM-06: the same script `convert` writes, the value off argv.
+            out.command(crate::formats::azure::set_secret_script(
+                &self.vault_name,
+                &akv_name,
+                value,
             ));
         }
 
