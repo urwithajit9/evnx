@@ -47,6 +47,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 `.env.production`, the file `validate`, `sync` and `diff` already read there,
 instead of `.env`. Pass `--env-name` to choose another.
 
+- **`doctor` checks whether an AI coding agent can read `.env`** (RM-25). For
+  each agent whose configuration is already in the project:
+  - **Claude Code** reads any file unless `permissions.deny` blocks it, so
+    `.claude/settings.json` (or `settings.local.json`) must deny
+    `Read(./.env)` and `Read(./.env.*)`. doctor prints the lines to add;
+    `--fix` never rewrites that file.
+  - **Cursor, Aider, Gemini CLI and Windsurf** honour `.gitignore`; `.env` is
+    reported only when neither `.gitignore` nor the agent's own file
+    (`.cursorignore`, `.aiderignore`, `.geminiignore`, `.codeiumignore`)
+    excludes it. `--fix` adds `.env*` to that file.
+  - **Copilot**'s content exclusion is an organisation setting: named as not
+    checkable from the repository.
+
+  Nothing is created for a tool the project does not use. The JSON report has
+  one more check, `ai_agents`. This prevents accidental exposure only: an agent
+  allowed to run shell commands can still read the file.
+- **Release archives carry build provenance** (RM-26). Each `.tar.gz` and
+  `.zip` has a Sigstore-signed SLSA provenance attestation tying it to the
+  workflow run and commit that built it. Verify with
+  `gh attestation verify <archive> -R urwithajit9/evnx`. No asset is added or
+  renamed.
 - **`evnx update` prints a command that works for the copy that is running**
   (RM-19, UP-1 to UP-4):
   - a pipx install says `pipx upgrade evnx`; it was read as pip and told
