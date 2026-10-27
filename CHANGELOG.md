@@ -41,6 +41,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 `.env.production`, the file `validate`, `sync` and `diff` already read there,
 instead of `.env`. Pass `--env-name` to choose another.
 
+- **`install.sh` reports the copy it installed, and names the one that runs**
+  (RM-20). Live on `main` (and `dotenv.space/install.sh`) on merge, not with
+  this release:
+  - "Installed version" is the version of the file just written, not of
+    whichever `evnx` is first on `PATH`; another copy ahead on `PATH` is named,
+    with the command that removes it (npm, pipx, pip, Homebrew, cargo).
+  - A copy that Homebrew, npm or pip owns is never replaced: the script stops
+    and prints that manager's upgrade command.
+  - A fresh account installs into `~/.local/bin`, created if missing, instead of
+    asking for `sudo`.
+  - A folder not on `PATH` ends with the `export` line and exit 0, not
+    "Installation failed".
+  - `EVNX_VERSION=0.10.18` pins a release; `EVNX_INSTALL_DIR=…` picks the
+    folder.
 - **`cloud export --to` takes `convert`'s names and collision rule** (RM-07).
   `--to gcp-secrets`, `azure-keyvault`, `heroku` and `kubernetes` wrote
   `my-project`, `my-keyvault`, `YOUR_APP_NAME` and `app-secrets`, and two names
