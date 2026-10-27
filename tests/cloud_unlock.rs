@@ -417,8 +417,11 @@ fn rm34_pull_keeps_the_replaced_file_and_its_mode() {
     out.assert_code(0);
     assert_eq!(p.read(".env"), "A=1\n");
     assert_eq!(p.read(".env.bak"), "A=local\n");
+    // `.\.env` on Windows.
+    let sep = std::path::MAIN_SEPARATOR;
     assert!(
-        out.all().contains("kept the previous ./.env as ./.env.bak"),
+        out.all()
+            .contains(&format!("kept the previous .{sep}.env as .{sep}.env.bak")),
         "{}",
         out.all()
     );
