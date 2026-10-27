@@ -8,6 +8,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+⚠️ **Breaking changes, and how to migrate:**
+- **`template`: an unresolved placeholder is an error** (RM-14, DEC-T2, I-142).
+  `{{X}}` with no value used to be written through literally, exit 0; now the
+  run exits 2, writes nothing, and lists every name. *Migrate:* add
+  `--allow-unresolved` where the pass-through was intended. `--strict` is now
+  the default; it is still accepted, with a notice, and is removed in 1.0.
+- **`spec`: a regex format is written `regex:<pattern>`** (RM-15, DEC-SP6,
+  I-188). A name that is not a format used to be compiled as a regex, so a typo
+  (`urll`) failed every value; it is now an error when the contract is read,
+  with "did you mean". *Migrate:* prefix bare patterns:
+  `format = "^sk_"` → `format = "regex:^sk_"`.
+- **`diff --format json`: `values_redacted` is gone; `schema_version` is 2**
+  (RM-16). *Migrate:* read `value_state` (`withheld`, `masked`, `shown`);
+  `value_state == "masked"` is the old `values_redacted == true`.
+- **`restore` writes back to the file the backup was made from** (RM-18, I-029).
+  A backup of `.env.staging` used to restore over `.env`; without `--output` it
+  now restores to `.env.staging`, in the current folder. A recorded name that is
+  not `.env` or `.env.<name>` still restores to `.env`. *Migrate:* pass
+  `--output .env` to keep the old destination.
+
 ⚠️ **`init` and `add` honour `[defaults] env_name`.** A project whose
 `.evnx.toml` sets `env_name = "production"` now has `init` and `add` write
 `.env.production`, the file `validate`, `sync` and `diff` already read there,
