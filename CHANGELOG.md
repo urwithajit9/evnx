@@ -92,6 +92,20 @@ instead of `.env`. Pass `--env-name` to choose another.
 - **Internal** (RM-35, RM-37): the deprecated, unused `utils::git` and
   `utils::string::redact` are gone, and `lazy_static` is replaced by the
   standard library's `LazyLock`, removing a dependency.
+- **`template` leaves bare `$NAME` alone** (I-135, DEC-T3). `${NAME}` and
+  `{{NAME}}` are references; a bare `$NAME` is substituted when the variable is
+  defined and otherwise left as it is, because in nginx, shell or Makefile text
+  (`$host`, `$document_root`, `$1`) it is that program's syntax. It used to be
+  reported as undefined, and with unresolved references now an error (RM-14,
+  above) every such template would have failed.
+- **`template`: each `|default:` uses its own text** (I-134).
+  `{{E|default:one}} {{E|default:two}}` with `E` empty rendered `one one`.
+- **`diff --interactive` says it writes nothing** (I-073). It printed "Applied
+  changes" and "apply with: patch -p1 < changes.patch", naming a file it never
+  wrote. It now lists the chosen changes under "Chosen (nothing was written)"
+  and says the file was not changed; writing it is planned for 0.12.0. Without
+  a terminal it refuses with exit 2 and names `evnx diff --format patch`; piped
+  answers used to be read as replies.
 - **`evnx update` prints a command that works for the copy that is running**
   (RM-19, UP-1 to UP-4):
   - a pipx install says `pipx upgrade evnx`; it was read as pip and told
