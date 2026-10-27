@@ -67,7 +67,15 @@ instead of `.env`. Pass `--env-name` to choose another.
   `.zip` has a Sigstore-signed SLSA provenance attestation tying it to the
   workflow run and commit that built it. Verify with
   `gh attestation verify <archive> -R urwithajit9/evnx`. No asset is added or
-  renamed.
+  renamed. Each archive is signed in the build job that compiled it (RM-81),
+  and every release now checks its own published archives the same way
+  (RM-82).
+- **`install.sh` checks provenance when the GitHub CLI can** (RM-83). With a
+  signed-in `gh` (2.49 or later), an archive that does not verify as built by
+  evnx's release workflow from the requested tag is refused and nothing is
+  installed. With no `gh`, a `gh` that is not signed in (`gh attestation verify`
+  needs a login), or a release before v0.11.0, the installer prints one line
+  saying the check was skipped and carries on. The checksum is still mandatory.
 - **`evnx update` prints a command that works for the copy that is running**
   (RM-19, UP-1 to UP-4):
   - a pipx install says `pipx upgrade evnx`; it was read as pip and told
