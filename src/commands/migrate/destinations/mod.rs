@@ -53,6 +53,8 @@ pub(crate) enum ArgKind {
     /// what lets `--dry-run` work on a machine with no credentials at all.
     /// `env` is the variable that supplies it, named first when it is missing:
     /// the flag is the form evnx warns against (I-273).
+    // Only the GitHub destination takes one, and it is built with `migrate`.
+    #[cfg_attr(not(feature = "migrate"), allow(dead_code))]
     Credential { env: &'static str },
 }
 
