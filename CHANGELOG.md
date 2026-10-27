@@ -27,6 +27,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now restores to `.env.staging`, in the current folder. A recorded name that is
   not `.env` or `.env.<name>` still restores to `.env`. *Migrate:* pass
   `--output .env` to keep the old destination.
+- **`update --check --json`: new `channel` values** (RM-19, DEC-UP1).
+  `script-or-pip` is gone: a shared bin folder with no pip record is now
+  `script`, with its `command` filled in instead of `null`. New: `pipx`, and
+  `pip-externally-managed` (pip under a Python that refuses pip, whose
+  `command` is `pipx install evnx`). *Migrate:* match on the new values; treat
+  an unknown one as `unknown`.
 - **A relative `[defaults] example` is read from the folder holding
   `.evnx.toml`** (I-332), the way `.gitignore` and `docker-compose.yml` read
   their paths. A root `.evnx.toml` naming `deploy/compose/.env.example` used to
@@ -41,6 +47,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 `.env.production`, the file `validate`, `sync` and `diff` already read there,
 instead of `.env`. Pass `--env-name` to choose another.
 
+- **`evnx update` prints a command that works for the copy that is running**
+  (RM-19, UP-1 to UP-4):
+  - a pipx install says `pipx upgrade evnx`; it was read as pip and told
+    `pip install --upgrade evnx`, which does not upgrade it;
+  - `~/.local/bin` or `/usr/local/bin` with no pip record is the install
+    script's, and only its command is printed. pip used to come first, and a
+    system Python that refuses pip (PEP 668) refused it;
+  - a pip install under such a Python is told to move to pipx, never to pass
+    `--break-system-packages`;
+  - `update`, `commands` and `completions` no longer read `.evnx.toml`: a
+    broken one stopped them with exit 2, and a valid one printed a `config`
+    line before the completion script;
+  - `--check` says "a channel can lag" only where one can: not for the install
+    script, which downloads from the release `--check` reads.
 - **`install.sh` reports the copy it installed, and names the one that runs**
   (RM-20). Live on `main` (and `dotenv.space/install.sh`) on merge, not with
   this release:
