@@ -354,14 +354,15 @@ fn t_dec_t9_dry_run_says_an_existing_output_would_be_replaced() {
     assert_eq!(p.read("out.yml"), "old\n");
 }
 
-/// Same exit rules as the real run (DEC-T2, error by default, is 0.11.0).
+/// Same exit rules as the real run (DEC-T2: an error by default since 0.11.0).
 #[test]
 fn t_dec_t9_dry_run_reports_unresolved_names_and_strict_fails() {
     let p = project().file("config.tpl", "host: {{DB_HOST}}\nurl: {{MISSING}}\n");
-    run_dry(&p, &[]).assert_code(0).assert_contains("MISSING");
-    run_dry(&p, &["--strict"])
-        .assert_code(2)
+    // RM-14: refusing is the default; --allow-unresolved previews the pass-through.
+    run_dry(&p, &["--allow-unresolved"])
+        .assert_code(0)
         .assert_contains("MISSING");
+    run_dry(&p, &[]).assert_code(2).assert_contains("MISSING");
     assert!(!p.exists("out.yml"));
 }
 

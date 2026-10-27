@@ -196,6 +196,8 @@ Filters, one per placeholder: {{VAR|filter}}\n\
 \x20 json                         a quoted, escaped JSON string\n\
 \x20 default:VALUE                VALUE when VAR is empty or not defined\n\
 An unknown filter, or two chained, is an error and nothing is written.\n\
+A placeholder with no value is an error too (exit 2); --allow-unresolved\n\
+writes it through as it is.\n\
 \n\
 Full guide: https://docs.evnx.dev/cli/commands/template",
 };

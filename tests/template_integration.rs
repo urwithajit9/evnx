@@ -101,22 +101,45 @@ fn strict_refuses_and_writes_nothing() {
     );
 }
 
-/// Without `--strict` the old permissive behaviour stands — it is someone's
-/// working pipeline — but it now says what it did rather than offering a tip.
+/// RM-14 (DEC-T2): an unresolved placeholder is an error by default — exit 2,
+/// nothing written, every name listed, and the way out named.
 #[test]
-fn without_strict_it_writes_through_but_says_so() {
+fn rm14_unresolved_is_an_error_by_default() {
+    let p = project("url={{DATABASE_URL}}\nb={{OTHER}}\n");
+    let out = template(&p, &[]);
+    out.assert_code(2);
+    let all = format!("{}{}", out.stdout, out.stderr);
+    for name in ["DATABASE_URL", "OTHER"] {
+        assert!(all.contains(name), "{all}");
+    }
+    assert!(all.contains("--allow-unresolved"), "{all}");
+    assert!(!p.exists("out.conf"));
+}
+
+/// `--allow-unresolved` keeps the old pass-through — someone's working
+/// pipeline — and says what it did.
+#[test]
+fn allow_unresolved_writes_through_but_says_so() {
     let p = project("url={{DATABASE_URL}}\n");
 
-    let out = template(&p, &[]);
+    let out = template(&p, &["--allow-unresolved"]);
     out.assert_code(0);
-
-    // ⚠️ stdout, not stderr: `ui::warning` and `ui::info` use `println!` across
-    // the whole CLI. Fine here — `--output -` keeps them off stdout — but see
-    // the review's note on the inconsistency.
     assert!(out.stdout.contains("unresolved"), "{}", out.stdout);
-    assert!(out.stdout.contains("--strict"), "{}", out.stdout);
-
+    assert!(out.stdout.contains("--allow-unresolved"), "{}", out.stdout);
     assert_eq!(p.read("out.conf"), "url={{DATABASE_URL}}\n");
+}
+
+/// `--strict` is still accepted, and says it is no longer needed.
+#[test]
+fn rm14_strict_is_an_accepted_alias_with_a_notice() {
+    let p = project("url={{DATABASE_URL}}\n");
+    let out = template(&p, &["--strict"]);
+    out.assert_code(2);
+    let all = format!("{}{}", out.stdout, out.stderr);
+    assert!(
+        all.contains("--strict is the default since 0.11.0"),
+        "{all}"
+    );
 }
 
 /// `--strict` names every unresolved placeholder, not just the first.

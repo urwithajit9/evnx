@@ -2356,8 +2356,9 @@ file, names that collide, a filter that leaves nothing).
 
         /// Render and report what would be written, and write nothing.
         ///
-        /// Fails where the real run would (an unknown filter, `--strict` with
-        /// an unresolved placeholder, a missing directory without `--mkdir`).
+        /// Fails where the real run would (an unknown filter, an unresolved
+        /// placeholder without `--allow-unresolved`, a missing directory without
+        /// `--mkdir`).
         /// Never prints the rendered text, and leaves `.gitignore` alone.
         #[arg(long)]
         dry_run: bool,
@@ -2385,15 +2386,17 @@ file, names that collide, a filter that leaves nothing).
         #[arg(long, conflicts_with = "gitignore")]
         no_gitignore: bool,
 
-        /// Refuse to write when a placeholder has no value.
+        /// Write an unresolved placeholder through literally and exit 0.
         ///
-        /// Without it an unresolved `{{DATABASE_URL}}` is copied through
-        /// literally and the command exits 0 — the generated file then holds the
-        /// placeholder text where a value should be, and whatever reads it next
-        /// treats that as the setting.
-        ///
-        /// Give a variable a fallback with `{{NAME|default:value}}` to keep it
-        /// optional under --strict.
+        /// Since 0.11.0 a placeholder with no value is an error: nothing is
+        /// written, every unresolved name is listed, and the exit code is 2. An
+        /// unresolved `{{DATABASE_URL}}` in a generated config is read by
+        /// whatever runs next as the literal setting. Give a variable a fallback
+        /// with `{{NAME|default:value}}` to keep it optional.
+        #[arg(long, conflicts_with = "strict")]
+        allow_unresolved: bool,
+
+        /// The default since 0.11.0; accepted, and removed in 1.0.
         #[arg(long)]
         strict: bool,
     },

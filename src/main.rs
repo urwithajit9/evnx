@@ -496,11 +496,19 @@ fn main() -> Result<()> {
             env_name,
             gitignore,
             no_gitignore,
+            allow_unresolved,
             strict,
             mode: file_mode,
             mkdir,
             dry_run,
         } => {
+            // RM-14 (DEC-T2): refusing is the default; --strict asked for it.
+            if strict {
+                evnx::utils::ui::info(
+                    "--strict is the default since 0.11.0 and is no longer needed; \
+                     it is removed in 1.0",
+                );
+            }
             let mode = evnx::utils::protect::GitignoreMode::from_flags(gitignore, no_gitignore);
             let env = resolve_env(
                 Path::new("."),
@@ -515,7 +523,7 @@ fn main() -> Result<()> {
                 commands::template::Options {
                     verbose: cli.verbose,
                     gitignore: mode,
-                    strict,
+                    strict: !allow_unresolved,
                     file_mode,
                     mkdir,
                     dry_run,

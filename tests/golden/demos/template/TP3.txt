@@ -4,8 +4,29 @@
 $ evnx template --input u.tpl --output u.out --no-gitignore
 ✓ Loaded 7 variables from .env
 ✓ Read template from u.tpl
-✓ Generated config at u.out
-· 4 placeholders were left unresolved and written through literally. Use --strict to make this an error.
+[stderr]
+
+  Generate config from template
+
+! Variable 'MISSING' referenced in template but not defined in .env
+! Variable 'ALSO' referenced in template but not defined in .env
+! Variable 'NOPE2' referenced in template but not defined in .env
+! Variable 'HOME' referenced in template but not defined in .env
+Error: 4 variables referenced in u.tpl have no value in .env: MISSING, ALSO, NOPE2, HOME
+
+Define them there, or give each a fallback with {{NAME|default:value}}.
+To write unresolved placeholders through as they are: --allow-unresolved.
+Nothing was written to u.out.
+
+No verdict: evnx did not finish. This is not a clean result.
+[exit 2]
+  ok: FIXED I-142 (RM-14, DEC-T2): an unresolved reference is an error by default, nothing written (exit 2)
+
+$ evnx template --input u.tpl --output u1.out --allow-unresolved --no-gitignore
+✓ Loaded 7 variables from .env
+✓ Read template from u.tpl
+✓ Generated config at u1.out
+· 4 placeholders were left unresolved and written through literally (--allow-unresolved).
 [stderr]
 
   Generate config from template
@@ -16,9 +37,10 @@ $ evnx template --input u.tpl --output u.out --no-gitignore
 ! Variable 'HOME' referenced in template but not defined in .env
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: KNOWN I-142: unresolved references are written through, exit 0; decided: error by default (exit 0)
+  ok: RM-14: --allow-unresolved writes them through and says so (exit 0)
 
 $ evnx template --input u.tpl --output u2.out --strict --no-gitignore
+· --strict is the default since 0.11.0 and is no longer needed; it is removed in 1.0
 ✓ Loaded 7 variables from .env
 ✓ Read template from u.tpl
 [stderr]
@@ -32,14 +54,15 @@ $ evnx template --input u.tpl --output u2.out --strict --no-gitignore
 Error: 4 variables referenced in u.tpl have no value in .env: MISSING, ALSO, NOPE2, HOME
 
 Define them there, or give each a fallback with {{NAME|default:value}}.
+To write unresolved placeholders through as they are: --allow-unresolved.
 Nothing was written to u2.out.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: --strict refuses, names all four (including $HOME: KNOWN I-135), writes nothing (exit 2)
+  ok: --strict, now the default: accepted with a notice; names all four (including $HOME: KNOWN I-135), writes nothing (exit 2)
 
 $ bash -c test -e u2.out && echo "u2.out exists" || echo "u2.out not created"
 u2.out not created
 [exit 0]
 
-================ summary: 2 ok, 0 mismatch   ================
+================ summary: 3 ok, 0 mismatch   ================

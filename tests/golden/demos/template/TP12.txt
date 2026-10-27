@@ -36,6 +36,7 @@ deploy not created
 [exit 0]
 
 $ evnx template --input u.tpl --output u.out --dry-run --strict --no-gitignore
+· --strict is the default since 0.11.0 and is no longer needed; it is removed in 1.0
 ✓ Loaded 7 variables from .env
 ✓ Read template from u.tpl
 [stderr]
@@ -46,6 +47,7 @@ $ evnx template --input u.tpl --output u.out --dry-run --strict --no-gitignore
 Error: 1 variable referenced in u.tpl has no value in .env: MISSING
 
 Define it there, or give it a fallback with {{NAME|default:value}}.
+To write unresolved placeholders through as they are: --allow-unresolved.
 Nothing was written to u.out.
 
 No verdict: evnx did not finish. This is not a clean result.

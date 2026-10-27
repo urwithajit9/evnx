@@ -72,7 +72,7 @@
 //! evnx template --input config.toml.template --output config.toml --env .env.production
 //!
 //! # Check it renders, without writing anything (CI)
-//! evnx template --input template.yaml --output output.yaml --dry-run --strict
+//! evnx template --input template.yaml --output output.yaml --dry-run
 //!
 //! # Into a directory that does not exist yet, and print to stdout
 //! evnx template --input template.yaml --output deploy/prod/output.yaml --mkdir
@@ -81,8 +81,8 @@
 //!
 //! # Error Handling
 //!
-//! - Undefined variables trigger a warning and exit 0; `--strict` makes them an
-//!   error, before anything is written
+//! - Undefined variables are an error (exit 2), before anything is written;
+//!   `--allow-unresolved` writes them through literally and exits 0 (DEC-T2)
 //! - Invalid filter values (a non-integer for `|int`, a non-boolean for `|bool`)
 //!   and unknown filters return an error; the value is masked when its name
 //!   looks secret
@@ -247,7 +247,8 @@ pub struct Options {
     pub verbose: bool,
     /// `--gitignore` / `--no-gitignore` / neither.
     pub gitignore: GitignoreMode,
-    /// `--strict`: refuse to write when a placeholder has no value.
+    /// Refuse to write when a placeholder has no value: the CLI's default since
+    /// 0.11.0 (`--allow-unresolved` turns it off). `false` here for library callers.
     pub strict: bool,
     /// `--mode`: `None` makes a new output 0600 and keeps an existing one's mode.
     pub file_mode: Option<u32>,
@@ -326,6 +327,7 @@ pub fn run_options(input: String, output: String, env: String, opts: Options) ->
         anyhow::bail!(
             "{} variable{} referenced in {input} {} no value in {env}: {}\n\n\
              Define {} there, or give {} a fallback with {{{{NAME|default:value}}}}.\n\
+             To write unresolved placeholders through as they are: --allow-unresolved.\n\
              {}",
             undefined.len(),
             if undefined.len() == 1 { "" } else { "s" },
@@ -413,8 +415,8 @@ pub fn run_options(input: String, output: String, env: String, opts: Options) ->
 
     if !undefined.is_empty() {
         ui::info(format!(
-            "{} placeholder{} left unresolved and written through literally. \
-             Use --strict to make this an error.",
+            "{} placeholder{} left unresolved and written through literally \
+             (--allow-unresolved).",
             undefined.len(),
             if undefined.len() == 1 {
                 " was"
