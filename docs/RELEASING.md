@@ -14,7 +14,7 @@ of them:
 
 | Workflow | Fires on | Publishes |
 |---|---|---|
-| `release.yml` | `v*` tag | GitHub Release (16 assets) → Homebrew tap, Scoop bucket, **winget** |
+| `release.yml` | `v*` tag | build provenance per archive → GitHub Release (16 assets) → Homebrew tap, Scoop bucket, **winget**; `verify-provenance` checks the published assets |
 | `python-publish.yml` | `v*` tag | PyPI |
 | `publish-action.yml` | `v*` tag | GitHub Marketplace action |
 | `publish-image.yml` | `v*` tag + push to `main` | ghcr.io |
@@ -192,6 +192,38 @@ instead, and the output looks like a broken release. Probe the artefact:
 ```bash
 cd "$(mktemp -d)" && npm install @evnx/cli@X.Y.Z >/dev/null && ./node_modules/@evnx/cli/bin/evnx --version
 ```
+
+### Provenance (RM-26, RM-81, RM-82)
+
+Each build job signs a SLSA provenance attestation for its archive through
+Sigstore before uploading it. `verify-provenance` then runs, against the
+published assets, the same check the release notes give users:
+
+```bash
+gh attestation verify evnx-x86_64-unknown-linux-musl.tar.gz -R urwithajit9/evnx \
+  --signer-workflow urwithajit9/evnx/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
+```
+
+⚠️ **An attest step failed** (Sigstore or GitHub's attestation API was down, or a
+permission was refused). That build job is red, so `release` never ran: **no GitHub
+Release, and nothing from Homebrew, Scoop, winget, ghcr or npm.** But
+`python-publish.yml` and `publish-action.yml` fire on the tag themselves, so **PyPI
+and the Marketplace may already be out.**
+
+1. **Re-run failed jobs** on the same `release.yml` run. The build re-signs, and
+   `release` and everything after it run as normal.
+2. ⛔ **Never delete or move the tag.** PyPI cannot take the same version twice, and
+   the channels that already published would point at a different commit.
+3. If Sigstore stays down, wait. Its status page is
+   [status.sigstore.dev](https://status.sigstore.dev); the public instance targets
+   99.5% availability.
+
+⚠️ **`verify-provenance` failed.** Everything is already published; this job gates
+nothing (owner decision, 2026-10-27). Read its log: an `::error::` names each archive
+that did not verify. Run the command above locally on one archive. If it passes
+there, re-run the job. If it fails there too, treat it as a security incident until
+explained: a published archive does not match what the build signed.
 
 ### Winget validation
 
