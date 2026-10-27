@@ -463,7 +463,7 @@ pub fn run(config: ConvertConfig) -> Result<()> {
 
     // The names the format writes into its output, required where it needs
     // one (I-084, DEC-CV1).
-    let converter = formats::converter_for(format, &config.targets)?;
+    let converter = formats::converter_for(format, &config.targets, "convert")?;
 
     if config.verbose {
         eprintln!(

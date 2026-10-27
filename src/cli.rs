@@ -1519,6 +1519,31 @@ pub enum CloudCommands {
         #[arg(long, value_name = "FORMAT")]
         to: Option<String>,
 
+        /// Google Cloud project for --to gcp-secrets (required there)
+        #[arg(long, requires = "to", value_name = "PROJECT")]
+        project: Option<String>,
+
+        /// Azure Key Vault for --to azure-keyvault (required there)
+        #[arg(long, requires = "to", value_name = "NAME")]
+        vault_name: Option<String>,
+
+        /// Heroku app for --to heroku (required there)
+        #[arg(long, requires = "to", value_name = "APP")]
+        heroku_app: Option<String>,
+
+        /// Name of the Kubernetes Secret for --to kubernetes (required there)
+        #[arg(long, requires = "to", value_name = "NAME")]
+        name: Option<String>,
+
+        /// Kubernetes namespace for --to kubernetes (optional)
+        #[arg(long, requires = "to", value_name = "NAMESPACE")]
+        namespace: Option<String>,
+
+        /// With --to: when two names become one in the target, keep the last
+        /// value instead of refusing.
+        #[arg(long, requires = "to")]
+        allow_collisions: bool,
+
         /// Overwrite a directory that already holds an export.
         ///
         /// Without it a non-empty directory is refused before the master

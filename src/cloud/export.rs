@@ -47,6 +47,13 @@ use super::vault::{self, VaultRef};
 /// Where an export lands when `--output` is not given.
 const DEFAULT_OUTPUT_DIR: &str = "evnx-export";
 
+/// `--to` and the flags that go with it, as `convert` takes them (RM-07).
+pub struct Conversion {
+    pub to: Option<String>,
+    pub targets: crate::formats::Targets,
+    pub allow_collisions: bool,
+}
+
 /// Export a vault's versions to a directory.
 #[allow(clippy::too_many_arguments)]
 pub fn export(
@@ -54,7 +61,7 @@ pub fn export(
     vault_target: Option<String>,
     output: Option<PathBuf>,
     all_versions: bool,
-    to: Option<String>,
+    conversion: Conversion,
     force: bool,
     password_stdin: bool,
     verbose: bool,
@@ -64,16 +71,41 @@ pub fn export(
     //
     // This only became possible when the dispatch stopped calling
     // `std::process::exit(2)` — see `formats::get_converter`.
+    //
+    // ⚠️ The names a format writes and the collision rule are `convert`'s
+    // (RM-07): with `get_converter` and default options, gcp-secrets, heroku,
+    // azure-keyvault and kubernetes wrote `my-project`-style placeholders, and
+    // two names that became one were both written.
+    let Conversion {
+        to,
+        targets,
+        allow_collisions,
+    } = conversion;
     let converter = match &to {
-        Some(name) => Some(crate::formats::get_converter(name).map_err(|_| {
-            anyhow!(
-                "unknown format: {name}\n\
-                 \x20 Run `evnx convert --help` for the full list, or omit --to to \n\
-                 \x20 export the files exactly as they were pushed.",
-                name = name
-            )
-        })?),
+        Some(name) => {
+            let format = crate::formats::find(name).ok_or_else(|| {
+                anyhow!(
+                    "unknown format: {name}\n\
+                     \x20 Run `evnx convert --help` for the full list, or omit --to to \n\
+                     \x20 export the files exactly as they were pushed.",
+                    name = name
+                )
+            })?;
+            Some(crate::formats::converter_for(
+                format,
+                &targets,
+                "cloud export",
+            )?)
+        }
         None => None,
+    };
+    let options = crate::core::converter::ConvertOptions {
+        collisions: if allow_collisions {
+            crate::core::converter::Collisions::LastWins
+        } else {
+            crate::core::converter::Collisions::Refuse
+        },
+        ..Default::default()
     };
 
     // ⚠️ Before any request or password (I-230, DEC-CL6). The default output is
@@ -192,8 +224,9 @@ pub fn export(
                         vault_ref.label()
                     )
                 })?;
+                options.announce_kept(&vars, c.as_ref());
                 let converted = c
-                    .convert(&vars, &Default::default())
+                    .convert(&vars, &options)
                     .with_context(|| format!("converting version {n} to {}", c.name()))?;
                 newline_terminated(converted).into_bytes()
             }

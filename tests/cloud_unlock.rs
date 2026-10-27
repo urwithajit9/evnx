@@ -592,3 +592,129 @@ fn t_i234_yes_or_a_named_file_pushes_to_production() {
         push.expect(1).assert();
     }
 }
+
+// ── RM-07: `cloud export --to` takes convert's names and collision rule ──────
+
+const COLLIDING: &[u8] = b"A_B=1\na_b=2\nDB=x\n";
+
+/// A server holding one version of `plaintext`, readable with `RIGHT`.
+fn export_server(plaintext: &[u8]) -> mockito::ServerGuard {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &a);
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions").as_str(),
+    )
+    .with_status(200)
+    .with_body(
+        r#"{"versions":[{"version_num":1,"key_count":3,"key_names":[],
+            "blob_hash":"h","blob_size_bytes":1,"pushed_by":"u-me",
+            "pushed_at":"2026-10-27T00:00:00Z"}]}"#,
+    )
+    .create();
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/1/blob").as_str(),
+    )
+    .with_status(200)
+    .with_body(blob(&vk, plaintext))
+    .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, &a)))
+        .create();
+    s
+}
+
+fn export(p: &Project, s: &mockito::ServerGuard, extra: &[&str]) -> support::Output {
+    let mut args = vec!["cloud", "export", "--vault", VAULT_ID, "-o", "out"];
+    args.extend_from_slice(extra);
+    args.push("--password-stdin");
+    signed_in(p, &s.url(), &args, Some(format!("{RIGHT}\n").as_bytes()))
+}
+
+/// The one `v1.*` file the export wrote.
+fn exported(p: &Project) -> String {
+    let dir = std::fs::read_dir(p.path().join("out"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let file = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|f| f.file_name().unwrap().to_string_lossy().starts_with("v1."))
+        .unwrap();
+    std::fs::read_to_string(file).unwrap()
+}
+
+/// The names come from the flags, and the file is what `convert` prints for
+/// the same input and flags. 0.10.18 wrote `my-project`.
+#[test]
+fn rm07_export_to_uses_the_named_project_like_convert() {
+    let s = export_server(b"DB=x\nTOKEN=y\n");
+    let p = Project::new().env("DB=x\nTOKEN=y\n");
+    export(&p, &s, &["--to", "gcp-secrets", "--project", "acme-prod"]).assert_code(0);
+    let file = exported(&p);
+    assert!(!file.contains("my-project"), "{file}");
+    let convert = support::run(
+        p.path(),
+        &["convert", "--to", "gcp-secrets", "--project", "acme-prod"],
+    );
+    convert.assert_code(0);
+    assert_eq!(file, convert.stdout);
+}
+
+/// A format that needs a name refuses without it, before any request, and
+/// the hint names `cloud export`.
+#[test]
+fn rm07_export_to_without_its_name_is_refused_before_any_request() {
+    let mut s = mockito::Server::new();
+    let any: Vec<_> = ["GET", "POST"]
+        .iter()
+        .map(|m| s.mock(m, mockito::Matcher::Any).expect(0).create())
+        .collect();
+    let p = Project::new();
+    for (to, flag) in [
+        ("gcp-secrets", "--project"),
+        ("azure-keyvault", "--vault-name"),
+        ("heroku", "--heroku-app"),
+        ("kubernetes", "--name"),
+    ] {
+        let out = export(&p, &s, &["--to", to]);
+        out.assert_code(2)
+            .assert_contains(flag)
+            .assert_contains(&format!("evnx cloud export --to {to} {flag}"));
+    }
+    // A flag meant for another format is refused the same way `convert` does.
+    export(&p, &s, &["--to", "heroku", "--project", "acme-prod"])
+        .assert_code(2)
+        .assert_contains("--project is for --to gcp-secrets");
+    for m in any {
+        m.assert();
+    }
+}
+
+/// Two names the format merges are refused, as `convert` refuses them;
+/// `--allow-collisions` keeps the last value.
+#[test]
+fn rm07_export_to_refuses_a_collision() {
+    let s = export_server(COLLIDING);
+    let p = Project::new();
+    let to = ["--to", "gcp-secrets", "--project", "acme-prod"];
+    export(&p, &s, &to)
+        .assert_code(2)
+        .assert_contains("A_B")
+        .assert_contains("a_b")
+        .assert_contains("--allow-collisions");
+
+    let p = Project::new();
+    let mut allow = to.to_vec();
+    allow.push("--allow-collisions");
+    export(&p, &s, &allow).assert_code(0);
+    let file = exported(&p);
+    assert_eq!(file.matches(" a-b").count(), 1, "{file}");
+}

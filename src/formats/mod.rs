@@ -333,13 +333,20 @@ impl Targets {
 /// names it (DEC-CV1): `my-project`, `my-keyvault`, `YOUR_APP_NAME` and
 /// `app-secrets` were printed for the reader to find and edit by hand, and a
 /// script run unedited went to a project nobody owns or failed halfway.
-pub fn converter_for(format: &Format, targets: &Targets) -> Result<Box<dyn Converter>> {
+///
+/// `command` is what the hint tells the user to run: `convert`, or
+/// `cloud export` (RM-07).
+pub fn converter_for(
+    format: &Format,
+    targets: &Targets,
+    command: &str,
+) -> Result<Box<dyn Converter>> {
     targets.check(Some(format))?;
     let need = |value: &Option<String>, flag: &str, placeholder: &str, what: &str| {
         value.clone().ok_or_else(|| {
             anyhow!(
                 "--to {name} needs {flag}: {what}. Nothing was printed.\n\n\
-                 \x20 evnx convert --to {name} {flag} <{placeholder}>",
+                 \x20 evnx {command} --to {name} {flag} <{placeholder}>",
                 name = format.name
             )
         })
@@ -573,7 +580,7 @@ mod registry_tests {
             ("heroku", "--heroku-app"),
             ("kubernetes", "--name"),
         ] {
-            let Err(e) = converter_for(find(n).unwrap(), &none) else {
+            let Err(e) = converter_for(find(n).unwrap(), &none, "convert") else {
                 panic!("{n} built without {flag}");
             };
             assert!(e.to_string().contains(flag), "{e}");
@@ -582,8 +589,8 @@ mod registry_tests {
             project: Some("acme-prod".into()),
             ..Default::default()
         };
-        assert!(converter_for(find("gcp").unwrap(), &gcp).is_ok());
-        let Err(e) = converter_for(find("json").unwrap(), &gcp) else {
+        assert!(converter_for(find("gcp").unwrap(), &gcp, "convert").is_ok());
+        let Err(e) = converter_for(find("json").unwrap(), &gcp, "convert") else {
             panic!("--project accepted for json");
         };
         assert!(
