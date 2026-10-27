@@ -713,3 +713,27 @@ fn a_valid_config_still_runs() {
         .assert()
         .code(0);
 }
+
+/// I-332: a relative `[defaults] example` is read from the folder holding the
+/// `.evnx.toml`, so the same file works from the root and from the subfolder.
+/// 0.10.18 looked for `deploy/compose/deploy/compose/.env.example` from inside
+/// `deploy/compose`.
+#[test]
+fn i332_defaults_example_is_relative_to_the_config_file() {
+    let d = project("[defaults]\nexample = \"deploy/compose/.env.example\"\n");
+    let nested = d.path().join("deploy").join("compose");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join(".env.example"), "A=x\nFROM_TEMPLATE=x\n").unwrap();
+    fs::write(nested.join(".env"), "A=1\n").unwrap();
+    fs::write(d.path().join(".env"), "A=1\n").unwrap();
+
+    for dir in [&nested, &d.path().to_path_buf()] {
+        cargo_bin_cmd!("evnx")
+            .current_dir(dir)
+            .args(["validate", "--exit-zero"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("FROM_TEMPLATE"))
+            .stderr(predicate::str::contains("does not exist").not());
+    }
+}

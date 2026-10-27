@@ -608,6 +608,9 @@ pub fn load(start: &Path) -> Result<Loaded> {
         return Ok(Loaded::default());
     };
     let mut loaded = load_file(&path)?;
+    if let (Some(example), Some(toml_dir)) = (&loaded.config.defaults.example, path.parent()) {
+        loaded.config.defaults.example = Some(rebase(example, toml_dir, start));
+    }
     if let Some(bare) = w.bare {
         loaded.warnings.insert(
             0,
@@ -618,6 +621,53 @@ pub fn load(start: &Path) -> Result<Loaded> {
         );
     }
     Ok(loaded)
+}
+
+/// `[defaults] example` as seen from `start` (I-332).
+///
+/// A relative path in the file means "from the folder holding this file", the
+/// way `.gitignore` and `docker-compose.yml` read theirs; every command reads
+/// it from `start`. Until 0.11.0 it was read from `start` as written, so a
+/// root `.evnx.toml` naming `deploy/compose/.env.example` sent a command run in
+/// `deploy/compose` to `deploy/compose/deploy/compose/.env.example`.
+/// Unchanged when the file is in `start` itself.
+fn rebase(name: &str, toml_dir: &Path, start: &Path) -> String {
+    let start = std::path::absolute(start).unwrap_or_else(|_| start.to_path_buf());
+    let (dir, from) = (lexical(toml_dir), lexical(&start));
+    if Path::new(name).is_absolute() || dir == from {
+        return name.to_string();
+    }
+    let target = lexical(&dir.join(name));
+    let (t, f): (Vec<_>, Vec<_>) = (target.components().collect(), from.components().collect());
+    let common = t.iter().zip(&f).take_while(|(a, b)| a == b).count();
+    if common == 0 {
+        // Another drive on Windows: no relative path exists.
+        return target.to_string_lossy().into_owned();
+    }
+    let mut rel = PathBuf::new();
+    for _ in common..f.len() {
+        rel.push("..");
+    }
+    rel.extend(&t[common..]);
+    rel.to_string_lossy().into_owned()
+}
+
+/// `.` dropped and `..` applied, without touching the filesystem.
+fn lexical(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir
+                if matches!(out.components().next_back(), Some(Component::Normal(_))) =>
+            {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Parse one specific file. Exposed for tests and for `--config`, later.
@@ -746,6 +796,26 @@ mod tests {
         assert_eq!((t.name.as_str(), t.configured), ("config/env.tpl", true));
         assert!(!t.exists(d.path()));
         assert_eq!(t.path(d.path()), d.path().join("config/env.tpl"));
+    }
+
+    /// I-332: from the toml's folder, re-expressed from `start`.
+    #[test]
+    fn i332_rebase_reads_example_from_the_config_folder() {
+        let root = std::path::absolute(Path::new("proj")).unwrap();
+        let sub = root.join("deploy/compose");
+        let r = |name: &str, start: &Path| rebase(name, &root, start).replace('\\', "/");
+        assert_eq!(r("deploy/compose/.env.example", &sub), ".env.example");
+        assert_eq!(
+            r("deploy/compose/.env.example", &root),
+            "deploy/compose/.env.example"
+        );
+        assert_eq!(r("./template.env", &root), "./template.env");
+        assert_eq!(r("template.env", &sub), "../../template.env");
+        assert_eq!(
+            r("../shared/.env.example", &sub),
+            "../../../shared/.env.example"
+        );
+        assert_eq!(r("other/.env.example", &sub), "../../other/.env.example");
     }
 
     fn write(dir: &Path, body: &str) -> PathBuf {
