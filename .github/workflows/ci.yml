@@ -207,6 +207,28 @@ jobs:
           cargo install cargo-audit --locked --quiet
           cargo audit
 
+  # ⚠️ scripts/install.sh ships on merge to main, not with a tag:
+  # dotenv.space/install.sh proxies it from there. Nothing tested it before
+  # RM-20. The harness stubs curl, uname and ldd, so it needs no network and
+  # writes nothing outside its temp folder. macOS too: its bash is 3.2 and it
+  # has shasum, not sha256sum.
+  install-script:
+    name: install.sh (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        # -S warning: info and style notes (an intentionally single-quoted
+        # `$HOME`, the unquoted `$SUDO`) are not failures.
+        run: shellcheck -S warning scripts/install.sh tests/install/run.sh
+      - name: harness
+        run: bash tests/install/run.sh
+
   docs:
     name: Documentation
     runs-on: ubuntu-latest

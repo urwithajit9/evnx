@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
-# evnx (formely dotenv-space-cli) installer
+# evnx (formerly dotenv-space-cli) installer
 # Usage: curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
+#
+# Environment (UP-11f):
+#   EVNX_VERSION=0.10.18        install this release instead of the latest
+#   EVNX_INSTALL_DIR=/opt/bin   install into this folder instead of the default
+#
+# ⚠️ This file goes live on merge to `main`: dotenv.space/install.sh proxies it,
+# cached for up to an hour. Review a change to it like a release.
+# Tests: tests/install/run.sh (stubbed curl, uname, ldd; no network).
 
 # ⚠️ `-o pipefail` is not free on this script and two pipelines had to be
 # changed for it — see the musl check and the release lookup below. Both
@@ -93,11 +101,18 @@ info "Target: $TARGET"
 #
 # The API call is kept as a fallback, with position-independent parsing that works
 # on minified and pretty-printed JSON alike.
-info "Fetching latest release..."
-# `|| true` so a network failure leaves LATEST empty and falls through to the
-# fallback below, rather than aborting here under `set -e` with no message.
-LATEST=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-    "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##') || true
+if [ -n "${EVNX_VERSION:-}" ]; then
+    # A pinned release (UP-11f): no lookup. `v0.10.18` and `0.10.18` both work.
+    LATEST="v${EVNX_VERSION#v}"
+    info "Pinned by EVNX_VERSION"
+else
+    info "Fetching latest release..."
+    # `|| true` so a network failure leaves LATEST empty and falls through to
+    # the fallback below, rather than aborting here under `set -e` with no
+    # message.
+    LATEST=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+        "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##') || true
+fi
 
 if [ -z "$LATEST" ] || [ "$LATEST" = "https://github.com/$REPO/releases" ]; then
     # ⓘ `grep | head -1` is left exactly as it was. The obvious pipefail worry
@@ -117,7 +132,7 @@ fi
 # from whatever junk it parsed and fails later with a confusing 404.
 case "$LATEST" in
     v[0-9]*) ;;
-    *) error "Could not resolve the latest release (got: '${LATEST:-empty}')" ;;
+    *) error "Could not resolve the release to install (got: '${LATEST:-empty}')" ;;
 esac
 
 info "Latest version: $LATEST"
@@ -128,7 +143,7 @@ CHECKSUM_URL="https://github.com/$REPO/releases/download/$LATEST/${BINARY_NAME}-
 
 # Create temp directory
 TMP_DIR=$(mktemp -d)
-trap "rm -rf $TMP_DIR" EXIT
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 cd "$TMP_DIR"
 
@@ -186,45 +201,158 @@ info "Checksum verified ✓"
 info "Extracting..."
 tar -xzf "$ARCHIVE_NAME"
 
-# Determine install directory
-if [ -w "/usr/local/bin" ]; then
-    INSTALL_DIR="/usr/local/bin"
-    SUDO=""
-elif [ -w "$HOME/.local/bin" ]; then
-    INSTALL_DIR="$HOME/.local/bin"
-    SUDO=""
-    mkdir -p "$INSTALL_DIR"
+# ── Where to install ─────────────────────────────────────────────────────────
+#
+# EVNX_INSTALL_DIR if given; else /usr/local/bin when writable; else
+# ~/.local/bin, created if missing (UP-11e, DEC-UP5).
+#
+# ⚠️ ~/.local/bin used to be chosen only when it already existed, so a fresh
+# account fell through to `sudo` for /usr/local/bin. A user-local install
+# needs no privilege. sudo is now used only for a folder named on purpose
+# with EVNX_INSTALL_DIR, and says so.
+#
+# _EVNX_SYSTEM_DIR exists for tests/install/run.sh, so no test can write to the
+# real /usr/local/bin. Not documented; not for users.
+SYSTEM_DIR="${_EVNX_SYSTEM_DIR:-/usr/local/bin}"
+LOCAL_DIR="$HOME/.local/bin"
+SUDO=""
+if [ -n "${EVNX_INSTALL_DIR:-}" ]; then
+    INSTALL_DIR="${EVNX_INSTALL_DIR%/}"
+    mkdir -p "$INSTALL_DIR" 2>/dev/null || true
+    if [ ! -w "$INSTALL_DIR" ]; then
+        SUDO="sudo"
+        warn "$INSTALL_DIR is not writable (EVNX_INSTALL_DIR): using sudo"
+        $SUDO mkdir -p "$INSTALL_DIR"
+    fi
+elif [ -w "$SYSTEM_DIR" ]; then
+    INSTALL_DIR="$SYSTEM_DIR"
 else
-    INSTALL_DIR="/usr/local/bin"
-    SUDO="sudo"
-    warn "Need sudo permission to install to $INSTALL_DIR"
+    INSTALL_DIR="$LOCAL_DIR"
+    mkdir -p "$INSTALL_DIR" || error "Could not create $INSTALL_DIR.
+       Choose another folder: EVNX_INSTALL_DIR=/path/to/bin"
+fi
+TARGET_FILE="$INSTALL_DIR/$BINARY_NAME"
+
+# A pip record for the copy in bin folder $1: `pyvenv.cfg` one level up, or an
+# `evnx-<version>.dist-info` in that prefix's site-packages or dist-packages.
+# The same rule as `evnx update` (src/commands/update/channel.rs).
+pip_owns() {
+    local prefix record
+    prefix=$(dirname "$1")
+    [ -f "$prefix/pyvenv.cfg" ] && return 0
+    for record in "$prefix"/lib/python*/site-packages/evnx-*.dist-info \
+                  "$prefix"/lib/python*/dist-packages/evnx-*.dist-info; do
+        [ -d "$record" ] && return 0
+    done
+    return 1
+}
+
+# $1 with every symlink followed. A loop, not `readlink -f`, which macOS
+# before 12.3 does not have.
+resolved() {
+    local p="$1" link
+    while [ -L "$p" ]; do
+        link=$(readlink "$p")
+        case "$link" in
+            /*) p="$link" ;;
+            *) p="$(dirname "$p")/$link" ;;
+        esac
+    done
+    echo "$p"
+}
+
+# The command that removes the copy at $1, from where it lives (UP-11b).
+removal_hint() {
+    local real
+    real=$(resolved "$1")
+    case "$real" in
+        */Cellar/*|*/homebrew/*|*/linuxbrew/*) echo "brew uninstall evnx" ;;
+        */node_modules/*|*/npm/*|*/.npm-global/*) echo "npm uninstall -g @evnx/cli" ;;
+        */pipx/*) echo "pipx uninstall evnx" ;;
+        */.cargo/bin/*|*/cargo/bin/*) echo "cargo uninstall evnx" ;;
+        *)
+            if pip_owns "$(dirname "$1")"; then
+                echo "pip uninstall evnx"
+            else
+                echo "rm $1"
+            fi
+            ;;
+    esac
+}
+
+# ── Never replace a copy another package manager owns (UP-11c) ───────────────
+#
+# On Intel macOS /usr/local/bin is writable, and Homebrew's `evnx` there is a
+# link into Cellar: replacing it left brew believing it still managed a file it
+# no longer did. The same for npm's link and a pip install's script. That
+# manager upgrades its own copy.
+if [ -e "$TARGET_FILE" ] || [ -L "$TARGET_FILE" ]; then
+    case "$(resolved "$TARGET_FILE")" in
+        */Cellar/*) OWNER="Homebrew"; UPGRADE="brew upgrade evnx" ;;
+        */node_modules/*) OWNER="npm"; UPGRADE="npm install -g @evnx/cli@latest" ;;
+        *)
+            if pip_owns "$INSTALL_DIR"; then
+                OWNER="pip"; UPGRADE="pip install --upgrade evnx  (or: pipx upgrade evnx)"
+            else
+                OWNER=""
+            fi
+            ;;
+    esac
+    if [ -n "$OWNER" ]; then
+        error "$TARGET_FILE belongs to $OWNER, so this script will not replace it.
+       Upgrade it there:  $UPGRADE
+       Or install beside it:  EVNX_INSTALL_DIR=\$HOME/.local/bin (then remove one copy).
+       Nothing was installed."
+    fi
 fi
 
-# Install
 info "Installing to $INSTALL_DIR..."
-$SUDO mv "${BINARY_NAME}-${TARGET}" "$INSTALL_DIR/$BINARY_NAME"
-$SUDO chmod +x "$INSTALL_DIR/$BINARY_NAME"
+$SUDO mv "${BINARY_NAME}-${TARGET}" "$TARGET_FILE"
+$SUDO chmod +x "$TARGET_FILE"
 
-# Verify installation
-if command -v evnx >/dev/null 2>&1; then
-    VERSION=$(evnx --version | awk '{print $2}')
-    echo
-    info "✓ Installation successful!"
-    info "Installed version: $VERSION"
-    echo
-    echo "Quick start:"
-    echo "  evnx init          # Create .env.example"
-    echo "  evnx validate      # Check for issues"
-    echo "  evnx scan          # Detect secrets"
-    echo "  evnx --help        # See all commands"
-    echo
-else
-    error "Installation failed - binary not found in PATH"
+# ── Report the copy that was installed (UP-11a) ──────────────────────────────
+#
+# ⚠️ Not `evnx --version`: that is whichever copy is first on PATH, and with an
+# older npm or pip copy ahead of this folder it printed *that* version as
+# "Installed version". The install had worked; the report described another
+# file.
+VERSION=$("$TARGET_FILE" --version | awk '{print $2}')
+echo
+info "✓ Installed evnx $VERSION to $TARGET_FILE"
+
+# ── Which copy runs when you type `evnx` (UP-11b, UP-11d) ────────────────────
+FIRST=$(command -v "$BINARY_NAME" 2>/dev/null || true)
+ON_PATH=true
+case ":$PATH:" in
+    *":$INSTALL_DIR:"*) ;;
+    *) ON_PATH=false ;;
+esac
+
+if [ -n "$FIRST" ] && ! [ "$FIRST" -ef "$TARGET_FILE" ]; then
+    OTHER=$("$FIRST" --version 2>/dev/null | awk '{print $2}' || true)
+    warn "Another evnx comes first on your PATH, so typing \`evnx\` runs it, not this one:
+       $FIRST  (version ${OTHER:-unknown})
+       Remove it:  $(removal_hint "$FIRST")
+       Then check: type -a evnx"
 fi
 
-# Check if install dir is in PATH
-if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]] && [ "$INSTALL_DIR" = "$HOME/.local/bin" ]; then
-    warn "$INSTALL_DIR is not in your PATH"
-    echo "Add to your shell profile (.bashrc, .zshrc, etc.):"
-    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+if [ "$ON_PATH" = false ]; then
+    # ⚠️ Exit 0: the install worked. This used to end "Installation failed",
+    # and the hint below it was never reached (UP-11d).
+    if [ "$INSTALL_DIR" = "$LOCAL_DIR" ]; then
+        LINE='export PATH="$HOME/.local/bin:$PATH"'
+    else
+        LINE="export PATH=\"$INSTALL_DIR:\$PATH\""
+    fi
+    warn "$INSTALL_DIR is not on your PATH. Add this line to your shell profile
+       (~/.bashrc, ~/.zshrc, …), then open a new terminal:
+         $LINE"
 fi
+
+echo
+echo "Quick start:"
+echo "  evnx init          # Create .env.example"
+echo "  evnx validate      # Check for issues"
+echo "  evnx scan          # Detect secrets"
+echo "  evnx --help        # See all commands"
+echo
