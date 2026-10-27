@@ -76,6 +76,22 @@ instead of `.env`. Pass `--env-name` to choose another.
   installed. With no `gh`, a `gh` that is not signed in (`gh attestation verify`
   needs a login), or a release before v0.11.0, the installer prints one line
   saying the check was skipped and carries on. The checksum is still mandatory.
+- **A public key is not a secret by its name** (RM-31). `VAPID_PUBLIC_KEY`,
+  `STRIPE_PUBLISHABLE_KEY` and the like matched `*_KEY`, so `diff --show-values`
+  and `sync` hid them and `validate` demanded a strong random value. Names
+  containing `PUBLIC_KEY` or `PUBLISHABLE_KEY` are now judged on the rest of
+  the name (`PUBLIC_KEY_PASSWORD` is still a secret), and a value that looks
+  like a secret is still masked.
+- **`cloud pull` keeps the file it replaces, and its mode** (RM-34). Replacing
+  a `.env` with different contents now keeps the old one as `.env.bak` (then
+  `.bak.2`, …), whether you answered yes or passed `--force`, as `restore`
+  does. The kept copy is protected by `.gitignore` like the file itself. The
+  write goes through the shared writer: an existing file keeps its mode, with a
+  warning if others can read it (it used to be forced to 0600), and a symlink
+  is written through rather than replaced.
+- **Internal** (RM-35, RM-37): the deprecated, unused `utils::git` and
+  `utils::string::redact` are gone, and `lazy_static` is replaced by the
+  standard library's `LazyLock`, removing a dependency.
 - **`evnx update` prints a command that works for the copy that is running**
   (RM-19, UP-1 to UP-4):
   - a pipx install says `pipx upgrade evnx`; it was read as pip and told
