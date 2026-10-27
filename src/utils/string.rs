@@ -23,29 +23,6 @@ pub fn truncate(s: &str, max_len: usize) -> String {
     }
 }
 
-/// Redact a sensitive value for safe display in terminal output.
-///
-/// - Short values (≤ 8 chars): replaced entirely with `*`.
-/// - Longer values: first 4 chars shown, then `...****`.
-///
-/// The original value is never fully exposed in output; this is purely
-/// for debugging context (e.g. showing that a key *has* a value).
-///
-/// # Examples
-///
-/// ```
-/// use evnx::utils::string::redact;
-/// assert_eq!(redact("secret"), "******");
-/// assert_eq!(redact("secretkey123"), "secr...****");
-/// ```
-pub fn redact(s: &str) -> String {
-    if s.len() <= 8 {
-        "*".repeat(s.len())
-    } else {
-        format!("{}...{}", &s[..4], "*".repeat(4))
-    }
-}
-
 /// Return a count-aware string using the correct singular or plural form.
 ///
 /// # Examples
@@ -185,22 +162,6 @@ mod tests {
     #[test]
     fn test_truncate_exact_boundary() {
         assert_eq!(truncate("hello", 5), "hello");
-    }
-
-    #[test]
-    fn test_redact_short() {
-        assert_eq!(redact("secret"), "******");
-    }
-
-    #[test]
-    fn test_redact_long() {
-        assert_eq!(redact("secretkey123"), "secr...****");
-    }
-
-    #[test]
-    fn test_redact_exactly_eight() {
-        // 8 chars → all stars
-        assert_eq!(redact("12345678"), "********");
     }
 
     #[test]

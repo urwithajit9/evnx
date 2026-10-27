@@ -63,10 +63,21 @@ pub fn is_sensitive_key(key: &str) -> bool {
 /// `STRIPE_APIKEY`, `CREDENTIALS` and `PASSWD` — names the Lenient rule and
 /// the published guide both treat as secrets — so `ADMIN_PWD=123` validated
 /// clean.
+///
+/// `PUBLIC_KEY` and `PUBLISHABLE_KEY` are taken out of the name first (RM-31,
+/// owner 2026-10-27): `VAPID_PUBLIC_KEY` and `STRIPE_PUBLISHABLE_KEY` are
+/// published by design, and `*_KEY` alone made them secrets, so `diff` hid
+/// them and `validate` demanded a random value. A credential word elsewhere
+/// still counts (`PUBLIC_KEY_PASSWORD`), and a secret-shaped *value* is still
+/// masked by the value check.
 pub fn is_secret_name(key: &str, strictness: Strictness) -> bool {
+    let key = key
+        .to_uppercase()
+        .replace("PUBLISHABLE_KEY", "")
+        .replace("PUBLIC_KEY", "");
     match strictness {
-        Strictness::Strict => strict_name(key),
-        Strictness::Lenient => lenient_name(key),
+        Strictness::Strict => strict_name(&key),
+        Strictness::Lenient => lenient_name(&key),
     }
 }
 
@@ -547,6 +558,30 @@ fn placeholder_pattern(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::Strictness::{Lenient, Strict};
+
+    /// RM-31: a public or publishable key is not a secret by name, at either
+    /// level; a credential word elsewhere in the name still is.
+    #[test]
+    fn rm31_public_keys_are_not_secret_by_name() {
+        for level in [Strict, Lenient] {
+            for no in [
+                "PUBLIC_KEY",
+                "VAPID_PUBLIC_KEY",
+                "stripe_publishable_key",
+                "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+            ] {
+                assert!(!super::is_secret_name(no, level), "{no} {level:?}");
+            }
+            for yes in [
+                "PRIVATE_KEY",
+                "STRIPE_SECRET_KEY",
+                "PUBLIC_KEY_PASSWORD",
+                "SIGNING_KEY",
+            ] {
+                assert!(super::is_secret_name(yes, level), "{yes} {level:?}");
+            }
+        }
+    }
 
     /// I-050, N-20: what a format rule may match and still not report.
     #[test]
