@@ -56,6 +56,7 @@ pub fn run(
     config: crate::core::config::Config,
     dry_run: bool,
     json: bool,
+    env_name: Option<String>,
 ) -> Result<()> {
     // ⚠️ Before the header and before any project is touched. Listing is a
     // question about evnx, not about this directory — it has to work with no
@@ -83,7 +84,7 @@ pub fn run(
     // mode selection because it replaces it entirely.
     // The folder init writes to: its template (DQ-28) and the config `main`
     // loaded for it (I-298).
-    let target = shared::Target::new(Path::new(&path), config, verbose);
+    let target = shared::Target::new(Path::new(&path), config, verbose)?.with_env_name(env_name)?;
 
     if from_source {
         print_init_header();
@@ -196,7 +197,7 @@ pub fn run(
     // times about a `.env` that did not exist (I-013, N-01). Exit code is 0 in
     // all three cases (DQ-3).
     if outcome == shared::Outcome::Written {
-        print_next_steps_ui(target.template_name());
+        print_next_steps_ui(target.template_name(), &target.env_file);
     }
     print_docs_hint(&docs::INIT);
     Ok(())
@@ -221,11 +222,12 @@ fn print_init_header() {
     );
 }
 
-fn print_next_steps_ui(template: &str) {
+fn print_next_steps_ui(template: &str, env_file: &str) {
     // The contract init now keeps is committed with the template (IN-15).
-    let commit = format!("Commit {template} and .evnx.toml; never commit .env");
+    let commit = format!("Commit {template} and .evnx.toml; never commit {env_file}");
+    let edit = format!("Edit {env_file} and replace placeholder values");
     print_next_steps(&[
-        "Edit .env and replace placeholder values",
+        &edit,
         &commit,
         "Run 'evnx validate' to check configuration",
         "Use 'evnx add' to add more variables later",

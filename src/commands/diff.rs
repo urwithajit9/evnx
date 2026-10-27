@@ -207,7 +207,7 @@ pub fn run(opts: DiffOptions) -> Result<i32> {
 
     let parser = Parser::default();
 
-    let env_file = parser.parse_file_or_hint(&opts.env, Parser::MISSING_ENV_HINT)?;
+    let env_file = parser.parse_file_or_hint(&opts.env, &Parser::missing_env_hint(&opts.env))?;
 
     let example_file = parser.parse_file_or_hint(
         &opts.example,

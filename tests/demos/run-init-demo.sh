@@ -121,7 +121,7 @@ S23() { scene S23; echo "The project's own template"; repo sample; printf 'FROM_
   check "FIXED I-295: [defaults] example is the file written; no .env.example" bash -c "grep -q '^REDIS_URL=' cfg/.env.template && [ ! -e cfg/.env.example ]"; }
 S24() { scene S24; echo "Other env files"; repo named; printf '[defaults]\nenv_name = "local"\n' > named/.evnx.toml
   logrun named.out "$EVNX" init --yes -p named; expect 0 "[defaults] env_name = local"
-  check "FIXED I-296 (R-init, DQ-32): the run says env_name points at .env.local" grep -q 'env.local' named.out
+  check "RM-17: init writes .env.local, the file [defaults] env_name names, and no .env" bash -c "[ -f named/.env.local ] && [ ! -f named/.env ]"
   repo multi; for n in production staging test; do printf "APP_ENV=%s\n" "$n" > "multi/.env.$n"; done
   logrun multi.out "$EVNX" init --with stripe --yes -p multi; expect 0 ".env.production, .env.staging, .env.test present"
   check "FIXED I-296: the env files left unchanged are named, with how to check one" bash -c "grep -q 'env.production' multi.out && grep -q 'validate --env-name production' multi.out"

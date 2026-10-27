@@ -76,6 +76,7 @@ pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
              evnx add custom NAME=value OTHER_NAME=value --yes",
         )?;
         let template = super::shared::template_of(output_path);
+        let env_file = super::shared::env_file_of(output_path, mode.env_name.as_deref());
         match prompt_loop(
             yes,
             args.desc,
@@ -83,6 +84,7 @@ pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
             args.required,
             args.optional,
             &template.name,
+            &env_file,
         )? {
             Some(customs) => customs,
             None => return Ok(aborted()),
@@ -228,6 +230,7 @@ fn prompt_loop(
     required: bool,
     optional: bool,
     template: &str,
+    env_file: &str,
 ) -> Result<Option<Vec<Custom>>> {
     print_header(
         "Custom Variables",
@@ -281,7 +284,7 @@ fn prompt_loop(
         let value: String = if !yes && hides_value(&name) {
             let v = Password::new()
                 .with_prompt(format!(
-                    "Value for {name} (hidden; .env only; Enter for {placeholder})"
+                    "Value for {name} (hidden; {env_file} only; Enter for {placeholder})"
                 ))
                 .allow_empty_password(true)
                 .interact()?;
@@ -293,7 +296,7 @@ fn prompt_loop(
         } else {
             Input::new()
                 .with_prompt(format!(
-                    "Value for {name} (.env only; {template} gets {placeholder})"
+                    "Value for {name} ({env_file} only; {template} gets {placeholder})"
                 ))
                 .default(placeholder)
                 .interact_text()?

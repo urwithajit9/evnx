@@ -105,6 +105,7 @@ fn main() -> Result<()> {
             detect,
             from_source,
             force,
+            env_name,
             dry_run,
             json,
         } => {
@@ -131,6 +132,7 @@ fn main() -> Result<()> {
                 target_config,
                 dry_run,
                 json,
+                env_name,
             )
         }
 
@@ -141,6 +143,7 @@ fn main() -> Result<()> {
             json,
             path,
             yes,
+            env_name,
         } => commands::add::run(
             target,
             commands::add::Options {
@@ -150,6 +153,7 @@ fn main() -> Result<()> {
                 dry_run,
                 json,
                 verbose: cli.verbose,
+                env_name,
             },
         ),
 

@@ -41,17 +41,34 @@ pub struct Target {
     pub config: Config,
     pub template: Template,
     pub verbose: bool,
+    /// `--env-name`, as given (RM-17).
+    pub env_name: Option<String>,
+    /// The env file init writes: `.env`, or `.env.<name>` from `--env-name`
+    /// or `[defaults] env_name`.
+    pub env_file: String,
 }
 
 impl Target {
-    pub fn new(root: &Path, config: Config, verbose: bool) -> Target {
+    pub fn new(root: &Path, config: Config, verbose: bool) -> Result<Target> {
         let template = Template::of(root, &config);
-        Target {
+        let env_file = crate::core::env_name::file_name(config.defaults.env_name.as_deref())?;
+        Ok(Target {
             root: root.to_path_buf(),
             config,
             template,
             verbose,
+            env_name: None,
+            env_file,
+        })
+    }
+
+    /// `--env-name NAME`: write `.env.NAME`. `None` keeps the config's choice.
+    pub fn with_env_name(mut self, name: Option<String>) -> Result<Target> {
+        if name.is_some() {
+            self.env_file = crate::core::env_name::file_name(name.as_deref())?;
+            self.env_name = name;
         }
+        Ok(self)
     }
 
     pub fn template_path(&self) -> PathBuf {
@@ -110,7 +127,7 @@ pub fn write_env_files(
 ) -> Result<()> {
     // Public signature kept: this is reachable as library API. Files only, as
     // before: the template the folder uses, `.env`, `.gitignore`; no contract.
-    let target = Target::new(output_path, Config::default(), false);
+    let target = Target::new(output_path, Config::default(), false)?;
     write_files(
         &target,
         &VarCollection::default(),
@@ -367,7 +384,8 @@ pub(crate) fn set_up_from_template(target: &Target, opts: WriteOptions) -> Resul
 }
 
 fn set_up(target: &Target, name: &str) -> Result<Outcome> {
-    if target.root.join(".env").exists() {
+    let env = target.env_file.as_str();
+    if target.root.join(env).exists() {
         let gitignore_line = update_gitignore(&target.root)?;
         finish(
             target,
@@ -378,17 +396,17 @@ fn set_up(target: &Target, name: &str) -> Result<Outcome> {
                     ui::say(line);
                 }
                 ui::success(format!(
-                    "already set up: {name} and .env are here; nothing was generated"
+                    "already set up: {name} and {env} are here; nothing was generated"
                 ));
-                warn_if_env_is_still_committable(&target.root);
+                warn_if_env_is_still_committable(&target.root, env);
             },
         )?;
         return Ok(Outcome::KeptExisting);
     }
     let done = keep(target, &VarCollection::default(), &template_vars(target)?);
     ui::info(format!("{name} is the project's template: kept as it is"));
-    env_from_template(&target.root, &target.template, false)?;
-    warn_if_env_is_still_committable(&target.root);
+    env_from_template(&target.root, &target.template, env, false)?;
+    warn_if_env_is_still_committable(&target.root, env);
     done();
     Ok(Outcome::Written)
 }
@@ -423,16 +441,25 @@ pub(crate) fn notice_lines(target: &Target) -> Vec<String> {
 fn notices_of(target: &Target) -> Vec<(bool, String)> {
     let root = &target.root;
     let mut out = Vec::new();
+    // Only when `--env-name` chose another file: init itself writes the one
+    // `[defaults] env_name` names (RM-17).
     if let Some(name) = &target.config.defaults.env_name {
-        out.push((
-            true,
-            format!(
-                ".evnx.toml sets env_name = \"{name}\": validate, sync and diff read .env.{name}, \
-                 not the .env init wrote"
-            ),
-        ));
+        if target.env_file != format!(".env.{name}") {
+            out.push((
+                true,
+                format!(
+                    ".evnx.toml sets env_name = \"{name}\": validate, sync and diff read \
+                     .env.{name}, not the {} init wrote",
+                    target.env_file
+                ),
+            ));
+        }
     }
-    let others = crate::core::env_name::available(root);
+    // The other environments: not the one this run wrote.
+    let others: Vec<String> = crate::core::env_name::available(root)
+        .into_iter()
+        .filter(|n| format!(".env.{n}") != target.env_file)
+        .collect();
     if let Some(first) = others.first() {
         let files: Vec<String> = others.iter().map(|n| format!(".env.{n}")).collect();
         out.push((
@@ -520,8 +547,8 @@ pub(crate) fn write_files(
                 }
                 // Keeping the template used to end here with no `.env`, while
                 // the closing lines told the user to edit one (N-01, DQ-4).
-                env_from_template(output_path, &target.template, true)?;
-                warn_if_env_is_still_committable(output_path);
+                env_from_template(output_path, &target.template, &target.env_file, true)?;
+                warn_if_env_is_still_committable(output_path, &target.env_file);
                 return Ok((Outcome::KeptExisting, Box::new(|| {})));
             }
             Some(true) => {}
@@ -548,7 +575,7 @@ pub(crate) fn write_files(
 
     // `.env` holds real values, so it is never replaced. It is created, or
     // given the names the new template has and it lacks (DQ-29).
-    let env_path = output_path.join(".env");
+    let env_path = output_path.join(&target.env_file);
     let created_env = !env_path.exists();
     let mut caught_up = 0;
     if created_env {
@@ -560,14 +587,15 @@ pub(crate) fn write_files(
     // 3. Talk, in the order these lines have always appeared — returned, not
     // printed, so the caller can write the contract first (RM-03).
     let root = output_path.to_path_buf();
+    let env = target.env_file.clone();
     let talk: Talk = Box::new(move || {
         crate::core::safe_write::report(&example);
         if created_env {
-            crate::utils::ui::say(format!("{} Created .env from template", "✓".green()));
+            crate::utils::ui::say(format!("{} Created {env} from template", "✓".green()));
         }
         if caught_up > 0 {
             crate::utils::ui::say(format!(
-                "{} Added {} to .env; the values already there are kept",
+                "{} Added {} to {env}; the values already there are kept",
                 "✓".green(),
                 pluralize(caught_up, "variable", "variables")
             ));
@@ -575,7 +603,7 @@ pub(crate) fn write_files(
         if let Some(line) = gitignore_line {
             crate::utils::ui::say(line);
         }
-        warn_if_env_is_still_committable(&root);
+        warn_if_env_is_still_committable(&root, &env);
     });
 
     Ok((Outcome::Written, talk))
@@ -637,20 +665,21 @@ fn create_env(path: &Path, bytes: &[u8]) -> Result<()> {
 pub(crate) fn env_from_template(
     output_path: &Path,
     template: &Template,
+    env_file: &str,
     ask: bool,
 ) -> Result<bool> {
     let example_path = template.path(output_path);
-    let env_path = output_path.join(".env");
+    let env_path = output_path.join(env_file);
     if env_path.exists() || !example_path.exists() {
         return Ok(false);
     }
 
     if ask {
         let create = yes_no()
-            .with_prompt(format!("Create .env from your {}?", template.name))
+            .with_prompt(format!("Create {env_file} from your {}?", template.name))
             .default(true)
             .interact_opt()
-            .context("could not ask whether to create .env")?;
+            .with_context(|| format!("could not ask whether to create {env_file}"))?;
         if create != Some(true) {
             return Ok(false);
         }
@@ -665,7 +694,7 @@ pub(crate) fn env_from_template(
         crate::utils::ui::say(line);
     }
     crate::utils::ui::say(format!(
-        "{} Created .env from {}",
+        "{} Created {env_file} from {}",
         "✓".green(),
         template.name
     ));
@@ -680,9 +709,9 @@ pub(crate) fn env_from_template(
 /// with no repository, the same gitignore logic `add` and `doctor` use) whether
 /// `.env` is actually ignored. It warns and never edits: the negation is the
 /// user's line, and may be deliberate. A warning, so `-q` does not hide it.
-fn warn_if_env_is_still_committable(output_path: &Path) {
+fn warn_if_env_is_still_committable(output_path: &Path, env_file: &str) {
     // The shared wording (E6): a tracked `.env` is told `git rm --cached`.
-    crate::utils::protect::warn_if_exposed(output_path, ".env");
+    crate::utils::protect::warn_if_exposed(output_path, env_file);
 }
 
 /// Ensure `.gitignore` actually ignores the env files. Returns the line to print,
@@ -745,7 +774,7 @@ mod tests {
     fn the_outcome_says_what_happened() {
         let dir = TempDir::new().unwrap();
         let outcome = write_files(
-            &Target::new(dir.path(), Config::default(), false),
+            &Target::new(dir.path(), Config::default(), false).unwrap(),
             &VarCollection::default(),
             "A=1",
             "A=\n",

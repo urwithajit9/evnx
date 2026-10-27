@@ -29,6 +29,8 @@ pub struct Options {
     pub dry_run: bool,
     pub json: bool,
     pub verbose: bool,
+    /// `--env-name` (RM-17).
+    pub env_name: Option<String>,
 }
 
 /// Main entry point for `evnx add`
@@ -61,6 +63,7 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
         dry_run: opts.dry_run,
         json: opts.json,
         verbose: opts.verbose,
+        env_name: opts.env_name.clone(),
     };
 
     if mode.interactive() {
@@ -109,8 +112,12 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
 
     // Next steps only after a write: they used to follow "Aborted." (N-12).
     if mode.interactive() && outcome == shared::Outcome::Written {
+        let edit = format!(
+            "Edit {} and replace placeholder values",
+            shared::env_file_of(output_path, mode.env_name.as_deref())
+        );
         print_next_steps(&[
-            "Edit .env and replace placeholder values",
+            &edit,
             "Run 'evnx validate' to check for issues",
             "Use 'evnx add' again to add more variables",
         ]);

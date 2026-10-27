@@ -423,7 +423,7 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
         };
         if !opts.dry_run {
             let done = super::shared::keep(target, &VarCollection::default(), &whole);
-            super::shared::env_from_template(root, &target.template, !opts.yes)?;
+            super::shared::env_from_template(root, &target.template, &target.env_file, !opts.yes)?;
             done();
         }
         super::shared::emit(planned.as_ref(), opts, root);
@@ -473,7 +473,7 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
         // Through `add`'s planner, so a name the user already set in `.env`
         // is not appended there again below their real value (N-11). Not its
         // `[vars]` write-back: init keeps the contract itself, below.
-        let plan = crate::commands::add::shared::plan(root, &vars)?;
+        let plan = crate::commands::add::shared::plan(root, &vars, target.env_name.as_deref())?;
         let mut whole = super::shared::template_vars(target)?;
         whole.vars.extend(plan.to_example.vars.clone());
         let planned = if opts.dry_run || opts.json {
@@ -504,7 +504,7 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
         }
         // A template with no `.env` beside it: create one from it, asking first
         // when there is someone to ask (DQ-10, DQ-14).
-        super::shared::env_from_template(root, &target.template, !opts.yes)?;
+        super::shared::env_from_template(root, &target.template, &target.env_file, !opts.yes)?;
         added();
         done();
         super::shared::emit(planned.as_ref(), opts, root);

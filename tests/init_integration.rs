@@ -1618,3 +1618,59 @@ fn i333_dry_run_under_path_names_every_file_with_its_folder() {
     }
     assert!(!dir.path().join("deploy/compose/.env").exists());
 }
+
+/// RM-17 (MEC-2, I-027): `init --env-name NAME` creates `.env.NAME` from the
+/// template, leaves `.env` alone, and names the file in its report.
+#[test]
+fn rm17_init_env_name_creates_the_named_file() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".env.example"), "A=placeholder\n").unwrap();
+    std::fs::write(dir.path().join(".env"), "A=dev\n").unwrap();
+    let init = |extra: &[&str]| {
+        let mut args = vec!["init", "--yes", "--env-name", "staging"];
+        args.extend_from_slice(extra);
+        cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(&args)
+            .env("NO_COLOR", "1")
+            .output()
+            .unwrap()
+    };
+    let dry = init(&["--dry-run"]);
+    assert!(dry.status.success());
+    let stdout = String::from_utf8_lossy(&dry.stdout);
+    assert!(
+        stdout.contains(".env.staging: would be created"),
+        "{stdout}"
+    );
+    assert!(!dir.path().join(".env.staging").exists());
+
+    assert!(init(&[]).status.success());
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".env.staging")).unwrap(),
+        "A=placeholder\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".env")).unwrap(),
+        "A=dev\n"
+    );
+}
+
+/// RM-17 (C-2): the hint for a missing `.env.NAME` can now be followed.
+#[test]
+fn rm17_the_missing_env_hint_names_init_env_name() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".env.example"), "A=1\n").unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--env", ".env.staging"])
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(all.contains("evnx init --env-name staging"), "{all}");
+}

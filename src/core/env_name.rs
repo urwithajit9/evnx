@@ -49,6 +49,28 @@ pub fn resolve(dir: &Path, name: Option<&str>) -> Result<PathBuf> {
         return Ok(in_dir(dir, DEFAULT_FILE));
     };
 
+    let name = checked(name)?;
+    let path = in_dir(dir, &format!(".env.{name}"));
+    if path.is_file() {
+        return Ok(path);
+    }
+
+    bail!("{}", not_found_message(dir, name));
+}
+
+/// The file a command that **writes** should write: `.env`, or `.env.<name>`
+/// for a valid name. Unlike [`resolve`] it does not need the file to exist —
+/// `init` and `add` create it (RM-17).
+pub fn file_name(name: Option<&str>) -> Result<String> {
+    Ok(match name {
+        None => DEFAULT_FILE.to_string(),
+        Some(name) => format!(".env.{}", checked(name)?),
+    })
+}
+
+/// `name`, trimmed, if it is one path segment a person could mean as an
+/// environment.
+fn checked(name: &str) -> Result<&str> {
     let name = name.trim();
     if name.is_empty() {
         bail!(
@@ -70,13 +92,7 @@ pub fn resolve(dir: &Path, name: Option<&str>) -> Result<PathBuf> {
             SUGGESTED.join(", ")
         );
     }
-
-    let path = in_dir(dir, &format!(".env.{name}"));
-    if path.is_file() {
-        return Ok(path);
-    }
-
-    bail!("{}", not_found_message(dir, name));
+    Ok(name)
 }
 
 /// `file` inside `dir`, written the way a person would type it: in the current
@@ -369,6 +385,15 @@ mod tests {
         let dir = project(&[".env.production"]);
         let err = resolve(dir.path(), Some("prod")).unwrap_err().to_string();
         assert!(err.contains("did you mean 'production'"), "{err}");
+    }
+
+    /// RM-17: the writing side takes the same names, and refuses the same ones.
+    #[test]
+    fn rm17_file_name_validates_without_needing_the_file() {
+        assert_eq!(file_name(None).unwrap(), ".env");
+        assert_eq!(file_name(Some(" staging ")).unwrap(), ".env.staging");
+        assert!(file_name(Some("../x")).is_err());
+        assert!(file_name(Some("")).is_err());
     }
 
     /// RM-17: a misspelling gets a suggestion too, not only an abbreviation.

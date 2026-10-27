@@ -44,7 +44,7 @@ pub enum Outcome {
 }
 
 /// How a run talks: whether it may ask, whether it writes, what it prints.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Mode {
     /// `--yes`: never ask for a confirmation.
     pub yes: bool,
@@ -53,6 +53,9 @@ pub struct Mode {
     /// `--json`: one JSON document on stdout, nothing else there (I-026).
     pub json: bool,
     pub verbose: bool,
+    /// `--env-name`: write `.env.<name>` instead of `.env` (RM-17). `None`
+    /// takes `[defaults] env_name`, then `.env`.
+    pub env_name: Option<String>,
 }
 
 impl Mode {
@@ -117,6 +120,9 @@ pub struct Plan {
     /// `.env.example`, `.env.sample` or `.env.template` present, else
     /// `.env.example`. It was always `.env.example` (I-295).
     pub template: crate::core::config::Template,
+    /// The env file this run writes: `.env`, or `.env.<name>` from
+    /// `--env-name` or `[defaults] env_name` (RM-17).
+    pub env_file: String,
 }
 
 impl Plan {
@@ -150,6 +156,17 @@ pub fn template_of(output_path: &Path) -> crate::core::config::Template {
     crate::core::config::Template::of(output_path, &config)
 }
 
+/// The env file a run in `output_path` writes, for a message before there
+/// is a plan: `--env-name`, else `[defaults] env_name`, else `.env` (RM-17).
+/// A config or name that does not parse says `.env`; the plan reports it.
+pub fn env_file_of(output_path: &Path, flag: Option<&str>) -> String {
+    let config = crate::core::config::load(output_path)
+        .map(|l| l.config)
+        .unwrap_or_default();
+    crate::core::env_name::file_name(flag.or(config.defaults.env_name.as_deref()))
+        .unwrap_or_else(|_| crate::core::env_name::DEFAULT_FILE.to_string())
+}
+
 /// Sort `requested` against what `.env.example` and `.env` in `output_path`
 /// already hold.
 ///
@@ -161,8 +178,8 @@ pub fn template_of(output_path: &Path) -> crate::core::config::Template {
 /// ⚠️ Values are compared in `.env.example` only. `.env` holds real values,
 /// which differ from the catalogue's placeholders by design; a name it has is
 /// simply skipped, and its value is never read into a message.
-pub fn plan(output_path: &Path, requested: &VarCollection) -> Result<Plan> {
-    plan_with(output_path, requested, false)
+pub fn plan(output_path: &Path, requested: &VarCollection, env_name: Option<&str>) -> Result<Plan> {
+    plan_with(output_path, requested, false, env_name)
 }
 
 /// [`plan`], and with `create_env_file` a missing `.env` is planned as an
@@ -172,11 +189,14 @@ pub fn plan_with(
     output_path: &Path,
     requested: &VarCollection,
     create_env_file: bool,
+    env_name: Option<&str>,
 ) -> Result<Plan> {
     let config = crate::core::config::load(output_path)?.config;
     let template = crate::core::config::Template::of(output_path, &config);
     let example = read_assignments(&template.path(output_path))?;
-    let env_path = output_path.join(".env");
+    let env_file =
+        crate::core::env_name::file_name(env_name.or(config.defaults.env_name.as_deref()))?;
+    let env_path = output_path.join(&env_file);
     let mut env = read_assignments(&env_path)?;
     let create_env_file = create_env_file && env.is_none();
     if create_env_file {
@@ -188,6 +208,7 @@ pub fn plan_with(
         env_exists: env_path.exists(),
         create_env_file,
         template,
+        env_file,
         ..Plan::default()
     };
 
@@ -317,7 +338,7 @@ pub fn apply_files(
 ) -> Result<Applied> {
     let mut applied = Applied::default();
     let example_path = plan.template.path(output_path);
-    let env_path = output_path.join(".env");
+    let env_path = output_path.join(&plan.env_file);
     let write_example = !plan.to_example.vars.is_empty();
     let write_env = (plan.env_exists || plan.create_env_file) && !plan.to_env.vars.is_empty();
 
@@ -365,10 +386,10 @@ pub fn apply_files(
             String::new()
         };
         append_block(&env_path, &existing, &addition)?;
-        applied.env_committable = env_is_committable(output_path);
+        applied.env_committable = env_is_committable(output_path, &plan.env_file);
         if announce && applied.env_committable {
             // The shared wording (E6), then add's way out when no rule covers it.
-            if crate::utils::protect::warn_if_exposed(output_path, ".env")
+            if crate::utils::protect::warn_if_exposed(output_path, &plan.env_file)
                 == crate::core::gitignore::Exposure::Unignored
             {
                 ui::warning_detail(format!(
@@ -385,8 +406,12 @@ pub fn apply_files(
         }
     } else if !plan.env_exists {
         if let Some(ask) = create_env {
-            applied.env_created =
-                crate::commands::init::shared::env_from_template(output_path, &plan.template, ask)?;
+            applied.env_created = crate::commands::init::shared::env_from_template(
+                output_path,
+                &plan.template,
+                &plan.env_file,
+                ask,
+            )?;
         }
     }
 
@@ -490,7 +515,12 @@ pub fn confirm_and_apply(
     flow: &Flow,
     mode: &Mode,
 ) -> Result<Outcome> {
-    let plan = plan_with(output_path, requested, flow.env_from_values)?;
+    let plan = plan_with(
+        output_path,
+        requested,
+        flow.env_from_values,
+        mode.env_name.as_deref(),
+    )?;
     // For `--json`, worked out before the write, as `init` does (DQ-21): the
     // `.gitignore` entries a new `.env` brings, and the `[vars]` record.
     let extra = if mode.json {
@@ -534,11 +564,11 @@ pub fn confirm_and_apply(
         // while `.env` got the names too. A `.env` created afterwards from the
         // template is asked about on its own.
         let writes_env = !plan.to_env.vars.is_empty() && (plan.env_exists || plan.create_env_file);
-        let both = format!("{} and .env", plan.template.name);
+        let both = format!("{} and {}", plan.template.name, plan.env_file);
         let file = match (plan.to_example.vars.is_empty(), writes_env) {
             (false, true) => both.as_str(),
             (false, false) => plan.template.name.as_str(),
-            (true, _) => ".env",
+            (true, _) => plan.env_file.as_str(),
         };
         println!("{}", (flow.preview)(subset).dimmed());
         if !plan.present.is_empty() {
@@ -615,21 +645,23 @@ fn print_dry_run(plan: &Plan, flow: &Flow) {
     if plan.env_exists {
         if !plan.to_env.vars.is_empty() {
             println!(
-                "  .env: would add {}: {}",
+                "  {}: would add {}: {}",
+                plan.env_file,
                 count(plan.to_env.vars.len(), "variable"),
                 names(&plan.to_env)
             );
         }
     } else if plan.create_env_file && !plan.to_env.vars.is_empty() {
         println!(
-            "  .env: would be created with {} (with .gitignore first): {}",
+            "  {}: would be created with {} (with .gitignore first): {}",
+            plan.env_file,
             count(plan.to_env.vars.len(), "variable"),
             names(&plan.to_env)
         );
     } else if !plan.is_empty() {
         println!(
-            "  .env: would be created from {} (with .gitignore first)",
-            plan.template.name
+            "  {}: would be created from {} (with .gitignore first)",
+            plan.env_file, plan.template.name
         );
     }
 }
@@ -730,8 +762,9 @@ pub fn report(plan: &Plan, flow: &Flow, show_conflicts: bool) {
     let env_only = plan.env_only();
     if plan.env_exists && !env_only.is_empty() {
         ui::info(format!(
-            "Added {} to .env that {} already had: {}",
+            "Added {} to {} that {} already had: {}",
             count(env_only.len(), "variable"),
+            plan.env_file,
             plan.template.name,
             env_only.join(", ")
         ));
@@ -797,8 +830,8 @@ pub fn format_var_line(
     lines.join("\n")
 }
 
-fn env_is_committable(project_root: &Path) -> bool {
-    !crate::core::gitignore::env_file_is_protected(project_root, ".env")
+fn env_is_committable(project_root: &Path, env_file: &str) -> bool {
+    !crate::core::gitignore::env_file_is_protected(project_root, env_file)
 }
 
 #[cfg(test)]
@@ -849,6 +882,7 @@ mod tests {
                 ("IN_ENV_ONLY", "z"),
                 ("NEW", "n"),
             ]),
+            None,
         )
         .unwrap();
         assert_eq!(names(&p.to_example), ["IN_ENV_ONLY", "NEW"]);
@@ -868,7 +902,7 @@ mod tests {
     #[test]
     fn plan_without_files_adds_everything_to_the_template() {
         let d = TempDir::new().unwrap();
-        let p = plan(d.path(), &vars(&[("A", "1"), ("B", "2")])).unwrap();
+        let p = plan(d.path(), &vars(&[("A", "1"), ("B", "2")]), None).unwrap();
         assert_eq!(names(&p.to_example), ["A", "B"]);
         assert!(p.to_env.vars.is_empty());
         assert!(!p.env_exists);
@@ -883,7 +917,7 @@ mod tests {
             "export A=\"x\"\nB='${NOPE}'\n",
         )
         .unwrap();
-        let p = plan(d.path(), &vars(&[("A", "x"), ("B", "${NOPE}")])).unwrap();
+        let p = plan(d.path(), &vars(&[("A", "x"), ("B", "${NOPE}")]), None).unwrap();
         assert_eq!(p.present, ["A", "B"]);
         assert!(p.conflicts.is_empty());
     }
@@ -893,7 +927,7 @@ mod tests {
     fn plan_reads_a_file_the_parser_refuses() {
         let d = TempDir::new().unwrap();
         fs::write(d.path().join(".env.example"), "A=1\nB=\"never closed\n").unwrap();
-        let p = plan(d.path(), &vars(&[("A", "1")])).unwrap();
+        let p = plan(d.path(), &vars(&[("A", "1")]), None).unwrap();
         assert_eq!(p.present, ["A"]);
     }
 

@@ -1697,6 +1697,14 @@ pub enum Commands {
         #[arg(long)]
         force: bool,
 
+        /// Write `.env.<NAME>` instead of `.env`.
+        ///
+        /// `--env-name production` creates or fills `.env.production` from the
+        /// template; the template and `.gitignore` are the project's, as without
+        /// it. Defaults to `[defaults] env_name` from `.evnx.toml`.
+        #[arg(long, value_name = "NAME")]
+        env_name: Option<String>,
+
         /// Show what would be written — the template, `.env`, `.gitignore` and
         /// `.evnx.toml` — and write nothing. Asks no confirmation; a menu is
         /// still shown when nothing was named.
@@ -1746,6 +1754,11 @@ pub enum Commands {
         /// Output path (default: current directory).
         #[arg(long, short, default_value = ".", global = true)]
         path: String,
+
+        /// Write to `.env.<NAME>` instead of `.env` (one file per run; loop
+        /// over names for several). Defaults to `[defaults] env_name`.
+        #[arg(long, value_name = "NAME", global = true)]
+        env_name: Option<String>,
 
         /// Skip confirmation prompts.
         #[arg(long, short, global = true)]

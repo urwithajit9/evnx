@@ -54,6 +54,8 @@ pub(crate) struct ContractPlan {
 #[derive(Debug, Clone)]
 pub(crate) struct Planned {
     pub template: String,
+    /// The env file the run writes: `.env`, or `.env.<name>` (RM-17).
+    pub env_file: String,
     pub template_action: TemplateAction,
     pub added: Vec<String>,
     pub env: EnvAction,
@@ -113,7 +115,7 @@ pub(crate) fn contract_pending(
 /// existing one): [`super::shared::write_files`]' decisions.
 pub(crate) fn plan_write(target: &Target, vars: &VarCollection) -> Result<Planned> {
     let root = &target.root;
-    let env_path = root.join(".env");
+    let env_path = root.join(&target.env_file);
     let (env, env_added) = if env_path.exists() {
         let have = crate::commands::add::shared::read_assignments(&env_path)?.unwrap_or_default();
         let missing: Vec<String> = sorted(vars)
@@ -130,6 +132,7 @@ pub(crate) fn plan_write(target: &Target, vars: &VarCollection) -> Result<Planne
     };
     Ok(Planned {
         template: target.template_name().to_string(),
+        env_file: target.env_file.clone(),
         template_action: if target.template_path().exists() {
             TemplateAction::Replace
         } else {
@@ -148,13 +151,14 @@ pub(crate) fn plan_write(target: &Target, vars: &VarCollection) -> Result<Planne
 /// `.env` copied from it when missing.
 pub(crate) fn plan_keep(target: &Target, whole: &VarCollection) -> Result<Planned> {
     let root = &target.root;
-    let (env, env_added) = if root.join(".env").exists() {
+    let (env, env_added) = if root.join(&target.env_file).exists() {
         (EnvAction::Unchanged, Vec::new())
     } else {
         (EnvAction::Copy, sorted(whole))
     };
     Ok(Planned {
         template: target.template_name().to_string(),
+        env_file: target.env_file.clone(),
         template_action: TemplateAction::Keep,
         added: Vec::new(),
         env,
@@ -184,6 +188,7 @@ pub(crate) fn plan_append(
     };
     Ok(Planned {
         template: target.template_name().to_string(),
+        env_file: target.env_file.clone(),
         template_action: TemplateAction::Append,
         added: sorted(&plan.to_example),
         env,
@@ -207,7 +212,7 @@ pub(crate) fn print_dry_run(p: &Planned, root: &Path) {
     };
     println!("Dry run: nothing was written.");
     let t = &at(&p.template);
-    let env = at(".env");
+    let env = at(&p.env_file);
     match p.template_action {
         TemplateAction::Create => {
             println!(
@@ -281,7 +286,7 @@ pub(crate) fn print_dry_run(p: &Planned, root: &Path) {
 /// `skipped`, `conflicts`, `env_added`, `env_created`, `env_committable`,
 /// `template`, `gitignore`, `contract` (`action`, `file`, `added`), `notices`.
 pub(crate) fn print_json(p: &Planned, dry_run: bool, root: &Path) {
-    let env_committable = !dry_run && !gitignore::env_file_is_protected(root, ".env");
+    let env_committable = !dry_run && !gitignore::env_file_is_protected(root, &p.env_file);
     let doc = serde_json::json!({
         "dry_run": dry_run,
         "written": !dry_run,

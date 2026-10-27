@@ -503,6 +503,8 @@ fn t_i242_from_source_beside_a_config_without_vars_does_not_say_run_spec_init() 
 
 // ── I-296 (T-INIT-39, DQ-32): the env files init does not write ───────
 
+/// RM-17 replaced the notice: init now writes the file `[defaults] env_name`
+/// names, so there is nothing to warn about.
 #[test]
 fn t_i296_defaults_env_name_is_named() {
     let p = Project::new()
@@ -510,8 +512,10 @@ fn t_i296_defaults_env_name_is_named() {
         .toml("[defaults]\nenv_name = \"local\"\n");
     let out = run(p.path(), &["init", "--yes"]);
     out.assert_code(0)
-        .assert_contains("env_name")
-        .assert_contains(".env.local");
+        .assert_contains("Created .env.local")
+        .assert_not_contains("not the .env init wrote");
+    assert!(p.exists(".env.local"));
+    assert!(!p.exists(".env"));
 }
 
 #[test]

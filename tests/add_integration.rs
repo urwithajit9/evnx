@@ -1503,3 +1503,66 @@ fn t_i251_custom_protects_the_env_it_creates() {
     assert!(p.read(".gitignore").contains(".env*"));
     assert!(!p.git_cmd(&["status", "--porcelain"]).contains(".env\n"));
 }
+
+/// RM-17 (MEC-2, I-033): `--env-name` writes one named file, and the template;
+/// every other env file is left alone. A bad name is refused before anything
+/// is written.
+#[test]
+fn rm17_add_writes_only_the_named_env_file() {
+    let p = Project::new()
+        .git()
+        .example("A=placeholder\n")
+        .env("A=dev\n")
+        .file(".env.production", "A=prod\n")
+        .file(".env.staging", "A=stage\n");
+    run(
+        p.path(),
+        &[
+            "add",
+            "custom",
+            "NEW_ONE=x",
+            "--env-name",
+            "production",
+            "--dry-run",
+        ],
+    )
+    .assert_code(0)
+    .assert_contains(".env.production: would add 1 variable: NEW_ONE");
+    run(
+        p.path(),
+        &[
+            "add",
+            "custom",
+            "NEW_ONE=x",
+            "--env-name",
+            "production",
+            "--yes",
+        ],
+    )
+    .assert_code(0);
+    assert!(p.read(".env.production").contains("NEW_ONE=x"));
+    assert!(p.read(".env.example").contains("NEW_ONE="));
+    assert!(!p.read(".env").contains("NEW_ONE"));
+    assert!(!p.read(".env.staging").contains("NEW_ONE"));
+
+    run(
+        p.path(),
+        &["add", "custom", "X=1", "--env-name", "../x", "--yes"],
+    )
+    .assert_code(2);
+    assert!(!p.read(".env.example").contains("X=1"));
+}
+
+/// RM-17: `[defaults] env_name` is the default for `add`, as for every reader.
+#[test]
+fn rm17_add_honours_defaults_env_name() {
+    let p = Project::new()
+        .git()
+        .example("A=placeholder\n")
+        .env("A=dev\n")
+        .file(".env.production", "A=prod\n")
+        .toml("[defaults]\nenv_name = \"production\"\n");
+    run(p.path(), &["add", "custom", "NEW_ONE=x", "--yes"]).assert_code(0);
+    assert!(p.read(".env.production").contains("NEW_ONE=x"));
+    assert!(!p.read(".env").contains("NEW_ONE"));
+}

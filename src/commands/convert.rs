@@ -415,7 +415,10 @@ pub fn run(config: ConvertConfig) -> Result<()> {
     // Parse .env file. A missing one is the error `validate` and `diff` give,
     // not three nested contexts (I-091).
     let parser = Parser::default();
-    let env_file = parser.parse_file_or_hint(&config.env_path, Parser::MISSING_ENV_HINT)?;
+    let env_file = parser.parse_file_or_hint(
+        &config.env_path,
+        &Parser::missing_env_hint(&config.env_path),
+    )?;
 
     // ⚠️ Before anything is converted, so a refusal writes nothing (I-081,
     // DEC-G5).
