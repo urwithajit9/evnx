@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "compared": "values",
   "missing": [],
   "extra": [
@@ -10,22 +10,19 @@
       "key": "DB_HOST",
       "example_value": "",
       "env_value": "localhost",
-      "value_state": "shown",
-      "values_redacted": false
+      "value_state": "shown"
     },
     {
       "key": "AWS_KEY",
       "example_value": "***",
       "env_value": "***",
-      "value_state": "masked",
-      "values_redacted": true
+      "value_state": "masked"
     },
     {
       "key": "PORT",
       "example_value": "",
       "env_value": "8080",
-      "value_state": "shown",
-      "values_redacted": false
+      "value_state": "shown"
     }
   ],
   "ignored": [],

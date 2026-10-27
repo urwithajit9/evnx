@@ -114,7 +114,7 @@ fn t_i078_fail_on_different_needs_values() {
 fn t_i078_json_says_what_was_compared() {
     let p = filled_in();
     let keys = json(&run(p.path(), &["diff", "--format", "json"]));
-    assert_eq!(keys["schema_version"], 1, "{keys}");
+    assert_eq!(keys["schema_version"], 2, "{keys}");
     assert_eq!(keys["compared"], "keys", "{keys}");
     assert_eq!(keys["different"], serde_json::json!([]), "{keys}");
     assert_eq!(keys["summary"]["total"], 0, "{keys}");
@@ -170,14 +170,14 @@ fn t_i076b_value_state_says_why_a_value_is_or_is_not_there() {
         let item = state(&base, key);
         assert_eq!(item["value_state"], "withheld", "{item}");
         assert_eq!(item["env_value"], serde_json::Value::Null, "{item}");
-        // Kept for one release beside value_state.
-        assert_eq!(item["values_redacted"], false, "{item}");
+        // RM-16: gone in schema 2; value_state says it.
+        assert!(item.get("values_redacted").is_none(), "{item}");
     }
     let shown = [&base[..], &["--show-values"]].concat();
     assert_eq!(state(&shown, "PORT")["value_state"], "shown");
     let masked = state(&shown, "API_KEY");
     assert_eq!(masked["value_state"], "masked", "{masked}");
-    assert_eq!(masked["values_redacted"], true, "{masked}");
+    assert!(masked.get("values_redacted").is_none(), "{masked}");
 }
 
 // ─── I-075: flags that do nothing in this mode are errors ───────────────────

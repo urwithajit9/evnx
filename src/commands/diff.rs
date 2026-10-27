@@ -171,16 +171,11 @@ pub struct DiffItem {
     pub example_value: Option<String>,
     pub env_value: Option<String>,
     /// Why the values above are what they are: `withheld` (not requested),
-    /// `masked` (a secret part replaced) or `shown` (I-076b). A `null` value
-    /// with `values_redacted: false` read as "not redacted" when it meant
-    /// "not requested".
+    /// `masked` (a secret part replaced) or `shown` (I-076b). It replaced
+    /// `values_redacted`, removed in schema 2 (RM-16): a `null` value with
+    /// `values_redacted: false` read as "not redacted" when it meant "not
+    /// requested". `value_state == "masked"` is the old test.
     pub value_state: ValueState,
-    /// `true` when the values above are masked rather than literal.
-    ///
-    /// ⚠️ Kept for one release beside `value_state`, which replaces it
-    /// (decided in the review, I-076b); `value_state == "masked"` is the same
-    /// test.
-    pub values_redacted: bool,
 }
 
 ///  Statistics for programmatic consumption
@@ -405,7 +400,6 @@ fn compute_diff(
                     example_value: example.text().map(str::to_string),
                     env_value: env.text().map(str::to_string),
                     value_state: value_state(&example, &env),
-                    values_redacted: example.is_masked() || env.is_masked(),
                 });
             }
         }
@@ -615,7 +609,7 @@ struct DiffSummary {
 #[derive(Serialize)]
 struct JsonReport<'a> {
     /// The shape of this report (S-D6). Raised when a field changes meaning or
-    /// goes away — `values_redacted` going is the next one.
+    /// goes away: 2 removed `values_redacted` from `different` (RM-16).
     schema_version: u32,
     /// `keys` against a template, `values` between two environments or with
     /// `--values` (I-078). With `keys`, `different` is always empty.
@@ -626,7 +620,7 @@ struct JsonReport<'a> {
 }
 
 /// The JSON report's `schema_version`.
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 fn output_json(diff: &DiffResult, compared: Compare) -> Result<()> {
     // Additive: `missing`, `extra`, `different` and `stats` keep their places,
@@ -889,10 +883,6 @@ mod tests {
                 ValueState::Withheld
             };
             assert!(diff.different.iter().all(|d| d.value_state == expected));
-            assert!(diff
-                .different
-                .iter()
-                .all(|d| d.values_redacted == show_values));
         }
     }
 
@@ -905,13 +895,11 @@ mod tests {
 
         let withheld = compute_diff(&left, &right, &HashSet::new(), Compare::Values, false);
         assert_eq!(withheld.different[0].env_value, None, "withheld");
-        assert!(!withheld.different[0].values_redacted);
         assert!(!serde_json::to_string(&withheld).unwrap().contains("debug"));
 
         let shown = compute_diff(&left, &right, &HashSet::new(), Compare::Values, true);
         assert_eq!(shown.different[0].env_value.as_deref(), Some("debug"));
         assert_eq!(shown.different[0].example_value.as_deref(), Some("info"));
-        assert!(!shown.different[0].values_redacted);
     }
 
     /// ⛔ The one the report missed: `evnx diff` **panicked**. Byte index 2 is

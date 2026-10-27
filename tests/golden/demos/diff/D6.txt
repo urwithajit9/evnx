@@ -3,7 +3,7 @@
 
 $ evnx diff --format json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "compared": "keys",
   "missing": [
     "REDIS_URL",
@@ -27,7 +27,7 @@ $ evnx diff --format json
 
 $ evnx diff --format json --with-stats
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "compared": "keys",
   "missing": [
     "REDIS_URL",
@@ -57,7 +57,7 @@ $ evnx diff --format json --with-stats
 
 $ evnx diff --format json --values
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "compared": "values",
   "missing": [
     "REDIS_URL",
@@ -71,22 +71,19 @@ $ evnx diff --format json --values
       "key": "DATABASE_URL",
       "example_value": null,
       "env_value": null,
-      "value_state": "withheld",
-      "values_redacted": false
+      "value_state": "withheld"
     },
     {
       "key": "API_SECRET",
       "example_value": null,
       "env_value": null,
-      "value_state": "withheld",
-      "values_redacted": false
+      "value_state": "withheld"
     },
     {
       "key": "API_PORT",
       "example_value": null,
       "env_value": null,
-      "value_state": "withheld",
-      "values_redacted": false
+      "value_state": "withheld"
     }
   ],
   "ignored": [],
@@ -113,6 +110,6 @@ error: invalid value 'xml' for '--format <FORMAT>'
 For more information, try '--help'.
 [exit 2]
   ok: FIXED I-074: an unknown format is refused with the valid values (exit 2)
-FIXED I-076b: value_state says withheld, masked or shown beside values_redacted
+FIXED I-076b: value_state says withheld, masked or shown; RM-16: values_redacted removed in schema 2
 
 ================ summary: 2 ok, 0 mismatch   ================

@@ -269,7 +269,7 @@ fn diff_json_is_stable() {
 
 /// R-diff (I-078): against a template the default compares key names only,
 /// so `different` is empty in `diff.json`. This pins the shape of a value
-/// comparison — `value_state` beside `values_redacted` (I-076b) — with
+/// comparison — `value_state` (I-076b; `values_redacted` left in schema 2) — with
 /// values withheld and with `--show-values`.
 #[test]
 fn diff_values_json_is_stable() {
