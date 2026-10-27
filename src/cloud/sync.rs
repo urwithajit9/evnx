@@ -480,12 +480,29 @@ pub fn pull(
         return Ok(());
     }
 
-    if !force && !confirm_overwrite(&file, &plaintext)? {
+    let existing = match std::fs::read(&file) {
+        Ok(b) => Some(zeroize::Zeroizing::new(b)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e).with_context(|| format!("reading {}", file.display())),
+    };
+    if !force && !confirm_overwrite(&file, existing.as_deref().map(Vec::as_slice), &plaintext)? {
         return Ok(());
     }
 
-    super::creds::write_atomic_secure(&file, &plaintext)
+    // RM-34 (owner, 2026-10-27): the shared writer, as `restore` uses — atomic,
+    // through a symlink with a notice, and an existing file keeps its mode with
+    // a warning if others can read it. What was there is kept as `.bak`
+    // whichever way the yes came (DEC-B11), like `restore`.
+    let kept = match existing.as_deref() {
+        Some(previous) if previous.as_slice() != plaintext.as_slice() => Some(
+            crate::core::safe_write::backup(&file, previous)
+                .with_context(|| format!("keeping a copy of {}", file.display()))?,
+        ),
+        _ => None,
+    };
+    let written = crate::core::safe_write::write_private(&file, &plaintext)
         .with_context(|| format!("writing {}", file.display()))?;
+    crate::core::safe_write::report(&written);
 
     crate::say!(
         "  {} pulled version {version} of {} into {}",
@@ -493,19 +510,30 @@ pub fn pull(
         vault_ref.label(),
         file.display()
     );
-    if verbose {
-        println!("  bytes     {} plaintext", plaintext.len());
-        // ⚠️ Not the literal "0600". Nothing sets a mode on Windows, where
-        // `write_secure` is a plain `fs::write`, so printing it there is a
-        // reassurance that is simply false.
-        println!(
-            "  mode      {}",
-            crate::utils::file_permissions::describe_permissions()
+    if let Some(kept) = &kept {
+        crate::say!(
+            "  {} kept the previous {} as {}",
+            "✓".green(),
+            file.display(),
+            kept.display()
         );
     }
+    if verbose {
+        println!("  bytes     {} plaintext", plaintext.len());
+        // The file's real mode: an existing file keeps the one it had (RM-34).
+        // Windows has none to report.
+        match crate::core::permissions::mode(&written.target) {
+            Some(m) => println!("  mode      {m:04o}"),
+            None => println!("  mode      inherited from the parent directory"),
+        }
+    }
     // Plaintext secrets in the project: keep them out of git, the way
-    // `template`, `convert` and `restore` do (owner, 2026-10-17).
+    // `template`, `convert` and `restore` do (owner, 2026-10-17). The kept copy
+    // holds plaintext too.
     crate::utils::protect::protect_output(&file.to_string_lossy(), &gitignore)?;
+    if let Some(kept) = &kept {
+        crate::utils::protect::protect_output(&kept.to_string_lossy(), &gitignore)?;
+    }
     Ok(())
 }
 
@@ -881,12 +909,11 @@ fn read_key_names(plaintext: &[u8]) -> (Vec<String>, Option<String>) {
     }
 }
 
-/// Ask before replacing a file whose contents differ.
-fn confirm_overwrite(file: &Path, incoming: &[u8]) -> Result<bool> {
-    let existing = match std::fs::read(file) {
-        Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(true),
-        Err(e) => return Err(e).with_context(|| format!("reading {}", file.display())),
+/// Ask before replacing a file whose contents differ. `existing` is what the
+/// file holds now, `None` when there is no file.
+fn confirm_overwrite(file: &Path, existing: Option<&[u8]>, incoming: &[u8]) -> Result<bool> {
+    let Some(existing) = existing else {
+        return Ok(true);
     };
 
     if existing == incoming {
@@ -901,11 +928,14 @@ fn confirm_overwrite(file: &Path, incoming: &[u8]) -> Result<bool> {
     // No terminal: say how to go on (I-218), as every other cloud prompt does.
     // `pull` says `--force`, not `--yes`.
     crate::utils::prompt::require_terminal_or(&format!(
-        "Add --force to replace {} without being asked.",
+        "Add --force to replace {} without being asked (the current file is kept as a .bak copy).",
         file.display()
     ))?;
     let ok = crate::utils::prompt::yes_no()
-        .with_prompt(format!("Overwrite {}?", file.display()))
+        .with_prompt(format!(
+            "Overwrite {}? (the current file is kept as a .bak copy)",
+            file.display()
+        ))
         .default(false)
         .interact_opt()?
         .unwrap_or(false);

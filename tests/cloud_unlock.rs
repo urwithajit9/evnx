@@ -368,6 +368,76 @@ fn t_i218_pull_over_a_different_file_names_force_without_a_terminal() {
     );
 }
 
+/// RM-34: `cloud pull --force` over a different `.env` writes through the
+/// shared writer: the replaced file is kept as `.env.bak` and is named; an
+/// existing file keeps its mode, with a warning when others can read it; a
+/// pull of identical content keeps no copy.
+#[test]
+fn rm34_pull_keeps_the_replaced_file_and_its_mode() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &a);
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/1/blob").as_str(),
+    )
+    .with_status(200)
+    .with_body(blob(&vk, b"A=1\n"))
+    .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, &a)))
+        .create();
+    let p = Project::new()
+        .file(".gitignore", ".env*\n")
+        .env("A=local\n");
+    #[cfg(unix)]
+    let p = p.mode(".env", 0o644);
+    let stdin = format!("{RIGHT}\n");
+    let pull = || {
+        signed_in(
+            &p,
+            &s.url(),
+            &[
+                "cloud",
+                "pull",
+                "--vault",
+                VAULT_ID,
+                "--version",
+                "1",
+                "--force",
+                "--password-stdin",
+            ],
+            Some(stdin.as_bytes()),
+        )
+    };
+
+    let out = pull();
+    out.assert_code(0);
+    assert_eq!(p.read(".env"), "A=1\n");
+    assert_eq!(p.read(".env.bak"), "A=local\n");
+    assert!(
+        out.all().contains("kept the previous ./.env as ./.env.bak"),
+        "{}",
+        out.all()
+    );
+    #[cfg(unix)]
+    {
+        assert_eq!(
+            evnx::core::permissions::mode(&p.path().join(".env")),
+            Some(0o644),
+            "an existing file keeps its mode"
+        );
+        assert!(out.stderr.contains("chmod"), "{}", out.stderr);
+    }
+
+    // Already up to date: nothing more is kept.
+    let out = pull();
+    out.assert_code(0);
+    assert!(!p.path().join(".env.bak.2").exists());
+}
+
 /// I-225 (DEC-CL3): with real keys, `-q` silences `vault create` and
 /// `cloud push`, and `cloud pull --file -` prints the file and nothing else.
 #[test]
