@@ -2113,9 +2113,10 @@ pub enum Commands {
         /// Print the values, not just which keys differ.
         ///
         /// In `pretty` and `json` a secret stays masked: by its name, or by the
-        /// value itself (`postgres://admin:***@db`). Without this flag `patch`
-        /// and `--interactive` print `<withheld>`; with it they print the exact
-        /// values, so the patch applies.
+        /// value itself (`postgres://admin:***@db`). A `patch` that carries
+        /// real values (`--values`, `--against`, `--reverse`) needs this flag,
+        /// and then has the exact values so it applies; `--interactive` shows
+        /// `<withheld>` in its questions without it.
         ///
         /// ⚠️ With `patch` and `--interactive` this puts real secrets on your
         /// terminal and into its scrollback, and into any CI log.
@@ -2125,8 +2126,10 @@ pub enum Commands {
         /// Output format: `pretty`, `json` or `patch`.
         ///
         /// An unrecognised value is an error (exit 2), not a silent fall back
-        /// to `pretty` (I-074). `patch` lists add, remove and update lines; it
-        /// is not input for `patch(1)`.
+        /// to `pretty` (I-074). `patch` is a unified diff of the left file that
+        /// `patch -p1` applies: it adds the missing names and, when values are
+        /// compared, replaces the different ones. Keys only in the left file
+        /// are kept and named in comment lines.
         #[arg(long, default_value = "pretty", value_parser = ["pretty", "json", "patch"])]
         format: String,
 
@@ -2168,10 +2171,11 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         with_stats: bool,
 
-        /// Prompt for each change (`--format patch` only).
+        /// Prompt for each change and write the chosen ones (`--format patch`
+        /// only).
         ///
-        /// ⚠️ Nothing is written: the answers are listed, not applied (I-073,
-        /// planned for 0.12.0). Needs a terminal.
+        /// The previous file is kept as `.bak`. Needs a terminal. Not with
+        /// `--reverse`, which would write `.env`'s values into the template.
         #[arg(short, long, default_value_t = false)]
         interactive: bool,
     },

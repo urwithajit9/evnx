@@ -12,6 +12,6 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: FIXED I-073, the honest half (RM-40): piped answers are not a terminal, so --interactive refuses and names evnx diff --format patch (exit 2)
   .env is byte-identical
 .env .env.before .env.example .env.production .env.staging answers 
-At a terminal it lists the chosen changes under 'Chosen (nothing was written)' with values withheld (I-071): tests/diff_pty.rs. Decided for v0.12.0: write the file with .env.bak
+At a terminal it writes the chosen changes and keeps .env.bak (RM-40), values withheld in its questions (I-071): tests/diff_pty.rs
 
 ================ summary: 1 ok, 0 mismatch   ================

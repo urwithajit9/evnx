@@ -128,8 +128,53 @@ fn t_i078_json_says_what_was_compared() {
 fn t_i078_patch_against_a_template_has_no_update_section() {
     let p = Project::new().example("A=x\nNEW=y\n").env("A=1\n");
     let out = run(p.path(), &["diff", "--format", "patch"]);
-    out.assert_contains("+ NEW=");
-    out.assert_not_contains("# Update these");
+    out.assert_contains("+NEW=y");
+    // Nothing of .env's: A's value is not replaced with the template's.
+    out.assert_not_contains("A=1");
+    out.assert_not_contains("+A=");
+}
+
+/// RM-40: `--format patch` is a unified diff `patch -p1` applies: the
+/// missing names are appended, keys only in `.env` are kept and named in
+/// comments `patch` skips.
+#[cfg(unix)]
+#[test]
+fn rm40_patch_applies_with_patch_p1() {
+    if std::process::Command::new("patch")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        return; // no `patch` on this machine
+    }
+    let p = Project::new()
+        .example("A=\nNEW=y\nPORT=8080\n")
+        .env("A=1\nMINE=2\n");
+    let out = run(p.path(), &["diff", "--format", "patch"]);
+    out.assert_contains("--- a/.env");
+    out.assert_contains("# MINE is only in .env");
+    std::fs::write(p.path().join("p.diff"), &out.stdout).unwrap();
+    let applied = std::process::Command::new("sh")
+        .arg("-c")
+        .arg("patch -p1 < p.diff")
+        .current_dir(p.path())
+        .output()
+        .unwrap();
+    assert!(applied.status.success(), "{applied:?}");
+    assert_eq!(p.read(".env"), "A=1\nMINE=2\nNEW=y\nPORT=8080\n");
+}
+
+/// RM-40: `--interactive --reverse` would write `.env`'s values into the
+/// committed template, so it is refused.
+#[test]
+fn rm40_interactive_reverse_is_refused() {
+    let p = Project::new().example("A=\n").env("A=1\nB=2\n");
+    let out = run(
+        p.path(),
+        &["diff", "--format", "patch", "--interactive", "--reverse"],
+    );
+    out.assert_code(2);
+    assert!(out.stderr.contains("evnx sync"), "{}", out.stderr);
 }
 
 // ─── DEC-DF2: no mask line without --show-values ────────────────────────────

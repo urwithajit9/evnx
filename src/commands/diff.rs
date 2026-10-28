@@ -3,7 +3,6 @@ use crate::core::Parser;
 use crate::docs;
 use crate::utils::string::pluralize;
 use crate::utils::ui;
-use crate::utils::ui::glyph;
 /// Diff command - compare .env and .env.example
 ///
 /// Shows missing, extra, and different variables between two env files
@@ -11,11 +10,12 @@ use crate::utils::ui::glyph;
 ///  Features: Exit codes for CI/CD, auto-redaction of sensitive values
 ///  Features: Key order preservation, --ignore-keys filtering
 /// Features: JSON statistics, interactive merge mode
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::*;
 use indexmap::IndexMap; // Preserve insertion order
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::path::Path;
 
 // ─────────────────────────────────────────────────────────────
 // Data Structures (enhanced with redaction + stats)
@@ -276,9 +276,26 @@ pub fn run(opts: DiffOptions) -> Result<i32> {
                 ));
             }
             if opts.interactive {
+                // RM-40: it writes now, and a template is committed: real
+                // values from .env must not be written into it.
+                if opts.reverse {
+                    anyhow::bail!(
+                        "--interactive --reverse would write .env's values into {left_name}, \
+                         which is committed. Use `evnx sync` to add names to it: it writes \
+                         placeholders."
+                    );
+                }
                 output_patch_interactive(&diff_result, left, right, left_name, opts.show_values)?;
             } else {
-                output_patch(&diff_result, left, right, opts.compare, opts.show_values)?;
+                let values_needed = opts.reverse || opts.compare == Compare::Values;
+                output_patch(
+                    &diff_result,
+                    left,
+                    right,
+                    left_name,
+                    values_needed,
+                    opts.show_values,
+                )?;
             }
             say_values_not_compared(opts.compare);
         }
@@ -644,50 +661,129 @@ fn output_patch(
     diff: &DiffResult,
     left: &IndexMap<String, String>,
     right: &IndexMap<String, String>,
-    compare: Compare,
+    left_path: &str,
+    values_needed: bool,
     show_values: bool,
 ) -> Result<()> {
-    println!("# Add these to .env:");
-    for key in &diff.missing {
-        if let Some(v) = right.get(key) {
-            println!("+ {}={}", key, shown(v, show_values));
-        }
+    // RM-40: a patch that applies has to carry the lines it adds or replaces.
+    // Against a template (key names only) those are the template's own lines,
+    // so nothing secret is printed. Any other comparison carries real values,
+    // and a `<withheld>` patch would write `<withheld>` into the file.
+    if values_needed && !show_values {
+        anyhow::bail!(
+            "this patch would carry real values (--values, --against or --reverse), and \
+             they are withheld by default. Add --show-values to print a patch that \
+             applies, or leave out --format patch to see the differences."
+        );
     }
+    let raw = std::fs::read_to_string(left_path).with_context(|| format!("reading {left_path}"))?;
+    let additions: Vec<(String, String)> = diff
+        .missing
+        .iter()
+        .filter_map(|k| right.get(k).map(|v| (k.clone(), v.clone())))
+        .collect();
+    let updates: Vec<(String, String)> = diff
+        .different
+        .iter()
+        .filter_map(|item| right.get(&item.key).map(|v| (item.key.clone(), v.clone())))
+        .collect();
+    let edit = plan_edit(&raw, left, &additions, &updates)?;
 
-    println!("\n# Remove these from .env:");
+    // Leading lines that are not a diff header are ignored by `patch`.
     for key in &diff.extra {
-        if let Some(v) = left.get(key) {
-            println!("- {}={}", key, shown(v, show_values));
-        }
+        println!("# {key} is only in {left_path}; this patch keeps it");
     }
-
-    // Against a template there are no updates: replacing real values with
-    // placeholders is what this section did (I-078, O-5).
-    if compare == Compare::Keys {
+    for key in &edit.by_hand {
+        println!("# {key} spans several lines in {left_path}; change it by hand");
+    }
+    if edit.hunks.is_empty() {
+        println!("# nothing to add to {left_path}");
         return Ok(());
     }
-
-    println!("\n# Update these in .env:");
-    for item in &diff.different {
-        // ⚠️ From the maps, not from `DiffItem`, which now carries only what is
-        // safe to *display*. A patch exists to be applied, so it needs the real
-        // values — masking them would produce a patch that writes `***` into
-        // the file.
-        //
-        // ⚠️ This is therefore the one format that prints secrets, and it is
-        // reachable only by typing `--format patch` by hand: the GitHub Action
-        // forces `--format json` for diff, and `pretty` is the default.
-        if let (Some(env_val), Some(ex_val)) = (left.get(&item.key), right.get(&item.key)) {
-            println!("- {}={}", item.key, shown(env_val, show_values));
-            println!("+ {}={}", item.key, shown(ex_val, show_values));
-        }
+    let name = left_path.trim_start_matches("./");
+    println!("--- a/{name}");
+    println!("+++ b/{name}");
+    for hunk in &edit.hunks {
+        print!("{hunk}");
     }
-
     Ok(())
 }
 
-/// A value as patch and interactive print it: exact when values were asked
-/// for, `<withheld>` otherwise (I-071, DEC-G7).
+/// What applying chosen changes to a `.env` does: the new text, the patch
+/// hunks that produce it, and the keys that cannot be edited on one line.
+struct Edit {
+    text: String,
+    hunks: Vec<String>,
+    by_hand: Vec<String>,
+}
+
+/// Replace each updated key's line in place and append each addition, as
+/// zero-context unified-diff hunks (RM-40). A value spread over several lines
+/// is left for the user, never half-replaced.
+fn plan_edit(
+    raw: &str,
+    current: &IndexMap<String, String>,
+    additions: &[(String, String)],
+    updates: &[(String, String)],
+) -> Result<Edit> {
+    let mut lines: Vec<String> = raw.lines().map(String::from).collect();
+    let mut hunks = Vec::new();
+    let mut by_hand = Vec::new();
+    let key_of = |line: &str| -> Option<String> {
+        let l = line.trim_start();
+        let l = l.strip_prefix("export ").unwrap_or(l);
+        l.split_once('=').map(|(k, _)| k.trim().to_string())
+    };
+    for (key, value) in updates {
+        let multiline = current.get(key).is_some_and(|v| v.contains('\n'));
+        let at = lines
+            .iter()
+            .position(|l| key_of(l).as_deref() == Some(key.as_str()));
+        match at {
+            Some(i) if !multiline => {
+                let new = crate::core::envfile::line(key, value);
+                hunks.push(format!(
+                    "@@ -{n},1 +{n},1 @@\n-{}\n+{new}\n",
+                    lines[i],
+                    n = i + 1
+                ));
+                lines[i] = new;
+            }
+            _ => by_hand.push(key.clone()),
+        }
+    }
+    if !additions.is_empty() {
+        if !raw.is_empty() && !raw.ends_with('\n') {
+            anyhow::bail!(
+                "the file does not end with a newline, so lines cannot be added after its \
+                 last line without changing it. Add a final newline and run again."
+            );
+        }
+        let n = lines.len();
+        let added: Vec<String> = additions
+            .iter()
+            .map(|(k, v)| crate::core::envfile::line(k, v))
+            .collect();
+        let mut hunk = format!("@@ -{n},0 +{},{} @@\n", n + 1, added.len());
+        for line in &added {
+            hunk.push_str(&format!("+{line}\n"));
+        }
+        hunks.push(hunk);
+        lines.extend(added);
+    }
+    let mut text = lines.join("\n");
+    if !lines.is_empty() {
+        text.push('\n');
+    }
+    Ok(Edit {
+        text,
+        hunks,
+        by_hand,
+    })
+}
+
+/// A value as interactive prints it: exact when values were asked for,
+/// `<withheld>` otherwise (I-071, DEC-G7).
 fn shown(value: &str, show_values: bool) -> &str {
     if show_values {
         value
@@ -696,13 +792,9 @@ fn shown(value: &str, show_values: bool) -> &str {
     }
 }
 
-/// Interactive merge mode for patch format: asks about each change and lists
-/// the ones chosen.
-///
-/// ⚠️ It writes nothing (I-073, the honest half; RM-40). It said "Applied
-/// changes" and "apply with: patch -p1 < changes.patch", naming a file it
-/// never wrote, while `target_file` was left untouched. Writing it, with a
-/// `.bak`, is RM-40 in v0.12.0; until then it says what it did.
+/// Interactive merge: asks about each change, then writes the chosen ones to
+/// `target_file`, keeping the previous file as `.bak` (RM-40). It used to
+/// write nothing while saying "Applied changes" (I-073).
 fn output_patch_interactive(
     diff: &DiffResult,
     left: &IndexMap<String, String>,
@@ -722,32 +814,32 @@ fn output_patch_interactive(
     println!("\n{}", "Interactive merge".bold());
     println!("Prompts: (y)es, (n)o, (s)kip rest\n");
 
-    let mut applied = Vec::new();
+    let mut additions: Vec<(String, String)> = Vec::new();
+    let mut updates: Vec<(String, String)> = Vec::new();
+    let mut stop = false;
 
-    // Handle missing keys
     for key in &diff.missing {
-        if let Some(v) = right.get(key) {
-            print!("Add {}={}? [y/n/s]: ", key, shown(v, show_values));
-            io::stdout().flush()?;
-
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-
-            match input.trim().to_lowercase().as_str() {
-                "y" | "yes" => {
-                    println!("   ✓ Queued: + {}={}", key, shown(v, show_values));
-                    applied.push(('+', key.clone(), shown(v, show_values).to_string()));
-                }
-                "s" | "skip" => break,
-                _ => println!("   ✗ Skipped"),
+        let Some(v) = right.get(key) else { continue };
+        print!("Add {}={}? [y/n/s]: ", key, shown(v, show_values));
+        io::stdout().flush()?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        match input.trim().to_lowercase().as_str() {
+            "y" | "yes" => additions.push((key.clone(), v.clone())),
+            "s" | "skip" => {
+                stop = true;
+                break;
             }
+            _ => println!("   ✗ Skipped"),
         }
     }
 
-    // Handle different values
     for item in &diff.different {
-        // Same reasoning as `output_patch`: an interactive merge writes real
-        // values into a real file, so it reads them from the maps.
+        if stop {
+            break;
+        }
+        // An interactive merge writes real values into a real file, so it
+        // reads them from the maps, not from the display-safe `DiffItem`.
         let (Some(env_val), Some(ex_val)) = (left.get(&item.key), right.get(&item.key)) else {
             continue;
         };
@@ -758,46 +850,45 @@ fn output_patch_interactive(
             shown(ex_val, show_values)
         );
         io::stdout().flush()?;
-
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
-
         match input.trim().to_lowercase().as_str() {
-            "y" | "yes" => {
-                println!("   ✓ Queued: + {}={}", item.key, shown(ex_val, show_values));
-                applied.push((
-                    '~',
-                    item.key.clone(),
-                    shown(ex_val, show_values).to_string(),
-                ));
-            }
+            "y" | "yes" => updates.push((item.key.clone(), ex_val.clone())),
             "s" | "skip" => break,
             _ => println!("   ✗ Skipped"),
         }
     }
 
-    // Summary of the chosen changes
-    if !applied.is_empty() {
-        println!("\n{}", "Chosen (nothing was written):".bold());
-        for (op, key, val) in &applied {
-            let icon = match op {
-                '+' => "+".green(),
-                '~' => "~".yellow(),
-                _ => "-".red(),
-            };
-            println!("  {} {}={}", icon, key, val);
-        }
-        println!(
-            "\n  {}  evnx did not change {target_file}: add these lines to it yourself",
-            glyph::ARROW.dimmed()
-        );
-    } else {
+    if additions.is_empty() && updates.is_empty() {
         println!(
             "\n{}",
             format!("· Nothing chosen; {target_file} was not changed").dimmed()
         );
+        return Ok(());
     }
 
+    let raw =
+        std::fs::read_to_string(target_file).with_context(|| format!("reading {target_file}"))?;
+    let edit = plan_edit(&raw, left, &additions, &updates)?;
+    let kept = crate::core::safe_write::backup(Path::new(target_file), raw.as_bytes())
+        .with_context(|| format!("keeping a copy of {target_file}"))?;
+    let written = crate::core::safe_write::write_private(target_file, edit.text.as_bytes())
+        .with_context(|| format!("writing {target_file}"))?;
+    crate::core::safe_write::report(&written);
+
+    let done = additions.len() + updates.len() - edit.by_hand.len();
+    println!(
+        "\n  {} wrote {} to {target_file}; the previous file is kept as {}",
+        "✓".green(),
+        crate::utils::string::pluralize(done, "change", "changes"),
+        kept.display()
+    );
+    for key in &edit.by_hand {
+        println!(
+            "  {} {key} spans several lines; it was not changed — edit it by hand",
+            "!".yellow()
+        );
+    }
     Ok(())
 }
 

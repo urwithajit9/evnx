@@ -1,9 +1,10 @@
 //! What `evnx diff` shows of the values it compares (U3 part 1).
 //!
 //! - I-071, DEC-G7: `--format patch` and `--interactive` printed the real
-//!   values of `.env` with no flag. They now print `<withheld>` unless
-//!   `--show-values`; with it, exact values (a patch must apply) and a warning
-//!   on stderr.
+//!   values of `.env` with no flag. Against a template a patch (RM-40) now
+//!   holds only the template's lines it adds; any other patch needs
+//!   `--show-values`, and then has exact values (it must apply) and a warning
+//!   on stderr. `--interactive` withholds values in its questions.
 //! - I-076, DEC-G9: `--show-values` masked by key name only, so
 //!   `DATABASE_URL=postgres://admin:s3cr3t@db` printed the password. Masking now
 //!   reads the value: a URL keeps its structure, a token is masked whole.
@@ -35,7 +36,9 @@ fn t_i071_patch_withholds_values_by_default() {
     for s in SECRETS {
         assert!(!out.all().contains(s), "{s} printed:\n{}", out.all());
     }
-    assert!(out.stdout.contains("<withheld>"), "{}", out.stdout);
+    assert!(out.stdout.contains("+NEW_ONE=x"), "{}", out.stdout);
+    // With values compared, a patch would carry them: refused without the flag.
+    run(p.path(), &["diff", "--format", "patch", "--values"]).assert_code(2);
 }
 
 #[test]
@@ -46,7 +49,7 @@ fn t_dec_g7_show_values_gives_an_exact_patch_and_a_warning() {
         &["diff", "--format", "patch", "--values", "--show-values"],
     );
     assert!(
-        out.stdout.contains(&format!("- DATABASE_URL={DB_URL_ENV}")),
+        out.stdout.contains(&format!("-DATABASE_URL={DB_URL_ENV}")),
         "{}",
         out.stdout
     );

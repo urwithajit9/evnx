@@ -2,23 +2,21 @@
 ================ D7 ================
 
 $ evnx diff --format patch
-# Add these to .env:
-+ REDIS_URL=<withheld>
-+ FEATURE_X=<withheld>
-
-# Remove these from .env:
-- EXTRA_DEBUG=<withheld>
+# EXTRA_DEBUG is only in .env; this patch keeps it
+--- a/.env
++++ b/.env
+@@ -4,0 +5,2 @@
++REDIS_URL=redis://localhost:6379
++FEATURE_X=false
 [stderr]
   values not compared against a template (--values to compare them)
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
 
 $ bash -c "$0" diff --format patch > changes.patch 2>/dev/null; patch -p1 --dry-run < changes.patch evnx
-[stderr]
-patch: **** Only garbage was found in the patch input.
-[exit 2]
-I-071 fixed (DEC-G7): values are <withheld> unless --show-values
+checking file .env
+[exit 0]
+  ok: FIXED I-072 (RM-40): patch -p1 applies it; against the template it adds the template's lines and prints no .env value (exit 0)
 FIXED I-078: against the template the patch has no update section, which replaced real values with placeholders
-KNOWN I-072: patch(1) rejects the output and headings always say .env; decided: dotenv fragment with real file names
 
-================ summary: 0 ok, 0 mismatch   ================
+================ summary: 1 ok, 0 mismatch   ================
