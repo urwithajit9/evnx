@@ -471,17 +471,25 @@ impl FileFilter {
         // finding there is always false. This only matters since `.env*` files
         // became scannable — before that, `.env.backup` was skipped for having
         // an unrecognised extension, and the false positive never surfaced.
-        Self::is_evnx_backup(path)
+        //
+        // ⚠️ By content as well as name (RM-84, I-293): a plaintext
+        // `cp .env .env.backup` carries the real secrets, and skipping it by
+        // name was a silent all-clear. A file that cannot be read is scanned,
+        // so the scan reports it rather than this filter hiding it.
+        Self::has_backup_name(path)
+            && std::fs::read_to_string(path)
+                .is_ok_and(|content| crate::core::envfile::is_evnx_backup(&content))
     }
 
-    /// Is this an `evnx backup` artefact — `.env.backup`, `.env.production.backup`,
-    /// or a rotated `.env.backup.2`?
+    /// Is this named like an `evnx backup` artefact — `.env.backup`,
+    /// `.env.production.backup`, or a rotated `.env.backup.2`? The name only
+    /// makes a file a candidate; the content decides.
     ///
     /// Deliberately narrow: it matches only files that *this* filter newly admits,
     /// i.e. ones whose name starts with `.env`. A plain `config.backup` is
     /// unaffected and stays outside the scanner's reach exactly as before, rather
     /// than being newly excluded on the strength of its extension.
-    fn is_evnx_backup(path: &Path) -> bool {
+    fn has_backup_name(path: &Path) -> bool {
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             return false;
         };
@@ -907,9 +915,14 @@ mod tests {
 
     /// `evnx backup` output is a single base64 blob that the high-entropy detector
     /// reads as a secret. It is ciphertext, so the finding is always false.
+    /// RM-84 (I-293): decided by content; a plaintext copy with a backup's name
+    /// is scanned.
     #[test]
-    fn evnx_backups_are_excluded() {
+    fn evnx_backups_are_excluded_by_content() {
         let filter = FileFilter::new(&[]);
+        let dir = tempfile::TempDir::new().unwrap();
+        // Format byte 1, then enough Base64 to pass for header and tag.
+        let blob = format!("AQ{}", "A".repeat(120));
         for name in [
             ".env.backup",
             ".env.backup.1",
@@ -917,16 +930,27 @@ mod tests {
             ".env.production.backup",
             ".env.production.backup.3",
         ] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, &blob).unwrap();
             assert!(
-                filter.should_exclude(Path::new(name)),
+                filter.should_exclude(&path),
                 "{name} is ciphertext and must not be scanned"
             );
+            std::fs::write(&path, "STRIPE_SECRET_KEY=sk_live_x\n").unwrap();
+            assert!(
+                !filter.should_exclude(&path),
+                "{name} holds plaintext and must be scanned"
+            );
         }
+        // Not on disk: scanned, so the scan reports it as unreadable.
+        assert!(!filter.should_exclude(&dir.path().join(".env.backup.9")));
 
         // Narrowly scoped: a backup that is not an `.env*` file is left exactly as
         // it was before this rule existed — unscannable by extension, not newly
         // excluded by name.
-        assert!(!filter.should_exclude(Path::new("config.backup")));
+        let config = dir.path().join("config.backup");
+        std::fs::write(&config, &blob).unwrap();
+        assert!(!filter.should_exclude(&config));
         assert!(!FileFilter::is_scannable(Path::new("config.backup")));
 
         // And `.env` itself is not a backup.
@@ -977,7 +1001,8 @@ mod tests {
             );
         }
         assert!(!found.contains(&".env.example".to_string()));
-        assert!(!found.contains(&".env.backup".to_string()));
+        // RM-84: this `.env.backup` is plaintext with a key in it, so it is read.
+        assert!(found.contains(&".env.backup".to_string()));
     }
 
     #[test]
