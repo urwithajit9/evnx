@@ -121,6 +121,9 @@ instead of `.env`. Pass `--env-name` to choose another.
   manual `cargo publish`), and PyPI uploads with GitHub's OIDC token instead
   of a stored API token, adding PEP 740 attestations. No long-lived registry
   token is needed for either.
+- **Internal**: a release build retries its provenance attestation once, after
+  60 seconds, so a passing Sigstore timeout no longer stops the release (seen
+  twice in the second fork dry run).
 - **Internal** (RM-28): the release and CI workflows move to `actions/checkout`
   v7.0.1, `actions/download-artifact` v8.0.2 (a hash mismatch now fails the
   download), `actions/setup-node` v7.1.0 (its automatic cache turned off in the
