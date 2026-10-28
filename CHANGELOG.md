@@ -106,6 +106,19 @@ instead of `.env`. Pass `--env-name` to choose another.
   and says the file was not changed; writing it is planned for 0.12.0. Without
   a terminal it refuses with exit 2 and names `evnx diff --format patch`; piped
   answers used to be read as replies.
+- **`scan` reads a plaintext `.env.backup`** (RM-84, I-293). Files named like
+  an `evnx backup` (`.env.backup`, `.env.production.backup`, `.env.backup.2`)
+  were skipped by name, as ciphertext, so `cp .env .env.backup` was never
+  scanned: real secrets, exit 0. The content decides now, as it does for
+  `doctor`: a real backup is still skipped, a plaintext copy is scanned.
+- **`scan` says how it read each file** (RM-47). Name-based checks
+  (`DB_PASSWORD=…` flagged by its name) run only on files named like a `.env`;
+  the same line in `config.txt` gets the value patterns alone. `-v` now says so
+  on each `Scanning:` line, and the JSON report has a `files` list with each
+  file's `read_as`, `dotenv` or `text` (additive).
+- **Internal** (RM-46): scan's lenient placeholder check is now named
+  `is_placeholder_lenient`, so it cannot be mistaken for `validate --fix`'s
+  strict one, which decides whether a value is safe to overwrite.
 - **`evnx update` prints a command that works for the copy that is running**
   (RM-19, UP-1 to UP-4):
   - a pipx install says `pipx upgrade evnx`; it was read as pip and told
