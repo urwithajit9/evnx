@@ -119,6 +119,8 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             exclude,
             password_stdin,
             allow_unsafe_names,
+            mask,
+            no_mask,
             command,
         } => run::run(
             server_override,
@@ -128,6 +130,7 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             exclude,
             password_stdin,
             allow_unsafe_names,
+            crate::core::inject::masking(mask, no_mask),
             verbose,
             command,
         ),

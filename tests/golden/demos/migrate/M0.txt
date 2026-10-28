@@ -89,14 +89,14 @@ Options:
   -v, --verbose
           Enable verbose output
 
-  -q, --quiet
-          Print nothing on success. Findings, warnings, errors and requested data still print
-
       --vault-name <VAULT_NAME>
           Azure Key Vault name
 
       --heroku-app <HEROKU_APP>
           Heroku application name
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
 
       --no-color
           Disable colored output

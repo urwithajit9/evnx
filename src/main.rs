@@ -713,6 +713,33 @@ fn main() -> Result<()> {
             }
         },
 
+        Commands::Run {
+            env,
+            env_name,
+            include,
+            exclude,
+            allow_unsafe_names,
+            mask,
+            no_mask,
+            command,
+        } => {
+            let env = resolve_env(
+                Path::new("."),
+                env.as_deref(),
+                env_name.as_deref(),
+                cfg.defaults.env_name.as_deref(),
+            );
+            commands::run::run(
+                &env,
+                include.as_deref(),
+                exclude.as_deref(),
+                allow_unsafe_names,
+                evnx::core::inject::masking(mask, no_mask),
+                cli.verbose,
+                &command,
+            )
+        }
+
         Commands::Surface { json, compact } => commands::surface::run(json, compact),
         Commands::Completions { shell } => commands::completions::run(shell),
         Commands::Update { check, json } => commands::update::run(check, json).map(verdict::finish),

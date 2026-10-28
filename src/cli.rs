@@ -1311,6 +1311,19 @@ pub enum CloudCommands {
         #[arg(long)]
         allow_unsafe_names: bool,
 
+        /// Mask secret values in the command's output as `***`.
+        ///
+        /// On by default when output is not a terminal (a CI log, an agent),
+        /// where what is printed is kept. Only values the classifier calls
+        /// secret (by name or by value) are masked. It prevents accidents, not
+        /// exfiltration: a command that transforms a value gets past it.
+        #[arg(long, conflicts_with = "no_mask")]
+        mask: bool,
+
+        /// Never mask the command's output.
+        #[arg(long)]
+        no_mask: bool,
+
         /// The command to run, after `--`.
         ///
         /// `last = true` makes the separator mandatory, so a flag meant for the
@@ -2748,6 +2761,62 @@ file, names that collide, a filter that leaves nothing).
     Spec {
         #[command(subcommand)]
         action: SpecAction,
+    },
+
+    /// Run a command with a `.env`'s variables in its environment.
+    ///
+    /// The local `evnx cloud run`: the file is read and handed to the child
+    /// process in its environment block, never its arguments, so `ps` shows
+    /// the command and not the values, and the command never reads `.env`
+    /// itself. evnx's own `EVNX_*` settings are not passed on.
+    ///
+    /// The command runs directly, not through a shell. For a pipeline or a
+    /// builtin, ask for one: `-- sh -c 'a | b'`. Exits with the command's code.
+    #[command(after_help = docs::RUN.after_help)]
+    Run {
+        /// The file to read. Defaults to `.env`, or `[defaults] env_name`.
+        #[arg(long)]
+        env: Option<String>,
+
+        /// Read `.env.<NAME>` instead of `.env`.
+        #[arg(long, value_name = "NAME", conflicts_with = "env")]
+        env_name: Option<String>,
+
+        /// Inject only variables whose name matches one of these globs.
+        #[arg(long, value_delimiter = ',', value_name = "GLOB")]
+        include: Option<Vec<String>>,
+
+        /// Skip variables whose name matches one of these globs.
+        #[arg(long, value_delimiter = ',', value_name = "GLOB")]
+        exclude: Option<Vec<String>>,
+
+        /// Inject variables that make a program load or run other code
+        /// (`PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, …), refused by
+        /// default.
+        #[arg(long)]
+        allow_unsafe_names: bool,
+
+        /// Mask secret values in the command's output as `***`.
+        ///
+        /// On by default when output is not a terminal (a CI log, an agent),
+        /// where what is printed is kept. Only values the classifier calls
+        /// secret (by name or by value) are masked. It prevents accidents, not
+        /// exfiltration: a command that transforms a value gets past it.
+        #[arg(long, conflicts_with = "no_mask")]
+        mask: bool,
+
+        /// Never mask the command's output.
+        #[arg(long)]
+        no_mask: bool,
+
+        /// The command to run, after `--`.
+        #[arg(
+            last = true,
+            required = true,
+            allow_hyphen_values = true,
+            value_name = "COMMAND"
+        )]
+        command: Vec<String>,
     },
 
     /// Every command this build has, and which features it was compiled with.

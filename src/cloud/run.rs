@@ -31,7 +31,7 @@
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use indexmap::IndexMap;
-use std::process::Command;
+
 use zeroize::Zeroize;
 
 use super::client::Client;
@@ -52,6 +52,7 @@ pub fn run(
     exclude: Option<Vec<String>>,
     password_stdin: bool,
     allow_unsafe_names: bool,
+    mask: bool,
     verbose: bool,
     command: Vec<String>,
 ) -> Result<()> {
@@ -154,21 +155,30 @@ pub fn run(
     }
 
     // Before the child exists: a refused name means nothing runs (I-228).
-    check_names(&env_vars, allow_unsafe_names)?;
+    crate::core::inject::check_names(
+        &env_vars,
+        allow_unsafe_names,
+        "the vault",
+        "push to this vault",
+    )?;
 
-    let status = spawn_with_env(program, args, &env_vars).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            anyhow!(
-                "no such command: {program}\n\
+    let masker = mask
+        .then(|| crate::core::inject::Masker::new(&env_vars))
+        .flatten();
+    let status = crate::core::inject::spawn_with_env(program, args, &env_vars, masker.as_ref())
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                anyhow!(
+                    "no such command: {program}\n\
                  \x20 `evnx cloud run` runs the command after `--`; it does not go \
                  through a shell, so builtins and pipelines need one:\n\
                  \x20   evnx cloud run --vault {} -- sh -c 'a | b'",
-                vault_ref.label()
-            )
-        } else {
-            anyhow::Error::new(e).context(format!("failed to run {program}"))
-        }
-    });
+                    vault_ref.label()
+                )
+            } else {
+                anyhow::Error::new(e).context(format!("failed to run {program}"))
+            }
+        });
 
     // ⚠️ Zeroized whether the child succeeded, failed, or never started.
     //
@@ -183,83 +193,8 @@ pub fn run(
 
     let status = status?;
 
-    // ── Exit as the child did ───────────────────────────────────────────────
-    //
-    // ⚠️ `std::process::exit`, not a returned `Result`. A pipeline branches on
-    // the exit code, and mapping every child failure onto evnx's own `1` would
-    // lose the distinction between "the deploy script returned 2" and "evnx
-    // could not reach the server".
-    match status.code() {
-        Some(code) => std::process::exit(code),
-        // Killed by a signal. There is no code to pass through, and the shell
-        // convention of 128+signal is not portable, so report and use 1.
-        None => {
-            eprintln!("  {} the command was killed by a signal", "!".yellow());
-            std::process::exit(1)
-        }
-    }
-}
-
-/// Refuse vault variables that would make the child load or run other code
-/// (`PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, …), unless `allow`.
-///
-/// ⚠️ Any name from the vault was injected, so anyone who can push to a vault
-/// could set `LD_PRELOAD` and run code inside every reader's `cloud run`
-/// (I-228, DEC-CL1). Checked before the child starts: nothing runs.
-fn check_names(env_vars: &IndexMap<String, String>, allow: bool) -> Result<()> {
-    if allow {
-        return Ok(());
-    }
-    let unsafe_names: Vec<&str> = env_vars
-        .keys()
-        .map(String::as_str)
-        .filter(|k| crate::core::envsource::is_unsafe_name(k))
-        .collect();
-    if unsafe_names.is_empty() {
-        return Ok(());
-    }
-    Err(anyhow!(
-        "the vault sets {}, which make a program load or run other code.\n\
-         \x20 Anyone who can push to this vault could use them to run code here.\n\
-         \x20 Nothing was run. Exclude them with --exclude, or pass\n\
-         \x20 --allow-unsafe-names if you meant to set them.",
-        unsafe_names.join(", ")
-    ))
-}
-
-/// Run `program` with `env_vars` laid over the inherited environment.
-///
-/// ⚠️ Separated from `run` so the properties that matter can be tested without a
-/// server, a vault or a password: that the child receives the variables, that
-/// they do **not** appear in its argument vector, and that its exit code comes
-/// back intact.
-///
-/// The parent's environment is inherited rather than cleared. Clearing it would
-/// remove `PATH`, and nothing would start.
-fn spawn_with_env(
-    program: &str,
-    args: &[String],
-    env_vars: &IndexMap<String, String>,
-) -> std::io::Result<std::process::ExitStatus> {
-    let mut cmd = Command::new(program);
-    cmd.args(args);
-    // ⚠️ evnx's own settings stay with evnx (I-227, DEC-CL1). `EVNX_TOKEN`,
-    // `EVNX_PASSWORD` and `EVNX_SERVER` were inherited, so every child of a CI
-    // step held the pipeline's API token.
-    for (key, _) in std::env::vars_os() {
-        if key
-            .to_str()
-            .is_some_and(crate::core::envsource::is_evnx_own)
-        {
-            cmd.env_remove(&key);
-        }
-    }
-    for (key, value) in env_vars {
-        // `env`, never an argument. This one line is the whole reason to prefer
-        // this command over `export $(cat .env | xargs)`.
-        cmd.env(key, value);
-    }
-    cmd.status()
+    // Exit as the child did: a pipeline branches on the child's own code.
+    crate::core::inject::exit_as(status)
 }
 
 /// Parse `KEY=value` lines, reusing the parser every other command uses.
@@ -299,8 +234,6 @@ mod tests {
         assert!(parse_env(b"# only a comment\n").unwrap().is_empty());
     }
 
-    // ─── spawn_with_env ─────────────────────────────────────────────────────
-
     fn vars(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
         pairs
             .iter()
@@ -312,125 +245,7 @@ mod tests {
         vec!["-c".to_string(), script.to_string()]
     }
 
-    /// The child sees the vault's variables.
-    #[test]
-    fn the_child_receives_the_variables() {
-        let status = spawn_with_env(
-            "sh",
-            &sh(r#"[ "$INJECTED" = "hello" ]"#),
-            &vars(&[("INJECTED", "hello")]),
-        )
-        .unwrap();
-        assert!(status.success(), "the child did not see INJECTED");
-    }
-
-    /// ⚠️ The property this command exists for. Secrets go in the environment
-    /// block, never the argument vector, so `ps` shows the command and not the
-    /// values. Checked by having the child read its own `/proc` entry.
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn the_secret_never_reaches_the_argument_vector() {
-        let secret = "sk_live_NEVER_IN_ARGV";
-
-        // Exits 0 only when the secret is absent from its own cmdline *and*
-        // present in its own environment — so a bug that dropped the injection
-        // entirely cannot pass this.
-        let script = format!(
-            r#"cmdline=$(tr '\0' ' ' < /proc/self/cmdline)
-               case "$cmdline" in *{secret}*) exit 1 ;; esac
-               [ "$TOKEN" = "{secret}" ] || exit 2
-               exit 0"#
-        );
-
-        let status = spawn_with_env("sh", &sh(&script), &vars(&[("TOKEN", secret)])).unwrap();
-        match status.code() {
-            Some(0) => {}
-            Some(1) => panic!("the secret appeared in the child's argument vector"),
-            Some(2) => panic!("the secret never reached the child's environment"),
-            other => panic!("unexpected status {other:?}"),
-        }
-    }
-
-    /// A pipeline branches on this, so the child's code must survive intact.
-    #[test]
-    fn the_childs_exit_code_comes_back_unchanged() {
-        for code in [0, 1, 7, 42] {
-            let status =
-                spawn_with_env("sh", &sh(&format!("exit {code}")), &IndexMap::new()).unwrap();
-            assert_eq!(status.code(), Some(code), "exit {code} was not preserved");
-        }
-    }
-
-    /// Inherited, not cleared — otherwise PATH is gone and nothing runs.
-    #[test]
-    fn the_parent_environment_is_inherited() {
-        std::env::set_var("RUN_INHERIT_PROBE", "from-parent");
-        let status = spawn_with_env(
-            "sh",
-            &sh(r#"[ "$RUN_INHERIT_PROBE" = "from-parent" ]"#),
-            &IndexMap::new(),
-        )
-        .unwrap();
-        std::env::remove_var("RUN_INHERIT_PROBE");
-        assert!(status.success(), "the parent environment was not inherited");
-    }
-
-    /// And the vault wins where both define a name — that is what injection means.
-    #[test]
-    fn a_vault_variable_overrides_the_inherited_one() {
-        std::env::set_var("RUN_OVERRIDE_PROBE", "from-parent");
-        let status = spawn_with_env(
-            "sh",
-            &sh(r#"[ "$RUN_OVERRIDE_PROBE" = "from-vault" ]"#),
-            &vars(&[("RUN_OVERRIDE_PROBE", "from-vault")]),
-        )
-        .unwrap();
-        std::env::remove_var("RUN_OVERRIDE_PROBE");
-        assert!(status.success(), "the inherited value won");
-    }
-
-    /// I-227, DEC-CL1: evnx's own settings — the API token above all — do not
-    /// reach the child. A test used to lock in that they did.
-    #[test]
-    fn t_i227_evnx_settings_are_not_inherited() {
-        std::env::set_var("EVNX_TOKEN_PROBE_I227", "evnx_tok_secret");
-        let status = spawn_with_env(
-            "sh",
-            &sh(r#"[ -z "${EVNX_TOKEN_PROBE_I227+set}" ]"#),
-            &IndexMap::new(),
-        )
-        .unwrap();
-        std::env::remove_var("EVNX_TOKEN_PROBE_I227");
-        assert!(status.success(), "an EVNX_ variable reached the child");
-    }
-
-    /// I-228, DEC-CL1: a vault variable that makes the child load or run other
-    /// code is refused, naming it, unless the user allows it.
-    #[test]
-    fn t_i228_unsafe_names_are_refused_unless_allowed() {
-        let v = vars(&[
-            ("API_KEY", "k"),
-            ("LD_PRELOAD", "/tmp/x.so"),
-            ("NODE_OPTIONS", "-r x"),
-        ]);
-        let err = check_names(&v, false).unwrap_err().to_string();
-        assert!(
-            err.contains("LD_PRELOAD") && err.contains("NODE_OPTIONS"),
-            "{err}"
-        );
-        assert!(err.contains("--allow-unsafe-names"), "{err}");
-        assert!(!err.contains("API_KEY"), "{err}");
-        assert!(check_names(&v, true).is_ok());
-        assert!(check_names(&vars(&[("API_KEY", "k")]), false).is_ok());
-    }
-
-    /// A missing command is an io::ErrorKind::NotFound, which `run` turns into
-    /// the "use sh -c" hint rather than a bare OS error.
-    #[test]
-    fn a_missing_command_is_reported_as_not_found() {
-        let err = spawn_with_env("evnx-no-such-binary-xyz", &[], &IndexMap::new()).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
-    }
+    use crate::core::inject::spawn_with_env;
 
     // ─── --include / --exclude, through the real injection ──────────────────
     //
@@ -468,6 +283,7 @@ mod tests {
                    [ -z "${STRIPE_KEY+set}" ] || exit 3
                    exit 0"#),
             &env,
+            None,
         )
         .unwrap();
         match status.code() {

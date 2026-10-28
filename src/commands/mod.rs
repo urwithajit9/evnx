@@ -6,6 +6,7 @@ pub mod doctor;
 pub mod init;
 pub mod migrate;
 pub mod restore;
+pub mod run;
 pub mod scan;
 pub mod spec;
 pub mod surface;

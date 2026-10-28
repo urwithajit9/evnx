@@ -10,6 +10,7 @@ pub mod gitignore;
 pub mod glob;
 #[cfg(feature = "net")]
 pub mod http;
+pub mod inject;
 pub mod mask;
 pub mod parser;
 pub mod permissions;
