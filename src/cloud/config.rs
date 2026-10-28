@@ -4,7 +4,7 @@
 //!
 //! | File | Contents | Written by |
 //! |------|----------|------------|
-//! | `config.toml` | server URL and other preferences | the user, by hand or by `evnx cloud config` |
+//! | `config.toml` | server URL and other preferences | the user, by hand (no command writes it; I-326) |
 //! | `credentials.json` | tokens | only the CLI, at mode 0600 — see [`crate::cloud::creds`] |
 //!
 //! # Why not `.evnx.toml`
