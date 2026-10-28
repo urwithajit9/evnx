@@ -116,6 +116,60 @@ instead of `.env`. Pass `--env-name` to choose another.
   the same line in `config.txt` gets the value patterns alone. `-v` now says so
   on each `Scanning:` line, and the JSON report has a `files` list with each
   file's `read_as`, `dotenv` or `text` (additive).
+- **Cloud commands a production server can trust** (RM-85, from a paid
+  user's 0.10.18 session):
+  - `cloud pull` said "writing to a production vault from ./.env", which
+    describes a push. It now says what a pull does, only when it would
+    replace a different file: `.env exists and differs from version 3 of
+    app/production (production); pulling replaces it.`
+  - Server times end in `UTC` (`cloud history`, `audit`, `sessions`, …): a
+    server in Seoul read `16:21` as local time.
+  - `cloud link` names the folder it bound, which is the project's
+    `.evnx.toml` folder and every folder below it, often not the current one.
+    It said "bound this directory".
+  - The binding is one aligned `vault  app/production  ([cloud] vault)` row
+    under the `config` line, and the `file` line is an absolute path.
+- **`[cloud] file`: a binding can name the file** (RM-86).
+  `evnx cloud link app/production --file deploy/.env` records it relative to
+  the `.evnx.toml`'s folder, so push and pull use the same file from every
+  folder below it; they used `./.env` from wherever they ran. `--file` and
+  `--env-name` still win; a path outside the project is refused.
+- **`evnx cloud diff --local`** (RM-87): the local file against a version, by
+  key name (`+` only in the vault, `-` only in the file, `~` value differs),
+  decrypted in memory; exit 0 when identical, 1 when not. Nothing is written,
+  so checking a server no longer means pulling production secrets into `/tmp`.
+- **`evnx spec check`** (RM-41): the `[vars]` contract against `.env.example`
+  (every declared variable in it, every name in it declared) and, when there
+  is one, `.env` (every required variable present). Read-only, exit 0/1/2, a
+  project without `[vars]` is skipped and says so. Shipped as the
+  `evnx-spec-check` pre-commit hook.
+- **`diff --format patch` is a patch** (RM-40, I-072). It is a unified diff of
+  `.env` that `patch -p1` applies: the missing names are appended with the
+  template's lines, keys only in `.env` are kept and named in comments. A
+  patch that would carry real values (`--values`, `--against`, `--reverse`)
+  needs `--show-values`; it used to print `<withheld>` lines `patch` rejected.
+- **`diff --interactive` writes what you choose** (RM-40), keeping the
+  previous file as `.env.bak`; batch 7 had made it say it wrote nothing.
+  `--interactive --reverse` is refused: it would write `.env`'s values into
+  the committed template (`evnx sync` adds names with placeholders).
+- **`evnx run -- <cmd>`** (RM-43): a local `.env` into a command's
+  environment block, never its arguments, as `evnx cloud run` does for a vault;
+  evnx's own `EVNX_*` settings are not passed on, and variables that make a
+  program load other code (`LD_PRELOAD`, `NODE_OPTIONS`, …) are refused.
+- **Secrets are masked in `run` and `cloud run` output** (RM-43): values the
+  classifier calls secret print as `***`, by default when output is not a
+  terminal (a CI log, an agent); `--mask` and `--no-mask` decide otherwise. It
+  prevents accidents, not exfiltration.
+- **`validate` and `doctor` say where your `.env`'s readers disagree** (RM-04,
+  phase 1). evnx's parser does not change; it reads as Docker Compose does. When
+  the project uses Node `dotenv`, `validate` reports `reader_mismatch` (a
+  warning, `--ignore`-able, never `--fix`ed) for lines Node reads differently:
+  `KEY=   # note` and `KEY=#ff0000` (empty), `PW=a#b` (cut at `#`), and
+  `${VAR}` without `dotenv-expand` (not expanded). Docker Compose and
+  python-dotenv were measured to read all of these as evnx does, so they
+  produce no finding. `doctor` adds one line naming the readers it detected.
+  Every value comes from running the real loaders
+  (`scripts/measure-dialects.py`, the weekly `dialects.yml` workflow).
 - **`evnx scan -` reads stdin** (RM-48). Scan a diff, a log or a file an
   agent is about to write without putting it on disk:
   `git diff | evnx scan -`. It is read as a `.env` when it parses as one and
