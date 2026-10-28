@@ -579,6 +579,20 @@ impl DiagnosticCheck for EnvFileCheck {
                         if verbose {
                             lines.push(format!("✓ {name} syntax is valid"));
                         }
+                        // RM-04: one line naming the readers, so a wrong
+                        // detection is visible; `validate` lists the lines.
+                        let readers = crate::core::dialect::detect(project_root);
+                        let found = crate::core::dialect::mismatches(&content, &readers);
+                        if !found.is_empty() {
+                            if severity == Severity::Ok {
+                                severity = Severity::Warning;
+                            }
+                            lines.push(format!(
+                                "! {name} is read by evnx and {}; {} read differently — run `evnx validate`",
+                                crate::core::dialect::names(&readers),
+                                crate::utils::string::pluralize(found.len(), "line is", "lines are")
+                            ));
+                        }
                     }
                     problems => {
                         severity = Severity::Error;

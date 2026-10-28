@@ -1,0 +1,52 @@
+name: .env dialects
+
+# RM-04: src/assets/dialects.json says how Docker Compose, python-dotenv and
+# Node dotenv read each case. Every value must be measured, never written from
+# memory, so this runs the real loaders and fails when one differs from the
+# table. Not in ci.yml: it needs Docker, Python and Node. Weekly, so a loader
+# that changes under a pinned major version is noticed; on demand; and on any
+# change to the table, the script or evnx's parser.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+  pull_request:
+    paths:
+      - src/assets/dialects.json
+      - scripts/measure-dialects.py
+      - src/core/parser.rs
+      - .github/workflows/dialects.yml
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: Measure the readers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - run: cargo build
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      # The versions the table was measured with (its "readers" block).
+      - name: Install the loaders
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet python-dotenv==1.2.2
+          mkdir -p "$RUNNER_TEMP/node"
+          npm install --silent --prefix "$RUNNER_TEMP/node" dotenv@18.0.9 dotenv-expand@12.0.1
+      - name: Compare with src/assets/dialects.json
+        env:
+          PYTHON: ${{ runner.temp }}/venv/bin/python
+          NODE_MODULES: ${{ runner.temp }}/node/node_modules
+          EVNX: target/debug/evnx
+        run: |
+          docker compose version
+          python3 scripts/measure-dialects.py

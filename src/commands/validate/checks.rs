@@ -179,6 +179,45 @@ pub fn check_missing_variables(
 ///
 /// This reads the file rather than the parsed map, because by the time there is
 /// a map the evidence is gone.
+/// Lines the project's other readers read differently from evnx (RM-04).
+/// Names the readers both ways and never prints a value.
+pub fn check_reader_mismatch(
+    content: &str,
+    env_path: &str,
+    project: &std::path::Path,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if ignore.contains(IssueType::ReaderMismatch.as_str()) {
+        return Vec::new();
+    }
+    let readers = crate::core::dialect::detect(project);
+    crate::core::dialect::mismatches(content, &readers)
+        .into_iter()
+        .map(|m| {
+            let agree = if m.agree.is_empty() {
+                "evnx reads".to_string()
+            } else {
+                format!("evnx and {} read", crate::core::dialect::names(&m.agree))
+            };
+            Issue {
+                severity: "warning".to_string(),
+                issue_type: IssueType::ReaderMismatch.as_str().to_string(),
+                variable: m.key.clone(),
+                message: format!(
+                    "{} (line {}): {} {}, while {agree} it as written",
+                    m.key,
+                    m.line,
+                    crate::core::dialect::names(&m.differ),
+                    m.effect
+                ),
+                location: format!("{env_path}:{}", m.line),
+                suggestion: Some(m.fix.to_string()),
+                auto_fixable: false,
+            }
+        })
+        .collect()
+}
+
 pub fn check_duplicate_keys(content: &str, env_path: &str, ignore: &HashSet<String>) -> Vec<Issue> {
     if ignore.contains(IssueType::DuplicateKey.as_str()) {
         return Vec::new();

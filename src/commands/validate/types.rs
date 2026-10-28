@@ -30,11 +30,15 @@ pub enum IssueType {
     /// The env file is already tracked by git: its values are in the history
     /// (D-27, DEC-VA1). An error.
     EnvTracked,
+    /// A line this project's readers (Docker Compose, python-dotenv, Node
+    /// dotenv) read differently from evnx (RM-04). A warning, never fixable:
+    /// fixing it would choose a reader for the user.
+    ReaderMismatch,
 }
 
 impl IssueType {
     /// Every type, in the order `--ignore`'s error lists them.
-    pub const ALL: [IssueType; 15] = [
+    pub const ALL: [IssueType; 16] = [
         IssueType::MissingVariable,
         IssueType::ExtraVariable,
         IssueType::PlaceholderValue,
@@ -50,6 +54,7 @@ impl IssueType {
         IssueType::UnknownEnvironment,
         IssueType::EnvNotIgnored,
         IssueType::EnvTracked,
+        IssueType::ReaderMismatch,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -69,6 +74,7 @@ impl IssueType {
             IssueType::UnknownEnvironment => "unknown_environment",
             IssueType::EnvNotIgnored => "env_not_ignored",
             IssueType::EnvTracked => "env_tracked",
+            IssueType::ReaderMismatch => "reader_mismatch",
         }
     }
 }

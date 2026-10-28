@@ -1,0 +1,83 @@
+{
+  "about": "How each .env reader reads one fixture line per case (RM-04). Every value is measured by running the real loader: scripts/measure-dialects.py, run by .github/workflows/dialects.yml, fails when one differs. Never edit a value by hand.",
+  "measured": "2026-10-28",
+  "readers": {
+    "evnx": "evnx's own parser (convert --to json)",
+    "compose": "Docker Compose v5.3.1, env_file: (docker compose config)",
+    "python-dotenv": "python-dotenv 1.2.2, dotenv_values",
+    "node-dotenv": "dotenv 18.0.9, dotenv.parse",
+    "node-dotenv-expand": "dotenv 18.0.9 + dotenv-expand 12.0.1"
+  },
+  "cases": [
+    {
+      "id": "empty_comment",
+      "fixture": "API_KEY=   # fill this in later\n",
+      "key": "API_KEY",
+      "values": {
+        "evnx": "# fill this in later",
+        "compose": "# fill this in later",
+        "python-dotenv": "# fill this in later",
+        "node-dotenv": "",
+        "node-dotenv-expand": ""
+      },
+      "effect": "reads it as empty",
+      "fix": "Leave the value empty (KEY=) and put the comment on its own line above it."
+    },
+    {
+      "id": "hash_start",
+      "fixture": "COLOR=#ff0000\n",
+      "key": "COLOR",
+      "values": {
+        "evnx": "#ff0000",
+        "compose": "#ff0000",
+        "python-dotenv": "#ff0000",
+        "node-dotenv": "",
+        "node-dotenv-expand": ""
+      },
+      "effect": "reads it as empty, taking `#` as a comment",
+      "fix": "Quote the value (KEY=\"#…\") so every reader keeps it."
+    },
+    {
+      "id": "hash_inside",
+      "fixture": "HASH=Tr0ub4dor#3\n",
+      "key": "HASH",
+      "values": {
+        "evnx": "Tr0ub4dor#3",
+        "compose": "Tr0ub4dor#3",
+        "python-dotenv": "Tr0ub4dor#3",
+        "node-dotenv": "Tr0ub4dor",
+        "node-dotenv-expand": "Tr0ub4dor"
+      },
+      "effect": "cuts the value at `#`",
+      "fix": "Quote the value (KEY=\"…#…\") so every reader keeps the part after `#`."
+    },
+    {
+      "id": "expansion",
+      "fixture": "HOST=db\nURL=${HOST}:5432\n",
+      "key": "URL",
+      "values": {
+        "evnx": "db:5432",
+        "compose": "db:5432",
+        "python-dotenv": "db:5432",
+        "node-dotenv": "${HOST}:5432",
+        "node-dotenv-expand": "db:5432"
+      },
+      "effect": "does not expand `${…}`: the text is passed as written",
+      "fix": "Write the value out in full, or load the file with dotenv-expand in Node."
+    },
+    {
+      "id": "export",
+      "fixture": "export KEY=v\n",
+      "key": "KEY",
+      "values": {
+        "evnx": "v",
+        "compose": "v",
+        "python-dotenv": "v",
+        "node-dotenv": "v",
+        "node-dotenv-expand": "v"
+      },
+      "effect": "",
+      "fix": ""
+    }
+  ]
+}

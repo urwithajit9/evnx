@@ -3,6 +3,7 @@ pub mod build;
 pub mod classify;
 pub mod config;
 pub mod converter;
+pub mod dialect;
 pub mod env_name;
 pub mod envfile;
 pub mod envsource;

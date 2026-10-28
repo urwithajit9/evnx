@@ -77,7 +77,7 @@ Next steps:
   ok: --exit-zero: report but exit 0 (exit 0)
 
 $ evnx validate --ignore bogus_type
-Error: unknown issue type 'bogus_type' — expected one of: missing_variable, extra_variable, placeholder_value, boolean_trap, weak_secret, localhost_in_docker, invalid_url, invalid_port, invalid_email, format_mismatch, duplicate_key, unknown_spec_key, unknown_environment, env_not_ignored, env_tracked
+Error: unknown issue type 'bogus_type' — expected one of: missing_variable, extra_variable, placeholder_value, boolean_trap, weak_secret, localhost_in_docker, invalid_url, invalid_port, invalid_email, format_mismatch, duplicate_key, unknown_spec_key, unknown_environment, env_not_ignored, env_tracked, reader_mismatch
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]

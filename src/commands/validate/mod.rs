@@ -345,6 +345,13 @@ pub fn run(opts: Options) -> Result<()> {
             &config.ignore_issues,
         ));
 
+        issues.extend(checks::check_reader_mismatch(
+            &raw_env_content,
+            &env_path,
+            folder_of(&env_path),
+            &config.ignore_issues,
+        ));
+
         issues.extend(check_placeholders(vars, &env_path, &config.ignore_issues));
 
         issues.extend(check_boolean_trap(vars, &env_path, &config.ignore_issues));
