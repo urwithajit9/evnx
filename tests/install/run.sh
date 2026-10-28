@@ -193,7 +193,9 @@ else bad "system dir"; fi
 # Unchanged: a checksum mismatch installs nothing.
 fresh checksum
 cp "$RELEASES/v0.10.18/$ASSET.sha256" "$WORK/good.sha256"
-sed 's/^./0/' "$WORK/good.sha256" > "$RELEASES/v0.10.18/$ASSET.sha256"
+# Always a different first digit: `s/^./0/` changed nothing when the hash of the
+# freshly built fake archive already began with 0 (1 run in 16 flaked).
+sed 's/^0/1/;t;s/^./0/' "$WORK/good.sha256" > "$RELEASES/v0.10.18/$ASSET.sha256"
 install "$HOME_/.local/bin:"
 cp "$WORK/good.sha256" "$RELEASES/v0.10.18/$ASSET.sha256"
 if [ $CODE -eq 1 ] && has "CHECKSUM MISMATCH" && [ ! -e "$HOME_/.local/bin/evnx" ]; then

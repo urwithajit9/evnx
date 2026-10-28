@@ -150,7 +150,32 @@ jobs:
       # not a later copy. Subject names are the file names, which are the
       # release asset names. The `.zip` line matches only on Windows; the action
       # fails only when no pattern matches at all.
+      #
+      # ⚠️ One retry. The second fork dry run (2026-10-28) lost two of seven
+      # builds to `error fetching tlog entry … network timeout` from
+      # rekor.sigstore.dev, which answered normally minutes later. A failed
+      # build holds back the Release and every channel after it, while PyPI
+      # and the Marketplace action publish anyway. So the first attempt may
+      # fail without failing the job; the retry, after a pause, may not. A
+      # retry after a half-written attempt adds a second attestation for the
+      # same file, which `gh attestation verify` accepts.
       - name: Attest build provenance
+        id: attest
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+
+      - name: Wait before retrying the attestation
+        if: steps.attest.outcome == 'failure'
+        run: |
+          echo "::warning::attestation failed once; retrying in 60s"
+          sleep 60
+
+      - name: Attest build provenance (retry)
+        if: steps.attest.outcome == 'failure'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
