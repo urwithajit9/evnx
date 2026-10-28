@@ -79,6 +79,19 @@ pub struct ConvertOptions {
 
     /// Two names that become one: refuse, keep the last, or (export) neither.
     pub collisions: Collisions,
+
+    /// `convert --only` (RM-67): keep only the secrets, or only the rest.
+    pub only: Option<Only>,
+}
+
+/// Which side of the shared classifier (`core::classify::holds_secret`, by
+/// name or by value) `convert --only` keeps (RM-67).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum Only {
+    /// Variables whose name or value says secret.
+    Secrets,
+    /// Everything else.
+    Public,
 }
 
 /// Two or more `.env` names that become one name at the target.
@@ -124,15 +137,18 @@ impl ConvertOptions {
     /// Filter variables based on include/exclude patterns
     pub fn filter_vars(&self, vars: &IndexMap<String, String>) -> IndexMap<String, String> {
         vars.iter()
-            .filter(|(key, _)| self.should_include(key))
+            .filter(|(key, value)| self.should_include(key, value))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     }
 
     /// Check if a variable should be included: `core::glob`, the rule
     /// `migrate` and `cloud run` use (A-13).
-    fn should_include(&self, key: &str) -> bool {
+    fn should_include(&self, key: &str, value: &str) -> bool {
         crate::core::glob::admits(key, nonempty(&self.include), nonempty(&self.exclude))
+            && self.only.is_none_or(|only| {
+                (only == Only::Secrets) == crate::core::classify::holds_secret(key, value)
+            })
     }
 
     /// Transform a key according to the specified transformation
@@ -174,7 +190,7 @@ impl ConvertOptions {
         converter: &N,
     ) -> Vec<(&'a str, String, &'a str)> {
         vars.iter()
-            .filter(|(k, _)| self.should_include(k))
+            .filter(|(k, v)| self.should_include(k, v))
             .map(|(k, v)| {
                 let target = converter.target_name(&self.transform_key(k));
                 (k.as_str(), target, v.as_str())

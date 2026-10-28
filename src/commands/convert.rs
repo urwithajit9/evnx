@@ -223,6 +223,7 @@ pub struct ConfigBuilder {
     allow_empty: bool,
     allow_collisions: bool,
     gitignore: Option<GitignoreMode>,
+    only: Option<crate::core::converter::Only>,
 }
 
 impl ConfigBuilder {
@@ -258,6 +259,13 @@ impl ConfigBuilder {
     #[must_use]
     pub fn exclude(mut self, patterns: Vec<String>) -> Self {
         self.exclude = patterns;
+        self
+    }
+
+    /// Keep only the secrets, or only the rest (RM-67).
+    #[must_use]
+    pub fn only(mut self, only: Option<crate::core::converter::Only>) -> Self {
+        self.only = only;
         self
     }
 
@@ -334,6 +342,7 @@ impl ConfigBuilder {
             options: ConvertOptions {
                 include: self.include,
                 exclude: self.exclude,
+                only: self.only,
                 base64: self.base64,
                 strip_prefix: None,
                 prefix: self.prefix,
@@ -483,7 +492,11 @@ pub fn run(config: ConvertConfig) -> Result<()> {
     // `--allow-empty` (I-089, DEC-CV3).
     let prepared = config.options.prepare(&env_file.vars, converter.as_ref())?;
     if prepared.is_empty() && !config.allow_empty {
-        anyhow::bail!(nothing_to_convert(&config.env_path, env_file.vars.len()));
+        anyhow::bail!(nothing_to_convert(
+            &config.env_path,
+            env_file.vars.len(),
+            config.options.only,
+        ));
     }
     config
         .options
@@ -517,11 +530,25 @@ pub fn run(config: ConvertConfig) -> Result<()> {
 /// ⚠️ It printed `{}` and exited 0 (I-089), so a pipeline whose `--include`
 /// had a typo uploaded an empty secret and reported success. `cloud run`
 /// refused the same case already; the filter wording is shared with it.
-fn nothing_to_convert(env_path: &str, before: usize) -> String {
-    let why = if before == 0 {
-        format!("{env_path} holds no variables, so there is nothing to convert.")
-    } else {
-        crate::core::glob::nothing_left(before, "convert")
+fn nothing_to_convert(
+    env_path: &str,
+    before: usize,
+    only: Option<crate::core::converter::Only>,
+) -> String {
+    use crate::core::converter::Only;
+    let why = match (before, only) {
+        (0, _) => format!("{env_path} holds no variables, so there is nothing to convert."),
+        // RM-67: name --only, not only the globs.
+        (_, Some(only)) => format!(
+            "nothing is left to convert: none of the {before} variable(s) passes \
+             --only {} (and --include/--exclude, if given).",
+            if only == Only::Secrets {
+                "secrets"
+            } else {
+                "public"
+            }
+        ),
+        _ => crate::core::glob::nothing_left(before, "convert"),
     };
     format!("{why}\n\x20 Pass --allow-empty to write the empty output anyway.")
 }

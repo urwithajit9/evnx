@@ -52,6 +52,15 @@ Options:
           
           Same patterns as --include; exclude wins over include. Examples: "*_DEBUG", "TEST_*"
 
+      --only <WHICH>
+          Keep only the secrets, or only the rest
+          
+          A variable is a secret when its name says so (`*_PASSWORD`, `*_SECRET`, `*_TOKEN`, …) or its value does (a provider key, a private key, a URL with a password). Applied with --include and --exclude. For example, public values to a build system and secrets to a secret manager.
+
+          Possible values:
+          - secrets: Variables whose name or value says secret
+          - public:  Everything else
+
       --allow-empty
           Convert even when no variable is left (an empty .env, or filters that match nothing). Without it that is an error, exit 2
 

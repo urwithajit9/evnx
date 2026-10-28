@@ -343,6 +343,7 @@ fn main() -> Result<()> {
             no_gitignore,
             include,
             exclude,
+            only,
             allow_empty,
             allow_collisions,
             base64,
@@ -390,6 +391,7 @@ fn main() -> Result<()> {
                 .output_path(output)
                 .include(include)
                 .exclude(exclude)
+                .only(only)
                 .base64(base64)
                 .prefix(prefix)
                 .transform(transform)
