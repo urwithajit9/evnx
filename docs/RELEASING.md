@@ -215,9 +215,16 @@ gh attestation verify evnx-x86_64-unknown-linux-musl.tar.gz -R urwithajit9/evnx 
   --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
 ```
 
-⚠️ **An attest step failed** (Sigstore or GitHub's attestation API was down, or a
-permission was refused). That build job is red, so `release` never ran: **no GitHub
-Release, and nothing from Homebrew, Scoop, winget, ghcr or npm.** But
+ⓘ **One failed attempt is retried by the build itself** (since v0.11.0): the first
+attest step may fail, and after 60 seconds a second one runs. A yellow warning,
+"attestation failed once; retrying in 60s", is that and needs nothing. Added after
+the second fork dry run lost two of seven builds to a Rekor read timeout
+(`error fetching tlog entry … network timeout`).
+
+⚠️ **An attest step failed twice** (Sigstore or GitHub's attestation API stayed
+down, or a permission was refused). That build job is red, so `release` never ran:
+**no GitHub Release, and nothing from Homebrew, Scoop, winget, ghcr, npm or
+crates.io.** But
 `python-publish.yml` and `publish-action.yml` fire on the tag themselves, so **PyPI
 and the Marketplace may already be out.**
 
