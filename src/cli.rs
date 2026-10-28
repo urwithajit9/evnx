@@ -1913,7 +1913,9 @@ pub enum Commands {
         ///
         /// A folder is walked. A file named here is always read — whatever
         /// `--exclude`, `--extensions` or the size limit say — and always
-        /// reported in full, even one git ignores.
+        /// reported in full, even one git ignores. `-` reads stdin, in memory
+        /// (`git diff | evnx scan -`): as a `.env` when it parses as one,
+        /// otherwise as text. Empty stdin is an error, not a clean result.
         #[arg(default_value = ".")]
         path: Vec<String>,
 

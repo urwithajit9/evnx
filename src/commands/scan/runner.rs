@@ -269,7 +269,15 @@ impl ScanRunner {
             }
         }
 
-        let collected = self.filter.collect(&paths)?;
+        // RM-48: `-` is stdin, read once and scanned in memory; nothing of it
+        // is written to disk. It can sit beside paths.
+        let stdin = paths.iter().any(|p| p == "-");
+        let on_disk: Vec<String> = paths.iter().filter(|p| *p != "-").cloned().collect();
+        let collected = if on_disk.is_empty() {
+            super::filters::Collected::default()
+        } else {
+            self.filter.collect(&on_disk)?
+        };
         let files = collected.files.clone();
         // Said before scanning: a limited walk is a weaker scan (DEC-U8-2).
         if let Some(list) = self.filter.extensions() {
@@ -298,7 +306,7 @@ impl ScanRunner {
         // Exit 2, not 1: nothing was found because nothing was looked at, which
         // is "could not run" rather than "ran and found nothing". A `--severity`
         // threshold that hides every finding is a different case and still 0.
-        if files.is_empty() {
+        if files.is_empty() && !stdin {
             // ⚠️ Names what was set aside and why (I-048, I-289). This said
             // "filtered out" and advised `--include`, a flag that never
             // existed — and when the walk had skipped a file for its size, the
@@ -387,6 +395,11 @@ impl ScanRunner {
                     finding.repo_path = Some(view.repo_path.clone());
                 }
             }
+        }
+
+        if stdin {
+            self.scan_stdin(&mut results)?;
+            read.push(Path::new(STDIN_LABEL).to_path_buf());
         }
 
         // Render output (goes to stdout)
@@ -525,6 +538,53 @@ impl ScanRunner {
         }
     }
 
+    /// `evnx scan -` (RM-48): what is piped in, read as a `.env` when it parses
+    /// as one and as text otherwise.
+    fn scan_stdin(&self, results: &mut ScanResults) -> Result<()> {
+        use anyhow::Context as _;
+        use std::io::{IsTerminal as _, Read as _};
+
+        if std::io::stdin().is_terminal() {
+            anyhow::bail!(
+                "`evnx scan -` reads what is piped into it, and nothing is. \
+                 Pipe a file, a diff or a log in: `git diff | evnx scan -`"
+            );
+        }
+        let mut bytes = Vec::new();
+        std::io::stdin()
+            .lock()
+            .read_to_end(&mut bytes)
+            .context("reading stdin")?;
+        // ⛔ Empty is not clean: `cat missing-file | evnx scan -` pipes nothing,
+        // and "No secrets detected", exit 0, would pass that CI step.
+        if bytes.is_empty() {
+            anyhow::bail!(
+                "nothing was piped into `evnx scan -`, so nothing was scanned. \
+                 Check the command before the pipe."
+            );
+        }
+        let label = Path::new(STDIN_LABEL);
+        let content = match decode_bytes(bytes) {
+            Decoded::Text(c) => c,
+            Decoded::Unreadable { reason } => {
+                results.unreadable.push(UnreadableFile {
+                    path: STDIN_LABEL.to_string(),
+                    reason,
+                });
+                return Ok(());
+            }
+        };
+        let read_as = if crate::core::envfile::is_dotenv(&content) {
+            super::models::ReadAs::Dotenv
+        } else {
+            super::models::ReadAs::Text
+        };
+        if self.verbose {
+            ui::scanning_file_stderr(label, read_as.describe());
+        }
+        self.scan_text(label, &content, read_as, results)
+    }
+
     fn scan_file(&self, path: &Path, walked: bool, results: &mut ScanResults) -> Result<()> {
         let content = match decode(path) {
             Decoded::Text(c) => c,
@@ -575,9 +635,19 @@ impl ScanRunner {
             }
         };
 
+        self.scan_text(path, &content, Self::read_as(path), results)
+    }
+
+    /// Scan text already read, from a file or stdin, labelled `path`.
+    fn scan_text(
+        &self,
+        path: &Path,
+        content: &str,
+        read_as: super::models::ReadAs,
+        results: &mut ScanResults,
+    ) -> Result<()> {
         results.files_scanned += 1;
 
-        let read_as = Self::read_as(path);
         results.files.push(super::models::ScannedFile {
             path: display_portable(path),
             read_as,
@@ -602,9 +672,9 @@ impl ScanRunner {
         //   which is the value that would reach a program.
         // * `strict: false` — a lowercase key is still worth scanning.
         if is_env {
-            if let Some(vars) = self.scan_env_parsed(path, &content, results) {
+            if let Some(vars) = self.scan_env_parsed(path, content, results) {
                 // ⛔ The parsed pass is not the whole file — see the function.
-                self.scan_lines_the_parser_dropped(path, &content, &vars, results);
+                self.scan_lines_the_parser_dropped(path, content, &vars, results);
                 return Ok(());
             }
             // Fell through: the file does not parse. Carry on into the raw loop
@@ -1078,17 +1148,21 @@ enum Decoded {
 /// So a NUL byte is the signal, not a decoding error: no UTF-8 text file
 /// contains one, and a UTF-16 one is half NULs by construction.
 fn decode(path: &Path) -> Decoded {
-    let bytes = match std::fs::read(path) {
-        Ok(b) => b,
-        Err(e) => {
-            return Decoded::Unreadable {
-                // ⚠️ `e` and not the path: the caller records the path, and an
-                // io::Error's Display does not include it.
-                reason: format!("could not be read: {e}"),
-            };
-        }
-    };
+    match std::fs::read(path) {
+        Ok(bytes) => decode_bytes(bytes),
+        Err(e) => Decoded::Unreadable {
+            // ⚠️ `e` and not the path: the caller records the path, and an
+            // io::Error's Display does not include it.
+            reason: format!("could not be read: {e}"),
+        },
+    }
+}
 
+/// How `evnx scan -` names stdin in findings and lists (RM-48).
+pub(super) const STDIN_LABEL: &str = "<stdin>";
+
+/// [`decode`] for bytes already read.
+fn decode_bytes(bytes: Vec<u8>) -> Decoded {
     // An explicit byte-order mark settles it.
     if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
         return from_utf16(rest, u16::from_le_bytes, "UTF-16LE");
@@ -1123,7 +1197,7 @@ fn decode(path: &Path) -> Decoded {
         // whether the decode *produced text*: a `.env` is ASCII keys, `=` and
         // newlines, with at most a few non-ASCII characters in values, and
         // never a C0 control character other than tab, newline or return.
-        if bytes.len() % 2 == 0 && !bytes.is_empty() {
+        if bytes.len().is_multiple_of(2) && !bytes.is_empty() {
             for (unit, label) in [
                 (
                     u16::from_le_bytes as fn([u8; 2]) -> u16,

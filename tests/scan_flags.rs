@@ -305,3 +305,62 @@ fn t_i254_production_env_is_parsed_and_yaml_is_not() {
         "{found:?}"
     );
 }
+
+// ── RM-48: `evnx scan -` reads stdin ─────────────────────────────────────────
+
+fn scan_stdin(input: &str, args: &[&str]) -> std::process::Output {
+    let d = TempDir::new().unwrap();
+    cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .env("NO_COLOR", "1")
+        .arg("scan")
+        .arg("-")
+        .args(args)
+        .write_stdin(input)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn rm48_stdin_is_read_as_dotenv_when_it_parses_as_one() {
+    let out = scan_stdin(
+        "DB_PASSWORD=correct-horse-battery-staple\n",
+        &["--format", "json"],
+    );
+    assert_eq!(out.status.code(), Some(1));
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["files"][0]["path"], "<stdin>");
+    assert_eq!(json["files"][0]["read_as"], "dotenv");
+    assert_eq!(json["findings"][0]["variable"], "DB_PASSWORD");
+}
+
+#[test]
+fn rm48_a_diff_is_read_as_text_and_gets_no_history_advice() {
+    let out = scan_stdin("+let k = \"sk_live_51H8xQ2eZvKYlo2CpR4mN7bV9\";\n", &[]);
+    assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("<stdin>:1"), "{stdout}");
+    assert!(!stdout.contains("filter-repo"), "{stdout}");
+}
+
+#[test]
+fn rm48_empty_stdin_is_not_a_clean_scan() {
+    let out = scan_stdin("", &[]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("nothing was piped"));
+}
+
+#[test]
+fn rm48_stdin_beside_a_path_scans_both() {
+    let d = TempDir::new().unwrap();
+    fs::write(d.path().join(".env"), "SAFE=1\n").unwrap();
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .args(["scan", ".", "-", "--format", "json"])
+        .write_stdin("STRIPE_SECRET_KEY=sk_live_51H8xQ2eZvKYlo2CpR4mN7bV9\n")
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["files_scanned"], 2, "{json}");
+    assert_eq!(json["secrets_found"], 1, "{json}");
+}

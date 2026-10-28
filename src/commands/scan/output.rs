@@ -441,7 +441,12 @@ fn name_files(paths: &[&str]) -> String {
 /// Whether the file a finding is in may be in git history: tracked, or
 /// nothing is known (outside a repository the old advice stands).
 fn may_be_committed(f: &super::models::Finding) -> bool {
-    matches!(f.git, None | Some(super::models::GitState::Tracked))
+    !from_stdin(f) && matches!(f.git, None | Some(super::models::GitState::Tracked))
+}
+
+/// Found in what `evnx scan -` read (RM-48): no file, so no history to rewrite.
+fn from_stdin(f: &super::models::Finding) -> bool {
+    split_location(&f.location).0 == super::runner::STDIN_LABEL
 }
 
 /// The distinct files among `findings` that `keep` selects, in order, as
@@ -507,6 +512,13 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
     let names = |v: &[String]| name_files(&v.iter().map(String::as_str).collect::<Vec<_>>());
 
     let mut steps = Vec::new();
+    if results.findings.iter().any(from_stdin) {
+        steps.push(
+            "Keep the keys found in <stdin> out of wherever that text was going \
+             (a commit, a log, a message); revoke or rotate any already shared"
+                .to_string(),
+        );
+    }
     if !history.is_empty() {
         steps.push("Revoke or rotate the keys above — assume they are compromised".to_string());
         steps.push(format!(
