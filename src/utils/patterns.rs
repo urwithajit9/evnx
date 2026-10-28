@@ -220,7 +220,11 @@ pub fn calculate_entropy(s: &str) -> f64 {
 /// [`crate::core::classify::is_placeholder`] (C-05); this asks it at the
 /// `Lenient` level with no key, which is exactly what this function answered
 /// before.
-pub fn is_placeholder(value: &str) -> bool {
+///
+/// ⚠️ Lenient, and named so (RM-46): it calls `dev` and `test` placeholders.
+/// Never use it to decide that a value is safe to overwrite; that is
+/// `classify::is_placeholder(key, value, Strictness::Strict)`.
+pub fn is_placeholder_lenient(value: &str) -> bool {
     crate::core::classify::is_placeholder("", value, crate::core::classify::Strictness::Lenient)
 }
 
@@ -294,7 +298,7 @@ mod placeholder_noise_tests {
             "postgres://u:pw@db/todos",
         ] {
             assert!(
-                !is_placeholder(v),
+                !is_placeholder_lenient(v),
                 "is_placeholder must NOT claim {v} is safe to overwrite"
             );
         }
@@ -598,11 +602,13 @@ fn is_email(v: &str) -> bool {
 
 /// Would a human call this finding obvious noise?
 ///
-/// ⛔ **Deliberately looser than [`is_placeholder`], and deliberately separate
-/// from it.** They answer different questions and must not be merged.
+/// ⛔ **Deliberately looser than [`is_placeholder_lenient`], and deliberately
+/// separate from the strict check.** They answer different questions and must
+/// not be merged.
 ///
-/// * `is_placeholder` answers *"is this value safe to OVERWRITE?"* for
-///   `validate --fix`. A false positive there destroys a working credential,
+/// * The strict check, `classify::is_placeholder(key, v, Strictness::Strict)`
+///   (`validate::checks::is_placeholder`), answers *"is this value safe to
+///   OVERWRITE?"* for `validate --fix`. A false positive there destroys a working credential,
 ///   which is finding A1/K6 — the patterns were anchored in #121 precisely to
 ///   stop `DB_PASSWORD=Tr0ub4dor<3horse` being replaced on the strength of a
 ///   `<`.
@@ -612,7 +618,7 @@ fn is_email(v: &str) -> bool {
 ///
 /// Sharing one function made the strict answer win, and `--ignore-placeholders`
 /// became inert: a detector fires on `sk_live_xxxxxxxxxxxxxxxxxxxxxxxx`, but
-/// `is_placeholder` only recognises a value that *is* a placeholder, never one
+/// `is_placeholder_lenient` only recognises a value that *is* a placeholder, never one
 /// that *contains* one, so the flag could never suppress anything a detector
 /// had flagged. Measured before the fix: identical findings with and without
 /// the flag.
@@ -623,7 +629,7 @@ fn is_email(v: &str) -> bool {
 /// Matching is on whole tokens, not bare substrings — `latest` must not match
 /// on `test`, and `contextual` must not match on `test` either.
 pub fn looks_like_placeholder_secret(value: &str) -> bool {
-    if is_placeholder(value) {
+    if is_placeholder_lenient(value) {
         return true;
     }
 
@@ -771,7 +777,7 @@ pub fn is_sensitive_key(key: &str) -> bool {
 /// ⚠️ Neither is offered to `scan_line`. An entropy threshold over whole lines
 /// would flag every minified bundle and every base64 blob in a lockfile.
 pub fn detect_heuristic(value: &str, key: &str) -> Option<(String, Confidence, Option<String>)> {
-    if is_placeholder(value) {
+    if is_placeholder_lenient(value) {
         return None;
     }
 
@@ -819,11 +825,11 @@ mod tests {
 
     #[test]
     fn test_is_placeholder() {
-        assert!(is_placeholder("YOUR_KEY_HERE"));
-        assert!(is_placeholder("sk_test_CHANGE_ME"));
-        assert!(is_placeholder("AKIAIOSFODNN7EXAMPLE"));
-        assert!(!is_placeholder("sk_live_51HrealkeystuffABC123"));
-        assert!(!is_placeholder("postgresql://localhost:5432/db"));
+        assert!(is_placeholder_lenient("YOUR_KEY_HERE"));
+        assert!(is_placeholder_lenient("sk_test_CHANGE_ME"));
+        assert!(is_placeholder_lenient("AKIAIOSFODNN7EXAMPLE"));
+        assert!(!is_placeholder_lenient("sk_live_51HrealkeystuffABC123"));
+        assert!(!is_placeholder_lenient("postgresql://localhost:5432/db"));
     }
 
     /// ⚠️ Rewritten when the provider patterns became [`builtin_rules`]. It used
@@ -972,39 +978,39 @@ mod tests {
         #[test]
         fn test_is_placeholder_patterns() {
             // Base word + digits
-            assert!(is_placeholder("example"));
-            assert!(is_placeholder("example1"));
-            assert!(is_placeholder("example123")); // ✅ This was failing
-            assert!(is_placeholder("example_value"));
+            assert!(is_placeholder_lenient("example"));
+            assert!(is_placeholder_lenient("example1"));
+            assert!(is_placeholder_lenient("example123")); // ✅ This was failing
+            assert!(is_placeholder_lenient("example_value"));
 
-            assert!(is_placeholder("test"));
-            assert!(is_placeholder("test123"));
-            assert!(is_placeholder("test_key"));
+            assert!(is_placeholder_lenient("test"));
+            assert!(is_placeholder_lenient("test123"));
+            assert!(is_placeholder_lenient("test_key"));
 
-            assert!(is_placeholder("dev"));
-            assert!(is_placeholder("dev123"));
-            assert!(is_placeholder("dev_key"));
+            assert!(is_placeholder_lenient("dev"));
+            assert!(is_placeholder_lenient("dev123"));
+            assert!(is_placeholder_lenient("dev_key"));
 
             // your_* patterns
-            assert!(is_placeholder("your_key"));
-            assert!(is_placeholder("your_api_key_here"));
-            assert!(is_placeholder("your-secret"));
+            assert!(is_placeholder_lenient("your_key"));
+            assert!(is_placeholder_lenient("your_api_key_here"));
+            assert!(is_placeholder_lenient("your-secret"));
 
             // Repeated characters
-            assert!(is_placeholder("xxx"));
-            assert!(is_placeholder("*****"));
-            assert!(is_placeholder("####"));
+            assert!(is_placeholder_lenient("xxx"));
+            assert!(is_placeholder_lenient("*****"));
+            assert!(is_placeholder_lenient("####"));
 
             // Simple alphanumeric placeholders
-            assert!(is_placeholder("abc123"));
-            assert!(is_placeholder("xyz789"));
+            assert!(is_placeholder_lenient("abc123"));
+            assert!(is_placeholder_lenient("xyz789"));
 
             // NOT placeholders (real secrets should not match)
-            assert!(!is_placeholder("AKIA1234567890EXAMPLE"));
-            assert!(!is_placeholder("ghp_xxxxxxxxxxxxxxxxxxxx"));
-            assert!(!is_placeholder("sk_live_abc123def456ghi789"));
-            assert!(!is_placeholder("My$ecureP@ssw0rd!"));
-            assert!(!is_placeholder("production_api_key_2024"));
+            assert!(!is_placeholder_lenient("AKIA1234567890EXAMPLE"));
+            assert!(!is_placeholder_lenient("ghp_xxxxxxxxxxxxxxxxxxxx"));
+            assert!(!is_placeholder_lenient("sk_live_abc123def456ghi789"));
+            assert!(!is_placeholder_lenient("My$ecureP@ssw0rd!"));
+            assert!(!is_placeholder_lenient("production_api_key_2024"));
         }
     }
 }

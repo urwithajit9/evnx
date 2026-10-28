@@ -34,7 +34,7 @@ fn rules() -> &'static crate::core::secretscan::PatternSet {
 /// password, or a long high-entropy string. A placeholder is not.
 pub fn is_secret_shaped(value: &str) -> bool {
     let v = value.trim();
-    if v.is_empty() || patterns::is_placeholder(v) {
+    if v.is_empty() || patterns::is_placeholder_lenient(v) {
         return false;
     }
     !rules().find_all(v).is_empty() || patterns::detect_heuristic(v, "").is_some()

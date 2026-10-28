@@ -727,7 +727,7 @@ mod tests {
     /// API_KEY=<your-api-key>               → Sensitive config key
     /// ```
     ///
-    /// and `utils::patterns::is_placeholder` recognises only two of those seven
+    /// and `utils::patterns::is_placeholder_lenient` recognises only two of those seven
     /// values. Adding a real key makes it six findings among five false ones.
     ///
     /// Removing the exclusion today would turn every project's pre-commit hook
