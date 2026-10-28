@@ -23,6 +23,99 @@ use crate::schema::component;
 use crate::schema::models::VarSource;
 use crate::utils::ui;
 
+/// `evnx spec check` (RM-41): the contract against the template, and `.env`
+/// when there is one. Read-only. `env_named` makes a missing `env` an error
+/// rather than a skip.
+pub fn check(
+    spec: &crate::core::spec::Spec,
+    example: &str,
+    env: &str,
+    env_named: bool,
+) -> Result<crate::core::verdict::Verdict> {
+    use crate::core::verdict::{self, Verdict};
+    use colored::Colorize;
+
+    if spec.is_empty() {
+        verdict::skipped("no [vars] in .evnx.toml");
+        return Ok(Verdict::Clean);
+    }
+    let keys = |path: &str| -> Result<indexmap::IndexMap<String, String>> {
+        let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
+        Parser::new(Default::default())
+            .parse_content(&text)
+            .map_err(|e| anyhow::anyhow!("{path} does not parse: {e}"))
+    };
+
+    let template = keys(example)?;
+    // A template documents every environment; a variable limited to some
+    // (`environments = [...]`) may live in their own templates instead.
+    let not_in_template: Vec<&str> = spec
+        .iter()
+        .filter(|(name, v)| v.environments.is_none() && !template.contains_key(*name))
+        .map(|(name, _)| name.as_str())
+        .collect();
+    let undeclared: Vec<&str> = template
+        .keys()
+        .filter(|k| !spec.contains_key(*k))
+        .map(String::as_str)
+        .collect();
+
+    let env_vars = if Path::new(env).exists() || env_named {
+        Some(keys(env)?)
+    } else {
+        None
+    };
+    let env_label = env;
+    let missing_from_env = env_vars.as_ref().map(|vars| {
+        crate::core::spec::missing_required(
+            spec,
+            |k| vars.contains_key(k),
+            crate::core::env_name::name_of(env),
+        )
+    });
+
+    let mut problems = 0;
+    let mut report = |title: String, names: &[&str]| {
+        if !names.is_empty() {
+            problems += names.len();
+            println!("  {} {title}: {}", "✗".red(), names.join(", "));
+        }
+    };
+    report(
+        format!("declared in [vars], missing from {example}"),
+        &not_in_template,
+    );
+    report(format!("in {example}, not declared in [vars]"), &undeclared);
+    if let Some(missing) = &missing_from_env {
+        report(
+            format!("required by [vars], missing from {env_label}"),
+            missing,
+        );
+    }
+
+    if problems == 0 {
+        crate::say!(
+            "  {} {example}{} agree{} with [vars] ({} declared)",
+            "✓".green(),
+            if env_vars.is_some() {
+                format!(" and {env_label}")
+            } else {
+                String::new()
+            },
+            if env_vars.is_some() { "" } else { "s" },
+            spec.len()
+        );
+    }
+    if env_vars.is_none() && !ui::is_quiet() {
+        eprintln!("· {env_label} not found, so only the template was checked");
+    }
+    Ok(if problems == 0 {
+        Verdict::Clean
+    } else {
+        Verdict::Findings
+    })
+}
+
 /// Where the variables come from.
 pub enum Source {
     /// `--with django,postgresql`: the component catalogue.

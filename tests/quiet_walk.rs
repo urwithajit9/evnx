@@ -125,6 +125,11 @@ const EXEMPT: &[(&str, &str)] = &[
     ),
     // Network.
     ("update", "needs the network"),
+    (
+        "spec check",
+        "this project has no [vars], so it says it skipped, as every skip does \
+         (DEC-U8-5); with a contract -q is silent: tests/spec_check.rs",
+    ),
 ];
 
 /// The cloud group needs a server; its `-q` is the output handle in U7 (A-44,

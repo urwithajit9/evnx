@@ -9,8 +9,9 @@ Writes `[vars.*]` into `.evnx.toml` — the contract `.env.example` cannot expre
 Usage: evnx spec [OPTIONS] <COMMAND>
 
 Commands:
-  init  Generate a first spec from this project, or from named components
-  help  Print this message or the help of the given subcommand(s)
+  init   Generate a first spec from this project, or from named components
+  check  Check the contract against `.env.example`, and `.env` when there is one. Read-only; suited to a pre-commit hook and to CI
+  help   Print this message or the help of the given subcommand(s)
 
 Options:
   -v, --verbose

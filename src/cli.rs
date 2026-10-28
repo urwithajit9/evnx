@@ -2942,7 +2942,40 @@ pub enum SpecAction {
         #[arg(long, hide = true)]
         force: bool,
     },
+
+    /// Check the contract against `.env.example`, and `.env` when there is
+    /// one. Read-only; suited to a pre-commit hook and to CI.
+    ///
+    /// Every variable `[vars]` declares for every environment must be in the
+    /// template, and every name in the template must be declared. When `.env`
+    /// exists, every required variable must be in it. A project without
+    /// `[vars]` is skipped, and says so.
+    #[command(after_help = SPEC_CHECK_EXIT_CODES)]
+    Check {
+        /// The template to check. Defaults to `.env.example`, or
+        /// `[defaults] example` from `.evnx.toml`.
+        #[arg(long)]
+        example: Option<String>,
+
+        /// The environment file to check. Defaults to `.env`, or
+        /// `[defaults] env_name`. Skipped when it does not exist, unless named.
+        #[arg(long)]
+        env: Option<String>,
+
+        /// Check `.env.<NAME>` instead of `.env`.
+        #[arg(long, value_name = "NAME", conflicts_with = "env")]
+        env_name: Option<String>,
+    },
 }
+
+/// `spec check --help`: what each exit code means (RM-41).
+const SPEC_CHECK_EXIT_CODES: &str = "\
+Exit codes:
+  0  the template and .env agree with [vars], or there is no [vars] (skipped)
+  1  they disagree: a name missing from the template, one it has that [vars]
+     does not declare, or a required variable missing from .env
+  2  no verdict: the template is missing or does not parse, or a file named
+     by --env or --env-name does not exist";
 
 /// `spec init --help`: what each exit code means (D-131).
 const SPEC_INIT_EXIT_CODES: &str = "\

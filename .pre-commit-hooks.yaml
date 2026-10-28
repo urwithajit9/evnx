@@ -102,6 +102,18 @@
   pass_filenames: false
   stages: [pre-commit]
 
+# RM-41: the contract against the template (and `.env` when there is one).
+# Needs no `.env`, so a fresh clone and CI run it too; a project with no
+# `[vars]` is skipped and says so.
+- id: evnx-spec-check
+  name: evnx — .env.example matches the [vars] contract
+  description: Fail the commit when .env.example and the [vars] contract in .evnx.toml disagree
+  entry: evnx spec check
+  language: rust
+  pass_filenames: false
+  stages: [pre-commit]
+  files: (^|/)\.evnx\.toml$|(^|/)\.env(\.\w+)*$
+
 # Pre-push variant (heavier checks)
 # ⚠️ Same change, same reason. At pre-push the question is what is about to be
 # published, not what happens to be on disk — and the working tree still holds
