@@ -116,6 +116,17 @@ instead of `.env`. Pass `--env-name` to choose another.
   the same line in `config.txt` gets the value patterns alone. `-v` now says so
   on each `Scanning:` line, and the JSON report has a `files` list with each
   file's `read_as`, `dotenv` or `text` (additive).
+- **`evnx scan -` reads stdin** (RM-48). Scan a diff, a log or a file an
+  agent is about to write without putting it on disk:
+  `git diff | evnx scan -`. It is read as a `.env` when it parses as one and
+  as text otherwise (`-v` and the JSON `files` list say which), it can sit
+  beside paths, and findings are labelled `<stdin>`. Empty stdin is an error,
+  exit 2, so `cat missing-file | evnx scan -` cannot pass as clean.
+- **`convert --only secrets|public`** (RM-67). Keep only the variables the
+  shared classifier calls secret (by name, or by value: a provider key, a
+  private key, a URL with a password), or only the rest; for example public
+  values to a build system and secrets to a secret manager. Works with
+  `--include` and `--exclude`.
 - **Internal** (RM-46): scan's lenient placeholder check is now named
   `is_placeholder_lenient`, so it cannot be mistaken for `validate --fix`'s
   strict one, which decides whether a value is safe to overwrite.
