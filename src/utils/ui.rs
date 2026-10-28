@@ -695,13 +695,13 @@ pub fn verbose_stderr(message: impl AsRef<str>) {
 /// ```no_run
 /// # use evnx::utils::ui::scanning_file_stderr;
 /// # use std::path::Path;
-/// scanning_file_stderr(Path::new(".env"));
+/// scanning_file_stderr(Path::new(".env"), "read as .env: names and values checked");
 /// ```
-pub fn scanning_file_stderr(file: &std::path::Path) {
+pub fn scanning_file_stderr(file: &std::path::Path, how: &str) {
     eprintln!(
         "{} {}",
         "⋯".dimmed(),
-        format!("Scanning: {}", file.display()).dimmed()
+        format!("Scanning: {} ({how})", file.display()).dimmed()
     );
 }
 

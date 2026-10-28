@@ -355,7 +355,7 @@ impl ScanRunner {
         let mut read = Vec::with_capacity(files.len());
         for (file, view) in files.iter().zip(&git) {
             if self.verbose {
-                ui::scanning_file_stderr(file);
+                ui::scanning_file_stderr(file, Self::read_as(file).describe());
             }
             let walked = !collected.named.contains(file);
             let before = results.skipped.len();
@@ -516,6 +516,15 @@ impl ScanRunner {
         }
     }
 
+    /// Which detectors a file gets is decided by its name alone (RM-47).
+    fn read_as(path: &Path) -> super::models::ReadAs {
+        if named_like_dotenv(path) {
+            super::models::ReadAs::Dotenv
+        } else {
+            super::models::ReadAs::Text
+        }
+    }
+
     fn scan_file(&self, path: &Path, walked: bool, results: &mut ScanResults) -> Result<()> {
         let content = match decode(path) {
             Decoded::Text(c) => c,
@@ -568,7 +577,12 @@ impl ScanRunner {
 
         results.files_scanned += 1;
 
-        let is_env = named_like_dotenv(path);
+        let read_as = Self::read_as(path);
+        results.files.push(super::models::ScannedFile {
+            path: display_portable(path),
+            read_as,
+        });
+        let is_env = read_as == super::models::ReadAs::Dotenv;
 
         // ── `.env`: the real parser, not a second implementation ─────────────
         //

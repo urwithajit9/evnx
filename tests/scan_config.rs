@@ -216,3 +216,45 @@ fn t_i060_quiet_drops_a_banner_with_nothing_to_announce() {
     let (_, _, stderr) = run(&d, &["validate", "-q"]);
     assert!(!stderr.contains(".evnx.toml"), "{stderr}");
 }
+
+/// RM-47: the same assignment is found by name in a `.env` and not in a text
+/// file, and `-v` and the JSON say which way each file was read.
+#[test]
+fn rm47_each_file_says_how_it_was_read() {
+    let d = project(&[
+        ("v.env", "DB_PASSWORD=correct-horse-battery-staple\n"),
+        ("config.txt", "DB_PASSWORD=correct-horse-battery-staple\n"),
+    ]);
+    let (_, _, err) = run(&d, &["scan", "-v"]);
+    assert!(
+        err.contains("v.env (read as .env: names and values checked)"),
+        "{err}"
+    );
+    assert!(
+        err.contains("config.txt (read as text: value patterns only, names not checked)"),
+        "{err}"
+    );
+
+    let (_, out, _) = run(&d, &["scan", "--format", "json"]);
+    let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let mut files: Vec<(String, String)> = json["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["path"].as_str().unwrap().to_string(),
+                f["read_as"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    files.sort();
+    assert_eq!(
+        files,
+        [
+            ("./config.txt".to_string(), "text".to_string()),
+            ("./v.env".to_string(), "dotenv".to_string()),
+        ],
+        "{out}"
+    );
+}

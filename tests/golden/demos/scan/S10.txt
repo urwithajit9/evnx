@@ -70,7 +70,7 @@ $ evnx scan . -v
 ⋯ 13 built-in rules, 0 custom patterns
 ⋯ rules: AWS Access Key, AWS Temporary Access Key (STS), GitHub Fine-grained PAT, Slack Token, Google API Key, JSON Web Token, Stripe Secret Key (LIVE), Stripe Secret Key (test), GitHub Token, OpenAI API Key, Anthropic API Key, Private Key, Credentials in a connection string
 ⋯ Found 1 files to scan
-⋯ Scanning: ./.env
+⋯ Scanning: ./.env (read as .env: names and values checked)
   scanning ./.env
 
   ✗  AWS Access Key                              high

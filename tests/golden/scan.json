@@ -1,5 +1,11 @@
 {
   "files_scanned": 1,
+  "files": [
+    {
+      "path": "./.env",
+      "read_as": "dotenv"
+    }
+  ],
   "unreadable": [],
   "skipped": [],
   "secrets_found": 1,

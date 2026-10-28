@@ -274,6 +274,11 @@ pub struct ScanResults {
     /// and had silently skipped. It is now incremented per file that was really
     /// read; anything that was not lands in `unreadable`.
     pub files_scanned: usize,
+    /// Each file read, and how it was read (RM-47). Name-based checks, such as
+    /// `DB_PASSWORD=…` flagged by its name, run only on files read as
+    /// `dotenv`; a `text` file gets the value patterns alone.
+    #[serde(default)]
+    pub files: Vec<ScannedFile>,
     /// Files this scan selected and then could not read.
     ///
     /// ⛔ **Not an empty list to ignore.** A secret scanner that cannot read a
@@ -344,6 +349,33 @@ pub struct IgnoredFile {
     pub findings: usize,
 }
 
+/// A file the scan read, and which detectors ran on it (RM-47).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ScannedFile {
+    pub path: String,
+    pub read_as: ReadAs,
+}
+
+/// How a file was read, which decides the detectors that ran on it.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReadAs {
+    /// Named like a `.env`: assignments, checked by name and by value.
+    Dotenv,
+    /// Anything else: tokens and lines, checked against value patterns only.
+    Text,
+}
+
+impl ReadAs {
+    /// What `-v` says about a file read this way.
+    pub fn describe(self) -> &'static str {
+        match self {
+            ReadAs::Dotenv => "read as .env: names and values checked",
+            ReadAs::Text => "read as text: value patterns only, names not checked",
+        }
+    }
+}
+
 /// A file the scan selected and could not read.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UnreadableFile {
@@ -385,6 +417,7 @@ impl ScanResults {
     pub fn new(files_scanned: usize) -> Self {
         Self {
             files_scanned,
+            files: Vec::new(),
             unreadable: Vec::new(),
             skipped: Vec::new(),
             ignored_by_git: Vec::new(),
