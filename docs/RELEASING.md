@@ -9,19 +9,29 @@ Nine channels fire from one tag. This is the order, and the traps.
 
 ## What a tag sets off
 
-Pushing `vX.Y.Z` to **`main`** starts four workflows, and a fifth chains off one
-of them:
+Pushing `vX.Y.Z` to **`main`** starts three workflows, and a fourth chains off
+one of them:
 
 | Workflow | Fires on | Publishes |
 |---|---|---|
-| `release.yml` | `v*` tag | build provenance per archive → GitHub Release (16 assets) → Homebrew tap, Scoop bucket, **winget**; `verify-provenance` checks the published assets |
-| `python-publish.yml` | `v*` tag | PyPI |
+| `release.yml` | `v*` tag | build provenance per archive → GitHub Release (16 assets) → ghcr.io image, Homebrew tap, Scoop bucket, **winget**, **crates.io** (`publish-crate`, RM-27); `verify-provenance` checks the published assets |
+| `python-publish.yml` | `v*` tag | PyPI, by trusted publishing (RM-27) |
 | `publish-action.yml` | `v*` tag | GitHub Marketplace action |
-| `publish-image.yml` | `v*` tag + push to `main` | ghcr.io |
 | `npm-publish.yml` | **`release.yml` completing** | npm — 5 platform packages, then `@evnx/cli` |
 
-**crates.io is not in that list.** It is fully manual: `cargo publish` from the
-tag. No workflow exists, and nothing reminds you.
+**crates.io and PyPI publish by trusted publishing** (RM-27, v0.11.0): each
+trades GitHub's OIDC token for a short-lived one, and no registry token is stored.
+That needs, once, a trusted publisher on each registry:
+
+- **PyPI**: the evnx project → Settings → Publishing → GitHub: owner `urwithajit9`,
+  repository `evnx`, workflow `python-publish.yml`, environment `pypi`.
+- **crates.io**: the evnx crate → Settings → Trusted Publishing: repository
+  `urwithajit9/evnx`, workflow `release.yml`.
+
+Without them the publish step fails and nothing is sent. `publish-crate` checks
+that the tag equals `Cargo.toml`'s version, and skips a version already on
+crates.io, so a re-run is safe. Delete the old `PYPI_API_TOKEN` secret (and any
+crates.io token) after the first release that publishes this way.
 
 ⛔ **Never tag from a feature branch.** Three of those fire on `v*` regardless of
 which branch the tag points at, so a stray tag publishes a feature branch to five
@@ -166,7 +176,7 @@ It reads the compiled feature list from `evnx commands --json`, so it covers
 |---|---|---|
 | GitHub Release | 16 assets + checksums | |
 | **npm** | `npm view @evnx/cli version` | `npm-publish.yml` fires on `release.yml` *completing* — including when it **fails**, where it correctly skips and still reports green. A green npm run means nothing; read the registry. A **red** one is safe to re-run: the publish steps skip every version already in the registry and finish the rest (I-256). Only an auth failure ("check NPM_TOKEN") needs a new token first. |
-| **crates.io** | `cargo publish` — **manual** | Nothing automates it and nothing reminds you. evnx-crypto 0.1.1 and 0.1.2 exist as git tags and npm releases only, because this step was skipped twice. |
+| **crates.io** | `curl -A … https://crates.io/api/v1/crates/evnx` shows the version | `publish-crate` in `release.yml` since v0.11.0 (RM-27). It was a manual `cargo publish` that evnx-crypto skipped twice (0.1.1, 0.1.2). It fails without the trusted publisher above. |
 | PyPI | install the wheel and run the binary — **and run `scripts/check-build-features.sh` on it** | ⚠️ Built with `--features full` until 0.9.0, and `full` excludes `cloud`. Five releases of wheels had no `auth`, `vault`, `cloud` or `org`. Fixed to `--all-features`; **verify it on the first release after 0.9.0.** |
 | Homebrew / Scoop | formula and manifest bumped | |
 | ghcr.io | new digest, not the old one | |

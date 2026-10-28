@@ -255,6 +255,14 @@ jobs:
     # that might be triggered on a non-tag branch.
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
 
+    # RM-27: trusted publishing. PyPI trades GitHub's OIDC token (hence
+    # `id-token: write`) for a short-lived upload token; no stored secret. The
+    # trusted publisher on pypi.org names this workflow and the `pypi`
+    # environment below. The action also uploads PEP 740 attestations.
+    permissions:
+      contents: read
+      id-token: write
+
     environment:
       name: pypi
       url: https://pypi.org/project/evnx
@@ -278,15 +286,15 @@ jobs:
       #     pip install "twine>=5.0" --quiet
       #     twine check dist/*
 
-      # ── Upload to PyPI using the stored API token ─────────────────────────
-      # Secret name: PYPI_API_TOKEN
-      # How to add: GitHub repo → Settings → Secrets and variables
-      #             → Actions → New repository secret
-      # Value: the token you got from pypi.org (starts with "pypi-")
+      # ── Upload to PyPI, trusted publishing (RM-27) ────────────────────────
+      # No `password:`: without one the action authenticates with OIDC. Set
+      # up once on pypi.org: the evnx project → Settings → Publishing → add a
+      # GitHub publisher: owner urwithajit9, repository evnx, workflow
+      # python-publish.yml, environment pypi. Until that exists this step
+      # fails and nothing is uploaded; then delete the PYPI_API_TOKEN secret.
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
           # Set to true only when testing against Test PyPI:
           # repository-url: https://test.pypi.org/legacy/
           verbose: true           # show upload progress in logs

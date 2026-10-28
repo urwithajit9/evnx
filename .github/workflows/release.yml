@@ -717,3 +717,67 @@ jobs:
             --urls $installerUrl `
             --submit `
             --token $env:GITHUB_TOKEN
+  # ── crates.io ──────────────────────────────────────────────────────────────
+  #
+  # RM-27: crates.io was the one fully manual channel, and the manual step was
+  # skipped twice for evnx-crypto. Trusted publishing: crates.io trades
+  # GitHub's OIDC token for a short-lived one, which the auth action revokes
+  # when the job ends. No long-lived token is stored.
+  #
+  # ⚠️ Needs a trusted publisher on crates.io before the first tag: the evnx
+  # crate → Settings → Trusted Publishing → repository urwithajit9/evnx,
+  # workflow release.yml. Without it the auth step fails and nothing is sent.
+  #
+  # ⚠️ After the Container image section on purpose: the fork dry run cuts this
+  # file at that comment, so no dry run can reach a publish step.
+  publish-crate:
+    name: Publish to crates.io
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+
+      - name: The tag is the crate's version
+        id: version
+        run: |
+          crate=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['packages'][0]['version'])")
+          if [ "v$crate" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::the tag is $GITHUB_REF_NAME but Cargo.toml says $crate; nothing was published"
+            exit 1
+          fi
+          echo "version=$crate" >> "$GITHUB_OUTPUT"
+
+      # A re-run after a partial release must not fail on the version that is
+      # already out.
+      - name: Already on crates.io?
+        id: exists
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -A "evnx-release (https://github.com/urwithajit9/evnx)" \
+            "https://crates.io/api/v1/crates/evnx/$VERSION")
+          if [ "$code" = "200" ]; then
+            echo "::notice::evnx $VERSION is already on crates.io; nothing to publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Get a crates.io token
+        if: steps.exists.outputs.skip != 'true'
+        id: auth
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+
+      # `--all-features`, as ci.yml's `cargo publish --dry-run`: the
+      # verification build then compiles the cloud module too.
+      - name: cargo publish
+        if: steps.exists.outputs.skip != 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --all-features
