@@ -322,7 +322,7 @@ mod tests {
     fn timestamps_are_trimmed_for_display() {
         assert_eq!(
             crate::cloud::when::stamp("2026-09-14T15:02:11Z"),
-            "2026-09-14 15:02"
+            "2026-09-14 15:02 UTC"
         );
         assert_eq!(
             crate::cloud::when::date("2026-10-14T15:02:11Z"),

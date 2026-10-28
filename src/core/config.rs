@@ -251,6 +251,9 @@ pub struct BackupPolicy {
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct CloudPolicy {
     pub vault: Option<String>,
+    /// The file push and pull use with the bound vault, relative to the
+    /// folder this `.evnx.toml` is in (RM-86).
+    pub file: Option<String>,
     #[serde(flatten)]
     extra: Extra,
 }

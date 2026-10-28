@@ -111,3 +111,93 @@ fn t_i230_export_refuses_a_git_work_tree_before_any_request() {
         m.assert();
     }
 }
+
+/// RM-85 (F8): `link` run in a subfolder writes the project's `.evnx.toml`,
+/// which covers every folder below it. It said "bound this directory".
+#[test]
+fn rm85_link_names_the_folder_it_bound() {
+    let p = Project::new()
+        .file(".evnx.toml", "[sync]\nnaming_policy = \"warn\"\n")
+        .file("deploy/.keep", "");
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"production",
+            "role":"owner","version_count":1,"updated_at":"2026-10-16T00:00:00Z"}}]}}"#
+        ))
+        .create();
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &s.url());
+    let out = run_with(
+        &p.path().join("deploy"),
+        &["cloud", "link", "app/production"],
+        &[
+            ("EVNX_SERVER", s.url().as_str()),
+            ("EVNX_CONFIG_DIR", cfg.to_str().unwrap()),
+        ],
+        None,
+    );
+    out.assert_code(0);
+    let root = p.path().file_name().unwrap().to_string_lossy().into_owned();
+    assert!(
+        out.stdout
+            .contains("and every folder below it to app/production"),
+        "{}",
+        out.stdout
+    );
+    assert!(out.stdout.contains(&root), "{}", out.stdout);
+    assert!(!out.stdout.contains("this directory"), "{}", out.stdout);
+    assert!(p.read(".evnx.toml").contains(r#"vault = "app/production""#));
+}
+
+/// RM-86: `link --file` stores the file relative to the `.evnx.toml`'s
+/// folder, and refuses one outside it.
+#[test]
+fn rm86_link_file_is_stored_from_the_toml_folder() {
+    let p = Project::new()
+        .file(".evnx.toml", "[sync]\nnaming_policy = \"warn\"\n")
+        .file("deploy/.keep", "");
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"production",
+            "role":"owner","version_count":1,"updated_at":"2026-10-16T00:00:00Z"}}]}}"#
+        ))
+        .create();
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &s.url());
+    let env = [
+        ("EVNX_SERVER", s.url()),
+        ("EVNX_CONFIG_DIR", cfg.to_str().unwrap().to_string()),
+    ];
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let deploy = p.path().join("deploy");
+
+    let out = run_with(
+        &deploy,
+        &["cloud", "link", "app/production", "--file", ".env"],
+        &env,
+        None,
+    );
+    out.assert_code(0);
+    let toml = p.read(".evnx.toml");
+    assert!(toml.contains(r#"file = "deploy/.env""#), "{toml}");
+    assert!(toml.contains("naming_policy"), "{toml}");
+
+    let outside = run_with(
+        &deploy,
+        &[
+            "cloud",
+            "link",
+            "app/production",
+            "--file",
+            "../../elsewhere.env",
+        ],
+        &env,
+        None,
+    );
+    outside.assert_code(2);
+    assert!(outside.stderr.contains("is outside"), "{}", outside.stderr);
+}

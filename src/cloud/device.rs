@@ -247,7 +247,7 @@ mod tests {
     fn a_timestamp_is_trimmed_to_the_minute() {
         assert_eq!(
             crate::cloud::when::stamp("2026-10-02T14:23:08.123456Z"),
-            "2026-10-02 14:23"
+            "2026-10-02 14:23 UTC"
         );
     }
 

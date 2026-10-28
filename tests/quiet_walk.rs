@@ -262,7 +262,7 @@ fn t_share_60_quiet_still_prints_findings() {
     out.assert_contains("AWS Access Key");
 }
 
-/// I-226 (DEC-CL4): the "using <vault> from <file>" notice is on stderr, so
+/// I-226 (DEC-CL4): the `vault <name> ([cloud] vault)` notice (RM-85) is on stderr, so
 /// `cloud pull` to stdout and `cloud run` output carry only data, and `-q`
 /// hides it. Offline: the run stops at "not signed in", after the notice.
 #[cfg(feature = "cloud")]
@@ -276,8 +276,12 @@ fn t_i226_vault_notice_is_on_stderr() {
         ("EVNX_CONFIG_DIR", home.to_str().unwrap()),
     ];
     let out = support::run_with(p.path(), &["cloud", "pull"], &env, None);
-    assert!(out.stderr.contains("using app/dev from"), "{}", out.stderr);
-    assert!(!out.stdout.contains("using"), "{}", out.stdout);
+    assert!(
+        out.stderr.contains("vault     app/dev  ([cloud] vault)"),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.stdout.contains("app/dev"), "{}", out.stdout);
     let out = support::run_with(p.path(), &["-q", "cloud", "pull"], &env, None);
-    assert!(!out.all().contains("using app/dev"), "{}", out.all());
+    assert!(!out.all().contains("app/dev"), "{}", out.all());
 }

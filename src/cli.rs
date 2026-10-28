@@ -1383,7 +1383,13 @@ pub enum CloudCommands {
     /// that happens the blob hashes are compared and the answer says so, rather
     /// than reporting "no changes".
     ///
-    /// Read-only: one request, no blob download, no password.
+    /// Read-only: one request, no blob download, no password. `--local`
+    /// compares the local file with a version instead, values included; that
+    /// needs the master password and decrypts in memory.
+    ///
+    /// `--version` here means the vault version (with `--local`), so clap's
+    /// auto-generated `--version` is disabled; `evnx --version` still works.
+    #[command(disable_version_flag = true)]
     Diff {
         /// Vault to inspect. Optional in a bound directory.
         #[arg(long, value_name = "VAULT")]
@@ -1396,6 +1402,32 @@ pub enum CloudCommands {
         /// Newer version number. Defaults to the newest.
         #[arg(long, value_name = "N")]
         to: Option<i32>,
+
+        /// Compare the local file with a version instead: key names added,
+        /// removed and changed, never values. Exit 0 when they match, 1 when
+        /// they differ.
+        ///
+        /// Decrypted in memory, so it needs the master password; nothing is
+        /// written. The file is chosen as `cloud pull` chooses it (`--file`,
+        /// `--env-name`, `[cloud] file`, then `.env`).
+        #[arg(long, conflicts_with_all = ["from", "to"])]
+        local: bool,
+
+        /// With --local: the version to compare with. Defaults to the newest.
+        #[arg(long, value_name = "N", requires = "local", value_parser = clap::value_parser!(i32).range(1..))]
+        version: Option<i32>,
+
+        /// With --local: the local file.
+        #[arg(long, short = 'f', value_name = "FILE", requires = "local")]
+        file: Option<std::path::PathBuf>,
+
+        /// With --local: use `.env.<NAME>`.
+        #[arg(long, value_name = "NAME", requires = "local", conflicts_with = "file")]
+        env_name: Option<String>,
+
+        /// With --local: read the master password from stdin.
+        #[arg(long, requires = "local")]
+        password_stdin: bool,
     },
 
     /// Who did what to a vault, newest first.
@@ -1466,6 +1498,14 @@ pub enum CloudCommands {
     Link {
         /// Vault to bind: `name`, `name/environment`, or an id.
         vault: String,
+
+        /// The file push and pull use with this vault, from any folder below
+        /// the binding (`--file deploy/.env`). Stored as `[cloud] file`,
+        /// relative to the folder the `.evnx.toml` is in, so it names the
+        /// same file wherever the command runs. `--file` and `--env-name` on
+        /// push and pull still win.
+        #[arg(long, short = 'f', value_name = "FILE")]
+        file: Option<std::path::PathBuf>,
     },
 
     /// Remove this directory's vault binding.

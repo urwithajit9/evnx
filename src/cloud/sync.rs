@@ -53,22 +53,29 @@ pub(crate) const NONCE_LEN: usize = 12;
 /// binding is used it is announced, so a push never goes somewhere the person
 /// running it cannot see from the output.
 pub(crate) fn resolve_target(explicit: Option<String>) -> Result<String> {
+    Ok(resolve_target_and_file(explicit)?.0)
+}
+
+/// [`resolve_target`], plus the binding's `[cloud] file` (RM-86). The file
+/// comes only with the binding's vault: `--vault` names another vault, and a
+/// file bound to this one must not follow it there.
+pub(crate) fn resolve_target_and_file(
+    explicit: Option<String>,
+) -> Result<(String, Option<PathBuf>)> {
     if let Some(v) = explicit {
-        return Ok(v);
+        return Ok((v, None));
     }
     let cwd = std::env::current_dir().context("reading the current directory")?;
     match binding::read(&cwd)? {
         Some(bound) => {
             // stderr and hidden by `-q` (DEC-CL4, I-226): `cloud pull` to stdout
             // and `cloud run` print data there, and this line is not part of it.
+            // One row in the `config` / `vault` / `file` column (RM-85, F9):
+            // the `config` line above already names the file.
             if !crate::utils::ui::is_quiet() {
-                eprintln!(
-                    "  using {} from {}",
-                    bound.vault.bold(),
-                    bound.path.display()
-                );
+                eprintln!("  vault     {}  ([cloud] vault)", bound.vault.bold());
             }
-            Ok(bound.vault)
+            Ok((bound.vault, bound.file))
         }
         None => Err(anyhow!(
             "no vault given and this directory has no binding.\n\
@@ -85,6 +92,8 @@ enum FileChoice {
     Explicit,
     /// `--env-name <name>`.
     Named,
+    /// `[cloud] file` in the binding (RM-86).
+    Bound,
     /// `.env.<vault environment>`, because that file exists.
     MatchedEnvironment,
     /// Plain `.env`.
@@ -96,6 +105,7 @@ impl FileChoice {
         match self {
             FileChoice::Explicit => "--file",
             FileChoice::Named => "--env-name",
+            FileChoice::Bound => "[cloud] file",
             FileChoice::MatchedEnvironment => "matched the vault environment",
             FileChoice::Default => "default",
         }
@@ -121,6 +131,7 @@ fn resolve_env_file(
     dir: &Path,
     explicit: Option<PathBuf>,
     env_name: Option<&str>,
+    bound: Option<PathBuf>,
     vault_env: &str,
 ) -> Result<(PathBuf, FileChoice)> {
     if let Some(path) = explicit {
@@ -132,6 +143,10 @@ fn resolve_env_file(
             crate::core::env_name::resolve(dir, Some(name))?,
             FileChoice::Named,
         ));
+    }
+
+    if let Some(path) = bound {
+        return Ok((path, FileChoice::Bound));
     }
 
     if !vault_env.is_empty() {
@@ -201,14 +216,21 @@ fn is_stdout(file: Option<&Path>) -> bool {
     file.is_some_and(crate::core::safe_write::is_stdout)
 }
 
-fn report_file(file: &Path, choice: FileChoice, vault_env: &str, action: &str) {
-    crate::say!("  file      {} ({})", file.display(), choice.note());
+/// The `file` line, absolute so the folder it came from is never a guess
+/// (RM-85, F3/F9).
+fn report_file(file: &Path, choice: FileChoice) {
+    let shown = std::path::absolute(file).unwrap_or_else(|_| file.to_path_buf());
+    crate::say!("  file      {} ({})", shown.display(), choice.note());
+}
 
+/// Push only: the default `.env` into a production vault is the shape of a
+/// forgotten flag. Pull says its own thing where it matters, when it would
+/// replace a file (RM-85, F1: pull used to print this push sentence).
+fn warn_default_into_production(file: &Path, choice: FileChoice, vault_env: &str) {
     if choice == FileChoice::Default && vault_env == "production" {
         println!(
-            "  {} {} to a production vault from {} — pass --env-name or --file if that is not what you meant",
+            "  {} pushing to a production vault from {} — pass --env-name or --file if that is not what you meant",
             "!".yellow(),
-            action,
             file.display()
         );
     }
@@ -306,7 +328,7 @@ pub fn push(
 ) -> Result<()> {
     use evnx_crypto::{b64_encode, encrypt_vault, vault_aad};
 
-    let vault_target = resolve_target(vault_target)?;
+    let (vault_target, bound_file) = resolve_target_and_file(vault_target)?;
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
@@ -319,9 +341,11 @@ pub fn push(
         Path::new("."),
         file,
         env_name.as_deref(),
+        bound_file,
         &vault_ref.environment,
     )?;
-    report_file(&file, choice, &vault_ref.environment, "pushing");
+    report_file(&file, choice);
+    warn_default_into_production(&file, choice, &vault_ref.environment);
     if choice == FileChoice::Default
         && !yes
         && !confirm_production_push(&client, &vault_ref, &file, &vault_target)?
@@ -409,7 +433,7 @@ pub fn pull(
     gitignore: crate::utils::protect::GitignoreMode,
     verbose: bool,
 ) -> Result<()> {
-    let vault_target = resolve_target(vault_target)?;
+    let (vault_target, bound_file) = resolve_target_and_file(vault_target)?;
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
@@ -427,6 +451,7 @@ pub fn pull(
         Path::new("."),
         file,
         env_name.as_deref(),
+        bound_file,
         &vault_ref.environment,
     )?;
     if to_stdout {
@@ -435,7 +460,7 @@ pub fn pull(
             eprintln!("  file      - (stdout)");
         }
     } else {
-        report_file(&file, choice, &vault_ref.environment, "writing");
+        report_file(&file, choice);
     }
 
     let version = match version {
@@ -485,7 +510,15 @@ pub fn pull(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(e).with_context(|| format!("reading {}", file.display())),
     };
-    if !force && !confirm_overwrite(&file, existing.as_deref().map(Vec::as_slice), &plaintext)? {
+    if !force
+        && !confirm_overwrite(
+            &file,
+            existing.as_deref().map(Vec::as_slice),
+            &plaintext,
+            &format!("version {version} of {}", vault_ref.label()),
+            vault_ref.environment == "production",
+        )?
+    {
         return Ok(());
     }
 
@@ -715,7 +748,12 @@ pub fn history(
 ///
 /// The vault is looked up before anything is written, so a typo fails here
 /// rather than at the next push.
-pub fn link(server_override: Option<&str>, vault_target: String, verbose: bool) -> Result<()> {
+pub fn link(
+    server_override: Option<&str>,
+    vault_target: String,
+    file: Option<&Path>,
+    verbose: bool,
+) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     client.require_credential()?;
@@ -729,15 +767,29 @@ pub fn link(server_override: Option<&str>, vault_target: String, verbose: bool) 
 
     let cwd = std::env::current_dir().context("reading the current directory")?;
     let canonical = format!("{}/{}", vault_ref.name, vault_ref.environment);
-    let path = binding::write(&cwd, &canonical)?;
+    let relative = file
+        .map(|f| bound_file_entry(&crate::core::config::project_file(&cwd), &cwd.join(f)))
+        .transpose()?;
+    let path = binding::write_with_file(&cwd, &canonical, relative.as_deref())?;
 
     // `-q` (DEC-CL3, I-225): silent on success.
     use crate::utils::ui::say;
+    // RM-85, F8: name the folder. The binding goes in the project's
+    // `.evnx.toml` (the git root, DEC-SP16), often not this directory, and it
+    // covers every folder below it.
+    let scope = path.parent().unwrap_or(&cwd);
     say(format!(
-        "  {} bound this directory to {canonical}",
-        "✓".green()
+        "  {} bound {} and every folder below it to {canonical}",
+        "✓".green(),
+        scope.display()
     ));
     say(format!("  written to {}", path.display()));
+    if let Some(relative) = &relative {
+        say(format!(
+            "  file      {relative} ([cloud] file, from {})",
+            scope.display()
+        ));
+    }
     say("");
     say("  `evnx cloud push` and `pull` now work here without --vault.");
     say("  Safe to commit — a vault name is not a secret, and sharing it");
@@ -746,6 +798,33 @@ pub fn link(server_override: Option<&str>, vault_target: String, verbose: bool) 
         println!("  vault id  {}", vault_ref.id);
     }
     Ok(())
+}
+
+/// `file` as `[cloud] file` records it: relative to the folder `toml` is in,
+/// `/`-separated. Refused outside that folder: the binding is committed, and a
+/// path out of the project would mean something else on every other machine.
+fn bound_file_entry(toml: &Path, file: &Path) -> Result<String> {
+    let root = toml.parent().unwrap_or(Path::new("."));
+    // Canonical on both sides (a symlinked temp folder, `..`), through the
+    // file's folder, since the file itself need not exist before a first pull.
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let name = file
+        .file_name()
+        .ok_or_else(|| anyhow!("--file {} names no file", file.display()))?;
+    let folder = canon(file.parent().unwrap_or(Path::new(".")));
+    let full = folder.join(name);
+    let rel = full.strip_prefix(canon(root)).map_err(|_| {
+        anyhow!(
+            "--file {} is outside {}, which the binding covers. Name a file inside it.",
+            file.display(),
+            root.display()
+        )
+    })?;
+    Ok(rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/"))
 }
 
 /// Remove this directory's binding.
@@ -911,7 +990,13 @@ fn read_key_names(plaintext: &[u8]) -> (Vec<String>, Option<String>) {
 
 /// Ask before replacing a file whose contents differ. `existing` is what the
 /// file holds now, `None` when there is no file.
-fn confirm_overwrite(file: &Path, existing: Option<&[u8]>, incoming: &[u8]) -> Result<bool> {
+fn confirm_overwrite(
+    file: &Path,
+    existing: Option<&[u8]>,
+    incoming: &[u8],
+    source: &str,
+    production: bool,
+) -> Result<bool> {
     let Some(existing) = existing else {
         return Ok(true);
     };
@@ -921,9 +1006,16 @@ fn confirm_overwrite(file: &Path, existing: Option<&[u8]>, incoming: &[u8]) -> R
         return Ok(false);
     }
 
+    // RM-85, F1: what a pull does, said the right way round.
     println!(
-        "  {} exists and differs from the version being pulled.",
-        file.display()
+        "  {}{} exists and differs from {source}{}; pulling replaces it.",
+        if production {
+            "! ".yellow().to_string()
+        } else {
+            String::new()
+        },
+        file.display(),
+        if production { " (production)" } else { "" }
     );
     // No terminal: say how to go on (I-218), as every other cloud prompt does.
     // `pull` says `--force`, not `--yes`.
@@ -1084,7 +1176,7 @@ mod env_file_tests {
     fn the_vault_environment_picks_the_file() {
         let d = project(&[".env", ".env.production"]);
 
-        let (path, choice) = resolve_env_file(d.path(), None, None, "production").unwrap();
+        let (path, choice) = resolve_env_file(d.path(), None, None, None, "production").unwrap();
 
         assert!(path.ends_with(".env.production"), "{path:?}");
         assert_eq!(choice, FileChoice::MatchedEnvironment);
@@ -1096,7 +1188,7 @@ mod env_file_tests {
     fn a_missing_derived_file_falls_back_rather_than_failing() {
         let d = project(&[".env"]);
 
-        let (path, choice) = resolve_env_file(d.path(), None, None, "production").unwrap();
+        let (path, choice) = resolve_env_file(d.path(), None, None, None, "production").unwrap();
 
         assert!(path.ends_with(".env"), "{path:?}");
         assert_eq!(choice, FileChoice::Default);
@@ -1108,7 +1200,7 @@ mod env_file_tests {
     fn an_unknown_environment_derives_nothing() {
         let d = project(&[".env", ".env.production"]);
 
-        let (path, choice) = resolve_env_file(d.path(), None, None, "").unwrap();
+        let (path, choice) = resolve_env_file(d.path(), None, None, None, "").unwrap();
 
         assert!(path.ends_with(".env"), "{path:?}");
         assert_eq!(choice, FileChoice::Default);
@@ -1122,12 +1214,32 @@ mod env_file_tests {
             d.path(),
             Some(PathBuf::from("custom.env")),
             None,
+            Some(PathBuf::from("bound.env")),
             "production",
         )
         .unwrap();
 
         assert_eq!(path, PathBuf::from("custom.env"));
         assert_eq!(choice, FileChoice::Explicit);
+    }
+
+    /// RM-86: `[cloud] file` beats the derived names, and loses to the flags.
+    #[test]
+    fn rm86_the_bound_file_comes_after_the_flags() {
+        let d = project(&[".env", ".env.production"]);
+        let bound = d.path().join("deploy/.env");
+        let (path, choice) =
+            resolve_env_file(d.path(), None, None, Some(bound.clone()), "production").unwrap();
+        assert_eq!((path, choice), (bound.clone(), FileChoice::Bound));
+        let (_, choice) = resolve_env_file(
+            d.path(),
+            None,
+            Some("production"),
+            Some(bound),
+            "production",
+        )
+        .unwrap();
+        assert_eq!(choice, FileChoice::Named);
     }
 
     /// `--env-name` keeps the strict contract of the local commands: a name that
@@ -1137,12 +1249,12 @@ mod env_file_tests {
         let d = project(&[".env", ".env.production"]);
 
         let (path, choice) =
-            resolve_env_file(d.path(), None, Some("production"), "staging").unwrap();
+            resolve_env_file(d.path(), None, Some("production"), None, "staging").unwrap();
         assert!(path.ends_with(".env.production"));
         assert_eq!(choice, FileChoice::Named);
 
         assert!(
-            resolve_env_file(d.path(), None, Some("nope"), "production").is_err(),
+            resolve_env_file(d.path(), None, Some("nope"), None, "production").is_err(),
             "a named environment that does not exist must fail"
         );
     }
@@ -1351,6 +1463,122 @@ pub(crate) fn key_delta_line(d: &KeyDelta) -> String {
 /// Costs one request. No blob is downloaded, nothing is decrypted, and the
 /// master password is never needed — the same reason `cloud history` does not
 /// ask for one.
+/// `cloud diff --local` (RM-87): the local file against a version, by key
+/// name, decrypted in memory. Nothing is written. Exit 1 when they differ.
+///
+/// It replaces pulling into a scratch folder and running `cmp`, which put a
+/// production `.env` in plaintext in `/tmp` (paid-user review N4).
+pub fn diff_local(
+    server_override: Option<&str>,
+    vault_target: Option<String>,
+    file: Option<PathBuf>,
+    env_name: Option<String>,
+    version: Option<i32>,
+    password_stdin: bool,
+) -> Result<()> {
+    let (vault_target, bound_file) = resolve_target_and_file(vault_target)?;
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server.clone())?;
+    client.require_credential()?;
+    let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
+
+    let (file, choice) = resolve_env_file(
+        Path::new("."),
+        file,
+        env_name.as_deref(),
+        bound_file,
+        &vault_ref.environment,
+    )?;
+    report_file(&file, choice);
+    let local = zeroize::Zeroizing::new(
+        std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?,
+    );
+
+    let version = match version {
+        Some(v) => v,
+        None => match current_version(&client, &vault_ref)? {
+            0 => {
+                return Err(anyhow!(
+                    "{} has no versions yet, so there is nothing to compare with.",
+                    vault_ref.label()
+                ))
+            }
+            latest => latest,
+        },
+    };
+    let blob = fetch_blob(&client, &vault_ref, version)?;
+    let password = auth::read_password(password_stdin, "Master password")?;
+    let unlocked = auth::unlock(&client, &password)?;
+    let vault_key = unwrap_vault_key(&client, &vault_ref, &unlocked)?;
+    let remote = zeroize::Zeroizing::new(decrypt_version(&blob, &vault_ref, version, &vault_key)?);
+
+    let against = format!("version {version} of {}", vault_ref.label());
+    println!();
+    println!(
+        "  {}  {} ↔ {against}",
+        "evnx cloud diff --local".bold(),
+        file.display()
+    );
+    println!();
+    if local.as_slice() == remote.as_slice() {
+        println!(
+            "  {} Identical: {} matches {against}.",
+            "✓".green(),
+            file.display()
+        );
+        return Ok(());
+    }
+
+    let parse = |bytes: &[u8]| {
+        let text = std::str::from_utf8(bytes).ok()?;
+        crate::core::parser::Parser::new(Default::default())
+            .parse_content(text)
+            .ok()
+    };
+    match (parse(&local), parse(&remote)) {
+        (Some(mine), Some(theirs)) => {
+            let only_vault: Vec<&String> =
+                theirs.keys().filter(|k| !mine.contains_key(*k)).collect();
+            let only_local: Vec<&String> =
+                mine.keys().filter(|k| !theirs.contains_key(*k)).collect();
+            let changed: Vec<&String> = mine
+                .iter()
+                .filter(|(k, v)| theirs.get(*k).is_some_and(|t| t != *v))
+                .map(|(k, _)| k)
+                .collect();
+            for k in &only_vault {
+                println!("  {} {k}  only in the vault", "+".green().bold());
+            }
+            for k in &only_local {
+                println!("  {} {k}  only in {}", "-".red().bold(), file.display());
+            }
+            for k in &changed {
+                println!("  {} {k}  value differs", "~".yellow().bold());
+            }
+            if only_vault.is_empty() && only_local.is_empty() && changed.is_empty() {
+                println!(
+                    "  Same keys and values; the files differ only in comments, order or quoting."
+                );
+            } else {
+                println!();
+                println!(
+                    "  {} only in the vault  ·  {} only in {}  ·  {} changed",
+                    only_vault.len(),
+                    only_local.len(),
+                    file.display(),
+                    changed.len()
+                );
+            }
+        }
+        _ => println!(
+            "  {} The contents differ, and one side does not parse as a .env, so no key list.",
+            "!".yellow()
+        ),
+    }
+    crate::core::verdict::finish(crate::core::verdict::Verdict::Findings);
+    Ok(())
+}
+
 pub fn diff(
     server_override: Option<&str>,
     vault_target: Option<String>,

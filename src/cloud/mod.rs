@@ -144,8 +144,28 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             include_mine,
             verbose,
         ),
-        CloudCommands::Diff { vault, from, to } => {
-            sync::diff(server_override, vault, from, to, verbose)
+        CloudCommands::Diff {
+            vault,
+            from,
+            to,
+            local,
+            version,
+            file,
+            env_name,
+            password_stdin,
+        } => {
+            if local {
+                sync::diff_local(
+                    server_override,
+                    vault,
+                    file,
+                    env_name,
+                    version,
+                    password_stdin,
+                )
+            } else {
+                sync::diff(server_override, vault, from, to, verbose)
+            }
         }
         CloudCommands::Audit { vault, last, event } => {
             audit::run(server_override, vault, &last, event, verbose)
@@ -158,7 +178,9 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             vault,
             yes,
         } => sync::delete_version(server_override, vault, version_num, yes, verbose),
-        CloudCommands::Link { vault } => sync::link(server_override, vault, verbose),
+        CloudCommands::Link { vault, file } => {
+            sync::link(server_override, vault, file.as_deref(), verbose)
+        }
         CloudCommands::Unlink => sync::unlink(verbose),
         CloudCommands::Export {
             vault,

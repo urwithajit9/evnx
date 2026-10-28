@@ -357,6 +357,19 @@ fn t_i218_pull_over_a_different_file_names_force_without_a_terminal() {
     );
     out.assert_code(2);
     assert!(out.stderr.contains("--force"), "{}", out.stderr);
+    // RM-85 (F1): what a pull does, the right way round.
+    assert!(
+        out.stdout.contains(&format!(
+            "differs from version 1 of {VAULT_ID}; pulling replaces it"
+        )),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        !out.all().contains("to a production vault from"),
+        "{}",
+        out.all()
+    );
     assert!(
         !out.stderr.contains("not a terminal: not a terminal"),
         "{}",
@@ -790,4 +803,129 @@ fn rm07_export_to_refuses_a_collision() {
     export(&p, &s, &allow).assert_code(0);
     let file = exported(&p);
     assert_eq!(file.matches(" a-b").count(), 1, "{file}");
+}
+
+/// RM-86 (F3): with `[cloud] file`, pull from any folder under the binding
+/// writes the same file, named by its absolute path; it used to be `./.env`
+/// wherever the command ran.
+#[test]
+fn rm86_the_bound_file_is_the_same_from_every_folder() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &a);
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/1/blob").as_str(),
+    )
+    .with_status(200)
+    .with_body(blob(&vk, b"A=1\n"))
+    .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, &a)))
+        .create();
+    let p = Project::new()
+        .file(
+            ".evnx.toml",
+            &format!("[cloud]\nvault = \"{VAULT_ID}\"\nfile = \"deploy/.env\"\n"),
+        )
+        .file(".gitignore", ".env*\n")
+        .file("deploy/.keep", "")
+        .file("tools/.keep", "");
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &s.url());
+    let out = support::run_with(
+        &p.path().join("tools"),
+        &["cloud", "pull", "--version", "1", "--password-stdin"],
+        &[
+            ("EVNX_SERVER", s.url().as_str()),
+            ("EVNX_CONFIG_DIR", cfg.to_str().unwrap()),
+        ],
+        Some(format!("{RIGHT}\n").as_bytes()),
+    );
+    out.assert_code(0);
+    assert_eq!(p.read("deploy/.env"), "A=1\n");
+    assert!(!p.path().join("tools/.env").exists());
+    assert!(out.all().contains("([cloud] file)"), "{}", out.all());
+    let deploy = std::path::Path::new("deploy").join(".env");
+    assert!(
+        out.all().contains(&deploy.display().to_string()),
+        "{}",
+        out.all()
+    );
+}
+
+/// RM-87 (N4): `cloud diff --local` compares the local file with a version in
+/// memory: key names only, exit 0 when identical and 1 when not, and nothing
+/// written.
+#[test]
+fn rm87_diff_local_lists_keys_and_writes_nothing() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &a);
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/1/blob").as_str(),
+    )
+    .with_status(200)
+    .with_body(blob(&vk, b"A=1\nB=2\n"))
+    .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, &a)))
+        .create();
+    let diff = |p: &Project| {
+        signed_in(
+            p,
+            &s.url(),
+            &[
+                "cloud",
+                "diff",
+                "--local",
+                "--vault",
+                VAULT_ID,
+                "--version",
+                "1",
+                "--password-stdin",
+            ],
+            Some(format!("{RIGHT}\n").as_bytes()),
+        )
+    };
+
+    let same = Project::new().env("A=1\nB=2\n");
+    let out = diff(&same);
+    out.assert_code(0);
+    assert!(out.stdout.contains("Identical"), "{}", out.stdout);
+
+    let p = Project::new().env("A=9\nC=3\n");
+    // Everything in the project but `cfg`, which the test's login creates.
+    let files = |p: &Project| {
+        let mut v: Vec<String> = std::fs::read_dir(p.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n != "cfg")
+            .collect();
+        v.sort();
+        v
+    };
+    let before = files(&p);
+    let out = diff(&p);
+    out.assert_code(1);
+    assert!(
+        out.stdout.contains("+ B  only in the vault"),
+        "{}",
+        out.stdout
+    );
+    assert!(out.stdout.contains("- C  only in"), "{}", out.stdout);
+    assert!(out.stdout.contains("~ A  value differs"), "{}", out.stdout);
+    // Values never appear.
+    assert!(
+        !out.all().contains("A=9") && !out.all().contains("B=2"),
+        "{}",
+        out.all()
+    );
+    assert_eq!(p.read(".env"), "A=9\nC=3\n");
+    assert_eq!(before, files(&p), "diff --local wrote a file");
 }

@@ -63,7 +63,8 @@ pub fn read(start: &Path) -> Result<Option<Bound>> {
     // below. A user's `.evnx.toml` holds their comments, their key order, and
     // settings this version knows nothing about — a deserialise-mutate-
     // reserialise round trip would quietly discard all three.
-    let Some(vault) = crate::core::config::load_file(&path)?.config.cloud.vault else {
+    let cloud = crate::core::config::load_file(&path)?.config.cloud;
+    let Some(vault) = cloud.vault else {
         return Ok(None);
     };
 
@@ -75,9 +76,24 @@ pub fn read(start: &Path) -> Result<Option<Bound>> {
         ));
     }
 
+    // RM-86: from the toml's folder, never the working directory, so every
+    // folder below it means the same file.
+    let file = match cloud.file.as_deref().map(str::trim) {
+        None => None,
+        Some("") => {
+            return Err(anyhow!(
+                "{} has an empty `[cloud] file`. Set it with \
+                 `evnx cloud link <vault> --file <path>`, or remove the line.",
+                path.display()
+            ))
+        }
+        Some(f) => Some(path.parent().unwrap_or(Path::new(".")).join(f)),
+    };
+
     Ok(Some(Bound {
         vault: vault.trim().to_string(),
         path,
+        file,
     }))
 }
 
@@ -91,6 +107,8 @@ pub struct Bound {
     pub vault: String,
     /// File the binding was read from, for messages.
     pub path: PathBuf,
+    /// `[cloud] file`, resolved from the folder `path` is in (RM-86).
+    pub file: Option<PathBuf>,
 }
 
 /// Record a binding in the project's `.evnx.toml`, creating it at the git root
@@ -99,6 +117,12 @@ pub struct Bound {
 /// Everything already in the file survives: comments, ordering, and any keys this
 /// module does not understand.
 pub fn write(dir: &Path, vault: &str) -> Result<PathBuf> {
+    write_with_file(dir, vault, None)
+}
+
+/// [`write`], plus `[cloud] file` when `file` is given: a path relative to
+/// the folder the `.evnx.toml` is in, with `/` separators (RM-86).
+pub fn write_with_file(dir: &Path, vault: &str, file: Option<&str>) -> Result<PathBuf> {
     let path = crate::core::config::project_file(dir);
 
     let mut doc: toml_edit::DocumentMut = match std::fs::read_to_string(&path) {
@@ -119,6 +143,9 @@ pub fn write(dir: &Path, vault: &str) -> Result<PathBuf> {
         doc["cloud"] = toml_edit::Item::Table(table);
     }
     doc["cloud"]["vault"] = toml_edit::value(vault);
+    if let Some(file) = file {
+        doc["cloud"]["file"] = toml_edit::value(file);
+    }
 
     crate::core::config::save(&path, &doc.to_string())?;
     Ok(path)
