@@ -116,6 +116,16 @@ instead of `.env`. Pass `--env-name` to choose another.
   the same line in `config.txt` gets the value patterns alone. `-v` now says so
   on each `Scanning:` line, and the JSON report has a `files` list with each
   file's `read_as`, `dotenv` or `text` (additive).
+- **crates.io and PyPI publish by trusted publishing** (RM-27). A release now
+  publishes to crates.io itself (`publish-crate` in `release.yml`; it was a
+  manual `cargo publish`), and PyPI uploads with GitHub's OIDC token instead
+  of a stored API token, adding PEP 740 attestations. No long-lived registry
+  token is needed for either.
+- **Internal** (RM-28): the release and CI workflows move to `actions/checkout`
+  v7.0.1, `actions/download-artifact` v8.0.2 (a hash mismatch now fails the
+  download), `actions/setup-node` v7.1.0 (its automatic cache turned off in the
+  publish job), `docker/build-push-action` v7.4.0 and a newer
+  `dtolnay/rust-toolchain`, all pinned by commit.
 - **Cloud commands a production server can trust** (RM-85, from a paid
   user's 0.10.18 session):
   - `cloud pull` said "writing to a production vault from ./.env", which
