@@ -1158,7 +1158,7 @@ repos:
     # before 0.10.15 evnx-doctor had no --skip-without-env. Before 0.10.0 the
     # scan hook scanned the whole working tree on every commit, including the
     # real, gitignored `.env`, and blocked every commit.
-    rev: v0.10.18
+    rev: v0.11.0
     hooks:
       - id: evnx-scan        # blocks commit if secrets found in the staged files
       - id: evnx-validate    # blocks commit if .env misconfigured
