@@ -46,7 +46,7 @@ format = "int"
   evnx spec  Generate the variable contract
 
 [exit 0]
-  ok: FIXED I-332 (0.11.0): the root's [defaults] example = env.sample is read from the root's folder, so sub/ finds ../env.sample (exit 0)
+  ok: FIXED I-332 (since 0.11.0): the root's [defaults] example = env.sample is read from the root's folder, so sub/ finds ../env.sample (exit 0)
   ok: FIXED I-332: SAMPLE_ONLY comes from ../env.sample
 
 $ evnx spec init --example .env.example

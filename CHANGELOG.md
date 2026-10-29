@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-29
+
 ⚠️ **Breaking changes, and how to migrate:**
 - **`template`: an unresolved placeholder is an error** (RM-14, DEC-T2, I-142).
   `{{X}}` with no value used to be written through literally, exit 0; now the
@@ -22,6 +24,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`diff --format json`: `values_redacted` is gone; `schema_version` is 2**
   (RM-16). *Migrate:* read `value_state` (`withheld`, `masked`, `shown`);
   `value_state == "masked"` is the old `values_redacted == true`.
+- **`diff --format patch` is a unified diff** (RM-40, I-072). It used to print
+  `# Add these to .env:` / `+ KEY=<withheld>` sections, which `patch` rejected;
+  it now prints a diff `patch -p1` applies, and a patch that would carry real
+  values (`--values`, `--against`, `--reverse`) needs `--show-values`, else
+  exit 2. `diff --interactive` now writes the chosen changes (keeping
+  `.env.bak`). *Migrate:* anything parsing the old sections should apply the
+  patch instead, or read `--format json`.
 - **`restore` writes back to the file the backup was made from** (RM-18, I-029).
   A backup of `.env.staging` used to restore over `.env`; without `--output` it
   now restores to `.env.staging`, in the current folder. A recorded name that is
@@ -100,12 +109,6 @@ instead of `.env`. Pass `--env-name` to choose another.
   above) every such template would have failed.
 - **`template`: each `|default:` uses its own text** (I-134).
   `{{E|default:one}} {{E|default:two}}` with `E` empty rendered `one one`.
-- **`diff --interactive` says it writes nothing** (I-073). It printed "Applied
-  changes" and "apply with: patch -p1 < changes.patch", naming a file it never
-  wrote. It now lists the chosen changes under "Chosen (nothing was written)"
-  and says the file was not changed; writing it is planned for 0.12.0. Without
-  a terminal it refuses with exit 2 and names `evnx diff --format patch`; piped
-  answers used to be read as replies.
 - **`scan` reads a plaintext `.env.backup`** (RM-84, I-293). Files named like
   an `evnx backup` (`.env.backup`, `.env.production.backup`, `.env.backup.2`)
   were skipped by name, as ciphertext, so `cp .env .env.backup` was never

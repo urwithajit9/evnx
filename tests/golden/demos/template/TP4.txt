@@ -38,6 +38,6 @@ $ evnx template --input e.tpl --output e.out --no-gitignore
 b: ${DB_HOST:-dflt}
 d: \db.internal
 e: $db.internal
-decided: chaining works and a backslash escape, with the 0.11.0 engine
+decided: chaining works and a backslash escape, with the engine since 0.11.0
 
 ================ summary: 2 ok, 0 mismatch   ================

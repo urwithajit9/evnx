@@ -12,9 +12,10 @@
 //! | ANSI colour and cursor codes | removed |
 //! | CRLF | LF |
 //!
-//! ⚠️ The version marker replaces the version string *anywhere*. A test whose
-//! fixture contains the same digits as a value would see `<version>` there too;
-//! use a different value in the fixture.
+//! ⚠️ The version marker replaces the version string almost anywhere: not after
+//! "since " or "before ", where a message names a version as history. A test
+//! whose fixture contains the same digits as a value would see `<version>`
+//! there too; use a different value in the fixture.
 //!
 //! `tests/init_golden.rs` and `tests/golden_output.rs` keep their own
 //! normalisers on purpose: they pin bytes that other tools read, and their
@@ -30,7 +31,28 @@ pub fn normalise(raw: &str, dirs: &[&Path]) -> String {
         s = s.replace(&spelling, "<dir>");
     }
     s = replace_dates(&s);
-    s.replace(env!("CARGO_PKG_VERSION"), "<version>")
+    replace_version(&s, env!("CARGO_PKG_VERSION"))
+}
+
+/// `version` → `<version>`, except where a message names it as history
+/// ("since 0.11.0", "before 0.11.0"): that text is fixed, and normalising it
+/// only while the crate is at that exact version broke the goldens at the
+/// 0.11.0 bump.
+fn replace_version(s: &str, version: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find(version) {
+        let before = &rest[..i];
+        out.push_str(before);
+        if before.ends_with("since ") || before.ends_with("before ") {
+            out.push_str(version);
+        } else {
+            out.push_str("<version>");
+        }
+        rest = &rest[i + version.len()..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Compare `actual` (already normalised) with `tests/golden/<rel>`, or write
