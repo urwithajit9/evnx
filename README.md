@@ -34,8 +34,20 @@ try evnx in your browser via GitHub Actions, no installation required.
 ### Linux / macOS
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
+curl -fsSL https://dotenv.space/install.sh | bash
 ```
+
+It checks the archive's SHA-256 and, from v0.11.0 with a signed-in `gh`, its build
+provenance. Pin a version with `EVNX_VERSION=0.11.0`, choose the folder with
+`EVNX_INSTALL_DIR`.
+
+### Docker
+
+```bash
+docker run --rm -v "$PWD:/work" ghcr.io/urwithajit9/evnx:0.11.0 scan
+```
+
+Commands that write files need `--user "$(id -u):$(id -g)"`.
 
 ### Homebrew (macOS and Linux)
 
@@ -137,6 +149,10 @@ evnx --version
 evnx commands      # the features this build has, and every command
 ```
 
+To verify a downloaded archive (v0.11.0+): `sha256sum -c` against its `.sha256`, then
+`gh attestation verify <archive> -R urwithajit9/evnx` for its build provenance. Full
+steps: [Installation](https://docs.evnx.dev/guides/getting-started/installation#verify-your-download).
+
 `--version` is the same whether or not a feature is compiled in; `evnx commands`
 says `built with: net, migrate, backup, cloud` for a full build.
 
@@ -231,6 +247,7 @@ evnx spec init --env-name staging         # sample values from .env.staging
 evnx spec init --with django,postgresql   # or start from the component catalogue
 evnx spec init --stdout                   # print it instead (only TOML goes to stdout)
 evnx spec init --merge                    # later: add only the names [vars] does not declare yet
+evnx spec check                           # v0.11.0+: the contract against .env.example (and .env); a pre-commit hook
 ```
 
 Every field is a guess from your files — read it before you commit it. A `format` is
@@ -651,6 +668,24 @@ For a vault, use `evnx cloud pull`; `restore cloud://…` is not supported.
 
 ---
 
+### `evnx run`
+
+**v0.11.0+.** Run a command with a `.env`'s variables in its environment, without the
+command reading the file. Secret values in its output print as `***` when the output
+is not a terminal (a CI log, an AI agent); `--mask` / `--no-mask` decide otherwise.
+
+```bash
+evnx run -- npm test
+evnx run --env-name staging -- python manage.py migrate
+evnx run --include 'NEXT_PUBLIC_*' -- npm run build
+```
+
+It exits with the command's own code. Names that make a program load other code
+(`LD_PRELOAD`, `NODE_OPTIONS`, …) are refused unless `--allow-unsafe-names`. Masking
+prevents accidents, not exfiltration.
+
+---
+
 ### `evnx commands` _(alias `surface`)_
 
 Which build you have: the version, the features it was compiled with, and every
@@ -739,7 +774,8 @@ correction is tracked in [`SECURITY.md`](./SECURITY.md#what-the-threat-model-act
 evnx auth register                       # create an account
 evnx auth login                          # sign in on this machine
 evnx vault create app --env production   # a vault holds one .env, versioned
-evnx cloud link app/production           # bind this directory to it
+evnx cloud link app/production           # bind this folder (and every folder below it) to it
+evnx cloud link app/production --file deploy/.env   # v0.11.0+: the binding names the file too
 evnx cloud push                          # encrypt locally, upload ciphertext
 evnx cloud pull                          # download, decrypt, write .env
 evnx cloud status                        # server, sign-in, this directory's binding
@@ -813,6 +849,7 @@ Every push is a new version. Nothing is overwritten.
 evnx cloud history                                  # what changed, when, and who pushed it
 evnx cloud pull --version 3                         # restore an earlier version
 evnx cloud diff                                     # what differs between two versions
+evnx cloud diff --local                             # v0.11.0+: your file against the latest version, nothing written
 evnx cloud export --output ../backup --all-versions # every version to disk, decrypted
 evnx cloud delete-version 2 --vault app/production  # remove one version for good
 ```
@@ -855,6 +892,7 @@ re-sent.
 ```bash
 evnx cloud run --vault app/production -- ./deploy.sh
 evnx cloud run --include 'NEXT_PUBLIC_*' -- npm run build
+evnx cloud run --vault app/production --no-mask -- ./debug.sh   # output is masked off a terminal (v0.11.0+)
 ```
 
 Decrypts in memory and hands the variables to the child process. Nothing on disk,
