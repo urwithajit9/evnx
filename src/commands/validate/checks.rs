@@ -204,6 +204,35 @@ pub fn check_reader_mismatch(
         .collect()
 }
 
+/// Values holding a NUL byte (B2 P0.6). An error: the file parses, but `exec`
+/// refuses such an environment and Docker will not start the container.
+pub fn check_nul_bytes(
+    doc: &crate::core::parser::Document,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if ignore.contains(IssueType::NulByte.as_str()) {
+        return Vec::new();
+    }
+    doc.nul_bytes()
+        .map(|e| Issue {
+            severity: "error".to_string(),
+            issue_type: IssueType::NulByte.as_str().to_string(),
+            variable: e.key.clone(),
+            message: format!(
+                "{} (line {}): a NUL byte inside the value. No process can receive it",
+                e.key, e.span.line
+            ),
+            location: format!("{env_path}:{}", e.span.line),
+            suggestion: Some(
+                "Remove the NUL byte. It usually comes from a file saved as UTF-16, or a binary paste"
+                    .to_string(),
+            ),
+            auto_fixable: false,
+        })
+        .collect()
+}
+
 /// Values holding a carriage return that ends no CRLF line (B2 P0.5). Always
 /// checked, whatever the readers: the file is one variable to evnx and two to
 /// python-dotenv and Node dotenv. Never prints the value.

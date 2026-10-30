@@ -102,6 +102,13 @@ impl Document {
         self.problems.is_empty()
     }
 
+    /// Entries whose value holds a NUL byte (B2 P0.6). It parses, but no
+    /// process can receive it: an environment is NUL-terminated C strings, so
+    /// `exec` refuses it and Docker will not start the container.
+    pub fn nul_bytes(&self) -> impl Iterator<Item = &Entry> {
+        self.entries.iter().filter(|e| e.value.contains('\0'))
+    }
+
     /// Entries whose text holds a carriage return that does not end a CRLF
     /// line (B2 P0.5): a classic Mac line ending, or a stray paste. evnx and
     /// Docker Compose keep it in the value; python-dotenv and Node dotenv end

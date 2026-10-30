@@ -1180,3 +1180,19 @@ fn p0_5_a_lone_carriage_return_is_found_and_crlf_is_not() {
         "an escaped \\r is text, not a CR"
     );
 }
+
+/// A NUL byte in a value is found (B2 P0.6). The reading does not change;
+/// `validate` and `doctor` report it as an error.
+#[test]
+fn p0_6_a_nul_byte_in_a_value_is_found() {
+    let doc = Parser::default().parse_document("A=1\nK=a\0b\nQ=\"x\0y\"\n");
+    let keys: Vec<&str> = doc.nul_bytes().map(|e| e.key.as_str()).collect();
+    assert_eq!(keys, ["K", "Q"]);
+    assert_eq!(
+        Parser::default()
+            .parse_document("A=1\n")
+            .nul_bytes()
+            .count(),
+        0
+    );
+}

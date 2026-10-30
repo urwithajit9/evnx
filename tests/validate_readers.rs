@@ -113,3 +113,36 @@ fn p0_5_a_lone_carriage_return_is_reported_by_validate_and_doctor() {
     );
     assert!(!out.all().contains("s3cr3t"), "{}", out.all());
 }
+
+/// B2 P0.6: a NUL byte in a value is an error in `validate` and `doctor`. It
+/// parses, but `exec` and Docker refuse such an environment. Measured: Compose's
+/// container fails with "invalid environment variable: contains nul byte".
+#[test]
+fn p0_6_a_nul_byte_is_an_error_in_validate_and_doctor() {
+    let p = Project::new()
+        .file(".gitignore", ".env\n")
+        .env("PORT=8080\nTOKEN=s3cr3t\0x\n")
+        .example("PORT=\nTOKEN=\n");
+    let out = run(p.path(), &["validate", "--format", "json"]);
+    assert_eq!(out.code, Some(1), "{}", out.all());
+    let json: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    let found: Vec<_> = json["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["type"] == "nul_byte")
+        .collect();
+    assert_eq!(found.len(), 1, "{}", out.stdout);
+    assert_eq!(found[0]["variable"], "TOKEN");
+    assert_eq!(found[0]["severity"], "error");
+    assert!(!out.stdout.contains("s3cr3t"), "{}", out.stdout);
+
+    let out = run(p.path(), &["doctor"]);
+    assert!(
+        out.all()
+            .contains(".env: a NUL byte inside TOKEN — no process can receive it"),
+        "{}",
+        out.all()
+    );
+    assert!(!out.all().contains("s3cr3t"), "{}", out.all());
+}

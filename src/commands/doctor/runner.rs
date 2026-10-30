@@ -580,6 +580,15 @@ impl DiagnosticCheck for EnvFileCheck {
                             if verbose {
                                 lines.push(format!("✓ {name} syntax is valid"));
                             }
+                            // B2 P0.6: parses, but no process can receive it.
+                            let nul: Vec<&str> = doc.nul_bytes().map(|e| e.key.as_str()).collect();
+                            if !nul.is_empty() {
+                                severity = Severity::Error;
+                                lines.push(format!(
+                                    "✗ {name}: a NUL byte inside {} — no process can receive it",
+                                    nul.join(", ")
+                                ));
+                            }
                             // B2 P0.5: whatever the readers, a lone CR splits
                             // a variable in two for python-dotenv and Node.
                             let cr: Vec<&str> = doc

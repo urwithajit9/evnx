@@ -26,6 +26,12 @@ in `doctor`'s output should match `.env: Line N:` instead.
   reading is unchanged. New issue type `lone_carriage_return` (a warning; JSON
   output gains it, nothing is removed).
 
+- **`validate` and `doctor` report a NUL byte in a value as an error** (B2).
+  The file parses, but no process can receive the value: `exec` refuses it, and
+  Docker Compose's container fails with `contains nul byte`. So the exit code
+  changes only for a file that already fails wherever it is loaded. New issue
+  type `nul_byte`.
+
 ### Changed
 - **`validate` lists every problem in a file that does not parse** (B1). It
   named only the first, so a file with three problems took three runs. It

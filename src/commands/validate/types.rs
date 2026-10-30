@@ -38,11 +38,14 @@ pub enum IssueType {
     /// keep it in the value, python-dotenv and Node dotenv split the line there.
     /// A warning, never fixable: which reading was meant is the author's call.
     LoneCarriageReturn,
+    /// A NUL byte in a value (B2 P0.6). An error: no process can receive it,
+    /// so the file already fails wherever it is loaded.
+    NulByte,
 }
 
 impl IssueType {
     /// Every type, in the order `--ignore`'s error lists them.
-    pub const ALL: [IssueType; 17] = [
+    pub const ALL: [IssueType; 18] = [
         IssueType::MissingVariable,
         IssueType::ExtraVariable,
         IssueType::PlaceholderValue,
@@ -60,6 +63,7 @@ impl IssueType {
         IssueType::EnvTracked,
         IssueType::ReaderMismatch,
         IssueType::LoneCarriageReturn,
+        IssueType::NulByte,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -81,6 +85,7 @@ impl IssueType {
             IssueType::EnvTracked => "env_tracked",
             IssueType::ReaderMismatch => "reader_mismatch",
             IssueType::LoneCarriageReturn => "lone_carriage_return",
+            IssueType::NulByte => "nul_byte",
         }
     }
 }
