@@ -3,6 +3,7 @@
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
+use super::document::{Document, Entry, Problem};
 use super::{ParseError, ParseResult, Parser};
 
 /// Marks a `$` that came from `\$` and must not be expanded.
@@ -30,11 +31,10 @@ pub(super) fn strip_markers(s: &str) -> String {
 impl Parser {
     // ── Private: variable expansion ───────────────────────────────────────────
 
-    /// Expand all `${VAR}` and `$VAR` references across the full variable map.
-    ///
-    /// Each value is expanded independently. Circular references and undefined
-    /// variables produce structured errors.
-    /// Expand every value that is not written in a literal form.
+    /// Expand every entry that is not written in a literal form, against each
+    /// key's last value. An undefined variable or a cycle becomes a [`Problem`]
+    /// on the entry that counts; a shadowed entry that fails keeps its text
+    /// silently, because the strict parser never read it.
     ///
     /// ⚠️ `literal` names the keys written in single quotes or backticks, and
     /// skipping them is a **behaviour change**: expansion used to run in every
@@ -47,36 +47,56 @@ impl Parser {
     /// left a secret containing `$` with **no** way to be written: `\$` did not work
     /// either, and still does not in these forms, because there is no unescape pass
     /// to interpret it. Now there does not need to be one.
-    pub(super) fn expand_all(
-        &self,
-        vars: &mut IndexMap<String, String>,
-        literal: &HashSet<String>,
-        lines: &IndexMap<String, usize>,
-    ) -> ParseResult<()> {
-        // Snapshot keys to avoid borrow conflicts while mutating the map.
-        let keys: Vec<String> = vars.keys().cloned().collect();
-        let mut expanded: IndexMap<String, String> = IndexMap::with_capacity(vars.len());
+    pub(super) fn expand_entries(&self, doc: &mut Document, literal: &HashSet<String>) {
+        // The map every reference resolves against: each key's last value.
+        let vars = doc.vars();
+        let mut effective: IndexMap<&str, usize> = IndexMap::with_capacity(vars.len());
+        for (i, e) in doc.entries.iter().enumerate() {
+            effective.insert(e.key.as_str(), i);
+        }
+        let effective: Vec<usize> = effective.into_values().collect();
 
-        for key in &keys {
-            let value = vars[key].clone();
-            if literal.contains(key) {
+        let expand = |e: &Entry| -> ParseResult<String> {
+            if literal.contains(&e.key) {
                 // ⚠️ Still stripped. A single-quoted value never goes through
                 // `unescape_double`, so it holds no marker — but stripping
                 // unconditionally means no path can leak one to a caller.
-                expanded.insert(key.clone(), strip_markers(&value));
-                continue;
+                return Ok(strip_markers(&e.value));
             }
             let mut stack: Vec<String> = Vec::new();
             // ⚠️ The line of the key being expanded, not of the key that defines
             // the missing variable — which may not exist anywhere. "`${NOPE}` is not
             // defined" is only actionable if it names where you wrote it.
-            let line = lines.get(key).copied().unwrap_or(0);
-            let result = self.expand_value(&value, vars, &mut stack, 0, line)?;
-            expanded.insert(key.clone(), strip_markers(&result));
-        }
+            self.expand_value(&e.value, &vars, &mut stack, 0, e.span.line)
+                .map(|v| strip_markers(&v))
+        };
 
-        *vars = expanded;
-        Ok(())
+        // Effective entries first, in key order: that is the order the strict
+        // parser met expansion errors in, so `problems` keeps its first error.
+        let mut done = vec![false; doc.entries.len()];
+        for i in effective {
+            done[i] = true;
+            match expand(&doc.entries[i]) {
+                Ok(v) => doc.entries[i].value = v,
+                Err(error) => {
+                    let e = &mut doc.entries[i];
+                    e.value = strip_markers(&e.value);
+                    doc.problems.push(Problem {
+                        span: e.span,
+                        raw: e.raw.clone(),
+                        error,
+                    });
+                }
+            }
+        }
+        // A shadowed assignment is not a problem: the strict parser never read it.
+        for (i, d) in done.into_iter().enumerate() {
+            if !d {
+                let e = &doc.entries[i];
+                let v = expand(e).unwrap_or_else(|_| strip_markers(&e.value));
+                doc.entries[i].value = v;
+            }
+        }
     }
 
     /// Recursively expand variable references within a single `value` string.

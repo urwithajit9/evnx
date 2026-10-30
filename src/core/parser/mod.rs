@@ -282,11 +282,15 @@ impl Default for Parser {
     }
 }
 
+mod document;
 mod expand;
+#[cfg(test)]
+mod legacy;
 mod lines;
 #[cfg(test)]
 mod tests;
 
+pub use document::{Comment, Document, Entry, Problem, Span};
 use expand::strip_markers;
 pub use lines::{closes_multiline, line_opens_multiline, opens_multiline};
 
@@ -323,6 +327,18 @@ impl Parser {
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn parse_file<P: AsRef<Path>>(&self, path: P) -> ParseResult<EnvFile> {
+        let source = path.as_ref().to_string_lossy().into_owned();
+        let (vars, lines) = self.read_document(path)?.into_result()?;
+        Ok(EnvFile {
+            vars,
+            source: Some(source),
+            lines,
+        })
+    }
+
+    /// Read a file into a [`Document`]. Fails only when the file cannot be
+    /// read; what is wrong *inside* it is in the document's `problems`.
+    pub fn read_document<P: AsRef<Path>>(&self, path: P) -> ParseResult<Document> {
         let content = fs::read_to_string(path.as_ref()).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 ParseError::FileNotFound {
@@ -332,13 +348,7 @@ impl Parser {
                 ParseError::FileReadError(e)
             }
         })?;
-        let source = path.as_ref().to_string_lossy().into_owned();
-        let (vars, lines) = self.parse_content_located(&content)?;
-        Ok(EnvFile {
-            vars,
-            source: Some(source),
-            lines,
-        })
+        Ok(self.parse_document(&content))
     }
 
     /// The hint for an `--env` file that does not exist, worded once for every
@@ -394,134 +404,178 @@ impl Parser {
         &self,
         content: &str,
     ) -> ParseResult<(IndexMap<String, String>, IndexMap<String, usize>)> {
-        let mut vars: IndexMap<String, String> = IndexMap::new();
-        // Keys written in a form that promises to be literal — single quotes or
-        // backticks. Tracked separately because the quote characters are gone by the
-        // time `expand_all` runs over the assembled map.
-        let mut literal_keys: HashSet<String> = HashSet::new();
-        // Where each key was written.
-        //
-        // ⚠️ Same reason as `literal_keys`: expansion is a separate pass over the
-        // assembled map, so it has no line to report unless one is carried to it. It
-        // reported **line 0** for every undefined variable — not a line in any file,
-        // so it pointed at nothing, in exactly the case where it matters: a large
-        // `.env` that suddenly will not parse.
-        let mut key_lines: IndexMap<String, usize> = IndexMap::new();
+        self.parse_document(content).into_result()
+    }
 
-        // Multiline accumulation state.
-        let mut ml_key: Option<String> = None;
-        let mut ml_value = String::new();
-        let mut ml_quote: char = '"';
-        let mut ml_start_line: usize = 0;
+    /// Read `content` into a [`Document`], recording every problem instead of
+    /// stopping at the first one.
+    ///
+    /// A bad line becomes a [`Problem`] and reading carries on at the next line.
+    /// An unterminated quote is the exception: as in the strict parser it takes
+    /// the rest of the file, so the problem spans to the end.
+    pub fn parse_document(&self, content: &str) -> Document {
+        let mut doc = Document::default();
+        // Keys written in a form that promises to be literal — single quotes or
+        // backticks. Tracked by name because expansion is a later pass.
+        //
+        // ⚠️ By name, and never removed: `A='x'` then `A=$B` leaves `A`
+        // unexpanded. That is what the parser has always done; changing it is a
+        // decision of its own, not part of this refactor.
+        let mut literal_keys: HashSet<String> = HashSet::new();
+
+        // A value still open across lines.
+        struct Open {
+            key: String,
+            exported: bool,
+            quote: char,
+            start: usize,
+            value: String,
+            raw: String,
+        }
+        let mut open: Option<Open> = None;
+        let mut last_line = 0;
 
         for (idx, raw_line) in content.lines().enumerate() {
             let line_num = idx + 1; // 1-indexed for all user-facing messages
+            last_line = line_num;
 
             // ── Multiline continuation ────────────────────────────────────────
-            if let Some(ref key) = ml_key.clone() {
-                let trimmed_end = raw_line.trim_end();
-
-                // ⚠️ `strip_suffix(ml_quote)` here, which closed the value on an
-                // escaped `\"` exactly as `is_closed_quote` did on the opening
-                // line. The bug had two sites; a value could survive its first
-                // line and then be cut short by a continuation line ending in
-                // `\"`.
-                if let Some(before_close) = closes_multiline(trimmed_end, ml_quote) {
-                    // Closing quote found — finalise the value.
-                    ml_value.push('\n');
-                    ml_value.push_str(before_close);
-
-                    // ⚠️ The accumulated value used to be inserted raw, so a
-                    // double-quoted value that spanned lines kept its
-                    // backslashes while the identical value on one line had them
-                    // resolved: `"x\ty"` gave a tab, `"x\ty` + `z"` gave a
-                    // literal backslash and `t`. Same quote character, different
-                    // escape rules depending on the line count — and it made
-                    // `\"` inexpressible in a multiline value, which is the
-                    // other half of B5.
-                    //
-                    // `unescape_double` only rewrites backslash sequences, so
-                    // the real newlines pushed above are untouched and PEM keys
-                    // (which contain no backslashes) are unaffected.
-                    // ⚠️ The same split as the single-line case, and for the same
-                    // reason: a multiline single-quoted value is literal in every
-                    // respect, escapes and expansion alike. A PEM key wrapped in
-                    // single quotes now means exactly its bytes.
-                    let finished = if ml_quote == '"' {
-                        self.unescape_double(&ml_value)
-                    } else {
-                        literal_keys.insert(key.clone());
-                        ml_value.clone()
-                    };
-                    key_lines.insert(key.clone(), ml_start_line);
-                    vars.insert(key.clone(), finished);
-                    ml_key = None;
-                    ml_value.clear();
+            if let Some(o) = open.as_mut() {
+                o.raw.push('\n');
+                o.raw.push_str(raw_line);
+                o.value.push('\n');
+                // ⚠️ `closes_multiline` honours `\"`; a bare `strip_suffix` closed
+                // the value on an escaped quote (B5).
+                let Some(before_close) = closes_multiline(raw_line.trim_end(), o.quote) else {
+                    o.value.push_str(raw_line);
+                    continue;
+                };
+                o.value.push_str(before_close);
+                let o = open.take().expect("matched above");
+                // ⚠️ Escapes mean the same on one line or several; a multiline
+                // single-quoted value is literal in every respect (B5).
+                let value = if o.quote == '"' {
+                    self.unescape_double(&o.value)
                 } else {
-                    // Still inside a multiline value — accumulate.
-                    ml_value.push('\n');
-                    ml_value.push_str(raw_line);
-                }
+                    literal_keys.insert(o.key.clone());
+                    o.value
+                };
+                doc.entries.push(Entry {
+                    key: o.key,
+                    value,
+                    span: Span {
+                        line: o.start,
+                        end_line: line_num,
+                    },
+                    raw: o.raw,
+                    exported: o.exported,
+                    quote: Some(o.quote),
+                });
                 continue;
             }
 
-            // ── Skip blank lines and full-line comments ────────────────────────
+            // ── Blank lines and full-line comments ────────────────────────────
             let line = raw_line.trim();
-            if line.is_empty() || line.starts_with('#') {
+            if line.is_empty() {
+                continue;
+            }
+            if let Some(text) = line.strip_prefix('#') {
+                doc.comments.push(Comment {
+                    line: line_num,
+                    text: text.to_string(),
+                });
                 continue;
             }
 
-            // ── Parse KEY=VALUE ───────────────────────────────────────────────
-            let (key, raw_value) = self.split_key_value(line, line_num)?;
+            // ── KEY=VALUE ─────────────────────────────────────────────────────
+            let parsed = self
+                .split_key_value(line, line_num)
+                .and_then(|(key, raw_value)| {
+                    self.validate_key(&key, line_num)?;
+                    Ok((key, raw_value))
+                });
+            let (key, raw_value) = match parsed {
+                Ok(kv) => kv,
+                Err(error) => {
+                    doc.problems.push(Problem {
+                        span: Span::line(line_num),
+                        raw: raw_line.to_string(),
+                        error,
+                    });
+                    continue;
+                }
+            };
+            // The same test `split_key_value` strips the prefix with.
+            let exported = line.starts_with("export");
 
-            // ── Key validation ────────────────────────────────────────────────
-            self.validate_key(&key, line_num)?;
-
-            // ── Value parsing ─────────────────────────────────────────────────
             match opens_multiline(&raw_value) {
-                // An opening quote with no closing quote on this line.
                 Some(q) if self.config.allow_multiline => {
-                    // Opening quote but no closing quote on this line.
-                    ml_key = Some(key);
-                    // Strip the opening quote from the accumulated content.
-                    ml_value = raw_value.trim_start_matches(q).to_string();
-                    ml_quote = q;
-                    ml_start_line = line_num;
+                    open = Some(Open {
+                        key,
+                        exported,
+                        quote: q,
+                        start: line_num,
+                        value: raw_value.trim_start_matches(q).to_string(),
+                        raw: raw_line.to_string(),
+                    });
                 }
-                _ => {
-                    let (value, is_literal) = self.parse_value(&raw_value, line_num)?;
-                    if is_literal {
-                        literal_keys.insert(key.clone());
+                _ => match self.parse_value(&raw_value, line_num) {
+                    Ok((value, is_literal)) => {
+                        if is_literal {
+                            literal_keys.insert(key.clone());
+                        }
+                        let quote = raw_value
+                            .trim_start()
+                            .chars()
+                            .next()
+                            .filter(|c| matches!(c, '"' | '\'' | '`'));
+                        doc.entries.push(Entry {
+                            key,
+                            value,
+                            span: Span::line(line_num),
+                            raw: raw_line.to_string(),
+                            exported,
+                            quote,
+                        });
                     }
-                    key_lines.insert(key.clone(), line_num);
-                    vars.insert(key, value);
-                }
+                    Err(error) => doc.problems.push(Problem {
+                        span: Span::line(line_num),
+                        raw: raw_line.to_string(),
+                        error,
+                    }),
+                },
             }
         }
 
-        // If we exited the loop still inside a multiline value, the file ended
-        // without a closing quote.
-        if let Some(_key) = ml_key {
-            return Err(ParseError::UnterminatedString {
-                line: ml_start_line,
+        // The file ended inside a quoted value.
+        if let Some(o) = open {
+            doc.problems.push(Problem {
+                span: Span {
+                    line: o.start,
+                    end_line: last_line,
+                },
+                raw: o.raw,
+                error: ParseError::UnterminatedString { line: o.start },
             });
         }
 
         // ── Variable expansion ────────────────────────────────────────────────
+        // ⓘ It runs even when the line pass found problems, so a lossy reader
+        // sees expanded values. `problems` lists line-pass problems first, so the
+        // strict reading still returns the error it always did.
         if self.config.allow_expansion {
-            self.expand_all(&mut vars, &literal_keys, &key_lines)?;
+            self.expand_entries(&mut doc, &literal_keys);
         } else {
-            // ⚠️ `expand_all` is what normally consumes the `\$` markers, so with
-            // expansion off nothing would — and `"\$B"` would come back holding a
-            // U+FDD0 noncharacter. Found by reading this branch rather than by a
-            // test, because no CLI flag reaches it today; `allow_expansion` is a
-            // library setting, so a consumer of the crate could.
-            for value in vars.values_mut() {
-                *value = strip_markers(value);
+            // ⚠️ Expansion is what normally consumes the `\$` markers, so with it
+            // off nothing would — and `"\$B"` would come back holding a U+FDD0
+            // noncharacter. `allow_expansion` is a library setting no CLI flag
+            // reaches, so only a consumer of the crate could hit this.
+            for e in &mut doc.entries {
+                e.value = strip_markers(&e.value);
             }
         }
 
-        Ok((vars, key_lines))
+        doc
     }
 
     /// Parse `content` into variables, discarding the line map.

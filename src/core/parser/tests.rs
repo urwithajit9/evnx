@@ -833,3 +833,206 @@ export LEGACY_KEY=legacy_value
     assert_eq!(vars["LEGACY_KEY"], "legacy_value");
     assert_eq!(vars.len(), 10);
 }
+
+// ─── B1: `Document` ─────────────────────────────────────────────────────────
+
+/// The strict reading of a document must be exactly what the parser returned
+/// before `Document` existed, error included. `legacy.rs` is that parser,
+/// frozen; this compares the two over every combination of up to three lines
+/// drawn from fragments chosen to hit each branch, under each setting that
+/// changes a branch.
+#[test]
+fn b1_the_document_reads_exactly_as_the_old_parser_did() {
+    const FRAGMENTS: &[&str] = &[
+        "",
+        "   ",
+        "# comment",
+        "  # A=1",
+        "A=1",
+        "A=2",
+        "B=x # c",
+        "export C=c",
+        "exportD=d",
+        "a_lower=v",
+        "1BAD=v",
+        "my-key=v",
+        "no separator",
+        "=nokey",
+        "E=\"q\"",
+        "E='lit $A'",
+        "F=`tick`",
+        "G=\"open",
+        "close\"",
+        "H='open",
+        "end'",
+        "I=\"esc \\\" still open",
+        "J=\"a\" trailing",
+        "K=${A}",
+        "L=${NOPE}",
+        "L=fine",
+        "M=$A/x",
+        "N=\\$A",
+        "O=\"\\$A\"",
+        "P=${P}",
+        "Q=${R}",
+        "R=${Q}",
+        "COLOR=#ff0000",
+        "S=\"x\\ty\"",
+    ];
+    let configs = [
+        ParserConfig::default(),
+        ParserConfig {
+            allow_expansion: false,
+            ..Default::default()
+        },
+        ParserConfig {
+            strict: true,
+            ..Default::default()
+        },
+        ParserConfig {
+            allow_multiline: false,
+            ..Default::default()
+        },
+        ParserConfig {
+            allow_inline_comments: false,
+            trim_values: false,
+            ..Default::default()
+        },
+    ];
+
+    let mut files: Vec<String> = Vec::new();
+    for a in FRAGMENTS {
+        files.push(format!("{a}\n"));
+        for b in FRAGMENTS {
+            files.push(format!("{a}\n{b}\n"));
+            for c in FRAGMENTS {
+                files.push(format!("{a}\n{b}\n{c}"));
+            }
+        }
+    }
+    // Every `.env`-like fixture the repository holds.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut dirs = vec![root.join("tests")];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if name.starts_with(".env") || name.ends_with(".env") {
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    files.push(text);
+                }
+            }
+        }
+    }
+
+    let show = |r: ParseResult<(IndexMap<String, String>, IndexMap<String, usize>)>| match r {
+        Ok(ok) => format!("{ok:?}"),
+        Err(e) => format!("Err({e:?})"),
+    };
+    let mut differ = Vec::new();
+    for config in &configs {
+        let p = Parser::new(config.clone());
+        for f in &files {
+            let old = show(p.legacy_parse_content_located(f));
+            let new = show(p.parse_content_located(f));
+            if old != new {
+                differ.push(format!("{config:?}\n{f:?}\n  old {old}\n  new {new}"));
+            }
+        }
+    }
+    assert!(
+        differ.is_empty(),
+        "{} of {} readings differ; first:\n{}",
+        differ.len(),
+        files.len() * configs.len(),
+        differ[0]
+    );
+}
+
+#[test]
+fn b1_every_problem_is_reported_with_its_line() {
+    let doc = Parser::default().parse_document("A=1\nnot a line\nB=2\n1BAD=x\nC=\"x\" junk\nD=4\n");
+    let lines: Vec<usize> = doc.problems.iter().map(|p| p.span.line).collect();
+    assert_eq!(lines, [2, 4, 5]);
+    assert!(matches!(
+        doc.problems[1].error,
+        ParseError::InvalidKey { .. }
+    ));
+    assert_eq!(doc.problems[0].raw, "not a line");
+    // Reading carried on around them.
+    let keys: Vec<&str> = doc.entries.iter().map(|e| e.key.as_str()).collect();
+    assert_eq!(keys, ["A", "B", "D"]);
+}
+
+#[test]
+fn b1_an_unterminated_quote_spans_to_the_end_of_the_file() {
+    let doc = Parser::default().parse_document("A=1\nB=\"open\nC=3\nD=4\n");
+    assert_eq!(doc.entries.len(), 1);
+    assert_eq!(doc.problems.len(), 1);
+    let p = &doc.problems[0];
+    assert!(matches!(
+        p.error,
+        ParseError::UnterminatedString { line: 2 }
+    ));
+    assert_eq!(
+        p.span,
+        Span {
+            line: 2,
+            end_line: 4
+        }
+    );
+    assert_eq!(p.raw, "B=\"open\nC=3\nD=4");
+}
+
+#[test]
+fn b1_duplicates_are_kept_and_the_last_one_counts() {
+    let doc = Parser::default().parse_document("K=sk_live_x\nOTHER=1\nK=\n");
+    let ks: Vec<(&str, &str, usize)> = doc
+        .entries
+        .iter()
+        .map(|e| (e.key.as_str(), e.value.as_str(), e.span.line))
+        .collect();
+    assert_eq!(ks, [("K", "sk_live_x", 1), ("OTHER", "1", 2), ("K", "", 3)]);
+    // First position, last value and line: what the parser always returned.
+    assert_eq!(format!("{:?}", doc.vars()), r#"{"K": "", "OTHER": "1"}"#);
+    assert_eq!(format!("{:?}", doc.lines()), r#"{"K": 3, "OTHER": 2}"#);
+}
+
+#[test]
+fn b1_entries_carry_their_form_and_comments_are_kept() {
+    let doc = Parser::default()
+        .parse_document("# top\nexport A='x'\nB=\"l1\nl2\"\n  #   indented\nC=plain\n");
+    let a = &doc.entries[0];
+    assert!(a.exported);
+    assert_eq!((a.quote, a.raw.as_str()), (Some('\''), "export A='x'"));
+    let b = &doc.entries[1];
+    assert_eq!(
+        b.span,
+        Span {
+            line: 3,
+            end_line: 4
+        }
+    );
+    assert_eq!(
+        (b.value.as_str(), b.raw.as_str()),
+        ("l1\nl2", "B=\"l1\nl2\"")
+    );
+    assert_eq!(doc.entries[2].quote, None);
+    let comments: Vec<(usize, &str)> = doc
+        .comments
+        .iter()
+        .map(|c| (c.line, c.text.as_str()))
+        .collect();
+    assert_eq!(comments, [(1, " top"), (5, "   indented")]);
+}
+
+#[test]
+fn b1_an_expansion_error_keeps_its_entry_and_names_its_line() {
+    let doc = Parser::default().parse_document("A=1\nB=${NOPE}\nC=${A}\nD=${ALSO_NOPE}\n");
+    let lines: Vec<usize> = doc.problems.iter().map(|p| p.span.line).collect();
+    assert_eq!(lines, [2, 4]);
+    assert_eq!(doc.vars()["B"], "${NOPE}");
+    assert_eq!(doc.vars()["C"], "1");
+}
