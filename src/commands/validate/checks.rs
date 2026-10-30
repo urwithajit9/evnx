@@ -204,6 +204,38 @@ pub fn check_reader_mismatch(
         .collect()
 }
 
+/// Values holding a carriage return that ends no CRLF line (B2 P0.5). Always
+/// checked, whatever the readers: the file is one variable to evnx and two to
+/// python-dotenv and Node dotenv. Never prints the value.
+pub fn check_lone_carriage_returns(
+    doc: &crate::core::parser::Document,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if ignore.contains(IssueType::LoneCarriageReturn.as_str()) {
+        return Vec::new();
+    }
+    doc.lone_carriage_returns()
+        .map(|e| Issue {
+            severity: "warning".to_string(),
+            issue_type: IssueType::LoneCarriageReturn.as_str().to_string(),
+            variable: e.key.clone(),
+            message: format!(
+                "{} (line {}): a carriage return inside the value. evnx and Docker Compose keep it; \
+                 python-dotenv and Node dotenv end the line there and read what follows as another variable",
+                e.key, e.span.line
+            ),
+            location: format!("{env_path}:{}", e.span.line),
+            suggestion: Some(
+                "Save the file with LF line endings. A carriage return on its own is the \
+                 line ending of classic Mac OS, or a paste from one"
+                    .to_string(),
+            ),
+            auto_fixable: false,
+        })
+        .collect()
+}
+
 /// Check: the same key assigned twice in one file.
 ///
 /// ⚠️ **The parser cannot report this and never could.** It builds an

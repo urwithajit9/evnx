@@ -34,11 +34,15 @@ pub enum IssueType {
     /// dotenv) read differently from evnx (RM-04). A warning, never fixable:
     /// fixing it would choose a reader for the user.
     ReaderMismatch,
+    /// A carriage return that ends no CRLF line (B2 P0.5): evnx and Compose
+    /// keep it in the value, python-dotenv and Node dotenv split the line there.
+    /// A warning, never fixable: which reading was meant is the author's call.
+    LoneCarriageReturn,
 }
 
 impl IssueType {
     /// Every type, in the order `--ignore`'s error lists them.
-    pub const ALL: [IssueType; 16] = [
+    pub const ALL: [IssueType; 17] = [
         IssueType::MissingVariable,
         IssueType::ExtraVariable,
         IssueType::PlaceholderValue,
@@ -55,6 +59,7 @@ impl IssueType {
         IssueType::EnvNotIgnored,
         IssueType::EnvTracked,
         IssueType::ReaderMismatch,
+        IssueType::LoneCarriageReturn,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -75,6 +80,7 @@ impl IssueType {
             IssueType::EnvNotIgnored => "env_not_ignored",
             IssueType::EnvTracked => "env_tracked",
             IssueType::ReaderMismatch => "reader_mismatch",
+            IssueType::LoneCarriageReturn => "lone_carriage_return",
         }
     }
 }

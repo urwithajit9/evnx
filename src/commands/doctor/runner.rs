@@ -580,6 +580,22 @@ impl DiagnosticCheck for EnvFileCheck {
                             if verbose {
                                 lines.push(format!("✓ {name} syntax is valid"));
                             }
+                            // B2 P0.5: whatever the readers, a lone CR splits
+                            // a variable in two for python-dotenv and Node.
+                            let cr: Vec<&str> = doc
+                                .lone_carriage_returns()
+                                .map(|e| e.key.as_str())
+                                .collect();
+                            if !cr.is_empty() {
+                                if severity == Severity::Ok {
+                                    severity = Severity::Warning;
+                                }
+                                lines.push(format!(
+                                    "! {name}: a carriage return inside {} — python-dotenv and Node dotenv \
+                                     end the line there — run `evnx validate`",
+                                    cr.join(", ")
+                                ));
+                            }
                             // RM-04: one line naming the readers, so a wrong
                             // detection is visible; `validate` lists the lines.
                             let readers = crate::core::dialect::detect(project_root);

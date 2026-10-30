@@ -81,3 +81,35 @@ fn rm04_doctor_names_the_readers_in_one_line() {
         out.all()
     );
 }
+
+/// B2 P0.5: a carriage return inside a value is reported by `validate` and
+/// `doctor` whatever the readers, since python-dotenv and Node dotenv split the
+/// line there. The value is never printed.
+#[test]
+fn p0_5_a_lone_carriage_return_is_reported_by_validate_and_doctor() {
+    let p = Project::new()
+        .file(".gitignore", ".env\n")
+        .env("PORT=8080\nTOKEN=s3cr3t\rLEAK=w\n")
+        .example("PORT=\nTOKEN=\n");
+    let out = run(p.path(), &["validate", "--format", "json"]);
+    let json: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    let found: Vec<_> = json["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["type"] == "lone_carriage_return")
+        .collect();
+    assert_eq!(found.len(), 1, "{}", out.stdout);
+    assert_eq!(found[0]["variable"], "TOKEN");
+    assert_eq!(found[0]["severity"], "warning");
+    assert!(!out.stdout.contains("s3cr3t"), "{}", out.stdout);
+
+    let out = run(p.path(), &["doctor"]);
+    assert!(
+        out.all()
+            .contains(".env: a carriage return inside TOKEN — python-dotenv and Node dotenv"),
+        "{}",
+        out.all()
+    );
+    assert!(!out.all().contains("s3cr3t"), "{}", out.all());
+}

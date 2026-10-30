@@ -1157,3 +1157,26 @@ fn p0_4_export_with_no_key_says_so() {
         );
     }
 }
+
+/// A carriage return that ends no CRLF line is found, wherever it is (B2 P0.5).
+/// The reading does not change; `validate` and `doctor` warn from this.
+#[test]
+fn p0_5_a_lone_carriage_return_is_found_and_crlf_is_not() {
+    let keys = |content: &str| -> Vec<String> {
+        Parser::default()
+            .parse_document(content)
+            .lone_carriage_returns()
+            .map(|e| e.key.clone())
+            .collect()
+    };
+    assert_eq!(keys("K=v\rL=w\r"), ["K"]);
+    assert_eq!(keys("A=1\nQ=\"x\ry\"\n"), ["Q"]);
+    assert!(
+        keys("A=1\r\nB=\"x\r\ny\"\r\n").is_empty(),
+        "CRLF is a line ending"
+    );
+    assert!(
+        keys("E=\"a\\rb\"\n").is_empty(),
+        "an escaped \\r is text, not a CR"
+    );
+}

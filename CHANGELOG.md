@@ -18,6 +18,14 @@ longer printed, since a line without `=` is sometimes a pasted secret.
 *Migrate:* anything matching `invalid syntax` or `the quote is never closed`
 in `doctor`'s output should match `.env: Line N:` instead.
 
+### Added
+- **`validate` and `doctor` warn about a carriage return inside a value** (B2).
+  A `\r` that ends no CRLF line — a classic Mac line ending, or a paste — is
+  kept in the value by evnx and Docker Compose, while python-dotenv and Node
+  dotenv end the line there and read what follows as another variable. The
+  reading is unchanged. New issue type `lone_carriage_return` (a warning; JSON
+  output gains it, nothing is removed).
+
 ### Changed
 - **`validate` lists every problem in a file that does not parse** (B1). It
   named only the first, so a file with three problems took three runs. It

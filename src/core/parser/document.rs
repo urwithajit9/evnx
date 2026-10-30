@@ -102,6 +102,16 @@ impl Document {
         self.problems.is_empty()
     }
 
+    /// Entries whose text holds a carriage return that does not end a CRLF
+    /// line (B2 P0.5): a classic Mac line ending, or a stray paste. evnx and
+    /// Docker Compose keep it in the value; python-dotenv and Node dotenv end
+    /// the line there, so `K=v\rL=w` is one variable here and two there.
+    pub fn lone_carriage_returns(&self) -> impl Iterator<Item = &Entry> {
+        self.entries
+            .iter()
+            .filter(|e| e.raw.replace("\r\n", "").contains('\r'))
+    }
+
     /// One value per key: the **last** assignment's value, in the **first**
     /// assignment's position. That is `IndexMap::insert`, which is what the
     /// parser always returned, and every command depends on that order.
