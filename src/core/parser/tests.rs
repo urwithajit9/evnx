@@ -168,7 +168,7 @@ fn a_real_multiline_value_still_spans_lines() {
 
 /// Text after the closing quote that is not a comment is named rather than
 /// discarded: silently dropping it would hide a missing quote or a stray
-/// paste.
+/// paste. It is counted, not quoted (B2 P0.3): it is often the rest of a secret.
 #[test]
 fn unexpected_text_after_the_closing_quote_is_reported() {
     let err = Parser::default()
@@ -176,9 +176,10 @@ fn unexpected_text_after_the_closing_quote_is_reported() {
         .expect_err("should be rejected");
     let msg = err.to_string();
     assert!(
-        msg.contains("unexpected text") && msg.contains("junk here"),
+        msg.contains("unexpected text after the closing \" (9 characters)"),
         "unhelpful error: {msg}"
     );
+    assert!(!msg.contains("junk"), "the stray text leaked: {msg}");
 }
 
 /// The primitive, directly: where the quote closes, independent of what the

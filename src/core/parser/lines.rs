@@ -196,11 +196,15 @@ impl Parser {
                 // Empty or a comment is fine; anything else is a mistake worth
                 // naming, because silently discarding it would hide a missing
                 // quote or a stray paste.
+                // ⚠️ Counted, never quoted: the stray text is often the rest of
+                // a secret, and this message reaches terminals and CI logs.
                 if !after.is_empty() && !after.starts_with('#') {
+                    let n = after.chars().count();
+                    let s = if n == 1 { "" } else { "s" };
                     return Err(ParseError::InvalidFormat {
                         line: line_num,
                         message: format!(
-                            "unexpected text after the closing {first}: `{after}` \
+                            "unexpected text after the closing {first} ({n} character{s}) \
                              — quote the whole value, or start a comment with #"
                         ),
                     });

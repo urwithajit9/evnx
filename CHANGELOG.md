@@ -24,6 +24,10 @@ in `doctor`'s output should match `.env: Line N:` instead.
   still exits 2; a file with one problem prints exactly what it did before.
 
 ### Fixed
+- **Text after a closing quote is counted, not quoted, in the error** (B2).
+  `A="value" rest` was refused with the stray text in the message, and that
+  text is often the rest of a secret, printed to a terminal or a CI log. The
+  message now says how many characters follow the quote.
 - **`${VAR:-default}` and its siblings are read as Docker Compose reads them**
   (B2). `:-`, `-`, `:+`, `+`, `:?` and `?` were all refused as an undefined
   variable named `VAR:-default`. A default is itself expanded (`${A:-$B}`), and
