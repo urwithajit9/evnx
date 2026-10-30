@@ -1310,18 +1310,7 @@ fn read_text(path: &Path, name: &str) -> std::result::Result<String, String> {
 fn syntax_problems(doc: &crate::core::parser::Document) -> Vec<String> {
     let mut problems: Vec<_> = doc.problems.iter().collect();
     problems.sort_by_key(|p| p.span.line);
-    problems
-        .iter()
-        .map(|p| {
-            let n = p.span.line;
-            // The parser says "… at line N"; the line leads here instead.
-            let reason = p
-                .error
-                .to_string()
-                .replacen(&format!(" at line {n}"), "", 1);
-            format!("Line {n}: {reason}")
-        })
-        .collect()
+    problems.iter().map(|p| p.describe()).collect()
 }
 
 /// Every project type `project_root` holds, Python first (RM-23). A folder

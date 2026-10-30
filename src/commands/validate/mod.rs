@@ -231,13 +231,17 @@ pub fn run(opts: Options) -> Result<()> {
         ..ParserConfig::default()
     });
 
-    let example_file = parser.parse_file_or_hint(
-        &example,
-        "validate compares .env against it, so it needs one. Create it with \
+    let example_file = parser
+        .parse_file_or_hint(
+            &example,
+            "validate compares .env against it, so it needs one. Create it with \
          `evnx sync` (from your .env) or `evnx init`, or point at another file \
          with --example.",
-    )?;
-    let env_file = parser.parse_file_or_hint(&env_path, &Parser::missing_env_hint(&env_path))?;
+        )
+        .map_err(|e| every_problem(e, &parser, &example))?;
+    let env_file = parser
+        .parse_file_or_hint(&env_path, &Parser::missing_env_hint(&env_path))
+        .map_err(|e| every_problem(e, &parser, &env_path))?;
 
     pb.finish_with_message("Files parsed ✓");
 
@@ -854,6 +858,32 @@ fn print_fixes(result: &ValidationResult, lead: bool) {
     if !result.fixed.is_empty() || !result.needs_input.is_empty() {
         println!();
     }
+}
+
+/// A file that does not parse, with **every** problem in it, in line order.
+///
+/// The parser's error names only the first, so a file with three problems
+/// was three runs to diagnose. One problem keeps the error as it was; more
+/// are listed one per line under it. A file that is missing or unreadable
+/// keeps its own error.
+fn every_problem(err: anyhow::Error, parser: &Parser, path: &str) -> anyhow::Error {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return err;
+    };
+    let mut problems = parser.parse_document(&content).problems;
+    if problems.len() < 2 {
+        return err;
+    }
+    problems.sort_by_key(|p| p.span.line);
+    let lines: Vec<String> = problems
+        .iter()
+        .map(|p| format!("  {}", p.describe()))
+        .collect();
+    anyhow::anyhow!(
+        "Failed to parse {path}: {} problems\n{}",
+        problems.len(),
+        lines.join("\n")
+    )
 }
 
 fn output_json(result: &ValidationResult) -> Result<()> {

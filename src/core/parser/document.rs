@@ -68,6 +68,20 @@ pub struct Problem {
     pub error: ParseError,
 }
 
+impl Problem {
+    /// `Line N: <reason>`, in the parser's wording. Never the line's text: a
+    /// line without `=` is sometimes a pasted secret.
+    pub fn describe(&self) -> String {
+        let n = self.span.line;
+        // The parser says "… at line N"; the line leads here instead.
+        let reason = self
+            .error
+            .to_string()
+            .replacen(&format!(" at line {n}"), "", 1);
+        format!("Line {n}: {reason}")
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Document {
     /// Every assignment in file order, **duplicates included**: a key assigned

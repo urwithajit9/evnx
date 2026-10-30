@@ -504,6 +504,42 @@ fn b1_a_line_inside_a_multiline_value_is_not_an_assignment() {
     );
 }
 
+/// A file that does not parse lists every problem, in line order, still
+/// exiting 2. One problem keeps the error exactly as it was.
+#[test]
+fn b1_validate_lists_every_problem_in_a_file_that_does_not_parse() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env.example"), "A=\nB=\n").unwrap();
+    fs::write(dir.path().join(".env"), "A=1\n!!bad\nB=${NOPE}\nnope\n").unwrap();
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate"])
+        .assert()
+        .code(2);
+    let err = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(
+        err.contains(
+            "Failed to parse .env: 3 problems\n  Line 2: Invalid format: missing '=' separator\n  \
+             Line 3: Undefined variable: ${NOPE} is not defined\n  \
+             Line 4: Invalid format: missing '=' separator\n"
+        ),
+        "{err}"
+    );
+    assert!(!err.contains("!!bad"), "a line's text was printed: {err}");
+
+    fs::write(dir.path().join(".env"), "A=1\n!!bad\nB=1\n").unwrap();
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate"])
+        .assert()
+        .code(2);
+    let err = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(
+        err.contains("Failed to parse .env: Invalid format at line 2: missing '=' separator"),
+        "{err}"
+    );
+}
+
 #[test]
 fn f5_a_file_without_duplicates_is_silent() {
     let dir = TempDir::new().unwrap();
