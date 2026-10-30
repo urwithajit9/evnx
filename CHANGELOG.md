@@ -8,7 +8,39 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+⚠️ **`doctor`'s syntax messages are the parser's** (B1). `doctor` checked
+syntax with its own pattern, which passed files `validate` fails on
+(`P="a"junk`, an undefined `${NOPE}`); it now reports exactly what the parser
+refuses, so the two agree. The wording changes —
+`Line 2: invalid syntax '!!bad'` is now
+`Line 2: Invalid format: missing '=' separator` — and the line's text is no
+longer printed, since a line without `=` is sometimes a pasted secret.
+*Migrate:* anything matching `invalid syntax` or `the quote is never closed`
+in `doctor`'s output should match `.env: Line N:` instead.
+
+### Changed
+- **`validate` lists every problem in a file that does not parse** (B1). It
+  named only the first, so a file with three problems took three runs. It
+  still exits 2; a file with one problem prints exactly what it did before.
+
 ### Fixed
+- **A line inside a multiline value is no longer read as an assignment** (B1).
+  Ten readers in six commands read a `.env` line by line beside the parser,
+  and each misread the inside of a quoted value. Now one reading serves them
+  all. On 0.11.0, with `X=…` or `A=x` on a line inside another key's value:
+  - `validate --fix` wrote a missing variable *inside* another key's value,
+    corrupting it and leaving the variable missing, and a fixed multiline value
+    kept its old continuation lines;
+  - `diff --format patch` replaced that inner line instead of the real one;
+  - `validate` reported it as a duplicate key, pointed a GitHub annotation at
+    it, and warned that another reader would read it differently;
+  - `restore --inspect` on a backup that does not parse listed a base64 line
+    ending in `=` as a variable name: part of a key body, under "values never
+    shown";
+  - `add`, on a `.env` with a syntax error elsewhere, took it as a variable
+    already set and did not add it;
+  - `scan`, on a `.env` with a syntax error elsewhere, named the key on the
+    inner line instead of the variable holding the secret.
 - **`doctor` and `validate` name three or more readers in one list.** They
   printed "read by evnx and python-dotenv and Node dotenv"; now
   "read by evnx, python-dotenv and Node dotenv".

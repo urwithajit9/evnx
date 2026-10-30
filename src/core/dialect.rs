@@ -15,6 +15,8 @@ use serde::Deserialize;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use crate::core::parser::{Document, Entry};
+
 const DIALECTS_JSON: &str = include_str!("../assets/dialects.json");
 
 #[derive(Debug, Deserialize)]
@@ -136,52 +138,46 @@ pub struct Mismatch {
     pub fix: &'static str,
 }
 
-/// Which measured case a raw line is, if any. Only unquoted values (and `${`
+/// Which measured case an entry is, if any. Only unquoted values (and `${`
 /// in double quotes) are cases in phase 1.
-fn classify(line: &str) -> Option<(&str, &'static str)> {
-    let l = line.trim_start();
-    if l.is_empty() || l.starts_with('#') {
-        return None;
-    }
-    let l = l.strip_prefix("export ").unwrap_or(l);
-    let (key, raw) = l.split_once('=')?;
-    let key = key.trim();
+///
+/// ⚠️ An entry, not a raw line: a line inside a multiline value is part of a
+/// value, so `X=#ff0000` there is not an assignment for any reader.
+fn classify(e: &Entry) -> Option<&'static str> {
+    // A key cannot contain `=`, so the first one ends it.
+    let (_, raw) = e.raw.split_once('=')?;
     let v = raw.trim_start();
-    if v.starts_with('\'') || v.starts_with('`') {
-        return None;
-    }
-    if v.starts_with('"') {
-        return v.contains("${").then_some((key, "expansion"));
+    match e.quote {
+        Some('"') => return v.contains("${").then_some("expansion"),
+        Some(_) => return None,
+        None => {}
     }
     if v.starts_with('#') {
-        return Some((
-            key,
-            if v.len() < raw.len() {
-                "empty_comment"
-            } else {
-                "hash_start"
-            },
-        ));
+        return Some(if v.len() < raw.len() {
+            "empty_comment"
+        } else {
+            "hash_start"
+        });
     }
     // A `#` after whitespace is a comment for every measured reader.
     if let Some(i) = v.find('#') {
         if !v[..i].ends_with([' ', '\t']) {
-            return Some((key, "hash_inside"));
+            return Some("hash_inside");
         }
     }
     let value = v.split(" #").next().unwrap_or(v);
-    value.contains("${").then_some((key, "expansion"))
+    value.contains("${").then_some("expansion")
 }
 
-/// The lines of `content` that `readers` read differently from evnx. Empty
+/// The entries of `doc` that `readers` read differently from evnx. Empty
 /// when no reader is detected, or every one agrees.
-pub fn mismatches(content: &str, readers: &[Reader]) -> Vec<Mismatch> {
+pub fn mismatches(doc: &Document, readers: &[Reader]) -> Vec<Mismatch> {
     if readers.is_empty() {
         return Vec::new();
     }
     let mut out = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        let Some((key, case_id)) = classify(line) else {
+    for e in &doc.entries {
+        let Some(case_id) = classify(e) else {
             continue;
         };
         let Some(case) = TABLE.cases.iter().find(|c| c.id == case_id) else {
@@ -200,8 +196,8 @@ pub fn mismatches(content: &str, readers: &[Reader]) -> Vec<Mismatch> {
             continue;
         }
         out.push(Mismatch {
-            line: i + 1,
-            key: key.to_string(),
+            line: e.span.line,
+            key: e.key.clone(),
             case: case.id.as_str(),
             differ,
             agree,
@@ -242,6 +238,15 @@ mod tests {
         expand: Some(false),
     };
 
+    fn doc(content: &str) -> Document {
+        crate::core::Parser::default().parse_document(content)
+    }
+
+    /// The case of the last entry `content` holds.
+    fn case_of(content: &str) -> Option<&'static str> {
+        classify(doc(content).entries.last()?)
+    }
+
     #[test]
     fn names_join_three_readers_with_one_and() {
         let three = [Reader::Compose, Reader::PythonDotenv, NODE];
@@ -278,40 +283,47 @@ mod tests {
     fn rm04_every_fixture_is_its_case() {
         for case in TABLE.cases.iter().filter(|c| c.id != "export") {
             let line = case.fixture.lines().last().unwrap();
-            assert_eq!(
-                classify(line).map(|(_, c)| c),
-                Some(case.id.as_str()),
-                "{line}"
-            );
+            assert_eq!(case_of(line), Some(case.id.as_str()), "{line}");
         }
-        assert_eq!(classify("V_C=x # c"), None);
-        assert_eq!(classify("A='#x'"), None);
-        assert_eq!(classify("A=\"x#y\""), None);
-        assert_eq!(classify("A=\"${B}\""), Some(("A", "expansion")));
+        assert_eq!(case_of("V_C=x # c"), None);
+        assert_eq!(case_of("A='#x'"), None);
+        assert_eq!(case_of("A=\"x#y\""), None);
+        assert_eq!(case_of("A=\"${B}\""), Some("expansion"));
     }
 
     #[test]
     fn rm04_only_readers_that_differ_are_reported() {
         let content = "PORT=8080\nAPI_KEY=   # fill this in later\n";
         // Compose and python-dotenv read it as evnx does: nothing to say.
-        assert!(mismatches(content, &[Reader::Compose, Reader::PythonDotenv]).is_empty());
-        let found = mismatches(content, &[Reader::Compose, NODE]);
+        assert!(mismatches(&doc(content), &[Reader::Compose, Reader::PythonDotenv]).is_empty());
+        let found = mismatches(&doc(content), &[Reader::Compose, NODE]);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].line, 2);
         assert_eq!(found[0].key, "API_KEY");
         assert_eq!(found[0].differ, [NODE]);
         assert_eq!(found[0].agree, [Reader::Compose]);
-        assert!(mismatches(content, &[]).is_empty());
+        assert!(mismatches(&doc(content), &[]).is_empty());
+    }
+
+    /// A line inside a multiline value is value text, not an assignment, so a
+    /// `#` there is not a case for any reader. Line-based, this reported
+    /// `X` on line 2 as read differently by Node dotenv.
+    #[test]
+    fn b1_a_line_inside_a_multiline_value_is_not_classified() {
+        let content = "P=\"a\nX=#ff0000\nb\"\nC=#ff0000\n";
+        let found = mismatches(&doc(content), &[NODE]);
+        let at: Vec<(usize, &str)> = found.iter().map(|m| (m.line, m.key.as_str())).collect();
+        assert_eq!(at, [(4, "C")]);
     }
 
     #[test]
     fn rm04_expansion_depends_on_dotenv_expand() {
         let content = "HOST=db\nURL=${HOST}:5432\n";
-        assert_eq!(mismatches(content, &[NODE]).len(), 1);
+        assert_eq!(mismatches(&doc(content), &[NODE]).len(), 1);
         let expanding = Reader::NodeDotenv { expand: Some(true) };
-        assert!(mismatches(content, &[expanding]).is_empty());
+        assert!(mismatches(&doc(content), &[expanding]).is_empty());
         let unknown = Reader::NodeDotenv { expand: None };
-        assert!(mismatches(content, &[unknown]).is_empty());
+        assert!(mismatches(&doc(content), &[unknown]).is_empty());
     }
 
     #[test]

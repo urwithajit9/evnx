@@ -4,7 +4,7 @@
 $ evnx doctor
 
   ✗  Validate .env file existence, security, and syntax
-     .env: Line 2: invalid syntax '!!bad one'; Line 4: invalid syntax '@@bad two'; Line 6: invalid syntax '%%bad three'
+     .env: Line 2: Invalid format: missing '=' separator; Line 4: Invalid format: missing '=' separator; Line 6: Invalid format: missing '=' separator
 
   ✓  Check .env.example exists and is Git-tracked
 
@@ -29,7 +29,7 @@ $ evnx doctor
 $ evnx doctor --strict
 
   ✗  Validate .env file existence, security, and syntax
-     .env: Line 2: invalid syntax '!!bad one'; Line 4: invalid syntax '@@bad two'; Line 6: invalid syntax '%%bad three'
+     .env: Line 2: Invalid format: missing '=' separator; Line 4: Invalid format: missing '=' separator; Line 6: Invalid format: missing '=' separator
 
   ✓  Check .env.example exists and is Git-tracked
 
@@ -79,7 +79,7 @@ $ evnx doctor
 $ evnx doctor
 
   ✗  Validate .env file existence, security, and syntax
-     .env: Line 1: unterminated double-quoted value — the quote is never closed
+     .env: Line 1: Unterminated quoted string
 
   ✓  Check .env.example exists and is Git-tracked
 
@@ -104,7 +104,7 @@ $ evnx doctor
 $ evnx doctor
 
   ✗  Validate .env file existence, security, and syntax
-     .env: Line 1: invalid syntax 'MY-KEY=1'
+     .env: Line 1: Invalid key: 'MY-KEY' (keys must match [A-Za-z_][A-Za-z0-9_]*)
 
   ✓  Check .env.example exists and is Git-tracked
 

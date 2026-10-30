@@ -26,7 +26,6 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use colored::*;
-use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -575,7 +574,8 @@ impl DiagnosticCheck for EnvFileCheck {
                     lines.push(format!("✗ {why}"));
                 }
                 Ok(content) => {
-                    match syntax_problems(&content) {
+                    let doc = crate::core::Parser::default().parse_document(&content);
+                    match syntax_problems(&doc) {
                         problems if problems.is_empty() => {
                             if verbose {
                                 lines.push(format!("✓ {name} syntax is valid"));
@@ -583,7 +583,7 @@ impl DiagnosticCheck for EnvFileCheck {
                             // RM-04: one line naming the readers, so a wrong
                             // detection is visible; `validate` lists the lines.
                             let readers = crate::core::dialect::detect(project_root);
-                            let found = crate::core::dialect::mismatches(&content, &readers);
+                            let found = crate::core::dialect::mismatches(&doc, &readers);
                             if !found.is_empty() {
                                 if severity == Severity::Ok {
                                     severity = Severity::Warning;
@@ -1291,82 +1291,26 @@ fn read_text(path: &Path, name: &str) -> std::result::Result<String, String> {
     String::from_utf8(bytes).map_err(|e| format!("{name} is not valid UTF-8: {}", e.utf8_error()))
 }
 
-/// Every line of `content` that `core::Parser` would refuse, as messages.
+/// Every problem the parser finds in `doc`, as messages, in line order.
 ///
-/// ⚠️ **This must agree with the parser, and it did not.** The pattern omitted
-/// the optional `export` prefix, so `export FOO=bar` — which the parser's own
-/// documentation lists as supported and which it strips at `parser.rs:385` —
-/// was reported as *"invalid syntax"*. The same file passed `evnx validate`
-/// with zero errors. A user was told their `.env` was broken by one command and
-/// fine by another.
+/// ⚠️ **This is the parser's verdict, not a second one.** It used to be a
+/// regex plus its own multiline tracking, kept in step with the parser by a
+/// test, and it drifted three times: `export` lines reported as invalid, every
+/// continuation line of a PEM reported as invalid (B6), and an unclosed quote
+/// called clean. It also passed lines the parser refuses (`P="a"junk`, a
+/// `${NOPE}` that is never defined), so `doctor` said a file was fine that
+/// `validate` failed on. Reading [`Document::problems`] makes that impossible.
 ///
-/// The duplication is deliberate rather than accidental: the parser stops at its
-/// first error, and `doctor` needs to report every bad line at once. What stops
-/// the two drifting again is `doctor_agrees_with_the_parser` in
-/// `tests/devrel_review.rs`, which runs both over the same corpus.
+/// ⚠️ All problems, not the first: a file with three is one `doctor` run.
 ///
-/// ⚠️ It also returned on the first bad line, so a file with three problems was
-/// three `doctor --fix` runs to diagnose. All of them are reported now.
+/// ⓘ No snippet of the line, as there used to be. A line without `=` is
+/// sometimes a pasted secret, and this printed its first 50 characters.
 ///
-/// ⚠️ **And it was line-based with no notion of a value spanning lines**, so
-/// every continuation line of a valid multiline value was reported as
-/// `invalid syntax` — a PEM key produced two or three complaints about a file
-/// that `validate`, `convert` and `scan` all accepted. That was bug B6. The
-/// multiline state is now tracked with the parser's own `closes_multiline` and
-/// `line_opens_multiline`, so the two cannot disagree about where a value ends.
-fn syntax_problems(content: &str) -> Vec<String> {
-    use crate::core::parser::{closes_multiline, line_opens_multiline};
-    use std::sync::OnceLock;
-
-    static LINE: OnceLock<Regex> = OnceLock::new();
-    let line_re = LINE.get_or_init(|| {
-        Regex::new(r"^(?:\s*$|\s*#.*|\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=.*)$")
-            .expect("a valid pattern")
-    });
-
-    let mut bad: Vec<String> = Vec::new();
-    // The quote a multiline value is open under, and the line it opened on.
-    let mut open: Option<(char, usize)> = None;
-
-    for (idx, line) in content.lines().enumerate() {
-        let line_num = idx + 1;
-
-        // Inside a multiline value, the following lines are value *content*.
-        // They are not entries and cannot be malformed ones.
-        if let Some((q, _)) = open {
-            if closes_multiline(line, q).is_some() {
-                open = None;
-            }
-            continue;
-        }
-
-        if !line_re.is_match(line) {
-            let snippet = line.chars().take(50).collect::<String>();
-            bad.push(format!(
-                "Line {}: invalid syntax '{}{}'",
-                line_num,
-                snippet,
-                if line.chars().count() > 50 { "..." } else { "" }
-            ));
-            continue;
-        }
-
-        open = line_opens_multiline(line).map(|q| (q, line_num));
-    }
-
-    // A value whose quote never closes is a genuine error — the parser reports
-    // `UnterminatedString` for it. The old line-based check could not represent
-    // this at all, so `doctor` called such a file clean while `validate` failed
-    // on it: the same disagreement as B6, in the opposite direction.
-    if let Some((q, line_num)) = open {
-        bad.push(format!(
-            "Line {}: unterminated {} value — the quote is never closed",
-            line_num,
-            if q == '"' { "double-quoted" } else { "quoted" }
-        ));
-    }
-
-    bad
+/// [`Document::problems`]: crate::core::parser::Document::problems
+fn syntax_problems(doc: &crate::core::parser::Document) -> Vec<String> {
+    let mut problems: Vec<_> = doc.problems.iter().collect();
+    problems.sort_by_key(|p| p.span.line);
+    problems.iter().map(|p| p.describe()).collect()
 }
 
 /// Every project type `project_root` holds, Python first (RM-23). A folder
@@ -1563,17 +1507,32 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    #[test]
-    fn test_validate_env_syntax_valid() {
-        assert!(syntax_problems("FOO=bar\n# comment\nEMPTY=\n").is_empty());
+    fn problems(content: &str) -> Vec<String> {
+        syntax_problems(&crate::core::Parser::default().parse_document(content))
     }
 
     #[test]
+    fn test_validate_env_syntax_valid() {
+        assert!(problems("FOO=bar\n# comment\nEMPTY=\n").is_empty());
+    }
+
+    /// The parser's wording, and never the line's text.
+    #[test]
     fn test_validate_env_syntax_invalid() {
         assert_eq!(
-            syntax_problems("INVALID LINE\n"),
-            ["Line 1: invalid syntax 'INVALID LINE'"]
+            problems("INVALID LINE\n"),
+            ["Line 1: Invalid format: missing '=' separator"]
         );
+    }
+
+    /// Every problem, in line order: lines the old regex passed are reported
+    /// too, so `doctor` and `validate` cannot disagree about a file.
+    #[test]
+    fn b1_every_parser_problem_is_reported_in_line_order() {
+        let found = problems("A=\"x\"junk\nB=${NOPE}\nno separator\nC=1\n");
+        let lines: Vec<&str> = found.iter().map(|m| &m[..7]).collect();
+        assert_eq!(lines, ["Line 1:", "Line 2:", "Line 3:"], "{found:?}");
+        assert!(found[1].contains("${NOPE} is not defined"), "{found:?}");
     }
 
     /// DEC-D9: the cause, without the OS's error number, then the file.

@@ -299,6 +299,9 @@ fn doctor_agrees_with_the_parser_about_what_is_valid() {
             true,
         ),
         ("escaped quote on one line", "P=\"say \\\"hi\\\"\"\n", true),
+        // ── B1: lines doctor's own regex passed and the parser refuses ──
+        ("text after a closing quote", "P=\"a\"junk\n", false),
+        ("undefined ${} reference", "P=${NOPE}\n", false),
     ];
 
     let parser = Parser::default();
@@ -313,9 +316,8 @@ fn doctor_agrees_with_the_parser_about_what_is_valid() {
             .args(["doctor"])
             .assert();
         let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
-        // ⚠️ Both messages. Checking only "invalid syntax" would read the
-        // unterminated-value complaint as a pass.
-        let doctor_ok = !out.contains("invalid syntax") && !out.contains("unterminated");
+        // Every problem doctor reports is a `.env: Line N: …` line.
+        let doctor_ok = !out.contains(".env: Line");
 
         let parser_ok = parser.parse_content(content).is_ok();
 
@@ -479,6 +481,63 @@ fn f5_duplicate_keys_are_reported() {
     let v: serde_json::Value = serde_json::from_slice(&converted.get_output().stdout).unwrap();
     assert_eq!(v["API_KEY"], "second");
     assert_eq!(v["OTHER"], "y");
+}
+
+/// A line inside a multiline value is value text, not an assignment. 0.11.0
+/// read raw lines, so `A=x` inside `P` was a duplicate of the real `A` on
+/// line 4, and the placeholder annotation for `A` pointed at line 2.
+#[test]
+fn b1_a_line_inside_a_multiline_value_is_not_an_assignment() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "P=\"a\nA=x\nb\"\nA=CHANGE_ME\n").unwrap();
+    fs::write(dir.path().join(".env.example"), "P=\nA=\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--format", "github-actions", "--exit-zero"])
+        .assert();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(!out.contains("assigned"), "false duplicate:\n{out}");
+    assert!(
+        out.contains("::error file=.env,line=4::A looks like a placeholder"),
+        "{out}"
+    );
+}
+
+/// A file that does not parse lists every problem, in line order, still
+/// exiting 2. One problem keeps the error exactly as it was.
+#[test]
+fn b1_validate_lists_every_problem_in_a_file_that_does_not_parse() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env.example"), "A=\nB=\n").unwrap();
+    fs::write(dir.path().join(".env"), "A=1\n!!bad\nB=${NOPE}\nnope\n").unwrap();
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate"])
+        .assert()
+        .code(2);
+    let err = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(
+        err.contains(
+            "Failed to parse .env: 3 problems\n  Line 2: Invalid format: missing '=' separator\n  \
+             Line 3: Undefined variable: ${NOPE} is not defined\n  \
+             Line 4: Invalid format: missing '=' separator\n"
+        ),
+        "{err}"
+    );
+    assert!(!err.contains("!!bad"), "a line's text was printed: {err}");
+
+    fs::write(dir.path().join(".env"), "A=1\n!!bad\nB=1\n").unwrap();
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate"])
+        .assert()
+        .code(2);
+    let err = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(
+        err.contains("Failed to parse .env: Invalid format at line 2: missing '=' separator"),
+        "{err}"
+    );
 }
 
 #[test]

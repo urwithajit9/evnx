@@ -418,38 +418,23 @@ impl ScanRunner {
         Ok(results.secrets_found > 0 || !results.unreadable.is_empty())
     }
 
-    /// Scan a single file for secrets.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the file to scan
-    /// * `results` - Mutable results to append findings to
-    ///
-    /// # Returns
-    ///
-    /// Ok(()) on success. Skips files that can't be read as text.
-    /// Scan a `.env` through the shared parser.
-    ///
-    /// `Some(())` when the file parsed and was scanned; `None` when it did not
-    /// parse, leaving the caller to fall back to raw line scanning.
+    /// Scan a `.env` through the shared parser, read lossily: a file with a
+    /// bad line is still read entry by entry around it.
     ///
     /// ⚠️ The line reported for a multiline value is the line it **opened** on,
     /// matching `EnvFile::lines` and the convention parse errors already use.
     /// Pointing at the fragment that happened to match would send someone to the
     /// middle of a PEM block rather than to the assignment they need to edit.
-    fn scan_env_parsed(
-        &self,
-        path: &Path,
-        content: &str,
-        results: &mut ScanResults,
-    ) -> Option<indexmap::IndexMap<String, String>> {
+    fn scan_env(&self, path: &Path, content: &str, results: &mut ScanResults) {
         use crate::core::parser::{Parser, ParserConfig};
 
         let parser = Parser::new(ParserConfig {
             allow_expansion: false,
             ..Default::default()
         });
-        let (vars, lines) = parser.parse_content_located(content).ok()?;
+        let doc = parser.parse_document(content);
+        let vars = doc.vars();
+        let lines = doc.lines();
 
         for (key, value) in &vars {
             let line_num = lines.get(key).copied().unwrap_or(1);
@@ -458,66 +443,51 @@ impl ScanRunner {
                 self.add_finding(results, path, line_num, Some(key.clone()), detection);
             }
         }
-        Some(vars)
-    }
 
-    /// The lines a successful parse does **not** account for.
-    ///
-    /// ⛔ A parsed `.env` is a map, and a map is smaller than the file. Two
-    /// kinds of line vanish into it, and a secret on either scanned clean:
-    ///
-    /// * **A commented-out assignment.** `# STRIPE_SECRET_KEY=sk_live_…` is a
-    ///   comment to the parser and a leaked credential to everyone else. A key
-    ///   pasted into a file and then commented out is still a key that was
-    ///   committed.
-    /// * **A shadowed duplicate.** `K=sk_live_…` followed by `K=` leaves only
-    ///   the empty one in the map, so the real value was never offered to a
-    ///   detector — and "I blanked it on the line below" does not unpublish it.
-    ///
-    /// ⚠️ Only lines the parsed pass missed are scanned here, so a secret is
-    /// not reported twice.
-    fn scan_lines_the_parser_dropped(
-        &self,
-        path: &Path,
-        content: &str,
-        vars: &indexmap::IndexMap<String, String>,
-        results: &mut ScanResults,
-    ) {
-        for (idx, raw) in content.lines().enumerate() {
-            let line_num = idx + 1;
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            let (key, value) = if let Some(body) = trimmed.strip_prefix('#') {
-                // A comment. If it looks like an assignment, keep the key so the
-                // finding can name it; otherwise scan the text as a bare value.
-                let body = body.trim();
-                match body.split_once('=') {
-                    Some((k, v)) => (k.trim().trim_start_matches("export ").trim(), v.trim()),
-                    None => ("", body),
-                }
-            } else {
-                let Some((k, v)) = trimmed.split_once('=') else {
-                    continue;
-                };
-                let k = k.trim().trim_start_matches("export ").trim();
-                let v = v.trim();
-                // ⓘ Already covered by the parsed pass unless this assignment
-                // was shadowed by a later one for the same key.
-                match vars.get(k) {
-                    Some(kept)
-                        if kept.trim_matches(['"', '\''].as_ref())
-                            == v.trim_matches(['"', '\''].as_ref()) =>
-                    {
-                        continue
-                    }
-                    Some(_) => (k, v),
-                    None => continue,
-                }
+        // ⛔ The map is not the whole file. What it drops, a secret on which
+        // scanned clean:
+        //
+        // * **A commented-out assignment.** `# STRIPE_SECRET_KEY=sk_live_…` is a
+        //   comment to the parser and a leaked credential to everyone else. A key
+        //   pasted into a file and then commented out is still a key that was
+        //   committed.
+        // * **A shadowed duplicate.** `K=sk_live_…` followed by `K=` leaves only
+        //   the empty one in the map, so the real value was never offered to a
+        //   detector — and "I blanked it on the line below" does not unpublish it.
+        // * **A line the parser refuses.** A malformed `.env` is exactly where a
+        //   half-pasted secret lives, so it is read as raw `KEY=value` text.
+        //
+        // ⚠️ Only what the map missed is scanned here, so a secret is not
+        // reported twice. A line inside a multiline value is neither a comment
+        // nor an assignment: its value was scanned whole above.
+        let mut dropped: Vec<(usize, &str, &str)> = Vec::new();
+        for c in &doc.comments {
+            // If it looks like an assignment, keep the key so the finding can
+            // name it; otherwise scan the text as a bare value.
+            let body = c.text.trim();
+            let (k, v) = match body.split_once('=') {
+                Some((k, v)) => (k.trim().trim_start_matches("export ").trim(), v.trim()),
+                None => ("", body),
             };
+            dropped.push((c.line, k, v));
+        }
+        for e in &doc.entries {
+            let shadowed = lines.get(&e.key) != Some(&e.span.line);
+            if shadowed && vars.get(&e.key) != Some(&e.value) {
+                dropped.push((e.span.line, &e.key, &e.value));
+            }
+        }
+        for p in &doc.problems {
+            for (i, line) in p.raw.lines().enumerate() {
+                if let Some((k, v)) = line.split_once('=') {
+                    let k = k.trim().trim_start_matches("export").trim();
+                    dropped.push((p.span.line + i, k, v.trim()));
+                }
+            }
+        }
+        dropped.sort_by_key(|(line, _, _)| *line);
 
+        for (line_num, key, value) in dropped {
             if value.is_empty() {
                 continue;
             }
@@ -672,19 +642,8 @@ impl ScanRunner {
         //   which is the value that would reach a program.
         // * `strict: false` — a lowercase key is still worth scanning.
         if is_env {
-            if let Some(vars) = self.scan_env_parsed(path, content, results) {
-                // ⛔ The parsed pass is not the whole file — see the function.
-                self.scan_lines_the_parser_dropped(path, content, &vars, results);
-                return Ok(());
-            }
-            // Fell through: the file does not parse. Carry on into the raw loop
-            // below, which is what this command did for every `.env` before D21.
-            //
-            // ⚠️ Deliberately a fallback rather than an error. A malformed `.env`
-            // is exactly where a half-pasted secret lives, and the baseline
-            // showed the old path *does* find one in a file with an unterminated
-            // quote. Refusing to scan it would trade a silent miss for a louder
-            // one.
+            self.scan_env(path, content, results);
+            return Ok(());
         }
 
         for (line_num, line) in content.lines().enumerate() {
@@ -697,44 +656,29 @@ impl ScanRunner {
                 continue;
             }
 
-            if is_env {
-                // Reached only when the file failed to parse — see above.
-                if let Some((key, value)) = line.split_once('=') {
-                    let key = key.trim().trim_start_matches("export").trim();
-                    let value = value.trim();
+            // Scan tokens for general text files.
+            let location = format!("{}:{}", display_portable(path), line_num);
+            let mut detections: Vec<super::detector::Detection> = Vec::new();
 
-                    let location = format!("{}:{} ({})", display_portable(path), line_num, key);
-                    if let Some(detection) =
-                        Self::best(self.registry.scan_kv(key, value, &location))
-                    {
-                        self.add_finding(results, path, line_num, Some(key.to_string()), detection);
-                    }
-                }
-            } else {
-                // Scan tokens for general text files.
-                let location = format!("{}:{}", display_portable(path), line_num);
-                let mut detections: Vec<super::detector::Detection> = Vec::new();
+            for token in Self::extract_tokens(line) {
+                detections.extend(self.registry.scan_token(&token, &location));
+            }
 
-                for token in Self::extract_tokens(line) {
-                    detections.extend(self.registry.scan_token(&token, &location));
-                }
+            // ...and the whole line, for what a token cannot carry.
+            //
+            // ⚠️ A line is not one value. Two unrelated credentials on one
+            // line are two findings, whereas two detectors describing one
+            // value are one — so these are reconciled by *value* below, not
+            // collapsed into a single answer per line.
+            //
+            // `extract_tokens` also drops anything 20 characters or shorter,
+            // so a format shorter than that is reachable only from here. An
+            // AWS access key is `AKIA` plus sixteen characters — exactly 20
+            // — and so arrives by this path alone.
+            detections.extend(self.registry.scan_line(line, &location));
 
-                // ...and the whole line, for what a token cannot carry.
-                //
-                // ⚠️ A line is not one value. Two unrelated credentials on one
-                // line are two findings, whereas two detectors describing one
-                // value are one — so these are reconciled by *value* below, not
-                // collapsed into a single answer per line.
-                //
-                // `extract_tokens` also drops anything 20 characters or shorter,
-                // so a format shorter than that is reachable only from here. An
-                // AWS access key is `AKIA` plus sixteen characters — exactly 20
-                // — and so arrives by this path alone.
-                detections.extend(self.registry.scan_line(line, &location));
-
-                for detection in Self::one_finding_per_value(detections) {
-                    self.add_finding(results, path, line_num, None, detection);
-                }
+            for detection in Self::one_finding_per_value(detections) {
+                self.add_finding(results, path, line_num, None, detection);
             }
         }
 

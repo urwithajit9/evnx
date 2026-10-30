@@ -514,30 +514,36 @@ fn extract_key_names(content: &str) -> Vec<String> {
         ..Default::default()
     });
 
-    match parser.parse_content(content) {
-        Ok(vars) => vars.keys().cloned().collect(),
-        // ⚠️ A backup that does not parse still has to list something, and the
-        // fallback must not reintroduce the defect — so it takes only lines that
-        // genuinely look like an assignment, and never "the whole line".
-        Err(_) => content
-            .lines()
-            .filter_map(|line| {
-                let t = line.trim();
-                if t.is_empty() || t.starts_with('#') {
-                    return None;
-                }
-                let t = t.strip_prefix("export ").unwrap_or(t);
-                let (key, _) = t.split_once('=')?;
-                let key = key.trim();
-                // A key is a key. A base64 line is not.
-                let plausible = !key.is_empty()
-                    && key
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.');
-                plausible.then(|| key.to_string())
-            })
-            .collect(),
-    }
+    // ⚠️ A backup that does not parse still has to list something, and the
+    // fallback must not reintroduce the defect. So it takes the entries the
+    // parser could read, plus the key of each line it refused when that key
+    // looks like one (`app.port=…`, an unterminated quote). Never a line
+    // inside a multiline value: a base64 line ending in `=` is a key body.
+    let doc = parser.parse_document(content);
+    let refused = doc.problems.iter().filter_map(|p| {
+        let first = p.raw.lines().next()?.trim();
+        let first = first.strip_prefix("export ").unwrap_or(first);
+        let (key, _) = first.split_once('=')?;
+        let key = key.trim();
+        // A key is a key. A base64 line is not.
+        let plausible = !key.is_empty()
+            && key
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.');
+        plausible.then(|| (p.span.line, key.to_string()))
+    });
+    let mut found: Vec<(usize, String)> = doc
+        .entries
+        .iter()
+        .map(|e| (e.span.line, e.key.clone()))
+        .chain(refused)
+        .collect();
+    found.sort_by_key(|(line, _)| *line);
+    let mut seen = std::collections::HashSet::new();
+    found
+        .into_iter()
+        .filter_map(|(_, k)| seen.insert(k.clone()).then_some(k))
+        .collect()
 }
 
 /// Determine where to write the restored file.
@@ -744,6 +750,26 @@ mod tests {
         // e.g. DATABASE_URL=postgres://user:pass@host/db?ssl=true
         let content = "DATABASE_URL=postgres://user:pass@host/db?ssl=true\n";
         assert_eq!(extract_key_names(content), vec!["DATABASE_URL"]);
+    }
+
+    /// A backup that does not parse: 0.11.0 read it line by line, so a base64
+    /// line ending in `=` inside a quoted value was listed as a name, which
+    /// printed part of a key body under "values never shown".
+    #[test]
+    fn b1_the_fallback_never_lists_a_line_inside_a_value() {
+        let content = "GOOD=1\nTLS=\"a\nc2VjcmV0Ym9keQ==\nb\"\nbad line\n";
+        assert_eq!(extract_key_names(content), vec!["GOOD", "TLS"]);
+    }
+
+    /// The fallback keeps its leniency: a key the parser refuses is still a
+    /// name, and so is the key of an unterminated quote.
+    #[test]
+    fn b1_the_fallback_still_lists_keys_the_parser_refuses() {
+        let content = "app.port=1\nGOOD=2\nBROKEN=\"never closed\nMIIEvQ==\n";
+        assert_eq!(
+            extract_key_names(content),
+            vec!["app.port", "GOOD", "BROKEN"]
+        );
     }
 
     #[test]
