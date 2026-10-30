@@ -7,7 +7,7 @@
 
 // use std::collections::HashMap;
 use indexmap::IndexMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use anyhow::{Context, Result};
 
@@ -385,10 +385,25 @@ pub fn write_fixed_file(
     let mut output = String::new();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
 
-    for line in original_content.lines() {
-        // ⚠️ `key_of` returns None for blanks, comments and malformed lines, so
-        // all three fall into the verbatim branch without a special case each.
-        match key_of(line) {
+    // ⚠️ Keys come from the document's entries, by the line each one opens on.
+    // A line inside a multiline value opens nothing, so `A=x` there is copied
+    // verbatim: read line by line, it was taken for `A` and rewritten, which
+    // put a fix for `A` inside another key's value.
+    let doc = crate::core::Parser::default().parse_document(original_content);
+    let opens: HashMap<usize, &crate::core::parser::Entry> =
+        doc.entries.iter().map(|e| (e.span.line, e)).collect();
+    // The last line of a rewritten multiline entry: its other lines are dropped.
+    let mut replaced_to = 0;
+
+    for (idx, line) in original_content.lines().enumerate() {
+        let n = idx + 1;
+        if n <= replaced_to {
+            continue;
+        }
+        // Blanks, comments, malformed lines and the inside of a multiline value
+        // open no entry, so all of them fall into the verbatim branch.
+        let entry = opens.get(&n);
+        match entry.map(|e| e.key.as_str()) {
             Some(key) if changed.contains(key) => {
                 seen.insert(key);
                 let value = match env_vars.get(key) {
@@ -413,6 +428,7 @@ pub fn write_fixed_file(
                 output.push('=');
                 output.push_str(&render_value(key, value)?);
                 output.push('\n');
+                replaced_to = entry.map_or(n, |e| e.span.end_line);
             }
             Some(key) => {
                 seen.insert(key);
@@ -449,24 +465,6 @@ pub fn write_fixed_file(
     let written = crate::core::safe_write::write_private(env_path, output.as_bytes())
         .with_context(|| format!("Failed to write fixes to {env_path}"))?;
     Ok((backup.to_string_lossy().into_owned(), written))
-}
-
-/// The variable a line assigns, or `None` if it assigns nothing.
-///
-/// Blank lines, comments and lines with no `=` all return `None`, which is what
-/// puts them in the verbatim branch.
-fn key_of(line: &str) -> Option<&str> {
-    let trimmed = line.trim_start();
-    if trimmed.is_empty() || trimmed.starts_with('#') {
-        return None;
-    }
-    let trimmed = trimmed.strip_prefix("export ").unwrap_or(trimmed);
-    let (key, _) = trimmed.split_once('=')?;
-    let key = key.trim();
-    if key.is_empty() {
-        return None;
-    }
-    Some(key)
 }
 
 /// A value, quoted if it would not survive being read back unquoted.
@@ -529,6 +527,21 @@ mod tests {
     /// ⛔ The one that mattered. A quoted value containing a space and a `#`
     /// was rewritten unquoted, which `sh` cannot parse and a dotenv parser
     /// truncates at ` #` — while evnx printed "All checks passed".
+    /// A line inside a multiline value is value text. 0.11.0 took `A=x` in
+    /// `P` for `A`, rewrote it there, and so corrupted `P` and left `A` missing.
+    #[test]
+    fn b1_a_line_inside_a_multiline_value_is_not_rewritten() {
+        let out = fix("P=\"a\nA=x\nb\"\n", &["A"], &[("A", "")]);
+        assert_eq!(out, "P=\"a\nA=x\nb\"\nA=\n");
+    }
+
+    /// A multiline entry that is fixed is replaced whole, not just its first line.
+    #[test]
+    fn b1_a_fixed_multiline_entry_is_replaced_whole() {
+        let out = fix("P=\"a\nb\"\nQ=1\n", &["P"], &[("P", "new")]);
+        assert_eq!(out, "P=new\nQ=1\n");
+    }
+
     #[test]
     fn an_untouched_line_is_copied_byte_for_byte() {
         let original = "# a comment\n\

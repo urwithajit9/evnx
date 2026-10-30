@@ -729,16 +729,17 @@ fn plan_edit(
     let mut lines: Vec<String> = raw.lines().map(String::from).collect();
     let mut hunks = Vec::new();
     let mut by_hand = Vec::new();
-    let key_of = |line: &str| -> Option<String> {
-        let l = line.trim_start();
-        let l = l.strip_prefix("export ").unwrap_or(l);
-        l.split_once('=').map(|(k, _)| k.trim().to_string())
-    };
+    // The key's first entry, not the first line that looks like it: a line
+    // inside a multiline value assigns nothing, and replacing it would edit
+    // another key's value.
+    let doc = crate::core::Parser::default().parse_document(raw);
     for (key, value) in updates {
         let multiline = current.get(key).is_some_and(|v| v.contains('\n'));
-        let at = lines
+        let at = doc
+            .entries
             .iter()
-            .position(|l| key_of(l).as_deref() == Some(key.as_str()));
+            .find(|e| &e.key == key)
+            .map(|e| e.span.line - 1);
         match at {
             Some(i) if !multiline => {
                 let new = crate::core::envfile::line(key, value);
@@ -912,6 +913,17 @@ impl DiffResult {
 mod tests {
     use super::*;
     use indexmap::indexmap;
+
+    /// An update edits the key's entry, not a line inside another key's
+    /// multiline value: 0.11.0 replaced `A=x` in `P` (line 2) instead of line 4.
+    #[test]
+    fn b1_an_update_edits_the_entry_not_a_line_inside_a_value() {
+        let raw = "P=\"a\nA=x\nb\"\nA=1\n";
+        let current = crate::core::Parser::default().parse_content(raw).unwrap();
+        let edit = plan_edit(raw, &current, &[], &[("A".into(), "2".into())]).unwrap();
+        assert_eq!(edit.hunks, ["@@ -4,1 +4,1 @@\n-A=1\n+A=2\n"]);
+        assert_eq!(edit.text, "P=\"a\nA=x\nb\"\nA=2\n");
+    }
 
     #[test]
     fn test_compute_diff_basic() {
