@@ -92,6 +92,20 @@
       },
       "effect": "reads the byte-order mark at the start of the file into the first key's name, so this key is not set",
       "fix": "Save the file as UTF-8 without a BOM (in VS Code: the encoding in the status bar, then \"Save with Encoding\", \"UTF-8\")."
+    },
+    {
+      "id": "dollar_dollar",
+      "fixture": "PASS=ab$$cd\n",
+      "key": "PASS",
+      "values": {
+        "evnx": "ab$$cd",
+        "compose": "ab$cd",
+        "python-dotenv": "ab$$cd",
+        "node-dotenv": "ab$$cd",
+        "node-dotenv-expand": "ab$"
+      },
+      "effect": "reads `$$` as a single `$`",
+      "fix": "Single-quote the value (KEY='…'): Docker Compose then keeps every `$` as written. dotenv-expand changes `$` even in single quotes."
     }
   ]
 }

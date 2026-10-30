@@ -634,7 +634,12 @@ impl DiagnosticCheck for EnvFileCheck {
                                 lines.push(format!(
                                 "! {name} is read by {}; {} read differently — run `evnx validate`",
                                 crate::core::dialect::names_with_evnx(&readers),
-                                crate::utils::string::pluralize(found.len(), "line is", "lines are")
+                                // One line can be two cases (`${A}$$`).
+                                crate::utils::string::pluralize(
+                                    found.iter().map(|m| m.line).collect::<std::collections::HashSet<_>>().len(),
+                                    "line is",
+                                    "lines are"
+                                )
                             ));
                             }
                         }

@@ -1,7 +1,7 @@
 //! RM-04, phase 1: lines this project's readers read differently from evnx.
 //! The values behind these findings are measured (`src/assets/dialects.json`):
-//! Docker Compose and python-dotenv read the cases as evnx does; Node `dotenv`
-//! does not.
+//! Docker Compose and python-dotenv read most cases as evnx does; Node `dotenv`
+//! does not. Compose reads `$$` as one `$` (P0.8).
 
 mod support;
 
@@ -183,4 +183,28 @@ fn p0_7_a_value_read_differently_top_to_bottom_is_reported() {
         out.all()
     );
     assert!(!out.all().contains("s3cr3t"), "{}", out.all());
+}
+
+/// Compose reads `$$` as one `$`; evnx keeps both, so a Compose project hears
+/// about it, with the measured fix, and never the value (D11, P0.8).
+#[test]
+fn p0_8_a_compose_project_hears_about_dollar_dollar() {
+    let p = Project::new()
+        .file(".gitignore", ".env\n")
+        .file("compose.yaml", "services: {}\n")
+        .env("PW=s3cr3t$$x\nOK='s3cr3t$$y'\n")
+        .example("PW=\nOK=\n");
+    let out = run(p.path(), &["validate", "--format", "json"]);
+    let found = findings(&out);
+    assert_eq!(found.len(), 1, "{}", out.stdout);
+    assert_eq!(found[0]["variable"], "PW");
+    assert_eq!(
+        found[0]["message"],
+        "PW (line 1): Docker Compose reads `$$` as a single `$`, while evnx reads it as written"
+    );
+    assert!(found[0]["suggestion"]
+        .as_str()
+        .unwrap()
+        .starts_with("Single-quote the value"));
+    assert!(!out.stdout.contains("s3cr3t"), "{}", out.stdout);
 }

@@ -41,6 +41,15 @@ in `doctor`'s output should match `.env: Line N:` instead.
   is unchanged in this release, and changes in 0.13.0**, when evnx expands top
   to bottom as well.
 
+- **`validate` warns about `$$` in a project Docker Compose reads** (B2).
+  Compose reads `$$` as one `$`, unquoted and in double quotes; evnx keeps both
+  dollars, as python-dotenv and Node dotenv do. A random password holding `$$`
+  is far more common than a `$$` meant as one dollar, so evnx's value does not
+  change: the `reader_mismatch` warning now covers it, and suggests single
+  quotes, which Compose reads as written. Measured into `dialects.json`, whose
+  script now reads Compose's real value: `docker compose config` prints each
+  `$` as `$$`.
+
 ### Changed
 - **`validate` lists every problem in a file that does not parse** (B1). It
   named only the first, so a file with three problems took three runs. It

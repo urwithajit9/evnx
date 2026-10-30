@@ -59,7 +59,10 @@ def measure(fixture: str, tmp: pathlib.Path) -> dict:
         run(["docker", "compose", "--project-directory", str(tmp), "-f", str(tmp / "compose.yaml"),
              "config", "--format", "json"], env={**os.environ, "COMPOSE_PROJECT_NAME": "dialects"})
     )
-    out["compose"] = cfg["services"]["s"].get("environment", {})
+    # `config` prints each literal `$` as `$$` so its output reloads as written;
+    # undo that to get the value the container receives (checked with `run`).
+    out["compose"] = {k: v.replace("$$", "$")
+                      for k, v in cfg["services"]["s"].get("environment", {}).items()}
     return out
 
 
