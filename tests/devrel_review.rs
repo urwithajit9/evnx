@@ -299,6 +299,9 @@ fn doctor_agrees_with_the_parser_about_what_is_valid() {
             true,
         ),
         ("escaped quote on one line", "P=\"say \\\"hi\\\"\"\n", true),
+        // ── B1: lines doctor's own regex passed and the parser refuses ──
+        ("text after a closing quote", "P=\"a\"junk\n", false),
+        ("undefined ${} reference", "P=${NOPE}\n", false),
     ];
 
     let parser = Parser::default();
@@ -313,9 +316,8 @@ fn doctor_agrees_with_the_parser_about_what_is_valid() {
             .args(["doctor"])
             .assert();
         let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
-        // ⚠️ Both messages. Checking only "invalid syntax" would read the
-        // unterminated-value complaint as a pass.
-        let doctor_ok = !out.contains("invalid syntax") && !out.contains("unterminated");
+        // Every problem doctor reports is a `.env: Line N: …` line.
+        let doctor_ok = !out.contains(".env: Line");
 
         let parser_ok = parser.parse_content(content).is_ok();
 

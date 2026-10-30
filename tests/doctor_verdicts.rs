@@ -60,7 +60,7 @@ fn t_i161_a_syntax_error_is_an_error() {
 
     let out = run(p.path(), &["doctor"]);
     out.assert_code(1);
-    out.assert_contains("Line 2: invalid syntax");
+    out.assert_contains("Line 2: Invalid format");
 
     let out = run(p.path(), &["doctor", "--format", "json"]);
     out.assert_code(1);

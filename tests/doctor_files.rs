@@ -71,7 +71,7 @@ fn t_dec_d19_structured_env_files_get_no_dotenv_syntax_check() {
 
     let out = run(p.path(), &["doctor"]);
     out.assert_code(0);
-    out.assert_not_contains("invalid syntax");
+    out.assert_not_contains(": Line ");
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn t_i159_a_symlinked_env_is_checked_for_syntax_and_ignore() {
 
     let out = run(p.path(), &["doctor"]);
     out.assert_code(1);
-    out.assert_contains("Line 1: invalid syntax");
+    out.assert_contains("Line 1: Invalid format");
 
     let p = project()
         .file(".gitignore", "node_modules/\n")
