@@ -350,6 +350,12 @@ pub fn run(opts: Options) -> Result<()> {
             &config.ignore_issues,
         ));
 
+        issues.extend(checks::check_expansion_order(
+            &env_doc,
+            &env_path,
+            &config.ignore_issues,
+        ));
+
         issues.extend(checks::check_nul_bytes(
             &env_doc,
             &env_path,

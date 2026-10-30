@@ -52,6 +52,31 @@ pub struct Entry {
     pub quote: Option<char>,
 }
 
+/// A value that Docker Compose and python-dotenv read differently because they
+/// expand top to bottom, against the values assigned **above** a reference,
+/// where evnx expands against each key's last value (D10). Found during
+/// expansion and only reported: evnx's reading is unchanged until 0.13.0.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrderDifference {
+    /// The entry that counts for this key, whose value differs.
+    pub key: String,
+    pub line: usize,
+    /// The variables it names directly that are assigned below it. Empty when
+    /// the difference comes through another variable.
+    pub below: Vec<AssignedBelow>,
+}
+
+/// One variable an [`OrderDifference`] names, and where it is assigned below.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssignedBelow {
+    pub name: String,
+    /// The first assignment below the reference.
+    pub line: usize,
+    /// Also assigned above it: the reference sees an earlier value in Compose,
+    /// rather than none.
+    pub also_above: bool,
+}
+
 /// A full-line comment. `text` is everything after the `#`, untrimmed.
 #[derive(Debug, Clone)]
 pub struct Comment {
@@ -95,6 +120,9 @@ pub struct Document {
     /// The file began with a UTF-8 byte-order mark, which was skipped. A fact
     /// for `dialect`: python-dotenv keeps it in the first key's name.
     pub bom: bool,
+    /// References whose value differs when expanded top to bottom (D10), for
+    /// `validate` and `doctor` to report. Empty with expansion off.
+    pub order_differences: Vec<OrderDifference>,
 }
 
 impl Document {

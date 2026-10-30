@@ -299,7 +299,7 @@ mod lines;
 #[cfg(test)]
 mod tests;
 
-pub use document::{Comment, Document, Entry, Problem, Span};
+pub use document::{AssignedBelow, Comment, Document, Entry, OrderDifference, Problem, Span};
 use expand::strip_markers;
 pub use lines::{closes_multiline, line_opens_multiline, opens_multiline, strip_export};
 

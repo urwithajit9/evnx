@@ -41,11 +41,15 @@ pub enum IssueType {
     /// A NUL byte in a value (B2 P0.6). An error: no process can receive it,
     /// so the file already fails wherever it is loaded.
     NulByte,
+    /// A value Docker Compose and python-dotenv read differently because they
+    /// expand top to bottom (D10, B2 P0.7). A warning: evnx switches to that
+    /// order in 0.13.0, so the value will change.
+    ExpansionOrder,
 }
 
 impl IssueType {
     /// Every type, in the order `--ignore`'s error lists them.
-    pub const ALL: [IssueType; 18] = [
+    pub const ALL: [IssueType; 19] = [
         IssueType::MissingVariable,
         IssueType::ExtraVariable,
         IssueType::PlaceholderValue,
@@ -64,6 +68,7 @@ impl IssueType {
         IssueType::ReaderMismatch,
         IssueType::LoneCarriageReturn,
         IssueType::NulByte,
+        IssueType::ExpansionOrder,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -86,6 +91,7 @@ impl IssueType {
             IssueType::ReaderMismatch => "reader_mismatch",
             IssueType::LoneCarriageReturn => "lone_carriage_return",
             IssueType::NulByte => "nul_byte",
+            IssueType::ExpansionOrder => "expansion_order",
         }
     }
 }

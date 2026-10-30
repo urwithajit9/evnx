@@ -114,6 +114,25 @@ fn lossy(doc: &Document, out: &mut String) {
     for p in &doc.problems {
         writeln!(out, "  problem: {}", p.describe()).unwrap();
     }
+    // D10: what Compose reads differently top to bottom (B2 P0.7).
+    for d in &doc.order_differences {
+        let below: Vec<String> = d
+            .below
+            .iter()
+            .map(|b| {
+                let above = if b.also_above { " also above" } else { "" };
+                format!("{} L{}{above}", b.name, b.line)
+            })
+            .collect();
+        writeln!(
+            out,
+            "  order: L{} {} below [{}]",
+            d.line,
+            d.key,
+            below.join(", ")
+        )
+        .unwrap();
+    }
 }
 
 #[test]

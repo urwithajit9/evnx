@@ -204,6 +204,53 @@ pub fn check_reader_mismatch(
         .collect()
 }
 
+/// Values Docker Compose and python-dotenv read differently because they expand
+/// top to bottom (D10, B2 P0.7). Always checked: evnx reads them that way from
+/// 0.13.0. Names the variables, never a value.
+pub fn check_expansion_order(
+    doc: &crate::core::parser::Document,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if ignore.contains(IssueType::ExpansionOrder.as_str()) {
+        return Vec::new();
+    }
+    doc.order_differences
+        .iter()
+        .map(|d| {
+            let uses = if d.below.is_empty() {
+                "a variable whose value depends on one assigned below it".to_string()
+            } else {
+                d.below
+                    .iter()
+                    .map(|b| {
+                        let how = if b.also_above { "again" } else { "only" };
+                        format!("{}, assigned {how} below it on line {}", b.name, b.line)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            };
+            Issue {
+                severity: "warning".to_string(),
+                issue_type: IssueType::ExpansionOrder.as_str().to_string(),
+                variable: d.key.clone(),
+                message: format!(
+                    "{} (line {}) uses {uses}. Docker Compose and python-dotenv expand top to bottom, \
+                     so they read a different value for {} than evnx does",
+                    d.key, d.line, d.key
+                ),
+                location: format!("{env_path}:{}", d.line),
+                suggestion: Some(
+                    "Assign each variable above the lines that use it. From 0.13.0 evnx also \
+                     expands top to bottom, so this value will change"
+                        .to_string(),
+                ),
+                auto_fixable: false,
+            }
+        })
+        .collect()
+}
+
 /// Values holding a NUL byte (B2 P0.6). An error: the file parses, but `exec`
 /// refuses such an environment and Docker will not start the container.
 pub fn check_nul_bytes(

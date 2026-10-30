@@ -32,6 +32,15 @@ in `doctor`'s output should match `.env: Line N:` instead.
   changes only for a file that already fails wherever it is loaded. New issue
   type `nul_byte`.
 
+- **`validate` and `doctor` warn about a value Docker Compose reads differently
+  because of the order of the file** (B2). Compose and python-dotenv expand
+  `${VAR}` top to bottom, against what is assigned above the reference; evnx
+  expands against each key's last value. So `B=1` / `A=${B}` / `B=2` is `A=1`
+  there and `A=2` here, silently. The warning names the variable and the line
+  it is assigned on below. New issue type `expansion_order`. ⚠️ **evnx's value
+  is unchanged in this release, and changes in 0.13.0**, when evnx expands top
+  to bottom as well.
+
 ### Changed
 - **`validate` lists every problem in a file that does not parse** (B1). It
   named only the first, so a file with three problems took three runs. It

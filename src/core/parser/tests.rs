@@ -1196,3 +1196,55 @@ fn p0_6_a_nul_byte_in_a_value_is_found() {
         0
     );
 }
+
+/// D10 (B2 P0.7): a value Docker Compose reads differently because it expands
+/// top to bottom is recorded, naming the variables assigned below the
+/// reference. evnx's own reading does not change.
+#[test]
+fn p0_7_a_reference_read_differently_top_to_bottom_is_recorded() {
+    let diffs = |content: &str| Parser::default().parse_document(content).order_differences;
+    let below = |name: &str, line, also_above| AssignedBelow {
+        name: name.into(),
+        line,
+        also_above,
+    };
+
+    // Redefined after: Compose reads A=1, evnx A=2.
+    let doc = Parser::default().parse_document("B=1\nA=${B}\nB=2\n");
+    assert_eq!(doc.vars()["A"], "2", "the reading does not change");
+    assert_eq!(
+        doc.order_differences,
+        [OrderDifference {
+            key: "A".into(),
+            line: 2,
+            below: vec![below("B", 3, true)],
+        }]
+    );
+    // Forward reference: Compose reads A=x (B unset), evnx A=1x.
+    assert_eq!(diffs("A=${B}x\nB=1\n")[0].below, [below("B", 2, false)]);
+    // A bare `$B` too, and through another variable (named by nothing direct).
+    assert_eq!(diffs("A=$B/x\nB=1\n")[0].below, [below("B", 2, false)]);
+    let through = diffs("B=1\nC=${B}\nA=${C}\nB=2\n");
+    assert_eq!(through.len(), 2, "{through:?}");
+    assert_eq!((through[1].key.as_str(), through[1].below.len()), ("A", 0));
+
+    // Nothing to report: top-to-bottom agrees, a literal, an escape, a
+    // shadowed entry, and a file that already fails (`A=${A}3`).
+    assert!(diffs("B=1\nA=${B}\nC=${A}\n").is_empty());
+    assert!(diffs("A='${B}'\nB=1\n").is_empty());
+    assert!(diffs("A=\"\\${B}\"\nB=1\n").is_empty());
+    assert!(diffs("A=${B}\nA=done\nB=1\n").is_empty());
+    assert!(diffs("A=1\nA=2\nA=${A}3\n").is_empty());
+    assert!(
+        diffs("B=x$y\nA=${B}\n").is_empty(),
+        "a `$` in a settled value is not re-expanded"
+    );
+    let off = Parser::new(ParserConfig {
+        allow_expansion: false,
+        ..ParserConfig::default()
+    });
+    assert!(off
+        .parse_document("A=${B}\nB=1\n")
+        .order_differences
+        .is_empty());
+}

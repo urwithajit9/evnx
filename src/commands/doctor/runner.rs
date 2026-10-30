@@ -605,6 +605,24 @@ impl DiagnosticCheck for EnvFileCheck {
                                     cr.join(", ")
                                 ));
                             }
+                            // D10: Compose's order, whatever the readers —
+                            // evnx switches to it in 0.13.0.
+                            if !doc.order_differences.is_empty() {
+                                if severity == Severity::Ok {
+                                    severity = Severity::Warning;
+                                }
+                                let keys: Vec<&str> = doc
+                                    .order_differences
+                                    .iter()
+                                    .map(|d| d.key.as_str())
+                                    .collect();
+                                lines.push(format!(
+                                    "! {name}: {} read differently top to bottom by Docker Compose \
+                                     and python-dotenv ({}) — run `evnx validate`",
+                                    crate::utils::string::pluralize(keys.len(), "value is", "values are"),
+                                    keys.join(", ")
+                                ));
+                            }
                             // RM-04: one line naming the readers, so a wrong
                             // detection is visible; `validate` lists the lines.
                             let readers = crate::core::dialect::detect(project_root);

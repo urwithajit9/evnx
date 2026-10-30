@@ -146,3 +146,41 @@ fn p0_6_a_nul_byte_is_an_error_in_validate_and_doctor() {
     );
     assert!(!out.all().contains("s3cr3t"), "{}", out.all());
 }
+
+/// D10, B2 P0.7: a value Docker Compose reads differently top to bottom is a
+/// warning in `validate` and one line in `doctor`, whatever the readers. The
+/// value evnx reads is unchanged, and no value is printed.
+#[test]
+fn p0_7_a_value_read_differently_top_to_bottom_is_reported() {
+    let p = Project::new()
+        .file(".gitignore", ".env\n")
+        .env("HOST=s3cr3t-a\nURL=${HOST}/x\nHOST=s3cr3t-b\n")
+        .example("HOST=\nURL=\n");
+    let out = run(p.path(), &["validate", "--format", "json"]);
+    let json: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    let found: Vec<_> = json["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["type"] == "expansion_order")
+        .collect();
+    assert_eq!(found.len(), 1, "{}", out.stdout);
+    assert_eq!(found[0]["variable"], "URL");
+    assert_eq!(found[0]["severity"], "warning");
+    assert_eq!(
+        found[0]["message"],
+        "URL (line 2) uses HOST, assigned again below it on line 3. Docker Compose and \
+         python-dotenv expand top to bottom, so they read a different value for URL than evnx does"
+    );
+    assert!(!out.stdout.contains("s3cr3t"), "{}", out.stdout);
+
+    let out = run(p.path(), &["doctor"]);
+    assert!(
+        out.all().contains(
+            ".env: 1 value is read differently top to bottom by Docker Compose and python-dotenv (URL)"
+        ),
+        "{}",
+        out.all()
+    );
+    assert!(!out.all().contains("s3cr3t"), "{}", out.all());
+}
