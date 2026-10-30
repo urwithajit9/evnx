@@ -214,7 +214,19 @@ pub fn mismatches(content: &str, readers: &[Reader]) -> Vec<Mismatch> {
 
 /// `a`, `a and b`, `a, b and c`.
 pub fn names(readers: &[Reader]) -> String {
-    let n: Vec<&str> = readers.iter().map(|r| r.name()).collect();
+    join(readers.iter().map(|r| r.name()).collect())
+}
+
+/// [`names`] with evnx first: `evnx and a`, `evnx, a and b`.
+pub fn names_with_evnx(readers: &[Reader]) -> String {
+    join(
+        std::iter::once("evnx")
+            .chain(readers.iter().map(|r| r.name()))
+            .collect(),
+    )
+}
+
+fn join(n: Vec<&str>) -> String {
     match n.as_slice() {
         [] => String::new(),
         [one] => (*one).to_string(),
@@ -229,6 +241,20 @@ mod tests {
     const NODE: Reader = Reader::NodeDotenv {
         expand: Some(false),
     };
+
+    #[test]
+    fn names_join_three_readers_with_one_and() {
+        let three = [Reader::Compose, Reader::PythonDotenv, NODE];
+        assert_eq!(
+            names(&three),
+            "Docker Compose, python-dotenv and Node dotenv"
+        );
+        assert_eq!(
+            names_with_evnx(&[Reader::PythonDotenv, NODE]),
+            "evnx, python-dotenv and Node dotenv"
+        );
+        assert_eq!(names_with_evnx(&[NODE]), "evnx and Node dotenv");
+    }
 
     /// The table parses, and evnx's column is what evnx's parser reads from
     /// each fixture: if the parser changed a value, this fails.

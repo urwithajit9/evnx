@@ -197,7 +197,7 @@ pub fn check_reader_mismatch(
             let agree = if m.agree.is_empty() {
                 "evnx reads".to_string()
             } else {
-                format!("evnx and {} read", crate::core::dialect::names(&m.agree))
+                format!("{} read", crate::core::dialect::names_with_evnx(&m.agree))
             };
             Issue {
                 severity: "warning".to_string(),

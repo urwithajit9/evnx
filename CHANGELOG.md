@@ -8,6 +8,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **`doctor` and `validate` name three or more readers in one list.** They
+  printed "read by evnx and python-dotenv and Node dotenv"; now
+  "read by evnx, python-dotenv and Node dotenv".
+
 ## [0.11.0] - 2026-10-29
 
 ⚠️ **Breaking changes, and how to migrate:**
