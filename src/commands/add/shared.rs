@@ -246,9 +246,12 @@ pub fn plan_with(
 ///
 /// Through the shared parser with expansion off: a template may reference
 /// variables it does not define, and nothing here should evaluate them. A file
-/// the parser refuses (a typo halfway down a hand-edited `.env`) is read line by
-/// line instead, so a syntax error elsewhere does not stop `add`, as it never
-/// did.
+/// the parser refuses (a typo halfway down a hand-edited `.env`) is read
+/// lossily, so a syntax error elsewhere does not stop `add`, as it never did.
+///
+/// ⚠️ Lossily, not line by line: a line inside a multiline value is value
+/// text. Read line by line, `KEY=x` there counted as `KEY` being set, so `add`
+/// skipped a variable the file did not have.
 pub(crate) fn read_assignments(path: &Path) -> Result<Option<IndexMap<String, String>>> {
     if !path.exists() {
         return Ok(None);
@@ -259,27 +262,7 @@ pub(crate) fn read_assignments(path: &Path) -> Result<Option<IndexMap<String, St
         allow_expansion: false,
         ..Default::default()
     });
-    if let Ok(map) = parser.parse_content(&text) {
-        return Ok(Some(map));
-    }
-    let mut map = IndexMap::new();
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let line = line.strip_prefix("export ").unwrap_or(line);
-        if let Some((key, value)) = line.split_once('=') {
-            let value = value.trim();
-            let value = value
-                .strip_prefix('"')
-                .and_then(|v| v.strip_suffix('"'))
-                .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
-                .unwrap_or(value);
-            map.insert(key.trim().to_string(), value.to_string());
-        }
-    }
-    Ok(Some(map))
+    Ok(Some(parser.parse_document(&text).vars()))
 }
 
 /// Carry out `plan`: append to each file the names it lacks, rendered by
@@ -839,6 +822,19 @@ mod tests {
     use super::*;
     use crate::schema::models::{VarMetadata, VarSource};
     use tempfile::TempDir;
+
+    /// A file with a syntax error is read lossily, not line by line: 0.11.0
+    /// took `DATABASE_URL=x` inside `P`'s value as set, so `add` skipped it.
+    #[test]
+    fn b1_a_broken_file_does_not_count_a_line_inside_a_value() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".env");
+        fs::write(&path, "P=\"a\nDATABASE_URL=x\nb\"\nbad line\nQ='1'\n").unwrap();
+        let map = read_assignments(&path).unwrap().unwrap();
+        let keys: Vec<&str> = map.keys().map(String::as_str).collect();
+        assert_eq!(keys, ["P", "Q"]);
+        assert_eq!(map["Q"], "1");
+    }
 
     fn vars(pairs: &[(&str, &str)]) -> VarCollection {
         let mut v = VarCollection::default();
