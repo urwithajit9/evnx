@@ -165,20 +165,6 @@ pub fn check_missing_variables(
         .collect()
 }
 
-/// Check: the same key assigned twice in one file.
-///
-/// ⚠️ **The parser cannot report this and never could.** It builds an
-/// `IndexMap`, and `insert` overwrites — so `API_KEY=first` followed by
-/// `API_KEY=second` silently becomes `second`, and the first value is gone
-/// before any check sees the file. Neither `validate` nor `doctor` said a word.
-///
-/// Last-wins is a defensible parsing rule and is what dotenv implementations
-/// generally do; evnx keeps it. What is not defensible is silence. A key written
-/// twice in a `.env` is almost always a merge artefact or a copy-paste, and the
-/// value the author expects is usually the first one.
-///
-/// This reads the file rather than the parsed map, because by the time there is
-/// a map the evidence is gone.
 /// Lines the project's other readers read differently from evnx (RM-04).
 /// Names the readers both ways and never prints a value.
 pub fn check_reader_mismatch(
@@ -218,26 +204,34 @@ pub fn check_reader_mismatch(
         .collect()
 }
 
-pub fn check_duplicate_keys(content: &str, env_path: &str, ignore: &HashSet<String>) -> Vec<Issue> {
+/// Check: the same key assigned twice in one file.
+///
+/// ⚠️ **The parser cannot report this and never could.** It builds an
+/// `IndexMap`, and `insert` overwrites — so `API_KEY=first` followed by
+/// `API_KEY=second` silently becomes `second`, and the first value is gone
+/// before any check sees the file. Neither `validate` nor `doctor` said a word.
+///
+/// Last-wins is a defensible parsing rule and is what dotenv implementations
+/// generally do; evnx keeps it. What is not defensible is silence. A key written
+/// twice in a `.env` is almost always a merge artefact or a copy-paste, and the
+/// value the author expects is usually the first one.
+///
+/// This reads the document's entries rather than the parsed map, because by the
+/// time there is a map the evidence is gone. Entries, not raw lines: a line
+/// inside a multiline value is value text, so `A=1` there is not an assignment.
+pub fn check_duplicate_keys(
+    doc: &crate::core::parser::Document,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
     if ignore.contains(IssueType::DuplicateKey.as_str()) {
         return Vec::new();
     }
 
     // key -> the line numbers it is assigned on, in file order.
-    let mut seen: IndexMap<String, Vec<usize>> = IndexMap::new();
-
-    for (idx, line) in content.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let without_export = trimmed.strip_prefix("export ").unwrap_or(trimmed);
-        if let Some((key, _)) = without_export.split_once('=') {
-            let key = key.trim();
-            if !key.is_empty() {
-                seen.entry(key.to_string()).or_default().push(idx + 1);
-            }
-        }
+    let mut seen: IndexMap<&str, Vec<usize>> = IndexMap::new();
+    for e in &doc.entries {
+        seen.entry(e.key.as_str()).or_default().push(e.span.line);
     }
 
     seen.into_iter()
@@ -252,7 +246,7 @@ pub fn check_duplicate_keys(content: &str, env_path: &str, ignore: &HashSet<Stri
             Issue {
                 severity: "warning".to_string(),
                 issue_type: IssueType::DuplicateKey.as_str().to_string(),
-                variable: key.clone(),
+                variable: key.to_string(),
                 message: format!(
                     "{key} is assigned {} times (lines {places}) — only line {last} takes effect",
                     lines.len()

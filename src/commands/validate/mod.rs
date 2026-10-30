@@ -338,10 +338,10 @@ pub fn run(opts: Options) -> Result<()> {
             ));
         }
 
-        // Reads the file, not the parsed map: `insert` has already discarded
-        // the evidence by the time `vars` exists.
+        // Reads the document, not the parsed map: `insert` has already
+        // discarded the evidence by the time `vars` exists.
         issues.extend(check_duplicate_keys(
-            &raw_env_content,
+            &env_doc,
             &env_path,
             &config.ignore_issues,
         ));
@@ -866,19 +866,14 @@ fn output_json(result: &ValidationResult) -> Result<()> {
 /// A *missing* variable has no line by definition, so those stay on line 1.
 /// Everything else — a placeholder, a weak secret, a boolean trap — is about a
 /// line that exists, and pointing at it is the whole value of an annotation.
-fn line_of(content: &str, key: &str) -> usize {
-    if key.is_empty() {
-        return 1;
-    }
-    content
-        .lines()
-        .enumerate()
-        .find(|(_, line)| {
-            let t = line.trim();
-            let t = t.strip_prefix("export ").unwrap_or(t);
-            t.split_once('=').is_some_and(|(k, _)| k.trim() == key)
-        })
-        .map_or(1, |(idx, _)| idx + 1)
+///
+/// The first assignment, read from the document: a line inside a multiline
+/// value is not an assignment, however much it looks like one.
+fn line_of(doc: &crate::core::parser::Document, key: &str) -> usize {
+    doc.entries
+        .iter()
+        .find(|e| e.key == key)
+        .map_or(1, |e| e.span.line)
 }
 
 /// ⚠️ **One annotation per finding, not two.**
@@ -891,7 +886,9 @@ fn line_of(content: &str, key: &str) -> usize {
 /// `%0A` is how a newline travels inside a workflow command; GitHub renders it
 /// as a line break in the annotation body.
 fn output_github_actions(result: &ValidationResult, env_path: &str) -> Result<()> {
+    // Read again, not reused: `--fix` may have rewritten the file since.
     let content = std::fs::read_to_string(env_path).unwrap_or_default();
+    let doc = crate::core::Parser::default().parse_document(&content);
 
     for issue in &result.issues {
         let level = match issue.severity.as_str() {
@@ -907,7 +904,7 @@ fn output_github_actions(result: &ValidationResult, env_path: &str) -> Result<()
             "::{} file={},line={}::{}",
             level,
             env_path,
-            line_of(&content, &issue.variable),
+            line_of(&doc, &issue.variable),
             body
         );
     }
@@ -918,7 +915,7 @@ fn output_github_actions(result: &ValidationResult, env_path: &str) -> Result<()
         println!(
             "::notice file={},line={}::{verb}: {} → {}",
             env_path,
-            line_of(&content, &fix.variable),
+            line_of(&doc, &fix.variable),
             fix.variable,
             fix.action
         );

@@ -481,6 +481,27 @@ fn f5_duplicate_keys_are_reported() {
     assert_eq!(v["OTHER"], "y");
 }
 
+/// A line inside a multiline value is value text, not an assignment. 0.11.0
+/// read raw lines, so `A=x` inside `P` was a duplicate of the real `A` on
+/// line 4, and the placeholder annotation for `A` pointed at line 2.
+#[test]
+fn b1_a_line_inside_a_multiline_value_is_not_an_assignment() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join(".env"), "P=\"a\nA=x\nb\"\nA=CHANGE_ME\n").unwrap();
+    fs::write(dir.path().join(".env.example"), "P=\nA=\n").unwrap();
+
+    let assert = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["validate", "--format", "github-actions", "--exit-zero"])
+        .assert();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(!out.contains("assigned"), "false duplicate:\n{out}");
+    assert!(
+        out.contains("::error file=.env,line=4::A looks like a placeholder"),
+        "{out}"
+    );
+}
+
 #[test]
 fn f5_a_file_without_duplicates_is_silent() {
     let dir = TempDir::new().unwrap();
