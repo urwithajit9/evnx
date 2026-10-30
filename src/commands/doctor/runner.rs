@@ -583,7 +583,10 @@ impl DiagnosticCheck for EnvFileCheck {
                             // RM-04: one line naming the readers, so a wrong
                             // detection is visible; `validate` lists the lines.
                             let readers = crate::core::dialect::detect(project_root);
-                            let found = crate::core::dialect::mismatches(&content, &readers);
+                            let found = crate::core::dialect::mismatches(
+                                &crate::core::Parser::default().parse_document(&content),
+                                &readers,
+                            );
                             if !found.is_empty() {
                                 if severity == Severity::Ok {
                                     severity = Severity::Warning;

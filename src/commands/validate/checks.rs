@@ -182,7 +182,7 @@ pub fn check_missing_variables(
 /// Lines the project's other readers read differently from evnx (RM-04).
 /// Names the readers both ways and never prints a value.
 pub fn check_reader_mismatch(
-    content: &str,
+    doc: &crate::core::parser::Document,
     env_path: &str,
     project: &std::path::Path,
     ignore: &HashSet<String>,
@@ -191,7 +191,7 @@ pub fn check_reader_mismatch(
         return Vec::new();
     }
     let readers = crate::core::dialect::detect(project);
-    crate::core::dialect::mismatches(content, &readers)
+    crate::core::dialect::mismatches(doc, &readers)
         .into_iter()
         .map(|m| {
             let agree = if m.agree.is_empty() {

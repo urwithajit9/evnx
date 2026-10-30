@@ -256,6 +256,7 @@ pub fn run(opts: Options) -> Result<()> {
     // ─────────────────────────────────────────
     let env_label = crate::core::env_name::name_of(&env_path);
     let raw_env_content = std::fs::read_to_string(&env_path).unwrap_or_default();
+    let env_doc = parser.parse_document(&raw_env_content);
 
     // Resolved once, so the report and the repair cannot disagree about it.
     let weak_secret_policy = if config.rotate_weak_secrets {
@@ -346,7 +347,7 @@ pub fn run(opts: Options) -> Result<()> {
         ));
 
         issues.extend(checks::check_reader_mismatch(
-            &raw_env_content,
+            &env_doc,
             &env_path,
             folder_of(&env_path),
             &config.ignore_issues,
