@@ -1063,3 +1063,63 @@ fn p0_1_a_leading_bom_is_skipped_and_recorded() {
         "a BOM past the start is still refused"
     );
 }
+
+/// `${VAR:-d}` and its five siblings read as Docker Compose reads them (B2 P0.2).
+/// Every one was an undefined-variable error before, so no working file changes.
+/// The values below were measured with Compose v5.3.1; the conformance fixture
+/// `edge_21_default_family` pins the rest.
+#[test]
+fn p0_2_default_and_alternative_forms_read_as_compose_does() {
+    let vars = Parser::default()
+        .parse_content("X=1\nE=\nB=bee\nA=${E:-d}\nC=${E-d}\nD=${E:+alt}\nF=${X+alt}\nG=${NOPE:-$B}/x\nH='${NOPE:-d}'\n")
+        .unwrap();
+    assert_eq!(vars["A"], "d", "`:-` treats empty as unset");
+    assert_eq!(vars["C"], "", "`-` does not");
+    assert_eq!(vars["D"], "");
+    assert_eq!(vars["F"], "alt");
+    assert_eq!(vars["G"], "bee/x", "the default is expanded");
+    assert_eq!(vars["H"], "${NOPE:-d}", "single quotes stay literal");
+
+    let off = Parser::new(ParserConfig {
+        allow_expansion: false,
+        ..ParserConfig::default()
+    });
+    assert_eq!(
+        off.parse_content("A=${NOPE:-d}").unwrap()["A"],
+        "${NOPE:-d}"
+    );
+}
+
+/// `${VAR:?message}` refuses the file with the message, as Compose does, and a
+/// `${` inside a default stays an error (Compose reads it; evnx does not yet).
+#[test]
+fn p0_2_a_required_variable_names_itself_and_its_message() {
+    let err = Parser::default()
+        .parse_content("X=1\nR=${NOPE:?must be set}\n")
+        .unwrap_err();
+    assert!(
+        matches!(&err, ParseError::RequiredVariable { line: 2, var, message }
+            if var == "NOPE" && message == "must be set"),
+        "{err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        "Required variable at line 2: ${NOPE} must be set"
+    );
+    let empty = Parser::default().parse_content("E=\nR=${E:?}").unwrap_err();
+    assert!(
+        empty.to_string().ends_with("${E} is not set or is empty"),
+        "{empty}"
+    );
+    assert_eq!(
+        Parser::default().parse_content("E=\nR=${E?}").unwrap()["R"],
+        ""
+    );
+
+    assert!(matches!(
+        Parser::default()
+            .parse_content("B=1\nA=${NOPE:-${B}}")
+            .unwrap_err(),
+        ParseError::UndefinedVariable { .. }
+    ));
+}

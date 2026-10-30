@@ -146,7 +146,11 @@ impl Parser {
                 // ── ${VAR} syntax ─────────────────────────────────────────────
                 Some(&'{') => {
                     chars.next(); // consume `{`
-                    let var_name: String = chars.by_ref().take_while(|&c| c != '}').collect();
+                    let inner: String = chars.by_ref().take_while(|&c| c != '}').collect();
+                    let (var_name, op, word) = match split_operator(&inner) {
+                        Some((name, op, word)) => (name.to_string(), op, word),
+                        None => (inner.clone(), "", ""),
+                    };
 
                     if stack.contains(&var_name) {
                         return Err(ParseError::CircularExpansion {
@@ -155,21 +159,61 @@ impl Parser {
                         });
                     }
 
-                    match vars.get(&var_name) {
+                    let value = match vars.get(&var_name) {
                         Some(val) => {
                             stack.push(var_name.clone());
                             let expanded =
                                 self.expand_value(val, vars, stack, depth + 1, line_hint)?;
                             stack.pop();
-                            result.push_str(&expanded);
+                            Some(expanded)
                         }
-                        None => {
-                            return Err(ParseError::UndefinedVariable {
-                                line: line_hint,
-                                var: var_name,
-                            });
-                        }
-                    }
+                        None => None,
+                    };
+
+                    // The shell's (and Compose's) meanings. A `:` also treats an
+                    // empty value as unset. The word is expanded in turn, so
+                    // `${A:-$B}` works.
+                    let set = |colon: bool| value.as_ref().filter(|v| !colon || !v.is_empty());
+                    let expanded = match op {
+                        "" => match value {
+                            Some(v) => v,
+                            None => {
+                                return Err(ParseError::UndefinedVariable {
+                                    line: line_hint,
+                                    var: var_name,
+                                });
+                            }
+                        },
+                        ":-" | "-" => match set(op == ":-") {
+                            Some(v) => v.clone(),
+                            None => self.expand_value(word, vars, stack, depth + 1, line_hint)?,
+                        },
+                        ":?" | "?" => match set(op == ":?") {
+                            Some(v) => v.clone(),
+                            None => {
+                                let message = if !word.is_empty() {
+                                    strip_markers(word)
+                                } else if op == ":?" {
+                                    "is not set or is empty".to_string()
+                                } else {
+                                    "is not set".to_string()
+                                };
+                                return Err(ParseError::RequiredVariable {
+                                    line: line_hint,
+                                    var: var_name,
+                                    message,
+                                });
+                            }
+                        },
+                        // ":+" | "+"
+                        _ => match set(op == ":+") {
+                            Some(_) => {
+                                self.expand_value(word, vars, stack, depth + 1, line_hint)?
+                            }
+                            None => String::new(),
+                        },
+                    };
+                    result.push_str(&expanded);
                 }
 
                 // ── $VAR bare syntax ──────────────────────────────────────────
@@ -228,4 +272,21 @@ impl Parser {
 
         Ok(result)
     }
+}
+
+/// Split `NAME:-word` (and `-`, `:?`, `?`, `:+`, `+`) into its parts.
+///
+/// `None` for a plain name, and for a word holding another `${`: the `}` that
+/// closed this reference belonged to that one, so it stays the undefined
+/// variable it was before these forms were read.
+fn split_operator(inner: &str) -> Option<(&str, &str, &str)> {
+    let end = inner.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))?;
+    if end == 0 {
+        return None;
+    }
+    let (name, rest) = inner.split_at(end);
+    let op = rest.get(..if rest.starts_with(':') { 2 } else { 1 })?;
+    let word = &rest[op.len()..];
+    (matches!(op, ":-" | "-" | ":?" | "?" | ":+" | "+") && !word.contains("${"))
+        .then_some((name, op, word))
 }

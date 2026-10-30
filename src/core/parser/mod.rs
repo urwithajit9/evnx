@@ -136,6 +136,15 @@ pub enum ParseError {
     #[error("Undefined variable at line {line}: ${{{var}}} is not defined")]
     UndefinedVariable { line: usize, var: String },
 
+    /// `${VAR:?message}` or `${VAR?message}` named a variable that is not set
+    /// (or, with the `:`, is empty).
+    #[error("Required variable at line {line}: ${{{var}}} {message}")]
+    RequiredVariable {
+        line: usize,
+        var: String,
+        message: String,
+    },
+
     /// Two or more variables reference each other in a cycle.
     #[error("Circular variable expansion at line {line}: {cycle}")]
     CircularExpansion { line: usize, cycle: String },

@@ -24,6 +24,12 @@ in `doctor`'s output should match `.env: Line N:` instead.
   still exits 2; a file with one problem prints exactly what it did before.
 
 ### Fixed
+- **`${VAR:-default}` and its siblings are read as Docker Compose reads them**
+  (B2). `:-`, `-`, `:+`, `+`, `:?` and `?` were all refused as an undefined
+  variable named `VAR:-default`. A default is itself expanded (`${A:-$B}`), and
+  `${VAR:?message}` refuses the file with your message, as Compose does. Single
+  quotes still keep the text as written. One difference remains: a `${...}`
+  inside a default (`${A:-${B}}`) is still an error in evnx.
 - **A `.env` that starts with a UTF-8 byte-order mark is read** (B2). Some
   Windows editors save one. evnx read it into the first key's name and refused
   the file with `Invalid key '\u{feff}K'`, a fault no one could see. It is now skipped,
