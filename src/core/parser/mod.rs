@@ -301,7 +301,7 @@ mod tests;
 
 pub use document::{Comment, Document, Entry, Problem, Span};
 use expand::strip_markers;
-pub use lines::{closes_multiline, line_opens_multiline, opens_multiline};
+pub use lines::{closes_multiline, line_opens_multiline, opens_multiline, strip_export};
 
 impl Parser {
     /// Create a parser with a custom [`ParserConfig`].
@@ -527,7 +527,7 @@ impl Parser {
                 }
             };
             // The same test `split_key_value` strips the prefix with.
-            let exported = line.starts_with("export");
+            let exported = strip_export(line).is_some();
 
             match opens_multiline(&raw_value) {
                 Some(q) if self.config.allow_multiline => {

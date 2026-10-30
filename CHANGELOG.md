@@ -24,6 +24,14 @@ in `doctor`'s output should match `.env: Line N:` instead.
   still exits 2; a file with one problem prints exactly what it did before.
 
 ### Fixed
+- ⚠️ **A key that starts with `export` keeps its whole name** (B2). `export`
+  was stripped as a bare prefix, so `exporter=1` was read as `er=1` and
+  `exports_dir` as `s_dir`, with no warning. It is now a keyword only when
+  whitespace follows it, as in Docker Compose and python-dotenv. **This changes
+  a reading:** a file with such a key now gives it its full name, which is what
+  every other reader gave it. Only lowercase names were affected.
+- **`export =v` and a bare `export` say `` `export` is followed by no key ``**
+  (B2), instead of `Invalid key: ''` and "missing '=' separator".
 - **Text after a closing quote is counted, not quoted, in the error** (B2).
   `A="value" rest` was refused with the stray text in the message, and that
   text is often the rest of a secret, printed to a terminal or a CI log. The

@@ -853,7 +853,8 @@ fn b1_the_document_reads_exactly_as_the_old_parser_did() {
         "A=2",
         "B=x # c",
         "export C=c",
-        "exportD=d",
+        // ⚠️ Not `exportD=d`: the old parser read it as `D`, and B2 P0.4 reads
+        // it as `exportD` on purpose. `p0_4_*` and edge_22 pin the new reading.
         "a_lower=v",
         "1BAD=v",
         "my-key=v",
@@ -1123,4 +1124,36 @@ fn p0_2_a_required_variable_names_itself_and_its_message() {
             .unwrap_err(),
         ParseError::UndefinedVariable { .. }
     ));
+}
+
+/// `export` is a keyword only when whitespace follows it (B2 P0.4). It was
+/// stripped as a bare prefix, so `exporter=1` became `er=1`, silently. Measured
+/// with Compose v5.3.1: it keeps `exporter`, `exports_dir` and `exportD`.
+#[test]
+fn p0_4_export_is_a_keyword_only_before_whitespace() {
+    let doc = Parser::default().parse_document("exporter=1\nexports_dir=/x\nexport\tTAB=3\n");
+    let keys: Vec<(&str, bool)> = doc
+        .entries
+        .iter()
+        .map(|e| (e.key.as_str(), e.exported))
+        .collect();
+    assert_eq!(
+        keys,
+        [("exporter", false), ("exports_dir", false), ("TAB", true)]
+    );
+    assert!(doc.is_clean(), "{:?}", doc.problems);
+    assert_eq!(line_opens_multiline("exporter=\"a"), Some('"'));
+}
+
+/// `export =v` and a bare `export` say what is wrong rather than `Invalid key: ''`.
+#[test]
+fn p0_4_export_with_no_key_says_so() {
+    for content in ["export =v\n", "export\n", "export   \n"] {
+        let err = Parser::default().parse_content(content).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Invalid format at line 1: `export` is followed by no key",
+            "{content:?}"
+        );
+    }
 }

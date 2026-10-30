@@ -63,11 +63,16 @@ impl Parser {
         line: &str,
         line_num: usize,
     ) -> ParseResult<(String, String)> {
-        // Strip optional `export ` prefix.
-        let line = line
-            .strip_prefix("export")
-            .map(|s| s.trim_start())
-            .unwrap_or(line);
+        let (line, exported) = match strip_export(line) {
+            Some(rest) => (rest, true),
+            None => (line, false),
+        };
+        if exported && (line.is_empty() || line.starts_with('=')) {
+            return Err(ParseError::InvalidFormat {
+                line: line_num,
+                message: "`export` is followed by no key".into(),
+            });
+        }
 
         let eq = line.find('=').ok_or_else(|| ParseError::InvalidFormat {
             line: line_num,
@@ -395,10 +400,7 @@ pub fn opens_multiline(raw_value: &str) -> Option<char> {
 /// stripping `export`.
 pub fn line_opens_multiline(line: &str) -> Option<char> {
     let line = line.trim();
-    let line = line
-        .strip_prefix("export")
-        .map(|s| s.trim_start())
-        .unwrap_or(line);
+    let line = strip_export(line).unwrap_or(line);
     let eq = line.find('=')?;
     opens_multiline(&line[eq + 1..])
 }
@@ -408,4 +410,15 @@ pub fn line_opens_multiline(line: &str) -> Option<char> {
 pub fn closes_multiline(line: &str, q: char) -> Option<&str> {
     let trimmed = line.trim_end();
     ends_with_closing_quote(trimmed, q).then(|| &trimmed[..trimmed.len() - q.len_utf8()])
+}
+
+/// What follows a leading `export` keyword, or `None` when there is none.
+///
+/// ⚠️ The keyword needs whitespace after it, or must be the whole line. This was
+/// `strip_prefix("export")`, so `exporter=1` was read as the key `er` and
+/// `exports_dir` as `s_dir`, silently; Docker Compose and python-dotenv keep
+/// both names whole (B2 P0.4).
+pub fn strip_export(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix("export")?;
+    (rest.is_empty() || rest.starts_with(char::is_whitespace)).then(|| rest.trim_start())
 }

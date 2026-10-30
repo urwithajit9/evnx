@@ -23,6 +23,7 @@ use super::{
     models::{Confidence, Finding, ScanResults},
     output::{render, OutputFormat},
 };
+use crate::core::parser::strip_export;
 use crate::utils::fs::display_portable;
 use crate::utils::ui;
 use anyhow::Result;
@@ -480,7 +481,8 @@ impl ScanRunner {
         for p in &doc.problems {
             for (i, line) in p.raw.lines().enumerate() {
                 if let Some((k, v)) = line.split_once('=') {
-                    let k = k.trim().trim_start_matches("export").trim();
+                    let k = k.trim();
+                    let k = strip_export(k).unwrap_or(k);
                     dropped.push((p.span.line + i, k, v.trim()));
                 }
             }
