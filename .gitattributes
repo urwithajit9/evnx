@@ -15,6 +15,12 @@
 # relaxing the line above.
 tests/golden/** text eol=lf
 
+# ⛔ The parser's conformance fixtures are the opposite case: their bytes ARE the
+# test. CRLF, a lone CR, a BOM, a NUL and Latin-1 are what they exist to check, and
+# `eol=lf` above would rewrite the CRLF ones on commit and test LF instead, silently.
+# `-text` turns every conversion off for them.
+tests/fixtures/conformance/** -text
+
 # ⓘ No `.bat`, `.cmd`, `.ps1` or binary files are tracked here today — checked,
 # not assumed. If one is added it needs its own rule: a batch file with LF
 # endings can fail on older Windows shells, and marking a binary as text
