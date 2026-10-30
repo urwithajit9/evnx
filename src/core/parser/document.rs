@@ -92,6 +92,9 @@ pub struct Document {
     /// That order is what makes `problems[0]` the error the strict parser
     /// returns; sort by `span` to show them.
     pub problems: Vec<Problem>,
+    /// The file began with a UTF-8 byte-order mark, which was skipped. A fact
+    /// for `dialect`: python-dotenv keeps it in the first key's name.
+    pub bom: bool,
 }
 
 impl Document {

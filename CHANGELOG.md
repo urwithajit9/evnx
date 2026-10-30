@@ -24,6 +24,12 @@ in `doctor`'s output should match `.env: Line N:` instead.
   still exits 2; a file with one problem prints exactly what it did before.
 
 ### Fixed
+- **A `.env` that starts with a UTF-8 byte-order mark is read** (B2). Some
+  Windows editors save one. evnx read it into the first key's name and refused
+  the file with `Invalid key '\u{feff}K'`, a fault no one could see. It is now skipped,
+  as Docker Compose, Node dotenv and `docker run` skip it. `validate` warns
+  where python-dotenv is a reader, since python-dotenv keeps the mark in the
+  key and leaves the variable unset. `--fix` keeps the mark.
 - **A line inside a multiline value is no longer read as an assignment** (B1).
   Ten readers in six commands read a `.env` line by line beside the parser,
   and each misread the inside of a quoted value. Now one reading serves them

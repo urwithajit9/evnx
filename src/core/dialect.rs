@@ -32,7 +32,8 @@ struct Case {
     fixture: String,
     #[allow(dead_code)]
     key: String,
-    values: IndexMap<String, String>,
+    /// `null` when the reader leaves the key unset (python-dotenv on a BOM).
+    values: IndexMap<String, Option<String>>,
     effect: String,
     fix: String,
 }
@@ -138,8 +139,17 @@ pub struct Mismatch {
     pub fix: &'static str,
 }
 
-/// Which measured case an entry is, if any. Only unquoted values (and `${`
-/// in double quotes) are cases in phase 1.
+/// Which measured case the `i`th entry of `doc` is, if any.
+fn case_of_entry(doc: &Document, i: usize) -> Option<&'static str> {
+    // A BOM is read into the first key by some readers, whatever its value.
+    if i == 0 && doc.bom {
+        return Some("bom");
+    }
+    classify(&doc.entries[i])
+}
+
+/// Which measured case an entry's own text is, if any. Only unquoted values
+/// (and `${` in double quotes) are cases in phase 1.
 ///
 /// ⚠️ An entry, not a raw line: a line inside a multiline value is part of a
 /// value, so `X=#ff0000` there is not an assignment for any reader.
@@ -176,8 +186,8 @@ pub fn mismatches(doc: &Document, readers: &[Reader]) -> Vec<Mismatch> {
         return Vec::new();
     }
     let mut out = Vec::new();
-    for e in &doc.entries {
-        let Some(case_id) = classify(e) else {
+    for (i, e) in doc.entries.iter().enumerate() {
+        let Some(case_id) = case_of_entry(doc, i) else {
             continue;
         };
         let Some(case) = TABLE.cases.iter().find(|c| c.id == case_id) else {
@@ -244,7 +254,8 @@ mod tests {
 
     /// The case of the last entry `content` holds.
     fn case_of(content: &str) -> Option<&'static str> {
-        classify(doc(content).entries.last()?)
+        let d = doc(content);
+        case_of_entry(&d, d.entries.len().checked_sub(1)?)
     }
 
     #[test]
@@ -271,7 +282,7 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 vars.get(&case.key),
-                Some(&case.values["evnx"]),
+                case.values["evnx"].as_ref(),
                 "{}: evnx's column is not what evnx reads",
                 case.id
             );
@@ -314,6 +325,22 @@ mod tests {
         let found = mismatches(&doc(content), &[NODE]);
         let at: Vec<(usize, &str)> = found.iter().map(|m| (m.line, m.key.as_str())).collect();
         assert_eq!(at, [(4, "C")]);
+    }
+
+    /// A BOM is skipped by evnx, Compose and Node, and read into the first
+    /// key by python-dotenv: only python-dotenv differs, on line 1 (P0.1).
+    #[test]
+    fn p0_1_a_bom_is_a_mismatch_for_python_dotenv_only() {
+        let content = "\u{feff}COLOR=#ff0000\nB=1\n";
+        let found = mismatches(
+            &doc(content),
+            &[Reader::Compose, Reader::PythonDotenv, NODE],
+        );
+        let bom: Vec<_> = found.iter().filter(|m| m.case == "bom").collect();
+        assert_eq!(bom.len(), 1, "{found:?}");
+        assert_eq!((bom[0].line, bom[0].key.as_str()), (1, "COLOR"));
+        assert_eq!(bom[0].differ, [Reader::PythonDotenv]);
+        assert!(mismatches(&doc("COLOR=red\n"), &[Reader::PythonDotenv]).is_empty());
     }
 
     #[test]

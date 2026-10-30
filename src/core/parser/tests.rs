@@ -935,7 +935,9 @@ fn b1_the_document_reads_exactly_as_the_old_parser_did() {
     for config in &configs {
         let p = Parser::new(config.clone());
         for f in &files {
-            let old = show(p.legacy_parse_content_located(f));
+            // ⚠️ The one intended difference (v0.12.0 B2 P0.1): a leading BOM
+            // is skipped, where the old parser read it into the first key.
+            let old = show(p.legacy_parse_content_located(f.strip_prefix('\u{feff}').unwrap_or(f)));
             let new = show(p.parse_content_located(f));
             if old != new {
                 differ.push(format!("{config:?}\n{f:?}\n  old {old}\n  new {new}"));
@@ -1035,4 +1037,29 @@ fn b1_an_expansion_error_keeps_its_entry_and_names_its_line() {
     assert_eq!(lines, [2, 4]);
     assert_eq!(doc.vars()["B"], "${NOPE}");
     assert_eq!(doc.vars()["C"], "1");
+}
+
+/// A leading UTF-8 BOM is skipped and recorded (B2 P0.1). It used to be read
+/// into the first key, and the file was refused with an invalid key whose
+/// fault was invisible. Only a leading one: a BOM further down is still text.
+#[test]
+fn p0_1_a_leading_bom_is_skipped_and_recorded() {
+    let doc = Parser::default().parse_document("\u{feff}K=v\nL=w\n");
+    assert!(doc.bom);
+    assert!(doc.is_clean(), "{:?}", doc.problems);
+    assert_eq!(doc.entries[0].key, "K");
+    assert_eq!(doc.entries[0].span, Span::line(1));
+    assert_eq!(
+        Parser::default().parse_content("\u{feff}K=v\n").unwrap()["K"],
+        "v"
+    );
+
+    assert!(!Parser::default().parse_document("K=v\n").bom);
+    let later = Parser::default().parse_document("K=v\n\u{feff}L=w\n");
+    assert!(!later.bom);
+    assert_eq!(
+        later.problems.len(),
+        1,
+        "a BOM past the start is still refused"
+    );
 }

@@ -542,6 +542,14 @@ mod tests {
         assert_eq!(out, "P=new\nQ=1\n");
     }
 
+    /// `--fix` keeps a leading BOM when line 1 is not the line it repairs:
+    /// the parser skips it, the copy of line 1 is still byte for byte (P0.1).
+    #[test]
+    fn p0_1_a_leading_bom_survives_a_fix_elsewhere() {
+        let out = fix("\u{feff}K=v\nA=CHANGE_ME\n", &["A"], &[("A", "fixed")]);
+        assert_eq!(out, "\u{feff}K=v\nA=fixed\n");
+    }
+
     #[test]
     fn an_untouched_line_is_copied_byte_for_byte() {
         let original = "# a comment\n\

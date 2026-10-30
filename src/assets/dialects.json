@@ -1,6 +1,6 @@
 {
   "about": "How each .env reader reads one fixture line per case (RM-04). Every value is measured by running the real loader: scripts/measure-dialects.py, run by .github/workflows/dialects.yml, fails when one differs. Never edit a value by hand.",
-  "measured": "2026-10-28",
+  "measured": "2026-10-30",
   "readers": {
     "evnx": "evnx's own parser (convert --to json)",
     "compose": "Docker Compose v5.3.1, env_file: (docker compose config)",
@@ -78,6 +78,20 @@
       },
       "effect": "",
       "fix": ""
+    },
+    {
+      "id": "bom",
+      "fixture": "\ufeffK=v\n",
+      "key": "K",
+      "values": {
+        "evnx": "v",
+        "compose": "v",
+        "python-dotenv": null,
+        "node-dotenv": "v",
+        "node-dotenv-expand": "v"
+      },
+      "effect": "reads the byte-order mark at the start of the file into the first key's name, so this key is not set",
+      "fix": "Save the file as UTF-8 without a BOM (in VS Code: the encoding in the status bar, then \"Save with Encoding\", \"UTF-8\")."
     }
   ]
 }

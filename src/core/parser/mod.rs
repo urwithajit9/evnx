@@ -435,6 +435,18 @@ impl Parser {
         let mut open: Option<Open> = None;
         let mut last_line = 0;
 
+        // A UTF-8 byte-order mark is an encoding marker, not text: Windows
+        // editors write one, and Docker Compose, Node dotenv and `docker run`
+        // skip it. Read as text it became part of the first key, and the file
+        // was refused with an invalid key whose fault no one could see.
+        let content = match content.strip_prefix('\u{feff}') {
+            Some(rest) => {
+                doc.bom = true;
+                rest
+            }
+            None => content,
+        };
+
         for (idx, raw_line) in content.lines().enumerate() {
             let line_num = idx + 1; // 1-indexed for all user-facing messages
             last_line = line_num;
