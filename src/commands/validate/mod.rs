@@ -1129,6 +1129,9 @@ fn output_github_actions(result: &ValidationResult, env_path: &str) -> Result<()
     // Read again, not reused: `--fix` may have rewritten the file since.
     let content = std::fs::read_to_string(env_path).unwrap_or_default();
     let doc = crate::core::Parser::default().parse_document(&content);
+    // GitHub matches `file=` against repository paths: `.env`, never the
+    // `./.env` that names it in text (RM-32).
+    let env_path = env_path.strip_prefix("./").unwrap_or(env_path);
 
     for issue in &result.issues {
         let level = match issue.severity {

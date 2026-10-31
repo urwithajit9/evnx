@@ -19,6 +19,13 @@ longer printed, since a line without `=` is sometimes a pasted secret.
 in `doctor`'s output should match `.env: Line N:` instead.
 
 ### Added
+- **`EVNX_MASTER_PASSWORD` unlocks vaults without a prompt** (B4, D4), for a
+  machine with no terminal that cannot use an API token. Every use prints a
+  warning to stderr (never the value). It is a variable of its own:
+  `EVNX_PASSWORD`, which opens backup files, never unlocks a vault, so one
+  leaked variable cannot open both. `--password-stdin` still takes precedence,
+  and changing or undoing a master password always asks. In CI, prefer
+  `EVNX_TOKEN`.
 - **`template` reads a template once, left to right** (B3, RM-39). A value
   is never read again as a template: with `A={{B|upper}}` and `B=bee`,
   `{{A|json}}` rendered `"BEE"` in one key order and the literal text in the
@@ -82,6 +89,21 @@ in `doctor`'s output should match `.env: Line N:` instead.
   `$` as `$$`.
 
 ### Changed
+- ⚠️ **One way to name a file: `./.env`** (B4, RM-32). `diff`, `validate` and
+  `restore` printed `.env` while `scan` and `cloud pull` printed `./.env` for
+  the same file; all five now say `./.env` (`.\.env` on Windows), which also
+  keeps a name starting with `-` from reading as a flag when copied into a
+  shell. **`validate --format json` reports `"location": "./.env"`**, so a
+  script matching `".env"` needs updating. GitHub annotations keep
+  `file=.env`, and `diff --format patch` keeps `a/.env`, because programs read
+  those as repository paths. `doctor` is unchanged: it names files relative to
+  the project it checks, not the current folder.
+- **`cloud pull` and `restore` ask the same question the same way** (B4,
+  RM-34). One prompt, "Overwrite ./.env? (the current file is kept as a .bak
+  copy)"; declining prints "Cancelled; ./.env was not changed." and **exits 4
+  in both** (`cloud pull` exited 0, so a script could not tell that nothing was
+  written). `cloud pull` takes `--yes`/`-y`, with `--force` kept as an alias;
+  `restore` already took both.
 - **Library: `Issue.severity` is a `Severity` enum and `Issue.issue_type` an
   `IssueType`** (B2), not strings. `validate --format json` is byte-identical;
   only Rust code using `evnx` as a library sees the change.

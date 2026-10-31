@@ -2,13 +2,13 @@
 ================ D12 ================
 
 $ evnx diff --fail-on missing
-Extra in .env (not in .env.example):
+Extra in ./.env (not in ./.env.example):
   - LOCAL_ONLY
 
-  1 not in .env.example
+  1 not in ./.env.example
 [stderr]
 
-  evnx diff  .env ↔ .env.example
+  evnx diff  ./.env ↔ ./.env.example
 
   values not compared against a template (--values to compare them)
   Docs: https://docs.evnx.dev/cli/commands/diff
@@ -16,17 +16,17 @@ Extra in .env (not in .env.example):
   ok: FIXED I-078: values differ from the template by design; only a missing key fails with --fail-on missing (exit 0)
 
 $ evnx diff --values
-Extra in .env (not in .env.example):
+Extra in ./.env (not in ./.env.example):
   - LOCAL_ONLY
 
 Different values:
   ~ JWT_SECRET
   ~ DEBUG
 
-  1 not in .env.example  ·  2 different values
+  1 not in ./.env.example  ·  2 different values
 [stderr]
 
-  evnx diff  .env ↔ .env.example
+  evnx diff  ./.env ↔ ./.env.example
 
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]
@@ -60,7 +60,7 @@ No verdict: evnx did not run. This is not a clean result.
 
 $ evnx diff --env nope
 [stderr]
-Error: nope does not exist
+Error: ./nope does not exist
 
 Create it with `evnx init`, or point at another file with --env.
 

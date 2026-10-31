@@ -2,6 +2,7 @@ pub mod dotenv_validation;
 pub mod file_ops;
 pub mod file_permissions;
 pub mod fs;
+pub mod path;
 pub mod patterns;
 pub mod prompt;
 pub mod protect;

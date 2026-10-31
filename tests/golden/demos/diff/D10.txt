@@ -2,18 +2,18 @@
 ================ D10 ================
 
 $ evnx diff --env left --example right --values --show-values
-Missing from left (present in right):
+Missing from ./left (present in ./right):
   + H = 
 
 Different values:
   ~ C
-    right: 1
-    left: 
+    ./right: 1
+    ./left: 
 
-  1 missing from left  ·  1 different value
+  1 missing from ./left  ·  1 different value
 [stderr]
 
-  evnx diff  left ↔ right
+  evnx diff  ./left ↔ ./right
 
   Docs: https://docs.evnx.dev/cli/commands/diff
 [exit 1]

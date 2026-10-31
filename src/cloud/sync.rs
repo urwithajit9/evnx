@@ -364,7 +364,7 @@ pub fn push(
     let current = current_version(&client, &vault_ref)?;
     let target_version = current + 1;
 
-    let password = auth::read_password(password_stdin, "Master password")?;
+    let password = auth::read_master_password(password_stdin)?;
     let unlocked = auth::unlock(&client, &password)?;
     let vault_key = unwrap_vault_key(&client, &vault_ref, &unlocked)?;
 
@@ -484,7 +484,7 @@ pub fn pull(
     // lets the order survive the extraction.
     let blob = fetch_blob(&client, &vault_ref, version)?;
 
-    let password = auth::read_password(password_stdin, "Master password")?;
+    let password = auth::read_master_password(password_stdin)?;
     let unlocked = auth::unlock(&client, &password)?;
     let vault_key = unwrap_vault_key(&client, &vault_ref, &unlocked)?;
 
@@ -1018,23 +1018,16 @@ fn confirm_overwrite(
         if production { " (production)" } else { "" }
     );
     // No terminal: say how to go on (I-218), as every other cloud prompt does.
-    // `pull` says `--force`, not `--yes`.
-    crate::utils::prompt::require_terminal_or(&format!(
-        "Add --force to replace {} without being asked (the current file is kept as a .bak copy).",
-        file.display()
-    ))?;
-    let ok = crate::utils::prompt::yes_no()
-        .with_prompt(format!(
-            "Overwrite {}? (the current file is kept as a .bak copy)",
-            file.display()
-        ))
-        .default(false)
-        .interact_opt()?
-        .unwrap_or(false);
-    if !ok {
-        println!("  Cancelled; {} was not changed.", file.display());
+    let label = file.display().to_string();
+    if !crate::utils::prompt::confirm_replace(
+        &label,
+        &format!(
+            "Add --yes to replace {label} without being asked (the current file is kept as a .bak copy)."
+        ),
+    )? {
+        return Err(crate::utils::prompt::Declined.into());
     }
-    Ok(ok)
+    Ok(true)
 }
 
 /// Turn a push failure into something actionable.
@@ -1507,7 +1500,7 @@ pub fn diff_local(
         },
     };
     let blob = fetch_blob(&client, &vault_ref, version)?;
-    let password = auth::read_password(password_stdin, "Master password")?;
+    let password = auth::read_master_password(password_stdin)?;
     let unlocked = auth::unlock(&client, &password)?;
     let vault_key = unwrap_vault_key(&client, &vault_ref, &unlocked)?;
     let remote = zeroize::Zeroizing::new(decrypt_version(&blob, &vault_ref, version, &vault_key)?);

@@ -5,9 +5,9 @@ $ evnx validate --fix
 
   evnx validate  Check environment configuration
 
-✓ Saved fixes to .env — original kept at .env.bak
-! .env is readable by other users (mode 644); evnx keeps the mode you set
-     →  chmod 600 .env
+✓ Saved fixes to ./.env — original kept at ./.env.bak
+! ./.env is readable by other users (mode 644); evnx keeps the mode you set
+     →  chmod 600 ./.env
 
 Fixed (2):
   • SECRET_KEY: "changeme" → <random-hex64>
@@ -20,7 +20,7 @@ Needs your input (2):
     evnx cannot invent these values: fill them in, then run validate again
 
   !  A is assigned 2 times (lines 7, 8) — only line 8 takes effect
-     .env
+     ./.env
      →  Remove the earlier assignments of A, or rename them if they were meant to differ
 
   1 warning  ·  2 fixed  ·  2 need your input
@@ -68,26 +68,26 @@ $ evnx validate --fix --dry-run
   evnx validate  Check environment configuration
 
   ✗  Missing required variable: STRIPE_KEY
-     .env
-     →  Add STRIPE_KEY=<value> to .env
+     ./.env
+     →  Add STRIPE_KEY=<value> to ./.env
      ·  fixable with --fix
 
   ✗  Missing required variable: OPTIONAL_X
-     .env
-     →  Add OPTIONAL_X=<value> to .env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.OPTIONAL_X] in .evnx.toml
+     ./.env
+     →  Add OPTIONAL_X=<value> to ./.env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.OPTIONAL_X] in .evnx.toml
      ·  fixable with --fix
 
   !  A is assigned 2 times (lines 7, 8) — only line 8 takes effect
-     .env
+     ./.env
      →  Remove the earlier assignments of A, or rename them if they were meant to differ
 
   ✗  SECRET_KEY looks like a placeholder
-     .env
+     ./.env
      →  Run: openssl rand -hex 32
      ·  fixable with --fix
 
   !  DEBUG is set to "False" (string, not boolean)
-     .env
+     ./.env
      →  Use false or 0 for proper boolean handling
      ·  fixable with --fix
 
@@ -100,7 +100,7 @@ Would need your input (2):
   • OPTIONAL_X: (new) → (empty)
     evnx cannot invent these values: fill them in, then run validate again
 
-  Dry run — nothing was written: .env is unchanged and no backup was made
+  Dry run — nothing was written: ./.env is unchanged and no backup was made
 
   3 errors  ·  2 warnings
 
@@ -119,7 +119,7 @@ $ evnx validate --fix
   evnx validate  Check environment configuration
 
   ✗  STRIPE_KEY looks like a placeholder
-     .env
+     ./.env
      →  Get from Stripe Dashboard
 
   1 error

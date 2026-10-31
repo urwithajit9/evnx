@@ -2,10 +2,10 @@
 ================ D1 ================
 
 $ evnx diff
-✓ .env and .env.example have the same keys
+✓ ./.env and ./.env.example have the same keys
 [stderr]
 
-  evnx diff  .env ↔ .env.example
+  evnx diff  ./.env ↔ ./.env.example
 
   values not compared against a template (--values to compare them)
   Docs: https://docs.evnx.dev/cli/commands/diff

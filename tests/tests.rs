@@ -333,7 +333,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
         // Against the template only key names are compared (I-078), and the
         // message says so rather than claiming values it did not check.
         .stdout(predicate::str::contains(
-            ".env and .env.example have the same keys",
+            "./.env and ./.env.example have the same keys",
         ));
 }
 
@@ -353,7 +353,7 @@ SECRET_KEY=test
         .current_dir(dir.path())
         .assert()
         .code(1) // ✅ Exit 1 when differences exist
-        .stdout(predicate::str::contains("Missing from .env"));
+        .stdout(predicate::str::contains("Missing from ./.env"));
 }
 
 // T-004: `test_diff_json_output` was here, commented out; tests/golden_output.rs locks

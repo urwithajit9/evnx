@@ -89,7 +89,7 @@ pub fn run(
     // *our* stdin. Whatever remains on stdin is inherited by the child, so a
     // command that also reads stdin sees the rest of the stream, not the
     // password line.
-    let password = auth::read_password(password_stdin, "Master password")?;
+    let password = auth::read_master_password(password_stdin)?;
     let unlocked = auth::unlock(&client, &password)?;
     let vault_key = super::sync::unwrap_vault_key(&client, &vault_ref, &unlocked)?;
     let mut plaintext = super::sync::decrypt_version(&blob, &vault_ref, version, &vault_key)?;

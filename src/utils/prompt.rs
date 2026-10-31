@@ -319,6 +319,33 @@ impl Pending {
     }
 }
 
+/// Replace an existing file on a yes: the one question `cloud pull` and
+/// `restore` ask (RM-34). `hint` is the no-terminal way out, naming the flag.
+///
+/// On a no it prints "Cancelled; X was not changed." and returns `Ok(false)`;
+/// the caller then exits 4 ([`Declined`] for a command with no exit map of its
+/// own), so a script can tell that nothing happened (D6).
+pub fn confirm_replace(label: &str, hint: &str) -> Result<bool> {
+    require_terminal_or(hint)?;
+    let ok = yes_no()
+        .with_prompt(format!(
+            "Overwrite {label}? (the current file is kept as a .bak copy)"
+        ))
+        .default(false)
+        .interact_opt()?
+        .unwrap_or(false);
+    if !ok {
+        println!("  Cancelled; {label} was not changed.");
+    }
+    Ok(ok)
+}
+
+/// The overwrite question was answered no. Already reported, so `main` prints
+/// nothing more and exits 4, `restore`'s code for the same answer.
+#[derive(Debug, thiserror::Error)]
+#[error("cancelled")]
+pub struct Declined;
+
 /// A destructive action's yes/no, the same way in every command (A-39, DEC-AU7).
 ///
 /// * `yes` (`--yes`/`-y`): no question, no stdin read — `Ok(true)`.

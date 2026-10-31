@@ -9,8 +9,8 @@
       "type": "extra_variable",
       "variable": "EXTRA",
       "message": "Extra variable not in .env.example: EXTRA",
-      "location": ".env",
-      "suggestion": "Add EXTRA to .env.example or remove from .env",
+      "location": "./.env",
+      "suggestion": "Add EXTRA to .env.example or remove from ./.env",
       "auto_fixable": false
     }
   ],

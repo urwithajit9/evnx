@@ -5,8 +5,8 @@ $ evnx validate
 
   evnx validate  Check environment configuration
 
-  !  .env is not covered by .gitignore — `git add .` would commit it
-     .env
+  !  ./.env is not covered by .gitignore — `git add .` would commit it
+     ./.env
      →  Add it to .gitignore (`evnx doctor --fix` adds `.env*` and keeps `.env.example`)
 
   1 warning

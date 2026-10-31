@@ -117,7 +117,7 @@ Full guide: https://docs.evnx.dev/cli/commands/diff
 
 $ evnx diff
 [stderr]
-Error: .env does not exist
+Error: ./.env does not exist
 
 Create it with `evnx init`, or point at another file with --env.
 
