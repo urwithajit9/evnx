@@ -137,6 +137,28 @@ in `doctor`'s output should match `.env: Line N:` instead.
   named only the first, so a file with three problems took three runs. It
   still exits 2; a file with one problem prints exactly what it did before.
 
+### For contributors (B6, RM-38, RM-44)
+- **A classifier corpus**, `tests/fixtures/classify-corpus.tsv`: 152
+  `name=value` pairs with the verdict each shared question gives (holds a
+  secret, placeholder at the Strict and Lenient levels, masked text).
+  `tests/classify_corpus.rs` reports every row that disagrees, not the first;
+  `UPDATE_CORPUS=1` refills it for review. It found one inconsistency, pinned as
+  `known_strict_placeholders_lenient_does_not_share`: RFC 2606 documentation
+  hosts (`https://api.example.com/v1`) are placeholders to `validate` but not to
+  `scan` and `diff`.
+- **`scripts/run-doc-examples.py <evnx> <evnx-web>`** runs every `evnx …` line
+  in the guides against a seeded project, offline, and sorts each into ran,
+  needs-context, error or skipped. Not in CI yet. First run: 577 examples, 197
+  ran, 7 errors (one is a stale `convert --to k8s-secret`).
+- **Cloud tests against a real server.** `tests/e2e_cloud.rs` drives the CLI
+  through register, verify, login, vault create, push, a byte-identical pull,
+  share, revoke and a refused pull, on a real evnx-server; it is skipped unless
+  `EVNX_E2E_SERVER` is set. Its first check is I-313: a second share sent
+  straight to the API is a 409 and changes nothing. Verified both ways: it
+  passes on the server production runs (`d2663fa`) and fails on one from before
+  the fix (`8ffdf10`, which answers 201). `.github/workflows/cloud-e2e.yml`
+  runs it nightly against that image, never on pull requests.
+
 ### Fixed
 - ⚠️ **A key that starts with `export` keeps its whole name** (B2). `export`
   was stripped as a bare prefix, so `exporter=1` was read as `er=1` and
