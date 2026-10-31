@@ -51,6 +51,11 @@ in `doctor`'s output should match `.env: Line N:` instead.
   `$` as `$$`.
 
 ### Changed
+- **A refused key says why** (B2). `my.key`, `my-key` and `1FOO` are still
+  refused, since a shell cannot hold them, and the message now says so and
+  that Docker Compose and python-dotenv accept them (measured). Other names
+  state the rule, and strict mode says it requires uppercase. Accepting these
+  keys is planned for 0.13.0.
 - **`validate` lists every problem in a file that does not parse** (B1). It
   named only the first, so a file with three problems took three runs. It
   still exits 2; a file with one problem prints exactly what it did before.

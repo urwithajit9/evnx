@@ -104,6 +104,27 @@ pub fn is_valid_key(key: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// Why `key` was refused (D12). Compose and python-dotenv were measured
+/// accepting `.`, `-`, a leading digit and non-ASCII letters, and Compose
+/// refusing `/`, `@` and a space, so only the first set says they accept it.
+fn key_problem(key: &str) -> &'static str {
+    if key.is_empty() {
+        "a key cannot be empty"
+    } else if is_valid_key(key) {
+        "strict mode requires uppercase keys"
+    } else if key
+        .chars()
+        .all(|c| c.is_alphanumeric() || "_.-".contains(c))
+    {
+        concat!(
+            "a shell cannot hold this name, so evnx refuses it, though Docker Compose ",
+            "and python-dotenv accept it; use letters, digits and _, not starting with a digit"
+        )
+    } else {
+        "use letters, digits and _, not starting with a digit"
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ParseError {
     /// The file is not there at all.
@@ -127,8 +148,9 @@ pub enum ParseError {
     #[error("Invalid format at line {line}: {message}")]
     InvalidFormat { line: usize, message: String },
 
-    /// A key contains characters outside `[A-Za-z_][A-Za-z0-9_]*`.
-    #[error("Invalid key at line {line}: '{key}' (keys must match [A-Za-z_][A-Za-z0-9_]*)")]
+    /// A key contains characters outside `[A-Za-z_][A-Za-z0-9_]*`, or is not
+    /// uppercase in strict mode. The message says which (D12).
+    #[error("Invalid key at line {line}: '{key}': {}", key_problem(.key))]
     InvalidKey { line: usize, key: String },
 
     /// A `${VAR}` or `$VAR` reference names a variable that was not defined

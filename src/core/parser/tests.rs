@@ -1248,3 +1248,34 @@ fn p0_7_a_reference_read_differently_top_to_bottom_is_recorded() {
         .order_differences
         .is_empty());
 }
+
+/// The InvalidKey message says why (D12): a name Compose and python-dotenv
+/// accept (measured: `.`, `-`, a leading digit) says so; one Compose refuses
+/// (`/`) states the rule; strict mode names its own reason.
+#[test]
+fn p0_9_an_invalid_key_says_why() {
+    let msg = |p: &Parser, content: &str| p.parse_content(content).unwrap_err().to_string();
+    let p = Parser::default();
+    for key in ["my.key", "my-key", "1FOO"] {
+        assert_eq!(
+            msg(&p, &format!("{key}=1\n")),
+            format!(
+                "Invalid key at line 1: '{key}': a shell cannot hold this name, so evnx refuses \
+                 it, though Docker Compose and python-dotenv accept it; use letters, digits \
+                 and _, not starting with a digit"
+            )
+        );
+    }
+    assert_eq!(
+        msg(&p, "a/b=1\n"),
+        "Invalid key at line 1: 'a/b': use letters, digits and _, not starting with a digit"
+    );
+    let strict = Parser::new(ParserConfig {
+        strict: true,
+        ..ParserConfig::default()
+    });
+    assert_eq!(
+        msg(&strict, "lower=1\n"),
+        "Invalid key at line 1: 'lower': strict mode requires uppercase keys"
+    );
+}
