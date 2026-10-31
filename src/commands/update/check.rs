@@ -64,7 +64,7 @@ fn latest_release_url() -> String {
     LATEST_RELEASE.to_string()
 }
 
-pub fn run(channel: Channel, json: bool) -> Result<Verdict> {
+pub fn run(channel: Channel, json: bool, other_copies: usize) -> Result<Verdict> {
     let quiet = ui::is_quiet();
 
     // Say what is about to happen before it happens: this is the only network
@@ -80,7 +80,10 @@ pub fn run(channel: Channel, json: bool) -> Result<Verdict> {
 
     let report = Report::new(env!("CARGO_PKG_VERSION"), &fetch()?, channel);
     if json {
-        println!("{}", serde_json::to_string_pretty(&report.payload())?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report.payload(other_copies))?
+        );
     } else if quiet {
         // DEC-SF5: the status line and the command.
         println!("{}", report.status_line());
@@ -148,6 +151,8 @@ struct Payload<'a> {
     /// `null` when evnx cannot name one command (see [`Channel::candidates`]).
     command: Option<&'static str>,
     release_url: &'a str,
+    /// Other copies of evnx on this machine: `evnx update --list` names them.
+    other_copies: usize,
 }
 
 impl Report {
@@ -174,7 +179,7 @@ impl Report {
         }
     }
 
-    fn payload(&self) -> Payload<'_> {
+    fn payload(&self, other_copies: usize) -> Payload<'_> {
         Payload {
             schema: SCHEMA,
             installed: self.installed,
@@ -187,6 +192,7 @@ impl Report {
             channel: self.channel.id(),
             command: self.channel.upgrade_command(),
             release_url: &self.release_url,
+            other_copies,
         }
     }
 
@@ -343,7 +349,7 @@ mod tests {
     #[test]
     fn t_i198_the_payload_names_status_channel_and_command() {
         let r = Report::new("0.6.0", &release("v0.7.0", Some("u")), Channel::Cargo);
-        let v = serde_json::to_value(r.payload()).unwrap();
+        let v = serde_json::to_value(r.payload(0)).unwrap();
         assert_eq!(
             v,
             serde_json::json!({
@@ -354,9 +360,10 @@ mod tests {
                 "channel": "cargo",
                 "command": "cargo install evnx --all-features --force",
                 "release_url": "u",
+                "other_copies": 0,
             })
         );
         let r = Report::new("0.6.0", &release("v0.7.0", Some("u")), Channel::Unknown);
-        assert!(serde_json::to_value(r.payload()).unwrap()["command"].is_null());
+        assert!(serde_json::to_value(r.payload(0)).unwrap()["command"].is_null());
     }
 }

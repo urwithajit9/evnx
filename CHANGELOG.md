@@ -19,6 +19,26 @@ longer printed, since a line without `=` is sometimes a pasted secret.
 in `doctor`'s output should match `.env: Line N:` instead.
 
 ### Added
+- **`evnx update --list`: every copy of evnx on this machine** (B5, RM-42).
+  An older copy earlier on `PATH` runs instead of a new install, silently; it
+  happened on the maintainer's own machines. `--list` walks `PATH` in order,
+  then the folders installers use (cargo, npm, pipx, Homebrew, `~/.local/bin`),
+  counts a symlink and its target once, marks the copy that runs, and gives each
+  copy's version and the command that removes it. It recommends keeping the
+  newest, and says when the copy that runs is older. Versions come from what the
+  installer left (Homebrew's Cellar, pip's dist-info, npm's `package.json`, the
+  install script's receipt); a copy with none is run with `--version`, killed
+  after two seconds, and the output says so (D7). No network; exit 0 however
+  many copies (D8). `--json` gives `count` and `copies`.
+- **Plain `update` and `--check` mention other copies** in one line, and
+  `update --check --json` gains `other_copies`. Plain `update` also says how
+  old this build's source is, from the commit date compiled in by `build.rs`
+  (`SOURCE_DATE_EPOCH` wins, for reproducible builds).
+- **The install script leaves a receipt**, `install-receipt.json` beside evnx's
+  settings, naming the file it wrote and its version. `update` reads it before
+  guessing a channel from the path.
+- **npm and Homebrew warn about a shadowing copy.** A global npm install warns
+  when another `evnx` comes first on `PATH`; Homebrew's caveats say how to check.
 - **`EVNX_MASTER_PASSWORD` unlocks vaults without a prompt** (B4, D4), for a
   machine with no terminal that cannot use an API token. Every use prints a
   warning to stderr (never the value). It is a variable of its own:
@@ -91,9 +111,10 @@ in `doctor`'s output should match `.env: Line N:` instead.
 ### Changed
 - ⚠️ **One way to name a file: `./.env`** (B4, RM-32). `diff`, `validate` and
   `restore` printed `.env` while `scan` and `cloud pull` printed `./.env` for
-  the same file; all five now say `./.env` (`.\.env` on Windows), which also
-  keeps a name starting with `-` from reading as a flag when copied into a
-  shell. **`validate --format json` reports `"location": "./.env"`**, so a
+  the same file; all five now say `./.env`, on Windows too (except `cloud
+  pull`, which keeps `.\.env` there). The `./` also keeps a name starting with
+  `-` from reading as a flag when copied into a shell.
+  **`validate --format json` reports `"location": "./.env"`**, so a
   script matching `".env"` needs updating. GitHub annotations keep
   `file=.env`, and `diff --format patch` keeps `a/.env`, because programs read
   those as repository paths. `doctor` is unchanged: it names files relative to

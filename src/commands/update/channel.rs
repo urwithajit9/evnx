@@ -117,6 +117,11 @@ impl Channel {
     /// the binary (see the module docs). Evidence on disk wins over a path
     /// pattern.
     pub fn from_install(exe: &Path) -> Self {
+        // RM-42: the install script's receipt names the file it wrote. Exact,
+        // where every check below is a pattern.
+        if receipt_version(exe).is_some() {
+            return Self::Script;
+        }
         // Only the system Python's prefixes: `pip --user` (`~/.local`) and a
         // system pip (`/usr/local`, `/usr`). A pip `--prefix` elsewhere is not
         // governed by the system's marker.
@@ -320,6 +325,37 @@ fn has_record(dir: &Path) -> bool {
             name.starts_with("evnx-") && name.ends_with(".dist-info")
         })
     })
+}
+
+/// The version in pip's `evnx-<version>.dist-info` record for `exe`.
+pub(super) fn pip_version(exe: &Path) -> Option<String> {
+    let prefix = exe.parent().and_then(Path::parent)?;
+    site_packages(prefix).iter().find_map(|d| {
+        std::fs::read_dir(d).ok()?.flatten().find_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let v = name.strip_prefix("evnx-")?.strip_suffix(".dist-info")?;
+            Some(v.to_string())
+        })
+    })
+}
+
+/// `install-receipt.json`, which `scripts/install.sh` writes beside evnx's
+/// other settings (`EVNX_CONFIG_DIR`, else the platform's config folder).
+fn receipt_file() -> Option<PathBuf> {
+    match std::env::var_os("EVNX_CONFIG_DIR").filter(|d| !d.is_empty()) {
+        Some(d) => Some(PathBuf::from(d)),
+        None => dirs::config_dir().map(|d| d.join("evnx")),
+    }
+    .map(|d| d.join("install-receipt.json"))
+}
+
+/// The version the install script recorded, when its receipt names `exe`.
+pub(super) fn receipt_version(exe: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(receipt_file()?).ok()?;
+    let r: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let path = std::fs::canonicalize(r["path"].as_str()?).ok()?;
+    let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
+    (path == exe).then(|| r["version"].as_str().map(str::to_string))?
 }
 
 /// Where a `PathBuf` is wanted rather than a `&Path`.

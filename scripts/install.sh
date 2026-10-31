@@ -357,6 +357,26 @@ VERSION=$("$TARGET_FILE" --version | awk '{print $2}')
 echo
 info "✓ Installed evnx $VERSION to $TARGET_FILE"
 
+# ── A receipt, so `evnx update` knows this copy is ours (RM-42) ─────────────
+#
+# Beside evnx's other settings: EVNX_CONFIG_DIR, else the folder Rust's
+# `dirs::config_dir` names. Best effort: an install that cannot write it still
+# worked, and `evnx update` falls back to reading the path.
+if [ -n "${EVNX_CONFIG_DIR:-}" ]; then
+    RECEIPT_DIR="$EVNX_CONFIG_DIR"
+elif [ "$(uname -s)" = "Darwin" ]; then
+    RECEIPT_DIR="$HOME/Library/Application Support/evnx"
+else
+    RECEIPT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/evnx"
+fi
+json_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+if mkdir -p "$RECEIPT_DIR" 2>/dev/null; then
+    printf '{\n  "schema": 1,\n  "channel": "script",\n  "path": "%s",\n  "version": "%s",\n  "installed": "%s"\n}\n' \
+        "$(json_str "$TARGET_FILE")" "$(json_str "$VERSION")" \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$RECEIPT_DIR/install-receipt.json" 2>/dev/null \
+        || warn "Could not write $RECEIPT_DIR/install-receipt.json (evnx update will guess the channel instead)"
+fi
+
 # ── Which copy runs when you type `evnx` (UP-11b, UP-11d) ────────────────────
 FIRST=$(command -v "$BINARY_NAME" 2>/dev/null || true)
 ON_PATH=true

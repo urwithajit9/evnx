@@ -187,7 +187,12 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: cargo build --release --all-features --target x86_64-unknown-linux-musl
       - run: cargo install cross --locked --version 0.2.5
+      # Its own target folder: the host build above leaves build-script
+      # binaries linked against the runner's glibc, which cross's older
+      # container cannot run (evnx's build.rs, RM-42).
       - run: cross build --release --all-features --target aarch64-unknown-linux-musl
+        env:
+          CARGO_TARGET_DIR: target/cross
 
   audit:
     name: Security audit

@@ -735,3 +735,109 @@ fn up3_commands_about_the_binary_do_not_read_the_project_config() {
     let p = Project::new().file(".evnx.toml", "[scan\n");
     run(p.path(), &["validate"]).assert_code(2);
 }
+
+/// RM-42: the install script's receipt names the file it wrote, and wins over
+/// a path no pattern recognises. A receipt naming another file is ignored.
+#[test]
+fn rm42_the_install_receipt_is_read_first() {
+    let install = Install::at("opt/tools/bin");
+    let cfg = tempfile::TempDir::new().unwrap();
+    let receipt = |path: &std::path::Path| {
+        std::fs::write(
+            cfg.path().join("install-receipt.json"),
+            format!(
+                r#"{{"schema":1,"channel":"script","path":{},"version":"9.9.9"}}"#,
+                serde_json::to_string(&path.display().to_string()).unwrap()
+            ),
+        )
+        .unwrap();
+    };
+    let env = [("EVNX_CONFIG_DIR", cfg.path().to_str().unwrap())];
+
+    receipt(install.exe());
+    install
+        .run_with(&["update"], &env)
+        .assert_contains("Installed via the install script. Upgrade with:");
+
+    receipt(cfg.path());
+    install
+        .run_with(&["update"], &env)
+        .assert_contains("could not tell how evnx was installed");
+}
+
+/// RM-42 (D7, D8): `--list` walks PATH in order, collapses a symlink to the
+/// same file, names the copy that runs, reads versions, makes no network
+/// request, and exits 0 with several copies.
+#[cfg(unix)]
+#[test]
+fn rm42_update_list_names_every_copy_in_path_order() {
+    use std::os::unix::fs::PermissionsExt;
+    let t = tempfile::TempDir::new().unwrap();
+    let stub = |dir: &str, version: &str| {
+        let d = t.path().join(dir);
+        std::fs::create_dir_all(&d).unwrap();
+        let p = d.join("evnx");
+        std::fs::write(&p, format!("#!/bin/sh\necho 'evnx {version}'\n")).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        d
+    };
+    let old = stub("old", "0.10.0");
+    let new = stub("new", "0.11.0");
+    let link = t.path().join("link");
+    std::fs::create_dir_all(&link).unwrap();
+    std::os::unix::fs::symlink(new.join("evnx"), link.join("evnx")).unwrap();
+    let install = Install::at("bin");
+    let path = std::env::join_paths([
+        old.clone(),
+        link,
+        new.clone(),
+        install.exe().parent().unwrap().to_path_buf(),
+    ])
+    .unwrap();
+    let env = [
+        ("PATH", path.to_str().unwrap()),
+        ("HOME", t.path().to_str().unwrap()),
+        ("EVNX_API_URL", "http://127.0.0.1:9"),
+    ];
+
+    let out = install.run_with(&["update", "--list", "--json"], &env);
+    out.assert_code(0);
+    let json: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    let copies = json["copies"].as_array().unwrap();
+    let ours: Vec<_> = copies
+        .iter()
+        .filter(|c| {
+            c["path"]
+                .as_str()
+                .unwrap()
+                .starts_with(t.path().to_str().unwrap())
+        })
+        .map(|c| (c["version"].as_str().unwrap(), c["runs"].as_bool().unwrap()))
+        .collect();
+    // The symlink and its target are one copy: the first place it was found.
+    assert_eq!(
+        ours,
+        [("0.10.0", true), ("0.11.0", false)],
+        "{}",
+        out.stdout
+    );
+    let this = copies.iter().find(|c| c["this"] == true).unwrap();
+    assert_eq!(this["version_from"], "self");
+
+    let out = install.run_with(&["update", "--list"], &env);
+    out.assert_code(0);
+    out.assert_contains("the copy that runs is older than");
+    out.assert_contains("version from running it");
+
+    let out = install.run_with(&["update"], &env);
+    out.assert_contains("other copies of evnx are on this machine: evnx update --list");
+}
+
+/// `--json` alone has nothing to describe.
+#[test]
+fn rm42_json_needs_check_or_list() {
+    Install::at("bin")
+        .run(&["update", "--json"])
+        .assert_code(2)
+        .assert_contains("--json goes with --check or --list");
+}

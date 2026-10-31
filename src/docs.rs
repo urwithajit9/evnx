@@ -326,9 +326,14 @@ pub const UPDATE: CommandDoc = CommandDoc {
     description: "How to upgrade, and whether a newer release exists",
     after_help: "\
 Exit codes:\n\
-\x20 0  without --check, always; with it, this is the latest release or newer\n\
+\x20 0  without --check, always (--list too, however many copies it finds);\n\
+\x20    with it, this is the latest release or newer\n\
 \x20 1  --check: a newer release exists\n\
 \x20 2  --check could not tell: no network support, no answer, or rate-limited\n\
+\n\
+More than one evnx installed? `evnx update --list` shows each copy, its\n\
+version, which one runs, and how to remove the rest. Only --check uses the\n\
+network.\n\
 \n\
 -q prints only the upgrade command; with --check, the status line and the command.\n\
 \n\
