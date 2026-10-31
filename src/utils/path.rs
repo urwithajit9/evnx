@@ -5,11 +5,15 @@
 //! as typed) no longer disagree about the same file. The `./` also keeps a name
 //! starting with `-` from reading as a flag when it is copied into a shell.
 
-use std::path::{Path, MAIN_SEPARATOR};
+use std::path::Path;
 
-/// `path` as output names it. A relative path gets `./` (`.\` on Windows)
-/// unless it already starts with `.` or `..` as a component. An absolute path,
-/// and `-` or `<stdin>` for standard input, are left alone.
+/// `path` as output names it. A relative path gets `./` unless it already
+/// starts with `.` or `..` as a component. An absolute path, and `-` or
+/// `<stdin>` for standard input, are left alone.
+///
+/// ⚠️ `./` on Windows too, never `.\`: `validate --format json` carries this,
+/// and a report must not change with the machine that wrote it (`scan` made
+/// the same choice for its machine-readable output). Windows opens `./.env`.
 ///
 /// shortcut: an absolute path inside the current folder stays absolute; make it
 /// relative if a command starts receiving absolute paths by default.
@@ -26,7 +30,7 @@ pub fn label(path: &str) -> String {
     {
         return path.to_string();
     }
-    format!(".{MAIN_SEPARATOR}{path}")
+    format!("./{path}")
 }
 
 #[cfg(test)]
@@ -35,10 +39,9 @@ mod tests {
 
     #[test]
     fn rm32_one_form_for_a_file() {
-        let s = std::path::MAIN_SEPARATOR;
-        assert_eq!(label(".env"), format!(".{s}.env"));
-        assert_eq!(label("sub/.env.prod"), format!(".{s}sub/.env.prod"));
-        assert_eq!(label("-flagish"), format!(".{s}-flagish"));
+        assert_eq!(label(".env"), "./.env");
+        assert_eq!(label("sub/.env.prod"), "./sub/.env.prod");
+        assert_eq!(label("-flagish"), "./-flagish");
         for kept in ["./.env", "../.env", ".", "-", "<stdin>", ""] {
             assert_eq!(label(kept), kept);
         }
