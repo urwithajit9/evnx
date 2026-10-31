@@ -225,7 +225,7 @@ jobs:
       # prefix keeps this step independent of whatever other jobs choose to
       # upload later.
       - name: Download the binary artifacts
-        uses: dawidd6/action-download-artifact@07ab29fd4a977ae4d2b275087cf67563dfdf0295 # v9
+        uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
         with:
           run_id: ${{ env.RELEASE_RUN_ID }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
