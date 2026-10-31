@@ -22,6 +22,15 @@ pub static EMAIL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").expect("Email regex is valid")
 });
 
+/// A finding's `path:line`. Line 0 is input with no lines (JSON): `path:—`.
+fn at(path: &str, line: usize) -> String {
+    if line == 0 {
+        format!("{path}:—")
+    } else {
+        format!("{path}:{line}")
+    }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Helper Predicates
 // ─────────────────────────────────────────────────────────────
@@ -185,7 +194,7 @@ pub fn check_reader_mismatch(
                     crate::core::dialect::names(&m.differ),
                     m.effect
                 ),
-                location: format!("{env_path}:{}", m.line),
+                location: at(env_path, m.line),
                 suggestion: Some(m.fix.to_string()),
                 auto_fixable: false,
             }
@@ -228,7 +237,7 @@ pub fn check_expansion_order(
                      so they read a different value for {} than evnx does",
                     d.key, d.line, d.key
                 ),
-                location: format!("{env_path}:{}", d.line),
+                location: at(env_path, d.line),
                 suggestion: Some(
                     "Assign each variable above the lines that use it. From 0.13.0 evnx also \
                      expands top to bottom, so this value will change"
@@ -259,7 +268,7 @@ pub fn check_nul_bytes(
                 "{} (line {}): a NUL byte inside the value. No process can receive it",
                 e.key, e.span.line
             ),
-            location: format!("{env_path}:{}", e.span.line),
+            location: at(env_path, e.span.line),
             suggestion: Some(
                 "Remove the NUL byte. It usually comes from a file saved as UTF-16, or a binary paste"
                     .to_string(),
@@ -290,7 +299,7 @@ pub fn check_lone_carriage_returns(
                  python-dotenv and Node dotenv end the line there and read what follows as another variable",
                 e.key, e.span.line
             ),
-            location: format!("{env_path}:{}", e.span.line),
+            location: at(env_path, e.span.line),
             suggestion: Some(
                 "Save the file with LF line endings. A carriage return on its own is the \
                  line ending of classic Mac OS, or a paste from one"

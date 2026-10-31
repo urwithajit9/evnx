@@ -41,6 +41,12 @@ in `doctor`'s output should match `.env: Line N:` instead.
   is unchanged in this release, and changes in 0.13.0**, when evnx expands top
   to bottom as well.
 
+- **`validate --env -` reads stdin, and `--input-format json` reads JSON**
+  (B2). JSON is a flat `{"KEY": "value"}` object or what
+  `evnx parse --format json --values` prints; the format is never guessed,
+  since `.env` text may start with `{`. A finding on input with no lines
+  reads `<stdin>:—`. `--fix` refuses both, since there is no file to rewrite,
+  and an empty pipe is an error rather than a pass.
 - **`validate` warns about `$$` in a project Docker Compose reads** (B2).
   Compose reads `$$` as one `$`, unquoted and in double quotes; evnx keeps both
   dollars, as python-dotenv and Node dotenv do. A random password holding `$$`

@@ -40,6 +40,8 @@ pub struct Options {
     /// The env file, already resolved from `--env`, `--env-name` or
     /// `[defaults] env_name`.
     pub env: String,
+    /// `--input-format`: `dotenv` or `json`.
+    pub input_format: String,
     pub example: String,
     pub strict: bool,
     pub fix: bool,
@@ -69,6 +71,96 @@ enum Format {
 }
 
 /// The lowest severity that fails the run (`--fail-on`, `[validate] fail_on`).
+/// How `--env` is read (B2). Never inferred (D3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputFormat {
+    Dotenv,
+    Json,
+}
+
+/// How a finding names stdin, as `scan -` does.
+const STDIN_LABEL: &str = "<stdin>";
+
+/// `--env -`: what is piped in. Refused from a terminal, and when empty:
+/// `cat missing | evnx validate --env -` pipes nothing.
+fn read_stdin() -> Result<String> {
+    use std::io::{IsTerminal as _, Read as _};
+    if std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "`--env -` reads what is piped into evnx, and nothing is: \
+             `cat .env | evnx validate --env -`"
+        );
+    }
+    let mut text = String::new();
+    std::io::stdin()
+        .lock()
+        .read_to_string(&mut text)
+        .context("reading stdin (it must be UTF-8 text)")?;
+    if text.is_empty() {
+        anyhow::bail!(
+            "nothing was piped into `evnx validate --env -`, so nothing was checked. \
+             Check the command before the pipe."
+        );
+    }
+    Ok(text)
+}
+
+/// `--input-format json` (B2): a flat `{"KEY": "value"}` object, or
+/// `evnx parse --format json --values`'s output. Every line number is 0: JSON
+/// has no line to point at. Never names a value in an error.
+fn document_from_json(text: &str) -> Result<crate::core::parser::Document> {
+    use serde_json::Value;
+    let json: Value = serde_json::from_str(text).context("it is not valid JSON")?;
+    let Value::Object(object) = json else {
+        anyhow::bail!("expected an object of variables");
+    };
+    let pairs: Vec<(String, String)> = if object.contains_key("schema_version") {
+        let entries = object
+            .get("entries")
+            .and_then(Value::as_array)
+            .context("`entries` is not a list")?;
+        entries
+            .iter()
+            .map(|e| {
+                let key = e
+                    .get("key")
+                    .and_then(Value::as_str)
+                    .context("an entry has no `key`")?;
+                let value = e
+                    .get("value")
+                    .and_then(Value::as_str)
+                    .with_context(|| format!("{key} has no `value`: each entry needs one"))?;
+                Ok((key.to_string(), value.to_string()))
+            })
+            .collect::<Result<_>>()?
+    } else {
+        object
+            .iter()
+            .map(|(k, v)| {
+                let v = v
+                    .as_str()
+                    .with_context(|| format!("{k}'s value is not a string"))?;
+                Ok((k.clone(), v.to_string()))
+            })
+            .collect::<Result<_>>()?
+    };
+    let mut doc = crate::core::parser::Document::default();
+    for (key, value) in pairs {
+        if !crate::core::parser::is_valid_key(&key) {
+            anyhow::bail!("'{key}' is not a variable name: use letters, digits and _");
+        }
+        doc.entries.push(crate::core::parser::Entry {
+            key,
+            value,
+            span: crate::core::parser::Span::line(0),
+            raw: String::new(),
+            exported: false,
+            quote: None,
+        });
+    }
+    Ok(doc)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailOn {
     Error,
@@ -579,6 +671,20 @@ pub fn run(opts: Options) -> Result<()> {
         ignore_issues.insert(t.to_string());
     }
 
+    let input_format = crate::core::args::one_of(
+        "input format",
+        &opts.input_format,
+        &[("dotenv", InputFormat::Dotenv), ("json", InputFormat::Json)],
+        &["dotenv", "json"],
+    )?;
+    let stdin = opts.env == "-";
+    if opts.fix && (stdin || input_format == InputFormat::Json) {
+        anyhow::bail!(
+            "--fix rewrites a .env file, and this input is not one. \
+             Save it as a .env file and run --fix on that."
+        );
+    }
+
     let configured_fail_on = opts
         .fail_on_configured
         .as_deref()
@@ -636,9 +742,36 @@ pub fn run(opts: Options) -> Result<()> {
          with --example.",
         )
         .map_err(|e| every_problem(e, &parser, &example))?;
-    let env_file = parser
-        .parse_file_or_hint(&env_path, &Parser::missing_env_hint(&env_path))
-        .map_err(|e| every_problem(e, &parser, &env_path))?;
+    let origin = if stdin {
+        STDIN_LABEL.to_string()
+    } else {
+        env_path.clone()
+    };
+    let doc = match input_format {
+        InputFormat::Json => {
+            let text = if stdin {
+                read_stdin()?
+            } else {
+                std::fs::read_to_string(&env_path)
+                    .with_context(|| format!("could not read {env_path}"))?
+            };
+            document_from_json(&text)
+                .with_context(|| format!("Failed to read {origin} as --input-format json"))?
+        }
+        InputFormat::Dotenv if stdin => {
+            let doc = parser.parse_document(&read_stdin()?);
+            if !doc.is_clean() {
+                return Err(listed_problems(doc.problems, &origin));
+            }
+            doc
+        }
+        InputFormat::Dotenv => {
+            parser
+                .parse_file_or_hint(&env_path, &Parser::missing_env_hint(&env_path))
+                .map_err(|e| every_problem(e, &parser, &env_path))?;
+            parser.parse_document(&std::fs::read_to_string(&env_path).unwrap_or_default())
+        }
+    };
 
     pb.finish_with_message("Files parsed ✓");
 
@@ -647,18 +780,22 @@ pub fn run(opts: Options) -> Result<()> {
             "Loaded {} variables from {} and {} from {}",
             example_file.vars.len(),
             example,
-            env_file.vars.len(),
-            env_path
+            doc.vars().len(),
+            origin
         ));
     }
 
-    let raw_env_content = std::fs::read_to_string(&env_path).unwrap_or_default();
+    let mut surroundings = Surroundings::of(&env_path);
+    if stdin {
+        // No file, so nothing git could commit.
+        surroundings.exposure = None;
+    }
     let input = Input {
-        doc: parser.parse_document(&raw_env_content),
+        doc,
         template: example_file.vars,
-        origin: env_path.clone(),
+        origin: origin.clone(),
         spec: opts.spec,
-        surroundings: Surroundings::of(&env_path),
+        surroundings,
     };
 
     let pb = config.fix.then(|| ui::spinner("Applying auto-fixes..."));
@@ -684,7 +821,7 @@ pub fn run(opts: Options) -> Result<()> {
     // ─────────────────────────────────────────
     match format {
         Format::Json => output_json(&result)?,
-        Format::Github => output_github_actions(&result, &env_path)?,
+        Format::Github => output_github_actions(&result, &origin)?,
         Format::Pretty => output_pretty(&result, &env_path)?,
     }
 
@@ -957,11 +1094,21 @@ fn every_problem(err: anyhow::Error, parser: &Parser, path: &str) -> anyhow::Err
     let Ok(content) = std::fs::read_to_string(path) else {
         return err;
     };
-    let mut problems = parser.parse_document(&content).problems;
+    let problems = parser.parse_document(&content).problems;
     if problems.len() < 2 {
         return err;
     }
+    listed_problems(problems, path)
+}
+
+/// [`every_problem`]'s message, for problems already found: one keeps the
+/// parser's error, more are listed one per line in line order.
+fn listed_problems(mut problems: Vec<crate::core::parser::Problem>, path: &str) -> anyhow::Error {
     problems.sort_by_key(|p| p.span.line);
+    if problems.len() == 1 {
+        return anyhow::Error::from(problems.remove(0).error)
+            .context(format!("Failed to parse {path}"));
+    }
     let lines: Vec<String> = problems
         .iter()
         .map(|p| format!("  {}", p.describe()))

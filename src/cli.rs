@@ -1846,7 +1846,7 @@ pub enum Commands {
     /// Check .env against .env.example, find issues.
     #[command(after_help = docs::VALIDATE.after_help)]
     Validate {
-        /// Path to the environment file to check.
+        /// Path to the environment file to check, or `-` to read stdin.
         ///
         /// Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
         #[arg(long)]
@@ -1859,6 +1859,14 @@ pub enum Commands {
         /// it never falls back to `.env`.
         #[arg(long, value_name = "NAME", conflicts_with = "env")]
         env_name: Option<String>,
+
+        /// How to read `--env`: `dotenv` or `json`.
+        ///
+        /// `json` takes a flat `{"KEY": "value"}` object, or what
+        /// `evnx parse --format json --values` prints. It is never guessed:
+        /// `.env` text may start with `{`.
+        #[arg(long, value_name = "FORMAT", default_value = "dotenv")]
+        input_format: String,
 
         /// The template to compare against.
         ///

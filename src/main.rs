@@ -173,6 +173,7 @@ fn main() -> Result<()> {
         Commands::Validate {
             env,
             env_name,
+            input_format,
             example,
             strict,
             fix,
@@ -190,6 +191,7 @@ fn main() -> Result<()> {
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
             ),
+            input_format,
             example: cfg.example_path(example),
             strict: evnx::core::config::any(strict, cfg.validate.strict),
             fix,
