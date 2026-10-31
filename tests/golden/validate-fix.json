@@ -9,7 +9,7 @@
       "type": "placeholder_value",
       "variable": "SENDGRID_API_KEY",
       "message": "SENDGRID_API_KEY looks like a placeholder",
-      "location": ".env",
+      "location": "./.env",
       "suggestion": null,
       "auto_fixable": false
     },
@@ -18,7 +18,7 @@
       "type": "placeholder_value",
       "variable": "STRIPE_KEY",
       "message": "STRIPE_KEY looks like a placeholder",
-      "location": ".env",
+      "location": "./.env",
       "suggestion": "Get from Stripe Dashboard",
       "auto_fixable": false
     }

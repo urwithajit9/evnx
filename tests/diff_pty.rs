@@ -25,7 +25,7 @@ fn rm40_interactive_writes_the_chosen_change_and_keeps_a_bak() {
     let (out, code) = s.finish();
     // 1: the verdict is the comparison that was made, before the write.
     assert_eq!(code, 1, "{out}");
-    assert!(out.contains("wrote 1 change to .env"), "{out}");
+    assert!(out.contains("wrote 1 change to ./.env"), "{out}");
     assert!(!out.contains("Applied changes"), "{out}");
     assert_eq!(p.read(".env"), "A=1\nB=\n");
     assert_eq!(p.read(".env.bak"), before);

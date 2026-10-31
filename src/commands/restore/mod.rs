@@ -242,7 +242,8 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
         if options.output.is_none() {
             writable_destination(&outcome.output.to_string_lossy(), &backup)?;
         }
-        let path = outcome.write_path.display().to_string();
+        // RM-32: `./.env`, as `cloud pull` names the same file.
+        let path = crate::utils::path::label(&outcome.write_path.display().to_string());
 
         // ── An existing output: identical, or replaced only on a yes ─────────
         match existing_output(&outcome)? {
@@ -270,20 +271,14 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
                     ui::warning(format!("Output file already exists: {path}"));
                     // I-148: dialoguer's "IO error: not a terminal" named
                     // neither way out.
-                    crate::utils::prompt::require_terminal_or(&format!(
-                        "Add --yes to replace it (the current file is kept as a .bak copy), \
-                         or restore somewhere else with --output <path>:\n  \
-                         evnx restore {backup} --yes"
-                    ))?;
-                    let overwrite = crate::utils::prompt::yes_no()
-                        .with_prompt(format!(
-                            "Overwrite {path}? (the current file is kept as a .bak copy)"
-                        ))
-                        .default(false)
-                        .interact()?;
-
-                    if !overwrite {
-                        ui::info("Restore cancelled — no files were modified.");
+                    if !crate::utils::prompt::confirm_replace(
+                        &path,
+                        &format!(
+                            "Add --yes to replace it (the current file is kept as a .bak copy), \
+                             or restore somewhere else with --output <path>:\n  \
+                             evnx restore {backup} --yes"
+                        ),
+                    )? {
                         ui::info("Tip: use --output <path> to restore to a different location.");
                         return Err(RestoreError::Cancelled.into());
                     }

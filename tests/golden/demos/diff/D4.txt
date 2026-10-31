@@ -2,17 +2,17 @@
 ================ D4 ================
 
 $ evnx diff --reverse
-Missing from .env.example (present in .env):
+Missing from ./.env.example (present in ./.env):
   + EXTRA_DEBUG
 
-Extra in .env.example (not in .env):
+Extra in ./.env.example (not in ./.env):
   - REDIS_URL
   - FEATURE_X
 
-  1 missing from .env.example  ·  2 not in .env
+  1 missing from ./.env.example  ·  2 not in ./.env
 [stderr]
 
-  evnx diff  .env.example ↔ .env
+  evnx diff  ./.env.example ↔ ./.env
 
   values not compared against a template (--values to compare them)
   Docs: https://docs.evnx.dev/cli/commands/diff

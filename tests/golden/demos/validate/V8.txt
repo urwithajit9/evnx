@@ -7,7 +7,7 @@ $ evnx validate
   evnx validate  Check environment configuration
 
   ✗  PORT is not a port between 1 and 65535
-     .env
+     ./.env
      →  Fix the value, or relax `format` in [vars.PORT]
 
   !  [vars.A] lists environment 'prodution' — did you mean 'production'?

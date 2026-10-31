@@ -27,6 +27,8 @@ use evnx::core::verdict::{self, Stage};
 ///
 /// 2 is what every command with a three-value contract already uses for "no
 /// verdict", so the answer is the same whichever command was asked.
+use evnx::utils::path::label;
+
 fn resolve_env(
     dir: &Path,
     env: Option<&str>,
@@ -185,14 +187,15 @@ fn main() -> Result<()> {
             validate_formats,
             fail_on,
         } => commands::validate::run(commands::validate::Options {
-            env: resolve_env(
+            // RM-32: `./.env` in every message and report.
+            env: label(&resolve_env(
                 Path::new("."),
                 env.as_deref(),
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
-            ),
+            )),
             input_format,
-            example: cfg.example_path(example),
+            example: label(&cfg.example_path(example)),
             strict: evnx::core::config::any(strict, cfg.validate.strict),
             fix,
             dry_run,
@@ -312,8 +315,8 @@ fn main() -> Result<()> {
                 verdict::no_verdict(&e, Stage::BeforeRun);
             }
             match commands::diff::run(DiffOptions {
-                env,
-                example,
+                env: label(&env),
+                example: label(&example),
                 compare,
                 show_values,
                 format,
@@ -640,7 +643,11 @@ fn main() -> Result<()> {
 
         #[cfg(feature = "cloud")]
         Commands::Cloud { command, server } => {
-            evnx::cloud::run(command, server.as_deref(), cli.verbose)
+            match evnx::cloud::run(command, server.as_deref(), cli.verbose) {
+                // `pull` declined: already said, and 4 as in `restore` (D6).
+                Err(e) if e.is::<evnx::utils::prompt::Declined>() => std::process::exit(4),
+                r => r,
+            }
         }
 
         Commands::Doctor {

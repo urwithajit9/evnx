@@ -9,7 +9,7 @@ $ evnx validate
 
   evnx validate  Check environment configuration
 
-Error: .env.example does not exist
+Error: ./.env.example does not exist
 
 validate compares .env against it, so it needs one. Create it with `evnx sync` (from your .env) or `evnx init`, or point at another file with --example.
 

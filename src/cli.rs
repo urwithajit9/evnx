@@ -1232,8 +1232,12 @@ pub enum CloudCommands {
         #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..))]
         version: Option<i32>,
 
-        /// Overwrite the target without asking.
-        #[arg(long)]
+        /// Overwrite the target without asking. Also accepted as --force.
+        ///
+        /// The replaced file is kept beside it as a .bak copy. Without it, and
+        /// without a terminal, a different existing file stops the run (exit 2).
+        /// Declining the question exits 4, as `restore` does (RM-34, D5, D6).
+        #[arg(long = "yes", short = 'y', visible_alias = "force")]
         force: bool,
 
         /// Read the master password from stdin instead of prompting.

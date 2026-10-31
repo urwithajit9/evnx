@@ -16,7 +16,7 @@ $ evnx validate
   evnx validate  Check environment configuration
 
   !  DB_HOST uses localhost/127.0.0.1
-     .env
+     ./.env
      →  In Docker, use service name instead (e.g., db:5432)
 
   1 warning
@@ -29,7 +29,7 @@ $ evnx validate
   evnx validate  Check environment configuration
 
   !  DB_HOST uses localhost/127.0.0.1
-     .env
+     ./.env
      →  In Docker, use service name instead (e.g., db:5432)
 
   1 warning

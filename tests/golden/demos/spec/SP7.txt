@@ -11,10 +11,10 @@ $ evnx validate
      →  Did you mean `secret`?
 
   ✗  A looks like a placeholder
-     .env
+     ./.env
 
-  !  .env is not covered by .gitignore — `git add .` would commit it
-     .env
+  !  ./.env is not covered by .gitignore — `git add .` would commit it
+     ./.env
      →  Add it to .gitignore (`evnx doctor --fix` adds `.env*` and keeps `.env.example`)
 
   3 errors  ·  1 warning

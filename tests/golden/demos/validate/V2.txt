@@ -6,26 +6,26 @@ $ evnx validate
   evnx validate  Check environment configuration
 
   ✗  Missing required variable: STRIPE_KEY
-     .env
-     →  Add STRIPE_KEY=<value> to .env
+     ./.env
+     →  Add STRIPE_KEY=<value> to ./.env
      ·  fixable with --fix
 
   ✗  Missing required variable: OPTIONAL_X
-     .env
-     →  Add OPTIONAL_X=<value> to .env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.OPTIONAL_X] in .evnx.toml
+     ./.env
+     →  Add OPTIONAL_X=<value> to ./.env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.OPTIONAL_X] in .evnx.toml
      ·  fixable with --fix
 
   !  A is assigned 2 times (lines 7, 8) — only line 8 takes effect
-     .env
+     ./.env
      →  Remove the earlier assignments of A, or rename them if they were meant to differ
 
   ✗  SECRET_KEY looks like a placeholder
-     .env
+     ./.env
      →  Run: openssl rand -hex 32
      ·  fixable with --fix
 
   !  DEBUG is set to "False" (string, not boolean)
-     .env
+     ./.env
      →  Use false or 0 for proper boolean handling
      ·  fixable with --fix
 

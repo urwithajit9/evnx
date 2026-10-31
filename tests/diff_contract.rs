@@ -85,7 +85,7 @@ fn t_i078_fail_on_missing_passes_when_only_extra_keys() {
     let out = run(p.path(), &["diff", "--fail-on", "missing"]);
     out.assert_code(0);
     // The report is unchanged: --fail-on decides the exit code only.
-    out.assert_contains("Extra in .env");
+    out.assert_contains("Extra in ./.env");
 
     let behind = Project::new().example("A=x\nNEW=y\n").env("A=1\n");
     run(behind.path(), &["diff", "--fail-on", "missing"]).assert_code(1);
@@ -152,7 +152,7 @@ fn rm40_patch_applies_with_patch_p1() {
         .env("A=1\nMINE=2\n");
     let out = run(p.path(), &["diff", "--format", "patch"]);
     out.assert_contains("--- a/.env");
-    out.assert_contains("# MINE is only in .env");
+    out.assert_contains("# MINE is only in ./.env");
     std::fs::write(p.path().join("p.diff"), &out.stdout).unwrap();
     let applied = std::process::Command::new("sh")
         .arg("-c")

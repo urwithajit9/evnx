@@ -519,7 +519,7 @@ fn b1_validate_lists_every_problem_in_a_file_that_does_not_parse() {
     let err = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
     assert!(
         err.contains(
-            "Failed to parse .env: 3 problems\n  Line 2: Invalid format: missing '=' separator\n  \
+            "Failed to parse ./.env: 3 problems\n  Line 2: Invalid format: missing '=' separator\n  \
              Line 3: Undefined variable: ${NOPE} is not defined\n  \
              Line 4: Invalid format: missing '=' separator\n"
         ),
@@ -535,7 +535,7 @@ fn b1_validate_lists_every_problem_in_a_file_that_does_not_parse() {
         .code(2);
     let err = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
     assert!(
-        err.contains("Failed to parse .env: Invalid format at line 2: missing '=' separator"),
+        err.contains("Failed to parse ./.env: Invalid format at line 2: missing '=' separator"),
         "{err}"
     );
 }

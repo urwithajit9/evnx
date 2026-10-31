@@ -356,7 +356,12 @@ fn t_i218_pull_over_a_different_file_names_force_without_a_terminal() {
         Some(format!("{RIGHT}\n").as_bytes()),
     );
     out.assert_code(2);
-    assert!(out.stderr.contains("--force"), "{}", out.stderr);
+    // RM-34 (D5): `--yes`, as in `restore`; `--force` still works.
+    assert!(
+        out.stderr.contains("Add --yes to replace"),
+        "{}",
+        out.stderr
+    );
     // RM-85 (F1): what a pull does, the right way round.
     assert!(
         out.stdout.contains(&format!(
@@ -408,7 +413,8 @@ fn rm34_pull_keeps_the_replaced_file_and_its_mode() {
     #[cfg(unix)]
     let p = p.mode(".env", 0o644);
     let stdin = format!("{RIGHT}\n");
-    let pull = || {
+    // D5: `--force` and `-y` are the same flag.
+    let pull = |yes: &str| {
         signed_in(
             &p,
             &s.url(),
@@ -419,14 +425,14 @@ fn rm34_pull_keeps_the_replaced_file_and_its_mode() {
                 VAULT_ID,
                 "--version",
                 "1",
-                "--force",
+                yes,
                 "--password-stdin",
             ],
             Some(stdin.as_bytes()),
         )
     };
 
-    let out = pull();
+    let out = pull("--force");
     out.assert_code(0);
     assert_eq!(p.read(".env"), "A=1\n");
     assert_eq!(p.read(".env.bak"), "A=local\n");
@@ -449,7 +455,7 @@ fn rm34_pull_keeps_the_replaced_file_and_its_mode() {
     }
 
     // Already up to date: nothing more is kept.
-    let out = pull();
+    let out = pull("-y");
     out.assert_code(0);
     assert!(!p.path().join(".env.bak.2").exists());
 }
@@ -928,4 +934,106 @@ fn rm87_diff_local_lists_keys_and_writes_nothing() {
     );
     assert_eq!(p.read(".env"), "A=9\nC=3\n");
     assert_eq!(before, files(&p), "diff --local wrote a file");
+}
+
+/// A server holding version 1 of `A=1`, readable with `RIGHT`.
+fn pull_server(a: &Account) -> mockito::ServerGuard {
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, a);
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/1/blob").as_str(),
+    )
+    .with_status(200)
+    .with_body(blob(&vk, b"A=1\n"))
+    .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, a)))
+        .create();
+    s
+}
+
+const PULL: &[&str] = &["cloud", "pull", "--vault", VAULT_ID, "--version", "1"];
+
+/// D4: `EVNX_MASTER_PASSWORD` unlocks without a terminal, announced on stderr
+/// without the value. `EVNX_PASSWORD`, which opens backups, never does.
+#[test]
+fn d4_the_master_password_comes_from_its_own_variable() {
+    let a = account(RIGHT);
+    let s = pull_server(&a);
+    let p = Project::new().file(".gitignore", ".env*\n");
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &s.url());
+    let env = |var: &'static str| {
+        [
+            ("EVNX_SERVER", s.url()),
+            ("EVNX_CONFIG_DIR", cfg.to_str().unwrap().to_string()),
+            (var, RIGHT.to_string()),
+        ]
+    };
+    let pull = |var: &'static str| {
+        let e = env(var);
+        let e: Vec<(&str, &str)> = e.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        support::run_with(p.path(), PULL, &e, None)
+    };
+
+    let out = pull("EVNX_MASTER_PASSWORD");
+    out.assert_code(0);
+    assert_eq!(p.read(".env"), "A=1\n");
+    assert!(
+        out.stderr
+            .contains("using the master password from EVNX_MASTER_PASSWORD"),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.all().contains(RIGHT), "{}", out.all());
+
+    std::fs::remove_file(p.path().join(".env")).unwrap();
+    let out = pull("EVNX_PASSWORD");
+    out.assert_code(2);
+    assert!(
+        out.stderr
+            .contains("no terminal to ask for the master password"),
+        "{}",
+        out.stderr
+    );
+    assert!(!p.path().join(".env").exists());
+}
+
+/// RM-34 (D6): declining pull's overwrite question exits 4, as `restore`
+/// does, says the file was not changed, and leaves it alone.
+#[cfg(unix)]
+#[test]
+fn d6_declining_the_overwrite_exits_4() {
+    let a = account(RIGHT);
+    let s = pull_server(&a);
+    let p = Project::new()
+        .file(".gitignore", ".env*\n")
+        .env("A=local\n");
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &s.url());
+    let url = s.url();
+    let mut run = support::pty::Pty::spawn_with(
+        p.path(),
+        PULL,
+        &[
+            ("EVNX_SERVER", url.as_str()),
+            ("EVNX_CONFIG_DIR", cfg.to_str().unwrap()),
+            ("EVNX_MASTER_PASSWORD", RIGHT),
+        ],
+    );
+    run.try_wait_for("[y/N]", std::time::Duration::from_secs(60))
+        .expect("the overwrite question");
+    run.press(&[support::pty::ENTER]);
+    let (rest, code) = run.finish();
+    assert_eq!(code, 4, "{rest}");
+    let sep = std::path::MAIN_SEPARATOR;
+    assert!(
+        rest.contains(&format!("Cancelled; .{sep}.env was not changed.")),
+        "{rest}"
+    );
+    assert_eq!(p.read(".env"), "A=local\n");
+    assert!(!p.path().join(".env.bak").exists());
 }

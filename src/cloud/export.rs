@@ -177,7 +177,7 @@ pub fn export(
     }
     crate::say!();
 
-    let password = auth::read_password(password_stdin, "Master password")?;
+    let password = auth::read_master_password(password_stdin)?;
     let unlocked = auth::unlock(&client, &password)?;
 
     // Opened **once** and reused for every version. The key is per vault, not

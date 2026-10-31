@@ -13,7 +13,7 @@ Backup information:
   Variables     : 11
 ✓ Decryption successful
   ✓ Decryption key cleared from memory
-✓ .env is already up to date — nothing was written
+✓ ./.env is already up to date — nothing was written
 [stderr]
 
   evnx restore  Decrypt and restore from an encrypted backup
@@ -38,7 +38,7 @@ Backup information:
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-! Output file already exists: .env
+! Output file already exists: ./.env
 Error: there is no terminal to confirm with.
 
 Add --yes to replace it (the current file is kept as a .bak copy), or restore somewhere else with --output <path>:
@@ -61,7 +61,7 @@ Backup information:
   Variables     : 11
 ✓ Decryption successful
   ✓ Decryption key cleared from memory
-· Kept the previous .env as .env.bak
+· Kept the previous ./.env as .env.bak
 
 ✓ Restored 11 variable(s) to .env
 

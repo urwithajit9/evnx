@@ -16,10 +16,10 @@ $ evnx add service redis --yes
 
 $ evnx validate
   ✗  DB looks like a placeholder
-     .env
+     ./.env
 
   ✗  REDIS_PASSWORD looks like a placeholder
-     .env
+     ./.env
      ·  fixable with --fix
 
   2 errors

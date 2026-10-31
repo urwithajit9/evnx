@@ -9,8 +9,8 @@
       "type": "missing_variable",
       "variable": "API_PORT",
       "message": "Missing required variable: API_PORT",
-      "location": ".env",
-      "suggestion": "Add API_PORT=<value> to .env",
+      "location": "./.env",
+      "suggestion": "Add API_PORT=<value> to ./.env",
       "auto_fixable": true
     },
     {
@@ -18,8 +18,8 @@
       "type": "missing_variable",
       "variable": "SENDGRID_API_KEY",
       "message": "Missing required variable: SENDGRID_API_KEY",
-      "location": ".env",
-      "suggestion": "Add SENDGRID_API_KEY=<value> to .env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.SENDGRID_API_KEY] in .evnx.toml",
+      "location": "./.env",
+      "suggestion": "Add SENDGRID_API_KEY=<value> to ./.env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.SENDGRID_API_KEY] in .evnx.toml",
       "auto_fixable": true
     },
     {
@@ -27,8 +27,8 @@
       "type": "missing_variable",
       "variable": "STRIPE_KEY",
       "message": "Missing required variable: STRIPE_KEY",
-      "location": ".env",
-      "suggestion": "Add STRIPE_KEY=<value> to .env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.STRIPE_KEY] in .evnx.toml",
+      "location": "./.env",
+      "suggestion": "Add STRIPE_KEY=<value> to ./.env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.STRIPE_KEY] in .evnx.toml",
       "auto_fixable": true
     },
     {
@@ -36,7 +36,7 @@
       "type": "boolean_trap",
       "variable": "DEBUG",
       "message": "DEBUG is set to \"False\" (string, not boolean)",
-      "location": ".env",
+      "location": "./.env",
       "suggestion": "Use false or 0 for proper boolean handling",
       "auto_fixable": true
     }

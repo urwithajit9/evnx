@@ -59,7 +59,7 @@ fn t_br06_a_typed_passphrase_round_trips() {
 
 /// Wait for the question restore asks after deriving the key.
 ///
-/// ⚠️ Not [`Pty::wait_for`]'s 15 s. Before "Overwrite .env?" appears, each
+/// ⚠️ Not [`Pty::wait_for`]'s 15 s. Before "Overwrite ./.env?" appears, each
 /// test has derived the Argon2 key twice (its `backup`, then `restore`): about
 /// 1.7 s each in a debug build on a 16-core desktop, several times that on a
 /// 3-core macOS runner with the tests in parallel. Both t_br32 tests timed out
@@ -83,7 +83,7 @@ fn existing_output() -> Project {
 fn t_br32_yes_at_the_question_replaces_and_keeps_a_copy() {
     let p = existing_output();
     let mut run = Pty::spawn(p.path(), &["restore", ".env.backup", "--key-file", "pw"]);
-    wait_after_kdf(&mut run, "Overwrite .env?");
+    wait_after_kdf(&mut run, "Overwrite ./.env?");
     run.wait_for("[y/N]");
     run.press(&["y", ENTER]);
     let (rest, code) = run.finish();
@@ -97,11 +97,16 @@ fn t_br32_yes_at_the_question_replaces_and_keeps_a_copy() {
 fn t_br32_enter_at_the_question_cancels() {
     let p = existing_output();
     let mut run = Pty::spawn(p.path(), &["restore", ".env.backup", "--key-file", "pw"]);
-    wait_after_kdf(&mut run, "Overwrite .env?");
+    wait_after_kdf(&mut run, "Overwrite ./.env?");
     run.wait_for("[y/N]");
     run.press(&[ENTER]);
     let (rest, code) = run.finish();
     assert_eq!(code, 4, "{rest}");
+    // RM-34: the same words as `cloud pull`.
+    assert!(
+        rest.contains("Cancelled; ./.env was not changed."),
+        "{rest}"
+    );
     assert_eq!(p.read(".env"), "OLD=1\n");
     assert!(!p.exists(".env.bak"));
 }

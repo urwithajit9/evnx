@@ -222,7 +222,7 @@ pub fn create(
     // The master key is not cached anywhere, so every command that touches a
     // vault key asks for the password. Caching it on disk would defeat the point
     // of the server never holding one.
-    let password = auth::read_password(password_stdin, "Master password")?;
+    let password = auth::read_master_password(password_stdin)?;
     let unlocked = auth::unlock(&client, &password)?;
 
     let vault_key = VaultKey::generate();
@@ -553,7 +553,7 @@ pub fn share(
         })?;
 
     // ── Open our copy, re-wrap for them ──────────────────────────────────────
-    let password = auth::read_password(password_stdin, "Master password")?;
+    let password = auth::read_master_password(password_stdin)?;
     let unlocked = auth::unlock(&client, &password)?;
 
     // Your own copy, or — for an admin — the one shared to you, opened with the
@@ -1369,7 +1369,7 @@ pub fn revoke(
     // this a revocation: the server deletes that member inside the same transaction
     // that swaps the key, so there is no window where they are still a member of a
     // vault whose key has already moved, nor one where they are gone but it has not.
-    let password = auth::read_password(password_stdin, "Master password")?;
+    let password = auth::read_master_password(password_stdin)?;
     let unlocked = auth::unlock(&client, &password)?;
 
     let total = rotate_vault_key(
@@ -1537,7 +1537,7 @@ pub fn rekey(
         }
     }
 
-    let password = auth::read_password(password_stdin, "Master password")?;
+    let password = auth::read_master_password(password_stdin)?;
     let unlocked = auth::unlock(&client, &password)?;
 
     // `None` — nobody is being removed, which is the whole difference from

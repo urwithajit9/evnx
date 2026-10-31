@@ -2,7 +2,7 @@
 ================ D7 ================
 
 $ evnx diff --format patch
-# EXTRA_DEBUG is only in .env; this patch keeps it
+# EXTRA_DEBUG is only in ./.env; this patch keeps it
 --- a/.env
 +++ b/.env
 @@ -4,0 +5,2 @@

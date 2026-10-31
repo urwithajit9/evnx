@@ -815,6 +815,34 @@ pub(crate) fn read_password(from_stdin: bool, prompt: &str) -> Result<Zeroizing<
     }
 }
 
+/// The master password to unlock a vault: `--password-stdin`, then
+/// `EVNX_MASTER_PASSWORD`, then a prompt (D4).
+///
+/// ⚠️ Its own variable, never `EVNX_PASSWORD`, which unlocks `backup` files:
+/// one leaked variable must not open both. Every use is announced on stderr,
+/// without the value. Only unlocking reads it; changing or undoing a password
+/// (`rotate.rs`) always asks. A child process never inherits it
+/// (`envsource::is_evnx_own`).
+pub(crate) fn read_master_password(from_stdin: bool) -> Result<Zeroizing<String>> {
+    if !from_stdin {
+        if let Some(pw) = std::env::var_os(MASTER_PASSWORD_ENV).filter(|v| !v.is_empty()) {
+            let pw = pw
+                .into_string()
+                .map_err(|_| anyhow!("{MASTER_PASSWORD_ENV} is not valid UTF-8"))?;
+            eprintln!(
+                "  {} using the master password from {MASTER_PASSWORD_ENV}. Any process that can \
+                 read this environment can read it; in CI, prefer an API token (EVNX_TOKEN).",
+                "!".yellow()
+            );
+            return Ok(Zeroizing::new(pw));
+        }
+    }
+    read_password(from_stdin, "Master password")
+}
+
+/// The variable [`read_master_password`] reads.
+pub(crate) const MASTER_PASSWORD_ENV: &str = "EVNX_MASTER_PASSWORD";
+
 /// The master key, with the password behind it proven (A-302, I-316).
 pub(crate) struct Unlocked {
     pub master_key: evnx_crypto::MasterKey,
