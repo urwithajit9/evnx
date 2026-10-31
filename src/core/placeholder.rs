@@ -5,7 +5,7 @@
 //! same placeholders into `.env.example` and imported them from the sync
 //! command, the one place a command reached into another for a value rule.
 //! `sync` and `add` use this module; `init` (`schema::resolver::placeholder_for`,
-//! `https://example.com`) and `validate --fix` (`fixer::fill_for_missing`)
+//! `https://example.com`) and `validate --fix` (`policy::fill_for_missing`)
 //! keep their own shapes on purpose (R-init, R-validate notes).
 //!
 //! ⚠️ Not a placeholder *judgement*: that is `core::classify::is_placeholder`.

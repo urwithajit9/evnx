@@ -8,6 +8,7 @@
 
 pub mod checks;
 pub mod fixer;
+pub mod policy;
 pub mod types;
 
 use std::collections::HashSet;
@@ -25,6 +26,7 @@ use crate::utils::ui::glyph;
 
 use self::checks::*;
 use self::fixer::*;
+use self::policy::*;
 
 // ─────────────────────────────────────────────────────────────
 // Inputs
@@ -264,9 +266,9 @@ pub fn run(opts: Options) -> Result<()> {
 
     // Resolved once, so the report and the repair cannot disagree about it.
     let weak_secret_policy = if config.rotate_weak_secrets {
-        fixer::WeakSecretPolicy::Rotate
+        policy::WeakSecretPolicy::Rotate
     } else {
-        fixer::WeakSecretPolicy::PlaceholdersOnly
+        policy::WeakSecretPolicy::PlaceholdersOnly
     };
 
     // Facts about the file's surroundings, looked up once: `--fix` changes
@@ -429,7 +431,7 @@ pub fn run(opts: Options) -> Result<()> {
                 let action = if crate::core::classify::may_generate(&issue.variable) {
                     FixAction::AddSecret
                 } else {
-                    FixAction::AddMissing(fixer::fill_for_missing(
+                    FixAction::AddMissing(policy::fill_for_missing(
                         &issue.variable,
                         example_file.vars.get(&issue.variable).map(String::as_str),
                     ))
@@ -566,7 +568,7 @@ pub fn run(opts: Options) -> Result<()> {
     // fixed. It is listed apart, and is not counted as a repair.
     let (needs_input, fixed): (Vec<_>, Vec<_>) = fixes_applied
         .into_iter()
-        .partition(|f| checks::is_placeholder(&f.variable, &f.new_value));
+        .partition(|f| policy::is_placeholder(&f.variable, &f.new_value));
 
     // ─────────────────────────────────────────
     // Build Result

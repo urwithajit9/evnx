@@ -607,7 +607,7 @@ fn is_email(v: &str) -> bool {
 /// not be merged.
 ///
 /// * The strict check, `classify::is_placeholder(key, v, Strictness::Strict)`
-///   (`validate::checks::is_placeholder`), answers *"is this value safe to
+///   (`validate::policy::is_placeholder`), answers *"is this value safe to
 ///   OVERWRITE?"* for `validate --fix`. A false positive there destroys a working credential,
 ///   which is finding A1/K6 — the patterns were anchored in #121 precisely to
 ///   stop `DB_PASSWORD=Tr0ub4dor<3horse` being replaced on the strength of a

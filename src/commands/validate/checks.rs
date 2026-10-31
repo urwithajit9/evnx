@@ -9,6 +9,7 @@ use std::sync::LazyLock;
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
+use super::policy::is_placeholder;
 use super::types::{Issue, IssueType};
 
 // ─────────────────────────────────────────────────────────────
@@ -24,17 +25,6 @@ pub static EMAIL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 // ─────────────────────────────────────────────────────────────
 // Helper Predicates
 // ─────────────────────────────────────────────────────────────
-
-/// `validate`'s placeholder question: [`crate::core::classify::is_placeholder`]
-/// at the **Strict** level, with the variable's name (C-05, DEC-G13).
-///
-/// ⚠️ Strict, because `--fix` overwrites what this calls a placeholder. The
-/// list (anchored, never `contains`) moved to `core::classify` unchanged; what
-/// is new is the name: `API_KEY=dev` is a placeholder, `ENVIRONMENT=dev` is not
-/// (DEC-G11), and `*****` or AWS's documentation key always is (DEC-G10).
-pub fn is_placeholder(name: &str, value: &str) -> bool {
-    crate::core::classify::is_placeholder(name, value, crate::core::classify::Strictness::Strict)
-}
 
 /// `name` chooses the length floor; `value` is what gets judged.
 ///
@@ -633,13 +623,13 @@ pub fn check_placeholders(
                 // `DB_NAME` has no value evnx can supply, and claiming
                 // "fixable with --fix" for it sends the user to a command that
                 // will leave the line as it found it.
-                auto_fixable: crate::commands::validate::fixer::suggest_fix(
+                auto_fixable: super::policy::suggest_fix(
                     key,
                     _value,
                     &IssueType::PlaceholderValue,
                     // A placeholder is not a credential, so the weak-secret
                     // policy has nothing to say about it either way.
-                    crate::commands::validate::fixer::WeakSecretPolicy::PlaceholdersOnly,
+                    super::policy::WeakSecretPolicy::PlaceholdersOnly,
                 )
                 .is_actionable(),
             }
@@ -683,7 +673,7 @@ pub fn check_weak_secret(
     env_vars: &IndexMap<String, String>,
     env_path: &str,
     ignore: &HashSet<String>,
-    weak_secrets: crate::commands::validate::fixer::WeakSecretPolicy,
+    weak_secrets: super::policy::WeakSecretPolicy,
 ) -> Vec<Issue> {
     if ignore.contains(IssueType::WeakSecret.as_str()) {
         return Vec::new();
@@ -713,7 +703,7 @@ pub fn check_weak_secret(
             // nobody asked, the action is to rotate it **where it is issued**
             // first; a new value evnx invents that the provider does not have
             // is an outage, not a repair. `--fix` deliberately declines that
-            // case — see `fixer::suggest_fix`.
+            // case — see `policy::suggest_fix`.
             //
             // ⚠️ I-260: and a key someone else issues gets neither the
             // one-liner nor the flag — `--fix` will not generate it under any
@@ -725,8 +715,7 @@ pub fn check_weak_secret(
                 ) {
                     (true, placeholder)
                         if placeholder
-                            || weak_secrets
-                                == crate::commands::validate::fixer::WeakSecretPolicy::Rotate =>
+                            || weak_secrets == super::policy::WeakSecretPolicy::Rotate =>
                     {
                         "Run: openssl rand -hex 32".to_string()
                     }
@@ -749,7 +738,7 @@ pub fn check_weak_secret(
             // report advertised `--fix` over working credentials and `--fix`
             // obliged. The two must agree, so ask the fixer rather than
             // asserting — the same shape `check_placeholders` already uses.
-            auto_fixable: crate::commands::validate::fixer::suggest_fix(
+            auto_fixable: super::policy::suggest_fix(
                 name,
                 value,
                 &IssueType::WeakSecret,
