@@ -19,6 +19,24 @@ longer printed, since a line without `=` is sometimes a pasted secret.
 in `doctor`'s output should match `.env: Line N:` instead.
 
 ### Added
+- **`template` reads a template once, left to right** (B3, RM-39). A value
+  is never read again as a template: with `A={{B|upper}}` and `B=bee`,
+  `{{A|json}}` rendered `"BEE"` in one key order and the literal text in the
+  other; it is now `"{{B|upper}}"` in every order (I-133). 2,000 keys over
+  3,000 lines took 4.2 s; it is now a single pass (I-143).
+  - **Filters chain left to right**: `{{PORT|default:8080|int}}`,
+    `{{NAME|upper|json}}`. Chains were an error. Each `default:` uses its own
+    text (I-134).
+  - **A backslash makes a reference literal**: `\${NAME}`, `\{{NAME}}` and
+    `\$NAME` render without the backslash, and `\\` before a reference is one
+    backslash (DEC-T5). Every other backslash is text, so `"C:\\dir"` and
+    `\n` in a JSON or YAML template stay as written. ⚠️ `\$NAME` rendered
+    `\value`; it now renders `$NAME`.
+  - **New filters `|yaml`, `|toml`, `|sh`**: a double-quoted YAML scalar, a
+    TOML basic string, and one single-quoted shell word (DEC-T10).
+  - **`${NAME:-x}` and the other shell expansions** are still written through
+    as they are, now with a warning naming the line, instead of silently
+    (I-136).
 - **`validate` and `doctor` warn about a carriage return inside a value** (B2).
   A `\r` that ends no CRLF line — a classic Mac line ending, or a paste — is
   kept in the value by evnx and Docker Compose, while python-dotenv and Node

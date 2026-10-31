@@ -5,8 +5,8 @@
 //! - `|bool` reads `true yes on 1 y` and `false no off 0 n` in any case, and
 //!   anything else is an error, like `|int` (I-138, DEC-T7).
 //! - A filter evnx does not know is an error naming it and its line, for any
-//!   `{{NAME|filter}}`; chained filters are an error until the 0.11.0 engine
-//!   (DEC-T7, owner 2026-10-17). They were written into the output unchanged.
+//!   `{{NAME|filter}}` (DEC-T7, owner 2026-10-17). They were written into the
+//!   output unchanged. Filters chain left to right since B3.
 //! - A bad value is not echoed when its name looks secret (`core::mask`).
 
 mod support;
@@ -146,9 +146,10 @@ fn t_dec_t7_a_close_filter_name_is_suggested() {
 }
 
 #[test]
-fn t_dec_t7_chained_filters_are_refused_until_the_engine_supports_them() {
+fn b3_chained_filters_apply_left_to_right() {
     let (_, out) = render("X=v\n", "{{X|upper|json}}\n");
-    out.assert_code(2).assert_contains("chained");
+    out.assert_code(0);
+    assert_eq!(out.stdout, "\"V\"\n");
 }
 
 /// What is not an evnx filter must keep working: a default's text may hold a
@@ -180,6 +181,9 @@ fn t_d93_help_lists_the_styles_and_the_filters() {
         "bool",
         "int",
         "json",
+        "yaml",
+        "toml",
+        "sh",
         "default:",
         "--dry-run",
         "--mkdir",
@@ -188,19 +192,20 @@ fn t_d93_help_lists_the_styles_and_the_filters() {
     }
 }
 
-/// A filter after `|default:` is a chain as well. `default:` took the rest of
-/// the braces as its text, so `{{PORT|default:8080|int}}` rendered `8080|int`
-/// with exit 0, past the chained-filter check (found in the docs review after
-/// #190). A pipe followed by something that is not a filter name stays part of
-/// the default's text (`{{X|default:a|b}}` → `a|b`, the guard above).
+/// A filter after `|default:` is a chain (B3). `default:` once took the rest
+/// of the braces as its text, so `{{PORT|default:8080|int}}` rendered
+/// `8080|int`; then it was refused; now it applies the default, then `int`.
+/// A pipe followed by something that is not a filter name stays part of the
+/// default's text (`{{X|default:a|b}}` → `a|b`, the guard above).
 #[test]
-fn t_dec_t7_a_filter_after_a_default_is_a_chain() {
-    for t in [
-        "{{PORT|default:8080|int}}\n",
-        "{{NOPE|default:x|json}}\n",
-        "{{NOPE|default:x | upper}}\n",
+fn b3_a_filter_after_a_default_applies_to_it() {
+    for (t, want) in [
+        ("{{PORT|default:8080|int}}\n", "8080\n"),
+        ("{{NOPE|default:x|json}}\n", "\"x\"\n"),
+        ("{{NOPE|default:x | upper}}\n", "X\n"),
     ] {
         let (_, out) = render("PORT=\n", t);
-        out.assert_code(2).assert_contains("chained");
+        out.assert_code(0);
+        assert_eq!(out.stdout, want, "{t}");
     }
 }

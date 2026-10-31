@@ -3,7 +3,8 @@
 //! This module provides a flexible template substitution system that supports:
 //!
 //! - Multiple variable syntax styles: `${VAR}`, `{{VAR}}`, `$VAR`
-//! - Filter transformations: `|upper`, `|lower`, `|title`, `|capitalize`, `|bool`, `|int`, `|json`, `|default:value`
+//! - Filter transformations: `|upper`, `|lower`, `|title`, `|capitalize`, `|bool`, `|int`, `|json`,
+//!   `|yaml`, `|toml`, `|sh`, `|default:value`
 //! - Proper error handling with contextual messages
 //! - Detection of undefined variables with warnings
 //! - Integration with the project's UI utilities for consistent output
@@ -30,11 +31,25 @@
 //! {{PORT|int}}            # Convert to integer: "8000" → 8000
 //! {{NAME|json}}           # JSON-escape: hello "world" → "hello \"world\""
 //! {{OPTIONAL|default:foo}} # Use default if undefined or empty
+//! {{NAME|yaml}}           # A double-quoted YAML scalar
+//! {{NAME|toml}}           # A TOML basic string
+//! {{NAME|sh}}             # One shell word, single-quoted
 //! ```
 //!
-//! Filters are processed **before** simple substitution to avoid pattern conflicts.
-//! One filter per placeholder: an unknown filter, or two chained
-//! (`{{X|upper|json}}`), is an error naming its line, and nothing is written.
+//! Filters chain left to right: `{{PORT|default:8080|int}}`. An unknown filter
+//! is an error naming its line, and nothing is written.
+//!
+//! # One pass (B3, DEC-T13)
+//!
+//! The template is read once, left to right. Inserted text is never read
+//! again, so a value that looks like `{{B|upper}}` is written as it is, and
+//! the output does not depend on the order of the keys (I-133).
+//!
+//! - `${NAME}` and `{{NAME}}` are always references. A bare `$NAME` is
+//!   substituted only when `NAME` is defined, and never reported (DEC-T3).
+//! - A backslash makes a reference literal: `\${NAME}`, `\{{NAME}}` and
+//!   `\$NAME` render without the backslash, and `\\` before a reference
+//!   renders one backslash (DEC-T5). Every other backslash is text.
 //!
 //! # Usage Examples
 //!
@@ -98,8 +113,6 @@
 
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
-use regex::Regex;
-use std::collections::HashSet;
 use std::fs;
 
 use colored::Colorize;
@@ -109,54 +122,6 @@ use crate::docs;
 /// How `template` updates `.gitignore`; the flow is shared (`utils::protect`).
 pub use crate::utils::protect::GitignoreMode;
 use crate::utils::ui;
-
-// ─────────────────────────────────────────────────────────────
-// Regex Pattern Helpers (avoid format! brace escaping hell)
-// ─────────────────────────────────────────────────────────────
-
-/// Build regex pattern to match `{{VAR|filter}}` style references.
-///
-/// The `filter` argument **must include the leading pipe**, e.g. `"|upper"`, `"|bool"`.
-///
-/// # Example (internal use only)
-///
-/// ```ignore
-/// // This function is private - used internally by process_filters
-/// let pattern = filter_var_pattern("ENV", "|upper");
-/// // pattern == r"\{\{ENV\|upper\}\}" as a regex string
-/// ```
-fn filter_var_pattern(key: &str, filter: &str) -> String {
-    // `filter` arrives with its leading pipe (`"|upper"`). The pipe is split out
-    // so whitespace can be allowed around it: `{{ ENV | upper }}` is the form
-    // people write, and it previously matched nothing.
-    let name = filter.strip_prefix('|').unwrap_or(filter);
-    format!(
-        "\\{{\\{{\\s*{}\\s*\\|\\s*{}\\s*\\}}\\}}",
-        regex::escape(key),
-        regex::escape(name)
-    )
-}
-
-/// Build regex pattern to match `{{VAR|default:VALUE}}` with capture group.
-///
-/// The capture group extracts the default value for substitution.
-fn default_var_pattern(key: &str) -> String {
-    format!(
-        "\\{{\\{{\\s*{}\\s*\\|\\s*default:\\s*([^}}]*?)\\s*\\}}\\}}",
-        regex::escape(key)
-    )
-}
-
-/// Match **any** `{{ NAME|default:VALUE }}`, whatever `NAME` is.
-///
-/// ⚠️ Every other pattern here is built from a key that is already in the
-/// environment, which made `|default:` exactly backwards: the fallback fired
-/// only when the variable existed — the one case it is not needed — and a
-/// genuinely missing variable rendered `{{NOPE|default:1234}}` into the output
-/// file. This pattern is keyed on nothing, so it can see the absent case.
-fn any_default_pattern() -> &'static str {
-    r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\|\s*default:\s*([^}]*?)\s*\}\}"
-}
 
 // ─────────────────────────────────────────────────────────────
 // Main Functions
@@ -309,6 +274,14 @@ pub fn run_options(input: String, output: String, env: String, opts: Options) ->
     // A filter evnx does not know is a typo shipping into the config: refuse
     // before anything else is reported (DEC-T7).
     check_filters(&template_content, &env_file.vars, &input, &output)?;
+
+    // Not evnx syntax: written as it is, but said (I-136).
+    for (line, raw) in shell_expansions(&template_content, &env_file.vars) {
+        ui::warning(format!(
+            "{input} line {line}: {raw} is written through as it is. \
+             evnx's fallback is {{{{NAME|default:value}}}}"
+        ));
+    }
 
     // Detect undefined variables and warn
     let undefined = detect_undefined_vars(&template_content, &env_file.vars);
@@ -477,64 +450,35 @@ const FILTERS: &[&str] = &[
     "bool",
     "int",
     "json",
+    "yaml",
+    "toml",
+    "sh",
 ];
 
-/// Refuse a filter evnx does not know, and chained filters, naming each one
-/// with its line (DEC-T7). They used to be written into the output unchanged,
-/// so `{{PORT|innt}}` shipped as literal text with exit 0.
+/// Refuse a filter evnx does not know, naming each one with its line
+/// (DEC-T7). They used to be written into the output unchanged, so
+/// `{{PORT|innt}}` shipped as literal text with exit 0.
 ///
 /// Every `{{ NAME | … }}` counts when NAME is an identifier or a key in the
 /// env file, whether it has a value or not (owner, 2026-10-17). Text that is
 /// not an evnx reference — Helm's `{{ .Values.x | quote }}` — is left alone.
-///
-/// `|default:` takes the rest of the braces as its text, pipes included,
-/// unless a pipe is followed by a filter name: that is a chain.
-///
-/// ⚠️ Chained filters (`{{X|upper|json}}`) are refused until the one
-/// substitution engine (T-WP3, 0.11.0) can apply them left to right; going
-/// from an error to working later breaks nobody.
 fn check_filters(
     template: &str,
     vars: &IndexMap<String, String>,
     input: &str,
     output: &str,
 ) -> Result<()> {
-    let re = Regex::new(r"\{\{\s*([^\s{}|]+)\s*\|([^}]*)\}\}").expect("valid filter pattern");
     let mut problems = Vec::new();
-    for caps in re.captures_iter(template) {
-        let (Some(whole), Some(name), Some(chunk)) = (caps.get(0), caps.get(1), caps.get(2)) else {
-            continue;
-        };
-        if !is_identifier(name.as_str()) && !vars.contains_key(name.as_str()) {
-            continue;
-        }
-        let chunk = chunk.as_str().trim();
-        let line = template[..whole.start()].matches('\n').count() + 1;
-        let placeholder = whole.as_str();
-        if let Some(text) = chunk.strip_prefix("default:") {
-            // The default's text runs to the braces, pipes included — unless a
-            // pipe is followed by a filter: `{{PORT|default:8080|int}}` is a
-            // chain, and rendered `8080|int` with exit 0 (found after #190).
-            if text.split('|').skip(1).any(|seg| {
-                let seg = seg.trim();
-                FILTERS.contains(&seg) || seg.starts_with("default:")
-            }) {
-                problems.push(format!(
-                    "line {line}: {placeholder}: chained filters are not supported; \
-                     use one filter per placeholder"
-                ));
+    for token in tokens(template, vars) {
+        let Token::Ref(r) = token else { continue };
+        for f in &r.filters {
+            let Filter::Named(name) = f else { continue };
+            if FILTERS.contains(name) {
+                continue;
             }
-            continue;
-        }
-        if chunk.contains('|') {
-            problems.push(format!(
-                "line {line}: {placeholder}: chained filters are not supported; \
-                 use one filter per placeholder"
-            ));
-        } else if !FILTERS.contains(&chunk) {
-            let mut msg = format!("line {line}: {placeholder}: unknown filter `{chunk}`");
+            let mut msg = format!("line {}: {}: unknown filter `{name}`", r.line, r.raw);
             let near = crate::utils::string::closest(
-                &chunk.to_lowercase(),
+                &name.to_lowercase(),
                 FILTERS.iter().map(|f| (*f, *f)),
             );
             if let Some(best) = near.first() {
@@ -548,7 +492,7 @@ fn check_filters(
     }
     anyhow::bail!(
         "{input} has {} evnx cannot apply:\n  {}\n\n\
-         Filters: {}, default:VALUE.\n\
+         Filters: {}, default:VALUE. They chain left to right.\n\
          {}",
         if problems.len() == 1 {
             "a filter".to_string()
@@ -581,24 +525,308 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// One piece of a template, as the scanner reads it.
+enum Token<'a> {
+    /// Written as it is. An escape's backslash is already left out.
+    Text(&'a str),
+    /// `${NAME}`, `{{NAME|filters…}}`, or a bare `$NAME`.
+    Ref(Ref<'a>),
+    /// `${NAME:-x}` and the other shell expansions: not evnx syntax, so
+    /// written as it is, with a warning (I-136).
+    Shell { raw: &'a str, line: usize },
+}
+
+struct Ref<'a> {
+    /// The placeholder as written: what an unresolved reference renders as.
+    raw: &'a str,
+    name: &'a str,
+    filters: Vec<Filter<'a>>,
+    /// A bare `$NAME`: substituted only when defined, never reported (DEC-T3).
+    bare: bool,
+    line: usize,
+}
+
+enum Filter<'a> {
+    /// `default:TEXT`, trimmed. Its text may hold a pipe, unless a filter
+    /// name follows the pipe: `{{X|default:a|b}}` is `a|b`, and
+    /// `{{X|default:8080|int}}` is a default, then `int`.
+    Default(&'a str),
+    Named(&'a str),
+}
+
+/// Whether `s` starts a reference: `${`, `{{`, or `$` and a name.
+fn opens_ref(s: &str) -> bool {
+    s.starts_with("${")
+        || s.starts_with("{{")
+        || s.strip_prefix('$')
+            .and_then(|r| r.chars().next())
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+}
+
+/// `${NAME:-x}`, `${NAME-x}`, `${NAME:?x}` and the like: a name, then a
+/// shell operator.
+fn is_shell_expansion(inner: &str) -> bool {
+    let end = inner
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .unwrap_or(inner.len());
+    is_identifier(&inner[..end])
+        && [":-", "-", ":=", "=", ":?", "?", ":+", "+"]
+            .iter()
+            .any(|op| inner[end..].starts_with(op))
+}
+
+fn parse_filters(tail: &str) -> Vec<Filter<'_>> {
+    let mut out = Vec::new();
+    // Where the open default's text starts in `tail`.
+    let mut default_from = None;
+    let mut pos = 0;
+    for seg in tail.split('|') {
+        let end = pos + seg.len();
+        let s = seg.trim();
+        let new_filter = FILTERS.contains(&s) || s.starts_with("default:");
+        match default_from {
+            Some(from) if !new_filter => {
+                if let Some(last) = out.last_mut() {
+                    *last = Filter::Default(tail[from..end].trim());
+                }
+            }
+            _ => {
+                default_from = None;
+                if let Some(at) = seg.find("default:").filter(|_| s.starts_with("default:")) {
+                    let from = pos + at + "default:".len();
+                    default_from = Some(from);
+                    out.push(Filter::Default(tail[from..end].trim()));
+                } else {
+                    out.push(Filter::Named(s));
+                }
+            }
+        }
+        pos = end + 1;
+    }
+    out
+}
+
+/// Read `template` once, left to right (B3). `vars` decides whether a
+/// non-identifier name such as `VAR.WITH.DOTS` is a key or someone else's
+/// syntax.
+fn tokens<'a>(template: &'a str, vars: &IndexMap<String, String>) -> Vec<Token<'a>> {
+    let is_name = |n: &str| is_identifier(n) || vars.contains_key(n);
+    let mut out = Vec::new();
+    let (mut i, mut text, mut line) = (0, 0, 1);
+    while i < template.len() {
+        let rest = &template[i..];
+        let b = rest.as_bytes()[0];
+        if b == b'\n' {
+            line += 1;
+            i += 1;
+            continue;
+        }
+        if b == b'\\' {
+            let after = &rest[1..];
+            if after.starts_with('\\') && opens_ref(&after[1..]) {
+                // `\\` before a reference: one backslash, then the reference.
+                out.push(Token::Text(&template[text..=i]));
+                i += 2;
+                text = i;
+            } else if opens_ref(after) {
+                // The reference's opener is text; the rest reads as text too.
+                out.push(Token::Text(&template[text..i]));
+                text = i + 1;
+                i += if after.starts_with('$') && !after.starts_with("${") {
+                    2
+                } else {
+                    3
+                };
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+        // A reference never spans a line.
+        let closing = |open: usize, close: &str| {
+            let body = &rest[open..];
+            body.find(close).filter(|&j| !body[..j].contains('\n'))
+        };
+        let mut found = None;
+        if rest.starts_with("${") {
+            if let Some(j) = closing(2, "}") {
+                let inner = &rest[2..2 + j];
+                let raw = &rest[..2 + j + 1];
+                let name = inner.trim();
+                if is_name(name) {
+                    found = Some(Token::Ref(Ref {
+                        raw,
+                        name,
+                        filters: Vec::new(),
+                        bare: false,
+                        line,
+                    }));
+                } else if is_shell_expansion(name) {
+                    found = Some(Token::Shell { raw, line });
+                }
+            }
+        } else if rest.starts_with("{{") {
+            if let Some(j) = closing(2, "}}") {
+                let inner = &rest[2..2 + j];
+                let raw = &rest[..2 + j + 2];
+                let (name, tail) = match inner.split_once('|') {
+                    Some((n, t)) => (n.trim(), Some(t)),
+                    None => (inner.trim(), None),
+                };
+                if is_name(name) {
+                    let filters = tail.map(parse_filters).unwrap_or_default();
+                    found = Some(Token::Ref(Ref {
+                        raw,
+                        name,
+                        filters,
+                        bare: false,
+                        line,
+                    }));
+                }
+            }
+        } else if opens_ref(rest) {
+            let end = 1 + rest[1..]
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(rest.len() - 1);
+            found = Some(Token::Ref(Ref {
+                raw: &rest[..end],
+                name: &rest[1..end],
+                filters: Vec::new(),
+                bare: true,
+                line,
+            }));
+        }
+        match found {
+            Some(token) => {
+                let len = match &token {
+                    Token::Ref(r) => r.raw.len(),
+                    Token::Shell { raw, .. } => raw.len(),
+                    Token::Text(_) => unreachable!(),
+                };
+                out.push(Token::Text(&template[text..i]));
+                out.push(token);
+                i += len;
+                text = i;
+            }
+            // Not a reference: one byte on. Only ASCII is matched, so a byte
+            // inside a multi-byte character is never a slice boundary here.
+            None => i += 1,
+        }
+    }
+    out.push(Token::Text(&template[text..]));
+    out
+}
+
+/// What `r` renders as, or `None` when it stays unresolved: no value, and no
+/// `default:` in its chain.
+fn resolve(r: &Ref, vars: &IndexMap<String, String>) -> Result<Option<String>> {
+    let mut value = vars.get(r.name).cloned();
+    for f in &r.filters {
+        value = match (f, value) {
+            (Filter::Default(text), v) => match v {
+                Some(v) if !v.trim().is_empty() => Some(v),
+                _ => Some((*text).to_string()),
+            },
+            (Filter::Named(_), None) => None,
+            (Filter::Named(name), Some(v)) => Some(apply_filter(name, r.name, &v)?),
+        };
+    }
+    Ok(value)
+}
+
+fn apply_filter(filter: &str, key: &str, value: &str) -> Result<String> {
+    Ok(match filter {
+        "upper" => value.to_uppercase(),
+        "lower" => value.to_lowercase(),
+        "title" => title_case(value),
+        // The old `|title`: the first character only, the rest as written.
+        "capitalize" => {
+            let mut c = value.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        }
+        // One word list for evnx (core::value); anything else is an error, as
+        // `|int` is (I-138, DEC-T7).
+        "bool" => crate::core::value::parse_bool(value)
+            .with_context(|| {
+                format!(
+                    "Variable '{}' value '{}' is not a boolean for |bool: use {} or {}",
+                    key,
+                    shown(key, value),
+                    crate::core::value::TRUE_WORDS.join("/"),
+                    crate::core::value::FALSE_WORDS.join("/"),
+                )
+            })?
+            .to_string(),
+        "int" => value
+            .parse::<i64>()
+            .with_context(|| {
+                format!(
+                    "Variable '{}' value '{}' is not a valid integer for |int filter",
+                    key,
+                    shown(key, value)
+                )
+            })?
+            .to_string(),
+        "json" => serde_json::to_string(value)
+            .with_context(|| format!("Failed to JSON-encode variable '{}'", key))?,
+        "yaml" => quoted(value, yaml_escape),
+        "toml" => quoted(value, toml_escape),
+        "sh" => crate::core::shell::quote(value),
+        other => anyhow::bail!("unknown filter `{other}` on {key}"),
+    })
+}
+
+/// `value` in double quotes, each character through `escape`.
+fn quoted(value: &str, escape: fn(char, &mut String)) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for c in value.chars() {
+        escape(c, &mut out);
+    }
+    out.push('"');
+    out
+}
+
+/// A YAML double-quoted scalar (DEC-T10): `\` and `"` escaped, and every
+/// control or line-separator character as an escape, so the value stays on
+/// its line and nothing in it is YAML syntax.
+fn yaml_escape(c: char, out: &mut String) {
+    match c {
+        '\\' => out.push_str("\\\\"),
+        '"' => out.push_str("\\\""),
+        '\n' => out.push_str("\\n"),
+        '\t' => out.push_str("\\t"),
+        '\r' => out.push_str("\\r"),
+        c if c.is_control() || c == '\u{2028}' || c == '\u{2029}' => {
+            out.push_str(&format!("\\u{:04x}", c as u32))
+        }
+        c => out.push(c),
+    }
+}
+
+/// A TOML basic string (DEC-T10): the escapes the TOML spec requires.
+fn toml_escape(c: char, out: &mut String) {
+    match c {
+        '\\' => out.push_str("\\\\"),
+        '"' => out.push_str("\\\""),
+        '\n' => out.push_str("\\n"),
+        '\t' => out.push_str("\\t"),
+        '\r' => out.push_str("\\r"),
+        '\u{8}' => out.push_str("\\b"),
+        '\u{c}' => out.push_str("\\f"),
+        c if c.is_control() => out.push_str(&format!("\\u{:04X}", c as u32)),
+        c => out.push(c),
+    }
+}
+
 /// Process a template string with variable substitution and filter transformations.
 ///
-/// This function applies transformations in a specific order to avoid conflicts:
-/// 1. **Filters first**: Process `{{VAR|filter}}` patterns with transformations
-/// 2. **Simple substitution**: Replace remaining `${VAR}`, `{{VAR}}`, `$VAR` patterns
-///
-/// This ordering ensures that filtered variables are not accidentally replaced
-/// by the simple substitution pass.
-///
-/// # Arguments
-///
-/// * `template` - The template string containing variable references
-/// * `vars` - Map of variable names to their string values
-///
-/// # Returns
-///
-/// * `Ok(String)` - The processed template with all substitutions applied
-/// * `Err(anyhow::Error)` - If a filter transformation fails (e.g., invalid integer)
+/// One pass, left to right: a substituted value is never read again, so the
+/// result does not depend on key order or on what the values look like
+/// (I-133). An unresolved reference is written as it is.
 ///
 /// # Supported Patterns
 ///
@@ -606,12 +834,13 @@ fn is_identifier(name: &str) -> bool {
 /// |---------|-------------|---------|
 /// | `${VAR}` | Shell-style substitution | `${PORT}` → `8000` |
 /// | `{{VAR}}` | Template-style substitution | `{{PORT}}` → `8000` |
-/// | `$VAR` | Simple prefix substitution | `$PORT` → `8000` |
+/// | `$VAR` | Only when `VAR` is defined | `$PORT` → `8000` |
 /// | `{{VAR|upper}}` | Uppercase filter | `{{env|upper}}` → `PRODUCTION` |
 /// | `{{VAR|bool}}` | Boolean conversion | `{{debug|bool}}` → `true` |
 /// | `{{VAR|int}}` | Integer parsing | `{{port|int}}` → `8000` |
 /// | `{{VAR|json}}` | JSON string escaping | `{{name|json}}` → `"hello \"world\""` |
-/// | `{{VAR|default:foo}}` | Default value if undefined | `{{opt|default:bar}}` → `bar` |
+/// | `{{VAR|default:foo}}` | Default value if undefined or empty | `{{opt|default:bar}}` → `bar` |
+/// | `{{VAR|default:8080|int}}` | Filters chain left to right | `8080` |
 ///
 /// # Example
 ///
@@ -627,151 +856,32 @@ fn is_identifier(name: &str) -> bool {
 /// assert_eq!(result, "host=LOCALHOST, port=3000");
 /// ```
 pub fn process_template(template: &str, vars: &IndexMap<String, String>) -> Result<String> {
-    let mut result = template.to_string();
-
-    // Step 1: Process filters FIRST (before simple substitution)
-    // This prevents {{VAR|filter}} from being partially replaced by $VAR or {{VAR}} patterns
-    result = process_filters(&result, vars)?;
-
-    // Step 2: Simple variable substitution for remaining unfiltered references
-    result = process_simple_substitution(&result, vars);
-
-    // Step 3: Any `|default:` still standing names a variable that is not in the
-    // environment at all, so steps 1 and 2 — which iterate over the variables
-    // that *are* — could not have seen it. That is the whole purpose of a
-    // default, and until this step it was the one case that did not work.
-    result = apply_absent_defaults(&result);
-
-    Ok(result)
-}
-
-/// Resolve `{{ NAME|default:VALUE }}` for names with no value in the environment.
-///
-/// Runs last, so a variable that *does* have a value has already won — a default
-/// is a fallback, never an override.
-fn apply_absent_defaults(template: &str) -> String {
-    let Ok(re) = Regex::new(any_default_pattern()) else {
-        return template.to_string();
-    };
-    re.replace_all(template, "$2").to_string()
-}
-
-/// Apply simple variable substitution patterns: `${VAR}`, `{{VAR}}`, `$VAR`.
-///
-/// This function handles basic substitution without filters. It should be called
-/// **after** `process_filters` to avoid interfering with filtered patterns.
-///
-/// # Arguments
-///
-/// * `template` - Template string after filter processing
-/// * `vars` - Variable map for substitution values
-///
-/// # Returns
-///
-/// String with all simple variable references replaced
-fn process_simple_substitution(template: &str, vars: &IndexMap<String, String>) -> String {
-    // ⛔ **One pass over the template, not one pass per variable.**
-    //
-    // This used to loop over `vars`, replacing each key across the whole
-    // accumulating result. So a value substituted early was **re-scanned** by
-    // every later iteration:
-    //
-    // ```text
-    // BRACE='{{OTHER}}'   OTHER=plain
-    //   brace={{BRACE}}   →   brace=plain
-    // ```
-    //
-    // The secret's own text was treated as a template, and whether that happened
-    // depended on key order — so the same file could render differently after an
-    // unrelated edit.
-    //
-    // ⚠️ The alternation is built from the **actual keys**, not from a generic
-    // `\w+`. `regex::escape` keeps keys containing dots working, which a
-    // character class would have silently dropped.
-    if vars.is_empty() {
-        return template.to_string();
-    }
-
-    let alt = vars
-        .keys()
-        .map(|k| regex::escape(k))
-        .collect::<Vec<_>>()
-        .join("|");
-
-    // ⚠️ The `\s*` around the key is load-bearing and predates this rewrite:
-    // without it `${ PORT }` matched nothing and was written to the output file
-    // verbatim with a zero exit code. Whitespace inside a placeholder is how
-    // most people write one, so the failure was common and invisible.
-    let pattern = format!(r"\$\{{\s*({alt})\s*\}}|\{{\{{\s*({alt})\s*\}}\}}|\$({alt})\b");
-    let Ok(re) = Regex::new(&pattern) else {
-        return template.to_string();
-    };
-
-    re.replace_all(template, |caps: &regex::Captures| {
-        let key = caps
-            .get(1)
-            .or_else(|| caps.get(2))
-            .or_else(|| caps.get(3))
-            .map(|m| m.as_str())
-            .unwrap_or_default();
-
-        match vars.get(key) {
-            // ⚠️ Returning the value from a closure puts it in **verbatim**.
-            // A `&str` replacement is a template, in which `$` names a capture
-            // group — which is what turned `DB_PASSWORD=pa$sw0rd` into `pa`,
-            // silently and with exit 0.
-            Some(value) => value.clone(),
-            None => caps
-                .get(0)
-                .map(|m| m.as_str())
-                .unwrap_or_default()
-                .to_string(),
+    let mut out = String::with_capacity(template.len());
+    for token in tokens(template, vars) {
+        match token {
+            Token::Text(s) | Token::Shell { raw: s, .. } => out.push_str(s),
+            Token::Ref(r) => match resolve(&r, vars)? {
+                Some(v) => out.push_str(&v),
+                None => out.push_str(r.raw),
+            },
         }
-    })
-    .to_string()
+    }
+    Ok(out)
 }
 
-/// Type alias for filter transformation functions.
-///
-/// Each filter takes a string value and returns a transformed string.
-type FilterFn = fn(&str) -> String;
-
-/// Registry of built-in filter patterns and their transformation functions.
-///
-/// Returns a vector of (pattern_suffix, transformation_function) pairs.
-/// The pattern suffix **includes the leading pipe** and is appended to the variable
-/// name within `{{VAR|suffix}}` syntax, e.g. `"|upper"` matches `{{VAR|upper}}`.
-///
-/// # Supported Filters
-///
-/// | Filter | Description | Example Input → Output |
-/// |--------|-------------|------------------------|
-/// | `upper` | Convert to uppercase | `"hello"` → `"HELLO"` |
-/// | `lower` | Convert to lowercase | `"HELLO"` → `"hello"` |
-/// | `title` | Title case | `"hello wORLD"` → `"Hello World"` |
-/// | `capitalize` | First character upper | `"hello wORLD"` → `"Hello wORLD"` |
-///
-/// # Example (internal use only)
-///
-/// ```ignore
-/// // This function is private - used internally by process_simple_substitution
-/// let pattern = shell_var_pattern("MY_VAR");
-/// // pattern == r"\$\{MY_VAR\}" as a regex string
-/// ```
-fn filter_patterns() -> Vec<(&'static str, FilterFn)> {
-    vec![
-        ("|upper", |v| v.to_uppercase()),
-        ("|lower", |v| v.to_lowercase()),
-        ("|title", title_case),
-        // The old `|title`: the first character only, the rest as written.
-        ("|capitalize", |v| {
-            let mut c = v.chars();
-            match c.next() {
-                None => String::new(),
-                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-            }
-        }),
-    ]
+/// The shell expansions in `template` (`${X:-d}` and the like), with their
+/// lines: evnx writes them through as they are (I-136).
+fn shell_expansions<'a>(
+    template: &'a str,
+    vars: &IndexMap<String, String>,
+) -> Vec<(usize, &'a str)> {
+    tokens(template, vars)
+        .into_iter()
+        .filter_map(|t| match t {
+            Token::Shell { raw, line } => Some((line, raw)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Title case, Jinja's rule (I-137, owner 2026-10-17): each word's first
@@ -801,136 +911,12 @@ fn shown(key: &str, value: &str) -> String {
     crate::core::mask::mask(key, value)
 }
 
-/// Process template filters: transformations applied via `{{VAR|filter}}` syntax.
-///
-/// This function handles all filter-based substitutions using regex for reliable
-/// pattern matching. Filters are processed before simple substitution to avoid
-/// conflicts with base variable patterns.
-///
-/// # Supported Filters
-///
-/// - **String transforms**: `|upper`, `|lower`, `|title`
-/// - **Type conversions**: `|bool`, `|int`
-/// - **Encoding**: `|json` (properly escaped JSON string)
-/// - **Defaults**: `|default:value` (fallback if variable is empty/undefined)
-///
-/// # Arguments
-///
-/// * `template` - Template string containing filter patterns
-/// * `vars` - Variable map for lookup and transformation
-///
-/// # Returns
-///
-/// * `Ok(String)` - Template with all filters applied
-/// * `Err(anyhow::Error)` - If a filter transformation fails
-fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<String> {
-    let mut result = template.to_string();
-
-    for (key, value) in vars {
-        // Apply string transformation filters (upper/lower/title)
-        // filter_suffix already contains the leading pipe, e.g. "|upper"
-        for (filter_suffix, transform) in &filter_patterns() {
-            let pattern = filter_var_pattern(key, filter_suffix);
-            if let Ok(re) = Regex::new(&pattern) {
-                if re.is_match(&result) {
-                    let transformed = transform(value);
-                    result = re
-                        .replace_all(&result, regex::NoExpand(transformed.as_str()))
-                        .to_string();
-                }
-            }
-        }
-
-        // Boolean filter: {{VAR|bool}}. One word list for evnx (core::value);
-        // anything else is an error, as `|int` is (I-138, DEC-T7). It was
-        // `false`, silently, for `on`, `enabled` and every typo.
-        let bool_pattern = filter_var_pattern(key, "|bool");
-        if let Ok(re) = Regex::new(&bool_pattern) {
-            if re.is_match(&result) {
-                let bool_val = crate::core::value::parse_bool(value).with_context(|| {
-                    format!(
-                        "Variable '{}' value '{}' is not a boolean for |bool: use {} or {}",
-                        key,
-                        shown(key, value),
-                        crate::core::value::TRUE_WORDS.join("/"),
-                        crate::core::value::FALSE_WORDS.join("/"),
-                    )
-                })?;
-                result = re
-                    .replace_all(&result, regex::NoExpand(bool_val.to_string().as_str()))
-                    .to_string();
-            }
-        }
-
-        // Integer filter: {{VAR|int}} - parses string to i64, errors on invalid input
-        let int_pattern = filter_var_pattern(key, "|int");
-        if let Ok(re) = Regex::new(&int_pattern) {
-            if re.is_match(&result) {
-                let int_val = value.parse::<i64>().with_context(|| {
-                    format!(
-                        "Variable '{}' value '{}' is not a valid integer for |int filter",
-                        key,
-                        shown(key, value)
-                    )
-                })?;
-                result = re
-                    .replace_all(&result, regex::NoExpand(int_val.to_string().as_str()))
-                    .to_string();
-            }
-        }
-
-        // JSON filter: {{VAR|json}} - properly escape value for JSON context
-        let json_pattern = filter_var_pattern(key, "|json");
-        if let Ok(re) = Regex::new(&json_pattern) {
-            if re.is_match(&result) {
-                let json_val = serde_json::to_string(value)
-                    .with_context(|| format!("Failed to JSON-encode variable '{}'", key))?;
-                // Keep quotes - they're part of valid JSON string representation
-                result = re
-                    .replace_all(&result, regex::NoExpand(json_val.as_str()))
-                    .to_string();
-            }
-        }
-
-        // Default value filter: {{VAR|default:fallback}}
-        let default_pattern = default_var_pattern(key);
-        if let Ok(re) = Regex::new(&default_pattern) {
-            if re.is_match(&result) {
-                // ⚠️ Per match (I-134): each `|default:` stands for its own
-                // text. Taking the first match's capture for all of them made
-                // `{{E|default:one}} {{E|default:two}}` render `one one`.
-                // A closure's return is verbatim, so a `$` in it stays.
-                result = re
-                    .replace_all(&result, |caps: &regex::Captures| {
-                        if value.trim().is_empty() {
-                            caps.get(1)
-                                .map(|m| m.as_str().to_string())
-                                .unwrap_or_default()
-                        } else {
-                            value.clone()
-                        }
-                    })
-                    .to_string();
-            }
-        }
-    }
-
-    Ok(result)
-}
-
 /// Detect variable references in template that are not defined in the variable map.
 ///
-/// Scans the template for all supported variable patterns and returns a list
-/// of undefined variable names. This helps catch configuration errors early.
-///
-/// # Arguments
-///
-/// * `template` - Template string to scan for variable references
-/// * `vars` - Map of defined variable names
-///
-/// # Returns
-///
-/// Vec of undefined variable names (deduplicated)
+/// `${NAME}` and `{{NAME}}` count, unless a `default:` in the chain supplies a
+/// value. ⛔ Not a bare `$NAME` (DEC-T3, I-135): in nginx, shell or Makefile
+/// text (`$host`, `$document_root`, `$1`) it is that program's syntax, not a
+/// missing variable.
 ///
 /// # Example
 ///
@@ -946,49 +932,17 @@ fn process_filters(template: &str, vars: &IndexMap<String, String>) -> Result<St
 /// assert_eq!(undefined, vec!["HOST"]);
 /// ```
 pub fn detect_undefined_vars(template: &str, vars: &IndexMap<String, String>) -> Vec<String> {
-    // The reference styles that are always references (DEC-T3):
-    // - ${VAR}: shell-style with braces
-    // - {{VAR}} or {{VAR|filter}}: template-style with optional filter
-    //
-    // ⛔ Not bare `$VAR` (I-135). It is substituted when the variable is
-    // defined, and otherwise left alone: in nginx, shell or Makefile text
-    // (`$host`, `$document_root`, `$1`) it is that program's syntax, not a
-    // missing variable. Once an unresolved reference became an error (RM-14),
-    // reporting it failed every such template.
-    // ⚠️ `\s*` throughout. Without it this agreed with the substituter's blind
-    // spot — `{{ PORT }}` was neither substituted nor reported, so the one signal
-    // that something was wrong was silent for exactly the forms that failed.
-    //
-    // Group 3 captures the filter chunk so a `|default:` can be recognised: a
-    // placeholder with a fallback is resolved, not undefined.
-    let re = Regex::new(
-        r"(?:\$\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\})|(?:\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*(\|[^}]*)?\}\})"
-    ).expect("Variable detection regex is valid");
-
-    let mut undefined = Vec::new();
-    let mut seen = HashSet::new();
-
-    for caps in re.captures_iter(template) {
-        // A `|default:` supplies a value, so the variable is not undefined.
-        if caps.get(3).is_some_and(|f| f.as_str().contains("default:")) {
+    let mut undefined: Vec<String> = Vec::new();
+    for token in tokens(template, vars) {
+        let Token::Ref(r) = token else { continue };
+        let defaulted = r.filters.iter().any(|f| matches!(f, Filter::Default(_)));
+        if r.bare || defaulted || vars.contains_key(r.name) || !is_identifier(r.name) {
             continue;
         }
-
-        // Variable name is in capture group 1 or 2 depending on style
-        let var_name = caps
-            .get(1)
-            .or_else(|| caps.get(2))
-            .map(|m| m.as_str().to_string());
-
-        if let Some(name) = var_name {
-            // Only report each undefined variable once, and skip if defined
-            if !vars.contains_key(&name) && !seen.contains(&name) {
-                undefined.push(name.clone());
-                seen.insert(name);
-            }
+        if !undefined.iter().any(|u| u == r.name) {
+            undefined.push(r.name.to_string());
         }
     }
-
     undefined
 }
 
@@ -1000,39 +954,22 @@ pub fn detect_undefined_vars(template: &str, vars: &IndexMap<String, String>) ->
 mod tests {
     use super::*;
 
-    /// Assert what a pattern *matches*, never its source text.
-    ///
-    /// ⚠️ These tests used to compare the generated regex string literally, which
-    /// pinned the implementation rather than the behaviour — and pinned it to a
-    /// version that could not match `{{ VAR }}`. A test that fails when the bug is
-    /// fixed is worse than no test.
-    fn matches(pattern: &str, haystack: &str) -> bool {
-        Regex::new(pattern)
-            .expect("valid pattern")
-            .is_match(haystack)
-    }
-
-    /// Render through the real substitution path, which is what the removed
-    /// `shell_var_pattern` / `template_var_pattern` helpers used to feed.
-    ///
-    /// ⚠️ These assertions used to check the *pattern string* those helpers
-    /// built. Testing the rendered output instead is why the single-pass
-    /// rewrite could be verified at all: a pattern test cannot see that a
-    /// substituted value gets re-scanned.
+    /// Render through the real engine. Tests read the output, never a
+    /// pattern: a pattern test cannot see that a value gets re-scanned.
     fn render(template: &str, pairs: &[(&str, &str)]) -> String {
         let vars: IndexMap<String, String> = pairs
             .iter()
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
             .collect();
-        process_simple_substitution(template, &vars)
+        process_template(template, &vars).unwrap()
     }
 
     #[test]
-    fn test_pattern_helpers() {
+    fn both_braced_styles_substitute() {
         assert_eq!(render("${MY_VAR}", &[("MY_VAR", "v")]), "v");
         assert_eq!(render("{{MY_VAR}}", &[("MY_VAR", "v")]), "v");
-        assert!(matches(&filter_var_pattern("KEY", "|bool"), "{{KEY|bool}}"));
-        assert!(matches(&default_var_pattern("OPT"), "{{OPT|default:x}}"));
+        assert_eq!(render("{{KEY|bool}}", &[("KEY", "yes")]), "true");
+        assert_eq!(render("{{OPT|default:x}}", &[]), "x");
     }
 
     /// Whitespace inside a placeholder is how most people write one, and every
@@ -1041,11 +978,8 @@ mod tests {
     fn whitespace_inside_a_placeholder_is_tolerated() {
         assert_eq!(render("${ V }", &[("V", "x")]), "x");
         assert_eq!(render("{{ V }}", &[("V", "x")]), "x");
-        assert!(matches(
-            &filter_var_pattern("V", "|upper"),
-            "{{ V | upper }}"
-        ));
-        assert!(matches(&default_var_pattern("V"), "{{ V | default:x }}"));
+        assert_eq!(render("{{ V | upper }}", &[("V", "x")]), "X");
+        assert_eq!(render("{{ V | default:x }}", &[("V", "")]), "x");
     }
 
     #[test]
@@ -1102,7 +1036,7 @@ mod tests {
         let mut vars = IndexMap::new();
         vars.insert("ENV".to_string(), "production".to_string());
 
-        let result = process_filters(template, &vars).unwrap();
+        let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "ENV=PRODUCTION");
     }
 
@@ -1112,7 +1046,7 @@ mod tests {
         let mut vars = IndexMap::new();
         vars.insert("ENV".to_string(), "PRODUCTION".to_string());
 
-        let result = process_filters(template, &vars).unwrap();
+        let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "ENV=production");
     }
 
@@ -1122,7 +1056,7 @@ mod tests {
         let mut vars = IndexMap::new();
         vars.insert("NAME".to_string(), "hello world".to_string());
 
-        let result = process_filters(template, &vars).unwrap();
+        let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "name=Hello World");
     }
 
@@ -1130,7 +1064,7 @@ mod tests {
     fn test_filter_capitalize_keeps_the_rest() {
         let mut vars = IndexMap::new();
         vars.insert("NAME".to_string(), "hello wORLD".to_string());
-        let result = process_filters("name={{NAME|capitalize}}", &vars).unwrap();
+        let result = process_template("name={{NAME|capitalize}}", &vars).unwrap();
         assert_eq!(result, "name=Hello wORLD");
     }
 
@@ -1151,7 +1085,7 @@ mod tests {
             let mut vars = IndexMap::new();
             vars.insert("DEBUG".to_string(), truthy.to_string());
 
-            let result = process_filters(template, &vars).unwrap();
+            let result = process_template(template, &vars).unwrap();
             assert_eq!(result, "debug=true", "Failed for truthy value: {}", truthy);
         }
     }
@@ -1161,7 +1095,7 @@ mod tests {
         for word in ["maybe", "", "enabled"] {
             let mut vars = IndexMap::new();
             vars.insert("DEBUG".to_string(), word.to_string());
-            let err = process_filters("debug={{DEBUG|bool}}", &vars).unwrap_err();
+            let err = process_template("debug={{DEBUG|bool}}", &vars).unwrap_err();
             assert!(err.to_string().contains("not a boolean"), "{word:?}: {err}");
         }
     }
@@ -1174,7 +1108,7 @@ mod tests {
             let mut vars = IndexMap::new();
             vars.insert("DEBUG".to_string(), falsy.to_string());
 
-            let result = process_filters(template, &vars).unwrap();
+            let result = process_template(template, &vars).unwrap();
             assert_eq!(result, "debug=false", "Failed for falsy value: {}", falsy);
         }
     }
@@ -1185,7 +1119,7 @@ mod tests {
         let mut vars = IndexMap::new();
         vars.insert("PORT".to_string(), "8000".to_string());
 
-        let result = process_filters(template, &vars).unwrap();
+        let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "port=8000");
     }
 
@@ -1195,7 +1129,7 @@ mod tests {
         let mut vars = IndexMap::new();
         vars.insert("PORT".to_string(), "not-a-number".to_string());
 
-        let result = process_filters(template, &vars);
+        let result = process_template(template, &vars);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -1210,7 +1144,7 @@ mod tests {
         // Value containing quotes and special chars
         vars.insert("VALUE".to_string(), r#"hello "world" & <test>"#.to_string());
 
-        let result = process_filters(template, &vars).unwrap();
+        let result = process_template(template, &vars).unwrap();
         // Should be properly JSON-escaped WITH quotes
         assert_eq!(result, r#"value="hello \"world\" & <test>""#);
     }
@@ -1221,7 +1155,7 @@ mod tests {
         let mut vars = IndexMap::new();
         vars.insert("OPTIONAL".to_string(), "".to_string()); // empty value
 
-        let result = process_filters(template, &vars).unwrap();
+        let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "opt=fallback");
     }
 
@@ -1231,7 +1165,7 @@ mod tests {
         let mut vars = IndexMap::new();
         vars.insert("OPTIONAL".to_string(), "actual_value".to_string());
 
-        let result = process_filters(template, &vars).unwrap();
+        let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "opt=actual_value");
     }
 
@@ -1323,19 +1257,165 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_var_pattern() {
+    fn whitespace_around_a_filter_is_tolerated() {
         for form in [
             "{{MY_VAR|upper}}",
             "{{ MY_VAR | upper }}",
             "{{MY_VAR |upper}}",
         ] {
-            assert!(
-                matches(&filter_var_pattern("MY_VAR", "|upper"), form),
-                "{form} should match"
+            assert_eq!(render(form, &[("MY_VAR", "v")]), "V", "{form}");
+        }
+    }
+
+    /// I-133: a value that looks like a template is written as it is, in
+    /// either key order. The per-key filter loop evaluated it in one order.
+    #[test]
+    fn b3_i133_a_value_is_never_read_as_a_template() {
+        for pairs in [
+            [("A", "{{B|upper}}"), ("B", "bee")],
+            [("B", "bee"), ("A", "{{B|upper}}")],
+        ] {
+            assert_eq!(
+                render("{{A|json}} {{A}}", &pairs),
+                r#""{{B|upper}}" {{B|upper}}"#
             );
         }
-        assert!(matches(&filter_var_pattern("KEY", "|bool"), "{{KEY|bool}}"));
-        // A different filter must not match.
-        assert!(!matches(&filter_var_pattern("KEY", "|bool"), "{{KEY|int}}"));
+    }
+
+    /// The same template renders the same under every order of the keys,
+    /// with values that hold every reference style (T-TPL-12).
+    #[test]
+    fn b3_i133_key_order_never_changes_the_output() {
+        let pairs = [
+            ("A", "${B}"),
+            ("B", "{{C|upper}}"),
+            ("C", "$A"),
+            ("D", "\\${A}"),
+        ];
+        let template = "${A} {{B}} $C {{D|json}} {{C|upper}} {{NOPE|default:$A}}\n";
+        let orders = [
+            [0, 1, 2, 3],
+            [3, 2, 1, 0],
+            [1, 3, 0, 2],
+            [2, 0, 3, 1],
+            [0, 2, 1, 3],
+            [3, 1, 2, 0],
+        ];
+        let rendered: Vec<String> = orders
+            .iter()
+            .map(|o| render(template, &o.map(|i| pairs[i])))
+            .collect();
+        assert!(rendered.windows(2).all(|w| w[0] == w[1]), "{rendered:?}");
+        assert_eq!(rendered[0], "${B} {{C|upper}} $A \"\\\\${A}\" $A $A\n");
+    }
+
+    /// I-134: each `default:` uses its own text.
+    #[test]
+    fn b3_i134_each_default_has_its_own_text() {
+        assert_eq!(
+            render("{{E|default:one}} {{E|default:two}}", &[("E", "")]),
+            "one two"
+        );
+        assert_eq!(
+            render("{{E|default:one}} {{E|default:two}}", &[]),
+            "one two"
+        );
+        // Spaces, `:` and a lone `}` are the default's text.
+        assert_eq!(render("{{E|default: a:b }c }}", &[]), "a:b }c");
+    }
+
+    /// Filters chain left to right; a default then a filter is a chain, and a
+    /// pipe followed by anything else is the default's text.
+    #[test]
+    fn b3_filters_chain_left_to_right() {
+        assert_eq!(render("{{X|upper|json}}", &[("X", "a\"b")]), "\"A\\\"B\"");
+        assert_eq!(render("{{PORT|default:8080|int}}", &[("PORT", "")]), "8080");
+        assert_eq!(
+            render("{{PORT|default:8080|int}}", &[("PORT", "9000")]),
+            "9000"
+        );
+        assert_eq!(render("{{X|default:a|b}}", &[]), "a|b");
+        assert_eq!(render("{{X|default:x | upper}}", &[]), "X");
+        // No value and no default: written as it is.
+        assert_eq!(render("{{NOPE|upper}}", &[]), "{{NOPE|upper}}");
+        assert!(
+            detect_undefined_vars("{{NOPE|upper}} {{N2|upper|default:x}}", &IndexMap::new())
+                == ["NOPE"]
+        );
+    }
+
+    /// DEC-T3 (I-135): a bare `$NAME` is substituted only when defined, and
+    /// never reported; `${NAME}` and `{{NAME}}` always are.
+    #[test]
+    fn b3_i135_a_bare_name_is_only_ever_a_defined_variable() {
+        let t = "root $document_root; $1 $HOME ${PORT} $PORT";
+        assert_eq!(
+            render(t, &[("PORT", "80")]),
+            "root $document_root; $1 $HOME 80 80"
+        );
+        assert!(detect_undefined_vars("$HOME $host", &IndexMap::new()).is_empty());
+        assert_eq!(
+            detect_undefined_vars("${HOME} {{host}}", &IndexMap::new()),
+            ["HOME", "host"]
+        );
+    }
+
+    /// DEC-T5: a backslash makes a reference literal; `\\` before one is one
+    /// backslash. Every other backslash is text, so `C:\\x` and `\n` stay.
+    #[test]
+    fn b3_dec_t5_a_backslash_escapes_a_reference() {
+        let v = &[("X", "v")];
+        assert_eq!(render(r"\${X} \{{X}} \$X", v), "${X} {{X}} $X");
+        assert_eq!(render(r"\\${X} \\{{X}}", v), r"\v \v");
+        assert_eq!(render(r#""C:\\dir\n" \x"#, v), r#""C:\\dir\n" \x"#);
+        assert!(detect_undefined_vars(r"\${NOPE} \{{NOPE}}", &IndexMap::new()).is_empty());
+    }
+
+    /// DEC-T10: values quoted for the syntax they land in.
+    #[test]
+    fn b3_dec_t10_yaml_toml_and_sh_quote_safely() {
+        let v = &[("V", "a\"b\\c\nd'e\u{7}")];
+        assert_eq!(render("{{V|yaml}}", v), r#""a\"b\\c\nd'e\u0007""#);
+        assert_eq!(render("{{V|toml}}", v), r#""a\"b\\c\nd'e\u0007""#);
+        assert_eq!(render("{{V|sh}}", v), "'a\"b\\c\nd'\\''e\u{7}'");
+        // What the YAML and TOML readers make of it is the value again.
+        let yaml: String = serde_yaml::from_str(&render("{{V|yaml}}", v)).unwrap();
+        assert_eq!(yaml, v[0].1);
+        let toml: toml::Table = render("k = {{V|toml}}", v).parse().unwrap();
+        assert_eq!(toml["k"].as_str(), Some(v[0].1));
+    }
+
+    /// I-136: `${X:-d}` is not evnx syntax. It is written as it is, and
+    /// reported with its line so it is never silent.
+    #[test]
+    fn b3_i136_shell_expansions_are_written_through_and_found() {
+        let t = "a\nb=${X:-d} ${Y?e} ${1}";
+        assert_eq!(render(t, &[("X", "x")]), t);
+        let found = shell_expansions(t, &IndexMap::new());
+        assert_eq!(found, [(2, "${X:-d}"), (2, "${Y?e}")]);
+    }
+
+    /// I-143: 2,000 keys over 3,000 lines took 4.2 s; the budget is 400 ms
+    /// (debug builds included).
+    #[test]
+    fn b3_i143_two_thousand_keys_render_within_budget() {
+        let vars: IndexMap<String, String> = (0..2000)
+            .map(|i| (format!("KEY_{i}"), format!("value-{i}")))
+            .collect();
+        let template: String = (0..3000)
+            .map(|i| {
+                format!(
+                    "a{i}: ${{KEY_{}}} {{{{KEY_{}|upper}}}} $KEY_{}\n",
+                    i % 2000,
+                    (i + 1) % 2000,
+                    (i + 2) % 2000
+                )
+            })
+            .collect();
+        let start = std::time::Instant::now();
+        let out = process_template(&template, &vars).unwrap();
+        let took = start.elapsed();
+        assert!(out.starts_with("a0: value-0 VALUE-1 value-2\n"));
+        assert!(took < std::time::Duration::from_millis(400), "{took:?}");
     }
 }

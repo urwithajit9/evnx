@@ -187,15 +187,18 @@ pub const TEMPLATE: CommandDoc = CommandDoc {
 References:\n\
 \x20 {{VAR}}  ${VAR}  $VAR        replaced by the value from the env file\n\
 \n\
-Filters, one per placeholder: {{VAR|filter}}\n\
+Filters: {{VAR|filter}}, chained left to right: {{VAR|default:8080|int}}\n\
 \x20 upper  lower                 case\n\
 \x20 title                        Title Case For Each Word\n\
 \x20 capitalize                   First character only\n\
 \x20 bool                         true/yes/on/1/y or false/no/off/0/n; anything else is an error\n\
 \x20 int                          a whole number; anything else is an error\n\
-\x20 json                         a quoted, escaped JSON string\n\
+\x20 json  yaml  toml            a quoted, escaped string for that syntax\n\
+\x20 sh                           one shell word, single-quoted\n\
 \x20 default:VALUE                VALUE when VAR is empty or not defined\n\
-An unknown filter, or two chained, is an error and nothing is written.\n\
+An unknown filter is an error and nothing is written.\n\
+\\${VAR} \\{{VAR}} \\$VAR are written as they are, without the backslash.\n\
+$VAR is replaced only when VAR is defined, and never reported.\n\
 A placeholder with no value is an error too (exit 2); --allow-unresolved\n\
 writes it through as it is.\n\
 \n\
