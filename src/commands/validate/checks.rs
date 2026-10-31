@@ -160,14 +160,13 @@ pub fn check_missing_variables(
 pub fn check_reader_mismatch(
     doc: &crate::core::parser::Document,
     env_path: &str,
-    project: &std::path::Path,
+    readers: &[crate::core::dialect::Reader],
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
     if ignore.contains(IssueType::ReaderMismatch.as_str()) {
         return Vec::new();
     }
-    let readers = crate::core::dialect::detect(project);
-    crate::core::dialect::mismatches(doc, &readers)
+    crate::core::dialect::mismatches(doc, readers)
         .into_iter()
         .map(|m| {
             let agree = if m.agree.is_empty() {

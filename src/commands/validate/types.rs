@@ -186,6 +186,8 @@ pub struct ValidationConfig {
     /// own documentation in `cli.rs`.
     pub rotate_weak_secrets: bool,
     pub validate_formats: bool,
+    /// `--fix --dry-run`: work the fixes out, write nothing.
+    pub dry_run: bool,
     /// Issue types the caller asked to suppress, from `--ignore`.
     pub ignore_issues: std::collections::HashSet<String>,
 }
