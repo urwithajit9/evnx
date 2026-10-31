@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use std::collections::HashSet;
 
 use super::policy::is_placeholder;
-use super::types::{Issue, IssueType};
+use super::types::{Issue, IssueType, Severity};
 
 // ─────────────────────────────────────────────────────────────
 // Regex Patterns for Format Validation
@@ -132,8 +132,8 @@ pub fn check_missing_variables(
         .iter()
         .filter(|(key, _)| !env_keys.contains(key))
         .map(|(key, template_value)| Issue {
-            severity: "error".to_string(),
-            issue_type: IssueType::MissingVariable.as_str().to_string(),
+            severity: Severity::Error,
+            issue_type: IssueType::MissingVariable,
             variable: key.to_string(),
             message: format!("Missing required variable: {}", key),
             location: env_path.to_string(),
@@ -176,8 +176,8 @@ pub fn check_reader_mismatch(
                 format!("{} read", crate::core::dialect::names_with_evnx(&m.agree))
             };
             Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::ReaderMismatch.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::ReaderMismatch,
                 variable: m.key.clone(),
                 message: format!(
                     "{} (line {}): {} {}, while {agree} it as written",
@@ -221,8 +221,8 @@ pub fn check_expansion_order(
                     .join("; ")
             };
             Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::ExpansionOrder.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::ExpansionOrder,
                 variable: d.key.clone(),
                 message: format!(
                     "{} (line {}) uses {uses}. Docker Compose and python-dotenv expand top to bottom, \
@@ -253,8 +253,8 @@ pub fn check_nul_bytes(
     }
     doc.nul_bytes()
         .map(|e| Issue {
-            severity: "error".to_string(),
-            issue_type: IssueType::NulByte.as_str().to_string(),
+            severity: Severity::Error,
+            issue_type: IssueType::NulByte,
             variable: e.key.clone(),
             message: format!(
                 "{} (line {}): a NUL byte inside the value. No process can receive it",
@@ -283,8 +283,8 @@ pub fn check_lone_carriage_returns(
     }
     doc.lone_carriage_returns()
         .map(|e| Issue {
-            severity: "warning".to_string(),
-            issue_type: IssueType::LoneCarriageReturn.as_str().to_string(),
+            severity: Severity::Warning,
+            issue_type: IssueType::LoneCarriageReturn,
             variable: e.key.clone(),
             message: format!(
                 "{} (line {}): a carriage return inside the value. evnx and Docker Compose keep it; \
@@ -342,8 +342,8 @@ pub fn check_duplicate_keys(
                 .collect::<Vec<_>>()
                 .join(", ");
             Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::DuplicateKey.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::DuplicateKey,
                 variable: key.to_string(),
                 message: format!(
                     "{key} is assigned {} times (lines {places}) — only line {last} takes effect",
@@ -378,8 +378,8 @@ pub fn check_extra_variables(
         .keys()
         .filter(|key| !example_keys.contains(key))
         .map(|key| Issue {
-            severity: "warning".to_string(),
-            issue_type: IssueType::ExtraVariable.as_str().to_string(),
+            severity: Severity::Warning,
+            issue_type: IssueType::ExtraVariable,
             variable: key.to_string(),
             message: format!("Extra variable not in .env.example: {}", key),
             location: env_path.to_string(),
@@ -415,8 +415,8 @@ pub fn check_spec_extras(
         return Vec::new();
     }
     let extra = |key: &str, message: String, suggestion: String| Issue {
-        severity: "warning".to_string(),
-        issue_type: IssueType::ExtraVariable.as_str().to_string(),
+        severity: Severity::Warning,
+        issue_type: IssueType::ExtraVariable,
         variable: key.to_string(),
         message,
         location: env_path.to_string(),
@@ -467,12 +467,11 @@ pub fn check_spec_extras(
 pub fn one_finding_per_cause(mut issues: Vec<Issue>) -> Vec<Issue> {
     let placeholders: HashSet<String> = issues
         .iter()
-        .filter(|i| i.issue_type == IssueType::PlaceholderValue.as_str())
+        .filter(|i| i.issue_type == IssueType::PlaceholderValue)
         .map(|i| i.variable.clone())
         .collect();
-    issues.retain(|i| {
-        !(i.issue_type == IssueType::WeakSecret.as_str() && placeholders.contains(&i.variable))
-    });
+    issues
+        .retain(|i| !(i.issue_type == IssueType::WeakSecret && placeholders.contains(&i.variable)));
     issues
 }
 
@@ -494,14 +493,14 @@ pub fn check_exposure(
     let (ty, severity, message, suggestion) = match exposure {
         Some(Exposure::Unignored) => (
             IssueType::EnvNotIgnored,
-            "warning",
+            Severity::Warning,
             format!("{env_path} is not covered by .gitignore — `git add .` would commit it"),
             "Add it to .gitignore (`evnx doctor --fix` adds `.env*` and keeps `.env.example`)"
                 .to_string(),
         ),
         Some(Exposure::Tracked) => (
             IssueType::EnvTracked,
-            "error",
+            Severity::Error,
             format!("{env_path} is tracked by git: its values are in the repository history"),
             format!(
                 "git rm --cached {env_path}, commit, then rotate every secret it held \
@@ -514,8 +513,8 @@ pub fn check_exposure(
         return Vec::new();
     }
     vec![Issue {
-        severity: severity.to_string(),
-        issue_type: ty.as_str().to_string(),
+        severity,
+        issue_type: ty,
         variable: String::new(),
         message,
         location: env_path.to_string(),
@@ -547,8 +546,8 @@ pub fn check_environments(
         .into_iter()
         .map(|p| match p {
             EnvNameProblem::Unknown { name, vars, meant } => Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::UnknownEnvironment.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::UnknownEnvironment,
                 variable: vars[0].clone(),
                 message: match &meant {
                     Some(m) => format!(
@@ -572,8 +571,8 @@ pub fn check_environments(
                 listed,
                 vars,
             } => Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::UnknownEnvironment.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::UnknownEnvironment,
                 variable: vars[0].clone(),
                 message: format!(
                     "{env_path} is not '{listed}': {} limited to '{listed}' {} not checked in it",
@@ -613,8 +612,8 @@ pub fn check_placeholders(
             };
 
             Issue {
-                severity: "error".to_string(),
-                issue_type: IssueType::PlaceholderValue.as_str().to_string(),
+                severity: Severity::Error,
+                issue_type: IssueType::PlaceholderValue,
                 variable: key.clone(),
                 message: format!("{} looks like a placeholder", key),
                 location: env_path.to_string(),
@@ -651,8 +650,8 @@ pub fn check_boolean_trap(
         .iter()
         .filter(|(_, v)| *v == "False" || *v == "True")
         .map(|(key, value)| Issue {
-            severity: "warning".to_string(),
-            issue_type: IssueType::BooleanTrap.as_str().to_string(),
+            severity: Severity::Warning,
+            issue_type: IssueType::BooleanTrap,
             variable: key.clone(),
             message: format!("{} is set to \"{}\" (string, not boolean)", key, value),
             location: env_path.to_string(),
@@ -691,8 +690,8 @@ pub fn check_weak_secret(
         })
         .filter(|(name, value)| is_weak_secret_key(name, value))
         .map(|(name, value)| Issue {
-            severity: "error".to_string(),
-            issue_type: IssueType::WeakSecret.as_str().to_string(),
+            severity: Severity::Error,
+            issue_type: IssueType::WeakSecret,
             variable: name.clone(),
             message: format!("{name} is too weak or predictable"),
             location: env_path.to_string(),
@@ -767,8 +766,8 @@ pub fn check_localhost_docker(
                 && (k.contains("URL") || k.contains("HOST") || k.contains("ADDR"))
         })
         .map(|(key, _)| Issue {
-            severity: "warning".to_string(),
-            issue_type: IssueType::LocalhostInDocker.as_str().to_string(),
+            severity: Severity::Warning,
+            issue_type: IssueType::LocalhostInDocker,
             variable: key.clone(),
             message: format!("{} uses localhost/127.0.0.1", key),
             location: env_path.to_string(),
@@ -803,8 +802,8 @@ pub fn check_formats(
             && !validate_url(value)
         {
             issues.push(Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::InvalidUrl.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::InvalidUrl,
                 variable: key.clone(),
                 message: format!("{} does not appear to be a valid URL", key),
                 location: env_path.to_string(),
@@ -820,8 +819,8 @@ pub fn check_formats(
             && !validate_port(value)
         {
             issues.push(Issue {
-                severity: "error".to_string(),
-                issue_type: IssueType::InvalidPort.as_str().to_string(),
+                severity: Severity::Error,
+                issue_type: IssueType::InvalidPort,
                 variable: key.clone(),
                 message: format!("{} is not a valid port number (1-65535)", key),
                 location: env_path.to_string(),
@@ -837,8 +836,8 @@ pub fn check_formats(
             && !validate_email(value)
         {
             issues.push(Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::InvalidEmail.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::InvalidEmail,
                 variable: key.clone(),
                 message: format!("{} does not appear to be a valid email", key),
                 location: env_path.to_string(),
@@ -1039,7 +1038,7 @@ mod tests {
         let issues = check_missing_variables(&env, &example, ".env", &HashSet::new());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].variable, "API_KEY");
-        assert_eq!(issues[0].severity, "error");
+        assert_eq!(issues[0].severity, Severity::Error);
     }
 
     #[test]
@@ -1094,8 +1093,8 @@ pub fn check_spec_required(
     crate::core::spec::missing_required(spec, |k| env_vars.contains_key(k), env_name)
         .into_iter()
         .map(|key| Issue {
-            severity: "error".to_string(),
-            issue_type: IssueType::MissingVariable.as_str().to_string(),
+            severity: Severity::Error,
+            issue_type: IssueType::MissingVariable,
             variable: key.to_string(),
             message: format!("Missing required variable: {key}"),
             location: env_path.to_string(),
@@ -1124,8 +1123,8 @@ pub fn check_spec_keys(spec: &Spec, ignore: &HashSet<String>) -> Vec<Issue> {
     for (name, declared) in spec {
         for key in declared.unknown_keys() {
             out.push(Issue {
-                severity: "error".to_string(),
-                issue_type: IssueType::UnknownSpecKey.as_str().to_string(),
+                severity: Severity::Error,
+                issue_type: IssueType::UnknownSpecKey,
                 variable: name.clone(),
                 message: format!("Unknown key `{key}` in [vars.{name}] — evnx ignores it"),
                 location: crate::core::config::PROJECT_FILE.to_string(),
@@ -1176,8 +1175,8 @@ pub fn check_spec_format(
         }
 
         out.push(Issue {
-            severity: "error".to_string(),
-            issue_type: IssueType::FormatMismatch.as_str().to_string(),
+            severity: Severity::Error,
+            issue_type: IssueType::FormatMismatch,
             variable: key.clone(),
             message: format!("{key} is not {}", format.describe()),
             location: env_path.to_string(),

@@ -51,6 +51,9 @@ in `doctor`'s output should match `.env: Line N:` instead.
   `$` as `$$`.
 
 ### Changed
+- **Library: `Issue.severity` is a `Severity` enum and `Issue.issue_type` an
+  `IssueType`** (B2), not strings. `validate --format json` is byte-identical;
+  only Rust code using `evnx` as a library sees the change.
 - **A refused key says why** (B2). `my.key`, `my-key` and `1FOO` are still
   refused, since a shell cannot hold them, and the message now says so and
   that Docker Compose and python-dotenv accept them (measured). Other names

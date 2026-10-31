@@ -2,7 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Serialised as [`IssueType::as_str`]; a test holds the two equal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum IssueType {
     MissingVariable,
     ExtraVariable,
@@ -96,11 +98,19 @@ impl IssueType {
     }
 }
 
+/// How serious a finding is: `"error"` or `"warning"` in JSON.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Severity {
+    Error,
+    Warning,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Issue {
-    pub severity: String,
+    pub severity: Severity,
     #[serde(rename = "type")]
-    pub issue_type: String,
+    pub issue_type: IssueType,
     pub variable: String,
     pub message: String,
     pub location: String,
@@ -178,4 +188,18 @@ pub struct ValidationConfig {
     pub validate_formats: bool,
     /// Issue types the caller asked to suppress, from `--ignore`.
     pub ignore_issues: std::collections::HashSet<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// JSON, `--ignore` and the docs all use `as_str`; serde must agree (B2 P2).
+    #[test]
+    fn p2_issue_types_serialise_as_their_names() {
+        for t in IssueType::ALL {
+            assert_eq!(serde_json::to_value(t).unwrap(), t.as_str());
+        }
+        assert_eq!(serde_json::to_value(Severity::Warning).unwrap(), "warning");
+    }
 }

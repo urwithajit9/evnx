@@ -427,7 +427,7 @@ pub fn run(opts: Options) -> Result<()> {
         // (DEC-VA6), the template's value where it may copy it (I-037, D-25),
         // a placeholder where it may do neither.
         for issue in &issues {
-            if issue.issue_type == IssueType::MissingVariable.as_str() && issue.auto_fixable {
+            if issue.issue_type == IssueType::MissingVariable && issue.auto_fixable {
                 let action = if crate::core::classify::may_generate(&issue.variable) {
                     FixAction::AddSecret
                 } else {
@@ -442,7 +442,7 @@ pub fn run(opts: Options) -> Result<()> {
 
         // Placeholders
         for issue in &issues {
-            if issue.issue_type == IssueType::PlaceholderValue.as_str() && issue.auto_fixable {
+            if issue.issue_type == IssueType::PlaceholderValue && issue.auto_fixable {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
@@ -459,7 +459,7 @@ pub fn run(opts: Options) -> Result<()> {
 
         // Boolean traps
         for issue in &issues {
-            if issue.issue_type == IssueType::BooleanTrap.as_str() && issue.auto_fixable {
+            if issue.issue_type == IssueType::BooleanTrap && issue.auto_fixable {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
@@ -481,7 +481,7 @@ pub fn run(opts: Options) -> Result<()> {
         // most one variable per run, and always looked up SECRET_KEY no matter
         // which variable the issue was actually about.
         for issue in &issues {
-            if issue.issue_type == IssueType::WeakSecret.as_str() && issue.auto_fixable {
+            if issue.issue_type == IssueType::WeakSecret && issue.auto_fixable {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
@@ -573,9 +573,16 @@ pub fn run(opts: Options) -> Result<()> {
     // ─────────────────────────────────────────
     // Build Result
     // ─────────────────────────────────────────
-    let errors = issues.iter().filter(|i| i.severity == "error").count();
-    let warnings = issues.iter().filter(|i| i.severity == "warning").count();
-    let style = issues.iter().filter(|i| i.severity == "style").count();
+    let errors = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Error)
+        .count();
+    let warnings = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Warning)
+        .count();
+    // No check reports a style finding; the count stays for the JSON's shape.
+    let style = 0;
 
     // Counted on the file as it is now: before the fix for a dry run (nothing
     // was written), after it otherwise.
@@ -659,7 +666,7 @@ fn hidden_by_needs_input(result: &ValidationResult) -> HashSet<&str> {
             result
                 .issues
                 .iter()
-                .any(|i| i.variable == *v && i.issue_type == IssueType::PlaceholderValue.as_str())
+                .any(|i| i.variable == *v && i.issue_type == IssueType::PlaceholderValue)
         })
         .collect()
 }
@@ -732,13 +739,11 @@ fn output_pretty(result: &ValidationResult, env_path: &str) -> Result<()> {
 
     // Show issues
     for issue in result.issues.iter().filter(|i| {
-        !(hidden.contains(i.variable.as_str())
-            && i.issue_type == IssueType::PlaceholderValue.as_str())
+        !(hidden.contains(i.variable.as_str()) && i.issue_type == IssueType::PlaceholderValue)
     }) {
-        let mark = match issue.severity.as_str() {
-            "error" => glyph::FAIL.red(),
-            "warning" => glyph::WARN.yellow(),
-            _ => glyph::INFO.dimmed(),
+        let mark = match issue.severity {
+            Severity::Error => glyph::FAIL.red(),
+            Severity::Warning => glyph::WARN.yellow(),
         };
 
         // The location leads the detail line rather than trailing it behind a
@@ -809,7 +814,7 @@ fn output_pretty(result: &ValidationResult, env_path: &str) -> Result<()> {
         let fixable = result.issues.iter().any(|i| {
             i.auto_fixable
                 && !(hidden.contains(i.variable.as_str())
-                    && i.issue_type == IssueType::PlaceholderValue.as_str())
+                    && i.issue_type == IssueType::PlaceholderValue)
         });
         let mut steps = vec!["Review and fix the errors above"];
         if fixable {
@@ -858,10 +863,7 @@ fn print_fixes(result: &ValidationResult, lead: bool) {
             if let Some(advice) = result
                 .issues
                 .iter()
-                .find(|i| {
-                    i.variable == fix.variable
-                        && i.issue_type == IssueType::PlaceholderValue.as_str()
-                })
+                .find(|i| i.variable == fix.variable && i.issue_type == IssueType::PlaceholderValue)
                 .and_then(|i| i.suggestion.as_deref())
             {
                 println!("    {}  {}", glyph::ARROW.dimmed(), advice.dimmed());
@@ -941,10 +943,9 @@ fn output_github_actions(result: &ValidationResult, env_path: &str) -> Result<()
     let doc = crate::core::Parser::default().parse_document(&content);
 
     for issue in &result.issues {
-        let level = match issue.severity.as_str() {
-            "error" => "error",
-            "warning" => "warning",
-            _ => "notice",
+        let level = match issue.severity {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
         };
         let body = match &issue.suggestion {
             Some(s) => format!("{}%0ASuggestion: {}", issue.message, s),
@@ -977,7 +978,9 @@ fn output_github_actions(result: &ValidationResult, env_path: &str) -> Result<()
 // Public Re-exports
 // ─────────────────────────────────────────────────────────────
 
-pub use types::{FixApplied, Issue, IssueType, Summary, ValidationConfig, ValidationResult};
+pub use types::{
+    FixApplied, Issue, IssueType, Severity, Summary, ValidationConfig, ValidationResult,
+};
 
 /// How many required variables the contract declares for this environment.
 ///
