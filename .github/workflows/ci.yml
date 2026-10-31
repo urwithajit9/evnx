@@ -58,7 +58,7 @@ jobs:
           toolchain: ${{ matrix.rust }}
       
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       
       # ⛔ **The debug binary does not fit Windows' default main-thread stack.**
       #
@@ -116,7 +116,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: "1.87.0"
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       # --all-targets so tests and benches are covered too: a dev-dependency
       # raising the floor breaks `cargo test` for the same people.
       - run: cargo check --all-features --all-targets
@@ -130,7 +130,7 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       # ⚠️ `--all-targets` includes tests and benches, which this did not lint
       # until v0.5.0. The debt it hid was small — a deprecated API, some style
       # lints — but the reason to close it is that a test file is where a
@@ -152,7 +152,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       # ⚠️ `--no-run` builds them and stops. Benchmark *timings* from a shared
       # runner are noise — neighbours on the box move them more than a code change
       # does — so measuring here would produce numbers nobody could act on.
@@ -183,7 +183,7 @@ jobs:
         with:
           toolchain: stable
           targets: x86_64-unknown-linux-musl
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: cargo build --release --all-features --target x86_64-unknown-linux-musl
       - run: cargo install cross --locked --version 0.2.5
@@ -202,7 +202,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       # The CLI had no audit job until 2026-09-14, so four live advisories in
       # rustls-webpki — the TLS stack the cloud feature talks to the API over,
       # including two certificate name-constraint bypasses — sat unnoticed in the
@@ -242,7 +242,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: cargo doc --no-deps --all-features
 
   package:
@@ -253,7 +253,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       # ⚠️ Publishing to crates.io is manual and irreversible — a version can be
       # yanked but never unpublished, and the number can never be reused. So the
       # failure mode worth preventing is discovering a packaging problem *during*
