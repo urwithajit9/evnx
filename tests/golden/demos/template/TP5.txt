@@ -25,8 +25,8 @@ $ evnx template --input r.tpl --output r.out --env r.env --no-gitignore
 
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: KNOWN I-133: the value of A is evaluated as a template by a later key's filter (exit 0)
+  ok: FIXED I-133 (B3): the value of A is written as it is, never read as a template (exit 0)
 --- r.out:
-v="BEE"
+v="{{B|upper}}"
 
 ================ summary: 2 ok, 0 mismatch   ================

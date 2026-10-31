@@ -8,16 +8,15 @@ $ evnx template --input f.tpl --output f.out --no-gitignore
 
   Generate config from template
 
-Error: f.tpl has 2 filters evnx cannot apply:
+Error: f.tpl has a filter evnx cannot apply:
   line 1: {{DB_HOST|bogus}}: unknown filter `bogus`
-  line 2: {{DB_HOST|upper|json}}: chained filters are not supported; use one filter per placeholder
 
-Filters: upper, lower, title, capitalize, bool, int, json, default:VALUE.
+Filters: upper, lower, title, capitalize, bool, int, json, yaml, toml, sh, default:VALUE. They chain left to right.
 Nothing was written to f.out.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: FIXED I-136 in part (DEC-T7): an unknown filter and a chained filter are errors naming their lines; nothing is written (exit 2)
+  ok: FIXED I-136 (DEC-T7): an unknown filter is an error naming its line; the chained filter is not (B3); nothing is written (exit 2)
 
 $ bash -c test -e f.out && echo "f.out exists" || echo "f.out not created"
 f.out not created
@@ -31,13 +30,13 @@ $ evnx template --input e.tpl --output e.out --no-gitignore
 
   Generate config from template
 
+! e.tpl line 1: ${DB_HOST:-dflt} is written through as it is. evnx's fallback is {{NAME|default:value}}
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: KNOWN I-136: the bash default is written through silently; no escape (DEC-T5, v0.12.0) (exit 0)
+  ok: FIXED I-136 (B3): the bash default is written through with a warning naming its line; \$ escapes (DEC-T5) (exit 0)
 --- e.out:
 b: ${DB_HOST:-dflt}
-d: \db.internal
+d: $DB_HOST
 e: $db.internal
-decided: chaining works and a backslash escape, with the engine since 0.11.0
 
 ================ summary: 2 ok, 0 mismatch   ================
