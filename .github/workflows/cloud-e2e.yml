@@ -1,0 +1,71 @@
+# The cloud commands against a real evnx-server (RM-44).
+#
+# Nightly and on demand, never on pull requests: it pulls the server image and
+# runs Postgres and Valkey, which is minutes a PR should not wait for.
+#
+# ⚠️ SERVER_IMAGE is the commit api.evnx.dev runs. Raise it with each server
+# deploy, so this tests what users meet. 2026-11-01: d2663fa (evnx-server
+# PR #7, the I-313 / SV-3 fix this suite's first test pins).
+#
+# Every value below is a dummy. The server runs with ENVIRONMENT=development,
+# EMAIL_TRANSPORT=log and STORAGE_BACKEND=local, which its config refuses
+# anywhere else, and talks to nothing outside this job.
+name: Cloud e2e
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SERVER_IMAGE: ghcr.io/urwithajit9/evnx-server:d2663fa
+
+jobs:
+  e2e:
+    name: CLI against a real server
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Start Postgres, Valkey and evnx-server
+        run: |
+          docker network create e2e
+          docker run -d --name e2e-pg --network e2e \
+            -e POSTGRES_USER=evnx -e POSTGRES_PASSWORD=e2e_only -e POSTGRES_DB=evnx_e2e \
+            postgres:16-alpine
+          docker run -d --name e2e-vk --network e2e valkey/valkey:9-alpine
+          for i in $(seq 30); do docker exec e2e-pg pg_isready -U evnx >/dev/null 2>&1 && break; sleep 1; done
+          docker run -d --name e2e-api --network e2e -p 127.0.0.1:18080:8080 \
+            -e ENVIRONMENT=development \
+            -e SERVER_HOST=0.0.0.0 -e SERVER_PORT=8080 \
+            -e DATABASE_URL=postgresql://evnx:e2e_only@e2e-pg:5432/evnx_e2e \
+            -e VALKEY_URL=redis://e2e-vk:6379/0 \
+            -e JWT_SECRET=e2e_only_not_a_real_secret_000000000000000000000000000000000000000000000000000000 \
+            -e FRONTEND_URL=http://127.0.0.1:3000 \
+            -e PUBLIC_API_URL=http://127.0.0.1:18080 \
+            -e PUBLIC_APP_URL=http://127.0.0.1:3000 \
+            -e RESEND_API_KEY=re_e2e_placeholder \
+            -e EMAIL_TRANSPORT=log -e EMAIL_FROM=e2e@example.test \
+            -e STORAGE_BACKEND=local -e STORAGE_LOCAL_PATH=/tmp/blobs \
+            -e RUST_LOG=info \
+            "$SERVER_IMAGE"
+          for i in $(seq 60); do curl -sf http://127.0.0.1:18080/health && break; sleep 1; done
+          curl -sf http://127.0.0.1:18080/health
+
+      - name: Run the e2e tests
+        env:
+          EVNX_E2E_SERVER: http://127.0.0.1:18080
+          EVNX_E2E_CONTAINER: e2e-api
+        run: cargo test --all-features --test e2e_cloud -- --test-threads=1 --nocapture
+
+      - name: Server log on failure
+        if: failure()
+        run: docker logs e2e-api 2>&1 | grep -v "token=" | tail -200

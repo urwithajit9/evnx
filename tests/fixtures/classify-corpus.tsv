@@ -1,0 +1,161 @@
+# The classifier corpus (RM-38). Read by tests/classify_corpus.rs.
+# Columns, tab-separated: name, value, secret, strict, lenient, masked, note.
+#   secret   holds_secret(name, value)              y/n
+#   strict   is_placeholder(name, value, Strict)    y/n  (validate)
+#   lenient  is_placeholder(name, value, Lenient)   y/n  (scan, diff)
+#   masked   mask(name, value)                      as printed
+# Values may hold \t, \n and \\. Fixtures only, never live credentials.
+# UPDATE_CORPUS=1 cargo test --test classify_corpus refills the four expected
+# columns from the code; review the diff before committing it.
+API_KEY		y	y	y	***	DEC-G10 hole
+APP_NAME		n	y	y		DEC-G10 hole, plain name
+API_KEY	  	y	y	y	***	DEC-G10 hole
+APP_NAME	  	n	y	y	  	DEC-G10 hole, plain name
+API_KEY	<set-me>	y	y	y	***	DEC-G10 hole
+APP_NAME	<set-me>	n	y	y	<set-me>	DEC-G10 hole, plain name
+API_KEY	<your-key>	y	y	y	***	DEC-G10 hole
+APP_NAME	<your-key>	n	y	y	<your-key>	DEC-G10 hole, plain name
+API_KEY	change-me	y	y	y	***	DEC-G10 hole
+APP_NAME	change-me	n	y	y	change-me	DEC-G10 hole, plain name
+API_KEY	none	y	y	y	***	DEC-G10 hole
+APP_NAME	none	n	y	y	none	DEC-G10 hole, plain name
+API_KEY	NULL	y	y	y	***	DEC-G10 hole
+APP_NAME	NULL	n	y	y	NULL	DEC-G10 hole, plain name
+API_KEY	*****	y	y	y	***	DEC-G10 hole
+APP_NAME	*****	n	y	y	*****	DEC-G10 hole, plain name
+API_KEY	AKIAIOSFODNN7EXAMPLE	y	y	y	***	DEC-G10 hole
+APP_NAME	AKIAIOSFODNN7EXAMPLE	n	y	y	AKIAIOSFODNN7EXAMPLE	DEC-G10 hole, plain name
+API_KEY	wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY	y	y	y	***	DEC-G10 hole
+APP_NAME	wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY	n	y	y	wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY	DEC-G10 hole, plain name
+DB_PASSWORD	Tr0ub4dor<3horse	y	n	n	***	DEC-G10: only a whole bracketed value is a hole (A1)
+API_KEY	dev	y	y	y	***	DEC-G11 context word
+API_KEY	test	y	y	y	***	DEC-G11 context word
+API_KEY	development	y	y	y	***	DEC-G11 context word
+API_KEY	sample	y	y	y	***	DEC-G11 context word
+API_KEY	dummy	y	y	y	***	DEC-G11 context word
+API_KEY	fake	y	y	y	***	DEC-G11 context word
+DB_PASSWORD	dev	y	y	y	***	DEC-G11 context word
+DB_PASSWORD	test	y	y	y	***	DEC-G11 context word
+DB_PASSWORD	development	y	y	y	***	DEC-G11 context word
+DB_PASSWORD	sample	y	y	y	***	DEC-G11 context word
+DB_PASSWORD	dummy	y	y	y	***	DEC-G11 context word
+DB_PASSWORD	fake	y	y	y	***	DEC-G11 context word
+ENVIRONMENT	dev	n	n	n	dev	DEC-G11 context word
+ENVIRONMENT	test	n	n	n	test	DEC-G11 context word
+ENVIRONMENT	development	n	n	n	development	DEC-G11 context word
+ENVIRONMENT	sample	n	n	n	sample	DEC-G11 context word
+ENVIRONMENT	dummy	n	n	n	dummy	DEC-G11 context word
+ENVIRONMENT	fake	n	n	n	fake	DEC-G11 context word
+MODE	dev	n	n	n	dev	DEC-G11 context word
+MODE	test	n	n	n	test	DEC-G11 context word
+MODE	development	n	n	n	development	DEC-G11 context word
+MODE	sample	n	n	n	sample	DEC-G11 context word
+MODE	dummy	n	n	n	dummy	DEC-G11 context word
+MODE	fake	n	n	n	fake	DEC-G11 context word
+DB_PASSWORD	test_db_pass	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	example_value	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	dev123	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	abc123	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	development_db	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	dummy_password	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	####	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	test_key	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	dev_key	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	example	y	y	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	example1	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	example123	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	test123	y	n	y	***	DEC-G13 prefix form: Lenient only
+DB_PASSWORD	your_key	y	y	y	***	DEC-G13 prefix form: Lenient only
+API_KEY	YOUR_KEY_HERE	y	y	y	***	agreed placeholder
+API_KEY	placeholder	y	y	y	***	agreed placeholder
+API_KEY	changeme	y	y	y	***	agreed placeholder
+API_KEY	xxx	y	y	y	***	agreed placeholder
+API_KEY	todo	y	y	y	***	agreed placeholder
+API_KEY	your-secret	y	y	y	***	agreed placeholder
+API_KEY	your_api_key_here	y	y	y	***	agreed placeholder
+API_KEY	sk_test_CHANGE_ME	y	n	y	***	agreed placeholder
+API_KEY	sk_live_51HrealkeystuffABC123	y	n	n	***	agreed real value
+API_KEY	postgres://u:pw@db/todos	y	n	n	postgres://u:***@db/todos	agreed real value
+API_KEY	latest	y	n	n	***	agreed real value
+API_KEY	production	y	n	n	***	agreed real value
+API_KEY	my-app	y	n	n	***	agreed real value
+API_KEY	secret123	y	n	n	***	agreed real value
+API_KEY	production_api_key_2024	y	n	n	***	agreed real value
+UPSTREAM	sk_live_51H1234567890abcdefghijk	y	n	n	***	secret by value, harmless name
+UPSTREAM	sk_test_51H1234567890abcdefghijk	y	n	n	***	secret by value, harmless name
+UPSTREAM	ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8	y	n	n	***	secret by value, harmless name
+UPSTREAM	AKIA4OZRMFJ3VREALKEY	y	n	n	***	secret by value, harmless name
+UPSTREAM	-----BEGIN PRIVATE KEY-----	y	n	n	***	secret by value, harmless name
+UPSTREAM	-----BEGIN RSA PRIVATE KEY-----	y	n	n	***	secret by value, harmless name
+UPSTREAM	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	y	n	n	***	secret by value, harmless name
+UPSTREAM	wJ9lrXUtnFEMI/K7MDzNG/bPxRfiCY4tQm8vHs2K	y	n	n	***	secret by value, harmless name
+UPSTREAM	aB3$xY9!zQ2#mK7	n	n	n	aB3$xY9!zQ2#mK7	secret by value, harmless name
+UPSTREAM	My$ecureP@ssw0rd!	n	n	n	My$ecureP@ssw0rd!	secret by value, harmless name
+UPSTREAM	sk_live_xxxxxxxxxxxxxxxxxxxxxxxx	y	n	n	***	I-050 stand-in or near miss
+UPSTREAM	ghp_000000000000000000000000000000000000	y	n	n	***	I-050 stand-in or near miss
+UPSTREAM	AKIA****************	n	n	n	AKIA****************	I-050 stand-in or near miss
+UPSTREAM	ghp_xxxxxxxxxxxxxxxxxxxx	n	n	n	ghp_xxxxxxxxxxxxxxxxxxxx	I-050 stand-in or near miss
+UPSTREAM	sk_live_51Hxxxxxxx1234567890abcdefghijk	y	n	n	***	I-050 stand-in or near miss
+PORT	8080	n	n	n	8080	plain or non-ASCII
+HOST	localhost	n	n	n	localhost	plain or non-ASCII
+DEBUG	true	n	n	n	true	plain or non-ASCII
+DEBUG_MODE	false	n	n	n	false	plain or non-ASCII
+APP_NAME	my-app	n	n	n	my-app	plain or non-ASCII
+GREETING	héllo wörld	n	n	n	héllo wörld	plain or non-ASCII
+API_TOKEN	日本語の秘密	y	n	n	***	plain or non-ASCII
+SOME_BLOB	aaaaaaa	n	n	y	aaaaaaa	plain or non-ASCII
+DATABASE_HOST	db.internal	n	n	n	db.internal	plain or non-ASCII
+DATABASE_URL	postgres://admin:s3cr3t@db.internal:5432/app	y	n	n	postgres://admin:***@db.internal:5432/app	URL: password masked, structure kept
+UPSTREAM	https://ghp_token123@github.com/o/r.git	y	n	n	https://***@github.com/o/r.git	URL: password masked, structure kept
+DATABASE_URL	postgres://u:pw@h/db	y	n	n	postgres://u:***@h/db	URL: password masked, structure kept
+DATABASE_URL	postgresql://localhost:5432/db	n	n	n	postgresql://localhost:5432/db	URL: password masked, structure kept
+DATABASE_URL	postgresql://reader@db.example.com/main	y	y	n	postgresql://***@db.example.com/main	URL: password masked, structure kept
+MONGO_URL	mongodb+srv://u:p@cluster0.mongodb.net/test	y	n	n	mongodb+srv://u:***@cluster0.mongodb.net/test	URL: password masked, structure kept
+MYSQL_URL	mysql://root:toor@127.0.0.1:3306/app	y	n	n	mysql://root:***@127.0.0.1:3306/app	URL: password masked, structure kept
+AMQP_URL	amqp://guest:guest@rabbit:5672/	y	n	n	amqp://guest:***@rabbit:5672/	URL: password masked, structure kept
+API_URL	https://api.example.com/?to=a@b.com	n	y	n	https://api.example.com/?to=a@b.com	URL: password masked, structure kept
+API_URL	https://api.example.com/users/me@example.com	n	y	n	https://api.example.com/users/me@example.com	URL: password masked, structure kept
+API_URL	https://api.example.com/v1	n	y	n	https://api.example.com/v1	URL: password masked, structure kept
+CONTACT	mailto:someone@example.com	n	n	n	mailto:someone@example.com	URL: password masked, structure kept
+REDIS_URL	redis://localhost:6379/0	n	n	n	redis://localhost:6379/0	URL: password masked, structure kept
+REDIS_URL	redis://:@host	n	n	n	redis://:@host	URL: password masked, structure kept
+DATABASE_URL	postgres://u:p@ss@host/db	y	n	n	postgres://u:***@host/db	URL: password masked, structure kept
+DATABASE_URL	postgres://user:password@db.prod.company.io:5432	y	n	n	postgres://user:***@db.prod.company.io:5432	URL: password masked, structure kept
+DATABASE_URL	postgresql://user:password@localhost:5432	y	n	n	postgresql://user:***@localhost:5432	URL: password masked, structure kept
+STRIPE_KEY	q7Rk2pLm	y	n	n	***	secret by name
+SECRET_KEY	q7Rk2pLm	y	n	n	***	secret by name
+DB_PASSWORD	q7Rk2pLm	y	n	n	***	secret by name
+jwt_secret	q7Rk2pLm	y	n	n	***	secret by name
+AWS_CREDENTIALS	q7Rk2pLm	y	n	n	***	secret by name
+APIKEY	q7Rk2pLm	y	n	n	***	secret by name
+SIGNING_KEY	q7Rk2pLm	y	n	n	***	secret by name
+GITHUB_TOKEN	q7Rk2pLm	y	n	n	***	secret by name
+ROOT_PASSWD	q7Rk2pLm	y	n	n	***	secret by name
+MY_PWD	q7Rk2pLm	y	n	n	***	secret by name
+X_APIKEY	q7Rk2pLm	y	n	n	***	secret by name
+PASSWD	q7Rk2pLm	y	n	n	***	secret by name
+ADMIN_PWD	q7Rk2pLm	y	n	n	***	secret by name
+STRIPE_APIKEY	q7Rk2pLm	y	n	n	***	secret by name
+CREDENTIALS	q7Rk2pLm	y	n	n	***	secret by name
+PRIVATE_KEY	q7Rk2pLm	y	n	n	***	secret by name
+STRIPE_SECRET_KEY	q7Rk2pLm	y	n	n	***	secret by name
+PUBLIC_KEY_PASSWORD	q7Rk2pLm	y	n	n	***	secret by name
+AWS_SECRET_ACCESS_KEY	q7Rk2pLm	y	n	n	***	secret by name
+ENCRYPTION_KEY	q7Rk2pLm	y	n	n	***	secret by name
+PUBLIC_KEY	q7Rk2pLm	n	n	n	q7Rk2pLm	RM-31, F6: name that is not a credential
+VAPID_PUBLIC_KEY	q7Rk2pLm	n	n	n	q7Rk2pLm	RM-31, F6: name that is not a credential
+stripe_publishable_key	q7Rk2pLm	n	n	n	q7Rk2pLm	RM-31, F6: name that is not a credential
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY	q7Rk2pLm	n	n	n	q7Rk2pLm	RM-31, F6: name that is not a credential
+PWD	q7Rk2pLm	y	n	n	***	RM-31, F6: name that is not a credential
+SECRET_KEY_ROTATION_DAYS	q7Rk2pLm	y	n	n	***	RM-31, F6: name that is not a credential
+QUOTA_FREE_TOKENS	q7Rk2pLm	y	n	n	***	RM-31, F6: name that is not a credential
+AUTH_ENABLED	q7Rk2pLm	y	n	n	***	RM-31, F6: name that is not a credential
+KEY	q7Rk2pLm	y	n	n	***	RM-31, F6: name that is not a credential
+API_KEY_ID	q7Rk2pLm	y	n	n	***	RM-31, F6: name that is not a credential
+KEYBOARD_LAYOUT	q7Rk2pLm	n	n	n	q7Rk2pLm	RM-31, F6: name that is not a credential
+MONKEY	q7Rk2pLm	n	n	n	q7Rk2pLm	RM-31, F6: name that is not a credential
+DONKEY_COUNT	q7Rk2pLm	n	n	n	q7Rk2pLm	RM-31, F6: name that is not a credential
+SUPPORT_EMAIL	q7Rk2pLm	n	n	n	q7Rk2pLm	RM-31, F6: name that is not a credential
+MULTILINE	line one\nline two	n	n	n	line one\nline two	value with a newline
+TABBED	a\tb	n	n	n	a\tb	value with a tab
+WIN_PATH	C:\\dir\\app	n	n	n	C:\\dir\\app	value with backslashes
