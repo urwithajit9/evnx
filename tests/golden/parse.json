@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "file": ".env",
+  "entries": [
+    {
+      "key": "DB_HOST",
+      "line": 1,
+      "empty": false,
+      "placeholder": false,
+      "secret": false
+    },
+    {
+      "key": "AWS_KEY",
+      "line": 2,
+      "empty": false,
+      "placeholder": false,
+      "secret": true
+    },
+    {
+      "key": "EXTRA",
+      "line": 3,
+      "empty": false,
+      "placeholder": false,
+      "secret": false
+    },
+    {
+      "key": "PORT",
+      "line": 4,
+      "empty": false,
+      "placeholder": false,
+      "secret": false
+    }
+  ],
+  "problems": []
+}

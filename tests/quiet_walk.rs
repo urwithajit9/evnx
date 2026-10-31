@@ -110,6 +110,7 @@ const EXEMPT: &[(&str, &str)] = &[
     // Data: `-q` never suppresses the answer (DEC-SF5, DEC-G3).
     ("commands", "data"),
     ("completions", "data"),
+    ("parse", "data: the listing is the answer"),
     (
         "cloud status",
         "data: the answer stays under -q (DEC-G3); see t_cloud_status_keeps_the_answer",

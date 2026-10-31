@@ -107,6 +107,29 @@ pub fn restore_cursor_on_interrupt() {
 #[cfg(not(unix))]
 pub fn restore_cursor_on_interrupt() {}
 
+/// `cmd`'s `-`: what is piped in, as UTF-8 text. Refused from a terminal, and
+/// when empty: `cat missing | evnx … -` pipes nothing, and reading that as
+/// an empty file would pass.
+pub fn read_piped(cmd: &str) -> anyhow::Result<String> {
+    use anyhow::Context as _;
+    use std::io::Read as _;
+    if interactive() {
+        anyhow::bail!("`{cmd}` reads what is piped into it, and nothing is: `cat .env | {cmd}`");
+    }
+    let mut text = String::new();
+    std::io::stdin()
+        .lock()
+        .read_to_string(&mut text)
+        .context("reading stdin (it must be UTF-8 text)")?;
+    if text.is_empty() {
+        anyhow::bail!(
+            "nothing was piped into `{cmd}`, so nothing was read. \
+             Check the command before the pipe."
+        );
+    }
+    Ok(text)
+}
+
 /// Whether evnx may ask the person a question: stdin is a terminal.
 ///
 /// One definition for every command (C-02). Ten call sites each asked

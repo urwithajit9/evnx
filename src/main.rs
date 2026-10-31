@@ -742,6 +742,22 @@ fn main() -> Result<()> {
             )
         }
 
+        Commands::Parse {
+            env,
+            env_name,
+            format,
+            values,
+            yes,
+        } => {
+            let env = resolve_env(
+                Path::new("."),
+                env.as_deref(),
+                env_name.as_deref(),
+                cfg.defaults.env_name.as_deref(),
+            );
+            commands::parse::run(&env, &format, values, yes)
+        }
+
         Commands::Surface { json, compact } => commands::surface::run(json, compact),
         Commands::Completions { shell } => commands::completions::run(shell),
         Commands::Update { check, json } => commands::update::run(check, json).map(verdict::finish),

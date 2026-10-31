@@ -81,30 +81,6 @@ enum InputFormat {
 /// How a finding names stdin, as `scan -` does.
 const STDIN_LABEL: &str = "<stdin>";
 
-/// `--env -`: what is piped in. Refused from a terminal, and when empty:
-/// `cat missing | evnx validate --env -` pipes nothing.
-fn read_stdin() -> Result<String> {
-    use std::io::{IsTerminal as _, Read as _};
-    if std::io::stdin().is_terminal() {
-        anyhow::bail!(
-            "`--env -` reads what is piped into evnx, and nothing is: \
-             `cat .env | evnx validate --env -`"
-        );
-    }
-    let mut text = String::new();
-    std::io::stdin()
-        .lock()
-        .read_to_string(&mut text)
-        .context("reading stdin (it must be UTF-8 text)")?;
-    if text.is_empty() {
-        anyhow::bail!(
-            "nothing was piped into `evnx validate --env -`, so nothing was checked. \
-             Check the command before the pipe."
-        );
-    }
-    Ok(text)
-}
-
 /// `--input-format json` (B2): a flat `{"KEY": "value"}` object, or
 /// `evnx parse --format json --values`'s output. Every line number is 0: JSON
 /// has no line to point at. Never names a value in an error.
@@ -126,10 +102,9 @@ fn document_from_json(text: &str) -> Result<crate::core::parser::Document> {
                     .get("key")
                     .and_then(Value::as_str)
                     .context("an entry has no `key`")?;
-                let value = e
-                    .get("value")
-                    .and_then(Value::as_str)
-                    .with_context(|| format!("{key} has no `value`: each entry needs one"))?;
+                let value = e.get("value").and_then(Value::as_str).with_context(|| {
+                    format!("{key} has no value: write it with `evnx parse --format json --values`")
+                })?;
                 Ok((key.to_string(), value.to_string()))
             })
             .collect::<Result<_>>()?
@@ -750,7 +725,7 @@ pub fn run(opts: Options) -> Result<()> {
     let doc = match input_format {
         InputFormat::Json => {
             let text = if stdin {
-                read_stdin()?
+                crate::utils::term::read_piped("evnx validate --env -")?
             } else {
                 std::fs::read_to_string(&env_path)
                     .with_context(|| format!("could not read {env_path}"))?
@@ -759,7 +734,8 @@ pub fn run(opts: Options) -> Result<()> {
                 .with_context(|| format!("Failed to read {origin} as --input-format json"))?
         }
         InputFormat::Dotenv if stdin => {
-            let doc = parser.parse_document(&read_stdin()?);
+            let doc =
+                parser.parse_document(&crate::utils::term::read_piped("evnx validate --env -")?);
             if !doc.is_clean() {
                 return Err(listed_problems(doc.problems, &origin));
             }

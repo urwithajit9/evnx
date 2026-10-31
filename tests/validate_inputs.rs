@@ -115,7 +115,8 @@ fn b2_json_errors_name_keys_never_values() {
     let no_values = r#"{"schema_version":1,"entries":[{"key":"PORT","line":1}]}"#;
     let out = validate(&d, no_values, &["--input-format", "json"]);
     assert!(
-        stderr(&out).contains("PORT has no `value`: each entry needs one"),
+        stderr(&out)
+            .contains("PORT has no value: write it with `evnx parse --format json --values`"),
         "{}",
         stderr(&out)
     );

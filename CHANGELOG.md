@@ -41,6 +41,13 @@ in `doctor`'s output should match `.env: Line N:` instead.
   is unchanged in this release, and changes in 0.13.0**, when evnx expands top
   to bottom as well.
 
+- **`evnx parse`: what evnx reads from a `.env`** (B2, RM-36, RM-88). One row
+  per entry: line, key, and whether the value is empty, a placeholder or a
+  secret, **never the value**. Every problem in the file is listed, and the
+  exit code is 1 when there is one. `--env -` reads stdin. `--format json`
+  (`schema_version: 1`) is what `validate --input-format json` reads back.
+  `--values` adds the values, and refuses a terminal unless `--yes`, where they
+  would stay in the scrollback.
 - **`validate --env -` reads stdin, and `--input-format json` reads JSON**
   (B2). JSON is a flat `{"KEY": "value"}` object or what
   `evnx parse --format json --values` prints; the format is never guessed,

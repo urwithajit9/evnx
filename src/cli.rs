@@ -2771,6 +2771,38 @@ file, names that collide, a filter that leaves nothing).
         action: SpecAction,
     },
 
+    /// List what evnx reads from a `.env`: line, key and flags, never a value.
+    ///
+    /// Flags say whether each value is empty, a placeholder or a secret. Every
+    /// problem in the file is listed, and the exit code is 1 when there is one.
+    /// `--format json` is what `evnx validate --input-format json` reads.
+    #[command(after_help = docs::PARSE.after_help)]
+    Parse {
+        /// The file to read, or `-` for stdin. Defaults to `.env`, or
+        /// `[defaults] env_name`.
+        #[arg(long)]
+        env: Option<String>,
+
+        /// Read `.env.<NAME>` instead of `.env`.
+        #[arg(long, value_name = "NAME", conflicts_with = "env")]
+        env_name: Option<String>,
+
+        /// Output format: `pretty` or `json`.
+        #[arg(long, default_value = "pretty")]
+        format: String,
+
+        /// Print each value too, in plain text.
+        ///
+        /// Refused when stdout is a terminal, unless --yes: a value printed
+        /// there stays in the scrollback.
+        #[arg(long)]
+        values: bool,
+
+        /// Print --values to a terminal anyway.
+        #[arg(short, long, requires = "values")]
+        yes: bool,
+    },
+
     /// Run a command with a `.env`'s variables in its environment.
     ///
     /// The local `evnx cloud run`: the file is read and handed to the child
