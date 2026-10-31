@@ -277,6 +277,13 @@ pub const ORG: CommandDoc = CommandDoc {
     after_help: "Full guide: https://docs.evnx.dev/cli/commands/org",
 };
 
+pub const PARSE: CommandDoc = CommandDoc {
+    command: "parse",
+    url: "https://docs.evnx.dev/cli/commands/parse",
+    description: "What evnx reads from a .env: keys, lines and flags, never values",
+    after_help: "Full guide: https://docs.evnx.dev/cli/commands/parse",
+};
+
 pub const RUN: CommandDoc = CommandDoc {
     command: "run",
     url: "https://docs.evnx.dev/cli/commands/run",
@@ -353,6 +360,7 @@ pub const ALL: &[&CommandDoc] = &[
     &AUTH,
     &VAULT,
     &ORG,
+    &PARSE,
     &RUN,
     &COMMANDS,
     &COMPLETIONS,

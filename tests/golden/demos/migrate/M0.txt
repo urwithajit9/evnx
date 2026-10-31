@@ -86,23 +86,23 @@ Options:
       --infisical-env <INFISICAL_ENV>
           Infisical environment name (dev / staging / prod)
 
-  -v, --verbose
-          Enable verbose output
-
       --vault-name <VAULT_NAME>
           Azure Key Vault name
 
       --heroku-app <HEROKU_APP>
           Heroku application name
 
+  -v, --verbose
+          Enable verbose output
+
   -q, --quiet
           Print nothing on success. Findings, warnings, errors and requested data still print
 
-      --no-color
-          Disable colored output
-
       --vercel-project <VERCEL_PROJECT>
           Vercel project ID or name (default: the linked project)
+
+      --no-color
+          Disable colored output
 
       --railway-project <RAILWAY_PROJECT>
           Railway project ID (default: the linked project). Needs --railway-environment, as Railway does

@@ -173,6 +173,7 @@ fn main() -> Result<()> {
         Commands::Validate {
             env,
             env_name,
+            input_format,
             example,
             strict,
             fix,
@@ -190,6 +191,7 @@ fn main() -> Result<()> {
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
             ),
+            input_format,
             example: cfg.example_path(example),
             strict: evnx::core::config::any(strict, cfg.validate.strict),
             fix,
@@ -738,6 +740,22 @@ fn main() -> Result<()> {
                 cli.verbose,
                 &command,
             )
+        }
+
+        Commands::Parse {
+            env,
+            env_name,
+            format,
+            values,
+            yes,
+        } => {
+            let env = resolve_env(
+                Path::new("."),
+                env.as_deref(),
+                env_name.as_deref(),
+                cfg.defaults.env_name.as_deref(),
+            );
+            commands::parse::run(&env, &format, values, yes)
         }
 
         Commands::Surface { json, compact } => commands::surface::run(json, compact),

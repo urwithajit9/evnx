@@ -580,6 +580,49 @@ impl DiagnosticCheck for EnvFileCheck {
                             if verbose {
                                 lines.push(format!("✓ {name} syntax is valid"));
                             }
+                            // B2 P0.6: parses, but no process can receive it.
+                            let nul: Vec<&str> = doc.nul_bytes().map(|e| e.key.as_str()).collect();
+                            if !nul.is_empty() {
+                                severity = Severity::Error;
+                                lines.push(format!(
+                                    "✗ {name}: a NUL byte inside {} — no process can receive it",
+                                    nul.join(", ")
+                                ));
+                            }
+                            // B2 P0.5: whatever the readers, a lone CR splits
+                            // a variable in two for python-dotenv and Node.
+                            let cr: Vec<&str> = doc
+                                .lone_carriage_returns()
+                                .map(|e| e.key.as_str())
+                                .collect();
+                            if !cr.is_empty() {
+                                if severity == Severity::Ok {
+                                    severity = Severity::Warning;
+                                }
+                                lines.push(format!(
+                                    "! {name}: a carriage return inside {} — python-dotenv and Node dotenv \
+                                     end the line there — run `evnx validate`",
+                                    cr.join(", ")
+                                ));
+                            }
+                            // D10: Compose's order, whatever the readers —
+                            // evnx switches to it in 0.13.0.
+                            if !doc.order_differences.is_empty() {
+                                if severity == Severity::Ok {
+                                    severity = Severity::Warning;
+                                }
+                                let keys: Vec<&str> = doc
+                                    .order_differences
+                                    .iter()
+                                    .map(|d| d.key.as_str())
+                                    .collect();
+                                lines.push(format!(
+                                    "! {name}: {} read differently top to bottom by Docker Compose \
+                                     and python-dotenv ({}) — run `evnx validate`",
+                                    crate::utils::string::pluralize(keys.len(), "value is", "values are"),
+                                    keys.join(", ")
+                                ));
+                            }
                             // RM-04: one line naming the readers, so a wrong
                             // detection is visible; `validate` lists the lines.
                             let readers = crate::core::dialect::detect(project_root);
@@ -591,7 +634,12 @@ impl DiagnosticCheck for EnvFileCheck {
                                 lines.push(format!(
                                 "! {name} is read by {}; {} read differently — run `evnx validate`",
                                 crate::core::dialect::names_with_evnx(&readers),
-                                crate::utils::string::pluralize(found.len(), "line is", "lines are")
+                                // One line can be two cases (`${A}$$`).
+                                crate::utils::string::pluralize(
+                                    found.iter().map(|m| m.line).collect::<std::collections::HashSet<_>>().len(),
+                                    "line is",
+                                    "lines are"
+                                )
                             ));
                             }
                         }

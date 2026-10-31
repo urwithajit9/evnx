@@ -9,7 +9,8 @@ use std::sync::LazyLock;
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
-use super::types::{Issue, IssueType};
+use super::policy::is_placeholder;
+use super::types::{Issue, IssueType, Severity};
 
 // ─────────────────────────────────────────────────────────────
 // Regex Patterns for Format Validation
@@ -21,20 +22,18 @@ pub static EMAIL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").expect("Email regex is valid")
 });
 
+/// A finding's `path:line`. Line 0 is input with no lines (JSON): `path:—`.
+fn at(path: &str, line: usize) -> String {
+    if line == 0 {
+        format!("{path}:—")
+    } else {
+        format!("{path}:{line}")
+    }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Helper Predicates
 // ─────────────────────────────────────────────────────────────
-
-/// `validate`'s placeholder question: [`crate::core::classify::is_placeholder`]
-/// at the **Strict** level, with the variable's name (C-05, DEC-G13).
-///
-/// ⚠️ Strict, because `--fix` overwrites what this calls a placeholder. The
-/// list (anchored, never `contains`) moved to `core::classify` unchanged; what
-/// is new is the name: `API_KEY=dev` is a placeholder, `ENVIRONMENT=dev` is not
-/// (DEC-G11), and `*****` or AWS's documentation key always is (DEC-G10).
-pub fn is_placeholder(name: &str, value: &str) -> bool {
-    crate::core::classify::is_placeholder(name, value, crate::core::classify::Strictness::Strict)
-}
 
 /// `name` chooses the length floor; `value` is what gets judged.
 ///
@@ -142,8 +141,8 @@ pub fn check_missing_variables(
         .iter()
         .filter(|(key, _)| !env_keys.contains(key))
         .map(|(key, template_value)| Issue {
-            severity: "error".to_string(),
-            issue_type: IssueType::MissingVariable.as_str().to_string(),
+            severity: Severity::Error,
+            issue_type: IssueType::MissingVariable,
             variable: key.to_string(),
             message: format!("Missing required variable: {}", key),
             location: env_path.to_string(),
@@ -170,14 +169,13 @@ pub fn check_missing_variables(
 pub fn check_reader_mismatch(
     doc: &crate::core::parser::Document,
     env_path: &str,
-    project: &std::path::Path,
+    readers: &[crate::core::dialect::Reader],
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
     if ignore.contains(IssueType::ReaderMismatch.as_str()) {
         return Vec::new();
     }
-    let readers = crate::core::dialect::detect(project);
-    crate::core::dialect::mismatches(doc, &readers)
+    crate::core::dialect::mismatches(doc, readers)
         .into_iter()
         .map(|m| {
             let agree = if m.agree.is_empty() {
@@ -186,8 +184,8 @@ pub fn check_reader_mismatch(
                 format!("{} read", crate::core::dialect::names_with_evnx(&m.agree))
             };
             Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::ReaderMismatch.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::ReaderMismatch,
                 variable: m.key.clone(),
                 message: format!(
                     "{} (line {}): {} {}, while {agree} it as written",
@@ -196,10 +194,118 @@ pub fn check_reader_mismatch(
                     crate::core::dialect::names(&m.differ),
                     m.effect
                 ),
-                location: format!("{env_path}:{}", m.line),
+                location: at(env_path, m.line),
                 suggestion: Some(m.fix.to_string()),
                 auto_fixable: false,
             }
+        })
+        .collect()
+}
+
+/// Values Docker Compose and python-dotenv read differently because they expand
+/// top to bottom (D10, B2 P0.7). Always checked: evnx reads them that way from
+/// 0.13.0. Names the variables, never a value.
+pub fn check_expansion_order(
+    doc: &crate::core::parser::Document,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if ignore.contains(IssueType::ExpansionOrder.as_str()) {
+        return Vec::new();
+    }
+    doc.order_differences
+        .iter()
+        .map(|d| {
+            let uses = if d.below.is_empty() {
+                "a variable whose value depends on one assigned below it".to_string()
+            } else {
+                d.below
+                    .iter()
+                    .map(|b| {
+                        let how = if b.also_above { "again" } else { "only" };
+                        format!("{}, assigned {how} below it on line {}", b.name, b.line)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            };
+            Issue {
+                severity: Severity::Warning,
+                issue_type: IssueType::ExpansionOrder,
+                variable: d.key.clone(),
+                message: format!(
+                    "{} (line {}) uses {uses}. Docker Compose and python-dotenv expand top to bottom, \
+                     so they read a different value for {} than evnx does",
+                    d.key, d.line, d.key
+                ),
+                location: at(env_path, d.line),
+                suggestion: Some(
+                    "Assign each variable above the lines that use it. From 0.13.0 evnx also \
+                     expands top to bottom, so this value will change"
+                        .to_string(),
+                ),
+                auto_fixable: false,
+            }
+        })
+        .collect()
+}
+
+/// Values holding a NUL byte (B2 P0.6). An error: the file parses, but `exec`
+/// refuses such an environment and Docker will not start the container.
+pub fn check_nul_bytes(
+    doc: &crate::core::parser::Document,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if ignore.contains(IssueType::NulByte.as_str()) {
+        return Vec::new();
+    }
+    doc.nul_bytes()
+        .map(|e| Issue {
+            severity: Severity::Error,
+            issue_type: IssueType::NulByte,
+            variable: e.key.clone(),
+            message: format!(
+                "{} (line {}): a NUL byte inside the value. No process can receive it",
+                e.key, e.span.line
+            ),
+            location: at(env_path, e.span.line),
+            suggestion: Some(
+                "Remove the NUL byte. It usually comes from a file saved as UTF-16, or a binary paste"
+                    .to_string(),
+            ),
+            auto_fixable: false,
+        })
+        .collect()
+}
+
+/// Values holding a carriage return that ends no CRLF line (B2 P0.5). Always
+/// checked, whatever the readers: the file is one variable to evnx and two to
+/// python-dotenv and Node dotenv. Never prints the value.
+pub fn check_lone_carriage_returns(
+    doc: &crate::core::parser::Document,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if ignore.contains(IssueType::LoneCarriageReturn.as_str()) {
+        return Vec::new();
+    }
+    doc.lone_carriage_returns()
+        .map(|e| Issue {
+            severity: Severity::Warning,
+            issue_type: IssueType::LoneCarriageReturn,
+            variable: e.key.clone(),
+            message: format!(
+                "{} (line {}): a carriage return inside the value. evnx and Docker Compose keep it; \
+                 python-dotenv and Node dotenv end the line there and read what follows as another variable",
+                e.key, e.span.line
+            ),
+            location: at(env_path, e.span.line),
+            suggestion: Some(
+                "Save the file with LF line endings. A carriage return on its own is the \
+                 line ending of classic Mac OS, or a paste from one"
+                    .to_string(),
+            ),
+            auto_fixable: false,
         })
         .collect()
 }
@@ -244,8 +350,8 @@ pub fn check_duplicate_keys(
                 .collect::<Vec<_>>()
                 .join(", ");
             Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::DuplicateKey.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::DuplicateKey,
                 variable: key.to_string(),
                 message: format!(
                     "{key} is assigned {} times (lines {places}) — only line {last} takes effect",
@@ -280,8 +386,8 @@ pub fn check_extra_variables(
         .keys()
         .filter(|key| !example_keys.contains(key))
         .map(|key| Issue {
-            severity: "warning".to_string(),
-            issue_type: IssueType::ExtraVariable.as_str().to_string(),
+            severity: Severity::Warning,
+            issue_type: IssueType::ExtraVariable,
             variable: key.to_string(),
             message: format!("Extra variable not in .env.example: {}", key),
             location: env_path.to_string(),
@@ -317,8 +423,8 @@ pub fn check_spec_extras(
         return Vec::new();
     }
     let extra = |key: &str, message: String, suggestion: String| Issue {
-        severity: "warning".to_string(),
-        issue_type: IssueType::ExtraVariable.as_str().to_string(),
+        severity: Severity::Warning,
+        issue_type: IssueType::ExtraVariable,
         variable: key.to_string(),
         message,
         location: env_path.to_string(),
@@ -369,12 +475,11 @@ pub fn check_spec_extras(
 pub fn one_finding_per_cause(mut issues: Vec<Issue>) -> Vec<Issue> {
     let placeholders: HashSet<String> = issues
         .iter()
-        .filter(|i| i.issue_type == IssueType::PlaceholderValue.as_str())
+        .filter(|i| i.issue_type == IssueType::PlaceholderValue)
         .map(|i| i.variable.clone())
         .collect();
-    issues.retain(|i| {
-        !(i.issue_type == IssueType::WeakSecret.as_str() && placeholders.contains(&i.variable))
-    });
+    issues
+        .retain(|i| !(i.issue_type == IssueType::WeakSecret && placeholders.contains(&i.variable)));
     issues
 }
 
@@ -396,14 +501,14 @@ pub fn check_exposure(
     let (ty, severity, message, suggestion) = match exposure {
         Some(Exposure::Unignored) => (
             IssueType::EnvNotIgnored,
-            "warning",
+            Severity::Warning,
             format!("{env_path} is not covered by .gitignore — `git add .` would commit it"),
             "Add it to .gitignore (`evnx doctor --fix` adds `.env*` and keeps `.env.example`)"
                 .to_string(),
         ),
         Some(Exposure::Tracked) => (
             IssueType::EnvTracked,
-            "error",
+            Severity::Error,
             format!("{env_path} is tracked by git: its values are in the repository history"),
             format!(
                 "git rm --cached {env_path}, commit, then rotate every secret it held \
@@ -416,8 +521,8 @@ pub fn check_exposure(
         return Vec::new();
     }
     vec![Issue {
-        severity: severity.to_string(),
-        issue_type: ty.as_str().to_string(),
+        severity,
+        issue_type: ty,
         variable: String::new(),
         message,
         location: env_path.to_string(),
@@ -449,8 +554,8 @@ pub fn check_environments(
         .into_iter()
         .map(|p| match p {
             EnvNameProblem::Unknown { name, vars, meant } => Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::UnknownEnvironment.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::UnknownEnvironment,
                 variable: vars[0].clone(),
                 message: match &meant {
                     Some(m) => format!(
@@ -474,8 +579,8 @@ pub fn check_environments(
                 listed,
                 vars,
             } => Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::UnknownEnvironment.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::UnknownEnvironment,
                 variable: vars[0].clone(),
                 message: format!(
                     "{env_path} is not '{listed}': {} limited to '{listed}' {} not checked in it",
@@ -515,8 +620,8 @@ pub fn check_placeholders(
             };
 
             Issue {
-                severity: "error".to_string(),
-                issue_type: IssueType::PlaceholderValue.as_str().to_string(),
+                severity: Severity::Error,
+                issue_type: IssueType::PlaceholderValue,
                 variable: key.clone(),
                 message: format!("{} looks like a placeholder", key),
                 location: env_path.to_string(),
@@ -525,13 +630,13 @@ pub fn check_placeholders(
                 // `DB_NAME` has no value evnx can supply, and claiming
                 // "fixable with --fix" for it sends the user to a command that
                 // will leave the line as it found it.
-                auto_fixable: crate::commands::validate::fixer::suggest_fix(
+                auto_fixable: super::policy::suggest_fix(
                     key,
                     _value,
                     &IssueType::PlaceholderValue,
                     // A placeholder is not a credential, so the weak-secret
                     // policy has nothing to say about it either way.
-                    crate::commands::validate::fixer::WeakSecretPolicy::PlaceholdersOnly,
+                    super::policy::WeakSecretPolicy::PlaceholdersOnly,
                 )
                 .is_actionable(),
             }
@@ -553,8 +658,8 @@ pub fn check_boolean_trap(
         .iter()
         .filter(|(_, v)| *v == "False" || *v == "True")
         .map(|(key, value)| Issue {
-            severity: "warning".to_string(),
-            issue_type: IssueType::BooleanTrap.as_str().to_string(),
+            severity: Severity::Warning,
+            issue_type: IssueType::BooleanTrap,
             variable: key.clone(),
             message: format!("{} is set to \"{}\" (string, not boolean)", key, value),
             location: env_path.to_string(),
@@ -575,7 +680,7 @@ pub fn check_weak_secret(
     env_vars: &IndexMap<String, String>,
     env_path: &str,
     ignore: &HashSet<String>,
-    weak_secrets: crate::commands::validate::fixer::WeakSecretPolicy,
+    weak_secrets: super::policy::WeakSecretPolicy,
 ) -> Vec<Issue> {
     if ignore.contains(IssueType::WeakSecret.as_str()) {
         return Vec::new();
@@ -593,8 +698,8 @@ pub fn check_weak_secret(
         })
         .filter(|(name, value)| is_weak_secret_key(name, value))
         .map(|(name, value)| Issue {
-            severity: "error".to_string(),
-            issue_type: IssueType::WeakSecret.as_str().to_string(),
+            severity: Severity::Error,
+            issue_type: IssueType::WeakSecret,
             variable: name.clone(),
             message: format!("{name} is too weak or predictable"),
             location: env_path.to_string(),
@@ -605,7 +710,7 @@ pub fn check_weak_secret(
             // nobody asked, the action is to rotate it **where it is issued**
             // first; a new value evnx invents that the provider does not have
             // is an outage, not a repair. `--fix` deliberately declines that
-            // case — see `fixer::suggest_fix`.
+            // case — see `policy::suggest_fix`.
             //
             // ⚠️ I-260: and a key someone else issues gets neither the
             // one-liner nor the flag — `--fix` will not generate it under any
@@ -617,8 +722,7 @@ pub fn check_weak_secret(
                 ) {
                     (true, placeholder)
                         if placeholder
-                            || weak_secrets
-                                == crate::commands::validate::fixer::WeakSecretPolicy::Rotate =>
+                            || weak_secrets == super::policy::WeakSecretPolicy::Rotate =>
                     {
                         "Run: openssl rand -hex 32".to_string()
                     }
@@ -641,7 +745,7 @@ pub fn check_weak_secret(
             // report advertised `--fix` over working credentials and `--fix`
             // obliged. The two must agree, so ask the fixer rather than
             // asserting — the same shape `check_placeholders` already uses.
-            auto_fixable: crate::commands::validate::fixer::suggest_fix(
+            auto_fixable: super::policy::suggest_fix(
                 name,
                 value,
                 &IssueType::WeakSecret,
@@ -670,8 +774,8 @@ pub fn check_localhost_docker(
                 && (k.contains("URL") || k.contains("HOST") || k.contains("ADDR"))
         })
         .map(|(key, _)| Issue {
-            severity: "warning".to_string(),
-            issue_type: IssueType::LocalhostInDocker.as_str().to_string(),
+            severity: Severity::Warning,
+            issue_type: IssueType::LocalhostInDocker,
             variable: key.clone(),
             message: format!("{} uses localhost/127.0.0.1", key),
             location: env_path.to_string(),
@@ -706,8 +810,8 @@ pub fn check_formats(
             && !validate_url(value)
         {
             issues.push(Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::InvalidUrl.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::InvalidUrl,
                 variable: key.clone(),
                 message: format!("{} does not appear to be a valid URL", key),
                 location: env_path.to_string(),
@@ -723,8 +827,8 @@ pub fn check_formats(
             && !validate_port(value)
         {
             issues.push(Issue {
-                severity: "error".to_string(),
-                issue_type: IssueType::InvalidPort.as_str().to_string(),
+                severity: Severity::Error,
+                issue_type: IssueType::InvalidPort,
                 variable: key.clone(),
                 message: format!("{} is not a valid port number (1-65535)", key),
                 location: env_path.to_string(),
@@ -740,8 +844,8 @@ pub fn check_formats(
             && !validate_email(value)
         {
             issues.push(Issue {
-                severity: "warning".to_string(),
-                issue_type: IssueType::InvalidEmail.as_str().to_string(),
+                severity: Severity::Warning,
+                issue_type: IssueType::InvalidEmail,
                 variable: key.clone(),
                 message: format!("{} does not appear to be a valid email", key),
                 location: env_path.to_string(),
@@ -942,7 +1046,7 @@ mod tests {
         let issues = check_missing_variables(&env, &example, ".env", &HashSet::new());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].variable, "API_KEY");
-        assert_eq!(issues[0].severity, "error");
+        assert_eq!(issues[0].severity, Severity::Error);
     }
 
     #[test]
@@ -997,8 +1101,8 @@ pub fn check_spec_required(
     crate::core::spec::missing_required(spec, |k| env_vars.contains_key(k), env_name)
         .into_iter()
         .map(|key| Issue {
-            severity: "error".to_string(),
-            issue_type: IssueType::MissingVariable.as_str().to_string(),
+            severity: Severity::Error,
+            issue_type: IssueType::MissingVariable,
             variable: key.to_string(),
             message: format!("Missing required variable: {key}"),
             location: env_path.to_string(),
@@ -1027,8 +1131,8 @@ pub fn check_spec_keys(spec: &Spec, ignore: &HashSet<String>) -> Vec<Issue> {
     for (name, declared) in spec {
         for key in declared.unknown_keys() {
             out.push(Issue {
-                severity: "error".to_string(),
-                issue_type: IssueType::UnknownSpecKey.as_str().to_string(),
+                severity: Severity::Error,
+                issue_type: IssueType::UnknownSpecKey,
                 variable: name.clone(),
                 message: format!("Unknown key `{key}` in [vars.{name}] — evnx ignores it"),
                 location: crate::core::config::PROJECT_FILE.to_string(),
@@ -1079,8 +1183,8 @@ pub fn check_spec_format(
         }
 
         out.push(Issue {
-            severity: "error".to_string(),
-            issue_type: IssueType::FormatMismatch.as_str().to_string(),
+            severity: Severity::Error,
+            issue_type: IssueType::FormatMismatch,
             variable: key.clone(),
             message: format!("{key} is not {}", format.describe()),
             location: env_path.to_string(),

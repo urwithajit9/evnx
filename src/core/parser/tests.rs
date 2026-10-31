@@ -168,7 +168,7 @@ fn a_real_multiline_value_still_spans_lines() {
 
 /// Text after the closing quote that is not a comment is named rather than
 /// discarded: silently dropping it would hide a missing quote or a stray
-/// paste.
+/// paste. It is counted, not quoted (B2 P0.3): it is often the rest of a secret.
 #[test]
 fn unexpected_text_after_the_closing_quote_is_reported() {
     let err = Parser::default()
@@ -176,9 +176,10 @@ fn unexpected_text_after_the_closing_quote_is_reported() {
         .expect_err("should be rejected");
     let msg = err.to_string();
     assert!(
-        msg.contains("unexpected text") && msg.contains("junk here"),
+        msg.contains("unexpected text after the closing \" (9 characters)"),
         "unhelpful error: {msg}"
     );
+    assert!(!msg.contains("junk"), "the stray text leaked: {msg}");
 }
 
 /// The primitive, directly: where the quote closes, independent of what the
@@ -852,7 +853,8 @@ fn b1_the_document_reads_exactly_as_the_old_parser_did() {
         "A=2",
         "B=x # c",
         "export C=c",
-        "exportD=d",
+        // ⚠️ Not `exportD=d`: the old parser read it as `D`, and B2 P0.4 reads
+        // it as `exportD` on purpose. `p0_4_*` and edge_22 pin the new reading.
         "a_lower=v",
         "1BAD=v",
         "my-key=v",
@@ -935,7 +937,9 @@ fn b1_the_document_reads_exactly_as_the_old_parser_did() {
     for config in &configs {
         let p = Parser::new(config.clone());
         for f in &files {
-            let old = show(p.legacy_parse_content_located(f));
+            // ⚠️ The one intended difference (v0.12.0 B2 P0.1): a leading BOM
+            // is skipped, where the old parser read it into the first key.
+            let old = show(p.legacy_parse_content_located(f.strip_prefix('\u{feff}').unwrap_or(f)));
             let new = show(p.parse_content_located(f));
             if old != new {
                 differ.push(format!("{config:?}\n{f:?}\n  old {old}\n  new {new}"));
@@ -1035,4 +1039,243 @@ fn b1_an_expansion_error_keeps_its_entry_and_names_its_line() {
     assert_eq!(lines, [2, 4]);
     assert_eq!(doc.vars()["B"], "${NOPE}");
     assert_eq!(doc.vars()["C"], "1");
+}
+
+/// A leading UTF-8 BOM is skipped and recorded (B2 P0.1). It used to be read
+/// into the first key, and the file was refused with an invalid key whose
+/// fault was invisible. Only a leading one: a BOM further down is still text.
+#[test]
+fn p0_1_a_leading_bom_is_skipped_and_recorded() {
+    let doc = Parser::default().parse_document("\u{feff}K=v\nL=w\n");
+    assert!(doc.bom);
+    assert!(doc.is_clean(), "{:?}", doc.problems);
+    assert_eq!(doc.entries[0].key, "K");
+    assert_eq!(doc.entries[0].span, Span::line(1));
+    assert_eq!(
+        Parser::default().parse_content("\u{feff}K=v\n").unwrap()["K"],
+        "v"
+    );
+
+    assert!(!Parser::default().parse_document("K=v\n").bom);
+    let later = Parser::default().parse_document("K=v\n\u{feff}L=w\n");
+    assert!(!later.bom);
+    assert_eq!(
+        later.problems.len(),
+        1,
+        "a BOM past the start is still refused"
+    );
+}
+
+/// `${VAR:-d}` and its five siblings read as Docker Compose reads them (B2 P0.2).
+/// Every one was an undefined-variable error before, so no working file changes.
+/// The values below were measured with Compose v5.3.1; the conformance fixture
+/// `edge_21_default_family` pins the rest.
+#[test]
+fn p0_2_default_and_alternative_forms_read_as_compose_does() {
+    let vars = Parser::default()
+        .parse_content("X=1\nE=\nB=bee\nA=${E:-d}\nC=${E-d}\nD=${E:+alt}\nF=${X+alt}\nG=${NOPE:-$B}/x\nH='${NOPE:-d}'\n")
+        .unwrap();
+    assert_eq!(vars["A"], "d", "`:-` treats empty as unset");
+    assert_eq!(vars["C"], "", "`-` does not");
+    assert_eq!(vars["D"], "");
+    assert_eq!(vars["F"], "alt");
+    assert_eq!(vars["G"], "bee/x", "the default is expanded");
+    assert_eq!(vars["H"], "${NOPE:-d}", "single quotes stay literal");
+
+    let off = Parser::new(ParserConfig {
+        allow_expansion: false,
+        ..ParserConfig::default()
+    });
+    assert_eq!(
+        off.parse_content("A=${NOPE:-d}").unwrap()["A"],
+        "${NOPE:-d}"
+    );
+}
+
+/// `${VAR:?message}` refuses the file with the message, as Compose does, and a
+/// `${` inside a default stays an error (Compose reads it; evnx does not yet).
+#[test]
+fn p0_2_a_required_variable_names_itself_and_its_message() {
+    let err = Parser::default()
+        .parse_content("X=1\nR=${NOPE:?must be set}\n")
+        .unwrap_err();
+    assert!(
+        matches!(&err, ParseError::RequiredVariable { line: 2, var, message }
+            if var == "NOPE" && message == "must be set"),
+        "{err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        "Required variable at line 2: ${NOPE} must be set"
+    );
+    let empty = Parser::default().parse_content("E=\nR=${E:?}").unwrap_err();
+    assert!(
+        empty.to_string().ends_with("${E} is not set or is empty"),
+        "{empty}"
+    );
+    assert_eq!(
+        Parser::default().parse_content("E=\nR=${E?}").unwrap()["R"],
+        ""
+    );
+
+    assert!(matches!(
+        Parser::default()
+            .parse_content("B=1\nA=${NOPE:-${B}}")
+            .unwrap_err(),
+        ParseError::UndefinedVariable { .. }
+    ));
+}
+
+/// `export` is a keyword only when whitespace follows it (B2 P0.4). It was
+/// stripped as a bare prefix, so `exporter=1` became `er=1`, silently. Measured
+/// with Compose v5.3.1: it keeps `exporter`, `exports_dir` and `exportD`.
+#[test]
+fn p0_4_export_is_a_keyword_only_before_whitespace() {
+    let doc = Parser::default().parse_document("exporter=1\nexports_dir=/x\nexport\tTAB=3\n");
+    let keys: Vec<(&str, bool)> = doc
+        .entries
+        .iter()
+        .map(|e| (e.key.as_str(), e.exported))
+        .collect();
+    assert_eq!(
+        keys,
+        [("exporter", false), ("exports_dir", false), ("TAB", true)]
+    );
+    assert!(doc.is_clean(), "{:?}", doc.problems);
+    assert_eq!(line_opens_multiline("exporter=\"a"), Some('"'));
+}
+
+/// `export =v` and a bare `export` say what is wrong rather than `Invalid key: ''`.
+#[test]
+fn p0_4_export_with_no_key_says_so() {
+    for content in ["export =v\n", "export\n", "export   \n"] {
+        let err = Parser::default().parse_content(content).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Invalid format at line 1: `export` is followed by no key",
+            "{content:?}"
+        );
+    }
+}
+
+/// A carriage return that ends no CRLF line is found, wherever it is (B2 P0.5).
+/// The reading does not change; `validate` and `doctor` warn from this.
+#[test]
+fn p0_5_a_lone_carriage_return_is_found_and_crlf_is_not() {
+    let keys = |content: &str| -> Vec<String> {
+        Parser::default()
+            .parse_document(content)
+            .lone_carriage_returns()
+            .map(|e| e.key.clone())
+            .collect()
+    };
+    assert_eq!(keys("K=v\rL=w\r"), ["K"]);
+    assert_eq!(keys("A=1\nQ=\"x\ry\"\n"), ["Q"]);
+    assert!(
+        keys("A=1\r\nB=\"x\r\ny\"\r\n").is_empty(),
+        "CRLF is a line ending"
+    );
+    assert!(
+        keys("E=\"a\\rb\"\n").is_empty(),
+        "an escaped \\r is text, not a CR"
+    );
+}
+
+/// A NUL byte in a value is found (B2 P0.6). The reading does not change;
+/// `validate` and `doctor` report it as an error.
+#[test]
+fn p0_6_a_nul_byte_in_a_value_is_found() {
+    let doc = Parser::default().parse_document("A=1\nK=a\0b\nQ=\"x\0y\"\n");
+    let keys: Vec<&str> = doc.nul_bytes().map(|e| e.key.as_str()).collect();
+    assert_eq!(keys, ["K", "Q"]);
+    assert_eq!(
+        Parser::default()
+            .parse_document("A=1\n")
+            .nul_bytes()
+            .count(),
+        0
+    );
+}
+
+/// D10 (B2 P0.7): a value Docker Compose reads differently because it expands
+/// top to bottom is recorded, naming the variables assigned below the
+/// reference. evnx's own reading does not change.
+#[test]
+fn p0_7_a_reference_read_differently_top_to_bottom_is_recorded() {
+    let diffs = |content: &str| Parser::default().parse_document(content).order_differences;
+    let below = |name: &str, line, also_above| AssignedBelow {
+        name: name.into(),
+        line,
+        also_above,
+    };
+
+    // Redefined after: Compose reads A=1, evnx A=2.
+    let doc = Parser::default().parse_document("B=1\nA=${B}\nB=2\n");
+    assert_eq!(doc.vars()["A"], "2", "the reading does not change");
+    assert_eq!(
+        doc.order_differences,
+        [OrderDifference {
+            key: "A".into(),
+            line: 2,
+            below: vec![below("B", 3, true)],
+        }]
+    );
+    // Forward reference: Compose reads A=x (B unset), evnx A=1x.
+    assert_eq!(diffs("A=${B}x\nB=1\n")[0].below, [below("B", 2, false)]);
+    // A bare `$B` too, and through another variable (named by nothing direct).
+    assert_eq!(diffs("A=$B/x\nB=1\n")[0].below, [below("B", 2, false)]);
+    let through = diffs("B=1\nC=${B}\nA=${C}\nB=2\n");
+    assert_eq!(through.len(), 2, "{through:?}");
+    assert_eq!((through[1].key.as_str(), through[1].below.len()), ("A", 0));
+
+    // Nothing to report: top-to-bottom agrees, a literal, an escape, a
+    // shadowed entry, and a file that already fails (`A=${A}3`).
+    assert!(diffs("B=1\nA=${B}\nC=${A}\n").is_empty());
+    assert!(diffs("A='${B}'\nB=1\n").is_empty());
+    assert!(diffs("A=\"\\${B}\"\nB=1\n").is_empty());
+    assert!(diffs("A=${B}\nA=done\nB=1\n").is_empty());
+    assert!(diffs("A=1\nA=2\nA=${A}3\n").is_empty());
+    assert!(
+        diffs("B=x$y\nA=${B}\n").is_empty(),
+        "a `$` in a settled value is not re-expanded"
+    );
+    let off = Parser::new(ParserConfig {
+        allow_expansion: false,
+        ..ParserConfig::default()
+    });
+    assert!(off
+        .parse_document("A=${B}\nB=1\n")
+        .order_differences
+        .is_empty());
+}
+
+/// The InvalidKey message says why (D12): a name Compose and python-dotenv
+/// accept (measured: `.`, `-`, a leading digit) says so; one Compose refuses
+/// (`/`) states the rule; strict mode names its own reason.
+#[test]
+fn p0_9_an_invalid_key_says_why() {
+    let msg = |p: &Parser, content: &str| p.parse_content(content).unwrap_err().to_string();
+    let p = Parser::default();
+    for key in ["my.key", "my-key", "1FOO"] {
+        assert_eq!(
+            msg(&p, &format!("{key}=1\n")),
+            format!(
+                "Invalid key at line 1: '{key}': a shell cannot hold this name, so evnx refuses \
+                 it, though Docker Compose and python-dotenv accept it; use letters, digits \
+                 and _, not starting with a digit"
+            )
+        );
+    }
+    assert_eq!(
+        msg(&p, "a/b=1\n"),
+        "Invalid key at line 1: 'a/b': use letters, digits and _, not starting with a digit"
+    );
+    let strict = Parser::new(ParserConfig {
+        strict: true,
+        ..ParserConfig::default()
+    });
+    assert_eq!(
+        msg(&strict, "lower=1\n"),
+        "Invalid key at line 1: 'lower': strict mode requires uppercase keys"
+    );
 }

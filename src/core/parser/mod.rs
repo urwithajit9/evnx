@@ -104,6 +104,27 @@ pub fn is_valid_key(key: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// Why `key` was refused (D12). Compose and python-dotenv were measured
+/// accepting `.`, `-`, a leading digit and non-ASCII letters, and Compose
+/// refusing `/`, `@` and a space, so only the first set says they accept it.
+fn key_problem(key: &str) -> &'static str {
+    if key.is_empty() {
+        "a key cannot be empty"
+    } else if is_valid_key(key) {
+        "strict mode requires uppercase keys"
+    } else if key
+        .chars()
+        .all(|c| c.is_alphanumeric() || "_.-".contains(c))
+    {
+        concat!(
+            "a shell cannot hold this name, so evnx refuses it, though Docker Compose ",
+            "and python-dotenv accept it; use letters, digits and _, not starting with a digit"
+        )
+    } else {
+        "use letters, digits and _, not starting with a digit"
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ParseError {
     /// The file is not there at all.
@@ -127,14 +148,24 @@ pub enum ParseError {
     #[error("Invalid format at line {line}: {message}")]
     InvalidFormat { line: usize, message: String },
 
-    /// A key contains characters outside `[A-Za-z_][A-Za-z0-9_]*`.
-    #[error("Invalid key at line {line}: '{key}' (keys must match [A-Za-z_][A-Za-z0-9_]*)")]
+    /// A key contains characters outside `[A-Za-z_][A-Za-z0-9_]*`, or is not
+    /// uppercase in strict mode. The message says which (D12).
+    #[error("Invalid key at line {line}: '{key}': {}", key_problem(.key))]
     InvalidKey { line: usize, key: String },
 
     /// A `${VAR}` or `$VAR` reference names a variable that was not defined
     /// earlier in the file.
     #[error("Undefined variable at line {line}: ${{{var}}} is not defined")]
     UndefinedVariable { line: usize, var: String },
+
+    /// `${VAR:?message}` or `${VAR?message}` named a variable that is not set
+    /// (or, with the `:`, is empty).
+    #[error("Required variable at line {line}: ${{{var}}} {message}")]
+    RequiredVariable {
+        line: usize,
+        var: String,
+        message: String,
+    },
 
     /// Two or more variables reference each other in a cycle.
     #[error("Circular variable expansion at line {line}: {cycle}")]
@@ -290,9 +321,9 @@ mod lines;
 #[cfg(test)]
 mod tests;
 
-pub use document::{Comment, Document, Entry, Problem, Span};
+pub use document::{AssignedBelow, Comment, Document, Entry, OrderDifference, Problem, Span};
 use expand::strip_markers;
-pub use lines::{closes_multiline, line_opens_multiline, opens_multiline};
+pub use lines::{closes_multiline, line_opens_multiline, opens_multiline, strip_export};
 
 impl Parser {
     /// Create a parser with a custom [`ParserConfig`].
@@ -435,6 +466,18 @@ impl Parser {
         let mut open: Option<Open> = None;
         let mut last_line = 0;
 
+        // A UTF-8 byte-order mark is an encoding marker, not text: Windows
+        // editors write one, and Docker Compose, Node dotenv and `docker run`
+        // skip it. Read as text it became part of the first key, and the file
+        // was refused with an invalid key whose fault no one could see.
+        let content = match content.strip_prefix('\u{feff}') {
+            Some(rest) => {
+                doc.bom = true;
+                rest
+            }
+            None => content,
+        };
+
         for (idx, raw_line) in content.lines().enumerate() {
             let line_num = idx + 1; // 1-indexed for all user-facing messages
             last_line = line_num;
@@ -506,7 +549,7 @@ impl Parser {
                 }
             };
             // The same test `split_key_value` strips the prefix with.
-            let exported = line.starts_with("export");
+            let exported = strip_export(line).is_some();
 
             match opens_multiline(&raw_value) {
                 Some(q) if self.config.allow_multiline => {

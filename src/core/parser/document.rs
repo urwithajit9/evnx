@@ -52,6 +52,31 @@ pub struct Entry {
     pub quote: Option<char>,
 }
 
+/// A value that Docker Compose and python-dotenv read differently because they
+/// expand top to bottom, against the values assigned **above** a reference,
+/// where evnx expands against each key's last value (D10). Found during
+/// expansion and only reported: evnx's reading is unchanged until 0.13.0.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrderDifference {
+    /// The entry that counts for this key, whose value differs.
+    pub key: String,
+    pub line: usize,
+    /// The variables it names directly that are assigned below it. Empty when
+    /// the difference comes through another variable.
+    pub below: Vec<AssignedBelow>,
+}
+
+/// One variable an [`OrderDifference`] names, and where it is assigned below.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssignedBelow {
+    pub name: String,
+    /// The first assignment below the reference.
+    pub line: usize,
+    /// Also assigned above it: the reference sees an earlier value in Compose,
+    /// rather than none.
+    pub also_above: bool,
+}
+
 /// A full-line comment. `text` is everything after the `#`, untrimmed.
 #[derive(Debug, Clone)]
 pub struct Comment {
@@ -92,11 +117,34 @@ pub struct Document {
     /// That order is what makes `problems[0]` the error the strict parser
     /// returns; sort by `span` to show them.
     pub problems: Vec<Problem>,
+    /// The file began with a UTF-8 byte-order mark, which was skipped. A fact
+    /// for `dialect`: python-dotenv keeps it in the first key's name.
+    pub bom: bool,
+    /// References whose value differs when expanded top to bottom (D10), for
+    /// `validate` and `doctor` to report. Empty with expansion off.
+    pub order_differences: Vec<OrderDifference>,
 }
 
 impl Document {
     pub fn is_clean(&self) -> bool {
         self.problems.is_empty()
+    }
+
+    /// Entries whose value holds a NUL byte (B2 P0.6). It parses, but no
+    /// process can receive it: an environment is NUL-terminated C strings, so
+    /// `exec` refuses it and Docker will not start the container.
+    pub fn nul_bytes(&self) -> impl Iterator<Item = &Entry> {
+        self.entries.iter().filter(|e| e.value.contains('\0'))
+    }
+
+    /// Entries whose text holds a carriage return that does not end a CRLF
+    /// line (B2 P0.5): a classic Mac line ending, or a stray paste. evnx and
+    /// Docker Compose keep it in the value; python-dotenv and Node dotenv end
+    /// the line there, so `K=v\rL=w` is one variable here and two there.
+    pub fn lone_carriage_returns(&self) -> impl Iterator<Item = &Entry> {
+        self.entries
+            .iter()
+            .filter(|e| e.raw.replace("\r\n", "").contains('\r'))
     }
 
     /// One value per key: the **last** assignment's value, in the **first**

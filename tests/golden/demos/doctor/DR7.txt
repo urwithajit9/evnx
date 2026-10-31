@@ -104,7 +104,7 @@ $ evnx doctor
 $ evnx doctor
 
   ✗  Validate .env file existence, security, and syntax
-     .env: Line 1: Invalid key: 'MY-KEY' (keys must match [A-Za-z_][A-Za-z0-9_]*)
+     .env: Line 1: Invalid key: 'MY-KEY': a shell cannot hold this name, so evnx refuses it, though Docker Compose and python-dotenv accept it; use letters, digits and _, not starting with a digit
 
   ✓  Check .env.example exists and is Git-tracked
 

@@ -18,12 +18,89 @@ longer printed, since a line without `=` is sometimes a pasted secret.
 *Migrate:* anything matching `invalid syntax` or `the quote is never closed`
 in `doctor`'s output should match `.env: Line N:` instead.
 
+### Added
+- **`validate` and `doctor` warn about a carriage return inside a value** (B2).
+  A `\r` that ends no CRLF line — a classic Mac line ending, or a paste — is
+  kept in the value by evnx and Docker Compose, while python-dotenv and Node
+  dotenv end the line there and read what follows as another variable. The
+  reading is unchanged. New issue type `lone_carriage_return` (a warning; JSON
+  output gains it, nothing is removed).
+
+- **`validate` and `doctor` report a NUL byte in a value as an error** (B2).
+  The file parses, but no process can receive the value: `exec` refuses it, and
+  Docker Compose's container fails with `contains nul byte`. So the exit code
+  changes only for a file that already fails wherever it is loaded. New issue
+  type `nul_byte`.
+
+- **`validate` and `doctor` warn about a value Docker Compose reads differently
+  because of the order of the file** (B2). Compose and python-dotenv expand
+  `${VAR}` top to bottom, against what is assigned above the reference; evnx
+  expands against each key's last value. So `B=1` / `A=${B}` / `B=2` is `A=1`
+  there and `A=2` here, silently. The warning names the variable and the line
+  it is assigned on below. New issue type `expansion_order`. ⚠️ **evnx's value
+  is unchanged in this release, and changes in 0.13.0**, when evnx expands top
+  to bottom as well.
+
+- **`evnx parse`: what evnx reads from a `.env`** (B2, RM-36, RM-88). One row
+  per entry: line, key, and whether the value is empty, a placeholder or a
+  secret, **never the value**. Every problem in the file is listed, and the
+  exit code is 1 when there is one. `--env -` reads stdin. `--format json`
+  (`schema_version: 1`) is what `validate --input-format json` reads back.
+  `--values` adds the values, and refuses a terminal unless `--yes`, where they
+  would stay in the scrollback.
+- **`validate --env -` reads stdin, and `--input-format json` reads JSON**
+  (B2). JSON is a flat `{"KEY": "value"}` object or what
+  `evnx parse --format json --values` prints; the format is never guessed,
+  since `.env` text may start with `{`. A finding on input with no lines
+  reads `<stdin>:—`. `--fix` refuses both, since there is no file to rewrite,
+  and an empty pipe is an error rather than a pass.
+- **`validate` warns about `$$` in a project Docker Compose reads** (B2).
+  Compose reads `$$` as one `$`, unquoted and in double quotes; evnx keeps both
+  dollars, as python-dotenv and Node dotenv do. A random password holding `$$`
+  is far more common than a `$$` meant as one dollar, so evnx's value does not
+  change: the `reader_mismatch` warning now covers it, and suggests single
+  quotes, which Compose reads as written. Measured into `dialects.json`, whose
+  script now reads Compose's real value: `docker compose config` prints each
+  `$` as `$$`.
+
 ### Changed
+- **Library: `Issue.severity` is a `Severity` enum and `Issue.issue_type` an
+  `IssueType`** (B2), not strings. `validate --format json` is byte-identical;
+  only Rust code using `evnx` as a library sees the change.
+- **A refused key says why** (B2). `my.key`, `my-key` and `1FOO` are still
+  refused, since a shell cannot hold them, and the message now says so and
+  that Docker Compose and python-dotenv accept them (measured). Other names
+  state the rule, and strict mode says it requires uppercase. Accepting these
+  keys is planned for 0.13.0.
 - **`validate` lists every problem in a file that does not parse** (B1). It
   named only the first, so a file with three problems took three runs. It
   still exits 2; a file with one problem prints exactly what it did before.
 
 ### Fixed
+- ⚠️ **A key that starts with `export` keeps its whole name** (B2). `export`
+  was stripped as a bare prefix, so `exporter=1` was read as `er=1` and
+  `exports_dir` as `s_dir`, with no warning. It is now a keyword only when
+  whitespace follows it, as in Docker Compose and python-dotenv. **This changes
+  a reading:** a file with such a key now gives it its full name, which is what
+  every other reader gave it. Only lowercase names were affected.
+- **`export =v` and a bare `export` say `` `export` is followed by no key ``**
+  (B2), instead of `Invalid key: ''` and "missing '=' separator".
+- **Text after a closing quote is counted, not quoted, in the error** (B2).
+  `A="value" rest` was refused with the stray text in the message, and that
+  text is often the rest of a secret, printed to a terminal or a CI log. The
+  message now says how many characters follow the quote.
+- **`${VAR:-default}` and its siblings are read as Docker Compose reads them**
+  (B2). `:-`, `-`, `:+`, `+`, `:?` and `?` were all refused as an undefined
+  variable named `VAR:-default`. A default is itself expanded (`${A:-$B}`), and
+  `${VAR:?message}` refuses the file with your message, as Compose does. Single
+  quotes still keep the text as written. One difference remains: a `${...}`
+  inside a default (`${A:-${B}}`) is still an error in evnx.
+- **A `.env` that starts with a UTF-8 byte-order mark is read** (B2). Some
+  Windows editors save one. evnx read it into the first key's name and refused
+  the file with `Invalid key '\u{feff}K'`, a fault no one could see. It is now skipped,
+  as Docker Compose, Node dotenv and `docker run` skip it. `validate` warns
+  where python-dotenv is a reader, since python-dotenv keeps the mark in the
+  key and leaves the variable unset. `--fix` keeps the mark.
 - **A line inside a multiline value is no longer read as an assignment** (B1).
   Ten readers in six commands read a `.env` line by line beside the parser,
   and each misread the inside of a quoted value. Now one reading serves them

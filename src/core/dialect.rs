@@ -32,7 +32,8 @@ struct Case {
     fixture: String,
     #[allow(dead_code)]
     key: String,
-    values: IndexMap<String, String>,
+    /// `null` when the reader leaves the key unset (python-dotenv on a BOM).
+    values: IndexMap<String, Option<String>>,
     effect: String,
     fix: String,
 }
@@ -138,8 +139,17 @@ pub struct Mismatch {
     pub fix: &'static str,
 }
 
-/// Which measured case an entry is, if any. Only unquoted values (and `${`
-/// in double quotes) are cases in phase 1.
+/// Which measured case the `i`th entry of `doc` is, if any.
+fn case_of_entry(doc: &Document, i: usize) -> Option<&'static str> {
+    // A BOM is read into the first key by some readers, whatever its value.
+    if i == 0 && doc.bom {
+        return Some("bom");
+    }
+    classify(&doc.entries[i])
+}
+
+/// Which measured case an entry's own text is, if any. Only unquoted values
+/// (and `${` in double quotes) are cases in phase 1.
 ///
 /// ⚠️ An entry, not a raw line: a line inside a multiline value is part of a
 /// value, so `X=#ff0000` there is not an assignment for any reader.
@@ -169,6 +179,20 @@ fn classify(e: &Entry) -> Option<&'static str> {
     value.contains("${").then_some("expansion")
 }
 
+/// Whether an entry holds `$$`, which Compose reads as one `$` unquoted and in
+/// double quotes (D11). Checked beside [`classify`]: `${A}$$` is both cases.
+fn has_dollar_dollar(e: &Entry) -> bool {
+    let Some((_, raw)) = e.raw.split_once('=') else {
+        return false;
+    };
+    let value = match e.quote {
+        Some('"') => raw,
+        Some(_) => return false,
+        None => raw.split(" #").next().unwrap_or(raw),
+    };
+    value.contains("$$")
+}
+
 /// The entries of `doc` that `readers` read differently from evnx. Empty
 /// when no reader is detected, or every one agrees.
 pub fn mismatches(doc: &Document, readers: &[Reader]) -> Vec<Mismatch> {
@@ -176,34 +200,34 @@ pub fn mismatches(doc: &Document, readers: &[Reader]) -> Vec<Mismatch> {
         return Vec::new();
     }
     let mut out = Vec::new();
-    for e in &doc.entries {
-        let Some(case_id) = classify(e) else {
-            continue;
-        };
-        let Some(case) = TABLE.cases.iter().find(|c| c.id == case_id) else {
-            continue;
-        };
-        let evnx = &case.values["evnx"];
-        let (mut differ, mut agree) = (Vec::new(), Vec::new());
-        for &reader in readers {
-            match reader.column(case_id).and_then(|c| case.values.get(c)) {
-                Some(v) if v != evnx => differ.push(reader),
-                Some(_) => agree.push(reader),
-                None => {}
+    for (i, e) in doc.entries.iter().enumerate() {
+        let dollars = has_dollar_dollar(e).then_some("dollar_dollar");
+        for case_id in case_of_entry(doc, i).into_iter().chain(dollars) {
+            let Some(case) = TABLE.cases.iter().find(|c| c.id == case_id) else {
+                continue;
+            };
+            let evnx = &case.values["evnx"];
+            let (mut differ, mut agree) = (Vec::new(), Vec::new());
+            for &reader in readers {
+                match reader.column(case_id).and_then(|c| case.values.get(c)) {
+                    Some(v) if v != evnx => differ.push(reader),
+                    Some(_) => agree.push(reader),
+                    None => {}
+                }
             }
+            if differ.is_empty() {
+                continue;
+            }
+            out.push(Mismatch {
+                line: e.span.line,
+                key: e.key.clone(),
+                case: case.id.as_str(),
+                differ,
+                agree,
+                effect: case.effect.as_str(),
+                fix: case.fix.as_str(),
+            });
         }
-        if differ.is_empty() {
-            continue;
-        }
-        out.push(Mismatch {
-            line: e.span.line,
-            key: e.key.clone(),
-            case: case.id.as_str(),
-            differ,
-            agree,
-            effect: case.effect.as_str(),
-            fix: case.fix.as_str(),
-        });
     }
     out
 }
@@ -244,7 +268,8 @@ mod tests {
 
     /// The case of the last entry `content` holds.
     fn case_of(content: &str) -> Option<&'static str> {
-        classify(doc(content).entries.last()?)
+        let d = doc(content);
+        case_of_entry(&d, d.entries.len().checked_sub(1)?)
     }
 
     #[test]
@@ -271,7 +296,7 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 vars.get(&case.key),
-                Some(&case.values["evnx"]),
+                case.values["evnx"].as_ref(),
                 "{}: evnx's column is not what evnx reads",
                 case.id
             );
@@ -281,7 +306,11 @@ mod tests {
     /// Each fixture's line is classified as its own case.
     #[test]
     fn rm04_every_fixture_is_its_case() {
-        for case in TABLE.cases.iter().filter(|c| c.id != "export") {
+        for case in TABLE
+            .cases
+            .iter()
+            .filter(|c| !["export", "dollar_dollar"].contains(&c.id.as_str()))
+        {
             let line = case.fixture.lines().last().unwrap();
             assert_eq!(case_of(line), Some(case.id.as_str()), "{line}");
         }
@@ -314,6 +343,50 @@ mod tests {
         let found = mismatches(&doc(content), &[NODE]);
         let at: Vec<(usize, &str)> = found.iter().map(|m| (m.line, m.key.as_str())).collect();
         assert_eq!(at, [(4, "C")]);
+    }
+
+    /// A BOM is skipped by evnx, Compose and Node, and read into the first
+    /// key by python-dotenv: only python-dotenv differs, on line 1 (P0.1).
+    #[test]
+    fn p0_1_a_bom_is_a_mismatch_for_python_dotenv_only() {
+        let content = "\u{feff}COLOR=#ff0000\nB=1\n";
+        let found = mismatches(
+            &doc(content),
+            &[Reader::Compose, Reader::PythonDotenv, NODE],
+        );
+        let bom: Vec<_> = found.iter().filter(|m| m.case == "bom").collect();
+        assert_eq!(bom.len(), 1, "{found:?}");
+        assert_eq!((bom[0].line, bom[0].key.as_str()), (1, "COLOR"));
+        assert_eq!(bom[0].differ, [Reader::PythonDotenv]);
+        assert!(mismatches(&doc("COLOR=red\n"), &[Reader::PythonDotenv]).is_empty());
+    }
+
+    /// `$$` is one `$` to Compose unquoted and in double quotes, and kept in
+    /// single quotes; evnx keeps both (D11, P0.8). A line can also be another
+    /// case, and both are reported.
+    #[test]
+    fn p0_8_dollar_dollar_is_a_mismatch_for_compose() {
+        let at = |content: &str| -> Vec<(usize, &'static str)> {
+            mismatches(&doc(content), &[Reader::Compose, NODE])
+                .iter()
+                .map(|m| (m.line, m.case))
+                .collect()
+        };
+        let found = mismatches(&doc("PASS=ab$$cd\n"), &[Reader::Compose, NODE]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            (found[0].key.as_str(), found[0].case),
+            ("PASS", "dollar_dollar")
+        );
+        assert_eq!(found[0].differ, [Reader::Compose]);
+        assert_eq!(found[0].agree, [NODE]);
+        assert_eq!(at("P=\"ab$$cd\"\n"), [(1, "dollar_dollar")]);
+        assert_eq!(at("P='ab$$cd'\nQ=a$b\nR=ab # $$\n"), []);
+        assert_eq!(
+            at("H=x\nP=\"${H}$$\"\n"),
+            [(2, "expansion"), (2, "dollar_dollar")]
+        );
+        assert!(mismatches(&doc("PASS=ab$$cd\n"), &[Reader::PythonDotenv]).is_empty());
     }
 
     #[test]

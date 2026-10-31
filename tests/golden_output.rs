@@ -183,6 +183,16 @@ fn scan_github_is_stable() {
     );
 }
 
+/// `parse --format json` is what `validate --input-format json` reads back
+/// (B2, D2). Without `--values` it carries no value: the AWS key is absent.
+#[test]
+fn parse_json_is_stable() {
+    let d = fixture();
+    let out = stdout_of(&d, &["parse", "--format", "json"]);
+    assert!(!out.contains("AKIA"), "{out}");
+    check("parse.json", &out);
+}
+
 #[test]
 fn validate_json_is_stable() {
     let d = fixture();

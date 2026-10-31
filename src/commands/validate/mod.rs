@@ -8,6 +8,7 @@
 
 pub mod checks;
 pub mod fixer;
+pub mod policy;
 pub mod types;
 
 use std::collections::HashSet;
@@ -25,6 +26,7 @@ use crate::utils::ui::glyph;
 
 use self::checks::*;
 use self::fixer::*;
+use self::policy::*;
 
 // ─────────────────────────────────────────────────────────────
 // Inputs
@@ -38,6 +40,8 @@ pub struct Options {
     /// The env file, already resolved from `--env`, `--env-name` or
     /// `[defaults] env_name`.
     pub env: String,
+    /// `--input-format`: `dotenv` or `json`.
+    pub input_format: String,
     pub example: String,
     pub strict: bool,
     pub fix: bool,
@@ -67,6 +71,71 @@ enum Format {
 }
 
 /// The lowest severity that fails the run (`--fail-on`, `[validate] fail_on`).
+/// How `--env` is read (B2). Never inferred (D3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputFormat {
+    Dotenv,
+    Json,
+}
+
+/// How a finding names stdin, as `scan -` does.
+const STDIN_LABEL: &str = "<stdin>";
+
+/// `--input-format json` (B2): a flat `{"KEY": "value"}` object, or
+/// `evnx parse --format json --values`'s output. Every line number is 0: JSON
+/// has no line to point at. Never names a value in an error.
+fn document_from_json(text: &str) -> Result<crate::core::parser::Document> {
+    use serde_json::Value;
+    let json: Value = serde_json::from_str(text).context("it is not valid JSON")?;
+    let Value::Object(object) = json else {
+        anyhow::bail!("expected an object of variables");
+    };
+    let pairs: Vec<(String, String)> = if object.contains_key("schema_version") {
+        let entries = object
+            .get("entries")
+            .and_then(Value::as_array)
+            .context("`entries` is not a list")?;
+        entries
+            .iter()
+            .map(|e| {
+                let key = e
+                    .get("key")
+                    .and_then(Value::as_str)
+                    .context("an entry has no `key`")?;
+                let value = e.get("value").and_then(Value::as_str).with_context(|| {
+                    format!("{key} has no value: write it with `evnx parse --format json --values`")
+                })?;
+                Ok((key.to_string(), value.to_string()))
+            })
+            .collect::<Result<_>>()?
+    } else {
+        object
+            .iter()
+            .map(|(k, v)| {
+                let v = v
+                    .as_str()
+                    .with_context(|| format!("{k}'s value is not a string"))?;
+                Ok((k.clone(), v.to_string()))
+            })
+            .collect::<Result<_>>()?
+    };
+    let mut doc = crate::core::parser::Document::default();
+    for (key, value) in pairs {
+        if !crate::core::parser::is_valid_key(&key) {
+            anyhow::bail!("'{key}' is not a variable name: use letters, digits and _");
+        }
+        doc.entries.push(crate::core::parser::Entry {
+            key,
+            value,
+            span: crate::core::parser::Span::line(0),
+            raw: String::new(),
+            exported: false,
+            quote: None,
+        });
+    }
+    Ok(doc)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailOn {
     Error,
@@ -146,135 +215,70 @@ fn known_environments(env_path: &str) -> Vec<String> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Main Entry Point
+// The checks, with no IO
 // ─────────────────────────────────────────────────────────────
 
-/// Run the validate command.
-///
-/// This function is called from `main.rs` after CLI args are parsed.
-pub fn run(opts: Options) -> Result<()> {
-    // Reject an unknown --format before doing any work. Discovering it after a
-    // full parse-and-check pass wastes the run and buries the message under
-    // output the user did not ask for. One rule with scan and doctor: any case,
-    // spaces trimmed (I-038).
-    let format = crate::core::args::one_of(
-        "format",
-        &opts.format,
-        &[
-            ("pretty", Format::Pretty),
-            ("text", Format::Pretty),
-            ("json", Format::Json),
-            ("github-actions", Format::Github),
-            ("github", Format::Github),
-        ],
-        &["pretty", "json", "github-actions"],
-    )?;
+/// Facts about where the env file lives, looked up once before any check:
+/// `--fix` changes none of them.
+pub struct Surroundings {
+    /// `localhost` means a container's own loopback here.
+    pub docker: bool,
+    pub exposure: Option<crate::core::gitignore::Exposure>,
+    pub known_environments: Vec<String>,
+    /// The project's other `.env` readers (RM-04).
+    pub readers: Vec<crate::core::dialect::Reader>,
+}
 
-    // ⚠️ I-038: a typo in `--ignore placeholder_vlaue` used to suppress
-    // nothing and say nothing. Both lists are checked, whichever is used.
-    let mut ignore_issues: HashSet<String> = HashSet::new();
-    for t in issue_types(&opts.ignore)? {
-        ignore_issues.insert(t.to_string());
-    }
-    let configured = issue_types(&opts.ignore_configured)
-        .with_context(|| format!("{} [validate] ignore", crate::core::config::PROJECT_FILE))?;
-    for t in configured {
-        ignore_issues.insert(t.to_string());
-    }
-
-    let configured_fail_on = opts
-        .fail_on_configured
-        .as_deref()
-        .map(parse_fail_on)
-        .transpose()
-        .with_context(|| format!("{} [validate] fail_on", crate::core::config::PROJECT_FILE))?;
-    let fail_on = match opts.fail_on.as_deref() {
-        Some(v) => parse_fail_on(v)?,
-        None => configured_fail_on.unwrap_or(FailOn::Error),
-    };
-
-    // ─────────────────────────────────────────
-    // UI: Header (only for pretty output)
-    // ─────────────────────────────────────────
-    if format == Format::Pretty {
-        ui::print_header("evnx validate", Some("Check environment configuration"));
-        if opts.verbose {
-            ui::info("Running in verbose mode");
+impl Surroundings {
+    pub fn of(env_path: &str) -> Self {
+        Surroundings {
+            docker: has_docker_context(env_path),
+            exposure: git_exposure(env_path),
+            known_environments: known_environments(env_path),
+            readers: crate::core::dialect::detect(folder_of(env_path)),
         }
-    } else if opts.verbose {
-        // Verbose for machine formats goes to stderr
-        eprintln!(
-            "[verbose] validate: env={}, example={}",
-            opts.env, opts.example
-        );
     }
+}
 
-    // `--env` already carries the resolved path: `--env-name production` is
-    // turned into `.env.production` before the command is called.
-    let env_path = opts.env.clone();
-    let example = opts.example.clone();
-    let spec = &opts.spec;
+/// Everything [`validate`] reads (B2 P3).
+pub struct Input {
+    /// The env file, parsed; its variables are what the checks judge.
+    pub doc: crate::core::parser::Document,
+    /// The template's (`.env.example`'s) variables.
+    pub template: indexmap::IndexMap<String, String>,
+    /// Where the env file came from: each finding's location starts with it.
+    pub origin: String,
+    pub spec: crate::core::spec::Spec,
+    pub surroundings: Surroundings,
+}
 
-    // Build configuration
-    let config = ValidationConfig {
-        strict: opts.strict,
-        fix: opts.fix,
-        rotate_weak_secrets: opts.rotate_weak_secrets,
-        validate_formats: opts.validate_formats,
-        ignore_issues,
-    };
+/// What [`validate`] found, and what `--fix` would write.
+pub struct Outcome {
+    pub result: ValidationResult,
+    /// The env file's variables after `--fix`, and the keys it changed. `None`
+    /// when there is nothing to write, including every dry run.
+    pub write: Option<(
+        indexmap::IndexMap<String, String>,
+        std::collections::BTreeSet<String>,
+    )>,
+}
 
-    // Parse files with progress indicator
-    let pb = ui::spinner("Parsing configuration files...");
-    let parser = Parser::new(ParserConfig {
-        strict: opts.strict,
-        ..ParserConfig::default()
-    });
-
-    let example_file = parser
-        .parse_file_or_hint(
-            &example,
-            "validate compares .env against it, so it needs one. Create it with \
-         `evnx sync` (from your .env) or `evnx init`, or point at another file \
-         with --example.",
-        )
-        .map_err(|e| every_problem(e, &parser, &example))?;
-    let env_file = parser
-        .parse_file_or_hint(&env_path, &Parser::missing_env_hint(&env_path))
-        .map_err(|e| every_problem(e, &parser, &env_path))?;
-
-    pb.finish_with_message("Files parsed ✓");
-
-    if opts.verbose {
-        ui::info(format!(
-            "Loaded {} variables from {} and {} from {}",
-            example_file.vars.len(),
-            example,
-            env_file.vars.len(),
-            env_path
-        ));
-    }
-
-    // ─────────────────────────────────────────
-    // Run All Validation Checks (pure functions)
-    // ─────────────────────────────────────────
-    let env_label = crate::core::env_name::name_of(&env_path);
-    let raw_env_content = std::fs::read_to_string(&env_path).unwrap_or_default();
-    let env_doc = parser.parse_document(&raw_env_content);
+/// Every check, and `--fix`'s repairs worked out in memory, with no IO: the
+/// caller reads the input, writes [`Outcome::write`], and renders the result.
+pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
+    let env_path = input.origin.as_str();
+    let env_label = crate::core::env_name::name_of(env_path);
+    let spec = &input.spec;
+    let s = &input.surroundings;
 
     // Resolved once, so the report and the repair cannot disagree about it.
     let weak_secret_policy = if config.rotate_weak_secrets {
-        fixer::WeakSecretPolicy::Rotate
+        policy::WeakSecretPolicy::Rotate
     } else {
-        fixer::WeakSecretPolicy::PlaceholdersOnly
+        policy::WeakSecretPolicy::PlaceholdersOnly
     };
 
-    // Facts about the file's surroundings, looked up once: `--fix` changes
-    // none of them.
-    let docker = has_docker_context(&env_path);
-    let exposure = git_exposure(&env_path);
-    let known = known_environments(&env_path);
-    let known: Vec<&str> = known.iter().map(String::as_str).collect();
+    let known: Vec<&str> = s.known_environments.iter().map(String::as_str).collect();
 
     // ⚠️ A closure, so the checks can be run **again** after `--fix`.
     //
@@ -296,14 +300,14 @@ pub fn run(opts: Options) -> Result<()> {
         if spec.is_empty() {
             issues.extend(check_missing_variables(
                 vars,
-                &example_file.vars,
-                &env_path,
+                &input.template,
+                env_path,
                 &config.ignore_issues,
             ));
             issues.extend(check_extra_variables(
                 vars,
-                &example_file.vars,
-                &env_path,
+                &input.template,
+                env_path,
                 config.strict,
                 &config.ignore_issues,
             ));
@@ -312,14 +316,14 @@ pub fn run(opts: Options) -> Result<()> {
                 vars,
                 spec,
                 env_label,
-                &env_path,
+                env_path,
                 &config.ignore_issues,
             ));
             issues.extend(checks::check_spec_format(
                 vars,
                 spec,
                 env_label,
-                &env_path,
+                env_path,
                 &config.ignore_issues,
             ));
             issues.extend(checks::check_spec_keys(spec, &config.ignore_issues));
@@ -327,7 +331,7 @@ pub fn run(opts: Options) -> Result<()> {
                 spec,
                 env_label,
                 &known,
-                &env_path,
+                env_path,
                 &config.ignore_issues,
             ));
             // With a contract, "declared" means declared in `[vars]` for this
@@ -336,7 +340,7 @@ pub fn run(opts: Options) -> Result<()> {
                 vars,
                 spec,
                 env_label,
-                &env_path,
+                env_path,
                 config.strict,
                 &config.ignore_issues,
             ));
@@ -345,75 +349,93 @@ pub fn run(opts: Options) -> Result<()> {
         // Reads the document, not the parsed map: `insert` has already
         // discarded the evidence by the time `vars` exists.
         issues.extend(check_duplicate_keys(
-            &env_doc,
-            &env_path,
+            &input.doc,
+            env_path,
+            &config.ignore_issues,
+        ));
+
+        issues.extend(checks::check_expansion_order(
+            &input.doc,
+            env_path,
+            &config.ignore_issues,
+        ));
+
+        issues.extend(checks::check_nul_bytes(
+            &input.doc,
+            env_path,
+            &config.ignore_issues,
+        ));
+
+        issues.extend(checks::check_lone_carriage_returns(
+            &input.doc,
+            env_path,
             &config.ignore_issues,
         ));
 
         issues.extend(checks::check_reader_mismatch(
-            &env_doc,
-            &env_path,
-            folder_of(&env_path),
+            &input.doc,
+            env_path,
+            &s.readers,
             &config.ignore_issues,
         ));
 
-        issues.extend(check_placeholders(vars, &env_path, &config.ignore_issues));
+        issues.extend(check_placeholders(vars, env_path, &config.ignore_issues));
 
-        issues.extend(check_boolean_trap(vars, &env_path, &config.ignore_issues));
+        issues.extend(check_boolean_trap(vars, env_path, &config.ignore_issues));
 
         issues.extend(check_weak_secret(
             vars,
-            &env_path,
+            env_path,
             &config.ignore_issues,
             weak_secret_policy,
         ));
 
         issues.extend(check_localhost_docker(
             vars,
-            &env_path,
-            docker,
+            env_path,
+            s.docker,
             &config.ignore_issues,
         ));
 
         issues.extend(check_formats(
             vars,
-            &env_path,
+            env_path,
             config.validate_formats,
             &config.ignore_issues,
         ));
 
         issues.extend(checks::check_exposure(
-            exposure,
-            &env_path,
+            s.exposure,
+            env_path,
             &config.ignore_issues,
         ));
         checks::one_finding_per_cause(issues)
     };
 
-    let mut issues = collect_issues(&env_file.vars);
+    let env_file_vars = input.doc.vars();
+    let mut issues = collect_issues(&env_file_vars);
 
     // ─────────────────────────────────────────
     // Apply Fixes if Requested (Improvement #1)
     // ─────────────────────────────────────────
     let mut fixes_applied = Vec::new();
-    let mut env_vars = env_file.vars.clone();
+    let mut env_vars = env_file_vars.clone();
+    let mut write = None;
 
     if config.fix && !issues.is_empty() {
-        let pb = ui::spinner("Applying auto-fixes...");
-
         let mut fixes_to_apply = Vec::new();
 
         // Missing variables: a new secret where evnx may generate one
         // (DEC-VA6), the template's value where it may copy it (I-037, D-25),
         // a placeholder where it may do neither.
         for issue in &issues {
-            if issue.issue_type == IssueType::MissingVariable.as_str() && issue.auto_fixable {
+            if issue.issue_type == IssueType::MissingVariable && issue.auto_fixable {
                 let action = if crate::core::classify::may_generate(&issue.variable) {
                     FixAction::AddSecret
                 } else {
-                    FixAction::AddMissing(fixer::fill_for_missing(
+                    FixAction::AddMissing(policy::fill_for_missing(
                         &issue.variable,
-                        example_file.vars.get(&issue.variable).map(String::as_str),
+                        input.template.get(&issue.variable).map(String::as_str),
                     ))
                 };
                 fixes_to_apply.push((issue.variable.clone(), String::new(), action));
@@ -422,7 +444,7 @@ pub fn run(opts: Options) -> Result<()> {
 
         // Placeholders
         for issue in &issues {
-            if issue.issue_type == IssueType::PlaceholderValue.as_str() && issue.auto_fixable {
+            if issue.issue_type == IssueType::PlaceholderValue && issue.auto_fixable {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
@@ -439,7 +461,7 @@ pub fn run(opts: Options) -> Result<()> {
 
         // Boolean traps
         for issue in &issues {
-            if issue.issue_type == IssueType::BooleanTrap.as_str() && issue.auto_fixable {
+            if issue.issue_type == IssueType::BooleanTrap && issue.auto_fixable {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
@@ -461,7 +483,7 @@ pub fn run(opts: Options) -> Result<()> {
         // most one variable per run, and always looked up SECRET_KEY no matter
         // which variable the issue was actually about.
         for issue in &issues {
-            if issue.issue_type == IssueType::WeakSecret.as_str() && issue.auto_fixable {
+            if issue.issue_type == IssueType::WeakSecret && issue.auto_fixable {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
@@ -509,7 +531,7 @@ pub fn run(opts: Options) -> Result<()> {
                 // ⚠️ A dry run never shows a generated secret: the real run
                 // makes a different one, and a value printed here would be
                 // copied somewhere and match nothing.
-                if opts.dry_run
+                if config.dry_run
                     && matches!(action, FixAction::GenerateSecret | FixAction::AddSecret)
                 {
                     fix.new_value = "(a new random secret)".to_string();
@@ -518,29 +540,19 @@ pub fn run(opts: Options) -> Result<()> {
             }
         }
 
-        pb.finish_with_message(format!("Applied {} fix(es) ✓", fixes_applied.len()));
-
-        // Write to file if any fixes were applied
-        if !fixes_applied.is_empty() && !opts.dry_run {
-            let original = std::fs::read_to_string(&env_path).unwrap_or_default();
+        // Written by the caller; everything here is decided without IO.
+        if !fixes_applied.is_empty() && !config.dry_run {
             // ⚠️ Only the keys actually repaired. Passing the whole map is what
             // made `write_fixed_file` rewrite — and damage — every line in the
             // file; see the note on that function.
             let changed: std::collections::BTreeSet<String> =
                 fixes_applied.iter().map(|f| f.variable.clone()).collect();
-            let (backup, written) = write_fixed_file(&env_path, &env_vars, &original, &changed)?;
-            if format == Format::Pretty {
-                ui::success(format!(
-                    "Saved fixes to {env_path} — original kept at {backup}"
-                ));
-                crate::core::safe_write::report(&written);
-            }
-
             // ⚠️ Recount against the file as it now stands, not as it arrived.
             // Everything below — the summary, the rendered output and the exit
             // code — reads `issues`, so without this `--fix` reports the very
             // problems it just repaired and exits 1.
             issues = collect_issues(&env_vars);
+            write = Some((env_vars.clone(), changed));
         }
     }
 
@@ -548,19 +560,26 @@ pub fn run(opts: Options) -> Result<()> {
     // fixed. It is listed apart, and is not counted as a repair.
     let (needs_input, fixed): (Vec<_>, Vec<_>) = fixes_applied
         .into_iter()
-        .partition(|f| checks::is_placeholder(&f.variable, &f.new_value));
+        .partition(|f| policy::is_placeholder(&f.variable, &f.new_value));
 
     // ─────────────────────────────────────────
     // Build Result
     // ─────────────────────────────────────────
-    let errors = issues.iter().filter(|i| i.severity == "error").count();
-    let warnings = issues.iter().filter(|i| i.severity == "warning").count();
-    let style = issues.iter().filter(|i| i.severity == "style").count();
+    let errors = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Error)
+        .count();
+    let warnings = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Warning)
+        .count();
+    // No check reports a style finding; the count stays for the JSON's shape.
+    let style = 0;
 
     // Counted on the file as it is now: before the fix for a dry run (nothing
     // was written), after it otherwise.
-    let counted = if opts.dry_run {
-        &env_file.vars
+    let counted = if config.dry_run {
+        &env_file_vars
     } else {
         &env_vars
     };
@@ -570,11 +589,11 @@ pub fn run(opts: Options) -> Result<()> {
         } else {
             "passed".to_string()
         },
-        dry_run: opts.dry_run,
+        dry_run: config.dry_run,
         // With a contract, "required" means what the contract says — not how
         // many lines the template happens to have.
-        required_present: required_present(spec, counted, env_label, &example_file.vars),
-        required_total: required_total(spec, env_label, &example_file.vars),
+        required_present: required_present(spec, counted, env_label, &input.template),
+        required_total: required_total(spec, env_label, &input.template),
         issues,
         summary: Summary {
             errors,
@@ -587,12 +606,198 @@ pub fn run(opts: Options) -> Result<()> {
         needs_input,
     };
 
+    Outcome { result, write }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Main Entry Point
+// ─────────────────────────────────────────────────────────────
+
+/// Run the validate command.
+///
+/// This function is called from `main.rs` after CLI args are parsed.
+pub fn run(opts: Options) -> Result<()> {
+    // Reject an unknown --format before doing any work. Discovering it after a
+    // full parse-and-check pass wastes the run and buries the message under
+    // output the user did not ask for. One rule with scan and doctor: any case,
+    // spaces trimmed (I-038).
+    let format = crate::core::args::one_of(
+        "format",
+        &opts.format,
+        &[
+            ("pretty", Format::Pretty),
+            ("text", Format::Pretty),
+            ("json", Format::Json),
+            ("github-actions", Format::Github),
+            ("github", Format::Github),
+        ],
+        &["pretty", "json", "github-actions"],
+    )?;
+
+    // ⚠️ I-038: a typo in `--ignore placeholder_vlaue` used to suppress
+    // nothing and say nothing. Both lists are checked, whichever is used.
+    let mut ignore_issues: HashSet<String> = HashSet::new();
+    for t in issue_types(&opts.ignore)? {
+        ignore_issues.insert(t.to_string());
+    }
+    let configured = issue_types(&opts.ignore_configured)
+        .with_context(|| format!("{} [validate] ignore", crate::core::config::PROJECT_FILE))?;
+    for t in configured {
+        ignore_issues.insert(t.to_string());
+    }
+
+    let input_format = crate::core::args::one_of(
+        "input format",
+        &opts.input_format,
+        &[("dotenv", InputFormat::Dotenv), ("json", InputFormat::Json)],
+        &["dotenv", "json"],
+    )?;
+    let stdin = opts.env == "-";
+    if opts.fix && (stdin || input_format == InputFormat::Json) {
+        anyhow::bail!(
+            "--fix rewrites a .env file, and this input is not one. \
+             Save it as a .env file and run --fix on that."
+        );
+    }
+
+    let configured_fail_on = opts
+        .fail_on_configured
+        .as_deref()
+        .map(parse_fail_on)
+        .transpose()
+        .with_context(|| format!("{} [validate] fail_on", crate::core::config::PROJECT_FILE))?;
+    let fail_on = match opts.fail_on.as_deref() {
+        Some(v) => parse_fail_on(v)?,
+        None => configured_fail_on.unwrap_or(FailOn::Error),
+    };
+
+    // ─────────────────────────────────────────
+    // UI: Header (only for pretty output)
+    // ─────────────────────────────────────────
+    if format == Format::Pretty {
+        ui::print_header("evnx validate", Some("Check environment configuration"));
+        if opts.verbose {
+            ui::info("Running in verbose mode");
+        }
+    } else if opts.verbose {
+        // Verbose for machine formats goes to stderr
+        eprintln!(
+            "[verbose] validate: env={}, example={}",
+            opts.env, opts.example
+        );
+    }
+
+    // `--env` already carries the resolved path: `--env-name production` is
+    // turned into `.env.production` before the command is called.
+    let env_path = opts.env.clone();
+    let example = opts.example.clone();
+
+    // Build configuration
+    let config = ValidationConfig {
+        strict: opts.strict,
+        fix: opts.fix,
+        rotate_weak_secrets: opts.rotate_weak_secrets,
+        validate_formats: opts.validate_formats,
+        dry_run: opts.dry_run,
+        ignore_issues,
+    };
+
+    // Parse files with progress indicator
+    let pb = ui::spinner("Parsing configuration files...");
+    let parser = Parser::new(ParserConfig {
+        strict: opts.strict,
+        ..ParserConfig::default()
+    });
+
+    let example_file = parser
+        .parse_file_or_hint(
+            &example,
+            "validate compares .env against it, so it needs one. Create it with \
+         `evnx sync` (from your .env) or `evnx init`, or point at another file \
+         with --example.",
+        )
+        .map_err(|e| every_problem(e, &parser, &example))?;
+    let origin = if stdin {
+        STDIN_LABEL.to_string()
+    } else {
+        env_path.clone()
+    };
+    let doc = match input_format {
+        InputFormat::Json => {
+            let text = if stdin {
+                crate::utils::term::read_piped("evnx validate --env -")?
+            } else {
+                std::fs::read_to_string(&env_path)
+                    .with_context(|| format!("could not read {env_path}"))?
+            };
+            document_from_json(&text)
+                .with_context(|| format!("Failed to read {origin} as --input-format json"))?
+        }
+        InputFormat::Dotenv if stdin => {
+            let doc =
+                parser.parse_document(&crate::utils::term::read_piped("evnx validate --env -")?);
+            if !doc.is_clean() {
+                return Err(listed_problems(doc.problems, &origin));
+            }
+            doc
+        }
+        InputFormat::Dotenv => {
+            parser
+                .parse_file_or_hint(&env_path, &Parser::missing_env_hint(&env_path))
+                .map_err(|e| every_problem(e, &parser, &env_path))?;
+            parser.parse_document(&std::fs::read_to_string(&env_path).unwrap_or_default())
+        }
+    };
+
+    pb.finish_with_message("Files parsed ✓");
+
+    if opts.verbose {
+        ui::info(format!(
+            "Loaded {} variables from {} and {} from {}",
+            example_file.vars.len(),
+            example,
+            doc.vars().len(),
+            origin
+        ));
+    }
+
+    let mut surroundings = Surroundings::of(&env_path);
+    if stdin {
+        // No file, so nothing git could commit.
+        surroundings.exposure = None;
+    }
+    let input = Input {
+        doc,
+        template: example_file.vars,
+        origin: origin.clone(),
+        spec: opts.spec,
+        surroundings,
+    };
+
+    let pb = config.fix.then(|| ui::spinner("Applying auto-fixes..."));
+    let Outcome { result, write } = validate(&input, &config);
+    if let Some(pb) = pb {
+        let n = result.fixed.len() + result.needs_input.len();
+        pb.finish_with_message(format!("Applied {n} fix(es) ✓"));
+    }
+
+    if let Some((env_vars, changed)) = write {
+        let original = std::fs::read_to_string(&env_path).unwrap_or_default();
+        let (backup, written) = write_fixed_file(&env_path, &env_vars, &original, &changed)?;
+        if format == Format::Pretty {
+            ui::success(format!(
+                "Saved fixes to {env_path} — original kept at {backup}"
+            ));
+            crate::core::safe_write::report(&written);
+        }
+    }
+
     // ─────────────────────────────────────────
     // Output (Improvement #6: UI integration)
     // ─────────────────────────────────────────
     match format {
         Format::Json => output_json(&result)?,
-        Format::Github => output_github_actions(&result, &env_path)?,
+        Format::Github => output_github_actions(&result, &origin)?,
         Format::Pretty => output_pretty(&result, &env_path)?,
     }
 
@@ -639,7 +844,7 @@ fn hidden_by_needs_input(result: &ValidationResult) -> HashSet<&str> {
             result
                 .issues
                 .iter()
-                .any(|i| i.variable == *v && i.issue_type == IssueType::PlaceholderValue.as_str())
+                .any(|i| i.variable == *v && i.issue_type == IssueType::PlaceholderValue)
         })
         .collect()
 }
@@ -712,13 +917,11 @@ fn output_pretty(result: &ValidationResult, env_path: &str) -> Result<()> {
 
     // Show issues
     for issue in result.issues.iter().filter(|i| {
-        !(hidden.contains(i.variable.as_str())
-            && i.issue_type == IssueType::PlaceholderValue.as_str())
+        !(hidden.contains(i.variable.as_str()) && i.issue_type == IssueType::PlaceholderValue)
     }) {
-        let mark = match issue.severity.as_str() {
-            "error" => glyph::FAIL.red(),
-            "warning" => glyph::WARN.yellow(),
-            _ => glyph::INFO.dimmed(),
+        let mark = match issue.severity {
+            Severity::Error => glyph::FAIL.red(),
+            Severity::Warning => glyph::WARN.yellow(),
         };
 
         // The location leads the detail line rather than trailing it behind a
@@ -789,7 +992,7 @@ fn output_pretty(result: &ValidationResult, env_path: &str) -> Result<()> {
         let fixable = result.issues.iter().any(|i| {
             i.auto_fixable
                 && !(hidden.contains(i.variable.as_str())
-                    && i.issue_type == IssueType::PlaceholderValue.as_str())
+                    && i.issue_type == IssueType::PlaceholderValue)
         });
         let mut steps = vec!["Review and fix the errors above"];
         if fixable {
@@ -838,10 +1041,7 @@ fn print_fixes(result: &ValidationResult, lead: bool) {
             if let Some(advice) = result
                 .issues
                 .iter()
-                .find(|i| {
-                    i.variable == fix.variable
-                        && i.issue_type == IssueType::PlaceholderValue.as_str()
-                })
+                .find(|i| i.variable == fix.variable && i.issue_type == IssueType::PlaceholderValue)
                 .and_then(|i| i.suggestion.as_deref())
             {
                 println!("    {}  {}", glyph::ARROW.dimmed(), advice.dimmed());
@@ -870,11 +1070,21 @@ fn every_problem(err: anyhow::Error, parser: &Parser, path: &str) -> anyhow::Err
     let Ok(content) = std::fs::read_to_string(path) else {
         return err;
     };
-    let mut problems = parser.parse_document(&content).problems;
+    let problems = parser.parse_document(&content).problems;
     if problems.len() < 2 {
         return err;
     }
+    listed_problems(problems, path)
+}
+
+/// [`every_problem`]'s message, for problems already found: one keeps the
+/// parser's error, more are listed one per line in line order.
+fn listed_problems(mut problems: Vec<crate::core::parser::Problem>, path: &str) -> anyhow::Error {
     problems.sort_by_key(|p| p.span.line);
+    if problems.len() == 1 {
+        return anyhow::Error::from(problems.remove(0).error)
+            .context(format!("Failed to parse {path}"));
+    }
     let lines: Vec<String> = problems
         .iter()
         .map(|p| format!("  {}", p.describe()))
@@ -921,10 +1131,9 @@ fn output_github_actions(result: &ValidationResult, env_path: &str) -> Result<()
     let doc = crate::core::Parser::default().parse_document(&content);
 
     for issue in &result.issues {
-        let level = match issue.severity.as_str() {
-            "error" => "error",
-            "warning" => "warning",
-            _ => "notice",
+        let level = match issue.severity {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
         };
         let body = match &issue.suggestion {
             Some(s) => format!("{}%0ASuggestion: {}", issue.message, s),
@@ -957,7 +1166,9 @@ fn output_github_actions(result: &ValidationResult, env_path: &str) -> Result<()
 // Public Re-exports
 // ─────────────────────────────────────────────────────────────
 
-pub use types::{FixApplied, Issue, IssueType, Summary, ValidationConfig, ValidationResult};
+pub use types::{
+    FixApplied, Issue, IssueType, Severity, Summary, ValidationConfig, ValidationResult,
+};
 
 /// How many required variables the contract declares for this environment.
 ///
@@ -998,4 +1209,49 @@ fn required_present(
         .filter(|(_, v)| v.is_required() && v.applies_to(env_name))
         .filter(|(k, _)| env_vars.contains_key(*k))
         .count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `validate` needs no file, folder or repository: everything arrives in
+    /// the `Input` (B2 P3). `--fix` decides the write; a dry run decides none.
+    #[test]
+    fn p3_validate_runs_on_an_input_alone() {
+        let input = Input {
+            doc: Parser::default().parse_document("DEBUG=True\n"),
+            template: [("DEBUG", ""), ("PORT", "8080")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            origin: "stdin".to_string(),
+            spec: Default::default(),
+            surroundings: Surroundings {
+                docker: false,
+                exposure: None,
+                known_environments: Vec::new(),
+                readers: Vec::new(),
+            },
+        };
+        let config = ValidationConfig::default();
+        let found = validate(&input, &config).result;
+        let types: Vec<IssueType> = found.issues.iter().map(|i| i.issue_type).collect();
+        assert_eq!(types, [IssueType::MissingVariable, IssueType::BooleanTrap]);
+        assert!(found.issues[0].location.starts_with("stdin"));
+
+        let fix = ValidationConfig {
+            fix: true,
+            ..ValidationConfig::default()
+        };
+        let (vars, changed) = validate(&input, &fix).write.unwrap();
+        assert_eq!(vars["DEBUG"], "true");
+        assert_eq!(vars["PORT"], "8080");
+        assert_eq!(changed.len(), 2);
+        let dry = ValidationConfig {
+            dry_run: true,
+            ..fix
+        };
+        assert!(validate(&input, &dry).write.is_none());
+    }
 }

@@ -2,7 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Serialised as [`IssueType::as_str`]; a test holds the two equal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum IssueType {
     MissingVariable,
     ExtraVariable,
@@ -34,11 +36,22 @@ pub enum IssueType {
     /// dotenv) read differently from evnx (RM-04). A warning, never fixable:
     /// fixing it would choose a reader for the user.
     ReaderMismatch,
+    /// A carriage return that ends no CRLF line (B2 P0.5): evnx and Compose
+    /// keep it in the value, python-dotenv and Node dotenv split the line there.
+    /// A warning, never fixable: which reading was meant is the author's call.
+    LoneCarriageReturn,
+    /// A NUL byte in a value (B2 P0.6). An error: no process can receive it,
+    /// so the file already fails wherever it is loaded.
+    NulByte,
+    /// A value Docker Compose and python-dotenv read differently because they
+    /// expand top to bottom (D10, B2 P0.7). A warning: evnx switches to that
+    /// order in 0.13.0, so the value will change.
+    ExpansionOrder,
 }
 
 impl IssueType {
     /// Every type, in the order `--ignore`'s error lists them.
-    pub const ALL: [IssueType; 16] = [
+    pub const ALL: [IssueType; 19] = [
         IssueType::MissingVariable,
         IssueType::ExtraVariable,
         IssueType::PlaceholderValue,
@@ -55,6 +68,9 @@ impl IssueType {
         IssueType::EnvNotIgnored,
         IssueType::EnvTracked,
         IssueType::ReaderMismatch,
+        IssueType::LoneCarriageReturn,
+        IssueType::NulByte,
+        IssueType::ExpansionOrder,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -75,15 +91,26 @@ impl IssueType {
             IssueType::EnvNotIgnored => "env_not_ignored",
             IssueType::EnvTracked => "env_tracked",
             IssueType::ReaderMismatch => "reader_mismatch",
+            IssueType::LoneCarriageReturn => "lone_carriage_return",
+            IssueType::NulByte => "nul_byte",
+            IssueType::ExpansionOrder => "expansion_order",
         }
     }
 }
 
+/// How serious a finding is: `"error"` or `"warning"` in JSON.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Severity {
+    Error,
+    Warning,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Issue {
-    pub severity: String,
+    pub severity: Severity,
     #[serde(rename = "type")]
-    pub issue_type: String,
+    pub issue_type: IssueType,
     pub variable: String,
     pub message: String,
     pub location: String,
@@ -159,6 +186,22 @@ pub struct ValidationConfig {
     /// own documentation in `cli.rs`.
     pub rotate_weak_secrets: bool,
     pub validate_formats: bool,
+    /// `--fix --dry-run`: work the fixes out, write nothing.
+    pub dry_run: bool,
     /// Issue types the caller asked to suppress, from `--ignore`.
     pub ignore_issues: std::collections::HashSet<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// JSON, `--ignore` and the docs all use `as_str`; serde must agree (B2 P2).
+    #[test]
+    fn p2_issue_types_serialise_as_their_names() {
+        for t in IssueType::ALL {
+            assert_eq!(serde_json::to_value(t).unwrap(), t.as_str());
+        }
+        assert_eq!(serde_json::to_value(Severity::Warning).unwrap(), "warning");
+    }
 }

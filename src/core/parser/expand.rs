@@ -3,7 +3,7 @@
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
-use super::document::{Document, Entry, Problem};
+use super::document::{AssignedBelow, Document, Entry, OrderDifference, Problem};
 use super::{ParseError, ParseResult, Parser};
 
 /// Marks a `$` that came from `\$` and must not be expanded.
@@ -55,6 +55,9 @@ impl Parser {
             effective.insert(e.key.as_str(), i);
         }
         let effective: Vec<usize> = effective.into_values().collect();
+        // D10: before any value is replaced, read each one as Compose would.
+        let ordered = self.expand_in_order(doc, literal);
+        let mut failed = vec![false; doc.entries.len()];
 
         let expand = |e: &Entry| -> ParseResult<String> {
             if literal.contains(&e.key) {
@@ -74,11 +77,12 @@ impl Parser {
         // Effective entries first, in key order: that is the order the strict
         // parser met expansion errors in, so `problems` keeps its first error.
         let mut done = vec![false; doc.entries.len()];
-        for i in effective {
+        for &i in &effective {
             done[i] = true;
             match expand(&doc.entries[i]) {
                 Ok(v) => doc.entries[i].value = v,
                 Err(error) => {
+                    failed[i] = true;
                     let e = &mut doc.entries[i];
                     e.value = strip_markers(&e.value);
                     doc.problems.push(Problem {
@@ -97,6 +101,72 @@ impl Parser {
                 doc.entries[i].value = v;
             }
         }
+
+        // Only the entry that counts, and only one evnx reads: a file that
+        // already fails says so as a problem.
+        for i in effective {
+            let Some((reading, names)) = &ordered[i] else {
+                continue;
+            };
+            let e = &doc.entries[i];
+            if failed[i] || reading.as_ref().is_ok_and(|v| *v == e.value) {
+                continue;
+            }
+            let below = names
+                .iter()
+                .filter_map(|name| {
+                    let mut lines = doc.entries.iter().filter(|o| o.key == *name);
+                    let line = lines
+                        .clone()
+                        .map(|o| o.span.line)
+                        .find(|&l| l > e.span.line)?;
+                    let also_above = lines.any(|o| o.span.line < e.span.line);
+                    Some(AssignedBelow {
+                        name: name.clone(),
+                        line,
+                        also_above,
+                    })
+                })
+                .collect();
+            doc.order_differences.push(OrderDifference {
+                key: e.key.clone(),
+                line: e.span.line,
+                below,
+            });
+        }
+    }
+
+    /// Every entry's value read as Docker Compose and python-dotenv read it:
+    /// top to bottom, each reference resolved against the values assigned
+    /// above it (D10). `None` for an entry with nothing to expand. With it,
+    /// the names the value refers to directly.
+    fn expand_in_order(
+        &self,
+        doc: &Document,
+        literal: &HashSet<String>,
+    ) -> Vec<Option<(ParseResult<String>, Vec<String>)>> {
+        // Values settled so far, with every `$` marked literal: they are
+        // already expanded and must not be expanded again on lookup.
+        let mut above: IndexMap<String, String> = IndexMap::new();
+        doc.entries
+            .iter()
+            .map(|e| {
+                let ordered = (!literal.contains(&e.key) && e.value.contains('$')).then(|| {
+                    let reading =
+                        self.expand_value(&e.value, &above, &mut Vec::new(), 0, e.span.line);
+                    (reading, references(&e.value))
+                });
+                let settled = match &ordered {
+                    Some((Ok(v), _)) => v.clone(),
+                    _ => strip_markers(&e.value),
+                };
+                above.insert(
+                    e.key.clone(),
+                    settled.replace('$', &format!("{LITERAL_DOLLAR}$")),
+                );
+                ordered
+            })
+            .collect()
     }
 
     /// Recursively expand variable references within a single `value` string.
@@ -146,7 +216,11 @@ impl Parser {
                 // ── ${VAR} syntax ─────────────────────────────────────────────
                 Some(&'{') => {
                     chars.next(); // consume `{`
-                    let var_name: String = chars.by_ref().take_while(|&c| c != '}').collect();
+                    let inner: String = chars.by_ref().take_while(|&c| c != '}').collect();
+                    let (var_name, op, word) = match split_operator(&inner) {
+                        Some((name, op, word)) => (name.to_string(), op, word),
+                        None => (inner.clone(), "", ""),
+                    };
 
                     if stack.contains(&var_name) {
                         return Err(ParseError::CircularExpansion {
@@ -155,21 +229,61 @@ impl Parser {
                         });
                     }
 
-                    match vars.get(&var_name) {
+                    let value = match vars.get(&var_name) {
                         Some(val) => {
                             stack.push(var_name.clone());
                             let expanded =
                                 self.expand_value(val, vars, stack, depth + 1, line_hint)?;
                             stack.pop();
-                            result.push_str(&expanded);
+                            Some(expanded)
                         }
-                        None => {
-                            return Err(ParseError::UndefinedVariable {
-                                line: line_hint,
-                                var: var_name,
-                            });
-                        }
-                    }
+                        None => None,
+                    };
+
+                    // The shell's (and Compose's) meanings. A `:` also treats an
+                    // empty value as unset. The word is expanded in turn, so
+                    // `${A:-$B}` works.
+                    let set = |colon: bool| value.as_ref().filter(|v| !colon || !v.is_empty());
+                    let expanded = match op {
+                        "" => match value {
+                            Some(v) => v,
+                            None => {
+                                return Err(ParseError::UndefinedVariable {
+                                    line: line_hint,
+                                    var: var_name,
+                                });
+                            }
+                        },
+                        ":-" | "-" => match set(op == ":-") {
+                            Some(v) => v.clone(),
+                            None => self.expand_value(word, vars, stack, depth + 1, line_hint)?,
+                        },
+                        ":?" | "?" => match set(op == ":?") {
+                            Some(v) => v.clone(),
+                            None => {
+                                let message = if !word.is_empty() {
+                                    strip_markers(word)
+                                } else if op == ":?" {
+                                    "is not set or is empty".to_string()
+                                } else {
+                                    "is not set".to_string()
+                                };
+                                return Err(ParseError::RequiredVariable {
+                                    line: line_hint,
+                                    var: var_name,
+                                    message,
+                                });
+                            }
+                        },
+                        // ":+" | "+"
+                        _ => match set(op == ":+") {
+                            Some(_) => {
+                                self.expand_value(word, vars, stack, depth + 1, line_hint)?
+                            }
+                            None => String::new(),
+                        },
+                    };
+                    result.push_str(&expanded);
                 }
 
                 // ── $VAR bare syntax ──────────────────────────────────────────
@@ -228,4 +342,48 @@ impl Parser {
 
         Ok(result)
     }
+}
+
+/// Split `NAME:-word` (and `-`, `:?`, `?`, `:+`, `+`) into its parts.
+///
+/// `None` for a plain name, and for a word holding another `${`: the `}` that
+/// closed this reference belonged to that one, so it stays the undefined
+/// variable it was before these forms were read.
+fn split_operator(inner: &str) -> Option<(&str, &str, &str)> {
+    let end = inner.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))?;
+    if end == 0 {
+        return None;
+    }
+    let (name, rest) = inner.split_at(end);
+    let op = rest.get(..if rest.starts_with(':') { 2 } else { 1 })?;
+    let word = &rest[op.len()..];
+    (matches!(op, ":-" | "-" | ":?" | "?" | ":+" | "+") && !word.contains("${"))
+        .then_some((name, op, word))
+}
+
+/// The variable names `value` refers to, `${NAME…}` or `$NAME`, in order and
+/// once each. A `$` written `\$` is not a reference.
+fn references(value: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == LITERAL_DOLLAR {
+            chars.next_if_eq(&'$');
+            continue;
+        }
+        if c != '$' {
+            continue;
+        }
+        let name = if chars.next_if_eq(&'{').is_some() {
+            let inner: String = chars.by_ref().take_while(|&c| c != '}').collect();
+            split_operator(&inner).map_or(inner.clone(), |(n, _, _)| n.to_string())
+        } else {
+            std::iter::from_fn(|| chars.next_if(|c| c.is_ascii_alphanumeric() || *c == '_'))
+                .collect()
+        };
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
 }
