@@ -43,6 +43,11 @@ impl Install {
         self
     }
 
+    /// The placed binary.
+    pub fn exe(&self) -> &Path {
+        &self.exe
+    }
+
     /// Run the placed binary with `args`.
     pub fn run(&self, args: &[&str]) -> Output {
         self.run_with(args, &[])

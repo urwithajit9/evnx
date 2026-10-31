@@ -517,6 +517,9 @@ jobs:
               <<~EOS
                 Run 'evnx --help' to get started.
                 Documentation: https://docs.evnx.dev/cli
+
+                If 'evnx --version' does not say #{version}, another copy comes
+                first on your PATH. '#{opt_bin}/evnx update --list' lists them all.
               EOS
             end
 

@@ -2924,12 +2924,23 @@ file, names that collide, a filter that leaves nothing).
         #[arg(long)]
         check: bool,
 
-        /// With `--check`: the answer as JSON on stdout, for scripts and CI.
+        /// List every copy of evnx on this machine, and which one runs.
         ///
-        /// `schema` (1), `installed`, `latest`, `status` (`current`, `behind` or
-        /// `ahead`), `channel`, `command` (null when evnx cannot name one) and
-        /// `release_url`. The exit code is the same as without it.
-        #[arg(long, requires = "check")]
+        /// Looks on PATH, in order, then in the folders installers use (cargo,
+        /// npm, pipx, Homebrew, ~/.local/bin). Versions are read from what the
+        /// installer left; a copy with none is run with `--version`, for at most
+        /// two seconds, and the output says so. No network. Exits 0 however
+        /// many copies there are; `--json` gives `count` for a script to decide.
+        #[arg(long, conflicts_with = "check")]
+        list: bool,
+
+        /// With `--check` or `--list`: the answer as JSON on stdout.
+        ///
+        /// `--check`: `schema` (1), `installed`, `latest`, `status` (`current`,
+        /// `behind` or `ahead`), `channel`, `command` (null when evnx cannot name
+        /// one), `release_url` and `other_copies`. `--list`: `schema` (1),
+        /// `count` and `copies`. The exit code is the same as without it.
+        #[arg(long)]
         json: bool,
     },
 }

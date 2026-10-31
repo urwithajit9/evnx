@@ -394,6 +394,33 @@ jobs:
             return binPath;
           }
 
+          // RM-42: an older evnx earlier on PATH runs instead of this one, and
+          // nothing says so. Global installs only; never fails the install.
+          function warnIfShadowed() {
+            try {
+              if (process.env.npm_config_global !== "true") return;
+              const prefix = process.env.npm_config_prefix;
+              if (!prefix) return;
+              const ours = process.platform === "win32" ? prefix : path.join(prefix, "bin");
+              const names = process.platform === "win32" ? ["evnx.exe", "evnx.cmd"] : ["evnx"];
+              for (const dir of (process.env.PATH || "").split(path.delimiter)) {
+                if (!dir) continue;
+                if (path.resolve(dir) === path.resolve(ours)) return;
+                for (const n of names) {
+                  const p = path.join(dir, n);
+                  if (fs.existsSync(p)) {
+                    process.stderr.write(
+                      `\nWARNING: another evnx comes first on your PATH: ${p}\n` +
+                      `Typing \`evnx\` runs that one, not this install.\n` +
+                      `List every copy: ${path.join(ours, names[names.length - 1])} update --list\n\n`
+                    );
+                    return;
+                  }
+                }
+              }
+            } catch (_) { /* a hint, never a failure */ }
+          }
+
           try {
             const binaryPath = getBinaryPath();
             const binDir     = path.join(__dirname, "bin");
@@ -410,6 +437,7 @@ jobs:
             }
 
             console.log(`evnx installed for ${process.platform}/${process.arch}`);
+            warnIfShadowed();
           } catch (err) {
             process.stderr.write(`\nWARNING: ${err.message}\n\n`);
             process.exit(0);
