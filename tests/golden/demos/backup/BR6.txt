@@ -24,18 +24,18 @@ Backup information:
   ✓ Decryption key cleared from memory
 
 Next steps:
-  1. Inspect the restored file:  cat r.env.restored
-  2. If the content is correct:  mv r.env.restored r.env
-  3. Validate the result:        evnx validate --env r.env
+  1. Inspect the restored file:  cat ./r.env.restored
+  2. If the content is correct:  mv ./r.env.restored ./r.env
+  3. Validate the result:        evnx validate --env ./r.env
 [stderr]
 
   evnx restore  Decrypt and restore from an encrypted backup
 
 ! Decrypted content does not look like a valid .env file.
-  Writing to r.env.restored instead of r.env to protect your current file.
+  Writing to ./r.env.restored instead of ./r.env to protect your current file.
   Inspect the file manually, then rename it if the content looks correct:
-    mv r.env.restored r.env
-! Wrote the backup's content to r.env.restored, not to r.env
+    mv ./r.env.restored ./r.env
+! Wrote the backup's content to ./r.env.restored, not to ./r.env
   Docs: https://docs.evnx.dev/cli/commands/restore
 [exit 5]
   ok: fallback: .restored, exit 5 (exit 5)

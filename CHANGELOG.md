@@ -160,6 +160,17 @@ in `doctor`'s output should match `.env: Line N:` instead.
   runs it nightly against that image, never on pull requests.
 
 ### Fixed
+- **`validate` on stdin or JSON no longer offers `--fix`.** Findings said
+  "fixable with --fix" and the next steps "Run with --fix", for input `--fix`
+  refuses; `auto_fixable` is now `false` there in `--format json` too. A missing
+  variable's suggestion said "Add DEBUG=<value> to <stdin>"; it now says
+  "Add DEBUG=<value>".
+- **`restore` names every path the same way.** One run said "Kept the previous
+  ./.env as .env.bak" and then "Restored 5 variable(s) to .env"; the kept copy,
+  the restored file, the fallback warning and the next-step commands now all
+  read `./.env` (RM-32).
+- **`parse --format json` reports `"file": "./.env"`**, as `validate` reports
+  `"location": "./.env"` for the same file. `<stdin>` is unchanged.
 - ⚠️ **A key that starts with `export` keeps its whole name** (B2). `export`
   was stripped as a bare prefix, so `exporter=1` was read as `er=1` and
   `exports_dir` as `s_dir`, with no warning. It is now a keyword only when

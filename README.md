@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/urwithajit9/evnx/workflows/CI/badge.svg)](https://github.com/urwithajit9/evnx/actions)
 [![Release](https://img.shields.io/github/v/release/urwithajit9/evnx)](https://github.com/urwithajit9/evnx/releases)
+[![SLSA Build L2](https://img.shields.io/badge/SLSA-Build%20L2-4c1)](https://www.evnx.dev/blog/how-to-verify-an-evnx-download)
 [![crates.io](https://img.shields.io/crates/v/evnx.svg)](https://crates.io/crates/evnx)
 [![PyPI](https://img.shields.io/pypi/v/evnx.svg)](https://pypi.org/project/evnx/)
 [![npm](https://img.shields.io/npm/v/@evnx/cli.svg)](https://www.npmjs.com/package/@evnx/cli)
@@ -164,10 +165,9 @@ Commands exit **0** when they ran and found nothing, **1** when they ran and the
 answer is no (secrets found, drift, a failed upload), and **2** when they could
 not run — "No verdict: evnx did not finish". `backup` and `restore` are the
 exception: they keep the specific codes listed in their section below (`restore`
-exits 3 when the backup file is missing) and never exit 1. `-q` prints nothing on success; findings and errors
-still print. ⚠️ Not yet in the cloud commands: `org`, `vault`, `cloud push`/`pull`/
-`export`/`audit` and `auth`'s token, session and device commands still print their
-progress lines under `-q` (`auth status`, `cloud status` and `cloud unlink` are quiet).
+exits 3 when the backup file is missing) and never exit 1. `-q` prints nothing on
+success, in every command including the cloud ones (v0.10.18+); findings, warnings,
+errors and data you asked for still print.
 
 ### `evnx init`
 
@@ -294,9 +294,30 @@ evnx validate --fail-on warning          # warnings exit 1 too
 evnx validate --fix --dry-run            # what --fix would change; writes nothing
 evnx validate --format json              # machine-readable output
 evnx validate --format github-actions    # inline GitHub annotations
+cat staged.env | evnx validate --env -    # v0.12.0+: stdin, nothing written to disk
+evnx parse --format json --values | evnx validate --env - --input-format json   # v0.12.0+
 ```
 
 Detects: missing required variables, placeholder values (`YOUR_KEY_HERE`, `CHANGE_ME`), the boolean string trap (`DEBUG="False"` is truthy in most runtimes), weak secret keys, duplicate keys, `localhost` in a project with Docker files, an env file `.gitignore` does not cover (a warning) or git already tracks (an error), and, with `--validate-formats`, malformed URLs, ports and emails. Warnings alone exit 0 unless `--fail-on warning`.
+
+A file that does not parse lists every problem in it at once (v0.12.0+). `--fix` is
+refused for stdin and JSON input: there is no file to rewrite.
+
+---
+
+### `evnx parse`
+
+**v0.12.0+.** What evnx reads from a `.env`, line by line: each key, its line, and
+whether the value is empty, a placeholder or a secret. **Names only** — values appear
+only with `--values`, which a terminal refuses without `--yes`. Every problem in the
+file is listed, and the exit code is 1 when there is one.
+
+```bash
+evnx parse                                # line, key, flags; never a value
+evnx parse --format json                  # the same, for jq or an AI agent
+evnx parse --env-name production          # .env.production
+printf 'A=1\n' | evnx parse --env -       # stdin
+```
 
 ---
 
@@ -596,10 +617,15 @@ database:
 | `bool` | `true`/`yes`/`on`/`1`/`y` → `true`, `false`/`no`/`off`/`0`/`n` → `false` (any case); anything else is an error |
 | `int` | a whole number; anything else is an error |
 | `json` | a quoted, escaped JSON string |
+| `yaml`, `toml` | v0.12.0+: a quoted string, safe in that format whatever the value holds |
+| `sh` | v0.12.0+: a single-quoted shell word |
 | `default:VALUE` | `VALUE` when the variable is empty or not defined |
 
-An unknown filter, or two chained (`{{X|upper|json}}`), is an error naming its
-line, and nothing is written. Exit codes: 0 rendered, 2 nothing written.
+Filters chain left to right (v0.12.0+): `{{PORT|default:8080|int}}`,
+`{{APP_ENV|upper|json}}`. A template is read once, so a value is never expanded
+again, and a backslash makes a reference literal: `\${HOST}` prints `${HOST}`. An
+unknown filter is an error naming its line, and nothing is written. Exit codes: 0
+rendered, 2 nothing written.
 
 ---
 
@@ -660,7 +686,8 @@ other's files:
 | Secret | a passphrase or key file you choose | your account's master password |
 | History | `--keep N` numbered files | server versions: `--version N`, `history`, `diff` |
 | Non-interactive | `--key-file`, `EVNX_PASSWORD` | `--password-stdin` |
-| Replacing a file | `--yes` (alias `--force`), keeps `.bak` | `--force` |
+| Replacing a file | `--yes` (alias `--force`), keeps `.bak` | `--yes` (alias `--force`), keeps `.bak` |
+| Declining the question | exit 4, nothing changed | exit 4, nothing changed (v0.12.0+) |
 | Works with no account or network | yes | no |
 | Everything back at once | the file is the backup | `cloud export` |
 
@@ -721,7 +748,13 @@ pass `--check`, and never replaces its own binary.
 evnx update                    # the upgrade command for this install
 evnx update --check            # exit 1 when a newer release exists
 evnx update --check --json     # the same answer for CI
+evnx update --list             # v0.12.0+: every evnx copy on this machine, which one runs
 ```
+
+`--list` finds every copy on `PATH` and in the usual install folders, reads each
+version from what its installer left (or runs it with `--version`, for at most two
+seconds), and says which to keep and how to remove the rest. An older copy earlier
+on `PATH` is the usual reason a new install "did not work". No network.
 
 ---
 
@@ -875,7 +908,8 @@ looks it up to ask, a vault-scoped token cannot and is not asked.
 
 `pull` writing a file inside a git repository checks that git ignores it: it asks
 on a terminal, warns without one, adds it with `--gitignore`, and skips the check
-with `--no-gitignore`. Over a file that differs it asks first, or `--force`.
+with `--no-gitignore`. Over a file that differs it asks first, the same question
+`restore` asks; `--yes` (alias `--force`) skips it, and declining exits 4 (v0.12.0+).
 
 ⚠️ `cloud diff` compares **key names**, not values. The server holds ciphertext
 and a list of names, so it can tell you a variable appeared, disappeared or
@@ -1111,7 +1145,10 @@ Two things to understand:
   person: a token is refused before anything is sent.
 
 Pipe the password rather than exporting it where you can: an environment variable
-is visible in process listings and tends to end up in logs.
+is visible in process listings and tends to end up in logs. Where piping is not
+possible, `EVNX_MASTER_PASSWORD` (v0.12.0+) unlocks without a prompt and warns each
+time it is used. It is separate from `EVNX_PASSWORD`, which only `backup` and
+`restore` read, so one leaked variable cannot open both.
 
 ### Self-hosting
 
@@ -1356,6 +1393,16 @@ variant it walks past, and `--env-name production` resolves to `.env.production`
 `.env.staging` and every other dotted variant, and reported "no secrets detected" without
 opening them. If you relied on `evnx scan` as a gate on an earlier version, it never saw
 the file most likely to hold production credentials.
+
+**Keys with `.` or `-` are refused.** `my.key=1` and `my-key=1` are accepted by
+Docker Compose, python-dotenv and Node, but evnx refuses the file, because a shell
+cannot `export` such a name. Since v0.12.0 the error says so. Accepting them, and
+refusing them only where an output format cannot hold them, is planned for v0.13.0.
+
+**`${VAR}` is expanded against a key's final value**, where Docker Compose and
+python-dotenv expand top to bottom: with `B=1`, `A=${B}`, `B=2`, evnx gives `A=2`
+and Compose `A=1`. Since v0.12.0 evnx warns when a file reads differently this way;
+switching to top-to-bottom is planned for v0.13.0.
 
 **Windows** — file permissions checking is limited (no Unix permission model). Terminal color support requires PowerShell or Windows Terminal on older systems.
 

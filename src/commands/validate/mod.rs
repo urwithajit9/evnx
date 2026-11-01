@@ -775,7 +775,14 @@ pub fn run(opts: Options) -> Result<()> {
     };
 
     let pb = config.fix.then(|| ui::spinner("Applying auto-fixes..."));
-    let Outcome { result, write } = validate(&input, &config);
+    let Outcome { mut result, write } = validate(&input, &config);
+    if stdin || input_format == InputFormat::Json {
+        // `--fix` is refused for this input, so nothing here is "fixable with
+        // --fix", in the text or in `auto_fixable`.
+        for issue in &mut result.issues {
+            issue.auto_fixable = false;
+        }
+    }
     if let Some(pb) = pb {
         let n = result.fixed.len() + result.needs_input.len();
         pb.finish_with_message(format!("Applied {n} fix(es) ✓"));

@@ -14,10 +14,10 @@ Backup information:
 ✓ Decryption successful
   ✓ Decryption key cleared from memory
 
-✓ Restored 15 variable(s) to golden.out
+✓ Restored 15 variable(s) to ./golden.out
 
 Next steps:
-  1. Run: evnx validate --env golden.out
+  1. Run: evnx validate --env ./golden.out
   2. Verify your application starts correctly
   3. Delete the backup file once you have confirmed the restore
 [stderr]
