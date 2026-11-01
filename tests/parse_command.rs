@@ -43,6 +43,9 @@ fn rm88_the_listing_names_keys_and_flags_never_values() {
     for value in ["8080", "changeme", "s3cr3t"] {
         assert!(!json.contains(value), "{value} in {json}");
     }
+    // RM-32: the file as `validate` names it.
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v["file"], "./.env");
 }
 
 #[test]

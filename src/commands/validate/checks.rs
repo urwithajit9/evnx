@@ -153,11 +153,12 @@ pub fn check_missing_variables(
             // counting as required, so the hint starts from `spec init`.
             suggestion: Some(if template_value.trim().is_empty() {
                 format!(
-                    "Add {key}=<value> to {env_path}. If it is optional: run `evnx spec init`, \
-                     then set `required = false` under [vars.{key}] in .evnx.toml"
+                    "{}. If it is optional: run `evnx spec init`, \
+                     then set `required = false` under [vars.{key}] in .evnx.toml",
+                    add_to(key, env_path)
                 )
             } else {
-                format!("Add {}=<value> to {}", key, env_path)
+                add_to(key, env_path)
             }),
             auto_fixable: true,
         })
@@ -862,6 +863,16 @@ pub fn check_formats(
 // Tests for Pure Functions
 // ─────────────────────────────────────────────────────────────
 
+/// "Add KEY=<value> to ./.env". Input that is no file (`<stdin>`) has nowhere
+/// to add it to, so the target is left out rather than named as `<stdin>`.
+fn add_to(key: &str, env_path: &str) -> String {
+    if env_path.starts_with('<') {
+        format!("Add {key}=<value>")
+    } else {
+        format!("Add {key}=<value> to {env_path}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1109,8 +1120,8 @@ pub fn check_spec_required(
             suggestion: Some(match spec.get(key).and_then(|v| v.description.as_deref()) {
                 // The spec already says what the variable is for, so the
                 // suggestion can say it too rather than repeating the name.
-                Some(d) => format!("Add {key}=<value> to {env_path} — {d}"),
-                None => format!("Add {key}=<value> to {env_path}"),
+                Some(d) => format!("{} — {d}", add_to(key, env_path)),
+                None => add_to(key, env_path),
             }),
             auto_fixable: true,
         })

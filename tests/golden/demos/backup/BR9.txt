@@ -27,10 +27,10 @@ Backup information:
   ✓ Decryption key cleared from memory
 · wrote through lnk.env -> realtarget
 
-✓ Restored 11 variable(s) to lnk.env
+✓ Restored 11 variable(s) to ./lnk.env
 
 Next steps:
-  1. Run: evnx validate --env lnk.env
+  1. Run: evnx validate --env ./lnk.env
   2. Verify your application starts correctly
   3. Delete the backup file once you have confirmed the restore
 [stderr]

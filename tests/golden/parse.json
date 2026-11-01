@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "file": ".env",
+  "file": "./.env",
   "entries": [
     {
       "key": "DB_HOST",

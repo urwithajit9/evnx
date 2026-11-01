@@ -412,8 +412,8 @@ pub fn commit_restore(outcome: RestoreOutcome, options: &RestoreOptions) -> Resu
         // warning, so `-q` keeps it (DEC-G2).
         ui::warning(format!(
             "Wrote the backup's content to {}, not to {}",
-            outcome.write_path.display(),
-            outcome.output.display(),
+            shown(&outcome.write_path),
+            shown(&outcome.output),
         ));
     } else {
         // `-q`: nothing on success (DEC-G4, I-153).
@@ -421,7 +421,7 @@ pub fn commit_restore(outcome: RestoreOutcome, options: &RestoreOptions) -> Resu
             "\n{} Restored {} variable(s) to {}",
             "✓".green(),
             var_count,
-            outcome.write_path.display(),
+            shown(&outcome.write_path),
         ));
     }
 
@@ -565,15 +565,11 @@ fn choose_write_path(output: &Path, content: &str, verbose: bool) -> (PathBuf, b
     ui::warning("Decrypted content does not look like a valid .env file.");
     ui::warning_detail(format!(
         "  Writing to {} instead of {} to protect your current file.",
-        fallback.display(),
-        output.display(),
+        shown(&fallback),
+        shown(output),
     ));
     ui::warning_detail("  Inspect the file manually, then rename it if the content looks correct:");
-    ui::warning_detail(format!(
-        "    mv {} {}",
-        fallback.display(),
-        output.display()
-    ));
+    ui::warning_detail(format!("    mv {} {}", shown(&fallback), shown(output)));
 
     if verbose {
         ui::verbose_stderr(format!("Fallback path: {}", fallback.display()));
@@ -610,25 +606,27 @@ fn print_validation_result(valid: bool) {
     }
 }
 
+/// A path as every restore message names it: `./.env` (RM-32).
+fn shown(path: &Path) -> String {
+    crate::utils::path::label(&path.display().to_string())
+}
+
 /// Print context-aware next steps after a successful write.
 fn print_next_steps(write_path: &Path, output: &Path, used_fallback: bool) {
     println!("\n{}", "Next steps:".bold());
     if used_fallback {
-        println!(
-            "  1. Inspect the restored file:  cat {}",
-            write_path.display()
-        );
+        println!("  1. Inspect the restored file:  cat {}", shown(write_path));
         println!(
             "  2. If the content is correct:  mv {} {}",
-            write_path.display(),
-            output.display(),
+            shown(write_path),
+            shown(output),
         );
         println!(
             "  3. Validate the result:        evnx validate --env {}",
-            output.display()
+            shown(output)
         );
     } else {
-        println!("  1. Run: evnx validate --env {}", write_path.display());
+        println!("  1. Run: evnx validate --env {}", shown(write_path));
         println!("  2. Verify your application starts correctly");
         println!("  3. Delete the backup file once you have confirmed the restore");
     }

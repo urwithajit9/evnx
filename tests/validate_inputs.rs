@@ -148,3 +148,23 @@ fn b2_fix_and_an_empty_pipe_are_refused() {
     );
     assert_ne!(out.status.code(), Some(0));
 }
+
+/// Input that is no file has nothing for `--fix` to rewrite or for a variable
+/// to be added to: no "fixable with --fix", no "Run with --fix", no
+/// "to <stdin>", and `auto_fixable` false in JSON.
+#[test]
+fn b2_stdin_findings_offer_no_fix_and_no_file() {
+    let d = project();
+    let out = validate(&d, "DEBUG=True\nAPI_KEY=changeme\n", &[]);
+    let all = String::from_utf8_lossy(&out.stdout).into_owned() + &stderr(&out);
+    for gone in ["fixable with --fix", "Run with --fix", "to <stdin>"] {
+        assert!(!all.contains(gone), "{gone:?} in:\n{all}");
+    }
+    assert!(all.contains("Add PORT=<value>."), "{all}");
+
+    let out = validate(&d, "DEBUG=True\n", &["--format", "json"]);
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    for issue in json["issues"].as_array().unwrap() {
+        assert_eq!(issue["auto_fixable"], false, "{issue}");
+    }
+}

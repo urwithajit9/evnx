@@ -41,10 +41,10 @@ Backup information:
 ✓ Decryption successful
   ✓ Decryption key cleared from memory
 
-✓ Restored 11 variable(s) to .env
+✓ Restored 11 variable(s) to ./.env
 
 Next steps:
-  1. Run: evnx validate --env .env
+  1. Run: evnx validate --env ./.env
   2. Verify your application starts correctly
   3. Delete the backup file once you have confirmed the restore
 [stderr]

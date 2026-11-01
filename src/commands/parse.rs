@@ -78,7 +78,8 @@ pub fn run(env: &str, format: &str, values: bool, yes: bool) -> Result<()> {
                 anyhow::Error::new(e).context(format!("could not read {env}"))
             }
         })?;
-        (env.to_string(), content)
+        // RM-32: `./.env`, as `validate` reports the same file.
+        (crate::utils::path::label(env), content)
     };
 
     let doc = Parser::default().parse_document(&content);
