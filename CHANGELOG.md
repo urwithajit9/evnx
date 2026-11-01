@@ -8,6 +8,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-01
+
+**Why 0.12.0 and not 0.11.1:** new commands (`evnx parse`, `update --list`),
+and output that scripts read changes: `doctor`'s syntax messages,
+`validate --format json`'s `"location"`, and `cloud pull` exiting 4 when
+declined. In `0.x` either one is a minor bump.
+
 ⚠️ **`doctor`'s syntax messages are the parser's** (B1). `doctor` checked
 syntax with its own pattern, which passed files `validate` fails on
 (`P="a"junk`, an undefined `${NOPE}`); it now reports exactly what the parser
