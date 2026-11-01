@@ -8,9 +8,7 @@ first 6 lines of run.sh:
 · Requires Heroku CLI
   Install: https://devcenter.heroku.com/articles/heroku-cli
 
-$ sh -n run.sh
-[stderr]
-run.sh: 8: Syntax error: "(" unexpected
+$ sh -c sh -n run.sh 2>/dev/null
 [exit 2]
   ok: without --print-only the saved file is the full report, not a script (unchanged by decision) (exit 2)
 run.sh with --print-only:
