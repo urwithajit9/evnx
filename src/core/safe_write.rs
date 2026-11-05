@@ -123,6 +123,17 @@ pub fn stage_private(path: impl AsRef<Path>, bytes: &[u8]) -> Result<Staged> {
     )
 }
 
+/// [`stage_private`] for a file meant to be shared (`.env.example`,
+/// `.evnx.toml`): new files 0644, and an existing one's mode is not reported.
+pub fn stage_shared(path: impl AsRef<Path>, bytes: &[u8]) -> Result<Staged> {
+    stage(
+        path.as_ref(),
+        bytes,
+        Mode::NewOnly(permissions::SHARED),
+        false,
+    )
+}
+
 #[derive(Debug, Clone, Copy)]
 enum Mode {
     NewOnly(u32),

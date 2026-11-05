@@ -450,9 +450,10 @@ fn print_template_only(ctx: &SyncCtx, names: &[String]) {
     );
     if !ctx.check {
         ui::info(format!(
-            "sync only adds: remove {} from {} by hand if {} stale, or add {} to {} with `{}`",
+            "sync only adds: remove {} from {} with `evnx remove {} --template` if {} stale, or add {} to {} with `{}`",
             it_them(names.len()),
             ctx.paths.example_str(),
+            names.join(" "),
             if names.len() == 1 {
                 "it is"
             } else {

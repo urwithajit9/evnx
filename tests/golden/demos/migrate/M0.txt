@@ -95,17 +95,17 @@ Options:
   -v, --verbose
           Enable verbose output
 
-  -q, --quiet
-          Print nothing on success. Findings, warnings, errors and requested data still print
-
       --vercel-project <VERCEL_PROJECT>
           Vercel project ID or name (default: the linked project)
 
-      --no-color
-          Disable colored output
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
 
       --railway-project <RAILWAY_PROJECT>
           Railway project ID (default: the linked project). Needs --railway-environment, as Railway does
+
+      --no-color
+          Disable colored output
 
       --railway-environment <RAILWAY_ENVIRONMENT>
           Railway environment, e.g. production

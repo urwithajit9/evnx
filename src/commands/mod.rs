@@ -6,6 +6,7 @@ pub mod doctor;
 pub mod init;
 pub mod migrate;
 pub mod parse;
+pub mod remove;
 pub mod restore;
 pub mod run;
 pub mod scan;

@@ -8,6 +8,52 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+⚠️ **`evnx add` exits 4 when you answer no** (R1). Saying no to "Add these
+variables to …?" (or pressing Esc there) wrote nothing and exited **0**, the
+same code as a write, so a script could not tell the two apart. It now exits
+**4**, as `restore`, `cloud pull` and `remove` do for a declined confirmation.
+Esc at an earlier question (picking an id, `add custom`'s questions) still
+exits 0. *Migrate:* a wrapper that treats any non-zero exit from an interactive
+`add` as a failure should accept 4 as "cancelled".
+
+### Added
+- **`evnx remove` (alias `rm`): take a variable out safely** (R1). Until now a
+  variable could only be removed by hand, from up to four places, and a partial
+  removal passed `validate` and `spec check` silently. `evnx remove NAME`
+  removes it from the env file (`--env-name`, else `[defaults] env_name`, else
+  `.env`) and then lists where it still is, with the flag that clears each
+  place: `--template`, `--contract` (the `[vars.NAME]` entry in `.evnx.toml`,
+  table or inline form) or `--all` (every environment file, the template and
+  the contract). After `--all`, `validate`, `spec check`, `sync --check` and
+  `diff` all agree.
+  - Entries are found with evnx's own parser, so multiline values, `export`,
+    duplicates (every one goes, each line reported), CRLF, a BOM and a missing
+    final newline are handled. Every other byte stays as it was, and the
+    one-line description `add` and `init` write above a variable goes with it;
+    group headers and longer comment blocks stay.
+  - Safe by default: the resolved file is printed with where its name came
+    from; it asks first (`--yes` skips, and no terminal means exit 2, never a
+    guess); `--dry-run` writes nothing; each env file is kept as `.bak` first
+    (`--no-backup` needs `--yes` and is refused for a file git tracks). Every
+    file is planned and checked before any is written, a file that changed
+    while the command ran is not overwritten, and a failure part-way puts back
+    the files already changed and names them.
+  - A glob (`'TEST_*'`) that matches every variable in a file needs `--yes`.
+    An argument that is an existing file name is refused, as a shell-expanded
+    glob.
+  - No value is printed in any mode, including `--json` (needs `--yes` or
+    `--dry-run`). Exit codes: 0 removed; 2 could not run, including a name that
+    is not there (`--ignore-missing` makes that 0); 4 you answered no.
+  - A run ends by saying that removal is not rotation: the value is still in
+    git history, older vault versions and the `.bak` copy.
+
+### Changed
+- `sync`'s "sync only adds" hint names `evnx remove NAME --template` instead
+  of "by hand", and `add`'s next steps mention `evnx remove`.
+- `toml_edit` is now always compiled in, not only with the `cloud` feature:
+  `remove --contract` needs it. No crate is added to any build: `toml` already
+  depends on it.
+
 ## [0.12.0] - 2026-11-01
 
 **Why 0.12.0 and not 0.11.1:** new commands (`evnx parse`, `update --list`),

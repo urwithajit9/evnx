@@ -67,6 +67,18 @@ pub const ADD: CommandDoc = CommandDoc {
     after_help: "Full guide: https://docs.evnx.dev/cli/commands/add",
 };
 
+pub const REMOVE: CommandDoc = CommandDoc {
+    command: "remove",
+    url: "https://docs.evnx.dev/cli/commands/remove",
+    description: "Removing a variable from the env file, template and contract",
+    after_help: "Examples:
+  evnx remove OLD_TOKEN                     from .env only
+  evnx remove OLD_TOKEN --all --dry-run     every file, the template and .evnx.toml: preview
+  evnx rm 'TEST_*' --env-name staging --yes from .env.staging, without asking
+
+Full guide: https://docs.evnx.dev/cli/commands/remove",
+};
+
 pub const VALIDATE: CommandDoc = CommandDoc {
     command: "validate",
     url: "https://docs.evnx.dev/cli/commands/validate",
@@ -354,6 +366,7 @@ pub const ALL: &[&CommandDoc] = &[
     &INIT,
     &SPEC,
     &ADD,
+    &REMOVE,
     &VALIDATE,
     &SCAN,
     &DIFF,

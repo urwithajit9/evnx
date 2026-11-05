@@ -79,7 +79,9 @@ fn custom_writes_the_variable_and_its_section() {
     );
 }
 
-/// T-ADD-35: the preview names the count, and `n` writes nothing.
+/// T-ADD-35: the preview names the count, and `n` writes nothing. Exit 4
+/// since 0.13.0 (R1), the code `restore`, `cloud pull` and `remove` give a
+/// declined confirmation; it was 0.
 #[test]
 fn answering_no_writes_nothing() {
     let p = project();
@@ -89,7 +91,7 @@ fn answering_no_writes_nothing() {
     s.wait_for("Add these 5 variables to .env.example and .env?");
     s.press(&["n", ENTER]);
     let (rest, code) = s.finish();
-    assert_eq!(code, 0, "{rest}");
+    assert_eq!(code, 4, "{rest}");
     assert!(rest.contains("Aborted."), "{rest}");
     assert_eq!((p.read(".env.example"), p.read(".env")), before);
 }
@@ -268,13 +270,14 @@ fn an_abort_prints_no_next_steps() {
     s.wait_for("Add these 18 variables to .env.example and .env?");
     s.press(&["n", ENTER]);
     let (rest, code) = s.finish();
-    assert_eq!(code, 0, "{rest}");
+    assert_eq!(code, 4, "{rest}");
     assert!(rest.contains("Aborted. Nothing was written."), "{rest}");
     assert!(!rest.contains("Next steps"), "{rest}");
 }
 
 /// N-13 (fixed in 0.10.2, AD-A; was `known_n13_*`): Esc cancels a
-/// confirmation, writes nothing and exits 0, as in `init`. A yes/no question
+/// confirmation and writes nothing. Exit 4 since 0.13.0 (R1); it was 0, as in
+/// `init`. A yes/no question
 /// takes its answer on Enter, so Esc selects "cancel" and Enter confirms it;
 /// `cancel_yes_no` waits for the redraw between the two (see its comment for
 /// the race this avoids).
@@ -291,7 +294,7 @@ fn escape_cancels_every_confirmation() {
         s.wait_for("to .env.example and .env?");
         s.cancel_yes_no();
         let (rest, code) = s.finish();
-        assert_eq!(code, 0, "{args:?}: {rest}");
+        assert_eq!(code, 4, "{args:?}: {rest}");
         assert!(
             rest.contains("Aborted. Nothing was written."),
             "{args:?}: {rest}"
@@ -466,7 +469,7 @@ fn t_i247_question_names_both_files() {
     s.wait_for("Add these 5 variables to .env.example and .env?");
     s.press(&["n", ENTER]);
     let (rest, code) = s.finish();
-    assert_eq!(code, 0, "{rest}");
+    assert_eq!(code, 4, "{rest}"); // a "no" is exit 4 since 0.13.0 (R1)
 
     // `add custom` in a folder with no `.env` writes the values to a new one.
     let q = Project::new().example("APP=1\n");
@@ -474,5 +477,5 @@ fn t_i247_question_names_both_files() {
     s.wait_for("Append these variables to .env.example and .env?");
     s.press(&["n", ENTER]);
     let (rest, code) = s.finish();
-    assert_eq!(code, 0, "{rest}");
+    assert_eq!(code, 4, "{rest}"); // a "no" is exit 4 since 0.13.0 (R1)
 }

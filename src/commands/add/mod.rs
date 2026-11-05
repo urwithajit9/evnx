@@ -119,7 +119,7 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
         print_next_steps(&[
             &edit,
             "Run 'evnx validate' to check for issues",
-            "Use 'evnx add' again to add more variables",
+            "Use 'evnx add' again to add more variables, 'evnx remove' to take one out",
         ]);
     }
     if !mode.json {
