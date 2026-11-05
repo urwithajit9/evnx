@@ -11,6 +11,8 @@
 
 mod support;
 
+// The PTY tests are Unix-only, as `support::pty` is; the rest runs everywhere.
+#[cfg(unix)]
 use support::pty::{Pty, ENTER};
 use support::{run, run_with, Project};
 
@@ -174,6 +176,7 @@ fn b2_b3_defaults_env_name_is_followed_and_said_and_the_flag_wins() {
     assert_eq!(p.read(".env.development"), "");
 }
 
+#[cfg(unix)]
 #[test]
 fn b4_s17_a_default_that_resolves_to_production_still_asks() {
     let p = Project::new()
@@ -282,6 +285,7 @@ fn c4_a_required_name_left_in_the_contract_is_warned_about() {
         .assert_contains("DROP is required in .evnx.toml [vars]");
 }
 
+#[cfg(unix)]
 #[test]
 fn c5_the_question_names_a_required_entry() {
     let p = clean_project();
@@ -366,6 +370,7 @@ fn d2_s9_a_dry_run_writes_nothing() {
     assert_eq!(snapshot(&p), before);
 }
 
+#[cfg(unix)]
 #[test]
 fn d4_answering_no_is_exit_4_and_changes_nothing() {
     let p = Project::new().env("X=1\n");
@@ -404,9 +409,11 @@ fn d5_d6_s1_no_value_leaks() {
     ] {
         outputs.push(evnx(&p, args).all());
     }
-    let p2 = Project::new()
-        .env(&format!("A={s}\nB=2\n"))
-        .mode(".env", 0o444);
+    let p2 = Project::new().env(&format!("A={s}\nB=2\n"));
+    // Read-only on every platform, not only Unix (`Project::mode`).
+    let mut perms = std::fs::metadata(p2.join(".env")).unwrap().permissions();
+    perms.set_readonly(true);
+    std::fs::set_permissions(p2.join(".env"), perms).unwrap();
     outputs.push(evnx(&p2, &["remove", "A", "--yes"]).all());
     let p3 = Project::new().env(&format!("A={s}\n")).toml("[vars.A\n");
     outputs.push(
@@ -445,6 +452,7 @@ fn d7_quiet_prints_nothing_on_success() {
     out.assert_code(2).assert_contains("NOPE is not in");
 }
 
+#[cfg(unix)]
 #[test]
 fn d8_d9_s10_globs_and_wide_matches() {
     let p = Project::new().env("TEST_A=1\nTEST_B=2\nKEEP=3\n");
