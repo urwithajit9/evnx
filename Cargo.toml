@@ -131,10 +131,12 @@ hex = { version = "0.4", optional = true }
 # Transport integrity hash on pushed blobs — the server recomputes and compares.
 # Already in the graph via evnx-crypto, so this adds no crates.
 blake3 = { version = "1", optional = true }
-# Format-preserving TOML editing for the `.evnx.toml` vault binding. A user's
-# config holds their comments and settings evnx does not model; rewriting it from
-# a typed struct would discard both. Already in the graph via `toml`.
-toml_edit = { version = "0.22", optional = true }
+# Format-preserving TOML editing for `.evnx.toml`: the vault binding and
+# `evnx remove --contract`. A user's config holds their comments and settings evnx
+# does not model; rewriting it from a typed struct would discard both. Already in
+# the graph via `toml`. Unconditional since 0.13.0 (R1): `remove` is not a cloud
+# command.
+toml_edit = "0.22"
 # Renders the TOTP enrolment QR in the terminal. default-features = false keeps
 # it to exactly one crate with no transitive dependencies — the image and svg
 # renderers are not wanted. Without it, enrolling means typing 32 base32
@@ -229,7 +231,7 @@ default = []
 net     = ["dep:reqwest"]
 migrate = ["net", "dep:crypto_box"]
 backup  = ["dep:aes-gcm", "dep:argon2"]
-cloud   = ["net", "dep:evnx-crypto", "dep:hex", "dep:blake3", "dep:toml_edit", "dep:qrcode"]
+cloud   = ["net", "dep:evnx-crypto", "dep:hex", "dep:blake3", "dep:qrcode"]
 # `cloud` is deliberately NOT in `full`: adding it would silently change what
 # `full` means for people already using that flag.
 #

@@ -79,6 +79,7 @@ fn cases() -> Vec<Case> {
         case("doctor", &["doctor"]),
         case("spec init", &["spec", "init"]),
         case("run", &["run", "--", "true"]),
+        case("remove", &["remove", "PORT", "--yes"]),
     ];
     if cfg!(feature = "backup") {
         v.push(case("backup", &["backup", "--key-file", "pw"]));

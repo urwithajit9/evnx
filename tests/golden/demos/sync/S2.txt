@@ -15,7 +15,7 @@ $ evnx sync -n
 │   • REDIS_URL                                                                │
 └──────────────────────────────────────────────────────────────────────────────┘
 
-· sync only adds: remove it from .env.example by hand if it is stale, or add it to .env with `evnx sync --direction reverse`
+· sync only adds: remove it from .env.example with `evnx remove REDIS_URL --template` if it is stale, or add it to .env with `evnx sync --direction reverse`
 
 Preview:
 Target: .env.example (action: Add)
@@ -86,7 +86,7 @@ $ evnx sync -f
 │   • REDIS_URL                                                                │
 └──────────────────────────────────────────────────────────────────────────────┘
 
-· sync only adds: remove it from .env.example by hand if it is stale, or add it to .env with `evnx sync --direction reverse`
+· sync only adds: remove it from .env.example with `evnx remove REDIS_URL --template` if it is stale, or add it to .env with `evnx sync --direction reverse`
 · Force mode: using placeholder values and skipping prompts
 ✓ Added 2 variables to .env.example
 [stderr]

@@ -1847,6 +1847,69 @@ pub enum Commands {
         yes: bool,
     },
 
+    /// Remove variables from the env file, and the template and contract too.
+    ///
+    /// By default only the env file changes: `--env-name`, else `[defaults]
+    /// env_name`, else `.env`. The run then lists where each name still is,
+    /// with the flag that clears it. Every byte that is not part of a removed
+    /// entry stays as it was; the env file is kept as a `.bak` copy first.
+    ///
+    /// Exit codes: 0 removed (or nothing to do with --ignore-missing, or a dry
+    /// run); 2 could not run or refused (a name that is not there, a file it
+    /// cannot read, no terminal to ask on); 4 you answered no.
+    #[command(
+        visible_alias = "rm",
+        after_help = docs::REMOVE.after_help,
+        arg_required_else_help = true
+    )]
+    Remove {
+        /// Variable names, or quoted globs (`'TEST_*'`). Case-sensitive.
+        #[arg(required = true, value_name = "NAME")]
+        names: Vec<String>,
+
+        /// Project folder (default: current directory).
+        #[arg(long, short, default_value = ".")]
+        path: String,
+
+        /// Remove from `.env.<NAME>` instead of `.env`. Defaults to
+        /// `[defaults] env_name`.
+        #[arg(long, value_name = "NAME", conflicts_with = "all")]
+        env_name: Option<String>,
+
+        /// Also remove from the template (`.env.example`, or `[defaults] example`).
+        #[arg(long)]
+        template: bool,
+
+        /// Also remove the `[vars.NAME]` declaration from `.evnx.toml`.
+        #[arg(long)]
+        contract: bool,
+
+        /// Remove from every environment file, the template and the contract.
+        #[arg(long)]
+        all: bool,
+
+        /// Show what would be removed; write nothing. Needs no terminal.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Remove without asking.
+        #[arg(long, short)]
+        yes: bool,
+
+        /// A name found nowhere is not an error (for scripts that run twice).
+        #[arg(long)]
+        ignore_missing: bool,
+
+        /// Keep no `.bak` copy of the env files (needs --yes; refused for a
+        /// file git tracks).
+        #[arg(long)]
+        no_backup: bool,
+
+        /// Print the result as one JSON document (needs --yes or --dry-run).
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Check .env against .env.example, find issues.
     #[command(after_help = docs::VALIDATE.after_help)]
     Validate {

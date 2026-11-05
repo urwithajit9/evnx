@@ -127,6 +127,37 @@ fn t_i114_env_lines_have_one_writer() {
     assert!(offenders.is_empty(), "raw KEY=value writes: {offenders:?}");
 }
 
+/// Only `commands/remove` deletes entries from env files (R1, plan §13.4).
+/// Its editor is `remove::edit::cut_entries`, which finds spans with the
+/// parser and checks the result; a second deleter, written with a regex or by
+/// filtering lines, is what loses a multiline value. Any other file that names
+/// the editor, or filters a document's entries by span, is a second one.
+#[test]
+fn r1_only_remove_deletes_env_entries() {
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    for f in files {
+        if f.starts_with(src().join("commands/remove")) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&f).unwrap();
+        for (n, l) in text.lines().enumerate() {
+            let code = !l.trim_start().starts_with("//");
+            if code
+                && (l.contains("cut_entries")
+                    || l.contains("span.end_line") && l.contains("retain"))
+            {
+                offenders.push(format!("{}:{}", f.display(), n + 1));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "env-entry deleters outside commands/remove: {offenders:?}"
+    );
+}
+
 /// Every cloud request path is built by `cloud::client::api_path`, which keeps
 /// each value inside its own segment and refuses `.`/`..` (U7, I-217, A-43).
 /// A `format!("/api/v1/…{x}")` let `org uninvite "../members/u-bob"` reach

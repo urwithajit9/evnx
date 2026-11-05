@@ -567,7 +567,11 @@ pub fn confirm_and_apply(
             .default(true)
             .interact_opt()?;
         if confirm != Some(true) {
-            return Ok(aborted());
+            // ⚠️ Exit 4 since 0.13.0 (R1): "no" to the write is the answer
+            // `restore`, `cloud pull` and `remove` give 4 for. It was 0, which a
+            // script could not tell from a write.
+            aborted();
+            return Err(crate::utils::prompt::Declined.into());
         }
     }
 

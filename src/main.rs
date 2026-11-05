@@ -170,7 +170,36 @@ fn main() -> Result<()> {
                 verbose: cli.verbose,
                 env_name,
             },
-        ),
+        )
+        .or_else(declined),
+
+        Commands::Remove {
+            names,
+            path,
+            env_name,
+            template,
+            contract,
+            all,
+            dry_run,
+            yes,
+            ignore_missing,
+            no_backup,
+            json,
+        } => commands::remove::run(commands::remove::Options {
+            names,
+            path,
+            env_name,
+            template,
+            contract,
+            all,
+            dry_run,
+            yes,
+            ignore_missing,
+            no_backup,
+            json,
+            verbose: cli.verbose,
+        })
+        .or_else(declined),
 
         Commands::Validate {
             env,
@@ -645,7 +674,7 @@ fn main() -> Result<()> {
         Commands::Cloud { command, server } => {
             match evnx::cloud::run(command, server.as_deref(), cli.verbose) {
                 // `pull` declined: already said, and 4 as in `restore` (D6).
-                Err(e) if e.is::<evnx::utils::prompt::Declined>() => std::process::exit(4),
+                Err(e) => declined(e),
                 r => r,
             }
         }
@@ -792,4 +821,13 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// A confirmation answered no: already said, so exit 4 with nothing more, as
+/// `restore` does (D6). `cloud pull`, `add` and `remove` (R1).
+fn declined(e: anyhow::Error) -> Result<()> {
+    if e.is::<evnx::utils::prompt::Declined>() {
+        std::process::exit(4);
+    }
+    Err(e)
 }
