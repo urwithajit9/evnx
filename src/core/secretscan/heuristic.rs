@@ -37,7 +37,10 @@ pub fn calculate_entropy(s: &str) -> f64 {
         *char_counts.entry(c).or_insert(0) += 1;
     }
 
-    let len = s.len() as f64;
+    // ⚠️ Characters, not bytes (C4 step 0). `s.len()` divided per-character
+    // counts by bytes, so on multi-byte text the probabilities summed to less
+    // than 1 and entropy came out too low.
+    let len = s.chars().count() as f64;
     let mut entropy = 0.0;
 
     for count in char_counts.values() {
@@ -298,6 +301,18 @@ mod name_rule_tests {
 /// ⚠️ Every exclusion below is a false positive this produced on a real file,
 /// not caution for its own sake. `QUOTA_FREE_TOKENS=2` is the one that was
 /// live in evnx-server's own `.env.example`.
+/// `PUBLIC` or `PUB` immediately qualifying `KEY` in a variable's name:
+/// `PUBLIC_KEY`, `RSA_PUBLIC_KEY`, not `NEXT_PUBLIC_TOKEN`. A public key is the
+/// one piece of key material meant to be published, so neither the name rule
+/// nor the entropy fallback reports it (`g11_*` tests).
+pub fn names_a_public_key(key: &str) -> bool {
+    let parts: Vec<&str> = key.split('_').collect();
+    parts.windows(2).any(|w| {
+        (w[0].eq_ignore_ascii_case("public") || w[0].eq_ignore_ascii_case("pub"))
+            && w[1].eq_ignore_ascii_case("key")
+    })
+}
+
 pub fn name_suggests_secret(key: &str, value: &str) -> bool {
     if key.is_empty() || !is_sensitive_key(key) {
         return false;
@@ -317,11 +332,7 @@ pub fn name_suggests_secret(key: &str, value: &str) -> bool {
     // deliberately reports it, annotated with the prefix. Adjacency is the
     // distinction: PUBLIC qualifies KEY in `RSA_PUBLIC_KEY`, and qualifies
     // nothing in `NEXT_PUBLIC_TOKEN`.
-    let parts: Vec<&str> = key.split('_').collect();
-    if parts.windows(2).any(|w| {
-        (w[0].eq_ignore_ascii_case("public") || w[0].eq_ignore_ascii_case("pub"))
-            && w[1].eq_ignore_ascii_case("key")
-    }) {
+    if names_a_public_key(key) {
         return false;
     }
     if looks_like_placeholder_secret(value) {
@@ -567,6 +578,42 @@ pub fn is_sensitive_key(key: &str) -> bool {
 ///
 /// ⚠️ Neither is offered to `scan_line`. An entropy threshold over whole lines
 /// would flag every minified bundle and every base64 blob in a lockfile.
+/// The entropy a value must exceed, in bits per character, to be reported by
+/// the generic fallback or the AWS secret-key check (C4, RM-53).
+///
+/// ⚠️ Measured, not guessed: `docs/scan-thresholds.md`, from
+/// `scripts/measure-entropy.py` over `tests/fixtures/entropy/`, and pinned by
+/// `tests/scan_entropy.rs`. It was 4.8 (4.5 for AWS), which reported 2–4% of
+/// random 32-character keys: a random string's entropy is capped by its length
+/// (log2 of it), so 4.8 was out of reach for most of them. At 4.3, with
+/// [`looks_like_key_material`], 95% or more of 32-character and every 40+
+/// character key is reported, and none of the hashes, SHAs, UUIDs or source
+/// tokens in the corpus.
+pub const ENTROPY_MIN: f64 = 4.3;
+
+/// The shortest value the generic fallback judges, in characters (C4). The
+/// token cut-off in `engine::extract_tokens` (more than 20 bytes) is below it,
+/// so it changes no result; measured with the same corpus.
+pub const ENTROPY_MIN_LEN: usize = 32;
+
+/// What a key the generic fallback is for looks like: base64 or URL-safe
+/// base64 characters only, and not an SRI hash (C4).
+///
+/// ⚠️ Measured: long tokens from real source code (`a.b(&c)`, paths, JSX)
+/// scored over the threshold 2–5% of the time, and every one carried `.`,
+/// `(`, `&`, `<` or similar; only 2 of 207 passed this filter. A password with
+/// punctuation is caught by its variable's name, not by this fallback.
+/// `sha256-` / `sha384-` / `sha512-` hashes are npm's integrity strings:
+/// random-looking, public by design, and hundreds per lockfile.
+pub fn looks_like_key_material(value: &str) -> bool {
+    value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "+/=_-".contains(c))
+        && !["sha256-", "sha384-", "sha512-", "sha1-"]
+            .iter()
+            .any(|p| value.starts_with(p))
+}
+
 pub fn detect_heuristic(value: &str, key: &str) -> Option<(String, Confidence, Option<String>)> {
     if is_placeholder_lenient(value) {
         return None;
@@ -574,7 +621,7 @@ pub fn detect_heuristic(value: &str, key: &str) -> Option<(String, Confidence, O
 
     if AWS_SECRET_KEY.is_match(value) && key.to_uppercase().contains("AWS") {
         let entropy = calculate_entropy(value);
-        if entropy > 4.5 {
+        if entropy > ENTROPY_MIN {
             return Some((
                 "AWS Secret Access Key".to_string(),
                 Confidence::Medium,
@@ -583,9 +630,14 @@ pub fn detect_heuristic(value: &str, key: &str) -> Option<(String, Confidence, O
         }
     }
 
-    if value.len() >= 32 {
+    // ⚠️ A base64 public key (`PUBLIC_KEY=MIIBIjAN…`) clears the measured
+    // threshold, as random data does. The name is what says it is public.
+    if value.chars().count() >= ENTROPY_MIN_LEN
+        && looks_like_key_material(value)
+        && !names_a_public_key(key)
+    {
         let entropy = calculate_entropy(value);
-        if entropy > 4.8 {
+        if entropy > ENTROPY_MIN {
             return Some((
                 "High-entropy string (possible secret)".to_string(),
                 Confidence::Low,
@@ -600,6 +652,17 @@ pub fn detect_heuristic(value: &str, key: &str) -> Option<(String, Confidence, O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// C4 step 0: entropy is per character. A non-ASCII string and an ASCII
+    /// one with the same distribution of characters score the same.
+    #[test]
+    fn entropy_counts_characters_not_bytes() {
+        let ascii = calculate_entropy("abcdabcdab");
+        let multibyte = calculate_entropy("éßøλéßøλéß");
+        assert!((ascii - multibyte).abs() < 1e-12, "{ascii} vs {multibyte}");
+        // Four equally likely symbols: exactly 2 bits.
+        assert!((calculate_entropy("éßøλ") - 2.0).abs() < 1e-12);
+    }
 
     #[test]
     fn test_entropy() {

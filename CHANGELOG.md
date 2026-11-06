@@ -43,6 +43,21 @@ page. Every finding now has a **severity** (how bad it is if real: `critical`,
   `--format github` show severity.
 - The Google API key rule is now high confidence, low severity.
 
+⚠️ **`evnx scan`'s entropy fallback is measured, and catches most random keys**
+(C4, RM-53). The fallback for secrets with no provider prefix reported a value of
+32+ characters with entropy above 4.8. Measured over a corpus
+(`docs/scan-thresholds.md`), that caught only 2–4% of random 32-character keys
+and 40–48% of 40-character ones, since a random string's entropy is capped by
+its length. It is now **4.3**, applied only to values made of base64 or URL-safe
+characters that are not npm `sha512-` integrity hashes: 95%+ of 32-character and
+all 40+ character keys are reported, and no hash, SHA, checksum, UUID or source
+token in the corpus is. On real repositories this **lowers** the count: evnx-web
+went from 847 entropy findings (lockfile hashes) to 7. Values in a variable
+named like a public key (`PUBLIC_KEY`) are not judged by entropy. Hex keys are
+still never reported this way (their entropy is that of a SHA). The AWS
+secret-key check uses the same 4.3 (was 4.5). Entropy is now computed per
+character, not per byte, which raised it for non-ASCII text.
+
 ### Added
 - **`evnx scan` checks names in YAML, JSON and TOML** (C8). A structured file
   was read as plain text, so only provider formats and the long-random-value
