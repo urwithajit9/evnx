@@ -60,6 +60,14 @@ Options:
           
           Severity is how bad a finding is if it is real: `critical` for cloud, payment and AI keys and private keys, `high` for account tokens, database passwords and variables named like a secret, `low` for test keys and keys meant to ship in a web page. Filters what is reported, counted and exited on. `--severity high` is the usual blocking CI gate. ⚠️ Until 0.13.0 this filtered on confidence; that is now `--confidence`. Defaults to `low` (report everything), or `[scan] severity` from `.evnx.toml`.
 
+      --baseline <FILE>
+          Findings accepted earlier: matching ones are reported as `known` and do not fail the run.
+          
+          Defaults to `.evnx/baseline.json` when it exists. Write it with `--update-baseline`. It holds a fingerprint, a rule and a file per finding, never a value, so it is safe to commit.
+
+      --update-baseline
+          Write this run's findings to the baseline (`--baseline`, or `.evnx/baseline.json`) and exit 0. Run it once to accept what a project already has; new findings fail from then on
+
       --confidence <LEVEL>
           Lowest confidence worth reporting: high, medium or low.
           

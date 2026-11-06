@@ -134,6 +134,9 @@ hex = { version = "0.4", optional = true }
 # the graph via `toml`. Unconditional since 0.13.0 (R1): `remove` is not a cloud
 # command.
 toml_edit = "0.22"
+# The scan baseline's fingerprints (C5, S9). Already in the build graph through
+# evnx-crypto when `cloud` is on.
+blake3 = "1"
 # Renders the TOTP enrolment QR in the terminal. default-features = false keeps
 # it to exactly one crate with no transitive dependencies — the image and svg
 # renderers are not wanted. Without it, enrolling means typing 32 base32

@@ -57,6 +57,7 @@ pub mod filters;
 pub mod models;
 pub mod output;
 pub mod runner;
+pub mod suppress;
 pub mod walk;
 // The rule engine lives in `core::secretscan` so `sync` can ask it without
 // importing a command (A-09). Its old paths keep working.
@@ -100,6 +101,12 @@ pub struct ScanOptions {
     pub severity: String,
     /// Lowest confidence reported: `high`, `medium` or `low` (C2).
     pub confidence: String,
+    /// `--baseline <file>`: findings accepted earlier (C5). `None` reads
+    /// `.evnx/baseline.json` when it exists.
+    pub baseline: Option<String>,
+    /// `--update-baseline`: write this run's findings to the baseline and
+    /// exit 0 (C5).
+    pub update_baseline: bool,
     /// `pretty`, `json`, `sarif` or `github`.
     pub format: String,
     /// Exit 0 even with findings (never hides exit 2).
@@ -130,6 +137,8 @@ impl Default for ScanOptions {
             ignore_placeholders: false,
             severity: "low".to_string(),
             confidence: "low".to_string(),
+            baseline: None,
+            update_baseline: false,
             format: "pretty".to_string(),
             exit_zero: false,
             verbose: false,
@@ -183,6 +192,17 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
     let scan = || -> Result<bool, anyhow::Error> {
         let min_severity: crate::core::secretscan::Severity = opts.severity.parse()?;
         let min_confidence: Confidence = opts.confidence.parse()?;
+        // C5: a named baseline must exist (unless it is about to be written);
+        // the default one is optional.
+        let baseline_path = std::path::PathBuf::from(
+            opts.baseline
+                .as_deref()
+                .unwrap_or(suppress::DEFAULT_BASELINE),
+        );
+        let baseline = suppress::Baseline::load(
+            &baseline_path,
+            opts.baseline.is_some() && !opts.update_baseline,
+        )?;
         let output_format: OutputFormat = opts.format.parse()?;
         // Compiled before anything is printed, so a broken expression cannot be
         // mistaken for a finished scan.
@@ -206,6 +226,10 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
         .with_include_ignored(opts.include_ignored)
         .with_max_file_size(opts.max_file_size)
         .with_min_severity(min_severity)
+        .with_baseline(
+            baseline,
+            opts.update_baseline.then(|| baseline_path.clone()),
+        )
         .with_disabled(disabled, &opts.disable);
         runner.run(opts.paths.clone(), output_format)
     };

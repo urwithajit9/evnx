@@ -2122,6 +2122,21 @@ pub enum Commands {
         #[arg(long, value_name = "LEVEL")]
         severity: Option<String>,
 
+        /// Findings accepted earlier: matching ones are reported as `known`
+        /// and do not fail the run.
+        ///
+        /// Defaults to `.evnx/baseline.json` when it exists. Write it with
+        /// `--update-baseline`. It holds a fingerprint, a rule and a file per
+        /// finding, never a value, so it is safe to commit.
+        #[arg(long, value_name = "FILE")]
+        baseline: Option<String>,
+
+        /// Write this run's findings to the baseline (`--baseline`, or
+        /// `.evnx/baseline.json`) and exit 0. Run it once to accept what a
+        /// project already has; new findings fail from then on.
+        #[arg(long)]
+        update_baseline: bool,
+
         /// Lowest confidence worth reporting: high, medium or low.
         ///
         /// Confidence is how sure evnx is that a match is a real credential of

@@ -59,6 +59,21 @@ secret-key check uses the same 4.3 (was 4.5). Entropy is now computed per
 character, not per byte, which raised it for non-ASCII text.
 
 ### Added
+- **`evnx:allow` markers and a baseline for `evnx scan`** (C5, RM-54).
+  - `# evnx:allow <rule-id> — reason` on a finding's line or the line above
+    silences that rule there, in any comment style. A marker without a reason
+    works and is warned about; a bare `evnx:allow`, or one naming another
+    rule, allows nothing and says so.
+  - `--update-baseline` writes this run's findings to `.evnx/baseline.json`
+    (or `--baseline <file>`) and exits 0; from then on a matching finding is
+    `known`. The fingerprint is BLAKE3 of the rule, the file and the variable
+    or line text, so a line inserted above keeps it and a changed value is new.
+    ⛔ The baseline holds no value or preview, so it is safe to commit.
+  - Allowed and known findings do not count towards the exit code. They are
+    in the JSON's `allowed` and `known` arrays, every finding carries a
+    `status` (`new`, `known`, `allowed`) and a `fingerprint`, the summary
+    counts them, and `-v` lists them. `findings` and `summary.total` remain
+    exactly what fails the run.
 - **`evnx scan` knows 23 more providers, and every rule is tested** (C3,
   RM-51/52). New rules: Stripe restricted keys, Azure storage account keys
   and SAS tokens, Twilio, SendGrid, Mailgun, DigitalOcean, npm, PyPI, Docker

@@ -176,7 +176,10 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
             }
             // ⚠️ Not "No secrets detected" when an ignored file held some: they
             // were detected, and the line below says where (I-285).
-            if results.ignored_by_git.is_empty() {
+            if !results.allowed.is_empty() || !results.known.is_empty() {
+                // C5: found, and accepted; not "no secrets".
+                println!("  {}  No new secrets", glyph::OK.green());
+            } else if results.ignored_by_git.is_empty() {
                 println!("  {}  No secrets detected", glyph::OK.green());
             } else {
                 println!(
@@ -194,6 +197,7 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
         }
         println!("\n  {}", files_line(results).dimmed());
         print_ignored_by_git(results);
+        print_accepted(results);
         return Ok(());
     }
 
@@ -322,6 +326,7 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
     }
     println!("  {}", parts.join("  ·  ").bold());
     print_ignored_by_git(results);
+    print_accepted(results);
 
     if results.has_critical_findings() {
         println!();
@@ -404,6 +409,27 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
 /// The one line about walked files git ignores (I-285): which, how many
 /// findings they held, and that those are not counted. Not under `-q`, which
 /// keeps findings only.
+/// What `evnx:allow` markers and the baseline set aside (C5): one line. `-v`
+/// lists each one (the runner, after the report).
+fn print_accepted(results: &ScanResults) {
+    if crate::utils::ui::is_quiet() || (results.allowed.is_empty() && results.known.is_empty()) {
+        return;
+    }
+    let mut parts = Vec::new();
+    if !results.allowed.is_empty() {
+        parts.push(format!("{} allowed inline", results.allowed.len()));
+    }
+    if !results.known.is_empty() {
+        parts.push(format!("{} known (baseline)", results.known.len()));
+    }
+    println!(
+        "  {}  {}{}",
+        glyph::INFO.dimmed(),
+        parts.join(", ").dimmed(),
+        " — not counted; -v lists them".dimmed()
+    );
+}
+
 fn print_ignored_by_git(results: &ScanResults) {
     if results.ignored_by_git.is_empty() || crate::utils::ui::is_quiet() {
         return;
@@ -615,6 +641,11 @@ fn render_json(results: &ScanResults) -> Result<()> {
 /// `location` is built as `path:line` or `path:line (VAR)`. Splitting from the
 /// **right** matters: a Windows path like `C:\\src\\.env:8` contains a colon that is
 /// not the separator, and splitting from the left would report the file as `C`.
+/// The file part of a finding's `location`.
+pub(super) fn file_of(location: &str) -> &str {
+    split_location(location).0
+}
+
 fn split_location(location: &str) -> (&str, usize) {
     let head = location.split(" (").next().unwrap_or(location);
     match head.rsplit_once(':') {
