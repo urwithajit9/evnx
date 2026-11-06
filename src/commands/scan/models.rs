@@ -389,6 +389,10 @@ pub struct IgnoredFile {
 pub struct ScannedFile {
     pub path: String,
     pub read_as: ReadAs,
+    /// Why a file was not read the way its name suggests: `did not parse as
+    /// yaml` for a template read as text instead (C8). Absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// How a file was read, which decides the detectors that ran on it.
@@ -397,6 +401,9 @@ pub struct ScannedFile {
 pub enum ReadAs {
     /// Named like a `.env`: assignments, checked by name and by value.
     Dotenv,
+    /// YAML, JSON or TOML that parsed: every string value checked by its key
+    /// and its value, plus the line rules (C8).
+    Structured,
     /// Anything else: tokens and lines, checked against value patterns only.
     Text,
 }
@@ -406,6 +413,7 @@ impl ReadAs {
     pub fn describe(self) -> &'static str {
         match self {
             ReadAs::Dotenv => "read as .env: names and values checked",
+            ReadAs::Structured => "read as structured data: names and values checked",
             ReadAs::Text => "read as text: value patterns only, names not checked",
         }
     }

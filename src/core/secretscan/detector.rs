@@ -30,7 +30,6 @@
 //! ```rust
 //! # use evnx::commands::scan::detector::{SecretDetector, Detection};
 //! # use evnx::commands::scan::Confidence;
-//! # use std::path::Path;
 //! pub struct MyNewDetector {
 //!     min_length: usize,
 //! }
@@ -41,7 +40,6 @@
 //! ```rust
 //! # use evnx::commands::scan::{SecretDetector, Detection};
 //! # use evnx::commands::scan::Confidence;
-//! # use std::path::Path;
 //! # pub struct MyNewDetector { min_length: usize }
 //! impl SecretDetector for MyNewDetector {
 //!     fn name(&self) -> &str {
@@ -92,7 +90,6 @@
 
 use super::heuristic;
 use super::{Confidence, Severity};
-use std::path::Path;
 
 /// Result of a single detection attempt.
 ///
@@ -153,8 +150,7 @@ impl Default for Detection {
 /// # Methods
 ///
 /// * `name()` - Returns human-readable identifier for reporting
-/// * `applies_to()` - Optional filter for file types (default: all files)
-/// * `scan_kv()` - Scan key-value pairs (optimized for .env files)
+/// * `scan_kv()` - Scan key-value pairs: a `.env` entry, or a string in YAML, JSON or TOML
 /// * `scan_token()` - Scan raw tokens (for general text files)
 ///
 /// # Implementation Notes
@@ -201,30 +197,6 @@ pub trait SecretDetector: Send + Sync {
     /// Used in verbose output and debugging to identify which detector
     /// found a particular secret.
     fn name(&self) -> &str;
-
-    /// Check if this detector should run on the given file.
-    ///
-    /// Override this method to optimize performance by skipping
-    /// detectors that aren't relevant for certain file types.
-    ///
-    /// # Default Implementation
-    ///
-    /// Returns `true` for all files (detector runs on everything).
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use std::path::Path;
-    /// # struct SecretDetector;
-    /// # impl SecretDetector {
-    /// fn applies_to(&self, _path: &Path) -> bool {
-    ///     true
-    /// }
-    /// # }
-    /// ```
-    fn applies_to(&self, _path: &Path) -> bool {
-        true
-    }
 
     /// Scan a key-value pair for secrets.
     ///
@@ -704,13 +676,6 @@ impl SecretDetector for ConfigKeyDetector {
     /// able to retract with `secret = false`.
     fn judges_value(&self) -> bool {
         false
-    }
-
-    fn applies_to(&self, path: &Path) -> bool {
-        matches!(
-            path.extension().and_then(|e| e.to_str()),
-            Some("yml" | "yaml" | "json" | "toml" | "env")
-        )
     }
 
     fn scan_kv(&self, key: &str, value: &str, _location: &str) -> Option<Detection> {

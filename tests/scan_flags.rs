@@ -300,8 +300,9 @@ fn t_i254_production_env_is_parsed_and_yaml_is_not() {
         found.contains(&"./production.env:1 (OLD)".to_string()),
         "{found:?}"
     );
+    // Read as YAML, not as a `.env`; since C8 the finding names its key.
     assert!(
-        found.contains(&"./config.env.yaml:1".to_string()),
+        found.contains(&"./config.env.yaml:1 (key)".to_string()),
         "{found:?}"
     );
 }

@@ -44,6 +44,19 @@ page. Every finding now has a **severity** (how bad it is if real: `critical`,
 - The Google API key rule is now high confidence, low severity.
 
 ### Added
+- **`evnx scan` checks names in YAML, JSON and TOML** (C8). A structured file
+  was read as plain text, so only provider formats and the long-random-value
+  fallback applied: `password: <a real password>` in `config.yml` scanned
+  clean. Each string value is now checked by its key and its value, and
+  reported with its line and key path (`./config.yml:12 (db.password)`), while
+  the line rules still run, comments included. A value both paths find is one
+  finding. A file that does not parse (a Helm template with `{{- if }}`) is read
+  as text, never an error: `-v` says so, and the JSON `files[]` gives
+  `read_as: "text"` with `note: "did not parse as yaml"`. Parsed files report
+  `read_as: "structured"` (additive under `schema_version: 2`). References
+  (`${VAR}`) and non-strings are skipped, as in a `.env`, and a whole sentence
+  or script is not judged by entropy: on a real repository's 633 structured
+  files this added no findings except named secrets.
 - **Rules as data** (C2). The 13 built-in rules moved to
   `src/assets/rules.toml`, compiled into the binary, each with a stable `id`.
   `[[scan.patterns]]` rules take an optional `id`, `severity` and `entropy`
