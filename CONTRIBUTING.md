@@ -350,6 +350,15 @@ cargo test -- --nocapture
 cargo test --test integration_tests
 ```
 
+The demo runners (`tests/*_runner.rs`, which play `tests/demos/*.sh` and compare
+with `tests/golden/demos/`) run on Linux only and need **bash**, **git**, GNU
+coreutils' **`stat -c`**, **python3** (backup, convert and doctor demos) and
+**jq** (diff demo). A missing one stops the runner with its name.
+
+They must pass whether `sh` is dash (Debian, Ubuntu) or bash (Fedora, Arch): CI
+runs them both ways. A scene should compare a system tool's exit code, never its
+wording.
+
 ## Coverage Goals
 
 * 80%+ coverage for core modules

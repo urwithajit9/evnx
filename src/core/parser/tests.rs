@@ -837,13 +837,24 @@ export LEGACY_KEY=legacy_value
 
 // ─── B1: `Document` ─────────────────────────────────────────────────────────
 
-/// The strict reading of a document must be exactly what the parser returned
-/// before `Document` existed, error included. `legacy.rs` is that parser,
-/// frozen; this compares the two over every combination of up to three lines
-/// drawn from fragments chosen to hit each branch, under each setting that
-/// changes a branch.
+/// The strict reading of a document, pinned for every combination of up to
+/// three lines drawn from fragments chosen to hit each branch, under each
+/// setting that changes a branch (Q1).
+///
+/// Until 0.13.0 this compared against `legacy.rs`, the parser exactly as it was
+/// before `Document` (v0.12.0 B1), frozen as an oracle; the two agreed on all
+/// 220,675 readings. The oracle is gone and its answers are kept:
+///
+/// * one- and two-line files: every reading, in
+///   `tests/golden/parser-fragments.txt`, so a change is a reviewable diff;
+/// * three-line files: one FNV-1a digest per setting in the same file, since
+///   their 214,375 readings would be megabytes.
+///
+/// A change to the parser that moves any reading fails here. If it is intended,
+/// rerun with `UPDATE_GOLDEN=1` and review the diff; a moved digest with no
+/// moved line means a three-line interaction changed.
 #[test]
-fn b1_the_document_reads_exactly_as_the_old_parser_did() {
+fn q1_parser_conformance_is_pinned() {
     const FRAGMENTS: &[&str] = &[
         "",
         "   ",
@@ -853,8 +864,6 @@ fn b1_the_document_reads_exactly_as_the_old_parser_did() {
         "A=2",
         "B=x # c",
         "export C=c",
-        // ⚠️ Not `exportD=d`: the old parser read it as `D`, and B2 P0.4 reads
-        // it as `exportD` on purpose. `p0_4_*` and edge_22 pin the new reading.
         "a_lower=v",
         "1BAD=v",
         "my-key=v",
@@ -881,78 +890,99 @@ fn b1_the_document_reads_exactly_as_the_old_parser_did() {
         "COLOR=#ff0000",
         "S=\"x\\ty\"",
     ];
-    let configs = [
-        ParserConfig::default(),
-        ParserConfig {
-            allow_expansion: false,
-            ..Default::default()
-        },
-        ParserConfig {
-            strict: true,
-            ..Default::default()
-        },
-        ParserConfig {
-            allow_multiline: false,
-            ..Default::default()
-        },
-        ParserConfig {
-            allow_inline_comments: false,
-            trim_values: false,
-            ..Default::default()
-        },
+    let configs: [(&str, ParserConfig); 5] = [
+        ("default", ParserConfig::default()),
+        (
+            "no-expansion",
+            ParserConfig {
+                allow_expansion: false,
+                ..Default::default()
+            },
+        ),
+        (
+            "strict",
+            ParserConfig {
+                strict: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "no-multiline",
+            ParserConfig {
+                allow_multiline: false,
+                ..Default::default()
+            },
+        ),
+        (
+            "raw",
+            ParserConfig {
+                allow_inline_comments: false,
+                trim_values: false,
+                ..Default::default()
+            },
+        ),
     ];
-
-    let mut files: Vec<String> = Vec::new();
-    for a in FRAGMENTS {
-        files.push(format!("{a}\n"));
-        for b in FRAGMENTS {
-            files.push(format!("{a}\n{b}\n"));
-            for c in FRAGMENTS {
-                files.push(format!("{a}\n{b}\n{c}"));
-            }
-        }
-    }
-    // Every `.env`-like fixture the repository holds.
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut dirs = vec![root.join("tests")];
-    while let Some(dir) = dirs.pop() {
-        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if path.is_dir() {
-                dirs.push(path);
-            } else if name.starts_with(".env") || name.ends_with(".env") {
-                if let Ok(text) = std::fs::read_to_string(&path) {
-                    files.push(text);
-                }
-            }
-        }
-    }
-
     let show = |r: ParseResult<(IndexMap<String, String>, IndexMap<String, usize>)>| match r {
         Ok(ok) => format!("{ok:?}"),
         Err(e) => format!("Err({e:?})"),
     };
-    let mut differ = Vec::new();
-    for config in &configs {
+    // FNV-1a, 64-bit: stable across Rust versions, unlike `DefaultHasher`.
+    let fnv = |h: &mut u64, s: &str| {
+        for b in s.bytes().chain([0xff]) {
+            *h ^= u64::from(b);
+            *h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+
+    let mut out = String::from(
+        "# Parser conformance (Q1): the strict reading of every one- and two-line file\n\
+         # built from the fragments in core/parser/tests.rs, per setting, then one\n\
+         # digest per setting over every three-line file. Regenerate with\n\
+         # UPDATE_GOLDEN=1 and review the diff.\n",
+    );
+    for (name, config) in &configs {
         let p = Parser::new(config.clone());
-        for f in &files {
-            // ⚠️ The one intended difference (v0.12.0 B2 P0.1): a leading BOM
-            // is skipped, where the old parser read it into the first key.
-            let old = show(p.legacy_parse_content_located(f.strip_prefix('\u{feff}').unwrap_or(f)));
-            let new = show(p.parse_content_located(f));
-            if old != new {
-                differ.push(format!("{config:?}\n{f:?}\n  old {old}\n  new {new}"));
+        out.push_str(&format!("\n## {name}\n"));
+        for a in FRAGMENTS {
+            let f = format!("{a}\n");
+            out.push_str(&format!("{f:?} => {}\n", show(p.parse_content_located(&f))));
+            for b in FRAGMENTS {
+                let f = format!("{a}\n{b}\n");
+                out.push_str(&format!("{f:?} => {}\n", show(p.parse_content_located(&f))));
             }
         }
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for a in FRAGMENTS {
+            for b in FRAGMENTS {
+                for c in FRAGMENTS {
+                    let f = format!("{a}\n{b}\n{c}");
+                    fnv(&mut h, &show(p.parse_content_located(&f)));
+                }
+            }
+        }
+        out.push_str(&format!("three-line digest: {h:016x}\n"));
     }
-    assert!(
-        differ.is_empty(),
-        "{} of {} readings differ; first:\n{}",
-        differ.len(),
-        files.len() * configs.len(),
-        differ[0]
-    );
+
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/parser-fragments.txt");
+    if std::env::var_os("UPDATE_GOLDEN").is_some() {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &out).unwrap();
+    }
+    let want = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{}: {e}; run with UPDATE_GOLDEN=1", path.display()));
+    if want != out {
+        let first = want
+            .lines()
+            .zip(out.lines())
+            .find(|(w, g)| w != g)
+            .map(|(w, g)| format!("\n  pinned: {w}\n  now:    {g}"))
+            .unwrap_or_default();
+        panic!(
+            "a parser reading moved (tests/golden/parser-fragments.txt); first difference:{first}\n\
+             If it is intended, rerun with UPDATE_GOLDEN=1 and review the diff."
+        );
+    }
 }
 
 #[test]

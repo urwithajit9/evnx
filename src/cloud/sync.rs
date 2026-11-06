@@ -373,7 +373,7 @@ pub fn push(
     let aad = vault_aad(&vault_ref.id, target_version as u32);
     let blob = encrypt_vault(&plaintext, &vault_key, &aad)
         .map_err(|e| anyhow!("encrypting {}: {e}", file.display()))?;
-    let blob_hash = blake3::hash(&blob.ciphertext).to_hex().to_string();
+    let blob_hash = evnx_crypto::blob_hash(&blob.ciphertext);
 
     let pushed: PushVersionResponse = client
         .post(
@@ -596,14 +596,17 @@ pub(crate) fn fetch_blob(
     vault_ref: &VaultRef,
     version: i32,
 ) -> Result<evnx_crypto::EncryptedBlob> {
-    let blob_bytes = client
-        .get_bytes(&api_path(&[
-            "vaults",
-            &vault_ref.id.to_string(),
-            "versions",
-            &version.to_string(),
-            "blob",
-        ])?)
+    let (blob_bytes, served_hash) = client
+        .get_bytes_with_header(
+            &api_path(&[
+                "vaults",
+                &vault_ref.id.to_string(),
+                "versions",
+                &version.to_string(),
+                "blob",
+            ])?,
+            "X-Blob-Hash",
+        )
         .map_err(|e| match e {
             // I-303 (DEC-CL11): this read "not found on …: /api/v1/vaults/<uuid>/…".
             ApiError::NotFound { .. } => anyhow!(
@@ -621,6 +624,20 @@ pub(crate) fn fetch_blob(
         ));
     }
     let (nonce_bytes, ciphertext) = blob_bytes.split_at(NONCE_LEN);
+    // Q1: the server sends the hash it stored at push. A mismatch is
+    // corruption between its check and here; the AEAD tag would refuse the
+    // blob anyway, but as "wrong password or tampered", which sends people
+    // looking in the wrong place. No header (an older server): nothing to
+    // compare.
+    if let Some(expected) = served_hash {
+        if !expected.eq_ignore_ascii_case(&evnx_crypto::blob_hash(ciphertext)) {
+            return Err(anyhow!(
+                "version {version} of {}: the server's blob does not match its own hash, \
+                 so it was not decrypted. Try again; if it persists, the stored copy is damaged.",
+                vault_ref.label()
+            ));
+        }
+    }
     let mut nonce = [0u8; NONCE_LEN];
     nonce.copy_from_slice(nonce_bytes);
 

@@ -415,18 +415,16 @@ pub struct Drift {
 }
 
 pub fn compare(scan: &Scan, template: &Path) -> Result<Drift> {
-    let declared: Vec<String> = std::fs::read_to_string(template)
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|l| {
-            let l = l.trim();
-            if l.is_empty() || l.starts_with('#') {
-                return None;
-            }
-            l.split('=').next().map(|k| k.trim().to_string())
-        })
-        .filter(|k| !k.is_empty())
-        .collect();
+    // The parser's keys, not `split('=')` (Q1): that read `export KEY=…` as a
+    // name "export KEY", and each line inside a multiline value as a name.
+    // Lossy on purpose: a bad line elsewhere does not hide the good ones.
+    let text = std::fs::read_to_string(template).unwrap_or_default();
+    let mut declared: Vec<String> = Vec::new();
+    for e in crate::core::Parser::default().parse_document(&text).entries {
+        if !declared.contains(&e.key) {
+            declared.push(e.key);
+        }
+    }
 
     let names: Vec<&str> = scan.found.iter().map(|v| v.name.as_str()).collect();
 
@@ -682,6 +680,28 @@ mod tests {
             "a genuinely absent name should be reported: {:?}",
             drift.unused
         );
+    }
+
+    /// Q1: the template is read by the parser. `export KEY=` is `KEY`, and
+    /// the lines of a multiline value are not names, so neither shows up as
+    /// a phantom "missing" or "unused" entry.
+    #[test]
+    fn q1_the_template_is_read_by_the_parser() {
+        let d = project(&[
+            (
+                "src/config.rs",
+                r#"let a = std::env::var("API_KEY"); let c = std::env::var("CERT");"#,
+            ),
+            (
+                ".env.example",
+                "export API_KEY=\nCERT=\"-----BEGIN-----\nAB=CD\nEND_LINE\"\n",
+            ),
+        ]);
+        let s = scan(d.path()).unwrap();
+        let drift = compare(&s, &d.path().join(".env.example")).unwrap();
+        assert!(drift.missing.is_empty(), "{:?}", drift.missing);
+        assert!(drift.unused.is_empty(), "{:?}", drift.unused);
+        assert_eq!(drift.matched, 2);
     }
 
     /// I-246: `import.meta.env` carries values the framework fills itself —

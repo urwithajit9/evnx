@@ -288,6 +288,12 @@ fn t_i194_the_bash_script_completes_the_shell_names() {
         .output()
         .is_err()
     {
+        // T2 (Q1): a missing tool is not a pass under CI.
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "bash is not installed, and CI is set: this test would pass without running"
+        );
+        eprintln!("skipped: bash is not installed");
         return;
     }
     let p = Project::new();
