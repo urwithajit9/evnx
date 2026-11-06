@@ -1,7 +1,7 @@
 //! One secret-name rule, at two levels (U8c, F6, DEC-G14).
 //!
 //! `validate` had its own suffix rule (`checks::is_secret_shaped`) beside the
-//! substring rule everything else used (`patterns::is_sensitive_key`). They
+//! substring rule everything else used (`heuristic::is_sensitive_key`). They
 //! disagreed on 8 of 32 names measured in U3. Both now live in
 //! `core::classify`:
 //!

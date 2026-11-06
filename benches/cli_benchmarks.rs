@@ -146,7 +146,7 @@ fn bench_secret_detection(c: &mut Criterion) {
     // provider patterns are `builtin_rules()` now and run through one RegexSet
     // pass, which is the thing worth timing.
     use evnx::commands::scan::patternset::PatternSet;
-    use evnx::utils::patterns::builtin_rules;
+    use evnx::core::secretscan::rules::builtin_rules;
     let set = PatternSet::compile(&builtin_rules()).expect("built-ins compile");
 
     let test_cases = vec![
@@ -167,7 +167,7 @@ fn bench_secret_detection(c: &mut Criterion) {
 }
 
 fn bench_entropy_calculation(c: &mut Criterion) {
-    use evnx::utils::patterns::calculate_entropy;
+    use evnx::core::secretscan::heuristic::calculate_entropy;
 
     let test_strings = vec!["aaaaaaa", "abcdefg", "a1b2c3d4e5f6g7h8", "aB3$xY9!zQ2#mK7"];
 

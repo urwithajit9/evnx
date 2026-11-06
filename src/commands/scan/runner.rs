@@ -16,6 +16,7 @@
 //! runner.run(vec!["./src".to_string()], OutputFormat::Pretty).unwrap();
 //! ```
 
+use super::walk::{decode, decode_bytes, named_like_dotenv, Decoded, STDIN_LABEL};
 use super::{
     detector::DetectorRegistry,
     filters::FileFilter,
@@ -23,7 +24,6 @@ use super::{
     models::{Confidence, Finding, ScanResults},
     output::{render, OutputFormat},
 };
-use crate::core::parser::strip_export;
 use crate::utils::fs::display_portable;
 use crate::utils::ui;
 use anyhow::Result;
@@ -422,85 +422,6 @@ impl ScanRunner {
     /// Scan a `.env` through the shared parser, read lossily: a file with a
     /// bad line is still read entry by entry around it.
     ///
-    /// ⚠️ The line reported for a multiline value is the line it **opened** on,
-    /// matching `EnvFile::lines` and the convention parse errors already use.
-    /// Pointing at the fragment that happened to match would send someone to the
-    /// middle of a PEM block rather than to the assignment they need to edit.
-    fn scan_env(&self, path: &Path, content: &str, results: &mut ScanResults) {
-        use crate::core::parser::{Parser, ParserConfig};
-
-        let parser = Parser::new(ParserConfig {
-            allow_expansion: false,
-            ..Default::default()
-        });
-        let doc = parser.parse_document(content);
-        let vars = doc.vars();
-        let lines = doc.lines();
-
-        for (key, value) in &vars {
-            let line_num = lines.get(key).copied().unwrap_or(1);
-            let location = format!("{}:{} ({})", display_portable(path), line_num, key);
-            if let Some(detection) = Self::best(self.registry.scan_kv(key, value, &location)) {
-                self.add_finding(results, path, line_num, Some(key.clone()), detection);
-            }
-        }
-
-        // ⛔ The map is not the whole file. What it drops, a secret on which
-        // scanned clean:
-        //
-        // * **A commented-out assignment.** `# STRIPE_SECRET_KEY=sk_live_…` is a
-        //   comment to the parser and a leaked credential to everyone else. A key
-        //   pasted into a file and then commented out is still a key that was
-        //   committed.
-        // * **A shadowed duplicate.** `K=sk_live_…` followed by `K=` leaves only
-        //   the empty one in the map, so the real value was never offered to a
-        //   detector — and "I blanked it on the line below" does not unpublish it.
-        // * **A line the parser refuses.** A malformed `.env` is exactly where a
-        //   half-pasted secret lives, so it is read as raw `KEY=value` text.
-        //
-        // ⚠️ Only what the map missed is scanned here, so a secret is not
-        // reported twice. A line inside a multiline value is neither a comment
-        // nor an assignment: its value was scanned whole above.
-        let mut dropped: Vec<(usize, &str, &str)> = Vec::new();
-        for c in &doc.comments {
-            // If it looks like an assignment, keep the key so the finding can
-            // name it; otherwise scan the text as a bare value.
-            let body = c.text.trim();
-            let (k, v) = match body.split_once('=') {
-                Some((k, v)) => (k.trim().trim_start_matches("export ").trim(), v.trim()),
-                None => ("", body),
-            };
-            dropped.push((c.line, k, v));
-        }
-        for e in &doc.entries {
-            let shadowed = lines.get(&e.key) != Some(&e.span.line);
-            if shadowed && vars.get(&e.key) != Some(&e.value) {
-                dropped.push((e.span.line, &e.key, &e.value));
-            }
-        }
-        for p in &doc.problems {
-            for (i, line) in p.raw.lines().enumerate() {
-                if let Some((k, v)) = line.split_once('=') {
-                    let k = k.trim();
-                    let k = strip_export(k).unwrap_or(k);
-                    dropped.push((p.span.line + i, k, v.trim()));
-                }
-            }
-        }
-        dropped.sort_by_key(|(line, _, _)| *line);
-
-        for (line_num, key, value) in dropped {
-            if value.is_empty() {
-                continue;
-            }
-            let location = format!("{}:{} ({})", display_portable(path), line_num, key);
-            if let Some(detection) = Self::best(self.registry.scan_kv(key, value, &location)) {
-                let variable = (!key.is_empty()).then(|| key.to_string());
-                self.add_finding(results, path, line_num, variable, detection);
-            }
-        }
-    }
-
     /// Which detectors a file gets is decided by its name alone (RM-47).
     fn read_as(path: &Path) -> super::models::ReadAs {
         if named_like_dotenv(path) {
@@ -624,197 +545,23 @@ impl ScanRunner {
             path: display_portable(path),
             read_as,
         });
-        let is_env = read_as == super::models::ReadAs::Dotenv;
-
-        // ── `.env`: the real parser, not a second implementation ─────────────
-        //
-        // ⚠️ This used to split every line on `=` itself. A continuation line of
-        // a multiline value has no `=`, so it was skipped entirely — and a PEM
-        // private key, the most common multiline value there is, scanned clean
-        // with exit 0. `scan.mdx` lists "private keys accidentally pasted as
-        // values" as something this catches. D21.
-        //
-        // `core::parser` already handles multiline, quoting and `export`, and
-        // eleven other modules use it. Three settings matter here:
-        //
-        // * `allow_expansion: false` — a scanner wants the literal text. With
-        //   expansion on, `$OTHER` would be substituted, which can both hide a
-        //   secret written literally and invent one that is not in the file.
-        // * `allow_inline_comments: true` — `A=secret # note` yields `secret`,
-        //   which is the value that would reach a program.
-        // * `strict: false` — a lowercase key is still worth scanning.
-        if is_env {
-            self.scan_env(path, content, results);
-            return Ok(());
-        }
-
-        for (line_num, line) in content.lines().enumerate() {
-            let line_num = line_num + 1;
-
-            // ⚠️ Blank lines only. A commented-out secret is still a secret
-            // that was committed, so `#` no longer skips the line — the
-            // detectors below read the raw text either way.
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            // Scan tokens for general text files.
-            let location = format!("{}:{}", display_portable(path), line_num);
-            let mut detections: Vec<super::detector::Detection> = Vec::new();
-
-            for token in Self::extract_tokens(line) {
-                detections.extend(self.registry.scan_token(&token, &location));
-            }
-
-            // ...and the whole line, for what a token cannot carry.
-            //
-            // ⚠️ A line is not one value. Two unrelated credentials on one
-            // line are two findings, whereas two detectors describing one
-            // value are one — so these are reconciled by *value* below, not
-            // collapsed into a single answer per line.
-            //
-            // `extract_tokens` also drops anything 20 characters or shorter,
-            // so a format shorter than that is reachable only from here. An
-            // AWS access key is `AKIA` plus sixteen characters — exactly 20
-            // — and so arrives by this path alone.
-            detections.extend(self.registry.scan_line(line, &location));
-
-            for detection in Self::one_finding_per_value(detections) {
-                self.add_finding(results, path, line_num, None, detection);
-            }
+        use crate::core::secretscan::engine;
+        let label = display_portable(path);
+        let ctx = engine::Context {
+            path: &label,
+            kind: match read_as {
+                super::models::ReadAs::Dotenv => engine::Kind::Dotenv,
+                super::models::ReadAs::Text => engine::Kind::Text,
+            },
+            document: None,
+            registry: &self.registry,
+        };
+        // Detection is the engine's; what a detection becomes is the report's.
+        for f in engine::scan_text(content, &ctx) {
+            self.add_finding(results, path, f.line, f.variable, f.detection);
         }
 
         Ok(())
-    }
-
-    /// One value, one finding.
-    ///
-    /// Every registered detector sees each key/value pair, and more than one can
-    /// match — `STRIPE_SECRET_KEY` fires both the pattern matcher and the
-    /// sensitive-key heuristic. Recording both inflated `secrets_found` (one
-    /// Stripe key reported as two secrets), printed the same line twice, and
-    /// emitted two GitHub annotations for it.
-    ///
-    /// Ranking, in order:
-    ///
-    /// 1. **Carries a remediation URL.** A finding that can say *where to revoke
-    ///    this* is more useful than one that cannot, and only the named provider
-    ///    patterns can. Confidence alone gets this wrong: the sensitive-key
-    ///    heuristic scores `High` on any long value, so it beat the real
-    ///    `AWS Secret Access Key` match — `Medium` on purpose, since that pattern
-    ///    is just "40 base64-ish characters" — and a genuine AWS key was reported
-    ///    as "Sensitive config key" with no link to IAM.
-    /// 2. **Higher confidence.** So `MY_PASSWORD=<long value>`, which matches only
-    ///    the key-aware heuristic and the shapeless high-entropy fallback, keeps
-    ///    the key-aware answer.
-    /// 3. **Earliest detector**, which is `RuleDetector` when the
-    ///    project declared patterns and `PatternDetector` otherwise. A rule the
-    ///    project wrote itself outranks a built-in heuristic that reached the
-    ///    same confidence, because it carries a name someone chose.
-    ///
-    /// The winner keeps its label and URL but takes the **highest confidence any
-    /// detector reported**. The two are answering different questions: the
-    /// pattern's `Medium` on an AWS secret key expresses doubt about *which
-    /// provider* a shapeless 40-character blob belongs to, not doubt about
-    /// whether it is a secret — and `AWS_SECRET_ACCESS_KEY` as a key name settles
-    /// the second question. Two independent detectors agreeing is stronger
-    /// evidence than either alone.
-    ///
-    /// Without this, deduplication would have quietly narrowed `--severity high`:
-    /// a real AWS secret key would drop to `Medium` and slip under a gate that
-    /// used to catch it through the heuristic's separate `High` finding.
-    fn best(detections: Vec<super::detector::Detection>) -> Option<super::detector::Detection> {
-        fn rank(d: &super::detector::Detection) -> (bool, super::models::Confidence) {
-            (d.action_url.is_some(), d.confidence)
-        }
-
-        let strongest = detections.iter().map(|d| d.confidence).max()?;
-        let mut winner = detections.into_iter().reduce(|best, next| {
-            if rank(&next) > rank(&best) {
-                next
-            } else {
-                best
-            }
-        })?;
-        winner.confidence = strongest;
-        Some(winner)
-    }
-
-    /// Reconcile a line's detections by the value each one is about.
-    ///
-    /// [`best`](Self::best) settles *one* set of detections about *one* value.
-    /// That is all a `.env` line needs, because `scan_kv` hands every detector
-    /// the same value and there is one answer to pick. A line of source is not
-    /// like that: it is scanned twice, by two paths that see different strings,
-    /// and neither could see the other's result.
-    ///
-    /// So one Stripe key in a `.py` file was reported twice:
-    ///
-    /// ```text
-    ///   ·  High-entropy string (possible secret)       low
-    ///   ✗  Stripe Secret Key (LIVE)                    high
-    /// ```
-    ///
-    /// The entropy heuristic reaches a non-`.env` file only through
-    /// `scan_token`, and the provider patterns reach it only through
-    /// `scan_line` — `RuleDetector::scan_token` returns `None` on purpose, so
-    /// that it does not report its own match twice. Each path was internally
-    /// consistent; nothing reconciled them with each other. One key counted as
-    /// two secrets, and as one `high` **and** one `low` in the severity totals
-    /// that `--severity` gates and CI reads.
-    ///
-    /// # Why containment rather than equality
-    ///
-    /// The two paths do not agree on where the value ends. `extract_tokens`
-    /// splits on whitespace, `=`, `:` and quotes — not on `-`, `{`, `)` or `,`
-    /// — so the token is often the credential plus whatever surrounds it, while
-    /// the pattern matched only the credential:
-    ///
-    /// ```text
-    /// c = "prefix-sk_live_51Habc…1234-suffix"
-    ///     token   prefix-sk_live_51Habc…1234-suffix
-    ///     pattern         sk_live_51Habc…1234
-    /// ```
-    ///
-    /// Equality collapses the quoted case and leaves that one duplicated, which
-    /// is the shape real code is full of. Two detections about the same line
-    /// where one value contains the other are one finding, and `best` then keeps
-    /// the specific answer — the named provider with its revocation URL, over
-    /// "high-entropy string".
-    ///
-    /// ⚠️ **An empty `matched_value` is compared by equality only.** Every string
-    /// contains `""`, so a detection that recorded no value would otherwise
-    /// swallow every other finding on its line.
-    ///
-    /// Two genuinely different credentials on one line stay two findings:
-    /// neither value contains the other.
-    ///
-    /// Order is the order values were first seen, so output stays stable —
-    /// grouping through a `HashMap` would reorder findings between runs of the
-    /// same scan.
-    fn one_finding_per_value(
-        detections: Vec<super::detector::Detection>,
-    ) -> Vec<super::detector::Detection> {
-        /// Do these two detections describe the same value?
-        fn same_value(a: &str, b: &str) -> bool {
-            if a.is_empty() || b.is_empty() {
-                return a == b;
-            }
-            a.contains(b) || b.contains(a)
-        }
-
-        let mut groups: Vec<Vec<super::detector::Detection>> = Vec::new();
-        for detection in detections {
-            match groups
-                .iter_mut()
-                .find(|g| same_value(&g[0].matched_value, &detection.matched_value))
-            {
-                Some(group) => group.push(detection),
-                None => groups.push(vec![detection]),
-            }
-        }
-
-        groups.into_iter().filter_map(Self::best).collect()
     }
 
     /// Add a finding to results with proper truncation and filtering.
@@ -843,7 +590,9 @@ impl ScanRunner {
         // and made this flag inert. See the doc comment on the new function
         // for why the two must not be merged back together.
         if self.ignore_placeholders
-            && crate::utils::patterns::looks_like_placeholder_secret(&detection.matched_value)
+            && crate::core::secretscan::heuristic::looks_like_placeholder_secret(
+                &detection.matched_value,
+            )
         {
             return;
         }
@@ -869,7 +618,7 @@ impl ScanRunner {
         // about the *name*, which is exactly what a name-only match has.
         let public = variable
             .as_deref()
-            .and_then(crate::utils::patterns::public_prefix);
+            .and_then(crate::core::secretscan::rules::public_prefix);
 
         let mut detection = detection;
         if public.is_some() {
@@ -921,24 +670,6 @@ impl ScanRunner {
         results.add_finding(finding);
     }
 
-    /// Extract tokens from a line for scanning.
-    ///
-    /// Splits on common separators and filters by minimum length.
-    ///
-    /// # Arguments
-    ///
-    /// * `line` - Line of text to extract tokens from
-    ///
-    /// # Returns
-    ///
-    /// Vector of token strings (min 20 chars by default)
-    fn extract_tokens(line: &str) -> Vec<String> {
-        line.split(|c: char| c.is_whitespace() || c == '=' || c == ':' || c == '"' || c == '\'')
-            .filter(|t| t.len() > 20)
-            .map(|s| s.to_string())
-            .collect()
-    }
-
     // /// Print the scan header UI.
     // fn print_header(&self) {
     //     println!(
@@ -956,7 +687,7 @@ impl ScanRunner {
     // }
 }
 
-/// The built-in rule for a password inside a URL (`utils::patterns`).
+/// The built-in rule for a password inside a URL (`core::secretscan::rules`).
 const CONNECTION_STRING_RULE: &str = "Credentials in a connection string";
 
 /// `-----BEGIN RSA PRIVATE KEY-----` when `value` is exactly a PEM private-key
@@ -1034,190 +765,6 @@ fn report_skipped(results: &ScanResults, verbose: bool, max_bytes: u64) {
         for f in &results.skipped {
             eprintln!("    {}  {}", f.path, f.reason);
         }
-    }
-}
-
-/// Should this file be read with the `.env` parser?
-///
-/// ⛔ **By file name, not by path.** This was
-/// `path.to_string_lossy().contains(".env")`, which is true of every file under
-/// a directory that happens to be called `.env` — and a Python virtualenv is
-/// routinely named exactly that. So every file in `.env/lib/python3/site-packages`
-/// was handed to the dotenv parser, and a line like `self.password = password`
-/// in somebody else's library became a finding.
-///
-/// ⚠️ It was also true of `.env.yaml` and `.env.json`, which are *not* dotenv.
-/// Those parse as nothing useful, and the raw fallback only looks at lines
-/// containing `=`, so `STRIPE_SECRET_KEY: sk_live_…` in a `.env.yaml` was
-/// scanned by neither path and reported clean.
-pub(super) fn named_like_dotenv(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-        return false;
-    };
-    // ⚠️ `app.env` and `production.env` too (I-254): the name Docker Compose's
-    // `env_file:` and many deploy tools use. Read as plain text, a `[vars]`
-    // declaration never applied to them — `secret = true` reported nothing.
-    let suffixed = name.len() > ".env".len() && name.ends_with(".env");
-    if name != ".env" && !name.starts_with(".env.") && !suffixed {
-        return false;
-    }
-    // ⓘ `.env.yaml` is YAML that happens to be named after `.env`. Anything with
-    // a known structured-format extension is left to the content detectors,
-    // which read it as text rather than as assignments. One list with
-    // `doctor`, which skips its dotenv syntax check for the same files.
-    !crate::core::env_name::is_structured(name)
-}
-
-// ─────────────────────────────────────────────────────────────
-// Decoding
-// ─────────────────────────────────────────────────────────────
-
-/// The outcome of trying to read a file as text.
-enum Decoded {
-    Text(String),
-    Unreadable { reason: String },
-}
-
-/// Read a file as text, decoding UTF-16 rather than giving up on it.
-///
-/// ⚠️ **There are two ways a UTF-16 `.env` defeated a UTF-8 read, and only one
-/// of them was an error.** Fixing the error alone leaves the other.
-///
-/// * **With a byte-order mark**, `read_to_string` fails: `0xFF` is not valid
-///   UTF-8. That surfaced as `Err`, and the `Err` arm returned `Ok(())`.
-/// * **Without one, `read_to_string` succeeds** — UTF-16LE ASCII is *valid
-///   UTF-8*, because every byte is either an ASCII character or `0x00`, and
-///   `0x00` is a legal UTF-8 code unit. So the scanner received
-///   `"A\0W\0S\0_\0S\0E\0C\0R\0E\0T\0"` and no pattern matched a single
-///   key or value. It genuinely scanned the file, and genuinely found nothing.
-///
-/// So a NUL byte is the signal, not a decoding error: no UTF-8 text file
-/// contains one, and a UTF-16 one is half NULs by construction.
-fn decode(path: &Path) -> Decoded {
-    match std::fs::read(path) {
-        Ok(bytes) => decode_bytes(bytes),
-        Err(e) => Decoded::Unreadable {
-            // ⚠️ `e` and not the path: the caller records the path, and an
-            // io::Error's Display does not include it.
-            reason: format!("could not be read: {e}"),
-        },
-    }
-}
-
-/// How `evnx scan -` names stdin in findings and lists (RM-48).
-pub(super) const STDIN_LABEL: &str = "<stdin>";
-
-/// [`decode`] for bytes already read.
-fn decode_bytes(bytes: Vec<u8>) -> Decoded {
-    // An explicit byte-order mark settles it.
-    if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
-        return from_utf16(rest, u16::from_le_bytes, "UTF-16LE");
-    }
-    if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
-        return from_utf16(rest, u16::from_be_bytes, "UTF-16BE");
-    }
-    if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
-        // A UTF-8 BOM. Not an encoding problem, but left in the string it
-        // becomes part of the first key's name.
-        return match String::from_utf8(rest.to_vec()) {
-            Ok(text) => Decoded::Text(text),
-            Err(e) => Decoded::Unreadable {
-                reason: format!("has a UTF-8 byte-order mark but is not valid UTF-8: {e}"),
-            },
-        };
-    }
-
-    // No BOM. A NUL means this is not UTF-8 text whatever `from_utf8` says.
-    if bytes.contains(&0) {
-        // UTF-16 without a byte-order mark. Try both parities and judge the
-        // **result**, not the input.
-        //
-        // ⚠️ The first version of this counted NUL bytes by position — "at
-        // least half the even-numbered bytes are zero, so it is UTF-16BE". A
-        // six-byte binary blob, `00 FF 13 37 00 01`, satisfies that by
-        // accident and was decoded into Ethiopic and Latin-Extended
-        // characters, which the caller then scanned as though it were the
-        // file's text. Its own test caught it.
-        //
-        // A ratio of input bytes cannot distinguish those cases. What can is
-        // whether the decode *produced text*: a `.env` is ASCII keys, `=` and
-        // newlines, with at most a few non-ASCII characters in values, and
-        // never a C0 control character other than tab, newline or return.
-        if bytes.len().is_multiple_of(2) && !bytes.is_empty() {
-            for (unit, label) in [
-                (
-                    u16::from_le_bytes as fn([u8; 2]) -> u16,
-                    "UTF-16LE (no BOM)",
-                ),
-                (
-                    u16::from_be_bytes as fn([u8; 2]) -> u16,
-                    "UTF-16BE (no BOM)",
-                ),
-            ] {
-                if let Decoded::Text(text) = from_utf16(&bytes, unit, label) {
-                    if looks_like_text(&text) {
-                        return Decoded::Text(text);
-                    }
-                }
-            }
-        }
-        return Decoded::Unreadable {
-            reason: "contains NUL bytes and does not decode as UTF-16, so it is not text \
-                     this scanner can read"
-                .to_string(),
-        };
-    }
-
-    match String::from_utf8(bytes) {
-        Ok(text) => Decoded::Text(text),
-        Err(e) => Decoded::Unreadable {
-            reason: format!("is not valid UTF-8: {e}"),
-        },
-    }
-}
-
-/// Did a candidate decode actually produce text?
-///
-/// Two conditions, both cheap and both decisive on the cases that matter:
-///
-/// * **No C0 control characters** beyond tab, newline and carriage return.
-///   Binary interpreted as UTF-16 lands on these almost immediately.
-/// * **Mostly ASCII.** A `.env` is ASCII keys, `=`, and newlines; a non-ASCII
-///   value is possible but cannot dominate the file. Binary decoded as UTF-16
-///   produces characters spread across the whole BMP, so it fails this by a
-///   wide margin rather than a narrow one.
-fn looks_like_text(text: &str) -> bool {
-    if text.is_empty() {
-        return false;
-    }
-    let mut ascii = 0usize;
-    let mut total = 0usize;
-    for c in text.chars() {
-        if c.is_control() && !matches!(c, '\t' | '\n' | '\r') {
-            return false;
-        }
-        if c.is_ascii() {
-            ascii += 1;
-        }
-        total += 1;
-    }
-    // Half, not all: a password with an accent in it is still a .env file.
-    ascii * 2 >= total
-}
-
-/// Decode UTF-16 code units into a `String`.
-fn from_utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16, label: &str) -> Decoded {
-    if !bytes.len().is_multiple_of(2) {
-        return Decoded::Unreadable {
-            reason: format!("looks like {label} but has an odd number of bytes"),
-        };
-    }
-    let units: Vec<u16> = bytes.chunks_exact(2).map(|c| unit([c[0], c[1]])).collect();
-    match String::from_utf16(&units) {
-        Ok(text) => Decoded::Text(text),
-        Err(e) => Decoded::Unreadable {
-            reason: format!("looks like {label} but does not decode: {e}"),
-        },
     }
 }
 
@@ -1392,14 +939,6 @@ mod tests {
     fn masking_is_utf8_safe() {
         let masked = truncate_value("🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑");
         assert!(masked.contains('…'), "{masked}");
-    }
-
-    #[test]
-    fn test_extract_tokens() {
-        let line = "API_KEY=sk_live_1234567890abcdefghijklmnop short";
-        let tokens = ScanRunner::extract_tokens(line);
-        assert_eq!(tokens.len(), 1);
-        assert!(tokens[0].len() > 20);
     }
 
     #[test]

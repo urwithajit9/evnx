@@ -7,8 +7,8 @@
 //! value — but its knowledge lived in the scan command.
 //!
 //! This module answers from the value, using the same built-in rules `scan`
-//! uses (`utils::patterns::builtin_rules`), and from the name, using the one
-//! name list (`utils::patterns::is_sensitive_key`). `core` never imports a
+//! uses (`secretscan::rules::builtin_rules`), and from the name, using the one
+//! name list (`secretscan::heuristic::is_sensitive_key`). `core` never imports a
 //! command (T-SHARE-01).
 //!
 //! The placeholder side (with a `Strictness`, DEC-G8) joins in U3 part 2.
@@ -16,7 +16,7 @@
 use std::ops::Range;
 use std::sync::OnceLock;
 
-use crate::utils::patterns;
+use crate::core::secretscan::{heuristic, rules as builtin};
 
 /// The built-in provider rules, compiled once by the engine `scan` uses
 /// ([`crate::core::secretscan::PatternSet`]), rather than a second time here
@@ -24,8 +24,8 @@ use crate::utils::patterns;
 fn rules() -> &'static crate::core::secretscan::PatternSet {
     static RULES: OnceLock<crate::core::secretscan::PatternSet> = OnceLock::new();
     RULES.get_or_init(|| {
-        crate::core::secretscan::PatternSet::compile(&patterns::builtin_rules())
-            .expect("the built-in rules compile; utils::patterns tests them")
+        crate::core::secretscan::PatternSet::compile(&builtin::builtin_rules())
+            .expect("the built-in rules compile; secretscan::rules tests them")
     })
 }
 
@@ -34,10 +34,10 @@ fn rules() -> &'static crate::core::secretscan::PatternSet {
 /// password, or a long high-entropy string. A placeholder is not.
 pub fn is_secret_shaped(value: &str) -> bool {
     let v = value.trim();
-    if v.is_empty() || patterns::is_placeholder_lenient(v) {
+    if v.is_empty() || heuristic::is_placeholder_lenient(v) {
         return false;
     }
-    !rules().find_all(v).is_empty() || patterns::detect_heuristic(v, "").is_some()
+    !rules().find_all(v).is_empty() || heuristic::detect_heuristic(v, "").is_some()
 }
 
 /// Whether the **name** says the value is a credential, at the Lenient level

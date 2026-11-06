@@ -77,7 +77,7 @@ struct CompiledRule {
     /// The expression as written, so a match lying inside its own text — the
     /// declaration in `.evnx.toml` — can be set aside (D-36).
     source: String,
-    /// One of `utils::patterns::builtin_rules`, unchanged (I-058).
+    /// One of `secretscan::rules::builtin_rules`, unchanged (I-058).
     builtin: bool,
 }
 
@@ -133,7 +133,7 @@ impl PatternSet {
 
         let mut compiled = Vec::with_capacity(rules.len());
         let mut sources = Vec::with_capacity(rules.len());
-        let builtins = crate::utils::patterns::builtin_rules();
+        let builtins = crate::core::secretscan::rules::builtin_rules();
 
         for (i, rule) in rules.iter().enumerate() {
             let name = rule.name.trim();
@@ -382,7 +382,7 @@ pub fn merge(
             .into_iter()
             .map(|n| n.to_lowercase())
             .collect();
-        for rule in crate::utils::patterns::builtin_rules() {
+        for rule in crate::core::secretscan::rules::builtin_rules() {
             if off.iter().any(|d| *d == rule.name.to_lowercase()) {
                 continue;
             }

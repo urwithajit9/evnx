@@ -90,8 +90,8 @@
 //! let detections = registry.scan_kv("AWS_KEY", "AKIA1234567890EXAMPLE", "test:1");
 //! ```
 
+use super::heuristic;
 use super::Confidence;
-use crate::utils::patterns;
 use std::path::Path;
 
 /// Result of a single detection attempt.
@@ -608,14 +608,14 @@ impl Default for DetectorRegistry {
 
 /// Default pattern-based secret detector.
 ///
-/// Uses regex patterns from `crate::utils::patterns` to detect
+/// Uses regex patterns from `super::rules` and `super::heuristic` to detect
 /// known secret formats (API keys, tokens, credentials, etc.).
 ///
 /// This is the primary detector and is always registered by default.
 /// The two checks that cannot be expressed as a rule.
 ///
 /// ⚠️ This was `PatternDetector`, and it wrapped a hand-written `if` chain of
-/// every provider regex. Those are [`crate::utils::patterns::builtin_rules`] now
+/// every provider regex. Those are [`super::rules::builtin_rules`] now
 /// and run through the same `PatternSet` as `[[scan.patterns]]`, so the chain was
 /// doing the same work twice — and doing it worse, because a chain of
 /// `is_match` calls only ever saw tokens over 20 characters.
@@ -623,7 +623,7 @@ impl Default for DetectorRegistry {
 /// What remains needs something a pattern does not have: the AWS secret key
 /// needs the *variable's name*, and the entropy fallback needs a threshold.
 /// Neither implements `scan_line`, deliberately — see
-/// [`crate::utils::patterns::detect_heuristic`].
+/// [`super::heuristic::detect_heuristic`].
 pub struct HeuristicDetector;
 
 impl SecretDetector for HeuristicDetector {
@@ -632,20 +632,20 @@ impl SecretDetector for HeuristicDetector {
     }
 
     fn scan_kv(&self, key: &str, value: &str, _location: &str) -> Option<Detection> {
-        patterns::detect_heuristic(value, key).map(|(pattern, confidence, action_url)| Detection {
+        heuristic::detect_heuristic(value, key).map(|(pattern, confidence, action_url)| Detection {
             judged_value: true,
             pattern: pattern.clone(),
-            confidence: confidence.into(),
+            confidence,
             action_url,
             matched_value: value.to_string(),
         })
     }
 
     fn scan_token(&self, token: &str, _location: &str) -> Option<Detection> {
-        patterns::detect_heuristic(token, "").map(|(pattern, confidence, action_url)| Detection {
+        heuristic::detect_heuristic(token, "").map(|(pattern, confidence, action_url)| Detection {
             judged_value: true,
             pattern: pattern.clone(),
-            confidence: confidence.into(),
+            confidence,
             action_url,
             matched_value: token.to_string(),
         })
@@ -676,7 +676,7 @@ impl SecretDetector for ConfigKeyDetector {
     }
 
     fn scan_kv(&self, key: &str, value: &str, _location: &str) -> Option<Detection> {
-        // ⚠️ One rule, in `patterns::name_suggests_secret`, not a second
+        // ⚠️ One rule, in `heuristic::name_suggests_secret`, not a second
         // hardcoded word list here.
         //
         // This used to test five words of its own — password, secret, token,
@@ -685,7 +685,7 @@ impl SecretDetector for ConfigKeyDetector {
         // rule, maintained for `diff`'s redaction and never consulted here.
         // Two lists for one question drift, and these had: `DB_PASSWD` was
         // missed, and `QUOTA_FREE_TOKENS=2` was reported as a secret.
-        if crate::utils::patterns::name_suggests_secret(key, value) {
+        if heuristic::name_suggests_secret(key, value) {
             Some(Detection {
                 judged_value: true,
                 pattern: format!("Sensitive config key: {}", key),
@@ -837,7 +837,7 @@ mod tests {
         assert_eq!(detector.name(), "heuristics");
     }
 
-    // Note: Full detection tests depend on utils::patterns implementation
+    // Note: Full detection tests depend on core::secretscan::heuristic
     // These tests verify the detector structure works correctly
     #[test]
     fn test_detection_struct() {

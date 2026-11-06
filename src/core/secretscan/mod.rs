@@ -12,7 +12,10 @@
 
 mod confidence;
 pub mod detector;
+pub mod engine;
+pub mod heuristic;
 pub mod patternset;
+pub mod rules;
 
 pub use confidence::Confidence;
 pub use detector::{Detection, DetectorRegistry, SecretDetector};

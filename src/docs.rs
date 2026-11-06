@@ -91,7 +91,7 @@ pub const SCAN: CommandDoc = CommandDoc {
     url: "https://docs.evnx.dev/cli/commands/scan",
     description: "Secret detection patterns and entropy analysis",
     // ⚠️ The rule names are the ones `[scan] disable` takes (I-056). A test in
-    // `utils::patterns` fails when a built-in is missing here.
+    // `core::secretscan::rules` fails when a built-in is missing here.
     after_help: "\
 What a folder walk reads:\n\
 \x20 every file, except .git, node_modules, target, dist and build, the\n\

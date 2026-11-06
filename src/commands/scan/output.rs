@@ -254,7 +254,7 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
         // sufficient on its own — the value is already in every build that has
         // shipped, so the name has to change too.
         if let Some(prefix) = &finding.public_prefix {
-            let what = crate::utils::patterns::public_prefix(prefix)
+            let what = crate::core::secretscan::rules::public_prefix(prefix)
                 .map(|(_, tool)| tool)
                 .unwrap_or("your bundler");
             println!(
@@ -446,7 +446,7 @@ fn may_be_committed(f: &super::models::Finding) -> bool {
 
 /// Found in what `evnx scan -` read (RM-48): no file, so no history to rewrite.
 fn from_stdin(f: &super::models::Finding) -> bool {
-    split_location(&f.location).0 == super::runner::STDIN_LABEL
+    split_location(&f.location).0 == super::walk::STDIN_LABEL
 }
 
 /// The distinct files among `findings` that `keep` selects, in order, as
@@ -534,7 +534,7 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
         let (env, source): (Vec<String>, Vec<String>) = uncommitted
             .iter()
             .cloned()
-            .partition(|p| super::runner::named_like_dotenv(std::path::Path::new(p)));
+            .partition(|p| super::walk::named_like_dotenv(std::path::Path::new(p)));
         let them = |v: &[String]| if v.len() == 1 { "it" } else { "them" };
         if !env.is_empty() {
             steps.push(format!(

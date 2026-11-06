@@ -11,10 +11,7 @@ use serde::{Deserialize, Serialize};
 /// Used to prioritize remediation efforts. High confidence findings
 /// should be addressed immediately as they likely represent real credentials.
 ///
-/// # Note
-///
-/// This enum mirrors `crate::utils::patterns::Confidence` for the scan module.
-/// Conversion is automatic via `From` trait implementation.
+/// The only one: `utils::patterns` had a second, joined by `From`, until C1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Confidence {
     /// Highly likely to be a real secret (e.g., matches known pattern + context)
@@ -87,18 +84,5 @@ impl std::fmt::Display for Confidence {
                 Confidence::Low => "low",
             }
         )
-    }
-}
-
-/// Convert from `utils::patterns::Confidence`.
-///
-/// This allows seamless integration with the existing pattern detection logic.
-impl From<crate::utils::patterns::Confidence> for Confidence {
-    fn from(conf: crate::utils::patterns::Confidence) -> Self {
-        match conf {
-            crate::utils::patterns::Confidence::High => Confidence::High,
-            crate::utils::patterns::Confidence::Medium => Confidence::Medium,
-            crate::utils::patterns::Confidence::Low => Confidence::Low,
-        }
     }
 }
