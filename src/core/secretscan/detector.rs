@@ -91,7 +91,7 @@
 //! ```
 
 use super::heuristic;
-use super::Confidence;
+use super::{Confidence, Severity};
 use std::path::Path;
 
 /// Result of a single detection attempt.
@@ -115,10 +115,14 @@ pub struct Detection {
     /// Only the wording depends on it: a name-based finding must not claim the
     /// value "matches a live key format", because nothing checked the value.
     pub judged_value: bool,
+    /// Stable id of the rule or check that matched (C2): the SARIF `ruleId`.
+    pub rule_id: String,
     /// Name of the detected pattern
     pub pattern: String,
-    /// Confidence level of the detection
+    /// How sure the detection is.
     pub confidence: Confidence,
+    /// How bad it is if real (S7).
+    pub severity: Severity,
     /// Optional URL for remediation actions
     pub action_url: Option<String>,
     /// The full matched value (will be truncated for display)
@@ -131,8 +135,10 @@ impl Default for Detection {
             // A detector that returns a `Detection` at all looked at
             // *something*; the registry corrects this for the name-based ones.
             judged_value: true,
+            rule_id: String::new(),
             pattern: String::new(),
             confidence: Confidence::Low,
+            severity: Severity::Medium,
             action_url: None,
             matched_value: String::new(),
         }
@@ -307,6 +313,22 @@ pub trait SecretDetector: Send + Sync {
 /// is real.
 pub const DECLARED_SECRET: &str = "Declared secret";
 
+/// Ids of the checks that are not rules in `rules.toml` (C2). Stable, like a
+/// rule's: they are SARIF `ruleId`s.
+pub const DECLARED_SECRET_ID: &str = "declared-secret";
+pub const SENSITIVE_KEY_ID: &str = "sensitive-config-key";
+
+/// The id and severity of a [`heuristic::detect_heuristic`] answer, by its
+/// name: an AWS secret key is critical; the shapeless entropy fallback,
+/// low-confidence by nature, is medium.
+fn heuristic_id(pattern: &str) -> (&'static str, Severity) {
+    if pattern.starts_with("AWS Secret Access Key") {
+        ("aws-secret-access-key", Severity::Critical)
+    } else {
+        ("high-entropy-string", Severity::Medium)
+    }
+}
+
 /// Would reporting this value help anyone?
 ///
 /// An empty value is not a leak, and neither is an obvious placeholder. A
@@ -444,9 +466,19 @@ impl DetectorRegistry {
         names: &[String],
     ) -> Self {
         self.disabled_formats = formats;
+        // A heuristic is named by its name or, since C2, its id.
+        const IDS: [(&str, &str); 3] = [
+            (SENSITIVE_KEY_ID, "Sensitive config key"),
+            ("high-entropy-string", "High-entropy string"),
+            ("aws-secret-access-key", "AWS Secret Access Key"),
+        ];
         self.disabled_heuristics = names
             .iter()
             .map(|n| n.to_lowercase())
+            .map(|n| match IDS.iter().find(|(id, _)| *id == n) {
+                Some((_, name)) => name.to_lowercase(),
+                None => n,
+            })
             .filter(|n| HEURISTIC_NAMES.iter().any(|h| h.to_lowercase() == *n))
             .collect();
         self
@@ -532,8 +564,10 @@ impl DetectorRegistry {
             found.push(Detection {
                 // The project declared it; nothing looked at the value.
                 judged_value: false,
+                rule_id: DECLARED_SECRET_ID.to_string(),
                 pattern: DECLARED_SECRET.to_string(),
                 confidence: Confidence::High,
+                severity: Severity::High,
                 action_url: None,
                 matched_value: value.to_string(),
             });
@@ -634,6 +668,8 @@ impl SecretDetector for HeuristicDetector {
     fn scan_kv(&self, key: &str, value: &str, _location: &str) -> Option<Detection> {
         heuristic::detect_heuristic(value, key).map(|(pattern, confidence, action_url)| Detection {
             judged_value: true,
+            rule_id: heuristic_id(&pattern).0.to_string(),
+            severity: heuristic_id(&pattern).1,
             pattern: pattern.clone(),
             confidence,
             action_url,
@@ -644,6 +680,8 @@ impl SecretDetector for HeuristicDetector {
     fn scan_token(&self, token: &str, _location: &str) -> Option<Detection> {
         heuristic::detect_heuristic(token, "").map(|(pattern, confidence, action_url)| Detection {
             judged_value: true,
+            rule_id: heuristic_id(&pattern).0.to_string(),
+            severity: heuristic_id(&pattern).1,
             pattern: pattern.clone(),
             confidence,
             action_url,
@@ -688,6 +726,10 @@ impl SecretDetector for ConfigKeyDetector {
         if heuristic::name_suggests_secret(key, value) {
             Some(Detection {
                 judged_value: true,
+                rule_id: SENSITIVE_KEY_ID.to_string(),
+                // ⚠️ High whatever the length: a short password is still a
+                // password if it is real. How likely that is, is confidence.
+                severity: Severity::High,
                 pattern: format!("Sensitive config key: {}", key),
                 // Lower confidence for short values (more likely to be false positive)
                 confidence: if value.len() < 16 {
@@ -740,8 +782,10 @@ impl From<super::patternset::PatternMatch> for Detection {
     fn from(found: super::patternset::PatternMatch) -> Self {
         Detection {
             judged_value: true,
+            rule_id: found.id,
             pattern: found.name,
             confidence: found.confidence,
+            severity: found.severity,
             action_url: found.url,
             matched_value: found.value,
         }
@@ -847,6 +891,7 @@ mod tests {
             confidence: Confidence::High,
             action_url: Some("https://example.com".to_string()),
             matched_value: "secret_value_123".to_string(),
+            ..Default::default()
         };
         assert_eq!(detection.pattern, "Test Pattern");
         assert_eq!(detection.confidence, Confidence::High);

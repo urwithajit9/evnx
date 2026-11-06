@@ -2109,18 +2109,26 @@ pub enum Commands {
         #[arg(long, overrides_with = "ignore_placeholders")]
         no_ignore_placeholders: bool,
 
-        /// Lowest confidence worth reporting: high, medium or low.
+        /// Lowest severity worth reporting: critical, high, medium or low.
         ///
-        /// Filters what is reported, counted and exited on — all three describe
-        /// the same set. `--severity high` keeps values that matched a format —
-        /// a provider's, or one this project declared under `[[scan.patterns]]`
-        /// — and long values in a variable named like a secret (`JWT_SECRET`,
-        /// `DB_PASSWORD`), so a committed one still fails the gate. It is the
-        /// usual choice for a blocking CI gate; the default reports everything.
-        /// Defaults to `low` (report everything), or `[scan] severity` from
-        /// `.evnx.toml` when that is set.
+        /// Severity is how bad a finding is if it is real: `critical` for
+        /// cloud, payment and AI keys and private keys, `high` for account
+        /// tokens, database passwords and variables named like a secret, `low`
+        /// for test keys and keys meant to ship in a web page. Filters what is
+        /// reported, counted and exited on. `--severity high` is the usual
+        /// blocking CI gate. ⚠️ Until 0.13.0 this filtered on confidence; that
+        /// is now `--confidence`. Defaults to `low` (report everything), or
+        /// `[scan] severity` from `.evnx.toml`.
         #[arg(long, value_name = "LEVEL")]
         severity: Option<String>,
+
+        /// Lowest confidence worth reporting: high, medium or low.
+        ///
+        /// Confidence is how sure evnx is that a match is a real credential of
+        /// that kind. Combine with `--severity`: both must pass. Defaults to
+        /// `low`, or `[scan] confidence` from `.evnx.toml`.
+        #[arg(long, value_name = "LEVEL")]
+        confidence: Option<String>,
 
         /// Output format: `pretty`, `json`, `sarif` or `github`.
         ///

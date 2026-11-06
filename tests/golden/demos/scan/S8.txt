@@ -7,19 +7,19 @@ $ evnx scan .
 
   scanning ./config/id_rsa.pem, ./src/main.py
 
-  ✗  Private Key                                 high
+  ✗  Private Key                                 critical
      ./config/id_rsa.pem:1  -----BEGIN RSA PRIVATE KEY-----
      !  matches a live key format, not a placeholder
 
-  ·  High-entropy string (possible secret)       low
+  !  High-entropy string (possible secret)       medium, low confidence
      ./config/id_rsa.pem:2  MIIB…t8Qu
 
-  ✗  AWS Access Key                              high
+  ✗  AWS Access Key                              critical
      ./src/main.py:1  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
-  3 findings  ·  2 high  ·  1 low
+  3 findings  ·  2 critical  ·  1 medium
 
 
 Next steps:
@@ -37,14 +37,14 @@ $ evnx scan config/id_rsa.pem
 
   scanning config/id_rsa.pem
 
-  ✗  Private Key                                 high
+  ✗  Private Key                                 critical
      config/id_rsa.pem:1  -----BEGIN RSA PRIVATE KEY-----
      !  matches a live key format, not a placeholder
 
-  ·  High-entropy string (possible secret)       low
+  !  High-entropy string (possible secret)       medium, low confidence
      config/id_rsa.pem:2  MIIB…t8Qu
 
-  2 findings  ·  1 high  ·  1 low
+  2 findings  ·  1 critical  ·  1 medium
 
 
 Next steps:
@@ -61,19 +61,19 @@ $ evnx scan . .
 
   scanning ./config/id_rsa.pem, ./src/main.py
 
-  ✗  Private Key                                 high
+  ✗  Private Key                                 critical
      ./config/id_rsa.pem:1  -----BEGIN RSA PRIVATE KEY-----
      !  matches a live key format, not a placeholder
 
-  ·  High-entropy string (possible secret)       low
+  !  High-entropy string (possible secret)       medium, low confidence
      ./config/id_rsa.pem:2  MIIB…t8Qu
 
-  ✗  AWS Access Key                              high
+  ✗  AWS Access Key                              critical
      ./src/main.py:1  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
-  3 findings  ·  2 high  ·  1 low
+  3 findings  ·  2 critical  ·  1 medium
 
 
 Next steps:

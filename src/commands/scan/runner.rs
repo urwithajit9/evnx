@@ -70,6 +70,8 @@ pub struct ScanRunner {
     verbose: bool,
     /// Lowest confidence worth reporting. `Low` reports everything.
     min_confidence: Confidence,
+    /// Lowest severity worth reporting (C2). `Low` reports everything.
+    min_severity: crate::core::secretscan::Severity,
     /// `(built-in, custom)` rule counts and every rule's name, for `-v`
     /// (I-058). The rules themselves live in the registry.
     rule_counts: (usize, usize),
@@ -101,6 +103,12 @@ impl ScanRunner {
 
     /// Skip walked files larger than `bytes` (`--max-file-size`,
     /// `[scan] max_file_size`); `None` keeps [`super::filters::MAX_WALK_BYTES`].
+    /// Report only findings at or above `severity` (`--severity`, C2).
+    pub fn with_min_severity(mut self, severity: crate::core::secretscan::Severity) -> Self {
+        self.min_severity = severity;
+        self
+    }
+
     pub fn with_max_file_size(mut self, bytes: Option<u64>) -> Self {
         if let Some(bytes) = bytes {
             self.filter = self.filter.with_max_bytes(bytes);
@@ -203,6 +211,7 @@ impl ScanRunner {
             ignore_placeholders,
             verbose,
             min_confidence,
+            min_severity: crate::core::secretscan::Severity::Low,
             rule_counts,
             rule_names,
             extensions_from: "",
@@ -635,7 +644,7 @@ impl ScanRunner {
         }
 
         // Below the --severity threshold: not recorded at all.
-        if detection.confidence < self.min_confidence {
+        if detection.confidence < self.min_confidence || detection.severity < self.min_severity {
             return;
         }
 
@@ -650,6 +659,7 @@ impl ScanRunner {
         // material, so it is shown whole — the body never reaches a detection.
         let preview = pem_header(&detection.matched_value)
             .unwrap_or_else(|| truncate_value(&detection.matched_value));
+        let rule = (detection.rule_id.clone(), detection.severity);
         let mut finding = Finding::new(
             detection.pattern,
             detection.confidence,
@@ -662,6 +672,7 @@ impl ScanRunner {
             variable,
             detection.action_url,
         )
+        .rule(rule.0, rule.1)
         .judged_value(judged_value)
         .public_prefix(public.map(|(prefix, _)| prefix.to_string()));
         finding.note = note;

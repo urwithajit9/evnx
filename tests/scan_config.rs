@@ -258,3 +258,92 @@ fn rm47_each_file_says_how_it_was_read() {
         "{out}"
     );
 }
+
+// ── C2: rule ids, severity and confidence ───────────────────────────────────
+
+fn findings(dir: &TempDir, args: &[&str]) -> serde_json::Value {
+    let mut all = vec!["scan", "--format", "json"];
+    all.extend_from_slice(args);
+    let (_, out, err) = run(dir, &all);
+    serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}\n{out}\n{err}"))
+}
+
+/// C2: the JSON carries `schema_version: 2`, and each finding its stable
+/// `rule_id` and `severity` beside `confidence`.
+#[test]
+fn c2_json_carries_rule_id_and_severity() {
+    let aws = format!("AKIA{}", "IOSFODNN7ABCDEFG");
+    let d = project(&[(".env", &format!("AWS_ACCESS_KEY_ID={aws}\n"))]);
+    let doc = findings(&d, &[]);
+    assert_eq!(doc["schema_version"], 2);
+    let f = &doc["findings"][0];
+    assert_eq!(
+        (&f["rule_id"], &f["severity"], &f["confidence"]),
+        (&"aws-access-key".into(), &"critical".into(), &"high".into())
+    );
+    assert_eq!(doc["summary"]["severity"]["critical"], 1);
+}
+
+/// C2, S7: a Google API key is certain and low-risk, so `--severity medium`
+/// drops it and `--confidence high` keeps it.
+#[test]
+fn c2_severity_and_confidence_filter_separately() {
+    let key = format!("AIza{}", "SyA1234567890abcdefghijklmnopqrstuv");
+    let d = project(&[("app.js", &format!("const k = \"{key}\";\n"))]);
+    let all = findings(&d, &[]);
+    assert_eq!(all["findings"][0]["rule_id"], "google-api-key");
+    assert_eq!(all["findings"][0]["severity"], "low");
+    assert_eq!(
+        findings(&d, &["--severity", "medium"])["summary"]["total"],
+        0
+    );
+    assert_eq!(
+        findings(&d, &["--confidence", "high"])["summary"]["total"],
+        1
+    );
+}
+
+/// C2: a project rule takes `id` and `severity`; without them it is
+/// `medium`, so a `--severity high` gate passes it unless it says otherwise.
+#[test]
+fn c2_a_project_rule_takes_an_id_and_a_severity() {
+    let token = format!("ACME-{}", "K3X9Q2M7V1ZPAB4C");
+    let d = project(&[
+        (
+            ".evnx.toml",
+            "[[scan.patterns]]\nname = \"Acme token\"\nregex = 'ACME-[A-Z0-9]{16}'\n",
+        ),
+        ("notes.txt", &format!("token {token}\n")),
+    ]);
+    let doc = findings(&d, &["notes.txt"]);
+    let f = &doc["findings"][0];
+    assert_eq!(
+        (&f["rule_id"], &f["severity"]),
+        (&"acme-token".into(), &"medium".into())
+    );
+    assert_eq!(
+        findings(&d, &["notes.txt", "--severity", "high"])["summary"]["total"],
+        0
+    );
+
+    fs::write(
+        d.path().join(".evnx.toml"),
+        "[[scan.patterns]]\nid = \"acme-internal\"\nname = \"Acme token\"\n\
+         regex = 'ACME-[A-Z0-9]{16}'\nseverity = \"critical\"\n",
+    )
+    .unwrap();
+    let doc = findings(&d, &["notes.txt", "--severity", "high"]);
+    assert_eq!(doc["findings"][0]["rule_id"], "acme-internal");
+    assert_eq!(doc["findings"][0]["severity"], "critical");
+}
+
+/// C2: `[scan] disable` takes a rule's id as well as its name.
+#[test]
+fn c2_disable_accepts_an_id() {
+    let aws = format!("AKIA{}", "IOSFODNN7ABCDEFG");
+    let d = project(&[
+        (".evnx.toml", "[scan]\ndisable = [\"aws-access-key\"]\n"),
+        ("notes.txt", &format!("key {aws}\n")),
+    ]);
+    assert_eq!(findings(&d, &["notes.txt"])["summary"]["total"], 0);
+}

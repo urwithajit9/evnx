@@ -1,4 +1,5 @@
 {
+  "schema_version": 2,
   "files_scanned": 1,
   "files": [
     {
@@ -11,8 +12,10 @@
   "secrets_found": 1,
   "findings": [
     {
+      "rule_id": "aws-access-key",
       "pattern": "AWS Access Key",
       "confidence": "high",
+      "severity": "critical",
       "value_preview": "AKIA…LKEY",
       "location": "./.env:2 (AWS_KEY)",
       "variable": "AWS_KEY",
@@ -28,6 +31,12 @@
     "high": 1,
     "medium": 0,
     "low": 0,
+    "severity": {
+      "critical": 1,
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    },
     "files_scanned": 1,
     "files_unreadable": 0,
     "files_skipped": 0

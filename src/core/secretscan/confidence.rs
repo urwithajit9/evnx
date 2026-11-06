@@ -54,12 +54,12 @@ impl Ord for Confidence {
 impl std::str::FromStr for Confidence {
     type Err = anyhow::Error;
 
-    /// Parses the `--severity` threshold. Unknown values are an **error**, not a
-    /// silent default: a typo in a CI flag must not quietly widen or narrow what
-    /// the scanner reports.
+    /// Parses the `--confidence` threshold (it was `--severity` until C2).
+    /// Unknown values are an **error**, not a silent default: a typo in a CI
+    /// flag must not quietly widen or narrow what the scanner reports.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         crate::core::args::one_of(
-            "severity",
+            "confidence",
             s,
             &[
                 ("high", Confidence::High),
@@ -84,5 +84,78 @@ impl std::fmt::Display for Confidence {
                 Confidence::Low => "low",
             }
         )
+    }
+}
+
+/// How bad a finding is if it is real: `critical`, `high`, `medium` or `low`
+/// (S7, C2). Separate from [`Confidence`], which is how **sure** evnx is.
+///
+/// A Google Maps browser key is the case that needed both: its shape is
+/// unmistakable (high confidence) and it is designed to ship in web pages
+/// (low severity). One field could only say one of those.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Severity {
+    /// Grants direct access to money, cloud accounts or signing keys.
+    Critical,
+    High,
+    Medium,
+    Low,
+}
+
+impl Severity {
+    /// Ranked explicitly, as [`Confidence::rank`] is, so reordering the
+    /// variants cannot invert a `--severity` filter.
+    pub fn rank(self) -> u8 {
+        match self {
+            Severity::Low => 0,
+            Severity::Medium => 1,
+            Severity::High => 2,
+            Severity::Critical => 3,
+        }
+    }
+}
+
+impl PartialOrd for Severity {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Severity {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.rank().cmp(&other.rank())
+    }
+}
+
+impl std::str::FromStr for Severity {
+    type Err = anyhow::Error;
+
+    /// Unknown values are an error, for the same reason as [`Confidence`].
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        crate::core::args::one_of(
+            "severity",
+            s,
+            &[
+                ("critical", Severity::Critical),
+                ("high", Severity::High),
+                ("medium", Severity::Medium),
+                ("med", Severity::Medium),
+                ("low", Severity::Low),
+                ("all", Severity::Low),
+            ],
+            &["critical", "high", "medium", "low"],
+        )
+    }
+}
+
+impl std::fmt::Display for Severity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Severity::Critical => "critical",
+            Severity::High => "high",
+            Severity::Medium => "medium",
+            Severity::Low => "low",
+        })
     }
 }

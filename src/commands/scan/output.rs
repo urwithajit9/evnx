@@ -15,7 +15,7 @@
 //! render(&results, OutputFormat::Pretty, &[]).unwrap();
 //! ```
 
-use super::models::{Confidence, ScanResults};
+use super::models::{Confidence, ScanResults, Severity};
 use crate::utils::string::pluralize;
 use crate::utils::ui;
 use crate::utils::ui::glyph;
@@ -202,10 +202,17 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
     // printed by `ui::warning`, which writes at column 0 — so a line that belongs
     // to one finding appeared to belong to none.
     for finding in &results.findings {
-        let (mark, level) = match finding.confidence {
-            Confidence::High => (glyph::FAIL.red(), "high".red()),
-            Confidence::Medium => (glyph::WARN.yellow(), "medium".yellow()),
-            Confidence::Low => (glyph::INFO.dimmed(), "low".dimmed()),
+        // Severity leads (C2): it is what `--severity` gates on. Confidence
+        // follows only when it is not high, as the qualifier it is.
+        let (mark, level) = match finding.severity {
+            Severity::Critical => (glyph::FAIL.red(), "critical".red()),
+            Severity::High => (glyph::FAIL.red(), "high".red()),
+            Severity::Medium => (glyph::WARN.yellow(), "medium".yellow()),
+            Severity::Low => (glyph::INFO.dimmed(), "low".dimmed()),
+        };
+        let level = match finding.confidence {
+            Confidence::High => level.to_string(),
+            other => format!("{level}{}", format!(", {other} confidence").dimmed()),
         };
 
         // Confidence right-aligned against a fixed column, so the levels form a
@@ -302,14 +309,16 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
     // One line, and only the counts that are non-zero — "0 medium-confidence
     // secrets" is noise, and "1 secrets" was simply wrong.
     let mut parts = vec![pluralize(results.secrets_found, "finding", "findings")];
-    if results.high_confidence > 0 {
-        parts.push(format!("{} high", results.high_confidence));
-    }
-    if results.medium_confidence > 0 {
-        parts.push(format!("{} medium", results.medium_confidence));
-    }
-    if results.low_confidence > 0 {
-        parts.push(format!("{} low", results.low_confidence));
+    let by = results.severity_counts();
+    for (n, label) in [
+        (by.critical, "critical"),
+        (by.high, "high"),
+        (by.medium, "medium"),
+        (by.low, "low"),
+    ] {
+        if n > 0 {
+            parts.push(format!("{n} {label}"));
+        }
     }
     println!("  {}", parts.join("  ·  ").bold());
     print_ignored_by_git(results);
@@ -582,14 +591,18 @@ fn render_json(results: &ScanResults) -> Result<()> {
     // `flatten` keeps every existing top-level key exactly where it was — adding
     // `summary` is purely additive, so anything already parsing `secrets_found`
     // or `high_confidence` keeps working.
+    // `schema_version` 2 (C2): every finding carries `rule_id` and
+    // `severity`, and `summary.severity` counts by it. Version 1 had no field.
     #[derive(serde::Serialize)]
     struct JsonReport<'a> {
+        schema_version: u32,
         #[serde(flatten)]
         results: &'a ScanResults,
         summary: super::models::Summary,
     }
 
     let json = serde_json::to_string_pretty(&JsonReport {
+        schema_version: 2,
         results,
         summary: results.summary(),
     })?;
@@ -646,10 +659,10 @@ fn gh_escape(value: &str, is_property: bool) -> String {
 /// doing the leaking itself, even in truncated form.
 fn render_github(results: &ScanResults) -> Result<()> {
     for f in &results.findings {
-        let level = match f.confidence {
-            Confidence::High => "error",
-            Confidence::Medium => "warning",
-            Confidence::Low => "notice",
+        let level = match f.severity {
+            Severity::Critical | Severity::High => "error",
+            Severity::Medium => "warning",
+            Severity::Low => "notice",
         };
         let (file, line) = split_location(&f.location);
 
@@ -693,36 +706,21 @@ fn render_github(results: &ScanResults) -> Result<()> {
             "::{level} file={},line={},title={}::{}",
             gh_escape(file, true),
             line,
-            gh_escape(&format!("Secret detected ({})", f.confidence), true),
+            gh_escape(&format!("Secret detected ({})", f.severity), true),
             gh_escape(&message, false),
         );
     }
     Ok(())
 }
 
-/// The stable identifier for the *kind* of finding, not the instance.
-///
-/// ⚠️ This used to be the whole display name, so a finding from the key-name
-/// heuristic produced
-/// `secret/sensitive-config-key:-acme_internal_token` — **the variable name
-/// inside the rule id**. Every new variable was therefore a new rule to GitHub,
-/// which means the rules list grows without bound, a dismissed alert never stays
-/// dismissed, and two runs of the same scan share no rules at all.
-///
-/// The display name carries the instance after a colon; the class is what comes
-/// before it.
-fn rule_id(pattern: &str) -> String {
-    let class = pattern.split(':').next().unwrap_or(pattern).trim();
-    format!(
-        "secret/{}",
-        class
-            .to_lowercase()
-            .chars()
-            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-            .collect::<String>()
-            .trim_matches('-')
-            .replace("--", "-")
-    )
+/// SARIF's `level` for a severity (C2): what a finding costs if real, so a
+/// low-risk key is a `note` however sure the match.
+fn sarif_level(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Critical | Severity::High => "error",
+        Severity::Medium => "warning",
+        Severity::Low => "note",
+    }
 }
 
 /// Render results in SARIF format for GitHub Code Scanning.
@@ -747,7 +745,7 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
     let mut seen: Vec<String> = Vec::new();
 
     for f in &results.findings {
-        let id = rule_id(&f.pattern);
+        let id = f.rule_id.clone();
         if seen.contains(&id) {
             continue;
         }
@@ -761,13 +759,7 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
                 "text": format!("evnx scan matched {class} in a file that may be committed.")
             },
             "helpUri": "https://docs.evnx.dev/cli/commands/scan",
-            "defaultConfiguration": {
-                "level": match f.confidence {
-                    Confidence::High => "error",
-                    Confidence::Medium => "warning",
-                    Confidence::Low => "note",
-                }
-            }
+            "defaultConfiguration": { "level": sarif_level(f.severity) }
         }));
     }
 
@@ -775,14 +767,10 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
         .findings
         .iter()
         .map(|f| {
-            let level = match f.confidence {
-                Confidence::High => "error",
-                Confidence::Medium => "warning",
-                Confidence::Low => "note",
-            };
+            let level = sarif_level(f.severity);
 
             let (file, line) = split_location(&f.location);
-            let id = rule_id(&f.pattern);
+            let id = &f.rule_id;
 
             // ⚠️ Without a fingerprint GitHub tracks an alert by its line
             // number, so inserting a line above a secret closes the old alert
@@ -803,6 +791,10 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
                     None => format!("{} detected", f.pattern),
                 }},
                 "partialFingerprints": { "evnxSecretV1": fingerprint },
+                "properties": {
+                    "severity": f.severity.to_string(),
+                    "confidence": f.confidence.to_string(),
+                },
                 "locations": [{
                     "physicalLocation": {
                         "artifactLocation": { "uri": file },

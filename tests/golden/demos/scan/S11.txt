@@ -7,19 +7,19 @@ $ evnx scan .
 
   scanning ./.env
 
-  ✗  Stripe Secret Key (LIVE)                    high
+  ✗  Stripe Secret Key (LIVE)                    critical
      ./.env:1 (NEXT_PUBLIC_STRIPE_SECRET)  sk_l…hijk
      !  matches a live key format, not a placeholder
      !  NEXT_PUBLIC_ is inlined into the client bundle by Next.js — anyone who loads your site can read this
      →  rename to STRIPE_SECRET and read it server-side
      →  revoke at https://dashboard.stripe.com/apikeys
 
-  ✗  AWS Access Key                              high
+  ✗  AWS Access Key                              critical
      ./.env:2 (OLD_KEY)  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
-  2 findings  ·  2 high
+  2 findings  ·  2 critical
 
 
 Next steps:

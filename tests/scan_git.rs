@@ -208,13 +208,15 @@ fn t_i285_a_file_in_an_ignored_folder_is_held_back() {
     );
 }
 
-/// `--severity` decides what the held-back count counts, as it does for findings.
+/// `--severity` and `--confidence` decide what the held-back count counts, as
+/// they do for findings.
 #[test]
 fn t_i285_the_held_back_count_follows_the_severity() {
     let Some(d) = repo(
         &[
             (".gitignore", ".env\n"),
-            // high (AWS) and medium (a short value under a secret name)
+            // AWS: critical, high confidence. A short value under a secret
+            // name: high severity (C2), medium confidence.
             (
                 ".env",
                 &format!("AWS_ACCESS_KEY_ID={AWS}\nAPI_TOKEN=abcd1234\n"),
@@ -227,6 +229,14 @@ fn t_i285_the_held_back_count_follows_the_severity() {
     assert_eq!(json(&d, &[])["summary"]["ignored_by_git"], 2);
     assert_eq!(
         json(&d, &["--severity", "high"])["summary"]["ignored_by_git"],
+        2
+    );
+    assert_eq!(
+        json(&d, &["--severity", "critical"])["summary"]["ignored_by_git"],
+        1
+    );
+    assert_eq!(
+        json(&d, &["--confidence", "high"])["summary"]["ignored_by_git"],
         1
     );
 }

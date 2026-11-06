@@ -1,0 +1,154 @@
+# The rules evnx ships, as data (v0.13.0 C2, RM-50). Compiled into the binary
+# with `include_str!` and loaded once by `core::secretscan::rules`.
+#
+# Each rule:
+#   id          stable, kebab-case. It is the SARIF ruleId and, from C5, the key a
+#               baseline and an `evnx:allow` marker name. ⚠️ Never rename one: a
+#               renamed id is a new rule to every tool that tracks findings.
+#   name        what output calls it
+#   regex       matched against values and whole lines (Rust `regex`: linear time)
+#   confidence  how SURE a match is that it is this provider's credential
+#   severity    how BAD it is if real: critical, high, medium or low
+#   url         where to revoke it, when there is one place
+#   entropy     optional: a match whose Shannon entropy is below this is dropped
+#
+# Severity, by kind: critical = direct access to money, cloud accounts, AI
+# billing or signing keys; high = account tokens and database passwords;
+# medium = often-public tokens (JWTs); low = test keys and keys designed to ship
+# in a web page.
+#
+# A loader test refuses a duplicate id, a missing field and a regex that does
+# not compile (`rules::tests`).
+
+version = 1
+
+[[rules]]
+id = "aws-access-key"
+name = "AWS Access Key"
+regex = 'AKIA[0-9A-Z]{16}'
+confidence = "high"
+severity = "critical"
+url = "https://console.aws.amazon.com/iam"
+
+# ⚠️ `ASIA`, not only `AKIA`. An STS temporary key is a live credential until it
+# expires, and it is what every CI role assumption hands out, so it is the form
+# most likely to be pasted into a `.env` by accident. Named separately from the
+# long-term key so the output says which kind it found.
+[[rules]]
+id = "aws-temporary-access-key"
+name = "AWS Temporary Access Key (STS)"
+regex = 'ASIA[0-9A-Z]{16}'
+confidence = "high"
+severity = "critical"
+url = "https://console.aws.amazon.com/iam"
+
+# ⚠️ The fine-grained PAT, which the `ghp_|gho_|ghu_|ghs_` alternation below
+# cannot match: different prefix, different length.
+[[rules]]
+id = "github-fine-grained-pat"
+name = "GitHub Fine-grained PAT"
+regex = 'github_pat_[A-Za-z0-9_]{40,}'
+confidence = "high"
+severity = "high"
+url = "https://github.com/settings/personal-access-tokens"
+
+# Bot, user, app-level and legacy tokens share the `xox<x>-` shape; `xapp-` is
+# the app-level token and has its own prefix.
+[[rules]]
+id = "slack-token"
+name = "Slack Token"
+regex = 'xox[abprs]-[0-9A-Za-z-]{10,}|xapp-[0-9]-[A-Za-z0-9-]{10,}'
+confidence = "high"
+severity = "high"
+url = "https://api.slack.com/apps"
+
+# ⚠️ The case that split severity from confidence (S7). The shape is
+# unmistakable, so confidence is high; but a Google API key is often a browser
+# key (Maps, Places) meant to ship in a page and restricted by referrer instead
+# of secrecy, so severity is low. Until C2 this was `confidence = "medium"`,
+# which said the wrong thing: evnx was never unsure what it was.
+[[rules]]
+id = "google-api-key"
+name = "Google API Key"
+regex = 'AIza[0-9A-Za-z_\-]{35}'
+confidence = "high"
+severity = "low"
+url = "https://console.cloud.google.com/apis/credentials"
+
+# ⚠️ Medium confidence and medium severity: plenty of JWTs are public ID tokens.
+# What makes one sensitive is usually the variable it sits in, which the name
+# heuristic covers separately.
+[[rules]]
+id = "jwt"
+name = "JSON Web Token"
+regex = 'eyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}'
+confidence = "medium"
+severity = "medium"
+
+[[rules]]
+id = "stripe-live-secret-key"
+name = "Stripe Secret Key (LIVE)"
+regex = 'sk_live_[0-9a-zA-Z]{24,}'
+confidence = "high"
+severity = "critical"
+url = "https://dashboard.stripe.com/apikeys"
+
+[[rules]]
+id = "stripe-test-secret-key"
+name = "Stripe Secret Key (test)"
+regex = 'sk_test_[0-9a-zA-Z]{24,}'
+confidence = "medium"
+severity = "low"
+url = "https://dashboard.stripe.com/apikeys"
+
+# The three GitHub forms in one alternation with one name.
+[[rules]]
+id = "github-token"
+name = "GitHub Token"
+regex = '\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9]{36,40}\b'
+confidence = "high"
+severity = "high"
+url = "https://github.com/settings/tokens"
+
+# ⚠️ Two exclusive branches, not `(?:proj-)?`. Anthropic keys also begin `sk-`,
+# and a permissive form swallowed them.
+[[rules]]
+id = "openai-api-key"
+name = "OpenAI API Key"
+regex = 'sk-(?:proj-[0-9a-zA-Z_-]{40,}|[0-9a-zA-Z]{48})'
+confidence = "high"
+severity = "critical"
+url = "https://platform.openai.com/api-keys"
+
+[[rules]]
+id = "anthropic-api-key"
+name = "Anthropic API Key"
+regex = 'sk-ant-api[0-9]{2}-[0-9a-zA-Z\-_]{95}'
+confidence = "high"
+severity = "critical"
+url = "https://console.anthropic.com/settings/keys"
+
+# ⚠️ `[A-Z0-9 ]*`, not `[A-Z ]+ `. PKCS#8 writes a bare `-----BEGIN PRIVATE
+# KEY-----` with no algorithm, OpenSSL's default since 3.0.
+[[rules]]
+id = "private-key"
+name = "Private Key"
+regex = '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----'
+confidence = "high"
+severity = "critical"
+
+# ⚠️ The most common thing in a `.env` after an API key, and it scanned clean
+# before this rule (D15): no provider prefix, a name with no secret word in it,
+# and a whole URL scores below the entropy threshold.
+#
+# The classes exclude `/`, `?` and `#`, so the userinfo cannot run past the
+# authority into a path (`https://host/users/me@example.com` is a URL, not a
+# credential). Requiring `:` before `@` means `postgresql://reader@host/db` is
+# a bare username, which is not a secret. No url: the place to rotate a database
+# password is the database.
+[[rules]]
+id = "connection-string-credentials"
+name = "Credentials in a connection string"
+regex = '[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/?#@]+:[^\s/?#@]+@[^\s/?#]+'
+confidence = "high"
+severity = "high"

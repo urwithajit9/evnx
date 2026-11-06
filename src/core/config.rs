@@ -88,12 +88,23 @@ pub struct Defaults {
 /// one there is a broken contract rather than a broken search.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct PatternRule {
-    /// What to call it in output, and in the SARIF rule id.
+    /// Stable, kebab-case: the SARIF `ruleId` and the JSON `rule_id` (C2).
+    /// Unset: a built-in's id when `name` is a built-in's (a re-rated rule
+    /// keeps its identity), otherwise the name, lowercased and kebab-cased.
+    pub id: Option<String>,
+    /// What to call it in output.
     pub name: String,
     /// The expression. Anchored by the author if they want it anchored.
     pub regex: String,
-    /// `high`, `medium` or `low`. Unset means high — you wrote the rule.
+    /// `high`, `medium` or `low`: how sure a match is. Unset means high — you
+    /// wrote the rule.
     pub confidence: Option<String>,
+    /// `critical`, `high`, `medium` or `low`: how bad a match is if real
+    /// (S7, C2). Unset: a built-in's when `name` is a built-in's, else medium.
+    pub severity: Option<String>,
+    /// A match whose Shannon entropy is below this is not reported. For
+    /// generic shapes that also match ordinary words.
+    pub entropy: Option<f64>,
     /// Where to go and revoke a match, when there is such a place.
     pub url: Option<String>,
     #[serde(flatten)]
@@ -112,27 +123,6 @@ impl PatternRule {
     /// The cost is a positional name that moves if the flags are reordered,
     /// which is the nudge toward declaring the rule in `.evnx.toml` when the
     /// name needs to mean something.
-    /// A rule evnx ships with.
-    ///
-    /// ⚠️ Built-in detectors are the **same type** as `[[scan.patterns]]`, on
-    /// purpose. They used to be a hand-written `if` chain in `utils::patterns` (now `core::secretscan::rules`),
-    /// which made them strictly weaker than a rule a user could write: custom
-    /// rules are matched against whole lines, built-ins only against tokens
-    /// longer than 20 characters — so `-----BEGIN RSA PRIVATE KEY-----`, a
-    /// phrase that can never be one token, was undetectable in any file.
-    ///
-    /// One type means one engine, one precedence rule, and a user can disable
-    /// or re-rate anything evnx ships.
-    pub fn builtin(name: &str, regex: &str, confidence: &str, url: Option<&str>) -> Self {
-        Self {
-            name: name.to_string(),
-            regex: regex.to_string(),
-            confidence: Some(confidence.to_string()),
-            url: url.map(str::to_string),
-            ..Default::default()
-        }
-    }
-
     pub fn anonymous(position: usize, regex: String) -> Self {
         Self {
             name: format!("Custom pattern {position}"),
@@ -151,8 +141,11 @@ impl PatternRule {
 /// which the CLI announces on every run that loads a config.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct ScanPolicy {
-    /// Lowest confidence worth reporting: `high`, `medium` or `low`.
+    /// Lowest severity worth reporting: `critical`, `high`, `medium` or
+    /// `low`. ⚠️ Until 0.13.0 this was confidence; that is now `confidence`.
     pub severity: Option<String>,
+    /// Lowest confidence worth reporting: `high`, `medium` or `low` (C2).
+    pub confidence: Option<String>,
     /// Paths and globs this project never scans.
     pub exclude: Option<Vec<String>>,
     /// Skip values that look like filler.
@@ -295,6 +288,9 @@ impl Config {
         let mut out = Vec::new();
         if let Some(sev) = &self.scan.severity {
             out.push(format!("scan.severity={sev}"));
+        }
+        if let Some(conf) = &self.scan.confidence {
+            out.push(format!("scan.confidence={conf}"));
         }
         match self.scan.exclude.as_deref() {
             Some(patterns) if !patterns.is_empty() => {
