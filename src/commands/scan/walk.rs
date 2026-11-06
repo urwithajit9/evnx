@@ -36,6 +36,18 @@ pub(super) fn named_like_dotenv(path: &Path) -> bool {
     !crate::core::env_name::is_structured(name)
 }
 
+/// The structured format a file is read as, by its extension (C8): YAML,
+/// JSON or TOML. Checked after [`named_like_dotenv`], so `.env.json` is JSON.
+pub(super) fn structured_format(path: &Path) -> Option<crate::core::secretscan::engine::Format> {
+    use crate::core::secretscan::engine::Format;
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "yml" | "yaml" => Some(Format::Yaml),
+        "json" => Some(Format::Json),
+        "toml" => Some(Format::Toml),
+        _ => None,
+    }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Decoding
 // ─────────────────────────────────────────────────────────────

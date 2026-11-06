@@ -13,11 +13,46 @@
 use super::detector::{Detection, DetectorRegistry};
 use crate::core::parser::{strip_export, Document, Parser, ParserConfig};
 
-/// How to read the text: as a `.env`, through the parser, or line by line.
+/// How to read the text: as a `.env`, through the parser, as a structured
+/// file (C8), or line by line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Dotenv,
+    /// YAML, JSON or TOML: names and values from the parsed tree, **and** the
+    /// text path's per-line rules, merged to one finding per value.
+    Structured(Format),
     Text,
+}
+
+/// A structured format [`leaves`] can parse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    Yaml,
+    Json,
+    Toml,
+}
+
+impl std::fmt::Display for Format {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Format::Yaml => "yaml",
+            Format::Json => "json",
+            Format::Toml => "toml",
+        })
+    }
+}
+
+/// One string value in a structured file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Leaf {
+    /// Dotted, for the location: `db.password`, `servers[0].token`.
+    pub path: String,
+    /// The key the name detectors judge: the leaf's own (`password`), or for
+    /// a list item its list's (`tokens`).
+    pub key: String,
+    pub value: String,
+    /// 1-based, found by searching the raw text: the parsers keep no positions.
+    pub line: usize,
 }
 
 /// What [`scan_text`] needs besides the text.
@@ -29,6 +64,9 @@ pub struct Context<'a> {
     /// An already-parsed `.env`, so a caller that has one does not parse it
     /// twice. `None` parses `text` (expansion off).
     pub document: Option<&'a Document>,
+    /// The same for a structured file: its [`leaves`]. `None` parses `text`,
+    /// and a file that does not parse is read as [`Kind::Text`].
+    pub leaves: Option<&'a [Leaf]>,
     /// The detectors, with their rules, disabled set and `[vars]` spec.
     pub registry: &'a DetectorRegistry,
 }
@@ -62,8 +100,10 @@ pub fn scan_text(text: &str, ctx: &Context) -> Vec<Found> {
     // * `allow_inline_comments: true` — `A=secret # note` yields `secret`,
     //   which is the value that would reach a program.
     // * `strict: false` — a lowercase key is still worth scanning.
-    if ctx.kind == Kind::Text {
-        return scan_lines(text, ctx);
+    match ctx.kind {
+        Kind::Text => return scan_lines(text, ctx),
+        Kind::Structured(format) => return scan_structured(text, format, ctx),
+        Kind::Dotenv => {}
     }
     let parsed;
     let doc = match ctx.document {
@@ -314,14 +354,6 @@ fn best(detections: Vec<Detection>) -> Option<Detection> {
 /// grouping through a `HashMap` would reorder findings between runs of the
 /// same scan.
 fn one_finding_per_value(detections: Vec<Detection>) -> Vec<Detection> {
-    /// Do these two detections describe the same value?
-    fn same_value(a: &str, b: &str) -> bool {
-        if a.is_empty() || b.is_empty() {
-            return a == b;
-        }
-        a.contains(b) || b.contains(a)
-    }
-
     let mut groups: Vec<Vec<Detection>> = Vec::new();
     for detection in detections {
         match groups
@@ -334,6 +366,212 @@ fn one_finding_per_value(detections: Vec<Detection>) -> Vec<Detection> {
     }
 
     groups.into_iter().filter_map(best).collect()
+}
+
+/// Do these two detections describe the same value?
+fn same_value(a: &str, b: &str) -> bool {
+    if a.is_empty() || b.is_empty() {
+        return a == b;
+    }
+    a.contains(b) || b.contains(a)
+}
+
+/// A structured file (C8): each string leaf by name and value, then the text
+/// path over the raw lines, which also reads comments. A value both found is
+/// one finding, keeping the key path the tree gave it.
+fn scan_structured(text: &str, format: Format, ctx: &Context) -> Vec<Found> {
+    let parsed;
+    let leaves = match ctx.leaves {
+        Some(l) => l,
+        None => match leaves(text, format) {
+            Some(l) => {
+                parsed = l;
+                &parsed
+            }
+            None => return scan_lines(text, ctx),
+        },
+    };
+    let mut all = Vec::new();
+    for leaf in leaves {
+        // D-36: a `regex = "…"` value is a rule's own declaration (in
+        // `.evnx.toml`, a rule file, a pack). Only the text path can tell, by
+        // seeing the `regex =` around it, so the value is left to that path.
+        if leaf.key == "regex" {
+            continue;
+        }
+        let location = format!("{}:{} ({})", ctx.path, leaf.line, leaf.path);
+        let mut detections = ctx.registry.scan_kv(&leaf.key, &leaf.value, &location);
+        // ⚠️ The entropy fallback judges one token, never a sentence: a long
+        // release note or a `run:` script scores over the threshold as a
+        // whole (measured on a real repository). The text path still checks
+        // each of its tokens, so nothing that was found before is lost.
+        if leaf.value.contains(char::is_whitespace) {
+            detections.retain(|d| d.rule_id != "high-entropy-string");
+        }
+        if let Some(detection) = best(detections) {
+            all.push(Found {
+                line: leaf.line,
+                variable: Some(leaf.path.clone()),
+                detection,
+            });
+        }
+    }
+    all.extend(scan_lines(text, ctx));
+
+    // One finding per value per line, in first-seen order.
+    let mut groups: Vec<Vec<Found>> = Vec::new();
+    for f in all {
+        match groups.iter_mut().find(|g| {
+            g[0].line == f.line
+                && same_value(&g[0].detection.matched_value, &f.detection.matched_value)
+        }) {
+            Some(g) => g.push(f),
+            None => groups.push(vec![f]),
+        }
+    }
+    let mut out: Vec<Found> = groups
+        .into_iter()
+        .filter_map(|g| {
+            let line = g[0].line;
+            let variable = g.iter().find_map(|f| f.variable.clone());
+            best(g.into_iter().map(|f| f.detection).collect()).map(|detection| Found {
+                line,
+                variable,
+                detection,
+            })
+        })
+        .collect();
+    out.sort_by_key(|f| f.line);
+    out
+}
+
+/// Every string leaf of `text` read as `format`, or `None` when it does not
+/// parse — a template, a Helm chart with `{{ }}` — which the caller reads as
+/// text instead. Numbers, booleans and nulls are not values a secret is in.
+pub fn leaves(text: &str, format: Format) -> Option<Vec<Leaf>> {
+    use serde::Deserialize;
+    let mut out = Vec::new();
+    match format {
+        Format::Json => walk_json(&serde_json::from_str(text).ok()?, "", "", &mut out),
+        Format::Toml => {
+            let table: toml::Table = toml::from_str(text).ok()?;
+            walk_toml(&toml::Value::Table(table), "", "", &mut out)
+        }
+        Format::Yaml => {
+            // Every document in a `---`-separated stream.
+            for doc in serde_yaml::Deserializer::from_str(text) {
+                walk_yaml(&serde_yaml::Value::deserialize(doc).ok()?, "", "", &mut out);
+            }
+        }
+    }
+    let mut from = 0;
+    for leaf in &mut out {
+        leaf.line = line_of(text, &leaf.key, &leaf.value, from);
+        from = leaf.line.saturating_sub(1);
+    }
+    Some(out)
+}
+
+fn push(path: &str, key: &str, value: &str, out: &mut Vec<Leaf>) {
+    out.push(Leaf {
+        path: path.to_string(),
+        key: key.to_string(),
+        value: value.to_string(),
+        line: 0,
+    });
+}
+
+fn child(path: &str, key: &str) -> String {
+    if path.is_empty() {
+        key.to_string()
+    } else {
+        format!("{path}.{key}")
+    }
+}
+
+fn walk_json(v: &serde_json::Value, path: &str, key: &str, out: &mut Vec<Leaf>) {
+    match v {
+        serde_json::Value::String(s) => push(path, key, s, out),
+        serde_json::Value::Array(items) => {
+            for (i, item) in items.iter().enumerate() {
+                walk_json(item, &format!("{path}[{i}]"), key, out);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (k, item) in map {
+                walk_json(item, &child(path, k), k, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn walk_toml(v: &toml::Value, path: &str, key: &str, out: &mut Vec<Leaf>) {
+    match v {
+        toml::Value::String(s) => push(path, key, s, out),
+        toml::Value::Array(items) => {
+            for (i, item) in items.iter().enumerate() {
+                walk_toml(item, &format!("{path}[{i}]"), key, out);
+            }
+        }
+        toml::Value::Table(map) => {
+            for (k, item) in map {
+                walk_toml(item, &child(path, k), k, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn walk_yaml(v: &serde_yaml::Value, path: &str, key: &str, out: &mut Vec<Leaf>) {
+    use serde_yaml::Value;
+    match v {
+        Value::String(s) => push(path, key, s, out),
+        Value::Sequence(items) => {
+            for (i, item) in items.iter().enumerate() {
+                walk_yaml(item, &format!("{path}[{i}]"), key, out);
+            }
+        }
+        Value::Mapping(map) => {
+            for (k, item) in map {
+                // A key is usually a string; a number or a bool is named as written.
+                let k = match k {
+                    Value::String(s) => s.clone(),
+                    other => serde_yaml::to_string(other)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string(),
+                };
+                walk_yaml(item, &child(path, &k), &k, out);
+            }
+        }
+        Value::Tagged(t) => walk_yaml(&t.value, path, key, out),
+        _ => {}
+    }
+}
+
+/// The 1-based line a leaf is on. The parsers keep no positions, so this
+/// searches the raw text, from `from` on (leaves come in file order): the first
+/// line holding the key and the value's first line; else the first holding
+/// the value (a list item's key is its parent's, on the line above); else the
+/// first holding the key; else line 1.
+///
+/// shortcut: a guess when the same key and value repeat, or a value is
+/// escaped differently in the source (`\u00e9` in JSON); use a span-keeping
+/// parser if a wrong line is ever reported.
+fn line_of(text: &str, key: &str, value: &str, from: usize) -> usize {
+    let first = value.lines().next().unwrap_or("").trim();
+    let lines: Vec<&str> = text.lines().collect();
+    let find = |pred: &dyn Fn(&str) -> bool| {
+        (from..lines.len())
+            .chain(0..from.min(lines.len()))
+            .find(|&i| pred(lines[i]))
+            .map(|i| i + 1)
+    };
+    find(&|l| l.contains(key) && !first.is_empty() && l.contains(first))
+        .or_else(|| find(&|l| !first.is_empty() && l.contains(first)))
+        .or_else(|| find(&|l| !key.is_empty() && l.contains(key)))
+        .unwrap_or(1)
 }
 
 /// Extract tokens from a line for scanning.
@@ -357,6 +595,41 @@ fn extract_tokens(line: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// C8: dotted paths through maps and lists, string leaves only, every
+    /// document of a YAML stream, and the line each leaf is on.
+    #[test]
+    fn leaves_walk_paths_and_find_lines() {
+        let yaml = "a:\n  b: one\n  n: 3\n  list:\n    - two\n---\nc: three\n";
+        let got: Vec<(String, String, String, usize)> = leaves(yaml, Format::Yaml)
+            .unwrap()
+            .into_iter()
+            .map(|l| (l.path, l.key, l.value, l.line))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("a.b".into(), "b".into(), "one".into(), 2),
+                ("a.list[0]".into(), "list".into(), "two".into(), 5),
+                ("c".into(), "c".into(), "three".into(), 7),
+            ]
+        );
+        let json = leaves("{\"x\": {\"y\": [\"v\"]}, \"z\": null}", Format::Json).unwrap();
+        assert_eq!(
+            (json[0].path.as_str(), json[0].key.as_str()),
+            ("x.y[0]", "y")
+        );
+        assert_eq!(json.len(), 1);
+        assert!(leaves("a = [", Format::Toml).is_none());
+    }
+
+    /// A repeated key is found on its own line, not the first one.
+    #[test]
+    fn line_of_moves_forward_through_repeats() {
+        let yaml = "one:\n  password: aaa\ntwo:\n  password: bbb\n";
+        let l = leaves(yaml, Format::Yaml).unwrap();
+        assert_eq!((l[0].line, l[1].line), (2, 4));
+    }
 
     #[test]
     fn test_extract_tokens() {

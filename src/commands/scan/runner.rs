@@ -16,7 +16,9 @@
 //! runner.run(vec!["./src".to_string()], OutputFormat::Pretty).unwrap();
 //! ```
 
-use super::walk::{decode, decode_bytes, named_like_dotenv, Decoded, STDIN_LABEL};
+use super::walk::{
+    decode, decode_bytes, named_like_dotenv, structured_format, Decoded, STDIN_LABEL,
+};
 use super::{
     detector::DetectorRegistry,
     filters::FileFilter,
@@ -435,6 +437,8 @@ impl ScanRunner {
     fn read_as(path: &Path) -> super::models::ReadAs {
         if named_like_dotenv(path) {
             super::models::ReadAs::Dotenv
+        } else if structured_format(path).is_some() {
+            super::models::ReadAs::Structured
         } else {
             super::models::ReadAs::Text
         }
@@ -548,21 +552,40 @@ impl ScanRunner {
         read_as: super::models::ReadAs,
         results: &mut ScanResults,
     ) -> Result<()> {
+        use super::models::ReadAs;
+        use crate::core::secretscan::engine;
         results.files_scanned += 1;
 
+        // C8: parsed once here, so a file that does not parse is recorded as
+        // read as text, and is never an error.
+        let format = (read_as == ReadAs::Structured)
+            .then(|| structured_format(path))
+            .flatten();
+        let leaves = format.and_then(|f| engine::leaves(content, f));
+        let (read_as, note) = match (format, &leaves) {
+            (Some(f), None) => (ReadAs::Text, Some(format!("did not parse as {f}"))),
+            _ => (read_as, None),
+        };
+        if self.verbose {
+            if let Some(note) = &note {
+                ui::verbose_stderr(format!("{}: {note}, read as text", display_portable(path)));
+            }
+        }
         results.files.push(super::models::ScannedFile {
             path: display_portable(path),
             read_as,
+            note,
         });
-        use crate::core::secretscan::engine;
         let label = display_portable(path);
         let ctx = engine::Context {
             path: &label,
-            kind: match read_as {
-                super::models::ReadAs::Dotenv => engine::Kind::Dotenv,
-                super::models::ReadAs::Text => engine::Kind::Text,
+            kind: match (read_as, format) {
+                (ReadAs::Dotenv, _) => engine::Kind::Dotenv,
+                (ReadAs::Structured, Some(f)) => engine::Kind::Structured(f),
+                _ => engine::Kind::Text,
             },
             document: None,
+            leaves: leaves.as_deref(),
             registry: &self.registry,
         };
         // Detection is the engine's; what a detection becomes is the report's.
