@@ -1,0 +1,12 @@
+# Fixtures for `sentry-dsn` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "low"
+
+positive = [
+  ["https://", "c9a94e29ae6644b7fb09587708aabdcb@o4505123.ingest.us.sentry.io/4505123456"],
+]
+
+near_miss = [
+  ["https://", "268cbfe9d7b798ff3c5320bbf90a5354@sentry.example.com/12"],
+]

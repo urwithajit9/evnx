@@ -1,0 +1,12 @@
+# Fixtures for `npm-access-token` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["npm_", "Vg8eXg1Yvo6UeejLATyVuPzFdTl3Z8fPdi8e"],
+]
+
+near_miss = [
+  ["npm_", "5764wlAK209kkKK6n2M2"],
+]

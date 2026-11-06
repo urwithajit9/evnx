@@ -1,0 +1,12 @@
+# Fixtures for `docker-hub-pat` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["dckr_pat_", "uvtCDQ7odLoOZSjtjGaGDK_DNzu"],
+]
+
+near_miss = [
+  ["dckr_pat_", "jYh6uSCx6e"],
+]

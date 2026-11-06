@@ -1,0 +1,12 @@
+# Fixtures for `gitlab-pat` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["glpat-", "DUrInmgq-d6p7_tni1o_"],
+]
+
+near_miss = [
+  ["glpat-", "Ya5I0HDw"],
+]

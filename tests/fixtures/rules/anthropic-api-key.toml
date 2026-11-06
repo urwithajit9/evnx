@@ -1,0 +1,12 @@
+# Fixtures for `anthropic-api-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["sk-ant-api03-", "uSDmY6SjXlW-hpkgYrccZkRBehptPw7ag5h99fVXLCjT2Mrfh5iCZZuEvOhHAVqkdzeGW1K5jN1WbVk5jFcfpry6xpgb0Mz"],
+]
+
+near_miss = [
+  ["sk-ant-api03-", "0g6lWe0fmUu8dlXQXmoZUu86iyuLVmVTkSLHwBLo"],
+]

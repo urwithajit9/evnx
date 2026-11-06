@@ -1,0 +1,12 @@
+# Fixtures for `google-api-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "low"
+
+positive = [
+  ["AIza", "GPj7JtCEm3ygi77dklo7mLiluulyXeUlu9h"],
+]
+
+near_miss = [
+  ["AIza", "96HDuSlVzF6OG3yPvLPG"],
+]

@@ -1,0 +1,12 @@
+# Fixtures for `jwt` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "medium"
+
+positive = [
+  ["eyJ", "9cXgUoxDpHYRZVMnFWZf.eyJcdbSFUMAPzwBAmZ7eTgVHM5mlyqy6O.VGiKqHaJ7uGfT6JD5xAzvA7quiJFEDudT765ZX3dFTY"],
+]
+
+near_miss = [
+  ["eyJ", "ZEuGZLiFo8Zz93PBLcI0.5UTy5mrJaEWOdsKbaMVT"],
+]

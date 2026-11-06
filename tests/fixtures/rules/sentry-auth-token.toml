@@ -1,0 +1,12 @@
+# Fixtures for `sentry-auth-token` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["sntrys_", "eyJCc1bzP3yxRNndEqG3Hp8iSCNEuasOXU-XVaUdg-qevlc4jYf1U5VGINvhF_x-pyta7ajce"],
+]
+
+near_miss = [
+  ["sntrys_", "3Q9PR9SgrD"],
+]

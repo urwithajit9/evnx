@@ -59,6 +59,23 @@ secret-key check uses the same 4.3 (was 4.5). Entropy is now computed per
 character, not per byte, which raised it for non-ASCII text.
 
 ### Added
+- **`evnx scan` knows 23 more providers, and every rule is tested** (C3,
+  RM-51/52). New rules: Stripe restricted keys, Azure storage account keys
+  and SAS tokens, Twilio, SendGrid, Mailgun, DigitalOcean, npm, PyPI, Docker
+  Hub, Shopify, HashiCorp Vault, GitLab, Hugging Face, Heroku (2024 format),
+  Sentry DSNs (low severity: they ship in client code) and auth tokens,
+  Linear, Discord and Telegram bot tokens, Slack webhooks and Google OAuth
+  client secrets. OpenSSH private keys are named as such, and OpenAI
+  service-account and admin keys are recognised. 36 rules in all. A rule needs
+  a documented fixed prefix, or a fixed length and charset ordinary values do
+  not share: Postmark, Cloudflare and Datadog keys and Heroku's legacy UUID
+  keys are left out on purpose (`src/assets/rules.toml` says why). Every rule
+  has fixtures in `tests/fixtures/rules/` that must match and near misses that
+  must not, checked in `.env` and YAML; a rule without fixtures fails the
+  suite. On evnx-web, evnx-server and evnx-app (9,315 files) the new rules
+  report nothing.
+- **PKCS#12 keystores (`.p12`, `.pfx`) are reported** (C3), by their content,
+  as `pkcs12-keystore`, critical. A folder walk used to skip them as binary.
 - **`evnx scan` checks names in YAML, JSON and TOML** (C8). A structured file
   was read as plain text, so only provider formats and the long-random-value
   fallback applied: `password: <a real password>` in `config.yml` scanned

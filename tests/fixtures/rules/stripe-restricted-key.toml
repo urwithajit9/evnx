@@ -1,0 +1,12 @@
+# Fixtures for `stripe-restricted-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["rk_live_", "hYjBxyzBHPnlCczXMHU9NDv8CoeRweip"],
+]
+
+near_miss = [
+  ["rk_live_", "Hi5tWKkOa3"],
+]

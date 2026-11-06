@@ -1,0 +1,12 @@
+# Fixtures for `slack-webhook-url` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "medium"
+
+positive = [
+  ["https://hooks.slack.com/services/", "TQPX77RA2UI/B18915VOFAR/G43tiScvTVRZAJobwjaUQscR"],
+]
+
+near_miss = [
+  ["https://hooks.slack.com/services/", "TOEKWOGR3C5"],
+]

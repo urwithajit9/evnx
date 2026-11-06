@@ -1,0 +1,12 @@
+# Fixtures for `azure-sas-token` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["https://acct.blob.core.windows.net/c?sv=2022-11-02&ss=b&srt=co&sp=r&se=2027-01-01&", "sig=idXxohBziEgorNk9MjY15VYOYUkWwmVSYi1RJ3ntNWC%3D"],
+]
+
+near_miss = [
+  ["https://acct.blob.core.windows.net/c?sp=r&", "sig=iv7WLYAaFcJPys0eNKKQw6ndUd68N5XtRt5jh3mfpiW"],
+]

@@ -1,0 +1,12 @@
+# Fixtures for `huggingface-token` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["hf_", "sIfsmWQfkVfugoVmUnqAUMSaSqSjRMNqXJ"],
+]
+
+near_miss = [
+  ["hf_", "oXritEpvLSar"],
+]

@@ -18,7 +18,19 @@
 # in a web page.
 #
 # A loader test refuses a duplicate id, a missing field and a regex that does
-# not compile (`rules::tests`).
+# not compile (`rules::tests`). Every rule has a fixture file,
+# `tests/fixtures/rules/<id>.toml`, with values that must match and near misses
+# that must not; `tests/rule_fixtures.rs` fails for a rule without one.
+#
+# ⛔ What gets a rule here (S1, C3): the provider documents a FIXED PREFIX, or a
+# fixed length and charset that ordinary values do not share. A shape anything
+# else can have stays with the entropy fallback and the name rule, because a
+# rule that matches ordinary data is noise in every project. Left out on that
+# ground, on purpose:
+#   Postmark server tokens, Heroku legacy API keys   a UUID, like any UUID
+#   Cloudflare API tokens                            40 characters, no prefix
+#   Datadog API and application keys                 plain hex, no prefix
+# Regexes adapted from gitleaks (MIT, github.com/gitleaks/gitleaks) say so.
 
 version = 1
 
@@ -112,10 +124,11 @@ url = "https://github.com/settings/tokens"
 
 # ⚠️ Two exclusive branches, not `(?:proj-)?`. Anthropic keys also begin `sk-`,
 # and a permissive form swallowed them.
+# C3: service-account and admin keys share the project key's shape.
 [[rules]]
 id = "openai-api-key"
 name = "OpenAI API Key"
-regex = 'sk-(?:proj-[0-9a-zA-Z_-]{40,}|[0-9a-zA-Z]{48})'
+regex = 'sk-(?:(?:proj|svcacct|admin)-[0-9a-zA-Z_-]{40,}|[0-9a-zA-Z]{48})'
 confidence = "high"
 severity = "critical"
 url = "https://platform.openai.com/api-keys"
@@ -127,6 +140,15 @@ regex = 'sk-ant-api[0-9]{2}-[0-9a-zA-Z\-_]{95}'
 confidence = "high"
 severity = "critical"
 url = "https://console.anthropic.com/settings/keys"
+
+# C3: named apart from the PEM rule below, which matches the same header, so
+# the output says "OpenSSH". Declared first so it wins the tie.
+[[rules]]
+id = "openssh-private-key"
+name = "OpenSSH Private Key"
+regex = '-----BEGIN OPENSSH PRIVATE KEY-----'
+confidence = "high"
+severity = "critical"
 
 # ⚠️ `[A-Z0-9 ]*`, not `[A-Z ]+ `. PKCS#8 writes a bare `-----BEGIN PRIVATE
 # KEY-----` with no algorithm, OpenSSL's default since 3.0.
@@ -152,3 +174,197 @@ name = "Credentials in a connection string"
 regex = '[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/?#@]+:[^\s/?#@]+@[^\s/?#]+'
 confidence = "high"
 severity = "high"
+
+# ── C3, first wave (2026-11-07) ────────────────────────────────────────────
+
+[[rules]]
+id = "stripe-restricted-key"
+name = "Stripe Restricted Key (LIVE)"
+regex = '\brk_live_[0-9a-zA-Z]{24,}'
+confidence = "high"
+severity = "high"
+url = "https://dashboard.stripe.com/apikeys"
+
+# The `AccountKey=` of a storage connection string: 64 bytes, base64.
+[[rules]]
+id = "azure-storage-account-key"
+name = "Azure Storage Account Key"
+regex = 'AccountKey=[A-Za-z0-9+/]{86}=='
+confidence = "high"
+severity = "critical"
+url = "https://portal.azure.com/"
+
+# A SAS URL: a dated `sv=` and a `sig=` signature.
+[[rules]]
+id = "azure-sas-token"
+name = "Azure SAS Token"
+regex = '''[?&]sv=[0-9]{4}-[0-9]{2}-[0-9]{2}&[^\s"'<>]*?\bsig=[A-Za-z0-9%+/]{30,}'''
+confidence = "high"
+severity = "high"
+url = "https://portal.azure.com/"
+
+# ⚠️ Medium confidence: `SK` plus 32 hex characters is Twilio's documented
+# shape, and also what a 32-character hex value prefixed SK can be by chance.
+[[rules]]
+id = "twilio-api-key"
+name = "Twilio API Key"
+regex = '\bSK[0-9a-fA-F]{32}\b'
+confidence = "medium"
+severity = "high"
+url = "https://console.twilio.com/"
+
+[[rules]]
+id = "sendgrid-api-key"
+name = "SendGrid API Key"
+regex = '\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b'
+confidence = "high"
+severity = "high"
+url = "https://app.sendgrid.com/settings/api_keys"
+
+# Mailgun's legacy private API key. Medium: `key-` is a common word prefix.
+[[rules]]
+id = "mailgun-api-key"
+name = "Mailgun API Key"
+regex = '\bkey-[0-9a-zA-Z]{32}\b'
+confidence = "medium"
+severity = "high"
+url = "https://app.mailgun.com/settings/api_security"
+
+# Personal access (`dop_`), OAuth (`doo_`) and refresh (`dor_`) tokens.
+[[rules]]
+id = "digitalocean-token"
+name = "DigitalOcean Token"
+regex = '\bdo[opr]_v1_[a-f0-9]{64}\b'
+confidence = "high"
+severity = "critical"
+url = "https://cloud.digitalocean.com/account/api/tokens"
+
+[[rules]]
+id = "npm-access-token"
+name = "npm Access Token"
+regex = '\bnpm_[A-Za-z0-9]{36}\b'
+confidence = "high"
+severity = "high"
+url = "https://docs.npmjs.com/revoking-access-tokens"
+
+# A PyPI API token is a macaroon whose fixed header encodes "pypi.org".
+[[rules]]
+id = "pypi-api-token"
+name = "PyPI API Token"
+regex = '\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}'
+confidence = "high"
+severity = "high"
+url = "https://pypi.org/manage/account/token/"
+
+[[rules]]
+id = "docker-hub-pat"
+name = "Docker Hub Access Token"
+regex = '\bdckr_pat_[A-Za-z0-9_-]{27}\b'
+confidence = "high"
+severity = "high"
+url = "https://app.docker.com/settings/personal-access-tokens"
+
+# Admin API (`shpat_`), custom app (`shpca_`), private app (`shppa_`) tokens and
+# the shared secret (`shpss_`).
+[[rules]]
+id = "shopify-token"
+name = "Shopify Access Token"
+regex = '\bshp(?:at|ca|pa|ss)_[a-fA-F0-9]{32}\b'
+confidence = "high"
+severity = "high"
+url = "https://help.shopify.com/en/manual/apps/app-types/custom-apps"
+
+# Vault 1.10+ service (`hvs.`) and batch (`hvb.`) tokens.
+[[rules]]
+id = "hashicorp-vault-token"
+name = "HashiCorp Vault Token"
+regex = '\bhv[sb]\.[A-Za-z0-9_-]{24,}'
+confidence = "high"
+severity = "critical"
+
+[[rules]]
+id = "gitlab-pat"
+name = "GitLab Personal Access Token"
+regex = '\bglpat-[A-Za-z0-9_-]{20}\b'
+confidence = "high"
+severity = "high"
+url = "https://gitlab.com/-/user_settings/personal_access_tokens"
+
+[[rules]]
+id = "huggingface-token"
+name = "Hugging Face Token"
+regex = '\bhf_[A-Za-z]{34}\b'
+confidence = "high"
+severity = "high"
+url = "https://huggingface.co/settings/tokens"
+
+# Heroku's 2024 key format; the older UUID keys are left out (see the header).
+[[rules]]
+id = "heroku-api-key"
+name = "Heroku API Key"
+regex = '\bHRKU-AA[0-9a-zA-Z_-]{58}\b'
+confidence = "high"
+severity = "high"
+url = "https://dashboard.heroku.com/account/applications"
+
+# ⚠️ Low severity: a DSN is meant to ship in client code. It lets anyone send
+# events to the project, which is spam, not access.
+[[rules]]
+id = "sentry-dsn"
+name = "Sentry DSN"
+regex = 'https://[0-9a-f]{32}@o[0-9]+\.ingest(?:\.[a-z]{2})?\.sentry\.io/[0-9]+'
+confidence = "high"
+severity = "low"
+url = "https://docs.sentry.io/concepts/key-terms/dsn-explainer/"
+
+# Organisation (`sntrys_`) and user (`sntryu_`) auth tokens: these are access.
+[[rules]]
+id = "sentry-auth-token"
+name = "Sentry Auth Token"
+regex = '\bsntry[su]_[A-Za-z0-9+/=_-]{40,}'
+confidence = "high"
+severity = "high"
+url = "https://sentry.io/settings/account/api/auth-tokens/"
+
+[[rules]]
+id = "linear-api-key"
+name = "Linear API Key"
+regex = '\blin_api_[A-Za-z0-9]{40}\b'
+confidence = "high"
+severity = "high"
+url = "https://linear.app/settings/api"
+
+# ⚠️ Medium confidence: three dot-separated base64 parts is also the outline of
+# other tokens. The leading character encodes the bot's user id.
+[[rules]]
+id = "discord-bot-token"
+name = "Discord Bot Token"
+regex = '\b[MNO][A-Za-z0-9_-]{23,25}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,38}\b'
+confidence = "medium"
+severity = "high"
+url = "https://discord.com/developers/applications"
+
+[[rules]]
+id = "telegram-bot-token"
+name = "Telegram Bot Token"
+regex = '\b[0-9]{8,10}:AA[0-9A-Za-z_-]{33}\b'
+confidence = "high"
+severity = "high"
+url = "https://core.telegram.org/bots#how-do-i-create-a-bot"
+
+# An incoming webhook posts to a channel; it grants no read access.
+[[rules]]
+id = "slack-webhook-url"
+name = "Slack Webhook URL"
+regex = 'https://hooks\.slack\.com/services/T[A-Z0-9]{8,}/B[A-Z0-9]{8,}/[A-Za-z0-9]{24}'
+confidence = "high"
+severity = "medium"
+url = "https://api.slack.com/apps"
+
+[[rules]]
+id = "google-oauth-client-secret"
+name = "Google OAuth Client Secret"
+regex = '\bGOCSPX-[A-Za-z0-9_-]{28}\b'
+confidence = "high"
+severity = "high"
+url = "https://console.cloud.google.com/apis/credentials"

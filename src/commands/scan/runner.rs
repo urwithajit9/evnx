@@ -17,8 +17,12 @@
 //! ```
 
 use super::walk::{
-    decode, decode_bytes, named_like_dotenv, structured_format, Decoded, STDIN_LABEL,
+    decode, decode_bytes, is_pkcs12, named_like_dotenv, structured_format, Decoded, STDIN_LABEL,
 };
+
+/// The id of a PKCS#12 keystore finding (C3). Found by file content, so it is
+/// not a regex rule in `rules.toml`.
+pub const PKCS12_ID: &str = "pkcs12-keystore";
 use super::{
     detector::DetectorRegistry,
     filters::FileFilter,
@@ -492,6 +496,25 @@ impl ScanRunner {
     }
 
     fn scan_file(&self, path: &Path, walked: bool, results: &mut ScanResults) -> Result<()> {
+        // C3: a keystore is binary, so it is found by its content, not read.
+        if is_pkcs12(path) {
+            results.files_scanned += 1;
+            results.files.push(super::models::ScannedFile {
+                path: display_portable(path),
+                read_as: super::models::ReadAs::Text,
+                note: Some("binary: a PKCS#12 keystore".to_string()),
+            });
+            let detection = super::detector::Detection {
+                rule_id: PKCS12_ID.to_string(),
+                pattern: "PKCS#12 Keystore".to_string(),
+                confidence: Confidence::High,
+                severity: crate::core::secretscan::Severity::Critical,
+                matched_value: PKCS12_ID.to_string(),
+                ..Default::default()
+            };
+            self.add_finding(results, path, 1, None, detection);
+            return Ok(());
+        }
         let content = match decode(path) {
             Decoded::Text(c) => c,
             // ⛔ **A file this command chose to scan and could not read is a
@@ -680,8 +703,12 @@ impl ScanRunner {
             .map(|(scheme, _)| format!("a password in a {scheme}:// URL, not a placeholder"));
         // I-051: `----…----` said nothing. A PEM header is a label, not key
         // material, so it is shown whole — the body never reaches a detection.
-        let preview = pem_header(&detection.matched_value)
-            .unwrap_or_else(|| truncate_value(&detection.matched_value));
+        let preview = if detection.rule_id == PKCS12_ID {
+            "binary keystore (private key and certificate)".to_string()
+        } else {
+            pem_header(&detection.matched_value)
+                .unwrap_or_else(|| truncate_value(&detection.matched_value))
+        };
         let rule = (detection.rule_id.clone(), detection.severity);
         let mut finding = Finding::new(
             detection.pattern,

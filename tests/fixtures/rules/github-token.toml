@@ -1,0 +1,14 @@
+# Fixtures for `github-token` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["ghp_", "r080UUTWjPBOaALo0vrQuGXc22ToCIyNaLQS"],
+  ["gho_", "B8FBr6Ln5J9K3E8JX2iuWm8fEKKpvDQoclts"],
+]
+
+near_miss = [
+  ["ghx_", "kNtigGC63QM357YhphtUmKt2ZKSO5opFlpZR"],
+  ["ghp_", "IgJ1e8zaIYil8FuhSZqu"],
+]

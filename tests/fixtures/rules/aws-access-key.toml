@@ -1,0 +1,13 @@
+# Fixtures for `aws-access-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["AKIA", "Y2CJTPNE9TEJNZES"],
+]
+
+near_miss = [
+  ["AKIA", "LVK9PSL1BE67"],
+  ["AKIB", "OPD17D27JII7E307"],
+]

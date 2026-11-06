@@ -1,0 +1,14 @@
+# Fixtures for `openai-api-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["sk-proj-", "_Pb27MZhLRkpwW2xdPq2KSCEt8L5150_lJuGFCFcTRmJMgf5mjvzL3n4irQHJMBd"],
+  ["sk-svcacct-", "Ub5MrqMtLQ3Df1CT4ILMVSK7WfL9GxS13UvbzjsMiYs1rtCnEq7hRuVQ8S9-flqr"],
+  ["sk-", "7VTpi8sNY4yHlxkkAGHesB4Ul1tbASY5FKkNv4sw7QaRiqQl"],
+]
+
+near_miss = [
+  ["sk-", "r0DwERmGNwgDUsiHQPhU"],
+]
