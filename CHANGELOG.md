@@ -53,6 +53,25 @@ exits 0. *Migrate:* a wrapper that treats any non-zero exit from an interactive
 - `toml_edit` is now always compiled in, not only with the `cloud` feature:
   `remove --contract` needs it. No crate is added to any build: `toml` already
   depends on it.
+- The direct `blake3` dependency is gone: the push hash is
+  `evnx_crypto::blob_hash`, the same function `vault rekey` uses (Q1).
+
+### Fixed
+- ⚠️ **`restore --output -` and `backup --output -` are refused** (Q1). `-`
+  means stdout in `template` and `cloud pull`; here it wrote a file named `-`,
+  and `restore` then suggested `evnx validate --env -`, which reads stdin. Both
+  now stop with exit 2 before anything is read or asked, until stdout output
+  is built. A file literally named `-` is still `./-`.
+- **`cloud pull` checks the blob against the server's hash** (Q1). The server
+  sends the hash it stored at push; a blob that does not match it is refused
+  as damaged ("the server's blob does not match its own hash"), before the
+  password is asked for. It used to reach decryption and fail as a wrong
+  password or tampering. `cloud run`, `cloud export` and `cloud diff` share
+  the check.
+- **`init --from-source` reads the template with the parser** (Q1). It split
+  lines on `=`, so `export KEY=` was a name "export KEY" and each line inside a
+  multiline value was a name, showing up as phantom "missing" and "unused"
+  variables.
 
 ## [0.12.0] - 2026-11-01
 

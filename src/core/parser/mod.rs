@@ -315,8 +315,6 @@ impl Default for Parser {
 
 mod document;
 mod expand;
-#[cfg(test)]
-mod legacy;
 mod lines;
 #[cfg(test)]
 mod tests;

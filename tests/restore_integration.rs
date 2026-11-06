@@ -434,3 +434,22 @@ fn rm18_a_backup_of_dot_env_restores_to_dot_env() {
     restore(&p, &[]).assert_code(0);
     assert_eq!(p.read(".env"), ENV);
 }
+
+/// Q1: `--output -` wrote the decrypted `.env` to a file named `-`, then told
+/// the user to run `evnx validate --env -`, which reads stdin. Refused, with
+/// no file named `-` created, in every mode.
+#[test]
+fn q1_output_dash_is_refused_and_no_file_named_dash_appears() {
+    let p = backed_up();
+    for extra in [&[][..], &["--yes"], &["--dry-run"]] {
+        let mut args = vec!["--output", "-"];
+        args.extend_from_slice(extra);
+        restore(&p, &args)
+            .assert_code(2)
+            .assert_contains("cannot write to stdout yet");
+        assert!(!p.exists("-"), "{extra:?}");
+    }
+    // `./-` is a file named `-`, on purpose.
+    restore(&p, &["--output", "./-"]).assert_code(0);
+    assert_eq!(p.read("-"), ENV);
+}

@@ -288,3 +288,37 @@ fn t_i267_strip_prefix_must_leave_variable_names() {
     assert!(out.stderr.contains("--strip-prefix"), "{}", out.stderr);
     assert!(!out.stdout.contains("config:set"), "{}", out.stdout);
 }
+
+/// Q1 (F10): every destination that only prints commands refuses
+/// `--skip-existing` and `--overwrite` by name, rather than accepting a flag
+/// it cannot honour. Only heroku was pinned (demo M5); this is all eight.
+#[test]
+fn q1_the_eight_command_printing_destinations_refuse_existing_flags() {
+    let p = support::Project::new().env("A=1\n");
+    let destinations: [&[&str]; 8] = [
+        &["aws-secrets-manager", "--secret-name", "s"],
+        &["doppler", "--project", "p", "--doppler-config", "dev"],
+        &["infisical", "--project", "p", "--infisical-env", "dev"],
+        &["gcp-secret-manager", "--project", "my-project-123"],
+        &["azure-keyvault", "--vault-name", "myvault01"],
+        &["heroku", "--heroku-app", "demo-app"],
+        &["vercel", "--vercel-project", "v"],
+        &[
+            "railway",
+            "--railway-project",
+            "p",
+            "--railway-environment",
+            "production",
+        ],
+    ];
+    for d in destinations {
+        for flag in ["--skip-existing", "--overwrite"] {
+            let mut args = vec!["migrate", "--to"];
+            args.extend_from_slice(d);
+            args.push(flag);
+            support::run(p.path(), &args)
+                .assert_code(2)
+                .assert_contains(&format!("{flag} cannot apply to `{}`", d[0]));
+        }
+    }
+}

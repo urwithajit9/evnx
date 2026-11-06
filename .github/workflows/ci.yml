@@ -88,6 +88,17 @@ jobs:
       - name: Run tests
         run: cargo test --all-features
 
+      # ⚠️ The demo runners again, with `sh` as bash (T3, Q1). Ubuntu's `sh` is
+      # dash, so a scene that recorded dash's wording passed here and failed on
+      # Fedora, where `sh` is bash (#261, scene M11). Reuses the build above.
+      - name: Demo runners with sh as bash
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/sh-is-bash"
+          ln -sf "$(command -v bash)" "$RUNNER_TEMP/sh-is-bash/sh"
+          PATH="$RUNNER_TEMP/sh-is-bash:$PATH" cargo test --all-features --test '*_runner'
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

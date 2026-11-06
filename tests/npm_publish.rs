@@ -164,8 +164,19 @@ fn text(o: &Output) -> String {
     )
 }
 
+/// Whether `node` is here for the tests that need it (T2, Q1). Without it a
+/// test returns early; under `CI` that is a failure, not a quiet pass, and
+/// locally it says so.
 fn has_node() -> bool {
-    Command::new("node").arg("--version").output().is_ok()
+    if Command::new("node").arg("--version").output().is_ok() {
+        return true;
+    }
+    assert!(
+        std::env::var_os("CI").is_none(),
+        "node is not installed, and CI is set: these tests would pass without running"
+    );
+    eprintln!("skipped: node is not installed");
+    false
 }
 
 // ── npm-await.sh ────────────────────────────────────────────────────────────
@@ -299,15 +310,18 @@ fn t_i256_publish_fails_fast_on_auth() {
         r.never_appears().publish_answers(1, answer);
         let pkg = r.package("@evnx/evnx-linux-x64", "0.10.7");
         let started = Instant::now();
+        // T1 (Q1): a 30 s poll interval and a 20 s bound. One poll would take
+        // 30 s, so the bound still tells "no wait" from "waited", with room for
+        // a loaded runner: interval 1 and a 5 s bound failed once on CI (#262).
         let out = r.run(
             PUBLISH,
             &[pkg.to_str().unwrap()],
-            &[("NPM_AWAIT_INTERVAL", "1".to_string())],
+            &[("NPM_AWAIT_INTERVAL", "30".to_string())],
         );
         assert_eq!(out.status.code(), Some(1), "{}", text(&out));
         assert!(text(&out).contains("check NPM_TOKEN"), "{}", text(&out));
         assert_eq!(r.calls("view"), 1, "only the exists check, no polling");
-        assert!(started.elapsed().as_secs() < 5, "an auth failure must not wait");
+        assert!(started.elapsed().as_secs() < 20, "an auth failure must not wait");
     }
 }
 

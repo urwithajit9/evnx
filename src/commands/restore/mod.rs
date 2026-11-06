@@ -173,6 +173,20 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
             gitignore,
         } = opts;
 
+        // ⛔ `-` is stdout in `template` and `cloud pull`, and was a file
+        // named `-` here: the decrypted `.env` landed in `./-`, and the next
+        // step printed was `evnx validate --env -`, which reads stdin (Q1).
+        // Refused until stdout output exists (DEC-B8).
+        if output
+            .as_deref()
+            .is_some_and(crate::core::safe_write::is_stdout)
+        {
+            anyhow::bail!(
+                "restore cannot write to stdout yet; name a file with --output, \
+                 e.g. --output .env (a file literally named - is ./-)"
+            );
+        }
+
         // ── Header ────────────────────────────────────────────────────────────
         ui::print_header(
             "evnx restore",

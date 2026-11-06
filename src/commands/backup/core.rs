@@ -271,6 +271,15 @@ pub fn backup_inner(
 pub fn check_output(source: &Path, output: &Path, keep: u32) -> Result<()> {
     use crate::core::safe_write;
 
+    // ⛔ `-` means stdout in `template` and `cloud pull`; here it was a file
+    // named `-` (Q1). Refused until backup can stream (DEC-B8).
+    if safe_write::is_stdout(output) {
+        anyhow::bail!(
+            "backup cannot write to stdout yet; name a file with --output \
+             (a file literally named - is ./-)"
+        );
+    }
+
     // The same wording `template` and `convert` use for their own input.
     safe_write::refuse_same_file(
         &output.to_string_lossy(),

@@ -1037,3 +1037,64 @@ fn d6_declining_the_overwrite_exits_4() {
     assert_eq!(p.read(".env"), "A=local\n");
     assert!(!p.path().join(".env.bak").exists());
 }
+
+/// Q1: `cloud pull` compares the blob with the hash the server stored for the
+/// version (`X-Blob-Hash`), before asking for the vault key. A mismatch is
+/// named as damage, not as a wrong password.
+#[test]
+fn q1_pull_refuses_a_blob_that_does_not_match_its_hash() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &a);
+    let body = blob(&vk, b"A=1\n");
+    let right = evnx_crypto::blob_hash(&body[12..]);
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/1/blob").as_str(),
+    )
+    .with_status(200)
+    .with_header("X-Blob-Hash", &"0".repeat(right.len()))
+    .with_body(&body)
+    .create();
+    let my_key = s
+        .mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, &a)))
+        .expect(0)
+        .create();
+    let out = pull(&s, RIGHT);
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("does not match its own hash"),
+        "{}",
+        out.stderr
+    );
+    assert!(out.stdout.is_empty(), "{}", out.stdout);
+    my_key.assert();
+}
+
+/// Q1 guard: the right hash still pulls.
+#[test]
+fn q1_pull_with_the_right_hash_decrypts() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &a);
+    let body = blob(&vk, b"A=1\n");
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/1/blob").as_str(),
+    )
+    .with_status(200)
+    .with_header("X-Blob-Hash", &evnx_crypto::blob_hash(&body[12..]))
+    .with_body(&body)
+    .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, &a)))
+        .create();
+    let out = pull(&s, RIGHT);
+    out.assert_code(0);
+    assert_eq!(out.stdout, "A=1\n");
+}

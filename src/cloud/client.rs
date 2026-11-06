@@ -409,6 +409,17 @@ impl Client {
     /// `nonce(12) || ciphertext`. Going through [`Client::get`] would try to parse
     /// ciphertext as JSON and fail on the first non-UTF-8 byte.
     pub fn get_bytes(&self, path: &str) -> Result<Vec<u8>, ApiError> {
+        self.get_bytes_with_header(path, "X-Blob-Hash")
+            .map(|(bytes, _)| bytes)
+    }
+
+    /// [`Client::get_bytes`], and the value of one response header if the
+    /// server sent it: `download_blob` sends the version's `X-Blob-Hash`.
+    pub fn get_bytes_with_header(
+        &self,
+        path: &str,
+        header: &str,
+    ) -> Result<(Vec<u8>, Option<String>), ApiError> {
         let token = self.access_token()?;
         let send = |token: &SecretString| {
             self.http
@@ -436,8 +447,13 @@ impl Client {
             return Err(self.error_from(status, &body, path));
         }
 
+        let value = resp
+            .headers()
+            .get(header)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
         resp.bytes()
-            .map(|b| b.to_vec())
+            .map(|b| (b.to_vec(), value))
             .map_err(|e| ApiError::Transport {
                 server: self.server.clone(),
                 reason: crate::core::http::transport_reason(&e, REQUEST_TIMEOUT),

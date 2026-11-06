@@ -893,7 +893,6 @@ dependencies = [
  "argon2",
  "assert_cmd",
  "base64",
- "blake3",
  "chrono",
  "clap",
  "clap_complete",

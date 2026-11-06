@@ -24,8 +24,10 @@
 //! commit. A scene that prints `MISMATCH` fails even if the golden file was
 //! regenerated, so a flip cannot be waved through with `UPDATE_GOLDEN=1`.
 //!
-//! Linux only: the runners use bash, GNU coreutils, git and, for a few scenes,
-//! python3 and nc.
+//! Linux only: the runners use bash, GNU coreutils (`stat -c`), git and, for a
+//! few demos, python3 (backup, convert, doctor) and jq (diff). A missing one is
+//! named before the demo runs ([`require_tools`], T4), rather than surfacing as
+//! a golden diff.
 
 use std::path::Path;
 use std::process::Command;
@@ -48,6 +50,11 @@ pub fn run_scene(cmd: &str, scene: &str) -> String {
     let script = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/demos")
         .join(format!("run-{cmd}-demo.sh"));
+
+    require_tools(
+        &std::fs::read_to_string(&script).expect("read demo script"),
+        cmd,
+    );
 
     // ⚠️ The umask is pinned. Files evnx creates take their mode from it, and
     // several scenes print a mode (I-081, I-130, I-237): 664 under a desktop's
@@ -136,4 +143,31 @@ macro_rules! demo_scenes {
             }
         )+
     };
+}
+
+/// Stop with the tool's name when a demo uses one this machine lacks (T4, Q1).
+/// A contributor on another distribution otherwise sees a golden diff with no
+/// reason in it.
+fn require_tools(script: &str, cmd: &str) {
+    let probes: [(&str, &str, &[&str]); 4] = [
+        ("git", r"\bgit ", &["--version"]),
+        ("python3", r"\bpython3\b", &["--version"]),
+        ("jq", r"\bjq\b", &["--version"]),
+        ("GNU stat", r"\bstat -c\b", &["-c", "%a", "."]),
+    ];
+    for (name, used, args) in probes {
+        if !Regex::new(used).unwrap().is_match(script) {
+            continue;
+        }
+        let program = name.trim_start_matches("GNU ");
+        let ok = Command::new(program)
+            .args(args)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        assert!(
+            ok,
+            "the {cmd} demo needs {name}, which is not installed or not working here \
+             (see CONTRIBUTING.md, \"Running Tests\")"
+        );
+    }
 }

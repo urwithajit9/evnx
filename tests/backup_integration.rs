@@ -440,3 +440,15 @@ fn t_br44_readme_examples_use_flags_that_exist() {
         "D-99, D-111"
     );
 }
+
+/// Q1: `--output -` made a file named `-`. Refused before the passphrase is
+/// read, and nothing is written.
+#[test]
+fn q1_output_dash_is_refused_and_no_file_named_dash_appears() {
+    let p = project();
+    run(p.path(), &["backup", "--key-file", "pw", "--output", "-"])
+        .assert_code(2)
+        .assert_contains("cannot write to stdout yet");
+    assert!(!p.exists("-"));
+    assert!(!p.exists("-.1"));
+}
