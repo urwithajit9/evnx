@@ -64,6 +64,14 @@ exits 0. *Migrate:* a wrapper that treats any non-zero exit from an interactive
   `evnx_crypto::blob_hash`, the same function `vault rekey` uses (Q1).
 
 ### Fixed
+- ⛔ **`evnx scan` no longer hangs on a project with many gitignored files.**
+  To learn which walked files git ignores, scan wrote every path to
+  `git check-ignore` before reading any answer. Once the ignored paths filled
+  git's output pipe (about 64 KiB, a few thousand files: a `.next/` build, a
+  `.venv`, coverage output), git stopped reading and both processes waited
+  forever, with only the header printed and no error. The paths are now
+  written from a separate thread while the answers are read. A Next.js
+  project that hung indefinitely now finishes in about 35 s.
 - ⚠️ **`restore --output -` and `backup --output -` are refused** (Q1). `-`
   means stdout in `template` and `cloud pull`; here it wrote a file named `-`,
   and `restore` then suggested `evnx validate --env -`, which reads stdin. Both

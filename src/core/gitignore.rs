@@ -634,14 +634,21 @@ fn ask_repository(
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    {
-        let mut stdin = child.stdin.take()?;
-        for (_, rel) in members {
-            stdin.write_all(rel.as_bytes()).ok()?;
-            stdin.write_all(&[0]).ok()?;
-        }
+    // ⛔ Written from another thread while this one reads the answers. Writing
+    // every path first and reading after deadlocked once the ignored paths
+    // filled git's stdout pipe (~64 KiB): git stopped reading, and `scan` hung
+    // with no output on any tree with a few thousand ignored files.
+    let mut input = Vec::new();
+    for (_, rel) in members {
+        input.extend_from_slice(rel.as_bytes());
+        input.push(0);
     }
+    let mut stdin = child.stdin.take()?;
+    let writer = std::thread::spawn(move || stdin.write_all(&input).is_ok());
     let answered = child.wait_with_output().ok()?;
+    if !writer.join().unwrap_or(false) {
+        return None;
+    }
     // 0: some paths are ignored, 1: none are. Anything else is no answer — the
     // same reading as `is_gitignored`, where collapsing 128 onto "not ignored"
     // once reported every env file in a plain folder as exposed.
@@ -868,6 +875,39 @@ mod tests {
         assert_eq!(exposure_of(&views, 3), Some(Exposure::Protected));
         assert_eq!(exposure_of(&views, 4), Some(Exposure::Tracked));
         assert_eq!(views[2].as_ref().unwrap().repo_path, "src/app.py");
+    }
+
+    /// A walk with thousands of ignored files (a `.next/` build, a `.venv`)
+    /// hung `evnx scan` forever with no output: every path was written to
+    /// `git check-ignore --stdin` before any answer was read, so once the
+    /// ignored paths filled git's stdout pipe (~64 KiB), git stopped reading
+    /// and both processes waited on each other. Bounded by a timeout, so a
+    /// regression fails here instead of hanging the suite.
+    #[test]
+    fn exposures_do_not_deadlock_on_many_ignored_files() {
+        let Some(d) = git_repo() else { return };
+        let root = d.path();
+        fs::write(root.join(".gitignore"), "build_out/\n").unwrap();
+        fs::create_dir_all(root.join("build_out")).unwrap();
+        // ~5,000 paths of ~70 bytes: about 350 KiB of answers, five times the pipe.
+        let files: Vec<PathBuf> = (0..5000)
+            .map(|i| {
+                let f = root.join(format!(
+                    "build_out/chunk-{i:05}-0123456789abcdef0123456789abcdef.js"
+                ));
+                fs::write(&f, "x").unwrap();
+                f
+            })
+            .collect();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || tx.send(exposures(&files)).ok());
+        let views = rx
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("exposures did not return within 60 s: git check-ignore deadlocked");
+        assert_eq!(views.len(), 5000);
+        assert!(views
+            .iter()
+            .all(|v| v.as_ref().map(|v| v.exposure) == Some(Exposure::Protected)));
     }
 
     /// I-157 through the batch: committed first and ignored later is tracked.
