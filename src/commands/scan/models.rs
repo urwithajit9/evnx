@@ -9,10 +9,14 @@
 //!
 //! ```rust
 //! # use evnx::commands::scan::{Finding, ScanResults, Confidence};
+//! # use evnx::core::secretscan::Severity;
 //!
 //! let finding = Finding {
+//!     // The rule's stable id, and how bad a match is if real (C2).
+//!     rule_id: "aws-access-key".to_string(),
 //!     pattern: "AWS Access Key".to_string(),
 //!     confidence: Confidence::High,
+//!     severity: Severity::Critical,
 //!     value_preview: "AKIA...XYZ12".to_string(),
 //!     location: ".env:15 (AWS_ACCESS_KEY_ID)".to_string(),
 //!     variable: Some("AWS_ACCESS_KEY_ID".to_string()),
@@ -37,7 +41,7 @@ use serde::{Deserialize, Serialize};
 
 /// How sure a detection is. Defined with the rule engine in
 /// [`crate::core::secretscan`]; re-exported here, where it has always been.
-pub use crate::core::secretscan::Confidence;
+pub use crate::core::secretscan::{Confidence, Severity};
 
 /// A single detected secret with contextual metadata.
 ///
@@ -71,9 +75,13 @@ pub use crate::core::secretscan::Confidence;
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Finding {
+    /// The rule's stable id (C2): `aws-access-key`, `sensitive-config-key`.
+    pub rule_id: String,
     pub pattern: String,
     #[serde(serialize_with = "serialize_confidence")]
     pub confidence: Confidence,
+    /// How bad it is if real (S7, C2). `--severity` filters on this.
+    pub severity: Severity,
     pub value_preview: String,
     pub location: String,
     pub variable: Option<String>,
@@ -187,6 +195,16 @@ impl Finding {
         self
     }
 
+    /// Record which rule matched and how severe it is. The runner always
+    /// does; [`Finding::new`]'s defaults (a slug of the name, medium) are for
+    /// the test constructors.
+    #[must_use]
+    pub fn rule(mut self, id: impl Into<String>, severity: Severity) -> Self {
+        self.rule_id = id.into();
+        self.severity = severity;
+        self
+    }
+
     /// Record the build-time prefix that publishes this variable.
     ///
     /// Builder-style for the same reason as [`Finding::judged_value`]: one caller
@@ -229,9 +247,14 @@ impl Finding {
         variable: Option<String>,
         action_url: Option<String>,
     ) -> Self {
+        let pattern = pattern.into();
         Self {
-            pattern: pattern.into(),
+            rule_id: crate::core::secretscan::patternset::slug(
+                pattern.split(':').next().unwrap_or(&pattern),
+            ),
+            pattern,
             confidence,
+            severity: Severity::Medium,
             value_preview: value_preview.into(),
             location: location.into(),
             variable,
@@ -316,11 +339,14 @@ pub struct ScanResults {
 /// problem here" — the two are different questions and the docs conflated them.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Summary {
-    /// Findings reported, after any `--severity` filtering.
+    /// Findings reported, after any `--severity` and `--confidence` filtering.
     pub total: usize,
+    /// By **confidence**, as before C2.
     pub high: usize,
     pub medium: usize,
     pub low: usize,
+    /// By severity (C2).
+    pub severity: SeverityCounts,
     pub files_scanned: usize,
     /// Files that were selected and could not be read.
     ///
@@ -335,6 +361,15 @@ pub struct Summary {
     /// summary as before.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub ignored_by_git: usize,
+}
+
+/// Findings per severity, in the JSON `summary` (C2).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeverityCounts {
+    pub critical: usize,
+    pub high: usize,
+    pub medium: usize,
+    pub low: usize,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -391,6 +426,7 @@ impl ScanResults {
             high: self.high_confidence,
             medium: self.medium_confidence,
             low: self.low_confidence,
+            severity: self.severity_counts(),
             files_scanned: self.files_scanned,
             files_unreadable: self.unreadable.len(),
             files_skipped: self.skipped.len(),
@@ -469,6 +505,17 @@ impl ScanResults {
     ///     println!("⚠️  Critical secrets detected!");
     /// }
     /// ```
+    /// How many findings there are at each severity.
+    pub fn severity_counts(&self) -> SeverityCounts {
+        let n = |s: Severity| self.findings.iter().filter(|f| f.severity == s).count();
+        SeverityCounts {
+            critical: n(Severity::Critical),
+            high: n(Severity::High),
+            medium: n(Severity::Medium),
+            low: n(Severity::Low),
+        }
+    }
+
     pub fn has_critical_findings(&self) -> bool {
         self.high_confidence > 0 || self.medium_confidence > 0
     }

@@ -61,11 +61,11 @@ fn test_scan_exit_zero() {
         "Expected output to contain 'AWS Access Key', got:\n{}",
         stdout
     );
-    // The confidence level is reported; `(high confidence)` became a right-aligned
-    // `high` so the levels form a column. Asserting the level, not its phrasing.
+    // The level is reported, right-aligned so the levels form a column. Since
+    // C2 it is the severity: an AWS access key is critical.
     assert!(
-        stdout.contains("high"),
-        "Expected the confidence level in the output, got:\n{}",
+        stdout.contains("critical"),
+        "Expected the severity in the output, got:\n{}",
         stdout
     );
     // And the finding carries where it is and a masked value, not the secret.
@@ -425,10 +425,18 @@ fn an_unknown_severity_is_an_error_not_a_default() {
 
     cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
-        .args(["scan", "--severity", "critical"])
+        .args(["scan", "--severity", "extreme"])
         .assert()
         .failure()
         .stderr(predicates::str::contains("unknown severity"));
+    // ⚠️ `critical` is a severity since C2, not a typo; `--confidence` has
+    // its own error.
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "--confidence", "critical"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("unknown confidence"));
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -7,12 +7,12 @@ $ evnx scan .
 
   scanning ./.env
 
-  ✗  AWS Access Key                              high
+  ✗  AWS Access Key                              critical
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
-  ✗  Stripe Secret Key (LIVE)                    high
+  ✗  Stripe Secret Key (LIVE)                    critical
      ./.env:2 (STRIPE_SECRET_KEY)  sk_l…hijk
      !  matches a live key format, not a placeholder
      →  revoke at https://dashboard.stripe.com/apikeys
@@ -26,7 +26,7 @@ $ evnx scan .
      ./.env:4 (DATABASE_URL)  post…5432
      !  a password in a postgres:// URL, not a placeholder
 
-  4 findings  ·  4 high
+  4 findings  ·  2 critical  ·  2 high
 
 
 Next steps:

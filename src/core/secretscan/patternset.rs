@@ -54,7 +54,7 @@
 //! is that `[scan.patterns]` in a committed `.evnx.toml` is not a denial-of-
 //! service vector against everyone who clones the repository.
 
-use super::Confidence;
+use super::{Confidence, Severity};
 use crate::core::config::PatternRule;
 use anyhow::{anyhow, bail, Context, Result};
 use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
@@ -70,8 +70,12 @@ const PATTERN_SIZE_LIMIT: usize = 1 << 20;
 /// One declared rule, compiled and ready to match.
 #[derive(Debug)]
 struct CompiledRule {
+    id: String,
     name: String,
     confidence: Confidence,
+    severity: Severity,
+    /// Matches below this Shannon entropy are dropped.
+    entropy: Option<f64>,
     url: Option<String>,
     regex: Regex,
     /// The expression as written, so a match lying inside its own text — the
@@ -88,9 +92,12 @@ struct CompiledRule {
 /// `runner::truncate_value` has the right thing to mask.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatternMatch {
-    /// The rule's name, as it appears in output and in the SARIF rule id.
+    /// The rule's stable id (C2).
+    pub id: String,
+    /// The rule's name, as it appears in output.
     pub name: String,
     pub confidence: Confidence,
+    pub severity: Severity,
     /// Where to go and revoke it, when the rule says.
     pub url: Option<String>,
     /// The matched span.
@@ -161,6 +168,40 @@ impl PatternSet {
                 None => Confidence::High,
             };
 
+            // A rule that re-rates a built-in by name keeps the built-in's
+            // identity and risk: changing how sure it is must not change which
+            // rule it is, nor drop it to the default severity.
+            let shipped = builtins.iter().find(|b| b.name == name);
+            let id = match rule.id.as_deref().or(shipped.and_then(|b| b.id.as_deref())) {
+                Some(id) => id.trim().to_string(),
+                None => slug(name),
+            };
+            if id.is_empty()
+                || !id
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            {
+                bail!("'{name}' has id '{id}': use lowercase letters, digits and '-'");
+            }
+            if let Some(other) = compiled.iter().find(|r: &&CompiledRule| r.id == id) {
+                bail!(
+                    "'{name}' and '{}' have the same id '{id}': each rule needs its own",
+                    other.name
+                );
+            }
+            // Unset: medium, the middle of the scale, for a rule evnx knows
+            // nothing about the risk of.
+            let severity = match rule
+                .severity
+                .as_deref()
+                .or(shipped.and_then(|b| b.severity.as_deref()))
+            {
+                Some(level) => level
+                    .parse::<Severity>()
+                    .with_context(|| format!("'{name}'"))?,
+                None => Severity::Medium,
+            };
+
             let regex = RegexBuilder::new(source)
                 .size_limit(PATTERN_SIZE_LIMIT)
                 .build()
@@ -180,8 +221,11 @@ impl PatternSet {
             }
 
             compiled.push(CompiledRule {
+                id,
                 name: name.to_string(),
                 confidence,
+                severity,
+                entropy: rule.entropy,
                 url: rule.url.clone(),
                 regex,
                 source: source.to_string(),
@@ -271,9 +315,17 @@ impl PatternSet {
                 if out.iter().any(|m| m.name == rule.name && m.value == value) {
                     continue;
                 }
+                if rule
+                    .entropy
+                    .is_some_and(|min| super::heuristic::calculate_entropy(value) < min)
+                {
+                    continue;
+                }
                 out.push(PatternMatch {
+                    id: rule.id.clone(),
                     name: rule.name.clone(),
                     confidence: rule.confidence,
+                    severity: rule.severity,
                     url: rule.url.clone(),
                     value: value.to_string(),
                 });
@@ -383,7 +435,7 @@ pub fn merge(
             .map(|n| n.to_lowercase())
             .collect();
         for rule in crate::core::secretscan::rules::builtin_rules() {
-            if off.iter().any(|d| *d == rule.name.to_lowercase()) {
+            if is_named(&rule, &off) {
                 continue;
             }
             out.push(rule);
@@ -391,6 +443,13 @@ pub fn merge(
     }
 
     dedup_by_name(out)
+}
+
+/// Whether `off` (lowercased `[scan] disable` entries) names `rule`, by its
+/// name or, since C2, its id.
+pub fn is_named(rule: &PatternRule, off: &[String]) -> bool {
+    off.iter()
+        .any(|d| *d == rule.name.to_lowercase() || rule.id.as_deref() == Some(d.as_str()))
 }
 
 /// Keep the first rule of each name.
@@ -405,6 +464,20 @@ fn dedup_by_name(rules: Vec<PatternRule>) -> Vec<PatternRule> {
         .into_iter()
         .filter(|r| seen.insert(r.name.to_lowercase()))
         .collect()
+}
+
+/// `name`, lowercased, with every run of other characters as one `-`: the id a
+/// rule gets when it declares none. `Custom pattern 1` is `custom-pattern-1`.
+pub fn slug(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    out.trim_matches('-').to_string()
 }
 
 #[cfg(test)]
@@ -472,7 +545,56 @@ mod tests {
         let err = PatternSet::compile(&[r]).unwrap_err();
         let text = format!("{err:#}");
         assert!(text.contains("typo"), "{text}");
-        assert!(text.contains("unknown severity"), "{text}");
+        assert!(text.contains("unknown confidence"), "{text}");
+    }
+
+    /// C2: a typo in `severity` is refused the same way, and a missing one is
+    /// medium, or a re-rated built-in's own.
+    #[test]
+    fn severity_is_parsed_defaulted_and_inherited() {
+        let mut r = rule("typo", "ACME-[0-9]{8}");
+        r.severity = Some("crit".to_string());
+        let err = format!("{:#}", PatternSet::compile(&[r]).unwrap_err());
+        assert!(err.contains("unknown severity"), "{err}");
+
+        let set = PatternSet::compile(&[rule("mine", "ACME-[0-9]{8}")]).unwrap();
+        let m = &set.find_all("ACME-12345678")[0];
+        assert_eq!((m.id.as_str(), m.severity), ("mine", Severity::Medium));
+
+        // A project re-rating a built-in by name keeps its id and severity.
+        let mut stripe = rule("Stripe Secret Key (LIVE)", "sk_live_[0-9a-zA-Z]{24,}");
+        stripe.confidence = Some("medium".to_string());
+        let set = PatternSet::compile(&[stripe]).unwrap();
+        let m = &set.find_all(&format!("sk_live_{}", "a".repeat(24)))[0];
+        assert_eq!(m.id, "stripe-live-secret-key");
+        assert_eq!(
+            (m.confidence, m.severity),
+            (Confidence::Medium, Severity::Critical)
+        );
+    }
+
+    /// C2: ids are kebab-case and unique within a set.
+    #[test]
+    fn ids_are_checked() {
+        let mut a = rule("a", "AAA-[0-9]{8}");
+        a.id = Some("same".into());
+        let mut b = rule("b", "BBB-[0-9]{8}");
+        b.id = Some("same".into());
+        let err = format!("{:#}", PatternSet::compile(&[a, b]).unwrap_err());
+        assert!(err.contains("same id 'same'"), "{err}");
+        let mut c = rule("c", "CCC-[0-9]{8}");
+        c.id = Some("Not Kebab".into());
+        assert!(PatternSet::compile(&[c]).is_err());
+    }
+
+    /// C2: `entropy` drops a match below the floor.
+    #[test]
+    fn an_entropy_floor_drops_low_entropy_matches() {
+        let mut r = rule("tok", "tok_[a-z0-9]{12}");
+        r.entropy = Some(3.0);
+        let set = PatternSet::compile(&[r]).unwrap();
+        assert!(set.find_all("tok_aaaaaaaaaaaa").is_empty());
+        assert_eq!(set.find_all("tok_k3x9q2m7v1zp").len(), 1);
     }
 
     #[test]

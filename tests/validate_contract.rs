@@ -219,7 +219,7 @@ fn t_i038_scan_and_doctor_messages_are_unchanged() {
     sev.assert_code(2);
     assert!(
         sev.stderr
-            .contains("unknown severity 'hgh' — expected one of: high, medium, low"),
+            .contains("unknown severity 'hgh' — expected one of: critical, high, medium, low"),
         "{}",
         sev.stderr
     );

@@ -95,8 +95,11 @@ pub struct ScanOptions {
     pub patterns: Vec<crate::core::config::PatternRule>,
     /// Skip values that look like filler.
     pub ignore_placeholders: bool,
-    /// Lowest confidence reported: `high`, `medium` or `low`.
+    /// Lowest severity reported: `critical`, `high`, `medium` or `low` (C2;
+    /// until then this filtered on confidence).
     pub severity: String,
+    /// Lowest confidence reported: `high`, `medium` or `low` (C2).
+    pub confidence: String,
     /// `pretty`, `json`, `sarif` or `github`.
     pub format: String,
     /// Exit 0 even with findings (never hides exit 2).
@@ -126,6 +129,7 @@ impl Default for ScanOptions {
             patterns: Vec::new(),
             ignore_placeholders: false,
             severity: "low".to_string(),
+            confidence: "low".to_string(),
             format: "pretty".to_string(),
             exit_zero: false,
             verbose: false,
@@ -177,7 +181,8 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
     // would format it as a generic error and collapse it onto 1 — the code that
     // already means "secrets found".
     let scan = || -> Result<bool, anyhow::Error> {
-        let min_confidence: Confidence = opts.severity.parse()?;
+        let min_severity: crate::core::secretscan::Severity = opts.severity.parse()?;
+        let min_confidence: Confidence = opts.confidence.parse()?;
         let output_format: OutputFormat = opts.format.parse()?;
         // Compiled before anything is printed, so a broken expression cannot be
         // mistaken for a finished scan.
@@ -186,7 +191,7 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
         let disabled = PatternSet::compile(
             &crate::core::secretscan::rules::builtin_rules()
                 .into_iter()
-                .filter(|r| off.contains(&r.name.to_lowercase()))
+                .filter(|r| crate::core::secretscan::patternset::is_named(r, &off))
                 .collect::<Vec<_>>(),
         )?;
         let runner = ScanRunner::with_spec_and_patterns(
@@ -200,6 +205,7 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
         .with_extensions(opts.extensions.clone())
         .with_include_ignored(opts.include_ignored)
         .with_max_file_size(opts.max_file_size)
+        .with_min_severity(min_severity)
         .with_disabled(disabled, &opts.disable);
         runner.run(opts.paths.clone(), output_format)
     };

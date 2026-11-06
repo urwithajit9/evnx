@@ -16,7 +16,39 @@ Esc at an earlier question (picking an id, `add custom`'s questions) still
 exits 0. *Migrate:* a wrapper that treats any non-zero exit from an interactive
 `add` as a failure should accept 4 as "cancelled".
 
+⚠️ **`evnx scan`: severity and confidence are now two things** (C2, RM-49,
+RM-50). A finding had one level, `high`/`medium`/`low`, which was confidence
+(how sure evnx is), and `--severity` filtered on it. A Google Maps browser key
+could not be described: its shape is certain, and it is meant to ship in a web
+page. Every finding now has a **severity** (how bad it is if real: `critical`,
+`high`, `medium`, `low`) and keeps its **confidence**.
+- `--severity` filters on severity. The new `--confidence` (and
+  `[scan] confidence`) filters on certainty; both must pass.
+  `--severity high` keeps almost exactly what it kept before, since the rules
+  that were high-confidence are high- or critical-risk.
+- ⚠️ A short value under a secret-like name (`API_TOKEN=abcd1234`) was medium
+  confidence and is now **high severity**, so a `--severity high` gate now fails
+  on it. Add `--confidence high` for the old behaviour.
+- ⚠️ A `[[scan.patterns]]` rule with no `severity` is **medium**, so a
+  `--severity high` gate no longer fails on it. Give the rule
+  `severity = "high"` (or `"critical"`) to keep the gate.
+- The JSON carries `schema_version: 2`, and each finding a `rule_id` and a
+  `severity`; `summary.severity` counts by severity. `confidence` and the
+  existing counts are unchanged. *Migrate:* JSON consumers that read
+  `confidence` as severity should read `severity`.
+- ⚠️ SARIF `ruleId` is now the rule's stable id (`aws-access-key`, was
+  `secret/aws-access-key`; `stripe-live-secret-key`, was
+  `secret/stripe-secret-key-live`), and `level` comes from severity. GitHub
+  code scanning will see existing alerts as new rules once. The terminal and
+  `--format github` show severity.
+- The Google API key rule is now high confidence, low severity.
+
 ### Added
+- **Rules as data** (C2). The 13 built-in rules moved to
+  `src/assets/rules.toml`, compiled into the binary, each with a stable `id`.
+  `[[scan.patterns]]` rules take an optional `id`, `severity` and `entropy`
+  (drop matches below that Shannon entropy). A rule that re-rates a built-in
+  by name keeps its id and severity. `[scan] disable` accepts ids too.
 - **`evnx remove` (alias `rm`): take a variable out safely** (R1). Until now a
   variable could only be removed by hand, from up to four places, and a partial
   removal passed `validate` and `spec check` silently. `evnx remove NAME`

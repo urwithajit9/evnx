@@ -17,6 +17,6 @@ pub mod heuristic;
 pub mod patternset;
 pub mod rules;
 
-pub use confidence::Confidence;
+pub use confidence::{Confidence, Severity};
 pub use detector::{Detection, DetectorRegistry, SecretDetector};
 pub use patternset::{PatternMatch, PatternSet};

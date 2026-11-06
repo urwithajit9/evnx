@@ -27,131 +27,25 @@ use crate::core::config::PatternRule;
 /// Both live in [`detect_heuristic`](super::heuristic::detect_heuristic) and stay token-scoped — running an entropy
 /// threshold over whole lines would flag every minified bundle.
 pub fn builtin_rules() -> Vec<PatternRule> {
-    vec![
-        PatternRule::builtin(
-            "AWS Access Key",
-            r"AKIA[0-9A-Z]{16}",
-            "high",
-            Some("https://console.aws.amazon.com/iam"),
-        ),
-        // ⚠️ `ASIA`, not only `AKIA`. An STS temporary key is a live credential
-        // until it expires, and it is what every CI role assumption hands out —
-        // so it is the form most likely to be pasted into a `.env` by accident.
-        // It was not matched at all: `ASIAIOSFODNN7EXAMPLE` scanned clean.
-        // Named separately from the long-term key so the output says which kind
-        // it found, because what you do about them differs.
-        PatternRule::builtin(
-            "AWS Temporary Access Key (STS)",
-            r"ASIA[0-9A-Z]{16}",
-            "high",
-            Some("https://console.aws.amazon.com/iam"),
-        ),
-        // ⚠️ The fine-grained PAT, which the `ghp_|gho_|ghu_|ghs_` alternation
-        // above cannot match — different prefix, different length, and it is
-        // the form GitHub now steers everyone towards.
-        PatternRule::builtin(
-            "GitHub Fine-grained PAT",
-            r"github_pat_[A-Za-z0-9_]{40,}",
-            "high",
-            Some("https://github.com/settings/personal-access-tokens"),
-        ),
-        // Bot, user, app-level and legacy tokens share the `xox<x>-` shape;
-        // `xapp-` is the app-level token and has its own prefix.
-        PatternRule::builtin(
-            "Slack Token",
-            r"xox[abprs]-[0-9A-Za-z-]{10,}|xapp-[0-9]-[A-Za-z0-9-]{10,}",
-            "high",
-            Some("https://api.slack.com/apps"),
-        ),
-        // ⚠️ `medium`, not `high`. A Google API key is frequently a *browser*
-        // key — Maps, Places — that is meant to ship in a page and is restricted
-        // by referrer instead of secrecy. Calling every one of them high would
-        // train people to ignore the severity column.
-        PatternRule::builtin(
-            "Google API Key",
-            r"AIza[0-9A-Za-z_\-]{35}",
-            "medium",
-            Some("https://console.cloud.google.com/apis/credentials"),
-        ),
-        // ⚠️ Also `medium`, and for the same reason: plenty of JWTs are public
-        // ID tokens. What makes one sensitive is usually the variable it sits
-        // in, which the name heuristic now covers separately.
-        PatternRule::builtin(
-            "JSON Web Token",
-            r"eyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}",
-            "medium",
-            None,
-        ),
-        PatternRule::builtin(
-            "Stripe Secret Key (LIVE)",
-            r"sk_live_[0-9a-zA-Z]{24,}",
-            "high",
-            Some("https://dashboard.stripe.com/apikeys"),
-        ),
-        PatternRule::builtin(
-            "Stripe Secret Key (test)",
-            r"sk_test_[0-9a-zA-Z]{24,}",
-            "medium",
-            Some("https://dashboard.stripe.com/apikeys"),
-        ),
-        // The three GitHub forms were three regexes behind one `||`; as data
-        // they are one alternation with one name, which is what the output said
-        // all along.
-        PatternRule::builtin(
-            "GitHub Token",
-            r"\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9]{36,40}\b",
-            "high",
-            Some("https://github.com/settings/tokens"),
-        ),
-        // ⚠️ Two exclusive branches, not `(?:proj-)?`. Anthropic keys also begin
-        // `sk-`, and a permissive form swallowed them.
-        PatternRule::builtin(
-            "OpenAI API Key",
-            r"sk-(?:proj-[0-9a-zA-Z_-]{40,}|[0-9a-zA-Z]{48})",
-            "high",
-            Some("https://platform.openai.com/api-keys"),
-        ),
-        PatternRule::builtin(
-            "Anthropic API Key",
-            r"sk-ant-api[0-9]{2}-[0-9a-zA-Z\-_]{95}",
-            "high",
-            Some("https://console.anthropic.com/settings/keys"),
-        ),
-        // ⚠️ `[A-Z ]*`, not `[A-Z ]+ `. PKCS#8 writes a bare
-        // `-----BEGIN PRIVATE KEY-----` with no algorithm — OpenSSL's default
-        // since 3.0 — which the old form could not match.
-        PatternRule::builtin(
-            "Private Key",
-            r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----",
-            "high",
-            None,
-        ),
-        // ⚠️ The gap every other rule here left open, and the most common thing
-        // in a `.env` after an API key.
-        //
-        // `DATABASE_URL=postgresql://admin:s3cr3t@db.prod…` scanned **clean**
-        // before this, and structurally so: every rule above is a provider prefix
-        // and a connection string has none, the sensitive-key heuristic keys off
-        // names containing `secret`/`token`/`key` and `DATABASE_URL` has none of
-        // them, and the entropy fallback scores a whole URL below threshold.
-        // Verified by scanning one. Filed as D15.
-        //
-        // The classes exclude `/`, `?` and `#`, so the userinfo match cannot run
-        // past the authority into a path — `https://host/users/me@example.com` is
-        // an ordinary URL, not a credential. Requiring a `:` before the `@` means
-        // `postgresql://reader@host/db` is read as a bare username, which is a
-        // name and not a secret.
-        //
-        // No `action_url`: there is no single provider to send anyone to. The
-        // place to rotate a database password is the database.
-        PatternRule::builtin(
-            "Credentials in a connection string",
-            r"[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/?#@]+:[^\s/?#@]+@[^\s/?#]+",
-            "high",
-            None,
-        ),
-    ]
+    BUILTIN.rules.clone()
 }
+
+/// `src/assets/rules.toml` as it is compiled in (C2, RM-50).
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuleFile {
+    /// The file's format version, for packs and rule files that share it (C6).
+    #[allow(dead_code)]
+    version: u32,
+    rules: Vec<PatternRule>,
+}
+
+/// Parsed once per process. ⚠️ `expect`, not an error path: the file is part
+/// of the binary, so a bad one is a build defect the loader test catches.
+static BUILTIN: std::sync::LazyLock<RuleFile> = std::sync::LazyLock::new(|| {
+    toml::from_str(include_str!("../../assets/rules.toml"))
+        .expect("src/assets/rules.toml parses; rules::tests checks it")
+});
 
 /// Build-time prefixes that inline a variable into the **client bundle**.
 ///
@@ -198,6 +92,43 @@ pub fn public_prefix(name: &str) -> Option<(&'static str, &'static str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// C2: `rules.toml` loads, every rule carries an id, a confidence and a
+    /// severity that parse, no id repeats, and the whole set compiles.
+    #[test]
+    fn rules_toml_loads_with_unique_ids_and_compiles() {
+        use crate::core::secretscan::{Confidence, PatternSet, Severity};
+        let rules = builtin_rules();
+        assert!(rules.len() >= 13);
+        let mut ids = std::collections::HashSet::new();
+        for r in &rules {
+            let id =
+                r.id.as_deref()
+                    .unwrap_or_else(|| panic!("{} has no id", r.name));
+            assert!(ids.insert(id), "duplicate id {id}");
+            r.confidence
+                .as_deref()
+                .unwrap()
+                .parse::<Confidence>()
+                .unwrap();
+            r.severity.as_deref().unwrap().parse::<Severity>().unwrap();
+        }
+        PatternSet::compile(&rules).expect("the built-in rules compile");
+    }
+
+    /// C2, S7: the case that split the two fields. A Google API key's shape
+    /// is certain, and it is usually a browser key meant to be public.
+    #[test]
+    fn a_google_api_key_is_high_confidence_and_low_severity() {
+        let g = builtin_rules()
+            .into_iter()
+            .find(|r| r.id.as_deref() == Some("google-api-key"))
+            .unwrap();
+        assert_eq!(
+            (g.confidence.as_deref(), g.severity.as_deref()),
+            (Some("high"), Some("low"))
+        );
+    }
 
     /// ⚠️ Rewritten when the provider patterns became [`builtin_rules`]. It used
     /// to call `detect_secret` directly, which no longer knows about them — and

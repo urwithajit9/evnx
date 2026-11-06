@@ -8,7 +8,7 @@ $ evnx scan .
 
   scanning ./.env, ./.evnx.toml
 
-  ✗  AWS Access Key                              high
+  ✗  AWS Access Key                              critical
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
@@ -22,7 +22,7 @@ $ evnx scan .
      ./.env:4 (DATABASE_URL)  post…5432
      !  a password in a postgres:// URL, not a placeholder
 
-  3 findings  ·  3 high
+  3 findings  ·  1 critical  ·  2 high
 
 
 Next steps:
@@ -35,7 +35,7 @@ Next steps:
 
 $ evnx scan . -q
   config    .evnx.toml (scan.severity=high, scan.exclude=1 patterns, scan.ignore_placeholders=true, scan.disable=1 built-in detector(s), vars.secret=false on 1 variable(s))
-  ✗  AWS Access Key                              high
+  ✗  AWS Access Key                              critical
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
@@ -49,7 +49,7 @@ $ evnx scan . -q
      ./.env:4 (DATABASE_URL)  post…5432
      !  a password in a postgres:// URL, not a placeholder
 
-  3 findings  ·  3 high
+  3 findings  ·  1 critical  ·  2 high
 
 [exit 1]
 FIXED I-060/I-049 (R-scan): -q is findings only, and keeps the line saying the config weakens the scan
@@ -61,7 +61,7 @@ $ evnx scan . --severity low
 
   scanning ./.env, ./.evnx.toml
 
-  ✗  AWS Access Key                              high
+  ✗  AWS Access Key                              critical
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
@@ -75,7 +75,7 @@ $ evnx scan . --severity low
      ./.env:4 (DATABASE_URL)  post…5432
      !  a password in a postgres:// URL, not a placeholder
 
-  3 findings  ·  3 high
+  3 findings  ·  1 critical  ·  2 high
 
 
 Next steps:

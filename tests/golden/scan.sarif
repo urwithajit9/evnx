@@ -22,9 +22,13 @@
             "text": "AWS Access Key detected in AWS_KEY"
           },
           "partialFingerprints": {
-            "evnxSecretV1": "./.env::AWS_KEY::secret/aws-access-key"
+            "evnxSecretV1": "./.env::AWS_KEY::aws-access-key"
           },
-          "ruleId": "secret/aws-access-key"
+          "properties": {
+            "confidence": "high",
+            "severity": "critical"
+          },
+          "ruleId": "aws-access-key"
         }
       ],
       "tool": {
@@ -40,7 +44,7 @@
                 "text": "evnx scan matched AWS Access Key in a file that may be committed."
               },
               "helpUri": "https://docs.evnx.dev/cli/commands/scan",
-              "id": "secret/aws-access-key",
+              "id": "aws-access-key",
               "name": "AWSAccessKey",
               "shortDescription": {
                 "text": "AWS Access Key"

@@ -21,12 +21,12 @@ $ evnx scan .env
 
   scanning .env
 
-  ✗  AWS Access Key                              high
+  ✗  AWS Access Key                              critical
      .env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
-  ✗  Stripe Secret Key (LIVE)                    high
+  ✗  Stripe Secret Key (LIVE)                    critical
      .env:2 (STRIPE_SECRET_KEY)  sk_l…hijk
      !  matches a live key format, not a placeholder
      →  revoke at https://dashboard.stripe.com/apikeys
@@ -40,7 +40,7 @@ $ evnx scan .env
      .env:4 (DATABASE_URL)  post…5432
      !  a password in a postgres:// URL, not a placeholder
 
-  4 findings  ·  4 high
+  4 findings  ·  2 critical  ·  2 high
 
 
 Next steps:
@@ -56,12 +56,12 @@ $ evnx scan --include-ignored --severity high
 
   scanning ./.env, ./.env.bak, ./.gitignore
 
-  ✗  AWS Access Key                              high
+  ✗  AWS Access Key                              critical
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
-  ✗  Stripe Secret Key (LIVE)                    high
+  ✗  Stripe Secret Key (LIVE)                    critical
      ./.env:2 (STRIPE_SECRET_KEY)  sk_l…hijk
      !  matches a live key format, not a placeholder
      →  revoke at https://dashboard.stripe.com/apikeys
@@ -75,12 +75,12 @@ $ evnx scan --include-ignored --severity high
      ./.env:4 (DATABASE_URL)  post…5432
      !  a password in a postgres:// URL, not a placeholder
 
-  ✗  AWS Access Key                              high
+  ✗  AWS Access Key                              critical
      ./.env.bak:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
-  ✗  Stripe Secret Key (LIVE)                    high
+  ✗  Stripe Secret Key (LIVE)                    critical
      ./.env.bak:2 (STRIPE_SECRET_KEY)  sk_l…hijk
      !  matches a live key format, not a placeholder
      →  revoke at https://dashboard.stripe.com/apikeys
@@ -94,7 +94,7 @@ $ evnx scan --include-ignored --severity high
      ./.env.bak:4 (DATABASE_URL)  post…5432
      !  a password in a postgres:// URL, not a placeholder
 
-  8 findings  ·  8 high
+  8 findings  ·  4 critical  ·  4 high
 
 
 Next steps:
@@ -110,12 +110,12 @@ $ evnx scan --severity high
 
   scanning ./.env, ./.env.bak, ./.gitignore
 
-  ✗  AWS Access Key                              high
+  ✗  AWS Access Key                              critical
      ./.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
-  ✗  Stripe Secret Key (LIVE)                    high
+  ✗  Stripe Secret Key (LIVE)                    critical
      ./.env:2 (STRIPE_SECRET_KEY)  sk_l…hijk
      !  matches a live key format, not a placeholder
      →  revoke at https://dashboard.stripe.com/apikeys
@@ -129,7 +129,7 @@ $ evnx scan --severity high
      ./.env:4 (DATABASE_URL)  post…5432
      !  a password in a postgres:// URL, not a placeholder
 
-  4 findings  ·  4 high
+  4 findings  ·  2 critical  ·  2 high
   ·  git ignores ./.env.bak — 4 findings there are not counted, because it is not committed (--include-ignored lists them)
 
 
