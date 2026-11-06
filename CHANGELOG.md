@@ -59,6 +59,25 @@ secret-key check uses the same 4.3 (was 4.5). Entropy is now computed per
 character, not per byte, which raised it for non-ASCII text.
 
 ### Added
+- **Scan rule files you write, and `evnx scan rules`** (C6; S3, S5). Rules in
+  the same format as evnx's own load from `.evnx/rules/*.toml` (committed, so
+  the team and CI share them), your personal `~/.config/evnx/rules/*.toml`
+  (or `$EVNX_CONFIG_DIR/rules`), and each `--rules <file>`, after evnx's own.
+  ⛔ They only add: an id evnx or another file already uses is an error
+  naming both, never an override. A scan always says when personal rules
+  apply. Caps: 2 MiB and 5,000 rules per file. A broken personal folder is a
+  warning; a broken project file stops the scan. `[[scan.patterns]]` keeps
+  working.
+  - `evnx scan rules list [--json]`: every rule, with its id, source,
+    severity and confidence.
+  - `evnx scan rules new <id> [--personal]`: a rule file to fill in.
+  - `evnx scan rules test [<file>]`: each rule against its own `positive` and
+    `near_miss` values, every failure reported; exit 1 on any.
+  - A folder literally named `rules` is now scanned as `evnx scan ./rules`.
+  - `.evnx/rules` and `.evnx/baseline.json` are found beside the `.evnx.toml`
+    in force, so a scan from a subfolder uses the project's.
+- `evnx commands --json` gives each command `subcommand_required`: whether it
+  needs a subcommand (`evnx auth`) or also runs alone (`evnx scan`).
 - **`evnx:allow` markers and a baseline for `evnx scan`** (C5, RM-54).
   - `# evnx:allow <rule-id> — reason` on a finding's line or the line above
     silences that rule there, in any comment style. A marker without a reason

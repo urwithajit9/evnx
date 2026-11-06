@@ -6,9 +6,16 @@ evnx <version>
 [exit 0]
 
 $ evnx scan --help
-Detect secrets that look real (AWS keys, tokens, etc.)
+Detect secrets that look real (AWS keys, tokens, etc.).
+
+`evnx scan rules …` manages rule files. A folder literally named `rules` is scanned as `evnx scan ./rules`.
 
 Usage: evnx scan [OPTIONS] [PATH]...
+       evnx scan <COMMAND>
+
+Commands:
+  rules  Your own scan rules: list, create and test them
+  help   Print this message or the help of the given subcommand(s)
 
 Arguments:
   [PATH]...
@@ -59,6 +66,9 @@ Options:
           Lowest severity worth reporting: critical, high, medium or low.
           
           Severity is how bad a finding is if it is real: `critical` for cloud, payment and AI keys and private keys, `high` for account tokens, database passwords and variables named like a secret, `low` for test keys and keys meant to ship in a web page. Filters what is reported, counted and exited on. `--severity high` is the usual blocking CI gate. ⚠️ Until 0.13.0 this filtered on confidence; that is now `--confidence`. Defaults to `low` (report everything), or `[scan] severity` from `.evnx.toml`.
+
+      --rules <FILE>
+          A rule file for this run, on top of `.evnx/rules/` and your personal rules. Repeatable. Same format as those: see `evnx scan rules new`
 
       --baseline <FILE>
           Findings accepted earlier: matching ones are reported as `known` and do not fail the run.

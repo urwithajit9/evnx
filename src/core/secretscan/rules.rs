@@ -34,8 +34,7 @@ pub fn builtin_rules() -> Vec<PatternRule> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RuleFile {
-    /// The file's format version, for packs and rule files that share it (C6).
-    #[allow(dead_code)]
+    /// The file's format version, shared with rule files and packs (C6).
     version: u32,
     rules: Vec<PatternRule>,
 }
@@ -46,6 +45,170 @@ static BUILTIN: std::sync::LazyLock<RuleFile> = std::sync::LazyLock::new(|| {
     toml::from_str(include_str!("../../assets/rules.toml"))
         .expect("src/assets/rules.toml parses; rules::tests checks it")
 });
+
+// ── C6: rule files ────────────────────────────────────────────────────────
+
+/// The largest rule file evnx reads, in bytes, and the most rules in one: a
+/// rule file is regexes and data, never code, and is capped by name.
+pub const MAX_RULE_FILE_BYTES: u64 = 2 * 1024 * 1024;
+pub const MAX_RULES_PER_FILE: usize = 5000;
+
+/// The project's rule folder, under its root (S3): committed, so the team and
+/// CI share it with no download.
+pub const PROJECT_RULES_DIR: &str = ".evnx/rules";
+
+/// A rule and where it came from: `core`, a file's path, or `.evnx.toml`.
+#[derive(Debug, Clone)]
+pub struct Sourced {
+    pub rule: PatternRule,
+    pub source: String,
+}
+
+/// What [`load`] found beyond the core.
+#[derive(Debug, Default)]
+pub struct Loaded {
+    /// In merge order: project, then personal, then each `--rules` file.
+    pub rules: Vec<Sourced>,
+    /// Rules per source, for the scan header.
+    pub sources: Vec<(String, usize)>,
+    /// Problems with personal rules, which warn rather than stop (S3).
+    pub warnings: Vec<String>,
+    /// How many of `rules` are personal: the scan header always names them.
+    pub personal: usize,
+}
+
+/// The personal rule folder: `EVNX_CONFIG_DIR/rules`, else the platform's
+/// config folder (`~/.config/evnx/rules` on Linux). Never committed.
+pub fn personal_dir() -> Option<std::path::PathBuf> {
+    match std::env::var_os("EVNX_CONFIG_DIR") {
+        Some(d) if !d.is_empty() => Some(std::path::PathBuf::from(d).join("rules")),
+        _ => dirs::config_dir().map(|d| d.join("evnx").join("rules")),
+    }
+}
+
+/// Read the rule files that add to the core (C6, S3): `.evnx/rules/*.toml`
+/// under `project`, then `personal`, then each of `extra` (`--rules`).
+///
+/// ⛔ Add-only (S5): a rule whose id is the core's, or another file's, is an
+/// error naming both, never an override. Every rule needs an id. A project
+/// or `--rules` file that cannot be read stops the scan; a personal one is a
+/// warning, because it is one person's and the scan should still run.
+pub fn load(
+    project: &std::path::Path,
+    personal: Option<&std::path::Path>,
+    extra: &[std::path::PathBuf],
+) -> anyhow::Result<Loaded> {
+    use std::collections::HashMap;
+    let mut seen: HashMap<String, String> = builtin_rules()
+        .into_iter()
+        .filter_map(|r| r.id)
+        .map(|id| (id, "evnx's own rules".to_string()))
+        .collect();
+    let mut out = Loaded::default();
+
+    let mut take = |path: &std::path::Path, label: String, personal: bool, out: &mut Loaded| {
+        let rules = read_rule_file(path, &label)?;
+        let n = rules.len();
+        for rule in rules {
+            let id = rule
+                .id
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("{label}: rule '{}' needs an id", rule.name))?;
+            if let Some(other) = seen.get(&id) {
+                anyhow::bail!(
+                    "rule id '{id}' is in both {other} and {label}: ids must be unique, \
+                     and a rule file adds to evnx's rules, it cannot replace one"
+                );
+            }
+            seen.insert(id, label.clone());
+            out.rules.push(Sourced {
+                rule,
+                source: label.clone(),
+            });
+        }
+        if personal {
+            out.personal += n;
+        }
+        out.sources.push((label, n));
+        Ok::<(), anyhow::Error>(())
+    };
+
+    for f in toml_files(&project.join(PROJECT_RULES_DIR))? {
+        // Named as it is in the project, wherever the scan was run from.
+        let label = format!(
+            "{PROJECT_RULES_DIR}/{}",
+            f.file_name().unwrap_or_default().to_string_lossy()
+        );
+        take(&f, label, false, &mut out)?;
+    }
+    if let Some(dir) = personal {
+        match toml_files(dir) {
+            Ok(files) => {
+                for f in files {
+                    let label = f.display().to_string();
+                    if let Err(e) = take(&f, label, true, &mut out) {
+                        // A duplicate id is a conflict, not one person's
+                        // broken file: still an error.
+                        if format!("{e}").contains("ids must be unique") {
+                            return Err(e);
+                        }
+                        out.warnings.push(format!("personal rules skipped: {e:#}"));
+                    }
+                }
+            }
+            Err(e) => out.warnings.push(format!("personal rules skipped: {e:#}")),
+        }
+    }
+    for f in extra {
+        let label = crate::utils::path::label(&f.to_string_lossy());
+        take(f, label, false, &mut out)?;
+    }
+    Ok(out)
+}
+
+/// Every `*.toml` in `dir`, sorted. A missing folder has none; any other
+/// failure to list it is an error.
+fn toml_files(dir: &std::path::Path) -> anyhow::Result<Vec<std::path::PathBuf>> {
+    use anyhow::Context;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", dir.display())),
+    };
+    let mut files: Vec<std::path::PathBuf> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "toml") && p.is_file())
+        .collect();
+    files.sort();
+    Ok(files)
+}
+
+/// One rule file, in the same schema as `rules.toml`, within the caps.
+pub fn read_rule_file(path: &std::path::Path, label: &str) -> anyhow::Result<Vec<PatternRule>> {
+    use anyhow::Context;
+    let size = std::fs::metadata(path)
+        .with_context(|| format!("reading {label}"))?
+        .len();
+    if size > MAX_RULE_FILE_BYTES {
+        anyhow::bail!(
+            "{label} is {size} bytes; a rule file may be at most {MAX_RULE_FILE_BYTES} \
+             (2 MiB), so it was not read"
+        );
+    }
+    let text = std::fs::read_to_string(path).with_context(|| format!("reading {label}"))?;
+    let file: RuleFile =
+        toml::from_str(&text).with_context(|| format!("{label} is not a valid rule file"))?;
+    if file.version != 1 {
+        anyhow::bail!("{label} has version {}; this evnx reads 1", file.version);
+    }
+    if file.rules.len() > MAX_RULES_PER_FILE {
+        anyhow::bail!(
+            "{label} has {} rules; a rule file may hold at most {MAX_RULES_PER_FILE}",
+            file.rules.len()
+        );
+    }
+    Ok(file.rules)
+}
 
 /// Build-time prefixes that inline a variable into the **client bundle**.
 ///

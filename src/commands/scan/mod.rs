@@ -56,6 +56,7 @@
 pub mod filters;
 pub mod models;
 pub mod output;
+pub mod rules_cmd;
 pub mod runner;
 pub mod suppress;
 pub mod walk;
@@ -107,6 +108,11 @@ pub struct ScanOptions {
     /// `--update-baseline`: write this run's findings to the baseline and
     /// exit 0 (C5).
     pub update_baseline: bool,
+    /// `--rules <file>`: rule files for this run only (C6).
+    pub rule_files: Vec<String>,
+    /// The folder holding the `.evnx.toml` in force, else the current one:
+    /// where `.evnx/rules` and `.evnx/baseline.json` are (C5, C6).
+    pub project_root: std::path::PathBuf,
     /// `pretty`, `json`, `sarif` or `github`.
     pub format: String,
     /// Exit 0 even with findings (never hides exit 2).
@@ -139,6 +145,8 @@ impl Default for ScanOptions {
             confidence: "low".to_string(),
             baseline: None,
             update_baseline: false,
+            rule_files: Vec::new(),
+            project_root: std::path::PathBuf::from("."),
             format: "pretty".to_string(),
             exit_zero: false,
             verbose: false,
@@ -194,11 +202,10 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
         let min_confidence: Confidence = opts.confidence.parse()?;
         // C5: a named baseline must exist (unless it is about to be written);
         // the default one is optional.
-        let baseline_path = std::path::PathBuf::from(
-            opts.baseline
-                .as_deref()
-                .unwrap_or(suppress::DEFAULT_BASELINE),
-        );
+        let baseline_path = match opts.baseline.as_deref() {
+            Some(p) => std::path::PathBuf::from(p),
+            None => opts.project_root.join(suppress::DEFAULT_BASELINE),
+        };
         let baseline = suppress::Baseline::load(
             &baseline_path,
             opts.baseline.is_some() && !opts.update_baseline,
@@ -206,7 +213,39 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
         let output_format: OutputFormat = opts.format.parse()?;
         // Compiled before anything is printed, so a broken expression cannot be
         // mistaken for a finished scan.
-        let compiled = PatternSet::compile(&opts.patterns)?;
+        // C6: the project's, the user's and this run's rule files, after the
+        // core. Personal rules are always announced (S3), on stderr so a
+        // machine format's stdout is untouched.
+        let extra: Vec<std::path::PathBuf> = opts
+            .rule_files
+            .iter()
+            .map(std::path::PathBuf::from)
+            .collect();
+        let loaded = crate::core::secretscan::rules::load(
+            &opts.project_root,
+            crate::core::secretscan::rules::personal_dir().as_deref(),
+            &extra,
+        )?;
+        for w in &loaded.warnings {
+            ui::warning(w);
+        }
+        if loaded.personal > 0 {
+            eprintln!(
+                "  + {} personal rule(s) from {}",
+                loaded.personal,
+                crate::core::secretscan::rules::personal_dir()
+                    .map(|d| d.display().to_string())
+                    .unwrap_or_default()
+            );
+        }
+        if opts.verbose {
+            for (source, n) in &loaded.sources {
+                ui::verbose_stderr(format!("{n} rule(s) from {source}"));
+            }
+        }
+        let mut all = opts.patterns.clone();
+        all.extend(loaded.rules.into_iter().map(|s| s.rule));
+        let compiled = PatternSet::compile(&all)?;
         let off: Vec<String> = opts.disable.iter().map(|n| n.to_lowercase()).collect();
         let disabled = PatternSet::compile(
             &crate::core::secretscan::rules::builtin_rules()

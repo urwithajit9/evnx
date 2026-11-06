@@ -39,7 +39,13 @@ fn rust_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
 #[test]
 fn t_share_49_quoted_commands_exist() {
     let mut flags: HashMap<Vec<String>, HashSet<String>> = HashMap::new();
+    // A group is a command that needs a subcommand. `evnx scan` has
+    // subcommands (C6) and still runs on its own, so it is not one.
+    let mut needs_sub: HashSet<Vec<String>> = HashSet::new();
     for c in support::surface::entries() {
+        if c.json["subcommand_required"] == true {
+            needs_sub.insert(c.path.clone());
+        }
         let longs = c
             .args()
             .iter()
@@ -47,11 +53,7 @@ fn t_share_49_quoted_commands_exist() {
             .collect();
         flags.insert(c.path, longs);
     }
-    let is_group = |p: &[String]| {
-        flags
-            .keys()
-            .any(|q| q.len() > p.len() && q[..p.len()] == *p)
-    };
+    let is_group = |p: &[String]| needs_sub.contains(p);
 
     let mut files = Vec::new();
     rust_files(

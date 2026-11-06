@@ -97,6 +97,11 @@ struct CommandNode {
     /// `commands` itself was, until it became a feature (D-143). A
     /// documentation check should skip them; a tour certainly should.
     hidden: bool,
+    /// The command does nothing without a subcommand: `evnx auth` prints
+    /// help. False for one that runs on its own and also has subcommands:
+    /// `evnx scan` scans, `evnx scan rules …` manages rules (C6). Having
+    /// children is not the same as needing one.
+    subcommand_required: bool,
     /// The guide this command's `--help` footer points at, when it has one.
     ///
     /// ⚠️ Read from `docs::ALL` — the **same** strings the binary prints — not
@@ -201,6 +206,7 @@ fn walk(cmd: &Command, prefix: &[String], out: &mut Vec<CommandNode>) {
             visible_aliases: sub.get_visible_aliases().map(str::to_string).collect(),
             aliases: sub.get_all_aliases().map(str::to_string).collect(),
             hidden: sub.is_hide_set(),
+            subcommand_required: sub.is_subcommand_required_set(),
             // Only top-level commands have a guide of their own.
             docs_url: if path.len() == 1 {
                 crate::docs::url_for(sub.get_name())

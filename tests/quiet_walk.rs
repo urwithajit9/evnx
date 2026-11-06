@@ -80,6 +80,7 @@ fn cases() -> Vec<Case> {
         case("spec init", &["spec", "init"]),
         case("run", &["run", "--", "true"]),
         case("remove", &["remove", "PORT", "--yes"]),
+        case("scan rules new", &["scan", "rules", "new", "quiet-rule"]),
     ];
     if cfg!(feature = "backup") {
         v.push(case("backup", &["backup", "--key-file", "pw"]));
@@ -112,6 +113,12 @@ const EXEMPT: &[(&str, &str)] = &[
     ("commands", "data"),
     ("completions", "data"),
     ("parse", "data: the listing is the answer"),
+    ("scan rules list", "data: the listing is the answer"),
+    (
+        "scan rules test",
+        "needs a rule file to test; its quiet success is `ui::success`, covered in \
+         tests/scan_rule_files.rs",
+    ),
     (
         "cloud status",
         "data: the answer stays under -q (DEC-G3); see t_cloud_status_keeps_the_answer",
