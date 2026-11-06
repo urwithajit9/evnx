@@ -115,7 +115,7 @@ impl PatternRule {
     /// A rule evnx ships with.
     ///
     /// ⚠️ Built-in detectors are the **same type** as `[[scan.patterns]]`, on
-    /// purpose. They used to be a hand-written `if` chain in `utils::patterns`,
+    /// purpose. They used to be a hand-written `if` chain in `utils::patterns` (now `core::secretscan::rules`),
     /// which made them strictly weaker than a rule a user could write: custom
     /// rules are matched against whole lines, built-ins only against tokens
     /// longer than 20 characters — so `-----BEGIN RSA PRIVATE KEY-----`, a

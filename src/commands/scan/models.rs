@@ -509,23 +509,6 @@ mod tests {
     }
 
     #[test]
-    fn test_confidence_from_patterns() {
-        // Test conversion from patterns::Confidence
-        assert_eq!(
-            Confidence::from(crate::utils::patterns::Confidence::High),
-            Confidence::High
-        );
-        assert_eq!(
-            Confidence::from(crate::utils::patterns::Confidence::Medium),
-            Confidence::Medium
-        );
-        assert_eq!(
-            Confidence::from(crate::utils::patterns::Confidence::Low),
-            Confidence::Low
-        );
-    }
-
-    #[test]
     fn test_finding_new() {
         let finding = Finding::new(
             "AWS Key",

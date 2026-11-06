@@ -53,6 +53,13 @@ exits 0. *Migrate:* a wrapper that treats any non-zero exit from an interactive
 - `toml_edit` is now always compiled in, not only with the `cloud` feature:
   `remove --contract` needs it. No crate is added to any build: `toml` already
   depends on it.
+- **Scanner internals (C1, RM-45), no change in output.** The detection
+  engine has one entry point, `core::secretscan::engine::scan_text`; the
+  built-in rules and heuristics moved from `utils::patterns` (deleted) to
+  `core::secretscan::rules` and `heuristic`, leaving one `Confidence` type;
+  file decoding moved from `scan/runner.rs` to `scan/walk.rs`. Every scan
+  golden and the behaviour lock are unchanged. For anyone using evnx as a
+  library: `evnx::utils::patterns` is gone.
 - The direct `blake3` dependency is gone: the push hash is
   `evnx_crypto::blob_hash`, the same function `vault rekey` uses (Q1).
 

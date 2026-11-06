@@ -57,6 +57,7 @@ pub mod filters;
 pub mod models;
 pub mod output;
 pub mod runner;
+pub mod walk;
 // The rule engine lives in `core::secretscan` so `sync` can ask it without
 // importing a command (A-09). Its old paths keep working.
 pub use crate::core::secretscan::{detector, patternset};
@@ -183,7 +184,7 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
         let compiled = PatternSet::compile(&opts.patterns)?;
         let off: Vec<String> = opts.disable.iter().map(|n| n.to_lowercase()).collect();
         let disabled = PatternSet::compile(
-            &crate::utils::patterns::builtin_rules()
+            &crate::core::secretscan::rules::builtin_rules()
                 .into_iter()
                 .filter(|r| off.contains(&r.name.to_lowercase()))
                 .collect::<Vec<_>>(),
