@@ -8,6 +8,51 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+⚠️ **`.env` references now expand top to bottom, as Docker Compose does** (P1,
+D10). A `${VAR}` reads the value assigned **above** it; until now evnx read each
+variable's last value in the file. Measured with Docker Compose v5.7.0, which now
+agrees on every case below. 0.12.0 warned about each affected line
+(`expansion_order`); that warning is gone because the difference is.
+- `B=1`, `A=${B}`, `B=2` gives `A=1` (was `2`).
+- A **forward reference** fails: `A=${B}` above `B=1` is an error that names the
+  line to move ("`${B}` is assigned below it, on line 2 … move that line above
+  line 1"). It was `1`.
+- `A=1`, then `A=${A}3`, gives `13`. It was a circular-expansion error, so no
+  working file depended on it. Circular and too-deep expansion can no longer
+  happen: every reference reads a value already settled.
+- A forward bare `$B` (no braces) keeps the text `$B`, as any undefined bare
+  reference does; it was the value from below. `validate` reports it as the new
+  `forward_reference` warning. Compose reads it as empty.
+- `validate`'s duplicate-key warning no longer advises removing an earlier
+  assignment that a line in between reads.
+- *Migrate:* run `evnx validate` on each env file before upgrading; with 0.12.0
+  every line that changes is already listed as `expansion_order`. Move each
+  definition above the lines that use it. `--ignore expansion_order` is still
+  accepted and does nothing.
+
+⚠️ **Keys may contain `.`, `-`, `[`, `]`, a leading digit and non-ASCII letters**
+(P1, D12). The parser now reads the names Docker Compose reads (measured, v5.7.0),
+such as `spring.datasource.url`, `my-key`, `1FOO` and `a[0]`; a file holding one
+was refused outright. `/`, `@`, `+`, `$`, spaces, quotes and braces are still
+refused, and the message says what a key may hold.
+- `validate` warns that a shell cannot `export` such a name (`not_shell_name`).
+- `evnx run` and `evnx cloud run` pass it to the process unchanged.
+- Each `convert` format and `migrate` destination that cannot hold a name refuses
+  it **by name**, writing or sending nothing: `shell`, GitHub Actions, Vercel,
+  Heroku, Doppler, Railway and Infisical take letters, digits and `_`;
+  Kubernetes takes `.` and `-`; Terraform takes `-`; GCP and Azure take `-`.
+  JSON, YAML, Docker Compose and AWS Secrets Manager take any of them.
+  `--exclude` leaves a name out. Every name evnx read before still passes.
+- `${my.key}` resolves (Compose itself refuses that template). A bare `$my.key`
+  stops at the `.`, as in Compose, and `${my-key}` is `${my}` with the default
+  `key`, as in Compose and the shell.
+- In `.evnx.toml`, a dotted name must be quoted: `[vars."spring.datasource.url"]`.
+  Unquoted, TOML reads nested tables, and `validate` now says so.
+- `strict` mode still requires uppercase: `MY.KEY` passes, `my.key` does not.
+- Library: `ParseError::ForwardReference` is new; `parser::is_env_key` is the
+  parser's rule, and `is_valid_key` stays the shell rule. `Document` no longer has
+  `order_differences`.
+
 ⚠️ **`evnx add` exits 4 when you answer no** (R1). Saying no to "Add these
 variables to …?" (or pressing Esc there) wrote nothing and exited **0**, the
 same code as a write, so a script could not tell the two apart. It now exits

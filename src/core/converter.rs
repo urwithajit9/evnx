@@ -258,6 +258,34 @@ impl ConvertOptions {
         consequence: &str,
     ) -> Result<Vec<(String, String)>> {
         let named = self.named(vars, converter);
+        // D12: a name the target cannot hold is refused by name, before
+        // anything is written or sent (`core::key_rules`).
+        let rule = converter.key_rule();
+        let refused: Vec<String> = named
+            .iter()
+            .filter(|(_, target, _)| !rule.accepts(target))
+            .map(|(from, target, _)| {
+                if from == target {
+                    format!("  {from}")
+                } else {
+                    format!("  {from} → {target}")
+                }
+            })
+            .collect();
+        if !refused.is_empty() {
+            let (these, them) = if refused.len() == 1 {
+                ("this name", "it")
+            } else {
+                ("these names", "them")
+            };
+            anyhow::bail!(
+                "{} cannot hold {these}: names there are {}.\n{}\n\n{consequence} \
+                 Rename {them} in the env file, or leave {them} out with --exclude.",
+                converter.name(),
+                rule.describe(),
+                refused.join("\n"),
+            );
+        }
         let pick = |i: usize| (named[i].1.clone(), self.transform_value(named[i].2));
         match self.collisions {
             Collisions::Unchecked => Ok((0..named.len()).map(pick).collect()),
@@ -430,6 +458,12 @@ pub trait Naming {
     /// See [`Converter::names_ignore_case`].
     fn names_ignore_case(&self) -> bool {
         false
+    }
+
+    /// The names the target can hold (D12): its row in
+    /// [`crate::core::key_rules::TARGET_KEY_RULES`], found by [`Naming::name`].
+    fn key_rule(&self) -> crate::core::key_rules::KeyRule {
+        crate::core::key_rules::for_target(self.name())
     }
 }
 

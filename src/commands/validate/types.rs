@@ -43,15 +43,20 @@ pub enum IssueType {
     /// A NUL byte in a value (B2 P0.6). An error: no process can receive it,
     /// so the file already fails wherever it is loaded.
     NulByte,
-    /// A value Docker Compose and python-dotenv read differently because they
-    /// expand top to bottom (D10, B2 P0.7). A warning: evnx switches to that
-    /// order in 0.13.0, so the value will change.
-    ExpansionOrder,
+    /// A bare `$NAME` naming a variable assigned only below it (D10, 0.13.0).
+    /// Expansion runs top to bottom, so it is kept as written, where 0.12.0
+    /// substituted the value from below. A warning: the value changed silently.
+    ForwardReference,
+    /// A name a shell cannot `export`, such as `spring.datasource.url` (D12,
+    /// 0.13.0). The parser reads it, as Docker Compose does, and a process
+    /// receives it; `source`, `export` and `convert --to shell` cannot. A
+    /// warning, never fixable: renaming it is the author's call.
+    NotShellName,
 }
 
 impl IssueType {
     /// Every type, in the order `--ignore`'s error lists them.
-    pub const ALL: [IssueType; 19] = [
+    pub const ALL: [IssueType; 20] = [
         IssueType::MissingVariable,
         IssueType::ExtraVariable,
         IssueType::PlaceholderValue,
@@ -70,7 +75,8 @@ impl IssueType {
         IssueType::ReaderMismatch,
         IssueType::LoneCarriageReturn,
         IssueType::NulByte,
-        IssueType::ExpansionOrder,
+        IssueType::ForwardReference,
+        IssueType::NotShellName,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -93,7 +99,8 @@ impl IssueType {
             IssueType::ReaderMismatch => "reader_mismatch",
             IssueType::LoneCarriageReturn => "lone_carriage_return",
             IssueType::NulByte => "nul_byte",
-            IssueType::ExpansionOrder => "expansion_order",
+            IssueType::ForwardReference => "forward_reference",
+            IssueType::NotShellName => "not_shell_name",
         }
     }
 }

@@ -52,31 +52,6 @@ pub struct Entry {
     pub quote: Option<char>,
 }
 
-/// A value that Docker Compose and python-dotenv read differently because they
-/// expand top to bottom, against the values assigned **above** a reference,
-/// where evnx expands against each key's last value (D10). Found during
-/// expansion and only reported: evnx's reading is unchanged until 0.13.0.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OrderDifference {
-    /// The entry that counts for this key, whose value differs.
-    pub key: String,
-    pub line: usize,
-    /// The variables it names directly that are assigned below it. Empty when
-    /// the difference comes through another variable.
-    pub below: Vec<AssignedBelow>,
-}
-
-/// One variable an [`OrderDifference`] names, and where it is assigned below.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AssignedBelow {
-    pub name: String,
-    /// The first assignment below the reference.
-    pub line: usize,
-    /// Also assigned above it: the reference sees an earlier value in Compose,
-    /// rather than none.
-    pub also_above: bool,
-}
-
 /// A full-line comment. `text` is everything after the `#`, untrimmed.
 #[derive(Debug, Clone)]
 pub struct Comment {
@@ -120,9 +95,6 @@ pub struct Document {
     /// The file began with a UTF-8 byte-order mark, which was skipped. A fact
     /// for `dialect`: python-dotenv keeps it in the first key's name.
     pub bom: bool,
-    /// References whose value differs when expanded top to bottom (D10), for
-    /// `validate` and `doctor` to report. Empty with expansion off.
-    pub order_differences: Vec<OrderDifference>,
 }
 
 impl Document {
@@ -164,6 +136,71 @@ impl Document {
         let mut out = IndexMap::with_capacity(self.entries.len());
         for e in &self.entries {
             out.insert(e.key.clone(), e.span.line);
+        }
+        out
+    }
+
+    /// The lines of entries that read `key`'s value before its last assignment:
+    /// after an earlier assignment, before the last one. Since 0.13.0 expansion
+    /// runs top to bottom (D10), so such an entry sees the earlier value, and
+    /// that assignment is not dead. Literal forms (single quotes, backticks)
+    /// read nothing.
+    pub fn read_before_last(&self, key: &str) -> Vec<usize> {
+        let lines: Vec<usize> = self
+            .entries
+            .iter()
+            .filter(|e| e.key == key)
+            .map(|e| e.span.line)
+            .collect();
+        let (Some(&first), Some(&last)) = (lines.first(), lines.last()) else {
+            return Vec::new();
+        };
+        self.entries
+            .iter()
+            .filter(|e| e.span.line > first && e.span.line < last)
+            .filter(|e| !matches!(e.quote, Some('\'') | Some('`')))
+            .filter(|e| {
+                // The text after `=`. In double quotes `\$` is an escaped
+                // dollar, not a reference; unquoted, it is still expanded.
+                let value = e.raw.split_once('=').map_or("", |(_, v)| v);
+                let value = if e.quote == Some('"') {
+                    value.replace("\\$", &super::expand::LITERAL_DOLLAR.to_string())
+                } else {
+                    value.to_string()
+                };
+                super::expand::references(&value).iter().any(|n| n == key)
+            })
+            .map(|e| e.span.line)
+            .collect()
+    }
+
+    /// References to a name assigned only **below** them: `(line, name,
+    /// assigned)`. Expansion runs top to bottom (D10), so such a reference sees
+    /// nothing. A `${NAME}` one is already a [`ParseError::ForwardReference`];
+    /// in a file that parses, these are bare `$NAME`s, kept as written, which
+    /// 0.12.0 expanded with the value from below.
+    ///
+    /// [`ParseError::ForwardReference`]: super::ParseError::ForwardReference
+    pub fn forward_references(&self) -> Vec<(usize, String, usize)> {
+        let mut out = Vec::new();
+        for (i, e) in self.entries.iter().enumerate() {
+            if matches!(e.quote, Some('\'') | Some('`')) {
+                continue;
+            }
+            let value = e.raw.split_once('=').map_or("", |(_, v)| v);
+            let value = if e.quote == Some('"') {
+                value.replace("\\$", &super::expand::LITERAL_DOLLAR.to_string())
+            } else {
+                value.to_string()
+            };
+            for name in super::expand::references(&value) {
+                if self.entries[..i].iter().any(|o| o.key == name) {
+                    continue;
+                }
+                if let Some(below) = self.entries[i + 1..].iter().find(|o| o.key == name) {
+                    out.push((e.span.line, name, below.span.line));
+                }
+            }
         }
         out
     }

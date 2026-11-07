@@ -147,37 +147,63 @@ fn p0_6_a_nul_byte_is_an_error_in_validate_and_doctor() {
     assert!(!out.all().contains("s3cr3t"), "{}", out.all());
 }
 
-/// D10, B2 P0.7: a value Docker Compose reads differently top to bottom is a
-/// warning in `validate` and one line in `doctor`, whatever the readers. The
-/// value evnx reads is unchanged, and no value is printed.
+/// D10 (0.13.0 P1): evnx expands top to bottom, so 0.12.0's P0.7 warning is
+/// gone and the value is Compose's. A duplicate whose earlier assignment is
+/// read in between is not called dead. `--ignore expansion_order` still runs.
+/// No value is printed.
 #[test]
-fn p0_7_a_value_read_differently_top_to_bottom_is_reported() {
+fn p1_d10_values_read_top_to_bottom() {
     let p = Project::new()
         .file(".gitignore", ".env\n")
         .env("HOST=s3cr3t-a\nURL=${HOST}/x\nHOST=s3cr3t-b\n")
         .example("HOST=\nURL=\n");
     let out = run(p.path(), &["validate", "--format", "json"]);
     let json: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
-    let found: Vec<_> = json["issues"]
-        .as_array()
-        .unwrap()
+    let issues = json["issues"].as_array().unwrap();
+    assert!(
+        issues.iter().all(|i| i["type"] != "expansion_order"),
+        "{}",
+        out.stdout
+    );
+    let dup: Vec<_> = issues
         .iter()
-        .filter(|i| i["type"] == "expansion_order")
+        .filter(|i| i["type"] == "duplicate_key")
         .collect();
-    assert_eq!(found.len(), 1, "{}", out.stdout);
-    assert_eq!(found[0]["variable"], "URL");
-    assert_eq!(found[0]["severity"], "warning");
+    assert_eq!(dup.len(), 1, "{}", out.stdout);
     assert_eq!(
-        found[0]["message"],
-        "URL (line 2) uses HOST, assigned again below it on line 3. Docker Compose and \
-         python-dotenv expand top to bottom, so they read a different value for URL than evnx does"
+        dup[0]["message"],
+        "HOST is assigned 2 times (lines 1, 3) — line 3 is its final value, and line 2 reads \
+         an earlier one"
     );
     assert!(!out.stdout.contains("s3cr3t"), "{}", out.stdout);
 
+    // The retired type is accepted and changes nothing.
+    let out = run(p.path(), &["validate", "--ignore", "expansion_order"]);
+    assert_eq!(out.code, Some(0), "{}", out.all());
+
+    // The value is Compose's: URL reads the HOST above it.
+    let out = run(p.path(), &["convert", "--to", "json"]);
+    let json: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(json["URL"], "s3cr3t-a/x", "{}", out.stdout);
+
     let out = run(p.path(), &["doctor"]);
+    assert!(!out.all().contains("top to bottom"), "{}", out.all());
+    assert!(!out.all().contains("s3cr3t"), "{}", out.all());
+}
+
+/// D10: a forward reference fails and names the line to move.
+#[test]
+fn p1_d10_a_forward_reference_names_the_line_to_move() {
+    let p = Project::new()
+        .file(".gitignore", ".env\n")
+        .env("URL=${HOST}/x\nHOST=s3cr3t\n")
+        .example("HOST=\nURL=\n");
+    let out = run(p.path(), &["validate"]);
+    assert_ne!(out.code, Some(0), "{}", out.all());
     assert!(
         out.all().contains(
-            ".env: 1 value is read differently top to bottom by Docker Compose and python-dotenv (URL)"
+            "Undefined variable at line 1: ${HOST} is assigned below it, on line 2. evnx expands \
+             top to bottom, as Docker Compose does: move that line above line 1"
         ),
         "{}",
         out.all()
@@ -207,4 +233,65 @@ fn p0_8_a_compose_project_hears_about_dollar_dollar() {
         .unwrap()
         .starts_with("Single-quote the value"));
     assert!(!out.stdout.contains("s3cr3t"), "{}", out.stdout);
+}
+
+/// D10: a bare `$NAME` naming a variable assigned below it is kept as written,
+/// which 0.12.0 expanded silently. `validate` says so, without the value.
+/// Compose (v5.7.0, measured) reads it as empty.
+#[test]
+fn p1_d10_a_bare_forward_reference_is_a_warning() {
+    let p = Project::new()
+        .file(".gitignore", ".env\n")
+        .env("M=$A/x\nOK=\"\\$A\"\nA=s3cr3t\n")
+        .example("M=\nOK=\nA=\n");
+    let out = run(p.path(), &["validate", "--format", "json"]);
+    let json: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    let found: Vec<_> = json["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["type"] == "forward_reference")
+        .collect();
+    assert_eq!(
+        found.len(),
+        1,
+        "an escaped `\\$A` is not a reference: {}",
+        out.stdout
+    );
+    assert_eq!(found[0]["variable"], "M");
+    assert_eq!(found[0]["severity"], "warning");
+    assert_eq!(
+        found[0]["message"],
+        "$A on line 1 names A, which is assigned below it on line 2. evnx expands top to \
+         bottom, so it keeps the text $A; Docker Compose reads it as empty"
+            .replace("line 2", "line 3")
+    );
+    assert!(!out.stdout.contains("s3cr3t"), "{}", out.stdout);
+}
+
+/// D12: a name a shell cannot `export` is read, with a warning that says who
+/// can and cannot receive it. Each name once, without its value.
+#[test]
+fn p1_d12_a_name_a_shell_cannot_export_is_a_warning() {
+    let p = Project::new()
+        .file(".gitignore", ".env\n")
+        .env("spring.datasource.url=s3cr3t\nspring.datasource.url=s3cr3t2\nOK=1\n")
+        .example("spring.datasource.url=\nOK=\n");
+    let out = run(p.path(), &["validate", "--format", "json"]);
+    let json: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    let found: Vec<_> = json["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["type"] == "not_shell_name")
+        .collect();
+    assert_eq!(found.len(), 1, "{}", out.stdout);
+    assert_eq!(found[0]["variable"], "spring.datasource.url");
+    assert_eq!(found[0]["severity"], "warning");
+    assert!(!out.stdout.contains("s3cr3t"), "{}", out.stdout);
+    let out = run(
+        p.path(),
+        &["validate", "--ignore", "not_shell_name,duplicate_key"],
+    );
+    assert_eq!(out.code, Some(0), "{}", out.all());
 }

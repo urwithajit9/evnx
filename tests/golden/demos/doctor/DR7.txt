@@ -103,8 +103,33 @@ $ evnx doctor
 
 $ evnx doctor
 
+  ✓  Validate .env file existence, security, and syntax
+
+  ✓  Check .env.example exists and is Git-tracked
+
+  ·  Detect project type and validate dependencies
+     No recognized project configuration
+
+  ·  Check for Docker configuration files
+     No Docker configuration detected
+
+  ✓  Check that AI coding agents cannot read .env
+
+  ✓  Check file permissions for sensitive files
+
+  4 checks passed
+[stderr]
+
+  evnx doctor  Diagnosing environment setup
+
+  Docs: https://docs.evnx.dev/cli/commands/doctor
+[exit 0]
+  ok: D12 (0.13.0): a dashed key is read, as Docker Compose reads it (exit 0)
+
+$ evnx doctor
+
   ✗  Validate .env file existence, security, and syntax
-     .env: Line 1: Invalid key: 'MY-KEY': a shell cannot hold this name, so evnx refuses it, though Docker Compose and python-dotenv accept it; use letters, digits and _, not starting with a digit
+     .env: Line 1: Invalid key: 'a/b': a key holds letters, digits, _, ., -, [ and ], as Docker Compose accepts
 
   ✓  Check .env.example exists and is Git-tracked
 
@@ -124,6 +149,6 @@ $ evnx doctor
   evnx doctor  Diagnosing environment setup
 
 [exit 1]
-  ok: dashed key: invalid for doctor and for the parser (consistent), an error since R-doctor (exit 1)
+  ok: a key Docker Compose refuses: invalid for doctor and for the parser (consistent) (exit 1)
 
-================ summary: 5 ok, 0 mismatch   ================
+================ summary: 6 ok, 0 mismatch   ================
