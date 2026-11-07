@@ -157,7 +157,7 @@ fn t_i100_gcp_prints_each_value_and_creates_or_adds_a_version() {
     support::stub::write_stub(
         &bin.join("gcloud"),
         "#!/bin/sh\n\
-         if [ \"$2\" = describe ]; then case \"$3\" in PRICE|APOS) exit 0;; *) exit 1;; esac; fi\n\
+         if [ \"$2\" = describe ]; then case \"$3\" in price|apos) exit 0;; *) exit 1;; esac; fi\n\
          in=$(cat)\n\
          printf '%s|%s|%s\\n' \"$*\" \"$in\" >> \"$STUB_LOG\"\n",
     );
@@ -195,12 +195,62 @@ fn t_i100_gcp_prints_each_value_and_creates_or_adds_a_version() {
     );
     let log = std::fs::read_to_string(&log).unwrap();
     for expected in [
-        "secrets versions add PRICE --data-file=- --project=my-proj|$5 off|",
-        "secrets versions add APOS --data-file=- --project=my-proj|it's|",
-        "secrets create NEW --data-file=- --project=my-proj|fresh|",
+        "secrets versions add price --data-file=- --project=my-proj|$5 off|",
+        "secrets versions add apos --data-file=- --project=my-proj|it's|",
+        "secrets create new --data-file=- --project=my-proj|fresh|",
     ] {
         assert!(log.contains(expected), "missing {expected:?} in\n{log}");
     }
+}
+
+/// I-098: the same input names the same secrets in `convert` and `migrate`.
+#[test]
+fn t_i098_gcp_migrate_names_match_convert() {
+    let p = Project::new().env("DB_URL=postgres://h/d\nAPI_KEY=k\n");
+    let m = migrate(
+        &p,
+        &[
+            "--to",
+            "gcp-secret-manager",
+            "--project",
+            "my-proj",
+            "--print-only",
+        ],
+    );
+    m.assert_code(0);
+    let c = run_with(
+        p.path(),
+        &["convert", "--to", "gcp-secrets", "--project", "my-proj"],
+        &[],
+        None,
+    );
+    c.assert_code(0);
+    for name in ["db-url", "api-key"] {
+        let line = format!("| upsert_secret {name}\n");
+        assert!(m.stdout.contains(&line), "migrate: {}", m.stdout);
+        assert!(c.stdout.contains(&line), "convert: {}", c.stdout);
+    }
+    assert!(!m.stdout.contains("upsert_secret DB_URL"), "{}", m.stdout);
+}
+
+/// Vercel: a secret-looking variable is added `--sensitive`, a plain one not.
+#[test]
+fn t_rm65_vercel_migrate_marks_secrets_sensitive() {
+    let p = Project::new().env("DB_PASSWORD=hunter2\nAPP_NAME=demo\n");
+    let out = migrate(&p, &["--to", "vercel"]);
+    out.assert_code(0);
+    assert!(
+        out.stdout
+            .contains("vercel env add DB_PASSWORD production --sensitive --force --yes"),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout
+            .contains("vercel env add APP_NAME production --force --yes"),
+        "{}",
+        out.stdout
+    );
 }
 
 // ── infisical (I-270, DEC-MG4) ──────────────────────────────────────────────

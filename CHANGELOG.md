@@ -8,6 +8,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**⚠️ `evnx migrate --to gcp-secret-manager` now creates `db-url` where 0.12 created `DB_URL`**
+(I-098, RM-62). `convert --to gcp-secrets` has always lowercased names and written `_` as `-`;
+`migrate` kept the `.env` name, so the two commands named the same variable differently. Both
+(and `cloud export --to gcp-secrets`, which renders through `convert`) now take the name from one
+function, so they cannot drift.
+- A project migrated with 0.12 gets new secrets beside the old ones: `DB_URL` stays, `db-url` is
+  added. Point the app at the new names, then delete the old upper-case secrets
+  (`gcloud secrets delete DB_URL --project=my-project`).
+- `A_B` and `a_b` becoming one `a-b` is refused by name, as in `convert`.
+
+**⚠️ `convert --to vercel` writes `"type": "sensitive"` for secret-looking variables** (RM-65,
+experimental). They were all `"plain"`. A variable whose name or value looks secret
+(`DB_PASSWORD`, a token, a URL with a password) now gets `"target": ["production", "preview"]`:
+Vercel's API rejects a Sensitive variable in `development`, so it is not set there, and evnx says
+how many on stderr (the JSON is unchanged otherwise). Other variables stay `"plain"` for all three
+targets. `migrate --to vercel` adds `--sensitive` to `vercel env add` for those variables, except
+when the environment is `development`.
+
 - **Three more built-in rules, 63 in all** (C12, RM-92): `gitlab-job-token` (`glcbt-`, medium),
   `flyio-token` (`FlyV1 fm2_` / `fm2_`, critical) and `azure-devops-pat` (the 84-character PAT
   with the fixed `AZDO` signature, high), each only where the provider's own docs state the

@@ -73,8 +73,8 @@ upsert_secret() {
   fi
 }
 
-printf '%s' 'demo app' | upsert_secret APP_NAME
-printf '%s' '$5' | upsert_secret PRICE
+printf '%s' 'demo app' | upsert_secret app-name
+printf '%s' '$5' | upsert_secret price
 [stderr]
 
   evnx migrate  Generate destination commands from your .env

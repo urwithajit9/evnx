@@ -269,6 +269,13 @@ pub trait MigrationDestination {
         false
     }
 
+    /// The name `key` — already prefixed — has at the destination. The name as
+    /// it is, unless the destination renames; then it calls the function the
+    /// matching `convert` format calls, so the two cannot drift (I-098).
+    fn target_name(&self, key: &str) -> String {
+        key.to_string()
+    }
+
     /// Perform (or simulate) the migration.
     ///
     /// Implementations must honour `opts.dry_run`: when true they must not
@@ -297,5 +304,9 @@ impl crate::core::converter::Naming for dyn MigrationDestination + '_ {
 
     fn names_ignore_case(&self) -> bool {
         MigrationDestination::names_ignore_case(self)
+    }
+
+    fn target_name(&self, key: &str) -> String {
+        MigrationDestination::target_name(self, key)
     }
 }
