@@ -54,10 +54,12 @@
 //! ```
 
 pub mod filters;
+pub mod hook;
 pub mod models;
 pub mod output;
 pub mod rules_cmd;
 pub mod runner;
+pub mod staged;
 pub mod suppress;
 pub mod walk;
 // The rule engine lives in `core::secretscan` so `sync` can ask it without
@@ -132,6 +134,8 @@ pub struct ScanOptions {
     /// [`detector::HEURISTIC_NAMES`] (I-056). The rules themselves are already
     /// out of `patterns`; this also silences the heuristics for their values.
     pub disable: Vec<String>,
+    /// `--staged` (C9): scan the git index, not the files on disk.
+    pub staged: bool,
 }
 
 impl Default for ScanOptions {
@@ -155,6 +159,7 @@ impl Default for ScanOptions {
             include_ignored: false,
             max_file_size: None,
             disable: Vec::new(),
+            staged: false,
         }
     }
 }
@@ -270,7 +275,11 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
             opts.update_baseline.then(|| baseline_path.clone()),
         )
         .with_disabled(disabled, &opts.disable);
-        runner.run(opts.paths.clone(), output_format)
+        if opts.staged {
+            runner.run_staged(opts.paths.clone(), output_format)
+        } else {
+            runner.run(opts.paths.clone(), output_format)
+        }
     };
 
     let secrets_found = match scan() {

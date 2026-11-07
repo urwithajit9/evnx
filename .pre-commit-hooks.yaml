@@ -22,6 +22,18 @@
   pass_filenames: true
   stages: [pre-commit]
 
+# C9: the same scan with the evnx on PATH (`language: system`): no Rust
+# toolchain and no first-run build, and the version is the one installed.
+# ⚠️ A missing evnx fails the hook; it never passes unchecked.
+# `evnx-scan` above stays for a version pinned by `rev:`.
+- id: evnx-scan-installed
+  name: evnx — Secret Scanner (installed evnx)
+  description: Scan staged files for secrets with the evnx on PATH; fails if evnx is not installed
+  entry: evnx scan
+  language: system
+  pass_filenames: true
+  stages: [pre-commit]
+
 - id: evnx-validate
   name: evnx — .env Validator
   description: Validate .env files for placeholders, weak secrets, and misconfigurations

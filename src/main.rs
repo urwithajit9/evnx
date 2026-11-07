@@ -273,6 +273,18 @@ fn main() -> Result<()> {
         }
 
         Commands::Scan {
+            action: Some(evnx::cli::ScanAction::Hook { command }),
+            ..
+        } => {
+            use evnx::cli::HookCommand;
+            match command {
+                HookCommand::Install => commands::scan::hook::install(&here).map(drop),
+                HookCommand::Uninstall => commands::scan::hook::uninstall(&here),
+                HookCommand::Status => commands::scan::hook::status(&here),
+            }
+        }
+
+        Commands::Scan {
             action: None,
             path,
             exclude,
@@ -289,6 +301,7 @@ fn main() -> Result<()> {
             format,
             exit_zero,
             include_ignored,
+            staged,
         } => commands::scan::run(commands::scan::ScanOptions {
             paths: path,
             exclude: evnx::core::config::extend(exclude, cfg.scan.exclude),
@@ -346,6 +359,7 @@ fn main() -> Result<()> {
                     .map(|e| (e, ".evnx.toml [scan] extensions"))
             }),
             include_ignored,
+            staged,
         }),
 
         Commands::Diff {

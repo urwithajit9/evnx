@@ -173,6 +173,8 @@ pub enum GitState {
     Unignored,
     /// Ignored and not tracked: a commit leaves it out.
     Ignored,
+    /// Read from the index by `--staged` (C9): the next commit records it.
+    Staged,
 }
 
 impl From<crate::core::gitignore::Exposure> for GitState {
