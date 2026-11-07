@@ -99,9 +99,20 @@ fn detail(e: &AuditEvent) -> String {
         "push" => num("version")
             .map(|v| format!("version {v}"))
             .unwrap_or_default(),
-        "pull" => num("version")
-            .map(|v| format!("version {v}"))
-            .unwrap_or_default(),
+        "pull" => {
+            let version = num("version").map(|v| format!("version {v}"));
+            // RM-57: rekey and revoke read every version to re-encrypt it. The
+            // server marks those reads (`system: true`, or `reason: "rekey"`),
+            // so they do not read as the member pulling each version by hand.
+            let system = m.get("system").and_then(|v| v.as_bool()) == Some(true)
+                || text("reason") == Some("rekey");
+            match (version, system) {
+                (Some(v), true) => format!("{v} · system read (rekey)"),
+                (None, true) => "system read (rekey)".to_string(),
+                (Some(v), false) => v,
+                (None, false) => String::new(),
+            }
+        }
         "version_deleted" => num("version")
             .map(|v| format!("version {v}"))
             .unwrap_or_default(),
@@ -115,11 +126,61 @@ fn detail(e: &AuditEvent) -> String {
                 _ => String::new(),
             }
         }
-        "vault_rekey" => num("members")
-            .map(|n| format!("re-wrapped for {n} member{}", if n == 1 { "" } else { "s" }))
-            .unwrap_or_default(),
+        "vault_rekey" => {
+            let rewrapped = num("members")
+                .map(|n| format!("re-wrapped for {n} member{}", if n == 1 { "" } else { "s" }));
+            // RM-57: a revoke is logged as a rekey holding `removed_user_id`. The
+            // server resolves it to `removed_email` (V0); older servers send
+            // the id only, which is still worth showing over nothing.
+            let removed = text("removed_email")
+                .or_else(|| text("target_email"))
+                .map(|e| format!("removed {e}"))
+                .or_else(|| {
+                    text("removed_user_id").map(|id| {
+                        let short: String = id.chars().take(8).collect();
+                        format!("removed a member (id {short}…)")
+                    })
+                });
+            match (removed, rewrapped) {
+                (Some(r), Some(w)) => format!("{r}; {w}"),
+                (Some(r), None) => r,
+                (None, Some(w)) => w,
+                (None, None) => String::new(),
+            }
+        }
         _ => String::new(),
     }
+}
+
+/// The actor, as the WHO column shows it.
+///
+/// ⚠️ A deleted account is named as such rather than left blank: an empty
+/// actor column reads as a bug, and "the account is gone" is a fact worth
+/// knowing while reading a trail.
+fn who(e: &AuditEvent) -> &str {
+    e.actor_email.as_deref().unwrap_or("(deleted account)")
+}
+
+/// Widest WHO entry, at least the heading, at most [`WHO_MAX`].
+fn who_width<'a>(entries: impl Iterator<Item = &'a str>) -> usize {
+    entries
+        .map(|w| w.chars().count())
+        .max()
+        .unwrap_or(0)
+        .clamp("WHO".len(), WHO_MAX)
+}
+
+/// The widest the WHO column grows before an entry is shortened with `…`.
+const WHO_MAX: usize = 40;
+
+/// `s` shortened to `width` characters, ending in `…` when it was cut.
+fn fit(s: &str, width: usize) -> String {
+    if s.chars().count() <= width {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(width.saturating_sub(1)).collect();
+    out.push('…');
+    out
 }
 
 pub fn run(
@@ -173,8 +234,11 @@ pub fn run(
             );
         }
     } else {
+        // RM-57 (I-308): the WHO column is as wide as its longest entry, up to
+        // a cap, so a long address neither pushes DETAIL off nor gets cut at 26.
+        let width = who_width(rows.iter().map(|e| who(e)));
         println!(
-            "  {:<19}  {:<18}  {:<26}  {}",
+            "  {:<19}  {:<18}  {:<width$}  {}",
             "WHEN".bold(),
             "WHAT".bold(),
             "WHO".bold(),
@@ -182,15 +246,11 @@ pub fn run(
         );
         for e in &rows {
             let when: String = e.created_at.replace('T', " ").chars().take(19).collect();
-            // ⚠️ A deleted account is named as such rather than left blank: an
-            // empty actor column reads as a bug, and "the account is gone" is a
-            // fact worth knowing while reading a trail.
-            let who = e.actor_email.as_deref().unwrap_or("(deleted account)");
             println!(
-                "  {:<19}  {:<18}  {:<26}  {}",
+                "  {:<19}  {:<18}  {:<width$}  {}",
                 when,
                 e.event_type,
-                who,
+                fit(who(e), width),
                 detail(e)
             );
         }
@@ -270,6 +330,70 @@ mod tests {
         assert_eq!(parse_window("7d").unwrap(), Some(7));
         assert_eq!(parse_window("30d").unwrap(), Some(30));
         assert_eq!(parse_window(" 30D ").unwrap(), Some(30));
+    }
+
+    fn event(kind: &str, actor: Option<&str>, meta: serde_json::Value) -> AuditEvent {
+        AuditEvent {
+            event_type: kind.into(),
+            actor_email: actor.map(Into::into),
+            metadata: Some(meta),
+            created_at: "2026-11-08T00:00:00Z".into(),
+        }
+    }
+
+    /// RM-57: a revoke names the removed member when the server resolves it,
+    /// and falls back to the id when it does not.
+    #[test]
+    fn rm57_a_revoke_names_the_removed_member() {
+        let e = event(
+            "vault_rekey",
+            Some("owner@acme.dev"),
+            serde_json::json!({"members": 2, "removed_user_id": "0f1e2d3c-aaaa", "removed_email": "ex@acme.dev"}),
+        );
+        assert_eq!(detail(&e), "removed ex@acme.dev; re-wrapped for 2 members");
+        let e = event(
+            "vault_rekey",
+            Some("owner@acme.dev"),
+            serde_json::json!({"members": 1, "removed_user_id": "0f1e2d3c-aaaa"}),
+        );
+        assert_eq!(
+            detail(&e),
+            "removed a member (id 0f1e2d3c…); re-wrapped for 1 member"
+        );
+        let e = event("vault_rekey", None, serde_json::json!({"members": 3}));
+        assert_eq!(detail(&e), "re-wrapped for 3 members");
+    }
+
+    /// RM-57: reads made by rekey are marked as system reads.
+    #[test]
+    fn rm57_rekey_reads_are_system_reads() {
+        let e = event(
+            "pull",
+            Some("o@a.dev"),
+            serde_json::json!({"version": 4, "system": true}),
+        );
+        assert_eq!(detail(&e), "version 4 · system read (rekey)");
+        let e = event(
+            "pull",
+            Some("o@a.dev"),
+            serde_json::json!({"version": 4, "reason": "rekey"}),
+        );
+        assert_eq!(detail(&e), "version 4 · system read (rekey)");
+        let e = event("pull", Some("o@a.dev"), serde_json::json!({"version": 4}));
+        assert_eq!(detail(&e), "version 4");
+    }
+
+    /// RM-57 (I-308): WHO grows to its longest entry, within bounds.
+    #[test]
+    fn rm57_who_column_is_width_aware() {
+        assert_eq!(who_width(["a@b.c"].into_iter()), 5);
+        assert_eq!(who_width(std::iter::empty()), 3);
+        let long = "a-very-long-address-for-someone@a-long-company-domain.example";
+        assert_eq!(who_width([long].into_iter()), WHO_MAX);
+        let cut = fit(long, WHO_MAX);
+        assert_eq!(cut.chars().count(), WHO_MAX);
+        assert!(cut.ends_with('…'));
+        assert_eq!(fit("x@y.z", 10), "x@y.z");
     }
 
     /// ⚠️ A bad window must be an error, not a silent `all`. Widening a window

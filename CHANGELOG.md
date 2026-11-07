@@ -365,6 +365,13 @@ character, not per byte, which raised it for non-ASCII text.
   `evnx_crypto::blob_hash`, the same function `vault rekey` uses (Q1).
 
 ### Fixed
+- **`evnx cloud audit` says who was removed** (RM-57, I-308). A revoke is logged
+  as a rekey; its DETAIL now reads `removed ex@acme.dev; re-wrapped for 2
+  members` when the server resolves the member (evnx-server V0), and names the
+  member's id when it does not. The reads a rekey makes to re-encrypt each
+  version show as `system read (rekey)` instead of looking like someone pulling
+  every version by hand. The WHO column grows to its longest address (up to 40
+  characters, then `…`) instead of a fixed 26.
 - ⛔ **`evnx scan` no longer hangs on a project with many gitignored files.**
   To learn which walked files git ignores, scan wrote every path to
   `git check-ignore` before reading any answer. Once the ignored paths filled
