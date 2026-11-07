@@ -1,0 +1,13 @@
+# Fixtures for `supabase-access-token` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["sbp_", "72ae4a18a9a18a27fc3dc5a270b0205b33b57745"],
+  ["sbp_fc", "0d1b3ebbdd8e02350b88fbbf20c5da2cb97e6fef"],
+]
+
+near_miss = [
+  ["sbp_", "ff99a76240cf66bda6c0"],
+]

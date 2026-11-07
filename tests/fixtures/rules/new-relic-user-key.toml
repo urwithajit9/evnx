@@ -1,0 +1,12 @@
+# Fixtures for `new-relic-user-key` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["NRAK-", "8CAI1EU8GRNE50CX51QL6UZUDFK"],
+]
+
+near_miss = [
+  ["NRAK-", "JRLIN2RGDP3A"],
+]

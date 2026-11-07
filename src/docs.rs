@@ -112,7 +112,14 @@ Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
 \x20 Shopify Access Token, HashiCorp Vault Token, GitLab Personal Access Token,\n\
 \x20 Hugging Face Token, Heroku API Key, Sentry DSN, Sentry Auth Token,\n\
 \x20 Linear API Key, Discord Bot Token, Telegram Bot Token, Slack Webhook URL,\n\
-\x20 Google OAuth Client Secret;\n\
+\x20 Google OAuth Client Secret, GitLab Runner Authentication Token, GitLab\n\
+\x20 Deploy Token, GitLab Pipeline Trigger Token, Groq API Key, xAI API Key,\n\
+\x20 Replicate API Token, Perplexity API Key, Stripe Webhook Signing Secret,\n\
+\x20 Databricks Personal Access Token, Atlassian API Token, Bitbucket App\n\
+\x20 Password, HCP Terraform API Token, Pulumi Access Token, Doppler Token,\n\
+\x20 Supabase Personal Access Token, Supabase Secret Key, age Secret Key, New\n\
+\x20 Relic User API Key, Grafana Service Account Token, Grafana Cloud Access\n\
+\x20 Policy Token, Postman API Key, Notion Integration Token;\n\
 \x20 and the heuristics: Sensitive config key, High-entropy string,\n\
 \x20 AWS Secret Access Key.\n\
 \n\

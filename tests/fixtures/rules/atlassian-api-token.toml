@@ -1,0 +1,13 @@
+# Fixtures for `atlassian-api-token` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["ATATT3xFfG", "Dj6K1UZy8J22KpgaTqARjCw1j7NCdCkLYRGcByAQBbtV6fTLh8MJCxKXr0SlUj7Y0v6sIFmIwjw69k0XQgTmttP4AwqT8gTluVthSw2jShFRiqxsRMG49ir53YTcuzJ7BuqJ5nYA5ZZqjemA8vaZc4MuvqpYhyBfsuEzD7jlnlXVCUBlWGrV"],
+  ["ATCTT3xFfG", "ygu3QmsxQW4OsWWnKQwbX9P66cTUE4VaHEcKeaU38LPFH1FUI4YJwUqiWhHIGrat71yxDUHbi5DvOXF3m3KVI8uxvsK7C6pR9JMhbMwSOEi8u1uxADvofzxcShdLdXbKZC33AHC6TUGb8AgtM6dMnVrczq3PiRv06lGlOgdzpY1UCjge2ZCP"],
+]
+
+near_miss = [
+  ["ATATT3xFfG", "2mgi5wm1qvKGpM6XsyEEXtsOJMhyLATWmb76BKm4"],
+]

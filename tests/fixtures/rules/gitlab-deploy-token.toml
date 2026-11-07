@@ -1,0 +1,12 @@
+# Fixtures for `gitlab-deploy-token` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["gldt-", "0TFeZJ4yPGfZfOSYOwdr"],
+]
+
+near_miss = [
+  ["gldt-", "F60j6aq9Hz"],
+]

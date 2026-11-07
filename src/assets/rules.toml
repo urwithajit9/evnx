@@ -54,7 +54,7 @@ confidence = "high"
 severity = "critical"
 url = "https://console.aws.amazon.com/iam"
 
-# ⚠️ The fine-grained PAT, which the `ghp_|gho_|ghu_|ghs_` alternation below
+# ⚠️ The fine-grained PAT, which the `ghp_|gho_|ghu_|ghs_|ghr_` alternation below
 # cannot match: different prefix, different length.
 [[rules]]
 id = "github-fine-grained-pat"
@@ -117,7 +117,7 @@ url = "https://dashboard.stripe.com/apikeys"
 [[rules]]
 id = "github-token"
 name = "GitHub Token"
-regex = '\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9]{36,40}\b'
+regex = '\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,40}\b'
 confidence = "high"
 severity = "high"
 url = "https://github.com/settings/tokens"
@@ -368,3 +368,219 @@ regex = '\bGOCSPX-[A-Za-z0-9_-]{28}\b'
 confidence = "high"
 severity = "high"
 url = "https://console.cloud.google.com/apis/credentials"
+
+# ── C3, second wave (2026-11-08) ─────────────────────────────────────────────
+# Each prefix checked against the provider's own documentation, or a first-party
+# statement where there is no page (Atlassian), as the inclusion rule above requires.
+
+# GitLab's token overview lists `glrt-` for runner authentication tokens (16.0+), which replace
+# registration tokens. The routable form (`glrt-t1_…`) starts the same way. Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "gitlab-runner-token"
+name = "GitLab Runner Authentication Token"
+regex = '\bglrt-[A-Za-z0-9_-]{20,}'
+confidence = "high"
+severity = "high"
+url = "https://docs.gitlab.com/ci/runners/runners_scope/"
+
+# `gldt-`, GitLab 16.7 and later (token overview). Clones and pushes registry images. Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "gitlab-deploy-token"
+name = "GitLab Deploy Token"
+regex = '\bgldt-[A-Za-z0-9_-]{20,}'
+confidence = "high"
+severity = "high"
+url = "https://docs.gitlab.com/user/project/deploy_tokens/"
+
+# `glptt-` plus 40 hex (token overview). Starts pipelines with the trigger owner's rights. Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "gitlab-trigger-token"
+name = "GitLab Pipeline Trigger Token"
+regex = '\bglptt-[0-9a-f]{40}\b'
+confidence = "high"
+severity = "high"
+url = "https://docs.gitlab.com/ci/triggers/"
+
+# Every Groq key starts `gsk_` and has full API access: no scoped keys exist. Billing, so critical.
+[[rules]]
+id = "groq-api-key"
+name = "Groq API Key"
+regex = '\bgsk_[A-Za-z0-9]{48,}\b'
+confidence = "high"
+severity = "critical"
+url = "https://console.groq.com/keys"
+
+# xAI (Grok) keys start `xai-`. The length is not published; 40+ keeps out short identifiers.
+# Not Groq: that is `gsk_`.
+[[rules]]
+id = "xai-api-key"
+name = "xAI API Key"
+regex = '\bxai-[A-Za-z0-9]{40,}\b'
+confidence = "high"
+severity = "critical"
+url = "https://console.x.ai"
+
+# Replicate: "40-character strings that always start with `r8_`" (replicate.com/docs, API tokens).
+[[rules]]
+id = "replicate-api-token"
+name = "Replicate API Token"
+regex = '\br8_[A-Za-z0-9]{37}\b'
+confidence = "high"
+severity = "critical"
+url = "https://replicate.com/account/api-tokens"
+
+# `pplx-` plus 48. Prepaid credits, so a leak drains the balance. Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "perplexity-api-key"
+name = "Perplexity API Key"
+regex = '\bpplx-[A-Za-z0-9]{48}\b'
+confidence = "high"
+severity = "critical"
+url = "https://www.perplexity.ai/account/api/keys"
+
+# `whsec_`, Stripe's endpoint signing secret; Standard Webhooks providers use the same prefix.
+# With it, anyone can forge events your endpoint accepts as Stripe's.
+[[rules]]
+id = "stripe-webhook-secret"
+name = "Stripe Webhook Signing Secret"
+regex = '\bwhsec_[A-Za-z0-9+/]{32,}'
+confidence = "high"
+severity = "high"
+url = "https://dashboard.stripe.com/webhooks"
+
+# `dapi` plus 32 hex (Databricks' format, as AWS Secrets Manager's partner rotation documents it).
+# Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "databricks-token"
+name = "Databricks Personal Access Token"
+regex = '\bdapi[a-f0-9]{32}(?:-[0-9])?\b'
+confidence = "high"
+severity = "high"
+url = "https://docs.databricks.com/admin/access-control/tokens.html"
+
+# Atlassian (staff answer, 2025-08): API tokens start `ATAT`, access tokens `ATCT`; both carry the
+# `TT3xFfG` header after it. Jira, Confluence and Bitbucket Cloud.
+[[rules]]
+id = "atlassian-api-token"
+name = "Atlassian API Token"
+regex = '\bAT[AC]TT3xFfG[A-Za-z0-9_=-]{100,}'
+confidence = "high"
+severity = "high"
+url = "https://id.atlassian.com/manage-profile/security/api-tokens"
+
+# Atlassian (staff answer, 2025-08): Bitbucket app passwords start `ATBB`. Medium confidence: four
+# capitals are a short prefix.
+[[rules]]
+id = "bitbucket-app-password"
+name = "Bitbucket App Password"
+regex = '\bATBB[A-Za-z0-9]{28,}\b'
+confidence = "medium"
+severity = "high"
+url = "https://bitbucket.org/account/settings/app-passwords/"
+
+# HCP Terraform (Terraform Cloud) user, team and organisation tokens: 14 characters, `.atlasv1.`, then
+# the secret. Runs plans and applies against real infrastructure. Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "terraform-cloud-token"
+name = "HCP Terraform API Token"
+regex = '\b[A-Za-z0-9]{14}\.atlasv1\.[A-Za-z0-9_=-]{60,70}'
+confidence = "high"
+severity = "critical"
+url = "https://app.terraform.io/app/settings/tokens"
+
+# Pulumi's API docs: token values are "prefixed with `pul-`" (personal, team and organisation).
+# Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "pulumi-access-token"
+name = "Pulumi Access Token"
+regex = '\bpul-[a-f0-9]{40}\b'
+confidence = "high"
+severity = "critical"
+url = "https://app.pulumi.com/account/tokens"
+
+# Doppler: service tokens `dp.st.<config>.`, personal `dp.pt.`, CLI `dp.ct.`, service accounts
+# `dp.sa.` (docs.doppler.com, Service Tokens). Each reads a secrets manager.
+[[rules]]
+id = "doppler-token"
+name = "Doppler Token"
+regex = '\bdp\.(?:st|pt|ct|sa)\.(?:[A-Za-z0-9_-]{1,64}\.)?[A-Za-z0-9]{40,}'
+confidence = "high"
+severity = "critical"
+url = "https://dashboard.doppler.com"
+
+# `sbp_` (scoped ones `sbp_fc`): the Management API, every project the account can reach.
+[[rules]]
+id = "supabase-access-token"
+name = "Supabase Personal Access Token"
+regex = '\bsbp_[A-Za-z0-9]{40,}\b'
+confidence = "high"
+severity = "critical"
+url = "https://supabase.com/dashboard/account/tokens"
+
+# `sb_secret_`, which replaces the `service_role` JWT and bypasses Row Level Security (supabase.com
+# API keys). Its partner `sb_publishable_` is meant to be public and has no rule.
+[[rules]]
+id = "supabase-secret-key"
+name = "Supabase Secret Key"
+regex = '\bsb_secret_[A-Za-z0-9_-]{20,}'
+confidence = "high"
+severity = "critical"
+url = "https://supabase.com/dashboard/project/_/settings/api-keys"
+
+# The age file-encryption secret key: Bech32, HRP `AGE-SECRET-KEY-`, 58 data characters (age spec).
+# It decrypts every file encrypted to its public key. Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "age-secret-key"
+name = "age Secret Key"
+regex = 'AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}'
+confidence = "high"
+severity = "critical"
+
+# User keys start `NRAK-` (AWS's New Relic integration pins `NRAK-[A-Z0-9]+`); NerdGraph with the
+# user's rights. Ingest and licence keys (`NRII`, `NRAL`) are not this rule.
+[[rules]]
+id = "new-relic-user-key"
+name = "New Relic User API Key"
+regex = '\bNRAK-[A-Z0-9]{27}\b'
+confidence = "high"
+severity = "high"
+url = "https://one.newrelic.com/api-keys"
+
+# `glsa_`, 32 characters, `_`, an 8-hex checksum (Grafana docs, gcx authentication). Cloud and
+# self-managed. Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "grafana-service-account-token"
+name = "Grafana Service Account Token"
+regex = '\bglsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}\b'
+confidence = "high"
+severity = "high"
+
+# `glc_` then base64 (Grafana docs). Manages stacks and data across a Grafana Cloud org. Adapted
+# from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "grafana-cloud-token"
+name = "Grafana Cloud Access Policy Token"
+regex = '\bglc_[A-Za-z0-9+/]{32,400}'
+confidence = "high"
+severity = "high"
+url = "https://grafana.com/orgs"
+
+# `PMAK-`, 24 hex, `-`, 34 hex. Every collection, environment and workspace the user can see,
+# environments often holding other secrets. Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "postman-api-key"
+name = "Postman API Key"
+regex = '\bPMAK-[a-f0-9]{24}-[a-f0-9]{34}\b'
+confidence = "high"
+severity = "high"
+url = "https://go.postman.co/settings/me/api-keys"
+
+# `ntn_`, 11 digits, then 35 characters. The legacy `secret_` form has no rule: that prefix is an
+# ordinary word. Adapted from gitleaks (MIT, github.com/gitleaks/gitleaks)
+[[rules]]
+id = "notion-token"
+name = "Notion Integration Token"
+regex = '\bntn_[0-9]{11}[A-Za-z0-9]{35}\b'
+confidence = "high"
+severity = "high"
+url = "https://www.notion.so/my-integrations"

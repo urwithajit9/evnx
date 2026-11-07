@@ -1,0 +1,12 @@
+# Fixtures for `notion-token` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["ntn_", "42020189426tZRzjJ8obKs4b9eHZLqrPfJMlOHRdpo3PX1"],
+]
+
+near_miss = [
+  ["ntn_", "jqKbOtTZBWJ07jloBKfc"],
+]

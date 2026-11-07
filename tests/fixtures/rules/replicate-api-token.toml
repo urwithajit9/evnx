@@ -1,0 +1,12 @@
+# Fixtures for `replicate-api-token` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["r8_", "kIbzlpOZvhxhaTHIGXRBVvPOGqXFBODtcVaYs"],
+]
+
+near_miss = [
+  ["r8_", "LcETle1Msu74H2AEDgI8dxdxEJoLxX"],
+]

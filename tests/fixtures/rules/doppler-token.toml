@@ -1,0 +1,13 @@
+# Fixtures for `doppler-token` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["dp.st.", "prd.nIwYbaRVbugrG54Sk8tN6cwvBqPI4DDvqlvnCmUrcZ5"],
+  ["dp.pt.", "nNjslwXddNQCHKvBKbGJvCdbb1AFEYhmq6YcJ3PgyfT"],
+]
+
+near_miss = [
+  ["dp.st.", "prd.Op9fvVfUuWoSZVINZHzf"],
+]

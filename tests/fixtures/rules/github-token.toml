@@ -6,6 +6,7 @@ expect_severity = "high"
 positive = [
   ["ghp_", "r080UUTWjPBOaALo0vrQuGXc22ToCIyNaLQS"],
   ["gho_", "B8FBr6Ln5J9K3E8JX2iuWm8fEKKpvDQoclts"],
+  ["ghr_", "NHrTpc74lJ65cCx0Yik84TaOh9IgFgzP83Wi"],
 ]
 
 near_miss = [
