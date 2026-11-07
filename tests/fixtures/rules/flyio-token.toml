@@ -1,0 +1,12 @@
+# Fixtures for `flyio-token` (C12, RM-92). Values are written as parts joined at test time.
+
+expect_severity = "critical"
+
+positive = [
+  ["FlyV1 fm2_", "lJPECAAAAAAAAT4kxBDVqE1SkHbn88HxjSI6bWHtP3f"],
+  ["fm2_", "lJPECAAAAAAAAT4kxBDVqE1SkHbn88HxjSI6bWHtP3f"],
+]
+
+near_miss = [
+  ["FlyV1 fm2_", "tooshort"],
+]

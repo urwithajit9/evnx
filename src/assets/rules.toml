@@ -737,3 +737,48 @@ regex = '\bntn_[0-9]{11}[A-Za-z0-9]{35}\b'
 confidence = "high"
 severity = "high"
 url = "https://www.notion.so/my-integrations"
+
+# `glcbt-` is the CI/CD job token's prefix (GitLab docs, Token overview; the docs give no length
+# or charset, so the body is any 20+ of the URL-safe set). It expires when the job ends, hence medium.
+# https://docs.gitlab.com/security/tokens/
+[[rules]]
+id = "gitlab-job-token"
+name = "GitLab CI/CD Job Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglcbt-[A-Za-z0-9_-]{20,}'
+keywords = ["glcbt-"]
+confidence = "high"
+severity = "medium"
+url = "https://docs.gitlab.com/ci/jobs/ci_job_token/"
+
+# Fly.io tokens are macaroons whose credential line starts `FlyV1 fm2_` (Fly.io docs, Authenticating
+# to Fly.io; Tokens). No length or charset is documented, so the body is base64/URL-safe, 32+. A
+# deploy or org token reaches the apps and machines it names.
+# https://fly.io/auth.md  https://fly.io/docs/security/tokens/
+[[rules]]
+id = "flyio-token"
+name = "Fly.io Access Token"
+provider = "Fly.io"
+category = "cloud"
+regex = '\b(?:FlyV1 )?fm2_[A-Za-z0-9+/=_-]{32,}'
+keywords = ["fm2_"]
+confidence = "high"
+severity = "critical"
+url = "https://fly.io/dashboard"
+
+# The 84-character Azure DevOps PAT: 52 random characters and a fixed `AZDO` signature at positions
+# 76 to 80 (Microsoft Learn, "Use personal access tokens"; Purview SIT definition: letters and
+# digits). The docs span five positions for four characters, so the signature is accepted at
+# either offset. Reads and writes repos, pipelines and work items as its owner.
+# https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate
+[[rules]]
+id = "azure-devops-pat"
+name = "Azure DevOps Personal Access Token"
+provider = "Azure DevOps"
+category = "source-ci"
+regex = '\b(?:[A-Za-z0-9]{75}AZDO[A-Za-z0-9]{5}|[A-Za-z0-9]{76}AZDO[A-Za-z0-9]{4})\b'
+keywords = ["AZDO"]
+confidence = "high"
+severity = "high"
+url = "https://dev.azure.com/_usersSettings/tokens"

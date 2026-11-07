@@ -8,6 +8,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Three more built-in rules, 63 in all** (C12, RM-92): `gitlab-job-token` (`glcbt-`, medium),
+  `flyio-token` (`FlyV1 fm2_` / `fm2_`, critical) and `azure-devops-pat` (the 84-character PAT
+  with the fixed `AZDO` signature, high), each only where the provider's own docs state the
+  format. A GCP service-account key file (`"private_key": "-----BEGIN PRIVATE KEY-----\n…"`) was
+  already reported by `private-key`; a test now locks that in.
+
 **⚠️ `CLERK_SECRET_KEY=sk_live_…` and `UPLOADTHING_SECRET=sk_live_…` change rule id** (C10,
 RM-92, CV-2). Clerk and UploadThing reuse Stripe's `sk_live_` prefix, so both were reported
 as `stripe-live-secret-key` and sent you to Stripe's dashboard. Two new rules, `clerk-secret-key`
