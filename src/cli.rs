@@ -1281,6 +1281,10 @@ pub enum CloudCommands {
     /// The command runs directly, not through a shell. For a pipeline or a
     /// shell builtin, ask for one: `-- sh -c 'a | b'`.
     ///
+    /// Once the command has started, evnx exits with the command's own exit
+    /// code. The codes 10–15 listed in `evnx cloud --help` apply only to a
+    /// failure before it starts (not signed in, server unreachable, …).
+    ///
     /// `--version` here means the vault version, so clap's auto-generated
     /// `--version` is disabled on this subcommand, as it is on `pull`. Use
     /// `evnx --version` for the program version.
@@ -2822,6 +2826,20 @@ file, names that collide, a filter that leaves nothing).
     ///
     /// Secrets are encrypted on this machine before upload. The server stores
     /// ciphertext and cannot read them.
+    ///
+    /// EXIT CODES when a request to the server fails (the same for `evnx auth`,
+    /// `evnx vault` and `evnx org`):
+    ///
+    ///   10  not signed in, or the session or API token was refused
+    ///   11  forbidden: your role does not allow it, or the email is not verified
+    ///   12  the plan's limit is reached
+    ///   13  the server could not be reached, or something that is not evnx
+    ///       (a proxy, firewall or captive portal) answered
+    ///   14  conflict (someone else pushed first) or the account is locked
+    ///   15  the server failed, or is rate limiting you
+    ///
+    /// Other failures keep the command's usual code. `evnx cloud run` returns
+    /// the command's own code once it has started.
     #[cfg(feature = "cloud")]
     #[command(after_help = docs::CLOUD.after_help)]
     Cloud {

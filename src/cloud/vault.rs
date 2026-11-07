@@ -24,7 +24,7 @@
 //! [`VaultKey`]: evnx_crypto::VaultKey
 
 use crate::cloud::client::api_path;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
@@ -110,7 +110,7 @@ fn list_and_pick(client: &Client, target: &str) -> Result<VaultSummary> {
                  not be able to enumerate the others."
             ))
         }
-        Err(e) => return Err(anyhow!("{e}")),
+        Err(e) => return Err(anyhow::Error::from(e)),
     };
     resolve(&vaults, target).cloned()
 }
@@ -121,7 +121,7 @@ fn list_and_pick(client: &Client, target: &str) -> Result<VaultSummary> {
 /// the id is not among the caller's vaults or the list cannot be fetched — a
 /// vault-scoped token cannot list, and then the name is not knowable.
 pub(crate) fn resolve_id(client: &Client, id: &str) -> Result<VaultRef> {
-    let vaults = list_vaults(client).map_err(|e| anyhow!("could not look up vault {id}: {e}"))?;
+    let vaults = list_vaults(client).with_context(|| format!("could not look up vault {id}"))?;
     let v = vaults
         .into_iter()
         .find(|v| v.id == id)
@@ -229,16 +229,14 @@ pub fn create(
     let wrapped = wrap_vault_key_with_master_key(&vault_key, &unlocked.master_key)
         .map_err(|e| anyhow!("wrapping the vault key: {e}"))?;
 
-    let created: CreateVaultResponse = client
-        .post(
-            "/api/v1/vaults",
-            &CreateVaultRequest {
-                name: name.clone(),
-                environment: environment.clone(),
-                encrypted_vault_key: b64_encode(&wrapped),
-            },
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let created: CreateVaultResponse = client.post(
+        "/api/v1/vaults",
+        &CreateVaultRequest {
+            name: name.clone(),
+            environment: environment.clone(),
+            encrypted_vault_key: b64_encode(&wrapped),
+        },
+    )?;
 
     crate::say!(
         "  {} created {}/{}",
@@ -269,7 +267,7 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
     let client = Client::new(server.clone())?;
     client.require_credential()?;
 
-    let listed: VaultList = client.get("/api/v1/vaults").map_err(|e| anyhow!("{e}"))?;
+    let listed: VaultList = client.get("/api/v1/vaults")?;
 
     if listed.vaults.is_empty() {
         println!("  No vaults yet on {server}.");
@@ -361,9 +359,7 @@ pub fn delete(
         }
     }
 
-    client
-        .delete(&api_path(&["vaults", &vault.id.to_string()])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    client.delete(&api_path(&["vaults", &vault.id.to_string()])?)?;
 
     crate::say!(
         "  {} deleted {}/{}",
@@ -450,9 +446,7 @@ pub fn share(
     // no longer delete the vault, and an admin "sharing" with the owner was the
     // first step to removing them. The server refuses both since SV-3; refusing
     // here spares the password prompt and says what would work instead.
-    let people: MemberList = client
-        .get(&api_path(&["vaults", &vault.id, "members"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let people: MemberList = client.get(&api_path(&["vaults", &vault.id, "members"])?)?;
     if let Some(m) = people
         .members
         .iter()
@@ -529,7 +523,7 @@ pub fn share(
                  \x20 They need to register first — the vault key is wrapped to their \n\
                  \x20 public key, so there has to be one."
             ),
-            other => anyhow!("{other}"),
+            other => anyhow::Error::from(other),
         })?;
 
     // ⚠️ No fallback. An X25519-only wrap would be one Shor opens, and it stays
@@ -568,18 +562,16 @@ pub fn share(
     let wrapped = wrap_vault_key_for_user(&vault_key, &recipient)
         .map_err(|e| anyhow!("wrapping the vault key for {recipient_email}: {e}"))?;
 
-    client
-        .post::<_, serde::de::IgnoredAny>(
-            &api_path(&["vaults", &vault.id.to_string(), "members"])?,
-            &AddMemberRequest {
-                user_email: recipient_email.clone(),
-                role: role.clone(),
-                encrypted_vault_key: wrapped.encrypted_vault_key_base64(),
-                eph_pub_key: wrapped.eph_pub_key_base64(),
-                mlkem_ciphertext: wrapped.mlkem_ciphertext_base64(),
-            },
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    client.post::<_, serde::de::IgnoredAny>(
+        &api_path(&["vaults", &vault.id.to_string(), "members"])?,
+        &AddMemberRequest {
+            user_email: recipient_email.clone(),
+            role: role.clone(),
+            encrypted_vault_key: wrapped.encrypted_vault_key_base64(),
+            eph_pub_key: wrapped.eph_pub_key_base64(),
+            mlkem_ciphertext: wrapped.mlkem_ciphertext_base64(),
+        },
+    )?;
 
     crate::say!(
         "  {} shared {}/{} with {recipient_email} as {role}",
@@ -640,9 +632,7 @@ pub fn leave(
 
     let vault = list_and_pick(&client, &target)?;
     let label = format!("{}/{}", vault.name, vault.environment);
-    let people: MemberList = client
-        .get(&api_path(&["vaults", &vault.id, "members"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let people: MemberList = client.get(&api_path(&["vaults", &vault.id, "members"])?)?;
     let me = people
         .members
         .iter()
@@ -675,9 +665,7 @@ pub fn leave(
         return Ok(());
     }
 
-    client
-        .delete(&api_path(&["vaults", &vault.id, "members", &me.user_id])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    client.delete(&api_path(&["vaults", &vault.id, "members", &me.user_id])?)?;
 
     crate::say!("  {} left {label}", "✓".green());
     crate::say!(
@@ -1034,9 +1022,7 @@ pub fn members(server_override: Option<&str>, target: String, verbose: bool) -> 
     // members but is refused the list of vaults, so listing first failed it.
     let vault = fetch_and_resolve(&client, &target)?;
 
-    let people: MemberList = client
-        .get(&api_path(&["vaults", &vault.id, "members"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let people: MemberList = client.get(&api_path(&["vaults", &vault.id, "members"])?)?;
 
     let label = if vault.name.is_empty() {
         vault.id.bold().to_string()
@@ -1095,9 +1081,8 @@ pub fn set_role(
 
     let vault = list_and_pick(&client, &target)?;
 
-    let people: MemberList = client
-        .get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let people: MemberList =
+        client.get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)?;
     let member = people
         .members
         .iter()
@@ -1121,17 +1106,15 @@ pub fn set_role(
         return Ok(());
     }
 
-    client
-        .patch::<_, serde::de::IgnoredAny>(
-            &api_path(&[
-                "vaults",
-                &vault.id.to_string(),
-                "members",
-                &member.user_id.to_string(),
-            ])?,
-            &SetRoleRequest { role: role.clone() },
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    client.patch::<_, serde::de::IgnoredAny>(
+        &api_path(&[
+            "vaults",
+            &vault.id.to_string(),
+            "members",
+            &member.user_id.to_string(),
+        ])?,
+        &SetRoleRequest { role: role.clone() },
+    )?;
 
     crate::say!(
         "  {} {user_email} is now {role} on {}/{}",
@@ -1241,9 +1224,8 @@ pub fn revoke(
     let vault = list_and_pick(&client, &target)?;
     let label = format!("{}/{}", vault.name, vault.environment);
 
-    let people: MemberList = client
-        .get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let people: MemberList =
+        client.get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)?;
 
     let leaving = people
         .members
@@ -1346,14 +1328,12 @@ pub fn revoke(
 
     // ── The simple path ──────────────────────────────────────────────────────
     if no_rekey {
-        client
-            .delete(&api_path(&[
-                "vaults",
-                &vault.id.to_string(),
-                "members",
-                &leaving.user_id.to_string(),
-            ])?)
-            .map_err(|e| anyhow!("{e}"))?;
+        client.delete(&api_path(&[
+            "vaults",
+            &vault.id.to_string(),
+            "members",
+            &leaving.user_id.to_string(),
+        ])?)?;
         crate::say!("  {} removed {user_email} from {label}", "✓".green());
         println!(
             "  {}",
@@ -1468,9 +1448,8 @@ pub fn rekey(
     let vault = list_and_pick(&client, &target)?;
     let label = format!("{}/{}", vault.name, vault.environment);
 
-    let people: MemberList = client
-        .get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let people: MemberList =
+        client.get(&api_path(&["vaults", &vault.id.to_string(), "members"])?)?;
 
     // Everyone stays. The server requires the payload cover every member exactly
     // once, so this list IS the contract — a member missed here would be dropped.
@@ -1624,9 +1603,8 @@ fn rotate_vault_key(
         UserPublicKeys, VaultKey, WrappedVaultKey,
     };
 
-    let my_key: MyWrappedKey = client
-        .get(&api_path(&["vaults", &vault.id.to_string(), "my-key"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let my_key: MyWrappedKey =
+        client.get(&api_path(&["vaults", &vault.id.to_string(), "my-key"])?)?;
 
     let old_key = match (&my_key.eph_pub_key, &my_key.mlkem_ciphertext) {
         (None, None) => {
@@ -1653,9 +1631,8 @@ fn rotate_vault_key(
     let new_key = VaultKey::generate();
 
     // ── Re-encrypt every version ─────────────────────────────────────────────
-    let versions: RevokeVersionList = client
-        .get(&api_path(&["vaults", &vault.id.to_string(), "versions"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let versions: RevokeVersionList =
+        client.get(&api_path(&["vaults", &vault.id.to_string(), "versions"])?)?;
 
     let total = versions.versions.len();
     crate::say!("  Re-encrypting {total} version(s)…");
@@ -1671,7 +1648,7 @@ fn rotate_vault_key(
                 &n.to_string(),
                 "blob",
             ])?)
-            .map_err(|e| anyhow!("fetching version {n}: {e}"))?;
+            .with_context(|| format!("fetching version {n}"))?;
 
         if blob_bytes.len() <= NONCE_LEN {
             return Err(anyhow!("version {n} is too short to be a blob"));
@@ -1702,7 +1679,7 @@ fn rotate_vault_key(
                     blob_hash: hash.clone(),
                 },
             )
-            .map_err(|e| anyhow!("staging version {n}: {e}"))?;
+            .with_context(|| format!("staging version {n}"))?;
 
         staged.push(RekeyedVersion {
             version_num: out.version_num,
@@ -1737,7 +1714,7 @@ fn rotate_vault_key(
 
         let keys: RecipientKeys = client
             .get(&api_path(&["users", &m.email.to_string(), "public-key"])?)
-            .map_err(|e| anyhow!("fetching {}'s public keys: {e}", m.email))?;
+            .with_context(|| format!("fetching {}'s public keys", m.email))?;
         let mlkem = keys
             .mlkem_public_key
             .ok_or_else(|| anyhow!("{} has no post-quantum sharing key", m.email))?;
@@ -1756,16 +1733,14 @@ fn rotate_vault_key(
     }
 
     // ── One atomic swap ──────────────────────────────────────────────────────
-    client
-        .post::<_, serde::de::IgnoredAny>(
-            &api_path(&["vaults", &vault.id.to_string(), "rekey"])?,
-            &RekeyRequest {
-                versions: staged,
-                members: wraps,
-                remove_user_id: remove_user_id.map(str::to_owned),
-            },
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    client.post::<_, serde::de::IgnoredAny>(
+        &api_path(&["vaults", &vault.id.to_string(), "rekey"])?,
+        &RekeyRequest {
+            versions: staged,
+            members: wraps,
+            remove_user_id: remove_user_id.map(str::to_owned),
+        },
+    )?;
 
     Ok(total)
 }

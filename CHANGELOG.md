@@ -8,6 +8,28 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**⚠️ Cloud commands exit 10–15 for server failures, where they exited 1 or 2** (RM-55, decision X3).
+`evnx auth`, `evnx vault`, `evnx org` and `evnx cloud` now exit with a code that says what failed,
+so a pipeline can tell "sign in again" from "the server is down" without reading the message:
+
+| Code | Meaning |
+|-----:|---------|
+| 10 | not signed in, or the session / `EVNX_TOKEN` was refused |
+| 11 | forbidden (role too low, not a member, token scope), or email not verified |
+| 12 | plan limit reached |
+| 13 | server unreachable, or answered by something that is not evnx (proxy, firewall, captive portal) |
+| 14 | conflict (someone else pushed first), or account locked |
+| 15 | server error, or rate limited |
+
+- Any script that tested for exactly `1` or `2` after a cloud command needs to accept these.
+  Other failures (bad arguments, local errors, a 404, a rejected request body) keep their code.
+- `evnx cloud run` / `evnx run` still return the child's own code once it has started; 10–15 can
+  only come from a failure before that.
+- A 403 now explains why when the server says (needs the `<role>` role, not a member, API token
+  restricted to another vault); a `Retry-After` is shown as "Try again in N s."; an HTML error page
+  from a proxy is reported as "not from evnx" instead of as a server error. All of this works
+  against servers that do not send the new fields yet.
+
 **⚠️ `evnx migrate --to gcp-secret-manager` now creates `db-url` where 0.12 created `DB_URL`**
 (I-098, RM-62). `convert --to gcp-secrets` has always lowercased names and written `_` as `-`;
 `migrate` kept the `.env` name, so the two commands named the same variable differently. Both

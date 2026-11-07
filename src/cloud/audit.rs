@@ -137,9 +137,8 @@ pub fn run(
     client.require_credential()?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
-    let res: AuditResponse = client
-        .get(&api_path(&["vaults", &vault_ref.id.to_string(), "audit"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let res: AuditResponse =
+        client.get(&api_path(&["vaults", &vault_ref.id.to_string(), "audit"])?)?;
 
     // `days_before`, not `Utc::now() - Duration::days(d)`: that panics out of
     // range (I-231). `parse_window` already capped `d`, so this is `Some`.

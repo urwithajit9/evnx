@@ -22,7 +22,7 @@ use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use super::client::{jwt_exp, Client};
+use super::client::{jwt_exp, reword, Client};
 use super::config::CloudConfig;
 use super::creds::{SecretString, Session, Store};
 
@@ -116,9 +116,7 @@ fn register_with_password(
     let body = build_registration(email, password)?;
 
     let client = Client::new(server.to_string())?;
-    let resp: RegisterResponse = client
-        .post_public("/api/v1/auth/register", &body)
-        .map_err(|e| anyhow!("{e}"))?;
+    let resp: RegisterResponse = client.post_public("/api/v1/auth/register", &body)?;
 
     crate::say!("  {} account created on {server}", "✓".green());
     if verbose {
@@ -369,15 +367,13 @@ fn login_with_password(
     let ephemeral =
         generate_client_ephemeral().map_err(|e| anyhow!("generating an SRP ephemeral: {e}"))?;
 
-    let init: SrpInitResponse = client
-        .post_public(
-            "/api/v1/auth/srp/init",
-            &SrpInitRequest {
-                email: email.to_string(),
-                client_public: hex::encode(&ephemeral.public_a),
-            },
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let init: SrpInitResponse = client.post_public(
+        "/api/v1/auth/srp/init",
+        &SrpInitRequest {
+            email: email.to_string(),
+            client_public: hex::encode(&ephemeral.public_a),
+        },
+    )?;
 
     if verbose {
         println!("  srp session {}", init.session_id);
@@ -603,7 +599,7 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
             }
             return Ok(());
         }
-        Err(e) => return Err(anyhow!("{e}")),
+        Err(e) => return Err(anyhow::Error::from(e)),
     };
 
     if !quiet {
@@ -879,7 +875,7 @@ struct MeSealed {
 /// means the CLI does not have to cache anything between commands. `/auth/me`
 /// works before the email is verified, which is deliberate on the server side.
 pub(crate) fn unlock(client: &Client, password: &Zeroizing<String>) -> Result<Unlocked> {
-    let me: MeSealed = client.get("/api/v1/auth/me").map_err(|e| anyhow!("{e}"))?;
+    let me: MeSealed = client.get("/api/v1/auth/me")?;
     unlock_with(&me.argon2_salt, &me.encrypted_private_key, password)
 }
 
@@ -1056,8 +1052,10 @@ fn backfill_mlkem_key(client: &Client, password: &Zeroizing<String>, verbose: bo
 /// possibilities and points at the likelier one.
 fn sign_in_error(e: super::client::ApiError) -> anyhow::Error {
     use super::client::ApiError;
+    let code = e.exit_code();
     match e {
-        ApiError::Unauthorized => anyhow!(
+        ApiError::Unauthorized => reword(
+            code,
             "that email address and master password were not accepted.\n\
              \x20 Check the address for a typo first: that is the more common \
              mistake.\n\
@@ -1065,34 +1063,42 @@ fn sign_in_error(e: super::client::ApiError) -> anyhow::Error {
              deliberately answers an unknown address exactly as it answers a bad \
              password.\n\
              \x20 There is no password reset: the master password is what your \
-             vaults are encrypted under, and evnx never receives it."
+             vaults are encrypted under, and evnx never receives it.",
         ),
-        ApiError::Locked { message } => anyhow!(
-            "{message}\n\
+        ApiError::Locked { message } => reword(
+            code,
+            format!(
+                "{message}\n\
              \x20 Too many failed sign-in attempts for this account. The lock \
              clears by itself — wait, then try again.\n\
              \x20 Nothing was changed, and your vaults are untouched."
+            ),
         ),
-        other => anyhow!("{other}"),
+        other => anyhow::Error::from(other),
     }
 }
 
 fn second_factor_error(e: super::client::ApiError) -> anyhow::Error {
     use super::client::ApiError;
+    let code = e.exit_code();
     match e {
-        ApiError::Unauthorized => anyhow!(
+        ApiError::Unauthorized => reword(
+            code,
             "that second factor was not accepted.\n\
              \x20 Authenticator codes last 30 seconds — try the next one. If they keep \
              failing, check this device's clock.\n\
              \x20 Recovery codes work once each: if you have used this one before, it \
-             is spent."
+             is spent.",
         ),
-        ApiError::Locked { message } => anyhow!(
-            "{message}\n\
+        ApiError::Locked { message } => reword(
+            code,
+            format!(
+                "{message}\n\
              \x20 Too many failed attempts. A recovery code still works during the \
-             lockout if you have one left."
+             lockout if you have one left.",
+            ),
         ),
-        other => anyhow!("{other}"),
+        other => anyhow::Error::from(other),
     }
 }
 
@@ -1196,7 +1202,7 @@ pub fn delete_account(
     // expired session before asking someone to type their address.
     let me: MeResponse = client
         .get("/api/v1/auth/me")
-        .map_err(|e| anyhow!("could not read the account: {e}"))?;
+        .context("could not read the account")?;
 
     println!();
     println!("  {}", "This deletes your evnx account.".red().bold());
@@ -1257,7 +1263,7 @@ pub fn delete_account(
         // ⚠️ Surfaced as prose, not a status code. A 409 here means named vaults
         // are in the way and the message says which — reducing it to "conflict"
         // would strand someone with no idea what to do next.
-        Err(e) => return Err(anyhow!("{e}")),
+        Err(e) => return Err(anyhow::Error::from(e)),
     }
 
     // The session is dead server-side; leaving the file would make the next
@@ -1354,7 +1360,7 @@ pub fn download_data(
     // the command makes.
     let body: serde_json::Value = client
         .get("/api/v1/auth/account/export")
-        .map_err(|e| anyhow!("could not fetch the export: {e}"))?;
+        .context("could not fetch the export")?;
 
     let pretty = serde_json::to_string_pretty(&body).context("formatting the export")?;
 

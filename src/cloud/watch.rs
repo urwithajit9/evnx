@@ -176,10 +176,13 @@ pub fn run(
                         "!".yellow()
                     ),
                     Health::Stop => {
-                        return Err(anyhow!(
-                            "stopped after {STOP_AFTER} failed polls in a row: {e}\n\
-                             \x20 Check the connection and your login (`evnx auth status`), \
-                             then run `evnx cloud watch` again."
+                        return Err(super::client::reword(
+                            super::client::exit_code_of(&e),
+                            format!(
+                                "stopped after {STOP_AFTER} failed polls in a row: {e}\n\
+                                 \x20 Check the connection and your login (`evnx auth status`), \
+                                 then run `evnx cloud watch` again."
+                            ),
                         ))
                     }
                 }

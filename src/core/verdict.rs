@@ -81,10 +81,16 @@ pub fn no_verdict_line(stage: Stage) -> &'static str {
 
 /// Print `err` and the no-verdict line to stderr, then exit 2.
 pub fn no_verdict(err: &anyhow::Error, stage: Stage) -> ! {
+    no_verdict_with_code(err, stage, EXIT_ERROR)
+}
+
+/// [`no_verdict`] with a specific exit code, for failures that have their own
+/// (the cloud commands' 10–15).
+pub fn no_verdict_with_code(err: &anyhow::Error, stage: Stage, code: i32) -> ! {
     eprintln!("{} {:#}", "Error:".on_red().bold(), err);
     eprintln!();
     eprintln!("{}", no_verdict_line(stage));
-    std::process::exit(EXIT_ERROR);
+    std::process::exit(code);
 }
 
 #[cfg(test)]
