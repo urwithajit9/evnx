@@ -8,6 +8,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**Every built-in scan rule names its provider and a category** (C11, RM-90). Additive: no
+rule, id or existing JSON field changes.
+- `rules.toml` gives all 58 rules a `provider` and a `category` from a fixed list: `cloud`,
+  `source-ci`, `ai`, `payments`, `databases-backends`, `auth`, `messaging-email`,
+  `observability`, `infra-secrets`, `saas`, `keys-certificates`, `generic`. A test fails
+  for a built-in without both.
+- Both fields are optional in your own rule files and packs. An unknown `category` is a
+  load error naming the file, the rule and the allowed list. `evnx scan rules test` warns
+  (never fails) for a rule missing either.
+- `evnx scan rules list` groups by category and shows each provider; unset ones list last
+  as "uncategorised". `--category <name>` filters (an unknown name exits 2 with the list).
+  `--json` adds `provider` and `category` (null when unset).
+
 **`evnx scan` knows 22 more providers: 58 built-in rules, up from 36** (C3, second wave).
 Each prefix was checked against the provider's own documentation (or, for Atlassian, a
 statement from its staff), and each rule has fixtures that must match and near misses that

@@ -259,9 +259,12 @@ fn main() -> Result<()> {
                 .unwrap_or_else(|| here.clone());
             let configured = cfg.scan.patterns.clone().unwrap_or_default();
             match command {
-                RulesCommand::List { json } => {
-                    commands::scan::rules_cmd::list(&project_root, &configured, json)
-                }
+                RulesCommand::List { category, json } => commands::scan::rules_cmd::list(
+                    &project_root,
+                    &configured,
+                    category.as_deref(),
+                    json,
+                ),
                 RulesCommand::New { id, personal } => {
                     commands::scan::rules_cmd::new(&project_root, &id, personal).map(drop)
                 }

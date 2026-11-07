@@ -3164,9 +3164,15 @@ pub enum HookCommand {
 pub enum RulesCommand {
     /// Every rule a scan here would use: evnx's own, `.evnx/rules/`, your
     /// personal rules and `[[scan.patterns]]`, with id, source, severity and
-    /// confidence.
+    /// confidence, grouped by category with each rule's provider.
     List {
-        /// One JSON document on stdout.
+        /// Show only this category: cloud, source-ci, ai, payments,
+        /// databases-backends, auth, messaging-email, observability,
+        /// infra-secrets, saas, keys-certificates or generic.
+        #[arg(long, value_name = "NAME")]
+        category: Option<String>,
+        /// One JSON document on stdout; each rule carries `provider` and
+        /// `category` (null when unset).
         #[arg(long)]
         json: bool,
     },
