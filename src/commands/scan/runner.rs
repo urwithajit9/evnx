@@ -17,8 +17,12 @@
 //! ```
 
 use super::walk::{
-    decode, decode_bytes, named_like_dotenv, structured_format, Decoded, STDIN_LABEL,
+    decode, decode_bytes, is_pkcs12, named_like_dotenv, structured_format, Decoded, STDIN_LABEL,
 };
+
+/// The id of a PKCS#12 keystore finding (C3). Found by file content, so it is
+/// not a regex rule in `rules.toml`.
+pub const PKCS12_ID: &str = "pkcs12-keystore";
 use super::{
     detector::DetectorRegistry,
     filters::FileFilter,
@@ -74,6 +78,11 @@ pub struct ScanRunner {
     min_confidence: Confidence,
     /// Lowest severity worth reporting (C2). `Low` reports everything.
     min_severity: crate::core::secretscan::Severity,
+    /// Findings accepted earlier (C5): reported as `known`, not counted.
+    baseline: super::suppress::Baseline,
+    /// `--update-baseline`: write this run's findings here instead of
+    /// reporting them (C5).
+    update_baseline: Option<std::path::PathBuf>,
     /// `(built-in, custom)` rule counts and every rule's name, for `-v`
     /// (I-058). The rules themselves live in the registry.
     rule_counts: (usize, usize),
@@ -105,6 +114,18 @@ impl ScanRunner {
 
     /// Skip walked files larger than `bytes` (`--max-file-size`,
     /// `[scan] max_file_size`); `None` keeps [`super::filters::MAX_WALK_BYTES`].
+    /// The baseline to compare against, and where `--update-baseline`
+    /// writes (C5).
+    pub fn with_baseline(
+        mut self,
+        baseline: super::suppress::Baseline,
+        update: Option<std::path::PathBuf>,
+    ) -> Self {
+        self.baseline = baseline;
+        self.update_baseline = update;
+        self
+    }
+
     /// Report only findings at or above `severity` (`--severity`, C2).
     pub fn with_min_severity(mut self, severity: crate::core::secretscan::Severity) -> Self {
         self.min_severity = severity;
@@ -214,6 +235,8 @@ impl ScanRunner {
             verbose,
             min_confidence,
             min_severity: crate::core::secretscan::Severity::Low,
+            baseline: Default::default(),
+            update_baseline: None,
             rule_counts,
             rule_names,
             extensions_from: "",
@@ -414,11 +437,49 @@ impl ScanRunner {
             read.push(Path::new(STDIN_LABEL).to_path_buf());
         }
 
+        // `--update-baseline` (C5): this run's counted and known findings
+        // become the baseline, and the run exits 0.
+        if let Some(path) = &self.update_baseline {
+            let current: Vec<(String, String, String)> = results
+                .findings
+                .iter()
+                .chain(&results.known)
+                .map(|f| {
+                    let file = super::output::file_of(&f.location).to_string();
+                    (f.fingerprint.clone(), f.rule_id.clone(), file)
+                })
+                .collect();
+            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let next = self.baseline.rewrite(&current, &today);
+            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                crate::core::safe_write::create_dirs(dir)?;
+            }
+            let json = serde_json::to_string_pretty(&next)? + "\n";
+            crate::core::safe_write::write_shared(path, json.as_bytes())?;
+            ui::success(format!(
+                "wrote {} with {} finding(s); they are reported as known from now on",
+                display_portable(path),
+                next.findings.len()
+            ));
+            return Ok(false);
+        }
+
         // Render output (goes to stdout)
         render(&results, format, &read)?;
         // After the report, so the note is not wedged between the stderr
         // header and the stdout file list.
         report_skipped(&results, self.verbose, self.filter.max_bytes());
+        // C5: `-v` lists what markers and the baseline set aside.
+        if self.verbose {
+            for f in results.allowed.iter().chain(&results.known) {
+                let why = match (f.status, &f.reason) {
+                    (super::models::Status::Allowed, Some(r)) => format!("allowed: {r}"),
+                    (super::models::Status::Allowed, None) => "allowed, no reason given".into(),
+                    _ => "known (baseline)".into(),
+                };
+                ui::verbose_stderr(format!("{}  {}  {why}", f.location, f.rule_id));
+            }
+        }
 
         // Return status for caller to handle exit code
         // ⛔ An unreadable file fails the scan.
@@ -492,6 +553,25 @@ impl ScanRunner {
     }
 
     fn scan_file(&self, path: &Path, walked: bool, results: &mut ScanResults) -> Result<()> {
+        // C3: a keystore is binary, so it is found by its content, not read.
+        if is_pkcs12(path) {
+            results.files_scanned += 1;
+            results.files.push(super::models::ScannedFile {
+                path: display_portable(path),
+                read_as: super::models::ReadAs::Text,
+                note: Some("binary: a PKCS#12 keystore".to_string()),
+            });
+            let detection = super::detector::Detection {
+                rule_id: PKCS12_ID.to_string(),
+                pattern: "PKCS#12 Keystore".to_string(),
+                confidence: Confidence::High,
+                severity: crate::core::secretscan::Severity::Critical,
+                matched_value: PKCS12_ID.to_string(),
+                ..Default::default()
+            };
+            self.add_finding(results, path, 1, None, detection, &[]);
+            return Ok(());
+        }
         let content = match decode(path) {
             Decoded::Text(c) => c,
             // ⛔ **A file this command chose to scan and could not read is a
@@ -589,8 +669,9 @@ impl ScanRunner {
             registry: &self.registry,
         };
         // Detection is the engine's; what a detection becomes is the report's.
+        let lines: Vec<&str> = content.lines().collect();
         for f in engine::scan_text(content, &ctx) {
-            self.add_finding(results, path, f.line, f.variable, f.detection);
+            self.add_finding(results, path, f.line, f.variable, f.detection, &lines);
         }
 
         Ok(())
@@ -612,6 +693,7 @@ impl ScanRunner {
         line: usize,
         variable: Option<String>,
         detection: super::detector::Detection,
+        lines: &[&str],
     ) {
         // Skip placeholders if configured.
         //
@@ -680,8 +762,12 @@ impl ScanRunner {
             .map(|(scheme, _)| format!("a password in a {scheme}:// URL, not a placeholder"));
         // I-051: `----…----` said nothing. A PEM header is a label, not key
         // material, so it is shown whole — the body never reaches a detection.
-        let preview = pem_header(&detection.matched_value)
-            .unwrap_or_else(|| truncate_value(&detection.matched_value));
+        let preview = if detection.rule_id == PKCS12_ID {
+            "binary keystore (private key and certificate)".to_string()
+        } else {
+            pem_header(&detection.matched_value)
+                .unwrap_or_else(|| truncate_value(&detection.matched_value))
+        };
         let rule = (detection.rule_id.clone(), detection.severity);
         let mut finding = Finding::new(
             detection.pattern,
@@ -700,6 +786,52 @@ impl ScanRunner {
         .public_prefix(public.map(|(prefix, _)| prefix.to_string()));
         finding.note = note;
         finding.line = line;
+
+        // C5: what the project has looked at. The fingerprint never holds the
+        // value itself: the line's text goes through BLAKE3.
+        let line_text = lines.get(line.wrapping_sub(1)).copied().unwrap_or("");
+        finding.fingerprint = super::suppress::fingerprint(
+            &finding.rule_id,
+            &display_portable(path),
+            finding.variable.as_deref(),
+            line_text,
+        );
+        let here = display_portable(path);
+        if let Some(m) = super::suppress::allowing(lines, line, &finding.rule_id) {
+            if m.reason.is_none() {
+                ui::warning(format!(
+                    "{here}:{line}: evnx:allow {} has no reason; say why after it",
+                    finding.rule_id
+                ));
+            }
+            finding.status = super::models::Status::Allowed;
+            finding.reason = m.reason;
+            results.allowed.push(finding);
+            return;
+        }
+        // A marker here that allows nothing: bare, or for another rule.
+        for n in [line, line.saturating_sub(1)]
+            .into_iter()
+            .filter(|&n| n >= 1)
+        {
+            if let Some(m) = lines.get(n - 1).and_then(|l| super::suppress::marker_in(l)) {
+                match m.rule {
+                    None => ui::warning(format!(
+                        "{here}:{n}: a bare evnx:allow allows nothing; name the rule: evnx:allow {}",
+                        finding.rule_id
+                    )),
+                    Some(other) => ui::warning(format!(
+                        "{here}:{n}: evnx:allow {other} does not match this finding, which is {}",
+                        finding.rule_id
+                    )),
+                }
+            }
+        }
+        if self.baseline.contains(&finding.fingerprint) {
+            finding.status = super::models::Status::Known;
+            results.known.push(finding);
+            return;
+        }
 
         results.add_finding(finding);
     }

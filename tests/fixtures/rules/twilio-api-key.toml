@@ -1,0 +1,13 @@
+# Fixtures for `twilio-api-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["SK", "0372f246b6e1785d165df31b000d1f6c"],
+]
+
+near_miss = [
+  ["SK", "2dffcc5ac709ec7165e4"],
+  ["SX", "587852a725d0d1e37b00ba35b6b7090e"],
+]

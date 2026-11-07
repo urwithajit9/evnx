@@ -10,10 +10,15 @@
 //! ```rust
 //! # use evnx::commands::scan::{Finding, ScanResults, Confidence};
 //! # use evnx::core::secretscan::Severity;
+//! # use evnx::commands::scan::models::Status;
 //!
 //! let finding = Finding {
 //!     // The rule's stable id, and how bad a match is if real (C2).
 //!     rule_id: "aws-access-key".to_string(),
+//!     // New, or accepted by a marker or the baseline (C5).
+//!     status: Status::New,
+//!     fingerprint: String::new(),
+//!     reason: None,
 //!     pattern: "AWS Access Key".to_string(),
 //!     confidence: Confidence::High,
 //!     severity: Severity::Critical,
@@ -77,6 +82,16 @@ pub use crate::core::secretscan::{Confidence, Severity};
 pub struct Finding {
     /// The rule's stable id (C2): `aws-access-key`, `sensitive-config-key`.
     pub rule_id: String,
+    /// `new`, or `known` (in the baseline) or `allowed` (an `evnx:allow`
+    /// marker) (C5). Only `new` findings are in `findings` and count.
+    #[serde(default)]
+    pub status: Status,
+    /// The finding's identity across runs (C5, S9). Never a value.
+    #[serde(default)]
+    pub fingerprint: String,
+    /// An `allowed` finding's reason, from its marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
     pub pattern: String,
     #[serde(serialize_with = "serialize_confidence")]
     pub confidence: Confidence,
@@ -134,6 +149,18 @@ pub struct Finding {
     /// line is also in `location`.
     #[serde(skip)]
     pub line: usize,
+}
+
+/// Whether a finding counts (C5).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Status {
+    #[default]
+    New,
+    /// In the baseline: accepted earlier.
+    Known,
+    /// Silenced by an `evnx:allow <rule-id>` marker on its line or the line above.
+    Allowed,
 }
 
 /// [`crate::core::gitignore::Exposure`], as a finding reports it.
@@ -249,6 +276,9 @@ impl Finding {
     ) -> Self {
         let pattern = pattern.into();
         Self {
+            status: Status::New,
+            fingerprint: String::new(),
+            reason: None,
             rule_id: crate::core::secretscan::patternset::slug(
                 pattern.split(':').next().unwrap_or(&pattern),
             ),
@@ -321,6 +351,12 @@ pub struct ScanResults {
     pub ignored_by_git: Vec<IgnoredFile>,
     pub secrets_found: usize,
     pub findings: Vec<Finding>,
+    /// Findings silenced by an `evnx:allow` marker (C5). Not counted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed: Vec<Finding>,
+    /// Findings in the baseline (C5). Not counted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub known: Vec<Finding>,
     pub high_confidence: usize,
     pub medium_confidence: usize,
     pub low_confidence: usize,
@@ -361,6 +397,12 @@ pub struct Summary {
     /// summary as before.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub ignored_by_git: usize,
+    /// Findings an `evnx:allow` marker silenced (C5).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub allowed: usize,
+    /// Findings in the baseline (C5).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub known: usize,
 }
 
 /// Findings per severity, in the JSON `summary` (C2).
@@ -439,6 +481,8 @@ impl ScanResults {
             files_unreadable: self.unreadable.len(),
             files_skipped: self.skipped.len(),
             ignored_by_git: self.ignored_by_git.iter().map(|f| f.findings).sum(),
+            allowed: self.allowed.len(),
+            known: self.known.len(),
         }
     }
 }
@@ -467,6 +511,8 @@ impl ScanResults {
             ignored_by_git: Vec::new(),
             secrets_found: 0,
             findings: Vec::new(),
+            allowed: Vec::new(),
+            known: Vec::new(),
             high_confidence: 0,
             medium_confidence: 0,
             low_confidence: 0,

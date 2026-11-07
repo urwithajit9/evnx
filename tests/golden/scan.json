@@ -13,6 +13,8 @@
   "findings": [
     {
       "rule_id": "aws-access-key",
+      "status": "new",
+      "fingerprint": "32a29d42e2f12320a8a67ce0261c0a23722f4b3a6bd4a8bf36745bc1aeb6beee",
       "pattern": "AWS Access Key",
       "confidence": "high",
       "severity": "critical",

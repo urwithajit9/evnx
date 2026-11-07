@@ -48,6 +48,36 @@ pub(super) fn structured_format(path: &Path) -> Option<crate::core::secretscan::
     }
 }
 
+/// Whether `path` is a PKCS#12 keystore (`.p12`, `.pfx`), by its content
+/// (C3): a private key and its certificate, usually behind a weak password.
+///
+/// The file is binary, so a walk used to skip it as "not text". DER for a
+/// PKCS#12 `PFX` is a SEQUENCE whose first element is INTEGER 3 (`30 len 02 01
+/// 03`), which an X.509 certificate (SEQUENCE, SEQUENCE) and a PKCS#8 key
+/// (INTEGER 0) are not. Checked by content, so a renamed keystore is found too.
+pub(super) fn is_pkcs12(path: &Path) -> bool {
+    use std::io::Read;
+    let mut head = [0u8; 16];
+    let n = std::fs::File::open(path)
+        .and_then(|mut f| f.read(&mut head))
+        .unwrap_or(0);
+    is_pkcs12_bytes(&head[..n])
+}
+
+fn is_pkcs12_bytes(b: &[u8]) -> bool {
+    if b.first() != Some(&0x30) || b.len() < 2 {
+        return false;
+    }
+    // The SEQUENCE's length: short form, long form (0x81/0x82/…), or BER's
+    // indefinite 0x80.
+    let at = match b[1] {
+        0x80 => 2,
+        l if l & 0x80 != 0 => 2 + (l & 0x7f) as usize,
+        _ => 2,
+    };
+    b.get(at..at + 3) == Some(&[0x02, 0x01, 0x03][..])
+}
+
 // ─────────────────────────────────────────────────────────────
 // Decoding
 // ─────────────────────────────────────────────────────────────
@@ -198,5 +228,29 @@ fn from_utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16, label: &str) -> Decoded {
         Err(e) => Decoded::Unreadable {
             reason: format!("looks like {label} but does not decode: {e}"),
         },
+    }
+}
+
+#[cfg(test)]
+mod pkcs12_tests {
+    use super::is_pkcs12_bytes;
+
+    #[test]
+    fn pkcs12_is_recognised_by_its_version_and_others_are_not() {
+        assert!(is_pkcs12_bytes(&[
+            0x30, 0x82, 0x0a, 0x1b, 0x02, 0x01, 0x03, 0x30
+        ]));
+        assert!(is_pkcs12_bytes(&[0x30, 0x80, 0x02, 0x01, 0x03]));
+        assert!(is_pkcs12_bytes(&[0x30, 0x40, 0x02, 0x01, 0x03]));
+        // X.509 certificate: SEQUENCE, SEQUENCE.
+        assert!(!is_pkcs12_bytes(&[
+            0x30, 0x82, 0x03, 0x0b, 0x30, 0x82, 0x02
+        ]));
+        // PKCS#8 private key: INTEGER 0.
+        assert!(!is_pkcs12_bytes(&[
+            0x30, 0x82, 0x04, 0xbe, 0x02, 0x01, 0x00
+        ]));
+        assert!(!is_pkcs12_bytes(b"\x89PNG\r\n"));
+        assert!(!is_pkcs12_bytes(&[]));
     }
 }

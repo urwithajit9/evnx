@@ -1,0 +1,13 @@
+# Fixtures for `digitalocean-token` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["dop_v1_", "0c87485842a7450c495511d17b10242df8f5d2f6ee581c274c56e1727ed99d01"],
+  ["dor_v1_", "2208e165dd39e48ea7531e9001b9c65f7c1321c1ac961e534a1e1660f446733b"],
+]
+
+near_miss = [
+  ["dop_v2_", "630f224a23a98ea8219ea6dede57b5db8f31007e060285c8724d7e4adec06a72"],
+]

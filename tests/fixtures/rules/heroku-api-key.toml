@@ -1,0 +1,12 @@
+# Fixtures for `heroku-api-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["HRKU-AA", "CE8lig9oWkz7tPtPHmWlN6ObHgBIBCXmltB3zSsMawfBHfKjl1-0NwnJom"],
+]
+
+near_miss = [
+  ["HRKU-", "selJDspAsuJLiElumpRC"],
+]

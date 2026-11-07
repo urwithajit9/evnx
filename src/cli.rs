@@ -2035,8 +2035,14 @@ pub enum Commands {
     },
 
     /// Detect secrets that look real (AWS keys, tokens, etc.).
-    #[command(after_help = docs::SCAN.after_help)]
+    ///
+    /// `evnx scan rules …` manages rule files. A folder literally named
+    /// `rules` is scanned as `evnx scan ./rules`.
+    #[command(after_help = docs::SCAN.after_help, args_conflicts_with_subcommands = true)]
     Scan {
+        #[command(subcommand)]
+        action: Option<ScanAction>,
+
         /// Files or folders to scan. Repeatable; defaults to the current folder.
         ///
         /// A folder is walked. A file named here is always read — whatever
@@ -2121,6 +2127,26 @@ pub enum Commands {
         /// `[scan] severity` from `.evnx.toml`.
         #[arg(long, value_name = "LEVEL")]
         severity: Option<String>,
+
+        /// A rule file for this run, on top of `.evnx/rules/` and your personal
+        /// rules. Repeatable. Same format as those: see `evnx scan rules new`.
+        #[arg(long = "rules", value_name = "FILE")]
+        rule_files: Vec<String>,
+
+        /// Findings accepted earlier: matching ones are reported as `known`
+        /// and do not fail the run.
+        ///
+        /// Defaults to `.evnx/baseline.json` when it exists. Write it with
+        /// `--update-baseline`. It holds a fingerprint, a rule and a file per
+        /// finding, never a value, so it is safe to commit.
+        #[arg(long, value_name = "FILE")]
+        baseline: Option<String>,
+
+        /// Write this run's findings to the baseline (`--baseline`, or
+        /// `.evnx/baseline.json`) and exit 0. Run it once to accept what a
+        /// project already has; new findings fail from then on.
+        #[arg(long)]
+        update_baseline: bool,
 
         /// Lowest confidence worth reporting: high, medium or low.
         ///
@@ -3087,6 +3113,44 @@ mod tests {
     fn cli_definition_is_valid() {
         Cli::command().debug_assert();
     }
+}
+
+/// `evnx scan` subcommands (C6; `hook` follows in C9).
+#[derive(Subcommand, Debug)]
+pub enum ScanAction {
+    /// Your own scan rules: list, create and test them.
+    Rules {
+        #[command(subcommand)]
+        command: RulesCommand,
+    },
+}
+
+/// `evnx scan rules` subcommands (C6, S3).
+#[derive(Subcommand, Debug)]
+pub enum RulesCommand {
+    /// Every rule a scan here would use: evnx's own, `.evnx/rules/`, your
+    /// personal rules and `[[scan.patterns]]`, with id, source, severity and
+    /// confidence.
+    List {
+        /// One JSON document on stdout.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Write a rule file to fill in: `.evnx/rules/<ID>.toml`, committed so the
+    /// team shares it.
+    New {
+        /// The rule's id: lowercase letters, digits and `-`.
+        id: String,
+        /// Write it to your personal rules instead (never committed).
+        #[arg(long)]
+        personal: bool,
+    },
+    /// Check each rule against its own `positive` and `near_miss` values, and
+    /// report every failure. Exit 1 if any fails.
+    Test {
+        /// One rule file. Default: `.evnx/rules/` and your personal rules.
+        file: Option<String>,
+    },
 }
 
 /// `evnx spec` subcommands.

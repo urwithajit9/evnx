@@ -1,0 +1,12 @@
+# Fixtures for `aws-temporary-access-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["ASIA", "G31NIE4OGAQWUX3B"],
+]
+
+near_miss = [
+  ["ASIA", "SXSAAPMOK2"],
+]

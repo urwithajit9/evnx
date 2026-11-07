@@ -6,9 +6,16 @@ evnx <version>
 [exit 0]
 
 $ evnx scan --help
-Detect secrets that look real (AWS keys, tokens, etc.)
+Detect secrets that look real (AWS keys, tokens, etc.).
+
+`evnx scan rules …` manages rule files. A folder literally named `rules` is scanned as `evnx scan ./rules`.
 
 Usage: evnx scan [OPTIONS] [PATH]...
+       evnx scan <COMMAND>
+
+Commands:
+  rules  Your own scan rules: list, create and test them
+  help   Print this message or the help of the given subcommand(s)
 
 Arguments:
   [PATH]...
@@ -60,6 +67,17 @@ Options:
           
           Severity is how bad a finding is if it is real: `critical` for cloud, payment and AI keys and private keys, `high` for account tokens, database passwords and variables named like a secret, `low` for test keys and keys meant to ship in a web page. Filters what is reported, counted and exited on. `--severity high` is the usual blocking CI gate. ⚠️ Until 0.13.0 this filtered on confidence; that is now `--confidence`. Defaults to `low` (report everything), or `[scan] severity` from `.evnx.toml`.
 
+      --rules <FILE>
+          A rule file for this run, on top of `.evnx/rules/` and your personal rules. Repeatable. Same format as those: see `evnx scan rules new`
+
+      --baseline <FILE>
+          Findings accepted earlier: matching ones are reported as `known` and do not fail the run.
+          
+          Defaults to `.evnx/baseline.json` when it exists. Write it with `--update-baseline`. It holds a fingerprint, a rule and a file per finding, never a value, so it is safe to commit.
+
+      --update-baseline
+          Write this run's findings to the baseline (`--baseline`, or `.evnx/baseline.json`) and exit 0. Run it once to accept what a project already has; new findings fail from then on
+
       --confidence <LEVEL>
           Lowest confidence worth reporting: high, medium or low.
           
@@ -99,16 +117,24 @@ Options:
 
 What a folder walk reads:
   every file, except .git, node_modules, target, dist and build, the
-  .env.example family, editor swap files, binary files, and files over
+  .env.example family, editor swap files, binary files (except PKCS#12
+  keystores, found by their content), and files over
   1 MiB (--max-file-size). A file named on the command line is always read.
   In a git repository, findings in files git ignores and does not track
   are summarised, not counted (--include-ignored counts them).
 
-Rules, by the names [scan] disable takes:
-  AWS Access Key, AWS Temporary Access Key (STS), GitHub Token,
-  GitHub Fine-grained PAT, Slack Token, Google API Key, JSON Web Token,
-  Stripe Secret Key (LIVE), Stripe Secret Key (test), OpenAI API Key,
-  Anthropic API Key, Private Key, Credentials in a connection string;
+Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
+  AWS Access Key, AWS Temporary Access Key (STS), GitHub Fine-grained PAT,
+  Slack Token, Google API Key, JSON Web Token, Stripe Secret Key (LIVE),
+  Stripe Secret Key (test), GitHub Token, OpenAI API Key, Anthropic API Key,
+  OpenSSH Private Key, Private Key, Credentials in a connection string,
+  Stripe Restricted Key (LIVE), Azure Storage Account Key, Azure SAS Token,
+  Twilio API Key, SendGrid API Key, Mailgun API Key, DigitalOcean Token,
+  npm Access Token, PyPI API Token, Docker Hub Access Token,
+  Shopify Access Token, HashiCorp Vault Token, GitLab Personal Access Token,
+  Hugging Face Token, Heroku API Key, Sentry DSN, Sentry Auth Token,
+  Linear API Key, Discord Bot Token, Telegram Bot Token, Slack Webhook URL,
+  Google OAuth Client Secret;
   and the heuristics: Sensitive config key, High-entropy string,
   AWS Secret Access Key.
 

@@ -1,0 +1,13 @@
+# Fixtures for `slack-token` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["xoxb-", "314619638325-PvFkqHnuXaKUbN5Qykt5pHB4"],
+  ["xapp-", "1-hAyzGzoxsqSwkV3SeUv1wWvB8EUpgr"],
+]
+
+near_miss = [
+  ["xoxz-", "izPcYOyccuNsalonPESqOUtA"],
+]

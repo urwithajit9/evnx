@@ -1,0 +1,12 @@
+# Fixtures for `azure-storage-account-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["AccountKey=", "SOzKG3D3VIMqAgpn1aiW8o6ND2XVXQkS0he5SJMW+roUgfvj6WpkHDApc5cEweYh1exCKPfIwqK7USPBufQ2ge=="],
+]
+
+near_miss = [
+  ["AccountKey=", "bOSe+V9XWuPmUkVrAOZg2Mbgf3vBFPtxulzIHvd2=="],
+]

@@ -1,0 +1,12 @@
+# Fixtures for `github-fine-grained-pat` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["github_pat_", "ZBSRi2qoCWagPaLtO8v80qZM64eBCwnK8MVfUaWn4BK7u9QKRLWWThTVtH79Katu1R6NNcARFqWSM2NYda"],
+]
+
+near_miss = [
+  ["github_pat_", "IbmHiN9XI7gy74KCrPt6"],
+]

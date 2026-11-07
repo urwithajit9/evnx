@@ -1,0 +1,12 @@
+# Fixtures for `sendgrid-api-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["SG.", "eHbb1ETHTiR_fBLfC_qpEc.sjtd_565IEOmMdaZUERkYmlpcxCg_FKw9pBZQBJRLmd"],
+]
+
+near_miss = [
+  ["SG.", "75G_6nmvY9KrRZvnPkSMDc"],
+]

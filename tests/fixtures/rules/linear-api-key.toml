@@ -1,0 +1,12 @@
+# Fixtures for `linear-api-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["lin_api_", "IC4reekenV5J2bWdBKc8nOTk85f3BX6bqxgY5f23"],
+]
+
+near_miss = [
+  ["lin_api_", "jYbgRaYj4VgL1T4a"],
+]

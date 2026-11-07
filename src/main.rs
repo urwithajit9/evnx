@@ -246,7 +246,34 @@ fn main() -> Result<()> {
             spec: cfg.vars.clone(),
         }),
 
+        // C6: `evnx scan rules …`.
         Commands::Scan {
+            action: Some(evnx::cli::ScanAction::Rules { command }),
+            ..
+        } => {
+            use evnx::cli::RulesCommand;
+            let project_root = config_source
+                .as_deref()
+                .and_then(|p| p.parent())
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| here.clone());
+            let configured = cfg.scan.patterns.clone().unwrap_or_default();
+            match command {
+                RulesCommand::List { json } => {
+                    commands::scan::rules_cmd::list(&project_root, &configured, json)
+                }
+                RulesCommand::New { id, personal } => {
+                    commands::scan::rules_cmd::new(&project_root, &id, personal).map(drop)
+                }
+                RulesCommand::Test { file } => {
+                    commands::scan::rules_cmd::test(&project_root, file.as_deref())
+                        .map(verdict::finish)
+                }
+            }
+        }
+
+        Commands::Scan {
+            action: None,
             path,
             exclude,
             max_file_size,
@@ -256,6 +283,9 @@ fn main() -> Result<()> {
             no_ignore_placeholders,
             severity,
             confidence,
+            baseline,
+            update_baseline,
+            rule_files,
             format,
             exit_zero,
             include_ignored,
@@ -296,6 +326,14 @@ fn main() -> Result<()> {
                 cfg.scan.confidence,
                 "low".to_string(),
             ),
+            baseline,
+            update_baseline,
+            rule_files,
+            project_root: config_source
+                .as_deref()
+                .and_then(|p| p.parent())
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| here.clone()),
             format,
             exit_zero,
             verbose: cli.verbose,

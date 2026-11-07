@@ -1,0 +1,13 @@
+# Fixtures for `private-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["-----BEGIN RSA ", "PRIVATE KEY-----"],
+  ["-----BEGIN ", "PRIVATE KEY-----"],
+]
+
+near_miss = [
+  ["-----BEGIN ", "PUBLIC KEY-----"],
+]

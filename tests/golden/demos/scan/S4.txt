@@ -17,6 +17,8 @@ $ evnx scan . --format json
   "findings": [
     {
       "rule_id": "aws-access-key",
+      "status": "new",
+      "fingerprint": "<random-hex64>",
       "pattern": "AWS Access Key",
       "confidence": "high",
       "severity": "critical",
@@ -28,6 +30,8 @@ $ evnx scan . --format json
     },
     {
       "rule_id": "stripe-live-secret-key",
+      "status": "new",
+      "fingerprint": "<random-hex64>",
       "pattern": "Stripe Secret Key (LIVE)",
       "confidence": "high",
       "severity": "critical",
@@ -39,6 +43,8 @@ $ evnx scan . --format json
     },
     {
       "rule_id": "github-token",
+      "status": "new",
+      "fingerprint": "<random-hex64>",
       "pattern": "GitHub Token",
       "confidence": "high",
       "severity": "high",
@@ -50,6 +56,8 @@ $ evnx scan . --format json
     },
     {
       "rule_id": "connection-string-credentials",
+      "status": "new",
+      "fingerprint": "<random-hex64>",
       "pattern": "Credentials in a connection string",
       "confidence": "high",
       "severity": "high",

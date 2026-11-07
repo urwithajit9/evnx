@@ -1,0 +1,12 @@
+# Fixtures for `telegram-bot-token` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["7234567891:", "AAgmOBltDVQbrGSHJsfPQF9yyp-p_O1uJ0z"],
+]
+
+near_miss = [
+  ["7234567891:", "BB2ne4SBsNZxJoCtUolzu2SoxS_r0bTC1-6"],
+]

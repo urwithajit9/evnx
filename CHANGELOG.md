@@ -43,7 +43,73 @@ page. Every finding now has a **severity** (how bad it is if real: `critical`,
   `--format github` show severity.
 - The Google API key rule is now high confidence, low severity.
 
+⚠️ **`evnx scan`'s entropy fallback is measured, and catches most random keys**
+(C4, RM-53). The fallback for secrets with no provider prefix reported a value of
+32+ characters with entropy above 4.8. Measured over a corpus
+(`docs/scan-thresholds.md`), that caught only 2–4% of random 32-character keys
+and 40–48% of 40-character ones, since a random string's entropy is capped by
+its length. It is now **4.3**, applied only to values made of base64 or URL-safe
+characters that are not npm `sha512-` integrity hashes: 95%+ of 32-character and
+all 40+ character keys are reported, and no hash, SHA, checksum, UUID or source
+token in the corpus is. On real repositories this **lowers** the count: evnx-web
+went from 847 entropy findings (lockfile hashes) to 7. Values in a variable
+named like a public key (`PUBLIC_KEY`) are not judged by entropy. Hex keys are
+still never reported this way (their entropy is that of a SHA). The AWS
+secret-key check uses the same 4.3 (was 4.5). Entropy is now computed per
+character, not per byte, which raised it for non-ASCII text.
+
 ### Added
+- **Scan rule files you write, and `evnx scan rules`** (C6; S3, S5). Rules in
+  the same format as evnx's own load from `.evnx/rules/*.toml` (committed, so
+  the team and CI share them), your personal `~/.config/evnx/rules/*.toml`
+  (or `$EVNX_CONFIG_DIR/rules`), and each `--rules <file>`, after evnx's own.
+  ⛔ They only add: an id evnx or another file already uses is an error
+  naming both, never an override. A scan always says when personal rules
+  apply. Caps: 2 MiB and 5,000 rules per file. A broken personal folder is a
+  warning; a broken project file stops the scan. `[[scan.patterns]]` keeps
+  working.
+  - `evnx scan rules list [--json]`: every rule, with its id, source,
+    severity and confidence.
+  - `evnx scan rules new <id> [--personal]`: a rule file to fill in.
+  - `evnx scan rules test [<file>]`: each rule against its own `positive` and
+    `near_miss` values, every failure reported; exit 1 on any.
+  - A folder literally named `rules` is now scanned as `evnx scan ./rules`.
+  - `.evnx/rules` and `.evnx/baseline.json` are found beside the `.evnx.toml`
+    in force, so a scan from a subfolder uses the project's.
+- `evnx commands --json` gives each command `subcommand_required`: whether it
+  needs a subcommand (`evnx auth`) or also runs alone (`evnx scan`).
+- **`evnx:allow` markers and a baseline for `evnx scan`** (C5, RM-54).
+  - `# evnx:allow <rule-id> — reason` on a finding's line or the line above
+    silences that rule there, in any comment style. A marker without a reason
+    works and is warned about; a bare `evnx:allow`, or one naming another
+    rule, allows nothing and says so.
+  - `--update-baseline` writes this run's findings to `.evnx/baseline.json`
+    (or `--baseline <file>`) and exits 0; from then on a matching finding is
+    `known`. The fingerprint is BLAKE3 of the rule, the file and the variable
+    or line text, so a line inserted above keeps it and a changed value is new.
+    ⛔ The baseline holds no value or preview, so it is safe to commit.
+  - Allowed and known findings do not count towards the exit code. They are
+    in the JSON's `allowed` and `known` arrays, every finding carries a
+    `status` (`new`, `known`, `allowed`) and a `fingerprint`, the summary
+    counts them, and `-v` lists them. `findings` and `summary.total` remain
+    exactly what fails the run.
+- **`evnx scan` knows 23 more providers, and every rule is tested** (C3,
+  RM-51/52). New rules: Stripe restricted keys, Azure storage account keys
+  and SAS tokens, Twilio, SendGrid, Mailgun, DigitalOcean, npm, PyPI, Docker
+  Hub, Shopify, HashiCorp Vault, GitLab, Hugging Face, Heroku (2024 format),
+  Sentry DSNs (low severity: they ship in client code) and auth tokens,
+  Linear, Discord and Telegram bot tokens, Slack webhooks and Google OAuth
+  client secrets. OpenSSH private keys are named as such, and OpenAI
+  service-account and admin keys are recognised. 36 rules in all. A rule needs
+  a documented fixed prefix, or a fixed length and charset ordinary values do
+  not share: Postmark, Cloudflare and Datadog keys and Heroku's legacy UUID
+  keys are left out on purpose (`src/assets/rules.toml` says why). Every rule
+  has fixtures in `tests/fixtures/rules/` that must match and near misses that
+  must not, checked in `.env` and YAML; a rule without fixtures fails the
+  suite. On evnx-web, evnx-server and evnx-app (9,315 files) the new rules
+  report nothing.
+- **PKCS#12 keystores (`.p12`, `.pfx`) are reported** (C3), by their content,
+  as `pkcs12-keystore`, critical. A folder walk used to skip them as binary.
 - **`evnx scan` checks names in YAML, JSON and TOML** (C8). A structured file
   was read as plain text, so only provider formats and the long-random-value
   fallback applied: `password: <a real password>` in `config.yml` scanned

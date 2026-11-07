@@ -105,6 +105,11 @@ pub struct PatternRule {
     /// A match whose Shannon entropy is below this is not reported. For
     /// generic shapes that also match ordinary words.
     pub entropy: Option<f64>,
+    /// Values this rule must report, for `evnx scan rules test` (C6). Never
+    /// read by a scan.
+    pub positive: Option<Vec<String>>,
+    /// Values it must not report, for `evnx scan rules test` (C6).
+    pub near_miss: Option<Vec<String>>,
     /// Where to go and revoke a match, when there is such a place.
     pub url: Option<String>,
     #[serde(flatten)]

@@ -1,0 +1,13 @@
+# Fixtures for `shopify-token` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["shpat_", "569348fd4dd202cb3792182c7eb566de"],
+  ["shpss_", "f1c98045cbf7abbc6e7518419872c6cb"],
+]
+
+near_miss = [
+  ["shpxx_", "6ca1255176045d743e85434993cbe8bf"],
+]

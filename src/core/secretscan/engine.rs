@@ -400,14 +400,9 @@ fn scan_structured(text: &str, format: Format, ctx: &Context) -> Vec<Found> {
             continue;
         }
         let location = format!("{}:{} ({})", ctx.path, leaf.line, leaf.path);
-        let mut detections = ctx.registry.scan_kv(&leaf.key, &leaf.value, &location);
-        // ⚠️ The entropy fallback judges one token, never a sentence: a long
-        // release note or a `run:` script scores over the threshold as a
-        // whole (measured on a real repository). The text path still checks
-        // each of its tokens, so nothing that was found before is lost.
-        if leaf.value.contains(char::is_whitespace) {
-            detections.retain(|d| d.rule_id != "high-entropy-string");
-        }
+        // A sentence or a script is not judged by entropy as a whole:
+        // `heuristic::looks_like_key_material` refuses whitespace (C4).
+        let detections = ctx.registry.scan_kv(&leaf.key, &leaf.value, &location);
         if let Some(detection) = best(detections) {
             all.push(Found {
                 line: leaf.line,

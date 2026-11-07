@@ -1,0 +1,12 @@
+# Fixtures for `hashicorp-vault-token` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["hvs.", "3eUQ9RQcb3A79vR7gA4kqeNS9Kgrwim7OB83eZyZI4gnPjlM47AAe2ffL3NZyDUusC2Fn38uhFEPh6ip8VkWpp9flM"],
+]
+
+near_miss = [
+  ["hvs.", "nhsVAZ7WkE"],
+]

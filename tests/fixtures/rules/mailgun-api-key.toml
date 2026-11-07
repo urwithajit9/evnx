@@ -1,0 +1,12 @@
+# Fixtures for `mailgun-api-key` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["key-", "7ftwlHFt014X20rneuCZASXUWiNlbxqo"],
+]
+
+near_miss = [
+  ["key-", "YzLAyU3hWq5W"],
+]

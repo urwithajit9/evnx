@@ -1,0 +1,12 @@
+# Fixtures for `pypi-api-token` (C3). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["pypi-AgEIcHlwaS5vcmc", "VIpSQVxh__bPScyI9rCMHjhnj8ncQe233bSA8XsU7Fb0dfHVdXYMKx6O33Rb"],
+]
+
+near_miss = [
+  ["pypi-AgEI", "CVZx1e2XWzbmxl83OvxwrbCDztcDl6v3ovncNWIhtfLBnwCL6aaowCtMhGTU"],
+]

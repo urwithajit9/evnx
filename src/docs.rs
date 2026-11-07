@@ -95,16 +95,24 @@ pub const SCAN: CommandDoc = CommandDoc {
     after_help: "\
 What a folder walk reads:\n\
 \x20 every file, except .git, node_modules, target, dist and build, the\n\
-\x20 .env.example family, editor swap files, binary files, and files over\n\
+\x20 .env.example family, editor swap files, binary files (except PKCS#12\n\
+\x20 keystores, found by their content), and files over\n\
 \x20 1 MiB (--max-file-size). A file named on the command line is always read.\n\
 \x20 In a git repository, findings in files git ignores and does not track\n\
 \x20 are summarised, not counted (--include-ignored counts them).\n\
 \n\
-Rules, by the names [scan] disable takes:\n\
-\x20 AWS Access Key, AWS Temporary Access Key (STS), GitHub Token,\n\
-\x20 GitHub Fine-grained PAT, Slack Token, Google API Key, JSON Web Token,\n\
-\x20 Stripe Secret Key (LIVE), Stripe Secret Key (test), OpenAI API Key,\n\
-\x20 Anthropic API Key, Private Key, Credentials in a connection string;\n\
+Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):\n\
+\x20 AWS Access Key, AWS Temporary Access Key (STS), GitHub Fine-grained PAT,\n\
+\x20 Slack Token, Google API Key, JSON Web Token, Stripe Secret Key (LIVE),\n\
+\x20 Stripe Secret Key (test), GitHub Token, OpenAI API Key, Anthropic API Key,\n\
+\x20 OpenSSH Private Key, Private Key, Credentials in a connection string,\n\
+\x20 Stripe Restricted Key (LIVE), Azure Storage Account Key, Azure SAS Token,\n\
+\x20 Twilio API Key, SendGrid API Key, Mailgun API Key, DigitalOcean Token,\n\
+\x20 npm Access Token, PyPI API Token, Docker Hub Access Token,\n\
+\x20 Shopify Access Token, HashiCorp Vault Token, GitLab Personal Access Token,\n\
+\x20 Hugging Face Token, Heroku API Key, Sentry DSN, Sentry Auth Token,\n\
+\x20 Linear API Key, Discord Bot Token, Telegram Bot Token, Slack Webhook URL,\n\
+\x20 Google OAuth Client Secret;\n\
 \x20 and the heuristics: Sensitive config key, High-entropy string,\n\
 \x20 AWS Secret Access Key.\n\
 \n\
