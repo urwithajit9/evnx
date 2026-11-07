@@ -1208,8 +1208,22 @@ pub enum CloudCommands {
         /// Vault to pull from: `name`, `name/environment`, or an id.
         ///
         /// Optional in a directory bound with `evnx cloud link`.
+        ///
+        /// Repeatable: with several, one master-password unlock opens them all
+        /// and they are merged left to right into the one file. A key in more
+        /// than one of them is refused (nothing is written) unless
+        /// `--allow-override` is given. `--version` belongs to one vault, so it
+        /// is refused with more than one.
         #[arg(long, value_name = "VAULT")]
-        vault: Option<String>,
+        vault: Vec<String>,
+
+        /// With several `--vault`, let the later vault win a key both hold.
+        ///
+        /// Each overlap is named on stderr (key and winning vault, never a
+        /// value). Without it an overlap stops the pull. Does nothing with one
+        /// vault.
+        #[arg(long)]
+        allow_override: bool,
 
         /// Where to write the decrypted file.
         ///
@@ -1275,8 +1289,22 @@ pub enum CloudCommands {
         /// Vault to read: `name`, `name/environment`, or an id.
         ///
         /// Optional in a directory bound with `evnx cloud link`.
+        ///
+        /// Repeatable: with several, one master-password unlock opens them all
+        /// and they are merged left to right. A key in more than one of them
+        /// is refused (the command does not run) unless `--allow-override` is
+        /// given. `--version` belongs to one vault, so it is refused with more
+        /// than one. `--include`/`--exclude` apply to the merged result.
         #[arg(long, value_name = "VAULT")]
-        vault: Option<String>,
+        vault: Vec<String>,
+
+        /// With several `--vault`, let the later vault win a key both hold.
+        ///
+        /// Each overlap is named on stderr (key and winning vault, never a
+        /// value). Without it an overlap stops the run. Does nothing with one
+        /// vault.
+        #[arg(long)]
+        allow_override: bool,
 
         /// Version to inject. Defaults to the latest.
         #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..))]

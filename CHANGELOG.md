@@ -170,6 +170,16 @@ secret-key check uses the same 4.3 (was 4.5). Entropy is now computed per
 character, not per byte, which raised it for non-ASCII text.
 
 ### Added
+- **`evnx cloud run` and `evnx cloud pull` take `--vault` more than once** (RM-59, GitHub #128).
+  `evnx cloud run --vault acme/shared --vault acme/prod -- ./deploy.sh` opens every vault with one
+  master-password unlock and merges them left to right: the first vault's keys, then each later
+  vault's new keys.
+  - A key held by two or more of the vaults is an error (exit 2) before the command runs or a file is
+    written: `DATABASE_URL is in both acme/shared and acme/prod`. `--allow-override` lets the later
+    vault win instead; each overlap is named on stderr (key and winning vault, never a value).
+  - `--version` selects a version of one vault, so it is refused with more than one `--vault`.
+    `--include`/`--exclude` and `--file`/`--env-name` apply to the merged result; a merged pull
+    writes `.env` unless told otherwise. One `--vault`, or none, behaves exactly as before.
 - **Rule packs: `evnx scan rules add | update | remove`, and a lock file**
   (C7; S2, S4, S6).
   - `evnx scan rules add <name | url | path> [--format gitleaks] [--personal]`

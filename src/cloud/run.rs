@@ -46,13 +46,14 @@ use crate::utils::ui;
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     server_override: Option<&str>,
-    vault_target: Option<String>,
+    vault_targets: Vec<String>,
     version: Option<i32>,
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
     password_stdin: bool,
     allow_unsafe_names: bool,
     mask: bool,
+    allow_override: bool,
     verbose: bool,
     command: Vec<String>,
 ) -> Result<()> {
@@ -60,49 +61,82 @@ pub fn run(
         .split_first()
         .ok_or_else(|| anyhow!("no command given. Usage: evnx cloud run --vault <V> -- <cmd>"))?;
 
-    let vault_target = super::sync::resolve_target(vault_target)?;
+    // RM-59 (X4): before any request. A version number belongs to one vault.
+    super::merge::check_usage(vault_targets.len(), version, allow_override)?;
+    let multi = vault_targets.len() > 1;
+    let vault_targets = if multi {
+        vault_targets
+    } else {
+        vec![super::sync::resolve_target(
+            vault_targets.into_iter().next(),
+        )?]
+    };
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     client.require_credential()?;
-    let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
+    let mut vault_refs = Vec::with_capacity(vault_targets.len());
+    for target in &vault_targets {
+        vault_refs.push(vault::fetch_and_resolve(&client, target)?);
+    }
 
-    let version = match version {
-        Some(v) => v,
-        None => {
-            let latest = super::sync::current_version(&client, &vault_ref)?;
-            if latest == 0 {
-                return Err(anyhow!(
-                    "{} has no versions yet. Push one with `evnx cloud push --vault {}`.",
-                    vault_ref.label(),
-                    vault_ref.label()
-                ));
+    // `source` names what was injected in messages; `vault_flags` is how to
+    // say the same vaults on a command line.
+    let (mut env_vars, source, short_source, vault_flags) = if multi {
+        let flags = vault_refs
+            .iter()
+            .map(|r| format!("--vault {}", r.label()))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let merged =
+            super::merge::fetch_merged(&client, vault_refs, password_stdin, allow_override)?;
+        let source = merged.describe();
+        (merged.vars, source.clone(), source, flags)
+    } else {
+        let vault_ref = vault_refs.remove(0);
+        let version = match version {
+            Some(v) => v,
+            None => {
+                let latest = super::sync::current_version(&client, &vault_ref)?;
+                if latest == 0 {
+                    return Err(anyhow!(
+                        "{} has no versions yet. Push one with `evnx cloud push --vault {}`.",
+                        vault_ref.label(),
+                        vault_ref.label()
+                    ));
+                }
+                latest
             }
-            latest
-        }
+        };
+
+        // Fetched before the password is asked for, as `cloud pull` does: a version
+        // that does not exist answers 404 rather than wasting the typing.
+        let blob = super::sync::fetch_blob(&client, &vault_ref, version)?;
+
+        // ⚠️ The password is read before the child is spawned, and it is read from
+        // *our* stdin. Whatever remains on stdin is inherited by the child, so a
+        // command that also reads stdin sees the rest of the stream, not the
+        // password line.
+        let password = auth::read_master_password(password_stdin)?;
+        let unlocked = auth::unlock(&client, &password)?;
+        let vault_key = super::sync::unwrap_vault_key(&client, &vault_ref, &unlocked)?;
+        let mut plaintext = super::sync::decrypt_version(&blob, &vault_ref, version, &vault_key)?;
+
+        // ── Parse, then destroy the whole-file plaintext ────────────────────
+        //
+        // ⚠️ Order matters, and this is the step that is easy to leave out. The
+        // decrypted blob is the entire file in one buffer; the parsed map is the
+        // same secrets in smaller pieces. Holding both for the child's lifetime
+        // doubles the window for no benefit, so the buffer dies here — before the
+        // process is even spawned.
+        let parsed = parse_env(&plaintext);
+        plaintext.zeroize();
+        (
+            parsed?,
+            format!("{} version {version}", vault_ref.label()),
+            format!("{} v{version}", vault_ref.label()),
+            format!("--vault {}", vault_ref.label()),
+        )
     };
-
-    // Fetched before the password is asked for, as `cloud pull` does: a version
-    // that does not exist answers 404 rather than wasting the typing.
-    let blob = super::sync::fetch_blob(&client, &vault_ref, version)?;
-
-    // ⚠️ The password is read before the child is spawned, and it is read from
-    // *our* stdin. Whatever remains on stdin is inherited by the child, so a
-    // command that also reads stdin sees the rest of the stream, not the
-    // password line.
-    let password = auth::read_master_password(password_stdin)?;
-    let unlocked = auth::unlock(&client, &password)?;
-    let vault_key = super::sync::unwrap_vault_key(&client, &vault_ref, &unlocked)?;
-    let mut plaintext = super::sync::decrypt_version(&blob, &vault_ref, version, &vault_key)?;
-
-    // ── Parse, then destroy the whole-file plaintext ────────────────────────
-    //
-    // ⚠️ Order matters, and this is the step that is easy to leave out. The
-    // decrypted blob is the entire file in one buffer; the parsed map is the
-    // same secrets in smaller pieces. Holding both for the child's lifetime
-    // doubles the window for no benefit, so the buffer dies here — before the
-    // process is even spawned.
-    let mut env_vars = parse_env(&plaintext)?;
-    plaintext.zeroize();
 
     // ── Narrow to what the child actually needs ─────────────────────────────
     //
@@ -128,10 +162,7 @@ pub fn run(
     }
 
     if env_vars.is_empty() {
-        ui::warning(format!(
-            "{} version {version} holds no variables — running anyway",
-            vault_ref.label()
-        ));
+        ui::warning(format!("{source} holds no variables — running anyway"));
     } else if !skipped.is_empty() {
         // Names only, and on stderr, so it does not pollute a piped stdout.
         if !ui::is_quiet() {
@@ -147,9 +178,8 @@ pub fn run(
         // Names only. Printing a value here would put it in the terminal
         // scrollback, which is most of what this command exists to avoid.
         eprintln!(
-            "  injecting {} variable(s) from {} v{version}: {}",
+            "  injecting {} variable(s) from {short_source}: {}",
             env_vars.len(),
-            vault_ref.label(),
             env_vars.keys().cloned().collect::<Vec<_>>().join(", ")
         );
     }
@@ -172,8 +202,7 @@ pub fn run(
                     "no such command: {program}\n\
                  \x20 `evnx cloud run` runs the command after `--`; it does not go \
                  through a shell, so builtins and pipelines need one:\n\
-                 \x20   evnx cloud run --vault {} -- sh -c 'a | b'",
-                    vault_ref.label()
+                 \x20   evnx cloud run {vault_flags} -- sh -c 'a | b'"
                 )
             } else {
                 anyhow::Error::new(e).context(format!("failed to run {program}"))
