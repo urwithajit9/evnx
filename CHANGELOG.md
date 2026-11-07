@@ -59,6 +59,32 @@ secret-key check uses the same 4.3 (was 4.5). Entropy is now computed per
 character, not per byte, which raised it for non-ASCII text.
 
 ### Added
+- **Rule packs: `evnx scan rules add | update | remove`, and a lock file**
+  (C7; S2, S4, S6).
+  - `evnx scan rules add <name | url | path> [--format gitleaks] [--personal]`
+    writes `.evnx/rules/<name>.toml` and records its sha256 in
+    `.evnx/rules.lock`; commit both. A name comes from the catalogue,
+    [evnx-rules](https://github.com/urwithajit9/evnx-rules) (`gitleaks`, 221
+    rules), and the download must match the sha256 its index lists.
+    `EVNX_RULES_CATALOGUE` points at a mirror.
+  - ⛔ A scan refuses a pack whose bytes no longer match the lock, or that is
+    missing, and names `update` and `remove`. A scan never downloads
+    anything. Hand-written rule files have no lock entry and are not checked.
+  - `update [<name>] [-y]` fetches again, shows the rule counts and the ids
+    added and removed, and asks before replacing. `remove <name>` deletes a
+    pack and its lock entry, never a hand-written file.
+  - `--format gitleaks` converts on import: ids get the pack name in front
+    (`gitleaks-…`), Go's ASCII `\w`/`\d`/`\s` become explicit classes, and
+    keywords, entropy, the secret group and allowlists (regexes and
+    stopwords) carry over. Rules that cannot convert are listed with the
+    reason, never dropped silently.
+  - Downloads need the `net` feature (in every prebuilt binary) and are
+    https only, or plain http to this machine.
+- Rule files gain `keywords` (the rule is tried only on text holding one, so
+  hundreds of rules stay fast), `secret_group` (the part that is the secret:
+  judged, reported and masked), and `allow` / `allow_line` (expressions that
+  drop a match). `evnx scan rules test` summarises rules with no fixtures in
+  one line.
 - **`evnx scan --staged` and `evnx scan hook`** (C9; S11, S12).
   - `--staged` scans what the next commit records, read from the git index
     with one `git cat-file --batch`, never from disk: a secret staged and then

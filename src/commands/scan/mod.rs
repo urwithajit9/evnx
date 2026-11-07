@@ -57,6 +57,7 @@ pub mod filters;
 pub mod hook;
 pub mod models;
 pub mod output;
+pub mod packs_cmd;
 pub mod rules_cmd;
 pub mod runner;
 pub mod staged;

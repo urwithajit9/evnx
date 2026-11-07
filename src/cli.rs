@@ -3185,6 +3185,43 @@ pub enum RulesCommand {
         /// One rule file. Default: `.evnx/rules/` and your personal rules.
         file: Option<String>,
     },
+    /// Add a rule pack: a catalogue name, an https URL, or a path.
+    ///
+    /// Written to `.evnx/rules/<NAME>.toml` and recorded with its sha256 in
+    /// `.evnx/rules.lock`; commit both. A scan refuses a pack that no longer
+    /// matches the lock, and never downloads anything itself. A catalogue
+    /// pack must match the sha256 its index lists.
+    Add {
+        /// A catalogue pack name (`gitleaks`), an https URL, or a file.
+        source: String,
+        /// What the source is written in. `gitleaks` converts it; rules whose
+        /// regex Rust cannot compile are listed and left out.
+        #[arg(long, default_value = "evnx", value_parser = ["evnx", "gitleaks"])]
+        format: String,
+        /// Add it to your personal rules instead (never committed).
+        #[arg(long)]
+        personal: bool,
+    },
+    /// Fetch added packs again, show the rules added and removed, and ask
+    /// before replacing each.
+    Update {
+        /// One pack. Default: every pack added here.
+        name: Option<String>,
+        /// Your personal packs instead.
+        #[arg(long)]
+        personal: bool,
+        /// Replace without asking (for CI).
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+    /// Remove an added pack and its lock entry.
+    Remove {
+        /// The pack's name.
+        name: String,
+        /// Your personal packs instead.
+        #[arg(long)]
+        personal: bool,
+    },
 }
 
 /// `evnx spec` subcommands.

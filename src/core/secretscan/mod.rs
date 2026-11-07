@@ -14,6 +14,7 @@ mod confidence;
 pub mod detector;
 pub mod engine;
 pub mod heuristic;
+pub mod packs;
 pub mod patternset;
 pub mod rules;
 

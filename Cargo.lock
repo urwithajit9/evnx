@@ -889,6 +889,7 @@ name = "evnx"
 version = "0.12.0"
 dependencies = [
  "aes-gcm",
+ "aho-corasick",
  "anyhow",
  "argon2",
  "assert_cmd",

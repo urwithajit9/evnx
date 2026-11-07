@@ -116,6 +116,19 @@ const EXEMPT: &[(&str, &str)] = &[
     ("scan rules list", "data: the listing is the answer"),
     ("scan hook status", "data: the answer stays under -q"),
     (
+        "scan rules add",
+        "needs a rule file or a catalogue; its output is `ui::success`/`ui::info`, and \
+         the skipped-rules list is a warning -q keeps (tests/scan_packs.rs)",
+    ),
+    (
+        "scan rules update",
+        "needs an added pack; it shows the change before asking, which -q keeps",
+    ),
+    (
+        "scan rules remove",
+        "needs an added pack; its output is `ui::success`, covered in tests/scan_packs.rs",
+    ),
+    (
         "scan hook install",
         "needs a git repository; its quiet success is `ui::success`, covered in \
          tests/scan_staged.rs",
