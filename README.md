@@ -1394,15 +1394,16 @@ variant it walks past, and `--env-name production` resolves to `.env.production`
 opening them. If you relied on `evnx scan` as a gate on an earlier version, it never saw
 the file most likely to hold production credentials.
 
-**Keys with `.` or `-` are refused.** `my.key=1` and `my-key=1` are accepted by
-Docker Compose, python-dotenv and Node, but evnx refuses the file, because a shell
-cannot `export` such a name. Since v0.12.0 the error says so. Accepting them, and
-refusing them only where an output format cannot hold them, is planned for v0.13.0.
+**Keys may contain `.`, `-`, `[`, `]` or a leading digit (v0.13.0).** evnx reads
+the names Docker Compose reads, such as `spring.datasource.url` and `my-key`.
+`validate` warns that a shell cannot `export` them, and each `convert` format or
+`migrate` destination that cannot hold one (a shell script, GitHub Actions,
+Vercel, …) refuses it by name.
 
-**`${VAR}` is expanded against a key's final value**, where Docker Compose and
-python-dotenv expand top to bottom: with `B=1`, `A=${B}`, `B=2`, evnx gives `A=2`
-and Compose `A=1`. Since v0.12.0 evnx warns when a file reads differently this way;
-switching to top-to-bottom is planned for v0.13.0.
+**`${VAR}` expands top to bottom (v0.13.0)**, as Docker Compose and python-dotenv
+do: with `B=1`, `A=${B}`, `B=2`, evnx gives `A=1`, and a reference to a variable
+assigned only below it is an error that names the line to move. Until v0.13.0
+evnx expanded against each key's final value (`A=2`).
 
 **Windows** — file permissions checking is limited (no Unix permission model). Terminal color support requires PowerShell or Windows Terminal on older systems.
 

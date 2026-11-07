@@ -64,7 +64,7 @@ fn rm36_stdin_and_every_problem_with_exit_1() {
     let d = TempDir::new().unwrap();
     let out = parse(
         &d,
-        Some("A=1\nmy.key=2\nB=\"x\n"),
+        Some("A=1\na/b=2\nB=\"x\n"),
         &["--env", "-", "--format", "json"],
     );
     assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));

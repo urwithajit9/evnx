@@ -270,7 +270,62 @@ fn t_i267_add_prefix_must_keep_names_variable_names() {
 /// leaves nothing a destination accepts.
 #[test]
 fn t_i267_strip_prefix_must_leave_variable_names() {
-    let p = Project::new().env("API_=x\nAPI_1X=y\nB=1\n");
+    let p = Project::new().env("API_=x\nB=1\n");
+    let args = [
+        "--to",
+        "heroku",
+        "--heroku-app",
+        "demo-app",
+        "--strip-prefix",
+        "API_",
+    ];
+    let out = migrate(&p, &args);
+    out.assert_code(2);
+    assert!(out.stderr.contains("API_ → ''"), "{}", out.stderr);
+    assert!(out.stderr.contains("--strip-prefix"), "{}", out.stderr);
+    assert!(!out.stdout.contains("config:set"), "{}", out.stdout);
+
+    // A leading digit is the destination's call since D12 (0.13.0): Heroku
+    // refuses it by name, with the name it would have had.
+    let p = Project::new().env("API_1X=y\nB=1\n");
+    let out = migrate(&p, &args);
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("Heroku cannot hold this name"),
+        "{}",
+        out.stderr
+    );
+    assert!(out.stderr.contains("API_1X → 1X"), "{}", out.stderr);
+    assert!(!out.stdout.contains("config:set"), "{}", out.stdout);
+}
+
+/// D12 (0.13.0): a name the parser reads but a destination cannot hold is
+/// refused by name, before anything is printed or sent. A destination that
+/// takes it gets it unchanged.
+#[test]
+fn p1_d12_destinations_refuse_names_they_cannot_hold() {
+    let p = Project::new().env("spring.datasource.url=jdbc:x\nOK=1\n");
+    let out = migrate(&p, &["--to", "heroku", "--heroku-app", "demo-app"]);
+    out.assert_code(2);
+    assert!(
+        out.stderr
+            .contains("Heroku cannot hold this name: names there are letters, digits and _"),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.contains("  spring.datasource.url\n"),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.contains("Nothing was printed or sent."),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.stdout.contains("config:set"), "{}", out.stdout);
+
+    // --exclude is the way through.
     let out = migrate(
         &p,
         &[
@@ -278,15 +333,12 @@ fn t_i267_strip_prefix_must_leave_variable_names() {
             "heroku",
             "--heroku-app",
             "demo-app",
-            "--strip-prefix",
-            "API_",
+            "--exclude",
+            "spring.*",
         ],
     );
-    out.assert_code(2);
-    assert!(out.stderr.contains("API_"), "{}", out.stderr);
-    assert!(out.stderr.contains("API_1X"), "{}", out.stderr);
-    assert!(out.stderr.contains("--strip-prefix"), "{}", out.stderr);
-    assert!(!out.stdout.contains("config:set"), "{}", out.stdout);
+    out.assert_code(0);
+    assert!(out.stdout.contains("OK="), "{}", out.stdout);
 }
 
 /// Q1 (F10): every destination that only prints commands refuses

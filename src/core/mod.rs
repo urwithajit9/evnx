@@ -12,6 +12,7 @@ pub mod glob;
 #[cfg(feature = "net")]
 pub mod http;
 pub mod inject;
+pub mod key_rules;
 pub mod mask;
 pub mod parser;
 pub mod permissions;

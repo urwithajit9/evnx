@@ -3,7 +3,7 @@
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
-use super::document::{AssignedBelow, Document, Entry, OrderDifference, Problem};
+use super::document::{Document, Entry, Problem};
 use super::{ParseError, ParseResult, Parser};
 
 /// Marks a `$` that came from `\$` and must not be expanded.
@@ -31,142 +31,90 @@ pub(super) fn strip_markers(s: &str) -> String {
 impl Parser {
     // ── Private: variable expansion ───────────────────────────────────────────
 
-    /// Expand every entry that is not written in a literal form, against each
-    /// key's last value. An undefined variable or a cycle becomes a [`Problem`]
-    /// on the entry that counts; a shadowed entry that fails keeps its text
-    /// silently, because the strict parser never read it.
+    /// Expand every entry that is not written in a literal form, top to bottom:
+    /// each reference resolves against the values assigned **above** it, as
+    /// Docker Compose and python-dotenv read a file (D10, 0.13.0).
     ///
-    /// ⚠️ `literal` names the keys written in single quotes or backticks, and
-    /// skipping them is a **behaviour change**: expansion used to run in every
-    /// quoting form, so `'cost $B'` substituted `B`'s value where a shell, `dotenv`,
-    /// `python-dotenv` and `godotenv` all leave it alone.
+    /// ⚠️ This is a **behaviour change** from 0.12.0, which expanded against each
+    /// key's final value:
+    /// - `B=1` / `A=${B}` / `B=2` gives `A=1`, not `2`;
+    /// - a forward reference (`A=${B}` / `B=1`) is an undefined variable, because
+    ///   `${NOPE}` is an error by design, not `""`;
+    /// - `A=1` / `A=${A}3` gives `13`, where it was a circular expansion.
     ///
-    /// That was the deeper half of the problem. Those forms are already literal for
-    /// backslash escapes, so "single quotes are literal" was true of one thing and
-    /// false of another — which is not a rule anyone can hold in their head. It also
-    /// left a secret containing `$` with **no** way to be written: `\$` did not work
-    /// either, and still does not in these forms, because there is no unescape pass
-    /// to interpret it. Now there does not need to be one.
+    /// An undefined variable becomes a [`Problem`] on the entry that counts. A
+    /// shadowed entry that fails is a problem only when a later entry reads it
+    /// before it is assigned again: otherwise nothing reads that value, which is
+    /// what the strict parser has always accepted (`A=${NOPE}` / `A=1`).
+    ///
+    /// ⚠️ `literal` names the keys written in single quotes or backticks, and they
+    /// are never expanded: `'cost $B'` keeps `$B`, as a shell, `dotenv`,
+    /// `python-dotenv` and `godotenv` do.
     pub(super) fn expand_entries(&self, doc: &mut Document, literal: &HashSet<String>) {
-        // The map every reference resolves against: each key's last value.
-        let vars = doc.vars();
-        let mut effective: IndexMap<&str, usize> = IndexMap::with_capacity(vars.len());
-        for (i, e) in doc.entries.iter().enumerate() {
-            effective.insert(e.key.as_str(), i);
-        }
-        let effective: Vec<usize> = effective.into_values().collect();
-        // D10: before any value is replaced, read each one as Compose would.
-        let ordered = self.expand_in_order(doc, literal);
-        let mut failed = vec![false; doc.entries.len()];
-
-        let expand = |e: &Entry| -> ParseResult<String> {
-            if literal.contains(&e.key) {
-                // ⚠️ Still stripped. A single-quoted value never goes through
-                // `unescape_double`, so it holds no marker — but stripping
-                // unconditionally means no path can leak one to a caller.
-                return Ok(strip_markers(&e.value));
-            }
-            let mut stack: Vec<String> = Vec::new();
-            // ⚠️ The line of the key being expanded, not of the key that defines
-            // the missing variable — which may not exist anywhere. "`${NOPE}` is not
-            // defined" is only actionable if it names where you wrote it.
-            self.expand_value(&e.value, &vars, &mut stack, 0, e.span.line)
-                .map(|v| strip_markers(&v))
-        };
-
-        // Effective entries first, in key order: that is the order the strict
-        // parser met expansion errors in, so `problems` keeps its first error.
-        let mut done = vec![false; doc.entries.len()];
-        for &i in &effective {
-            done[i] = true;
-            match expand(&doc.entries[i]) {
-                Ok(v) => doc.entries[i].value = v,
-                Err(error) => {
-                    failed[i] = true;
-                    let e = &mut doc.entries[i];
-                    e.value = strip_markers(&e.value);
-                    doc.problems.push(Problem {
-                        span: e.span,
-                        raw: e.raw.clone(),
-                        error,
-                    });
-                }
-            }
-        }
-        // A shadowed assignment is not a problem: the strict parser never read it.
-        for (i, d) in done.into_iter().enumerate() {
-            if !d {
-                let e = &doc.entries[i];
-                let v = expand(e).unwrap_or_else(|_| strip_markers(&e.value));
-                doc.entries[i].value = v;
-            }
-        }
-
-        // Only the entry that counts, and only one evnx reads: a file that
-        // already fails says so as a problem.
-        for i in effective {
-            let Some((reading, names)) = &ordered[i] else {
-                continue;
-            };
-            let e = &doc.entries[i];
-            if failed[i] || reading.as_ref().is_ok_and(|v| *v == e.value) {
-                continue;
-            }
-            let below = names
-                .iter()
-                .filter_map(|name| {
-                    let mut lines = doc.entries.iter().filter(|o| o.key == *name);
-                    let line = lines
-                        .clone()
-                        .map(|o| o.span.line)
-                        .find(|&l| l > e.span.line)?;
-                    let also_above = lines.any(|o| o.span.line < e.span.line);
-                    Some(AssignedBelow {
-                        name: name.clone(),
-                        line,
-                        also_above,
-                    })
-                })
-                .collect();
-            doc.order_differences.push(OrderDifference {
-                key: e.key.clone(),
-                line: e.span.line,
-                below,
-            });
-        }
-    }
-
-    /// Every entry's value read as Docker Compose and python-dotenv read it:
-    /// top to bottom, each reference resolved against the values assigned
-    /// above it (D10). `None` for an entry with nothing to expand. With it,
-    /// the names the value refers to directly.
-    fn expand_in_order(
-        &self,
-        doc: &Document,
-        literal: &HashSet<String>,
-    ) -> Vec<Option<(ParseResult<String>, Vec<String>)>> {
-        // Values settled so far, with every `$` marked literal: they are
-        // already expanded and must not be expanded again on lookup.
+        // Values settled so far, with every `$` marked literal: they are already
+        // expanded and must not be expanded again when a later entry reads them.
         let mut above: IndexMap<String, String> = IndexMap::new();
-        doc.entries
-            .iter()
-            .map(|e| {
-                let ordered = (!literal.contains(&e.key) && e.value.contains('$')).then(|| {
-                    let reading =
-                        self.expand_value(&e.value, &above, &mut Vec::new(), 0, e.span.line);
-                    (reading, references(&e.value))
+        // The entry each name was last assigned by, so far.
+        let mut current: IndexMap<String, usize> = IndexMap::new();
+        let mut pending: Vec<Option<ParseError>> = (0..doc.entries.len()).map(|_| None).collect();
+        let mut problems: Vec<Problem> = Vec::new();
+
+        for i in 0..doc.entries.len() {
+            let e = &doc.entries[i];
+            let value = if literal.contains(&e.key) {
+                // ⚠️ Still stripped. A single-quoted value never goes through
+                // `unescape_double`, so it holds no marker, but stripping
+                // unconditionally means no path can leak one to a caller.
+                strip_markers(&e.value)
+            } else {
+                // A failed entry read here, before it is assigned again, is a
+                // problem after all: its value is used.
+                for name in references(&e.value) {
+                    if let Some(&k) = current.get(&name) {
+                        if let Some(error) = pending[k].take() {
+                            let src = &doc.entries[k];
+                            problems.push(Problem {
+                                span: src.span,
+                                raw: src.raw.clone(),
+                                error,
+                            });
+                        }
+                    }
+                }
+                // ⚠️ The line of the key being expanded, not of the key that
+                // defines the missing variable, which may not exist anywhere.
+                match self.expand_value(&e.value, &above, &mut Vec::new(), 0, e.span.line) {
+                    Ok(v) => strip_markers(&v),
+                    Err(error) => {
+                        pending[i] = Some(forward(error, &doc.entries[i + 1..]));
+                        strip_markers(&e.value)
+                    }
+                }
+            };
+            let key = e.key.clone();
+            above.insert(
+                key.clone(),
+                value.replace('$', &format!("{LITERAL_DOLLAR}$")),
+            );
+            current.insert(key, i);
+            doc.entries[i].value = value;
+        }
+
+        // The entries that count: a failure there is always a problem.
+        for &i in current.values() {
+            if let Some(error) = pending[i].take() {
+                let e = &doc.entries[i];
+                problems.push(Problem {
+                    span: e.span,
+                    raw: e.raw.clone(),
+                    error,
                 });
-                let settled = match &ordered {
-                    Some((Ok(v), _)) => v.clone(),
-                    _ => strip_markers(&e.value),
-                };
-                above.insert(
-                    e.key.clone(),
-                    settled.replace('$', &format!("{LITERAL_DOLLAR}$")),
-                );
-                ordered
-            })
-            .collect()
+            }
+        }
+        // Line order, after the line-pass problems: `problems[0]` stays the
+        // error the strict parser returns.
+        problems.sort_by_key(|p| p.span.line);
+        doc.problems.extend(problems);
     }
 
     /// Recursively expand variable references within a single `value` string.
@@ -344,6 +292,22 @@ impl Parser {
     }
 }
 
+/// An undefined variable that `below` assigns is a forward reference: say where
+/// it is assigned, so the reader knows which line to move (D10).
+fn forward(error: ParseError, below: &[Entry]) -> ParseError {
+    match error {
+        ParseError::UndefinedVariable { line, var } => match below.iter().find(|e| e.key == var) {
+            Some(e) => ParseError::ForwardReference {
+                line,
+                var,
+                assigned: e.span.line,
+            },
+            None => ParseError::UndefinedVariable { line, var },
+        },
+        other => other,
+    }
+}
+
 /// Split `NAME:-word` (and `-`, `:?`, `?`, `:+`, `+`) into its parts.
 ///
 /// `None` for a plain name, and for a word holding another `${`: the `}` that
@@ -363,7 +327,7 @@ fn split_operator(inner: &str) -> Option<(&str, &str, &str)> {
 
 /// The variable names `value` refers to, `${NAME…}` or `$NAME`, in order and
 /// once each. A `$` written `\$` is not a reference.
-fn references(value: &str) -> Vec<String> {
+pub(super) fn references(value: &str) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     let mut chars = value.chars().peekable();
     while let Some(c) = chars.next() {

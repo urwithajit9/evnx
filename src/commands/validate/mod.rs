@@ -121,8 +121,8 @@ fn document_from_json(text: &str) -> Result<crate::core::parser::Document> {
     };
     let mut doc = crate::core::parser::Document::default();
     for (key, value) in pairs {
-        if !crate::core::parser::is_valid_key(&key) {
-            anyhow::bail!("'{key}' is not a variable name: use letters, digits and _");
+        if !crate::core::parser::is_env_key(&key) {
+            anyhow::bail!("'{key}' is not a variable name: use letters, digits, _, ., -, [ and ]");
         }
         doc.entries.push(crate::core::parser::Entry {
             key,
@@ -151,13 +151,20 @@ fn parse_fail_on(value: &str) -> Result<FailOn> {
     )
 }
 
+/// Issue types an earlier release emitted and this one no longer does.
+const RETIRED_ISSUE_TYPES: &[&str] = &["expansion_order"];
+
 /// The issue types in `list`, each one checked (I-038).
 fn issue_types(list: &[String]) -> Result<Vec<&'static str>> {
-    let accepted: Vec<(&str, &'static str)> = IssueType::ALL
+    let mut accepted: Vec<(&str, &'static str)> = IssueType::ALL
         .iter()
         .map(|t| (t.as_str(), t.as_str()))
         .collect();
     let shown: Vec<&str> = accepted.iter().map(|(n, _)| *n).collect();
+    // Retired, accepted and inert: 0.12.0's top-to-bottom warning (D10, B2 P0.7)
+    // went when evnx itself switched to that order in 0.13.0. A `.evnx.toml`
+    // that still ignores it must not turn every `validate` into an error.
+    accepted.extend(RETIRED_ISSUE_TYPES.iter().map(|t| (*t, *t)));
     list.iter()
         .map(|t| crate::core::args::one_of("issue type", t, &accepted, &shown))
         .collect()
@@ -354,7 +361,13 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
             &config.ignore_issues,
         ));
 
-        issues.extend(checks::check_expansion_order(
+        issues.extend(checks::check_shell_names(
+            &input.doc,
+            env_path,
+            &config.ignore_issues,
+        ));
+
+        issues.extend(checks::check_forward_references(
             &input.doc,
             env_path,
             &config.ignore_issues,
