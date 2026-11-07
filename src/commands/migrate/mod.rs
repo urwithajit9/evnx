@@ -36,7 +36,7 @@ use sources::load_secrets;
 
 use crate::core::args::{self, Name};
 use crate::core::converter::{Collisions, ConvertOptions};
-use crate::core::parser::is_valid_key;
+use crate::core::parser::is_env_key;
 use crate::core::verdict::Verdict;
 use crate::docs;
 use crate::utils::ui;
@@ -183,16 +183,15 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         prefix: args.add_prefix.clone(),
         ..Default::default()
     };
-    let renamed = options.prepare(&raw, &AsIs)?;
-
-    // I-267: `--strip-prefix` can take a whole name, or leave one starting
-    // with a digit. No destination takes either; heroku printed `''='x'`.
+    // I-267: `--strip-prefix` can take a whole name; heroku printed `''='x'`.
+    // Since 0.13.0 (D12) a leading digit, `.` or `-` is the destination's call:
+    // its row in `core::key_rules`, checked by `prepare_with` below.
     let unnamed: Vec<String> = options
         .filter_vars(&raw)
         .keys()
         .filter_map(|k| {
             let to = options.transform_key(k);
-            (!is_valid_key(&to)).then(|| format!("{k} → '{to}'"))
+            (!is_env_key(&to)).then(|| format!("{k} → '{to}'"))
         })
         .collect();
     if !unnamed.is_empty() {
@@ -203,6 +202,8 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
             unnamed.join("\n  ")
         );
     }
+
+    let renamed = options.prepare(&raw, &AsIs)?;
 
     // I-103: say which names leave the environment, before anything is printed.
     if source == "environment" {

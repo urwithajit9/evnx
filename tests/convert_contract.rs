@@ -857,3 +857,64 @@ fn rm06_azure_values_never_reach_a_command_line() {
         );
     }
 }
+
+/// D12 (0.13.0): each format holds the names its target can, and refuses the
+/// rest by name, writing nothing. Docker Compose, JSON and YAML keep
+/// `spring.datasource.url`; a shell, GitHub and Terraform cannot hold it.
+#[test]
+fn p1_d12_each_format_refuses_only_names_it_cannot_hold() {
+    let p = Project::new().env("spring.datasource.url=jdbc:x\nmy-key=2\nOK=3\n");
+    for to in ["json", "yaml", "docker-compose", "aws-secrets"] {
+        let out = run(p.path(), &["convert", "--to", to]);
+        out.assert_code(0);
+        assert!(
+            out.stdout.contains("spring.datasource.url"),
+            "{to}: {}",
+            out.stdout
+        );
+    }
+    let out = run(
+        p.path(),
+        &["convert", "--to", "kubernetes", "--name", "app"],
+    );
+    out.assert_code(0);
+    assert!(
+        out.stdout.contains("spring.datasource.url"),
+        "{}",
+        out.stdout
+    );
+
+    for (to, accepted) in [
+        ("shell", "letters, digits and _, not starting with a digit"),
+        (
+            "github-actions",
+            "letters, digits and _, not starting with a digit",
+        ),
+        ("vercel", "letters, digits and _, not starting with a digit"),
+    ] {
+        let out = run(p.path(), &["convert", "--to", to]);
+        out.assert_code(2);
+        assert!(
+            out.stderr.contains(&format!(
+                "{to} cannot hold these names: names there are {accepted}."
+            )),
+            "{to}: {}",
+            out.stderr
+        );
+        assert!(
+            out.stderr.contains("  spring.datasource.url\n  my-key\n"),
+            "{}",
+            out.stderr
+        );
+        assert!(out.stdout.is_empty(), "{to} wrote: {}", out.stdout);
+    }
+    // Terraform takes `-` but not `.`.
+    let out = run(p.path(), &["convert", "--to", "terraform"]);
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("terraform cannot hold this name"),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.stderr.contains("my-key"), "{}", out.stderr);
+}

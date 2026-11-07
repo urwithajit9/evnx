@@ -573,20 +573,18 @@ fn test_unterminated_string_eof() {
 
 // ── Key validation ────────────────────────────────────────────────────────
 
+/// Refused until 0.13.0; Docker Compose reads both (D12).
 #[test]
-fn test_key_starting_with_digit_rejected() {
+fn test_key_starting_with_digit_accepted() {
     let p = Parser::default();
-    let result = p.parse_content("1KEY=value");
-    assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), ParseError::InvalidKey { .. }));
+    assert_eq!(p.parse_content("1KEY=value").unwrap()["1KEY"], "value");
 }
 
+/// Refused until 0.13.0; Docker Compose reads both (D12).
 #[test]
-fn test_key_with_hyphen_rejected() {
+fn test_key_with_hyphen_accepted() {
     let p = Parser::default();
-    let result = p.parse_content("MY-KEY=value");
-    assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), ParseError::InvalidKey { .. }));
+    assert_eq!(p.parse_content("MY-KEY=value").unwrap()["MY-KEY"], "value");
 }
 
 #[test]
@@ -708,15 +706,13 @@ fn bare_references_chain() {
     assert_eq!(vars["API"], "http://localhost:8080/api");
 }
 
-/// T-SHARE-22: a cycle through a bare reference is still caught.
+/// T-SHARE-22 until 0.13.0, when this was a cycle. Top to bottom (D10), `$B` on
+/// line 1 names nothing assigned yet, so it is kept like any undefined bare
+/// reference, and `B` reads `A`'s settled value.
 #[test]
-fn bare_reference_cycle_is_an_error() {
-    let p = Parser::default();
-    let err = p.parse_content("A=$B/x\nB=$A/y\n").unwrap_err();
-    assert!(
-        matches!(err, ParseError::CircularExpansion { .. }),
-        "{err:?}"
-    );
+fn bare_forward_reference_is_kept_not_a_cycle() {
+    let vars = Parser::default().parse_content("A=$B/x\nB=$A/y\n").unwrap();
+    assert_eq!((vars["A"].as_str(), vars["B"].as_str()), ("$B/x", "$B/x/y"));
 }
 
 #[test]
@@ -757,31 +753,36 @@ fn test_undefined_bare_var_kept_literal() {
     assert_eq!(vars["KEY"], "$UNDEFINED_BARE");
 }
 
+/// What was a cycle until 0.13.0 is a forward reference top to bottom (D10):
+/// `${B}` on line 1 names nothing assigned yet.
 #[test]
-fn test_circular_expansion_detected() {
+fn test_former_cycle_is_an_undefined_forward_reference() {
     let p = Parser::default();
-    let result = p.parse_content("A=${B}\nB=${A}");
-    assert!(result.is_err());
-    assert!(matches!(
-        result.unwrap_err(),
-        ParseError::CircularExpansion { .. }
-    ));
+    match p.parse_content("A=${B}\nB=${A}").unwrap_err() {
+        ParseError::ForwardReference {
+            line,
+            var,
+            assigned,
+        } => {
+            assert_eq!((line, var.as_str(), assigned), (1, "B", 2))
+        }
+        e => panic!("expected ForwardReference, got {e:?}"),
+    }
 }
 
+/// Every reference reads a value already expanded (D10), so a long chain
+/// never nests: it resolves even with `max_expansion_depth` at 2.
 #[test]
-fn test_expansion_depth_limit() {
+fn test_long_chain_does_not_nest() {
     let p = Parser::new(ParserConfig {
         max_expansion_depth: 2,
         ..Default::default()
     });
-    // Three levels of nesting exceeds depth 2.
-    let content = "A=base\nB=${A}\nC=${B}\nD=${C}";
-    let result = p.parse_content(content);
-    assert!(result.is_err());
-    assert!(matches!(
-        result.unwrap_err(),
-        ParseError::ExpansionDepthExceeded { .. }
-    ));
+    let mut content = String::from("K0=base\n");
+    for i in 1..50 {
+        content.push_str(&format!("K{i}=${{K{}}}\n", i - 1));
+    }
+    assert_eq!(p.parse_content(&content).unwrap()["K49"], "base");
 }
 // New test demonstrating order preservation:
 #[test]
@@ -987,7 +988,7 @@ fn q1_parser_conformance_is_pinned() {
 
 #[test]
 fn b1_every_problem_is_reported_with_its_line() {
-    let doc = Parser::default().parse_document("A=1\nnot a line\nB=2\n1BAD=x\nC=\"x\" junk\nD=4\n");
+    let doc = Parser::default().parse_document("A=1\nnot a line\nB=2\na/b=x\nC=\"x\" junk\nD=4\n");
     let lines: Vec<usize> = doc.problems.iter().map(|p| p.span.line).collect();
     assert_eq!(lines, [2, 4, 5]);
     assert!(matches!(
@@ -1227,79 +1228,93 @@ fn p0_6_a_nul_byte_in_a_value_is_found() {
     );
 }
 
-/// D10 (B2 P0.7): a value Docker Compose reads differently because it expands
-/// top to bottom is recorded, naming the variables assigned below the
-/// reference. evnx's own reading does not change.
+/// D10 (0.13.0 P1): expansion runs top to bottom, each reference resolving
+/// against the values assigned above it. Every Compose reading here was
+/// measured with Docker Compose v5.7.0.
 #[test]
-fn p0_7_a_reference_read_differently_top_to_bottom_is_recorded() {
-    let diffs = |content: &str| Parser::default().parse_document(content).order_differences;
-    let below = |name: &str, line, also_above| AssignedBelow {
-        name: name.into(),
-        line,
-        also_above,
-    };
+fn p1_d10_expansion_runs_top_to_bottom() {
+    let vars = |content: &str| Parser::default().parse_content(content).unwrap();
+    let err = |content: &str| Parser::default().parse_content(content).unwrap_err();
 
-    // Redefined after: Compose reads A=1, evnx A=2.
-    let doc = Parser::default().parse_document("B=1\nA=${B}\nB=2\n");
-    assert_eq!(doc.vars()["A"], "2", "the reading does not change");
-    assert_eq!(
-        doc.order_differences,
-        [OrderDifference {
-            key: "A".into(),
-            line: 2,
-            below: vec![below("B", 3, true)],
-        }]
-    );
-    // Forward reference: Compose reads A=x (B unset), evnx A=1x.
-    assert_eq!(diffs("A=${B}x\nB=1\n")[0].below, [below("B", 2, false)]);
-    // A bare `$B` too, and through another variable (named by nothing direct).
-    assert_eq!(diffs("A=$B/x\nB=1\n")[0].below, [below("B", 2, false)]);
-    let through = diffs("B=1\nC=${B}\nA=${C}\nB=2\n");
-    assert_eq!(through.len(), 2, "{through:?}");
-    assert_eq!((through[1].key.as_str(), through[1].below.len()), ("A", 0));
+    // Reassigned after a reference: Compose reads A=1, and now so does evnx.
+    let v = vars("B=1\nA=${B}\nB=2\n");
+    assert_eq!((v["A"].as_str(), v["B"].as_str()), ("1", "2"));
+    // Through another variable, the value seen is the one assigned so far.
+    assert_eq!(vars("B=1\nC=${B}\nA=${C}\nB=2\n")["A"], "1");
+    // A value built on its earlier self: an error until 0.13.0, now Compose's 13.
+    assert_eq!(vars("A=1\nA=${A}3\n")["A"], "13");
+    assert_eq!(vars("A=1\nA=2\nA=${A}3\n")["A"], "23");
 
-    // Nothing to report: top-to-bottom agrees, a literal, an escape, a
-    // shadowed entry, and a file that already fails (`A=${A}3`).
-    assert!(diffs("B=1\nA=${B}\nC=${A}\n").is_empty());
-    assert!(diffs("A='${B}'\nB=1\n").is_empty());
-    assert!(diffs("A=\"\\${B}\"\nB=1\n").is_empty());
-    assert!(diffs("A=${B}\nA=done\nB=1\n").is_empty());
-    assert!(diffs("A=1\nA=2\nA=${A}3\n").is_empty());
-    assert!(
-        diffs("B=x$y\nA=${B}\n").is_empty(),
-        "a `$` in a settled value is not re-expanded"
-    );
-    let off = Parser::new(ParserConfig {
-        allow_expansion: false,
-        ..ParserConfig::default()
-    });
-    assert!(off
-        .parse_document("A=${B}\nB=1\n")
-        .order_differences
-        .is_empty());
+    // A forward `${B}` is undefined: `${NOPE}` is an error by design, not "".
+    // It says where `B` is assigned, so the reader knows which line to move.
+    assert!(matches!(
+        err("A=${B}x\nB=1\n"),
+        ParseError::ForwardReference { line: 1, ref var, assigned: 2 } if var == "B"
+    ));
+    // So is a self-reference with nothing above it.
+    assert!(matches!(
+        err("A=${A}\n"),
+        ParseError::UndefinedVariable { .. }
+    ));
+    // A forward bare `$B` is kept, as any undefined bare reference is.
+    assert_eq!(vars("A=$B/x\nB=1\n")["A"], "$B/x");
+    // A default covers a forward reference.
+    assert_eq!(vars("A=${B:-d}\nB=1\n")["A"], "d");
+
+    // A shadowed entry that fails is not a problem while nothing reads it...
+    assert_eq!(vars("A=${NOPE}\nA=1\n")["A"], "1");
+    // ...and is one when a later entry reads it before it is reassigned.
+    assert!(matches!(
+        err("A=${NOPE}\nB=${A}\nA=1\n"),
+        ParseError::UndefinedVariable { line: 1, .. }
+    ));
+
+    // A settled value's `$` is not expanded again on lookup.
+    assert_eq!(vars("B=x$y\nA=${B}\n")["A"], "x$y");
+    assert_eq!(vars("B=\"\\${C}\"\nC=1\nA=${B}\n")["A"], "${C}");
+    // Literal forms stay literal.
+    assert_eq!(vars("A='${B}'\nB=1\n")["A"], "${B}");
+
+    // The first problem, in line order, is the one the strict reading returns.
+    assert!(matches!(
+        err("A=${X}\nB=${Y}\n"),
+        ParseError::UndefinedVariable { line: 1, ref var } if var == "X"
+    ));
 }
 
-/// The InvalidKey message says why (D12): a name Compose and python-dotenv
-/// accept (measured: `.`, `-`, a leading digit) says so; one Compose refuses
-/// (`/`) states the rule; strict mode names its own reason.
+/// D12 (0.13.0 P1): the parser accepts the names Docker Compose accepts,
+/// measured with Compose v5.7.0: letters (Unicode too), digits (first too),
+/// `_`, `.`, `-`, `[` and `]`.
 #[test]
-fn p0_9_an_invalid_key_says_why() {
+fn p1_d12_keys_compose_accepts_are_read() {
+    let vars = |content: &str| Parser::default().parse_content(content).unwrap();
+    for key in [
+        "my.key", "my-key", "1FOO", "café", "ÜBER", "a[0]", "-lead", ".lead", "x.", "日本",
+    ] {
+        assert_eq!(vars(&format!("{key}=1\n"))[key], "1", "{key}");
+    }
+    let v = vars("spring.datasource.url=jdbc:x\nexport my-key=2\n");
+    assert_eq!(
+        (v["spring.datasource.url"].as_str(), v["my-key"].as_str()),
+        ("jdbc:x", "2")
+    );
+}
+
+/// D12: what Compose refuses, evnx refuses, and the message says what a key
+/// may hold. Strict mode names its own reason.
+#[test]
+fn p1_d12_an_invalid_key_says_why() {
     let msg = |p: &Parser, content: &str| p.parse_content(content).unwrap_err().to_string();
     let p = Parser::default();
-    for key in ["my.key", "my-key", "1FOO"] {
+    for key in ["a/b", "a@b", "a+b", "a$b", "a:b", "a{b}", "a'b"] {
         assert_eq!(
             msg(&p, &format!("{key}=1\n")),
             format!(
-                "Invalid key at line 1: '{key}': a shell cannot hold this name, so evnx refuses \
-                 it, though Docker Compose and python-dotenv accept it; use letters, digits \
-                 and _, not starting with a digit"
-            )
+                "Invalid key at line 1: '{key}': a key holds letters, digits, _, ., -, [ and ], \
+                 as Docker Compose accepts"
+            ),
         );
     }
-    assert_eq!(
-        msg(&p, "a/b=1\n"),
-        "Invalid key at line 1: 'a/b': use letters, digits and _, not starting with a digit"
-    );
     let strict = Parser::new(ParserConfig {
         strict: true,
         ..ParserConfig::default()
@@ -1308,4 +1323,28 @@ fn p0_9_an_invalid_key_says_why() {
         msg(&strict, "lower=1\n"),
         "Invalid key at line 1: 'lower': strict mode requires uppercase keys"
     );
+    assert_eq!(
+        msg(&strict, "my.key=1\n"),
+        "Invalid key at line 1: 'my.key': strict mode requires uppercase keys"
+    );
+    // Strict asks for uppercase, not for a shell name.
+    assert_eq!(strict.parse_content("MY.KEY=1\n").unwrap()["MY.KEY"], "1");
+}
+
+/// D12: `${my.key}` resolves; a bare `$my.key` stops at the `.`, as in
+/// Compose. `${my-key}` is `${my}` with the default `key`, as in Compose and
+/// the shell, so a name with `-` cannot be referenced in braces.
+///
+/// ⚠️ Compose itself refuses `${my.key}` ("Invalid template", v5.7.0); evnx
+/// resolving it is the owner's decision (PARSER-DECISIONS.md D12, option B).
+#[test]
+fn p1_d12_references_to_dotted_names() {
+    let vars = |content: &str| Parser::default().parse_content(content).unwrap();
+    assert_eq!(vars("my.key=1\nA=${my.key}\n")["A"], "1");
+    assert_eq!(vars("a[0]=1\nA=${a[0]}\n")["A"], "1");
+    assert_eq!(vars("café=1\nA=${café}\n")["A"], "1");
+    assert_eq!(vars("my=X\nA=$my.key\n")["A"], "X.key");
+    assert_eq!(vars("my.key=1\nA=$my.key\n")["A"], "$my.key");
+    assert_eq!(vars("my-key=1\nA=${my-key}\n")["A"], "key");
+    assert_eq!(vars("my=X\nmy-key=1\nA=${my-key}\n")["A"], "X");
 }

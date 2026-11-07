@@ -203,49 +203,73 @@ pub fn check_reader_mismatch(
         .collect()
 }
 
-/// Values Docker Compose and python-dotenv read differently because they expand
-/// top to bottom (D10, B2 P0.7). Always checked: evnx reads them that way from
-/// 0.13.0. Names the variables, never a value.
-pub fn check_expansion_order(
+/// Bare `$NAME` references to a variable assigned only below them (D10). Kept
+/// as written since 0.13.0, where 0.12.0 substituted the value from below, so
+/// the value changed with no error. Names the variables, never a value.
+pub fn check_forward_references(
     doc: &crate::core::parser::Document,
     env_path: &str,
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
-    if ignore.contains(IssueType::ExpansionOrder.as_str()) {
+    if ignore.contains(IssueType::ForwardReference.as_str()) {
         return Vec::new();
     }
-    doc.order_differences
+    let key_at = |line: usize| {
+        doc.entries
+            .iter()
+            .find(|e| e.span.line == line)
+            .map(|e| e.key.clone())
+            .unwrap_or_default()
+    };
+    doc.forward_references()
+        .into_iter()
+        .map(|(line, name, assigned)| Issue {
+            severity: Severity::Warning,
+            issue_type: IssueType::ForwardReference,
+            variable: key_at(line),
+            message: format!(
+                "${name} on line {line} names {name}, which is assigned below it on line {assigned}. \
+                 evnx expands top to bottom, so it keeps the text ${name}; Docker Compose reads it as empty"
+            ),
+            location: at(env_path, line),
+            suggestion: Some(format!(
+                "Move {name} above line {line}, or write ${{{name}}} so a missing value is an error"
+            )),
+            auto_fixable: false,
+        })
+        .collect()
+}
+
+/// Names a shell cannot `export` (D12). Since 0.13.0 the parser reads them, as
+/// Docker Compose does; a process receives them, a shell does not.
+pub fn check_shell_names(
+    doc: &crate::core::parser::Document,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if ignore.contains(IssueType::NotShellName.as_str()) {
+        return Vec::new();
+    }
+    let mut seen = HashSet::new();
+    doc.entries
         .iter()
-        .map(|d| {
-            let uses = if d.below.is_empty() {
-                "a variable whose value depends on one assigned below it".to_string()
-            } else {
-                d.below
-                    .iter()
-                    .map(|b| {
-                        let how = if b.also_above { "again" } else { "only" };
-                        format!("{}, assigned {how} below it on line {}", b.name, b.line)
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            };
-            Issue {
-                severity: Severity::Warning,
-                issue_type: IssueType::ExpansionOrder,
-                variable: d.key.clone(),
-                message: format!(
-                    "{} (line {}) uses {uses}. Docker Compose and python-dotenv expand top to bottom, \
-                     so they read a different value for {} than evnx does",
-                    d.key, d.line, d.key
-                ),
-                location: at(env_path, d.line),
-                suggestion: Some(
-                    "Assign each variable above the lines that use it. From 0.13.0 evnx also \
-                     expands top to bottom, so this value will change"
-                        .to_string(),
-                ),
-                auto_fixable: false,
-            }
+        .filter(|e| !crate::core::parser::is_valid_key(&e.key) && seen.insert(e.key.clone()))
+        .map(|e| Issue {
+            severity: Severity::Warning,
+            issue_type: IssueType::NotShellName,
+            variable: e.key.clone(),
+            message: format!(
+                "A shell cannot export {} (line {}): Docker Compose, `evnx run` and Kubernetes \
+                 pass it to a process, but `source`, `export` and `evnx convert --to shell` cannot",
+                e.key, e.span.line
+            ),
+            location: at(env_path, e.span.line),
+            suggestion: Some(
+                "Keep it if only a process reads it. If a shell must, rename it with letters, \
+                 digits and _, not starting with a digit"
+                    .to_string(),
+            ),
+            auto_fixable: false,
         })
         .collect()
 }
@@ -350,18 +374,46 @@ pub fn check_duplicate_keys(
                 .map(|l| l.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
+            // Since 0.13.0 a reference between two assignments reads the
+            // earlier one (D10), so removing it would change that value.
+            let readers = doc.read_before_last(key);
+            let (message, suggestion) = if readers.is_empty() {
+                (
+                    format!(
+                        "{key} is assigned {} times (lines {places}) — only line {last} takes effect",
+                        lines.len()
+                    ),
+                    format!(
+                        "Remove the earlier assignments of {key}, or rename them if they were meant to differ"
+                    ),
+                )
+            } else {
+                let at = readers
+                    .iter()
+                    .map(|l| l.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (
+                    format!(
+                        "{key} is assigned {} times (lines {places}) — line {last} is its final value, \
+                         and {} {at} {} an earlier one",
+                        lines.len(),
+                        if readers.len() == 1 { "line" } else { "lines" },
+                        if readers.len() == 1 { "reads" } else { "read" },
+                    ),
+                    format!(
+                        "evnx expands top to bottom, so removing an earlier {key} changes line {at}. \
+                         Rename it if the two were meant to differ"
+                    ),
+                )
+            };
             Issue {
                 severity: Severity::Warning,
                 issue_type: IssueType::DuplicateKey,
                 variable: key.to_string(),
-                message: format!(
-                    "{key} is assigned {} times (lines {places}) — only line {last} takes effect",
-                    lines.len()
-                ),
+                message,
                 location: env_path.to_string(),
-                suggestion: Some(format!(
-                    "Remove the earlier assignments of {key}, or rename them if they were meant to differ"
-                )),
+                suggestion: Some(suggestion),
                 auto_fixable: false,
             }
         })
@@ -1128,6 +1180,24 @@ pub fn check_spec_required(
         .collect()
 }
 
+/// The variable an unquoted `[vars.a.b.c]` meant: `a.b.c`, when the unknown
+/// key `b` is a table that leads, one table at a time, to `[vars.X]` keys.
+fn dotted_name(name: &str, key: &str, declared: &crate::core::spec::VarSpec) -> Option<String> {
+    let mut path = format!("{name}.{key}");
+    let mut table = declared.extra.get(key)?.as_table()?;
+    loop {
+        if table
+            .keys()
+            .any(|k| crate::core::spec::VarSpec::KEYS.contains(&k.as_str()))
+        {
+            return Some(path);
+        }
+        let (k, v) = table.iter().next().filter(|_| table.len() == 1)?;
+        path = format!("{path}.{k}");
+        table = v.as_table()?;
+    }
+}
+
 /// Keys under `[vars.X]` that evnx does not understand (I-187, DEC-SP5).
 ///
 /// ⚠️ An error, not a warning. `[vars.OPT] requird = false` leaves OPT
@@ -1147,13 +1217,24 @@ pub fn check_spec_keys(spec: &Spec, ignore: &HashSet<String>) -> Vec<Issue> {
                 variable: name.clone(),
                 message: format!("Unknown key `{key}` in [vars.{name}] — evnx ignores it"),
                 location: crate::core::config::PROJECT_FILE.to_string(),
-                suggestion: Some(match crate::core::spec::known_key_like(key) {
-                    Some(k) => format!("Did you mean `{k}`?"),
-                    None => format!(
-                        "Remove it; [vars.{name}] understands {}",
-                        crate::core::spec::VarSpec::KEYS.join(", ")
+                suggestion: Some(
+                    match (
+                        dotted_name(name, key, declared),
+                        crate::core::spec::known_key_like(key),
+                    ) {
+                        // D12: `[vars.spring.datasource.url]` is nested tables in
+                        // TOML, not one variable whose name has dots.
+                        (Some(full), _) => format!(
+                        "TOML reads the dots in [vars.{full}] as nested tables. To declare the \
+                         variable {full}, quote its name: [vars.\"{full}\"]"
                     ),
-                }),
+                        (None, Some(k)) => format!("Did you mean `{k}`?"),
+                        (None, None) => format!(
+                            "Remove it; [vars.{name}] understands {}",
+                            crate::core::spec::VarSpec::KEYS.join(", ")
+                        ),
+                    },
+                ),
                 auto_fixable: false,
             });
         }

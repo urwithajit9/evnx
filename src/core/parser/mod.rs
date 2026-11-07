@@ -22,6 +22,7 @@
 //! | `$VAR` expansion         | ✓         |
 //! | Circular expansion guard | ✓         |
 //! | Strict uppercase keys    | ✓ (opt-in via [`ParserConfig::strict`]) |
+//! | Keys with `.` `-` `[` `]`, a leading digit, Unicode letters | ✓ (D12, 0.13.0; see [`is_env_key`]) |
 //!
 //! # Compatibility with other modules
 //!
@@ -88,13 +89,18 @@ use thiserror::Error;
 ///     .parse_file(&env)
 ///     .with_context(|| format!("Failed to parse {}", env))?;
 /// ```
-/// Is `key` a legal environment-variable name — `[A-Za-z_][A-Za-z0-9_]*`?
+/// Can a shell `export` `key`: `[A-Za-z_][A-Za-z0-9_]*`?
 ///
-/// ⚠️ Exists so commands that **write** `.env` files can apply the same rule the
-/// parser applies when reading them. `evnx add custom` took a name straight from
-/// the prompt with no check, so typing `NODE_VERSION=22` produced the line
-/// `# TODO: NODE_VERSION=22=22`, which this parser then refuses. A tool must not
-/// be able to write a file it cannot read.
+/// ⚠️ Since 0.13.0 (D12) this is **not** what the parser accepts — that is
+/// [`is_env_key`]. This is the narrower rule for whatever has to pass through a
+/// shell: `convert --to shell`, a GitHub Actions secret, a name typed into
+/// `evnx add`. A process can receive `spring.datasource.url`; a shell cannot
+/// hold it.
+///
+/// Exists so commands that **write** `.env` files can apply a rule the parser
+/// reads back. `evnx add custom` took a name straight from the prompt with no
+/// check, so typing `NODE_VERSION=22` produced the line
+/// `# TODO: NODE_VERSION=22=22`, which the parser then refused.
 pub fn is_valid_key(key: &str) -> bool {
     let mut chars = key.chars();
     match chars.next() {
@@ -104,24 +110,35 @@ pub fn is_valid_key(key: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Why `key` was refused (D12). Compose and python-dotenv were measured
-/// accepting `.`, `-`, a leading digit and non-ASCII letters, and Compose
-/// refusing `/`, `@` and a space, so only the first set says they accept it.
+/// Is `key` a name the parser accepts: letters, digits, `_`, `.`, `-`, `[` and
+/// `]`, in any position (D12, 0.13.0)?
+///
+/// The set Docker Compose accepts, measured with Compose v5.7.0 on 2026-11-08:
+/// Unicode letters and digits, a leading digit, `.`, `-`, `[` and `]` are read
+/// as part of the name; a space, `/`, `@`, `+`, `,`, `$`, `!`, `#`, `%`, `*`,
+/// `;`, `\\`, `~`, `^`, `|`, `&`, `?`, `<`, quotes and braces are refused.
+/// (Compose also reads `a:b=1` as the key `a`: `:` is a separator there, which
+/// evnx does not adopt, so `a:b` stays a refused name.)
+///
+/// They come from Java and Spring (`spring.datasource.url`), Kubernetes, and
+/// tools that map config keys to environment names. A process receives them
+/// (Docker, `exec`, Kubernetes `env`); a shell cannot `export` them, which is
+/// [`is_valid_key`]'s narrower rule, applied per output format.
+pub fn is_env_key(key: &str) -> bool {
+    !key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '.' | '-' | '[' | ']'))
+}
+
+/// Why `key` was refused (D12).
 fn key_problem(key: &str) -> &'static str {
     if key.is_empty() {
         "a key cannot be empty"
-    } else if is_valid_key(key) {
+    } else if is_env_key(key) {
         "strict mode requires uppercase keys"
-    } else if key
-        .chars()
-        .all(|c| c.is_alphanumeric() || "_.-".contains(c))
-    {
-        concat!(
-            "a shell cannot hold this name, so evnx refuses it, though Docker Compose ",
-            "and python-dotenv accept it; use letters, digits and _, not starting with a digit"
-        )
     } else {
-        "use letters, digits and _, not starting with a digit"
+        "a key holds letters, digits, _, ., -, [ and ], as Docker Compose accepts"
     }
 }
 
@@ -148,8 +165,8 @@ pub enum ParseError {
     #[error("Invalid format at line {line}: {message}")]
     InvalidFormat { line: usize, message: String },
 
-    /// A key contains characters outside `[A-Za-z_][A-Za-z0-9_]*`, or is not
-    /// uppercase in strict mode. The message says which (D12).
+    /// A key holds a character [`is_env_key`] refuses, or is not uppercase in
+    /// strict mode. The message says which (D12).
     #[error("Invalid key at line {line}: '{key}': {}", key_problem(.key))]
     InvalidKey { line: usize, key: String },
 
@@ -157,6 +174,21 @@ pub enum ParseError {
     /// earlier in the file.
     #[error("Undefined variable at line {line}: ${{{var}}} is not defined")]
     UndefinedVariable { line: usize, var: String },
+
+    /// A `${VAR}` reference to a variable assigned only **below** it. Since
+    /// 0.13.0 evnx expands top to bottom, as Docker Compose and python-dotenv
+    /// do (D10), so this is undefined where it is read. A variant of its own so
+    /// the message names the line to move: a file that parsed in 0.12.0 fails
+    /// here, and "is not defined" next to a visible definition helps no one.
+    #[error(
+        "Undefined variable at line {line}: ${{{var}}} is assigned below it, on line {assigned}. \
+         evnx expands top to bottom, as Docker Compose does: move that line above line {line}"
+    )]
+    ForwardReference {
+        line: usize,
+        var: String,
+        assigned: usize,
+    },
 
     /// `${VAR:?message}` or `${VAR?message}` named a variable that is not set
     /// (or, with the `:`, is empty).
@@ -319,7 +351,7 @@ mod lines;
 #[cfg(test)]
 mod tests;
 
-pub use document::{AssignedBelow, Comment, Document, Entry, OrderDifference, Problem, Span};
+pub use document::{Comment, Document, Entry, Problem, Span};
 use expand::strip_markers;
 pub use lines::{closes_multiline, line_opens_multiline, opens_multiline, strip_export};
 

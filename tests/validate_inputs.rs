@@ -71,7 +71,7 @@ fn b2_stdin_is_checked_as_a_dotenv_file() {
 
 #[test]
 fn b2_stdin_that_does_not_parse_lists_every_problem() {
-    let out = validate(&project(), "my.key=1\nB=\"x\n", &[]);
+    let out = validate(&project(), "a/b=1\nB=\"x\n", &[]);
     assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
     assert!(
         stderr(&out).contains("Failed to parse <stdin>: 2 problems"),

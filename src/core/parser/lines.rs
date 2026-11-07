@@ -2,7 +2,7 @@
 //! escapes, and where a multiline value ends.
 
 use super::expand::LITERAL_DOLLAR;
-use super::{is_valid_key, ParseError, ParseResult, Parser};
+use super::{is_env_key, ParseError, ParseResult, Parser};
 
 /// Where an unquoted value ends, given that `#` may start a comment.
 ///
@@ -85,67 +85,23 @@ impl Parser {
         Ok((key, raw))
     }
 
-    /// Enforce key naming rules: `[A-Za-z_][A-Za-z0-9_]*`, and uppercase-only
-    /// when [`ParserConfig::strict`] is set.
+    /// Enforce key naming rules: [`is_env_key`], and uppercase-only when
+    /// [`ParserConfig::strict`] is set.
     ///
-    /// ⚠️ **A leading underscore is allowed**, and was not until 2026-09-24.
-    /// `_INTERNAL=1` is a valid environment variable name in POSIX shells and in
-    /// every mainstream dotenv library, and `evnx doctor` already accepted it —
-    /// so the parser was the stricter of two disagreeing definitions inside one
-    /// binary. Found by `doctor_agrees_with_the_parser_about_what_is_valid` on
-    /// its first run.
+    /// ⚠️ Since 0.13.0 (D12) this is Docker Compose's set, not a shell's: `my.key`,
+    /// `my-key`, `1FOO` and `a[0]` are read. Each output format that cannot hold
+    /// such a name refuses it there, by name (`core::key_rules`).
     ///
-    /// A digit first is still refused: `1FOO` is not a name a shell can export.
+    /// [`is_env_key`]: super::is_env_key
+    /// [`ParserConfig::strict`]: super::ParserConfig::strict
     pub(super) fn validate_key(&self, key: &str, line_num: usize) -> ParseResult<()> {
-        if !is_valid_key(key) {
+        let refused = !is_env_key(key) || (self.config.strict && key != key.to_uppercase());
+        if refused {
             return Err(ParseError::InvalidKey {
                 line: line_num,
                 key: key.to_string(),
             });
         }
-        self.validate_key_strict(key, line_num)
-    }
-
-    /// Strict mode only: the rest of the original check.
-    pub(super) fn validate_key_strict(&self, key: &str, line_num: usize) -> ParseResult<()> {
-        if key.is_empty() {
-            return Err(ParseError::InvalidKey {
-                line: line_num,
-                key: key.to_string(),
-            });
-        }
-
-        let mut chars = key.chars();
-
-        // First character: a letter or an underscore, never a digit.
-        match chars.next() {
-            Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
-            _ => {
-                return Err(ParseError::InvalidKey {
-                    line: line_num,
-                    key: key.to_string(),
-                })
-            }
-        }
-
-        // Remaining characters: alphanumeric or underscore.
-        for c in chars {
-            if !c.is_ascii_alphanumeric() && c != '_' {
-                return Err(ParseError::InvalidKey {
-                    line: line_num,
-                    key: key.to_string(),
-                });
-            }
-        }
-
-        // Strict mode: all-uppercase required.
-        if self.config.strict && key != key.to_uppercase() {
-            return Err(ParseError::InvalidKey {
-                line: line_num,
-                key: key.to_string(),
-            });
-        }
-
         Ok(())
     }
 
