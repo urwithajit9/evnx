@@ -2036,8 +2036,9 @@ pub enum Commands {
 
     /// Detect secrets that look real (AWS keys, tokens, etc.).
     ///
-    /// `evnx scan rules …` manages rule files. A folder literally named
-    /// `rules` is scanned as `evnx scan ./rules`.
+    /// `evnx scan rules …` manages rule files and `evnx scan hook …` a git
+    /// pre-commit hook. A folder literally named `rules` or `hook` is scanned
+    /// as `evnx scan ./rules`.
     #[command(after_help = docs::SCAN.after_help, args_conflicts_with_subcommands = true)]
     Scan {
         #[command(subcommand)]
@@ -2182,6 +2183,15 @@ pub enum Commands {
         /// any folder outside a repository, is always reported in full.
         #[arg(long)]
         include_ignored: bool,
+
+        /// Scan what is staged for the next commit, read from the git index.
+        ///
+        /// A file staged and then edited on disk is scanned as staged, because
+        /// that is what the commit records. Paths limit it to staged files
+        /// under them. Nothing staged exits 0. `evnx scan hook install` runs
+        /// this before every commit.
+        #[arg(long)]
+        staged: bool,
     },
 
     /// Compare two env files: keys missing or extra, and values between environments.
@@ -3123,6 +3133,30 @@ pub enum ScanAction {
         #[command(subcommand)]
         command: RulesCommand,
     },
+    /// A git `pre-commit` hook that runs `evnx scan --staged`.
+    Hook {
+        #[command(subcommand)]
+        command: HookCommand,
+    },
+}
+
+/// `evnx scan hook` subcommands (C9, S11).
+#[derive(Subcommand, Debug)]
+pub enum HookCommand {
+    /// Add the evnx block to this repository's `pre-commit` hook.
+    ///
+    /// Lines the hook already has are kept, and a reinstall replaces the
+    /// block. The hooks folder honours `core.hooksPath`. A hook that
+    /// pre-commit or prek generated is left alone: add the
+    /// `evnx-scan-installed` hook to `.pre-commit-config.yaml` instead.
+    /// A commit is blocked when secrets are staged, when the scan cannot
+    /// run, and when evnx is not on `PATH`. `git config hooks.evnx-scan
+    /// false` turns it off; `git commit --no-verify` skips it once.
+    Install,
+    /// Remove the evnx block, and nothing else, from the `pre-commit` hook.
+    Uninstall,
+    /// Whether the hook is installed here, and whether it is turned off.
+    Status,
 }
 
 /// `evnx scan rules` subcommands (C6, S3).

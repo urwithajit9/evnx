@@ -114,6 +114,17 @@ const EXEMPT: &[(&str, &str)] = &[
     ("completions", "data"),
     ("parse", "data: the listing is the answer"),
     ("scan rules list", "data: the listing is the answer"),
+    ("scan hook status", "data: the answer stays under -q"),
+    (
+        "scan hook install",
+        "needs a git repository; its quiet success is `ui::success`, covered in \
+         tests/scan_staged.rs",
+    ),
+    (
+        "scan hook uninstall",
+        "needs a git repository; its quiet success is `ui::success`, covered in \
+         tests/scan_staged.rs",
+    ),
     (
         "scan rules test",
         "needs a rule file to test; its quiet success is `ui::success`, covered in \

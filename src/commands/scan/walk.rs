@@ -64,7 +64,7 @@ pub(super) fn is_pkcs12(path: &Path) -> bool {
     is_pkcs12_bytes(&head[..n])
 }
 
-fn is_pkcs12_bytes(b: &[u8]) -> bool {
+pub(super) fn is_pkcs12_bytes(b: &[u8]) -> bool {
     if b.first() != Some(&0x30) || b.len() < 2 {
         return false;
     }

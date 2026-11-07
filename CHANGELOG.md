@@ -59,6 +59,27 @@ secret-key check uses the same 4.3 (was 4.5). Entropy is now computed per
 character, not per byte, which raised it for non-ASCII text.
 
 ### Added
+- **`evnx scan --staged` and `evnx scan hook`** (C9; S11, S12).
+  - `--staged` scans what the next commit records, read from the git index
+    with one `git cat-file --batch`, never from disk: a secret staged and then
+    edited out on disk is still found, and an unstaged one is not. Paths limit
+    it to staged files under them. Staged files are scanned whatever
+    `.gitignore` says. Nothing staged exits 0 ("nothing staged, nothing
+    scanned"); outside a repository exits 2. Findings carry `"git": "staged"`,
+    and the next steps say `git restore --staged`, never `git filter-repo`.
+  - `evnx scan hook install | uninstall | status` adds a managed block that
+    runs `evnx scan --staged` to the repository's `pre-commit` hook
+    (`core.hooksPath` honoured). The hook's own lines are kept, a reinstall
+    replaces the block, and `uninstall` removes only the block. A hook that
+    pre-commit or prek generated is left alone, with the
+    `.pre-commit-config.yaml` snippet to add instead. The commit is blocked
+    when secrets are staged, when the scan cannot run, and ⚠️ when evnx is not
+    on `PATH`. `git config hooks.evnx-scan false` turns it off;
+    `git commit --no-verify` skips it once. No secret is printed in full.
+  - `.pre-commit-hooks.yaml` gains `evnx-scan-installed` (`language: system`):
+    the evnx on `PATH`, no first-run build. CI runs it under pre-commit and
+    prek.
+  - A folder literally named `hook` is now scanned as `evnx scan ./hook`.
 - **Scan rule files you write, and `evnx scan rules`** (C6; S3, S5). Rules in
   the same format as evnx's own load from `.evnx/rules/*.toml` (committed, so
   the team and CI share them), your personal `~/.config/evnx/rules/*.toml`

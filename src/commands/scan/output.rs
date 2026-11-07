@@ -589,6 +589,22 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
             steps.push("If one was pushed or shared before, revoke or rotate it".to_string());
         }
     }
+    // C9: nothing is committed yet, so the fix is to unstage, never to
+    // rewrite history.
+    let staged = shown_in(results, GitState::Staged);
+    if !staged.is_empty() {
+        let list = staged.join(" ");
+        steps.push(format!(
+            "Unstage {}: git restore --staged {list} (or git rm --cached {list} to stop tracking it)",
+            names(&staged)
+        ));
+        steps.push(
+            "Move the values out of the file, into one git ignores such as .env, then stage it again"
+                .to_string(),
+        );
+        steps
+            .push("If one was committed, pushed or shared before, revoke or rotate it".to_string());
+    }
     if !ignored.is_empty() {
         steps.push(format!(
             "git ignores {} and does not track {}, so nothing was committed",

@@ -245,6 +245,21 @@ jobs:
       - name: harness
         run: bash tests/install/run.sh
 
+  # C9: .pre-commit-hooks.yaml under both managers that read it. Pinned to
+  # the versions checked on 2026-11-02.
+  hook-managers:
+    name: pre-commit and prek
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - run: cargo build --all-features
+      - run: pipx install pre-commit==4.7.0 && pipx install prek==0.5.9
+      - run: bash tests/hooks/try-repo.sh target/debug
+
   docs:
     name: Documentation
     runs-on: ubuntu-latest

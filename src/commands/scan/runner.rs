@@ -34,7 +34,7 @@ use crate::utils::fs::display_portable;
 use crate::utils::ui;
 use anyhow::Result;
 // use colored::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Characters shown at each end of a masked secret.
 const VISIBLE_EDGE: usize = 4;
@@ -436,7 +436,89 @@ impl ScanRunner {
             self.scan_stdin(&mut results)?;
             read.push(Path::new(STDIN_LABEL).to_path_buf());
         }
+        self.finish(results, format, &read)
+    }
 
+    /// `evnx scan --staged` (C9): the index blobs a commit would record, under
+    /// `paths` (pathspecs) when any are given.
+    pub fn run_staged(&self, paths: Vec<String>, format: OutputFormat) -> Result<bool> {
+        if paths.iter().any(|p| p == "-") {
+            anyhow::bail!("--staged reads the git index; it cannot be combined with `-` (stdin)");
+        }
+        let cwd = std::env::current_dir()?;
+        super::staged::toplevel(&cwd)?;
+        let paths: Vec<String> = paths.into_iter().filter(|p| p != ".").collect();
+        let staged = super::staged::staged(&cwd, &paths, self.filter.max_bytes())?;
+        if matches!(format, OutputFormat::Pretty) {
+            ui::print_header("evnx scan", Some("Checking what is staged for commit"));
+        }
+        let mut results = ScanResults::new(0);
+        if staged.is_empty() {
+            // The one empty case that is clean: no commit content, nothing to leak.
+            if matches!(format, OutputFormat::Pretty) {
+                ui::success("nothing staged, nothing scanned");
+                return Ok(false);
+            }
+            return self.finish(results, format, &[]);
+        }
+        let mut read = Vec::with_capacity(staged.len());
+        for file in staged {
+            let label = PathBuf::from(&file.path);
+            let Some(bytes) = file.bytes else {
+                results.skipped.push(UnreadableFile {
+                    path: file.path.clone(),
+                    reason: format!(
+                        "larger than {} ({})",
+                        super::filters::size_label(self.filter.max_bytes()),
+                        super::filters::size_label(file.size)
+                    ),
+                });
+                continue;
+            };
+            if self.verbose {
+                ui::scanning_file_stderr(&label, Self::read_as(&label).describe());
+            }
+            let first = results.findings.len();
+            if super::walk::is_pkcs12_bytes(&bytes) {
+                self.add_pkcs12(&label, &mut results);
+            } else {
+                match decode_bytes(bytes) {
+                    Decoded::Text(c) => {
+                        self.scan_text(&label, &c, Self::read_as(&label), &mut results)?
+                    }
+                    // Binary handling as for a walk (I-047).
+                    Decoded::Unreadable { reason } if !FileFilter::is_scannable(&label) => {
+                        results.skipped.push(UnreadableFile {
+                            path: file.path.clone(),
+                            reason: format!("not text: {reason}"),
+                        });
+                        continue;
+                    }
+                    Decoded::Unreadable { reason } => {
+                        results.unreadable.push(UnreadableFile {
+                            path: file.path.clone(),
+                            reason,
+                        });
+                        continue;
+                    }
+                }
+            }
+            read.push(label);
+            results.findings[first..]
+                .sort_by(|a, b| (a.line, &a.pattern).cmp(&(b.line, &b.pattern)));
+            // ⚠️ No git hold-back: a staged file is committed whatever
+            // `.gitignore` says.
+            for finding in &mut results.findings[first..] {
+                finding.git = Some(super::models::GitState::Staged);
+                finding.repo_path = Some(file.path.clone());
+            }
+        }
+        self.finish(results, format, &read)
+    }
+
+    /// Report `results`, or write them as the baseline: shared by a walk and
+    /// `--staged`.
+    fn finish(&self, results: ScanResults, format: OutputFormat, read: &[PathBuf]) -> Result<bool> {
         // `--update-baseline` (C5): this run's counted and known findings
         // become the baseline, and the run exits 0.
         if let Some(path) = &self.update_baseline {
@@ -465,7 +547,7 @@ impl ScanRunner {
         }
 
         // Render output (goes to stdout)
-        render(&results, format, &read)?;
+        render(&results, format, read)?;
         // After the report, so the note is not wedged between the stderr
         // header and the stdout file list.
         report_skipped(&results, self.verbose, self.filter.max_bytes());
@@ -552,24 +634,29 @@ impl ScanRunner {
         self.scan_text(label, &content, read_as, results)
     }
 
+    /// C3: a keystore is binary, so it is found by its content, not read.
+    fn add_pkcs12(&self, path: &Path, results: &mut ScanResults) {
+        results.files_scanned += 1;
+        results.files.push(super::models::ScannedFile {
+            path: display_portable(path),
+            read_as: super::models::ReadAs::Text,
+            note: Some("binary: a PKCS#12 keystore".to_string()),
+        });
+        let detection = super::detector::Detection {
+            rule_id: PKCS12_ID.to_string(),
+            pattern: "PKCS#12 Keystore".to_string(),
+            confidence: Confidence::High,
+            severity: crate::core::secretscan::Severity::Critical,
+            matched_value: PKCS12_ID.to_string(),
+            ..Default::default()
+        };
+        self.add_finding(results, path, 1, None, detection, &[]);
+    }
+
     fn scan_file(&self, path: &Path, walked: bool, results: &mut ScanResults) -> Result<()> {
         // C3: a keystore is binary, so it is found by its content, not read.
         if is_pkcs12(path) {
-            results.files_scanned += 1;
-            results.files.push(super::models::ScannedFile {
-                path: display_portable(path),
-                read_as: super::models::ReadAs::Text,
-                note: Some("binary: a PKCS#12 keystore".to_string()),
-            });
-            let detection = super::detector::Detection {
-                rule_id: PKCS12_ID.to_string(),
-                pattern: "PKCS#12 Keystore".to_string(),
-                confidence: Confidence::High,
-                severity: crate::core::secretscan::Severity::Critical,
-                matched_value: PKCS12_ID.to_string(),
-                ..Default::default()
-            };
-            self.add_finding(results, path, 1, None, detection, &[]);
+            self.add_pkcs12(path, results);
             return Ok(());
         }
         let content = match decode(path) {
