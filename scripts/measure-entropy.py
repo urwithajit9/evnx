@@ -46,7 +46,7 @@ def entropy(s):
 def load(kind):
     out = {}
     for f in sorted((CORPUS / kind).glob("*.txt")):
-        out[f.stem] = [l for l in f.read_text().splitlines() if l]
+        out[f.stem] = [l for l in f.read_text(encoding="utf-8").splitlines() if l]
     return out
 
 
@@ -125,11 +125,11 @@ def table():
 def main():
     text = table()
     if "--check" in sys.argv:
-        if not OUT.exists() or OUT.read_text() != text:
+        if not OUT.exists() or OUT.read_text(encoding="utf-8") != text:
             print(f"{OUT.relative_to(ROOT)} is out of date: run scripts/measure-entropy.py")
             return 1
         return 0
-    OUT.write_text(text)
+    OUT.write_text(text, encoding="utf-8", newline="\n")
     print(f"wrote {OUT.relative_to(ROOT)}")
     return 0
 
