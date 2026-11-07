@@ -1,0 +1,12 @@
+# Fixtures for `postman-api-key` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["PMAK-", "016a4e4df933162879f55325-6b6b7e7c769f2784b8f96e05622abad38c"],
+]
+
+near_miss = [
+  ["PMAK-", "2be9262efc3fec87f9236b84"],
+]

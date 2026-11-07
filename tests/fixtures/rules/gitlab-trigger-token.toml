@@ -1,0 +1,12 @@
+# Fixtures for `gitlab-trigger-token` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["glptt-", "38c610b349fa4eb3ec0767faeb2628eae9067277"],
+]
+
+near_miss = [
+  ["glptt-", "d0d2c007ba6ae67d6138127ba32cbf"],
+]

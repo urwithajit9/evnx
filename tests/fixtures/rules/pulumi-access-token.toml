@@ -1,0 +1,12 @@
+# Fixtures for `pulumi-access-token` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["pul-", "49fa65328d971a75af87e8442a443c28cc5b727d"],
+]
+
+near_miss = [
+  ["pul-", "4b2e4d8a0a91165977547c47"],
+]

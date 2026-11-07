@@ -1,0 +1,13 @@
+# Fixtures for `databricks-token` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["dapi", "fb12edad0413a5512b86db36ab33d006"],
+  ["dapi", "5bdb91f1a8c999af47188b99cf885613-2"],
+]
+
+near_miss = [
+  ["dapi", "3a33e33a63c7af9f263a"],
+]

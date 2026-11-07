@@ -1,0 +1,12 @@
+# Fixtures for `grafana-cloud-token` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["glc_", "ME9961NGsVCrHuN9eG6s7SNNA9KW15hhC8BQVmGfe7p6yQxN5OsSqjLthxtSOkHUlRDLMymHRJv9Y3dX9D3uTsIZaQZ8eS5Wq5upDb9VI52nnpWjPo9ylBlO"],
+]
+
+near_miss = [
+  ["glc_", "LAOJOmAbn2np4wOp"],
+]

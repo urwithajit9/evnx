@@ -1,0 +1,13 @@
+# Fixtures for `gitlab-runner-token` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "high"
+
+positive = [
+  ["glrt-", "uCo5tyJaJWQBf2BS8gax"],
+  ["glrt-", "t1_tQzYD5fqYx0SB5aB6KvmBzFP89l"],
+]
+
+near_miss = [
+  ["glrt-", "aX1zSXFRg0CD"],
+]

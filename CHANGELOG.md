@@ -8,6 +8,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**`evnx scan` knows 22 more providers: 58 built-in rules, up from 36** (C3, second wave).
+Each prefix was checked against the provider's own documentation (or, for Atlassian, a
+statement from its staff), and each rule has fixtures that must match and near misses that
+must not. Across evnx-web, evnx-server and evnx-app the new rules report nothing.
+- AI billing (critical): Groq `gsk_`, xAI `xai-`, Replicate `r8_`, Perplexity `pplx-`.
+- Infrastructure and secrets (critical): HCP Terraform `….atlasv1.…`, Pulumi `pul-`,
+  Doppler `dp.st.`/`dp.pt.`/`dp.ct.`/`dp.sa.`, Supabase `sbp_` and `sb_secret_`, age
+  `AGE-SECRET-KEY-1`.
+- Source and CI (high): GitLab runner `glrt-`, deploy `gldt-` and trigger `glptt-` tokens;
+  GitHub refresh tokens `ghr_` join the existing GitHub Token rule.
+- SaaS (high): Stripe webhook signing secrets `whsec_`, Databricks `dapi`, Atlassian API
+  tokens `ATATT3…`/`ATCTT3…`, Bitbucket app passwords `ATBB` (medium confidence), New Relic
+  `NRAK-`, Grafana `glsa_` and `glc_`, Postman `PMAK-`, Notion `ntn_`.
+- A `--severity high` gate now fails on these. `[scan] disable` takes each by name, listed in
+  `evnx scan --help`.
+
 ⚠️ **`.env` references now expand top to bottom, as Docker Compose does** (P1,
 D10). A `${VAR}` reads the value assigned **above** it; until now evnx read each
 variable's last value in the file. Measured with Docker Compose v5.7.0, which now

@@ -1,0 +1,12 @@
+# Fixtures for `groq-api-key` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["gsk_", "bIs08bIq5EjgdHbwzMUCTTH3gXHRYtdDldxtKNCT4rldSTpLxRCP"],
+]
+
+near_miss = [
+  ["gsk_", "2w27gBTPawQwWnZDGDPy"],
+]

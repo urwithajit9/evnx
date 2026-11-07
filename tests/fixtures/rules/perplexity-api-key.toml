@@ -1,0 +1,12 @@
+# Fixtures for `perplexity-api-key` (C3, second wave). Each value is written as parts that are
+# joined at test time, so this file never holds a whole token.
+
+expect_severity = "critical"
+
+positive = [
+  ["pplx-", "rDYsi9JTxBTJjy1cbmPZ7KsR0EvOGIodHTEB3JY0GwFviglb"],
+]
+
+near_miss = [
+  ["pplx-", "psjUQ6UrYhQkp7g6OS4azUhgvo6NJQ"],
+]
