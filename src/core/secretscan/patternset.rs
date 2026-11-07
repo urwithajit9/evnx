@@ -65,7 +65,7 @@ use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 /// `[A-Z0-9]{1000000}` is a legal expression that costs a great deal to compile.
 /// 1 MiB is far above any real credential format and far below anything that
 /// would be felt.
-const PATTERN_SIZE_LIMIT: usize = 1 << 20;
+pub(crate) const PATTERN_SIZE_LIMIT: usize = 1 << 20;
 
 /// One declared rule, compiled and ready to match.
 #[derive(Debug)]
@@ -83,6 +83,14 @@ struct CompiledRule {
     source: String,
     /// One of `secretscan::rules::builtin_rules`, unchanged (I-058).
     builtin: bool,
+    /// C7: lowercased; the rule is tried only on text holding one of them.
+    keywords: Vec<String>,
+    /// C7: the capture group that is the secret; unset is the whole match.
+    secret_group: Option<usize>,
+    /// C7: a secret any of these matches is not reported.
+    allow: Option<RegexSet>,
+    /// C7: nothing on a line any of these matches is reported.
+    allow_line: Option<RegexSet>,
 }
 
 /// What a custom pattern found.
@@ -107,9 +115,16 @@ pub struct PatternMatch {
 /// Every custom pattern this run was given, compiled once.
 #[derive(Debug)]
 pub struct PatternSet {
-    /// The single-pass filter: which rules match at all.
+    /// The single-pass filter over the rules **without** keywords.
     set: RegexSet,
-    /// Parallel to the set's indices — `set.matches(x)` yields positions here.
+    /// The set's index `i` is rule `in_set[i]`.
+    in_set: Vec<usize>,
+    /// C7: one pass over every keyword, lowercased. Pattern `i` belongs to
+    /// rule `by_keyword[i]`. A rule with keywords is tried only where one
+    /// appears, which is what keeps a pack of hundreds of rules fast: one
+    /// `RegexSet` of them all outgrows its cache and crawls.
+    keywords: Option<aho_corasick::AhoCorasick>,
+    by_keyword: Vec<usize>,
     rules: Vec<CompiledRule>,
 }
 
@@ -121,6 +136,9 @@ impl PatternSet {
     pub fn empty() -> Self {
         Self {
             set: RegexSet::empty(),
+            in_set: Vec::new(),
+            keywords: None,
+            by_keyword: Vec::new(),
             rules: Vec::new(),
         }
     }
@@ -220,7 +238,35 @@ impl PatternSet {
                 );
             }
 
+            let allow_set = |list: &Option<Vec<String>>, what: &str| -> Result<Option<RegexSet>> {
+                match list.as_deref() {
+                    None | Some([]) => Ok(None),
+                    Some(list) => RegexSetBuilder::new(list)
+                        .size_limit(PATTERN_SIZE_LIMIT.saturating_mul(list.len()))
+                        .build()
+                        .map(Some)
+                        .map_err(|e| {
+                            anyhow!(
+                                "'{name}' has an {what} expression that does not compile\n\n{e}"
+                            )
+                        }),
+                }
+            };
+            let allow = allow_set(&rule.allow, "allow")?;
+            let allow_line = allow_set(&rule.allow_line, "allow_line")?;
+            if let Some(g) = rule.secret_group {
+                if g == 0 || g >= regex.captures_len() {
+                    bail!(
+                        "'{name}' has secret_group = {g}, and its regex has {} capture group(s)",
+                        regex.captures_len() - 1
+                    );
+                }
+            }
+
             compiled.push(CompiledRule {
+                secret_group: rule.secret_group,
+                allow,
+                allow_line,
                 id,
                 name: name.to_string(),
                 confidence,
@@ -230,22 +276,55 @@ impl PatternSet {
                 regex,
                 source: source.to_string(),
                 builtin: builtins.contains(rule),
+                keywords: rule
+                    .keywords
+                    .iter()
+                    .flatten()
+                    .map(|k| k.trim().to_ascii_lowercase())
+                    .filter(|k| !k.is_empty())
+                    .collect(),
             });
-            sources.push(source.to_string());
+            if compiled.last().is_some_and(|r| r.keywords.is_empty()) {
+                sources.push(source.to_string());
+            }
         }
+        let in_set: Vec<usize> = (0..compiled.len())
+            .filter(|&i| compiled[i].keywords.is_empty())
+            .collect();
+        let mut words = Vec::new();
+        let mut by_keyword = Vec::new();
+        for (i, r) in compiled.iter().enumerate() {
+            for k in &r.keywords {
+                words.push(k.clone());
+                by_keyword.push(i);
+            }
+        }
+        let keywords = if words.is_empty() {
+            None
+        } else {
+            Some(aho_corasick::AhoCorasick::new(&words).context("compiling the rule keywords")?)
+        };
 
         // The set is built from the same sources, so its indices line up with
         // `compiled`. Its size limit scales with the rule count: the per-pattern
         // ceiling has already been enforced above, and applying that same number
         // to the combined automaton would make a set of modest patterns fail for
         // no reason other than that there are several of them.
-        let set = RegexSetBuilder::new(&sources)
-            .size_limit(PATTERN_SIZE_LIMIT.saturating_mul(sources.len()))
-            .build()
-            .context("compiling the custom pattern set")?;
+        // Every rule may have keywords (a gitleaks pack): then the set is empty.
+        let set = if sources.is_empty() {
+            RegexSet::empty()
+        } else {
+            RegexSetBuilder::new(&sources)
+                .size_limit(PATTERN_SIZE_LIMIT.saturating_mul(sources.len()))
+                .build()
+                .context("compiling the custom pattern set")?
+        };
 
         Ok(Self {
             set,
+            in_set,
+            keywords,
+            by_keyword,
             rules: compiled,
         })
     }
@@ -284,17 +363,51 @@ impl PatternSet {
 
         // The single pass. Everything below runs only for text that already
         // contains something.
-        let hits = self.set.matches(haystack);
-        if !hits.matched_any() {
+        let mut tried: Vec<usize> = self
+            .set
+            .matches(haystack)
+            .iter()
+            .map(|i| self.in_set[i])
+            .collect();
+        if let Some(ac) = &self.keywords {
+            let lower = haystack.to_ascii_lowercase();
+            tried.extend(
+                ac.find_overlapping_iter(&lower)
+                    .map(|m| self.by_keyword[m.pattern().as_usize()]),
+            );
+            // Declaration order, each rule once.
+            tried.sort_unstable();
+            tried.dedup();
+        }
+        if tried.is_empty() {
             return Vec::new();
         }
 
         let mut out: Vec<PatternMatch> = Vec::new();
-        for index in hits.iter() {
+        for index in tried {
             let rule = &self.rules[index];
-            for found in rule.regex.find_iter(haystack) {
-                let value = found.as_str();
+            if rule
+                .allow_line
+                .as_ref()
+                .is_some_and(|a| a.is_match(haystack))
+            {
+                continue;
+            }
+            for caps in rule.regex.captures_iter(haystack) {
+                let found = caps.get(0).expect("group 0 is the match");
+                // C7: `secret_group` names the part that is the secret, as
+                // gitleaks' rules do; it is what is judged and reported.
+                let value = match rule.secret_group {
+                    Some(g) => match caps.get(g) {
+                        Some(m) => m.as_str(),
+                        None => continue,
+                    },
+                    None => found.as_str(),
+                };
                 if value.is_empty() {
+                    continue;
+                }
+                if rule.allow.as_ref().is_some_and(|a| a.is_match(value)) {
                     continue;
                 }
                 // D-36: a pattern of literal text matches its own declaration,
@@ -595,6 +708,44 @@ mod tests {
         let set = PatternSet::compile(&[r]).unwrap();
         assert!(set.find_all("tok_aaaaaaaaaaaa").is_empty());
         assert_eq!(set.find_all("tok_k3x9q2m7v1zp").len(), 1);
+    }
+
+    /// C7: the secret group is what is reported and judged; `allow` drops a
+    /// secret, `allow_line` a whole line.
+    #[test]
+    fn the_secret_group_is_reported_and_allow_lists_drop_matches() {
+        let mut r = rule("kv", r"key\s*=\s*([a-z0-9]{8})");
+        r.secret_group = Some(1);
+        r.allow = Some(vec!["(?i)example".into()]);
+        r.allow_line = Some(vec![r"#\s*fixture".into()]);
+        let set = PatternSet::compile(std::slice::from_ref(&r)).unwrap();
+        let found = set.find_all("key = k3x9q2m7");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].value, "k3x9q2m7");
+        assert!(set.find_all("key = example1").is_empty());
+        assert!(set.find_all("key = k3x9q2m7 # fixture").is_empty());
+
+        r.secret_group = Some(2);
+        assert!(PatternSet::compile(&[r]).is_err(), "no group 2");
+    }
+
+    /// C7: a rule with keywords is tried only where one appears, any case;
+    /// one without stays in the set and is tried everywhere.
+    #[test]
+    fn keywords_gate_a_rule_and_leave_the_others_alone() {
+        let mut gated = rule("gated", "[0-9]{8}");
+        gated.keywords = Some(vec!["Acme".into()]);
+        // Only keyword rules: no set at all, and it still compiles.
+        assert!(PatternSet::compile(std::slice::from_ref(&gated)).is_ok());
+        let open = rule("open", "zz-[0-9]{4}");
+        let set = PatternSet::compile(&[gated, open]).unwrap();
+        assert!(set.find_all("id 12345678").is_empty());
+        let found: Vec<String> = set
+            .find_all("ACME_ID=12345678 zz-1234")
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(found, ["gated", "open"]);
     }
 
     #[test]

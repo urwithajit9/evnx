@@ -133,6 +133,13 @@ pub fn load(
         Ok::<(), anyhow::Error>(())
     };
 
+    // ⛔ S4, before any file is read: a pack whose bytes no longer match
+    // its lock is refused by name, in either folder. Tampering is never a
+    // personal warning.
+    super::packs::verify(&project.join(PROJECT_RULES_DIR), PROJECT_RULES_DIR)?;
+    if let Some(dir) = personal {
+        super::packs::verify(dir, &dir.display().to_string())?;
+    }
     for f in toml_files(&project.join(PROJECT_RULES_DIR))? {
         // Named as it is in the project, wherever the scan was run from.
         let label = format!(
@@ -168,7 +175,7 @@ pub fn load(
 
 /// Every `*.toml` in `dir`, sorted. A missing folder has none; any other
 /// failure to list it is an error.
-fn toml_files(dir: &std::path::Path) -> anyhow::Result<Vec<std::path::PathBuf>> {
+pub(crate) fn toml_files(dir: &std::path::Path) -> anyhow::Result<Vec<std::path::PathBuf>> {
     use anyhow::Context;
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -196,8 +203,21 @@ pub fn read_rule_file(path: &std::path::Path, label: &str) -> anyhow::Result<Vec
         );
     }
     let text = std::fs::read_to_string(path).with_context(|| format!("reading {label}"))?;
+    parse_rule_text(&text, label)
+}
+
+/// A rule file's text, checked as [`read_rule_file`] checks a file (C7: a
+/// download is checked before it is written).
+pub fn parse_rule_text(text: &str, label: &str) -> anyhow::Result<Vec<PatternRule>> {
+    use anyhow::Context;
+    if text.len() as u64 > MAX_RULE_FILE_BYTES {
+        anyhow::bail!(
+            "{label} is {} bytes; a rule file may be at most {MAX_RULE_FILE_BYTES} (2 MiB)",
+            text.len()
+        );
+    }
     let file: RuleFile =
-        toml::from_str(&text).with_context(|| format!("{label} is not a valid rule file"))?;
+        toml::from_str(text).with_context(|| format!("{label} is not a valid rule file"))?;
     if file.version != 1 {
         anyhow::bail!("{label} has version {}; this evnx reads 1", file.version);
     }

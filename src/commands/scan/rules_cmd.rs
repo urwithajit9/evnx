@@ -169,6 +169,7 @@ pub fn test(project: &Path, file: Option<&str>) -> Result<Verdict> {
         );
     }
     let (mut failures, mut checked) = (Vec::new(), 0usize);
+    let mut untested: Vec<String> = Vec::new();
     for s in &rules {
         let id = s.rule.id.clone().unwrap_or_else(|| s.rule.name.clone());
         let set = match PatternSet::compile(std::slice::from_ref(&s.rule)) {
@@ -181,7 +182,7 @@ pub fn test(project: &Path, file: Option<&str>) -> Result<Verdict> {
         let positive = s.rule.positive.as_deref().unwrap_or_default();
         let near_miss = s.rule.near_miss.as_deref().unwrap_or_default();
         if positive.is_empty() && near_miss.is_empty() {
-            crate::utils::ui::warning(format!("{id}: no positive or near_miss values to test"));
+            untested.push(id.clone());
         }
         for v in positive {
             checked += 1;
@@ -206,6 +207,19 @@ pub fn test(project: &Path, file: Option<&str>) -> Result<Verdict> {
                 failures.push(format!("{id}: {e}"));
             }
         }
+    }
+    // One line per rule for a few; a count for an imported pack, which
+    // usually ships with none.
+    if untested.len() <= 5 {
+        for id in &untested {
+            crate::utils::ui::warning(format!("{id}: no positive or near_miss values to test"));
+        }
+    } else {
+        crate::utils::ui::warning(format!(
+            "{} of {} rules have no positive or near_miss values; only that they compile was checked",
+            untested.len(),
+            rules.len()
+        ));
     }
     for f in &failures {
         crate::utils::ui::error(f);

@@ -137,6 +137,13 @@ toml_edit = "0.22"
 # The scan baseline's fingerprints (C5, S9). Already in the build graph through
 # evnx-crypto when `cloud` is on.
 blake3 = "1"
+# sha256 for `.evnx/rules.lock` and the catalogue index (C7, S4): the hash
+# `sha256sum` prints, so a pack can be checked by hand. Already in the build
+# graph through evnx-crypto when `cloud` is on.
+sha2 = "0.10"
+# Rule keywords (C7): one pass for every keyword of every rule. Already in
+# the graph through `regex`.
+aho-corasick = "1"
 # Renders the TOTP enrolment QR in the terminal. default-features = false keeps
 # it to exactly one crate with no transitive dependencies — the image and svg
 # renderers are not wanted. Without it, enrolling means typing 32 base32

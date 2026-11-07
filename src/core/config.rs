@@ -105,6 +105,16 @@ pub struct PatternRule {
     /// A match whose Shannon entropy is below this is not reported. For
     /// generic shapes that also match ordinary words.
     pub entropy: Option<f64>,
+    /// C7: the rule is tried only on text containing one of these, compared
+    /// case-insensitively. gitleaks' `keywords`, carried over on import.
+    pub keywords: Option<Vec<String>>,
+    /// C7: which capture group is the secret: what entropy and `allow` judge,
+    /// and what is reported. Unset: the whole match.
+    pub secret_group: Option<usize>,
+    /// C7: a secret any of these expressions matches is not reported.
+    pub allow: Option<Vec<String>>,
+    /// C7: a line any of these expressions matches reports nothing.
+    pub allow_line: Option<Vec<String>>,
     /// Values this rule must report, for `evnx scan rules test` (C6). Never
     /// read by a scan.
     pub positive: Option<Vec<String>>,

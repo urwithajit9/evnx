@@ -265,6 +265,22 @@ fn main() -> Result<()> {
                 RulesCommand::New { id, personal } => {
                     commands::scan::rules_cmd::new(&project_root, &id, personal).map(drop)
                 }
+                RulesCommand::Add {
+                    source,
+                    format,
+                    personal,
+                } => commands::scan::packs_cmd::add(&project_root, &source, &format, personal),
+                RulesCommand::Update {
+                    name,
+                    personal,
+                    yes,
+                } => {
+                    commands::scan::packs_cmd::update(&project_root, name.as_deref(), personal, yes)
+                        .or_else(declined)
+                }
+                RulesCommand::Remove { name, personal } => {
+                    commands::scan::packs_cmd::remove(&project_root, &name, personal)
+                }
                 RulesCommand::Test { file } => {
                     commands::scan::rules_cmd::test(&project_root, file.as_deref())
                         .map(verdict::finish)
