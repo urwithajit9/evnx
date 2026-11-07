@@ -225,13 +225,13 @@ pub fn test(project: &Path, file: Option<&str>) -> Result<Verdict> {
         }
         for v in positive {
             checked += 1;
-            if set.find_all(v).is_empty() {
+            if set.find_all_ignoring_names(v).is_empty() {
                 failures.push(format!("{id}: does not report positive {v:?}"));
             }
         }
         for v in near_miss {
             checked += 1;
-            if !set.find_all(v).is_empty() {
+            if !set.find_all_ignoring_names(v).is_empty() {
                 failures.push(format!("{id}: reports near miss {v:?}"));
             }
         }

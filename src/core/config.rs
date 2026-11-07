@@ -127,6 +127,13 @@ pub struct PatternRule {
     pub provider: Option<String>,
     /// RM-90: which group `rules list` files the rule under.
     pub category: Option<Category>,
+    /// RM-92 (CV-2): regular expressions matched against the variable or key
+    /// name a value is attached to (`.env` name, YAML/JSON/TOML leaf key). A
+    /// rule with `names` fires only where the name matches one of them, and
+    /// never on text with no name. For providers that reuse another's prefix
+    /// (Clerk and UploadThing use Stripe's `sk_live_`). Where such a rule and
+    /// an unconstrained one match the same value, the named rule wins.
+    pub names: Option<Vec<String>>,
     #[serde(flatten)]
     extra: Extra,
 }

@@ -91,6 +91,20 @@ struct CompiledRule {
     allow: Option<RegexSet>,
     /// C7: nothing on a line any of these matches is reported.
     allow_line: Option<RegexSet>,
+    /// RM-92: the rule fires only for a value whose variable/key name matches
+    /// one of these. `None`: it fires anywhere.
+    names: Option<RegexSet>,
+}
+
+/// How a search treats rules that have `names` (RM-92).
+#[derive(Clone, Copy)]
+enum Names<'a> {
+    /// The text has no name: a rule with `names` does not fire.
+    Absent,
+    /// The text is the value of this variable/key.
+    Key(&'a str),
+    /// Do not apply `names` (`evnx scan rules test` judges value shapes).
+    Ignore,
 }
 
 /// What a custom pattern found.
@@ -247,11 +261,12 @@ impl PatternSet {
                         .map(Some)
                         .map_err(|e| {
                             anyhow!(
-                                "'{name}' has an {what} expression that does not compile\n\n{e}"
+                                "'{name}' has a `{what}` expression that does not compile\n\n{e}"
                             )
                         }),
                 }
             };
+            let names = allow_set(&rule.names, "names")?;
             let allow = allow_set(&rule.allow, "allow")?;
             let allow_line = allow_set(&rule.allow_line, "allow_line")?;
             if let Some(g) = rule.secret_group {
@@ -267,6 +282,7 @@ impl PatternSet {
                 secret_group: rule.secret_group,
                 allow,
                 allow_line,
+                names,
                 id,
                 name: name.to_string(),
                 confidence,
@@ -357,6 +373,24 @@ impl PatternSet {
     /// Repeated matches of the same rule on the same text are reported once: a
     /// line that mentions the same token twice is one leak, not two.
     pub fn find_all(&self, haystack: &str) -> Vec<PatternMatch> {
+        self.search(haystack, Names::Absent)
+    }
+
+    /// [`find_all`](Self::find_all) for `haystack` as the value of the
+    /// variable or key `key` (RM-92): rules with `names` can fire, and one
+    /// that does takes precedence over an unconstrained rule matching the
+    /// same value.
+    pub fn find_all_named(&self, haystack: &str, key: &str) -> Vec<PatternMatch> {
+        self.search(haystack, Names::Key(key))
+    }
+
+    /// [`find_all`](Self::find_all) with `names` not applied: for
+    /// `evnx scan rules test`, which has a value and no variable.
+    pub fn find_all_ignoring_names(&self, haystack: &str) -> Vec<PatternMatch> {
+        self.search(haystack, Names::Ignore)
+    }
+
+    fn search(&self, haystack: &str, names: Names) -> Vec<PatternMatch> {
         if self.rules.is_empty() || haystack.is_empty() {
             return Vec::new();
         }
@@ -384,8 +418,20 @@ impl PatternSet {
         }
 
         let mut out: Vec<PatternMatch> = Vec::new();
+        // RM-92: ids of the matches a `names` rule produced.
+        let mut named: Vec<usize> = Vec::new();
         for index in tried {
             let rule = &self.rules[index];
+            if let Some(set) = &rule.names {
+                let allowed = match names {
+                    Names::Absent => false,
+                    Names::Key(key) => set.is_match(key),
+                    Names::Ignore => true,
+                };
+                if !allowed {
+                    continue;
+                }
+            }
             if rule
                 .allow_line
                 .as_ref()
@@ -434,6 +480,9 @@ impl PatternSet {
                 {
                     continue;
                 }
+                if rule.names.is_some() {
+                    named.push(out.len());
+                }
                 out.push(PatternMatch {
                     id: rule.id.clone(),
                     name: rule.name.clone(),
@@ -443,6 +492,21 @@ impl PatternSet {
                     value: value.to_string(),
                 });
             }
+        }
+        // RM-92 (CV-2): a name-constrained rule that matched a value wins over
+        // an unconstrained one matching the same value (one contains the
+        // other): `CLERK_SECRET_KEY=sk_live_…` is Clerk's, not Stripe's.
+        if !named.is_empty() {
+            let winners: Vec<String> = named.iter().map(|&i| out[i].value.clone()).collect();
+            let mut i = 0;
+            out.retain(|m| {
+                let keep = named.contains(&i)
+                    || !winners
+                        .iter()
+                        .any(|w| w.contains(&m.value) || m.value.contains(w.as_str()));
+                i += 1;
+                keep
+            });
         }
         out
     }

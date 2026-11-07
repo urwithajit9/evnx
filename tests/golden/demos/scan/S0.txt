@@ -132,7 +132,8 @@ What a folder walk reads:
 Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
   AWS Access Key, AWS Temporary Access Key (STS), GitHub Fine-grained PAT,
   Slack Token, Google API Key, JSON Web Token, Stripe Secret Key (LIVE),
-  Stripe Secret Key (test), GitHub Token, OpenAI API Key, Anthropic API Key,
+  Clerk Secret Key (LIVE), UploadThing Secret Key, Stripe Secret Key (test),
+  GitHub Token, OpenAI API Key, Anthropic API Key,
   OpenSSH Private Key, Private Key, Credentials in a connection string,
   Stripe Restricted Key (LIVE), Azure Storage Account Key, Azure SAS Token,
   Twilio API Key, SendGrid API Key, Mailgun API Key, DigitalOcean Token,

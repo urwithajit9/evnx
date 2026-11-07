@@ -8,6 +8,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**⚠️ `CLERK_SECRET_KEY=sk_live_…` and `UPLOADTHING_SECRET=sk_live_…` change rule id** (C10,
+RM-92, CV-2). Clerk and UploadThing reuse Stripe's `sk_live_` prefix, so both were reported
+as `stripe-live-secret-key` and sent you to Stripe's dashboard. Two new rules, `clerk-secret-key`
+(Clerk, `auth`) and `uploadthing-secret-key` (UploadThing, `saas`), both critical, fire when the
+variable (or YAML/JSON/TOML key) has Clerk's or UploadThing's name; **60 built-in rules, up
+from 58**. Under any other name, or in plain text, the value stays `stripe-live-secret-key`.
+- Update baselines and `evnx:allow stripe-live-secret-key` markers on those lines to the new
+  ids; the old ones no longer match, so the finding reappears until you do.
+- New optional rule field `names` (regexes matched against the variable/key name) for your own
+  rule files and packs: the rule never fires on text with no name, and beats an unconstrained
+  rule matching the same value. An invalid `names` expression is a load error naming the file
+  and rule. `evnx scan rules test` checks a rule's value shape and ignores `names`.
+
 **Every built-in scan rule names its provider and a category** (C11, RM-90). Additive: no
 rule, id or existing JSON field changes.
 - `rules.toml` gives all 58 rules a `provider` and a `category` from a fixed list: `cloud`,

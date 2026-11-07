@@ -14,6 +14,12 @@
 #   confidence  how SURE a match is that it is this provider's credential
 #   severity    how BAD it is if real: critical, high, medium or low
 #   url         where to revoke it, when there is one place
+#   names       optional: regexes matched against the name of the variable or key
+#               the value is attached to (a `.env` name, a YAML/JSON/TOML leaf
+#               key). A rule with `names` fires only where the name matches, and
+#               never on text with no name; where it and an unconstrained rule
+#               match the same value, it wins. For a provider that reuses
+#               another's prefix (Clerk and UploadThing use Stripe's `sk_live_`).
 #   entropy     optional: a match whose Shannon entropy is below this is dropped
 #
 # Severity, by kind: critical = direct access to money, cloud accounts, AI
@@ -122,6 +128,33 @@ regex = 'sk_live_[0-9a-zA-Z]{24,}'
 confidence = "high"
 severity = "critical"
 url = "https://dashboard.stripe.com/apikeys"
+
+# ⚠️ Clerk and UploadThing reuse Stripe's `sk_live_` prefix, so the value alone
+# cannot tell them apart. `names` does: under these variable names the finding is
+# theirs (and so is the dashboard to revoke it in); under any other name, or in
+# plain text, it stays `stripe-live-secret-key`. Clerk's `sk_test_` development
+# keys are not split out: Stripe's test rule (low) keeps reporting them.
+[[rules]]
+id = "clerk-secret-key"
+name = "Clerk Secret Key (LIVE)"
+provider = "Clerk"
+category = "auth"
+regex = 'sk_live_[0-9a-zA-Z]{24,}'
+names = ['(?i)^(NEXT_)?CLERK_(SECRET_KEY|API_KEY)$']
+confidence = "high"
+severity = "critical"
+url = "https://dashboard.clerk.com"
+
+[[rules]]
+id = "uploadthing-secret-key"
+name = "UploadThing Secret Key"
+provider = "UploadThing"
+category = "saas"
+regex = 'sk_live_[0-9a-zA-Z]{24,}'
+names = ['(?i)^UPLOADTHING_(SECRET|SECRET_KEY|TOKEN)$']
+confidence = "high"
+severity = "critical"
+url = "https://uploadthing.com/dashboard"
 
 [[rules]]
 id = "stripe-test-secret-key"

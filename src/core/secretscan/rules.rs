@@ -228,6 +228,16 @@ pub fn parse_rule_text(text: &str, label: &str) -> anyhow::Result<Vec<PatternRul
             file.rules.len()
         );
     }
+    // RM-92: a `names` expression that does not compile is a load error naming
+    // the file and the rule.
+    for r in &file.rules {
+        for n in r.names.iter().flatten() {
+            if let Err(e) = regex::Regex::new(n) {
+                let id = r.id.as_deref().unwrap_or(&r.name);
+                anyhow::bail!("{label}: rule '{id}' has a `names` expression '{n}' that does not compile\n\n{e}");
+            }
+        }
+    }
     Ok(file.rules)
 }
 
@@ -355,6 +365,14 @@ mod tests {
             e.contains("cloud-ish") && e.contains("keys-certificates"),
             "{e}"
         );
+    }
+
+    /// RM-92: an invalid `names` regex is a load error naming file and rule.
+    #[test]
+    fn an_invalid_names_regex_is_rejected_with_file_and_rule() {
+        let text = "version = 1\n[[rules]]\nid = \"x-key\"\nname = \"X\"\nregex = 'x'\nnames = ['(unclosed']\n";
+        let err = parse_rule_text(text, "my.toml").unwrap_err().to_string();
+        assert!(err.contains("my.toml") && err.contains("x-key"), "{err}");
     }
 
     /// RM-90: provider and category are optional in user rule files.
