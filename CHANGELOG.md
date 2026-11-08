@@ -8,6 +8,38 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-08
+
+**Read this first: what changes for scripts and CI.** Each item has its own
+entry below with the details and how to migrate.
+
+1. **`.env` expansion is top to bottom**, as Compose does it. A forward
+   `${VAR}` is an error naming the line to move. `evnx validate` on 0.12.0
+   already lists every affected line as `expansion_order`.
+2. **Keys with `.`, `-`, `[`, `]`, a leading digit or non-ASCII letters are
+   read**; outputs that cannot hold them refuse them by name.
+3. **`evnx scan --format json` is `schema_version: 2`**: `severity` (how bad)
+   is separate from `confidence` (how sure). `--severity` now filters on risk;
+   the old meaning is `--confidence`. SARIF `ruleId` is the stable rule id.
+4. **More findings**: 63 built-in rules (13 in 0.12.0), names checked inside
+   YAML, JSON and TOML. A `--severity high` gate may start failing; a
+   baseline (`evnx scan --update-baseline`) or allow markers adopt existing findings.
+5. **Cloud commands exit 10–15** by failure class (table below), not 1 or 2.
+6. **`migrate --to gcp-secret-manager` names secrets `db-url`**, as
+   `convert` does; a project migrated with 0.12 gets new secrets beside the old.
+7. **Clerk and UploadThing `sk_live_` keys have their own rule ids**, no
+   longer `stripe-live-secret-key`: update baselines and allow markers on them.
+8. **`convert --to vercel` marks secrets `sensitive`** (production and
+   preview only), **`evnx add` exits 4** when declined, and
+   **`backup`/`restore --output -` are refused**.
+
+**New:** `evnx remove`; scan rule files, packs from
+[evnx-rules](https://github.com/urwithajit9/evnx-rules) (`gitleaks`,
+`betterleaks`) and a Betterleaks importer; allow markers and baselines;
+`scan --staged` and `scan hook`; provider and category on every rule;
+repeatable `--vault` on `cloud run` and `cloud pull`; reasons on refused cloud
+requests; `cloud audit` names removed members.
+
 **⚠️ Cloud commands exit 10–15 for server failures, where they exited 1 or 2** (RM-55, decision X3).
 `evnx auth`, `evnx vault`, `evnx org` and `evnx cloud` now exit with a code that says what failed,
 so a pipeline can tell "sign in again" from "the server is down" without reading the message:

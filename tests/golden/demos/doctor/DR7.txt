@@ -124,7 +124,7 @@ $ evnx doctor
 
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
-  ok: D12 (0.13.0): a dashed key is read, as Docker Compose reads it (exit 0)
+  ok: D12 (<version>): a dashed key is read, as Docker Compose reads it (exit 0)
 
 $ evnx doctor
 

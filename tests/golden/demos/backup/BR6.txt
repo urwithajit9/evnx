@@ -5,8 +5,8 @@ restore of valid-looking inputs (named path vs .restored):
   [empty] exit 0 lk.out 
   [comments] exit 0 lk.out 
   [FIXED I-145 export] exit 0 lk.out 
-  [dashed key: read since D12 (0.13.0), so restored to the named path] exit 0 lk.out 
-  [dotted key: read since D12 (0.13.0), so restored to the named path] exit 0 lk.out 
+  [dashed key: read since D12 (<version>), so restored to the named path] exit 0 lk.out 
+  [dotted key: read since D12 (<version>), so restored to the named path] exit 0 lk.out 
   [a key Docker Compose refuses: the parser refuses it too, stays .restored (correct)] exit 5 lk.out.restored 
   [FIXED I-145 PEM-heavy] exit 0 lk.out 
   [prose (correct)] exit 5 lk.out.restored 
