@@ -2840,8 +2840,10 @@ file, names that collide, a filter that leaves nothing).
     ///
     /// Other failures keep the command's usual code. `evnx cloud run` returns
     /// the command's own code once it has started.
+    // `verbatim_doc_comment`: without it clap rewraps the exit-code table into
+    // one run-on paragraph.
     #[cfg(feature = "cloud")]
-    #[command(after_help = docs::CLOUD.after_help)]
+    #[command(verbatim_doc_comment, after_help = docs::CLOUD.after_help)]
     Cloud {
         #[command(subcommand)]
         command: CloudCommands,
