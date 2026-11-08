@@ -16,7 +16,6 @@ one of them:
 |---|---|---|
 | `release.yml` | `v*` tag | build provenance per archive → GitHub Release (16 assets) → ghcr.io image, Homebrew tap, Scoop bucket, **winget**, **crates.io** (`publish-crate`, RM-27); `verify-provenance` checks the published assets |
 | `python-publish.yml` | `v*` tag | PyPI, by trusted publishing (RM-27) |
-| `publish-action.yml` | `v*` tag | GitHub Marketplace action |
 | `npm-publish.yml` | **`release.yml` completing** | npm — 5 platform packages, then `@evnx/cli` |
 
 **crates.io and PyPI publish by trusted publishing** (RM-27, v0.11.0): each
@@ -225,8 +224,7 @@ the second fork dry run lost two of seven builds to a Rekor read timeout
 down, or a permission was refused). That build job is red, so `release` never ran:
 **no GitHub Release, and nothing from Homebrew, Scoop, winget, ghcr, npm or
 crates.io.** But
-`python-publish.yml` and `publish-action.yml` fire on the tag themselves, so **PyPI
-and the Marketplace may already be out.**
+`python-publish.yml` fires on the tag itself, so **PyPI may already be out.**
 
 1. **Re-run failed jobs** on the same `release.yml` run. The build re-signs, and
    `release` and everything after it run as normal.
@@ -262,5 +260,4 @@ sailed through. Read `/issues/{n}/events` instead.
 
 | | |
 |---|---|
-| **The Marketplace action's pinned-version install is broken.** `urwithajit9/evnx-action` downloads `releases/download/<version>/evnx-linux-x86_64`, and **no release has ever had an asset by that name** — the real one is `evnx-x86_64-unknown-linux-musl.tar.gz`, a tarball. `version: latest` (the default) works, because it goes through `dotenv.space/install.sh`. Pinning a version writes a 404 page to `/usr/local/bin/evnx`. Verified 2026-10-05 against the v0.8.0 asset list. **Fix belongs in the `evnx-action` repo.** |
-| **`publish-action.yml`'s version bump is a no-op.** The pattern `evnx-vX.Y.Z` appears nowhere in the action's `action.yml`. Harmless — the action resolves the version at runtime — and the step now says so in the log instead of passing silently. |
+| **The Marketplace action is released from its own repo, not from here.** `publish-action.yml` was removed 2026-11-08. On every CLI tag it created an `evnx-action` release named after the CLI version (`v0.13.0`), marked it Latest and moved a floating `v0` tag, while the action's README tells users `@v1`. So the Marketplace advertised `v0.13.0` and `@v1` sat at 2026-10-07, missing every fix since. A CLI release needs nothing in `evnx-action`: it installs `version: latest` at runtime. Release the action with its own `v1.x` tags when the action changes. The `EVNX_ACTION_PAT` secret can be deleted. (The pinned-install 404 noted here before was fixed in action v1.0.) |
