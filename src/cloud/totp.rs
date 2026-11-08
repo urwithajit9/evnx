@@ -23,11 +23,11 @@
 //! `recovery-codes` both demand a valid second factor rather than a live session:
 //! a stolen session must not be able to strip 2FA off the account.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
-use super::client::Client;
+use super::client::{reword, Client};
 use super::config::CloudConfig;
 
 #[derive(Deserialize)]
@@ -54,9 +54,7 @@ pub fn enable(server_override: Option<&str>, verbose: bool) -> Result<()> {
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
-    let setup: SetupResponse = client
-        .post("/api/v1/auth/totp/setup", &())
-        .map_err(|e| anyhow!("{e}"))?;
+    let setup: SetupResponse = client.post("/api/v1/auth/totp/setup", &())?;
 
     println!("{}", "Scan this with your authenticator app".bold());
     println!();
@@ -100,12 +98,10 @@ pub fn disable(server_override: Option<&str>, _verbose: bool) -> Result<()> {
     println!("  so that a stolen one cannot strip the second factor off your account.");
     let code = prompt_second_factor()?;
 
-    client
-        .post::<_, serde::de::IgnoredAny>(
-            "/api/v1/auth/totp/disable",
-            &CodeRequest { totp_code: code },
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    client.post::<_, serde::de::IgnoredAny>(
+        "/api/v1/auth/totp/disable",
+        &CodeRequest { totp_code: code },
+    )?;
 
     crate::say!("  {} two-factor authentication is off", "✓".green());
     crate::say!("  Your recovery codes were deleted along with it.");
@@ -122,12 +118,10 @@ pub fn regenerate(server_override: Option<&str>, _verbose: bool) -> Result<()> {
     println!("  down will stop working.");
     let code = prompt_second_factor()?;
 
-    let fresh: CodesResponse = client
-        .post(
-            "/api/v1/auth/totp/backup-codes",
-            &CodeRequest { totp_code: code },
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let fresh: CodesResponse = client.post(
+        "/api/v1/auth/totp/backup-codes",
+        &CodeRequest { totp_code: code },
+    )?;
 
     crate::say!();
     crate::say!("  {} new recovery codes issued", "✓".green());
@@ -211,13 +205,15 @@ fn prompt_second_factor() -> Result<String> {
 /// Explain a failed confirmation in terms of what probably went wrong.
 fn confirm_error(e: super::client::ApiError) -> anyhow::Error {
     use super::client::ApiError;
+    let code = e.exit_code();
     match e {
-        ApiError::Unauthorized | ApiError::Validation { .. } => anyhow!(
+        ApiError::Unauthorized | ApiError::Validation { .. } => reword(
+            code,
             "that code was not accepted, so 2FA was not switched on.\n\
              \x20 Codes last 30 seconds — try the next one. If they keep failing, your \
-             device clock may have drifted: authenticator codes depend on it."
+             device clock may have drifted: authenticator codes depend on it.",
         ),
-        other => anyhow!("{other}"),
+        other => anyhow::Error::from(other),
     }
 }
 

@@ -27,7 +27,7 @@
 //! else the server knows about a login is inference; a disavowal is the account
 //! holder saying so. The server weighs it above every other signal combined.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use colored::Colorize;
 use serde::Deserialize;
 
@@ -63,9 +63,7 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
-    let listed: DeviceList = client
-        .get("/api/v1/auth/devices")
-        .map_err(|e| anyhow!("{e}"))?;
+    let listed: DeviceList = client.get("/api/v1/auth/devices")?;
 
     if listed.devices.is_empty() {
         println!("  No sign-ins recorded on {server} yet.");
@@ -181,12 +179,10 @@ pub fn disavow(
         }
     }
 
-    let resp: DisavowResponse = client
-        .post(
-            "/api/v1/auth/devices/disavow",
-            &serde_json::json!({ "device_id": device_id }),
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let resp: DisavowResponse = client.post(
+        "/api/v1/auth/devices/disavow",
+        &serde_json::json!({ "device_id": device_id }),
+    )?;
 
     crate::say!();
     crate::say!(

@@ -533,7 +533,7 @@ fn t_i302_a_refused_api_token_says_to_create_a_new_one() {
         .create();
 
     let out = evnx(&p, &url, Some(TOKEN), &["vault", "list"]);
-    out.assert_code(2);
+    out.assert_code(10);
     assert!(
         out.stderr
             .contains("the API token in EVNX_TOKEN was refused"),
@@ -609,7 +609,7 @@ fn t_i302_an_expired_session_still_says_sign_in_again() {
         .create();
 
     let out = evnx(&p, &url, None, &["vault", "list"]);
-    out.assert_code(2);
+    out.assert_code(10);
     assert!(out.stderr.contains("session has expired"), "{}", out.stderr);
     assert!(out.stderr.contains("evnx auth login"), "{}", out.stderr);
     assert!(!out.stderr.contains("API token"), "{}", out.stderr);
@@ -731,7 +731,7 @@ fn t_i306_an_unknown_error_code_prints_the_servers_sentence() {
         .create();
 
     let out = evnx(&p, &url, Some(TOKEN), &["vault", "list"]);
-    out.assert_code(2);
+    out.assert_code(12);
     assert!(
         out.stderr.contains("your plan (free) allows 3 vaults."),
         "{}",

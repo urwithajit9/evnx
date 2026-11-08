@@ -102,17 +102,15 @@ pub fn create(
         None => None,
     };
 
-    let created: CreateTokenResponse = client
-        .post(
-            "/api/v1/auth/tokens",
-            &CreateTokenRequest {
-                name: name.trim().to_string(),
-                scope: scope.clone(),
-                vault_id: vault_ref.as_ref().map(|v| v.id.clone()),
-                expires_in_days,
-            },
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let created: CreateTokenResponse = client.post(
+        "/api/v1/auth/tokens",
+        &CreateTokenRequest {
+            name: name.trim().to_string(),
+            scope: scope.clone(),
+            vault_id: vault_ref.as_ref().map(|v| v.id.clone()),
+            expires_in_days,
+        },
+    )?;
 
     crate::say!("  {} created token {}", "✓".green(), name.trim().bold());
     crate::say!();
@@ -170,9 +168,7 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
-    let listed: TokenList = client
-        .get("/api/v1/auth/tokens")
-        .map_err(|e| anyhow!("{e}"))?;
+    let listed: TokenList = client.get("/api/v1/auth/tokens")?;
 
     if listed.tokens.is_empty() {
         println!("  No API tokens on {server}.");
@@ -263,9 +259,7 @@ pub fn revoke(
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
-    let listed: TokenList = client
-        .get("/api/v1/auth/tokens")
-        .map_err(|e| anyhow!("{e}"))?;
+    let listed: TokenList = client.get("/api/v1/auth/tokens")?;
     let token = resolve(&listed.tokens, &target)?;
 
     if !assume_yes {
@@ -294,9 +288,7 @@ pub fn revoke(
         }
     }
 
-    client
-        .delete(&api_path(&["auth", "tokens", &token.id.to_string()])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    client.delete(&api_path(&["auth", "tokens", &token.id.to_string()])?)?;
 
     crate::say!("  {} revoked {}", "✓".green(), token.name);
     if verbose {

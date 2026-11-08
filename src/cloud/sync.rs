@@ -40,7 +40,7 @@ use std::path::{Path, PathBuf};
 
 use super::auth;
 use super::binding;
-use super::client::{ApiError, Client};
+use super::client::{reword, ApiError, Client};
 use super::config::CloudConfig;
 use super::vault::{self, VaultRef};
 
@@ -601,13 +601,11 @@ pub fn pull(
 /// Read-only and cheap — metadata only, no blobs and no key. `history` and
 /// `export` both go through here so "what versions exist" has one answer.
 pub(crate) fn list_versions(client: &Client, vault_ref: &VaultRef) -> Result<Vec<VersionSummary>> {
-    let listed: VersionList = client
-        .get(&api_path(&[
-            "vaults",
-            &vault_ref.id.to_string(),
-            "versions",
-        ])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let listed: VersionList = client.get(&api_path(&[
+        "vaults",
+        &vault_ref.id.to_string(),
+        "versions",
+    ])?)?;
     Ok(listed.versions)
 }
 
@@ -640,7 +638,7 @@ pub(crate) fn fetch_blob(
                  \x20 `evnx cloud history --vault {label}` lists the versions it has.",
                 label = vault_ref.label()
             ),
-            other => anyhow!("{other}"),
+            other => anyhow::Error::from(other),
         })?;
 
     if blob_bytes.len() <= NONCE_LEN {
@@ -913,7 +911,7 @@ pub(crate) fn current_version(client: &Client, vault_ref: &VaultRef) -> Result<i
     ])?) {
         Ok(v) => Ok(v.version_num),
         Err(ApiError::NotFound { .. }) => Ok(0),
-        Err(e) => Err(anyhow!("{e}")),
+        Err(e) => Err(anyhow::Error::from(e)),
     }
 }
 
@@ -936,9 +934,7 @@ pub(crate) fn unwrap_vault_key(
 ) -> Result<evnx_crypto::VaultKey> {
     use evnx_crypto::{b64_decode, unwrap_vault_key_with_master_key};
 
-    let my_key: MyKey = client
-        .get(&api_path(&["vaults", &vault_ref.id.to_string(), "my-key"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let my_key: MyKey = client.get(&api_path(&["vaults", &vault_ref.id.to_string(), "my-key"])?)?;
 
     match (&my_key.eph_pub_key, &my_key.mlkem_ciphertext) {
         // Shared with us: open it with the hybrid path.
@@ -1075,14 +1071,18 @@ fn confirm_overwrite(
 
 /// Turn a push failure into something actionable.
 fn push_error(e: ApiError, based_on: i32) -> anyhow::Error {
+    let code = e.exit_code();
     match e {
-        ApiError::Conflict { message } => anyhow!(
-            "{message}\n\
+        ApiError::Conflict { message } => reword(
+            code,
+            format!(
+                "{message}\n\
              \x20 You based this push on version {based_on}. Pull first, re-apply your \
              changes, then push again — the version number is authenticated into the \
              ciphertext, so the same bytes cannot simply be re-sent."
+            ),
         ),
-        other => anyhow!("{other}"),
+        other => anyhow::Error::from(other),
     }
 }
 
@@ -1327,13 +1327,11 @@ pub fn delete_version(
     )?;
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
-    let listed: VersionList = client
-        .get(&api_path(&[
-            "vaults",
-            &vault_ref.id.to_string(),
-            "versions",
-        ])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let listed: VersionList = client.get(&api_path(&[
+        "vaults",
+        &vault_ref.id.to_string(),
+        "versions",
+    ])?)?;
 
     let latest = listed
         .versions
@@ -1412,15 +1410,19 @@ pub fn delete_version(
 /// Explain a refusal in terms of the thing that was refused.
 fn delete_version_error(e: super::client::ApiError) -> anyhow::Error {
     use super::client::ApiError;
+    let code = e.exit_code();
     match e {
         // The server checks the role; a developer can push but not remove history.
-        ApiError::Forbidden { message } => anyhow!(
-            "{message}\n\
+        ApiError::Forbidden { message, .. } => reword(
+            code,
+            format!(
+                "{message}\n\
              \x20 Deleting a version needs admin on the vault. A developer can push \
-             new versions but not remove old ones."
+             new versions but not remove old ones.",
+            ),
         ),
-        ApiError::Conflict { message } => anyhow!("{message}"),
-        other => anyhow!("{other}"),
+        ApiError::Conflict { message } => reword(code, message),
+        other => anyhow::Error::from(other),
     }
 }
 

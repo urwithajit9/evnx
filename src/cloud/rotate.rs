@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use super::auth;
-use super::client::{ApiError, Client};
+use super::client::{reword, ApiError, Client};
 use super::config::CloudConfig;
 
 // ─── Wire types ───────────────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ pub fn rotate(
 
     let me: Me = client
         .get("/api/v1/auth/me")
-        .map_err(|e| anyhow!("could not read the account: {e}"))?;
+        .context("could not read the account")?;
 
     crate::say!();
     crate::say!("  {}", "Changing your evnx master password.".bold());
@@ -232,7 +232,7 @@ pub fn rotate(
     // was shared to them.
     let list: VaultList = client
         .get("/api/v1/vaults")
-        .map_err(|e| anyhow!("could not list your vaults: {e}"))?;
+        .context("could not list your vaults")?;
 
     let mut opened: Vec<OpenedVault> = Vec::new();
     let mut shared = 0usize;
@@ -241,7 +241,7 @@ pub fn rotate(
         let label = format!("{}/{}", v.name, v.environment);
         let my_key: MyWrappedKey = client
             .get(&api_path(&["vaults", &v.id.to_string(), "my-key"])?)
-            .map_err(|e| anyhow!("could not read your key for {label}: {e}"))?;
+            .with_context(|| format!("could not read your key for {label}"))?;
 
         match (&my_key.eph_pub_key, &my_key.mlkem_ciphertext) {
             // Wrapped under the master key — this is the set that moves.
@@ -468,7 +468,7 @@ pub fn rotate(
     for v in &opened {
         let my_key: MyWrappedKey = client
             .get(&api_path(&["vaults", &v.id.to_string(), "my-key"])?)
-            .map_err(|e| anyhow!("\n  could not re-read your key for {}: {e}", v.label))?;
+            .with_context(|| format!("\n  could not re-read your key for {}", v.label))?;
         let raw = b64_decode(&my_key.encrypted_vault_key, "encrypted_vault_key")
             .map_err(|e| anyhow!("\n  unusable wrapped key for {}: {e}", v.label))?;
         let back = unwrap_vault_key_with_master_key(&raw, &new_master).map_err(|_| {
@@ -588,15 +588,13 @@ pub fn undo(
     let ephemeral =
         generate_client_ephemeral().map_err(|e| anyhow!("generating an SRP ephemeral: {e}"))?;
 
-    let init: ChallengeResponse = client
-        .post_public(
-            "/api/v1/auth/master-key/undo/init",
-            &UndoInit {
-                email: email.clone(),
-                client_public: hex::encode(&ephemeral.public_a),
-            },
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let init: ChallengeResponse = client.post_public(
+        "/api/v1/auth/master-key/undo/init",
+        &UndoInit {
+            email: email.clone(),
+            client_public: hex::encode(&ephemeral.public_a),
+        },
+    )?;
 
     crate::say!("  Deriving your previous key on this machine…");
     let srp_salt = salt_from_base64(&init.srp_salt)
@@ -680,14 +678,12 @@ fn reauthenticate(
     let ephemeral =
         generate_client_ephemeral().map_err(|e| anyhow!("generating an SRP ephemeral: {e}"))?;
 
-    let init: ChallengeResponse = client
-        .post(
-            "/api/v1/auth/reauth/init",
-            &ChallengeInit {
-                client_public: hex::encode(&ephemeral.public_a),
-            },
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let init: ChallengeResponse = client.post(
+        "/api/v1/auth/reauth/init",
+        &ChallengeInit {
+            client_public: hex::encode(&ephemeral.public_a),
+        },
+    )?;
 
     // ⚠️ The SRP salt here is the account's, not the one just generated for the
     // new password — this proves the password being *replaced*.
@@ -860,55 +856,66 @@ fn live_token_count(client: &Client) -> Option<usize> {
 
 /// A rejected `/reauth/verify` means the password or the code, not a dead session.
 fn reauth_error(e: ApiError) -> anyhow::Error {
+    let code = e.exit_code();
     match e {
-        ApiError::Unauthorized => anyhow!(
+        ApiError::Unauthorized => reword(
+            code,
             "that master password — or that two-factor code — was not accepted. \
-             Nothing has been changed."
+             Nothing has been changed.",
         ),
-        ApiError::Locked { .. } => anyhow!(
+        ApiError::Locked { .. } => reword(
+            code,
             "too many failed attempts, so this account is locked for a while. \
              Nothing has been changed.\n\
              \x20 The lock lifts on its own; it is shared with sign-in, so wait rather \
-             than retrying."
+             than retrying.",
         ),
-        other => anyhow!("{other}"),
+        other => anyhow::Error::from(other),
     }
 }
 
 /// `/master-key` refuses in ways worth translating.
 fn rotate_error(e: ApiError) -> anyhow::Error {
+    let code = e.exit_code();
     match e {
-        ApiError::Forbidden { .. } => anyhow!(
+        ApiError::Forbidden { .. } => reword(
+            code,
             "the server did not accept the proof of your current password, or it expired \
-             before the change was sent. Nothing has been changed — run the command again."
+             before the change was sent. Nothing has been changed — run the command again.",
         ),
-        ApiError::Conflict { message } => anyhow!(
-            "{message}\n\
+        ApiError::Conflict { message } => reword(
+            code,
+            format!(
+                "{message}\n\
              \x20 This means evnx and the server disagree about which vault keys you hold. \
              Nothing has been changed. Run `evnx vault list` and try again; if it persists, \
              please report it."
+            ),
         ),
-        other => anyhow!("{other}"),
+        other => anyhow::Error::from(other),
     }
 }
 
 /// A rejected undo says as little as `/srp/init` does, and for the same reason.
 fn undo_error(e: ApiError) -> anyhow::Error {
+    let code = e.exit_code();
     match e {
-        ApiError::Unauthorized => anyhow!(
+        ApiError::Unauthorized => reword(
+            code,
             "that previous master password was not accepted, or there is nothing to undo.\n\
              \x20 evnx cannot tell you which — the server answers an address with no \
              pending change exactly as it answers a wrong password, so that this command \
              cannot be used to discover who has an account.\n\
              \x20 An undo is only available for a limited window after a change, and only \
-             when the change kept one."
+             when the change kept one.",
         ),
-        ApiError::Locked { .. } => anyhow!(
+        ApiError::Locked { .. } => reword(
+            code,
             "too many failed attempts, so the undo is locked for a while. It lifts on its \
-             own, and it is counted separately from sign-in."
+             own, and it is counted separately from sign-in.",
         ),
-        ApiError::Conflict { message } => anyhow!("{message}"),
-        other => anyhow!("{other}"),
+        ApiError::Conflict { message } => reword(code, message),
+        other => anyhow::Error::from(other),
     }
 }
 

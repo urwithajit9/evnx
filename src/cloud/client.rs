@@ -110,8 +110,23 @@ pub enum ApiError {
     EmailNotVerified,
 
     /// 403 `FORBIDDEN`.
-    #[error("{message}")]
+    ///
+    /// A newer server says why (RM-56); an older one sends neither field, and
+    /// then the message is the server's sentence alone.
+    #[error("{message}{}", forbidden_hint(reason.as_deref(), required_role.as_deref()))]
     Forbidden {
+        /// The server's message.
+        message: String,
+        /// `ROLE_TOO_LOW`, `NOT_A_MEMBER`, `TOKEN_SCOPE` or `TOKEN_READ_ONLY`, when the server says.
+        reason: Option<String>,
+        /// With `ROLE_TOO_LOW`: the role the action needs.
+        required_role: Option<String>,
+    },
+
+    /// `PLAN_LIMIT` (RM-58), whatever the status — 403, or 409 from a server
+    /// that predates the code.
+    #[error("{message}")]
+    PlanLimit {
         /// The server's message.
         message: String,
     },
@@ -157,12 +172,29 @@ pub enum ApiError {
     RateLimited {
         /// The server's message, including how long to wait.
         message: String,
+        /// Seconds from the `Retry-After` header, when it gave a plain number.
+        retry_after: Option<u64>,
     },
 
     /// 5xx. The server deliberately does not say what broke, so neither do we.
-    #[error("{server} reported an internal error (HTTP {status}). Nothing was changed.")]
+    #[error("{server} reported an internal error (HTTP {status}). Nothing was changed.{}", retry_hint(*retry_after))]
     ServerError {
         /// Server that failed.
+        server: String,
+        /// Status returned.
+        status: u16,
+        /// Seconds from `Retry-After` (a 503 usually sends one).
+        retry_after: Option<u64>,
+    },
+
+    /// A reply that is not evnx's: an HTML error page from a proxy, firewall or
+    /// captive portal (DEC-AU5, I-203).
+    #[error(
+        "{server} answered HTTP {status} with a page that is not from evnx — a proxy, \
+         firewall or captive portal is in the way"
+    )]
+    NotEvnx {
+        /// Server that was addressed.
         server: String,
         /// Status returned.
         status: u16,
@@ -227,8 +259,104 @@ pub enum ApiError {
     },
 
     /// A local failure — reading the credential store, building the client.
+    ///
+    /// ⚠️ No `#[from]`/`#[source]`: the inner error is already rendered in full
+    /// by `{0:#}`, and as a source it would be printed a second time by
+    /// anyhow's `{:#}` chain.
     #[error("{0:#}")]
-    Local(#[from] anyhow::Error),
+    Local(anyhow::Error),
+}
+
+impl From<anyhow::Error> for ApiError {
+    fn from(e: anyhow::Error) -> Self {
+        ApiError::Local(e)
+    }
+}
+
+/// The server's sentence, plus the wait when it did not already say so.
+fn with_retry(message: String, retry_after: Option<u64>) -> String {
+    match retry_after {
+        Some(n) if !message.contains(&n.to_string()) => {
+            format!("{message} Try again in {n} s.")
+        }
+        _ => message,
+    }
+}
+
+/// " Try again in N s." — or nothing.
+fn retry_hint(retry_after: Option<u64>) -> String {
+    match retry_after {
+        Some(n) => format!(" Try again in {n} s."),
+        None => String::new(),
+    }
+}
+
+/// One line saying what to do about a 403, by the server's `reason`.
+fn forbidden_hint(reason: Option<&str>, required_role: Option<&str>) -> String {
+    match reason {
+        Some("ROLE_TOO_LOW") => match required_role {
+            Some(r) => format!("\n  This needs the {r} role; ask the vault owner."),
+            None => "\n  This needs a higher role on the vault; ask the vault owner.".into(),
+        },
+        Some("NOT_A_MEMBER") => {
+            "\n  You are not a member of this vault; ask the owner to share it \
+             with you using `evnx vault share`."
+                .into()
+        }
+        Some("TOKEN_SCOPE") => "\n  This API token is restricted to another vault; create one for \
+             this vault with `evnx auth token create --vault <vault>`."
+            .into(),
+        Some("TOKEN_READ_ONLY") => {
+            "\n  This API token can only read; create one that can write with \
+             `evnx auth token create --scope read_write`."
+                .into()
+        }
+        _ => String::new(),
+    }
+}
+
+/// An `ApiError` whose text was rewritten for the command that hit it.
+///
+/// Several commands explain a refusal in their own terms ("version 3 does not
+/// exist" rather than "not found: /api/v1/…"). Flattening that into a plain
+/// `anyhow!` message threw the type away, so `main` could not tell a 401 from
+/// a 500. This keeps the rewritten text and the exit code, and — unlike
+/// wrapping the `ApiError` as a context source — does not print the original
+/// message a second time.
+#[derive(Debug)]
+pub struct Reworded {
+    message: String,
+    exit: Option<i32>,
+}
+
+impl std::fmt::Display for Reworded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Reworded {}
+
+/// Rewrite an `ApiError`'s message, keeping its exit code.
+///
+/// `exit` is [`ApiError::exit_code`] of the error being replaced, taken before
+/// it is matched away.
+pub fn reword(exit: Option<i32>, message: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(Reworded {
+        message: message.into(),
+        exit,
+    })
+}
+
+/// The exit code a cloud failure asks for (X3), found anywhere in the chain.
+pub fn exit_code_of(err: &anyhow::Error) -> Option<i32> {
+    err.chain().find_map(|c| {
+        if let Some(a) = c.downcast_ref::<ApiError>() {
+            a.exit_code()
+        } else {
+            c.downcast_ref::<Reworded>().and_then(|r| r.exit)
+        }
+    })
 }
 
 impl ApiError {
@@ -244,6 +372,31 @@ impl ApiError {
                 | ApiError::RateLimited { .. }
         )
     }
+
+    /// The process exit code this failure asks for (decision X3), or `None` to
+    /// keep the command's usual one.
+    ///
+    /// 0–5 belong to other commands, and `run` returns the child's own code once
+    /// it has started — these apply only before that.
+    pub fn exit_code(&self) -> Option<i32> {
+        match self {
+            ApiError::NotSignedIn { .. }
+            | ApiError::Unauthorized
+            | ApiError::TokenRejected
+            | ApiError::RefreshNotPersisted { .. } => Some(10),
+            ApiError::Forbidden { .. } | ApiError::EmailNotVerified => Some(11),
+            ApiError::PlanLimit { .. } => Some(12),
+            ApiError::Transport { .. } | ApiError::NotEvnx { .. } => Some(13),
+            ApiError::Conflict { .. } | ApiError::Locked { .. } => Some(14),
+            ApiError::ServerError { .. } | ApiError::RateLimited { .. } => Some(15),
+            ApiError::NotFound { .. }
+            | ApiError::Validation { .. }
+            | ApiError::Refused { .. }
+            | ApiError::Unexpected { .. }
+            | ApiError::Malformed { .. }
+            | ApiError::Local(_) => None,
+        }
+    }
 }
 
 /// Error body as evnx-server sends it.
@@ -253,6 +406,34 @@ struct ServerError {
     error: String,
     #[serde(default)]
     code: String,
+    /// Why a 403 `FORBIDDEN` (RM-56). Absent from older servers.
+    #[serde(default)]
+    reason: Option<String>,
+    /// With `ROLE_TOO_LOW`: the role needed.
+    #[serde(default)]
+    required_role: Option<String>,
+}
+
+/// `Retry-After` as seconds. An HTTP-date is treated as unknown.
+fn retry_after_secs(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+fn is_json_content_type(headers: &reqwest::header::HeaderMap) -> bool {
+    headers
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| {
+            let v = v.to_ascii_lowercase();
+            v.contains("json")
+        })
+        .unwrap_or(false)
 }
 
 /// How a client proves who it is.
@@ -337,10 +518,11 @@ impl Client {
         if self.is_signed_in() {
             return Ok(());
         }
-        anyhow::bail!(
-            "not signed in to {}. Run `evnx auth login` first.",
-            self.server
-        )
+        // The typed error, so `main` can exit 10 rather than the generic code.
+        Err(ApiError::NotSignedIn {
+            server: self.server.clone(),
+        }
+        .into())
     }
 
     /// Refuse an API token, then refuse when not signed in (A-37, DEC-AU3).
@@ -443,8 +625,9 @@ impl Client {
             // Reuse the JSON error mapping: a failure is an error document even
             // on a binary endpoint.
             let status = resp.status();
+            let headers = resp.headers().clone();
             let body = resp.text().unwrap_or_default();
-            return Err(self.error_from(status, &body, path));
+            return Err(self.error_from(status, &headers, &body, path));
         }
 
         let value = resp
@@ -697,16 +880,31 @@ impl Client {
             });
         }
 
+        let headers = resp.headers().clone();
         let body = resp.text().unwrap_or_default();
-        Err(self.error_from(status, &body, path))
+        Err(self.error_from(status, &headers, &body, path))
     }
 
-    /// Map a failure status plus its body to a typed error.
-    fn error_from(&self, status: reqwest::StatusCode, body: &str, path: &str) -> ApiError {
-        let parsed: ServerError = serde_json::from_str(body).unwrap_or(ServerError {
+    /// Map a failure status, its headers and its body to a typed error.
+    fn error_from(
+        &self,
+        status: reqwest::StatusCode,
+        headers: &reqwest::header::HeaderMap,
+        body: &str,
+        path: &str,
+    ) -> ApiError {
+        let json: Option<ServerError> = serde_json::from_str(body).ok();
+        // Not evnx's: the body is not the `{error, code}` document and the
+        // content type does not claim JSON either (DEC-AU5, I-203). A blank
+        // body proves nothing, so it is left to the status below.
+        let not_evnx = json.is_none() && !body.trim().is_empty() && !is_json_content_type(headers);
+        let parsed = json.unwrap_or(ServerError {
             error: String::new(),
             code: String::new(),
+            reason: None,
+            required_role: None,
         });
+        let retry_after = retry_after_secs(headers);
         // A real sentence from the server, as opposed to the placeholder below.
         let has_sentence = !parsed.error.trim().is_empty();
         let message = if parsed.error.is_empty() {
@@ -717,10 +915,20 @@ impl Client {
 
         // `code` first: EMAIL_NOT_VERIFIED and FORBIDDEN share status 403, so the
         // status alone cannot tell them apart.
+        // RM-58: a plan limit may arrive as `reason: PLAN_LIMIT` under another
+        // code (the RM-56 envelope) as well as `code: PLAN_LIMIT`.
+        if parsed.reason.as_deref() == Some("PLAN_LIMIT") {
+            return ApiError::PlanLimit { message };
+        }
         match parsed.code.as_str() {
             "UNAUTHORIZED" => ApiError::Unauthorized,
             "EMAIL_NOT_VERIFIED" => ApiError::EmailNotVerified,
-            "FORBIDDEN" => ApiError::Forbidden { message },
+            "FORBIDDEN" => ApiError::Forbidden {
+                message,
+                reason: parsed.reason,
+                required_role: parsed.required_role,
+            },
+            "PLAN_LIMIT" => ApiError::PlanLimit { message },
             "LOCKED" => ApiError::Locked { message },
             "NOT_FOUND" => ApiError::NotFound {
                 server: self.server.clone(),
@@ -728,10 +936,14 @@ impl Client {
             },
             "CONFLICT" => ApiError::Conflict { message },
             "VALIDATION_ERROR" => ApiError::Validation { message },
-            "RATE_LIMITED" => ApiError::RateLimited { message },
+            "RATE_LIMITED" => ApiError::RateLimited {
+                message: with_retry(message, retry_after),
+                retry_after,
+            },
             "INTERNAL_ERROR" => ApiError::ServerError {
                 server: self.server.clone(),
                 status: status.as_u16(),
+                retry_after,
             },
             // No recognised code: fall back to the status, so a proxy's error
             // page or a future code still produces something sensible.
@@ -741,9 +953,18 @@ impl Client {
                     server: self.server.clone(),
                     path: path.to_string(),
                 },
+                s if not_evnx => ApiError::NotEvnx {
+                    server: self.server.clone(),
+                    status: s,
+                },
+                429 => ApiError::RateLimited {
+                    message: with_retry(message, retry_after),
+                    retry_after,
+                },
                 s if (500..600).contains(&s) => ApiError::ServerError {
                     server: self.server.clone(),
                     status: s,
+                    retry_after,
                 },
                 // ⚠️ I-306: a code this build does not know, with a sentence —
                 // keep the sentence. It said "unexpected response: HTTP 403"
@@ -1065,6 +1286,27 @@ mod tests {
         refresh.assert();
     }
 
+    /// RM-58: `reason: PLAN_LIMIT` under `code: FORBIDDEN` is a plan limit too.
+    #[test]
+    #[serial]
+    fn rm58_a_plan_limit_reason_under_forbidden_is_a_plan_limit() {
+        let _g = ConfigDirGuard::new();
+        let mut server = mockito::Server::new();
+        signed_in(&server.url(), 4_000_000_000).save().unwrap();
+        let client = Client::new(server.url()).unwrap();
+        let _m = server
+            .mock("GET", "/api/v1/pl")
+            .with_status(403)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"error":"your plan allows 3 vaults.","code":"FORBIDDEN","reason":"PLAN_LIMIT"}"#,
+            )
+            .create();
+        let e = client.get::<serde_json::Value>("/api/v1/pl").unwrap_err();
+        assert!(matches!(e, ApiError::PlanLimit { .. }), "{e:?}");
+        assert_eq!(e.exit_code(), Some(12));
+    }
+
     // ─── I-306: a code this build does not know ─────────────────────────────
 
     /// A code added to the server after this build (`PLAN_LIMIT` was the first
@@ -1122,7 +1364,7 @@ mod tests {
             .get::<serde_json::Value>("/api/v1/vaults")
             .unwrap_err();
         assert!(
-            matches!(err, ApiError::Unexpected { status: 403, .. }),
+            matches!(err, ApiError::NotEvnx { status: 403, .. }),
             "{err:?}"
         );
         m.assert();
@@ -1183,11 +1425,271 @@ mod tests {
         let err = client
             .get::<serde_json::Value>("/api/v1/vaults")
             .unwrap_err();
+        // A page that is not evnx's is not "the server reported an error".
         assert!(
-            matches!(err, ApiError::ServerError { status: 502, .. }),
+            matches!(err, ApiError::NotEvnx { status: 502, .. }),
             "{err:?}"
         );
         m.assert();
+    }
+
+    /// One GET against a mock that answers `status` with `body`.
+    fn failure(status: usize, headers: &[(&str, &str)], body: &str) -> ApiError {
+        let _g = ConfigDirGuard::new();
+        let mut server = mockito::Server::new();
+        signed_in(&server.url(), 4_000_000_000).save().unwrap();
+        let client = Client::new(server.url()).unwrap();
+        let mut m = server.mock("GET", "/api/v1/probe").with_status(status);
+        for (k, v) in headers {
+            m = m.with_header(*k, v);
+        }
+        let m = m.with_body(body).create();
+        let err = client
+            .get::<serde_json::Value>("/api/v1/probe")
+            .unwrap_err();
+        m.assert();
+        err
+    }
+
+    #[test]
+    #[serial]
+    fn rm56_forbidden_reasons_add_one_hint_each() {
+        let e = failure(
+            403,
+            &[],
+            r#"{"error":"Forbidden","code":"FORBIDDEN","reason":"ROLE_TOO_LOW","required_role":"admin"}"#,
+        );
+        assert!(matches!(e, ApiError::Forbidden { .. }), "{e:?}");
+        let t = e.to_string();
+        assert!(t.starts_with("Forbidden"), "{t}");
+        assert!(
+            t.contains("needs the admin role; ask the vault owner"),
+            "{t}"
+        );
+
+        let e = failure(
+            403,
+            &[],
+            r#"{"error":"Forbidden","code":"FORBIDDEN","reason":"NOT_A_MEMBER"}"#,
+        );
+        assert!(e.to_string().contains("`evnx vault share`"), "{e}");
+
+        let e = failure(
+            403,
+            &[],
+            r#"{"error":"Forbidden","code":"FORBIDDEN","reason":"TOKEN_SCOPE"}"#,
+        );
+        assert!(
+            e.to_string().contains("evnx auth token create --vault"),
+            "{e}"
+        );
+    }
+
+    /// RM-56: evnx-server V0 also sends `TOKEN_READ_ONLY` for a read-only
+    /// token that tried to write.
+    #[test]
+    #[serial]
+    fn rm56_a_read_only_token_is_told_how_to_get_a_writing_one() {
+        let e = failure(
+            403,
+            &[],
+            r#"{"error":"Insufficient permissions","code":"FORBIDDEN","reason":"TOKEN_READ_ONLY"}"#,
+        );
+        assert!(e.to_string().contains("--scope read_write"), "{e}");
+        assert_eq!(e.exit_code(), Some(11));
+    }
+
+    #[test]
+    #[serial]
+    fn rm56_forbidden_without_a_reason_is_todays_message() {
+        let e = failure(403, &[], r#"{"error":"nope","code":"FORBIDDEN"}"#);
+        assert_eq!(e.to_string(), "nope");
+        // A reason this build does not know adds nothing either.
+        let e = failure(
+            403,
+            &[],
+            r#"{"error":"nope","code":"FORBIDDEN","reason":"SOMETHING_NEW"}"#,
+        );
+        assert_eq!(e.to_string(), "nope");
+    }
+
+    #[test]
+    #[serial]
+    fn rm58_plan_limit_on_403_and_on_legacy_409() {
+        for status in [403, 409] {
+            let e = failure(
+                status,
+                &[],
+                r#"{"error":"your plan allows 3 vaults.","code":"PLAN_LIMIT"}"#,
+            );
+            assert!(matches!(e, ApiError::PlanLimit { .. }), "{status}: {e:?}");
+            assert_eq!(e.exit_code(), Some(12));
+        }
+        // No code: a legacy 409 stays a conflict.
+        let e = failure(409, &[], r#"{"error":"x","code":"CONFLICT"}"#);
+        assert!(matches!(e, ApiError::Conflict { .. }), "{e:?}");
+    }
+
+    #[test]
+    #[serial]
+    fn i203_a_json_500_is_a_server_error_and_a_proxy_page_is_not_evnx() {
+        let e = failure(500, &[], r#"{"error":"boom","code":"INTERNAL_ERROR"}"#);
+        assert!(
+            matches!(e, ApiError::ServerError { status: 500, .. }),
+            "{e:?}"
+        );
+
+        let e = failure(502, &[("content-type", "text/html")], "<html>502</html>");
+        assert!(matches!(e, ApiError::NotEvnx { status: 502, .. }), "{e:?}");
+        let t = e.to_string();
+        assert!(
+            t.contains("answered HTTP 502 with a page that is not from evnx"),
+            "{t}"
+        );
+        assert!(t.contains("proxy, firewall or captive portal"), "{t}");
+
+        // A 5xx whose body is not parseable but claims JSON is still evnx's.
+        let e = failure(500, &[("content-type", "application/json")], "not json");
+        assert!(matches!(e, ApiError::ServerError { .. }), "{e:?}");
+
+        // 404 stays NotFound whatever the body.
+        let e = failure(404, &[("content-type", "text/html")], "<html>404</html>");
+        assert!(matches!(e, ApiError::NotFound { .. }), "{e:?}");
+    }
+
+    #[test]
+    #[serial]
+    fn retry_after_is_read_for_429_and_503() {
+        let e = failure(
+            429,
+            &[("retry-after", "30")],
+            r#"{"error":"Too many requests","code":"RATE_LIMITED"}"#,
+        );
+        match &e {
+            ApiError::RateLimited { retry_after, .. } => assert_eq!(*retry_after, Some(30)),
+            other => panic!("{other:?}"),
+        }
+        assert!(
+            e.to_string().contains("try again in 30 s")
+                || e.to_string().contains("Try again in 30 s"),
+            "{e}"
+        );
+
+        let e = failure(
+            503,
+            &[("retry-after", "7")],
+            r#"{"error":"down","code":"INTERNAL_ERROR"}"#,
+        );
+        match &e {
+            ApiError::ServerError { retry_after, .. } => assert_eq!(*retry_after, Some(7)),
+            other => panic!("{other:?}"),
+        }
+        assert!(e.to_string().contains("Try again in 7 s"), "{e}");
+
+        // An HTTP-date is unknown, not an error.
+        let e = failure(
+            429,
+            &[("retry-after", "Wed, 21 Oct 2026 07:28:00 GMT")],
+            r#"{"error":"Too many requests","code":"RATE_LIMITED"}"#,
+        );
+        assert!(
+            matches!(
+                e,
+                ApiError::RateLimited {
+                    retry_after: None,
+                    ..
+                }
+            ),
+            "{e:?}"
+        );
+        assert_eq!(e.to_string(), "Too many requests");
+    }
+
+    #[test]
+    fn x3_exit_codes() {
+        let s = || "s".to_string();
+        let cases: Vec<(ApiError, Option<i32>)> = vec![
+            (ApiError::NotSignedIn { server: s() }, Some(10)),
+            (ApiError::Unauthorized, Some(10)),
+            (ApiError::TokenRejected, Some(10)),
+            (ApiError::RefreshNotPersisted { message: s() }, Some(10)),
+            (
+                ApiError::Forbidden {
+                    message: s(),
+                    reason: None,
+                    required_role: None,
+                },
+                Some(11),
+            ),
+            (ApiError::EmailNotVerified, Some(11)),
+            (ApiError::PlanLimit { message: s() }, Some(12)),
+            (
+                ApiError::Transport {
+                    server: s(),
+                    reason: s(),
+                },
+                Some(13),
+            ),
+            (
+                ApiError::NotEvnx {
+                    server: s(),
+                    status: 502,
+                },
+                Some(13),
+            ),
+            (ApiError::Conflict { message: s() }, Some(14)),
+            (ApiError::Locked { message: s() }, Some(14)),
+            (
+                ApiError::ServerError {
+                    server: s(),
+                    status: 500,
+                    retry_after: None,
+                },
+                Some(15),
+            ),
+            (
+                ApiError::RateLimited {
+                    message: s(),
+                    retry_after: None,
+                },
+                Some(15),
+            ),
+            (
+                ApiError::NotFound {
+                    server: s(),
+                    path: s(),
+                },
+                None,
+            ),
+            (ApiError::Validation { message: s() }, None),
+            (ApiError::Malformed { message: s() }, None),
+        ];
+        for (e, want) in cases {
+            assert_eq!(e.exit_code(), want, "{e:?}");
+        }
+    }
+
+    #[test]
+    fn the_exit_code_survives_context_and_rewording_without_repeating_text() {
+        use anyhow::Context;
+        let e: Result<(), ApiError> = Err(ApiError::Unauthorized);
+        let wrapped = e.context("could not list your vaults").unwrap_err();
+        assert_eq!(exit_code_of(&wrapped), Some(10));
+        let printed = format!("{wrapped:#}");
+        assert_eq!(
+            printed.matches("session has expired").count(),
+            1,
+            "{printed}"
+        );
+
+        let r = reword(Some(14), "custom text");
+        assert_eq!(exit_code_of(&r), Some(14));
+        assert_eq!(format!("{r:#}"), "custom text");
+
+        // Local does not print its inner error twice.
+        let l = anyhow::Error::from(ApiError::Local(anyhow::anyhow!("inner").context("outer")));
+        assert_eq!(format!("{l:#}"), "outer: inner");
+        assert_eq!(exit_code_of(&l), None);
     }
 
     #[test]

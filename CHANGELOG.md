@@ -8,6 +8,28 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**⚠️ Cloud commands exit 10–15 for server failures, where they exited 1 or 2** (RM-55, decision X3).
+`evnx auth`, `evnx vault`, `evnx org` and `evnx cloud` now exit with a code that says what failed,
+so a pipeline can tell "sign in again" from "the server is down" without reading the message:
+
+| Code | Meaning |
+|-----:|---------|
+| 10 | not signed in, or the session / `EVNX_TOKEN` was refused |
+| 11 | forbidden (role too low, not a member, token scope), or email not verified |
+| 12 | plan limit reached |
+| 13 | server unreachable, or answered by something that is not evnx (proxy, firewall, captive portal) |
+| 14 | conflict (someone else pushed first), or account locked |
+| 15 | server error, or rate limited |
+
+- Any script that tested for exactly `1` or `2` after a cloud command needs to accept these.
+  Other failures (bad arguments, local errors, a 404, a rejected request body) keep their code.
+- `evnx cloud run` / `evnx run` still return the child's own code once it has started; 10–15 can
+  only come from a failure before that.
+- A 403 now explains why when the server says (needs the `<role>` role, not a member, API token
+  restricted to another vault); a `Retry-After` is shown as "Try again in N s."; an HTML error page
+  from a proxy is reported as "not from evnx" instead of as a server error. All of this works
+  against servers that do not send the new fields yet.
+
 **⚠️ `evnx migrate --to gcp-secret-manager` now creates `db-url` where 0.12 created `DB_URL`**
 (I-098, RM-62). `convert --to gcp-secrets` has always lowercased names and written `_` as `-`;
 `migrate` kept the `.env` name, so the two commands named the same variable differently. Both
@@ -199,6 +221,13 @@ character, not per byte, which raised it for non-ASCII text.
     keywords, entropy, the secret group and allowlists (regexes and
     stopwords) carry over. Rules that cannot convert are listed with the
     reason, never dropped silently.
+  - It also reads **Betterleaks**, the gitleaks fork (C13): `confidence`
+    carries over, `valueGroup` is the secret group, rules marked `skipReport`
+    (parts of a composite) are skipped and listed, and the leading
+    `entropy(finding["secret"]) < N` clause of a CEL `filter` becomes the
+    rule's entropy floor. The rest of a filter, and a composite's
+    `components`, cannot be expressed; those rules are counted in the pack
+    header, as lost allowlists are.
   - Downloads need the `net` feature (in every prebuilt binary) and are
     https only, or plain http to this machine.
 - Rule files gain `keywords` (the rule is tried only on text holding one, so
@@ -343,6 +372,14 @@ character, not per byte, which raised it for non-ASCII text.
   `evnx_crypto::blob_hash`, the same function `vault rekey` uses (Q1).
 
 ### Fixed
+- **`evnx cloud audit` says who was removed** (RM-57, I-308). A revoke is logged
+  as a rekey; its DETAIL now reads `removed ex@acme.dev; re-wrapped for 2
+  members` when the server resolves the member (evnx-server V0), and names the
+  member's id when it does not. The reads a rekey makes to re-encrypt each
+  version show as `read for rekey` instead of looking like someone pulling
+  every version by hand (the CLI sends `purpose=rekey`; the server records it
+  for an admin or the owner only). The WHO column grows to its longest address (up to 40
+  characters, then `…`) instead of a fixed 26.
 - ⛔ **`evnx scan` no longer hangs on a project with many gitignored files.**
   To learn which walked files git ignores, scan wrote every path to
   `git check-ignore` before reading any answer. Once the ignored paths filled

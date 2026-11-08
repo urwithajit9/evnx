@@ -45,9 +45,7 @@ pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
-    let listed: SessionList = client
-        .get("/api/v1/auth/sessions")
-        .map_err(|e| anyhow!("{e}"))?;
+    let listed: SessionList = client.get("/api/v1/auth/sessions")?;
 
     if listed.sessions.is_empty() {
         println!("  No active sessions on {server}.");
@@ -113,9 +111,7 @@ pub fn revoke(
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
-    let listed: SessionList = client
-        .get("/api/v1/auth/sessions")
-        .map_err(|e| anyhow!("{e}"))?;
+    let listed: SessionList = client.get("/api/v1/auth/sessions")?;
     let session = resolve(&listed.sessions, &target)?;
 
     if session.current && !assume_yes {
@@ -141,13 +137,11 @@ pub fn revoke(
         }
     }
 
-    client
-        .delete(&api_path(&[
-            "auth",
-            "sessions",
-            &session.session_id.to_string(),
-        ])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    client.delete(&api_path(&[
+        "auth",
+        "sessions",
+        &session.session_id.to_string(),
+    ])?)?;
 
     crate::say!(
         "  {} revoked session {}",
@@ -180,9 +174,7 @@ pub fn revoke_others(
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
-    let listed: SessionList = client
-        .get("/api/v1/auth/sessions")
-        .map_err(|e| anyhow!("{e}"))?;
+    let listed: SessionList = client.get("/api/v1/auth/sessions")?;
     let others = listed.sessions.iter().filter(|s| !s.current).count();
 
     if others == 0 {
@@ -203,9 +195,7 @@ pub fn revoke_others(
         }
     }
 
-    client
-        .delete("/api/v1/auth/sessions/others")
-        .map_err(|e| anyhow!("{e}"))?;
+    client.delete("/api/v1/auth/sessions/others")?;
 
     crate::say!("  {} revoked {others} other session(s)", "✓".green());
     crate::say!("  Their access tokens stopped working immediately.");

@@ -143,7 +143,7 @@ fn require_login(client: &Client, _server: &str) -> Result<()> {
 }
 
 pub(crate) fn fetch_orgs(client: &Client) -> Result<Vec<OrgSummary>> {
-    let listed: OrgList = client.get("/api/v1/orgs").map_err(|e| anyhow!("{e}"))?;
+    let listed: OrgList = client.get("/api/v1/orgs")?;
     Ok(listed.organizations)
 }
 
@@ -296,9 +296,7 @@ fn resolve_member<'a>(members: &'a [MemberSummary], target: &str) -> Result<&'a 
 }
 
 fn members_of(client: &Client, org_id: &str) -> Result<Vec<MemberSummary>> {
-    let listed: MemberList = client
-        .get(&api_path(&["orgs", org_id, "members"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let listed: MemberList = client.get(&api_path(&["orgs", org_id, "members"])?)?;
     Ok(listed.members)
 }
 
@@ -318,12 +316,10 @@ pub fn create(server_override: Option<&str>, name: &str, slug: &str, verbose: bo
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
-    let created: CreatedOrg = client
-        .post(
-            "/api/v1/orgs",
-            &serde_json::json!({ "name": name, "slug": slug }),
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let created: CreatedOrg = client.post(
+        "/api/v1/orgs",
+        &serde_json::json!({ "name": name, "slug": slug }),
+    )?;
 
     crate::say!();
     crate::say!("  {} created {}", "✓".green(), created.slug.bold());
@@ -450,12 +446,10 @@ pub fn invite(
     let role = parse_role(role.unwrap_or("member"), ORG_ROLES, ORG_OWNER)?; // A-303
     let target = resolve_org(&client, org)?;
 
-    let created: CreatedInvite = client
-        .post(
-            &api_path(&["orgs", &target.id.to_string(), "invites"])?,
-            &serde_json::json!({ "email": email, "role": role }),
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let created: CreatedInvite = client.post(
+        &api_path(&["orgs", &target.id.to_string(), "invites"])?,
+        &serde_json::json!({ "email": email, "role": role }),
+    )?;
 
     crate::say!();
     crate::say!(
@@ -499,9 +493,8 @@ pub fn invites(server_override: Option<&str>, org: Option<&str>, _verbose: bool)
     require_login(&client, &server)?;
 
     let target = resolve_org(&client, org)?;
-    let listed: InviteList = client
-        .get(&api_path(&["orgs", &target.id.to_string(), "invites"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let listed: InviteList =
+        client.get(&api_path(&["orgs", &target.id.to_string(), "invites"])?)?;
 
     if listed.invites.is_empty() {
         println!("  No invitations outstanding for {}.", target.slug);
@@ -542,14 +535,12 @@ pub fn uninvite(
     require_login(&client, &server)?;
 
     let target = resolve_org(&client, org)?;
-    client
-        .delete(&api_path(&[
-            "orgs",
-            &target.id.to_string(),
-            "invites",
-            invite_id,
-        ])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    client.delete(&api_path(&[
+        "orgs",
+        &target.id.to_string(),
+        "invites",
+        invite_id,
+    ])?)?;
 
     crate::say!("  {} withdrew that invitation", "✓".green());
     Ok(())
@@ -564,12 +555,10 @@ pub fn accept(server_override: Option<&str>, token: &str, _verbose: bool) -> Res
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
-    let joined: AcceptedInvite = client
-        .post(
-            "/api/v1/orgs/invites/accept",
-            &serde_json::json!({ "token": token.trim() }),
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let joined: AcceptedInvite = client.post(
+        "/api/v1/orgs/invites/accept",
+        &serde_json::json!({ "token": token.trim() }),
+    )?;
 
     crate::say!();
     crate::say!(
@@ -651,12 +640,10 @@ pub fn seats(
     }
 
     let body = serde_json::json!({ "seats": if unlimited { serde_json::Value::Null } else { serde_json::json!(set) } });
-    let state: SeatState = client
-        .put(
-            &api_path(&["orgs", &target.id.to_string(), "seats"])?,
-            &body,
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let state: SeatState = client.put(
+        &api_path(&["orgs", &target.id.to_string(), "seats"])?,
+        &body,
+    )?;
 
     crate::say!("  {} seats {}", "✓".green(), state.seats.render());
     if state.over_seated {
@@ -721,9 +708,8 @@ pub fn billing(server_override: Option<&str>, org: Option<&str>, _verbose: bool)
     require_login(&client, &server)?;
 
     let target = resolve_org(&client, org)?;
-    let state: BillingState = client
-        .get(&api_path(&["orgs", &target.id.to_string(), "billing"])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    let state: BillingState =
+        client.get(&api_path(&["orgs", &target.id.to_string(), "billing"])?)?;
 
     println!();
     println!("  {} — {} plan", target.slug.bold(), state.plan.bold());
@@ -853,17 +839,15 @@ fn seat_change(
     let members = members_of(&client, &target.id)?;
     let member = resolve_member(&members, who)?;
 
-    let _: serde_json::Value = client
-        .patch(
-            &api_path(&[
-                "orgs",
-                &target.id.to_string(),
-                "members",
-                &member.user_id.to_string(),
-            ])?,
-            &serde_json::json!({ "seat": assign }),
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let _: serde_json::Value = client.patch(
+        &api_path(&[
+            "orgs",
+            &target.id.to_string(),
+            "members",
+            &member.user_id.to_string(),
+        ])?,
+        &serde_json::json!({ "seat": assign }),
+    )?;
 
     crate::say!();
     if assign {
@@ -922,17 +906,15 @@ pub fn set_role(
     let members = members_of(&client, &target.id)?;
     let member = resolve_member(&members, who)?;
 
-    let _: serde_json::Value = client
-        .patch(
-            &api_path(&[
-                "orgs",
-                &target.id.to_string(),
-                "members",
-                &member.user_id.to_string(),
-            ])?,
-            &serde_json::json!({ "role": role }),
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    let _: serde_json::Value = client.patch(
+        &api_path(&[
+            "orgs",
+            &target.id.to_string(),
+            "members",
+            &member.user_id.to_string(),
+        ])?,
+        &serde_json::json!({ "role": role }),
+    )?;
 
     crate::say!(
         "  {} {} is now {} in {}",
@@ -990,14 +972,12 @@ pub fn remove(
         }
     }
 
-    client
-        .delete(&api_path(&[
-            "orgs",
-            &target.id.to_string(),
-            "members",
-            &member.user_id.to_string(),
-        ])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    client.delete(&api_path(&[
+        "orgs",
+        &target.id.to_string(),
+        "members",
+        &member.user_id.to_string(),
+    ])?)?;
 
     crate::say!("  {} removed {}", "✓".green(), member.email);
     Ok(())
@@ -1062,12 +1042,10 @@ pub fn delete(
         }
     }
 
-    client
-        .delete_with_body(
-            &api_path(&["orgs", &target.id.to_string()])?,
-            &serde_json::json!({ "force": force }),
-        )
-        .map_err(|e| anyhow!("{e}"))?;
+    client.delete_with_body(
+        &api_path(&["orgs", &target.id.to_string()])?,
+        &serde_json::json!({ "force": force }),
+    )?;
 
     crate::say!("  {} deleted {}", "✓".green(), target.slug);
     Ok(())
@@ -1124,14 +1102,12 @@ pub fn leave(
         }
     }
 
-    client
-        .delete(&api_path(&[
-            "orgs",
-            &target.id.to_string(),
-            "members",
-            &me.user_id.to_string(),
-        ])?)
-        .map_err(|e| anyhow!("{e}"))?;
+    client.delete(&api_path(&[
+        "orgs",
+        &target.id.to_string(),
+        "members",
+        &me.user_id.to_string(),
+    ])?)?;
 
     crate::say!("  {} left {}", "✓".green(), target.slug);
     Ok(())

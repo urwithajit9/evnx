@@ -894,6 +894,12 @@ fn main() -> Result<()> {
     // Commands that exit on their own — `scan`, `doctor`, `backup`, `restore`
     // and the findings path in `validate` — never reach here.
     if let Err(e) = outcome {
+        // A cloud failure that has its own exit code (X3: 10–15) keeps the same
+        // text and "no verdict" line as any other error; only the code differs.
+        #[cfg(feature = "cloud")]
+        if let Some(code) = evnx::cloud::client::exit_code_of(&e) {
+            verdict::no_verdict_with_code(&e, Stage::DuringRun, code);
+        }
         verdict::no_verdict(&e, Stage::DuringRun);
     }
 

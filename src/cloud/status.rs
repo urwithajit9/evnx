@@ -168,7 +168,7 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
                 // health-check script reads. Re-wrapped as a flat message so the
                 // reason prints on one line instead of as an anyhow chain that
                 // repeats the server URL.
-                Err(anyhow::anyhow!("{e}"))
+                Err(anyhow::Error::from(e))
             }
         }
     } else {
