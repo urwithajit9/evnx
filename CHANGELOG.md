@@ -369,8 +369,9 @@ character, not per byte, which raised it for non-ASCII text.
   as a rekey; its DETAIL now reads `removed ex@acme.dev; re-wrapped for 2
   members` when the server resolves the member (evnx-server V0), and names the
   member's id when it does not. The reads a rekey makes to re-encrypt each
-  version show as `system read (rekey)` instead of looking like someone pulling
-  every version by hand. The WHO column grows to its longest address (up to 40
+  version show as `read for rekey` instead of looking like someone pulling
+  every version by hand (the CLI sends `purpose=rekey`; the server records it
+  for an admin or the owner only). The WHO column grows to its longest address (up to 40
   characters, then `…`) instead of a fixed 26.
 - ⛔ **`evnx scan` no longer hangs on a project with many gitignored files.**
   To learn which walked files git ignores, scan wrote every path to

@@ -1640,14 +1640,19 @@ fn rotate_vault_key(
     let mut staged = Vec::with_capacity(total);
     for (i, v) in versions.versions.iter().enumerate() {
         let n = v.version_num;
+        // RM-57: `purpose=rekey` lets the audit trail show these reads as part
+        // of the rekey rather than as someone pulling every version. The
+        // server records it only for an admin or the owner, who are the only
+        // ones who can rekey, and ignores it otherwise.
+        let path = api_path(&[
+            "vaults",
+            &vault.id.to_string(),
+            "versions",
+            &n.to_string(),
+            "blob",
+        ])?;
         let blob_bytes = client
-            .get_bytes(&api_path(&[
-                "vaults",
-                &vault.id.to_string(),
-                "versions",
-                &n.to_string(),
-                "blob",
-            ])?)
+            .get_bytes(&format!("{path}?purpose=rekey"))
             .with_context(|| format!("fetching version {n}"))?;
 
         if blob_bytes.len() <= NONCE_LEN {

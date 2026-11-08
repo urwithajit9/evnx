@@ -117,7 +117,7 @@ pub enum ApiError {
     Forbidden {
         /// The server's message.
         message: String,
-        /// `ROLE_TOO_LOW`, `NOT_A_MEMBER` or `TOKEN_SCOPE`, when the server says.
+        /// `ROLE_TOO_LOW`, `NOT_A_MEMBER`, `TOKEN_SCOPE` or `TOKEN_READ_ONLY`, when the server says.
         reason: Option<String>,
         /// With `ROLE_TOO_LOW`: the role the action needs.
         required_role: Option<String>,
@@ -306,6 +306,11 @@ fn forbidden_hint(reason: Option<&str>, required_role: Option<&str>) -> String {
         Some("TOKEN_SCOPE") => "\n  This API token is restricted to another vault; create one for \
              this vault with `evnx auth token create --vault <vault>`."
             .into(),
+        Some("TOKEN_READ_ONLY") => {
+            "\n  This API token can only read; create one that can write with \
+             `evnx auth token create --scope read_write`."
+                .into()
+        }
         _ => String::new(),
     }
 }
@@ -1478,6 +1483,20 @@ mod tests {
             e.to_string().contains("evnx auth token create --vault"),
             "{e}"
         );
+    }
+
+    /// RM-56: evnx-server V0 also sends `TOKEN_READ_ONLY` for a read-only
+    /// token that tried to write.
+    #[test]
+    #[serial]
+    fn rm56_a_read_only_token_is_told_how_to_get_a_writing_one() {
+        let e = failure(
+            403,
+            &[],
+            r#"{"error":"Insufficient permissions","code":"FORBIDDEN","reason":"TOKEN_READ_ONLY"}"#,
+        );
+        assert!(e.to_string().contains("--scope read_write"), "{e}");
+        assert_eq!(e.exit_code(), Some(11));
     }
 
     #[test]

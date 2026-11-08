@@ -102,13 +102,13 @@ fn detail(e: &AuditEvent) -> String {
         "pull" => {
             let version = num("version").map(|v| format!("version {v}"));
             // RM-57: rekey and revoke read every version to re-encrypt it. The
-            // server marks those reads (`system: true`, or `reason: "rekey"`),
-            // so they do not read as the member pulling each version by hand.
-            let system = m.get("system").and_then(|v| v.as_bool()) == Some(true)
-                || text("reason") == Some("rekey");
-            match (version, system) {
-                (Some(v), true) => format!("{v} · system read (rekey)"),
-                (None, true) => "system read (rekey)".to_string(),
+            // CLI sends `purpose=rekey` on those reads and the server records
+            // it for an admin or the owner, so they do not read as that person
+            // pulling each version by hand. WHO still names who did it.
+            let rekey = text("purpose") == Some("rekey");
+            match (version, rekey) {
+                (Some(v), true) => format!("{v} · read for rekey"),
+                (None, true) => "read for rekey".to_string(),
                 (Some(v), false) => v,
                 (None, false) => String::new(),
             }
@@ -364,21 +364,21 @@ mod tests {
         assert_eq!(detail(&e), "re-wrapped for 3 members");
     }
 
-    /// RM-57: reads made by rekey are marked as system reads.
+    /// RM-57: reads made by rekey are marked as such.
     #[test]
-    fn rm57_rekey_reads_are_system_reads() {
+    fn rm57_rekey_reads_are_marked() {
         let e = event(
             "pull",
             Some("o@a.dev"),
-            serde_json::json!({"version": 4, "system": true}),
+            serde_json::json!({"version": 4, "purpose": "rekey"}),
         );
-        assert_eq!(detail(&e), "version 4 · system read (rekey)");
+        assert_eq!(detail(&e), "version 4 · read for rekey");
         let e = event(
             "pull",
             Some("o@a.dev"),
-            serde_json::json!({"version": 4, "reason": "rekey"}),
+            serde_json::json!({"version": 4, "purpose": "other"}),
         );
-        assert_eq!(detail(&e), "version 4 · system read (rekey)");
+        assert_eq!(detail(&e), "version 4");
         let e = event("pull", Some("o@a.dev"), serde_json::json!({"version": 4}));
         assert_eq!(detail(&e), "version 4");
     }
