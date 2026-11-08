@@ -1,0 +1,15 @@
+# Fixtures for `azure-devops-pat` (C12, RM-92). 84 characters with `AZDO` at a fixed offset;
+# values are written as parts joined at test time.
+
+expect_severity = "high"
+
+positive = [
+  ["C3J27XDCG2LmlZGEONYlgCtjfIZ4SOcMz9CPVNPkNa1Hedcm4pMbXDuCL1mHoOsFaQfDPrAJ71f", "AZDO", "TquWo"],
+  ["GsbeKXgzg2sye9b2Rann76dEyTzAeKOmXRrvftva9AW7hipTgadDZFlRJmCGmUXiAPyhzAnar3ZL", "AZDO", "t4bn"],
+]
+
+near_miss = [
+  ["lz2MPKgcjnCqaXNv1syeefnLOpaMxxNDi9LE1Ki3ylOjt6o0NpUmkVO8JmR8y4EMfAdggcG9qpVTzqA05MFs"],
+  ["Hl7UeioEJP2NNern66nVberACpdclsxHKifxi5CvQUSHL8iLc7bE6wSt9cbMOeEeUtuieeCIxVc", "AZDO", "57VV"],
+  ["TiY96vwfRE5e32A8Yb3FKaNQyyLaMeffOhq4AUvy7VSLDCD1IfHWGbtMfEbo9ShFXNQ6Fq5axtjR", "AZDO", "NmHkW"],
+]

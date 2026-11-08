@@ -444,6 +444,17 @@ mod tests {
         }
     }
 
+    /// I-098: export renders through the converter, so its GCP secret names
+    /// are `convert`'s and `migrate`'s (`formats::gcp::secret_id`).
+    #[test]
+    fn t_i098_gcp_export_names_are_secret_id() {
+        let mut vars = IndexMap::new();
+        vars.insert("DB_URL".to_string(), "x".to_string());
+        let out = convert_for_test(&vars, "gcp-secrets").unwrap();
+        assert!(out.contains("| upsert_secret db-url\n"), "{out}");
+        assert!(!out.contains("upsert_secret DB_URL"));
+    }
+
     #[test]
     fn the_directory_name_flattens_the_slash_in_a_label() {
         assert_eq!(

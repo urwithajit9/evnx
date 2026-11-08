@@ -1,0 +1,11 @@
+# Fixtures for `gitlab-job-token` (C12, RM-92). Values are written as parts joined at test time.
+
+expect_severity = "medium"
+
+positive = [
+  ["glcbt-", "64_uSwMFLZDe1f8rESQedUStPKR0CsTy4Qwb"],
+]
+
+near_miss = [
+  ["glcbt-", "64_short"],
+]

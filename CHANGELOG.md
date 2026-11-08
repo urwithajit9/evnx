@@ -8,6 +8,56 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**⚠️ `evnx migrate --to gcp-secret-manager` now creates `db-url` where 0.12 created `DB_URL`**
+(I-098, RM-62). `convert --to gcp-secrets` has always lowercased names and written `_` as `-`;
+`migrate` kept the `.env` name, so the two commands named the same variable differently. Both
+(and `cloud export --to gcp-secrets`, which renders through `convert`) now take the name from one
+function, so they cannot drift.
+- A project migrated with 0.12 gets new secrets beside the old ones: `DB_URL` stays, `db-url` is
+  added. Point the app at the new names, then delete the old upper-case secrets
+  (`gcloud secrets delete DB_URL --project=my-project`).
+- `A_B` and `a_b` becoming one `a-b` is refused by name, as in `convert`.
+
+**⚠️ `convert --to vercel` writes `"type": "sensitive"` for secret-looking variables** (RM-65,
+experimental). They were all `"plain"`. A variable whose name or value looks secret
+(`DB_PASSWORD`, a token, a URL with a password) now gets `"target": ["production", "preview"]`:
+Vercel's API rejects a Sensitive variable in `development`, so it is not set there, and evnx says
+how many on stderr (the JSON is unchanged otherwise). Other variables stay `"plain"` for all three
+targets. `migrate --to vercel` adds `--sensitive` to `vercel env add` for those variables, except
+when the environment is `development`.
+
+- **Three more built-in rules, 63 in all** (C12, RM-92): `gitlab-job-token` (`glcbt-`, medium),
+  `flyio-token` (`FlyV1 fm2_` / `fm2_`, critical) and `azure-devops-pat` (the 84-character PAT
+  with the fixed `AZDO` signature, high), each only where the provider's own docs state the
+  format. A GCP service-account key file (`"private_key": "-----BEGIN PRIVATE KEY-----\n…"`) was
+  already reported by `private-key`; a test now locks that in.
+
+**⚠️ `CLERK_SECRET_KEY=sk_live_…` and `UPLOADTHING_SECRET=sk_live_…` change rule id** (C10,
+RM-92, CV-2). Clerk and UploadThing reuse Stripe's `sk_live_` prefix, so both were reported
+as `stripe-live-secret-key` and sent you to Stripe's dashboard. Two new rules, `clerk-secret-key`
+(Clerk, `auth`) and `uploadthing-secret-key` (UploadThing, `saas`), both critical, fire when the
+variable (or YAML/JSON/TOML key) has Clerk's or UploadThing's name; **60 built-in rules, up
+from 58**. Under any other name, or in plain text, the value stays `stripe-live-secret-key`.
+- Update baselines and `evnx:allow stripe-live-secret-key` markers on those lines to the new
+  ids; the old ones no longer match, so the finding reappears until you do.
+- New optional rule field `names` (regexes matched against the variable/key name) for your own
+  rule files and packs: the rule never fires on text with no name, and beats an unconstrained
+  rule matching the same value. An invalid `names` expression is a load error naming the file
+  and rule. `evnx scan rules test` checks a rule's value shape and ignores `names`.
+
+**Every built-in scan rule names its provider and a category** (C11, RM-90). Additive: no
+rule, id or existing JSON field changes.
+- `rules.toml` gives all 58 rules a `provider` and a `category` from a fixed list: `cloud`,
+  `source-ci`, `ai`, `payments`, `databases-backends`, `auth`, `messaging-email`,
+  `observability`, `infra-secrets`, `saas`, `keys-certificates`, `generic`. A test fails
+  for a built-in without both.
+- Both fields are optional in your own rule files and packs. An unknown `category` is a
+  load error naming the file, the rule and the allowed list. `evnx scan rules test` warns
+  (never fails) for a rule missing either.
+- `evnx scan rules list` groups by category and shows each provider; unset ones list last
+  as "uncategorised". `--category <name>` filters (an unknown name exits 2 with the list).
+  `--json` adds `provider` and `category` (null when unset).
+
 **`evnx scan` knows 22 more providers: 58 built-in rules, up from 36** (C3, second wave).
 Each prefix was checked against the provider's own documentation (or, for Atlassian, a
 statement from its staff), and each rule has fixtures that must match and near misses that
@@ -120,6 +170,16 @@ secret-key check uses the same 4.3 (was 4.5). Entropy is now computed per
 character, not per byte, which raised it for non-ASCII text.
 
 ### Added
+- **`evnx cloud run` and `evnx cloud pull` take `--vault` more than once** (RM-59, GitHub #128).
+  `evnx cloud run --vault acme/shared --vault acme/prod -- ./deploy.sh` opens every vault with one
+  master-password unlock and merges them left to right: the first vault's keys, then each later
+  vault's new keys.
+  - A key held by two or more of the vaults is an error (exit 2) before the command runs or a file is
+    written: `DATABASE_URL is in both acme/shared and acme/prod`. `--allow-override` lets the later
+    vault win instead; each overlap is named on stderr (key and winning vault, never a value).
+  - `--version` selects a version of one vault, so it is refused with more than one `--vault`.
+    `--include`/`--exclude` and `--file`/`--env-name` apply to the merged result; a merged pull
+    writes `.env` unless told otherwise. One `--vault`, or none, behaves exactly as before.
 - **Rule packs: `evnx scan rules add | update | remove`, and a lock file**
   (C7; S2, S4, S6).
   - `evnx scan rules add <name | url | path> [--format gitleaks] [--personal]`

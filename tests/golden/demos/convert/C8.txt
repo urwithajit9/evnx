@@ -48,19 +48,17 @@ $ evnx convert --to vercel
   "DATABASE_URL": {
     "target": [
       "production",
-      "preview",
-      "development"
+      "preview"
     ],
-    "type": "plain",
+    "type": "sensitive",
     "value": "postgres://admin:s3cr3t@db.internal:5432/app"
   },
   "API_SECRET": {
     "target": [
       "production",
-      "preview",
-      "development"
+      "preview"
     ],
-    "type": "plain",
+    "type": "sensitive",
     "value": "abc123"
   },
   "DEBUG": {
@@ -110,6 +108,7 @@ $ evnx convert --to vercel
   }
 }
 [stderr]
+! 2 variables written as type "sensitive" and not set for development: Vercel does not allow a Sensitive variable there.
 ! vercel output is experimental: Vercel's API takes {key, value, type, target} objects, not this map.
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]

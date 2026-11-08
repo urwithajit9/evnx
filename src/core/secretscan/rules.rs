@@ -216,6 +216,7 @@ pub fn parse_rule_text(text: &str, label: &str) -> anyhow::Result<Vec<PatternRul
             text.len()
         );
     }
+    check_categories(text, label)?;
     let file: RuleFile =
         toml::from_str(text).with_context(|| format!("{label} is not a valid rule file"))?;
     if file.version != 1 {
@@ -227,7 +228,49 @@ pub fn parse_rule_text(text: &str, label: &str) -> anyhow::Result<Vec<PatternRul
             file.rules.len()
         );
     }
+    // RM-92: a `names` expression that does not compile is a load error naming
+    // the file and the rule.
+    for r in &file.rules {
+        for n in r.names.iter().flatten() {
+            if let Err(e) = regex::Regex::new(n) {
+                let id = r.id.as_deref().unwrap_or(&r.name);
+                anyhow::bail!("{label}: rule '{id}' has a `names` expression '{n}' that does not compile\n\n{e}");
+            }
+        }
+    }
     Ok(file.rules)
+}
+
+/// RM-90: an unknown `category` is a load error naming the file, the rule and
+/// the allowed list, so a typo never silently lands in another group.
+fn check_categories(text: &str, label: &str) -> anyhow::Result<()> {
+    let Ok(doc) = text.parse::<toml::Table>() else {
+        return Ok(()); // the typed parse reports the syntax error
+    };
+    let Some(rules) = doc.get("rules").and_then(|r| r.as_array()) else {
+        return Ok(());
+    };
+    for rule in rules {
+        let Some(value) = rule.get("category") else {
+            continue;
+        };
+        let id = rule
+            .get("id")
+            .or_else(|| rule.get("name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("(unnamed)");
+        let ok = value
+            .as_str()
+            .is_some_and(|s| s.parse::<crate::core::config::Category>().is_ok());
+        if !ok {
+            let shown = value.as_str().map_or(value.to_string(), str::to_string);
+            anyhow::bail!(
+                "{label}: rule '{id}' has unknown category '{shown}'; allowed: {}",
+                crate::core::config::Category::allowed()
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Build-time prefixes that inline a variable into the **client bundle**.
@@ -297,6 +340,47 @@ mod tests {
             r.severity.as_deref().unwrap().parse::<Severity>().unwrap();
         }
         PatternSet::compile(&rules).expect("the built-in rules compile");
+    }
+
+    /// RM-90: every built-in names its provider and a category.
+    #[test]
+    fn every_builtin_rule_has_a_provider_and_category() {
+        for r in builtin_rules() {
+            let id = r.id.as_deref().unwrap_or(&r.name);
+            let provider = r.provider.as_deref().unwrap_or("");
+            assert!(!provider.trim().is_empty(), "{id} has no provider");
+            assert!(r.category.is_some(), "{id} has no category");
+        }
+    }
+
+    /// RM-90: an unknown category is a load error naming file, rule, list.
+    #[test]
+    fn an_unknown_category_is_rejected_with_file_rule_and_list() {
+        let text = "version = 1\n[[rules]]\nid = \"x-key\"\nname = \"X\"\nregex = 'x'\ncategory = \"cloud-ish\"\n";
+        let e = parse_rule_text(text, "my-rules.toml")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("my-rules.toml") && e.contains("x-key"), "{e}");
+        assert!(
+            e.contains("cloud-ish") && e.contains("keys-certificates"),
+            "{e}"
+        );
+    }
+
+    /// RM-92: an invalid `names` regex is a load error naming file and rule.
+    #[test]
+    fn an_invalid_names_regex_is_rejected_with_file_and_rule() {
+        let text = "version = 1\n[[rules]]\nid = \"x-key\"\nname = \"X\"\nregex = 'x'\nnames = ['(unclosed']\n";
+        let err = parse_rule_text(text, "my.toml").unwrap_err().to_string();
+        assert!(err.contains("my.toml") && err.contains("x-key"), "{err}");
+    }
+
+    /// RM-90: provider and category are optional in user rule files.
+    #[test]
+    fn provider_and_category_are_optional_in_rule_files() {
+        let text = "version = 1\n[[rules]]\nid = \"x-key\"\nname = \"X\"\nregex = 'x'\n";
+        let rules = parse_rule_text(text, "f.toml").unwrap();
+        assert!(rules[0].provider.is_none() && rules[0].category.is_none());
     }
 
     /// C2, S7: the case that split the two fields. A Google API key's shape

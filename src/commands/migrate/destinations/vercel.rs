@@ -18,6 +18,10 @@
 //! - `--yes`: `env add` can still ask how to store the value ("Store this
 //!   value as?"); the printed command should run without a question.
 //!
+//! - `--sensitive` for a variable that looks secret (`classify::holds_secret`),
+//!   production and preview only: Vercel rejects a Sensitive variable in
+//!   `development`.
+//!
 //! # Usage
 //!
 //! ```bash
@@ -46,7 +50,10 @@ impl VercelDestination {
     }
 
     /// `vercel env add NAME ENVIRONMENT [--project P] --force --yes`.
-    fn add_command(&self, key: &str) -> String {
+    ///
+    /// ⚠️ `--sensitive` for a secret-looking variable, except for
+    /// `development`, where Vercel rejects a Sensitive variable.
+    fn add_command(&self, key: &str, sensitive: bool) -> String {
         let mut words = vec![
             "vercel".to_string(),
             "env".into(),
@@ -57,6 +64,9 @@ impl VercelDestination {
         if let Some(p) = &self.project {
             words.push("--project".into());
             words.push(shell::word(p));
+        }
+        if sensitive && self.environment != "development" {
+            words.push("--sensitive".into());
         }
         words.push("--force".into());
         words.push("--yes".into());
@@ -113,7 +123,7 @@ impl MigrationDestination for VercelDestination {
             out.command(format!(
                 "printf '%s' {} | {}",
                 shell::quote(value),
-                self.add_command(key)
+                self.add_command(key, crate::formats::vercel::is_sensitive(key, value))
             ));
         }
 
@@ -139,13 +149,23 @@ mod tests {
     fn t_i268_project_flag_is_project() {
         let with = VercelDestination::new(Some("prj_1".into()));
         assert_eq!(
-            with.add_command("A"),
+            with.add_command("A", false),
             "vercel env add A production --project prj_1 --force --yes"
         );
         let without = VercelDestination::new(None);
         assert_eq!(
-            without.add_command("A"),
+            without.add_command("A", false),
             "vercel env add A production --force --yes"
+        );
+        assert_eq!(
+            without.add_command("A", true),
+            "vercel env add A production --sensitive --force --yes"
+        );
+        let mut dev = VercelDestination::new(None);
+        dev.environment = "development".into();
+        assert_eq!(
+            dev.add_command("A", true),
+            "vercel env add A development --force --yes"
         );
     }
 }

@@ -6,10 +6,20 @@
 #               baseline and an `evnx:allow` marker name. ⚠️ Never rename one: a
 #               renamed id is a new rule to every tool that tracks findings.
 #   name        what output calls it
+#   provider    who issues the credential (required for built-ins, RM-90)
+#   category    one of cloud, source-ci, ai, payments, databases-backends, auth,
+#               messaging-email, observability, infra-secrets, saas,
+#               keys-certificates, generic (required for built-ins)
 #   regex       matched against values and whole lines (Rust `regex`: linear time)
 #   confidence  how SURE a match is that it is this provider's credential
 #   severity    how BAD it is if real: critical, high, medium or low
 #   url         where to revoke it, when there is one place
+#   names       optional: regexes matched against the name of the variable or key
+#               the value is attached to (a `.env` name, a YAML/JSON/TOML leaf
+#               key). A rule with `names` fires only where the name matches, and
+#               never on text with no name; where it and an unconstrained rule
+#               match the same value, it wins. For a provider that reuses
+#               another's prefix (Clerk and UploadThing use Stripe's `sk_live_`).
 #   entropy     optional: a match whose Shannon entropy is below this is dropped
 #
 # Severity, by kind: critical = direct access to money, cloud accounts, AI
@@ -37,6 +47,8 @@ version = 1
 [[rules]]
 id = "aws-access-key"
 name = "AWS Access Key"
+provider = "AWS"
+category = "cloud"
 regex = 'AKIA[0-9A-Z]{16}'
 confidence = "high"
 severity = "critical"
@@ -49,6 +61,8 @@ url = "https://console.aws.amazon.com/iam"
 [[rules]]
 id = "aws-temporary-access-key"
 name = "AWS Temporary Access Key (STS)"
+provider = "AWS"
+category = "cloud"
 regex = 'ASIA[0-9A-Z]{16}'
 confidence = "high"
 severity = "critical"
@@ -59,6 +73,8 @@ url = "https://console.aws.amazon.com/iam"
 [[rules]]
 id = "github-fine-grained-pat"
 name = "GitHub Fine-grained PAT"
+provider = "GitHub"
+category = "source-ci"
 regex = 'github_pat_[A-Za-z0-9_]{40,}'
 confidence = "high"
 severity = "high"
@@ -69,6 +85,8 @@ url = "https://github.com/settings/personal-access-tokens"
 [[rules]]
 id = "slack-token"
 name = "Slack Token"
+provider = "Slack"
+category = "messaging-email"
 regex = 'xox[abprs]-[0-9A-Za-z-]{10,}|xapp-[0-9]-[A-Za-z0-9-]{10,}'
 confidence = "high"
 severity = "high"
@@ -82,6 +100,8 @@ url = "https://api.slack.com/apps"
 [[rules]]
 id = "google-api-key"
 name = "Google API Key"
+provider = "Google"
+category = "cloud"
 regex = 'AIza[0-9A-Za-z_\-]{35}'
 confidence = "high"
 severity = "low"
@@ -93,6 +113,8 @@ url = "https://console.cloud.google.com/apis/credentials"
 [[rules]]
 id = "jwt"
 name = "JSON Web Token"
+provider = "JWT"
+category = "keys-certificates"
 regex = 'eyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}'
 confidence = "medium"
 severity = "medium"
@@ -100,14 +122,45 @@ severity = "medium"
 [[rules]]
 id = "stripe-live-secret-key"
 name = "Stripe Secret Key (LIVE)"
+provider = "Stripe"
+category = "payments"
 regex = 'sk_live_[0-9a-zA-Z]{24,}'
 confidence = "high"
 severity = "critical"
 url = "https://dashboard.stripe.com/apikeys"
 
+# ⚠️ Clerk and UploadThing reuse Stripe's `sk_live_` prefix, so the value alone
+# cannot tell them apart. `names` does: under these variable names the finding is
+# theirs (and so is the dashboard to revoke it in); under any other name, or in
+# plain text, it stays `stripe-live-secret-key`. Clerk's `sk_test_` development
+# keys are not split out: Stripe's test rule (low) keeps reporting them.
+[[rules]]
+id = "clerk-secret-key"
+name = "Clerk Secret Key (LIVE)"
+provider = "Clerk"
+category = "auth"
+regex = 'sk_live_[0-9a-zA-Z]{24,}'
+names = ['(?i)^(NEXT_)?CLERK_(SECRET_KEY|API_KEY)$']
+confidence = "high"
+severity = "critical"
+url = "https://dashboard.clerk.com"
+
+[[rules]]
+id = "uploadthing-secret-key"
+name = "UploadThing Secret Key"
+provider = "UploadThing"
+category = "saas"
+regex = 'sk_live_[0-9a-zA-Z]{24,}'
+names = ['(?i)^UPLOADTHING_(SECRET|SECRET_KEY|TOKEN)$']
+confidence = "high"
+severity = "critical"
+url = "https://uploadthing.com/dashboard"
+
 [[rules]]
 id = "stripe-test-secret-key"
 name = "Stripe Secret Key (test)"
+provider = "Stripe"
+category = "payments"
 regex = 'sk_test_[0-9a-zA-Z]{24,}'
 confidence = "medium"
 severity = "low"
@@ -117,6 +170,8 @@ url = "https://dashboard.stripe.com/apikeys"
 [[rules]]
 id = "github-token"
 name = "GitHub Token"
+provider = "GitHub"
+category = "source-ci"
 regex = '\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,40}\b'
 confidence = "high"
 severity = "high"
@@ -128,6 +183,8 @@ url = "https://github.com/settings/tokens"
 [[rules]]
 id = "openai-api-key"
 name = "OpenAI API Key"
+provider = "OpenAI"
+category = "ai"
 regex = 'sk-(?:(?:proj|svcacct|admin)-[0-9a-zA-Z_-]{40,}|[0-9a-zA-Z]{48})'
 confidence = "high"
 severity = "critical"
@@ -136,6 +193,8 @@ url = "https://platform.openai.com/api-keys"
 [[rules]]
 id = "anthropic-api-key"
 name = "Anthropic API Key"
+provider = "Anthropic"
+category = "ai"
 regex = 'sk-ant-api[0-9]{2}-[0-9a-zA-Z\-_]{95}'
 confidence = "high"
 severity = "critical"
@@ -146,6 +205,8 @@ url = "https://console.anthropic.com/settings/keys"
 [[rules]]
 id = "openssh-private-key"
 name = "OpenSSH Private Key"
+provider = "OpenSSH"
+category = "keys-certificates"
 regex = '-----BEGIN OPENSSH PRIVATE KEY-----'
 confidence = "high"
 severity = "critical"
@@ -155,6 +216,8 @@ severity = "critical"
 [[rules]]
 id = "private-key"
 name = "Private Key"
+provider = "PEM"
+category = "keys-certificates"
 regex = '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----'
 confidence = "high"
 severity = "critical"
@@ -171,6 +234,8 @@ severity = "critical"
 [[rules]]
 id = "connection-string-credentials"
 name = "Credentials in a connection string"
+provider = "Generic"
+category = "databases-backends"
 regex = '[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/?#@]+:[^\s/?#@]+@[^\s/?#]+'
 confidence = "high"
 severity = "high"
@@ -180,6 +245,8 @@ severity = "high"
 [[rules]]
 id = "stripe-restricted-key"
 name = "Stripe Restricted Key (LIVE)"
+provider = "Stripe"
+category = "payments"
 regex = '\brk_live_[0-9a-zA-Z]{24,}'
 confidence = "high"
 severity = "high"
@@ -189,6 +256,8 @@ url = "https://dashboard.stripe.com/apikeys"
 [[rules]]
 id = "azure-storage-account-key"
 name = "Azure Storage Account Key"
+provider = "Azure"
+category = "cloud"
 regex = 'AccountKey=[A-Za-z0-9+/]{86}=='
 confidence = "high"
 severity = "critical"
@@ -198,6 +267,8 @@ url = "https://portal.azure.com/"
 [[rules]]
 id = "azure-sas-token"
 name = "Azure SAS Token"
+provider = "Azure"
+category = "cloud"
 regex = '''[?&]sv=[0-9]{4}-[0-9]{2}-[0-9]{2}&[^\s"'<>]*?\bsig=[A-Za-z0-9%+/]{30,}'''
 confidence = "high"
 severity = "high"
@@ -208,6 +279,8 @@ url = "https://portal.azure.com/"
 [[rules]]
 id = "twilio-api-key"
 name = "Twilio API Key"
+provider = "Twilio"
+category = "messaging-email"
 regex = '\bSK[0-9a-fA-F]{32}\b'
 confidence = "medium"
 severity = "high"
@@ -216,6 +289,8 @@ url = "https://console.twilio.com/"
 [[rules]]
 id = "sendgrid-api-key"
 name = "SendGrid API Key"
+provider = "SendGrid"
+category = "messaging-email"
 regex = '\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b'
 confidence = "high"
 severity = "high"
@@ -225,6 +300,8 @@ url = "https://app.sendgrid.com/settings/api_keys"
 [[rules]]
 id = "mailgun-api-key"
 name = "Mailgun API Key"
+provider = "Mailgun"
+category = "messaging-email"
 regex = '\bkey-[0-9a-zA-Z]{32}\b'
 confidence = "medium"
 severity = "high"
@@ -234,6 +311,8 @@ url = "https://app.mailgun.com/settings/api_security"
 [[rules]]
 id = "digitalocean-token"
 name = "DigitalOcean Token"
+provider = "DigitalOcean"
+category = "cloud"
 regex = '\bdo[opr]_v1_[a-f0-9]{64}\b'
 confidence = "high"
 severity = "critical"
@@ -242,6 +321,8 @@ url = "https://cloud.digitalocean.com/account/api/tokens"
 [[rules]]
 id = "npm-access-token"
 name = "npm Access Token"
+provider = "npm"
+category = "source-ci"
 regex = '\bnpm_[A-Za-z0-9]{36}\b'
 confidence = "high"
 severity = "high"
@@ -251,6 +332,8 @@ url = "https://docs.npmjs.com/revoking-access-tokens"
 [[rules]]
 id = "pypi-api-token"
 name = "PyPI API Token"
+provider = "PyPI"
+category = "source-ci"
 regex = '\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}'
 confidence = "high"
 severity = "high"
@@ -259,6 +342,8 @@ url = "https://pypi.org/manage/account/token/"
 [[rules]]
 id = "docker-hub-pat"
 name = "Docker Hub Access Token"
+provider = "Docker Hub"
+category = "source-ci"
 regex = '\bdckr_pat_[A-Za-z0-9_-]{27}\b'
 confidence = "high"
 severity = "high"
@@ -269,6 +354,8 @@ url = "https://app.docker.com/settings/personal-access-tokens"
 [[rules]]
 id = "shopify-token"
 name = "Shopify Access Token"
+provider = "Shopify"
+category = "saas"
 regex = '\bshp(?:at|ca|pa|ss)_[a-fA-F0-9]{32}\b'
 confidence = "high"
 severity = "high"
@@ -278,6 +365,8 @@ url = "https://help.shopify.com/en/manual/apps/app-types/custom-apps"
 [[rules]]
 id = "hashicorp-vault-token"
 name = "HashiCorp Vault Token"
+provider = "HashiCorp"
+category = "infra-secrets"
 regex = '\bhv[sb]\.[A-Za-z0-9_-]{24,}'
 confidence = "high"
 severity = "critical"
@@ -285,6 +374,8 @@ severity = "critical"
 [[rules]]
 id = "gitlab-pat"
 name = "GitLab Personal Access Token"
+provider = "GitLab"
+category = "source-ci"
 regex = '\bglpat-[A-Za-z0-9_-]{20}\b'
 confidence = "high"
 severity = "high"
@@ -293,6 +384,8 @@ url = "https://gitlab.com/-/user_settings/personal_access_tokens"
 [[rules]]
 id = "huggingface-token"
 name = "Hugging Face Token"
+provider = "Hugging Face"
+category = "ai"
 regex = '\bhf_[A-Za-z]{34}\b'
 confidence = "high"
 severity = "high"
@@ -302,6 +395,8 @@ url = "https://huggingface.co/settings/tokens"
 [[rules]]
 id = "heroku-api-key"
 name = "Heroku API Key"
+provider = "Heroku"
+category = "cloud"
 regex = '\bHRKU-AA[0-9a-zA-Z_-]{58}\b'
 confidence = "high"
 severity = "high"
@@ -312,6 +407,8 @@ url = "https://dashboard.heroku.com/account/applications"
 [[rules]]
 id = "sentry-dsn"
 name = "Sentry DSN"
+provider = "Sentry"
+category = "observability"
 regex = 'https://[0-9a-f]{32}@o[0-9]+\.ingest(?:\.[a-z]{2})?\.sentry\.io/[0-9]+'
 confidence = "high"
 severity = "low"
@@ -321,6 +418,8 @@ url = "https://docs.sentry.io/concepts/key-terms/dsn-explainer/"
 [[rules]]
 id = "sentry-auth-token"
 name = "Sentry Auth Token"
+provider = "Sentry"
+category = "observability"
 regex = '\bsntry[su]_[A-Za-z0-9+/=_-]{40,}'
 confidence = "high"
 severity = "high"
@@ -329,6 +428,8 @@ url = "https://sentry.io/settings/account/api/auth-tokens/"
 [[rules]]
 id = "linear-api-key"
 name = "Linear API Key"
+provider = "Linear"
+category = "saas"
 regex = '\blin_api_[A-Za-z0-9]{40}\b'
 confidence = "high"
 severity = "high"
@@ -339,6 +440,8 @@ url = "https://linear.app/settings/api"
 [[rules]]
 id = "discord-bot-token"
 name = "Discord Bot Token"
+provider = "Discord"
+category = "messaging-email"
 regex = '\b[MNO][A-Za-z0-9_-]{23,25}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,38}\b'
 confidence = "medium"
 severity = "high"
@@ -347,6 +450,8 @@ url = "https://discord.com/developers/applications"
 [[rules]]
 id = "telegram-bot-token"
 name = "Telegram Bot Token"
+provider = "Telegram"
+category = "messaging-email"
 regex = '\b[0-9]{8,10}:AA[0-9A-Za-z_-]{33}\b'
 confidence = "high"
 severity = "high"
@@ -356,6 +461,8 @@ url = "https://core.telegram.org/bots#how-do-i-create-a-bot"
 [[rules]]
 id = "slack-webhook-url"
 name = "Slack Webhook URL"
+provider = "Slack"
+category = "messaging-email"
 regex = 'https://hooks\.slack\.com/services/T[A-Z0-9]{8,}/B[A-Z0-9]{8,}/[A-Za-z0-9]{24}'
 confidence = "high"
 severity = "medium"
@@ -364,6 +471,8 @@ url = "https://api.slack.com/apps"
 [[rules]]
 id = "google-oauth-client-secret"
 name = "Google OAuth Client Secret"
+provider = "Google"
+category = "auth"
 regex = '\bGOCSPX-[A-Za-z0-9_-]{28}\b'
 confidence = "high"
 severity = "high"
@@ -378,6 +487,8 @@ url = "https://console.cloud.google.com/apis/credentials"
 [[rules]]
 id = "gitlab-runner-token"
 name = "GitLab Runner Authentication Token"
+provider = "GitLab"
+category = "source-ci"
 regex = '\bglrt-[A-Za-z0-9_-]{20,}'
 confidence = "high"
 severity = "high"
@@ -387,6 +498,8 @@ url = "https://docs.gitlab.com/ci/runners/runners_scope/"
 [[rules]]
 id = "gitlab-deploy-token"
 name = "GitLab Deploy Token"
+provider = "GitLab"
+category = "source-ci"
 regex = '\bgldt-[A-Za-z0-9_-]{20,}'
 confidence = "high"
 severity = "high"
@@ -396,6 +509,8 @@ url = "https://docs.gitlab.com/user/project/deploy_tokens/"
 [[rules]]
 id = "gitlab-trigger-token"
 name = "GitLab Pipeline Trigger Token"
+provider = "GitLab"
+category = "source-ci"
 regex = '\bglptt-[0-9a-f]{40}\b'
 confidence = "high"
 severity = "high"
@@ -405,6 +520,8 @@ url = "https://docs.gitlab.com/ci/triggers/"
 [[rules]]
 id = "groq-api-key"
 name = "Groq API Key"
+provider = "Groq"
+category = "ai"
 regex = '\bgsk_[A-Za-z0-9]{48,}\b'
 confidence = "high"
 severity = "critical"
@@ -415,6 +532,8 @@ url = "https://console.groq.com/keys"
 [[rules]]
 id = "xai-api-key"
 name = "xAI API Key"
+provider = "xAI"
+category = "ai"
 regex = '\bxai-[A-Za-z0-9]{40,}\b'
 confidence = "high"
 severity = "critical"
@@ -424,6 +543,8 @@ url = "https://console.x.ai"
 [[rules]]
 id = "replicate-api-token"
 name = "Replicate API Token"
+provider = "Replicate"
+category = "ai"
 regex = '\br8_[A-Za-z0-9]{37}\b'
 confidence = "high"
 severity = "critical"
@@ -433,6 +554,8 @@ url = "https://replicate.com/account/api-tokens"
 [[rules]]
 id = "perplexity-api-key"
 name = "Perplexity API Key"
+provider = "Perplexity"
+category = "ai"
 regex = '\bpplx-[A-Za-z0-9]{48}\b'
 confidence = "high"
 severity = "critical"
@@ -443,6 +566,8 @@ url = "https://www.perplexity.ai/account/api/keys"
 [[rules]]
 id = "stripe-webhook-secret"
 name = "Stripe Webhook Signing Secret"
+provider = "Stripe"
+category = "payments"
 regex = '\bwhsec_[A-Za-z0-9+/]{32,}'
 confidence = "high"
 severity = "high"
@@ -453,6 +578,8 @@ url = "https://dashboard.stripe.com/webhooks"
 [[rules]]
 id = "databricks-token"
 name = "Databricks Personal Access Token"
+provider = "Databricks"
+category = "databases-backends"
 regex = '\bdapi[a-f0-9]{32}(?:-[0-9])?\b'
 confidence = "high"
 severity = "high"
@@ -463,6 +590,8 @@ url = "https://docs.databricks.com/admin/access-control/tokens.html"
 [[rules]]
 id = "atlassian-api-token"
 name = "Atlassian API Token"
+provider = "Atlassian"
+category = "saas"
 regex = '\bAT[AC]TT3xFfG[A-Za-z0-9_=-]{100,}'
 confidence = "high"
 severity = "high"
@@ -473,6 +602,8 @@ url = "https://id.atlassian.com/manage-profile/security/api-tokens"
 [[rules]]
 id = "bitbucket-app-password"
 name = "Bitbucket App Password"
+provider = "Bitbucket"
+category = "source-ci"
 regex = '\bATBB[A-Za-z0-9]{28,}\b'
 confidence = "medium"
 severity = "high"
@@ -483,6 +614,8 @@ url = "https://bitbucket.org/account/settings/app-passwords/"
 [[rules]]
 id = "terraform-cloud-token"
 name = "HCP Terraform API Token"
+provider = "HashiCorp"
+category = "infra-secrets"
 regex = '\b[A-Za-z0-9]{14}\.atlasv1\.[A-Za-z0-9_=-]{60,70}'
 confidence = "high"
 severity = "critical"
@@ -493,6 +626,8 @@ url = "https://app.terraform.io/app/settings/tokens"
 [[rules]]
 id = "pulumi-access-token"
 name = "Pulumi Access Token"
+provider = "Pulumi"
+category = "infra-secrets"
 regex = '\bpul-[a-f0-9]{40}\b'
 confidence = "high"
 severity = "critical"
@@ -503,6 +638,8 @@ url = "https://app.pulumi.com/account/tokens"
 [[rules]]
 id = "doppler-token"
 name = "Doppler Token"
+provider = "Doppler"
+category = "infra-secrets"
 regex = '\bdp\.(?:st|pt|ct|sa)\.(?:[A-Za-z0-9_-]{1,64}\.)?[A-Za-z0-9]{40,}'
 confidence = "high"
 severity = "critical"
@@ -512,6 +649,8 @@ url = "https://dashboard.doppler.com"
 [[rules]]
 id = "supabase-access-token"
 name = "Supabase Personal Access Token"
+provider = "Supabase"
+category = "databases-backends"
 regex = '\bsbp_[A-Za-z0-9]{40,}\b'
 confidence = "high"
 severity = "critical"
@@ -522,6 +661,8 @@ url = "https://supabase.com/dashboard/account/tokens"
 [[rules]]
 id = "supabase-secret-key"
 name = "Supabase Secret Key"
+provider = "Supabase"
+category = "databases-backends"
 regex = '\bsb_secret_[A-Za-z0-9_-]{20,}'
 confidence = "high"
 severity = "critical"
@@ -532,6 +673,8 @@ url = "https://supabase.com/dashboard/project/_/settings/api-keys"
 [[rules]]
 id = "age-secret-key"
 name = "age Secret Key"
+provider = "age"
+category = "keys-certificates"
 regex = 'AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}'
 confidence = "high"
 severity = "critical"
@@ -541,6 +684,8 @@ severity = "critical"
 [[rules]]
 id = "new-relic-user-key"
 name = "New Relic User API Key"
+provider = "New Relic"
+category = "observability"
 regex = '\bNRAK-[A-Z0-9]{27}\b'
 confidence = "high"
 severity = "high"
@@ -551,6 +696,8 @@ url = "https://one.newrelic.com/api-keys"
 [[rules]]
 id = "grafana-service-account-token"
 name = "Grafana Service Account Token"
+provider = "Grafana"
+category = "observability"
 regex = '\bglsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}\b'
 confidence = "high"
 severity = "high"
@@ -560,6 +707,8 @@ severity = "high"
 [[rules]]
 id = "grafana-cloud-token"
 name = "Grafana Cloud Access Policy Token"
+provider = "Grafana"
+category = "observability"
 regex = '\bglc_[A-Za-z0-9+/]{32,400}'
 confidence = "high"
 severity = "high"
@@ -570,6 +719,8 @@ url = "https://grafana.com/orgs"
 [[rules]]
 id = "postman-api-key"
 name = "Postman API Key"
+provider = "Postman"
+category = "saas"
 regex = '\bPMAK-[a-f0-9]{24}-[a-f0-9]{34}\b'
 confidence = "high"
 severity = "high"
@@ -580,7 +731,54 @@ url = "https://go.postman.co/settings/me/api-keys"
 [[rules]]
 id = "notion-token"
 name = "Notion Integration Token"
+provider = "Notion"
+category = "saas"
 regex = '\bntn_[0-9]{11}[A-Za-z0-9]{35}\b'
 confidence = "high"
 severity = "high"
 url = "https://www.notion.so/my-integrations"
+
+# `glcbt-` is the CI/CD job token's prefix (GitLab docs, Token overview; the docs give no length
+# or charset, so the body is any 20+ of the URL-safe set). It expires when the job ends, hence medium.
+# https://docs.gitlab.com/security/tokens/
+[[rules]]
+id = "gitlab-job-token"
+name = "GitLab CI/CD Job Token"
+provider = "GitLab"
+category = "source-ci"
+regex = '\bglcbt-[A-Za-z0-9_-]{20,}'
+keywords = ["glcbt-"]
+confidence = "high"
+severity = "medium"
+url = "https://docs.gitlab.com/ci/jobs/ci_job_token/"
+
+# Fly.io tokens are macaroons whose credential line starts `FlyV1 fm2_` (Fly.io docs, Authenticating
+# to Fly.io; Tokens). No length or charset is documented, so the body is base64/URL-safe, 32+. A
+# deploy or org token reaches the apps and machines it names.
+# https://fly.io/auth.md  https://fly.io/docs/security/tokens/
+[[rules]]
+id = "flyio-token"
+name = "Fly.io Access Token"
+provider = "Fly.io"
+category = "cloud"
+regex = '\b(?:FlyV1 )?fm2_[A-Za-z0-9+/=_-]{32,}'
+keywords = ["fm2_"]
+confidence = "high"
+severity = "critical"
+url = "https://fly.io/dashboard"
+
+# The 84-character Azure DevOps PAT: 52 random characters and a fixed `AZDO` signature at positions
+# 76 to 80 (Microsoft Learn, "Use personal access tokens"; Purview SIT definition: letters and
+# digits). The docs span five positions for four characters, so the signature is accepted at
+# either offset. Reads and writes repos, pipelines and work items as its owner.
+# https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate
+[[rules]]
+id = "azure-devops-pat"
+name = "Azure DevOps Personal Access Token"
+provider = "Azure DevOps"
+category = "source-ci"
+regex = '\b(?:[A-Za-z0-9]{75}AZDO[A-Za-z0-9]{5}|[A-Za-z0-9]{76}AZDO[A-Za-z0-9]{4})\b'
+keywords = ["AZDO"]
+confidence = "high"
+severity = "high"
+url = "https://dev.azure.com/_usersSettings/tokens"

@@ -18,6 +18,8 @@ use std::path::Path;
 #[serde(deny_unknown_fields)]
 struct Fixture {
     expect_severity: String,
+    /// The variable name a positive is judged under, for a rule with `names`.
+    name: Option<String>,
     positive: Vec<Vec<String>>,
     near_miss: Vec<Vec<String>>,
 }
@@ -68,7 +70,10 @@ fn every_rule_reports_its_positives_and_not_its_near_misses() {
         }
         for parts in &f.positive {
             let value = parts.concat();
-            let found = set.find_all(&value);
+            let found = match &f.name {
+                Some(n) => set.find_all_named(&value, n),
+                None => set.find_all(&value),
+            };
             match PatternSet::strongest_of(found.clone()) {
                 Some(m) if m.id == id => {}
                 Some(m) => failures.push(format!("{id}: a positive is claimed by {}", m.id)),
@@ -79,7 +84,12 @@ fn every_rule_reports_its_positives_and_not_its_near_misses() {
             }
         }
         for parts in &f.near_miss {
-            if set.find_all(&parts.concat()).iter().any(|m| m.id == id) {
+            let value = parts.concat();
+            let found = match &f.name {
+                Some(n) => set.find_all_named(&value, n),
+                None => set.find_all(&value),
+            };
+            if found.iter().any(|m| m.id == id) {
                 failures.push(format!("{id}: a near miss is reported: {parts:?}"));
             }
         }
@@ -97,11 +107,12 @@ fn every_positive_is_found_in_a_dotenv_and_in_yaml() {
     for (id, f) in fixtures() {
         for parts in &f.positive {
             let value = parts.concat();
+            let var = f.name.as_deref().unwrap_or("VALUE_A");
             for (kind, text) in [
-                (Kind::Dotenv, format!("VALUE_A={value}\n")),
+                (Kind::Dotenv, format!("{var}={value}\n")),
                 (
                     Kind::Structured(Format::Yaml),
-                    format!("value_a: '{value}'\n"),
+                    format!("{var}: '{value}'\n"),
                 ),
             ] {
                 let ctx = Context {

@@ -21,6 +21,22 @@ impl Default for GcpSecretConverter {
     }
 }
 
+/// The secret ID `key` gets in Secret Manager: lowercase, `_` as `-`
+/// (`DB_URL` → `db-url`).
+///
+/// ⚠️ **The one definition** of the rename, for `convert --to gcp-secrets`,
+/// `migrate --to gcp-secret-manager` and `cloud export --to gcp-secrets` (the
+/// last renders through the converter), so the three cannot drift (I-098).
+/// GCP does not require it — secret IDs take `A-Z a-z 0-9 _ -` (the
+/// `GcpSecretId` row of `core::key_rules`, which still accepts the renamed
+/// ID) — but it is the name every earlier `convert` script created (DEC-CV2).
+/// `A_B`/`a_b` becoming one `a-b` is refused by
+/// [`ConvertOptions::prepare`](crate::core::converter::ConvertOptions::prepare)
+/// rather than printed twice (I-249).
+pub fn secret_id(key: &str) -> String {
+    key.to_lowercase().replace('_', "-")
+}
+
 /// The comment above [`upsert_function`], for a reader of the printed script.
 pub const UPSERT_COMMENT: &str =
     "# Creates each secret, or adds a new version when it already exists.";
@@ -94,13 +110,9 @@ impl Converter for GcpSecretConverter {
         "GCP Secret Manager (gcloud commands)"
     }
 
-    /// Lowercase with hyphens. ⚠️ GCP does not require it — secret IDs take
-    /// `A-Z a-z 0-9 _ -` — but it is the name every earlier script created, so
-    /// it stays (DEC-CV2), and `A_B`/`a_b` becoming one `a-b` is refused rather
-    /// than printed twice (I-249). Names as they are, like `migrate`, wait for
-    /// the shared target catalogue (I-098).
+    /// Lowercase with hyphens: [`secret_id`], shared with `migrate` (I-098).
     fn target_name(&self, key: &str) -> String {
-        key.to_lowercase().replace('_', "-")
+        secret_id(key)
     }
 }
 
@@ -124,5 +136,21 @@ mod tests {
         assert!(result.contains("gcloud secrets create \"$1\""));
         assert!(result.contains("gcloud secrets versions add \"$1\""));
         assert!(result.contains("| upsert_secret database-url\n"));
+    }
+
+    /// I-098: convert, migrate and export name secrets by one function.
+    #[test]
+    fn t_i098_secret_id_is_lowercase_hyphen() {
+        assert_eq!(secret_id("DB_URL"), "db-url");
+        assert_eq!(secret_id("db-url"), "db-url");
+        assert_eq!(secret_id(&secret_id("A_B")), "a-b");
+    }
+
+    #[test]
+    fn t_i098_converter_names_come_from_secret_id() {
+        let c = GcpSecretConverter::default();
+        for k in ["DB_URL", "API_KEY", "x"] {
+            assert_eq!(Converter::target_name(&c, k), secret_id(k));
+        }
     }
 }

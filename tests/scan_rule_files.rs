@@ -227,3 +227,104 @@ fn a_folder_named_rules_is_scanned_as_dot_slash_rules() {
     assert_eq!(code, 1);
     assert_eq!(ids(&out), ["stripe-live-secret-key"]);
 }
+
+// ── RM-90: provider and category ─────────────────────────────────────────
+
+fn list_json(p: &Path, h: &Path, extra: &[&str]) -> (i32, Vec<serde_json::Value>, String) {
+    let mut args = vec!["scan", "rules", "list", "--json"];
+    args.extend_from_slice(extra);
+    let (code, out, err) = run(p, h, &args);
+    let doc = serde_json::from_str::<Vec<serde_json::Value>>(&out).unwrap_or_default();
+    (code, doc, err)
+}
+
+#[test]
+fn rm90_list_json_carries_provider_and_category_for_every_rule() {
+    let (p, h) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    fs::create_dir_all(p.path().join(".evnx/rules")).unwrap();
+    fs::write(
+        p.path().join(".evnx/rules/a.toml"),
+        rule_file("bare-tok", "BARE-[0-9]{8}"),
+    )
+    .unwrap();
+    let (code, rows, _) = list_json(p.path(), h.path(), &[]);
+    assert_eq!(code, 0);
+    assert!(rows
+        .iter()
+        .all(|r| r.get("provider").is_some() && r.get("category").is_some()));
+    let bare = rows.iter().find(|r| r["id"] == "bare-tok").unwrap();
+    assert!(bare["provider"].is_null() && bare["category"].is_null());
+    let aws = rows.iter().find(|r| r["id"] == "aws-access-key").unwrap();
+    assert_eq!(aws["provider"], "AWS");
+    assert_eq!(aws["category"], "cloud");
+}
+
+#[test]
+fn rm90_category_flag_filters_and_rejects_unknown_names() {
+    let (p, h) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let (code, rows, _) = list_json(p.path(), h.path(), &["--category", "ai"]);
+    assert_eq!(code, 0);
+    assert!(!rows.is_empty() && rows.iter().all(|r| r["category"] == "ai"));
+    let (code, out, err) = run(
+        p.path(),
+        h.path(),
+        &["scan", "rules", "list", "--category", "clod"],
+    );
+    assert_eq!(code, 2, "{out}{err}");
+    assert!(err.contains("clod") && err.contains("source-ci"), "{err}");
+}
+
+#[test]
+fn rm90_text_list_groups_by_category_with_uncategorised_last() {
+    let (p, h) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    fs::create_dir_all(p.path().join(".evnx/rules")).unwrap();
+    fs::write(
+        p.path().join(".evnx/rules/a.toml"),
+        rule_file("bare-tok", "BARE-[0-9]{8}"),
+    )
+    .unwrap();
+    let (code, out, _) = run(p.path(), h.path(), &["scan", "rules", "list"]);
+    assert_eq!(code, 0);
+    let pos = |h: &str| {
+        out.find(&format!("\n  {h}\n"))
+            .unwrap_or_else(|| panic!("{h}\n{out}"))
+    };
+    assert!(pos("cloud") < pos("ai") && pos("ai") < pos("keys-certificates"));
+    assert!(pos("keys-certificates") < pos("uncategorised"));
+}
+
+#[test]
+fn rm90_unknown_category_in_a_rule_file_is_a_load_error_naming_the_file() {
+    let (p, h) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    fs::create_dir_all(p.path().join(".evnx/rules")).unwrap();
+    let body = format!(
+        "{}category = \"clod\"\n",
+        rule_file("typo-tok", "TYPO-[0-9]{8}")
+    );
+    fs::write(p.path().join(".evnx/rules/typo.toml"), body).unwrap();
+    let (code, _, err) = run(p.path(), h.path(), &["scan", "rules", "list"]);
+    assert_eq!(code, 2, "{err}");
+    assert!(
+        err.contains("typo.toml") && err.contains("typo-tok") && err.contains("clod"),
+        "{err}"
+    );
+    assert!(err.contains("keys-certificates"), "{err}");
+}
+
+#[test]
+fn rm90_rules_test_warns_but_passes_when_provider_and_category_are_missing() {
+    let (p, h) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let f = p.path().join("r.toml");
+    let body = format!(
+        "{}positive = [\"BARE-12345678\"]\nnear_miss = [\"BARE-1\"]\n",
+        rule_file("bare-tok", "BARE-[0-9]{8}")
+    );
+    fs::write(&f, body).unwrap();
+    let (code, out, err) = run(
+        p.path(),
+        h.path(),
+        &["scan", "rules", "test", f.to_str().unwrap()],
+    );
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(format!("{out}{err}").contains("bare-tok: no provider or category"));
+}

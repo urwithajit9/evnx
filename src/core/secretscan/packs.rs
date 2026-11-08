@@ -407,6 +407,7 @@ pub fn to_rule_file(rules: &[PatternRule], header: &[String]) -> Result<String> 
         };
         put("allow", strings(&r.allow));
         put("allow_line", strings(&r.allow_line));
+        put("names", strings(&r.names));
         put(
             "keywords",
             r.keywords

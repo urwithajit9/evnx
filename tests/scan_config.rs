@@ -160,7 +160,7 @@ fn t_i058_verbose_counts_built_in_rules_and_custom_patterns_apart() {
     let d = project(&[(".env", "A=1\n")]);
     let (_, _, stderr) = run(&d, &["scan", ".", "-v"]);
     assert!(
-        stderr.contains("58 built-in rules, 0 custom patterns"),
+        stderr.contains("63 built-in rules, 0 custom patterns"),
         "{stderr}"
     );
     assert!(!stderr.contains("custom pattern(s) active"), "{stderr}");
@@ -168,7 +168,7 @@ fn t_i058_verbose_counts_built_in_rules_and_custom_patterns_apart() {
 
     let (_, _, stderr) = run(&d, &["scan", ".", "-v", "--pattern", "ACME-[0-9]{8}"]);
     assert!(
-        stderr.contains("58 built-in rules, 1 custom pattern"),
+        stderr.contains("63 built-in rules, 1 custom pattern"),
         "{stderr}"
     );
 
@@ -346,4 +346,26 @@ fn c2_disable_accepts_an_id() {
         ("notes.txt", &format!("key {aws}\n")),
     ]);
     assert_eq!(findings(&d, &["notes.txt"])["summary"]["total"], 0);
+}
+
+/// C12 (RM-92): a GCP service-account key file holds the PEM header inside a JSON
+/// string, newlines escaped as `\n`. The `private-key` rule must still see it.
+#[test]
+fn c12_gcp_service_account_json_is_caught_by_the_private_key_rule() {
+    let header = format!("-----BEGIN {}-----", "PRIVATE KEY");
+    let json = format!(
+        "{{\n  \"type\": \"service_account\",\n  \"project_id\": \"demo-project\",\n  \
+         \"private_key_id\": \"0123abcd\",\n  \"private_key\": \"{header}\\nMIIEvQIBADANBgkq\\nabc=\\n-----END {}-----\\n\",\n  \
+         \"client_email\": \"sa@demo-project.iam.gserviceaccount.com\"\n}}\n",
+        "PRIVATE KEY"
+    );
+    let d = project(&[("sa.json", &json)]);
+    let doc = findings(&d, &["sa.json"]);
+    let ids: Vec<&str> = doc["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["rule_id"].as_str().unwrap())
+        .collect();
+    assert!(ids.contains(&"private-key"), "{doc}");
 }

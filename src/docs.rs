@@ -104,7 +104,8 @@ What a folder walk reads:\n\
 Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):\n\
 \x20 AWS Access Key, AWS Temporary Access Key (STS), GitHub Fine-grained PAT,\n\
 \x20 Slack Token, Google API Key, JSON Web Token, Stripe Secret Key (LIVE),\n\
-\x20 Stripe Secret Key (test), GitHub Token, OpenAI API Key, Anthropic API Key,\n\
+\x20 Clerk Secret Key (LIVE), UploadThing Secret Key, Stripe Secret Key (test),\n\
+\x20 GitHub Token, OpenAI API Key, Anthropic API Key,\n\
 \x20 OpenSSH Private Key, Private Key, Credentials in a connection string,\n\
 \x20 Stripe Restricted Key (LIVE), Azure Storage Account Key, Azure SAS Token,\n\
 \x20 Twilio API Key, SendGrid API Key, Mailgun API Key, DigitalOcean Token,\n\
@@ -119,7 +120,8 @@ Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
 \x20 Password, HCP Terraform API Token, Pulumi Access Token, Doppler Token,\n\
 \x20 Supabase Personal Access Token, Supabase Secret Key, age Secret Key, New\n\
 \x20 Relic User API Key, Grafana Service Account Token, Grafana Cloud Access\n\
-\x20 Policy Token, Postman API Key, Notion Integration Token;\n\
+\x20 Policy Token, Postman API Key, Notion Integration Token, GitLab CI/CD\n\
+\x20 Job Token, Fly.io Access Token, Azure DevOps Personal Access Token;\n\
 \x20 and the heuristics: Sensitive config key, High-entropy string,\n\
 \x20 AWS Secret Access Key.\n\
 \n\

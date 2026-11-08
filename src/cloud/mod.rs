@@ -51,6 +51,7 @@ pub mod config;
 pub mod creds;
 pub mod device;
 pub mod export;
+pub(crate) mod merge;
 pub mod org;
 pub(crate) mod role;
 pub mod rotate;
@@ -94,6 +95,7 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
         ),
         CloudCommands::Pull {
             vault,
+            allow_override,
             file,
             env_name,
             version,
@@ -110,10 +112,12 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             force,
             password_stdin,
             crate::utils::protect::GitignoreMode::from_flags(gitignore, no_gitignore),
+            allow_override,
             verbose,
         ),
         CloudCommands::Run {
             vault,
+            allow_override,
             version,
             include,
             exclude,
@@ -131,6 +135,7 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             password_stdin,
             allow_unsafe_names,
             crate::core::inject::masking(mask, no_mask),
+            allow_override,
             verbose,
             command,
         ),

@@ -7,9 +7,12 @@
 //! ⚠️ It printed `echo -n "${NAME}" | gcloud secrets create NAME …` until
 //! 0.10.10 (I-100): the value came from whatever the user's shell held under
 //! that name — usually nothing, so an empty secret — `create` failed for a
-//! secret that existed, and `--project` was accepted and dropped. Names stay
-//! as they are in the `.env`; convert's lowercase-hyphen rename waits for the
-//! shared catalogue (I-098).
+//! secret that existed, and `--project` was accepted and dropped.
+//!
+//! ⚠️ **Names are convert's** (I-098): `DB_URL` becomes `db-url`, through
+//! [`secret_id`](crate::formats::gcp::secret_id), the function
+//! `convert --to gcp-secrets` renames with. 0.12 kept the `.env` name
+//! (`DB_URL`), so a project migrated then gets new secrets beside the old ones.
 //!
 //! # Usage
 //!
@@ -41,6 +44,11 @@ impl GcpDestination {
 impl MigrationDestination for GcpDestination {
     fn name(&self) -> &str {
         "GCP Secret Manager"
+    }
+
+    /// [`secret_id`], the rename `convert --to gcp-secrets` applies (I-098).
+    fn target_name(&self, key: &str) -> String {
+        crate::formats::gcp::secret_id(key)
     }
 
     fn migrate(
@@ -101,6 +109,46 @@ impl MigrationDestination for GcpDestination {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// I-098: `prepare_with` hands `migrate` the names `convert` prints.
+    #[test]
+    fn t_i098_migrate_names_match_convert() {
+        use crate::core::converter::{ConvertOptions, Converter};
+        let mut vars = IndexMap::new();
+        vars.insert("DB_URL".to_string(), "postgres://h/db".to_string());
+        vars.insert("API_KEY".to_string(), "abc".to_string());
+        let options = ConvertOptions::default();
+
+        let dest = GcpDestination::new("p".into());
+        let dest: &dyn MigrationDestination = &dest;
+        let migrated: Vec<String> = options
+            .prepare_with(&vars, dest, "")
+            .unwrap()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        let converted: Vec<String> = options
+            .prepare(&vars, &crate::formats::gcp::GcpSecretConverter::default())
+            .unwrap()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(migrated, vec!["db-url", "api-key"]);
+        assert_eq!(migrated, converted);
+
+        // The printed script uses those names.
+        let secrets: IndexMap<String, String> = options
+            .prepare_with(&vars, dest, "")
+            .unwrap()
+            .into_iter()
+            .collect();
+        let script = crate::formats::gcp::GcpSecretConverter::default()
+            .convert(&vars, &options)
+            .unwrap();
+        for name in secrets.keys() {
+            assert!(script.contains(&format!("| upsert_secret {name}\n")));
+        }
+    }
 
     #[test]
     fn t_i100_dry_run_counts_and_prints_no_value() {

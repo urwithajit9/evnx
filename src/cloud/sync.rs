@@ -424,21 +424,41 @@ pub fn push(
 #[allow(clippy::too_many_arguments)]
 pub fn pull(
     server_override: Option<&str>,
-    vault_target: Option<String>,
+    vault_targets: Vec<String>,
     file: Option<PathBuf>,
     env_name: Option<String>,
     version: Option<i32>,
     force: bool,
     password_stdin: bool,
     gitignore: crate::utils::protect::GitignoreMode,
+    allow_override: bool,
     verbose: bool,
 ) -> Result<()> {
-    let (vault_target, bound_file) = resolve_target_and_file(vault_target)?;
+    // RM-59 (X4): before any request. A version number belongs to one vault.
+    super::merge::check_usage(vault_targets.len(), version, allow_override)?;
+    let multi = vault_targets.len() > 1;
+    // The binding's vault and file apply only to a pull that names no vault; a
+    // merge of several names them all, so nothing is bound to it.
+    let (vault_targets, bound_file) = if multi {
+        (vault_targets, None)
+    } else {
+        let (t, b) = resolve_target_and_file(vault_targets.into_iter().next())?;
+        (vec![t], b)
+    };
 
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     client.require_credential()?;
-    let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
+    let mut vault_refs = Vec::with_capacity(vault_targets.len());
+    for target in &vault_targets {
+        vault_refs.push(vault::fetch_and_resolve(&client, target)?);
+    }
+    // No environment to derive `.env.<environment>` from when merging.
+    let vault_env = if multi {
+        String::new()
+    } else {
+        vault_refs[0].environment.clone()
+    };
 
     // ⚠️ On pull the derivation only fires when the file already exists, so a
     // first pull into a fresh checkout still writes `.env`. That is the right
@@ -452,7 +472,7 @@ pub fn pull(
         file,
         env_name.as_deref(),
         bound_file,
-        &vault_ref.environment,
+        &vault_env,
     )?;
     if to_stdout {
         // Status on stderr: stdout carries the file and nothing else.
@@ -463,32 +483,47 @@ pub fn pull(
         report_file(&file, choice);
     }
 
-    let version = match version {
-        Some(v) => v,
-        None => {
-            let latest = current_version(&client, &vault_ref)?;
-            if latest == 0 {
-                return Err(anyhow!(
-                    "{} has no versions yet. Push one with `evnx cloud push --vault {}`.",
-                    vault_ref.label(),
-                    vault_ref.label()
-                ));
+    // `what` is how the result is named in messages: "version 3 of acme/prod",
+    // or "acme/shared v3 + acme/prod v7" for a merge.
+    let (plaintext, what, production): (Vec<u8>, String, bool) = if multi {
+        let merged =
+            super::merge::fetch_merged(&client, vault_refs, password_stdin, allow_override)?;
+        let text = merged.to_env_text();
+        (text.to_vec(), merged.describe(), merged.is_production())
+    } else {
+        let vault_ref = vault_refs.remove(0);
+        let version = match version {
+            Some(v) => v,
+            None => {
+                let latest = current_version(&client, &vault_ref)?;
+                if latest == 0 {
+                    return Err(anyhow!(
+                        "{} has no versions yet. Push one with `evnx cloud push --vault {}`.",
+                        vault_ref.label(),
+                        vault_ref.label()
+                    ));
+                }
+                latest
             }
-            latest
-        }
+        };
+
+        // ⚠️ The blob is fetched **before** the password is asked for, and that
+        // ordering is deliberate: a version that does not exist should answer 404
+        // rather than waste the typing. The split into two functions below is what
+        // lets the order survive the extraction.
+        let blob = fetch_blob(&client, &vault_ref, version)?;
+
+        let password = auth::read_master_password(password_stdin)?;
+        let unlocked = auth::unlock(&client, &password)?;
+        let vault_key = unwrap_vault_key(&client, &vault_ref, &unlocked)?;
+
+        let plaintext = decrypt_version(&blob, &vault_ref, version, &vault_key)?;
+        (
+            plaintext,
+            format!("version {version} of {}", vault_ref.label()),
+            vault_ref.environment == "production",
+        )
     };
-
-    // ⚠️ The blob is fetched **before** the password is asked for, and that
-    // ordering is deliberate: a version that does not exist should answer 404
-    // rather than waste the typing. The split into two functions below is what
-    // lets the order survive the extraction.
-    let blob = fetch_blob(&client, &vault_ref, version)?;
-
-    let password = auth::read_master_password(password_stdin)?;
-    let unlocked = auth::unlock(&client, &password)?;
-    let vault_key = unwrap_vault_key(&client, &vault_ref, &unlocked)?;
-
-    let plaintext = decrypt_version(&blob, &vault_ref, version, &vault_key)?;
 
     if to_stdout {
         use std::io::Write;
@@ -496,11 +531,7 @@ pub fn pull(
         out.write_all(&plaintext).context("writing to stdout")?;
         out.flush().context("writing to stdout")?;
         if !crate::utils::ui::is_quiet() {
-            eprintln!(
-                "  {} pulled version {version} of {} to stdout",
-                "✓".green(),
-                vault_ref.label()
-            );
+            eprintln!("  {} pulled {what} to stdout", "✓".green());
         }
         return Ok(());
     }
@@ -515,8 +546,8 @@ pub fn pull(
             &file,
             existing.as_deref().map(Vec::as_slice),
             &plaintext,
-            &format!("version {version} of {}", vault_ref.label()),
-            vault_ref.environment == "production",
+            &what,
+            production,
         )?
     {
         return Ok(());
@@ -537,12 +568,7 @@ pub fn pull(
         .with_context(|| format!("writing {}", file.display()))?;
     crate::core::safe_write::report(&written);
 
-    crate::say!(
-        "  {} pulled version {version} of {} into {}",
-        "✓".green(),
-        vault_ref.label(),
-        file.display()
-    );
+    crate::say!("  {} pulled {what} into {}", "✓".green(), file.display());
     if let Some(kept) = &kept {
         crate::say!(
             "  {} kept the previous {} as {}",

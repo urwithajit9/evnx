@@ -122,8 +122,90 @@ pub struct PatternRule {
     pub near_miss: Option<Vec<String>>,
     /// Where to go and revoke a match, when there is such a place.
     pub url: Option<String>,
+    /// RM-90: who issues the credential. Required of built-ins, optional
+    /// elsewhere (`evnx scan rules test` warns when it is missing).
+    pub provider: Option<String>,
+    /// RM-90: which group `rules list` files the rule under.
+    pub category: Option<Category>,
+    /// RM-92 (CV-2): regular expressions matched against the variable or key
+    /// name a value is attached to (`.env` name, YAML/JSON/TOML leaf key). A
+    /// rule with `names` fires only where the name matches one of them, and
+    /// never on text with no name. For providers that reuse another's prefix
+    /// (Clerk and UploadThing use Stripe's `sk_live_`). Where such a rule and
+    /// an unconstrained one match the same value, the named rule wins.
+    pub names: Option<Vec<String>>,
     #[serde(flatten)]
     extra: Extra,
+}
+
+/// RM-90: the fixed list of rule categories (decision CV-1). Part of the rule
+/// schema and the JSON, so adding one is additive but renaming one is breaking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Category {
+    Cloud,
+    SourceCi,
+    Ai,
+    Payments,
+    DatabasesBackends,
+    Auth,
+    MessagingEmail,
+    Observability,
+    InfraSecrets,
+    Saas,
+    KeysCertificates,
+    Generic,
+}
+
+impl Category {
+    /// Every category, in the order `rules list` shows them.
+    pub const ALL: [Category; 12] = [
+        Category::Cloud,
+        Category::SourceCi,
+        Category::Ai,
+        Category::Payments,
+        Category::DatabasesBackends,
+        Category::Auth,
+        Category::MessagingEmail,
+        Category::Observability,
+        Category::InfraSecrets,
+        Category::Saas,
+        Category::KeysCertificates,
+        Category::Generic,
+    ];
+
+    /// The kebab-case name used in rule files, flags and JSON.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Category::Cloud => "cloud",
+            Category::SourceCi => "source-ci",
+            Category::Ai => "ai",
+            Category::Payments => "payments",
+            Category::DatabasesBackends => "databases-backends",
+            Category::Auth => "auth",
+            Category::MessagingEmail => "messaging-email",
+            Category::Observability => "observability",
+            Category::InfraSecrets => "infra-secrets",
+            Category::Saas => "saas",
+            Category::KeysCertificates => "keys-certificates",
+            Category::Generic => "generic",
+        }
+    }
+
+    /// The allowed names, comma-separated, for error messages.
+    pub fn allowed() -> String {
+        Self::ALL.map(Category::as_str).join(", ")
+    }
+}
+
+impl std::str::FromStr for Category {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        Self::ALL
+            .into_iter()
+            .find(|c| c.as_str() == s)
+            .ok_or_else(|| format!("unknown category '{s}'; allowed: {}", Self::allowed()))
+    }
 }
 
 impl PatternRule {

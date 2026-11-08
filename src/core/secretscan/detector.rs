@@ -735,8 +735,19 @@ impl RuleDetector {
     /// name and entropy heuristics already drop those. See
     /// [`crate::core::classify::is_stand_in`].
     fn live_matches(&self, text: &str) -> Vec<super::patternset::PatternMatch> {
-        self.patterns
-            .find_all(text)
+        self.stand_ins_out(self.patterns.find_all(text))
+    }
+
+    /// [`live_matches`](Self::live_matches) for the value of `key` (RM-92).
+    fn live_matches_named(&self, key: &str, text: &str) -> Vec<super::patternset::PatternMatch> {
+        self.stand_ins_out(self.patterns.find_all_named(text, key))
+    }
+
+    fn stand_ins_out(
+        &self,
+        found: Vec<super::patternset::PatternMatch>,
+    ) -> Vec<super::patternset::PatternMatch> {
+        found
             .into_iter()
             .filter(|m| !crate::core::classify::is_stand_in(&m.value))
             .collect()
@@ -773,8 +784,9 @@ impl SecretDetector for RuleDetector {
         true
     }
 
-    fn scan_kv(&self, _key: &str, value: &str, _location: &str) -> Option<Detection> {
-        super::patternset::PatternSet::strongest_of(self.live_matches(value)).map(Into::into)
+    fn scan_kv(&self, key: &str, value: &str, _location: &str) -> Option<Detection> {
+        super::patternset::PatternSet::strongest_of(self.live_matches_named(key, value))
+            .map(Into::into)
     }
 
     /// Always `None` — custom patterns answer [`scan_line`] instead, which sees

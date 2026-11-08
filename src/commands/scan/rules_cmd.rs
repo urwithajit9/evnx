@@ -6,7 +6,7 @@
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
 
-use crate::core::config::PatternRule;
+use crate::core::config::{Category, PatternRule};
 use crate::core::secretscan::rules::{self, Sourced};
 use crate::core::secretscan::{Confidence, PatternSet, Severity};
 use crate::core::verdict::Verdict;
@@ -32,46 +32,85 @@ fn all_rules(project: &Path, configured: &[PatternRule]) -> Result<Vec<Sourced>>
     Ok(out)
 }
 
-/// `list`: id, source, severity and confidence of each rule, as compiled.
-pub fn list(project: &Path, configured: &[PatternRule], json: bool) -> Result<()> {
+/// `list`: id, provider, source, severity and confidence of each rule, as
+/// compiled, grouped by category (RM-90). `category` filters.
+pub fn list(
+    project: &Path,
+    configured: &[PatternRule],
+    category: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    // Checked first: a typo is a usage error whatever else is wrong.
+    let filter: Option<Category> = category
+        .map(|c| c.parse::<Category>().map_err(anyhow::Error::msg))
+        .transpose()?;
     let rules = all_rules(project, configured)?;
     // Compiled together, as a scan does, so a broken rule is reported here.
     PatternSet::compile(&rules.iter().map(|s| s.rule.clone()).collect::<Vec<_>>())?;
-    let rows: Vec<(String, String, String, String, String)> = rules
+    struct Row {
+        id: String,
+        name: String,
+        source: String,
+        severity: String,
+        confidence: String,
+        provider: Option<String>,
+        category: Option<Category>,
+    }
+    let rows: Vec<Row> = rules
         .iter()
-        .map(|s| {
-            let id = s
+        .filter(|s| filter.is_none() || s.rule.category == filter)
+        .map(|s| Row {
+            id: s
                 .rule
                 .id
                 .clone()
-                .unwrap_or_else(|| crate::core::secretscan::patternset::slug(&s.rule.name));
-            let severity = s.rule.severity.clone().unwrap_or_else(|| "medium".into());
-            let confidence = s.rule.confidence.clone().unwrap_or_else(|| "high".into());
-            (
-                id,
-                s.rule.name.clone(),
-                s.source.clone(),
-                severity,
-                confidence,
-            )
+                .unwrap_or_else(|| crate::core::secretscan::patternset::slug(&s.rule.name)),
+            name: s.rule.name.clone(),
+            source: s.source.clone(),
+            severity: s.rule.severity.clone().unwrap_or_else(|| "medium".into()),
+            confidence: s.rule.confidence.clone().unwrap_or_else(|| "high".into()),
+            provider: s.rule.provider.clone(),
+            category: s.rule.category,
         })
         .collect();
     if json {
         let doc: Vec<serde_json::Value> = rows
             .iter()
-            .map(|(id, name, source, sev, conf)| {
+            .map(|r| {
                 serde_json::json!({
-                    "id": id, "name": name, "source": source,
-                    "severity": sev, "confidence": conf,
+                    "id": r.id, "name": r.name, "source": r.source,
+                    "severity": r.severity, "confidence": r.confidence,
+                    "provider": r.provider,
+                    "category": r.category.map(Category::as_str),
                 })
             })
             .collect();
         println!("{}", serde_json::to_string_pretty(&doc)?);
         return Ok(());
     }
-    let width = rows.iter().map(|r| r.0.len()).max().unwrap_or(2);
-    for (id, _, source, sev, conf) in &rows {
-        println!("  {id:<width$}  {sev:<8}  {conf:<6}  {source}");
+    let width = rows.iter().map(|r| r.id.len()).max().unwrap_or(2);
+    let pwidth = rows
+        .iter()
+        .map(|r| r.provider.as_deref().unwrap_or("-").len())
+        .max()
+        .unwrap_or(1);
+    let groups = Category::ALL
+        .iter()
+        .map(|c| (c.as_str(), Some(*c)))
+        .chain(std::iter::once(("uncategorised", None)));
+    for (heading, cat) in groups {
+        let members: Vec<&Row> = rows.iter().filter(|r| r.category == cat).collect();
+        if members.is_empty() {
+            continue;
+        }
+        println!("\n  {heading}");
+        for r in members {
+            let provider = r.provider.as_deref().unwrap_or("-");
+            println!(
+                "    {:<width$}  {provider:<pwidth$}  {:<8}  {:<6}  {}",
+                r.id, r.severity, r.confidence, r.source
+            );
+        }
     }
     println!("\n  {} rules", rows.len());
     Ok(())
@@ -186,15 +225,29 @@ pub fn test(project: &Path, file: Option<&str>) -> Result<Verdict> {
         }
         for v in positive {
             checked += 1;
-            if set.find_all(v).is_empty() {
+            if set.find_all_ignoring_names(v).is_empty() {
                 failures.push(format!("{id}: does not report positive {v:?}"));
             }
         }
         for v in near_miss {
             checked += 1;
-            if !set.find_all(v).is_empty() {
+            if !set.find_all_ignoring_names(v).is_empty() {
                 failures.push(format!("{id}: reports near miss {v:?}"));
             }
+        }
+        // RM-90: a warning, never a failure; they are optional outside evnx.
+        let mut missing = Vec::new();
+        if s.rule.provider.is_none() {
+            missing.push("provider");
+        }
+        if s.rule.category.is_none() {
+            missing.push("category");
+        }
+        if !missing.is_empty() {
+            crate::utils::ui::warning(format!(
+                "{id}: no {}; `evnx scan rules list` shows it as uncategorised",
+                missing.join(" or ")
+            ));
         }
         // The levels parse, as a scan would require.
         if let Some(c) = &s.rule.confidence {
