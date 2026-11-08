@@ -163,6 +163,16 @@ fn obtain(kind: &str, source: &str, format: &str) -> Result<(String, String, usi
         ),
         "commits, which evnx cannot express, so they may report more than in gitleaks.".into(),
     ];
+    if c.filtered > 0 {
+        header.push(format!(
+            "{} rule(s) kept only the entropy floor of a Betterleaks `filter`, or were",
+            c.filtered
+        ));
+        header.push(
+            "composites; the rest is not carried over, so they may report more than upstream."
+                .into(),
+        );
+    }
     for (id, why) in &c.skipped {
         header.push(format!("skipped {id}: {why}"));
     }
@@ -177,6 +187,13 @@ fn obtain(kind: &str, source: &str, format: &str) -> Result<(String, String, usi
             "{} rule(s) had an allowlist tied to paths or commits, which is not carried \
              over; they may report more than in gitleaks",
             c.narrowed
+        ));
+    }
+    if c.filtered > 0 {
+        ui::warning(format!(
+            "{} rule(s) had a filter beyond an entropy floor, or were composites; only the \
+             floor is carried over, so they may report more than upstream",
+            c.filtered
         ));
     }
     let n = c.rules.len();

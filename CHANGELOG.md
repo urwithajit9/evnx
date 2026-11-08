@@ -221,6 +221,13 @@ character, not per byte, which raised it for non-ASCII text.
     keywords, entropy, the secret group and allowlists (regexes and
     stopwords) carry over. Rules that cannot convert are listed with the
     reason, never dropped silently.
+  - It also reads **Betterleaks**, the gitleaks fork (C13): `confidence`
+    carries over, `valueGroup` is the secret group, rules marked `skipReport`
+    (parts of a composite) are skipped and listed, and the leading
+    `entropy(finding["secret"]) < N` clause of a CEL `filter` becomes the
+    rule's entropy floor. The rest of a filter, and a composite's
+    `components`, cannot be expressed; those rules are counted in the pack
+    header, as lost allowlists are.
   - Downloads need the `net` feature (in every prebuilt binary) and are
     https only, or plain http to this machine.
 - Rule files gain `keywords` (the rule is tried only on text holding one, so

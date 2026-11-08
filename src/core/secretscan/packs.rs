@@ -203,6 +203,10 @@ pub struct Converted {
     /// Rules with an allowlist that could not be carried over (one tied to
     /// paths or commits): they may report more than in gitleaks.
     pub narrowed: usize,
+    /// Rules whose Betterleaks `filter` held more than an entropy floor, or
+    /// that were composites needing `components`: what evnx cannot express
+    /// is dropped, so they may report more than upstream.
+    pub filtered: usize,
 }
 
 /// Convert gitleaks' TOML. `id`, `regex`, `keywords`, `entropy`, the secret
@@ -211,6 +215,14 @@ pub struct Converted {
 /// id gets `<pack>-` in front, so a pack cannot collide with evnx's own ids
 /// (S5). A regex Rust's `regex` cannot compile (look-around, back-references)
 /// is skipped and listed.
+///
+/// Betterleaks (the gitleaks fork) writes the same format plus a few fields,
+/// read here too: `confidence` carries over; `valueGroup` is its secret
+/// group; a rule with `skipReport = true` only exists as part of a composite
+/// and is skipped; and from the CEL `filter` the leading
+/// `entropy(finding["secret"]) < N` (or `<=`) clause becomes the entropy floor.
+/// Anything else in a filter, and a composite's `components`, cannot be
+/// expressed: the rule is kept, counted in [`Converted::filtered`].
 pub fn from_gitleaks(text: &str, pack: &str) -> Result<Converted> {
     let doc: toml::Value = toml::from_str(text).context("not a valid gitleaks TOML file")?;
     let Some(rules) = doc.get("rules").and_then(|r| r.as_array()) else {
@@ -223,6 +235,13 @@ pub fn from_gitleaks(text: &str, pack: &str) -> Result<Converted> {
             .and_then(|v| v.as_str())
             .map(str::to_string)
             .unwrap_or_else(|| format!("rule-{}", i + 1));
+        if r.get("skipReport").and_then(|v| v.as_bool()) == Some(true) {
+            out.skipped.push((
+                gid,
+                "reported only as part of a composite rule (skipReport)".into(),
+            ));
+            continue;
+        }
         let Some(regex) = r.get("regex").and_then(|v| v.as_str()) else {
             out.skipped
                 .push((gid, "no regex: it matches file paths only".into()));
@@ -267,19 +286,36 @@ pub fn from_gitleaks(text: &str, pack: &str) -> Result<Converted> {
         rule.name = name;
         rule.regex = regex.to_string();
         rule.id = Some(id);
-        rule.confidence = Some("medium".into());
+        rule.confidence = Some(
+            r.get("confidence")
+                .and_then(|v| v.as_str())
+                .filter(|c| matches!(*c, "low" | "medium" | "high"))
+                .unwrap_or("medium")
+                .into(),
+        );
         rule.severity = Some("medium".into());
         rule.keywords = r.get("keywords").and_then(|v| v.as_array()).map(|a| {
             a.iter()
                 .filter_map(|k| k.as_str().map(str::to_string))
                 .collect()
         });
+        let (floor, rest) = r
+            .get("filter")
+            .and_then(|v| v.as_str())
+            .map(entropy_floor)
+            .unwrap_or((None, false));
+        if rest || r.get("components").is_some() {
+            out.filtered += 1;
+        }
         rule.entropy = r
             .get("entropy")
-            .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|n| n as f64)));
-        // gitleaks judges the secret: `secretGroup`, else the first group.
+            .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|n| n as f64)))
+            .or(floor);
+        // gitleaks judges the secret: `secretGroup` (Betterleaks: `valueGroup`),
+        // else the first group.
         rule.secret_group = r
             .get("secretGroup")
+            .or_else(|| r.get("valueGroup"))
             .and_then(|v| v.as_integer())
             .map(|g| g as usize)
             .filter(|&g| g > 0)
@@ -289,6 +325,30 @@ pub fn from_gitleaks(text: &str, pack: &str) -> Result<Converted> {
         out.rules.push(rule);
     }
     Ok(out)
+}
+
+/// A Betterleaks CEL `filter` as `(entropy floor, anything else in it)`.
+///
+/// A filter says when to *drop* a finding, so a leading
+/// `entropy(finding["secret"]) < N` means "report only from entropy N up",
+/// which is what a rule's `entropy` says. `<=` is read the same way; a secret
+/// of exactly N is the one value treated differently. Only the leading
+/// clause is read: anything after it (`|| tokenRatio(..)`, path matches) is
+/// reported as the second value so the caller can count it.
+fn entropy_floor(filter: &str) -> (Option<f64>, bool) {
+    let re = regex::Regex::new(
+        r#"^\s*entropy\(\s*finding\[\s*"secret"\s*\]\s*\)\s*<=?\s*([0-9]+(?:\.[0-9]+)?)"#,
+    )
+    .expect("a fixed pattern");
+    let text = filter.trim();
+    match re.captures(text) {
+        Some(c) => {
+            let floor = c[1].parse::<f64>().ok();
+            let end = c.get(0).map_or(0, |m| m.end());
+            (floor, !text[end..].trim().is_empty())
+        }
+        None => (None, !text.is_empty()),
+    }
 }
 
 /// A gitleaks rule's allowlists as `(allow, allow_line, something dropped)`.
@@ -430,6 +490,84 @@ pub fn to_rule_file(rules: &[PatternRule], header: &[String]) -> Result<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// C13: Betterleaks' extra fields: confidence, valueGroup, skipReport,
+    /// and the entropy floor of a CEL filter.
+    #[test]
+    fn betterleaks_filters_confidence_and_composites_convert() {
+        let text = r#"
+[[rules]]
+id = "acme-token"
+description = "Acme token"
+regex = '''acme_[a-z0-9]{32}'''
+confidence = "high"
+keywords = ["acme_"]
+filter = '''
+entropy(finding["secret"]) <= 4.0
+'''
+
+[[rules]]
+id = "acme-key"
+regex = '''key=([a-z0-9]{32})'''
+valueGroup = 1
+filter = '''
+entropy(finding["secret"]) < 3.5 || tokenRatio(finding["secret"]) >= 0.5
+'''
+
+[[rules]]
+id = "acme-child"
+regex = '''child_[a-z]{8}'''
+skipReport = true
+
+[[rules]]
+id = "acme-parent"
+regex = '''parent_[a-z]{8}'''
+confidence = "certain"
+components = ["acme-child"]
+"#;
+        let c = from_gitleaks(text, "betterleaks").unwrap();
+        let ids: Vec<&str> = c.rules.iter().map(|r| r.id.as_deref().unwrap()).collect();
+        assert_eq!(
+            ids,
+            [
+                "betterleaks-acme-token",
+                "betterleaks-acme-key",
+                "betterleaks-acme-parent"
+            ]
+        );
+        assert_eq!(c.rules[0].entropy, Some(4.0));
+        assert_eq!(c.rules[0].confidence.as_deref(), Some("high"));
+        assert_eq!(c.rules[1].entropy, Some(3.5));
+        assert_eq!(c.rules[1].secret_group, Some(1));
+        assert_eq!(
+            c.rules[2].confidence.as_deref(),
+            Some("medium"),
+            "unknown values fall back"
+        );
+        assert_eq!(
+            c.filtered, 2,
+            "the tokenRatio clause and the composite are counted"
+        );
+        assert_eq!(c.skipped.len(), 1);
+        assert!(c.skipped[0].1.contains("skipReport"));
+    }
+
+    #[test]
+    fn an_entropy_floor_is_read_only_from_a_leading_clause() {
+        assert_eq!(
+            entropy_floor("entropy(finding[\"secret\"]) < 3"),
+            (Some(3.0), false)
+        );
+        assert_eq!(
+            entropy_floor("  entropy( finding[ \"secret\" ] ) <= 4.5\n"),
+            (Some(4.5), false)
+        );
+        assert_eq!(
+            entropy_floor("matchesAny(finding[\"secret\"], [\"x\"])"),
+            (None, true)
+        );
+        assert_eq!(entropy_floor(""), (None, false));
+    }
 
     #[test]
     fn gitleaks_rules_convert_and_what_cannot_is_listed() {
