@@ -57,6 +57,7 @@ pub fn run(opts: Options) -> Result<Verdict> {
     for n in env_name::available(project) {
         env_files.push(in_dir(project, &format!(".env.{n}")));
     }
+    super::case_collisions(&env_files);
     let template = Template::of(project, &loaded.config);
     let template_path = in_dir(project, &template.name);
 

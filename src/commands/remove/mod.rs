@@ -143,6 +143,9 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
     if opts.all {
         env_files = all_env.clone();
     }
+    // G-2: two files that differ only in case are two files here and one on a
+    // case-insensitive filesystem. Said, never merged.
+    case_collisions(&all_env);
     for p in &env_files {
         places.push(read_place(Kind::Env, p)?);
     }
@@ -481,6 +484,26 @@ fn resolve_env(
     Ok((Some(path), source))
 }
 
+/// G-2: warn about env files whose names differ only in case. Each is read and
+/// edited as the separate file it is; a filesystem that folds case cannot hold
+/// both, so on one of those this never fires.
+pub(crate) fn case_collisions(files: &[PathBuf]) {
+    let mut seen: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for f in files {
+        let name = f.file_name().unwrap_or_default().to_string_lossy();
+        seen.entry(name.to_lowercase())
+            .or_default()
+            .push(name.into_owned());
+    }
+    for names in seen.values().filter(|n| n.len() > 1) {
+        ui::warning(format!(
+            "{} differ only in case: treated as separate files here, but they are one file \
+             on a case-insensitive filesystem (macOS, Windows)",
+            names.join(" and ")
+        ));
+    }
+}
+
 /// `file` in `project`, as a person types it from there.
 fn in_dir(project: &Path, file: &str) -> PathBuf {
     if project == Path::new(".") {
@@ -688,6 +711,27 @@ fn apply(
     no_backup: bool,
     before_commit: &mut dyn FnMut(usize, &Path),
 ) -> Result<Vec<Option<PathBuf>>> {
+    // E-7: one run at a time per file. Held until this function returns, so the
+    // check below, the backups and the swaps all happen under it. Sorted, and
+    // never waited for, so two runs cannot deadlock: the second stops.
+    let mut targets: Vec<&Path> = changes
+        .iter()
+        .map(|c| places[c.place_index].path.as_path())
+        .collect();
+    targets.sort();
+    targets.dedup();
+    let mut _locks = Vec::new();
+    for t in targets {
+        _locks.push(crate::core::lock::acquire(t)?);
+    }
+    // A run that held the lock before us may have finished since we read: stop
+    // before taking a backup of a file that is no longer what we planned from.
+    for c in changes {
+        let p = &places[c.place_index];
+        if !matches!(std::fs::read(&p.path), Ok(now) if now == p.original.as_bytes()) {
+            bail!("{} changed while evnx was running", p.label);
+        }
+    }
     let mut backups = Vec::new();
     for c in changes {
         let p = &places[c.place_index];
@@ -894,5 +938,109 @@ mod tests {
         for (n, _) in FILES {
             assert!(!read(&d, n).contains('X'), "{n}");
         }
+    }
+}
+
+#[cfg(test)]
+mod interruption_tests {
+    use super::*;
+
+    /// E-6: the new text is staged in a temp file beside the target before any
+    /// target changes, so an interruption at that point (the hook runs exactly
+    /// there) leaves every original whole. The write path is temp file, then
+    /// rename: `Staged::commit` is `persist`, and the file is a new inode.
+    #[test]
+    fn e6_nothing_visible_changes_until_the_rename() {
+        let d = tempfile::TempDir::new().unwrap();
+        let files = [(".env", "X=1\nY=1\n"), (".env.staging", "X=2\nY=2\n")];
+        for (n, c) in files {
+            std::fs::write(d.path().join(n), c).unwrap();
+        }
+        let before: Vec<(String, String)> = files
+            .iter()
+            .map(|(n, c)| (n.to_string(), c.to_string()))
+            .collect();
+        let dir = d.path().to_path_buf();
+        let mut staged_seen = 0;
+        run_with(
+            Options {
+                names: vec!["X".into()],
+                path: dir.to_string_lossy().into_owned(),
+                all: true,
+                yes: true,
+                ..Options::default()
+            },
+            &mut |i, _| {
+                if i == 0 {
+                    // Before the first rename: both new texts are staged, no
+                    // original has changed.
+                    staged_seen = std::fs::read_dir(&dir)
+                        .unwrap()
+                        .filter_map(|e| e.ok())
+                        .filter(|e| {
+                            let n = e.file_name().to_string_lossy().into_owned();
+                            n.starts_with(".evnx-") && n.ends_with(".tmp")
+                        })
+                        .count();
+                    for (n, c) in &before {
+                        assert_eq!(&std::fs::read_to_string(dir.join(n)).unwrap(), c);
+                    }
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(staged_seen, 2);
+        // And after: no temp file is left, the lock is gone.
+        let left: Vec<String> = std::fs::read_dir(d.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp") || n.ends_with(".lock"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+    }
+
+    /// E-6, the failure half: a staged write that never reaches the rename
+    /// (dropped, as when the process dies or `commit` is not reached) leaves
+    /// the target byte for byte as it was, and no temp file behind.
+    #[test]
+    fn e6_a_staged_write_dropped_before_the_rename_leaves_the_original() {
+        let d = tempfile::TempDir::new().unwrap();
+        let p = d.path().join(".env");
+        std::fs::write(&p, "ORIGINAL=1\n").unwrap();
+        let staged = safe_write::stage_private(&p, b"NEW=2\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "ORIGINAL=1\n");
+        drop(staged);
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "ORIGINAL=1\n");
+        let tmp = std::fs::read_dir(d.path())
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".tmp")
+            })
+            .count();
+        assert_eq!(tmp, 0);
+    }
+
+    /// E-6: the commit is a rename, not a rewrite in place: a handle opened
+    /// before it still reads the old bytes, which no truncate-and-write could
+    /// leave.
+    #[cfg(unix)]
+    #[test]
+    fn e6_commit_replaces_the_file_rather_than_rewriting_it() {
+        let d = tempfile::TempDir::new().unwrap();
+        let p = d.path().join(".env");
+        std::fs::write(&p, "ORIGINAL=1\n").unwrap();
+        let mut old = std::fs::File::open(&p).unwrap();
+        safe_write::stage_private(&p, b"NEW=2\n")
+            .unwrap()
+            .commit()
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "NEW=2\n");
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut old, &mut text).unwrap();
+        assert_eq!(text, "ORIGINAL=1\n");
     }
 }

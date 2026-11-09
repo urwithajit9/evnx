@@ -8,40 +8,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **`evnx spec init` wrote `[vars.spring.datasource.url]` for a variable with dots in its name.**
-  TOML reads that as nested tables, so `evnx validate` then reported `Missing required variable:
-  spring` and unknown keys. Names that are not TOML bare keys (anything but `A-Za-z0-9_-`) are
-  now quoted, as `[vars."spring.datasource.url"]`, wherever evnx writes or prints a
-  `[vars.NAME]` table (`spec init`, `add`, `remove --contract` messages and the `validate`
-  hints). Bare names such as `my-var` and `9LIVES` stay unquoted. A `.evnx.toml` already written
-  with the unquoted form must be edited by hand: quote the name.
-- **`evnx migrate --to vercel` printed `production` for a development file.** With
-  `--env-name development` (or `preview`) it read `.env.development` but every printed
-  `vercel env add` said `production`, and the dry-run said `Environment : production`; every
-  earlier version did this. The environment now follows the file that was read
-  (`.env.development`/`.env.dev` is `development`, `.env.preview` is `preview`, anything else,
-  including plain `.env`, is `production`). **If you ran it for a development or preview
-  file, check Vercel production for development values.**
-- **`evnx add --help` said a declined confirmation exits 0**; it exits 4, as
-  0.13.0 made it (the help text was not updated). It now lists 0, 2 and 4.
-- **Vercel secrets are now `sensitive` in `development` too** (`convert --to vercel`,
-  `migrate --to vercel`). 0.13.0 kept them out of `development` because Vercel rejected a
-  Sensitive variable there; Vercel reversed that rule on 2026-08-24 ("Secrets are allowed in
-  Development", [docs](https://vercel.com/docs/environment-variables/sensitive-environment-variables),
-  [changelog](https://vercel.com/changelog/environment-variables-now-use-config-and-secret-types)).
-  `convert --to vercel` now gives a secret-looking variable all three targets (`production`,
-  `preview`, `development`) and no longer prints the "not set for development" warning;
-  `migrate --to vercel` adds `--sensitive` for `development` as for the other environments.
-  The two commands agree again. `--sensitive` is the legacy spelling of the Secret type and
-  still works.
-- **A scan rule's `names` now beats a built-in rule in YAML and JSON too.** A key such as
-  `app: secret_key: sk_live_…` reported the built-in Stripe rule instead of the
-  project's rule, because the text pass (no key) found Stripe and its remediation URL
-  outranked the named rule; `.env` was already right. `names` stay case-sensitive regexes
-  in every format, as in `.env`: write `(?i)` or both spellings to cover `SECRET_KEY` and `secret_key`.
-
+- **`SSL_CERT_FILE` and `SSL_CERT_DIR` add trusted root certificates**, so evnx
+  works behind TLS-inspecting corporate proxies (RM-68). The bundled roots stay;
+  the extras are added to them. `SSL_CERT_FILE` is a PEM bundle; `SSL_CERT_DIR`
+  is a directory (or a path-separator list of them) of `*.pem`, `*.crt` and
+  hashed (`a1b2c3d4.0`) files. A missing path or a file with no certificate is an
+  error naming the variable and the path (exit 13 for `evnx cloud`); an
+  unreadable file inside the directory is a warning. An unknown-issuer failure
+  now says: set SSL_CERT_FILE to your organisation's CA bundle (PEM). Applies to
+  `cloud`, `update --check`, `migrate --to github-actions` and `scan packs`.
 - **`validate` and `spec check` report a name some environment files have and
   others lack** (N14-12). A `partial_presence` warning ("EXTRA is in .env,
   .env.production but not in .env.staging"), until now visible only through
@@ -86,6 +63,51 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - It is a mode of its own: clap refuses `--prune` with `--check`, `--format`,
     `--env`, `--env-name`, `--direction`, `--force`, `--placeholder`,
     `--skip-without-env`, `--template-config` and `--naming-policy`.
+
+### Fixed
+
+- **`evnx spec init` wrote `[vars.spring.datasource.url]` for a variable with dots in its name.**
+  TOML reads that as nested tables, so `evnx validate` then reported `Missing required variable:
+  spring` and unknown keys. Names that are not TOML bare keys (anything but `A-Za-z0-9_-`) are
+  now quoted, as `[vars."spring.datasource.url"]`, wherever evnx writes or prints a
+  `[vars.NAME]` table (`spec init`, `add`, `remove --contract` messages and the `validate`
+  hints). Bare names such as `my-var` and `9LIVES` stay unquoted. A `.evnx.toml` already written
+  with the unquoted form must be edited by hand: quote the name.
+- **`evnx migrate --to vercel` printed `production` for a development file.** With
+  `--env-name development` (or `preview`) it read `.env.development` but every printed
+  `vercel env add` said `production`, and the dry-run said `Environment : production`; every
+  earlier version did this. The environment now follows the file that was read
+  (`.env.development`/`.env.dev` is `development`, `.env.preview` is `preview`, anything else,
+  including plain `.env`, is `production`). **If you ran it for a development or preview
+  file, check Vercel production for development values.**
+- **`evnx add --help` said a declined confirmation exits 0**; it exits 4, as
+  0.13.0 made it (the help text was not updated). It now lists 0, 2 and 4.
+- **Vercel secrets are now `sensitive` in `development` too** (`convert --to vercel`,
+  `migrate --to vercel`). 0.13.0 kept them out of `development` because Vercel rejected a
+  Sensitive variable there; Vercel reversed that rule on 2026-08-24 ("Secrets are allowed in
+  Development", [docs](https://vercel.com/docs/environment-variables/sensitive-environment-variables),
+  [changelog](https://vercel.com/changelog/environment-variables-now-use-config-and-secret-types)).
+  `convert --to vercel` now gives a secret-looking variable all three targets (`production`,
+  `preview`, `development`) and no longer prints the "not set for development" warning;
+  `migrate --to vercel` adds `--sensitive` for `development` as for the other environments.
+  The two commands agree again. `--sensitive` is the legacy spelling of the Secret type and
+  still works.
+- **A scan rule's `names` now beats a built-in rule in YAML and JSON too.** A key such as
+  `app: secret_key: sk_live_…` reported the built-in Stripe rule instead of the
+  project's rule, because the text pass (no key) found Stripe and its remediation URL
+  outranked the named rule; `.env` was already right. `names` stay case-sensitive regexes
+  in every format, as in `.env`: write `(?i)` or both spellings to cover `SECRET_KEY` and `secret_key`.
+- **Two `remove` (or `sync --prune`) runs on the same file can no longer undo
+  each other** (E-7). A run now takes an advisory lock file beside each file it
+  writes (`.evnx-<name>.lock`, created exclusively, holding its process id)
+  before it checks the file is unchanged and writes. The second run stops at
+  once with exit 2, "another evnx (process N) is changing .env", and changes
+  nothing; a lock left by a crashed run is taken over (the process is gone, or
+  the lock is over ten minutes old). No locking crate is a dependency and
+  `File::lock` needs Rust 1.89, so a lock file it is.
+- `remove` and `remove --check` say when two environment files differ only in
+  case (`.env.Staging`, `.env.staging`): they are separate files except on a
+  case-insensitive filesystem, and are never merged (G-2).
 
 ## [0.13.0] - 2026-11-08
 
