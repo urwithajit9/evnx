@@ -540,6 +540,50 @@ Exit codes: 0 done, 1 some GitHub uploads failed, 2 could not run.
 
 ---
 
+### `evnx platform` _(requires `--features net`)_
+
+Compares a local `.env` with the variables of a hosting platform, and pulls the
+readable ones into it. Vercel is the first platform; `--to` takes only `vercel` for
+now. Read-only against Vercel: `diff` and `pull` change nothing there.
+
+Vercel has two kinds of variable. A **Config** value can be read back. A **Secret**
+never can, so `diff` shows only that it exists and `pull` cannot fetch it. **Values
+are never printed.**
+
+```bash
+export VERCEL_TOKEN=…                   # or --token-file <path>; there is no --token flag
+evnx platform diff --to vercel          # .env.development (or .env) vs Vercel's development
+evnx platform diff --to vercel --env-name production --format json
+evnx platform pull --to vercel --dry-run   # what would change, nothing written
+evnx platform pull --to vercel --yes       # write Vercel's readable values (asks without --yes)
+```
+
+```text
+Vercel  acme/web  production        local  .env.production
+  ~ DATABASE_URL  secret  update  (value cannot be compared: write-only)
+  ~ API_URL       config  update  (value differs)
+  = SENTRY_DSN    config  unchanged
+  + NEW_FLAG      config  add
+  ! REDIS_URL     secret  remote only  (not in the local file)
+1 add · 2 update · 1 unchanged · 1 remote only · values never shown
+```
+
+- **Project:** `--project` / `--team`, else `VERCEL_PROJECT_ID` / `VERCEL_ORG_ID`, else
+  `.vercel/project.json` from `vercel link`.
+- **File:** `.env.<env-name>` when it exists, else `.env` (`--file` overrides); the run
+  prints which. `--env-name` is `production`, `preview` or `development` (the default).
+- **`pull`:** Config values are written in place, keeping comments, order and formatting;
+  new keys go at the end. A Secret whose key has a local value keeps it; one the file
+  lacks is written as `KEY=` and listed. Keys only the local file has are kept. It shows
+  the plan and asks first (`--yes` without a terminal; declining exits 4), keeps the old
+  file as `.bak`, and records `.evnx/platform/vercel.json` (ids and timestamps, never
+  values; add `.evnx/platform/` to `.gitignore`).
+- **Exit codes:** `diff` 0 no differences, 1 differences; both 2 could not run, 10 token
+  refused, 11 forbidden, 13 unreachable, 15 Vercel error or rate limit that did not clear.
+  The same 10–15 as `evnx cloud`.
+
+---
+
 ### `evnx doctor`
 
 Runs a health check on your environment configuration setup.
