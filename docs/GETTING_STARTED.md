@@ -731,6 +731,28 @@ Full reference: [docs.evnx.dev/cli/reference/configuration-file](https://docs.ev
 
 ---
 
+## Behind a TLS-inspecting proxy
+
+If `evnx update --check`, `evnx migrate` or an `evnx cloud` command fails with a
+certificate error such as `UnknownIssuer`, your network is re-signing HTTPS
+traffic with your organisation's own certificate authority. evnx trusts its
+bundled root certificates plus any you add:
+
+```bash
+# A PEM bundle (one or more certificates) from your IT department
+export SSL_CERT_FILE=/etc/ssl/corp-ca-bundle.pem
+
+# Or a directory of *.pem, *.crt or hashed (a1b2c3d4.0) files
+export SSL_CERT_DIR=/etc/ssl/corp-certs
+```
+
+The extra certificates are added to the bundled ones, never instead of them.
+A variable that names a missing path, or a file with no certificate in it, is an
+error that names the variable and the path (`evnx cloud` commands exit 13). A
+file in `SSL_CERT_DIR` that cannot be read is skipped with a warning.
+
+---
+
 ## Next steps
 
 | Topic | Link |

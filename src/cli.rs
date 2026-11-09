@@ -2564,6 +2564,10 @@ Destinations:
 Exit codes: 0 done; 1 some GitHub uploads failed; 2 could not run (bad flag, missing
 file, names that collide, a filter that leaves nothing).
 
+TLS (GitHub upload): evnx trusts its bundled root certificates plus any in the PEM bundle
+named by SSL_CERT_FILE or the directory named by SSL_CERT_DIR. Behind a TLS-inspecting
+proxy, set SSL_CERT_FILE to your organisation's CA bundle.
+
 📖  Full guide: https://docs.evnx.dev/cli/commands/migrate
 ")]
     Migrate(Box<MigrateOptions>),
@@ -2842,6 +2846,13 @@ file, names that collide, a filter that leaves nothing).
     ///
     /// Other failures keep the command's usual code. `evnx cloud run` returns
     /// the command's own code once it has started.
+    ///
+    /// TLS: evnx trusts its bundled root certificates plus any in the PEM
+    /// bundle named by SSL_CERT_FILE or the directory named by SSL_CERT_DIR
+    /// (files ending .pem or .crt, or hashed names like a1b2c3d4.0). Behind a
+    /// TLS-inspecting proxy, set SSL_CERT_FILE to your organisation's CA
+    /// bundle. A variable that names a missing path or a file with no
+    /// certificate is an error, exit 13.
     // `verbatim_doc_comment`: without it clap rewraps the exit-code table into
     // one run-on paragraph.
     #[cfg(feature = "cloud")]
@@ -3069,6 +3080,11 @@ file, names that collide, a filter that leaves nothing).
     /// ⚠️ evnx never replaces its own binary. Each package manager owns the file
     /// it installed, and a self-updating binary fights it — Homebrew and winget
     /// would then report a version they did not install.
+    ///
+    /// `--check` trusts evnx's bundled root certificates plus any in the PEM
+    /// bundle named by SSL_CERT_FILE or the directory named by SSL_CERT_DIR.
+    /// Behind a TLS-inspecting proxy, set SSL_CERT_FILE to your organisation's
+    /// CA bundle.
     #[command(after_help = docs::UPDATE.after_help)]
     Update {
         /// Ask api.github.com for the latest release.
@@ -3247,6 +3263,10 @@ pub enum RulesCommand {
     /// `.evnx/rules.lock`; commit both. A scan refuses a pack that no longer
     /// matches the lock, and never downloads anything itself. A catalogue
     /// pack must match the sha256 its index lists.
+    ///
+    /// Downloads trust SSL_CERT_FILE / SSL_CERT_DIR as well as the bundled root
+    /// certificates; behind a TLS-inspecting proxy set SSL_CERT_FILE to your
+    /// organisation's CA bundle.
     Add {
         /// A catalogue pack name (`gitleaks`), an https URL, or a file.
         source: String,

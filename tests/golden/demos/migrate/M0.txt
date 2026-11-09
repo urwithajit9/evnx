@@ -144,6 +144,10 @@ Destinations:
 Exit codes: 0 done; 1 some GitHub uploads failed; 2 could not run (bad flag, missing
 file, names that collide, a filter that leaves nothing).
 
+TLS (GitHub upload): evnx trusts its bundled root certificates plus any in the PEM bundle
+named by SSL_CERT_FILE or the directory named by SSL_CERT_DIR. Behind a TLS-inspecting
+proxy, set SSL_CERT_FILE to your organisation's CA bundle.
+
 📖  Full guide: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
 
