@@ -36,5 +36,8 @@ pub fn run(command: PlatformCommands) -> Result<Verdict> {
         PlatformCommands::Diff(a) => match a.common.to {
             Platform::Vercel => vercel::diff::run(&a),
         },
+        PlatformCommands::Pull(a) => match a.common.to {
+            Platform::Vercel => vercel::pull::run(&a).map(|()| Verdict::Clean),
+        },
     }
 }

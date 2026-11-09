@@ -495,6 +495,30 @@ Legend: + add (local only)   ~ update (on both sides)   = unchanged
 
 Full guide: https://docs.evnx.dev/cli/commands/platform")]
     Diff(PlatformDiffArgs),
+
+    /// Write Vercel's readable values into the local file.
+    ///
+    /// Config values are written: an existing line keeps its place, its comments
+    /// and its formatting; a new key goes at the end. A Secret is write-only on
+    /// Vercel, so it cannot be fetched: a key that already has a local value
+    /// keeps it, and one the file lacks is written as `KEY=` and listed. Keys only
+    /// the local file has are kept.
+    ///
+    /// Shows what will change (never a value) and asks first. The replaced file is
+    /// kept as a .bak copy. Without a terminal, --yes is required; declining exits
+    /// 4. --dry-run shows the plan and writes nothing.
+    ///
+    /// After a pull, `.evnx/platform/vercel.json` records each variable's id,
+    /// targets, type and updatedAt. It holds no values and no hashes.
+    #[command(after_help = "\
+Examples:
+  evnx platform pull --to vercel --dry-run               what would change, nothing written
+  evnx platform pull --to vercel                         update .env.development (or .env), after asking
+  evnx platform pull --to vercel --env-name preview --yes   no question (CI)
+  evnx platform pull --to vercel --file .env.local       write a file of your choice
+
+Full guide: https://docs.evnx.dev/cli/commands/platform")]
+    Pull(PlatformPullArgs),
 }
 
 /// What every `platform` subcommand needs to find its project, token and file.
@@ -574,6 +598,34 @@ pub enum PlatformFormat {
     Pretty,
     /// Keys, types and actions as JSON.
     Json,
+}
+
+/// Arguments of `evnx platform pull`.
+#[cfg(feature = "net")]
+#[derive(Args, Debug, Clone)]
+pub struct PlatformPullArgs {
+    #[command(flatten)]
+    pub common: PlatformCommon,
+
+    /// Change the file without asking.
+    ///
+    /// The replaced file is kept beside it as a .bak copy. Without it, and
+    /// without a terminal, the pull stops (exit 2). Declining the question
+    /// exits 4.
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+
+    /// Show what would change and write nothing (the file or the state).
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Add the pulled file to .gitignore without asking (no prompt).
+    #[arg(long, conflicts_with = "no_gitignore")]
+    pub gitignore: bool,
+
+    /// Skip the .gitignore check for the pulled file.
+    #[arg(long, conflicts_with = "gitignore")]
+    pub no_gitignore: bool,
 }
 
 // ─────────────────────────────────────────────────────────────

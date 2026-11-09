@@ -18,6 +18,8 @@ pub mod auth;
 pub mod diff;
 pub mod plan;
 pub mod project;
+pub mod pull;
+pub mod state;
 
 use api::{Api, Kind, Listing, Team};
 use plan::{Environment, Remote, Selection};

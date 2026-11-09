@@ -162,6 +162,13 @@ fn diff_args<'a>(extra: &[&'a str]) -> Vec<&'a str> {
     a
 }
 
+fn pull_args<'a>(extra: &[&'a str]) -> Vec<&'a str> {
+    let mut a = vec!["platform", "pull"];
+    a.extend_from_slice(COMMON);
+    a.extend_from_slice(extra);
+    a
+}
+
 /// No value anywhere a person or a log could read it.
 #[track_caller]
 fn quiet(out: &Output) {
@@ -661,4 +668,248 @@ fn only_vercel_is_accepted_for_to() {
     );
     out.assert_code(2);
     out.assert_contains("vercel");
+}
+
+// ── pull ─────────────────────────────────────────────────────────────────────
+
+const PULL_BEFORE: &str = "\
+# Pulled from Vercel
+API_URL=old-local-api-value-aa11   # dev server
+export LOG_LEVEL=\"remote-log-debug-77\"
+DB_URL=keep-me-local-db-value-bb22
+LOCAL_ONLY=local-only-value-cc33
+";
+
+fn pull_project() -> Project {
+    Project::new().file(".env.development", PULL_BEFORE)
+}
+
+#[test]
+fn pull_writes_config_keeps_secrets_and_local_only_and_keeps_the_formatting() {
+    let v = Vercel::start();
+    let p = pull_project();
+    let out = run(&p, &v.url(), &pull_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    quiet(&out);
+    v.assert_reads();
+
+    assert_eq!(
+        p.read(".env.development"),
+        format!(
+            "# Pulled from Vercel\n\
+             API_URL={R_API}   # dev server\n\
+             export LOG_LEVEL=\"{R_LOG}\"\n\
+             DB_URL={L_DB}\n\
+             LOCAL_ONLY={L_ONLY}\n\
+             NEW_REMOTE={R_NEW}\n\
+             REDIS_URL=\n"
+        )
+    );
+    // Secrets: the one with a local value kept it; the missing one is listed.
+    out.assert_contains("Written empty");
+    out.assert_contains("REDIS_URL");
+    assert!(
+        !out.stdout.contains(
+            "Written empty (write-only on Vercel, so evnx cannot fetch the value): DB_URL"
+        ),
+        "{}",
+        out.stdout
+    );
+    // The previous file is kept.
+    assert_eq!(p.read(".env.development.bak"), PULL_BEFORE);
+    support::snapshot::check_golden(
+        "platform/pull-development.txt",
+        &support::snapshot::normalise(&out.stdout, &[p.path()]),
+    );
+}
+
+#[test]
+fn pull_records_ids_and_timestamps_but_no_values() {
+    let v = Vercel::start();
+    let p = pull_project();
+    let out = run(&p, &v.url(), &pull_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    let text = p.read(".evnx/platform/vercel.json");
+    for value in ALL_VALUES {
+        assert!(!text.contains(value), "{value} in the state file:\n{text}");
+    }
+    let s: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(s["project"], "prj_1");
+    assert_eq!(s["team"], "team_1");
+    assert_eq!(s["environment"], "development");
+    let entries = s["entries"].as_array().unwrap();
+    // Development's five variables: not the production-only API_URL entry.
+    let ids: Vec<&str> = entries.iter().map(|e| e["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["e1", "e2", "e3", "e4", "e5"]);
+    let api = &entries[0];
+    assert_eq!(api["key"], "API_URL");
+    assert_eq!(api["target"], json!(["development", "preview"]));
+    assert_eq!(api["type"], "encrypted");
+    assert!(api["updatedAt"].is_u64());
+    assert_eq!(entries[1]["type"], "sensitive");
+    for e in entries {
+        let keys: Vec<&String> = e.as_object().unwrap().keys().collect();
+        assert_eq!(
+            keys.len(),
+            5,
+            "only key, id, target, type, updatedAt: {keys:?}"
+        );
+    }
+}
+
+#[test]
+fn pull_hints_at_gitignore_when_the_state_is_not_ignored() {
+    let v = Vercel::start();
+    let p = pull_project().git();
+    let out = run(&p, &v.url(), &pull_args(&["--yes"]));
+    out.assert_code(0);
+    assert!(
+        out.stderr.contains(".evnx/platform/"),
+        "no gitignore hint:\n{}",
+        out.stderr
+    );
+    let p = pull_project()
+        .git()
+        .file(".gitignore", ".evnx/platform/\n.env*\n");
+    let out = run(&p, &v.url(), &pull_args(&["--yes"]));
+    out.assert_code(0);
+    out.assert_not_contains("per-machine state");
+}
+
+#[test]
+fn quiet_pull_with_yes_is_silent_and_quiet_diff_still_prints_the_plan() {
+    let v = Vercel::start();
+    let p = pull_project();
+    // A file others can read is a warning `-q` keeps (and evnx keeps the mode).
+    #[cfg(unix)]
+    let p = p.mode(".env.development", 0o600);
+    let mut args = vec!["-q"];
+    args.extend(pull_args(&["--yes", "--no-gitignore"]));
+    let out = run(&p, &v.url(), &args);
+    out.assert_code(0);
+    assert_eq!((out.stdout.as_str(), out.stderr.as_str()), ("", ""));
+    assert!(p.read(".env.development").contains(R_NEW));
+
+    let v = Vercel::start_for_diff();
+    let p = diff_project();
+    let mut args = vec!["-q"];
+    args.extend(diff_args(&[]));
+    let out = run(&p, &v.url(), &args);
+    out.assert_code(1);
+    out.assert_contains("values never shown");
+    quiet(&out);
+}
+
+#[test]
+fn pull_dry_run_writes_nothing() {
+    let v = Vercel::start();
+    let p = pull_project();
+    let out = run(&p, &v.url(), &pull_args(&["--dry-run"]));
+    out.assert_code(0);
+    quiet(&out);
+    out.assert_contains("Dry run: nothing was written");
+    assert_eq!(p.read(".env.development"), PULL_BEFORE);
+    assert!(!p.exists(".env.development.bak"));
+    assert!(!p.exists(".evnx"));
+}
+
+#[test]
+fn pull_without_a_terminal_needs_yes() {
+    let v = Vercel::start();
+    let p = pull_project();
+    let out = run(&p, &v.url(), &pull_args(&["--no-gitignore"]));
+    out.assert_code(2);
+    out.assert_contains("--yes");
+    quiet(&out);
+    assert_eq!(p.read(".env.development"), PULL_BEFORE);
+    assert!(!p.exists(".evnx"));
+}
+
+#[test]
+fn pull_creates_a_file_that_does_not_exist() {
+    let v = Vercel::start();
+    let p = Project::new();
+    let out = run(&p, &v.url(), &pull_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    quiet(&out);
+    out.assert_contains("file      .env (default)");
+    assert_eq!(
+        p.read(".env"),
+        format!("API_URL={R_API}\nLOG_LEVEL={R_LOG}\nNEW_REMOTE={R_NEW}\nDB_URL=\nREDIS_URL=\n")
+    );
+    assert!(!p.exists(".env.bak"));
+}
+
+#[test]
+fn pull_with_nothing_to_change_says_so_and_still_records_the_state() {
+    let v = Vercel::start();
+    let p = Project::new().file(
+        ".env.development",
+        &format!("API_URL={R_API}\nDB_URL=x\nLOG_LEVEL={R_LOG}\nNEW_REMOTE={R_NEW}\nREDIS_URL=y\n"),
+    );
+    let out = run(&p, &v.url(), &pull_args(&["--no-gitignore"]));
+    out.assert_code(0);
+    quiet(&out);
+    out.assert_contains("already up to date");
+    assert!(p.exists(".evnx/platform/vercel.json"));
+    assert!(!p.exists(".env.development.bak"));
+}
+
+#[test]
+fn pull_refuses_a_file_it_cannot_read_without_touching_it() {
+    let v = Vercel::start();
+    let p = Project::new().file(".env.development", "A=1\n=broken\n");
+    let out = run(&p, &v.url(), &pull_args(&["--yes"]));
+    out.assert_code(2);
+    out.assert_contains("cannot read");
+    assert_eq!(p.read(".env.development"), "A=1\n=broken\n");
+}
+
+#[test]
+fn pull_failures_use_the_same_exit_codes_and_write_nothing() {
+    for (status, code) in [(401, 10), (403, 11), (500, 15)] {
+        let mut s = Server::new();
+        s.mock("GET", "/v10/projects/prj_1/env")
+            .match_query(list_query("team_1"))
+            .with_status(status)
+            .with_body("{}")
+            .create();
+        let p = pull_project();
+        let out = run(&p, &s.url(), &pull_args(&["--yes"]));
+        out.assert_code(code);
+        quiet(&out);
+        assert_eq!(p.read(".env.development"), PULL_BEFORE);
+        assert!(!p.exists(".evnx"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn declining_the_pull_exits_4_and_changes_nothing() {
+    use support::pty::{Pty, ENTER};
+    let v = Vercel::start();
+    let p = pull_project();
+    let url = v.url();
+    let args = pull_args(&["--no-gitignore"]);
+    let mut s = Pty::spawn_with(
+        p.path(),
+        &args,
+        &[
+            ("VERCEL_TOKEN", TOKEN),
+            ("EVNX_VERCEL_API_URL", &url),
+            ("VERCEL_PROJECT_ID", ""),
+            ("VERCEL_ORG_ID", ""),
+        ],
+    );
+    s.wait_for("[y/N]");
+    s.wait_for_echo_off();
+    s.press(&["n", ENTER]);
+    let (rest, code) = s.finish();
+    assert_eq!(code, 4, "{rest}");
+    assert!(rest.contains("Cancelled"), "{rest}");
+    for value in ALL_VALUES {
+        assert!(!rest.contains(value), "{value} in:\n{rest}");
+    }
+    assert_eq!(p.read(".env.development"), PULL_BEFORE);
+    assert!(!p.exists(".evnx"));
 }
