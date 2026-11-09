@@ -22,6 +22,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `migrate --to vercel` adds `--sensitive` for `development` as for the other environments.
   The two commands agree again. `--sensitive` is the legacy spelling of the Secret type and
   still works.
+- **A scan rule's `names` now beats a built-in rule in YAML and JSON too.** A key such as
+  `app: secret_key: sk_live_…` reported the built-in Stripe rule instead of the
+  project's rule, because the text pass (no key) found Stripe and its remediation URL
+  outranked the named rule; `.env` was already right. `names` stay case-sensitive regexes
+  in every format, as in `.env`: write `(?i)` or both spellings to cover `SECRET_KEY` and `secret_key`.
 
 ## [0.13.0] - 2026-11-08
 

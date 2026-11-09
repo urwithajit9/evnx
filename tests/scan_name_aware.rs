@@ -134,3 +134,92 @@ fn a_user_rule_with_names_fires_only_under_those_names() {
         .collect();
     assert_eq!(hits.len(), 1, "{doc}");
 }
+
+/// F14-3: a rule's `names` beats the built-in rule that matches the same
+/// value in every file format, not only in `.env`. `secret_key` under a YAML
+/// or JSON mapping reported Stripe, because the text pass (which has no key)
+/// found Stripe's rule and its remediation URL outranked the named rule.
+///
+/// `names` are regular expressions tested against the leaf key as written, in
+/// every format: `.env` is no exception, so a rule that means both
+/// `SECRET_KEY` and `secret_key` says so (here, or with `(?i)`).
+#[test]
+fn f14_3_names_win_over_a_builtin_in_every_format() {
+    let value = key();
+    let cases: [(&str, String); 6] = [
+        (".env", format!("SECRET_KEY={value}\n")),
+        ("flat.yaml", format!("secret_key: {value}\n")),
+        ("nested.yaml", format!("app:\n  secret_key: {value}\n")),
+        (
+            "deep.yml",
+            format!("a:\n  b:\n    - secret_key: '{value}'\n"),
+        ),
+        ("flat.json", format!("{{\"secret_key\": \"{value}\"}}\n")),
+        (
+            "nested.json",
+            format!("{{\"app\": {{\"secret_key\": \"{value}\"}}}}\n"),
+        ),
+    ];
+    for (file, body) in cases {
+        let d = TempDir::new().unwrap();
+        fs::write(
+            d.path().join(".evnx.toml"),
+            "[[scan.patterns]]\nid = \"acme-app-secret\"\nname = \"Acme App Secret\"\n\
+             regex = 'sk_live_[A-Za-z0-9]{16,}'\nnames = ['^(?:SECRET_KEY|secret_key)$']\n\
+             severity = \"critical\"\n",
+        )
+        .unwrap();
+        fs::write(d.path().join(file), body).unwrap();
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(d.path())
+            .env("NO_COLOR", "1")
+            .args(["scan", "--format", "json", file])
+            .output()
+            .unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&out.stdout)
+            .unwrap_or_else(|e| panic!("{file}: {e}\n{}", String::from_utf8_lossy(&out.stdout)));
+        let rules: Vec<&str> = doc["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["rule_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(rules, ["acme-app-secret"], "{file}: {doc}");
+    }
+}
+
+/// F14-3: the same rule stays out of the way under another name, in a nested
+/// mapping too: Stripe's rule still reports it.
+#[test]
+fn f14_3_a_nested_key_the_names_do_not_match_stays_builtin() {
+    let d = TempDir::new().unwrap();
+    fs::write(
+        d.path().join(".evnx.toml"),
+        "[[scan.patterns]]\nid = \"acme-app-secret\"\nname = \"Acme App Secret\"\n\
+         regex = 'sk_live_[A-Za-z0-9]{16,}'\nnames = ['^secret_key$']\nseverity = \"critical\"\n",
+    )
+    .unwrap();
+    fs::write(
+        d.path().join("nested.yaml"),
+        format!("app:\n  other_key: {}\n", key()),
+    )
+    .unwrap();
+    assert_eq!(
+        only_in(&d, "nested.yaml"),
+        "stripe-live-secret-key",
+        "names must not widen"
+    );
+}
+
+fn only_in(d: &TempDir, file: &str) -> String {
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(d.path())
+        .env("NO_COLOR", "1")
+        .args(["scan", "--format", "json", file])
+        .output()
+        .unwrap();
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let f = doc["findings"].as_array().unwrap();
+    assert_eq!(f.len(), 1, "{doc}");
+    f[0]["rule_id"].as_str().unwrap().to_string()
+}
