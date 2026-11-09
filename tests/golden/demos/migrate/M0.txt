@@ -92,23 +92,23 @@ Options:
       --heroku-app <HEROKU_APP>
           Heroku application name
 
-  -v, --verbose
-          Enable verbose output
-
       --vercel-project <VERCEL_PROJECT>
           Vercel project ID or name (default: the linked project)
-
-  -q, --quiet
-          Print nothing on success. Findings, warnings, errors and requested data still print
 
       --railway-project <RAILWAY_PROJECT>
           Railway project ID (default: the linked project). Needs --railway-environment, as Railway does
 
-      --no-color
-          Disable colored output
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
 
       --railway-environment <RAILWAY_ENVIRONMENT>
           Railway environment, e.g. production
+
+      --no-color
+          Disable colored output
 
       --railway-service <RAILWAY_SERVICE>
           Railway service (default: the linked service, or the project's only one)

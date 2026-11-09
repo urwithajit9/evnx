@@ -1,0 +1,60 @@
+{
+  "differs": true,
+  "entries": [
+    {
+      "action": "update",
+      "compare": "value_differs",
+      "key": "API_URL",
+      "type": "config",
+      "vercel_type": "config"
+    },
+    {
+      "action": "update",
+      "compare": "write_only",
+      "key": "DB_URL",
+      "type": "secret",
+      "vercel_type": "secret"
+    },
+    {
+      "action": "unchanged",
+      "compare": null,
+      "key": "LOG_LEVEL",
+      "type": "config",
+      "vercel_type": "config"
+    },
+    {
+      "action": "add",
+      "compare": null,
+      "key": "BRAND_NEW",
+      "type": "config",
+      "vercel_type": null
+    },
+    {
+      "action": "remote_only",
+      "compare": null,
+      "key": "NEW_REMOTE",
+      "type": "config",
+      "vercel_type": "config"
+    },
+    {
+      "action": "remote_only",
+      "compare": null,
+      "key": "REDIS_URL",
+      "type": "secret",
+      "vercel_type": "secret"
+    }
+  ],
+  "environment": "development",
+  "file": ".env.development",
+  "hidden_production_env_count": 0,
+  "platform": "vercel",
+  "project": "prj_1",
+  "summary": {
+    "add": 1,
+    "remote_only": 2,
+    "type_differs": 0,
+    "unchanged": 1,
+    "update": 2
+  },
+  "team": "team_1"
+}

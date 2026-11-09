@@ -468,6 +468,115 @@ pub struct MigrateOptions {
 }
 
 // ─────────────────────────────────────────────────────────────
+// platform: diff and pull against a hosting platform
+// ─────────────────────────────────────────────────────────────
+
+/// Subcommands for `evnx platform`.
+#[cfg(feature = "net")]
+#[derive(Subcommand, Debug)]
+pub enum PlatformCommands {
+    /// Show what differs between a local .env and a Vercel environment.
+    ///
+    /// Prints keys, types and actions, never a value. A Config variable's value
+    /// is compared; a Secret's cannot be (Vercel never returns it), so one that
+    /// exists on both sides is shown as an update that cannot be compared.
+    ///
+    /// Exit 0 when nothing differs, 1 when something does, 2 when it could not
+    /// run, and 10, 11, 13, 15 for a Vercel failure (see `evnx platform --help`).
+    #[command(after_help = "\
+Examples:
+  evnx platform diff --to vercel                         .env.development (or .env) vs development
+  evnx platform diff --to vercel --env-name production   .env.production (or .env) vs production
+  evnx platform diff --to vercel --format json           machine-readable: keys and actions only
+  evnx platform diff --to vercel --project prj_123 --team team_456 --token-file ~/.vercel-token
+
+Legend: + add (local only)   ~ update (on both sides)   = unchanged
+        ! remote only (Vercel has it, the file does not)   ! type differs (not changed)
+
+Full guide: https://docs.evnx.dev/cli/commands/platform")]
+    Diff(PlatformDiffArgs),
+}
+
+/// What every `platform` subcommand needs to find its project, token and file.
+#[cfg(feature = "net")]
+#[derive(Args, Debug, Clone)]
+pub struct PlatformCommon {
+    /// The platform to talk to. Only `vercel` for now.
+    #[arg(long, value_enum, value_name = "PLATFORM")]
+    pub to: crate::platform::Platform,
+
+    /// Vercel project id (`prj_…`) or name.
+    ///
+    /// Otherwise VERCEL_PROJECT_ID, then `.vercel/project.json` (`vercel link`).
+    #[arg(long, value_name = "ID")]
+    pub project: Option<String>,
+
+    /// Vercel team id (`team_…`) or slug, for a team's project.
+    ///
+    /// Otherwise VERCEL_ORG_ID, then the `orgId` in `.vercel/project.json` when
+    /// the project came from there too.
+    #[arg(long, value_name = "ID")]
+    pub team: Option<String>,
+
+    /// Read the Vercel token from this file (only the token, one line).
+    ///
+    /// Otherwise VERCEL_TOKEN. There is no `--token <value>` flag: it would land
+    /// in shell history.
+    #[arg(long, value_name = "PATH")]
+    pub token_file: Option<std::path::PathBuf>,
+
+    /// The Vercel environment: `production`, `preview` or `development`.
+    ///
+    /// Also picks the local file: `.env.<environment>` when it exists, else
+    /// `.env`, as `cloud push` does. The file used is always printed.
+    #[arg(
+        long,
+        value_enum,
+        value_name = "ENV",
+        default_value_t = crate::platform::vercel::plan::Environment::Development
+    )]
+    pub env_name: crate::platform::vercel::plan::Environment,
+
+    /// The local file, instead of `.env.<environment>` or `.env`.
+    #[arg(long, short, value_name = "PATH")]
+    pub file: Option<std::path::PathBuf>,
+
+    /// The Vercel API address (for testing against a local server).
+    #[arg(long, hide = true, env = "EVNX_VERCEL_API_URL", value_name = "URL")]
+    pub api_url: Option<String>,
+}
+
+/// Arguments of `evnx platform diff`.
+#[cfg(feature = "net")]
+#[derive(Args, Debug, Clone)]
+pub struct PlatformDiffArgs {
+    #[command(flatten)]
+    pub common: PlatformCommon,
+
+    /// Output format: `pretty` or `json`.
+    #[arg(long, value_enum, value_name = "FORMAT", default_value_t = PlatformFormat::Pretty)]
+    pub format: PlatformFormat,
+}
+
+#[cfg(feature = "net")]
+impl PlatformDiffArgs {
+    /// Whether `--format json` was given.
+    pub fn json(&self) -> bool {
+        self.format == PlatformFormat::Json
+    }
+}
+
+/// `--format` of `platform diff`.
+#[cfg(feature = "net")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum PlatformFormat {
+    /// The table.
+    Pretty,
+    /// Keys, types and actions as JSON.
+    Json,
+}
+
+// ─────────────────────────────────────────────────────────────
 // Cli: Top-level CLI structure
 // ─────────────────────────────────────────────────────────────
 
@@ -1721,6 +1830,7 @@ what it has). What each one adds:
   backup     backup, restore
   migrate    migrate
   cloud      auth, org, vault, cloud
+  net        platform (and `update --check`)
 
 `cargo install evnx` compiles with no features. For all of them:
   cargo install evnx --all-features
@@ -2915,6 +3025,35 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// the access and refresh tokens travel in request headers.
         #[arg(long, value_name = "URL", global = true)]
         server: Option<String>,
+    },
+
+    /// Compare or sync .env with a hosting platform's variables (Vercel).
+    ///
+    /// `diff` shows what differs between a local .env and a Vercel environment;
+    /// `pull` writes Vercel's readable values into the local file. Vercel has two
+    /// kinds of variable: a Config value can be read back, a Secret never can, so
+    /// `diff` cannot compare Secrets and `pull` cannot fetch them. Values are
+    /// never printed.
+    ///
+    /// Needs a Vercel token in VERCEL_TOKEN (or --token-file) and a project
+    /// (--project, VERCEL_PROJECT_ID, or .vercel/project.json from `vercel link`).
+    ///
+    /// Exit codes:
+    ///   0   done, or no differences
+    ///   1   `diff` found differences
+    ///   2   could not run (bad flag, no token, no project, unreadable file)
+    ///   4   `pull` was declined at the confirmation
+    ///   10  Vercel refused the token
+    ///   11  the token may not read that project
+    ///   13  Vercel could not be reached
+    ///   15  Vercel server error, or the rate limit never cleared
+    // `verbatim_doc_comment`: without it clap rewraps the exit-code table into
+    // one run-on paragraph.
+    #[cfg(feature = "net")]
+    #[command(verbatim_doc_comment, after_help = docs::PLATFORM.after_help)]
+    Platform {
+        #[command(subcommand)]
+        command: PlatformCommands,
     },
 
     /// Diagnose common setup issues.

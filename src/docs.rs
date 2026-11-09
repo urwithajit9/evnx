@@ -294,6 +294,24 @@ pub const CLOUD: CommandDoc = CommandDoc {
     after_help: "Full guide: https://docs.evnx.dev/cli/commands/cloud",
 };
 
+pub const PLATFORM: CommandDoc = CommandDoc {
+    command: "platform",
+    url: "https://docs.evnx.dev/cli/commands/platform",
+    description: "Compare and sync .env with Vercel's variables",
+    after_help: "Examples:
+  evnx platform diff --to vercel                         what differs from Vercel's development variables
+  evnx platform diff --to vercel --env-name production   .env.production against production
+  evnx platform pull --to vercel --dry-run               what a pull would change, nothing written
+  evnx platform pull --to vercel --yes                   write Vercel's readable values, no question
+
+Auth: VERCEL_TOKEN, or --token-file <path>. There is no --token flag.
+Project: --project / --team, or VERCEL_PROJECT_ID / VERCEL_ORG_ID, or .vercel/project.json.
+Config variables can be read back; Secrets cannot, so they are compared by presence only
+and never pulled. Values are never printed.
+
+Full guide: https://docs.evnx.dev/cli/commands/platform",
+};
+
 pub const AUTH: CommandDoc = CommandDoc {
     command: "auth",
     url: "https://docs.evnx.dev/cli/commands/auth",
@@ -401,6 +419,7 @@ pub const ALL: &[&CommandDoc] = &[
     &BACKUP,
     &RESTORE,
     &CLOUD,
+    &PLATFORM,
     &AUTH,
     &VAULT,
     &ORG,
