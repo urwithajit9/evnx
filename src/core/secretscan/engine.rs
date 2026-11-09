@@ -429,7 +429,22 @@ fn scan_structured(text: &str, format: Format, ctx: &Context) -> Vec<Found> {
         .filter_map(|g| {
             let line = g[0].line;
             let variable = g.iter().find_map(|f| f.variable.clone());
-            best(g.into_iter().map(|f| f.detection).collect()).map(|detection| Found {
+            // ⚠️ A rule with `names` fired for this leaf because its key
+            // matched. The text path reads the same value with no key, so it
+            // can only report the unconstrained rule the named one exists to
+            // beat (`secret_key: sk_live_…` is the project's, not Stripe's);
+            // left in the group, that rule's remediation URL outranked it.
+            // `.env` never had the problem: it has no text path for a line
+            // that parsed (F14-3).
+            let keyed = |f: &Found| {
+                f.variable.is_some() && ctx.registry.is_name_constrained(&f.detection.rule_id)
+            };
+            let detections: Vec<Detection> = if g.iter().any(keyed) {
+                g.into_iter().filter(keyed).map(|f| f.detection).collect()
+            } else {
+                g.into_iter().map(|f| f.detection).collect()
+            };
+            best(detections).map(|detection| Found {
                 line,
                 variable,
                 detection,

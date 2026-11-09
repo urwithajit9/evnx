@@ -228,6 +228,13 @@ pub trait SecretDetector: Send + Sync {
         true
     }
 
+    /// Is `rule_id` one of this detector's rules that only fires for a named
+    /// key (a rule's `names`, RM-92)? Used to keep a keyless pass over the same
+    /// text from outranking it in a YAML/JSON/TOML file.
+    fn is_name_constrained(&self, _rule_id: &str) -> bool {
+        false
+    }
+
     /// Scan a raw token for secrets.
     ///
     /// Used for general text files where key-value structure isn't present.
@@ -548,6 +555,13 @@ impl DetectorRegistry {
         found
     }
 
+    /// Does a detector hold a `names` rule with this id (RM-92)?
+    pub fn is_name_constrained(&self, rule_id: &str) -> bool {
+        self.detectors
+            .iter()
+            .any(|d| d.is_name_constrained(rule_id))
+    }
+
     /// Scan a raw token through all registered detectors.
     ///
     /// Similar to [`scan_kv()`](Self::scan_kv) but for token-based scanning
@@ -782,6 +796,10 @@ impl SecretDetector for RuleDetector {
     /// A project that no longer wants a rule deletes the rule.
     fn judges_value(&self) -> bool {
         true
+    }
+
+    fn is_name_constrained(&self, rule_id: &str) -> bool {
+        self.patterns.is_name_constrained(rule_id)
     }
 
     fn scan_kv(&self, key: &str, value: &str, _location: &str) -> Option<Detection> {

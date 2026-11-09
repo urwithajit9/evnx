@@ -264,9 +264,10 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 args.vercel_project.as_deref(),
                 Name::Slug,
             )?;
-            Ok(Box::new(vercel::VercelDestination::new(
-                args.vercel_project.clone(),
-            )))
+            Ok(Box::new(
+                vercel::VercelDestination::new(args.vercel_project.clone())
+                    .for_env_file(&args.source_file),
+            ))
         }
         "heroku" => {
             let app = resolve_arg(

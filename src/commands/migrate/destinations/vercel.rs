@@ -19,8 +19,11 @@
 //!   value as?"); the printed command should run without a question.
 //!
 //! - `--sensitive` for a variable that looks secret (`classify::holds_secret`),
-//!   production and preview only: Vercel rejects a Sensitive variable in
-//!   `development`.
+//!   in every environment including `development`. Vercel allowed Sensitive
+//!   variables there from 2026-08-24 ("Secrets are allowed in Development",
+//!   <https://vercel.com/docs/environment-variables/sensitive-environment-variables>,
+//!   updated 2026-08-28); `--sensitive` is the legacy spelling of the Secret
+//!   type and still works, so the printed command works on older CLIs too.
 //!
 //! # Usage
 //!
@@ -49,10 +52,23 @@ impl VercelDestination {
         }
     }
 
+    /// Target the Vercel environment the source file stands for: `.env.development`
+    /// is `development`, `.env.preview` is `preview`, anything else `production`.
+    /// There is no flag to override it.
+    ///
+    /// ⚠️ Before this, `--env-name development` read `.env.development` but the
+    /// commands said `production`, so development values could land in
+    /// production (F14-2b).
+    pub fn for_env_file(mut self, source_file: &str) -> Self {
+        self.environment = environment_for(source_file).into();
+        self
+    }
+
     /// `vercel env add NAME ENVIRONMENT [--project P] --force --yes`.
     ///
-    /// ⚠️ `--sensitive` for a secret-looking variable, except for
-    /// `development`, where Vercel rejects a Sensitive variable.
+    /// ⚠️ `--sensitive` for a secret-looking variable, in every environment.
+    /// 0.13.0 left it off for `development` because Vercel then rejected it
+    /// there; Vercel has allowed Secrets in Development since 2026-08-24 (F14-2).
     fn add_command(&self, key: &str, sensitive: bool) -> String {
         let mut words = vec![
             "vercel".to_string(),
@@ -65,12 +81,28 @@ impl VercelDestination {
             words.push("--project".into());
             words.push(shell::word(p));
         }
-        if sensitive && self.environment != "development" {
+        if sensitive {
             words.push("--sensitive".into());
         }
         words.push("--force".into());
         words.push("--yes".into());
         words.join(" ")
+    }
+}
+
+/// The Vercel environment for a source file name (`.env.development.local`
+/// counts as `development`); `production` when the name says nothing.
+fn environment_for(source_file: &str) -> &'static str {
+    let base = source_file
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(source_file);
+    let name = base.strip_prefix(".env.").unwrap_or("");
+    let name = name.strip_suffix(".local").unwrap_or(name);
+    match name.to_ascii_lowercase().as_str() {
+        "development" | "dev" => "development",
+        "preview" => "preview",
+        _ => "production",
     }
 }
 
@@ -165,7 +197,25 @@ mod tests {
         dev.environment = "development".into();
         assert_eq!(
             dev.add_command("A", true),
-            "vercel env add A development --force --yes"
+            "vercel env add A development --sensitive --force --yes"
         );
+    }
+
+    /// F14-2b: the environment follows the file that was read.
+    #[test]
+    fn f14_2b_environment_follows_the_source_file() {
+        for (file, env) in [
+            (".env.development", "development"),
+            ("cfg/.env.dev", "development"),
+            (".env.development.local", "development"),
+            (".env.preview", "preview"),
+            (".env.production", "production"),
+            (".env.staging", "production"),
+            (".env", "production"),
+        ] {
+            let d = VercelDestination::new(None).for_env_file(file);
+            assert_eq!(d.environment, env, "{file}");
+            assert!(d.add_command("A", false).contains(&format!(" {env} ")));
+        }
     }
 }

@@ -438,7 +438,7 @@ fn render<'a>(entries: impl IntoIterator<Item = &'a Entry>, header: &str) -> Str
 /// writeback `add` uses. Field order: comment, description, required, format,
 /// secret.
 pub(crate) fn render_entry(name: &str, spec: &VarSpec, comment: Option<&str>) -> String {
-    let mut s = format!("\n[vars.{name}]\n");
+    let mut s = format!("\n[vars.{}]\n", crate::core::spec::toml_key(name));
     if let Some(c) = comment {
         s.push_str(&format!("# {c}\n"));
     }

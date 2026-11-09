@@ -253,6 +253,41 @@ fn t_rm65_vercel_migrate_marks_secrets_sensitive() {
     );
 }
 
+/// F14-2b: the Vercel environment is the one of the file read, in the commands
+/// and in the dry-run summary; plain `.env` stays production. 0.13.0 printed
+/// `production` for `.env.development`.
+#[test]
+fn f14_2b_vercel_environment_follows_the_env_name() {
+    let p = Project::new()
+        .env("APP_NAME=demo\n")
+        .file(".env.development", "APP_NAME=dev\n")
+        .file(".env.preview", "APP_NAME=prev\n");
+    for (args, env) in [
+        (&["--env-name", "development"][..], "development"),
+        (&["--env-name", "preview"][..], "preview"),
+        (&[][..], "production"),
+    ] {
+        let mut a = vec!["--to", "vercel"];
+        a.extend_from_slice(args);
+        let out = migrate(&p, &a);
+        out.assert_code(0);
+        assert!(
+            out.stdout
+                .contains(&format!("vercel env add APP_NAME {env} --force --yes")),
+            "{env}: {}",
+            out.stdout
+        );
+        a.push("--dry-run");
+        let out = migrate(&p, &a);
+        out.assert_code(0);
+        assert!(
+            out.stdout.contains(&format!("Environment : {env}")),
+            "{env}: {}",
+            out.stdout
+        );
+    }
+}
+
 // ── infisical (I-270, DEC-MG4) ──────────────────────────────────────────────
 
 #[test]

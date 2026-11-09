@@ -511,6 +511,15 @@ impl PatternSet {
         out
     }
 
+    /// Whether the rule with this id carries `names` (RM-92). Such a rule only
+    /// ever fires where a key name was offered, so a finding of it was reached
+    /// with the key, and a keyless pass over the same text cannot overrule it.
+    pub fn is_name_constrained(&self, id: &str) -> bool {
+        self.rules
+            .iter()
+            .any(|r| r.names.is_some() && r.id.as_str() == id)
+    }
+
     /// The single best match in `haystack`, for a `.env` value.
     ///
     /// One value is one finding — the same rule the built-in detectors follow in
