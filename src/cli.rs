@@ -1839,9 +1839,11 @@ pub enum Commands {
     /// • blueprint: Add vars from a stack blueprint
     /// • custom: Interactive custom variable addition
     ///
-    /// Exit codes: 0 when the variables were added, were already there, or
-    /// the run was a --dry-run or answered no; 2 when it could not run
-    /// (unknown id, bad argument, no terminal to ask, a write error).
+    /// Exit codes: 0 when the variables were added, were already there, the
+    /// run was a --dry-run, or you backed out of a menu or a custom question
+    /// (Esc); 2 when it could not run (unknown id, bad argument, no terminal
+    /// to ask, a write error); 4 you answered no (or Esc) at the write
+    /// confirmation.
     // ⚠️ Not `args_conflicts_with_subcommands`: that also refuses every flag
     // written before the subcommand (`evnx add --path api service redis`),
     // which has always worked. `--list` with a subcommand is refused in `run`.
