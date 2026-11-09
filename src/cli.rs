@@ -217,6 +217,37 @@ pub struct SyncArgs {
     #[arg(long, value_name = "PATH")]
     pub template_config: Option<std::path::PathBuf>,
 
+    /// Remove from the template the names that no environment file has.
+    ///
+    /// Compares the template with `.env` and every `.env.<NAME>`, lists what
+    /// goes, and asks. A name declared in `.evnx.toml [vars]` is kept. Only the
+    /// template is written (git holds its history; no `.bak`). Refused when no
+    /// environment file exists or all are empty.
+    ///
+    /// Works on its own: it cannot be combined with the options that pick
+    /// one environment file or another mode (env, env-name, direction, check,
+    /// format, force, placeholder, skip-without-env, template-config,
+    /// naming-policy). Use --example for another template and --dry-run to
+    /// preview.
+    ///
+    ///   0  pruned, nothing to prune, or a dry run
+    ///   2  refused (no terminal without --yes, no environment file, a file it
+    ///      cannot read, changed while running)
+    ///   4  you answered no
+    #[arg(
+        long,
+        verbatim_doc_comment,
+        conflicts_with_all = [
+            "env", "env_name", "direction", "check", "format", "force",
+            "placeholder", "skip_without_env", "template_config", "naming_policy",
+        ]
+    )]
+    pub prune: bool,
+
+    /// With --prune: remove without asking.
+    #[arg(long, short = 'y', requires = "prune")]
+    pub yes: bool,
+
     /// What to do with a name that is not UPPER_SNAKE_CASE.
     ///
     /// Defaults to `[sync] naming_policy` in .evnx.toml, else `warn`. `error`

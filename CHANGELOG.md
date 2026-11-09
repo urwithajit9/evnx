@@ -42,6 +42,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   outranked the named rule; `.env` was already right. `names` stay case-sensitive regexes
   in every format, as in `.env`: write `(?i)` or both spellings to cover `SECRET_KEY` and `secret_key`.
 
+- **`evnx sync --prune`: remove stale names from the template** (N14-11).
+  `sync` only ever added; a name that every environment had dropped stayed in
+  `.env.example` until someone edited it by hand. `--prune` compares the
+  template (`--example`, `[defaults] example`, else `.env.example`) with `.env`
+  and every `.env.<NAME>`, lists the names none of them has, and removes them
+  after asking. It uses `remove`'s editor and writer, so comments, line
+  endings and everything else in the template stay byte for byte.
+  - A name declared in `.evnx.toml [vars]` is never pruned: it is listed as
+    kept, with the `evnx remove NAME --template --contract` that drops both.
+  - `--dry-run` previews and writes nothing; `--yes` (`-y`, only with
+    `--prune`) skips the question; no terminal without `--yes` is exit 2;
+    answering no is exit 4. Only the template is written, and no `.bak` is
+    kept for it (it is committed, as with `remove --template`).
+  - Refused, with nothing changed (exit 2): no environment file, every
+    environment file empty, or one that has a line evnx cannot read (a name
+    could hide behind it).
+  - It is a mode of its own: clap refuses `--prune` with `--check`, `--format`,
+    `--env`, `--env-name`, `--direction`, `--force`, `--placeholder`,
+    `--skip-without-env`, `--template-config` and `--naming-policy`.
+
 ## [0.13.0] - 2026-11-08
 
 **Read this first: what changes for scripts and CI.** Each item has its own

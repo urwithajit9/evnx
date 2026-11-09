@@ -23,6 +23,7 @@
 
 pub mod contract;
 pub mod edit;
+pub mod prune;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

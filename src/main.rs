@@ -577,6 +577,20 @@ fn main() -> Result<()> {
         // ⚠️ `[sync] naming_policy` is checked even when the flag overrides it,
         // as `[validate] fail_on` is (I-038, I-121): a typo in the file is not
         // hidden by a flag that happens to be passed today.
+        // `--prune` is its own mode (N14-11): it compares the template with
+        // every environment file, so none of sync's file or mode flags apply
+        // (clap refuses the combinations).
+        Commands::Sync { args } if args.prune => {
+            commands::remove::prune::run(commands::remove::prune::PruneOptions {
+                path: ".".to_string(),
+                example: cfg.example_path(args.example.clone()),
+                declared: cfg.vars.keys().cloned().collect(),
+                dry_run: args.dry_run,
+                yes: args.yes,
+            })
+            .or_else(declined)
+        }
+
         Commands::Sync { args } => cfg
             .sync
             .naming_policy

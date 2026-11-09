@@ -168,7 +168,12 @@ pub const SYNC: CommandDoc = CommandDoc {
     command: "sync",
     url: "https://docs.evnx.dev/cli/commands/sync",
     description: "Keeping .env and .env.example in sync",
-    after_help: "Full guide: https://docs.evnx.dev/cli/commands/sync",
+    after_help: "Examples:
+  evnx sync --check --direction forward   CI gate: does the template have everything .env has?
+  evnx sync --prune --dry-run             preview names in the template that no env file has
+  evnx sync --prune --yes                 remove them, without asking
+
+Full guide: https://docs.evnx.dev/cli/commands/sync",
 };
 
 pub const MIGRATE: CommandDoc = CommandDoc {
