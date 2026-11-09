@@ -778,6 +778,17 @@ fn main() -> Result<()> {
             }
         }
 
+        #[cfg(feature = "net")]
+        Commands::Platform { command } => match evnx::platform::run(command) {
+            // `diff` found differences: 1, as `cloud diff --local` and `diff`.
+            Ok(v) => {
+                verdict::finish(v);
+                Ok(())
+            }
+            // `pull` declined: already said, and 4 as in `cloud pull` (D6).
+            Err(e) => declined(e),
+        },
+
         Commands::Doctor {
             path,
             project_path,
@@ -920,6 +931,10 @@ fn main() -> Result<()> {
         // text and "no verdict" line as any other error; only the code differs.
         #[cfg(feature = "cloud")]
         if let Some(code) = evnx::cloud::client::exit_code_of(&e) {
+            verdict::no_verdict_with_code(&e, Stage::DuringRun, code);
+        }
+        #[cfg(feature = "net")]
+        if let Some(code) = evnx::platform::exit_code_of(&e) {
             verdict::no_verdict_with_code(&e, Stage::DuringRun, code);
         }
         verdict::no_verdict(&e, Stage::DuringRun);

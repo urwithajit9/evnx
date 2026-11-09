@@ -1,0 +1,12 @@
+  Vercel    team_1/prj_1 (--project)  development
+  file      .env.development (matched the environment)
+  ~ API_URL     config  update (local value replaced)
+  = DB_URL      secret  kept (secret: write-only on Vercel, local value stays)
+  = LOG_LEVEL   config  unchanged
+  + NEW_REMOTE  config  add
+  ! REDIS_URL   secret  written empty (secret: write-only on Vercel)
+1 add · 1 update · 1 unchanged · 1 secret kept · 1 written empty · 1 local only (untouched) · values never shown
+  Written empty (write-only on Vercel, so evnx cannot fetch the value): REDIS_URL
+  ✓ wrote .env.development
+  ✓ kept the previous .env.development as .env.development.bak
+  ✓ recorded .evnx/platform/vercel.json (ids only, no values)

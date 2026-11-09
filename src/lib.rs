@@ -34,6 +34,10 @@ pub mod commands;
 pub mod core;
 pub mod docs;
 pub mod formats;
+// Behind `net` like `cloud` is behind `cloud`: without the feature the module does
+// not exist, so nothing in a default build can open a socket for it.
+#[cfg(feature = "net")]
+pub mod platform;
 pub mod schema;
 pub mod utils;
 

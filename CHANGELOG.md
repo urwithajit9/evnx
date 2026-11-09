@@ -10,6 +10,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`evnx platform diff|pull --to vercel`: compare and pull a Vercel project's
+  environment variables** (N14-10, phase 1; `push` and `--prune` come later).
+  `diff` prints a plan (`+ add`, `~ update`, `= unchanged`, `! remote only`,
+  `! type differs`) for a local `.env.<env>` against a Vercel environment, with
+  `--format json`; exit 0 with no differences, 1 with some. `pull` writes
+  Vercel's **Config** values into the local file, keeping comments, order and
+  formatting. A **Secret** is write-only on Vercel: one whose key has a local
+  value keeps it, one the file lacks is written as `KEY=` and listed, and `diff`
+  can say only that it exists. Local-only keys are kept. `pull` shows the plan
+  and asks first (`--yes` without a terminal, exit 4 on a no, `--dry-run`), and
+  keeps the old file as `.bak`. **Values are never printed.** The project comes
+  from `--project`/`--team`, then `VERCEL_PROJECT_ID`/`VERCEL_ORG_ID`, then
+  `.vercel/project.json`; the token from `VERCEL_TOKEN` or `--token-file` (there
+  is no `--token` flag). `--env-name production|preview|development` (default
+  `development`) also picks the file (`.env.<env>` if present, else `.env`).
+  Exit codes follow `cloud`: 10 token refused, 11 forbidden, 13 unreachable, 15
+  Vercel error or a rate limit that did not clear after three tries. A pull
+  records `.evnx/platform/vercel.json` (each variable's id, targets, type and
+  `updatedAt`; no values, no hashes) for the later `push`; add `.evnx/platform/`
+  to `.gitignore`. Needs the `net` feature; a build without it lists `platform`
+  in the missing-features table.
 - **`SSL_CERT_FILE` and `SSL_CERT_DIR` add trusted root certificates**, so evnx
   works behind TLS-inspecting corporate proxies (RM-68). The bundled roots stay;
   the extras are added to them. `SSL_CERT_FILE` is a PEM bundle; `SSL_CERT_DIR`
