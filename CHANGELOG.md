@@ -8,18 +8,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
-
-- **`SSL_CERT_FILE` and `SSL_CERT_DIR` add trusted root certificates**, so evnx
-  works behind TLS-inspecting corporate proxies (RM-68). The bundled roots stay;
-  the extras are added to them. `SSL_CERT_FILE` is a PEM bundle; `SSL_CERT_DIR`
-  is a directory (or a path-separator list of them) of `*.pem`, `*.crt` and
-  hashed (`a1b2c3d4.0`) files. A missing path or a file with no certificate is an
-  error naming the variable and the path (exit 13 for `evnx cloud`); an
-  unreadable file inside the directory is a warning. An unknown-issuer failure
-  now says: set SSL_CERT_FILE to your organisation's CA bundle (PEM). Applies to
-  `cloud`, `update --check`, `migrate --to github-actions` and `scan packs`.
-
 ### Fixed
 
 - **`evnx spec init` wrote `[vars.spring.datasource.url]` for a variable with dots in its name.**
