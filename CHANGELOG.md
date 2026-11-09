@@ -10,6 +10,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`evnx migrate --to vercel` printed `production` for a development file.** With
+  `--env-name development` (or `preview`) it read `.env.development` but every printed
+  `vercel env add` said `production`, and the dry-run said `Environment : production`; every
+  earlier version did this. The environment now follows the file that was read
+  (`.env.development`/`.env.dev` is `development`, `.env.preview` is `preview`, anything else,
+  including plain `.env`, is `production`). **If you ran it for a development or preview
+  file, check Vercel production for development values.**
 - **`evnx add --help` said a declined confirmation exits 0**; it exits 4, as
   0.13.0 made it (the help text was not updated). It now lists 0, 2 and 4.
 - **Vercel secrets are now `sensitive` in `development` too** (`convert --to vercel`,
