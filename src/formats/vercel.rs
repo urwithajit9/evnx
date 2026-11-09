@@ -9,52 +9,47 @@ use indexmap::IndexMap;
 
 pub struct VercelEnvConverter;
 
-/// Targets of a variable that is not secret.
-const PLAIN_TARGETS: [&str; 3] = ["production", "preview", "development"];
-/// Targets of a Sensitive variable. ⚠️ Not `development`: Vercel's API
-/// rejects it ("You cannot set a Sensitive Environment Variable's target to
-/// development"; <https://vercel.com/docs/environment-variables/sensitive-environment-variables>).
-const SENSITIVE_TARGETS: [&str; 2] = ["production", "preview"];
+/// Targets of every variable, secret or not.
+///
+/// ⚠️ A Sensitive (now "Secret") variable is allowed in `development`. Vercel
+/// reversed its earlier rule that limited them to Production and Preview:
+/// "Secrets are allowed in Development. This reverses the earlier rule that
+/// limited Sensitive environment variables to Production and Preview"
+/// (<https://vercel.com/docs/environment-variables/sensitive-environment-variables>,
+/// updated 2026-08-28; changelog
+/// <https://vercel.com/changelog/environment-variables-now-use-config-and-secret-types>).
+/// evnx 0.13.0 followed the old rule and left them out of `development` (F14-2).
+const TARGETS: [&str; 3] = ["production", "preview", "development"];
 
-/// `vercel env add --sensitive` applies when `key=value` looks secret and the
-/// environment is not `development` (shared with `migrate --to vercel`).
+/// `vercel env add --sensitive` applies when `key=value` looks secret, in every
+/// environment (shared with `migrate --to vercel`). `--sensitive` is the legacy
+/// spelling of the Secret type and still works.
 pub fn is_sensitive(key: &str, value: &str) -> bool {
     crate::core::classify::holds_secret(key, value)
 }
 
 impl Converter for VercelEnvConverter {
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
-        let mut sensitive = 0usize;
         let transformed: IndexMap<String, serde_json::Value> = options
             .prepare(vars, self)?
             .into_iter()
             .map(|(key, value)| {
                 let entry = if is_sensitive(&key, &value) {
-                    sensitive += 1;
                     serde_json::json!({
                         "type": "sensitive",
                         "value": value,
-                        "target": SENSITIVE_TARGETS
+                        "target": TARGETS
                     })
                 } else {
                     serde_json::json!({
                         "type": "plain",
                         "value": value,
-                        "target": PLAIN_TARGETS
+                        "target": TARGETS
                     })
                 };
                 (key, entry)
             })
             .collect();
-
-        if sensitive > 0 {
-            // stderr, never in the JSON.
-            crate::utils::ui::warning(format!(
-                "{sensitive} variable{} written as type \"sensitive\" and not set for \
-                 development: Vercel does not allow a Sensitive variable there.",
-                if sensitive == 1 { "" } else { "s" }
-            ));
-        }
 
         let json = serde_json::to_string_pretty(&transformed)?;
         Ok(json)
@@ -85,12 +80,12 @@ mod tests {
     }
 
     #[test]
-    fn secret_key_is_sensitive_without_development() {
+    fn secret_key_is_sensitive_in_every_environment() {
         let v = run(&[("DB_PASSWORD", "hunter2")]);
         assert_eq!(v["DB_PASSWORD"]["type"], "sensitive");
         assert_eq!(
             v["DB_PASSWORD"]["target"],
-            serde_json::json!(["production", "preview"])
+            serde_json::json!(["production", "preview", "development"])
         );
     }
 

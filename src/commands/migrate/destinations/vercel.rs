@@ -19,8 +19,11 @@
 //!   value as?"); the printed command should run without a question.
 //!
 //! - `--sensitive` for a variable that looks secret (`classify::holds_secret`),
-//!   production and preview only: Vercel rejects a Sensitive variable in
-//!   `development`.
+//!   in every environment including `development`. Vercel allowed Sensitive
+//!   variables there from 2026-08-24 ("Secrets are allowed in Development",
+//!   <https://vercel.com/docs/environment-variables/sensitive-environment-variables>,
+//!   updated 2026-08-28); `--sensitive` is the legacy spelling of the Secret
+//!   type and still works, so the printed command works on older CLIs too.
 //!
 //! # Usage
 //!
@@ -51,8 +54,9 @@ impl VercelDestination {
 
     /// `vercel env add NAME ENVIRONMENT [--project P] --force --yes`.
     ///
-    /// ⚠️ `--sensitive` for a secret-looking variable, except for
-    /// `development`, where Vercel rejects a Sensitive variable.
+    /// ⚠️ `--sensitive` for a secret-looking variable, in every environment.
+    /// 0.13.0 left it off for `development` because Vercel then rejected it
+    /// there; Vercel has allowed Secrets in Development since 2026-08-24 (F14-2).
     fn add_command(&self, key: &str, sensitive: bool) -> String {
         let mut words = vec![
             "vercel".to_string(),
@@ -65,7 +69,7 @@ impl VercelDestination {
             words.push("--project".into());
             words.push(shell::word(p));
         }
-        if sensitive && self.environment != "development" {
+        if sensitive {
             words.push("--sensitive".into());
         }
         words.push("--force".into());
@@ -165,7 +169,7 @@ mod tests {
         dev.environment = "development".into();
         assert_eq!(
             dev.add_command("A", true),
-            "vercel env add A development --force --yes"
+            "vercel env add A development --sensitive --force --yes"
         );
     }
 }

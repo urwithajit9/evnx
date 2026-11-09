@@ -12,6 +12,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **`evnx add --help` said a declined confirmation exits 0**; it exits 4, as
   0.13.0 made it (the help text was not updated). It now lists 0, 2 and 4.
+- **Vercel secrets are now `sensitive` in `development` too** (`convert --to vercel`,
+  `migrate --to vercel`). 0.13.0 kept them out of `development` because Vercel rejected a
+  Sensitive variable there; Vercel reversed that rule on 2026-08-24 ("Secrets are allowed in
+  Development", [docs](https://vercel.com/docs/environment-variables/sensitive-environment-variables),
+  [changelog](https://vercel.com/changelog/environment-variables-now-use-config-and-secret-types)).
+  `convert --to vercel` now gives a secret-looking variable all three targets (`production`,
+  `preview`, `development`) and no longer prints the "not set for development" warning;
+  `migrate --to vercel` adds `--sensitive` for `development` as for the other environments.
+  The two commands agree again. `--sensitive` is the legacy spelling of the Secret type and
+  still works.
 
 ## [0.13.0] - 2026-11-08
 
