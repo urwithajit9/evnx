@@ -358,7 +358,7 @@ fn header_u64(headers: &HeaderMap, name: &str) -> Option<u64> {
 }
 
 /// Seconds to wait after a 429: `Retry-After`, else until `x-ratelimit-reset`,
-/// else a short growing pause; never more than [`MAX_WAIT_SECS`].
+/// else a short growing pause; never more than 60 s.
 pub fn wait_secs(headers: &HeaderMap, now: u64, attempt: u32) -> u64 {
     let wait = header_u64(headers, "retry-after")
         .or_else(|| header_u64(headers, "x-ratelimit-reset").map(|r| r.saturating_sub(now)))
