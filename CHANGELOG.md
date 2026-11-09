@@ -42,6 +42,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   outranked the named rule; `.env` was already right. `names` stay case-sensitive regexes
   in every format, as in `.env`: write `(?i)` or both spellings to cover `SECRET_KEY` and `secret_key`.
 
+- **`validate` and `spec check` report a name some environment files have and
+  others lack** (N14-12). A `partial_presence` warning ("EXTRA is in .env,
+  .env.production but not in .env.staging"), until now visible only through
+  `sync --check` and `diff`. A warning, so the exit code is unchanged unless
+  `--fail-on warning`; silence it with `--ignore partial_presence` or
+  `[validate] ignore`. It needs two environment files (`.env` and each
+  `.env.<NAME>`; the template and `.bak` copies do not count), so a project
+  with one sees no new finding and `--env -`/`--input-format json` are never
+  compared. With a contract, a file is expected to lack a name declared
+  `required = false` or limited by `environments`, and a name `missing_variable`
+  already reports for the checked file is not repeated. `spec check` prints the
+  same finding as a warning on stderr and keeps its verdict.
+  **For CI:** a project with several environment files that differ on purpose
+  gets new warnings in `validate` (`summary.warnings`, and the evnx-action
+  `validate-findings` count if it counts warnings); add the type to the ignore
+  list to keep the old count.
 - **`evnx remove --check NAME…`: is it gone everywhere?** (N14-11). Read-only
   and made for CI after a removal merges: exit 0 when no named variable (or
   quoted glob) is in any environment file, the template or the `[vars]`

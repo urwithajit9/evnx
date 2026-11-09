@@ -52,11 +52,14 @@ pub enum IssueType {
     /// receives it; `source`, `export` and `convert --to shell` cannot. A
     /// warning, never fixable: renaming it is the author's call.
     NotShellName,
+    /// A name some environment files hold and others lack (N14-12). A warning:
+    /// environments legitimately differ, and the contract can say where.
+    PartialPresence,
 }
 
 impl IssueType {
     /// Every type, in the order `--ignore`'s error lists them.
-    pub const ALL: [IssueType; 20] = [
+    pub const ALL: [IssueType; 21] = [
         IssueType::MissingVariable,
         IssueType::ExtraVariable,
         IssueType::PlaceholderValue,
@@ -77,6 +80,7 @@ impl IssueType {
         IssueType::NulByte,
         IssueType::ForwardReference,
         IssueType::NotShellName,
+        IssueType::PartialPresence,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -101,6 +105,7 @@ impl IssueType {
             IssueType::NulByte => "nul_byte",
             IssueType::ForwardReference => "forward_reference",
             IssueType::NotShellName => "not_shell_name",
+            IssueType::PartialPresence => "partial_presence",
         }
     }
 }

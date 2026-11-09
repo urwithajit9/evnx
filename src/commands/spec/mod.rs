@@ -106,6 +106,27 @@ pub fn check(
             spec.len()
         );
     }
+    // N14-12: a name some environment files hold and others lack. A warning:
+    // it does not change the verdict. The contract excuses a file from a name
+    // it declares optional or limited to other environments.
+    let folder = match Path::new(env).parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    };
+    let env_file = Path::new(env).file_name().and_then(|f| f.to_str());
+    let in_env_files = crate::core::presence::read_dir(folder, None);
+    let already = |f: &crate::core::presence::EnvNames, name: &str| {
+        Some(f.file.as_str()) == env_file
+            && missing_from_env.as_ref().is_some_and(|m| m.contains(&name))
+    };
+    for p in crate::core::presence::partial(&in_env_files, spec, &already) {
+        ui::warning(format!(
+            "{} is in {} but not in {} (partial_presence)",
+            p.name,
+            p.present_in.join(", "),
+            p.absent_from.join(", ")
+        ));
+    }
     if env_vars.is_none() && !ui::is_quiet() {
         eprintln!("· {env_label} not found, so only the template was checked");
     }

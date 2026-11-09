@@ -17,6 +17,7 @@ pub mod mask;
 pub mod parser;
 pub mod permissions;
 pub mod placeholder;
+pub mod presence;
 pub mod project;
 pub mod safe_write;
 pub mod secretscan;

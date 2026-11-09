@@ -275,6 +275,81 @@ pub fn check_shell_names(
         .collect()
 }
 
+/// A name some environment files hold and others lack (N14-12).
+///
+/// `siblings` are the folder's other environment files, read by
+/// [`Surroundings::of`](super::Surroundings::of); with none there is nothing to
+/// compare, so a project with one env file sees no change. A warning, never
+/// fixable: whether the name belongs everywhere is the author's call. With a
+/// contract, a file is expected to lack a name declared optional or limited to
+/// other environments. What `missing_variable` already reports for the checked
+/// file is not repeated.
+pub fn check_partial_presence(
+    doc: &crate::core::parser::Document,
+    vars: &IndexMap<String, String>,
+    siblings: &[crate::core::presence::EnvNames],
+    template: &IndexMap<String, String>,
+    spec: &crate::core::spec::Spec,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    use crate::core::presence::{partial, EnvNames};
+    if ignore.contains(IssueType::PartialPresence.as_str()) || siblings.is_empty() {
+        return Vec::new();
+    }
+    let file = std::path::Path::new(env_path)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(env_path);
+    let me = EnvNames::new(file, vars.keys().cloned());
+    let mut files = vec![me];
+    files.extend(siblings.iter().cloned());
+    let reported_as_missing = |f: &EnvNames, name: &str| {
+        f.file == file
+            && match spec.get(name) {
+                Some(v) => v.is_required() && v.applies_to(f.environment.as_deref()),
+                None => spec.is_empty() && template.contains_key(name),
+            }
+    };
+    partial(&files, spec, &reported_as_missing)
+        .into_iter()
+        .map(|p| {
+            let here = p.present_in.iter().any(|f| f == file);
+            let line = doc
+                .entries
+                .iter()
+                .find(|e| e.key == p.name)
+                .map_or(0, |e| e.span.line);
+            Issue {
+                severity: Severity::Warning,
+                issue_type: IssueType::PartialPresence,
+                variable: p.name.clone(),
+                message: format!(
+                    "{} is in {} but not in {}",
+                    p.name,
+                    p.present_in.join(", "),
+                    p.absent_from.join(", ")
+                ),
+                location: at(env_path, line),
+                suggestion: Some(if here {
+                    format!(
+                        "Add {} to {}, or remove it everywhere with `evnx remove {} --all`",
+                        p.name,
+                        p.absent_from.join(", "),
+                        p.name
+                    )
+                } else {
+                    format!(
+                        "Add {} to {file}, or remove it everywhere with `evnx remove {} --all` if it is stale",
+                        p.name, p.name
+                    )
+                }),
+                auto_fixable: false,
+            }
+        })
+        .collect()
+}
+
 /// Values holding a NUL byte (B2 P0.6). An error: the file parses, but `exec`
 /// refuses such an environment and Docker will not start the container.
 pub fn check_nul_bytes(
