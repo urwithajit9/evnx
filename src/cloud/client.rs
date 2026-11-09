@@ -353,6 +353,10 @@ pub fn exit_code_of(err: &anyhow::Error) -> Option<i32> {
     err.chain().find_map(|c| {
         if let Some(a) = c.downcast_ref::<ApiError>() {
             a.exit_code()
+        } else if c.is::<crate::core::http::TlsRootsError>() {
+            // SSL_CERT_FILE / SSL_CERT_DIR unusable: the server cannot be
+            // reached the way the user asked, the same class as a transport failure.
+            Some(13)
         } else {
             c.downcast_ref::<Reworded>().and_then(|r| r.exit)
         }
@@ -393,8 +397,14 @@ impl ApiError {
             | ApiError::Validation { .. }
             | ApiError::Refused { .. }
             | ApiError::Unexpected { .. }
-            | ApiError::Malformed { .. }
-            | ApiError::Local(_) => None,
+            | ApiError::Malformed { .. } => None,
+            // An unusable SSL_CERT_FILE / SSL_CERT_DIR (RM-68) is the same class
+            // as a server that cannot be reached; any other local failure keeps
+            // the command's usual code.
+            ApiError::Local(e) => e
+                .chain()
+                .any(|c| c.is::<crate::core::http::TlsRootsError>())
+                .then_some(13),
         }
     }
 }
@@ -1690,6 +1700,15 @@ mod tests {
         let l = anyhow::Error::from(ApiError::Local(anyhow::anyhow!("inner").context("outer")));
         assert_eq!(format!("{l:#}"), "outer: inner");
         assert_eq!(exit_code_of(&l), None);
+        let tls = anyhow::Error::new(crate::core::http::TlsRootsError {
+            variable: "SSL_CERT_FILE",
+            path: "/x.pem".into(),
+            reason: "that file does not exist".into(),
+        })
+        .context("building the HTTP client");
+        assert_eq!(exit_code_of(&tls), Some(13));
+        let local_tls = ApiError::Local(tls);
+        assert_eq!(local_tls.exit_code(), Some(13));
     }
 
     #[test]
