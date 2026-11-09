@@ -24,14 +24,14 @@ fn validate_strict_comes_from_config() {
     let without = project("");
     cargo_bin_cmd!("evnx")
         .current_dir(without.path())
-        .args(["validate", "--exit-zero"])
+        .args(["validate", "--exit-zero", "--ignore", "partial_presence"])
         .assert()
         .stdout(predicate::str::contains("EXTRA_ONLY_HERE").not());
 
     let with = project("[validate]\nstrict = true\n");
     cargo_bin_cmd!("evnx")
         .current_dir(with.path())
-        .args(["validate", "--exit-zero"])
+        .args(["validate", "--exit-zero", "--ignore", "partial_presence"])
         .assert()
         .stdout(predicate::str::contains("EXTRA_ONLY_HERE"));
 }

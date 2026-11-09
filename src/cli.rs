@@ -217,6 +217,37 @@ pub struct SyncArgs {
     #[arg(long, value_name = "PATH")]
     pub template_config: Option<std::path::PathBuf>,
 
+    /// Remove from the template the names that no environment file has.
+    ///
+    /// Compares the template with `.env` and every `.env.<NAME>`, lists what
+    /// goes, and asks. A name declared in `.evnx.toml [vars]` is kept. Only the
+    /// template is written (git holds its history; no `.bak`). Refused when no
+    /// environment file exists or all are empty.
+    ///
+    /// Works on its own: it cannot be combined with the options that pick
+    /// one environment file or another mode (env, env-name, direction, check,
+    /// format, force, placeholder, skip-without-env, template-config,
+    /// naming-policy). Use --example for another template and --dry-run to
+    /// preview.
+    ///
+    ///   0  pruned, nothing to prune, or a dry run
+    ///   2  refused (no terminal without --yes, no environment file, a file it
+    ///      cannot read, changed while running)
+    ///   4  you answered no
+    #[arg(
+        long,
+        verbatim_doc_comment,
+        conflicts_with_all = [
+            "env", "env_name", "direction", "check", "format", "force",
+            "placeholder", "skip_without_env", "template_config", "naming_policy",
+        ]
+    )]
+    pub prune: bool,
+
+    /// With --prune: remove without asking.
+    #[arg(long, short = 'y', requires = "prune")]
+    pub yes: bool,
+
     /// What to do with a name that is not UPPER_SNAKE_CASE.
     ///
     /// Defaults to `[sync] naming_policy` in .evnx.toml, else `warn`. `error`
@@ -1889,8 +1920,9 @@ pub enum Commands {
     /// entry stays as it was; the env file is kept as a `.bak` copy first.
     ///
     /// Exit codes: 0 removed (or nothing to do with --ignore-missing, or a dry
-    /// run); 2 could not run or refused (a name that is not there, a file it
-    /// cannot read, no terminal to ask on); 4 you answered no.
+    /// run); 1 only with --check, a name is still somewhere; 2 could not run or
+    /// refused (a name that is not there, a file it cannot read, no terminal to
+    /// ask on); 4 you answered no.
     #[command(
         visible_alias = "rm",
         after_help = docs::REMOVE.after_help,
@@ -1939,9 +1971,25 @@ pub enum Commands {
         #[arg(long)]
         no_backup: bool,
 
-        /// Print the result as one JSON document (needs --yes or --dry-run).
+        /// Print the result as one JSON document (needs --yes or --dry-run;
+        /// with --check it never asks, so neither is needed).
         #[arg(long)]
         json: bool,
+
+        /// Only look: exit 1 if any NAME is still in an environment file, the
+        /// template or `.evnx.toml`, listing where; 0 if it is gone everywhere.
+        ///
+        /// Read-only, for CI. Always looks everywhere (`.env`, every
+        /// `.env.<NAME>`, the template, `[vars]`), so it takes no scope flags.
+        /// Exit 2 means no verdict: a file it cannot read whole.
+        #[arg(
+            long,
+            conflicts_with_all = [
+                "template", "contract", "all", "env_name", "dry_run", "yes",
+                "ignore_missing", "no_backup",
+            ]
+        )]
+        check: bool,
     },
 
     /// Check .env against .env.example, find issues.

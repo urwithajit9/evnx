@@ -487,6 +487,8 @@ evnx sync --check --direction forward
 | `--naming-policy warn\|error\|ignore` | Names that are not `UPPER_SNAKE_CASE`; `error` stops with exit 2 |
 | `--skip-without-env` | For a pre-commit hook: with no `.env` and no spec, skip (exit 0) and say so |
 | `--placeholder` | Deprecated; does what `--force` does |
+| `--prune` | Remove from the template the names that no environment file (`.env`, `.env.<name>`) has. Asks first (exit 4 on no); `-n`/`--dry-run` previews; a name declared in `[vars]` is kept. A mode of its own: not with `--check`, `--direction`, `--env`, `--env-name` or `--force` |
+| `-y`, `--yes` | With `--prune`: remove without asking. No terminal and no `--yes` is exit 2 |
 
 ---
 

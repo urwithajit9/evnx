@@ -75,6 +75,7 @@ pub const REMOVE: CommandDoc = CommandDoc {
   evnx remove OLD_TOKEN                     from .env only
   evnx remove OLD_TOKEN --all --dry-run     every file, the template and .evnx.toml: preview
   evnx rm 'TEST_*' --env-name staging --yes from .env.staging, without asking
+  evnx remove OLD_TOKEN --check             CI: exit 1 if it is still in any env file, the template or .evnx.toml
 
 Full guide: https://docs.evnx.dev/cli/commands/remove",
 };
@@ -168,7 +169,12 @@ pub const SYNC: CommandDoc = CommandDoc {
     command: "sync",
     url: "https://docs.evnx.dev/cli/commands/sync",
     description: "Keeping .env and .env.example in sync",
-    after_help: "Full guide: https://docs.evnx.dev/cli/commands/sync",
+    after_help: "Examples:
+  evnx sync --check --direction forward   CI gate: does the template have everything .env has?
+  evnx sync --prune --dry-run             preview names in the template that no env file has
+  evnx sync --prune --yes                 remove them, without asking
+
+Full guide: https://docs.evnx.dev/cli/commands/sync",
 };
 
 pub const MIGRATE: CommandDoc = CommandDoc {

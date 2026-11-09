@@ -8,6 +8,62 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`SSL_CERT_FILE` and `SSL_CERT_DIR` add trusted root certificates**, so evnx
+  works behind TLS-inspecting corporate proxies (RM-68). The bundled roots stay;
+  the extras are added to them. `SSL_CERT_FILE` is a PEM bundle; `SSL_CERT_DIR`
+  is a directory (or a path-separator list of them) of `*.pem`, `*.crt` and
+  hashed (`a1b2c3d4.0`) files. A missing path or a file with no certificate is an
+  error naming the variable and the path (exit 13 for `evnx cloud`); an
+  unreadable file inside the directory is a warning. An unknown-issuer failure
+  now says: set SSL_CERT_FILE to your organisation's CA bundle (PEM). Applies to
+  `cloud`, `update --check`, `migrate --to github-actions` and `scan packs`.
+- **`validate` and `spec check` report a name some environment files have and
+  others lack** (N14-12). A `partial_presence` warning ("EXTRA is in .env,
+  .env.production but not in .env.staging"), until now visible only through
+  `sync --check` and `diff`. A warning, so the exit code is unchanged unless
+  `--fail-on warning`; silence it with `--ignore partial_presence` or
+  `[validate] ignore`. It needs two environment files (`.env` and each
+  `.env.<NAME>`; the template and `.bak` copies do not count), so a project
+  with one sees no new finding and `--env -`/`--input-format json` are never
+  compared. With a contract, a file is expected to lack a name declared
+  `required = false` or limited by `environments`, and a name `missing_variable`
+  already reports for the checked file is not repeated. `spec check` prints the
+  same finding as a warning on stderr and keeps its verdict.
+  **For CI:** a project with several environment files that differ on purpose
+  gets new warnings in `validate` (`summary.warnings`, and the evnx-action
+  `validate-findings` count if it counts warnings); add the type to the ignore
+  list to keep the old count.
+- **`evnx remove --check NAME…`: is it gone everywhere?** (N14-11). Read-only
+  and made for CI after a removal merges: exit 0 when no named variable (or
+  quoted glob) is in any environment file, the template or the `[vars]`
+  contract; exit 1 listing each file (and line) where one still is; exit 2,
+  no verdict, when it cannot read a file whole. It always looks everywhere, so
+  it takes none of the scope flags (`--template`, `--contract`, `--all`,
+  `--env-name`) nor `--dry-run`, `--yes`, `--ignore-missing` or `--no-backup`.
+  `--json` prints `schema_version`, `check`, `clean`, `names`, `checked` and
+  `present` (`name`, `file`, `kind`, and `lines` or `table`); no value appears.
+- **`evnx sync --prune`: remove stale names from the template** (N14-11).
+  `sync` only ever added; a name that every environment had dropped stayed in
+  `.env.example` until someone edited it by hand. `--prune` compares the
+  template (`--example`, `[defaults] example`, else `.env.example`) with `.env`
+  and every `.env.<NAME>`, lists the names none of them has, and removes them
+  after asking. It uses `remove`'s editor and writer, so comments, line
+  endings and everything else in the template stay byte for byte.
+  - A name declared in `.evnx.toml [vars]` is never pruned: it is listed as
+    kept, with the `evnx remove NAME --template --contract` that drops both.
+  - `--dry-run` previews and writes nothing; `--yes` (`-y`, only with
+    `--prune`) skips the question; no terminal without `--yes` is exit 2;
+    answering no is exit 4. Only the template is written, and no `.bak` is
+    kept for it (it is committed, as with `remove --template`).
+  - Refused, with nothing changed (exit 2): no environment file, every
+    environment file empty, or one that has a line evnx cannot read (a name
+    could hide behind it).
+  - It is a mode of its own: clap refuses `--prune` with `--check`, `--format`,
+    `--env`, `--env-name`, `--direction`, `--force`, `--placeholder`,
+    `--skip-without-env`, `--template-config` and `--naming-policy`.
+
 ### Fixed
 
 - **`evnx spec init` wrote `[vars.spring.datasource.url]` for a variable with dots in its name.**
@@ -41,6 +97,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   project's rule, because the text pass (no key) found Stripe and its remediation URL
   outranked the named rule; `.env` was already right. `names` stay case-sensitive regexes
   in every format, as in `.env`: write `(?i)` or both spellings to cover `SECRET_KEY` and `secret_key`.
+- **Two `remove` (or `sync --prune`) runs on the same file can no longer undo
+  each other** (E-7). A run now takes an advisory lock file beside each file it
+  writes (`.evnx-<name>.lock`, created exclusively, holding its process id)
+  before it checks the file is unchanged and writes. The second run stops at
+  once with exit 2, "another evnx (process N) is changing .env", and changes
+  nothing; a lock left by a crashed run is taken over (the process is gone, or
+  the lock is over ten minutes old). No locking crate is a dependency and
+  `File::lock` needs Rust 1.89, so a lock file it is.
+- `remove` and `remove --check` say when two environment files differ only in
+  case (`.env.Staging`, `.env.staging`): they are separate files except on a
+  case-insensitive filesystem, and are never merged (G-2).
 
 ## [0.13.0] - 2026-11-08
 

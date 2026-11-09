@@ -234,6 +234,9 @@ pub struct Surroundings {
     pub known_environments: Vec<String>,
     /// The project's other `.env` readers (RM-04).
     pub readers: Vec<crate::core::dialect::Reader>,
+    /// The folder's other environment files, for `partial_presence` (N14-12).
+    /// Empty when the input is not an environment file beside others.
+    pub environments: Vec<crate::core::presence::EnvNames>,
 }
 
 impl Surroundings {
@@ -243,6 +246,14 @@ impl Surroundings {
             exposure: git_exposure(env_path),
             known_environments: known_environments(env_path),
             readers: crate::core::dialect::detect(folder_of(env_path)),
+            environments: Path::new(env_path)
+                .file_name()
+                .and_then(|f| f.to_str())
+                .filter(|f| crate::core::presence::is_environment_file(f))
+                .map(|_| {
+                    crate::core::presence::read_dir(folder_of(env_path), Some(Path::new(env_path)))
+                })
+                .unwrap_or_default(),
         }
     }
 }
@@ -369,6 +380,16 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
 
         issues.extend(checks::check_forward_references(
             &input.doc,
+            env_path,
+            &config.ignore_issues,
+        ));
+
+        issues.extend(checks::check_partial_presence(
+            &input.doc,
+            vars,
+            &s.environments,
+            &input.template,
+            spec,
             env_path,
             &config.ignore_issues,
         ));
@@ -778,6 +799,10 @@ pub fn run(opts: Options) -> Result<()> {
     if stdin {
         // No file, so nothing git could commit.
         surroundings.exposure = None;
+    }
+    if stdin || input_format == InputFormat::Json {
+        // Not a file among the others: nothing to compare it with.
+        surroundings.environments.clear();
     }
     let input = Input {
         doc,
@@ -1255,6 +1280,7 @@ mod tests {
                 exposure: None,
                 known_environments: Vec::new(),
                 readers: Vec::new(),
+                environments: Vec::new(),
             },
         };
         let config = ValidationConfig::default();
