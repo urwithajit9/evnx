@@ -10,6 +10,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`evnx spec init` wrote `[vars.spring.datasource.url]` for a variable with dots in its name.**
+  TOML reads that as nested tables, so `evnx validate` then reported `Missing required variable:
+  spring` and unknown keys. Names that are not TOML bare keys (anything but `A-Za-z0-9_-`) are
+  now quoted, as `[vars."spring.datasource.url"]`, wherever evnx writes or prints a
+  `[vars.NAME]` table (`spec init`, `add`, `remove --contract` messages and the `validate`
+  hints). Bare names such as `my-var` and `9LIVES` stay unquoted. A `.evnx.toml` already written
+  with the unquoted form must be edited by hand: quote the name.
 - **`evnx migrate --to vercel` printed `production` for a development file.** With
   `--env-name development` (or `preview`) it read `.env.development` but every printed
   `vercel env add` said `production`, and the dry-run said `Environment : production`; every

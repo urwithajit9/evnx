@@ -443,3 +443,45 @@ fn t_sp13_a_symlinked_config_is_written_through() {
     assert!(p.read("shared/project.toml").contains("[vars.A]"));
     assert!(out.all().contains("wrote through"), "{}", out.all());
 }
+
+/// F14-4: `spec init` quoted nothing, so `spring.datasource.url` became
+/// `[vars.spring.datasource.url]`, three nested tables, and `validate` then
+/// reported `Missing required variable: spring`. A dotted name is quoted, a
+/// hyphen or leading digit stays bare, and the first validate is green.
+#[test]
+fn f14_4_spec_init_quotes_dotted_names_and_validates_clean() {
+    let body = "spring.datasource.url=jdbc\nmy-var=1\n9LIVES=1\nOK=1\n";
+    let p = Project::new().dir(".git").env(body).example(body);
+    run(p.path(), &["spec", "init"]).assert_code(0);
+    let t = p.read(".evnx.toml");
+    assert!(t.contains("[vars.\"spring.datasource.url\"]\n"), "{t}");
+    assert!(t.contains("[vars.my-var]\n"), "{t}");
+    assert!(t.contains("[vars.9LIVES]\n"), "{t}");
+    assert!(!t.contains("[vars.spring"), "{t}");
+    let out = run(p.path(), &["validate"]);
+    out.assert_code(0);
+    assert!(
+        !out.stdout.contains("spring.datasource.url is missing"),
+        "{}",
+        out.stdout
+    );
+}
+
+/// F14-4: a dotted variable missing from `.env` is reported as itself, and the
+/// hint to declare it is quoted.
+#[test]
+fn f14_4_validate_names_a_dotted_variable_whole() {
+    let p = Project::new()
+        .dir(".git")
+        .env("OK=1\n")
+        .example("OK=1\nspring.datasource.url=\n")
+        .toml("[vars.OK]\n[vars.\"spring.datasource.url\"]\n");
+    let out = run(p.path(), &["validate"]);
+    out.assert_code(1);
+    let all = format!("{}{}", out.stdout, out.stderr);
+    assert!(
+        all.contains("Missing required variable: spring.datasource.url"),
+        "{all}"
+    );
+    assert!(!all.contains("variable: spring\n"), "{all}");
+}

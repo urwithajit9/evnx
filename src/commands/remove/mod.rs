@@ -598,7 +598,7 @@ fn describe(c: &Change) -> String {
         return c
             .tables
             .iter()
-            .map(|t| format!("[vars.{t}]"))
+            .map(|t| format!("[vars.{}]", crate::core::spec::toml_key(t)))
             .collect::<Vec<_>>()
             .join(", ");
     }
@@ -777,7 +777,7 @@ fn print_json(
         }
         for t in &c.tables {
             removed
-                .push(serde_json::json!({ "name": t, "file": file, "table": format!("vars.{t}") }));
+                .push(serde_json::json!({ "name": t, "file": file, "table": format!("vars.{}", crate::core::spec::toml_key(t)) }));
         }
     }
     let doc = serde_json::json!({

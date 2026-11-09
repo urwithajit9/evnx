@@ -140,9 +140,9 @@ fn say_how_to_make_optional(output_path: &Path, customs: &[Custom]) {
     crate::utils::ui::warning_detail(format!(
         "     →  run `evnx spec init`, then set `required = false` under [vars.{}]",
         if optional.len() == 1 {
-            optional[0]
+            crate::core::spec::toml_key(optional[0])
         } else {
-            "NAME"
+            "NAME".to_string()
         }
     ));
 }

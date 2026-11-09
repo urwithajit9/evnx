@@ -376,9 +376,39 @@ pub fn environment_problems(
     out
 }
 
+/// `name` as a TOML key: bare when it is only `A-Za-z0-9_-`, else a quoted,
+/// escaped string. Every `[vars.NAME]` header evnx writes or prints goes
+/// through this: `spring.datasource.url` unquoted is three nested tables, and
+/// `validate` then reported `Missing required variable: spring` (F14-4).
+pub fn toml_key(name: &str) -> String {
+    toml_edit::Key::new(name).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// F14-4: bare keys stay bare; anything else is quoted and escaped, and
+    /// the result parses back to the same single key.
+    #[test]
+    fn f14_4_toml_key_quotes_what_is_not_bare() {
+        for (name, shown) in [
+            ("DATABASE_URL", "DATABASE_URL"),
+            ("my-var", "my-var"),
+            ("spring.datasource.url", "\"spring.datasource.url\""),
+            ("9LIVES", "9LIVES"),
+            ("has space", "\"has space\""),
+            ("é", "\"é\""),
+            ("a\"b", "'a\"b'"), // a literal string needs no escape
+        ] {
+            assert_eq!(toml_key(name), shown, "{name}");
+            let doc: toml::Table = format!("[vars.{}]\nrequired = true\n", toml_key(name))
+                .parse()
+                .unwrap();
+            let vars = doc["vars"].as_table().unwrap();
+            assert_eq!(vars.keys().collect::<Vec<_>>(), [name], "{name}");
+        }
+    }
 
     #[test]
     fn t_i042_environment_names_are_checked() {

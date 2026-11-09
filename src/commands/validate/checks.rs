@@ -154,8 +154,9 @@ pub fn check_missing_variables(
             suggestion: Some(if template_value.trim().is_empty() {
                 format!(
                     "{}. If it is optional: run `evnx spec init`, \
-                     then set `required = false` under [vars.{key}] in .evnx.toml",
-                    add_to(key, env_path)
+                     then set `required = false` under [vars.{}] in .evnx.toml",
+                    add_to(key, env_path),
+                    crate::core::spec::toml_key(key)
                 )
             } else {
                 add_to(key, env_path)
@@ -490,7 +491,10 @@ pub fn check_spec_extras(
             None => out.push(extra(
                 key,
                 format!("Extra variable not declared in [vars]: {key}"),
-                format!("Declare it as [vars.{key}] in .evnx.toml, or remove it from {env_path}"),
+                format!(
+                    "Declare it as [vars.{}] in .evnx.toml, or remove it from {env_path}",
+                    crate::core::spec::toml_key(key)
+                ),
             )),
             Some(declared) if !declared.applies_to(env_name) => {
                 let only = declared
@@ -503,7 +507,7 @@ pub fn check_spec_extras(
                     format!("{key} is declared for {only} only, but set in {env_path}"),
                     match env_name {
                         Some(env) => format!(
-                            "Remove it from {env_path}, or add \"{env}\" to `environments` in [vars.{key}]"
+                            "Remove it from {env_path}, or add \"{env}\" to `environments` in [vars.{}]", crate::core::spec::toml_key(key)
                         ),
                         None => format!("Remove it from {env_path}"),
                     },
@@ -599,8 +603,12 @@ pub fn check_environments(
         return Vec::new();
     }
     let who = |vars: &[String]| match vars {
-        [one] => format!("[vars.{one}]"),
-        [first, rest @ ..] => format!("[vars.{first}] and {} more", rest.len()),
+        [one] => format!("[vars.{}]", crate::core::spec::toml_key(one)),
+        [first, rest @ ..] => format!(
+            "[vars.{}] and {} more",
+            crate::core::spec::toml_key(first),
+            rest.len()
+        ),
         [] => "[vars]".to_string(),
     };
     crate::core::spec::environment_problems(spec, env_name, known)
@@ -1215,7 +1223,10 @@ pub fn check_spec_keys(spec: &Spec, ignore: &HashSet<String>) -> Vec<Issue> {
                 severity: Severity::Error,
                 issue_type: IssueType::UnknownSpecKey,
                 variable: name.clone(),
-                message: format!("Unknown key `{key}` in [vars.{name}] — evnx ignores it"),
+                message: format!(
+                    "Unknown key `{key}` in [vars.{}] — evnx ignores it",
+                    crate::core::spec::toml_key(name)
+                ),
                 location: crate::core::config::PROJECT_FILE.to_string(),
                 suggestion: Some(
                     match (
@@ -1226,11 +1237,13 @@ pub fn check_spec_keys(spec: &Spec, ignore: &HashSet<String>) -> Vec<Issue> {
                         // TOML, not one variable whose name has dots.
                         (Some(full), _) => format!(
                         "TOML reads the dots in [vars.{full}] as nested tables. To declare the \
-                         variable {full}, quote its name: [vars.\"{full}\"]"
+                         variable {full}, quote its name: [vars.{}]",
+                        crate::core::spec::toml_key(&full)
                     ),
                         (None, Some(k)) => format!("Did you mean `{k}`?"),
                         (None, None) => format!(
-                            "Remove it; [vars.{name}] understands {}",
+                            "Remove it; [vars.{}] understands {}",
+                            crate::core::spec::toml_key(name),
                             crate::core::spec::VarSpec::KEYS.join(", ")
                         ),
                     },
@@ -1280,7 +1293,10 @@ pub fn check_spec_format(
             variable: key.clone(),
             message: format!("{key} is not {}", format.describe()),
             location: env_path.to_string(),
-            suggestion: Some(format!("Fix the value, or relax `format` in [vars.{key}]")),
+            suggestion: Some(format!(
+                "Fix the value, or relax `format` in [vars.{}]",
+                crate::core::spec::toml_key(key)
+            )),
             // ⚠️ Not auto-fixable, and must not become so. evnx knows the value
             // is wrong; it has no idea what the right one is.
             auto_fixable: false,
