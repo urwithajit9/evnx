@@ -34,7 +34,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use colored::*;
 
 use super::{edit, in_dir, read_place, Change, Kind};
@@ -214,18 +214,10 @@ pub fn run_with(opts: PruneOptions, before_commit: &mut dyn FnMut(usize, &Path))
 /// The names an environment file assigns. Refuses a file it cannot read whole:
 /// a line the parser rejects may hide a key, and the template would lose it.
 fn env_names(path: &Path, shown: &str) -> Result<BTreeSet<String>> {
-    let bytes = std::fs::read(path).with_context(|| format!("reading {shown}"))?;
-    let text = String::from_utf8(bytes)
-        .map_err(|_| anyhow::anyhow!("{shown} is not UTF-8 text, so nothing was changed"))?;
-    let doc = edit::document(&text);
-    if let Some(p) = doc.problems.first() {
-        bail!(
-            "{shown} has a line evnx cannot read, so a name could be hidden behind it and \
-             nothing was changed:\n  {}\n  Fix it first; `evnx validate` lists every problem.",
-            p.describe()
-        );
-    }
-    Ok(edit::keys(&doc).into_iter().collect())
+    Ok(super::check::entries(path, shown)?
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect())
 }
 
 #[cfg(test)]

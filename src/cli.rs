@@ -1920,8 +1920,9 @@ pub enum Commands {
     /// entry stays as it was; the env file is kept as a `.bak` copy first.
     ///
     /// Exit codes: 0 removed (or nothing to do with --ignore-missing, or a dry
-    /// run); 2 could not run or refused (a name that is not there, a file it
-    /// cannot read, no terminal to ask on); 4 you answered no.
+    /// run); 1 only with --check, a name is still somewhere; 2 could not run or
+    /// refused (a name that is not there, a file it cannot read, no terminal to
+    /// ask on); 4 you answered no.
     #[command(
         visible_alias = "rm",
         after_help = docs::REMOVE.after_help,
@@ -1970,9 +1971,25 @@ pub enum Commands {
         #[arg(long)]
         no_backup: bool,
 
-        /// Print the result as one JSON document (needs --yes or --dry-run).
+        /// Print the result as one JSON document (needs --yes or --dry-run;
+        /// with --check it never asks, so neither is needed).
         #[arg(long)]
         json: bool,
+
+        /// Only look: exit 1 if any NAME is still in an environment file, the
+        /// template or `.evnx.toml`, listing where; 0 if it is gone everywhere.
+        ///
+        /// Read-only, for CI. Always looks everywhere (`.env`, every
+        /// `.env.<NAME>`, the template, `[vars]`), so it takes no scope flags.
+        /// Exit 2 means no verdict: a file it cannot read whole.
+        #[arg(
+            long,
+            conflicts_with_all = [
+                "template", "contract", "all", "env_name", "dry_run", "yes",
+                "ignore_missing", "no_backup",
+            ]
+        )]
+        check: bool,
     },
 
     /// Check .env against .env.example, find issues.

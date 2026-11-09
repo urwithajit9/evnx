@@ -75,6 +75,7 @@ pub const REMOVE: CommandDoc = CommandDoc {
   evnx remove OLD_TOKEN                     from .env only
   evnx remove OLD_TOKEN --all --dry-run     every file, the template and .evnx.toml: preview
   evnx rm 'TEST_*' --env-name staging --yes from .env.staging, without asking
+  evnx remove OLD_TOKEN --check             CI: exit 1 if it is still in any env file, the template or .evnx.toml
 
 Full guide: https://docs.evnx.dev/cli/commands/remove",
 };

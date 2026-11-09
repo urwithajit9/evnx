@@ -21,6 +21,7 @@
 //! ⛔ No value is ever printed, in any mode or error (S-1): only names, files
 //! and line numbers. `--json` carries none either.
 
+pub mod check;
 pub mod contract;
 pub mod edit;
 pub mod prune;
@@ -54,6 +55,8 @@ pub struct Options {
     pub no_backup: bool,
     pub json: bool,
     pub verbose: bool,
+    /// `--check`: read-only; see [`check`].
+    pub check: bool,
 }
 
 /// What a file is to this command.

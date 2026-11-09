@@ -185,21 +185,29 @@ fn main() -> Result<()> {
             ignore_missing,
             no_backup,
             json,
-        } => commands::remove::run(commands::remove::Options {
-            names,
-            path,
-            env_name,
-            template,
-            contract,
-            all,
-            dry_run,
-            yes,
-            ignore_missing,
-            no_backup,
-            json,
-            verbose: cli.verbose,
-        })
-        .or_else(declined),
+            check,
+        } => {
+            let opts = commands::remove::Options {
+                names,
+                path,
+                env_name,
+                template,
+                contract,
+                all,
+                dry_run,
+                yes,
+                ignore_missing,
+                no_backup,
+                json,
+                verbose: cli.verbose,
+                check,
+            };
+            if check {
+                commands::remove::check::run(opts).map(verdict::finish)
+            } else {
+                commands::remove::run(opts).or_else(declined)
+            }
+        }
 
         Commands::Validate {
             env,

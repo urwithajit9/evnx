@@ -42,6 +42,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   outranked the named rule; `.env` was already right. `names` stay case-sensitive regexes
   in every format, as in `.env`: write `(?i)` or both spellings to cover `SECRET_KEY` and `secret_key`.
 
+- **`evnx remove --check NAME…`: is it gone everywhere?** (N14-11). Read-only
+  and made for CI after a removal merges: exit 0 when no named variable (or
+  quoted glob) is in any environment file, the template or the `[vars]`
+  contract; exit 1 listing each file (and line) where one still is; exit 2,
+  no verdict, when it cannot read a file whole. It always looks everywhere, so
+  it takes none of the scope flags (`--template`, `--contract`, `--all`,
+  `--env-name`) nor `--dry-run`, `--yes`, `--ignore-missing` or `--no-backup`.
+  `--json` prints `schema_version`, `check`, `clean`, `names`, `checked` and
+  `present` (`name`, `file`, `kind`, and `lines` or `table`); no value appears.
 - **`evnx sync --prune`: remove stale names from the template** (N14-11).
   `sync` only ever added; a name that every environment had dropped stayed in
   `.env.example` until someone edited it by hand. `--prune` compares the
