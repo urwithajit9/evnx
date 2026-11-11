@@ -145,6 +145,19 @@ fn t_i316_vault_create_with_the_right_password_still_creates() {
         "{}",
         out.stdout
     );
+    // F7: one "Next" line, true whether or not `cloud link` is run next.
+    assert_eq!(out.stdout.matches("Next:").count(), 1, "{}", out.stdout);
+    assert!(
+        out.stdout
+            .contains("evnx cloud link --vault app/development"),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        !out.stdout.contains("Push a .env into it"),
+        "{}",
+        out.stdout
+    );
     create.assert();
 }
 
@@ -659,6 +672,12 @@ fn t_i234_a_default_env_push_to_production_needs_yes_without_a_terminal() {
             out.stderr
         );
         push.expect(0).assert();
+        // F10: the question is the warning; the `!` line is not printed as well.
+        assert!(
+            !out.all().contains("pushing to a production vault"),
+            "{target}:\n{}",
+            out.all()
+        );
     }
 }
 
@@ -682,6 +701,15 @@ fn t_i234_yes_or_a_named_file_pushes_to_production() {
         let out = signed_in(&p, &s.url(), &args, Some(format!("{RIGHT}\n").as_bytes()));
         out.assert_code(0);
         push.expect(1).assert();
+        // F10: said once. `--yes` skips the question, so the `!` line stands in
+        // for it; a named file is not the shape of a forgotten flag.
+        let warned = out.stdout.matches("pushing to a production vault").count();
+        assert_eq!(
+            warned,
+            usize::from(extra == ["--yes"]),
+            "{extra:?}:\n{}",
+            out.stdout
+        );
     }
 }
 

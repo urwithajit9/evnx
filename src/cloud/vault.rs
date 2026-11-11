@@ -256,14 +256,16 @@ pub fn create(
         println!("  key wrap  master key (no ECDH, no ephemeral)");
     }
     crate::say!();
-    // I-320: a bare `evnx cloud push` fails here — `create` binds no directory.
+    // I-320, F7: `create` binds no directory, so a bare `evnx cloud push` fails
+    // right after it. Say both ways once, each with its condition, so the line
+    // is still true when `cloud link` is run next (which then says push and
+    // pull work here without --vault).
+    let label = format!("{}/{}", created.name, created.environment);
     crate::say!(
-        "  Push a .env into it with:  {}",
-        format!(
-            "evnx cloud push --vault {}/{}",
-            created.name, created.environment
-        )
-        .cyan()
+        "  Next:  {}   (or bind this folder once with  {}  and a bare  {}  works)",
+        format!("evnx cloud push --vault {label}").cyan(),
+        format!("evnx cloud link --vault {label}").cyan(),
+        "evnx cloud push".cyan()
     );
     Ok(())
 }

@@ -232,6 +232,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on stderr under the commands says they can show in `ps` and shell history and
   should be run on a trusted machine (`-q` does not hide it; `> run.sh` does not
   capture it).
+- **Paid-user output gaps** (F14-11, review F6, F7, F10, F11).
+  `cloud history` names you as `you (me@example.com)` instead of `you`. A push
+  by an API token is still recorded under its owner, so token versus person
+  needs the server and is not done here. `vault create` prints one `Next:` line
+  that stays true when `cloud link` is run after it, instead of a `--vault` hint
+  that `link` then contradicted. A push into a production vault from the default
+  `.env` shows its production warning once: the question when it asks, the `!`
+  line only with `--yes`. `auth status` and `cloud status` print
+  `client    evnx <version>`.
 
 ## [0.13.0] - 2026-11-08
 

@@ -563,6 +563,7 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
                 println!("{}", "evnx account".bold());
             }
             println!("  server    {server}");
+            println!("  client    evnx {}", env!("CARGO_PKG_VERSION"));
             println!("  status    {}", "session expired".yellow());
             if !quiet {
                 println!("  Run `evnx auth login` to sign in again.");
@@ -576,6 +577,7 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
                 println!("{}", "evnx account".bold());
             }
             println!("  server    {server}");
+            println!("  client    evnx {}", env!("CARGO_PKG_VERSION"));
             println!("  using     API token (from {})", super::client::ENV_TOKEN);
             println!("  status    {}", "API token refused".yellow());
             if !quiet {
@@ -591,6 +593,7 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
         println!("{}", "evnx account".bold());
     }
     println!("  server    {server}");
+    println!("  client    evnx {}", env!("CARGO_PKG_VERSION"));
     // Which credential answered (DEC-AU10, I-212). An API token and a login
     // can do different things, and "signed in as ci@example.com" alone does not
     // say which one a pipeline is running with.

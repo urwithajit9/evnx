@@ -35,6 +35,7 @@ pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<(
         println!("{}", "evnx cloud".bold());
     }
     println!("  server    {server}");
+    println!("  client    evnx {}", env!("CARGO_PKG_VERSION"));
 
     // ⚠️ A non-empty `EVNX_TOKEN` is the credential every cloud command uses,
     // ahead of any stored login; this said "not signed in" while the commands

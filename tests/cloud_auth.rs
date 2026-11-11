@@ -131,6 +131,13 @@ fn t_i212_status_says_it_used_an_api_token() {
     out.assert_code(0);
     assert!(out.stdout.contains("API token"), "{}", out.stdout);
     assert!(out.stdout.contains("EVNX_TOKEN"), "{}", out.stdout);
+    // F11: which build answered, so a report can say what it ran.
+    assert!(
+        out.stdout
+            .contains(concat!("client    evnx ", env!("CARGO_PKG_VERSION"))),
+        "{}",
+        out.stdout
+    );
 }
 
 /// DEC-AU10: `logout` cannot end an API token, and says how it ends.
