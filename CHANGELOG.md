@@ -167,6 +167,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `sh -n`; and `sync`, `add` and `remove` leave files that parse, with `diff`
   of a file against itself clean. Found one bug, fixed below.
 
+- **Known-answer tests for every primitive and for evnx's own envelope** (SEC-1,
+  `tests/crypto_kat.rs`). The official vectors run against the crate versions in
+  `Cargo.lock`: BLAKE3 hash, keyed hash and derive_key (the BLAKE3 team's
+  `test_vectors.json`, vendored unchanged), HKDF-SHA256 (RFC 5869), X25519
+  (RFC 7748), Ed25519 (RFC 8032), ChaCha20-Poly1305 (RFC 8439),
+  XChaCha20-Poly1305 (draft-arciszewski-xchacha), AES-256-GCM (McGrew and
+  Viega, Test Case 16) and Argon2id (RFC 9106). Golden vectors generated once
+  from `evnx-crypto` 0.2.1 pin evnx's wire format: master-key derivation, the
+  vault key wrapped under the master key, the blob (`nonce || AES-256-GCM`
+  bound by `vault_aad`) and its BLAKE3 hash, an encrypted private key and the
+  three public keys derived from it, and a hybrid X25519 plus ML-KEM-768 wrapped
+  vault key. Changing any of them is a breaking protocol change. The tests live
+  here because `evnx-crypto` is a separate crate evnx consumes from crates.io.
+  Adds four dev-dependencies (`chacha20poly1305`, `x25519-dalek`, `hkdf`,
+  `ed25519-dalek`) that are already in the build graph.
+
 ### Changed
 
 - **`scan` reads files in parallel** (RM-74). Files are scanned on all cores and

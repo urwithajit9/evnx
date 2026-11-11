@@ -198,6 +198,14 @@ criterion          = { version = "0.5", features = ["html_reports"] }
 
 pretty_assertions  = "1"
 serial_test        = "3.0"
+# Known-answer tests for the primitives evnx-crypto builds on (SEC-1,
+# `tests/crypto_kat.rs`): the official RFC and draft vectors run against the very
+# versions in Cargo.lock, so a bump that changes an answer fails the build. All
+# four are already in the graph through evnx-crypto, so this adds no crates.
+chacha20poly1305   = "0.10"
+x25519-dalek       = "2"
+hkdf               = "0.12"
+ed25519-dalek      = "2"
 # Validates `scan --format sarif` against the official SARIF 2.1.0 schema,
 # vendored in tests/schemas/ (T-SCAN-62, decided 2026-10-11). Default features
 # off: they fetch remote `$ref`s over HTTP, which a vendored schema never needs,
