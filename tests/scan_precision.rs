@@ -241,3 +241,169 @@ fn names_are_checked_only_in_those_files_and_a_value_is_reported_once() {
         "{hits:?}"
     );
 }
+
+// ── SCAN-FP ──────────────────────────────────────────────────────────────
+
+/// `n` base64 characters, deterministic and random-looking (high entropy).
+fn b64(n: usize, seed: usize) -> String {
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    (0..n)
+        .map(|i| A[(i * 11 + seed * 17 + i / 3 + (i * i) % 7) % A.len()] as char)
+        .collect()
+}
+
+fn pem(label: &str, seed: usize) -> String {
+    format!(
+        "-----BEGIN {label}-----\n{}\n{}\n{}\n-----END {label}-----\n",
+        b64(64, seed),
+        b64(64, seed + 1),
+        b64(40, seed + 2)
+    )
+}
+
+#[test]
+fn a_private_key_block_is_one_finding_not_one_per_body_line() {
+    for (file, label, rule) in [
+        ("deploy.pem", "PRIVATE KEY", "private-key"),
+        ("server.key", "RSA PRIVATE KEY", "private-key"),
+        ("id_deploy", "OPENSSH PRIVATE KEY", "openssh-private-key"),
+    ] {
+        let hits = scan(&[(file, &pem(label, 3))]);
+        assert_eq!(rules(&hits), vec![(rule, 1)], "{file}: {hits:?}");
+    }
+}
+
+#[test]
+fn a_secret_after_a_private_key_block_is_still_found() {
+    let mut text = pem("PRIVATE KEY", 5);
+    text.push_str(&format!("token {}\n", b64(48, 9).replace(['+', '/'], "x")));
+    let hits = scan(&[("bundle.txt", &text)]);
+    assert_eq!(
+        rules(&hits),
+        vec![("private-key", 1), ("high-entropy-string", 6)],
+        "{hits:?}"
+    );
+}
+
+#[test]
+fn public_keys_and_certificates_are_not_secrets() {
+    for label in [
+        "PUBLIC KEY",
+        "RSA PUBLIC KEY",
+        "CERTIFICATE",
+        "CERTIFICATE REQUEST",
+    ] {
+        let hits = scan(&[("public.pem", &pem(label, 7))]);
+        assert_eq!(hits, vec![], "{label}");
+    }
+    let blob = format!("AAAAC3NzaC1lZDI1NTE5AAAA{}", b64(36, 4));
+    let rsa = format!("AAAAB3NzaC1yc2EAAAADAQABAAABAQ{}", b64(120, 6));
+    let text = format!("ssh-ed25519 {blob} deploy@laptop\nssh-rsa {rsa} ci@host\n");
+    assert_eq!(scan(&[("authorized_keys", &text)]), vec![]);
+    assert_eq!(scan(&[("id_ed25519.pub", &text)]), vec![]);
+}
+
+#[test]
+fn a_cache_key_holding_a_digest_is_an_identifier() {
+    let hex = |n: usize| -> String {
+        (0..n)
+            .map(|i| "0123456789abcdef".as_bytes()[(i * 7 + i / 3) % 16] as char)
+            .collect()
+    };
+    let hits = scan(&[(
+        ".env",
+        &format!(
+            "CACHE_KEY={}\nETAG_KEY={}\nIDEMPOTENCY_KEY={}\nCACHE_KEY={}\n",
+            hex(32),
+            hex(40),
+            hex(64),
+            hex(32)
+        ),
+    )]);
+    assert_eq!(hits, vec![]);
+}
+
+#[test]
+fn only_a_cache_digest_is_excused_by_its_name() {
+    let hex = |n: usize| -> String {
+        (0..n)
+            .map(|i| "0123456789abcdef".as_bytes()[(i * 5 + i / 2) % 16] as char)
+            .collect()
+    };
+    let text = format!(
+        "API_KEY={}\nCACHE_API_KEY={}\nCACHE_SECRET_KEY={}\nHASH_KEY={}\nCHECKSUM_KEY={}\nSIGNING_KEY={}\n\
+         CACHE_KEY={}\nCACHE_KEY={}\n",
+        hex(32),
+        hex(32),
+        hex(32),
+        hex(64),
+        hex(64),
+        hex(32),
+        // not a digest length, and not hex
+        hex(31),
+        b64(32, 2).replace(['+', '/'], "k"),
+    );
+    let hits = scan(&[(".env", &text)]);
+    let lines: Vec<usize> = hits.iter().map(|h| h.1).collect();
+    assert_eq!(lines, vec![1, 2, 3, 4, 5, 6, 7, 8], "{hits:?}");
+}
+
+#[test]
+fn a_stripe_publishable_key_is_public_but_a_secret_under_a_public_prefix_is_not() {
+    let body: String = b64(24, 8).replace(['+', '/'], "q");
+    let live = format!("pk_{}_{body}", "live");
+    let test = format!("pk_{}_{body}", "test");
+    let hits = scan(&[(
+        ".env",
+        &format!("NEXT_PUBLIC_STRIPE_KEY={live}\nVITE_STRIPE_KEY={test}\nSTRIPE_KEY={live}\n"),
+    )]);
+    assert_eq!(hits, vec![]);
+    let secret = format!("sk_{}_{body}", "live");
+    let hits = scan(&[(".env", &format!("NEXT_PUBLIC_STRIPE_KEY={secret}\n"))]);
+    assert_eq!(
+        rules(&hits),
+        vec![("stripe-live-secret-key", 1)],
+        "{hits:?}"
+    );
+}
+
+#[test]
+fn yaml_references_are_not_reported_as_secrets() {
+    let text = "services:\n  app:\n    environment:\n      API_TOKEN: \"{{ .Values.apiToken }}\"\n\
+                \x20     DB_PASSWORD: ${{ secrets.DB_PASSWORD }}\n    secrets:\n      - db_password\n      - api-token\n\
+                env:\n  - name: DB_PASSWORD\n    valueFrom:\n      secretKeyRef:\n        name: app-secrets\n        key: password\n\
+                envFrom:\n  - secretRef:\n      name: app-secrets\n";
+    assert_eq!(scan(&[("docker-compose.yml", text)]), vec![]);
+}
+
+#[test]
+fn yaml_real_values_next_to_references_are_still_reported() {
+    let v = b64(30, 1).replace(['+', '/'], "z");
+    let w = b64(30, 2).replace(['+', '/'], "z");
+    let text = format!(
+        "services:\n  app:\n    environment:\n      API_TOKEN: {v}\n    secrets:\n      - {w}\n      - Db7PassWord9\n"
+    );
+    let hits = scan(&[("docker-compose.yml", &text)]);
+    let lines: Vec<usize> = hits.iter().map(|h| h.1).collect();
+    assert_eq!(lines, vec![4, 6, 7], "{hits:?}");
+}
+
+#[test]
+fn a_pass_suffix_is_a_password_name() {
+    let p = pw();
+    let hits = scan(&[(
+        ".env",
+        &format!(
+            "RABBITMQ_DEFAULT_PASS={p}\nDB_PASS={p}\nBYPASS_CACHE=true-for-everyone\nMAX_PASS=3\n\
+             COMPASS={p}\nLOW_PASS=changeme\n"
+        ),
+    )]);
+    assert_eq!(
+        names(&hits),
+        vec![
+            ("sensitive-config-key", 1, "RABBITMQ_DEFAULT_PASS"),
+            ("sensitive-config-key", 2, "DB_PASS"),
+        ],
+        "{hits:?}"
+    );
+}

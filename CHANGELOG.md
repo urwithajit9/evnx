@@ -168,6 +168,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`scan`: false positives found by the RM-70 corpus** (SCAN-FP).
+  - A PEM or OpenSSH private key is one `private-key` finding; its base64 body
+    lines are no longer also `high-entropy-string`.
+  - The body of a `PUBLIC KEY`, `RSA PUBLIC KEY` or `CERTIFICATE` block, and
+    the blob of an `ssh-rsa` or `ssh-ed25519` public key line, are not
+    reported: public material is not a secret.
+  - `CACHE_KEY`, `ETAG_KEY` and `IDEMPOTENCY_KEY` holding a 32, 40 or 64 digit
+    hex digest are identifiers, not credentials. Any other word in the name
+    (`CACHE_API_KEY`, `API_KEY`, `HASH_KEY`) or any other value keeps the check.
+  - A Stripe publishable key (`pk_live_`, `pk_test_`) is public by design and
+    is not reported by name or by entropy. A secret key under `NEXT_PUBLIC_`
+    is still reported.
+  - YAML, JSON and TOML references are not values: a whole-value template
+    (`{{ .Values.apiToken }}`, `${{ secrets.TOKEN }}`), anything under a
+    Kubernetes `secretKeyRef` or `secretRef`, and a lowercase secret name in a
+    `secrets:` list (`- db_password`).
+  - Names ending in `_PASS` (`RABBITMQ_DEFAULT_PASS`, `DB_PASS`) are password
+    names, for `scan` and for masking. `BYPASS_CACHE` and `COMPASS` are not.
 - **`scan`: names are checked in Dockerfiles, shell scripts and Python
   modules** (SCAN-NAMES). A file read as text was judged by value alone, so
   `ENV DB_PASSWORD=<random>` (also `ARG`, the `ENV KEY value` form and

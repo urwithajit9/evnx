@@ -132,7 +132,11 @@ fn lenient_name(key: &str) -> bool {
     // own suffix rule (now the Strict level). The two commands disagreeing meant
     // `diff --show-values` printed values that `validate` would have demanded
     // a strong secret for.
-    const SUFFIXES: &[&str] = &["_KEY", "_SECRET", "_PASSWORD", "_TOKEN", "_PASSWD"];
+    //
+    // `_PASS` (SCAN-FP): `RABBITMQ_DEFAULT_PASS`, `DB_PASS`. A suffix, not a
+    // substring, so `BYPASS_CACHE` and `COMPASS` stay out; a flag or a number
+    // under it is dropped by the value checks.
+    const SUFFIXES: &[&str] = &["_KEY", "_SECRET", "_PASSWORD", "_TOKEN", "_PASSWD", "_PASS"];
 
     let upper = key.to_uppercase();
     CONTAINS.iter().any(|p| upper.contains(p))
