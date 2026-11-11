@@ -328,11 +328,51 @@ fn diff_says_which_file_it_used() {
     let out = run(&p, &v.url(), &diff_args(&[]));
     quiet(&out);
     out.assert_contains("local  .env\n");
-    // Nothing to compare with at all is an error, not an empty diff.
-    let empty = Project::new();
-    let out = run(&empty, &v.url(), &diff_args(&[]));
+}
+
+#[test]
+fn f3_no_local_file_means_an_empty_local_side() {
+    let v = Vercel::start_for_diff();
+    let p = Project::new();
+    let out = run(&p, &v.url(), &diff_args(&["--env-name", "development"]));
+    // Five development variables, all remote only: a difference, but not an error.
+    out.assert_code(1);
+    quiet(&out);
+    out.assert_contains("neither .env.development nor .env exists");
+    out.assert_contains("every Vercel variable shows as remote only");
+    out.assert_contains("local  .env\n");
+    assert_eq!(
+        out.stdout.matches("remote only").count(),
+        6,
+        "{}",
+        out.stdout
+    );
+    out.assert_contains("5 remote only");
+    assert!(!out.stdout.contains("+ "), "{}", out.stdout);
+
+    let out = run(&p, &v.url(), &diff_args(&["--format", "json"]));
+    out.assert_code(1);
+    let j: Value = serde_json::from_str(&out.stdout).expect("stdout is JSON and nothing else");
+    assert_eq!(j["local_file_found"], false);
+    assert_eq!(j["summary"]["remote_only"], 5);
+    quiet(&out);
+}
+
+#[test]
+fn f3_nothing_on_vercel_and_no_local_file_is_clean_and_a_missing_explicit_file_is_an_error() {
+    let mut s = Server::new();
+    s.mock("GET", "/v10/projects/prj_1/env")
+        .match_query(list_query("team_1"))
+        .with_body(json!({ "envs": [] }).to_string())
+        .create();
+    let p = Project::new();
+    let out = run(&p, &s.url(), &diff_args(&[]));
+    out.assert_code(0);
+    out.assert_contains("neither");
+    // --file names a path on purpose: a missing one is a typo.
+    let out = run(&p, &s.url(), &diff_args(&["--file", "nope.env"]));
     out.assert_code(2);
-    out.assert_contains("not found");
+    out.assert_contains("nope.env not found");
 }
 
 #[test]

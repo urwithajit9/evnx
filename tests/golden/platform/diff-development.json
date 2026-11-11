@@ -47,6 +47,7 @@
   "environment": "development",
   "file": ".env.development",
   "hidden_production_env_count": 0,
+  "local_file_found": true,
   "platform": "vercel",
   "project": "prj_1",
   "strict": false,

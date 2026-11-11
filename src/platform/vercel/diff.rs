@@ -12,16 +12,23 @@ use crate::platform::local;
 /// Compare the local file with a Vercel environment. `Findings` when they differ.
 pub fn run(args: &PlatformDiffArgs) -> Result<Verdict> {
     let session = Session::open(&args.common)?;
-    let (path, _) = local::resolve(
+    let (path, choice) = local::resolve(
         Path::new("."),
         args.common.file.as_deref(),
         session.environment.name(),
     );
     let file = local::read(&path)?;
-    if file.text.is_none() {
-        bail!(
-            "{} not found. Pass --file <path>, or create .env.{} or .env.",
-            shown(&path),
+    // F3: with no `.env.<env>` and no `.env`, the local side is empty and every
+    // Vercel variable is "remote only", which the run says. A `--file` that does
+    // not exist is a typo, and stays an error.
+    let local_found = file.text.is_some();
+    if !local_found {
+        if choice == local::Choice::Explicit {
+            bail!("{} not found.", shown(&path));
+        }
+        eprintln!(
+            "note: neither .env.{} nor .env exists, so the local side is empty and every \
+             Vercel variable shows as remote only.",
             session.environment.name()
         );
     }
@@ -40,7 +47,7 @@ pub fn run(args: &PlatformDiffArgs) -> Result<Verdict> {
     let file_name = shown(&path);
 
     if args.json() {
-        let j = plan::to_json(
+        let mut j = plan::to_json(
             &plan,
             &session.project.project,
             session.project.team.as_deref(),
@@ -49,6 +56,7 @@ pub fn run(args: &PlatformDiffArgs) -> Result<Verdict> {
             listing.hidden_production,
             args.strict,
         );
+        j["local_file_found"] = local_found.into();
         println!("{}", serde_json::to_string_pretty(&j)?);
     } else {
         println!(
