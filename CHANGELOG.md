@@ -185,6 +185,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   email under whichever name you learned first. The aliases were already in the
   parser; this adds the test that holds them, so neither flag can be dropped by
   accident.
+- `convert --to json` and `--to vercel` warn, on stderr, when `--exclude` is used
+  without `--include` (F14-9, OW-19). `--exclude` is a denylist, so a variable you
+  did not think of is copied into a file that usually ends up in an app build or a
+  web bundle (`ANDROID_KEYSTORE_PASSWORD` does not match `*_SECRET*`). The output is
+  unchanged and the exit code stays 0; the warning says to list what may go there
+  with `--include`.
 
 ## [0.13.0] - 2026-11-08
 

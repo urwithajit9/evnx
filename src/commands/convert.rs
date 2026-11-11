@@ -512,6 +512,10 @@ pub fn run(config: ConvertConfig) -> Result<()> {
         ui::warning(note);
     }
 
+    if let Some(note) = exclude_on_public_target(format.name, &config.options) {
+        ui::warning(note);
+    }
+
     // Output result
     write_output(
         &result,
@@ -523,6 +527,33 @@ pub fn run(config: ConvertConfig) -> Result<()> {
     ui::print_docs_hint(&docs::CONVERT);
 
     Ok(())
+}
+
+/// Targets whose output usually ends up somewhere public: `json` feeds an app
+/// build (`flutter --dart-define-from-file`, a web bundle's config) and `vercel`
+/// feeds a project whose public-prefixed variables reach the browser (F14-9).
+const PUBLIC_SURFACE_TARGETS: &[&str] = &["json", "vercel"];
+
+/// F14-9: `--exclude` without `--include` on a public target.
+///
+/// `--exclude` is a denylist: every name the pattern does not match is copied,
+/// including the one added next month, so for a boundary that must hold
+/// (`ANDROID_KEYSTORE_PASSWORD` is not `*_SECRET*`) the allowlist is the safe
+/// shape. A warning, never an error: the output is what was asked for.
+fn exclude_on_public_target(
+    format: &str,
+    options: &crate::core::converter::ConvertOptions,
+) -> Option<String> {
+    (PUBLIC_SURFACE_TARGETS.contains(&format)
+        && !options.exclude.is_empty()
+        && options.include.is_empty())
+    .then(|| {
+        format!(
+            "--exclude only removes the names you list, and the {format} output usually \
+                 ends up somewhere public (an app build, a web bundle): a variable you did not \
+                 think of is copied too. List what may go there with --include instead."
+        )
+    })
 }
 
 /// Why nothing is left to convert, and the flag that converts it anyway.
