@@ -352,6 +352,10 @@ pub const URL_PLACEHOLDERS: &[(&str, &str)] = &[
 /// the connection-string rule reported evnx's own placeholder as a live
 /// credential. The host matters: `user:password@db.prod.company.io` is not
 /// something evnx wrote, so it stays a finding.
+///
+/// A host with a label that says it is an example (`ep-example-123456` in the
+/// Neon sample, F14-8) is a documentation host too: the generator wrote it, and
+/// no provider hands out a name that starts that way.
 pub fn is_url_placeholder(value: &str) -> bool {
     let v = value.trim();
     let Some((_, rest)) = v.split_once("://") else {
@@ -369,7 +373,10 @@ pub fn is_url_placeholder(value: &str) -> bool {
     let documentation = ["example.com", "example.org", "example.net"]
         .iter()
         .any(|d| host == *d || host.ends_with(&format!(".{d}")));
-    userinfo == "user:password" && (local || documentation)
+    let example_label = host
+        .split('.')
+        .any(|label| label.starts_with("example") || label.contains("-example-"));
+    userinfo == "user:password" && (local || documentation || example_label)
 }
 
 /// The placeholder for a URL by its scheme, or `None` for a scheme not in
@@ -894,6 +901,25 @@ mod tests {
 
     /// I-121, DEC-S11: every key the struct reads is listed, so the refusal
     /// cannot reject a real setting.
+    /// F14-8: the Neon sample `evnx init --with neon` writes is a placeholder,
+    /// and a real host with the same credentials is not.
+    #[test]
+    fn t_f14_8_the_neon_sample_url_is_a_placeholder() {
+        for url in [
+            "postgresql://user:password@ep-example-123456-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require",
+            "postgresql://user:password@ep-example-123456.us-east-2.aws.neon.tech/neondb?sslmode=require",
+        ] {
+            assert!(is_url_placeholder(url), "{url}");
+        }
+        for url in [
+            "postgresql://user:password@ep-cool-darkness-123456.us-east-2.aws.neon.tech/neondb",
+            "postgresql://user:hunter2@ep-example-123456.us-east-2.aws.neon.tech/neondb",
+            "postgresql://user:password@db.prod.company.io/app",
+        ] {
+            assert!(!is_url_placeholder(url), "{url}");
+        }
+    }
+
     #[test]
     fn t_i121_config_keys_match_the_fields() {
         let json = serde_json::to_value(PlaceholderConfig {
