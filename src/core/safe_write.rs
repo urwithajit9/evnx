@@ -517,16 +517,20 @@ mod tests {
         for n in [".env.bak", ".env.bak.2", ".env.bak.3", ".env.bak.100"] {
             std::fs::write(d.path().join(n), "old\n").unwrap();
         }
-        let keep = [
+        let mut keep = vec![
             ".env.bak.old",
             ".env.bak.2x",
-            ".env.bak.",
             ".env.production.bak.2",
             "notes.bak.txt",
             ".envx.bak.2",
             ".env.bak.2.txt",
         ];
-        for n in keep {
+        // Windows drops a trailing dot from a file name, so `.env.bak.` is
+        // `.env.bak` there: the backup itself, not a file to leave alone.
+        if !cfg!(windows) {
+            keep.push(".env.bak.");
+        }
+        for n in &keep {
             std::fs::write(d.path().join(n), "keep\n").unwrap();
         }
         std::fs::create_dir(d.path().join(".env.bak.7")).unwrap();
@@ -534,7 +538,7 @@ mod tests {
         for n in [".env.bak.2", ".env.bak.3", ".env.bak.100"] {
             assert!(!d.path().join(n).exists(), "{n} should be gone");
         }
-        for n in keep {
+        for n in &keep {
             assert_eq!(
                 std::fs::read_to_string(d.path().join(n)).unwrap(),
                 "keep\n",
