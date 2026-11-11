@@ -110,6 +110,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`platform pull`: no more "already up to date" for a file that does not exist.**
+  When Vercel has nothing for the environment and the local file is absent, pull
+  says `nothing to pull; <file> not created` (exit 0). An existing file with
+  nothing to change still reads "is already up to date".
 - **`platform push`: the plan says when it splits a shared entry.** A row now reads
   `~ KEY secret update (split: Preview, Production keep their own entry; …)`, the
   summary counts `N split (shared entry left)`, and `--format json` has

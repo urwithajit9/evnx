@@ -996,6 +996,31 @@ fn pull_with_nothing_to_change_says_so_and_still_records_the_state() {
 }
 
 #[test]
+fn pull_with_nothing_on_vercel_and_no_file_says_it_created_nothing() {
+    let mut s = Server::new();
+    s.mock("GET", "/v10/projects/prj_1/env")
+        .match_query(list_query("team_1"))
+        .with_body(json!({ "envs": [] }).to_string())
+        .create();
+    let p = Project::new();
+    let out = run(&p, &s.url(), &pull_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    quiet(&out);
+    out.assert_contains("nothing to pull; .env not created");
+    out.assert_not_contains("already up to date");
+    assert!(!p.exists(".env.development"));
+    assert!(!p.exists(".env"));
+
+    // The file exists and Vercel has nothing: that file is up to date.
+    let p = Project::new().file(".env.development", "LOCAL=1\n");
+    let out = run(&p, &s.url(), &pull_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    out.assert_contains(".env.development is already up to date");
+    out.assert_not_contains("not created");
+    assert_eq!(p.read(".env.development"), "LOCAL=1\n");
+}
+
+#[test]
 fn pull_refuses_a_file_it_cannot_read_without_touching_it() {
     let v = Vercel::start();
     let p = Project::new().file(".env.development", "A=1\n=broken\n");
