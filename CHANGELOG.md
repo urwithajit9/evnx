@@ -110,6 +110,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Backups no longer pile up.** Every command that keeps the replaced file as
+  `<file>.bak` (`platform pull`, `cloud pull`, `restore`, `diff --apply`,
+  `validate --fix`, `remove`) now keeps exactly one: `<file>.bak` is replaced on
+  each write instead of becoming `.bak.2`, `.bak.3`, … Old numbered copies of
+  that same file (`<file>.bak.<digits>`, nothing else: `.bak.old` and
+  `notes.bak.txt` are never touched) are removed on the next write, with one line
+  saying how many. `.gitignore` gets a single `*.bak` line, once, under the same
+  `--gitignore`/`--no-gitignore`/`--yes` rules, instead of a question per copy;
+  nothing is staged or committed. Because the backup is replaced, a second edit
+  in a row leaves a copy of the first edit's result, not of the original.
+
 - **`platform diff`: a Secret present on both sides is no longer a difference**
   (F1). Vercel never returns a Secret's value, so such a variable made `diff` exit
   1 forever and the command was useless as a CI gate. It now prints as

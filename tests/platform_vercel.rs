@@ -1054,6 +1054,67 @@ fn declining_the_pull_exits_4_and_changes_nothing() {
     assert!(!p.exists(".evnx"));
 }
 
+// ── Backups: one `.bak` per file, one `.gitignore` pattern ──────────────────
+
+#[test]
+fn a_second_pull_replaces_the_bak_and_removes_legacy_numbered_copies() {
+    let v = Vercel::start();
+    let p = pull_project()
+        .git()
+        .file(".gitignore", ".evnx/platform/\n")
+        .file(".env.development.bak", "older\n")
+        .file(".env.development.bak.2", "legacy2\n")
+        .file(".env.development.bak.3", "legacy3\n")
+        .file(".env.development.bak.old", "mine\n")
+        .file("notes.bak.txt", "mine\n");
+    let out = run(&p, &v.url(), &pull_args(&["--yes", "--gitignore"]));
+    out.assert_code(0);
+    quiet(&out);
+    assert_eq!(p.read(".env.development.bak"), PULL_BEFORE);
+    assert!(!p.exists(".env.development.bak.2"));
+    assert!(!p.exists(".env.development.bak.3"));
+    assert_eq!(p.read(".env.development.bak.old"), "mine\n");
+    assert_eq!(p.read("notes.bak.txt"), "mine\n");
+    assert!(
+        out.stderr.contains("removed 2 old backups"),
+        "{}",
+        out.stderr
+    );
+
+    // The file changes again; the second pull replaces the one backup.
+    let edited = PULL_BEFORE.replace("old-local-api-value-aa11", "edited-by-hand");
+    std::fs::write(p.join(".env.development"), &edited).unwrap();
+    let out = run(&p, &v.url(), &pull_args(&["--yes", "--gitignore"]));
+    out.assert_code(0);
+    quiet(&out);
+    assert_eq!(p.read(".env.development.bak"), edited);
+    assert!(!p.exists(".env.development.bak.2"));
+    out.assert_not_contains("old backup");
+
+    // One pattern covers every copy, added once; nothing staged or committed.
+    let ignore = p.read(".gitignore");
+    assert_eq!(ignore.matches("*.bak").count(), 1, "{ignore}");
+    assert!(p.is_ignored(".env.development.bak"));
+    assert_eq!(p.git_cmd(&["diff", "--cached", "--name-only"]).trim(), "");
+}
+
+#[test]
+fn an_existing_pattern_keeps_the_backup_silent_and_no_gitignore_adds_nothing() {
+    let v = Vercel::start();
+    let p = pull_project().git().file(".gitignore", ".env*\n");
+    let out = run(&p, &v.url(), &pull_args(&["--yes", "--gitignore"]));
+    out.assert_code(0);
+    quiet(&out);
+    out.assert_not_contains("*.bak");
+    out.assert_not_contains("not in .gitignore");
+    assert!(!p.read(".gitignore").contains("*.bak"));
+
+    let p = pull_project().git().file(".gitignore", "x\n");
+    let out = run(&p, &v.url(), &pull_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    assert_eq!(p.read(".gitignore"), "x\n");
+}
+
 // ── F4: the state file and .gitignore ────────────────────────────────────────
 
 #[test]

@@ -148,7 +148,7 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
     super::record(&session, &sel.entries, &gitignore, args.yes)?;
     crate::utils::protect::protect_output(&path.to_string_lossy(), &gitignore)?;
     if let Some(kept) = &kept {
-        crate::utils::protect::protect_output(&kept.to_string_lossy(), &gitignore)?;
+        crate::utils::protect::protect_backup(&kept.to_string_lossy(), &gitignore)?;
     }
     Ok(())
 }

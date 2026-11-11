@@ -591,7 +591,7 @@ pub fn pull(
     // holds plaintext too.
     crate::utils::protect::protect_output(&file.to_string_lossy(), &gitignore)?;
     if let Some(kept) = &kept {
-        crate::utils::protect::protect_output(&kept.to_string_lossy(), &gitignore)?;
+        crate::utils::protect::protect_backup(&kept.to_string_lossy(), &gitignore)?;
     }
     Ok(())
 }

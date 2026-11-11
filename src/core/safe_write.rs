@@ -73,41 +73,82 @@ pub fn write_with_mode(path: impl AsRef<Path>, bytes: &[u8], mode: u32) -> Resul
 }
 
 /// Keep `content` — what `path` holds before an in-place edit — beside it as
-/// `<path>.bak`, or `.bak.2` … `.bak.100` when earlier copies exist. Returns
-/// the backup's path.
+/// `<path>.bak`. Returns the backup's path.
 ///
-/// ⚠️ Never overwrites an earlier copy, unlike `sed -i.bak`: two edits in a row
-/// would otherwise leave a "backup" of the already-changed file and no copy of
-/// the original.
+/// ⚠️ **One backup per file.** `<path>.bak` is replaced on every call; it holds
+/// the file as it was before the latest edit. Earlier versions of this helper
+/// piled up `.bak.2` … `.bak.100`, one per write, and a `.gitignore` question
+/// for each. Stale numbered copies of the same file (`<path>.bak.<digits>`,
+/// exactly that and nothing else) are removed once the new copy is on disk, and
+/// one line on stderr says how many.
 ///
 /// The copy holds what the original held, so it gets the original's mode
 /// (0600 when that cannot be read) — set on the temp file before it is
-/// renamed, so it is never readable by others for a moment either. It used to
-/// be written at the umask's mode and `chmod`ed after.
+/// renamed, so it is never readable by others for a moment either. A symlink
+/// where the backup goes is replaced, not written through.
 ///
-/// `validate --fix` is the caller; it was `utils::fs::backup_file` (never
-/// called, and named `.backup`) and validate's private `write_backup`.
+/// `validate --fix`, `restore`, `diff --apply`, `remove`, `cloud pull` and
+/// `platform pull` are the callers.
 pub fn backup(path: impl AsRef<Path>, content: &[u8]) -> Result<PathBuf> {
     let path = path.as_ref();
     let base = path.as_os_str().to_string_lossy();
-    let mut candidate = PathBuf::from(format!("{base}.bak"));
-    let mut n = 2;
-    while std::fs::symlink_metadata(&candidate).is_ok() {
-        if n > 100 {
+    let candidate = PathBuf::from(format!("{base}.bak"));
+    if let Ok(meta) = std::fs::symlink_metadata(&candidate) {
+        if meta.file_type().is_symlink() {
+            std::fs::remove_file(&candidate).with_context(|| {
+                format!("could not replace the link {}", candidate.display())
+            })?;
+        } else if meta.is_dir() {
             bail!(
-                "refusing to change {base}: {base}.bak through {base}.bak.100 all exist — \
-                 remove some first"
+                "refusing to change {base}: {} is a directory",
+                candidate.display()
             );
         }
-        candidate = PathBuf::from(format!("{base}.bak.{n}"));
-        n += 1;
     }
     let mode = existing_file(&resolve(path)?.0)?
         .and_then(|m| existing_mode(&m))
         .unwrap_or(permissions::PRIVATE);
     write_with_mode(&candidate, content, mode)
         .with_context(|| format!("could not keep a backup at {}", candidate.display()))?;
+    let removed = remove_stale_backups(path);
+    if removed > 0 && !crate::utils::ui::is_quiet() {
+        eprintln!(
+            "  removed {removed} old backup{} of {base} (only {base}.bak is kept)",
+            if removed == 1 { "" } else { "s" }
+        );
+    }
     Ok(candidate)
+}
+
+/// Remove `<path>.bak.<digits>` beside `path` (the numbered copies older
+/// versions made) and return how many went. Matches that exact shape only:
+/// `.bak.old`, `notes.bak.txt`, `.bak.2x`, `.bak.` and directories stay.
+/// Best effort: a copy that cannot be removed is left and not counted.
+fn remove_stale_backups(path: &Path) -> usize {
+    let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+        return 0;
+    };
+    let prefix = format!("{name}.bak.");
+    let dir = target_dir(path);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let file_name = entry.file_name().to_string_lossy().into_owned();
+        let Some(rest) = file_name.strip_prefix(&prefix) else {
+            continue;
+        };
+        if rest.is_empty() || !rest.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let p = entry.path();
+        match std::fs::symlink_metadata(&p) {
+            Ok(m) if !m.is_dir() && std::fs::remove_file(&p).is_ok() => removed += 1,
+            _ => {}
+        }
+    }
+    removed
 }
 
 /// Stage a private write: the bytes are in a temp file beside the target, and
@@ -457,16 +498,55 @@ mod tests {
     }
 
     #[test]
-    fn a_backup_never_overwrites_an_earlier_one() {
+    fn a_second_backup_replaces_the_first() {
         let d = TempDir::new().unwrap();
         let p = d.path().join(".env");
         std::fs::write(&p, "A=1\n").unwrap();
         let first = backup(&p, b"A=1\n").unwrap();
         let second = backup(&p, b"A=2\n").unwrap();
         assert_eq!(first, d.path().join(".env.bak"));
-        assert_eq!(second, d.path().join(".env.bak.2"));
-        assert_eq!(std::fs::read_to_string(first).unwrap(), "A=1\n");
+        assert_eq!(second, first);
         assert_eq!(std::fs::read_to_string(second).unwrap(), "A=2\n");
+        assert!(!d.path().join(".env.bak.2").exists());
+    }
+
+    #[test]
+    fn legacy_numbered_backups_are_removed_and_nothing_else() {
+        let d = TempDir::new().unwrap();
+        let p = d.path().join(".env");
+        std::fs::write(&p, "A=1\n").unwrap();
+        for n in [".env.bak", ".env.bak.2", ".env.bak.3", ".env.bak.100"] {
+            std::fs::write(d.path().join(n), "old\n").unwrap();
+        }
+        let keep = [
+            ".env.bak.old",
+            ".env.bak.2x",
+            ".env.bak.",
+            ".env.production.bak.2",
+            "notes.bak.txt",
+            ".envx.bak.2",
+            ".env.bak.2.txt",
+        ];
+        for n in keep {
+            std::fs::write(d.path().join(n), "keep\n").unwrap();
+        }
+        std::fs::create_dir(d.path().join(".env.bak.7")).unwrap();
+        backup(&p, b"A=1\n").unwrap();
+        for n in [".env.bak.2", ".env.bak.3", ".env.bak.100"] {
+            assert!(!d.path().join(n).exists(), "{n} should be gone");
+        }
+        for n in keep {
+            assert_eq!(
+                std::fs::read_to_string(d.path().join(n)).unwrap(),
+                "keep\n",
+                "{n}"
+            );
+        }
+        assert!(d.path().join(".env.bak.7").is_dir());
+        assert_eq!(
+            std::fs::read_to_string(d.path().join(".env.bak")).unwrap(),
+            "A=1\n"
+        );
     }
 
     #[cfg(unix)]

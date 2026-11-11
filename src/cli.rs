@@ -3063,8 +3063,8 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// Replace an existing --output without asking.
         ///
         /// For scripts and CI, where there is no terminal to ask on. The file
-        /// it replaces is kept beside it as <output>.bak (.bak.2, … when one
-        /// exists). Without it, and without a terminal, an existing output
+        /// it replaces is kept beside it as <output>.bak (replacing the previous
+        /// copy). Without it, and without a terminal, an existing output
         /// stops the run (exit 2). Also accepted as --force, as in `cloud pull`.
         #[arg(long, short = 'y', visible_alias = "force")]
         yes: bool,

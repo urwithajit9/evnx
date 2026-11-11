@@ -87,15 +87,15 @@ fn t_dec_b11_the_kept_copy_has_the_old_mode() {
     assert_eq!(mode(&p, ".env"), 0o640, "an existing output keeps its mode");
 }
 
-/// A second replacement never overwrites the first copy.
+/// A second replacement replaces the copy: one `.bak` per file, no `.bak.2`.
 #[test]
-fn t_dec_b11_an_earlier_copy_is_never_overwritten() {
+fn t_dec_b11_a_second_copy_replaces_the_first() {
     let p = backed_up().env(OLD);
     restore(&p, &["--yes"]).assert_code(0);
     std::fs::write(p.join(".env"), "SECOND=1\n").unwrap();
     restore(&p, &["--yes"]).assert_code(0);
-    assert_eq!(p.read(".env.bak"), OLD);
-    assert_eq!(p.read(".env.bak.2"), "SECOND=1\n");
+    assert_eq!(p.read(".env.bak"), "SECOND=1\n");
+    assert!(!p.exists(".env.bak.2"));
 }
 
 // ── DEC-B12 (S-B4): nothing to do ────────────────────────────────────────────
