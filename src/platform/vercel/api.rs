@@ -1,4 +1,4 @@
-//! The Vercel REST calls `diff` and `pull` need, and nothing else.
+//! The Vercel REST calls `diff`, `pull` and `push` need, and nothing else.
 //!
 //! Facts this is written to, all verified live (design §2a):
 //!
@@ -21,10 +21,11 @@ use std::cell::Cell;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use reqwest::header::{HeaderMap, ACCEPT};
-use reqwest::{StatusCode, Url};
+use reqwest::header::{HeaderMap, ACCEPT, CONTENT_TYPE};
+use reqwest::{Method, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::Value;
+use zeroize::Zeroizing;
 
 use crate::platform::error::PlatformError;
 use crate::platform::secret::SecretString;
@@ -82,6 +83,15 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// The `type` Vercel is sent for a new entry: `encrypted` for Config,
+    /// `sensitive` for a Secret (the types the live test used).
+    pub fn vercel_type(self) -> &'static str {
+        match self {
+            Kind::Config => "encrypted",
+            Kind::Secret => "sensitive",
+        }
+    }
+
     /// The word the plan prints.
     pub fn word(self) -> &'static str {
         match self {
@@ -266,22 +276,52 @@ impl Api {
         }
     }
 
-    /// One GET: pacing, the 429 wait, and the status mapping.
+    /// One GET, its body read as JSON.
     fn get_json(&self, url: Url, what: &str) -> Result<Value, PlatformError> {
+        let text = self.request(Method::GET, url, None, what, false)?;
+        serde_json::from_str(&text)
+            .map_err(|_| PlatformError::Malformed("the body is not JSON".into()))
+    }
+
+    /// One request: pacing, the 429 wait, and the status mapping. Returns the
+    /// body of a 2xx answer, to be parsed and dropped by the caller.
+    ///
+    /// `write` marks a request that carries a value. Its answer can echo
+    /// ciphertext, so an error from it names Vercel's error *code* and never
+    /// the message, and the body is never kept anywhere but the returned string.
+    fn request(
+        &self,
+        method: Method,
+        url: Url,
+        body: Option<Zeroizing<Vec<u8>>>,
+        what: &str,
+        write: bool,
+    ) -> Result<Zeroizing<String>, PlatformError> {
+        let detail = |text: &str| {
+            if write {
+                server_code(text)
+            } else {
+                server_sentence(text)
+            }
+        };
         let mut tries = 0;
         loop {
             tries += 1;
             self.pace();
-            let resp = self
+            let mut req = self
                 .http
-                .get(url.clone())
+                .request(method.clone(), url.clone())
                 .bearer_auth(self.token.expose())
-                .header(ACCEPT, "application/json")
-                .send()
-                .map_err(|e| PlatformError::Transport {
-                    host: self.host.clone(),
-                    reason: crate::core::http::transport_reason(&e, REQUEST_TIMEOUT),
-                })?;
+                .header(ACCEPT, "application/json");
+            if let Some(b) = &body {
+                req = req
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(b.to_vec());
+            }
+            let resp = req.send().map_err(|e| PlatformError::Transport {
+                host: self.host.clone(),
+                reason: crate::core::http::transport_reason(&e, REQUEST_TIMEOUT),
+            })?;
             let status = resp.status();
             let headers = resp.headers().clone();
             self.note_limits(&headers);
@@ -295,29 +335,107 @@ impl Api {
                 continue;
             }
 
-            let text = resp.text().map_err(|e| PlatformError::Transport {
+            let text = Zeroizing::new(resp.text().map_err(|e| PlatformError::Transport {
                 host: self.host.clone(),
                 reason: crate::core::http::transport_reason(&e, REQUEST_TIMEOUT),
-            })?;
+            })?);
             return match status.as_u16() {
-                200..=299 => serde_json::from_str(&text)
-                    .map_err(|_| PlatformError::Malformed("the body is not JSON".into())),
+                200..=299 => Ok(text),
                 401 => Err(PlatformError::Unauthorized),
                 403 if invalid_token(&text) => Err(PlatformError::InvalidToken),
                 403 => Err(PlatformError::Forbidden {
-                    detail: server_sentence(&text),
+                    detail: detail(&text),
                 }),
                 404 => Err(PlatformError::NotFound {
                     what: what.to_string(),
                 }),
                 s @ 400..=499 => Err(PlatformError::Refused {
                     status: s,
-                    detail: server_sentence(&text),
+                    detail: detail(&text),
                 }),
                 s @ 500..=599 => Err(PlatformError::ServerError { status: s }),
                 s => Err(PlatformError::Unexpected { status: s }),
             };
         }
+    }
+
+    // ── Writes ───────────────────────────────────────────────────────────────
+
+    /// Create entries in one bulk `POST /v10/projects/{id}/env?upsert=false`.
+    ///
+    /// Never an upsert: upsert matches by key and replaces the whole target list
+    /// (design §2a, P0 #3). A 201 can still carry `failed[]`, so it is read.
+    pub fn create_envs(&self, project: &str, items: &[NewEnv]) -> Result<Created, PlatformError> {
+        let url = self.url(&["v10", "projects", project, "env"], &[("upsert", "false")]);
+        let body: Vec<Value> = items
+            .iter()
+            .map(|i| {
+                serde_json::json!({
+                    "key": i.key,
+                    "value": i.value.expose(),
+                    "type": i.type_,
+                    "target": i.target,
+                })
+            })
+            .collect();
+        let text = self.request(
+            Method::POST,
+            url,
+            Some(json_bytes(&Value::Array(body))?),
+            "the variables to create",
+            true,
+        )?;
+        let v: Value = serde_json::from_str(&text)
+            .map_err(|_| PlatformError::Malformed("the create answer is not JSON".into()))?;
+        let failed: Vec<Failure> = v
+            .get("failed")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().map(Failure::from_json).collect())
+            .unwrap_or_default();
+        // `created` is the list of what was made; absent, everything else was.
+        let created = match v.get("created") {
+            Some(Value::Array(a)) => a.len(),
+            _ => items.len().saturating_sub(failed.len()),
+        };
+        Ok(Created { created, failed })
+    }
+
+    /// `PATCH /v9/projects/{id}/env/{envId}` with a new value.
+    pub fn patch_value(
+        &self,
+        project: &str,
+        id: &str,
+        value: &SecretString,
+    ) -> Result<(), PlatformError> {
+        self.patch(project, id, serde_json::json!({ "value": value.expose() }))
+    }
+
+    /// `PATCH /v9/projects/{id}/env/{envId}` with a new target list.
+    pub fn patch_target(
+        &self,
+        project: &str,
+        id: &str,
+        target: &[String],
+    ) -> Result<(), PlatformError> {
+        self.patch(project, id, serde_json::json!({ "target": target }))
+    }
+
+    fn patch(&self, project: &str, id: &str, body: Value) -> Result<(), PlatformError> {
+        if !is_plain_id(id) {
+            return Err(PlatformError::Malformed(
+                "a variable id is not an id".into(),
+            ));
+        }
+        let url = self.url(&["v9", "projects", project, "env", id], &[]);
+        // The answer echoes the entry (ciphertext for Config): dropped unread.
+        self.request(
+            Method::PATCH,
+            url,
+            Some(json_bytes(&body)?),
+            "a variable",
+            true,
+        )
+        .map(drop)
     }
 
     /// Sleep out a rate limit the last response said was used up.
@@ -337,6 +455,78 @@ impl Api {
             self.pause_until.set(reset);
         }
     }
+}
+
+/// One entry to create.
+pub struct NewEnv {
+    /// The variable's name.
+    pub key: String,
+    /// Its value.
+    pub value: SecretString,
+    /// Vercel's `type`: see [`Kind::vercel_type`].
+    pub type_: String,
+    /// The environments it applies to.
+    pub target: Vec<String>,
+}
+
+/// An entry the create call reported in `failed[]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Failure {
+    /// The variable, when Vercel said which.
+    pub key: Option<String>,
+    /// Vercel's error code (`ENV_ALREADY_EXISTS`, …), never its message.
+    pub code: String,
+}
+
+impl Failure {
+    fn from_json(f: &Value) -> Failure {
+        let get = |p: &str| f.pointer(p).and_then(Value::as_str);
+        Failure {
+            key: get("/error/key")
+                .or_else(|| get("/error/envVarKey"))
+                .or_else(|| get("/key"))
+                .map(|k| k.chars().filter(|c| !c.is_control()).take(256).collect()),
+            code: clean_code(get("/error/code").or_else(|| get("/code"))),
+        }
+    }
+}
+
+/// What a create call did.
+#[derive(Debug)]
+pub struct Created {
+    /// Entries made.
+    pub created: usize,
+    /// Entries Vercel refused inside a successful answer.
+    pub failed: Vec<Failure>,
+}
+
+fn json_bytes(v: &Value) -> Result<Zeroizing<Vec<u8>>, PlatformError> {
+    serde_json::to_vec(v)
+        .map(Zeroizing::new)
+        .map_err(|_| PlatformError::Malformed("could not encode the request".into()))
+}
+
+/// An error code kept to the characters a code has, and short.
+fn clean_code(code: Option<&str>) -> String {
+    let c: String = code
+        .unwrap_or("")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+        .take(64)
+        .collect();
+    if c.is_empty() {
+        "unknown".into()
+    } else {
+        c
+    }
+}
+
+/// The `error.code` of a Vercel error body, as "error code X". For answers to
+/// requests that carried a value, where the message is not repeated.
+fn server_code(body: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(body).ok()?;
+    let c = v.pointer("/error/code")?.as_str()?;
+    Some(format!("error code {}", clean_code(Some(c))))
 }
 
 /// An id that is safe as a path segment.

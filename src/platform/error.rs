@@ -76,6 +76,20 @@ pub enum PlatformError {
         tries: u32,
     },
 
+    /// A variable `push` was about to change is not as the last pull or push
+    /// left it (D4): someone changed it on Vercel. Nothing was written.
+    #[error(
+        "{} changed on Vercel since the last pull or push: {}.\n  \
+         Nothing was written. See what differs with `evnx platform diff --to vercel`, \
+         then `evnx platform pull --to vercel` to take Vercel's state, and push again.",
+        if keys.len() == 1 { "this variable" } else { "these variables" },
+        keys.join(", ")
+    )]
+    Changed {
+        /// The variables, by name.
+        keys: Vec<String>,
+    },
+
     /// The request never completed.
     #[error("could not reach {host}: {reason}")]
     Transport {
@@ -110,6 +124,7 @@ impl PlatformError {
         match self {
             PlatformError::Unauthorized | PlatformError::InvalidToken => Some(10),
             PlatformError::Forbidden { .. } => Some(11),
+            PlatformError::Changed { .. } => Some(14),
             PlatformError::Transport { .. } => Some(13),
             PlatformError::ServerError { .. } | PlatformError::RateLimited { .. } => Some(15),
             PlatformError::NotFound { .. }
@@ -142,6 +157,13 @@ mod tests {
     fn codes_follow_the_cloud_contract() {
         assert_eq!(PlatformError::Unauthorized.exit_code(), Some(10));
         assert_eq!(PlatformError::InvalidToken.exit_code(), Some(10));
+        assert_eq!(
+            PlatformError::Changed {
+                keys: vec!["A".into()]
+            }
+            .exit_code(),
+            Some(14)
+        );
         assert_eq!(
             PlatformError::Forbidden { detail: None }.exit_code(),
             Some(11)

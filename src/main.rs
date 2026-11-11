@@ -785,7 +785,7 @@ fn main() -> Result<()> {
                 verdict::finish(v);
                 Ok(())
             }
-            // `pull` declined: already said, and 4 as in `cloud pull` (D6).
+            // `pull` and `push` declined: already said, and 4 as in `cloud pull` (D6).
             Err(e) => declined(e),
         },
 

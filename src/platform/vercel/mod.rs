@@ -1,11 +1,12 @@
-//! `evnx platform diff|pull --to vercel`: compare a local `.env` with a Vercel
+//! `evnx platform diff|pull|push --to vercel`: compare a local `.env` with a Vercel
 //! environment, or pull Vercel's readable values into it.
 //!
 //! Vercel has two kinds of variable now. A **Config** value can be read back; a
 //! **Secret** can never be, so `pull` cannot fetch it and `diff` can say only
 //! that it exists. Values are never printed, by either command.
 //!
-//! Read-only against Vercel: `push` and `--prune` are later phases.
+//! `diff` and `pull` only read Vercel; `push` writes to it (see [`push`]). Deleting
+//! what Vercel has and the local file lacks is `--prune`, a later phase.
 
 use std::path::Path;
 
@@ -20,6 +21,7 @@ pub mod diff;
 pub mod plan;
 pub mod project;
 pub mod pull;
+pub mod push;
 pub mod state;
 
 use crate::utils::protect::GitignoreMode;
