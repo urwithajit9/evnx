@@ -126,6 +126,11 @@ pub fn scan_text(text: &str, ctx: &Context) -> Vec<Found> {
 fn scan_lines(text: &str, ctx: &Context) -> Vec<Found> {
     let mut out = Vec::new();
 
+    // SCAN-NAMES: a Dockerfile, shell script or Python module also gets its
+    // assignments judged by name, as a `.env` line is.
+    let mut assignments = super::assign::Shape::of(ctx.path, text.lines().next().unwrap_or(""))
+        .map(super::assign::Assignments::new);
+
     for (line_num, line) in text.lines().enumerate() {
         let line_num = line_num + 1;
 
@@ -157,10 +162,29 @@ fn scan_lines(text: &str, ctx: &Context) -> Vec<Found> {
         // — and so arrives by this path alone.
         detections.extend(ctx.registry.scan_line(line, &location));
 
+        // ...and each `NAME = literal`, by name and value. Detections about
+        // the same value are one finding below, so a key the value rules
+        // already found is not reported twice.
+        let named = assignments
+            .as_mut()
+            .map(|a| a.line(line))
+            .unwrap_or_default();
+        for (key, value) in &named {
+            detections.extend(ctx.registry.scan_kv(key, value, &location));
+        }
+
         for detection in one_finding_per_value(detections) {
+            // Named only where the name is why it was reported; a value rule's
+            // finding reads as it always did.
+            let by_name = detection.rule_id == super::detector::SENSITIVE_KEY_ID
+                || detection.rule_id == super::detector::DECLARED_SECRET_ID;
+            let variable = named
+                .iter()
+                .find(|(_, v)| by_name && same_value(v, &detection.matched_value))
+                .map(|(k, _)| k.clone());
             out.push(Found {
                 line: line_num,
-                variable: None,
+                variable,
                 detection,
             });
         }

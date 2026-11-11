@@ -168,6 +168,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`scan`: names are checked in Dockerfiles, shell scripts and Python
+  modules** (SCAN-NAMES). A file read as text was judged by value alone, so
+  `ENV DB_PASSWORD=<random>` (also `ARG`, the `ENV KEY value` form and
+  continuation lines), `export DB_PASSWORD="<random>"` or `DB_PASSWORD=<random>`
+  in a `.sh`, `.bash`, `.zsh` or `#!`-script, and `DB_PASSWORD = "<random>"` in
+  a `.py` file scanned clean. Those assignments now get the name check, the
+  placeholder, empty-value and reference filters a `.env` line gets, and are
+  reported as `sensitive-config-key` on the right line. Never flagged: `ARG X`
+  with no value, `$VAR`, `${VAR}`, `$(cmd)`, backticks, `os.environ[...]`,
+  `os.getenv(...)`, `settings.X`, f-strings, empty strings and placeholders.
+  Commented-out assignments are left to the value rules.
 - **`scan`: the `github-token` rule matches stateless GitHub App installation
   tokens** (SCAN-GHS). Since GitHub finished its rollout on 2026-10-02, `ghs_`
   tokens, the Actions `GITHUB_TOKEN` among them, are `ghs_<appid>_<JWT>` (about

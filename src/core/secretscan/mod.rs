@@ -10,6 +10,7 @@
 //! results are printed stay in `commands::scan`. Splitting those out too, and
 //! then a crate of their own, is SC-WP1 and SC-WP9.
 
+pub mod assign;
 mod confidence;
 pub mod detector;
 pub mod engine;
