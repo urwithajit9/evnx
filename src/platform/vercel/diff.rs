@@ -31,7 +31,10 @@ pub fn run(args: &PlatformDiffArgs) -> Result<Verdict> {
     let remote = session.read(&sel.entries, |k| file.vars.contains_key(k))?;
     session.warn(&sel, &listing);
 
+    // A Secret on both sides cannot be compared: it is `present`, not a
+    // difference, unless `--strict` asks for the old reading (F1).
     let plan = plan::diff(&file.vars, &remote);
+    let plan = if args.strict { plan } else { plan.presented() };
     let counts = plan.counts();
     let label = session.project.label();
     let file_name = shown(&path);
@@ -44,6 +47,7 @@ pub fn run(args: &PlatformDiffArgs) -> Result<Verdict> {
             session.environment,
             &file_name,
             listing.hidden_production,
+            args.strict,
         );
         println!("{}", serde_json::to_string_pretty(&j)?);
     } else {

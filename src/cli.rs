@@ -479,7 +479,8 @@ pub enum PlatformCommands {
     ///
     /// Prints keys, types and actions, never a value. A Config variable's value
     /// is compared; a Secret's cannot be (Vercel never returns it), so one that
-    /// exists on both sides is shown as an update that cannot be compared.
+    /// exists on both sides is shown as `= present` (write-only, not compared)
+    /// and is not a difference. --strict counts it as one.
     ///
     /// Exit 0 when nothing differs, 1 when something does, 2 when it could not
     /// run, and 10, 11, 13, 15 for a Vercel failure (see `evnx platform --help`).
@@ -488,9 +489,11 @@ Examples:
   evnx platform diff --to vercel                         .env.development (or .env) vs development
   evnx platform diff --to vercel --env-name production   .env.production (or .env) vs production
   evnx platform diff --to vercel --format json           machine-readable: keys and actions only
+  evnx platform diff --to vercel --strict                a Secret on both sides counts as a difference
   evnx platform diff --to vercel --project prj_123 --team team_456 --token-file ~/.vercel-token
 
 Legend: + add (local only)   ~ update (on both sides)   = unchanged
+        = present (a Secret on both sides: write-only, not compared; a difference only with --strict)
         ! remote only (Vercel has it, the file does not)   ! type differs (not changed)
 
 Full guide: https://docs.evnx.dev/cli/commands/platform")]
@@ -580,6 +583,15 @@ pub struct PlatformDiffArgs {
     /// Output format: `pretty` or `json`.
     #[arg(long, value_enum, value_name = "FORMAT", default_value_t = PlatformFormat::Pretty)]
     pub format: PlatformFormat,
+
+    /// Count a Secret present on both sides as a difference (exit 1).
+    ///
+    /// Vercel never returns a Secret's value, so evnx cannot tell whether it
+    /// changed. By default such a variable shows as `= present` and is not a
+    /// difference, which keeps `diff` usable as a CI gate. With --strict it is
+    /// an update that cannot be compared, and the exit code is 1.
+    #[arg(long)]
+    pub strict: bool,
 }
 
 #[cfg(feature = "net")]

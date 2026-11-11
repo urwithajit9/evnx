@@ -211,13 +211,76 @@ fn diff_json_has_keys_kinds_and_actions_only() {
     let j: Value = serde_json::from_str(&out.stdout).expect("stdout is JSON and nothing else");
     assert_eq!(j["differs"], true);
     assert_eq!(j["summary"]["add"], 1);
-    assert_eq!(j["summary"]["update"], 2);
+    assert_eq!(j["summary"]["update"], 1);
     assert_eq!(j["summary"]["unchanged"], 1);
+    assert_eq!(j["summary"]["present"], 1);
     assert_eq!(j["summary"]["remote_only"], 2);
     support::snapshot::check_golden(
         "platform/diff-development.json",
         &support::snapshot::normalise(&out.stdout, &[p.path()]),
     );
+}
+
+/// One Secret on both sides, nothing else: the F1 case.
+fn secret_only_remote() -> ServerGuard {
+    let mut s = Server::new();
+    s.mock("GET", "/v10/projects/prj_1/env")
+        .match_query(list_query("team_1"))
+        .with_body(
+            json!({ "envs": [env_entry("e2", "DB_URL", "sensitive", &["development"])] })
+                .to_string(),
+        )
+        .create();
+    s
+}
+
+#[test]
+fn f1_a_secret_on_both_sides_is_not_a_difference() {
+    let s = secret_only_remote();
+    let p = Project::new().file(".env.development", &format!("DB_URL={L_DB}\n"));
+    let out = run(&p, &s.url(), &diff_args(&[]));
+    out.assert_code(0);
+    quiet(&out);
+    out.assert_contains("= DB_URL");
+    out.assert_contains("secret  present  (write-only, not compared)");
+    out.assert_contains("1 present (not compared) · values never shown");
+    out.assert_not_contains("~ DB_URL");
+}
+
+#[test]
+fn f1_strict_restores_the_difference_and_exit_1() {
+    let s = secret_only_remote();
+    let p = Project::new().file(".env.development", &format!("DB_URL={L_DB}\n"));
+    let out = run(&p, &s.url(), &diff_args(&["--strict"]));
+    out.assert_code(1);
+    quiet(&out);
+    out.assert_contains("~ DB_URL");
+    out.assert_contains("value cannot be compared: write-only");
+}
+
+#[test]
+fn f1_json_tells_present_from_unchanged_and_strict_from_not() {
+    let s = secret_only_remote();
+    let p = Project::new().file(".env.development", &format!("DB_URL={L_DB}\n"));
+    let out = run(&p, &s.url(), &diff_args(&["--format", "json"]));
+    out.assert_code(0);
+    quiet(&out);
+    let j: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(j["differs"], false);
+    assert_eq!(j["strict"], false);
+    assert_eq!(j["summary"]["present"], 1);
+    assert_eq!(j["summary"]["update"], 0);
+    assert_eq!(j["entries"][0]["action"], "unchanged");
+    assert_eq!(j["entries"][0]["compare"], "write_only");
+
+    let out = run(&p, &s.url(), &diff_args(&["--format", "json", "--strict"]));
+    out.assert_code(1);
+    let j: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(j["differs"], true);
+    assert_eq!(j["strict"], true);
+    assert_eq!(j["summary"]["present"], 0);
+    assert_eq!(j["entries"][0]["action"], "update");
+    assert_eq!(j["entries"][0]["compare"], "write_only");
 }
 
 #[test]
@@ -297,7 +360,21 @@ fn a_config_variable_vercel_will_not_reveal_is_write_only() {
         .expect(0)
         .create();
     let p = Project::new().file(".env.development", "ODD=a\nVIS=b\n");
+    // F1: both are Secrets on both sides, so present and not a difference...
     let out = run(&p, &s.url(), &diff_args(&[]));
+    out.assert_code(0);
+    out.assert_contains("= ODD");
+    out.assert_contains("= VIS");
+    assert_eq!(
+        out.stdout
+            .matches("present  (write-only, not compared)")
+            .count(),
+        2,
+        "{}",
+        out.stdout
+    );
+    // ...unless --strict asks for the old reading.
+    let out = run(&p, &s.url(), &diff_args(&["--strict"]));
     out.assert_code(1);
     out.assert_contains("~ ODD");
     out.assert_contains("~ VIS");
