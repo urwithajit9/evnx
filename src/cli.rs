@@ -3508,6 +3508,25 @@ mod tests {
     use super::*;
     use clap::CommandFactory;
 
+    /// F14-7: `vault share` takes `--user` as well as `--with`, as `role` and
+    /// `revoke` do, and both spellings parse to the same recipient.
+    #[cfg(feature = "cloud")]
+    #[test]
+    fn vault_share_takes_user_and_with() {
+        for flag in ["--user", "--with"] {
+            let cli =
+                Cli::try_parse_from(["evnx", "vault", "share", "app", flag, "bob@example.com"])
+                    .unwrap_or_else(|e| panic!("{flag}: {e}"));
+            match cli.command {
+                Commands::Vault {
+                    command: VaultCommands::Share { with, .. },
+                    ..
+                } => assert_eq!(with, "bob@example.com", "{flag}"),
+                other => panic!("{flag}: {other:?}"),
+            }
+        }
+    }
+
     /// Build the entire command tree and run clap's own consistency checks.
     ///
     /// clap validates argument definitions with debug assertions that fire when

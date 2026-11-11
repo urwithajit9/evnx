@@ -289,16 +289,21 @@ pub(crate) struct VersionSummary {
 #[derive(Deserialize)]
 struct MeId {
     user_id: String,
+    /// Only for naming you in `history` (F6); `None` from a server that omits it.
+    #[serde(default)]
+    email: Option<String>,
 }
 
 /// Your user id, to tell your own pushes from a teammate's (`history`,
 /// `watch`). `None` when `/auth/me` cannot be read; callers then treat every
 /// push as someone else's.
 pub(crate) fn my_user_id(client: &Client) -> Option<String> {
-    client
-        .get::<MeId>("/api/v1/auth/me")
-        .ok()
-        .map(|m| m.user_id)
+    my_identity(client).map(|m| m.user_id)
+}
+
+/// [`my_user_id`] with the account's email, for `history` (F6).
+fn my_identity(client: &Client) -> Option<MeId> {
+    client.get::<MeId>("/api/v1/auth/me").ok()
 }
 
 #[derive(Deserialize)]
@@ -345,7 +350,11 @@ pub fn push(
         &vault_ref.environment,
     )?;
     report_file(&file, choice);
-    warn_default_into_production(&file, choice, &vault_ref.environment);
+    // F10: said once. Without `--yes` the question below says it (and names the
+    // file and the vault); with `--yes` nothing else would, so the line does.
+    if yes {
+        warn_default_into_production(&file, choice, &vault_ref.environment);
+    }
     if choice == FileChoice::Default
         && !yes
         && !confirm_production_push(&client, &vault_ref, &file, &vault_target)?
@@ -361,12 +370,17 @@ pub fn push(
         return Err(anyhow!("{} is empty; nothing to push", file.display()));
     }
 
-    let current = current_version(&client, &vault_ref)?;
-    let target_version = current + 1;
-
     let password = auth::read_master_password(password_stdin)?;
     let unlocked = auth::unlock(&client, &password)?;
     let vault_key = unwrap_vault_key(&client, &vault_ref, &unlocked)?;
+
+    // CLOUD-409: read after the password prompt and the Argon2id unlock, the
+    // slow part (a person typing, then a second of key stretching), not before
+    // it. `base_version` is what the server compares, so the longer the gap
+    // between reading it and posting, the likelier a teammate's push lands in
+    // it and this one answers 409. Only encryption is left between the two.
+    let current = current_version(&client, &vault_ref)?;
+    let target_version = current + 1;
 
     let (key_names, parse_note) = read_key_names(&plaintext);
 
@@ -389,6 +403,7 @@ pub fn push(
         )
         .map_err(|e| push_error(e, current))?;
 
+    super::highwater::note(&vault_ref.id, pushed.version_num);
     crate::say!(
         "  {} pushed {} to {} as version {}",
         "✓".green(),
@@ -664,6 +679,8 @@ pub(crate) fn fetch_blob(
     }
     let mut nonce = [0u8; NONCE_LEN];
     nonce.copy_from_slice(nonce_bytes);
+    // RM-89: the server served this version, so it exists.
+    super::highwater::note(&vault_ref.id, version);
 
     Ok(evnx_crypto::EncryptedBlob {
         nonce,
@@ -728,7 +745,7 @@ pub fn history(
     // `pushed_by` is a user id. You are "you"; anyone else is named by email
     // from the member list (I-319) — it showed an 8-character id. Someone who
     // has since left is no longer listed and keeps the short id.
-    let me = my_user_id(&client);
+    let me = my_identity(&client);
     let emails = vault::member_emails(&client, &vault_ref.id);
 
     let mut rows: Vec<&VersionSummary> = versions.iter().collect();
@@ -736,7 +753,15 @@ pub fn history(
     let shown = rows.len().min(limit);
     let who = |v: &VersionSummary| -> String {
         match (&me, emails.get(&v.pushed_by)) {
-            (Some(id), _) if *id == v.pushed_by => "you".to_string(),
+            // F6: "you" alone is not an identity once a second person or a CI
+            // token pushes, and cannot be exported. Highlight, do not replace:
+            // `you (me@example.com)`. A push by an API token is recorded under
+            // its owner's id, so the token cannot be told from the person here;
+            // that needs the server (token name on `vault_versions`).
+            (Some(m), member) if m.user_id == v.pushed_by => match m.email.as_ref().or(member) {
+                Some(email) => format!("you ({email})"),
+                None => "you".to_string(),
+            },
             (_, Some(email)) => email.clone(),
             _ => v.pushed_by.chars().take(8).collect(),
         }
@@ -909,8 +934,16 @@ pub(crate) fn current_version(client: &Client, vault_ref: &VaultRef) -> Result<i
         "versions",
         "latest",
     ])?) {
-        Ok(v) => Ok(v.version_num),
-        Err(ApiError::NotFound { .. }) => Ok(0),
+        Ok(v) => {
+            super::highwater::observe(&vault_ref.id, &vault_ref.label(), v.version_num);
+            Ok(v.version_num)
+        }
+        Err(ApiError::NotFound { .. }) => {
+            // RM-89: "no versions" after this machine saw one is the same
+            // regression, only starker.
+            super::highwater::observe(&vault_ref.id, &vault_ref.label(), 0);
+            Ok(0)
+        }
         Err(e) => Err(anyhow::Error::from(e)),
     }
 }

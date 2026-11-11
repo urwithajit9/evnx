@@ -66,3 +66,48 @@ fn rm67_only_combines_with_include_and_names_itself_when_nothing_is_left() {
     none.assert_code(2);
     assert!(none.stderr.contains("--only secrets"), "{}", none.stderr);
 }
+
+// ── F14-9: --exclude on a public target ─────────────────────────────────────
+
+fn warns(args: &[&str]) -> bool {
+    let p = Project::new().env(ENV);
+    let out = run(p.path(), args);
+    out.assert_code(0);
+    out.stderr.contains("List what may go there with --include")
+}
+
+#[test]
+fn f14_9_exclude_on_a_public_target_warns_on_stderr_and_still_converts() {
+    let p = Project::new().env(ENV);
+    let out = run(
+        p.path(),
+        &["convert", "--to", "json", "--exclude", "*_SECRET*"],
+    );
+    out.assert_code(0);
+    assert!(out.stderr.contains("--include"), "{}", out.stderr);
+    assert!(
+        !out.stdout.contains("--include"),
+        "stdout stays the artefact"
+    );
+    assert!(keys(&out.stdout).contains(&"APP_NAME".to_string()));
+}
+
+#[test]
+fn f14_9_the_warning_needs_exclude_without_include_on_a_public_target() {
+    assert!(warns(&["convert", "--to", "vercel", "--exclude", "DB_*"]));
+    // An allowlist is the advice, so it is quiet; so is no filter at all.
+    assert!(!warns(&["convert", "--to", "json", "--include", "APP_*"]));
+    assert!(!warns(&["convert", "--to", "json"]));
+    // Both given: the allowlist is there, the denylist trims it.
+    assert!(!warns(&[
+        "convert",
+        "--to",
+        "json",
+        "--include",
+        "A*,P*",
+        "--exclude",
+        "PORT"
+    ]));
+    // A target that is not a public surface.
+    assert!(!warns(&["convert", "--to", "shell", "--exclude", "DB_*"]));
+}

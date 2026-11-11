@@ -14,9 +14,13 @@
 //! dialoguer's "IO error: not a terminal". The key-file reader was already
 //! shared, because it decides what string Argon2id sees (F7).
 //!
-//! ⚠️ The cloud master password is not read here. It has its own floor (12
-//! characters), `--password-stdin` and no key file; moving it onto this module
-//! is the cloud half of B-WP3 (0.11.0, R-auth).
+//! The cloud master password is read here too, by [`resolve_master`] (CLOUD-PW,
+//! the cloud half of B-WP3): `--password-stdin`, then `EVNX_MASTER_PASSWORD_FILE`,
+//! then `EVNX_MASTER_PASSWORD`, then a prompt. It is a different secret with its
+//! own variables (one leaked variable must not open both a backup and a vault),
+//! its own floor (12 characters, applied where an account is created, not here)
+//! and no confirmation prompt when unlocking, but the sources are read by this
+//! module's code, not a second copy of it.
 
 use std::path::Path;
 
@@ -215,6 +219,120 @@ fn from_prompt(purpose: Purpose, example: &str, verbose: bool) -> Result<Zeroizi
     Ok(pw)
 }
 
+// ── The cloud master password (CLOUD-PW) ─────────────────────────────────────
+
+/// The variable the cloud master password is read from when unlocking.
+///
+/// ⚠️ Its own variable, never [`ENV_VAR`], which unlocks `backup` files: one
+/// leaked variable must not open both.
+pub const MASTER_ENV_VAR: &str = "EVNX_MASTER_PASSWORD";
+
+/// A file holding the cloud master password, for a machine that has one
+/// (a mounted secret) and no terminal. Read before [`MASTER_ENV_VAR`].
+pub const MASTER_FILE_ENV_VAR: &str = "EVNX_MASTER_PASSWORD_FILE";
+
+/// Where [`resolve_master`] found the password, so the caller can say so
+/// (without the value) on stderr.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MasterSource {
+    /// `--password-stdin`: the first line of standard input.
+    Stdin,
+    /// The file named by [`MASTER_FILE_ENV_VAR`].
+    File(String),
+    /// [`MASTER_ENV_VAR`].
+    Env,
+    /// A hidden prompt on the terminal.
+    Prompt,
+}
+
+/// The first line of `input` without its line ending, and nothing else
+/// stripped: leading and inner spaces are part of a passphrase.
+///
+/// # Errors
+///
+/// The read failed.
+pub fn first_line(input: &mut dyn std::io::BufRead) -> Result<Zeroizing<String>> {
+    let mut line = String::new();
+    input.read_line(&mut line)?;
+    let trimmed = line.trim_end_matches(['\n', '\r']).to_string();
+    line.zeroize();
+    Ok(Zeroizing::new(trimmed))
+}
+
+/// The password in `path`: its first line, as [`first_line`] reads stdin.
+///
+/// Not [`read_key_file`], which trims every edge and Base64-encodes binary
+/// content for Argon2id to be given a stable string: a master password typed
+/// at a prompt keeps a trailing space, so a file must not lose it.
+fn password_file(path: &str) -> Result<Zeroizing<String>> {
+    let p = Path::new(path);
+    if !p.is_file() {
+        return Err(anyhow!(
+            "{MASTER_FILE_ENV_VAR} names {path}, which is not a readable file"
+        ));
+    }
+    let bytes = Zeroizing::new(
+        std::fs::read(p).map_err(|e| anyhow!("reading {MASTER_FILE_ENV_VAR} ({path}): {e}"))?,
+    );
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|_| anyhow!("{path} (from {MASTER_FILE_ENV_VAR}) is not valid UTF-8"))?;
+    let pw = first_line(&mut std::io::Cursor::new(text.as_bytes()))?;
+    if pw.is_empty() {
+        return Err(anyhow!("{path} (from {MASTER_FILE_ENV_VAR}) is empty"));
+    }
+    crate::core::permissions::warn_if_readable(p);
+    Ok(pw)
+}
+
+/// What [`resolve_master`] reads from. The real process in production; fixed
+/// values in a test, so no test touches the environment or the terminal.
+pub struct MasterInputs<'a> {
+    /// `--password-stdin`: read standard input and nothing else.
+    pub from_stdin: bool,
+    /// Whether the environment variables and the file may supply it. `false`
+    /// for a password being *changed* (`rotate-master-password`), which always
+    /// asks.
+    pub allow_env: bool,
+    /// Standard input.
+    pub stdin: &'a mut dyn std::io::BufRead,
+    /// An environment variable's value, `None` when unset or empty.
+    pub env: &'a dyn Fn(&str) -> Option<std::ffi::OsString>,
+    /// Ask on the terminal, or fail when there is none.
+    pub prompt: &'a mut dyn FnMut() -> Result<Zeroizing<String>>,
+}
+
+/// The cloud master password, from the first source that has one:
+/// `--password-stdin`, [`MASTER_FILE_ENV_VAR`], [`MASTER_ENV_VAR`], a prompt.
+///
+/// An empty variable counts as unset (it falls through to the prompt), as it
+/// always did; an empty or missing *file* is an error, because someone
+/// pointed at it on purpose.
+///
+/// # Errors
+///
+/// An unreadable or empty file, a value that is not UTF-8, a failed read, or
+/// whatever `prompt` returns (no terminal).
+pub fn resolve_master(inputs: MasterInputs<'_>) -> Result<(Zeroizing<String>, MasterSource)> {
+    if inputs.from_stdin {
+        return Ok((first_line(inputs.stdin)?, MasterSource::Stdin));
+    }
+    if inputs.allow_env {
+        if let Some(path) = (inputs.env)(MASTER_FILE_ENV_VAR) {
+            let path = path
+                .into_string()
+                .map_err(|_| anyhow!("{MASTER_FILE_ENV_VAR} is not valid UTF-8"))?;
+            return Ok((password_file(&path)?, MasterSource::File(path)));
+        }
+        if let Some(pw) = (inputs.env)(MASTER_ENV_VAR) {
+            let pw = pw
+                .into_string()
+                .map_err(|_| anyhow!("{MASTER_ENV_VAR} is not valid UTF-8"))?;
+            return Ok((Zeroizing::new(pw), MasterSource::Env));
+        }
+    }
+    Ok(((inputs.prompt)()?, MasterSource::Prompt))
+}
+
 /// Refuse a new backup's passphrase under [`MIN_LEN`] characters.
 ///
 /// `label` names the source as the message's subject. Characters, not bytes,
@@ -261,5 +379,103 @@ mod tests {
             floor("Password", "abc", false).unwrap_err().to_string(),
             "Password must be at least 8 characters (got 3)"
         );
+    }
+
+    // ── CLOUD-PW: the cloud master password's sources ─────────────────────────
+
+    use std::ffi::OsString;
+
+    /// Run `resolve_master` against fixed inputs. `prompted` is what the prompt
+    /// would return, `None` for "no terminal".
+    fn master(
+        from_stdin: bool,
+        allow_env: bool,
+        stdin: &str,
+        env: &[(&str, &str)],
+        prompted: Option<&str>,
+    ) -> Result<(String, MasterSource)> {
+        let mut input = std::io::Cursor::new(stdin.as_bytes().to_vec());
+        let lookup = |name: &str| {
+            env.iter()
+                .find(|(k, v)| *k == name && !v.is_empty())
+                .map(|(_, v)| OsString::from(v))
+        };
+        let mut ask = || match prompted {
+            Some(p) => Ok(Zeroizing::new(p.to_string())),
+            None => Err(anyhow!("no terminal")),
+        };
+        resolve_master(MasterInputs {
+            from_stdin,
+            allow_env,
+            stdin: &mut input,
+            env: &lookup,
+            prompt: &mut ask,
+        })
+        .map(|(pw, src)| (pw.to_string(), src))
+    }
+
+    #[test]
+    fn master_stdin_wins_and_keeps_spaces() {
+        let env = [(MASTER_ENV_VAR, "from-env")];
+        let (pw, src) = master(true, true, "  pass phrase \r\nsecond\n", &env, None).unwrap();
+        assert_eq!((pw.as_str(), src), ("  pass phrase ", MasterSource::Stdin));
+    }
+
+    #[test]
+    fn master_env_then_prompt_and_an_empty_variable_is_unset() {
+        let (pw, src) = master(false, true, "", &[(MASTER_ENV_VAR, "from-env")], None).unwrap();
+        assert_eq!((pw.as_str(), src), ("from-env", MasterSource::Env));
+
+        let (pw, src) = master(false, true, "", &[(MASTER_ENV_VAR, "")], Some("typed")).unwrap();
+        assert_eq!((pw.as_str(), src), ("typed", MasterSource::Prompt));
+
+        let e = master(false, true, "", &[], None).unwrap_err().to_string();
+        assert_eq!(e, "no terminal");
+    }
+
+    #[test]
+    fn master_env_is_ignored_when_the_password_is_being_changed() {
+        let env = [(MASTER_ENV_VAR, "from-env")];
+        let (pw, src) = master(false, false, "", &env, Some("typed")).unwrap();
+        assert_eq!((pw.as_str(), src), ("typed", MasterSource::Prompt));
+    }
+
+    #[test]
+    fn master_file_beats_env_and_is_read_like_stdin() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let f = dir.path().join("pw");
+        std::fs::write(&f, " keeps edges \nignored second line\n").unwrap();
+        let path = f.to_str().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let env = [(MASTER_FILE_ENV_VAR, path), (MASTER_ENV_VAR, "from-env")];
+        let (pw, src) = master(false, true, "", &env, None).unwrap();
+        assert_eq!(
+            (pw.as_str(), src),
+            (" keeps edges ", MasterSource::File(path.to_string()))
+        );
+        // ...and stdin still beats the file.
+        let (pw, src) = master(true, true, "piped\n", &env, None).unwrap();
+        assert_eq!((pw.as_str(), src), ("piped", MasterSource::Stdin));
+    }
+
+    #[test]
+    fn master_file_problems_are_errors_not_a_fall_through() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let empty = dir.path().join("empty");
+        std::fs::write(&empty, "\n").unwrap();
+        let missing = dir.path().join("missing");
+        for (path, needle) in [
+            (empty.to_str().unwrap(), "is empty"),
+            (missing.to_str().unwrap(), "not a readable file"),
+        ] {
+            let env = [(MASTER_FILE_ENV_VAR, path), (MASTER_ENV_VAR, "from-env")];
+            let e = master(false, true, "", &env, Some("typed")).unwrap_err();
+            assert!(e.to_string().contains(needle), "{e}");
+            assert!(e.to_string().contains(MASTER_FILE_ENV_VAR), "{e}");
+        }
     }
 }

@@ -214,6 +214,85 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `remove` and `remove --check` say when two environment files differ only in
   case (`.env.Staging`, `.env.staging`): they are separate files except on a
   case-insensitive filesystem, and are never merged (G-2).
+- **A secret under a browser-exposed prefix is worse, and says why** (F14-5).
+  `VITE_`, `NEXT_PUBLIC_`, `REACT_APP_`, `EXPO_PUBLIC_` and the other prefixes
+  `scan` already knew are inlined into the client bundle. `scan` now raises such a
+  finding's severity one level (`low` stays `low`: a Maps browser key or a Sentry
+  DSN is meant to ship), and `validate` has a new error, `public_secret`, for a
+  secret-shaped value (a provider key, a private key, a password in a URL) under
+  one of them; `--ignore public_secret` skips it. The prefix list is one list,
+  shared with `platform ... --to vercel` (it gains `STORYBOOK_`, and matches in any
+  case).
+- `vault share` takes `--user` as well as `--with`, and `vault role` and
+  `vault revoke` take `--with` as well as `--user` (F14-7, OW-16): the member's
+  email under whichever name you learned first. The aliases were already in the
+  parser; this adds the test that holds them, so neither flag can be dropped by
+  accident.
+- `convert --to json` and `--to vercel` warn, on stderr, when `--exclude` is used
+  without `--include` (F14-9, OW-19). `--exclude` is a denylist, so a variable you
+  did not think of is copied into a file that usually ends up in an app build or a
+  web bundle (`ANDROID_KEYSTORE_PASSWORD` does not match `*_SECRET*`). The output is
+  unchanged and the exit code stays 0; the warning says to list what may go there
+  with `--include`.
+- `cloud push` reads the vault's current version after the password prompt and
+  the Argon2id unlock, not before (CLOUD-409). The version it sends as
+  `base_version` is now read just before encrypting, so the window in which a
+  teammate's push makes yours answer 409 no longer includes a person typing a
+  password. A wrong password also stops before any version request.
+- The cloud master password is read by `utils::secret_source`, as `backup` and
+  `restore` read theirs (CLOUD-PW, the cloud half of B-WP3). `--password-stdin`,
+  `EVNX_MASTER_PASSWORD` and the prompt behave as before, and the notice on
+  stderr is unchanged. New: `EVNX_MASTER_PASSWORD_FILE` names a file whose first
+  line is the password (nothing else is trimmed), read before the variable and
+  announced without the value; a missing or empty file is an error. Changing a
+  password (`rotate-master-password`) and `login` still always ask. Tests cover
+  each source in order.
+- **`cloud` warns when a vault's "latest" goes backwards** (RM-89, a client-only
+  slice of P6). The CLI remembers the highest version of each vault it has seen
+  (pushed, fetched, or reported as latest) in `high-water.json` in the config
+  directory: a vault id and a number, no name, key, value or hash. When the
+  server later reports a lower latest (a version removed, a rollback, a restored
+  backup), `push`, `pull`, `run`, `diff` and `export` print a warning on stderr
+  naming both numbers and `evnx cloud history`. It is a hint and never stops
+  the command; it is per machine, and `vault delete` forgets the vault.
+- **A vault id typed in upper case is stored in lower case** (C10).
+  `--vault 0B8A…` was kept verbatim and bound into the encrypted version's AAD,
+  while the server's id, which a pull by name uses, is lower case, so a version
+  pushed by an upper-case id could not be pulled by name. The id is now
+  lower-cased as soon as it is read, and an id is matched in any case against
+  `vault list`. **Pushes already made with an upper-case id:** they were sealed
+  with that spelling, so they open only with the same upper-case id, which only
+  0.13.0 and earlier still send (`evnx cloud pull --vault <the same upper-case
+  id>`). Pull them once with 0.13.0 and push again with this version; versions
+  pushed from now on open by id or by name.
+- **`migrate` keeps values off the command line where the tool allows it, and
+  says so where it does not** (K8). For `aws-secrets-manager` the printed
+  commands now write the JSON to a private (`umask 077`) temp file through a
+  quoted heredoc and pass `--secret-string file://"$f"`, then remove the file,
+  as the Azure commands already did: the values no longer show in `ps` or shell
+  history, and the stored secret is exactly the JSON. `heroku`, `doppler`,
+  `infisical` and `railway` take values only as arguments, so a one-line warning
+  on stderr under the commands says they can show in `ps` and shell history and
+  should be run on a trusted machine (`-q` does not hide it; `> run.sh` does not
+  capture it).
+- **Paid-user output gaps** (F14-11, review F6, F7, F10, F11).
+  `cloud history` names you as `you (me@example.com)` instead of `you`. A push
+  by an API token is still recorded under its owner, so token versus person
+  needs the server and is not done here. `vault create` prints one `Next:` line
+  that stays true when `cloud link` is run after it, instead of a `--vault` hint
+  that `link` then contradicted. A push into a production vault from the default
+  `.env` shows its production warning once: the question when it asks, the `!`
+  line only with `--yes`. `auth status` and `cloud status` print
+  `client    evnx <version>`.
+- **`@evnx/cli` works where install scripts do not run** (R6). pnpm 10+ and bun
+  skip `postinstall`, so the placeholder `bin/evnx` (exit 1) was never replaced
+  by `install.js` and `evnx` was broken there. `bin/evnx` is now a Node launcher
+  that resolves `@evnx/evnx-<platform>-<arch>/package.json`, runs the binary next
+  to it with the terminal attached, and forwards the exit code and any signal; a
+  missing platform package gets a clear error naming `--omit=optional`.
+  `install.js` and `postinstall` are gone. The global-install warning that
+  another `evnx` comes first on `PATH` (RM-42) lived in `install.js` and goes
+  with it; `evnx update --list` still lists every copy.
 
 ## [0.13.0] - 2026-11-08
 

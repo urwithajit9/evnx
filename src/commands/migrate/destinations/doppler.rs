@@ -92,6 +92,7 @@ impl MigrationDestination for DopplerDestination {
                 shell::assignment(key, value)
             ));
         }
+        out.warn_values_in_argv();
 
         Ok(MigrationResult {
             uploaded: secrets.len(),

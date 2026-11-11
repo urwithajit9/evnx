@@ -1,18 +1,24 @@
 
 ================ M8 ================
 --- printed create-secret command:
+(
+umask 077; f=$(mktemp) || exit 1; trap 'rm -f "$f"' EXIT
+head -c 17 > "$f" <<'EVNX_VALUE'
+{
+  "A": "it's"
+}
+EVNX_VALUE
 aws secretsmanager create-secret \
   --name s \
-  --secret-string '{
-  "A": "it'\''s"
-}'
+  --secret-string file://"$f"
+)
 
 $ bash -c PATH="$PWD/bin:$PATH" sh run.sh 2>&1; echo "sh exit: $?"
-stub aws args: <secretsmanager> <create-secret> <--name> <s> <--secret-string> <{
+stub aws args: <secretsmanager> <create-secret> <--name> <s> <--secret-string> <file:{
   "A": "it's"
 }>
 sh exit: 0
 [exit 0]
-FIXED I-094: the apostrophe is written '\'' and the command runs
+FIXED I-094, K8: the value goes through a heredoc into a private temp file, so the apostrophe needs no escaping and nothing is on the command line
 
 ================ summary: 0 ok, 0 mismatch   ================

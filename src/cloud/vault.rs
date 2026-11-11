@@ -71,8 +71,11 @@ pub(crate) fn fetch_and_resolve(client: &Client, target: &str) -> Result<VaultRe
     // vaults is outside what it was issued for. So for CI, passing the id is the
     // only path that works at all.
     if looks_like_vault_id(target) {
+        // C10: lower case. The id goes into the AAD verbatim, and the server's
+        // is lower case, so an id typed in upper case sealed a version that a
+        // pull by name (which takes the server's spelling) could not open.
         return Ok(VaultRef {
-            id: target.to_string(),
+            id: target.to_ascii_lowercase(),
             name: String::new(),
             environment: String::new(),
         });
@@ -122,15 +125,19 @@ fn list_and_pick(client: &Client, target: &str) -> Result<VaultSummary> {
 /// vault-scoped token cannot list, and then the name is not knowable.
 pub(crate) fn resolve_id(client: &Client, id: &str) -> Result<VaultRef> {
     let vaults = list_vaults(client).with_context(|| format!("could not look up vault {id}"))?;
-    let v = vaults
-        .into_iter()
-        .find(|v| v.id == id)
+    let v = find_id(&vaults, id)
+        .cloned()
         .ok_or_else(|| anyhow!("no vault {id} among yours. Run `evnx vault list` to see them."))?;
     Ok(VaultRef {
         id: v.id,
         name: v.name,
         environment: v.environment,
     })
+}
+
+/// The vault with `id`, whatever case it was typed in (C10).
+fn find_id<'a>(vaults: &'a [VaultSummary], id: &str) -> Option<&'a VaultSummary> {
+    vaults.iter().find(|v| v.id.eq_ignore_ascii_case(id))
 }
 
 /// Every member's email by user id, for naming who did what (I-319). Empty when
@@ -249,14 +256,16 @@ pub fn create(
         println!("  key wrap  master key (no ECDH, no ephemeral)");
     }
     crate::say!();
-    // I-320: a bare `evnx cloud push` fails here — `create` binds no directory.
+    // I-320, F7: `create` binds no directory, so a bare `evnx cloud push` fails
+    // right after it. Say both ways once, each with its condition, so the line
+    // is still true when `cloud link` is run next (which then says push and
+    // pull work here without --vault).
+    let label = format!("{}/{}", created.name, created.environment);
     crate::say!(
-        "  Push a .env into it with:  {}",
-        format!(
-            "evnx cloud push --vault {}/{}",
-            created.name, created.environment
-        )
-        .cyan()
+        "  Next:  {}   (or bind this folder once with  {}  and a bare  {}  works)",
+        format!("evnx cloud push --vault {label}").cyan(),
+        format!("evnx cloud link --vault {label}").cyan(),
+        "evnx cloud push".cyan()
     );
     Ok(())
 }
@@ -360,6 +369,7 @@ pub fn delete(
     }
 
     client.delete(&api_path(&["vaults", &vault.id.to_string()])?)?;
+    super::highwater::forget(&vault.id.to_string());
 
     crate::say!(
         "  {} deleted {}/{}",
@@ -697,7 +707,7 @@ fn article(role: &str) -> &'static str {
 /// in more than one environment is an error listing the candidates rather than a
 /// guess — picking one and deleting it would be the worst possible outcome.
 fn resolve<'a>(vaults: &'a [VaultSummary], target: &str) -> Result<&'a VaultSummary> {
-    if let Some(v) = vaults.iter().find(|v| v.id == target) {
+    if let Some(v) = find_id(vaults, target) {
         return Ok(v);
     }
 
@@ -767,6 +777,41 @@ fn validate_environment(env: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ID: &str = "0b8a1f8e-3c2d-4e5f-8a9b-1c2d3e4f5a6b";
+
+    /// C10: a vault id typed in upper case is stored lower-cased, so the AAD
+    /// (which binds the id verbatim) is the one a pull by name derives.
+    #[test]
+    fn c10_an_uppercase_id_gives_the_same_aad_as_lowercase() {
+        let client = Client::new("http://127.0.0.1:9".to_string()).unwrap();
+        let upper = fetch_and_resolve(&client, &ID.to_uppercase()).unwrap();
+        let lower = fetch_and_resolve(&client, ID).unwrap();
+        assert_eq!(upper.id, ID);
+        assert_eq!(
+            evnx_crypto::vault_aad(&upper.id, 3),
+            evnx_crypto::vault_aad(&lower.id, 3)
+        );
+        // The premise: the AAD does depend on the spelling.
+        assert_ne!(
+            evnx_crypto::vault_aad(&ID.to_uppercase(), 3),
+            evnx_crypto::vault_aad(ID, 3)
+        );
+    }
+
+    /// C10: an id is compared in any case, and the server's spelling returned.
+    #[test]
+    fn c10_ids_are_matched_ignoring_case() {
+        let mut v = v("app", "production");
+        v.id = ID.to_string();
+        let list = [v];
+        assert_eq!(
+            find_id(&list, &ID.to_uppercase()).map(|v| &v.id[..]),
+            Some(ID)
+        );
+        assert!(find_id(&list, "00000000-0000-0000-0000-000000000000").is_none());
+        assert!(resolve(&list, &ID.to_uppercase()).is_ok());
+    }
 
     fn v(name: &str, env: &str) -> VaultSummary {
         VaultSummary {

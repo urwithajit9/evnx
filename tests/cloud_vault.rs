@@ -816,6 +816,11 @@ fn t_i319_history_names_who_pushed() {
     );
     out.assert_code(0);
     assert!(out.stdout.contains("bob@example.com"), "{}", out.stdout);
-    assert!(out.stdout.contains("you"), "{}", out.stdout);
+    // F6: you are named, not replaced: `you (email)`; others by email alone.
+    assert!(
+        out.stdout.contains("you (me@example.com)"),
+        "{}",
+        out.stdout
+    );
     assert!(!out.stdout.contains("u-bob"), "{}", out.stdout);
 }

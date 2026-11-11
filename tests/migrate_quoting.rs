@@ -68,7 +68,8 @@ fn stubs(dir: &Path) {
             "#!/bin/sh\n\
              in=$(cat)\n\
              {{ printf '%s' '{t}'; prev=; for a; do printf '\\037%s' \"$a\"; \
-             if [ \"$prev\" = --file ]; then printf '\\037FILE='; cat \"$a\"; fi; prev=$a; done; \
+             if [ \"$prev\" = --file ]; then printf '\\037FILE='; cat \"$a\"; fi; \
+             case $a in file://*) printf '\\037FILEJSON='; cat \"${{a#file://}}\";; esac; prev=$a; done; \
              printf '\\037STDIN=%s\\036' \"$in\"; }} >> \"$STUB_LOG\"\n"
         );
         support::stub::write_stub(&bin.join(t), &script);
@@ -176,9 +177,13 @@ fn assert_exact(p: &Project, calls: &[Call], report: &str, key_of: &dyn Fn(&str)
                     .iter()
                     .any(|a| a == v || *a == format!("{key}={v}") || *a == format!("FILE={v}"))
                 || c.args.iter().any(|a| {
-                    serde_json::from_str::<serde_json::Value>(a)
-                        .map(|j| j[*k] == **v)
-                        .unwrap_or(false)
+                    // aws (K8): the JSON arrives through a `file://` argument,
+                    // which the stub reads as `FILEJSON=<contents>`.
+                    serde_json::from_str::<serde_json::Value>(
+                        a.strip_prefix("FILEJSON=").unwrap_or(a),
+                    )
+                    .map(|j| j[*k] == **v)
+                    .unwrap_or(false)
                 })
         });
         assert!(arrived, "{k}={v:?} did not arrive exactly\n{report}");
@@ -199,6 +204,164 @@ fn same(k: &str) -> String {
 fn t_mig_01_i094_aws_passes_values_exactly() {
     let (p, calls, report) = run_printed(&["--to", "aws-secrets-manager", "--secret-name", "s"]);
     assert_exact(&p, &calls, &report, &same);
+}
+
+/// K8: aws reads the JSON from a private temp file (`file://`), exactly, never
+/// as an argument, and the file is gone afterwards. Both the create and the
+/// update command do it.
+#[test]
+fn k8_aws_reads_the_json_from_a_temp_file_and_removes_it() {
+    let (p, calls, report) = run_printed(&["--to", "aws-secrets-manager", "--secret-name", "s"]);
+    let create = calls
+        .iter()
+        .filter(|c| c.args.iter().any(|a| a == "create-secret"))
+        .count();
+    let update = calls
+        .iter()
+        .filter(|c| c.args.iter().any(|a| a == "update-secret"))
+        .count();
+    assert_eq!((create, update), (1, 1), "{report}");
+    for c in &calls {
+        let i = c
+            .args
+            .iter()
+            .position(|a| a == "--secret-string")
+            .unwrap_or_else(|| panic!("no --secret-string\n{report}"));
+        let file = c.args[i + 1].strip_prefix("file://").unwrap_or_else(|| {
+            panic!("--secret-string was not a file://\n{report}");
+        });
+        assert!(
+            !Path::new(file).exists(),
+            "temp file left: {file}\n{report}"
+        );
+        // Exactly the JSON, with no stray final newline from the heredoc.
+        let json = c
+            .args
+            .iter()
+            .find_map(|a| a.strip_prefix("FILEJSON="))
+            .unwrap_or_else(|| panic!("the stub saw no file\n{report}"));
+        assert!(json.ends_with('}'), "{json:?}");
+        for (k, v) in VALUES {
+            assert!(
+                !c.args.iter().any(|a| a == v),
+                "{k}={v:?} was on the command line\n{report}"
+            );
+        }
+    }
+    // The printed text never carries a value outside the heredoc.
+    let out = support::run(
+        p.path(),
+        &[
+            "migrate",
+            "--from",
+            "env-file",
+            "--to",
+            "aws-secrets-manager",
+            "--secret-name",
+            "s",
+        ],
+    );
+    assert!(!out.stdout.contains("--secret-string '"), "{}", out.stdout);
+    assert!(
+        out.stdout.contains("--secret-string file://\"$f\""),
+        "{}",
+        out.stdout
+    );
+}
+
+/// K8: the printed script makes the temp file private (`umask 077`) and removes
+/// it on exit.
+#[test]
+fn k8_the_aws_temp_file_is_created_private() {
+    let p = Project::new().env("A=1\n");
+    let out = support::run(
+        p.path(),
+        &[
+            "migrate",
+            "--from",
+            "env-file",
+            "--to",
+            "aws",
+            "--secret-name",
+            "s",
+        ],
+    );
+    out.assert_code(0);
+    assert!(
+        out.stdout.contains("umask 077; f=$(mktemp)"),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains("trap 'rm -f \"$f\"' EXIT"),
+        "{}",
+        out.stdout
+    );
+}
+
+/// K8: the four tools that take values as arguments say so under the commands.
+#[test]
+fn k8_argv_destinations_warn_about_ps_and_history() {
+    for args in [
+        &["--to", "heroku", "--heroku-app", "app"][..],
+        &["--to", "doppler", "--project", "p"][..],
+        &["--to", "infisical", "--project", "p"][..],
+        &[
+            "--to",
+            "railway",
+            "--railway-project",
+            "p",
+            "--railway-environment",
+            "production",
+        ][..],
+    ] {
+        let p = Project::new().env("A=1\n");
+        let mut full = vec!["migrate", "--from", "env-file"];
+        full.extend_from_slice(args);
+        let out = run_with(p.path(), &full, &[("PATH", &stub_path(&p))], None);
+        out.assert_code(0);
+        assert!(
+            out.stderr.contains("command-line arguments")
+                && out.stderr.contains("`ps`")
+                && out.stderr.contains("shell history")
+                && out.stderr.contains("trusted machine"),
+            "{args:?}:\n{}",
+            out.stderr
+        );
+        // On stderr, so `> run.sh` stays a script; aws and azure keep values off argv.
+        assert!(
+            !out.stdout.contains("command-line arguments"),
+            "{}",
+            out.stdout
+        );
+    }
+    let p = Project::new().env("A=1\n");
+    let out = support::run(
+        p.path(),
+        &[
+            "migrate",
+            "--from",
+            "env-file",
+            "--to",
+            "aws",
+            "--secret-name",
+            "s",
+        ],
+    );
+    assert!(
+        !out.stderr.contains("command-line arguments"),
+        "{}",
+        out.stderr
+    );
+}
+
+fn stub_path(p: &Project) -> String {
+    stubs(p.path());
+    format!(
+        "{}:{}",
+        p.path().join("bin").display(),
+        std::env::var("PATH").unwrap_or_default()
+    )
 }
 
 #[test]

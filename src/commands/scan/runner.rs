@@ -823,6 +823,9 @@ impl ScanRunner {
 
         let mut detection = detection;
         if public.is_some() {
+            // F14-5: a secret that ships in every bundle is worse than the
+            // same secret kept on a server.
+            detection.severity = detection.severity.escalated_for_public_prefix();
             detection.confidence = match detection.action_url {
                 // A named provider format — this is a real key, and the prefix
                 // means it is already public. Nothing about it is low risk.

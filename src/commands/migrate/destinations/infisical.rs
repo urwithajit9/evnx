@@ -137,6 +137,7 @@ impl MigrationDestination for InfisicalDestination {
                 shell::assignment(key, value)
             ));
         }
+        out.warn_values_in_argv();
 
         Ok(MigrationResult {
             uploaded: secrets.len(),

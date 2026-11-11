@@ -26,6 +26,7 @@ Next steps:
 
   evnx migrate  Generate destination commands from your .env
 
+! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: FIXED S-M1: --env-name production reads .env.production (exit 0)
@@ -54,6 +55,8 @@ heroku config:set --app demo-app \
 Summary:
   ✓  8 command(s) generated
      nothing has been uploaded — run the commands above
+[stderr]
+! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
 [exit 0]
   ok: FIXED I-105: -q leaves the commands and the summary (exit 0)
 

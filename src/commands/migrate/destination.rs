@@ -46,6 +46,18 @@ impl Out {
         }
     }
 
+    /// K8: the printed commands carry the values as command-line arguments
+    /// (heroku, doppler, infisical, railway: their CLIs take no file or
+    /// stdin for this), so say what that means. One line on stderr under the
+    /// commands, never hidden by `-q` (a warning is something the reader has
+    /// not seen yet), and out of the way of `> run.sh`.
+    pub fn warn_values_in_argv(&self) {
+        crate::utils::ui::warning(
+            "These commands pass the values as command-line arguments, which can show in \
+             `ps` and in your shell history: run them on a trusted machine.",
+        );
+    }
+
     /// What the run came to: the summary, a dry run's preview. Shown under
     /// `-q`; on stderr with `--print-only`.
     pub fn result(&self, line: impl Display) {

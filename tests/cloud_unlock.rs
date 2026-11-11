@@ -145,6 +145,19 @@ fn t_i316_vault_create_with_the_right_password_still_creates() {
         "{}",
         out.stdout
     );
+    // F7: one "Next" line, true whether or not `cloud link` is run next.
+    assert_eq!(out.stdout.matches("Next:").count(), 1, "{}", out.stdout);
+    assert!(
+        out.stdout
+            .contains("evnx cloud link --vault app/development"),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        !out.stdout.contains("Push a .env into it"),
+        "{}",
+        out.stdout
+    );
     create.assert();
 }
 
@@ -659,6 +672,12 @@ fn t_i234_a_default_env_push_to_production_needs_yes_without_a_terminal() {
             out.stderr
         );
         push.expect(0).assert();
+        // F10: the question is the warning; the `!` line is not printed as well.
+        assert!(
+            !out.all().contains("pushing to a production vault"),
+            "{target}:\n{}",
+            out.all()
+        );
     }
 }
 
@@ -682,7 +701,73 @@ fn t_i234_yes_or_a_named_file_pushes_to_production() {
         let out = signed_in(&p, &s.url(), &args, Some(format!("{RIGHT}\n").as_bytes()));
         out.assert_code(0);
         push.expect(1).assert();
+        // F10: said once. `--yes` skips the question, so the `!` line stands in
+        // for it; a named file is not the shape of a forgotten flag.
+        let warned = out.stdout.matches("pushing to a production vault").count();
+        assert_eq!(
+            warned,
+            usize::from(extra == ["--yes"]),
+            "{extra:?}:\n{}",
+            out.stdout
+        );
     }
+}
+
+/// CLOUD-409: `push` reads the vault's current version after the unlock, not
+/// before it, so the gap between reading `base_version` and posting it holds
+/// only the encryption. A password that does not open the keypair therefore
+/// stops before the version is ever asked for.
+#[test]
+fn cloud_409_push_reads_the_version_after_the_unlock() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &a);
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"development",
+            "role":"owner","version_count":0,"updated_at":"2026-10-20T09:00:00Z"}}]}}"#
+        ))
+        .create();
+    let latest = s
+        .mock(
+            "GET",
+            format!("/api/v1/vaults/{VAULT_ID}/versions/latest").as_str(),
+        )
+        .with_status(404)
+        .with_body(r#"{"error":"Not found","code":"NOT_FOUND"}"#)
+        .expect(0)
+        .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, &a)))
+        .create();
+    let push = s
+        .mock(
+            "POST",
+            format!("/api/v1/vaults/{VAULT_ID}/versions").as_str(),
+        )
+        .expect(0)
+        .create();
+    let p = Project::new();
+    std::fs::write(p.path().join(".env"), "A=dev\n").unwrap();
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &[
+            "cloud",
+            "push",
+            "--vault",
+            "app/development",
+            "--password-stdin",
+        ],
+        Some(format!("{TYPO}\n").as_bytes()),
+    );
+    out.assert_code(2);
+    assert!(out.stderr.contains(WRONG), "{}", out.stderr);
+    latest.assert();
+    push.assert();
 }
 
 // ── RM-07: `cloud export --to` takes convert's names and collision rule ──────
@@ -1000,6 +1085,114 @@ fn d4_the_master_password_comes_from_its_own_variable() {
         out.stderr
     );
     assert!(!p.path().join(".env").exists());
+}
+
+/// CLOUD-PW: `EVNX_MASTER_PASSWORD_FILE` unlocks the same way, read by the
+/// same code as the variable and `--password-stdin`; it is announced without
+/// the value, and a file that is not there is an error, not a fall-through to
+/// the variable.
+#[test]
+fn cloud_pw_the_master_password_can_come_from_a_file() {
+    let a = account(RIGHT);
+    let s = pull_server(&a);
+    let p = Project::new().file(".gitignore", ".env*\n");
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &s.url());
+    let pw_file = p.path().join("master.pw");
+    std::fs::write(&pw_file, format!("{RIGHT}\n")).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&pw_file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let url = s.url();
+    let cfg_s = cfg.to_str().unwrap().to_string();
+    let pull = |file: &str| {
+        support::run_with(
+            p.path(),
+            PULL,
+            &[
+                ("EVNX_SERVER", url.as_str()),
+                ("EVNX_CONFIG_DIR", cfg_s.as_str()),
+                ("EVNX_MASTER_PASSWORD_FILE", file),
+            ],
+            None,
+        )
+    };
+
+    let out = pull(pw_file.to_str().unwrap());
+    out.assert_code(0);
+    assert_eq!(p.read(".env"), "A=1\n");
+    assert!(
+        out.stderr
+            .contains("using the master password from EVNX_MASTER_PASSWORD_FILE"),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.all().contains(RIGHT), "{}", out.all());
+
+    std::fs::remove_file(p.path().join(".env")).unwrap();
+    let out = pull(p.path().join("missing.pw").to_str().unwrap());
+    out.assert_code(2);
+    assert!(out.stderr.contains("not a readable file"), "{}", out.stderr);
+    assert!(!p.path().join(".env").exists());
+}
+
+/// RM-89: the highest version this machine has seen is remembered, per vault
+/// and without values, and a server whose "latest" is lower than that is
+/// named on stderr. The command still runs: it is a hint, not a guard.
+#[test]
+fn rm89_a_latest_lower_than_the_last_seen_version_warns() {
+    let a = account(RIGHT);
+    let mut s = pull_server(&a);
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/latest").as_str(),
+    )
+    .with_status(200)
+    .with_body(r#"{"version_num":1,"pushed_at":"2026-10-24T09:00:00Z"}"#)
+    .create();
+    let p = Project::new();
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &s.url());
+    let url = s.url();
+    let cfg_s = cfg.to_str().unwrap().to_string();
+    let latest = || {
+        support::run_with(
+            p.path(),
+            &["cloud", "pull", "--vault", VAULT_ID, "--file", "-"],
+            &[
+                ("EVNX_SERVER", url.as_str()),
+                ("EVNX_CONFIG_DIR", cfg_s.as_str()),
+                ("EVNX_MASTER_PASSWORD", RIGHT),
+            ],
+            None,
+        )
+    };
+    let marks = cfg.join("high-water.json");
+    let read_marks = || -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(&marks).unwrap()).unwrap()
+    };
+
+    // First sight of the vault: nothing to compare, and the mark is taken.
+    let out = latest();
+    out.assert_code(0);
+    assert!(!out.stderr.contains("already seen"), "{}", out.stderr);
+    assert_eq!(read_marks(), serde_json::json!({ VAULT_ID: 1 }));
+
+    // This machine has since seen version 7 (a push from here, say).
+    std::fs::write(&marks, format!(r#"{{"{}":7}}"#, VAULT_ID.to_uppercase())).unwrap();
+    let out = latest();
+    out.assert_code(0);
+    assert!(
+        out.stderr
+            .contains("is at version 1, but this machine has already seen version 7"),
+        "{}",
+        out.stderr
+    );
+    // The mark is not lowered by the server's say-so, and holds no value.
+    assert_eq!(read_marks()[VAULT_ID.to_uppercase()], 7, "left as written");
+    assert!(!std::fs::read_to_string(&marks).unwrap().contains("A=1"));
 }
 
 /// RM-34 (D6): declining pull's overwrite question exits 4, as `restore`

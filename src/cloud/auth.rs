@@ -25,6 +25,7 @@ use zeroize::Zeroizing;
 use super::client::{jwt_exp, reword, Client};
 use super::config::CloudConfig;
 use super::creds::{SecretString, Session, Store};
+use crate::utils::secret_source::{resolve_master, MasterInputs, MasterSource};
 
 /// Shortest master password accepted.
 ///
@@ -257,16 +258,10 @@ pub(crate) fn prompt_new_password() -> Result<Zeroizing<String>> {
 ///
 /// A trailing newline is stripped and nothing else is: leading and inner spaces
 /// are part of the password, because a passphrase may legitimately contain them.
+/// One reader for every source: `utils::secret_source`.
 fn read_password_from_stdin() -> Result<Zeroizing<String>> {
-    use std::io::BufRead;
-    let mut line = String::new();
-    std::io::stdin()
-        .lock()
-        .read_line(&mut line)
-        .context("reading the password from stdin")?;
-    let trimmed = line.trim_end_matches(['\n', '\r']).to_string();
-    zeroize::Zeroize::zeroize(&mut line);
-    Ok(Zeroizing::new(trimmed))
+    crate::utils::secret_source::first_line(&mut std::io::stdin().lock())
+        .context("reading the password from stdin")
 }
 
 /// Reject an address the server would reject, before spending a second on Argon2id.
@@ -334,17 +329,7 @@ pub fn login(
     validate_email(&email)?;
     let email = normalize_email(&email);
 
-    let password = if password_stdin {
-        read_password_from_stdin()?
-    } else {
-        require_password_terminal()?;
-        Zeroizing::new(
-            dialoguer::Password::new()
-                .with_prompt("Master password")
-                .interact()
-                .context("reading the master password")?,
-        )
-    };
+    let password = read_password(password_stdin, "Master password")?;
 
     login_with_password(&server, &email, &password, verbose)
 }
@@ -578,6 +563,7 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
                 println!("{}", "evnx account".bold());
             }
             println!("  server    {server}");
+            println!("  client    evnx {}", env!("CARGO_PKG_VERSION"));
             println!("  status    {}", "session expired".yellow());
             if !quiet {
                 println!("  Run `evnx auth login` to sign in again.");
@@ -591,6 +577,7 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
                 println!("{}", "evnx account".bold());
             }
             println!("  server    {server}");
+            println!("  client    evnx {}", env!("CARGO_PKG_VERSION"));
             println!("  using     API token (from {})", super::client::ENV_TOKEN);
             println!("  status    {}", "API token refused".yellow());
             if !quiet {
@@ -606,6 +593,7 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
         println!("{}", "evnx account".bold());
     }
     println!("  server    {server}");
+    println!("  client    evnx {}", env!("CARGO_PKG_VERSION"));
     // Which credential answered (DEC-AU10, I-212). An API token and a login
     // can do different things, and "signed in as ci@example.com" alone does not
     // say which one a pipeline is running with.
@@ -797,10 +785,38 @@ fn print_usage(u: &UsageResponse) {
 /// key needs the master key, and the master key is never cached. Caching it on
 /// disk would put a decryption key next to the ciphertext and undo the point of
 /// the server never holding one.
+///
+/// Never from the environment: this is for a password being typed in earnest
+/// (`login`, `rotate-master-password`'s current, previous and new). Unlocking is
+/// [`read_master_password`].
 pub(crate) fn read_password(from_stdin: bool, prompt: &str) -> Result<Zeroizing<String>> {
-    if from_stdin {
-        read_password_from_stdin()
-    } else {
+    read_from(from_stdin, false, prompt).map(|(pw, _)| pw)
+}
+
+/// The master password to unlock a vault: `--password-stdin`, then
+/// `EVNX_MASTER_PASSWORD_FILE`, then `EVNX_MASTER_PASSWORD`, then a prompt (D4,
+/// CLOUD-PW).
+///
+/// ⚠️ Its own variables, never `EVNX_PASSWORD`, which unlocks `backup` files:
+/// one leaked variable must not open both. Every use of a variable or file is
+/// announced on stderr, without the value. Only unlocking reads them; changing
+/// or undoing a password (`rotate.rs`) always asks. A child process never
+/// inherits them (`envsource::is_evnx_own`).
+pub(crate) fn read_master_password(from_stdin: bool) -> Result<Zeroizing<String>> {
+    read_from(from_stdin, true, "Master password").map(|(pw, _)| pw)
+}
+
+/// The one place the cloud commands read a password from, through
+/// `utils::secret_source::resolve_master`, announcing a variable or file.
+fn read_from(
+    from_stdin: bool,
+    allow_env: bool,
+    prompt: &str,
+) -> Result<(Zeroizing<String>, MasterSource)> {
+    let stdin = std::io::stdin();
+    let mut stdin = stdin.lock();
+    let env = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    let mut ask = || {
         require_password_terminal()?;
         Ok(Zeroizing::new(
             dialoguer::Password::new()
@@ -808,36 +824,48 @@ pub(crate) fn read_password(from_stdin: bool, prompt: &str) -> Result<Zeroizing<
                 .interact()
                 .context("reading the master password")?,
         ))
+    };
+    let got = resolve_master(MasterInputs {
+        from_stdin,
+        allow_env,
+        stdin: &mut stdin,
+        env: &env,
+        prompt: &mut ask,
+    })
+    .map_err(|e| {
+        if from_stdin {
+            e.context("reading the password from stdin")
+        } else {
+            e
+        }
+    })?;
+    match &got.1 {
+        MasterSource::Env => eprintln!("  {} {}", "!".yellow(), announce(MASTER_PASSWORD_ENV)),
+        MasterSource::File(path) => {
+            eprintln!(
+                "  {} {}",
+                "!".yellow(),
+                announce(&format!("{MASTER_FILE_ENV} ({path})"))
+            );
+        }
+        MasterSource::Stdin | MasterSource::Prompt => {}
     }
+    Ok(got)
 }
 
-/// The master password to unlock a vault: `--password-stdin`, then
-/// `EVNX_MASTER_PASSWORD`, then a prompt (D4).
-///
-/// ⚠️ Its own variable, never `EVNX_PASSWORD`, which unlocks `backup` files:
-/// one leaked variable must not open both. Every use is announced on stderr,
-/// without the value. Only unlocking reads it; changing or undoing a password
-/// (`rotate.rs`) always asks. A child process never inherits it
-/// (`envsource::is_evnx_own`).
-pub(crate) fn read_master_password(from_stdin: bool) -> Result<Zeroizing<String>> {
-    if !from_stdin {
-        if let Some(pw) = std::env::var_os(MASTER_PASSWORD_ENV).filter(|v| !v.is_empty()) {
-            let pw = pw
-                .into_string()
-                .map_err(|_| anyhow!("{MASTER_PASSWORD_ENV} is not valid UTF-8"))?;
-            eprintln!(
-                "  {} using the master password from {MASTER_PASSWORD_ENV}. Any process that can \
-                 read this environment can read it; in CI, prefer an API token (EVNX_TOKEN).",
-                "!".yellow()
-            );
-            return Ok(Zeroizing::new(pw));
-        }
-    }
-    read_password(from_stdin, "Master password")
+/// The stderr notice for a master password that did not come from a person.
+fn announce(source: &str) -> String {
+    format!(
+        "using the master password from {source}. Any process that can read this \
+         environment can read it; in CI, prefer an API token (EVNX_TOKEN)."
+    )
 }
 
 /// The variable [`read_master_password`] reads.
-pub(crate) const MASTER_PASSWORD_ENV: &str = "EVNX_MASTER_PASSWORD";
+pub(crate) const MASTER_PASSWORD_ENV: &str = crate::utils::secret_source::MASTER_ENV_VAR;
+
+/// The file variable [`read_master_password`] reads first.
+const MASTER_FILE_ENV: &str = crate::utils::secret_source::MASTER_FILE_ENV_VAR;
 
 /// The master key, with the password behind it proven (A-302, I-316).
 pub(crate) struct Unlocked {

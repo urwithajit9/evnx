@@ -36,6 +36,24 @@ impl AwsDestination {
     }
 }
 
+/// The lines of one `aws secretsmanager` command whose `--secret-string` is read
+/// from a private temp file holding `json` (K8). `command` is the command's
+/// leading lines, each ending in ` \`; the last line is added here.
+fn secret_script(json: &str, command: &[String]) -> Vec<String> {
+    let end = "EVNX_VALUE";
+    let mut lines = vec![
+        "(".to_string(),
+        "umask 077; f=$(mktemp) || exit 1; trap 'rm -f \"$f\"' EXIT".to_string(),
+        format!("head -c {} > \"$f\" <<'{end}'", json.len()),
+        json.to_string(),
+        end.to_string(),
+    ];
+    lines.extend(command.iter().cloned());
+    lines.push("  --secret-string file://\"$f\"".to_string());
+    lines.push(")".to_string());
+    lines
+}
+
 impl MigrationDestination for AwsDestination {
     fn name(&self) -> &str {
         "AWS Secrets Manager"
@@ -77,22 +95,39 @@ impl MigrationDestination for AwsDestination {
             });
         }
 
-        // ⚠️ Not `replace('\'', "\\'")`: inside single quotes `\'` is two
-        // characters and the next `'` ends the string (I-094).
-        let secret_string = shell::quote(&json);
         let name = shell::word(&self.secret_name);
 
+        // K8: the JSON is not on the command line. `--secret-string '<json>'`
+        // put every value in `ps` and in shell history; now a quoted heredoc
+        // (no expansion, and I-094's quoting problem cannot occur) writes it to
+        // a private temp file and `aws` reads it with `file://`. As Azure does
+        // (RM-06), `head -c <bytes>` drops the heredoc's final newline so the
+        // stored secret is exactly the JSON, and the subshell's trap removes
+        // the file whatever `aws` does. Each block stands alone, so either can
+        // be pasted without the other.
         out.status(format!("\n{}", "Run one of the following commands:".bold()));
         out.status("");
         out.command("# Create a new secret:".dimmed());
-        out.command("aws secretsmanager create-secret \\");
-        out.command(format!("  {}--name {} \\", profile_flag, name));
-        out.command(format!("  --secret-string {}", secret_string));
+        for line in secret_script(
+            &json,
+            &[
+                "aws secretsmanager create-secret \\".to_string(),
+                format!("  {}--name {} \\", profile_flag, name),
+            ],
+        ) {
+            out.command(line);
+        }
         out.command("");
         out.command("# Or update an existing secret:".dimmed());
-        out.command("aws secretsmanager update-secret \\");
-        out.command(format!("  {}--secret-id {} \\", profile_flag, name));
-        out.command(format!("  --secret-string {}", secret_string));
+        for line in secret_script(
+            &json,
+            &[
+                "aws secretsmanager update-secret \\".to_string(),
+                format!("  {}--secret-id {} \\", profile_flag, name),
+            ],
+        ) {
+            out.command(line);
+        }
 
         // We print CLI commands; we don't upload directly, so mark as "uploaded"
         // conceptually (the operator will run the commands).

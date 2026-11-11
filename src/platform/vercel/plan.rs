@@ -198,22 +198,12 @@ pub fn select(vars: Vec<RemoteVar>, env: &Environment, branch: Option<&str>) -> 
 
 // ── Type of a new variable ───────────────────────────────────────────────────
 
-/// Prefixes that frameworks inline into browser bundles: such a variable is
-/// public by design and must be Config (Vercel refuses a Secret there).
-const PUBLIC_PREFIXES: &[&str] = &[
-    "NEXT_PUBLIC_",
-    "NUXT_PUBLIC_",
-    "VITE_",
-    "REACT_APP_",
-    "VUE_APP_",
-    "GATSBY_",
-    "EXPO_PUBLIC_",
-    "PUBLIC_",
-];
-
-/// Whether the key has a public framework prefix.
+/// Whether the key has a public framework prefix: a variable the bundler
+/// inlines into the browser, so public by design and Config on Vercel. The
+/// list is the one `scan` and `validate` use
+/// ([`crate::core::secretscan::rules::PUBLIC_PREFIXES`]).
 pub fn has_public_prefix(key: &str) -> bool {
-    PUBLIC_PREFIXES.iter().any(|p| key.starts_with(p))
+    crate::core::secretscan::rules::public_prefix(key).is_some()
 }
 
 /// The type evnx would give a variable it created: a Secret when the key or the
@@ -589,6 +579,18 @@ pub fn pull_plan(local: &IndexMap<String, String>, remote: Vec<Remote>) -> Vec<P
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    /// F14-5: Vercel and `scan`/`validate` share one prefix list.
+    #[test]
+    fn the_public_prefix_list_is_the_scanners() {
+        for (prefix, _) in crate::core::secretscan::rules::PUBLIC_PREFIXES {
+            assert!(has_public_prefix(&format!("{prefix}X")), "{prefix}");
+        }
+        for p in ["VITE_", "NEXT_PUBLIC_", "REACT_APP_", "EXPO_PUBLIC_"] {
+            assert!(has_public_prefix(&format!("{p}X")), "{p}");
+        }
+        assert!(!has_public_prefix("STRIPE_KEY"));
+    }
 
     fn var(id: &str, key: &str, kind: Kind, target: &[&str], at: u64) -> RemoteVar {
         RemoteVar {

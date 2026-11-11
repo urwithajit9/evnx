@@ -472,3 +472,135 @@ fn t_i256_the_workflow_publishes_through_the_script() {
         }
     }
 }
+
+// ── R6: the wrapper is a launcher, not an installer ─────────────────────────
+//
+// pnpm 10+ and bun skip `postinstall`, so the old placeholder `bin/evnx`
+// (exit 1) was never replaced and `evnx` was broken there. The wrapper's
+// `bin/evnx` is now a Node script that resolves the platform package itself.
+
+fn wrapper_step() -> String {
+    let yml = std::fs::read_to_string(WORKFLOW).unwrap();
+    let start = yml.find("- name: Create wrapper package").unwrap();
+    let rest = &yml[start + 1..];
+    let end = rest.find("\n      - name:").unwrap_or(rest.len());
+    rest[..end].to_string()
+}
+
+/// The launcher as the workflow writes it (heredoc body, 10 spaces dedented).
+fn launcher() -> String {
+    let step = wrapper_step();
+    let from =
+        step.find("<< 'LAUNCHEREOF'\n").expect("launcher heredoc") + "<< 'LAUNCHEREOF'\n".len();
+    let body = &step[from..];
+    let body = &body[..body.find("          LAUNCHEREOF").expect("heredoc end")];
+    body.lines()
+        .map(|l| l.strip_prefix("          ").unwrap_or(l))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
+}
+
+#[test]
+fn r6_the_wrapper_has_no_postinstall_and_keeps_bin_and_optional_dependencies() {
+    let step = wrapper_step();
+    assert!(!step.contains("\"postinstall\""), "{step}");
+    assert!(!step.contains("\"scripts\""), "{step}");
+    assert!(!step.contains("install.js"), "{step}");
+    assert!(
+        !step.contains("exit 1"),
+        "no placeholder that exits 1:\n{step}"
+    );
+    assert!(step.contains(r#""bin": {"#) && step.contains(r#""evnx": "bin/evnx""#));
+    for p in [
+        "linux-x64",
+        "linux-arm64",
+        "darwin-x64",
+        "darwin-arm64",
+        "win32-x64",
+    ] {
+        assert!(step.contains(&format!("\"@evnx/evnx-{p}\"")), "{p}");
+    }
+    let js = launcher();
+    assert!(js.starts_with("#!/usr/bin/env node\n"), "{js}");
+    assert!(
+        js.contains("require.resolve(pkg + \"/package.json\")"),
+        "{js}"
+    );
+    assert!(js.contains("stdio: \"inherit\""));
+}
+
+fn node() -> Option<()> {
+    Command::new("node")
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|_| ())
+}
+
+/// Run the launcher with `node` against a fake platform package.
+#[test]
+fn r6_the_launcher_runs_the_platform_binary_and_forwards_code_and_signal() {
+    if node().is_none() {
+        eprintln!("node not available; skipping");
+        return;
+    }
+    let dir = TempDir::new().unwrap();
+    let cli = dir.path().join("node_modules/@evnx/cli");
+    std::fs::create_dir_all(cli.join("bin")).unwrap();
+    std::fs::write(cli.join("bin/evnx"), launcher()).unwrap();
+    let platform = String::from_utf8(
+        Command::new("node")
+            .args(["-p", "process.platform + '-' + process.arch"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    let pkg = dir
+        .path()
+        .join("node_modules/@evnx")
+        .join(format!("evnx-{}", platform.trim()));
+    std::fs::create_dir_all(pkg.join("bin")).unwrap();
+    std::fs::write(
+        pkg.join("package.json"),
+        r#"{"name":"x","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    support::stub::write_stub(
+        &pkg.join("bin/evnx"),
+        "#!/bin/sh\necho \"args:$*\"\nif [ \"$1\" = sig ]; then kill -TERM $$; fi\nexit ${EXIT_CODE:-0}\n",
+    );
+    let run = |args: &[&str], code: &str| -> Output {
+        Command::new("node")
+            .arg(cli.join("bin/evnx"))
+            .args(args)
+            .env("EXIT_CODE", code)
+            .output()
+            .unwrap()
+    };
+
+    let out = run(&["--version", "a b"], "0");
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "args:--version a b\n");
+    assert_eq!(run(&["x"], "7").status.code(), Some(7));
+    // A signal: node dies of it too (143 = 128 + SIGTERM if it exits instead).
+    let out = run(&["sig"], "0");
+    use std::os::unix::process::ExitStatusExt;
+    assert!(
+        out.status.signal() == Some(15) || out.status.code() == Some(143),
+        "{:?}",
+        out.status
+    );
+
+    // The platform package is gone: a clear error, exit 1.
+    std::fs::remove_dir_all(&pkg).unwrap();
+    let out = run(&["--version"], "0");
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("is not installed") && err.contains("npm install @evnx/evnx-"),
+        "{err}"
+    );
+}

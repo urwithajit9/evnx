@@ -75,6 +75,13 @@ fn t_i232_status_reports_an_api_token() {
     out.assert_code(0);
     assert!(out.stdout.contains("API token"), "{}", out.stdout);
     assert!(!out.stdout.contains("not signed in"), "{}", out.stdout);
+    // F11: the build is named in the header block.
+    assert!(
+        out.stdout
+            .contains(concat!("client    evnx ", env!("CARGO_PKG_VERSION"))),
+        "{}",
+        out.stdout
+    );
 }
 
 #[test]

@@ -49,6 +49,7 @@ railway variable set --project p-1 --environment production \
 
 Upload secrets with:
 
+! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
 
 Summary:
   ✓  2 command(s) generated
