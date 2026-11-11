@@ -1649,8 +1649,20 @@ fn plat_state_pull_dev_then_prod_then_a_change_on_vercel_still_stops_a_dev_push(
     e1b.assert();
 
     // Both records are in the one file.
-    assert_eq!(record(&p, "development")["entries"].as_array().unwrap().len(), 5);
-    assert_eq!(record(&p, "production")["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        record(&p, "development")["entries"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+    assert_eq!(
+        record(&p, "production")["entries"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     let file: Value = serde_json::from_str(&p.read(".evnx/platform/vercel.json")).unwrap();
     assert_eq!(file["records"].as_array().unwrap().len(), 2);
 
@@ -1904,7 +1916,7 @@ fn push_json_is_one_document_with_no_values() {
         .find(|e| e["key"] == "API_URL")
         .unwrap();
     assert_eq!(api["split"], true);
-    assert_eq!(api["keeps_shared_entry"], json!(["preview"]));
+    assert_eq!(api["keeps_shared_entry"], json!(["Preview"]));
     assert_eq!(j["summary"]["type_differs"], 1);
     assert_eq!(j["summary"]["remote_only"], 1);
     assert!(j["result"].is_null());
@@ -2022,4 +2034,569 @@ fn quiet_push_with_yes_is_silent() {
     // Only the no-state-file warning, which -q keeps.
     assert_eq!(out.stdout, "");
     assert_eq!(out.stderr.lines().count(), 1, "{}", out.stderr);
+}
+
+// ── P3: --prune ──────────────────────────────────────────────────────────────
+
+impl Vercel {
+    /// `DELETE …/env/{id}`. The answer echoes the deleted entry, ciphertext and
+    /// all (design §2a #9): the command must never print it.
+    fn delete(&mut self, id: &str, status: usize, hits: usize) -> Mock {
+        let body = if status < 300 {
+            json!({ "id": id, "value": CIPHER })
+        } else {
+            json!({ "error": { "code": "forbidden_by_policy", "message": CIPHER } })
+        };
+        self.server
+            .mock("DELETE", format!("/v9/projects/prj_1/env/{id}").as_str())
+            .match_query(list_query("team_1"))
+            .match_header("authorization", format!("Bearer {TOKEN}").as_str())
+            .with_status(status)
+            .with_body(body.to_string())
+            .expect(hits)
+            .create()
+    }
+}
+
+/// Local file for the prune tests: LOG_LEVEL is the same on both sides, REDIS_URL
+/// is empty (skipped, never pruned), and API_URL, DB_URL and NEW_REMOTE are
+/// Vercel-only.
+fn prune_project() -> Project {
+    push_project(&format!("LOG_LEVEL={R_LOG}\nREDIS_URL=\n"))
+}
+
+#[test]
+fn prune_deletes_vercel_only_variables_by_id_and_takes_a_shared_one_out_of_this_environment() {
+    let mut v = Vercel::start_for_diff();
+    // e2 (DB_URL, secret) and e4 (NEW_REMOTE) are only here: deleted by id.
+    let del_e2 = v.delete("e2", 200, 1);
+    let del_e4 = v.delete("e4", 200, 1);
+    // e1 (API_URL) is shared with preview: development leaves it, nothing is deleted.
+    let leave_e1 = v.patch("e1", json!({ "target": ["preview"] }), 1);
+    // Never: the production-only entry, the unchanged one, and the empty local key.
+    let never: Vec<Mock> = ["e1", "e1b", "e3", "e5"]
+        .iter()
+        .map(|id| v.delete(id, 200, 0))
+        .collect();
+    let p = prune_project();
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--prune", "--yes", "--no-gitignore"]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    del_e2.assert();
+    del_e4.assert();
+    leave_e1.assert();
+    for m in &never {
+        m.assert();
+    }
+    out.assert_contains("x DB_URL");
+    out.assert_contains("x NEW_REMOTE");
+    out.assert_contains("~ API_URL");
+    out.assert_contains("shared with Preview: only development is taken out of its targets");
+    out.assert_contains("- REDIS_URL");
+    out.assert_contains("skipped");
+    out.assert_contains("2 delete · 1 detach (shared entry stays)");
+    out.assert_contains("deleted 2 variables");
+    out.assert_contains("took development out of 1 shared variable");
+    out.assert_contains("recorded .evnx/platform/vercel.json");
+}
+
+#[test]
+fn quiet_prune_with_yes_is_silent_on_stdout() {
+    let mut v = Vercel::start_for_diff();
+    let del = v.delete("e2", 200, 1);
+    let del4 = v.delete("e4", 200, 1);
+    let leave = v.patch("e1", json!({ "target": ["preview"] }), 1);
+    let p = prune_project();
+    #[cfg(unix)]
+    let p = p.mode(".env.development", 0o600);
+    let mut args = vec!["-q"];
+    args.extend(push_args(&["--prune", "--yes", "--no-gitignore"]));
+    let out = run(&p, &v.url(), &args);
+    out.assert_code(0);
+    quiet_push(&out);
+    assert_eq!(out.stdout, "");
+    del.assert();
+    del4.assert();
+    leave.assert();
+}
+
+#[test]
+fn without_prune_the_vercel_only_variables_are_kept_and_nothing_is_deleted() {
+    let mut v = Vercel::start_for_diff();
+    let deletes: Vec<Mock> = ["e1", "e2", "e4", "e5"]
+        .iter()
+        .map(|id| v.delete(id, 200, 0))
+        .collect();
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"));
+    let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_contains("! DB_URL");
+    out.assert_contains("kept; --prune to delete");
+    patch.assert();
+    for m in &deletes {
+        m.assert();
+    }
+}
+
+#[test]
+fn prune_in_ci_needs_yes_and_says_so_before_any_request() {
+    let mut s = Server::new();
+    let any = s.mock("GET", Matcher::Any).expect(0).create();
+    let writes: Vec<Mock> = ["POST", "PATCH", "PUT", "DELETE"]
+        .iter()
+        .map(|m| s.mock(m, Matcher::Any).expect(0).create())
+        .collect();
+    let p = prune_project();
+    let out = run(&p, &s.url(), &push_args(&["--prune", "--no-gitignore"]));
+    out.assert_code(2);
+    quiet_push(&out);
+    out.assert_contains("--prune");
+    out.assert_contains("--yes");
+    any.assert();
+    for m in &writes {
+        m.assert();
+    }
+    assert!(!p.exists(".evnx/platform/vercel.json"));
+}
+
+#[test]
+fn prune_dry_run_lists_the_deletions_and_sends_nothing_even_without_yes() {
+    let mut v = Vercel::start_for_diff();
+    let writes = v.no_writes();
+    let p = prune_project();
+    let out = run(&p, &v.url(), &push_args(&["--prune", "--dry-run"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_contains("x DB_URL");
+    out.assert_contains("Dry run: nothing was sent.");
+    for m in &writes {
+        m.assert();
+    }
+
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--prune", "--dry-run", "--format", "json"]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    let j: Value = serde_json::from_str(&out.stdout).expect("stdout is JSON and nothing else");
+    assert_eq!(j["summary"]["delete"], 2);
+    assert_eq!(j["summary"]["detach"], 1);
+    let action = |k: &str| {
+        j["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["key"] == k)
+            .unwrap()["action"]
+            .clone()
+    };
+    assert_eq!(action("DB_URL"), "delete");
+    assert_eq!(action("API_URL"), "detach");
+    assert_eq!(action("REDIS_URL"), "skipped");
+}
+
+#[test]
+fn a_refused_delete_is_exit_1_naming_the_key_and_code_and_never_the_answer() {
+    let mut v = Vercel::start_for_diff();
+    // 400, not 403: a write 403 may mean a bad token and ends the run.
+    let refused = v.delete("e2", 400, 1);
+    let ok = v.delete("e4", 200, 1);
+    let leave = v.patch("e1", json!({ "target": ["preview"] }), 1);
+    let p = prune_project();
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--prune", "--yes", "--no-gitignore"]),
+    );
+    out.assert_code(1);
+    quiet_push(&out);
+    refused.assert();
+    ok.assert();
+    leave.assert();
+    out.assert_contains("deleted 1 variable");
+    assert!(out.stderr.contains("DB_URL"), "{}", out.stderr);
+    assert!(out.stderr.contains("forbidden_by_policy"), "{}", out.stderr);
+}
+
+// ── P3: custom environments ──────────────────────────────────────────────────
+
+/// An entry with explicit targets, custom environments and branch.
+fn entry_with(
+    id: &str,
+    key: &str,
+    target: &[&str],
+    custom: &[&str],
+    branch: Option<&str>,
+) -> Value {
+    let mut e = env_entry(id, key, "encrypted", target);
+    if target.is_empty() {
+        e.as_object_mut().unwrap().remove("target");
+    }
+    if !custom.is_empty() {
+        e["customEnvironmentIds"] = json!(custom);
+    }
+    if let Some(b) = branch {
+        e["gitBranch"] = json!(b);
+    }
+    e
+}
+
+/// A project with staging and qa custom environments.
+fn custom_remote() -> Vercel {
+    let envs = vec![
+        // staging only
+        entry_with("c1", "STG_ONLY", &[], &["env_stg"], None),
+        // shared: development, staging and qa
+        entry_with(
+            "c2",
+            "SHARED_CFG",
+            &["development"],
+            &["env_stg", "env_qa"],
+            None,
+        ),
+        // qa only
+        entry_with("c3", "QA_ONLY", &[], &["env_qa"], None),
+        // a plain development entry
+        entry_with("c4", "DEV_ONLY", &["development"], &[], None),
+    ];
+    let mut v = Vercel::with_list(json!({ "envs": envs }), 0);
+    v.server
+        .mock("GET", "/v9/projects/prj_1/custom-environments")
+        .match_query(list_query("team_1"))
+        .match_header("authorization", format!("Bearer {TOKEN}").as_str())
+        .with_status(200)
+        .with_body(
+            json!({ "environments": [
+                { "id": "env_stg", "slug": "staging", "type": "custom" },
+                { "id": "env_qa", "slug": "qa", "type": "custom" },
+            ]})
+            .to_string(),
+        )
+        .create();
+    for (id, value) in [("c1", R_API), ("c2", R_LOG)] {
+        let m = v.value_mock(id, 200, Some(value), 1);
+        v.once.push(m);
+    }
+    for id in ["c3", "c4"] {
+        let m = v.value_mock(id, 200, None, 0);
+        v.never.push(m);
+    }
+    v
+}
+
+#[test]
+fn a_custom_environment_is_found_by_slug_and_its_entries_by_id() {
+    let v = custom_remote();
+    let p = Project::new().file(
+        ".env.staging",
+        &format!("STG_ONLY={R_API}\nSHARED_CFG={R_LOG}\n"),
+    );
+    let mut args = diff_args(&["--env-name", "staging"]);
+    args.push("--format");
+    args.push("json");
+    let out = run(&p, &v.url(), &args);
+    out.assert_code(0);
+    quiet(&out);
+    let j: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(j["environment"], "staging");
+    let keys: Vec<&str> = j["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["key"].as_str().unwrap())
+        .collect();
+    // Only staging's two entries: not qa's, not development's.
+    assert_eq!(keys, ["STG_ONLY", "SHARED_CFG"]);
+    // Their two Config values were read (the first three mocks are the standard ones).
+    for m in v.once.iter().skip(3).chain(&v.never) {
+        m.assert();
+    }
+}
+
+#[test]
+fn an_unknown_custom_environment_is_exit_2_naming_the_ones_there_are() {
+    let mut v = custom_remote();
+    let writes = v.no_writes();
+    let p = Project::new().file(".env", "A=1\n");
+    let out = run(&p, &v.url(), &diff_args(&["--env-name", "nope"]));
+    out.assert_code(2);
+    quiet(&out);
+    out.assert_contains("no custom environment 'nope'");
+    out.assert_contains("staging, qa");
+    for m in &writes {
+        m.assert();
+    }
+    // A name that cannot be a slug never reaches the network.
+    let out = run(&p, &v.url(), &diff_args(&["--env-name", "../x"]));
+    out.assert_code(2);
+    let out = run(&p, &v.url(), &diff_args(&["--env-name", "Production"]));
+    out.assert_code(2);
+    out.assert_contains("lowercase");
+}
+
+#[test]
+fn push_to_a_custom_environment_creates_with_ids_and_no_target_and_splits_by_ids() {
+    let mut v = custom_remote();
+    // STG_ONLY (c1) is staging's alone: changed in place.
+    let patch_c1 = v.patch("c1", json!({ "value": P_LOG }), 1);
+    // SHARED_CFG (c2) is also development's and qa's: staging leaves it by
+    // customEnvironmentIds, and keeps nothing of `target`...
+    let leave_c2 = v.patch("c2", json!({ "customEnvironmentIds": ["env_qa"] }), 1);
+    // ...and gets its own entry: customEnvironmentIds, no `target` key at all.
+    let create = v.post(
+        json!([
+            { "key": "SHARED_CFG", "value": P_DB, "type": "encrypted",
+              "customEnvironmentIds": ["env_stg"] },
+            { "key": "BRAND_NEW", "value": P_NEW, "type": "encrypted",
+              "customEnvironmentIds": ["env_stg"] },
+        ]),
+        201,
+        created_answer(&["SHARED_CFG", "BRAND_NEW"]),
+        1,
+    );
+    // Other environments' entries are never touched.
+    let untouched = [
+        v.patch("c3", json!({ "value": P_LOG }), 0),
+        v.patch("c4", json!({ "value": P_LOG }), 0),
+    ];
+    let p = Project::new().file(
+        ".env.staging",
+        &format!("STG_ONLY={P_LOG}\nSHARED_CFG={P_DB}\nBRAND_NEW={P_NEW}\n"),
+    );
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--env-name", "staging", "--yes", "--no-gitignore"]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_contains("staging (custom)");
+    out.assert_contains("local  .env.staging");
+    out.assert_contains("split: Development, qa keep their own entry");
+    patch_c1.assert();
+    leave_c2.assert();
+    create.assert();
+    for m in &untouched {
+        m.assert();
+    }
+    // The record is keyed by the slug.
+    assert!(record(&p, "staging")["entries"].is_array());
+}
+
+#[test]
+fn prune_in_a_custom_environment_deletes_its_own_and_detaches_the_shared() {
+    let mut v = custom_remote();
+    let del_c1 = v.delete("c1", 200, 1);
+    let leave_c2 = v.patch("c2", json!({ "customEnvironmentIds": ["env_qa"] }), 1);
+    let never: Vec<Mock> = ["c2", "c3", "c4"]
+        .iter()
+        .map(|i| v.delete(i, 200, 0))
+        .collect();
+    // Local has neither key; falls back to `.env` (no .env.staging).
+    let p = Project::new().file(".env", "KEEP_ME=\n");
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&[
+            "--env-name",
+            "staging",
+            "--prune",
+            "--yes",
+            "--no-gitignore",
+        ]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_contains("local  .env");
+    del_c1.assert();
+    leave_c2.assert();
+    for m in &never {
+        m.assert();
+    }
+}
+
+// ── P3: --git-branch ─────────────────────────────────────────────────────────
+
+fn branch_remote() -> Vercel {
+    let envs = vec![
+        // API_URL for the branch, and for all branches.
+        entry_with("b1", "API_URL", &["preview"], &[], Some("feature")),
+        entry_with("b2", "API_URL", &["preview"], &[], None),
+        // All branches only: same value locally.
+        entry_with("b3", "ONLY_ALL", &["preview"], &[], None),
+        // Another branch's.
+        entry_with("b4", "OTHER", &["preview"], &[], Some("other")),
+        // All branches only: the local value differs.
+        entry_with("b6", "ALL_DIFF", &["preview"], &[], None),
+        // The branch's alone, and not in the local file.
+        entry_with("b7", "BRANCH_GONE", &["preview"], &[], Some("feature")),
+    ];
+    let mut v = Vercel::with_list(json!({ "envs": envs }), 0);
+    for (id, value, hits) in [("b1", R_API, 1), ("b3", R_LOG, 1), ("b6", R_NEW, 1)] {
+        let m = v.value_mock(id, 200, Some(value), hits);
+        v.once.push(m);
+    }
+    // The all-branches API_URL is shadowed, the other branch's is not ours.
+    for id in ["b2", "b4"] {
+        let m = v.value_mock(id, 200, None, 0);
+        v.never.push(m);
+    }
+    v
+}
+
+#[test]
+fn git_branch_uses_the_branch_entry_falls_back_to_all_branches_and_creates_with_the_branch() {
+    let mut v = branch_remote();
+    // The branch's own API_URL (b1) changes in place.
+    let patch_b1 = v.patch("b1", json!({ "value": P_API }), 1);
+    // ALL_DIFF only has an all-branches entry: the branch gets its own beside it
+    // (nothing is patched, split or deleted); FRESH_VAR is new. Both carry gitBranch.
+    let create = v.post(
+        json!([
+            { "key": "ALL_DIFF", "value": P_DB, "type": "encrypted",
+              "target": ["preview"], "gitBranch": "feature" },
+            { "key": "FRESH_VAR", "value": P_NEW, "type": "encrypted",
+              "target": ["preview"], "gitBranch": "feature" },
+        ]),
+        201,
+        created_answer(&["ALL_DIFF", "FRESH_VAR"]),
+        1,
+    );
+    let untouched: Vec<Mock> = ["b2", "b3", "b4", "b6"]
+        .iter()
+        .flat_map(|id| {
+            [
+                v.patch(id, json!({ "value": P_API }), 0),
+                v.delete(id, 200, 0),
+            ]
+        })
+        .collect();
+    let p = Project::new().file(
+        ".env.preview",
+        &format!("API_URL={P_API}\nONLY_ALL={R_LOG}\nALL_DIFF={P_DB}\nFRESH_VAR={P_NEW}\n"),
+    );
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&[
+            "--env-name",
+            "preview",
+            "--git-branch",
+            "feature",
+            "--yes",
+            "--no-gitignore",
+        ]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_contains("preview (branch feature)");
+    // The fallback is labelled in the plan.
+    out.assert_contains("same as the all-branches preview entry");
+    out.assert_contains("branch feature gets its own entry, the all-branches one stays");
+    assert!(
+        out.stderr.contains("scoped to other git branches ignored"),
+        "{}",
+        out.stderr
+    );
+    patch_b1.assert();
+    create.assert();
+    for m in &untouched {
+        m.assert();
+    }
+    // The state is kept apart from plain preview's.
+    assert!(record(&p, "preview@feature")["entries"].is_array());
+}
+
+#[test]
+fn git_branch_with_prune_deletes_only_the_branchs_own_entries() {
+    let mut v = branch_remote();
+    let del = v.delete("b7", 200, 1);
+    // The all-branches and other-branch entries are never deleted.
+    let never: Vec<Mock> = ["b2", "b3", "b4", "b6", "b1"]
+        .iter()
+        .map(|id| v.delete(id, 200, 0))
+        .collect();
+    let p = Project::new().file(
+        ".env.preview",
+        &format!("API_URL={R_API}\nONLY_ALL={R_LOG}\nALL_DIFF={R_NEW}\n"),
+    );
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&[
+            "--env-name",
+            "preview",
+            "--git-branch",
+            "feature",
+            "--prune",
+            "--yes",
+            "--no-gitignore",
+        ]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_contains("x BRANCH_GONE");
+    del.assert();
+    for m in &never {
+        m.assert();
+    }
+}
+
+#[test]
+fn git_branch_is_only_for_preview() {
+    let mut v = Vercel::start_for_diff();
+    let writes = v.no_writes();
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"));
+    for env in ["development", "production", "staging"] {
+        let out = run(
+            &p,
+            &v.url(),
+            &push_args(&["--env-name", env, "--git-branch", "feature", "--yes"]),
+        );
+        out.assert_code(2);
+        quiet_push(&out);
+        out.assert_contains("--git-branch only applies to --env-name preview");
+    }
+    // Also on the default environment, and for diff and pull.
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--git-branch", "feature", "--yes"]),
+    );
+    out.assert_code(2);
+    let out = run(&p, &v.url(), &diff_args(&["--git-branch", "feature"]));
+    out.assert_code(2);
+    let out = run(
+        &p,
+        &v.url(),
+        &pull_args(&["--git-branch", "feature", "--yes"]),
+    );
+    out.assert_code(2);
+    for m in &writes {
+        m.assert();
+    }
+}
+
+#[test]
+fn without_git_branch_branch_scoped_preview_variables_are_skipped_and_the_warning_says_how() {
+    let v = branch_remote();
+    let p = Project::new().file(".env.preview", &format!("ONLY_ALL={R_LOG}\n"));
+    let mut args = diff_args(&["--env-name", "preview"]);
+    args.extend(["--format", "json"]);
+    let out = run(&p, &v.url(), &args);
+    quiet(&out);
+    assert!(
+        out.stderr
+            .contains("use --git-branch <branch> with --env-name preview"),
+        "{}",
+        out.stderr
+    );
 }

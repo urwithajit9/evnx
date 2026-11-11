@@ -50,7 +50,7 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
     }
 
     let (sel, listing) = session.list()?;
-    let remote = session.read(&sel.entries, |_| true)?;
+    let remote = session.read(&sel, |_| true)?;
     session.warn(&sel, &listing);
     let changes = plan::pull_plan(&file.vars, remote);
 

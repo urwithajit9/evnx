@@ -118,6 +118,8 @@ pub struct RemoteVar {
     pub git_branch: Option<String>,
     /// `updatedAt` exactly as sent (a number of milliseconds), for the state file.
     pub updated_at: Value,
+    /// Custom environments this entry applies to (`customEnvironmentIds`).
+    pub custom_environment_ids: Vec<String>,
 }
 
 /// What a list call returned, all pages.
@@ -150,6 +152,8 @@ struct RawEnv {
     git_branch: Option<String>,
     #[serde(default, rename = "updatedAt")]
     updated_at: Option<Value>,
+    #[serde(default, rename = "customEnvironmentIds")]
+    custom_environment_ids: Option<Vec<String>>,
 }
 
 impl RawEnv {
@@ -173,6 +177,7 @@ impl RawEnv {
             },
             git_branch: self.git_branch.filter(|b| !b.is_empty()),
             updated_at: self.updated_at.unwrap_or(Value::Null),
+            custom_environment_ids: self.custom_environment_ids.unwrap_or_default(),
         }
     }
 }
@@ -370,12 +375,21 @@ impl Api {
         let body: Vec<Value> = items
             .iter()
             .map(|i| {
-                serde_json::json!({
+                let mut v = serde_json::json!({
                     "key": i.key,
                     "value": i.value.expose(),
                     "type": i.type_,
-                    "target": i.target,
-                })
+                });
+                if !i.target.is_empty() {
+                    v["target"] = serde_json::json!(i.target);
+                }
+                if !i.custom_environment_ids.is_empty() {
+                    v["customEnvironmentIds"] = serde_json::json!(i.custom_environment_ids);
+                }
+                if let Some(b) = &i.git_branch {
+                    v["gitBranch"] = serde_json::json!(b);
+                }
+                v
             })
             .collect();
         let text = self.request(
@@ -420,6 +434,70 @@ impl Api {
         self.patch(project, id, serde_json::json!({ "target": target }))
     }
 
+    /// `PATCH /v9/projects/{id}/env/{envId}` with a new custom-environment list.
+    pub fn patch_custom_environments(
+        &self,
+        project: &str,
+        id: &str,
+        ids: &[String],
+    ) -> Result<(), PlatformError> {
+        self.patch(
+            project,
+            id,
+            serde_json::json!({ "customEnvironmentIds": ids }),
+        )
+    }
+
+    /// `DELETE /v9/projects/{id}/env/{envId}`: by id, never by key.
+    ///
+    /// The answer is the deleted entry, ciphertext included (design §2a #9):
+    /// it is dropped unread, and an error from it names Vercel's code only.
+    pub fn delete_env(&self, project: &str, id: &str) -> Result<(), PlatformError> {
+        if !is_plain_id(id) {
+            return Err(PlatformError::Malformed(
+                "a variable id is not an id".into(),
+            ));
+        }
+        let url = self.url(&["v9", "projects", project, "env", id], &[]);
+        self.request(Method::DELETE, url, None, "a variable", true)
+            .map(drop)
+    }
+
+    /// The project's custom environments, `GET /v9/projects/{id}/custom-environments`.
+    ///
+    /// ⚠️ Not live-tested (design §2a has no row for it): written against the
+    /// documented shape, `{ "environments": [ { "id", "slug", … } ] }`. A bare
+    /// array is accepted too, and an entry without a slug or id is skipped.
+    pub fn list_custom_environments(&self, project: &str) -> Result<Vec<CustomEnvironment>> {
+        let url = self.url(&["v9", "projects", project, "custom-environments"], &[]);
+        let body = self.get_json(
+            url,
+            &format!("the custom environments of project {project}"),
+        )?;
+        let list = body
+            .get("environments")
+            .or(Some(&body))
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                PlatformError::Malformed(
+                    "the custom environments have no `environments` array".into(),
+                )
+            })?;
+        let clean =
+            |s: &str| -> String { s.chars().filter(|c| !c.is_control()).take(128).collect() };
+        Ok(list
+            .iter()
+            .filter_map(|e| {
+                let id = e.get("id")?.as_str()?;
+                let slug = e.get("slug")?.as_str()?;
+                (!id.is_empty() && !slug.is_empty()).then(|| CustomEnvironment {
+                    id: clean(id),
+                    slug: clean(slug),
+                })
+            })
+            .collect())
+    }
+
     fn patch(&self, project: &str, id: &str, body: Value) -> Result<(), PlatformError> {
         if !is_plain_id(id) {
             return Err(PlatformError::Malformed(
@@ -457,6 +535,15 @@ impl Api {
     }
 }
 
+/// A custom environment of the project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CustomEnvironment {
+    /// Vercel's id (`env_…`).
+    pub id: String,
+    /// The slug `--env-name` takes.
+    pub slug: String,
+}
+
 /// One entry to create.
 pub struct NewEnv {
     /// The variable's name.
@@ -465,8 +552,13 @@ pub struct NewEnv {
     pub value: SecretString,
     /// Vercel's `type`: see [`Kind::vercel_type`].
     pub type_: String,
-    /// The environments it applies to.
+    /// The built-in environments it applies to. Empty for a custom environment:
+    /// the body then has no `target`.
     pub target: Vec<String>,
+    /// The custom environments it applies to (`customEnvironmentIds`).
+    pub custom_environment_ids: Vec<String>,
+    /// A preview variable for one branch (`gitBranch`).
+    pub git_branch: Option<String>,
 }
 
 /// An entry the create call reported in `failed[]`.

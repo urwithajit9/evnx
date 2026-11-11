@@ -202,13 +202,19 @@ mod tests {
             target: vec!["development".into(), "preview".into()],
             git_branch: None,
             updated_at: Value::from(at),
+            custom_environment_ids: vec![],
         }
     }
 
     #[test]
     fn the_file_has_the_agreed_shape_and_no_values() {
-        let text = render(None, &project("prj_1"), "development", &[var("env_1", 1_700_000_000_000)])
-            .unwrap();
+        let text = render(
+            None,
+            &project("prj_1"),
+            "development",
+            &[var("env_1", 1_700_000_000_000)],
+        )
+        .unwrap();
         let v: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(v["version"], 2);
         let r = &v["records"][0];
@@ -228,7 +234,10 @@ mod tests {
     fn each_environment_keeps_its_own_record() {
         let dir = tempfile::tempdir().unwrap();
         let p = project("prj_1");
-        assert!(matches!(load(dir.path(), &p, "development"), Loaded::Missing));
+        assert!(matches!(
+            load(dir.path(), &p, "development"),
+            Loaded::Missing
+        ));
         write(dir.path(), &p, "development", &[var("env_1", 7)]).unwrap();
         write(dir.path(), &p, "production", &[var("env_2", 9)]).unwrap();
         // Development's record survived production's write.
@@ -249,8 +258,12 @@ mod tests {
         let v: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(v["records"].as_array().unwrap().len(), 2);
         // No record for preview; another project has none at all.
-        assert!(matches!(load(dir.path(), &p, "preview"), Loaded::Unusable(w) if w.contains("no record for preview")));
-        assert!(matches!(load(dir.path(), &project("prj_2"), "development"), Loaded::Unusable(w) if w.contains("another project")));
+        assert!(
+            matches!(load(dir.path(), &p, "preview"), Loaded::Unusable(w) if w.contains("no record for preview"))
+        );
+        assert!(
+            matches!(load(dir.path(), &project("prj_2"), "development"), Loaded::Unusable(w) if w.contains("another project"))
+        );
     }
 
     #[test]
@@ -270,10 +283,12 @@ mod tests {
         }
         write(dir.path(), &p, "development", &[var("env_1", 7)]).unwrap();
         let v: Value =
-            serde_json::from_str(&std::fs::read_to_string(dir.path().join(PATH)).unwrap())
-                .unwrap();
+            serde_json::from_str(&std::fs::read_to_string(dir.path().join(PATH)).unwrap()).unwrap();
         assert_eq!(v["version"], 2);
         assert_eq!(v["records"].as_array().unwrap().len(), 2);
-        assert!(matches!(load(dir.path(), &p, "production"), Loaded::Usable(_)));
+        assert!(matches!(
+            load(dir.path(), &p, "production"),
+            Loaded::Usable(_)
+        ));
     }
 }

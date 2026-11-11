@@ -54,6 +54,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exit code is **14** (no state file: a warning, and it goes ahead). A push that
   wrote anything refreshes the state file. `--format json` prints one document.
   Response bodies are never printed (create and delete answers echo ciphertext).
+- **`evnx platform push --prune`, custom environments and `--git-branch`** (N14-10,
+  phase 3). `--prune` lists the variables only Vercel has in this environment as
+  deletions and deletes them by id after the confirmation (`--yes` is required
+  without a terminal, checked before anything is sent; `--dry-run` sends nothing).
+  A remote-only variable shared with other environments is not deleted: this
+  environment is taken out of its targets instead (shown as `detach`). A key
+  that is in the local file with an empty value (`KEY=`) is never pruned, and the
+  delete answer, which echoes ciphertext, is never printed. `--env-name <slug>`
+  now accepts a **custom environment**: the slug is looked up with
+  `GET /v9/projects/<id>/custom-environments`, its variables are the entries whose
+  `customEnvironmentIds` include it, a new one is created with
+  `customEnvironmentIds` and no `target`, and the local file is `.env.<slug>` else
+  `.env`. `--git-branch <branch>` (only with `--env-name preview`, else exit 2)
+  selects that branch's preview entries, falls back to a key's all-branches entry
+  for reading (labelled in the plan, never changed or deleted by the run; a
+  differing value creates a branch entry beside it), and creates with `gitBranch`
+  set. `diff` and `pull` take the same two flags. The state file keeps a separate
+  record for a branch run (`preview@<branch>`) and for a custom environment.
 - **`SSL_CERT_FILE` and `SSL_CERT_DIR` add trusted root certificates**, so evnx
   works behind TLS-inspecting corporate proxies (RM-68). The bundled roots stay;
   the extras are added to them. `SSL_CERT_FILE` is a PEM bundle; `SSL_CERT_DIR`
