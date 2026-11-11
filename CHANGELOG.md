@@ -241,6 +241,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.env` shows its production warning once: the question when it asks, the `!`
   line only with `--yes`. `auth status` and `cloud status` print
   `client    evnx <version>`.
+- **`@evnx/cli` works where install scripts do not run** (R6). pnpm 10+ and bun
+  skip `postinstall`, so the placeholder `bin/evnx` (exit 1) was never replaced
+  by `install.js` and `evnx` was broken there. `bin/evnx` is now a Node launcher
+  that resolves `@evnx/evnx-<platform>-<arch>/package.json`, runs the binary next
+  to it with the terminal attached, and forwards the exit code and any signal; a
+  missing platform package gets a clear error naming `--omit=optional`.
+  `install.js` and `postinstall` are gone. The global-install warning that
+  another `evnx` comes first on `PATH` (RM-42) lived in `install.js` and goes
+  with it; `evnx update --list` still lists every copy.
 
 ## [0.13.0] - 2026-11-08
 

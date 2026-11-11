@@ -316,8 +316,8 @@ jobs:
             chmod +x "$pkg_dir/bin/$binary" || true
 
             # ⛔ No "bin" here (I-253). The wrapper @evnx/cli owns the `evnx`
-            # command; its install.js finds this package's bin/<binary> by
-            # path. With "bin" in both, a project install and npx link
+            # command; bin/evnx finds this package's bin/<binary> by
+            # path (require.resolve of its package.json). With "bin" in both, a project install and npx link
             # neither (node_modules/.bin stays empty, `npx @evnx/cli` says
             # "evnx: not found"); only `npm install -g` worked.
             cat > "$pkg_dir/package.json" << EOF
@@ -344,105 +344,67 @@ jobs:
         run: |
           mkdir -p npm-publish/evnx/bin
 
-          cat > npm-publish/evnx/install.js << 'INSTALLEOF'
+          cat > npm-publish/evnx/bin/evnx << 'LAUNCHEREOF'
           #!/usr/bin/env node
+          // R6: the launcher is the command. Nothing runs at install time, so it works
+          // under pnpm 10+ and bun, which skip postinstall scripts. It finds the binary
+          // next to the platform package's package.json (esbuild and biome do the same).
           "use strict";
 
-          const fs   = require("fs");
+          const fs = require("fs");
           const path = require("path");
+          const { spawnSync } = require("child_process");
+          const os = require("os");
 
-          const PLATFORM_PACKAGES = {
-            "linux-x64":    "@evnx/evnx-linux-x64",
-            "linux-arm64":  "@evnx/evnx-linux-arm64",
-            "darwin-x64":   "@evnx/evnx-darwin-x64",
-            "darwin-arm64": "@evnx/evnx-darwin-arm64",
-            "win32-x64":    "@evnx/evnx-win32-x64",
-          };
+          const SUPPORTED = ["linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64", "win32-x64"];
+          const platform = process.platform + "-" + process.arch;
+          const pkg = "@evnx/evnx-" + platform;
 
-          function getBinaryPath() {
-            const key = `${process.platform}-${process.arch}`;
-            const pkg = PLATFORM_PACKAGES[key];
-
-            if (!pkg) {
-              throw new Error(
-                `evnx: Unsupported platform: ${process.platform}/${process.arch}\n` +
-                `Supported: ${Object.keys(PLATFORM_PACKAGES).join(", ")}\n` +
-                `Install manually: https://github.com/urwithajit9/evnx/releases`
-              );
-            }
-
-            let pkgJsonPath;
-            try {
-              pkgJsonPath = require.resolve(`${pkg}/package.json`);
-            } catch (e) {
-              throw new Error(
-                `evnx: Binary package ${pkg} not installed.\n` +
-                `This usually means your platform wasn't detected correctly at install time.\n` +
-                `Try: npm install ${pkg}\n` +
-                `Or install manually: https://github.com/urwithajit9/evnx/releases`
-              );
-            }
-
-            const pkgDir  = path.dirname(pkgJsonPath);
-            const binName = process.platform === "win32" ? "evnx.exe" : "evnx";
-            const binPath = path.join(pkgDir, "bin", binName);
-
-            if (!fs.existsSync(binPath)) {
-              throw new Error(`evnx: Binary not found at expected path: ${binPath}`);
-            }
-
-            return binPath;
+          function fail(message) {
+            process.stderr.write("evnx: " + message + "\n");
+            process.exit(1);
           }
 
-          // RM-42: an older evnx earlier on PATH runs instead of this one, and
-          // nothing says so. Global installs only; never fails the install.
-          function warnIfShadowed() {
-            try {
-              if (process.env.npm_config_global !== "true") return;
-              const prefix = process.env.npm_config_prefix;
-              if (!prefix) return;
-              const ours = process.platform === "win32" ? prefix : path.join(prefix, "bin");
-              const names = process.platform === "win32" ? ["evnx.exe", "evnx.cmd"] : ["evnx"];
-              for (const dir of (process.env.PATH || "").split(path.delimiter)) {
-                if (!dir) continue;
-                if (path.resolve(dir) === path.resolve(ours)) return;
-                for (const n of names) {
-                  const p = path.join(dir, n);
-                  if (fs.existsSync(p)) {
-                    process.stderr.write(
-                      `\nWARNING: another evnx comes first on your PATH: ${p}\n` +
-                      `Typing \`evnx\` runs that one, not this install.\n` +
-                      `List every copy: ${path.join(ours, names[names.length - 1])} update --list\n\n`
-                    );
-                    return;
-                  }
-                }
-              }
-            } catch (_) { /* a hint, never a failure */ }
+          if (!SUPPORTED.includes(platform)) {
+            fail(
+              "unsupported platform " + platform + ". Supported: " + SUPPORTED.join(", ") + ".\n" +
+              "Install a release binary instead: https://github.com/urwithajit9/evnx/releases"
+            );
           }
 
+          let pkgJson;
           try {
-            const binaryPath = getBinaryPath();
-            const binDir     = path.join(__dirname, "bin");
-            fs.mkdirSync(binDir, { recursive: true });
-
-            if (process.platform === "win32") {
-              const shim = `@echo off\r\n"${binaryPath}" %*\r\n`;
-              fs.writeFileSync(path.join(binDir, "evnx.cmd"), shim);
-            } else {
-              const shim     = `#!/bin/sh\nexec "${binaryPath}" "$@"\n`;
-              const shimPath = path.join(binDir, "evnx");
-              fs.writeFileSync(shimPath, shim);
-              fs.chmodSync(shimPath, 0o755);
-            }
-
-            console.log(`evnx installed for ${process.platform}/${process.arch}`);
-            warnIfShadowed();
-          } catch (err) {
-            process.stderr.write(`\nWARNING: ${err.message}\n\n`);
-            process.exit(0);
+            pkgJson = require.resolve(pkg + "/package.json");
+          } catch (_) {
+            fail(
+              "the binary package " + pkg + " is not installed.\n" +
+              "It is an optional dependency of @evnx/cli; it is missing when the install ran with\n" +
+              "--omit=optional / --no-optional, or copied node_modules between platforms.\n" +
+              "Reinstall with optional dependencies enabled, or run: npm install " + pkg + "\n" +
+              "Or install a release binary: https://github.com/urwithajit9/evnx/releases"
+            );
           }
-          INSTALLEOF
+
+          const bin = path.join(
+            path.dirname(pkgJson), "bin", process.platform === "win32" ? "evnx.exe" : "evnx"
+          );
+          if (!fs.existsSync(bin)) {
+            fail("the binary is missing from " + pkg + " (expected " + bin + "). Reinstall @evnx/cli.");
+          }
+
+          const result = spawnSync(bin, process.argv.slice(2), { stdio: "inherit" });
+          if (result.error) {
+            fail("could not run " + bin + ": " + result.error.message);
+          }
+          if (result.signal) {
+            // Die of the same signal, so a shell sees what it would have seen.
+            try { process.kill(process.pid, result.signal); } catch (_) { /* fall through */ }
+            const n = os.constants.signals[result.signal];
+            process.exit(n ? 128 + n : 1);
+          }
+          process.exit(result.status === null ? 1 : result.status);
+          LAUNCHEREOF
+          chmod +x npm-publish/evnx/bin/evnx
 
           cat > npm-publish/evnx/package.json << EOF
           {
@@ -463,9 +425,6 @@ jobs:
             "bin": {
               "evnx": "bin/evnx"
             },
-            "scripts": {
-              "postinstall": "node install.js"
-            },
             "optionalDependencies": {
               "@evnx/evnx-linux-x64":    "$VERSION",
               "@evnx/evnx-linux-arm64":  "$VERSION",
@@ -478,16 +437,10 @@ jobs:
             },
             "files": [
               "bin/",
-              "install.js",
               "README.md"
             ]
           }
           EOF
-
-          # Placeholder bin/evnx — install.js replaces this at postinstall time
-          printf '#!/bin/sh\necho "evnx: run npm install to complete setup" >&2\nexit 1\n' \
-            > npm-publish/evnx/bin/evnx
-          chmod +x npm-publish/evnx/bin/evnx
 
           echo "Wrapper package ready:"
           find npm-publish/evnx -type f | sort
