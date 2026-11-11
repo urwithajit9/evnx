@@ -394,6 +394,7 @@ pub fn push(
         )
         .map_err(|e| push_error(e, current))?;
 
+    super::highwater::note(&vault_ref.id, pushed.version_num);
     crate::say!(
         "  {} pushed {} to {} as version {}",
         "✓".green(),
@@ -669,6 +670,8 @@ pub(crate) fn fetch_blob(
     }
     let mut nonce = [0u8; NONCE_LEN];
     nonce.copy_from_slice(nonce_bytes);
+    // RM-89: the server served this version, so it exists.
+    super::highwater::note(&vault_ref.id, version);
 
     Ok(evnx_crypto::EncryptedBlob {
         nonce,
@@ -914,8 +917,16 @@ pub(crate) fn current_version(client: &Client, vault_ref: &VaultRef) -> Result<i
         "versions",
         "latest",
     ])?) {
-        Ok(v) => Ok(v.version_num),
-        Err(ApiError::NotFound { .. }) => Ok(0),
+        Ok(v) => {
+            super::highwater::observe(&vault_ref.id, &vault_ref.label(), v.version_num);
+            Ok(v.version_num)
+        }
+        Err(ApiError::NotFound { .. }) => {
+            // RM-89: "no versions" after this machine saw one is the same
+            // regression, only starker.
+            super::highwater::observe(&vault_ref.id, &vault_ref.label(), 0);
+            Ok(0)
+        }
         Err(e) => Err(anyhow::Error::from(e)),
     }
 }

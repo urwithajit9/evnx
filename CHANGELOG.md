@@ -204,6 +204,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   announced without the value; a missing or empty file is an error. Changing a
   password (`rotate-master-password`) and `login` still always ask. Tests cover
   each source in order.
+- **`cloud` warns when a vault's "latest" goes backwards** (RM-89, a client-only
+  slice of P6). The CLI remembers the highest version of each vault it has seen
+  (pushed, fetched, or reported as latest) in `high-water.json` in the config
+  directory: a vault id and a number, no name, key, value or hash. When the
+  server later reports a lower latest (a version removed, a rollback, a restored
+  backup), `push`, `pull`, `run`, `diff` and `export` print a warning on stderr
+  naming both numbers and `evnx cloud history`. It is a hint and never stops
+  the command; it is per machine, and `vault delete` forgets the vault.
 
 ## [0.13.0] - 2026-11-08
 

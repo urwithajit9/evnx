@@ -1110,6 +1110,63 @@ fn cloud_pw_the_master_password_can_come_from_a_file() {
     assert!(!p.path().join(".env").exists());
 }
 
+/// RM-89: the highest version this machine has seen is remembered, per vault
+/// and without values, and a server whose "latest" is lower than that is
+/// named on stderr. The command still runs: it is a hint, not a guard.
+#[test]
+fn rm89_a_latest_lower_than_the_last_seen_version_warns() {
+    let a = account(RIGHT);
+    let mut s = pull_server(&a);
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions/latest").as_str(),
+    )
+    .with_status(200)
+    .with_body(r#"{"version_num":1,"pushed_at":"2026-10-24T09:00:00Z"}"#)
+    .create();
+    let p = Project::new();
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &s.url());
+    let url = s.url();
+    let cfg_s = cfg.to_str().unwrap().to_string();
+    let latest = || {
+        support::run_with(
+            p.path(),
+            &["cloud", "pull", "--vault", VAULT_ID, "--file", "-"],
+            &[
+                ("EVNX_SERVER", url.as_str()),
+                ("EVNX_CONFIG_DIR", cfg_s.as_str()),
+                ("EVNX_MASTER_PASSWORD", RIGHT),
+            ],
+            None,
+        )
+    };
+    let marks = cfg.join("high-water.json");
+    let read_marks = || -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(&marks).unwrap()).unwrap()
+    };
+
+    // First sight of the vault: nothing to compare, and the mark is taken.
+    let out = latest();
+    out.assert_code(0);
+    assert!(!out.stderr.contains("already seen"), "{}", out.stderr);
+    assert_eq!(read_marks(), serde_json::json!({ VAULT_ID: 1 }));
+
+    // This machine has since seen version 7 (a push from here, say).
+    std::fs::write(&marks, format!(r#"{{"{}":7}}"#, VAULT_ID.to_uppercase())).unwrap();
+    let out = latest();
+    out.assert_code(0);
+    assert!(
+        out.stderr
+            .contains("is at version 1, but this machine has already seen version 7"),
+        "{}",
+        out.stderr
+    );
+    // The mark is not lowered by the server's say-so, and holds no value.
+    assert_eq!(read_marks()[VAULT_ID.to_uppercase()], 7, "left as written");
+    assert!(!std::fs::read_to_string(&marks).unwrap().contains("A=1"));
+}
+
 /// RM-34 (D6): declining pull's overwrite question exits 4, as `restore`
 /// does, says the file was not changed, and leaves it alone.
 #[cfg(unix)]

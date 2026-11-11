@@ -360,6 +360,7 @@ pub fn delete(
     }
 
     client.delete(&api_path(&["vaults", &vault.id.to_string()])?)?;
+    super::highwater::forget(&vault.id.to_string());
 
     crate::say!(
         "  {} deleted {}/{}",

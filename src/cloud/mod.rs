@@ -51,6 +51,7 @@ pub mod config;
 pub mod creds;
 pub mod device;
 pub mod export;
+pub mod highwater;
 pub(crate) mod merge;
 pub mod org;
 pub(crate) mod role;
