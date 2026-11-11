@@ -126,6 +126,13 @@ pub fn scan_text(text: &str, ctx: &Context) -> Vec<Found> {
 fn scan_lines(text: &str, ctx: &Context) -> Vec<Found> {
     let mut out = Vec::new();
 
+    // SCAN-NAMES: a Dockerfile, shell script or Python module also gets its
+    // assignments judged by name, as a `.env` line is.
+    let mut assignments = super::assign::Shape::of(ctx.path, text.lines().next().unwrap_or(""))
+        .map(super::assign::Assignments::new);
+    // SCAN-FP (a, b): the inside of a PEM block is one value, not many.
+    let mut block = Block::default();
+
     for (line_num, line) in text.lines().enumerate() {
         let line_num = line_num + 1;
 
@@ -157,10 +164,31 @@ fn scan_lines(text: &str, ctx: &Context) -> Vec<Found> {
         // — and so arrives by this path alone.
         detections.extend(ctx.registry.scan_line(line, &location));
 
+        // ...and each `NAME = literal`, by name and value. Detections about
+        // the same value are one finding below, so a key the value rules
+        // already found is not reported twice.
+        let named = assignments
+            .as_mut()
+            .map(|a| a.line(line))
+            .unwrap_or_default();
+        for (key, value) in &named {
+            detections.extend(ctx.registry.scan_kv(key, value, &location));
+        }
+
+        block.line(line, &mut detections);
+
         for detection in one_finding_per_value(detections) {
+            // Named only where the name is why it was reported; a value rule's
+            // finding reads as it always did.
+            let by_name = detection.rule_id == super::detector::SENSITIVE_KEY_ID
+                || detection.rule_id == super::detector::DECLARED_SECRET_ID;
+            let variable = named
+                .iter()
+                .find(|(_, v)| by_name && same_value(v, &detection.matched_value))
+                .map(|(k, _)| k.clone());
             out.push(Found {
                 line: line_num,
-                variable: None,
+                variable,
                 detection,
             });
         }
@@ -399,6 +427,9 @@ fn scan_structured(text: &str, format: Format, ctx: &Context) -> Vec<Found> {
         if leaf.key == "regex" {
             continue;
         }
+        if is_reference_leaf(leaf) {
+            continue;
+        }
         let location = format!("{}:{} ({})", ctx.path, leaf.line, leaf.path);
         // A sentence or a script is not judged by entropy as a whole:
         // `heuristic::looks_like_key_material` refuses whitespace (C4).
@@ -453,6 +484,138 @@ fn scan_structured(text: &str, format: Format, ctx: &Context) -> Vec<Found> {
         .collect();
     out.sort_by_key(|f| f.line);
     out
+}
+
+/// A leaf that points at a secret instead of holding one (SCAN-FP e).
+///
+/// * A template: the whole value is one `{{ .Values.apiToken }}` (Helm, Go
+///   templates) or `${{ secrets.TOKEN }}` (GitHub Actions) expression. It is
+///   filled in later, from somewhere else.
+/// * A Kubernetes secret reference: anything under `secretKeyRef` or
+///   `secretRef` (`key: password`, `name: app-secrets`) names a Secret and
+///   the key in it.
+/// * A `secrets:` list item that is just a secret's name (Docker Compose
+///   `secrets: [db_password]`): lowercase, and either one word or words joined
+///   by `_`, `-` or `.`. A value with upper case or digits and no separator
+///   (random-looking) is still judged.
+fn is_reference_leaf(leaf: &Leaf) -> bool {
+    let v = leaf.value.trim();
+    if (v.starts_with("{{") || v.starts_with("${{")) && v.ends_with("}}") {
+        return true;
+    }
+    let under = |name: &str| {
+        leaf.path
+            .split('.')
+            .map(|seg| seg.split('[').next().unwrap_or(seg))
+            .any(|seg| seg.eq_ignore_ascii_case(name))
+    };
+    if under("secretKeyRef") || under("secretRef") {
+        return true;
+    }
+    let is_list_item = leaf.path.ends_with(']');
+    let lower_name = !v.is_empty()
+        && v.bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'-' | b'.')
+        });
+    let separated = v.contains(['_', '-', '.']);
+    let alphabetic = v.bytes().all(|b| b.is_ascii_lowercase());
+    leaf.key.eq_ignore_ascii_case("secrets")
+        && is_list_item
+        && lower_name
+        && (separated || alphabetic)
+}
+
+/// PEM and public-key text that the entropy fallback must not read as many
+/// secrets (SCAN-FP a, b).
+///
+/// * Inside a `-----BEGIN … PRIVATE KEY-----` block the private-key rule has
+///   already reported the key, once, on its first line. The base64 body lines
+///   are the same secret and are not reported again.
+/// * A `-----BEGIN PUBLIC KEY-----`, `RSA PUBLIC KEY`, `CERTIFICATE` (and
+///   request, CRL) block is public material. Its body is not reported at all.
+/// * The base64 blob in an `ssh-rsa` / `ssh-ed25519` / `ecdsa-sha2-…` public
+///   key line is the key's public half.
+///
+/// Only `high-entropy-string` is dropped, and only for a base64 line inside a
+/// block (so a different secret pasted after a stray BEGIN is still found).
+/// A private block is entered only when a private-key rule did report its
+/// first line, so disabling that rule does not hide the body.
+#[derive(Default)]
+struct Block {
+    inside: Option<BlockKind>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BlockKind {
+    Private,
+    Public,
+}
+
+const ENTROPY_ID: &str = "high-entropy-string";
+
+impl Block {
+    fn line(&mut self, line: &str, detections: &mut Vec<Detection>) {
+        let t = line.trim();
+        if self.inside.is_some() {
+            if t.contains("-----END") {
+                self.inside = None;
+            } else if is_base64_body(t) {
+                detections.retain(|d| d.rule_id != ENTROPY_ID);
+            }
+            return;
+        }
+        if let Some(label) = t
+            .strip_prefix("-----BEGIN ")
+            .and_then(|r| r.split("-----").next())
+        {
+            if t.contains("-----END") {
+                return;
+            }
+            if label.ends_with("PRIVATE KEY") || label.ends_with("PRIVATE KEY BLOCK") {
+                let reported = detections
+                    .iter()
+                    .any(|d| matches!(d.rule_id.as_str(), "private-key" | "openssh-private-key"));
+                if reported {
+                    self.inside = Some(BlockKind::Private);
+                }
+            } else if label.ends_with("PUBLIC KEY")
+                || label.ends_with("PUBLIC KEY BLOCK")
+                || label.ends_with("CERTIFICATE")
+                || label.ends_with("CERTIFICATE REQUEST")
+                || label == "X509 CRL"
+            {
+                self.inside = Some(BlockKind::Public);
+            }
+            return;
+        }
+        if let Some(blob) = ssh_public_blob(t) {
+            detections.retain(|d| d.rule_id != ENTROPY_ID || !same_value(blob, &d.matched_value));
+        }
+    }
+}
+
+/// A PEM body line: base64 only, no spaces.
+fn is_base64_body(t: &str) -> bool {
+    !t.is_empty()
+        && t.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
+}
+
+/// The key blob of an OpenSSH public key line, `ssh-ed25519 AAAA… comment`.
+fn ssh_public_blob(t: &str) -> Option<&str> {
+    let mut words = t.split_whitespace();
+    while let Some(w) = words.next() {
+        let is_type = matches!(w, "ssh-rsa" | "ssh-ed25519" | "ssh-dss")
+            || w.starts_with("ecdsa-sha2-")
+            || w.starts_with("sk-ssh-ed25519@")
+            || w.starts_with("sk-ecdsa-sha2-");
+        if is_type {
+            return words
+                .next()
+                .filter(|b| b.starts_with("AAAA") && is_base64_body(b));
+        }
+    }
+    None
 }
 
 /// Every string leaf of `text` read as `format`, or `None` when it does not

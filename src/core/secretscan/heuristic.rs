@@ -313,6 +313,46 @@ pub fn names_a_public_key(key: &str) -> bool {
     })
 }
 
+/// A Stripe **publishable** key, `pk_live_…` or `pk_test_…` (SCAN-FP d).
+///
+/// It ships in every page that takes a card, so `NEXT_PUBLIC_STRIPE_KEY=pk_live_…`
+/// is not a leak and the `*_KEY` name must not make it one. Only the value
+/// decides, and only this prefix: the secret `sk_live_…` under the same name
+/// still reports (by the Stripe rule, and by the F14-5 public-prefix guard).
+fn is_publishable_key(v: &str) -> bool {
+    ["pk_live_", "pk_test_"].iter().any(|p| {
+        v.strip_prefix(p)
+            .is_some_and(|rest| rest.len() >= 10 && rest.bytes().all(|b| b.is_ascii_alphanumeric()))
+    })
+}
+
+/// `CACHE_KEY=<32, 40 or 64 hex digits>`: a name that ends in `KEY` only
+/// because it is a lookup key, holding a digest (SCAN-FP c).
+///
+/// ⚠️ Deliberately narrow, so no credential name loses its finding:
+///
+/// * every word before `KEY` must be one of `CACHE`, `ETAG`, `IDEMPOTENCY`
+///   (a cache key, an entity tag, a request-dedup key: identifiers). Any
+///   other word keeps the name check: `CACHE_API_KEY`, `CACHE_SECRET_KEY`,
+///   `API_KEY` and `SIGNING_KEY` are untouched;
+/// * the value must be a plain hex digest of an MD5 (32), SHA-1 (40) or
+///   SHA-256 (64) length. Any other value under `CACHE_KEY` still reports.
+///
+/// `HASH_KEY` and `CHECKSUM_KEY` are left out on purpose: "hash key" is as
+/// often an HMAC key, and a hex value there can be the secret itself.
+fn names_a_cache_digest(key: &str, v: &str) -> bool {
+    let upper = key.to_ascii_uppercase();
+    let mut words: Vec<&str> = upper.split('_').collect();
+    if words.pop() != Some("KEY") || words.is_empty() {
+        return false;
+    }
+    words
+        .iter()
+        .all(|w| matches!(*w, "CACHE" | "ETAG" | "IDEMPOTENCY"))
+        && matches!(v.len(), 32 | 40 | 64)
+        && v.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 pub fn name_suggests_secret(key: &str, value: &str) -> bool {
     if key.is_empty() || !is_sensitive_key(key) {
         return false;
@@ -340,6 +380,15 @@ pub fn name_suggests_secret(key: &str, value: &str) -> bool {
     }
 
     let v = value.trim();
+
+    // SCAN-FP (d): public by design, whatever the name says.
+    if is_publishable_key(v) {
+        return false;
+    }
+    // SCAN-FP (c): an identifier named like a key, not a credential.
+    if names_a_cache_digest(key, v) {
+        return false;
+    }
 
     //   len >= 8   `AUTH_ENABLED=true`, `QUOTA_FREE_TOKENS=2` — the name
     //              matches and the value is a flag or a count.
@@ -635,6 +684,8 @@ pub fn detect_heuristic(value: &str, key: &str) -> Option<(String, Confidence, O
     if value.chars().count() >= ENTROPY_MIN_LEN
         && looks_like_key_material(value)
         && !names_a_public_key(key)
+        // A Stripe publishable key is public by design (SCAN-FP d).
+        && !is_publishable_key(value.trim())
     {
         let entropy = calculate_entropy(value);
         if entropy > ENTROPY_MIN {

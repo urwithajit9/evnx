@@ -47,6 +47,7 @@
     "OPENAI_API_KEY": "openai-api-key",
     "PRIVATE_DB_KEY": "heuristic",
     "PUBLIC_API_URL": "public",
+    "RABBITMQ_DEFAULT_PASS": "heuristic",
     "RABBITMQ_URL": "connection-string-credentials",
     "RAILWAY_TOKEN": "heuristic",
     "RAZORPAY_KEY_SECRET": "heuristic",

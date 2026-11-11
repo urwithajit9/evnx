@@ -168,6 +168,46 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`scan -v` says names are checked in Dockerfiles, Containerfiles, shell
+  scripts and Python modules.** They print `read as text: value patterns, and
+  names in assignments`; other text files keep `value patterns only, names not
+  checked`. The JSON `read_as` stays `text`.
+- **`scan`: false positives found by the RM-70 corpus** (SCAN-FP).
+  - A PEM or OpenSSH private key is one `private-key` finding; its base64 body
+    lines are no longer also `high-entropy-string`.
+  - The body of a `PUBLIC KEY`, `RSA PUBLIC KEY` or `CERTIFICATE` block, and
+    the blob of an `ssh-rsa` or `ssh-ed25519` public key line, are not
+    reported: public material is not a secret.
+  - `CACHE_KEY`, `ETAG_KEY` and `IDEMPOTENCY_KEY` holding a 32, 40 or 64 digit
+    hex digest are identifiers, not credentials. Any other word in the name
+    (`CACHE_API_KEY`, `API_KEY`, `HASH_KEY`) or any other value keeps the check.
+  - A Stripe publishable key (`pk_live_`, `pk_test_`) is public by design and
+    is not reported by name or by entropy. A secret key under `NEXT_PUBLIC_`
+    is still reported.
+  - YAML, JSON and TOML references are not values: a whole-value template
+    (`{{ .Values.apiToken }}`, `${{ secrets.TOKEN }}`), anything under a
+    Kubernetes `secretKeyRef` or `secretRef`, and a lowercase secret name in a
+    `secrets:` list (`- db_password`).
+  - Names ending in `_PASS` (`RABBITMQ_DEFAULT_PASS`, `DB_PASS`) are password
+    names, for `scan` and for masking. `BYPASS_CACHE` and `COMPASS` are not.
+- **`scan`: names are checked in Dockerfiles, shell scripts and Python
+  modules** (SCAN-NAMES). A file read as text was judged by value alone, so
+  `ENV DB_PASSWORD=<random>` (also `ARG`, the `ENV KEY value` form and
+  continuation lines), `export DB_PASSWORD="<random>"` or `DB_PASSWORD=<random>`
+  in a `.sh`, `.bash`, `.zsh` or `#!`-script, and `DB_PASSWORD = "<random>"` in
+  a `.py` file scanned clean. Those assignments now get the name check, the
+  placeholder, empty-value and reference filters a `.env` line gets, and are
+  reported as `sensitive-config-key` on the right line. Never flagged: `ARG X`
+  with no value, `$VAR`, `${VAR}`, `$(cmd)`, backticks, `os.environ[...]`,
+  `os.getenv(...)`, `settings.X`, f-strings, empty strings and placeholders.
+  Commented-out assignments are left to the value rules.
+- **`scan`: the `github-token` rule matches stateless GitHub App installation
+  tokens** (SCAN-GHS). Since GitHub finished its rollout on 2026-10-02, `ghs_`
+  tokens, the Actions `GITHUB_TOKEN` among them, are `ghs_<appid>_<JWT>` (about
+  520 characters) and the classic 36 to 40 character shape missed them. The
+  rule now has a second branch for that form and keeps the classic one. It is
+  reported once, as `github-token`, not also as `jwt` or `high-entropy-string`;
+  a trailing `.`, `,` or `)` is not part of the match.
 - **Monorepos: paths in `.evnx.toml` are read from the folder that holds it, and
   `doctor` notices nested `.env` files** (F14-10, I-333, I-331).
   - A relative path in `.evnx.toml` means "from the folder holding this file",

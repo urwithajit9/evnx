@@ -224,6 +224,10 @@ fn rm47_each_file_says_how_it_was_read() {
     let d = project(&[
         ("v.env", "DB_PASSWORD=correct-horse-battery-staple\n"),
         ("config.txt", "DB_PASSWORD=correct-horse-battery-staple\n"),
+        ("Dockerfile", "FROM x\n"),
+        ("run.sh", "echo\n"),
+        ("app.py", "x = 1\n"),
+        ("Containerfile", "FROM x\n"),
     ]);
     let (_, _, err) = run(&d, &["scan", "-v"]);
     assert!(
@@ -234,6 +238,15 @@ fn rm47_each_file_says_how_it_was_read() {
         err.contains("config.txt (read as text: value patterns only, names not checked)"),
         "{err}"
     );
+    // Files whose assignments are checked by name say so.
+    for f in ["Dockerfile", "run.sh", "app.py", "Containerfile"] {
+        assert!(
+            err.contains(&format!(
+                "{f} (read as text: value patterns, and names in assignments)"
+            )),
+            "{f}: {err}"
+        );
+    }
 
     let (_, out, _) = run(&d, &["scan", "--format", "json"]);
     let json: serde_json::Value = serde_json::from_str(&out).unwrap();
@@ -252,7 +265,11 @@ fn rm47_each_file_says_how_it_was_read() {
     assert_eq!(
         files,
         [
+            ("./Containerfile".to_string(), "text".to_string()),
+            ("./Dockerfile".to_string(), "text".to_string()),
+            ("./app.py".to_string(), "text".to_string()),
             ("./config.txt".to_string(), "text".to_string()),
+            ("./run.sh".to_string(), "text".to_string()),
             ("./v.env".to_string(), "dotenv".to_string()),
         ],
         "{out}"

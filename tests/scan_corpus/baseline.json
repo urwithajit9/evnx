@@ -1,11 +1,11 @@
 {
   "version": 1,
   "overall": {
-    "tp": 53,
-    "fp": 12,
-    "fn": 3,
-    "precision": 0.8154,
-    "recall": 0.9464
+    "tp": 57,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0
   },
   "families": {
     "ai": {
@@ -37,11 +37,11 @@
       "recall": 1.0
     },
     "generic": {
-      "tp": 13,
-      "fp": 4,
-      "fn": 3,
-      "precision": 0.7647,
-      "recall": 0.8125
+      "tp": 16,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
     },
     "jwt": {
       "tp": 3,
@@ -52,9 +52,9 @@
     },
     "keys": {
       "tp": 4,
-      "fp": 8,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.3333,
+      "precision": 1.0,
       "recall": 1.0
     },
     "payment": {
@@ -72,7 +72,7 @@
       "recall": 1.0
     },
     "vcs": {
-      "tp": 5,
+      "tp": 6,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,
@@ -81,17 +81,17 @@
   },
   "formats": {
     "dockerfile": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5
+      "recall": 1.0
     },
     "dotenv": {
-      "tp": 27,
-      "fp": 2,
+      "tp": 28,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.931,
+      "precision": 1.0,
       "recall": 1.0
     },
     "ipynb": {
@@ -109,24 +109,24 @@
       "recall": 1.0
     },
     "shell": {
-      "tp": 5,
+      "tp": 6,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.8333
+      "recall": 1.0
     },
     "text": {
-      "tp": 4,
-      "fp": 7,
-      "fn": 1,
-      "precision": 0.3636,
-      "recall": 0.8
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
     },
     "yaml": {
       "tp": 9,
-      "fp": 3,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.75,
+      "precision": 1.0,
       "recall": 1.0
     }
   }

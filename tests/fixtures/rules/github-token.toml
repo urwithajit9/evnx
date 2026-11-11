@@ -7,9 +7,37 @@ positive = [
   ["ghp_", "r080UUTWjPBOaALo0vrQuGXc22ToCIyNaLQS"],
   ["gho_", "B8FBr6Ln5J9K3E8JX2iuWm8fEKKpvDQoclts"],
   ["ghr_", "NHrTpc74lJ65cCx0Yik84TaOh9IgFgzP83Wi"],
+  # The stateless installation token: ghs_<appid>_<JWT>, 523 characters.
+  [
+    "ghs_1234567_eyJNfiglJ5m7",
+    "yyPhcothuTUjVBIPrDKjawz4",
+    ".eyJMOuXM_Yi5b_kgNPLjjPD",
+    "U0OL29Vx6n_631Mg8ye5_IS_",
+    "i4Cz2Csv8htmYF8gMxMEYnDA",
+    "ktgOESZAdghXfaqlvEUZu_xf",
+    "xo_Ef28rLhNQZGSbh_5QwGNg",
+    "v21Q4cLSWSCctF07i8pJuHMI",
+    "2OGVIAnFRwTA57-ClKifkAeA",
+    "tOPyw5lsqDgRknb4DI4rx2g1",
+    "ZDw8fxPceYgJfL6GDYk26cIJ",
+    "Xv6ZxNu8bsq-nGW6Rj8nGTHD",
+    "n_ulvWQDaIQdnz8sWsftq3OB",
+    "FniVmZZOcxk4OxO4JeHawYKQ",
+    "u9PKLdcNR88oxIuPriV69MtF",
+    "5oBHwZfNtVj2GWI2r9Y3T1.m",
+    "flbVPgfHaSbygOddBZnEjecq",
+    "RdGjXA1j_5eG-T6ahZnP-zD9",
+    "p2olpIBrIfUY4g4-xxAzeJkL",
+    "a916quw8hxjuXCQlP-_Hd8CG",
+    "R0WZWxFalQFppIaCNKBc0TGq",
+    "q11C9CGDM2YBQNmpCFY",
+  ],
 ]
 
 near_miss = [
   ["ghx_", "kNtigGC63QM357YhphtUmKt2ZKSO5opFlpZR"],
   ["ghp_", "IgJ1e8zaIYil8FuhSZqu"],
+  # Stateless form with a two-part JWT (one dot) and with no app id.
+  ["ghs_", "1234567_", "eyJhbGciOiJSUzI1NiJ9", ".", "eyJpc3MiOiIxMjM0NTY3In0"],
+  ["ghs_", "_eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiIxMjM0NTY3In0.c2lnbmF0dXJl"],
 ]

@@ -80,6 +80,13 @@ expect = [
 ]
 
 [[case]]
+id = "pos-vcs-github-stateless"
+family = "vcs"
+format = "dotenv"
+as = ".env"
+expect = [{ line = 2, rule = "github-token" }]
+
+[[case]]
 id = "pos-vcs-gitlab-yaml"
 family = "vcs"
 format = "yaml"
