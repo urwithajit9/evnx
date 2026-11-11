@@ -561,6 +561,9 @@ evnx platform diff --to vercel --strict    # a Secret on both sides counts as a 
 evnx platform push --to vercel --dry-run   # the plan; nothing is sent
 evnx platform push --to vercel             # create and update on Vercel, after asking
 evnx platform push --to vercel --env-name production --only-new --yes   # CI: new keys only
+evnx platform push --to vercel --prune     # also delete what only Vercel has (listed first, asks first)
+evnx platform push --to vercel --env-name staging          # a custom environment, by slug
+evnx platform push --to vercel --env-name preview --git-branch feature   # one preview branch
 ```
 
 ```text
@@ -576,12 +579,22 @@ Vercel  acme/web  production        local  .env.production
 - **Project:** `--project` / `--team`, else `VERCEL_PROJECT_ID` / `VERCEL_ORG_ID`, else
   `.vercel/project.json` from `vercel link`.
 - **File:** `.env.<env-name>` when it exists, else `.env` (`--file` overrides); the run
-  prints which. `--env-name` is `production`, `preview` or `development` (the default).
+  prints which. `--env-name` is `production`, `preview` or `development` (the default), or
+  the slug of a **custom environment** of the project (`.env.<slug>`, else `.env`): its
+  variables are the entries whose `customEnvironmentIds` include it, and a new one is
+  created with `customEnvironmentIds` and no `target`. An unknown slug exits 2 and names the
+  project's custom environments.
+- **`--git-branch <branch>`** (with `--env-name preview` only; any other environment exits
+  2): a key's entry for that branch is used; a key with none falls back to its
+  all-branches preview entry, which the plan labels, is never changed by this run, and
+  gets a branch entry of its own beside it when its value must differ. New variables are
+  created with `gitBranch` set. Without the flag, branch-scoped preview variables are
+  skipped with a warning.
 - **`pull`:** Config values are written in place, keeping comments, order and formatting;
   new keys go at the end. A Secret whose key has a local value keeps it; one the file
   lacks is written as `KEY=` and listed. Keys only the local file has are kept. It shows
   the plan and asks first (`--yes` without a terminal; declining exits 4), keeps the old
-  file as `.bak`, and records `.evnx/platform/vercel.json` (ids and timestamps, never
+  file as `.bak` (one per file, replaced each time), and records `.evnx/platform/vercel.json` (ids and timestamps, never
   values). On a terminal it offers to add `.evnx/platform/` to `.gitignore`; `--gitignore`
   does it without asking, `--no-gitignore` skips it.
 - **`diff`:** a Secret on both sides shows as `= present` and is not a difference, so the
@@ -593,14 +606,23 @@ Vercel  acme/web  production        local  .env.production
   call, never an upsert (it would replace a variable's other environments). A Config whose
   value differs is updated by id. A Secret on both sides cannot be compared, so it counts
   as an update; `--only-new` skips those. A variable shared with other environments leaves
-  this one and gets its own entry. A new key's type is `migrate`'s rule (a Secret when the
+  this one and gets its own entry: the plan row says so (`split: Preview, Production keep
+  their own entry`) and the summary counts splits. A new key's type is `migrate`'s rule (a Secret when the
   key or value looks like a credential); a public prefix (`NEXT_PUBLIC_`, `VITE_`, …) is
   always Config; `--type config|secret` overrides it for new keys. Existing variables keep
-  their type; keys only Vercel has are kept (`--prune` comes later); a key with an empty
+  their type; keys only Vercel has are kept unless `--prune`; a key with an empty
   value is not pushed. If Vercel refuses some variables the rest stays applied and the exit
   code is 1, naming them.
-- **Lost updates:** `push` compares each variable it will change with
-  `.evnx/platform/vercel.json`. If Vercel changed it since your last `pull` or `push`,
+- **`--prune`:** keys only Vercel has, **in this environment**, are listed in the plan as
+  deletions (`x KEY … delete`) and deleted by id after the confirmation; the delete
+  answer is never printed. Without a terminal it needs `--yes` (exit 2 before anything is
+  sent), `--dry-run` sends nothing. A remote-only variable that other environments share
+  is not deleted: only this environment is taken out of its targets (`detach`). A key
+  that is in the local file with an empty value (`KEY=`) is not remote-only and is never
+  pruned. With `--git-branch`, only the branch's own entries are candidates.
+- **Lost updates:** `push` compares each variable it will change (or delete) with this
+  environment's record in `.evnx/platform/vercel.json`, which holds one record per
+  project, team and environment. If Vercel changed it since your last `pull` or `push`,
   nothing is written and the exit code is 14.
 - **Exit codes:** `diff` 0 no differences, 1 differences; `push` 0 done, 1 Vercel refused
   some variables, 4 declined, 14 changed on Vercel since the last pull; all: 2 could not

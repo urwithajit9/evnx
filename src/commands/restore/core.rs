@@ -355,7 +355,7 @@ pub fn existing_output(outcome: &RestoreOutcome) -> Result<Existing> {
 }
 
 /// Keep `previous` — what the output held — beside it as `<output>.bak`
-/// (`.bak.2` … when earlier copies exist), with the file's mode, before it is
+/// (replacing the previous copy), with the file's mode, before it is
 /// replaced. The helper `validate --fix` keeps its copies with (DEC-B11).
 ///
 /// # Errors

@@ -14,7 +14,6 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::api::RemoteVar;
-use super::plan::Environment;
 use super::project::ProjectRef;
 
 /// Where it lives, from the project root.
@@ -32,20 +31,23 @@ struct Entry<'a> {
 }
 
 #[derive(Serialize)]
-struct State<'a> {
+struct Record<'a> {
     project: &'a str,
     team: Option<&'a str>,
-    environment: Environment,
+    environment: &'a str,
     entries: Vec<Entry<'a>>,
 }
 
-/// The state file's text.
-pub fn render(
-    project: &ProjectRef,
-    environment: Environment,
-    entries: &[RemoteVar],
-) -> Result<String> {
-    let state = State {
+/// The file's current shape: one record per project, team and environment.
+///
+/// ⓘ Until 0.14 the file *was* a single record (`project`, `team`,
+/// `environment`, `entries` at the top level), so pulling production replaced
+/// development's and a development push could not see what changed on Vercel.
+/// That shape is still read, and upgraded by the next write.
+const VERSION: u64 = 2;
+
+fn record_of(project: &ProjectRef, environment: &str, entries: &[RemoteVar]) -> Result<Value> {
+    serde_json::to_value(Record {
         project: &project.project,
         team: project.team.as_deref(),
         environment,
@@ -59,8 +61,49 @@ pub fn render(
                 updated_at: &e.updated_at,
             })
             .collect(),
-    };
-    let mut text = serde_json::to_string_pretty(&state).context("writing the state file")?;
+    })
+    .context("writing the state file")
+}
+
+/// Does `record` belong to this project, team and environment?
+fn is_for(record: &Value, project: &ProjectRef, environment: &str) -> bool {
+    is_for_project(record, project) && record["environment"].as_str() == Some(environment)
+}
+
+fn is_for_project(record: &Value, project: &ProjectRef) -> bool {
+    record["project"].as_str() == Some(project.project.as_str())
+        && record["team"].as_str() == project.team.as_deref()
+}
+
+/// The records a parsed file holds, from either shape.
+fn records_of(file: &Value) -> Option<Vec<Value>> {
+    if let Some(list) = file["records"].as_array() {
+        return Some(list.clone());
+    }
+    // The old single-record shape.
+    file["entries"].is_array().then(|| vec![file.clone()])
+}
+
+/// The state file's text after recording `entries` for this project and
+/// environment: `existing` (the file as it is now, if any) with only that
+/// environment's record replaced.
+pub fn render(
+    existing: Option<&str>,
+    project: &ProjectRef,
+    environment: &str,
+    entries: &[RemoteVar],
+) -> Result<String> {
+    let mut records = existing
+        .and_then(|t| serde_json::from_str::<Value>(t).ok())
+        .and_then(|v| records_of(&v))
+        .unwrap_or_default();
+    let new = record_of(project, environment, entries)?;
+    match records.iter().position(|r| is_for(r, project, environment)) {
+        Some(i) => records[i] = new,
+        None => records.push(new),
+    }
+    let file = serde_json::json!({ "version": VERSION, "records": records });
+    let mut text = serde_json::to_string_pretty(&file).context("writing the state file")?;
     text.push('\n');
     Ok(text)
 }
@@ -69,14 +112,15 @@ pub fn render(
 pub fn write(
     root: &Path,
     project: &ProjectRef,
-    environment: Environment,
+    environment: &str,
     entries: &[RemoteVar],
 ) -> Result<PathBuf> {
     let path = root.join(PATH);
     if let Some(dir) = path.parent() {
         crate::core::safe_write::create_dirs(dir)?;
     }
-    let text = render(project, environment, entries)?;
+    let existing = std::fs::read_to_string(&path).ok();
+    let text = render(existing.as_deref(), project, environment, entries)?;
     crate::core::safe_write::write_private(&path, text.as_bytes())
         .with_context(|| format!("writing {}", path.display()))?;
     Ok(path)
@@ -104,9 +148,9 @@ impl Seen {
     }
 }
 
-/// Read the state file under `root`. A file for another project, team or
-/// environment is unusable, not an error: it is not evidence about this one.
-pub fn load(root: &Path, project: &ProjectRef, environment: Environment) -> Loaded {
+/// Read the state file under `root`. Only this project, team and environment's
+/// record counts: another environment's is not evidence about this one.
+pub fn load(root: &Path, project: &ProjectRef, environment: &str) -> Loaded {
     let path = root.join(PATH);
     let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,
@@ -116,19 +160,17 @@ pub fn load(root: &Path, project: &ProjectRef, environment: Environment) -> Load
     let Ok(v) = serde_json::from_str::<Value>(&text) else {
         return Loaded::Unusable("is not valid JSON".into());
     };
-    if v["project"].as_str() != Some(project.project.as_str())
-        || v["team"].as_str() != project.team.as_deref()
-    {
-        return Loaded::Unusable("is for another project".into());
-    }
-    if v["environment"].as_str() != Some(environment.name()) {
-        return Loaded::Unusable(format!(
-            "is for {}, not {}",
-            v["environment"].as_str().unwrap_or("another environment"),
-            environment.name()
-        ));
-    }
-    let Some(entries) = v["entries"].as_array() else {
+    let Some(records) = records_of(&v) else {
+        return Loaded::Unusable("has no entries".into());
+    };
+    let Some(record) = records.iter().find(|r| is_for(r, project, environment)) else {
+        return Loaded::Unusable(if records.iter().any(|r| is_for_project(r, project)) {
+            format!("has no record for {environment} yet")
+        } else {
+            "is for another project".into()
+        });
+    };
+    let Some(entries) = record["entries"].as_array() else {
         return Loaded::Unusable("has no entries".into());
     };
     let updated = entries
@@ -143,76 +185,110 @@ mod tests {
     use super::*;
     use crate::platform::vercel::api::Kind;
 
-    #[test]
-    fn the_file_has_the_agreed_shape_and_no_values() {
-        let project = ProjectRef {
-            project: "prj_1".into(),
+    fn project(name: &str) -> ProjectRef {
+        ProjectRef {
+            project: name.into(),
             team: Some("team_1".into()),
             source: "--project",
-        };
-        let entries = vec![RemoteVar {
-            id: "env_1".into(),
+        }
+    }
+
+    fn var(id: &str, at: u64) -> RemoteVar {
+        RemoteVar {
+            id: id.into(),
             key: "API_URL".into(),
             kind: Kind::Config,
             raw_type: "encrypted".into(),
             target: vec!["development".into(), "preview".into()],
             git_branch: None,
-            updated_at: Value::from(1_700_000_000_000u64),
-        }];
-        let text = render(&project, Environment::Development, &entries).unwrap();
+            updated_at: Value::from(at),
+            custom_environment_ids: vec![],
+        }
+    }
+
+    #[test]
+    fn the_file_has_the_agreed_shape_and_no_values() {
+        let text = render(
+            None,
+            &project("prj_1"),
+            "development",
+            &[var("env_1", 1_700_000_000_000)],
+        )
+        .unwrap();
         let v: Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(v["project"], "prj_1");
-        assert_eq!(v["team"], "team_1");
-        assert_eq!(v["environment"], "development");
-        assert_eq!(v["entries"][0]["key"], "API_URL");
-        assert_eq!(v["entries"][0]["id"], "env_1");
-        assert_eq!(v["entries"][0]["target"][1], "preview");
-        assert_eq!(v["entries"][0]["type"], "encrypted");
-        assert_eq!(v["entries"][0]["updatedAt"], 1_700_000_000_000u64);
-        let keys: Vec<_> = v["entries"][0].as_object().unwrap().keys().collect();
+        assert_eq!(v["version"], 2);
+        let r = &v["records"][0];
+        assert_eq!(r["project"], "prj_1");
+        assert_eq!(r["team"], "team_1");
+        assert_eq!(r["environment"], "development");
+        assert_eq!(r["entries"][0]["key"], "API_URL");
+        assert_eq!(r["entries"][0]["id"], "env_1");
+        assert_eq!(r["entries"][0]["target"][1], "preview");
+        assert_eq!(r["entries"][0]["type"], "encrypted");
+        assert_eq!(r["entries"][0]["updatedAt"], 1_700_000_000_000u64);
+        let keys: Vec<_> = r["entries"][0].as_object().unwrap().keys().collect();
         assert_eq!(keys.len(), 5, "{keys:?}");
     }
 
     #[test]
-    fn a_state_file_is_read_back_only_for_its_own_project_and_environment() {
+    fn each_environment_keeps_its_own_record() {
         let dir = tempfile::tempdir().unwrap();
-        let project = ProjectRef {
-            project: "prj_1".into(),
-            team: None,
-            source: "--project",
-        };
-        let entries = vec![RemoteVar {
-            id: "env_1".into(),
-            key: "K".into(),
-            kind: Kind::Config,
-            raw_type: "encrypted".into(),
-            target: vec!["development".into()],
-            git_branch: None,
-            updated_at: Value::from(7u64),
-        }];
+        let p = project("prj_1");
         assert!(matches!(
-            load(dir.path(), &project, Environment::Development),
+            load(dir.path(), &p, "development"),
             Loaded::Missing
         ));
-        write(dir.path(), &project, Environment::Development, &entries).unwrap();
-        match load(dir.path(), &project, Environment::Development) {
+        write(dir.path(), &p, "development", &[var("env_1", 7)]).unwrap();
+        write(dir.path(), &p, "production", &[var("env_2", 9)]).unwrap();
+        // Development's record survived production's write.
+        match load(dir.path(), &p, "development") {
             Loaded::Usable(s) => {
                 assert_eq!(s.updated_at("env_1"), Some(&Value::from(7u64)));
-                assert_eq!(s.updated_at("other"), None);
+                assert_eq!(s.updated_at("env_2"), None);
             }
             _ => panic!("usable"),
         }
+        match load(dir.path(), &p, "production") {
+            Loaded::Usable(s) => assert_eq!(s.updated_at("env_2"), Some(&Value::from(9u64))),
+            _ => panic!("usable"),
+        }
+        // Writing again replaces that record only.
+        write(dir.path(), &p, "development", &[var("env_1", 8)]).unwrap();
+        let text = std::fs::read_to_string(dir.path().join(PATH)).unwrap();
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["records"].as_array().unwrap().len(), 2);
+        // No record for preview; another project has none at all.
+        assert!(
+            matches!(load(dir.path(), &p, "preview"), Loaded::Unusable(w) if w.contains("no record for preview"))
+        );
+        assert!(
+            matches!(load(dir.path(), &project("prj_2"), "development"), Loaded::Unusable(w) if w.contains("another project"))
+        );
+    }
+
+    #[test]
+    fn the_old_single_record_file_is_read_and_upgraded_by_the_next_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = project("prj_1");
+        let old = serde_json::json!({
+            "project": "prj_1", "team": "team_1", "environment": "production",
+            "entries": [{ "key": "K", "id": "old_1", "target": ["production"],
+                          "type": "encrypted", "updatedAt": 3 }],
+        });
+        std::fs::create_dir_all(dir.path().join(".evnx/platform")).unwrap();
+        std::fs::write(dir.path().join(PATH), old.to_string()).unwrap();
+        match load(dir.path(), &p, "production") {
+            Loaded::Usable(s) => assert_eq!(s.updated_at("old_1"), Some(&Value::from(3u64))),
+            _ => panic!("the old shape is read"),
+        }
+        write(dir.path(), &p, "development", &[var("env_1", 7)]).unwrap();
+        let v: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.path().join(PATH)).unwrap()).unwrap();
+        assert_eq!(v["version"], 2);
+        assert_eq!(v["records"].as_array().unwrap().len(), 2);
         assert!(matches!(
-            load(dir.path(), &project, Environment::Production),
-            Loaded::Unusable(_)
-        ));
-        let other = ProjectRef {
-            project: "prj_2".into(),
-            ..project
-        };
-        assert!(matches!(
-            load(dir.path(), &other, Environment::Development),
-            Loaded::Unusable(_)
+            load(dir.path(), &p, "production"),
+            Loaded::Usable(_)
         ));
     }
 }

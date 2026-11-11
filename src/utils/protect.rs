@@ -128,6 +128,99 @@ pub fn protect_output(output: &str, mode: &GitignoreMode) -> Result<()> {
     Ok(())
 }
 
+/// The one `.gitignore` line that covers every backup evnx keeps
+/// ([`crate::core::safe_write::backup`] writes `<file>.bak`, whatever the file
+/// is called: `cloud pull --file`, `restore` and `diff --apply` take any name).
+pub const BACKUP_PATTERN: &str = "*.bak";
+
+/// After `kept` (a `.bak` copy) was written, make sure git will not pick it up
+/// — with ONE pattern ([`BACKUP_PATTERN`]) instead of one line per copy.
+///
+/// Same modes as [`protect_output`]: `Auto` adds the pattern, `Skip` does
+/// nothing, `Default` asks with a terminal and warns without one. Unlike
+/// [`protect_output`], it says nothing when git already ignores the copy (the
+/// pattern was added before, or the user's own rule covers it).
+pub fn protect_backup(kept: &str, mode: &GitignoreMode) -> Result<()> {
+    if matches!(mode, GitignoreMode::Skip) {
+        return Ok(());
+    }
+    let cwd = std::env::current_dir()?;
+    let Some(gitignore_path) = gitignore::find_gitignore_path(&cwd) else {
+        if matches!(mode, GitignoreMode::Auto) {
+            ui::warning("Not a git repository — cannot update .gitignore");
+        }
+        return Ok(());
+    };
+    let git_root = gitignore_path
+        .parent()
+        .expect(".gitignore path always has a parent directory");
+    let kept_path = {
+        let p = Path::new(kept);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            cwd.join(p)
+        }
+    };
+    let Some(entry_path) = gitignore::relative_output_path(git_root, &kept_path) else {
+        ui::warning(format!(
+            "'{kept}' is outside the git repository — .gitignore cannot protect it"
+        ));
+        return Ok(());
+    };
+    let entry = entry_path.to_string_lossy().to_string();
+
+    match gitignore::exposure(git_root, &entry) {
+        gitignore::Exposure::Protected => return Ok(()),
+        gitignore::Exposure::Tracked => {
+            warn_tracked(&entry);
+            return Ok(());
+        }
+        gitignore::Exposure::Unignored => {}
+    }
+    // The pattern is there and still loses to a later rule: say so, add nothing.
+    if matches!(
+        gitignore::check_ignored(&gitignore_path, BACKUP_PATTERN),
+        Ok(gitignore::GitignoreStatus::AlreadyIgnored)
+    ) {
+        warn_still_unignored(&entry);
+        return Ok(());
+    }
+
+    let should_write = match mode {
+        GitignoreMode::Auto => true,
+        GitignoreMode::Skip => false,
+        GitignoreMode::Default => {
+            if crate::utils::term::interactive() {
+                match crate::utils::prompt::yes_no()
+                    .with_prompt(format!(
+                        "Backups ('{entry}') may contain secrets — add {BACKUP_PATTERN} to .gitignore?"
+                    ))
+                    .default(true)
+                    .interact_opt()
+                {
+                    Ok(answer) => answer.unwrap_or(false),
+                    Err(_) => false,
+                }
+            } else {
+                false
+            }
+        }
+    };
+    if !should_write {
+        if matches!(mode, GitignoreMode::Default) {
+            warn_not_in_gitignore(&entry);
+        }
+        return Ok(());
+    }
+    gitignore::append_entry(&gitignore_path, BACKUP_PATTERN)?;
+    ui::success(format!("Added '{BACKUP_PATTERN}' to .gitignore"));
+    if !gitignore::is_protected(git_root, &entry) {
+        warn_still_unignored(&entry);
+    }
+    Ok(())
+}
+
 /// `Default` mode: the question, or the warning when it cannot be asked.
 ///
 /// Esc is "no". A prompt that fails (stderr is not a terminal although stdin

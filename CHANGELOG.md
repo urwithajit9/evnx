@@ -54,6 +54,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exit code is **14** (no state file: a warning, and it goes ahead). A push that
   wrote anything refreshes the state file. `--format json` prints one document.
   Response bodies are never printed (create and delete answers echo ciphertext).
+- **`evnx platform push --prune`, custom environments and `--git-branch`** (N14-10,
+  phase 3). `--prune` lists the variables only Vercel has in this environment as
+  deletions and deletes them by id after the confirmation (`--yes` is required
+  without a terminal, checked before anything is sent; `--dry-run` sends nothing).
+  A remote-only variable shared with other environments is not deleted: this
+  environment is taken out of its targets instead (shown as `detach`). A key
+  that is in the local file with an empty value (`KEY=`) is never pruned, and the
+  delete answer, which echoes ciphertext, is never printed. `--env-name <slug>`
+  now accepts a **custom environment**: the slug is looked up with
+  `GET /v9/projects/<id>/custom-environments`, its variables are the entries whose
+  `customEnvironmentIds` include it, a new one is created with
+  `customEnvironmentIds` and no `target`, and the local file is `.env.<slug>` else
+  `.env`. `--git-branch <branch>` (only with `--env-name preview`, else exit 2)
+  selects that branch's preview entries, falls back to a key's all-branches entry
+  for reading (labelled in the plan, never changed or deleted by the run; a
+  differing value creates a branch entry beside it), and creates with `gitBranch`
+  set. `diff` and `pull` take the same two flags. The state file keeps a separate
+  record for a branch run (`preview@<branch>`) and for a custom environment.
 - **`SSL_CERT_FILE` and `SSL_CERT_DIR` add trusted root certificates**, so evnx
   works behind TLS-inspecting corporate proxies (RM-68). The bundled roots stay;
   the extras are added to them. `SSL_CERT_FILE` is a PEM bundle; `SSL_CERT_DIR`
@@ -109,6 +127,31 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `--skip-without-env`, `--template-config` and `--naming-policy`.
 
 ### Fixed
+
+- **`platform pull`: no more "already up to date" for a file that does not exist.**
+  When Vercel has nothing for the environment and the local file is absent, pull
+  says `nothing to pull; <file> not created` (exit 0). An existing file with
+  nothing to change still reads "is already up to date".
+- **`platform push`: the plan says when it splits a shared entry.** A row now reads
+  `~ KEY secret update (split: Preview, Production keep their own entry; …)`, the
+  summary counts `N split (shared entry left)`, and `--format json` has
+  `summary.split` and, per entry, `split` and `keeps_shared_entry`.
+- **`platform`: the state file keeps one record per environment** (PLAT-STATE).
+  `.evnx/platform/vercel.json` held a single environment's record, so pulling
+  production after development made a development `push` warn "no state" instead
+  of stopping (exit 14) on a change made on Vercel. It now holds a record per
+  project, team and environment, and a push checks only its own. The old
+  single-record file is still read, and upgraded by the next `pull` or `push`.
+- **Backups no longer pile up.** Every command that keeps the replaced file as
+  `<file>.bak` (`platform pull`, `cloud pull`, `restore`, `diff --apply`,
+  `validate --fix`, `remove`) now keeps exactly one: `<file>.bak` is replaced on
+  each write instead of becoming `.bak.2`, `.bak.3`, … Old numbered copies of
+  that same file (`<file>.bak.<digits>`, nothing else: `.bak.old` and
+  `notes.bak.txt` are never touched) are removed on the next write, with one line
+  saying how many. `.gitignore` gets a single `*.bak` line, once, under the same
+  `--gitignore`/`--no-gitignore`/`--yes` rules, instead of a question per copy;
+  nothing is staged or committed. Because the backup is replaced, a second edit
+  in a row leaves a copy of the first edit's result, not of the original.
 
 - **`platform diff`: a Secret present on both sides is no longer a difference**
   (F1). Vercel never returns a Secret's value, so such a variable made `diff` exit

@@ -35,7 +35,7 @@ pub fn run(args: &PlatformDiffArgs) -> Result<Verdict> {
 
     let (sel, listing) = session.list()?;
     // Values are read only for what is compared: Config keys the local file has.
-    let remote = session.read(&sel.entries, |k| file.vars.contains_key(k))?;
+    let remote = session.read(&sel, |k| file.vars.contains_key(k))?;
     session.warn(&sel, &listing);
 
     // A Secret on both sides cannot be compared: it is `present`, not a
@@ -51,7 +51,7 @@ pub fn run(args: &PlatformDiffArgs) -> Result<Verdict> {
             &plan,
             &session.project.project,
             session.project.team.as_deref(),
-            session.environment,
+            &session.environment,
             &file_name,
             listing.hidden_production,
             args.strict,

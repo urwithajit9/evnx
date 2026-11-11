@@ -233,7 +233,11 @@ fn b11_all_leaves_backups_alone_and_edits_the_template_as_the_template() {
         .file(".env.backup", "X=old\n")
         .example("X=\n");
     evnx(&p, &["remove", "X", "--all", "--yes"]).assert_code(0);
-    assert_eq!(p.read(".env.bak"), "X=old\n");
+    // Not edited as an environment: `.env.backup` is untouched. `.env.bak` is
+    // where `.env`'s own backup goes, so it now holds what `.env` held (one
+    // backup per file, replaced on each write).
+    assert_eq!(p.read(".env.bak"), "X=1\n");
+    assert!(!p.exists(".env.bak.2"));
     assert_eq!(p.read(".env.backup"), "X=old\n");
     assert_eq!(p.read(".env.example"), "");
     // The template is committed: git is its backup.

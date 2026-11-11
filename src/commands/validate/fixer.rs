@@ -186,8 +186,8 @@ pub fn apply_fix(
 ///    read back.** The bug above was a write that could not be re-read; the
 ///    guard belongs at the write.
 ///
-/// The backup is [`crate::core::safe_write::backup`] (numbered, never
-/// overwritten, the original's mode) and the write is
+/// The backup is [`crate::core::safe_write::backup`] (one `.bak`, replaced on
+/// each run, the original's mode) and the write is
 /// [`crate::core::safe_write::write_private`]: atomic, the file keeps its mode,
 /// and a symlinked `.env` is written through with the link left in place. It
 /// was a truncate-in-place `fs::write`, the last `.env` writer that was not on
@@ -554,10 +554,10 @@ mod tests {
         assert!(!placeholder.old_value_withheld);
     }
 
-    /// Running twice must not leave a "backup" of the already-changed file and
-    /// no copy of the original.
+    /// One backup per file (owner, 2026-11-11): a second run replaces `.env.bak`
+    /// with the file as it was before that run, and leaves no `.bak.2`.
     #[test]
-    fn a_second_run_does_not_clobber_the_first_backup() {
+    fn a_second_run_replaces_the_backup_and_leaves_no_numbered_copy() {
         let dir = std::env::temp_dir().join(format!("evnx-fixer-bak-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -576,8 +576,8 @@ mod tests {
         let (b2, _) =
             write_fixed_file(p, &map, &second, &["A".to_string()].into_iter().collect()).unwrap();
 
-        assert_ne!(b1, b2, "the second run overwrote the first backup");
-        assert_eq!(fs::read_to_string(&b1).unwrap(), "A=one\n");
+        assert_eq!(b1, b2, "one backup per file");
+        assert!(!dir.join(".env.bak.2").exists());
         assert_eq!(fs::read_to_string(&b2).unwrap(), "A=two\n");
         let _ = fs::remove_dir_all(&dir);
     }

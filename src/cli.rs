@@ -530,7 +530,7 @@ Full guide: https://docs.evnx.dev/cli/commands/platform")]
     /// prefix such as NEXT_PUBLIC_ is always Config; --type overrides the rest).
     /// A Config whose value differs is updated. A Secret already on Vercel
     /// cannot be compared, so it counts as an update; --only-new skips those.
-    /// An existing variable keeps its type. Keys only Vercel has are kept.
+    /// An existing variable keeps its type. Keys only Vercel has are kept; with --prune they are deleted (a variable shared with other environments only loses this one).
     ///
     /// Never an upsert: a variable shared with other environments is split, so
     /// only this environment changes. A key with an empty value is not pushed.
@@ -586,17 +586,33 @@ pub struct PlatformCommon {
     #[arg(long, value_name = "PATH")]
     pub token_file: Option<std::path::PathBuf>,
 
-    /// The Vercel environment: `production`, `preview` or `development`.
+    /// The Vercel environment: `production`, `preview`, `development`, or the
+    /// slug of a custom environment.
     ///
-    /// Also picks the local file: `.env.<environment>` when it exists, else
-    /// `.env`, as `cloud push` does. The file used is always printed.
+    /// A custom environment is looked up in the project
+    /// (`GET /v9/projects/<id>/custom-environments`); its variables are the
+    /// entries whose `customEnvironmentIds` include it, and a new one is created
+    /// with `customEnvironmentIds` and no `target`. Also picks the local file:
+    /// `.env.<environment>` when it exists, else `.env`, as `cloud push` does. The
+    /// file used is always printed.
     #[arg(
         long,
-        value_enum,
         value_name = "ENV",
-        default_value_t = crate::platform::vercel::plan::Environment::Development
+        default_value = "development",
+        value_parser = crate::platform::vercel::plan::Environment::parse
     )]
     pub env_name: crate::platform::vercel::plan::Environment,
+
+    /// A preview branch: work on the variables for this git branch only.
+    ///
+    /// Only with `--env-name preview` (anything else exits 2). A key with an
+    /// entry for the branch uses it; a key without one falls back to its
+    /// all-branches preview entry, read-only and labelled in the plan, and a
+    /// push that must change it creates a branch entry instead. New variables
+    /// are created with `gitBranch` set. Without it, branch-scoped preview
+    /// variables are skipped (with a warning).
+    #[arg(long, value_name = "BRANCH")]
+    pub git_branch: Option<String>,
 
     /// The local file, instead of `.env.<environment>` or `.env`.
     #[arg(long, short, value_name = "PATH")]
@@ -698,6 +714,16 @@ pub struct PlatformPushArgs {
     /// counts it as an update and overwrites it.
     #[arg(long)]
     pub only_new: bool,
+
+    /// Also delete the variables only Vercel has, in this environment.
+    ///
+    /// They are listed in the plan as deletions and removed (by id) after the
+    /// confirmation. Without a terminal it needs --yes. A variable shared with
+    /// other environments is not deleted: this environment is taken out of its
+    /// targets instead. A key that is in the local file with an empty value
+    /// (`KEY=`) is not remote-only and is never pruned.
+    #[arg(long)]
+    pub prune: bool,
 
     /// The type of a variable that does not exist on Vercel yet.
     ///
@@ -3063,8 +3089,8 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// Replace an existing --output without asking.
         ///
         /// For scripts and CI, where there is no terminal to ask on. The file
-        /// it replaces is kept beside it as <output>.bak (.bak.2, … when one
-        /// exists). Without it, and without a terminal, an existing output
+        /// it replaces is kept beside it as <output>.bak (replacing the previous
+        /// copy). Without it, and without a terminal, an existing output
         /// stops the run (exit 2). Also accepted as --force, as in `cloud pull`.
         #[arg(long, short = 'y', visible_alias = "force")]
         yes: bool,

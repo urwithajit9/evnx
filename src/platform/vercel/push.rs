@@ -11,7 +11,9 @@
 //!   compared (`--only-new` skips them).
 //! * An existing variable keeps its type: a Secret cannot become Config in place,
 //!   so a type difference is shown and not changed.
-//! * Variables only Vercel has are kept. Deleting them is `--prune`, a later phase.
+//! * Variables only Vercel has are kept. With `--prune` they are deleted (by id)
+//!   after the confirmation; one shared with other environments only has this
+//!   environment taken out of its targets.
 //! * A local key with an **empty value** is never pushed: `pull` writes `KEY=` for
 //!   a Secret it cannot fetch, and pushing that back would blank the real one.
 //!
@@ -72,6 +74,11 @@ pub enum PushOp {
     TypeKept,
     /// On Vercel only: kept.
     Kept,
+    /// On Vercel only, `--prune`: deleted.
+    Delete,
+    /// On Vercel only, `--prune`, and shared with other environments: this
+    /// environment is taken out of its targets, the entry stays for the others.
+    Detach,
 }
 
 impl PushOp {
@@ -84,6 +91,8 @@ impl PushOp {
             PushOp::SkipSecret | PushOp::SkipEmpty => "skipped",
             PushOp::TypeKept => "type differs",
             PushOp::Kept => "remote only",
+            PushOp::Delete => "delete",
+            PushOp::Detach => "detach",
         }
     }
 
@@ -94,11 +103,16 @@ impl PushOp {
             PushOp::Unchanged | PushOp::SkipSecret => "=",
             PushOp::SkipEmpty => "-",
             PushOp::TypeKept | PushOp::Kept => "!",
+            PushOp::Delete => "x",
+            PushOp::Detach => "~",
         }
     }
 
     fn writes(self) -> bool {
-        matches!(self, PushOp::Create | PushOp::Update)
+        matches!(
+            self,
+            PushOp::Create | PushOp::Update | PushOp::Delete | PushOp::Detach
+        )
     }
 }
 
@@ -113,6 +127,9 @@ pub struct PushRow {
     pub op: PushOp,
     /// The parenthesised remark.
     pub note: Option<String>,
+    /// The targets that keep the old shared entry when this row splits it
+    /// (empty when it does not).
+    pub split: Vec<String>,
 }
 
 /// A value change of an entry that only this environment uses.
@@ -125,15 +142,30 @@ pub struct Patch {
     pub value: SecretString,
 }
 
-/// An entry shared with other environments whose value must change here: this
-/// environment leaves it (`PATCH target`), and gets its own entry (a create).
+/// An entry shared with other environments that this environment leaves
+/// (`PATCH`): for a split, because its value must change here and this
+/// environment gets its own entry (a create); for a prune, because the variable
+/// is not wanted here and the others still use it.
 pub struct Split {
     /// The variable.
     pub key: String,
     /// The shared entry's id.
     pub id: String,
-    /// The targets it keeps: everything but this environment.
+    /// The built-in targets it keeps: everything but this environment.
     pub remaining: Vec<String>,
+    /// The custom environments it keeps (their ids).
+    pub remaining_custom: Vec<String>,
+    /// This environment is a custom one: the PATCH sets `customEnvironmentIds`,
+    /// not `target`.
+    pub custom: bool,
+}
+
+/// An entry that only this environment uses and `--prune` deletes.
+pub struct Delete {
+    /// The variable.
+    pub key: String,
+    /// The entry's id: a delete is by id, never by key.
+    pub id: String,
 }
 
 /// What push will send, and the table that shows it.
@@ -147,15 +179,25 @@ pub struct PushPlan {
     pub splits: Vec<Split>,
     /// Entries to change in place.
     pub patches: Vec<Patch>,
+    /// `--prune`: shared entries this environment leaves, and keeps nothing of.
+    pub detaches: Vec<Split>,
+    /// `--prune`: entries only this environment used.
+    pub deletes: Vec<Delete>,
 }
 
 /// What the flags change about the plan.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Options {
     /// `--only-new`: leave existing Secrets alone.
     pub only_new: bool,
     /// `--type`: the type of a new variable, whatever the classifier says.
     pub type_override: Option<Kind>,
+    /// `--prune`: delete what only Vercel has.
+    pub prune: bool,
+    /// `--git-branch` (preview only).
+    pub git_branch: Option<String>,
+    /// Custom environments by id, to name the ones an entry is shared with.
+    pub custom_names: HashMap<String, String>,
 }
 
 impl PushPlan {
@@ -173,13 +215,99 @@ impl PushPlan {
         self.creates.is_empty() && self.patches.is_empty()
     }
 
+    /// Entries `--prune` will delete.
+    pub fn deleting(&self) -> usize {
+        self.deletes.len()
+    }
+
     /// The entries (by id) a write will touch, with the key.
     pub fn touched(&self) -> impl Iterator<Item = (&str, &str)> {
         self.patches
             .iter()
             .map(|p| (p.key.as_str(), p.id.as_str()))
             .chain(self.splits.iter().map(|s| (s.key.as_str(), s.id.as_str())))
+            .chain(
+                self.detaches
+                    .iter()
+                    .map(|s| (s.key.as_str(), s.id.as_str())),
+            )
+            .chain(self.deletes.iter().map(|d| (d.key.as_str(), d.id.as_str())))
     }
+}
+
+/// A new entry for `env` (and the branch, for preview): a built-in environment
+/// by `target`, a custom one by `customEnvironmentIds` with no `target`.
+fn new_entry(env: &Environment, opts: &Options, key: &str, value: &str, type_: String) -> NewEnv {
+    let (target, custom_environment_ids) = match env {
+        Environment::Custom(c) => (vec![], c.id.iter().cloned().collect()),
+        built_in => (vec![built_in.name().to_string()], vec![]),
+    };
+    NewEnv {
+        key: key.to_string(),
+        value: SecretString::new(value),
+        type_,
+        target,
+        custom_environment_ids,
+        git_branch: if *env == Environment::Preview {
+            opts.git_branch.clone()
+        } else {
+            None
+        },
+    }
+}
+
+/// What an entry keeps when `env` leaves it, and who those are.
+fn leaving(env: &Environment, var: &RemoteVar, opts: &Options) -> (Split, Vec<String>) {
+    let (remaining, remaining_custom) = match env {
+        Environment::Custom(c) => (
+            var.target.clone(),
+            var.custom_environment_ids
+                .iter()
+                .filter(|i| Some(i.as_str()) != c.id.as_deref())
+                .cloned()
+                .collect::<Vec<_>>(),
+        ),
+        built_in => (
+            var.target
+                .iter()
+                .filter(|t| t.as_str() != built_in.name())
+                .cloned()
+                .collect::<Vec<_>>(),
+            var.custom_environment_ids.clone(),
+        ),
+    };
+    let mut names = title_list(&remaining);
+    for id in &remaining_custom {
+        names.push(
+            opts.custom_names
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| id.clone()),
+        );
+    }
+    (
+        Split {
+            key: var.key.clone(),
+            id: var.id.clone(),
+            remaining,
+            remaining_custom,
+            custom: env.is_custom(),
+        },
+        names,
+    )
+}
+
+/// `preview`, `production` as `Preview`, `Production`.
+fn title_list(names: &[String]) -> Vec<String> {
+    names
+        .iter()
+        .map(|n| {
+            let mut c = n.chars();
+            c.next()
+                .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+                .unwrap_or_default()
+        })
+        .collect()
 }
 
 /// The type an entry that is being recreated keeps.
@@ -196,8 +324,8 @@ fn existing_type(r: &Remote) -> String {
 pub fn build(
     local: &IndexMap<String, String>,
     remote: &[Remote],
-    env: Environment,
-    opts: Options,
+    env: &Environment,
+    opts: &Options,
 ) -> PushPlan {
     // A key with an empty value is out of the comparison altogether, so that it
     // is neither "remote only" nor an update that would blank a Secret.
@@ -227,6 +355,7 @@ pub fn build(
                 kind,
                 op: PushOp::SkipEmpty,
                 note: Some(note.into()),
+                split: vec![],
             });
             continue;
         }
@@ -236,6 +365,7 @@ pub fn build(
             kind: row.kind,
             op: PushOp::Unchanged,
             note: None,
+            split: vec![],
         };
         match row.action {
             Action::Add => {
@@ -253,12 +383,8 @@ pub fn build(
                 }
                 push_row.kind = kind;
                 push_row.op = PushOp::Create;
-                out.creates.push(NewEnv {
-                    key: key.clone(),
-                    value: SecretString::new(value.as_str()),
-                    type_: kind.vercel_type().into(),
-                    target: vec![env.name().into()],
-                });
+                out.creates
+                    .push(new_entry(env, opts, key, value, kind.vercel_type().into()));
             }
             Action::Update(why) => {
                 let r = remote_by_key[key.as_str()];
@@ -273,41 +399,48 @@ pub fn build(
                             "write-only: cannot tell whether it changed; --only-new skips"
                         }
                     };
-                    let others: Vec<String> = r
-                        .var
-                        .target
-                        .iter()
-                        .filter(|t| t.as_str() != env.name())
-                        .cloned()
-                        .collect();
-                    if others.is_empty() {
-                        push_row.note = Some(base.into());
-                        out.patches.push(Patch {
-                            key: key.clone(),
-                            id: r.var.id.clone(),
-                            value: SecretString::new(value.as_str()),
-                        });
-                    } else {
+                    if r.inherited {
+                        // `--git-branch`: the key has no entry for the branch, and
+                        // the all-branches one is not this run's to change. The
+                        // branch gets an entry of its own beside it.
                         push_row.note = Some(format!(
-                            "{base}; shared with {}, so {} gets its own entry",
-                            others.join(", "),
-                            env.name()
+                            "{base}; branch {} gets its own entry, the all-branches one stays",
+                            opts.git_branch.as_deref().unwrap_or("?")
                         ));
-                        out.creates.push(NewEnv {
-                            key: key.clone(),
-                            value: SecretString::new(value.as_str()),
-                            type_: existing_type(r),
-                            target: vec![env.name().into()],
-                        });
-                        out.splits.push(Split {
-                            key: key.clone(),
-                            id: r.var.id.clone(),
-                            remaining: others,
-                        });
+                        out.creates
+                            .push(new_entry(env, opts, key, value, existing_type(r)));
+                    } else {
+                        let (leave, others) = leaving(env, &r.var, opts);
+                        if others.is_empty() {
+                            push_row.note = Some(base.into());
+                            out.patches.push(Patch {
+                                key: key.clone(),
+                                id: r.var.id.clone(),
+                                value: SecretString::new(value.as_str()),
+                            });
+                        } else {
+                            push_row.note = Some(format!(
+                                "split: {} {} own entry; {base}",
+                                others.join(", "),
+                                if others.len() == 1 {
+                                    "keeps its"
+                                } else {
+                                    "keep their"
+                                },
+                            ));
+                            push_row.split = others;
+                            out.creates
+                                .push(new_entry(env, opts, key, value, existing_type(r)));
+                            out.splits.push(leave);
+                        }
                     }
                 }
             }
-            Action::Unchanged => {}
+            Action::Unchanged => {
+                if remote_by_key[key.as_str()].inherited {
+                    push_row.note = Some("same as the all-branches preview entry".into());
+                }
+            }
             Action::Present => unreachable!("plan::diff never returns Present"),
             Action::TypeDiffers => {
                 push_row.op = PushOp::TypeKept;
@@ -318,14 +451,40 @@ pub fn build(
         out.rows.push(push_row);
     }
     for r in remote {
-        if !local.contains_key(&r.var.key) {
-            out.rows.push(PushRow {
-                key: r.var.key.clone(),
-                kind: r.kind,
-                op: PushOp::Kept,
-                note: Some("kept; --prune to delete (coming)".into()),
-            });
+        if local.contains_key(&r.var.key) {
+            continue;
         }
+        let mut row = PushRow {
+            key: r.var.key.clone(),
+            kind: r.kind,
+            op: PushOp::Kept,
+            note: Some("kept; --prune to delete".into()),
+            split: vec![],
+        };
+        if r.inherited {
+            // Never this run's to delete: it belongs to every preview branch.
+            row.note = Some("all-branches preview entry; kept even with --prune".into());
+        } else if opts.prune {
+            let (leave, others) = leaving(env, &r.var, opts);
+            if others.is_empty() {
+                row.op = PushOp::Delete;
+                row.note = Some("not in the local file; deleted by id".into());
+                out.deletes.push(Delete {
+                    key: r.var.key.clone(),
+                    id: r.var.id.clone(),
+                });
+            } else {
+                row.op = PushOp::Detach;
+                row.note = Some(format!(
+                    "shared with {}: only {} is taken out of its targets; the entry stays there",
+                    others.join(", "),
+                    env.name()
+                ));
+                row.split = others;
+                out.detaches.push(leave);
+            }
+        }
+        out.rows.push(row);
     }
     out
 }
@@ -367,10 +526,13 @@ pub fn summary(plan: &PushPlan) -> String {
     for (n, w) in [
         (plan.count(PushOp::Create), "create"),
         (plan.count(PushOp::Update), "update"),
+        (plan.splits.len(), "split (shared entry left)"),
         (plan.count(PushOp::Unchanged), "unchanged"),
         (skipped, "skipped"),
         (plan.count(PushOp::TypeKept), "type differs (not changed)"),
         (plan.count(PushOp::Kept), "remote only (kept)"),
+        (plan.count(PushOp::Delete), "delete"),
+        (plan.count(PushOp::Detach), "detach (shared entry stays)"),
     ] {
         if n > 0 {
             parts.push(format!("{n} {w}"));
@@ -401,6 +563,10 @@ pub struct Outcome {
     pub created: usize,
     /// Variables changed in place or recreated for this environment.
     pub updated: usize,
+    /// Variables deleted (`--prune`).
+    pub deleted: usize,
+    /// Shared variables this environment was taken out of (`--prune`).
+    pub detached: usize,
     /// What Vercel refused.
     pub failed: Vec<Failed>,
     /// Whether any request was accepted (the state file is stale then).
@@ -422,6 +588,15 @@ fn entry_failure(e: &PlatformError) -> Option<String> {
     }
 }
 
+/// `PATCH` an entry so this environment is no longer one of its targets.
+fn leave(api: &super::api::Api, project: &str, s: &Split) -> Result<(), PlatformError> {
+    if s.custom {
+        api.patch_custom_environments(project, &s.id, &s.remaining_custom)
+    } else {
+        api.patch_target(project, &s.id, &s.remaining)
+    }
+}
+
 /// Send the plan: leave shared entries, one bulk create, then in-place changes.
 ///
 /// A refusal of one entry is recorded and the rest goes on; anything that ends
@@ -433,8 +608,8 @@ pub fn apply(session: &Session, plan: &PushPlan) -> Result<Outcome> {
     let mut out = Outcome::default();
     let progress = |o: &Outcome| {
         format!(
-            "{} created, {} updated before it stopped",
-            o.created, o.updated
+            "{} created, {} updated, {} deleted before it stopped",
+            o.created, o.updated, o.deleted
         )
     };
 
@@ -442,7 +617,7 @@ pub fn apply(session: &Session, plan: &PushPlan) -> Result<Outcome> {
     //    split is left alone: creating its own entry would collide with it.
     let mut skip_create: Vec<&str> = Vec::new();
     for s in &plan.splits {
-        match api.patch_target(project, &s.id, &s.remaining) {
+        match leave(api, project, s) {
             Ok(()) => out.touched = true,
             Err(e) => match entry_failure(&e) {
                 Some(code) => {
@@ -473,6 +648,8 @@ pub fn apply(session: &Session, plan: &PushPlan) -> Result<Outcome> {
             value: SecretString::new(c.value.expose()),
             type_: c.type_.clone(),
             target: c.target.clone(),
+            custom_environment_ids: c.custom_environment_ids.clone(),
+            git_branch: c.git_branch.clone(),
         })
         .collect();
     if !creates.is_empty() {
@@ -527,6 +704,52 @@ pub fn apply(session: &Session, plan: &PushPlan) -> Result<Outcome> {
             },
         }
     }
+
+    // 4. `--prune`: shared entries lose this environment, the rest are deleted by
+    //    id. The delete answer echoes the entry, ciphertext included, and is
+    //    never read or printed (design §2a #9).
+    for d in &plan.detaches {
+        match leave(api, project, d) {
+            Ok(()) => {
+                out.touched = true;
+                out.detached += 1;
+            }
+            Err(e) => match entry_failure(&e) {
+                Some(code) => out.failed.push(Failed {
+                    key: Some(d.key.clone()),
+                    code,
+                }),
+                None => {
+                    return Err(anyhow::Error::new(e).context(format!(
+                        "removing {} from a shared entry: {}",
+                        d.key,
+                        progress(&out)
+                    )))
+                }
+            },
+        }
+    }
+    for d in &plan.deletes {
+        match api.delete_env(project, &d.id) {
+            Ok(()) => {
+                out.touched = true;
+                out.deleted += 1;
+            }
+            Err(e) => match entry_failure(&e) {
+                Some(code) => out.failed.push(Failed {
+                    key: Some(d.key.clone()),
+                    code,
+                }),
+                None => {
+                    return Err(anyhow::Error::new(e).context(format!(
+                        "deleting {}: {}",
+                        d.key,
+                        progress(&out)
+                    )))
+                }
+            },
+        }
+    }
     Ok(out)
 }
 
@@ -557,6 +780,14 @@ impl Say {
 
 /// Push. `Findings` when Vercel refused some of it; `Err(Declined)` on a no.
 pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
+    // `--prune` deletes: with nothing to ask on, it needs `--yes` — said before
+    // anything is read or sent. A dry run sends nothing, so it needs no answer.
+    if args.prune && !args.yes && !args.dry_run {
+        crate::utils::prompt::require_terminal_or(&format!(
+            "--prune deletes variables on Vercel. Add --yes (-y) to go ahead without being asked:\n  evnx platform push --to vercel --env-name {} --prune --yes",
+            args.common.env_name.name()
+        ))?;
+    }
     let session = Session::open(&args.common)?;
     let (path, choice) = local::resolve(
         Path::new("."),
@@ -572,8 +803,8 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
         );
     }
     let say = Say { json: args.json() };
-    let env = session.environment;
-    if choice == local::Choice::Default && env == Environment::Production {
+    let env = &session.environment;
+    if choice == local::Choice::Default && *env == Environment::Production {
         eprintln!(
             "warning: pushing {} to production — pass --file .env.production if that is not what you meant",
             shown(&path)
@@ -581,16 +812,17 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
     }
 
     let (sel, listing) = session.list()?;
-    let remote = session.read(&sel.entries, |k| {
-        file.vars.get(k).is_some_and(|v| !v.is_empty())
-    })?;
+    let remote = session.read(&sel, |k| file.vars.get(k).is_some_and(|v| !v.is_empty()))?;
     session.warn(&sel, &listing);
 
     let opts = Options {
         only_new: args.only_new,
         type_override: args.type_.map(Kind::from),
+        prune: args.prune,
+        git_branch: session.git_branch.clone(),
+        custom_names: session.custom_names.clone(),
     };
-    let plan = build(&file.vars, &remote, env, opts);
+    let plan = build(&file.vars, &remote, env, &opts);
     let file_name = shown(&path);
 
     // D4: before anything is written, has Vercel moved since the last pull/push?
@@ -601,7 +833,7 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
         println!(
             "Vercel  {}  {}        local  {file_name}",
             session.project.label(),
-            env.name()
+            session.env_label()
         );
         print!("{}", render(&plan));
         println!("{}", summary(&plan));
@@ -629,11 +861,30 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
         return Ok(Verdict::Clean);
     }
 
+    let sends = plan.writes() - plan.deletes.len() - plan.detaches.len();
+    let mut what = Vec::new();
+    if sends > 0 {
+        what.push(format!("Push {sends} variable(s) to"));
+    }
+    if !plan.deletes.is_empty() {
+        what.push(format!("DELETE {} variable(s) on", plan.deletes.len()));
+    }
+    if !plan.detaches.is_empty() {
+        what.push(format!(
+            "take {} out of {} shared variable(s) on",
+            env.name(),
+            plan.detaches.len()
+        ));
+    }
+    let mut question = what.join(", ");
+    if sends > 0 && what.len() > 1 {
+        // "Push 2 variable(s) to, DELETE 1 …" reads badly: one "on Vercel" at the end.
+        question = question.replacen(" variable(s) to,", " variable(s),", 1);
+    }
     let question = format!(
-        "Push {} variable(s) to Vercel ({}, {})?",
-        plan.writes(),
+        "{question} Vercel ({}, {})?",
         session.project.label(),
-        env.name()
+        session.env_label()
     );
     let example = format!(
         "evnx platform push --to vercel --env-name {} --yes",
@@ -659,6 +910,23 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
             "✓".green(),
             outcome.updated,
             plural(outcome.updated)
+        ));
+    }
+    if outcome.deleted > 0 {
+        say.status(format!(
+            "  {} deleted {} variable{}",
+            "✓".green(),
+            outcome.deleted,
+            plural(outcome.deleted)
+        ));
+    }
+    if outcome.detached > 0 {
+        say.status(format!(
+            "  {} took {} out of {} shared variable{}",
+            "✓".green(),
+            env.name(),
+            outcome.detached,
+            plural(outcome.detached)
         ));
     }
 
@@ -710,7 +978,7 @@ fn record(
     if json {
         // stdout carries only the JSON document: the usual lines are not wanted.
         let root = Path::new(".");
-        let written = state::write(root, &session.project, session.environment, entries)?;
+        let written = state::write(root, &session.project, &session.state_key(), entries)?;
         eprintln!("recorded {} (ids only, no values)", shown(&written));
         return Ok(());
     }
@@ -756,7 +1024,7 @@ fn check_state(session: &Session, plan: &PushPlan, remote: &[Remote]) -> Result<
     if touched.is_empty() {
         return Ok(());
     }
-    let loaded = match state::load(Path::new("."), &session.project, session.environment) {
+    let loaded = match state::load(Path::new("."), &session.project, &session.state_key()) {
         state::Loaded::Usable(s) => s,
         state::Loaded::Missing => {
             eprintln!(
@@ -812,6 +1080,9 @@ fn to_json(
         "summary": {
             "create": plan.count(PushOp::Create),
             "update": plan.count(PushOp::Update),
+            "split": plan.splits.len(),
+            "delete": plan.count(PushOp::Delete),
+            "detach": plan.count(PushOp::Detach),
             "unchanged": plan.count(PushOp::Unchanged),
             "skipped": plan.count(PushOp::SkipSecret) + plan.count(PushOp::SkipEmpty),
             "type_differs": plan.count(PushOp::TypeKept),
@@ -821,10 +1092,14 @@ fn to_json(
             "key": r.key,
             "type": r.kind.word(),
             "action": r.op.word().replace(' ', "_"),
+            "split": r.op == PushOp::Update && !r.split.is_empty(),
+            "keeps_shared_entry": r.split,
         })).collect::<Vec<_>>(),
         "result": outcome.map(|o| json!({
             "created": o.created,
             "updated": o.updated,
+            "deleted": o.deleted,
+            "detached": o.detached,
             "failed": o.failed.iter().map(|f| json!({ "key": f.key, "code": f.code })).collect::<Vec<_>>(),
         })),
     })
@@ -848,10 +1123,12 @@ mod tests {
                 target: target.iter().map(|s| (*s).to_string()).collect(),
                 git_branch: None,
                 updated_at: Value::from(1),
+                custom_environment_ids: vec![],
             },
             kind,
             value: value.map(SecretString::new),
             read: true,
+            inherited: false,
         }
     }
 
@@ -896,7 +1173,7 @@ mod tests {
             remote("r", "REDIS_URL", Kind::Secret, &["development"], None),
             remote("e", "EMPTY", Kind::Secret, &["development"], None),
         ];
-        let p = build(&l, &r, Environment::Development, Options::default());
+        let p = build(&l, &r, &Environment::Development, &Options::default());
         assert_eq!(op(&p, "NEW_ONE"), PushOp::Create);
         assert_eq!(op(&p, "API_URL"), PushOp::Update);
         assert_eq!(op(&p, "SAME"), PushOp::Unchanged);
@@ -919,10 +1196,11 @@ mod tests {
         let p = build(
             &l,
             &r,
-            Environment::Development,
-            Options {
+            &Environment::Development,
+            &Options {
                 only_new: true,
                 type_override: Some(Kind::Secret),
+                ..Options::default()
             },
         );
         assert_eq!(op(&p, "DB_URL"), PushOp::SkipSecret);
@@ -932,10 +1210,11 @@ mod tests {
         let p = build(
             &local(&[("STRIPE_SECRET_KEY", "x")]),
             &[],
-            Environment::Development,
-            Options {
+            &Environment::Development,
+            &Options {
                 only_new: false,
                 type_override: Some(Kind::Config),
+                ..Options::default()
             },
         );
         assert_eq!(p.creates[0].type_, "encrypted");
@@ -946,10 +1225,11 @@ mod tests {
         let p = build(
             &local(&[("NEXT_PUBLIC_API_KEY", "sk_live_abcdefghijklmnop")]),
             &[],
-            Environment::Production,
-            Options {
+            &Environment::Production,
+            &Options {
                 only_new: false,
                 type_override: Some(Kind::Secret),
+                ..Options::default()
             },
         );
         assert_eq!(p.creates[0].type_, "encrypted");
@@ -976,7 +1256,7 @@ mod tests {
                 None,
             ),
         ];
-        let p = build(&l, &r, Environment::Development, Options::default());
+        let p = build(&l, &r, &Environment::Development, &Options::default());
         assert!(p.patches.is_empty());
         assert_eq!(p.splits.len(), 2);
         assert_eq!(p.splits[0].remaining, ["preview"]);
@@ -989,7 +1269,155 @@ mod tests {
             .note
             .as_deref()
             .unwrap()
-            .contains("shared with preview"));
+            .starts_with("split: Preview keeps its own entry"));
+        assert_eq!(p.rows[0].split, ["Preview"]);
+        assert_eq!(p.rows[1].split, ["Production"]);
+        assert_eq!(
+            summary(&p)
+                .split(" · ")
+                .filter(|x| x.contains("split"))
+                .count(),
+            1
+        );
+        assert!(summary(&p).contains("2 split"), "{}", summary(&p));
+    }
+
+    fn custom(id: &str, slug: &str) -> Environment {
+        Environment::Custom(plan::CustomEnv {
+            slug: slug.into(),
+            id: Some(id.into()),
+        })
+    }
+
+    fn remote_custom(
+        id: &str,
+        key: &str,
+        kind: Kind,
+        target: &[&str],
+        custom_ids: &[&str],
+    ) -> Remote {
+        let mut r = remote(id, key, kind, target, None);
+        r.var.custom_environment_ids = custom_ids.iter().map(|s| (*s).to_string()).collect();
+        r
+    }
+
+    fn prune() -> Options {
+        Options {
+            prune: true,
+            ..Options::default()
+        }
+    }
+
+    #[test]
+    fn prune_deletes_by_id_what_only_this_environment_has_and_never_an_empty_local_key() {
+        let l = local(&[("KEEP", "v"), ("EMPTY", "")]);
+        let r = vec![
+            remote("k", "KEEP", Kind::Config, &["development"], Some("v")),
+            remote("g", "GONE", Kind::Secret, &["development"], None),
+            remote("e", "EMPTY", Kind::Secret, &["development"], None),
+        ];
+        let p = build(&l, &r, &Environment::Development, &prune());
+        assert_eq!(op(&p, "GONE"), PushOp::Delete);
+        assert_eq!(p.deletes.len(), 1);
+        assert_eq!(
+            (p.deletes[0].key.as_str(), p.deletes[0].id.as_str()),
+            ("GONE", "g")
+        );
+        // KEY= is a local key: skipped as before, never remote-only, never pruned.
+        assert_eq!(op(&p, "EMPTY"), PushOp::SkipEmpty);
+        assert_eq!(op(&p, "KEEP"), PushOp::Unchanged);
+        assert!(p.detaches.is_empty());
+        // Without --prune the same entry is only reported.
+        let p = build(&l, &r, &Environment::Development, &Options::default());
+        assert_eq!(op(&p, "GONE"), PushOp::Kept);
+        assert!(p.deletes.is_empty());
+    }
+
+    #[test]
+    fn prune_takes_a_shared_remote_only_entry_out_of_this_environment_instead_of_deleting_it() {
+        let r = vec![remote(
+            "s",
+            "SHARED",
+            Kind::Config,
+            &["development", "preview"],
+            None,
+        )];
+        let p = build(&local(&[]), &r, &Environment::Development, &prune());
+        assert_eq!(op(&p, "SHARED"), PushOp::Detach);
+        assert!(p.deletes.is_empty());
+        assert_eq!(p.detaches[0].remaining, ["preview"]);
+        assert!(!p.detaches[0].custom);
+        let note = p.rows[0].note.as_deref().unwrap();
+        assert!(note.contains("shared with Preview"), "{note}");
+    }
+
+    #[test]
+    fn a_custom_environment_is_created_by_id_with_no_target_and_split_by_ids() {
+        let env = custom("env_stg", "staging");
+        let r = vec![remote_custom(
+            "x",
+            "API_URL",
+            Kind::Config,
+            &["preview"],
+            &["env_stg", "env_qa"],
+        )];
+        let mut opts = prune();
+        opts.custom_names.insert("env_qa".into(), "qa".into());
+        let p = build(
+            &local(&[("API_URL", "new"), ("FRESH", "v")]),
+            &r,
+            &env,
+            &opts,
+        );
+        let fresh = p.creates.iter().find(|c| c.key == "FRESH").unwrap();
+        assert!(fresh.target.is_empty());
+        assert_eq!(fresh.custom_environment_ids, ["env_stg"]);
+        // API_URL is shared with Preview and qa: staging leaves via customEnvironmentIds.
+        assert_eq!(p.splits[0].remaining_custom, ["env_qa"]);
+        assert_eq!(p.splits[0].remaining, ["preview"]);
+        assert!(p.splits[0].custom);
+        assert_eq!(p.rows[0].split, ["Preview", "qa"]);
+    }
+
+    #[test]
+    fn a_git_branch_run_creates_with_the_branch_and_never_changes_the_all_branches_entry() {
+        let mut inherited = remote("a", "API_URL", Kind::Config, &["preview"], Some("old"));
+        inherited.inherited = true;
+        let mut same = remote("b", "SAME", Kind::Config, &["preview"], Some("v"));
+        same.inherited = true;
+        let mut only = remote("c", "ONLY_ALL", Kind::Config, &["preview"], Some("v"));
+        only.inherited = true;
+        let opts = Options {
+            prune: true,
+            git_branch: Some("feature".into()),
+            ..Options::default()
+        };
+        let p = build(
+            &local(&[("API_URL", "new"), ("SAME", "v"), ("FRESH", "v")]),
+            &[inherited, same, only],
+            &Environment::Preview,
+            &opts,
+        );
+        assert!(p.patches.is_empty() && p.splits.is_empty());
+        assert!(p.deletes.is_empty() && p.detaches.is_empty());
+        assert_eq!(p.creates.len(), 2);
+        assert!(p
+            .creates
+            .iter()
+            .all(|c| c.git_branch.as_deref() == Some("feature") && c.target == ["preview"]));
+        assert_eq!(op(&p, "SAME"), PushOp::Unchanged);
+        let note = |k: &str| {
+            p.rows
+                .iter()
+                .find(|r| r.key == k)
+                .unwrap()
+                .note
+                .clone()
+                .unwrap()
+        };
+        assert!(note("SAME").contains("all-branches"), "{}", note("SAME"));
+        assert!(note("API_URL").contains("branch feature gets its own entry"));
+        assert!(note("ONLY_ALL").contains("kept even with --prune"));
     }
 
     #[test]
@@ -1002,7 +1430,7 @@ mod tests {
             &["development"],
             Some("very-secret-remote"),
         )];
-        let p = build(&l, &r, Environment::Development, Options::default());
+        let p = build(&l, &r, &Environment::Development, &Options::default());
         let text = format!("{}{}", render(&p), summary(&p));
         assert!(!text.contains("very-secret"), "{text}");
         assert!(text.contains("1 create · 1 update"), "{text}");

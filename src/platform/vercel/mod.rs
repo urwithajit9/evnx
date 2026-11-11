@@ -6,7 +6,7 @@
 //! that it exists. Values are never printed, by either command.
 //!
 //! `diff` and `pull` only read Vercel; `push` writes to it (see [`push`]). Deleting
-//! what Vercel has and the local file lacks is `--prune`, a later phase.
+//! what Vercel has and the local file lacks is `push --prune`.
 
 use std::path::Path;
 
@@ -35,13 +35,30 @@ pub struct Session {
     pub api: Api,
     /// The project.
     pub project: ProjectRef,
-    /// The Vercel environment.
+    /// The Vercel environment. A custom one has its id filled in by [`Session::open`].
     pub environment: Environment,
+    /// `--git-branch` (preview only).
+    pub git_branch: Option<String>,
+    /// Custom environments by id, for naming the ones an entry is shared with.
+    pub custom_names: std::collections::HashMap<String, String>,
 }
 
 impl Session {
-    /// Resolve project, token and API base. Nothing is sent.
+    /// Resolve project, token and API base. A custom environment's slug is looked
+    /// up here (one `GET`); nothing else is sent.
     pub fn open(common: &PlatformCommon) -> Result<Session> {
+        // Before anything is read or sent: a flag that cannot apply is a usage error.
+        if let Some(branch) = &common.git_branch {
+            if common.env_name != Environment::Preview {
+                anyhow::bail!(
+                    "--git-branch only applies to --env-name preview (got {}).",
+                    common.env_name.name()
+                );
+            }
+            if branch.trim().is_empty() {
+                anyhow::bail!("--git-branch needs a branch name.");
+            }
+        }
         let env = |k: &str| std::env::var(k).ok();
         let project = project::resolve(
             common.project.as_deref(),
@@ -52,34 +69,81 @@ impl Session {
         let token = auth::resolve(common.token_file.as_deref(), env)?;
         let base = api::parse_base(common.api_url.as_deref().unwrap_or(api::DEFAULT_BASE))?;
         let team = project.team.as_deref().map(Team::from_ref);
+        let api = Api::new(base, token, team)?;
+        let mut environment = common.env_name.clone();
+        let mut custom_names = std::collections::HashMap::new();
+        if let Environment::Custom(custom) = &mut environment {
+            let known = api.list_custom_environments(&project.project)?;
+            match known.iter().find(|k| k.slug == custom.slug) {
+                Some(k) => custom.id = Some(k.id.clone()),
+                None => {
+                    let have: Vec<&str> = known.iter().map(|k| k.slug.as_str()).collect();
+                    anyhow::bail!(
+                        "{} has no custom environment '{}'. {}",
+                        project.label(),
+                        custom.slug,
+                        if have.is_empty() {
+                            "It has none; the others are production, preview and development."
+                                .to_string()
+                        } else {
+                            format!("Its custom environments: {}.", have.join(", "))
+                        }
+                    );
+                }
+            }
+            custom_names = known.into_iter().map(|k| (k.id, k.slug)).collect();
+        }
         Ok(Session {
-            api: Api::new(base, token, team)?,
+            api,
             project,
-            environment: common.env_name,
+            environment,
+            git_branch: common.git_branch.clone(),
+            custom_names,
         })
+    }
+
+    /// The environment as the plan header names it: `preview (branch feature)`,
+    /// `staging (custom)`, or the built-in name.
+    pub fn env_label(&self) -> String {
+        match (&self.git_branch, &self.environment) {
+            (Some(b), e) => format!("{} (branch {b})", e.name()),
+            (None, e) if e.is_custom() => format!("{} (custom)", e.name()),
+            (None, e) => e.name().to_string(),
+        }
+    }
+
+    /// What the state file keys this run's record by: the environment, and for a
+    /// branch run the branch too (`preview@feature`), so a branch's entries do
+    /// not stand in for the preview ones.
+    pub fn state_key(&self) -> String {
+        match &self.git_branch {
+            Some(b) => format!("{}@{b}", self.environment.name()),
+            None => self.environment.name().to_string(),
+        }
     }
 
     /// List the project's variables and pick the chosen environment's entries.
     pub fn list(&self) -> Result<(Selection, Listing)> {
         let mut listing = self.api.list_envs(&self.project.project)?;
-        let sel = plan::select(std::mem::take(&mut listing.vars), self.environment);
+        let sel = plan::select(
+            std::mem::take(&mut listing.vars),
+            &self.environment,
+            self.git_branch.as_deref(),
+        );
         Ok((sel, listing))
     }
 
     /// Read the value of every Config entry `wanted` accepts. A Config entry for
     /// which Vercel returns no value is treated as a Secret.
-    pub fn read(
-        &self,
-        entries: &[api::RemoteVar],
-        wanted: impl Fn(&str) -> bool,
-    ) -> Result<Vec<Remote>> {
-        let mut out = Vec::with_capacity(entries.len());
-        for var in entries {
+    pub fn read(&self, sel: &Selection, wanted: impl Fn(&str) -> bool) -> Result<Vec<Remote>> {
+        let mut out = Vec::with_capacity(sel.entries.len());
+        for var in &sel.entries {
             let mut remote = Remote {
                 var: var.clone(),
                 kind: var.kind,
                 value: None,
                 read: false,
+                inherited: sel.inherited.contains(&var.id),
             };
             if var.kind == Kind::Config && wanted(&var.key) {
                 remote.read = true;
@@ -103,9 +167,15 @@ impl Session {
                 if listing.hidden_production == 1 { " is" } else { "s are" }
             );
         }
-        if sel.skipped_branch > 0 {
+        if sel.skipped_branch > 0 && self.git_branch.is_some() {
             eprintln!(
-                "warning: {} preview variable{} scoped to one git branch skipped (branch scoping is not supported yet).",
+                "warning: {} preview variable{} scoped to other git branches ignored.",
+                sel.skipped_branch,
+                if sel.skipped_branch == 1 { "" } else { "s" }
+            );
+        } else if sel.skipped_branch > 0 {
+            eprintln!(
+                "warning: {} preview variable{} scoped to a git branch skipped (use --git-branch <branch> with --env-name preview to work on one).",
                 sel.skipped_branch,
                 if sel.skipped_branch == 1 { " is" } else { "s are" }
             );
@@ -132,7 +202,7 @@ pub fn record(
     yes: bool,
 ) -> Result<()> {
     let root = Path::new(".");
-    let written = state::write(root, &session.project, session.environment, entries)?;
+    let written = state::write(root, &session.project, &session.state_key(), entries)?;
     crate::say!(
         "  {} recorded {} (ids only, no values)",
         "✓".green(),

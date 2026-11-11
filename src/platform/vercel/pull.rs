@@ -50,7 +50,7 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
     }
 
     let (sel, listing) = session.list()?;
-    let remote = session.read(&sel.entries, |_| true)?;
+    let remote = session.read(&sel, |_| true)?;
     session.warn(&sel, &listing);
     let changes = plan::pull_plan(&file.vars, remote);
 
@@ -92,7 +92,13 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
     let gitignore = GitignoreMode::from_flags(args.gitignore, args.no_gitignore);
 
     if set.is_empty() && add.is_empty() {
-        crate::say!("  {} is already up to date.", shown(&path));
+        if file.text.is_some() {
+            crate::say!("  {} is already up to date.", shown(&path));
+        } else {
+            // Nothing for this environment on Vercel, and no file to bring up
+            // to date: "up to date" would suggest there is one.
+            crate::say!("  nothing to pull; {} not created.", shown(&path));
+        }
         if !args.dry_run {
             super::record(&session, &sel.entries, &gitignore, args.yes)?;
         }
@@ -148,7 +154,7 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
     super::record(&session, &sel.entries, &gitignore, args.yes)?;
     crate::utils::protect::protect_output(&path.to_string_lossy(), &gitignore)?;
     if let Some(kept) = &kept {
-        crate::utils::protect::protect_output(&kept.to_string_lossy(), &gitignore)?;
+        crate::utils::protect::protect_backup(&kept.to_string_lossy(), &gitignore)?;
     }
     Ok(())
 }
