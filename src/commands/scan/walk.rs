@@ -48,6 +48,13 @@ pub(super) fn structured_format(path: &Path) -> Option<crate::core::secretscan::
     }
 }
 
+/// Whether `path` is a Jupyter notebook, by extension (F14-6).
+pub(super) fn is_notebook(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("ipynb"))
+}
+
 /// Whether `path` is a PKCS#12 keystore (`.p12`, `.pfx`), by its content
 /// (C3): a private key and its certificate, usually behind a weak password.
 ///

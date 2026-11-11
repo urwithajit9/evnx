@@ -30,6 +30,29 @@ pub fn builtin_rules() -> Vec<PatternRule> {
     BUILTIN.rules.clone()
 }
 
+/// Ids of the checks that report findings but are not rules in `rules.toml`:
+/// the AWS secret key and entropy heuristics, the name check and a declared
+/// secret. Together with [`builtin_rules`] they are every `rule_id` a built-in
+/// scan can print.
+pub const CHECK_IDS: &[&str] = &[
+    "aws-secret-access-key",
+    "high-entropy-string",
+    super::detector::SENSITIVE_KEY_ID,
+    super::detector::DECLARED_SECRET_ID,
+];
+
+/// Every `rule_id` a scan without extra rule files can report (RM-91): the
+/// built-in rules, then [`CHECK_IDS`]. The catalogue `schema.json`'s `scan`
+/// section is held to.
+#[must_use]
+pub fn catalogue_ids() -> Vec<String> {
+    builtin_rules()
+        .into_iter()
+        .filter_map(|r| r.id)
+        .chain(CHECK_IDS.iter().map(|s| (*s).to_string()))
+        .collect()
+}
+
 /// `src/assets/rules.toml` as it is compiled in (C2, RM-50).
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]

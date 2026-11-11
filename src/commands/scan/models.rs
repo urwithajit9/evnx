@@ -362,6 +362,11 @@ pub struct ScanResults {
     pub high_confidence: usize,
     pub medium_confidence: usize,
     pub low_confidence: usize,
+    /// Lines for stderr in the order they arose: `(is_warning, text)`, else a
+    /// `-v` line. Held, not printed, while files are scanned in parallel
+    /// (RM-74), so stderr reads the same whatever the thread count.
+    #[serde(skip)]
+    pub log: Vec<(bool, String)>,
 }
 
 /// Aggregate counts, as a nested object.
@@ -518,7 +523,25 @@ impl ScanResults {
             high_confidence: 0,
             medium_confidence: 0,
             low_confidence: 0,
+            log: Vec::new(),
         }
+    }
+
+    /// Append what another (one file's) scan produced, after what is here.
+    pub fn merge(&mut self, other: ScanResults) {
+        self.files_scanned += other.files_scanned;
+        self.files.extend(other.files);
+        self.unreadable.extend(other.unreadable);
+        self.skipped.extend(other.skipped);
+        self.ignored_by_git.extend(other.ignored_by_git);
+        self.secrets_found += other.secrets_found;
+        self.findings.extend(other.findings);
+        self.allowed.extend(other.allowed);
+        self.known.extend(other.known);
+        self.high_confidence += other.high_confidence;
+        self.medium_confidence += other.medium_confidence;
+        self.low_confidence += other.low_confidence;
+        self.log.extend(other.log);
     }
 
     /// Add a finding and update confidence counters.

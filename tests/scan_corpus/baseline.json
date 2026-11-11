@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "overall": {
+    "tp": 53,
+    "fp": 12,
+    "fn": 3,
+    "precision": 0.8154,
+    "recall": 0.9464
+  },
+  "families": {
+    "ai": {
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "chat": {
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "cloud": {
+      "tp": 8,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "database": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "generic": {
+      "tp": 13,
+      "fp": 4,
+      "fn": 3,
+      "precision": 0.7647,
+      "recall": 0.8125
+    },
+    "jwt": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "keys": {
+      "tp": 4,
+      "fp": 8,
+      "fn": 0,
+      "precision": 0.3333,
+      "recall": 1.0
+    },
+    "payment": {
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "saas": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "vcs": {
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    }
+  },
+  "formats": {
+    "dockerfile": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.5
+    },
+    "dotenv": {
+      "tp": 27,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.931,
+      "recall": 1.0
+    },
+    "ipynb": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "json": {
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "shell": {
+      "tp": 5,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.8333
+    },
+    "text": {
+      "tp": 4,
+      "fp": 7,
+      "fn": 1,
+      "precision": 0.3636,
+      "recall": 0.8
+    },
+    "yaml": {
+      "tp": 9,
+      "fp": 3,
+      "fn": 0,
+      "precision": 0.75,
+      "recall": 1.0
+    }
+  }
+}

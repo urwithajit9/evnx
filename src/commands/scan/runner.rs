@@ -17,7 +17,8 @@
 //! ```
 
 use super::walk::{
-    decode, decode_bytes, is_pkcs12, named_like_dotenv, structured_format, Decoded, STDIN_LABEL,
+    decode, decode_bytes, is_notebook, is_pkcs12, named_like_dotenv, structured_format, Decoded,
+    STDIN_LABEL,
 };
 
 /// The id of a PKCS#12 keystore finding (C3). Found by file content, so it is
@@ -393,43 +394,72 @@ impl ScanRunner {
         // `None` everywhere outside one, which leaves the report as it was.
         let git = crate::core::gitignore::exposures(&files);
 
+        // RM-74: files are scanned in parallel, each into a results of its own,
+        // and merged in `files` order (sorted by path), so the report is the
+        // same whatever the thread count. `RAYON_NUM_THREADS` caps the pool.
+        //
+        // ⚠️ Nothing a file's scan does is shared: its findings, notes and
+        // warnings land in its own results. Notes are printed by `finish`, in
+        // order, so stderr is as deterministic as stdout.
+        use rayon::prelude::*;
+        let scanned: Vec<(ScanResults, bool)> = files
+            .par_iter()
+            .zip(git.par_iter())
+            .map(|(file, view)| {
+                let mut local = ScanResults::new(0);
+                if self.verbose {
+                    local.log.push((
+                        false,
+                        format!(
+                            "Scanning: {} ({})",
+                            file.display(),
+                            Self::read_as(file).describe()
+                        ),
+                    ));
+                }
+                let walked = !collected.named.contains(file);
+                let outcome = self.scan_file(file, walked, &mut local);
+                // I-062: line, then rule. A `.env` is read twice — parsed, then the
+                // lines the parser dropped — so a commented-out key on line 1 used
+                // to come after a finding on line 5.
+                //
+                // A notebook is already in cell order: a line is within its cell.
+                if !is_notebook(file) {
+                    local
+                        .findings
+                        .sort_by(|a, b| (a.line, &a.pattern).cmp(&(b.line, &b.pattern)));
+                }
+                let read = local.skipped.is_empty();
+
+                // ⚠️ Held back only when git positively says ignored **and** not
+                // tracked, and only for a walk. A tracked file is in the
+                // repository whatever `.gitignore` says now (I-157); a file the
+                // user named is the file they asked about; and no answer from git
+                // is not "ignored". Each of those is reported exactly as before.
+                let ignored = view.as_ref().map(|v| v.exposure)
+                    == Some(crate::core::gitignore::Exposure::Protected);
+                if walked && ignored && !self.include_ignored {
+                    local.hold_back(0, display_portable(file));
+                } else if let Some(view) = view {
+                    for finding in &mut local.findings {
+                        finding.git = Some(view.exposure.into());
+                        finding.repo_path = Some(view.repo_path.clone());
+                    }
+                }
+                outcome.map(|()| (local, read))
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .collect::<Result<_>>()?;
+
         // The files actually read: `scanning …` must not name one that was
         // then set aside as binary.
         let mut read = Vec::with_capacity(files.len());
-        for (file, view) in files.iter().zip(&git) {
-            if self.verbose {
-                ui::scanning_file_stderr(file, Self::read_as(file).describe());
-            }
-            let walked = !collected.named.contains(file);
-            let before = results.skipped.len();
-            let first = results.findings.len();
-            self.scan_file(file, walked, &mut results)?;
-            if results.skipped.len() == before {
+        for (file, (local, was_read)) in files.iter().zip(scanned) {
+            if was_read {
                 read.push(file.clone());
             }
-            // I-062: line, then rule. A `.env` is read twice — parsed, then the
-            // lines the parser dropped — so a commented-out key on line 1 used
-            // to come after a finding on line 5.
-            results.findings[first..]
-                .sort_by(|a, b| (a.line, &a.pattern).cmp(&(b.line, &b.pattern)));
-
-            // ⚠️ Held back only when git positively says ignored **and** not
-            // tracked, and only for a walk. A tracked file is in the
-            // repository whatever `.gitignore` says now (I-157); a file the
-            // user named is the file they asked about; and no answer from git
-            // is not "ignored". Each of those is reported exactly as before.
-            let ignored = view.as_ref().map(|v| v.exposure)
-                == Some(crate::core::gitignore::Exposure::Protected);
-            if walked && ignored && !self.include_ignored {
-                results.hold_back(first, display_portable(file));
-                continue;
-            }
-            if let Some(view) = view {
-                for finding in &mut results.findings[first..] {
-                    finding.git = Some(view.exposure.into());
-                    finding.repo_path = Some(view.repo_path.clone());
-                }
-            }
+            results.merge(local);
         }
 
         if stdin {
@@ -518,7 +548,20 @@ impl ScanRunner {
 
     /// Report `results`, or write them as the baseline: shared by a walk and
     /// `--staged`.
-    fn finish(&self, results: ScanResults, format: OutputFormat, read: &[PathBuf]) -> Result<bool> {
+    fn finish(
+        &self,
+        mut results: ScanResults,
+        format: OutputFormat,
+        read: &[PathBuf],
+    ) -> Result<bool> {
+        // What the scan had to say, in the order it arose (RM-74).
+        for (warning, line) in std::mem::take(&mut results.log) {
+            if warning {
+                ui::warning(line);
+            } else {
+                ui::verbose_stderr(line);
+            }
+        }
         // `--update-baseline` (C5): this run's counted and known findings
         // become the baseline, and the run exits 0.
         if let Some(path) = &self.update_baseline {
@@ -580,7 +623,7 @@ impl ScanRunner {
     fn read_as(path: &Path) -> super::models::ReadAs {
         if named_like_dotenv(path) {
             super::models::ReadAs::Dotenv
-        } else if structured_format(path).is_some() {
+        } else if structured_format(path).is_some() || is_notebook(path) {
             super::models::ReadAs::Structured
         } else {
             super::models::ReadAs::Text
@@ -723,6 +766,14 @@ impl ScanRunner {
         use crate::core::secretscan::engine;
         results.files_scanned += 1;
 
+        // F14-6: a notebook is JSON whose strings hide a secret behind
+        // escapes, so it is read cell by cell, unescaped.
+        if read_as == ReadAs::Structured && is_notebook(path) {
+            if let Some(chunks) = engine::notebook_chunks(content) {
+                return self.scan_notebook(path, chunks, results);
+            }
+        }
+
         // C8: parsed once here, so a file that does not parse is recorded as
         // read as text, and is never an error.
         let format = (read_as == ReadAs::Structured)
@@ -731,11 +782,18 @@ impl ScanRunner {
         let leaves = format.and_then(|f| engine::leaves(content, f));
         let (read_as, note) = match (format, &leaves) {
             (Some(f), None) => (ReadAs::Text, Some(format!("did not parse as {f}"))),
+            _ if read_as == ReadAs::Structured && is_notebook(path) => (
+                ReadAs::Text,
+                Some("did not parse as a Jupyter notebook".to_string()),
+            ),
             _ => (read_as, None),
         };
         if self.verbose {
             if let Some(note) = &note {
-                ui::verbose_stderr(format!("{}: {note}, read as text", display_portable(path)));
+                results.log.push((
+                    false,
+                    format!("{}: {note}, read as text", display_portable(path)),
+                ));
             }
         }
         results.files.push(super::models::ScannedFile {
@@ -761,6 +819,47 @@ impl ScanRunner {
             self.add_finding(results, path, f.line, f.variable, f.detection, &lines);
         }
 
+        Ok(())
+    }
+
+    /// Scan a notebook's cells (F14-6). Each chunk is read as text, so a value
+    /// is found once, where it is: the location is `file:LINE (cells[N]…)`,
+    /// LINE being within that cell's source or output.
+    fn scan_notebook(
+        &self,
+        path: &Path,
+        chunks: Vec<crate::core::secretscan::engine::NotebookChunk>,
+        results: &mut ScanResults,
+    ) -> Result<()> {
+        use super::models::ReadAs;
+        use crate::core::secretscan::engine;
+        let label = display_portable(path);
+        results.files_scanned += 1;
+        results.files.push(super::models::ScannedFile {
+            path: label.clone(),
+            read_as: ReadAs::Structured,
+            note: Some("Jupyter notebook: cells and outputs read unescaped".to_string()),
+        });
+        for chunk in chunks {
+            let ctx = engine::Context {
+                path: &label,
+                kind: engine::Kind::Text,
+                document: None,
+                leaves: None,
+                registry: &self.registry,
+            };
+            let lines: Vec<&str> = chunk.text.lines().collect();
+            for f in engine::scan_text(&chunk.text, &ctx) {
+                self.add_finding(
+                    results,
+                    path,
+                    f.line,
+                    Some(chunk.path.clone()),
+                    f.detection,
+                    &lines,
+                );
+            }
+        }
         Ok(())
     }
 
@@ -889,9 +988,12 @@ impl ScanRunner {
         let here = display_portable(path);
         if let Some(m) = super::suppress::allowing(lines, line, &finding.rule_id) {
             if m.reason.is_none() {
-                ui::warning(format!(
-                    "{here}:{line}: evnx:allow {} has no reason; say why after it",
-                    finding.rule_id
+                results.log.push((
+                    true,
+                    format!(
+                        "{here}:{line}: evnx:allow {} has no reason; say why after it",
+                        finding.rule_id
+                    ),
                 ));
             }
             finding.status = super::models::Status::Allowed;
@@ -906,13 +1008,19 @@ impl ScanRunner {
         {
             if let Some(m) = lines.get(n - 1).and_then(|l| super::suppress::marker_in(l)) {
                 match m.rule {
-                    None => ui::warning(format!(
-                        "{here}:{n}: a bare evnx:allow allows nothing; name the rule: evnx:allow {}",
-                        finding.rule_id
+                    None => results.log.push((
+                        true,
+                        format!(
+                            "{here}:{n}: a bare evnx:allow allows nothing; name the rule: evnx:allow {}",
+                            finding.rule_id
+                        ),
                     )),
-                    Some(other) => ui::warning(format!(
-                        "{here}:{n}: evnx:allow {other} does not match this finding, which is {}",
-                        finding.rule_id
+                    Some(other) => results.log.push((
+                        true,
+                        format!(
+                            "{here}:{n}: evnx:allow {other} does not match this finding, which is {}",
+                            finding.rule_id
+                        ),
                     )),
                 }
             }

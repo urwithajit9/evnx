@@ -1,0 +1,3 @@
+# The key pair from AWS's own documentation
+AWS_ACCESS_KEY_ID={{cat:AKIA|IOSFODNN7|EXAMPLE}}
+AWS_SECRET_ACCESS_KEY={{cat:wJalrXUtnFEMI/K7MDENG/bPxRfiCY|EXAMPLEKEY}}

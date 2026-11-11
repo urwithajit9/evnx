@@ -126,7 +126,69 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `--env`, `--env-name`, `--direction`, `--force`, `--placeholder`,
     `--skip-without-env`, `--template-config` and `--naming-policy`.
 
+- **A precision and recall gate for `scan`, run by `cargo test`** (RM-70).
+  `tests/scan_corpus/` is a labelled corpus of 60 files: 37 whose secrets must be
+  found, each labelled with its rule id and line, and 23 look-alikes that must
+  not be (documentation keys, near-miss tokens, hashes, UUIDs, lockfile
+  digests, base64 images, notebook outputs, placeholders, public keys, config
+  references). `tests/scan_quality.rs` runs the real `evnx scan` over it and
+  prints precision and recall overall, per family (cloud, vcs, payment, chat,
+  keys, jwt, ai, saas, database, generic) and per file format. A drop in recall
+  anywhere fails the build; so does a precision drop of more than 0.02. The
+  committed numbers are `tests/scan_corpus/baseline.json`; move them on purpose
+  with `EVNX_UPDATE_SCAN_BASELINE=1 cargo test --test scan_quality -- --nocapture`.
+  No secret-shaped value is committed: the files are templates filled at test
+  time from parts, and a test fails if one holds a value that matches a rule.
+  In CI the table is also written to the job summary.
+
+- **`init`'s `schema.json` says how `scan` sees each secret variable** (RM-91).
+  A new `scan` section in `src/assets/schema.json` has an entry for every
+  variable the catalogue declares that `scan` would treat as a credential, or
+  that sits behind a browser-exposed prefix: the id of the rule that reports its
+  value (`stripe-live-secret-key`, `github-token`, ...), `heuristic` when only
+  the generic name and entropy checks would, or `public` when a prefix from
+  `PUBLIC_PREFIXES` (`NEXT_PUBLIC_`, `VITE_`, ...) puts it in the client bundle.
+  Additive: the rest of the file is unchanged. `schema::loader::scan_view(name)`
+  reads it. `tests/schema_scan_view.rs` holds the section, `rules.toml` and the
+  prefix list in step, and checks each claim against the scanner itself, so a
+  renamed or removed rule, a dropped variable or a new prefix breaks a test.
+  It needs no target-format catalogue (RM-61): the rule ids come from the rule
+  definitions.
+
+### Changed
+
+- **`scan` reads files in parallel** (RM-74). Files are scanned on all cores and
+  reported in path order, so text, JSON, SARIF and GitHub output, the exit code
+  and the notes on stderr are the same as before and the same at any thread
+  count. `RAYON_NUM_THREADS=N` caps the threads (`1` is the old behaviour).
+  Measured on a 4,500-file, 51 MB tree on two cores: 9.4 s to 4.9 s with the
+  built-in rules, 10.9 s to 6.2 s with the gitleaks pack. `-v` lines and
+  `evnx:allow` warnings are now printed together after the scan rather than as
+  each file is read.
+
 ### Fixed
+
+- **Monorepos: paths in `.evnx.toml` are read from the folder that holds it, and
+  `doctor` notices nested `.env` files** (F14-10, I-333, I-331).
+  - A relative path in `.evnx.toml` means "from the folder holding this file",
+    wherever evnx runs below it. That was already so for `[defaults] example`
+    and `[cloud] file`; `[scan] exclude` patterns with a `/` now are too, so
+    `apps/web/fixtures/**` excludes that folder from a scan run in `apps/web`.
+    Patterns as written still match (a union), and a pattern with no `/`
+    matches anywhere as before. Flags are relative to where you run.
+  - `doctor` lists env files in subfolders (`apps/web/.env`, up to five, then
+    "and N more") as info with `evnx doctor apps/web` as the hint; it checks
+    only the folder you gave. `node_modules`, `target`, `.git` and other
+    dependency, build and hidden folders are skipped, as `init` skips them.
+    `init` already named a nested `.env` and touches none.
+- **`scan` reads Jupyter notebooks cell by cell** (F14-6, OW-4). A notebook is
+  JSON, so a key in a cell or an output sat behind string escapes and was
+  missed. Each cell's `source` (code and markdown) and each output's `text`,
+  `data["text/plain"]` and `traceback` are now read unescaped, and a finding is
+  located by cell: `nb.ipynb:2 (cells[3].outputs[0].text)`, the line being
+  within that cell or output. Image output is not read. A notebook that does not
+  parse is scanned as text, as before. The baseline fingerprint of a notebook
+  finding now includes its cell path.
 
 - **`platform pull`: no more "already up to date" for a file that does not exist.**
   When Vercel has nothing for the environment and the local file is absent, pull

@@ -331,7 +331,19 @@ fn main() -> Result<()> {
             staged,
         } => commands::scan::run(commands::scan::ScanOptions {
             paths: path,
-            exclude: evnx::core::config::extend(exclude, cfg.scan.exclude),
+            exclude: evnx::core::config::extend(
+                exclude,
+                // Read from the folder holding `.evnx.toml` (I-333).
+                match (
+                    cfg.scan.exclude,
+                    config_source.as_deref().and_then(Path::parent),
+                ) {
+                    (Some(patterns), Some(dir)) => {
+                        Some(evnx::core::config::rebase_exclude(patterns, dir, &here))
+                    }
+                    (patterns, _) => patterns,
+                },
+            ),
             // Additive, like `exclude` above: `--pattern` is this run's rule and
             // `[[scan.patterns]]` is the project's standing set.
             disable: cfg.scan.disable.clone().unwrap_or_default(),

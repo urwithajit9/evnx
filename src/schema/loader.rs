@@ -173,3 +173,28 @@ fn extract_service_names(
         })
         .collect()
 }
+
+/// How `scan` sees a variable of the catalogue (RM-91).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanView {
+    /// A provider rule reports its value: the rule's id.
+    Rule(&'static str),
+    /// No rule for it; the generic name and entropy checks are all that would.
+    Heuristic,
+    /// Behind a browser-exposed prefix (`NEXT_PUBLIC_`, `VITE_`, ...): inlined
+    /// into the client bundle, so a secret there is public.
+    Public,
+}
+
+/// `name`'s entry in `schema.json`'s `scan` section, if it has one.
+///
+/// Held in step with `rules.toml` and the prefix list by
+/// `tests/schema_scan_view.rs`.
+pub fn scan_view(name: &str) -> Option<ScanView> {
+    let value = schema().ok()?.scan.get(name)?;
+    Some(match value.as_str() {
+        "heuristic" => ScanView::Heuristic,
+        "public" => ScanView::Public,
+        id => ScanView::Rule(id),
+    })
+}
