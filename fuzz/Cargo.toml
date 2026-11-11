@@ -1,0 +1,49 @@
+# Local fuzz targets (SEC-1). Not part of any build or of CI: the owner decided
+# these run on a developer's machine only. See README.md.
+#
+# `[workspace]` below makes this its own workspace root, so `cargo build` and
+# `cargo test` at the repository root never see it, and the root `exclude` keeps
+# it out of the published crate.
+
+[package]
+name = "evnx-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# The library, default features: the parser and the scan engine are not
+# feature-gated.
+evnx = { path = ".." }
+# The same crate, from the same registry, that the `cloud` feature links.
+evnx-crypto = "0.2.1"
+
+[workspace]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "env_parser"
+path = "fuzz_targets/env_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "scan_engine"
+path = "fuzz_targets/scan_engine.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "crypto_decrypt"
+path = "fuzz_targets/crypto_decrypt.rs"
+test = false
+doc = false
+bench = false

@@ -183,6 +183,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Adds four dev-dependencies (`chacha20poly1305`, `x25519-dalek`, `hkdf`,
   `ed25519-dalek`) that are already in the build graph.
 
+- **Local fuzz targets for the `.env` parser, the scan engine and decryption**
+  (SEC-1, `fuzz/`). A cargo-fuzz project of its own, outside every build and
+  without a CI job: `env_parser` (every `ParserConfig`), `scan_engine` (one
+  in-memory file read as `.env`, text, JSON, YAML, TOML or a Jupyter notebook)
+  and `crypto_decrypt` (`evnx-crypto` on arbitrary ciphertext, wrapped keys and
+  encodings, which must always return an error). `fuzz/README.md` says how to
+  run them; `fuzz/seeds/` holds small starting inputs. The directory is excluded
+  from the published crate.
+
 ### Changed
 
 - **`scan` reads files in parallel** (RM-74). Files are scanned on all cores and

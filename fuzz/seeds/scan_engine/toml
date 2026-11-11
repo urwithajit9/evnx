@@ -1,0 +1,4 @@
+[db]
+password = "hunter2"
+[[servers]]
+token = "abc"

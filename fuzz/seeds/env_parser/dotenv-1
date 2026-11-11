@@ -1,0 +1,12 @@
+# comment
+export A=1
+B="two words" # trailing
+C='single $quoted'
+D=${A}-${B:-fallback}
+EMPTY=
+MULTI="line1
+line2"
+UNI="héllo"
+bad line without equals
+=novalue
+KEY WITH SPACE=1
