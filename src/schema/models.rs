@@ -19,6 +19,12 @@ type Ordered<T> = IndexMap<String, T>;
 /// Root schema containing all configuration data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {
+    /// How `scan` sees a variable (RM-91): for each variable name, the id of
+    /// the rule that reports its value, `"heuristic"` when only the generic
+    /// name and entropy checks would, or `"public"` when a browser-exposed
+    /// prefix puts it in the client bundle. Additive: absent in older files.
+    #[serde(default)]
+    pub scan: Ordered<String>,
     pub languages: Ordered<LanguageConfig>,
     pub services: ServiceCategories,
     pub infrastructure: Ordered<InfrastructureConfig>,

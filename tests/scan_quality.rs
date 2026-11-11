@@ -646,18 +646,8 @@ fn portable(name: &str) -> bool {
 fn the_manifest_and_the_templates_agree() {
     let manifest = manifest();
     let mut ids = BTreeSet::new();
-    let known: BTreeSet<String> = evnx::core::secretscan::rules::builtin_rules()
+    let known: BTreeSet<String> = evnx::core::secretscan::rules::catalogue_ids()
         .into_iter()
-        .filter_map(|r| r.id)
-        .chain(
-            [
-                "aws-secret-access-key",
-                "high-entropy-string",
-                evnx::core::secretscan::detector::SENSITIVE_KEY_ID,
-                evnx::core::secretscan::detector::DECLARED_SECRET_ID,
-            ]
-            .map(String::from),
-        )
         .collect();
 
     for case in &manifest.case {

@@ -141,6 +141,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   time from parts, and a test fails if one holds a value that matches a rule.
   In CI the table is also written to the job summary.
 
+- **`init`'s `schema.json` says how `scan` sees each secret variable** (RM-91).
+  A new `scan` section in `src/assets/schema.json` has an entry for every
+  variable the catalogue declares that `scan` would treat as a credential, or
+  that sits behind a browser-exposed prefix: the id of the rule that reports its
+  value (`stripe-live-secret-key`, `github-token`, ...), `heuristic` when only
+  the generic name and entropy checks would, or `public` when a prefix from
+  `PUBLIC_PREFIXES` (`NEXT_PUBLIC_`, `VITE_`, ...) puts it in the client bundle.
+  Additive: the rest of the file is unchanged. `schema::loader::scan_view(name)`
+  reads it. `tests/schema_scan_view.rs` holds the section, `rules.toml` and the
+  prefix list in step, and checks each claim against the scanner itself, so a
+  renamed or removed rule, a dropped variable or a new prefix breaks a test.
+  It needs no target-format catalogue (RM-61): the rule ids come from the rule
+  definitions.
+
 ### Changed
 
 - **`scan` reads files in parallel** (RM-74). Files are scanned on all cores and
