@@ -33,6 +33,7 @@ Next steps:
 
   evnx migrate  Generate destination commands from your .env
 
+! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: heroku: one bulk command, single-quoted (exit 0)
@@ -68,6 +69,7 @@ Next steps:
 
   evnx migrate  Generate destination commands from your .env
 
+! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: FIXED I-110: printing doppler commands needs no doppler installed (exit 0)
@@ -105,6 +107,7 @@ Next steps:
 
   evnx migrate  Generate destination commands from your .env
 
+! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: FIXED I-110: same for railway (and infisical) (exit 0)

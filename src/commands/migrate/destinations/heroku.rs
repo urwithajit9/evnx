@@ -70,6 +70,7 @@ impl MigrationDestination for HerokuDestination {
             command.push_str(&format!(" \\\n  {}", shell::assignment(key, value)));
         }
         out.command(command);
+        out.warn_values_in_argv();
 
         Ok(MigrationResult {
             uploaded: secrets.len(),

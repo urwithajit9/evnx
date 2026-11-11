@@ -28,6 +28,7 @@ Next steps:
 
   evnx migrate  Generate destination commands from your .env
 
+! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: comma list, then prefix (exit 0)
@@ -106,6 +107,7 @@ Next steps:
   evnx migrate  Generate destination commands from your .env
 
 ! API_X, X → X: kept the value of X (--allow-collisions)
+! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
   Docs: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
   ok: --allow-collisions keeps the last value, and says so (DEC-PL2) (exit 0)

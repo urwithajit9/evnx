@@ -222,6 +222,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   0.13.0 and earlier still send (`evnx cloud pull --vault <the same upper-case
   id>`). Pull them once with 0.13.0 and push again with this version; versions
   pushed from now on open by id or by name.
+- **`migrate` keeps values off the command line where the tool allows it, and
+  says so where it does not** (K8). For `aws-secrets-manager` the printed
+  commands now write the JSON to a private (`umask 077`) temp file through a
+  quoted heredoc and pass `--secret-string file://"$f"`, then remove the file,
+  as the Azure commands already did: the values no longer show in `ps` or shell
+  history, and the stored secret is exactly the JSON. `heroku`, `doppler`,
+  `infisical` and `railway` take values only as arguments, so a one-line warning
+  on stderr under the commands says they can show in `ps` and shell history and
+  should be run on a trusted machine (`-q` does not hide it; `> run.sh` does not
+  capture it).
 
 ## [0.13.0] - 2026-11-08
 
