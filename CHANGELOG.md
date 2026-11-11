@@ -212,6 +212,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   backup), `push`, `pull`, `run`, `diff` and `export` print a warning on stderr
   naming both numbers and `evnx cloud history`. It is a hint and never stops
   the command; it is per machine, and `vault delete` forgets the vault.
+- **A vault id typed in upper case is stored in lower case** (C10).
+  `--vault 0B8A…` was kept verbatim and bound into the encrypted version's AAD,
+  while the server's id, which a pull by name uses, is lower case, so a version
+  pushed by an upper-case id could not be pulled by name. The id is now
+  lower-cased as soon as it is read, and an id is matched in any case against
+  `vault list`. **Pushes already made with an upper-case id:** they were sealed
+  with that spelling, so they open only with the same upper-case id, which only
+  0.13.0 and earlier still send (`evnx cloud pull --vault <the same upper-case
+  id>`). Pull them once with 0.13.0 and push again with this version; versions
+  pushed from now on open by id or by name.
 
 ## [0.13.0] - 2026-11-08
 
