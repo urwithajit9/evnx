@@ -11,7 +11,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **`evnx platform diff|pull --to vercel`: compare and pull a Vercel project's
-  environment variables** (N14-10, phase 1; `push` and `--prune` come later).
+  environment variables** (N14-10, phase 1; `push` is below, `--prune` comes later).
   `diff` prints a plan (`+ add`, `~ update`, `= unchanged`, `! remote only`,
   `! type differs`) for a local `.env.<env>` against a Vercel environment, with
   `--format json`; exit 0 with no differences, 1 with some. `pull` writes
@@ -31,6 +31,29 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `updatedAt`; no values, no hashes) for the later `push`; add `.evnx/platform/`
   to `.gitignore`. Needs the `net` feature; a build without it lists `platform`
   in the missing-features table.
+- **`evnx platform push --to vercel`: create and update Vercel variables from the
+  local file** (N14-10, phase 2). It prints the plan (`+ create`, `~ update`,
+  `= unchanged`, `! type differs`, `! remote only`; never a value) and asks first
+  (`--yes` without a terminal, exit 4 on a no, `--dry-run` sends no request that
+  carries a value). A new key is created in **one bulk `POST`** with
+  `upsert=false`: Vercel's upsert replaces a variable's whole target list, so it
+  is never used. A **Config** whose value differs is changed by id with `PATCH`;
+  a **Secret** that exists on both sides cannot be compared, so it counts as an
+  update (`--only-new` skips those). A variable shared with other environments
+  leaves this environment first (`PATCH` its targets) and gets its own entry of
+  the same type, so the others are untouched. The type of a new key is the
+  classifier's; a public prefix (`NEXT_PUBLIC_`, `VITE_`, …) is always Config;
+  `--type config|secret` overrides it for new keys only. An existing variable
+  keeps its type. Keys only Vercel has are kept (`--prune` is a later phase). A
+  key with an empty value is never pushed, so `pull` followed by `push` cannot
+  blank a Secret. `failed[]` is read on every create: any entry is exit 1 naming
+  the keys and Vercel's error code, and the rest stays applied. A 429 waits for
+  the reset and gives up after three tries (exit 15). Before it writes, `push`
+  compares each variable it will change with `.evnx/platform/vercel.json`; if
+  Vercel changed it since the last `pull` or `push`, nothing is written and the
+  exit code is **14** (no state file: a warning, and it goes ahead). A push that
+  wrote anything refreshes the state file. `--format json` prints one document.
+  Response bodies are never printed (create and delete answers echo ciphertext).
 - **`SSL_CERT_FILE` and `SSL_CERT_DIR` add trusted root certificates**, so evnx
   works behind TLS-inspecting corporate proxies (RM-68). The bundled roots stay;
   the extras are added to them. `SSL_CERT_FILE` is a PEM bundle; `SSL_CERT_DIR`
@@ -86,6 +109,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `--skip-without-env`, `--template-config` and `--naming-policy`.
 
 ### Fixed
+
+- **`platform diff`: a Secret present on both sides is no longer a difference**
+  (F1). Vercel never returns a Secret's value, so such a variable made `diff` exit
+  1 forever and the command was useless as a CI gate. It now prints as
+  `= secret  present  (write-only, not compared)` and counts as unchanged for the
+  exit code. **`diff --strict`** restores the old reading (an update, exit 1). In
+  `--format json` the entry is `"action": "unchanged"` with `"compare":
+  "write_only"`, the summary gains `present`, and the document gains `strict`; no
+  existing field was removed.
+- **`platform`: a 403 that says `invalidToken` exits 10, not 11** (F2). The
+  message is "the token is invalid or expired; create one at
+  vercel.com/account/tokens" instead of a hint about the project and team. A 403
+  without that flag stays 11.
+- **`platform diff` with no `.env.<env>` and no `.env` compares against an empty
+  local side** (F3): every Vercel variable is "remote only", and a note says so,
+  instead of exit 2. A `--file` that does not exist is still an error.
+- **`platform pull` and `push` offer to add `.evnx/platform/` to `.gitignore`**
+  (F4), the same yes/no question the env files get, on a terminal without
+  `--yes`. `--gitignore` adds it without asking; otherwise the text hint stays.
 
 - **`evnx spec init` wrote `[vars.spring.datasource.url]` for a variable with dots in its name.**
   TOML reads that as nested tables, so `evnx validate` then reported `Missing required variable:

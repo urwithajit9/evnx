@@ -542,9 +542,10 @@ Exit codes: 0 done, 1 some GitHub uploads failed, 2 could not run.
 
 ### `evnx platform` _(requires `--features net`)_
 
-Compares a local `.env` with the variables of a hosting platform, and pulls the
-readable ones into it. Vercel is the first platform; `--to` takes only `vercel` for
-now. Read-only against Vercel: `diff` and `pull` change nothing there.
+Compares a local `.env` with the variables of a hosting platform, pulls the readable
+ones into it, and pushes the local ones to it. Vercel is the first platform; `--to`
+takes only `vercel` for now. `diff` and `pull` change nothing on Vercel; `push` creates
+and updates variables, and never deletes one.
 
 Vercel has two kinds of variable. A **Config** value can be read back. A **Secret**
 never can, so `diff` shows only that it exists and `pull` cannot fetch it. **Values
@@ -556,16 +557,20 @@ evnx platform diff --to vercel          # .env.development (or .env) vs Vercel's
 evnx platform diff --to vercel --env-name production --format json
 evnx platform pull --to vercel --dry-run   # what would change, nothing written
 evnx platform pull --to vercel --yes       # write Vercel's readable values (asks without --yes)
+evnx platform diff --to vercel --strict    # a Secret on both sides counts as a difference (exit 1)
+evnx platform push --to vercel --dry-run   # the plan; nothing is sent
+evnx platform push --to vercel             # create and update on Vercel, after asking
+evnx platform push --to vercel --env-name production --only-new --yes   # CI: new keys only
 ```
 
 ```text
 Vercel  acme/web  production        local  .env.production
-  ~ DATABASE_URL  secret  update  (value cannot be compared: write-only)
+  = DATABASE_URL  secret  present  (write-only, not compared)
   ~ API_URL       config  update  (value differs)
   = SENTRY_DSN    config  unchanged
   + NEW_FLAG      config  add
   ! REDIS_URL     secret  remote only  (not in the local file)
-1 add · 2 update · 1 unchanged · 1 remote only · values never shown
+1 add · 1 update · 1 unchanged · 1 present (not compared) · 1 remote only · values never shown
 ```
 
 - **Project:** `--project` / `--team`, else `VERCEL_PROJECT_ID` / `VERCEL_ORG_ID`, else
@@ -577,10 +582,31 @@ Vercel  acme/web  production        local  .env.production
   lacks is written as `KEY=` and listed. Keys only the local file has are kept. It shows
   the plan and asks first (`--yes` without a terminal; declining exits 4), keeps the old
   file as `.bak`, and records `.evnx/platform/vercel.json` (ids and timestamps, never
-  values; add `.evnx/platform/` to `.gitignore`).
-- **Exit codes:** `diff` 0 no differences, 1 differences; both 2 could not run, 10 token
-  refused, 11 forbidden, 13 unreachable, 15 Vercel error or rate limit that did not clear.
-  The same 10–15 as `evnx cloud`.
+  values). On a terminal it offers to add `.evnx/platform/` to `.gitignore`; `--gitignore`
+  does it without asking, `--no-gitignore` skips it.
+- **`diff`:** a Secret on both sides shows as `= present` and is not a difference, so the
+  exit code works as a CI gate; `--strict` counts it as one (exit 1). With no
+  `.env.<env>` and no `.env`, the local side is empty and every Vercel variable is
+  "remote only".
+- **`push`:** shows the plan and asks first (`--yes` without a terminal; declining exits
+  4; `--dry-run` sends no request that carries a value). New keys are created in one bulk
+  call, never an upsert (it would replace a variable's other environments). A Config whose
+  value differs is updated by id. A Secret on both sides cannot be compared, so it counts
+  as an update; `--only-new` skips those. A variable shared with other environments leaves
+  this one and gets its own entry. A new key's type is `migrate`'s rule (a Secret when the
+  key or value looks like a credential); a public prefix (`NEXT_PUBLIC_`, `VITE_`, …) is
+  always Config; `--type config|secret` overrides it for new keys. Existing variables keep
+  their type; keys only Vercel has are kept (`--prune` comes later); a key with an empty
+  value is not pushed. If Vercel refuses some variables the rest stays applied and the exit
+  code is 1, naming them.
+- **Lost updates:** `push` compares each variable it will change with
+  `.evnx/platform/vercel.json`. If Vercel changed it since your last `pull` or `push`,
+  nothing is written and the exit code is 14.
+- **Exit codes:** `diff` 0 no differences, 1 differences; `push` 0 done, 1 Vercel refused
+  some variables, 4 declined, 14 changed on Vercel since the last pull; all: 2 could not
+  run, 10 token refused (including a 403 that says the token is invalid), 11 forbidden, 13
+  unreachable, 15 Vercel error or rate limit that did not clear. The same 10–15 as
+  `evnx cloud`.
 
 ---
 
