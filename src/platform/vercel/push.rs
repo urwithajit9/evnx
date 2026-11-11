@@ -174,7 +174,7 @@ impl PushPlan {
     }
 
     /// The entries (by id) a write will touch, with the key.
-    pub fn touched<'a>(&'a self) -> impl Iterator<Item = (&'a str, &'a str)> {
+    pub fn touched(&self) -> impl Iterator<Item = (&str, &str)> {
         self.patches
             .iter()
             .map(|p| (p.key.as_str(), p.id.as_str()))
