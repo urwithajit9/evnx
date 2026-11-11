@@ -335,6 +335,9 @@ evnx scan --exit-zero                  # warn but do not fail CI
 evnx scan --extensions env,yml,json    # opt-in: read only these files in folders (the run says so)
 ```
 
+Jupyter notebooks (`.ipynb`) are read cell by cell, outputs included, after JSON
+unescaping; a finding says `nb.ipynb:LINE (cells[N].source)`, LINE being within the cell.
+
 A folder scan reads **every** file. Binary files and files over 1 MiB
 (`--max-file-size`) are skipped, and the scan says how many (`-v` lists them). A
 file you name is always read.

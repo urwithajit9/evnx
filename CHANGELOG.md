@@ -128,6 +128,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`scan` reads Jupyter notebooks cell by cell** (F14-6, OW-4). A notebook is
+  JSON, so a key in a cell or an output sat behind string escapes and was
+  missed. Each cell's `source` (code and markdown) and each output's `text`,
+  `data["text/plain"]` and `traceback` are now read unescaped, and a finding is
+  located by cell: `nb.ipynb:2 (cells[3].outputs[0].text)`, the line being
+  within that cell or output. Image output is not read. A notebook that does not
+  parse is scanned as text, as before. The baseline fingerprint of a notebook
+  finding now includes its cell path.
+
 - **`platform pull`: no more "already up to date" for a file that does not exist.**
   When Vercel has nothing for the environment and the local file is absent, pull
   says `nothing to pull; <file> not created` (exit 0). An existing file with

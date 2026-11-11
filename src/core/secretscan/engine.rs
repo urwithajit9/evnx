@@ -482,6 +482,77 @@ pub fn leaves(text: &str, format: Format) -> Option<Vec<Leaf>> {
     Some(out)
 }
 
+/// One piece of text inside a Jupyter notebook: a cell's source or one output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotebookChunk {
+    /// Where it sits, for the location: `cells[2].source`,
+    /// `cells[2].outputs[0].text`.
+    pub path: String,
+    /// The text after JSON unescaping, lines joined as the notebook stores them.
+    pub text: String,
+}
+
+/// The text a notebook holds (F14-6): every cell's `source` (code and
+/// markdown) and every output's `text`, `data["text/plain"]` and `traceback`,
+/// unescaped. `None` when `text` is not a JSON notebook with a `cells` array
+/// (malformed, or nbformat 3), which the caller reads as plain text.
+///
+/// Binary output (`image/png` and the like) is not text and is not read.
+pub fn notebook_chunks(text: &str) -> Option<Vec<NotebookChunk>> {
+    use serde_json::Value;
+    // A notebook's strings are either one string or a list of lines.
+    fn joined(v: &Value, sep: &str) -> Option<String> {
+        match v {
+            Value::String(s) => Some(s.clone()),
+            Value::Array(items) => Some(
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(sep),
+            ),
+            _ => None,
+        }
+    }
+    let root: Value = serde_json::from_str(text).ok()?;
+    let cells = root.get("cells")?.as_array()?;
+    let mut out = Vec::new();
+    let mut add = |path: String, text: Option<String>| {
+        if let Some(text) = text.filter(|t| !t.trim().is_empty()) {
+            out.push(NotebookChunk { path, text });
+        }
+    };
+    for (i, cell) in cells.iter().enumerate() {
+        add(
+            format!("cells[{i}].source"),
+            cell.get("source").and_then(|v| joined(v, "")),
+        );
+        let Some(outputs) = cell.get("outputs").and_then(Value::as_array) else {
+            continue;
+        };
+        for (j, output) in outputs.iter().enumerate() {
+            let base = format!("cells[{i}].outputs[{j}]");
+            add(
+                format!("{base}.text"),
+                output.get("text").and_then(|v| joined(v, "")),
+            );
+            add(
+                format!("{base}.data.text/plain"),
+                output
+                    .get("data")
+                    .and_then(|d| d.get("text/plain"))
+                    .and_then(|v| joined(v, "")),
+            );
+            // A traceback is a list of whole lines without their newlines.
+            add(
+                format!("{base}.traceback"),
+                output.get("traceback").and_then(|v| joined(v, "\n")),
+            );
+        }
+    }
+    Some(out)
+}
+
 fn push(path: &str, key: &str, value: &str, out: &mut Vec<Leaf>) {
     out.push(Leaf {
         path: path.to_string(),
