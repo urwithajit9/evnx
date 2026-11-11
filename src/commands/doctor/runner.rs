@@ -489,24 +489,37 @@ impl DiagnosticCheck for EnvFileCheck {
             // DEC-D8: beside a template, a missing `.env` is the project not
             // set up — an error. Without one it is only worth saying.
             let template = &self.template.name;
+            let nested = nested_env_lines(project_root);
             return Ok(match self.template.exists(project_root) {
                 true => self.result(
                     Severity::Error,
-                    details(vec![
-                        format!(
-                            ".env not found, though {template} is here: this project expects one"
-                        ),
-                        format!(
-                            "→ create it from the template: {}",
-                            create_from_template(project_root, template)
-                        ),
-                    ]),
+                    details(
+                        [
+                            vec![
+                                format!(
+                                    ".env not found, though {template} is here: this project expects one"
+                                ),
+                                format!(
+                                    "→ create it from the template: {}",
+                                    create_from_template(project_root, template)
+                                ),
+                            ],
+                            nested,
+                        ]
+                        .concat(),
+                    ),
                 ),
                 false => self.result(
                     Severity::Warning,
-                    Some(format!(
-                        ".env not found, and there is no {template} to create it from"
-                    )),
+                    details(
+                        [
+                            vec![format!(
+                                ".env not found, and there is no {template} to create it from"
+                            )],
+                            nested,
+                        ]
+                        .concat(),
+                    ),
                 ),
             });
         }
@@ -634,12 +647,48 @@ impl DiagnosticCheck for EnvFileCheck {
             }
         }
 
+        let nested = nested_env_lines(project_root);
+        if severity == Severity::Ok && !nested.is_empty() {
+            severity = Severity::Info;
+        }
+        lines.extend(nested);
+
         Ok(CheckResult {
             fixable,
             fix_action: Some(fix_env_gitignore),
             ..self.result(severity, details(lines))
         })
     }
+}
+
+/// How many nested env files doctor names before "and N more" (I-331).
+const NESTED_LISTED: usize = 5;
+
+/// The info lines for env files in subfolders (I-331): a monorepo's
+/// `apps/web/.env` is not what doctor checks, and saying so beats a green tick
+/// that reads as "all env files are fine". Dependency, build and hidden folders
+/// are skipped, as `init` skips them. Empty when there are none.
+fn nested_env_lines(project_root: &Path) -> Vec<String> {
+    let nested = crate::commands::init::shared::nested_env_files(project_root, |name| {
+        env_name::kind(name) == FileKind::Env
+    });
+    let Some(first) = nested.first() else {
+        return Vec::new();
+    };
+    let dir = first.rsplit_once('/').map_or(".", |(dir, _)| dir);
+    let mut names = nested
+        .iter()
+        .take(NESTED_LISTED)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    if nested.len() > NESTED_LISTED {
+        names.push_str(&format!(" and {} more", nested.len() - NESTED_LISTED));
+    }
+    vec![
+        format!("· also in subfolders, not checked here: {names}"),
+        format!("→ check one with: evnx doctor {dir}"),
+    ]
 }
 
 /// One env file doctor checks: in the project folder, by name.

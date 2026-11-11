@@ -26,6 +26,15 @@
 //! the walk meets with no `.evnx.toml` beside it stops every command with exit 2
 //! and the rename to make; beside a `.evnx.toml` it is one warning.
 //!
+//! # Paths in the file
+//!
+//! A relative path in `.evnx.toml` means "from the folder holding this file",
+//! wherever evnx is run below it (I-332, I-333). That covers every key that
+//! names a place: `[defaults] example`, `[cloud] file` (RM-86) and the
+//! slash-bearing patterns of `[scan] exclude`; `.evnx/rules` and
+//! `.evnx/baseline.json` are found from the same folder. A command-line flag
+//! is relative to where you run, as usual.
+//!
 //! # Where it is written
 //!
 //! [`project_file`] picks the file and [`save`] writes it, for every command
@@ -748,6 +757,44 @@ fn rebase(name: &str, toml_dir: &Path, start: &Path) -> String {
     rel.to_string_lossy().into_owned()
 }
 
+/// `[scan] exclude` as seen from `start` (I-333).
+///
+/// A pattern with a `/` in it names a place, so like `[defaults] example` it
+/// is read from the folder holding the `.evnx.toml`: `apps/web/fixtures`
+/// excludes that folder whether `scan` runs at the root or in `apps/web`. Each
+/// such pattern is kept as written **and** given, when it starts with the
+/// folder `start` is (`apps/web/`), as seen from `start` (`fixtures`). A union,
+/// like the rest of `exclude`: nothing that matched before stops matching. A
+/// pattern with no `/` (`*.log`, `node_modules`) matches anywhere and is left
+/// alone.
+pub fn rebase_exclude(patterns: Vec<String>, toml_dir: &Path, start: &Path) -> Vec<String> {
+    let start = std::path::absolute(start).unwrap_or_else(|_| start.to_path_buf());
+    let (dir, from) = (lexical(toml_dir), lexical(&start));
+    let Ok(rel) = from.strip_prefix(&dir) else {
+        return patterns;
+    };
+    let rel: Vec<String> = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    if rel.is_empty() {
+        return patterns;
+    }
+    let prefix = format!("{}/", rel.join("/"));
+    let mut out = Vec::with_capacity(patterns.len());
+    for p in patterns {
+        let local = p
+            .strip_prefix("./")
+            .unwrap_or(&p)
+            .strip_prefix(&prefix)
+            .filter(|rest| !rest.is_empty())
+            .map(str::to_string);
+        out.push(p);
+        out.extend(local);
+    }
+    out
+}
+
 /// `.` dropped and `..` applied, without touching the filesystem.
 fn lexical(path: &Path) -> PathBuf {
     use std::path::Component;
@@ -895,6 +942,26 @@ mod tests {
     }
 
     /// I-332: from the toml's folder, re-expressed from `start`.
+    #[test]
+    fn i333_exclude_patterns_are_read_from_the_config_folder() {
+        let root = std::path::absolute(Path::new("proj")).unwrap();
+        let sub = root.join("apps").join("web");
+        let p = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            rebase_exclude(p(&["apps/web/fixtures/**", "*.log", "dist"]), &root, &sub),
+            p(&["apps/web/fixtures/**", "fixtures/**", "*.log", "dist"])
+        );
+        // At the config's own folder, and for places elsewhere, nothing is added.
+        assert_eq!(
+            rebase_exclude(p(&["apps/web/x"]), &root, &root),
+            p(&["apps/web/x"])
+        );
+        assert_eq!(
+            rebase_exclude(p(&["apps/api/x"]), &root, &sub),
+            p(&["apps/api/x"])
+        );
+    }
+
     #[test]
     fn i332_rebase_reads_example_from_the_config_folder() {
         let root = std::path::absolute(Path::new("proj")).unwrap();

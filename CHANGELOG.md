@@ -128,6 +128,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Monorepos: paths in `.evnx.toml` are read from the folder that holds it, and
+  `doctor` notices nested `.env` files** (F14-10, I-333, I-331).
+  - A relative path in `.evnx.toml` means "from the folder holding this file",
+    wherever evnx runs below it. That was already so for `[defaults] example`
+    and `[cloud] file`; `[scan] exclude` patterns with a `/` now are too, so
+    `apps/web/fixtures/**` excludes that folder from a scan run in `apps/web`.
+    Patterns as written still match (a union), and a pattern with no `/`
+    matches anywhere as before. Flags are relative to where you run.
+  - `doctor` lists env files in subfolders (`apps/web/.env`, up to five, then
+    "and N more") as info with `evnx doctor apps/web` as the hint; it checks
+    only the folder you gave. `node_modules`, `target`, `.git` and other
+    dependency, build and hidden folders are skipped, as `init` skips them.
+    `init` already named a nested `.env` and touches none.
 - **`scan` reads Jupyter notebooks cell by cell** (F14-6, OW-4). A notebook is
   JSON, so a key in a cell or an output sat behind string escapes and was
   missed. Each cell's `source` (code and markdown) and each output's `text`,

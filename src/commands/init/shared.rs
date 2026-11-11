@@ -478,7 +478,7 @@ fn notices_of(target: &Target) -> Vec<(bool, String)> {
     }
     // I-331: in a monorepo the subfolder's file is invisible from here, and the
     // one at this level is what every later command run here reads.
-    let nested = nested_env_files(root, &target.env_file);
+    let nested = nested_env_files(root, |n| n == target.env_file);
     if let Some(first) = nested.first() {
         let dir = first
             .rsplit_once('/')
@@ -520,10 +520,11 @@ fn notices_of(target: &Target) -> Vec<(bool, String)> {
     out
 }
 
-/// `file` in subfolders of `root`, at most three levels down, as `a/b/.env`.
+/// Files named as `wanted` says, in subfolders of `root`, at most three levels
+/// down, as `a/b/.env`.
 /// Dependency, build and hidden folders are skipped, as `--from-source` skips
 /// them.
-fn nested_env_files(root: &Path, file: &str) -> Vec<String> {
+pub(crate) fn nested_env_files(root: &Path, wanted: impl Fn(&str) -> bool) -> Vec<String> {
     let mut found: Vec<String> = walkdir::WalkDir::new(root)
         // Not `min_depth`: `filter_entry` never sees the levels it skips.
         .max_depth(4)
@@ -535,7 +536,9 @@ fn nested_env_files(root: &Path, file: &str) -> Vec<String> {
                 || !(super::source::SKIP_DIRS.contains(&name.as_ref()) || name.starts_with('.'))
         })
         .filter_map(Result::ok)
-        .filter(|e| e.depth() >= 2 && e.file_type().is_file() && e.file_name() == file)
+        .filter(|e| {
+            e.depth() >= 2 && e.file_type().is_file() && wanted(&e.file_name().to_string_lossy())
+        })
         .filter_map(|e| {
             let rel = e.path().strip_prefix(root).ok()?;
             Some(rel.to_string_lossy().replace('\\', "/"))

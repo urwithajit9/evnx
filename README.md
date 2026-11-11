@@ -653,7 +653,9 @@ no other user can read it (mode 600). Also: the template exists and is tracked, 
 project type, and Docker files. The template is `[defaults] example` in `.evnx.toml` if
 set, else the first of `.env.example`, `.env.sample`, `.env.template`. A tracked env
 file, an unignored one and a syntax error are errors; a readable file and a missing
-template are warnings.
+template are warnings. Env files in subfolders (`apps/web/.env`) are listed as info
+with `evnx doctor apps/web` as the hint, and not checked; dependency, build and hidden
+folders are skipped.
 
 `--fix` adds the `.env*` entries `evnx init` writes to `.gitignore` and sets each
 readable env file to 600 (a symlinked one only when its target is inside the project).
@@ -1363,7 +1365,7 @@ example  = ".env.template"     # the template path, if not .env.example
 
 [scan]
 severity            = "high"        # "high" | "medium" | "low"
-exclude             = ["fixtures"]  # paths this project never scans
+exclude             = ["fixtures"]  # paths this project never scans (from this file's folder)
 ignore_placeholders = true
 
 # Your own secret formats, beyond the built-in ones. Repeat per rule.
@@ -1409,6 +1411,10 @@ Precedence is **flag > config > default**. Lists combine rather than replace, so
 scanning are announced on every run. Unknown keys warn and never fail, so a file written
 for a later evnx keeps working on an earlier one — except under `[vars.NAME]`, where
 `validate` counts one as an error: a typo there changes the contract.
+
+A relative path in `.evnx.toml` is read from the folder that holds it, wherever you run
+evnx below it: `[defaults] example`, `[cloud] file`, and the `[scan] exclude` patterns that
+contain a `/`. A flag is relative to where you run.
 
 Only `.evnx.toml`, with the leading dot, is read. A bare `evnx.toml` stops every command
 with the rename to make; beside a `.evnx.toml` it is a warning.
