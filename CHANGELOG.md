@@ -126,6 +126,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `--env`, `--env-name`, `--direction`, `--force`, `--placeholder`,
     `--skip-without-env`, `--template-config` and `--naming-policy`.
 
+- **A precision and recall gate for `scan`, run by `cargo test`** (RM-70).
+  `tests/scan_corpus/` is a labelled corpus of 60 files: 37 whose secrets must be
+  found, each labelled with its rule id and line, and 23 look-alikes that must
+  not be (documentation keys, near-miss tokens, hashes, UUIDs, lockfile
+  digests, base64 images, notebook outputs, placeholders, public keys, config
+  references). `tests/scan_quality.rs` runs the real `evnx scan` over it and
+  prints precision and recall overall, per family (cloud, vcs, payment, chat,
+  keys, jwt, ai, saas, database, generic) and per file format. A drop in recall
+  anywhere fails the build; so does a precision drop of more than 0.02. The
+  committed numbers are `tests/scan_corpus/baseline.json`; move them on purpose
+  with `EVNX_UPDATE_SCAN_BASELINE=1 cargo test --test scan_quality -- --nocapture`.
+  No secret-shaped value is committed: the files are templates filled at test
+  time from parts, and a test fails if one holds a value that matches a rule.
+  In CI the table is also written to the job summary.
+
 ### Changed
 
 - **`scan` reads files in parallel** (RM-74). Files are scanned on all cores and

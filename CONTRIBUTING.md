@@ -359,6 +359,24 @@ They must pass whether `sh` is dash (Debian, Ubuntu) or bash (Fedora, Arch): CI
 runs them both ways. A scene should compare a system tool's exit code, never its
 wording.
 
+## The scan quality gate
+
+`cargo test --test scan_quality` runs `evnx scan` over the labelled corpus in
+`tests/scan_corpus/` and compares precision and recall (overall, per family and
+per file format) with `tests/scan_corpus/baseline.json`. A drop in recall fails;
+so does a precision drop of more than 0.02. Read the table it prints, and the
+list of misses and false positives under it.
+
+* Add a case to `corpus.toml` and a template to `cases/<id>.tpl`. A case with an
+  `expect` list must be found (`{ line, rule }`); one without must not be.
+* A template never holds a secret. Write `{{rule:aws-access-key}}`,
+  `{{near:...}}`, `{{gen:alnum:24:seed}}`, `{{cat:a|b}}` and the other markers
+  described at the top of `tests/scan_quality.rs`; the test fills them. A test
+  fails if a template holds a value that matches a rule.
+* When a change is meant to move the numbers, update the baseline on purpose and
+  commit it with the change, so the diff shows the trade:
+  `EVNX_UPDATE_SCAN_BASELINE=1 cargo test --test scan_quality -- --nocapture`.
+
 ## Coverage Goals
 
 * 80%+ coverage for core modules

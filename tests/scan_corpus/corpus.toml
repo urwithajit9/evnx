@@ -1,0 +1,468 @@
+# The labelled scan corpus (RM-70). Read by tests/scan_quality.rs.
+#
+# Each [[case]] is one file the scanner is run over:
+#   id        unique, and the folder the file is written into
+#   family    what the case is about (cloud, vcs, payment, chat, keys, ...);
+#             precision and recall are reported per family
+#   format    how the file is read (dotenv, yaml, json, ipynb, dockerfile,
+#             shell, text); reported per format too
+#   as        the file name written to disk. The scanner decides how to read
+#             a file from its name, so this matters.
+#   expect    every finding the scanner MUST report, as { line, rule } and
+#             optionally also = [other rule ids that count as finding it].
+#             A case
+#             with no expect is a look-alike: any finding in it is a false
+#             positive. A finding in a positive case that is not listed is a
+#             false positive as well.
+#
+# The template for a case is cases/<id>.tpl. A template never holds a secret:
+# `{{...}}` markers are filled at test time from parts (see the module docs of
+# tests/scan_quality.rs for the markers).
+
+# ── Must be found ────────────────────────────────────────────────────────
+
+[[case]]
+id = "pos-cloud-aws-dotenv"
+family = "cloud"
+format = "dotenv"
+as = ".env"
+expect = [
+  { line = 3, rule = "aws-access-key" },
+  { line = 4, rule = "aws-secret-access-key" },
+]
+
+[[case]]
+id = "pos-cloud-aws-sts"
+family = "cloud"
+format = "dotenv"
+as = ".env.production"
+expect = [
+  { line = 1, rule = "aws-temporary-access-key" },
+  { line = 2, rule = "sensitive-config-key", also = ["aws-secret-access-key"] },
+]
+
+[[case]]
+id = "pos-cloud-gcp-json"
+family = "cloud"
+format = "json"
+as = "service-account.json"
+expect = [{ line = 4, rule = "private-key" }]
+
+[[case]]
+id = "pos-cloud-google-yaml"
+family = "cloud"
+format = "yaml"
+as = "config.yaml"
+expect = [{ line = 3, rule = "google-api-key" }]
+
+[[case]]
+id = "pos-cloud-azure-dotenv"
+family = "cloud"
+format = "dotenv"
+as = ".env"
+expect = [{ line = 2, rule = "azure-storage-account-key" }]
+
+[[case]]
+id = "pos-cloud-do-shell"
+family = "cloud"
+format = "shell"
+as = "deploy.sh"
+expect = [{ line = 3, rule = "digitalocean-token" }]
+
+[[case]]
+id = "pos-vcs-github-dotenv"
+family = "vcs"
+format = "dotenv"
+as = ".env"
+expect = [
+  { line = 1, rule = "github-token" },
+  { line = 2, rule = "github-fine-grained-pat" },
+]
+
+[[case]]
+id = "pos-vcs-gitlab-yaml"
+family = "vcs"
+format = "yaml"
+as = ".gitlab-ci.yml"
+expect = [{ line = 3, rule = "gitlab-pat" }]
+
+[[case]]
+id = "pos-vcs-github-shell"
+family = "vcs"
+format = "shell"
+as = "clone.sh"
+expect = [{ line = 2, rule = "github-token" }]
+
+[[case]]
+id = "pos-vcs-npmrc"
+family = "vcs"
+format = "text"
+as = ".npmrc"
+expect = [{ line = 2, rule = "npm-access-token" }]
+
+[[case]]
+id = "pos-payment-stripe-dotenv"
+family = "payment"
+format = "dotenv"
+as = ".env"
+expect = [
+  { line = 1, rule = "stripe-live-secret-key" },
+  { line = 2, rule = "stripe-restricted-key" },
+  { line = 3, rule = "stripe-webhook-secret" },
+]
+
+[[case]]
+id = "pos-payment-stripe-test"
+family = "payment"
+format = "dotenv"
+as = ".env.local"
+expect = [{ line = 1, rule = "stripe-test-secret-key" }]
+
+[[case]]
+id = "pos-payment-stripe-yaml"
+family = "payment"
+format = "yaml"
+as = "payments.yml"
+expect = [{ line = 3, rule = "stripe-live-secret-key" }]
+
+[[case]]
+id = "pos-chat-slack-dotenv"
+family = "chat"
+format = "dotenv"
+as = ".env"
+expect = [
+  { line = 1, rule = "slack-token" },
+  { line = 2, rule = "slack-webhook-url" },
+]
+
+[[case]]
+id = "pos-chat-webhook-yaml"
+family = "chat"
+format = "yaml"
+as = "notify.yaml"
+expect = [{ line = 3, rule = "slack-webhook-url" }]
+
+[[case]]
+id = "pos-chat-discord-json"
+family = "chat"
+format = "json"
+as = "bot.json"
+expect = [{ line = 4, rule = "discord-bot-token" }]
+
+[[case]]
+id = "pos-chat-telegram-shell"
+family = "chat"
+format = "shell"
+as = "notify.sh"
+expect = [{ line = 2, rule = "telegram-bot-token" }]
+
+[[case]]
+id = "pos-keys-pem-dotenv"
+family = "keys"
+format = "dotenv"
+as = ".env"
+expect = [{ line = 2, rule = "private-key" }]
+
+[[case]]
+id = "pos-keys-pem-file"
+family = "keys"
+format = "text"
+as = "deploy.pem"
+expect = [{ line = 1, rule = "private-key" }]
+
+[[case]]
+id = "pos-keys-openssh-file"
+family = "keys"
+format = "text"
+as = "id_deploy"
+expect = [{ line = 1, rule = "openssh-private-key" }]
+
+[[case]]
+id = "pos-keys-age-dotenv"
+family = "keys"
+format = "dotenv"
+as = ".env"
+expect = [{ line = 1, rule = "age-secret-key" }]
+
+[[case]]
+id = "pos-database-url-dotenv"
+family = "database"
+format = "dotenv"
+as = ".env"
+expect = [{ line = 1, rule = "connection-string-credentials" }]
+
+[[case]]
+id = "pos-database-url-compose"
+family = "database"
+format = "yaml"
+as = "docker-compose.yml"
+expect = [{ line = 5, rule = "connection-string-credentials" }]
+
+[[case]]
+id = "pos-jwt-dotenv"
+family = "jwt"
+format = "dotenv"
+as = ".env"
+expect = [{ line = 1, rule = "jwt", also = ["sensitive-config-key"] }]
+
+[[case]]
+id = "pos-jwt-json"
+family = "jwt"
+format = "json"
+as = "session.json"
+expect = [{ line = 3, rule = "jwt", also = ["sensitive-config-key"] }]
+
+[[case]]
+id = "pos-jwt-shell"
+family = "jwt"
+format = "shell"
+as = "call.sh"
+expect = [{ line = 2, rule = "jwt" }]
+
+[[case]]
+id = "pos-ai-dotenv"
+family = "ai"
+format = "dotenv"
+as = ".env"
+expect = [
+  { line = 1, rule = "openai-api-key" },
+  { line = 2, rule = "anthropic-api-key" },
+  { line = 3, rule = "huggingface-token" },
+]
+
+[[case]]
+id = "pos-saas-dotenv"
+family = "saas"
+format = "dotenv"
+as = ".env"
+expect = [
+  { line = 1, rule = "sendgrid-api-key" },
+  { line = 2, rule = "sentry-auth-token" },
+  { line = 3, rule = "twilio-api-key" },
+]
+
+[[case]]
+id = "pos-generic-dotenv"
+family = "generic"
+format = "dotenv"
+as = ".env"
+expect = [
+  { line = 2, rule = "sensitive-config-key" },
+  { line = 3, rule = "sensitive-config-key" },
+  { line = 4, rule = "sensitive-config-key" },
+  { line = 5, rule = "sensitive-config-key" },
+]
+
+[[case]]
+id = "pos-generic-yaml"
+family = "generic"
+format = "yaml"
+as = "app.yaml"
+expect = [{ line = 4, rule = "sensitive-config-key" }]
+
+[[case]]
+id = "pos-generic-json"
+family = "generic"
+format = "json"
+as = "settings.json"
+expect = [
+  { line = 4, rule = "sensitive-config-key" },
+  { line = 6, rule = "sensitive-config-key" },
+]
+
+[[case]]
+id = "pos-generic-compose"
+family = "generic"
+format = "yaml"
+as = "docker-compose.yml"
+expect = [{ line = 5, rule = "sensitive-config-key" }]
+
+[[case]]
+id = "pos-generic-k8s-secret"
+family = "generic"
+format = "yaml"
+as = "secret.yaml"
+expect = [
+  { line = 6, rule = "sensitive-config-key" },
+  { line = 7, rule = "sensitive-config-key" },
+]
+
+[[case]]
+id = "pos-generic-dockerfile"
+family = "generic"
+format = "dockerfile"
+as = "Dockerfile"
+expect = [
+  { line = 3, rule = "sensitive-config-key", also = ["high-entropy-string"] },
+  { line = 4, rule = "aws-access-key" },
+]
+
+[[case]]
+id = "pos-generic-shell"
+family = "generic"
+format = "shell"
+as = "setup.sh"
+expect = [
+  { line = 2, rule = "sensitive-config-key", also = ["high-entropy-string"] },
+  { line = 3, rule = "sensitive-config-key", also = ["high-entropy-string"] },
+]
+
+[[case]]
+id = "pos-generic-python"
+family = "generic"
+format = "text"
+as = "settings.py"
+expect = [
+  { line = 4, rule = "sensitive-config-key", also = ["high-entropy-string"] },
+  { line = 5, rule = "sensitive-config-key", also = ["high-entropy-string"] },
+]
+
+[[case]]
+id = "pos-notebook-ipynb"
+family = "ai"
+format = "ipynb"
+as = "analysis.ipynb"
+expect = [
+  { line = 10, rule = "openai-api-key" },
+  { line = 22, rule = "aws-access-key" },
+]
+
+# ── Must NOT be found: look-alikes ──────────────────────────────────────
+
+[[case]]
+id = "neg-cloud-aws-doc-example"
+family = "cloud"
+format = "dotenv"
+as = ".env"
+
+[[case]]
+id = "neg-cloud-near-misses"
+family = "cloud"
+format = "dotenv"
+as = ".env"
+
+[[case]]
+id = "neg-ids-and-hashes"
+family = "generic"
+format = "dotenv"
+as = ".env"
+
+[[case]]
+id = "neg-lockfile-npm"
+family = "generic"
+format = "json"
+as = "package-lock.json"
+
+[[case]]
+id = "neg-lockfile-cargo"
+family = "generic"
+format = "text"
+as = "Cargo.lock"
+
+[[case]]
+id = "neg-lockfile-yarn"
+family = "generic"
+format = "text"
+as = "yarn.lock"
+
+[[case]]
+id = "neg-base64-image-css"
+family = "generic"
+format = "text"
+as = "styles.css"
+
+[[case]]
+id = "neg-base64-image-json"
+family = "generic"
+format = "json"
+as = "avatar.json"
+
+[[case]]
+id = "neg-notebook-image-output"
+family = "generic"
+format = "ipynb"
+as = "plot.ipynb"
+
+[[case]]
+id = "neg-placeholders-dotenv"
+family = "generic"
+format = "dotenv"
+as = ".env"
+
+[[case]]
+id = "neg-docs-readme"
+family = "generic"
+format = "text"
+as = "README.md"
+
+[[case]]
+id = "neg-env-template"
+family = "generic"
+format = "dotenv"
+as = ".env.example"
+
+[[case]]
+id = "neg-entropy-nonsecrets-json"
+family = "generic"
+format = "json"
+as = "asset-manifest.json"
+
+[[case]]
+id = "neg-public-keys"
+family = "keys"
+format = "dotenv"
+as = ".env"
+
+[[case]]
+id = "neg-public-key-pem"
+family = "keys"
+format = "text"
+as = "public.pem"
+
+[[case]]
+id = "neg-urls-yaml"
+family = "generic"
+format = "yaml"
+as = "endpoints.yaml"
+
+[[case]]
+id = "neg-code-references"
+family = "generic"
+format = "text"
+as = "app.py"
+
+[[case]]
+id = "neg-yaml-references"
+family = "generic"
+format = "yaml"
+as = "docker-compose.yml"
+
+[[case]]
+id = "neg-dockerfile"
+family = "generic"
+format = "dockerfile"
+as = "Dockerfile"
+
+[[case]]
+id = "neg-shell-prompts"
+family = "generic"
+format = "shell"
+as = "login.sh"
+
+[[case]]
+id = "neg-jwt-docs"
+family = "jwt"
+format = "text"
+as = "auth.txt"
+
+[[case]]
+id = "neg-chat-near-misses"
+family = "chat"
+format = "dotenv"
+as = ".env"
+
+[[case]]
+id = "neg-payment-near-misses"
+family = "payment"
+format = "dotenv"
+as = ".env"

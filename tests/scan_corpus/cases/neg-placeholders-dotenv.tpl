@@ -1,0 +1,9 @@
+API_KEY=your_api_key_here
+SECRET_KEY=changeme
+DB_PASSWORD=<password>
+AUTH_TOKEN=xxxxxxxxxxxxxxxx
+STRIPE_SECRET_KEY=sk_live_xxxxxxxx
+JWT_SECRET=
+SMTP_PASSWORD=${SMTP_PASSWORD}
+REDIS_URL=redis://localhost:6379
+DATABASE_URL={{cat:postgresql://user:|password|@localhost:5432/dbname}}
