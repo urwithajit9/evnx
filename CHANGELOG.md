@@ -180,6 +180,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one of them; `--ignore public_secret` skips it. The prefix list is one list,
   shared with `platform ... --to vercel` (it gains `STORYBOOK_`, and matches in any
   case).
+- `vault share` takes `--user` as well as `--with`, and `vault role` and
+  `vault revoke` take `--with` as well as `--user` (F14-7, OW-16): the member's
+  email under whichever name you learned first. The aliases were already in the
+  parser; this adds the test that holds them, so neither flag can be dropped by
+  accident.
 
 ## [0.13.0] - 2026-11-08
 
