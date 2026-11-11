@@ -155,6 +155,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   It needs no target-format catalogue (RM-61): the rule ids come from the rule
   definitions.
 
+- **`tests/invariants.rs`: evnx accepts what evnx generates** (F14-8, OW-17).
+  Chains commands and feeds each one's output to the next: every `init`
+  component and blueprint must `validate` (placeholders are the only error),
+  `doctor` (no error) and `scan` (no finding) and parse; `convert` of a `.env`
+  holding quotes, `$`, `#`, spaces, `=`, unicode, an empty value, a multi-line
+  value and the words YAML reads as something else must read back to the same
+  keys and values in every format (JSON, YAML, TOML and base64 parsed by their
+  own readers, the script formats run under `sh` against stand-ins for
+  `gcloud`, `az` and `heroku`); every `migrate --print-only` script passes
+  `sh -n`; and `sync`, `add` and `remove` leave files that parse, with `diff`
+  of a file against itself clean. Found one bug, fixed below.
+
 ### Changed
 
 - **`scan` reads files in parallel** (RM-74). Files are scanned on all cores and
@@ -208,6 +220,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rule now has a second branch for that form and keeps the classic one. It is
   reported once, as `github-token`, not also as `jwt` or `high-entropy-string`;
   a trailing `.`, `,` or `)` is not part of the match.
+- **`scan` no longer flags the Neon sample URL `init --with neon` writes**
+  (F14-8). `postgresql://user:password@ep-example-123456.<region>.aws.neon.tech/...`
+  was reported as a live connection-string credential, so a new project did not
+  scan clean. A host with an `example` label is now a placeholder host, as
+  `localhost` and `example.com` already were; `user:password` is still required,
+  so a real host with those credentials, or a real password on an example host,
+  stays a finding.
+
 - **Monorepos: paths in `.evnx.toml` are read from the folder that holds it, and
   `doctor` notices nested `.env` files** (F14-10, I-333, I-331).
   - A relative path in `.evnx.toml` means "from the folder holding this file",
