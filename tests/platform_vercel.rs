@@ -1122,3 +1122,694 @@ fn f4_on_a_terminal_without_yes_the_state_file_gets_the_gitignore_question() {
         assert_eq!(rest.contains("hint: .evnx"), !added, "{rest}");
     }
 }
+
+// ── push ─────────────────────────────────────────────────────────────────────
+//
+// Values here are built at run time from parts: nothing in this file is shaped
+// like a real credential.
+
+/// A value the classifier takes for a payment key.
+fn fake_payment_key() -> String {
+    format!("sk_{}_{}", "live", "x".repeat(24))
+}
+/// A second one, for a public-prefixed variable.
+fn fake_public_key() -> String {
+    format!("pk_{}_{}", "live", "y".repeat(24))
+}
+const P_LOG: &str = "push-new-log-level-3a3a";
+const P_DB: &str = "push-db-value-9b9b";
+const P_API: &str = "push-api-value-5c5c";
+const P_NEW: &str = "push-brand-new-7d7d";
+const P_AUTH: &str = "push-auth-value-8e8e";
+/// What a server's error message might echo.
+const P_ECHO: &str = "server-echoed-value-1f1f";
+
+/// Every value a push test uses, on top of `ALL_VALUES`.
+fn push_values() -> Vec<String> {
+    let mut v: Vec<String> = [P_LOG, P_DB, P_API, P_NEW, P_AUTH, P_ECHO]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    v.push(fake_payment_key());
+    v.push(fake_public_key());
+    v
+}
+
+/// `quiet`, and none of the push values either.
+#[track_caller]
+fn quiet_push(out: &Output) {
+    quiet(out);
+    for v in push_values() {
+        out.assert_not_contains(&v);
+    }
+}
+
+fn push_args<'a>(extra: &[&'a str]) -> Vec<&'a str> {
+    let mut a = vec!["platform", "push"];
+    a.extend_from_slice(COMMON);
+    a.extend_from_slice(extra);
+    a
+}
+
+fn push_project(env_file: &str) -> Project {
+    Project::new().file(".env.development", env_file)
+}
+
+/// `updatedAt` of `env_entry(id, …)`.
+fn updated_at(id: &str) -> u64 {
+    1_700_000_000_000u64 + id.len() as u64
+}
+
+fn state_file(entries: &[(&str, u64)]) -> String {
+    json!({
+        "project": "prj_1", "team": "team_1", "environment": "development",
+        "entries": entries.iter().map(|(id, at)| json!({
+            "key": "K", "id": id, "target": ["development"], "type": "encrypted", "updatedAt": at,
+        })).collect::<Vec<_>>(),
+    })
+    .to_string()
+}
+
+impl Vercel {
+    /// `POST …/env?upsert=false` with exactly this body (once, by default).
+    fn post(&mut self, body: Value, status: usize, answer: Value, hits: usize) -> Mock {
+        self.server
+            .mock("POST", "/v10/projects/prj_1/env")
+            .match_query(Matcher::Exact("teamId=team_1&upsert=false".into()))
+            .match_header("authorization", format!("Bearer {TOKEN}").as_str())
+            .match_body(Matcher::Json(body))
+            .with_status(status)
+            .with_body(answer.to_string())
+            .expect(hits)
+            .create()
+    }
+
+    /// `PATCH …/env/{id}` with exactly this body.
+    fn patch(&mut self, id: &str, body: Value, hits: usize) -> Mock {
+        self.server
+            .mock("PATCH", format!("/v9/projects/prj_1/env/{id}").as_str())
+            .match_query(list_query("team_1"))
+            .match_body(Matcher::Json(body))
+            .with_status(200)
+            // The answer echoes the entry, ciphertext and all.
+            .with_body(json!({ "id": id, "value": CIPHER }).to_string())
+            .expect(hits)
+            .create()
+    }
+
+    /// No request that writes anything, to any path.
+    fn no_writes(&mut self) -> Vec<Mock> {
+        ["POST", "PATCH", "PUT", "DELETE"]
+            .iter()
+            .map(|m| self.server.mock(m, Matcher::Any).expect(0).create())
+            .collect()
+    }
+}
+
+fn created_answer(keys: &[&str]) -> Value {
+    json!({
+        "created": keys.iter().map(|k| json!({ "key": k, "value": CIPHER })).collect::<Vec<_>>(),
+        "failed": [],
+    })
+}
+
+fn new_var(key: &str, value: &str, ty: &str) -> Value {
+    json!({ "key": key, "value": value, "type": ty, "target": ["development"] })
+}
+
+#[test]
+fn push_creates_new_keys_in_one_bulk_post_without_upsert() {
+    let mut v = Vercel::start_for_diff();
+    let pk = fake_payment_key();
+    let public = fake_public_key();
+    let post = v.post(
+        json!([
+            new_var("BRAND_NEW", P_NEW, "encrypted"),
+            new_var("STRIPE_SECRET_KEY", &pk, "sensitive"),
+            // D3: a public prefix is Config even with a credential-shaped value.
+            new_var("NEXT_PUBLIC_STRIPE_KEY", &public, "encrypted"),
+        ]),
+        201,
+        created_answer(&["BRAND_NEW", "STRIPE_SECRET_KEY", "NEXT_PUBLIC_STRIPE_KEY"]),
+        1,
+    );
+    let patches = v.no_writes();
+    let p = push_project(&format!(
+        "BRAND_NEW={P_NEW}\nSTRIPE_SECRET_KEY={pk}\nNEXT_PUBLIC_STRIPE_KEY={public}\n"
+    ));
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    post.assert(); // exactly one POST, with upsert=false in its query
+    for m in &patches {
+        m.assert();
+    }
+    out.assert_contains("created 3 variables");
+    out.assert_contains("recorded .evnx/platform/vercel.json");
+
+    // The state file is Vercel's listing after the push: ids and times, no values.
+    let text = p.read(".evnx/platform/vercel.json");
+    for value in ALL_VALUES
+        .iter()
+        .map(|s| s.to_string())
+        .chain(push_values())
+    {
+        assert!(!text.contains(&value), "{value} in the state file:\n{text}");
+    }
+    let s: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(s["entries"].as_array().unwrap().len(), 5);
+    assert!(s["entries"][0]["updatedAt"].is_u64());
+}
+
+/// Remote with a Config that is not shared (e6) beside the standard ones.
+fn push_remote() -> Vercel {
+    let mut envs = standard_envs();
+    envs.push(env_entry(
+        "e6",
+        "AUTH_SECRET",
+        "encrypted",
+        &["development"],
+    ));
+    let mut v = Vercel::with_list(json!({ "envs": envs, "pagination": { "count": 7 } }), 0);
+    let m = v.value_mock("e6", 200, Some(P_AUTH), 1);
+    v.once.push(m);
+    v
+}
+
+fn golden_file() -> String {
+    format!(
+        "API_URL={L_API_OLD}\nDB_URL={P_DB}\nLOG_LEVEL={R_LOG}\nAUTH_SECRET={P_AUTH}\n\
+         BRAND_NEW={P_NEW}\nSTRIPE_SECRET_KEY={}\nNEXT_PUBLIC_STRIPE_KEY={}\nREDIS_URL=\nSPARE=\n",
+        fake_payment_key(),
+        fake_public_key()
+    )
+}
+
+#[test]
+fn push_dry_run_prints_the_plan_and_sends_nothing() {
+    let mut v = push_remote();
+    let writes = v.no_writes();
+    let p = push_project(&golden_file());
+    let out = run(&p, &v.url(), &push_args(&["--dry-run"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_contains("Dry run: nothing was sent");
+    for m in &writes {
+        m.assert(); // no POST, PATCH or DELETE of any kind
+    }
+    assert!(!p.exists(".evnx"), "dry run writes no state file");
+    // No state file yet: the one warning, and nothing else on stderr.
+    assert_eq!(out.stderr.lines().count(), 1, "{}", out.stderr);
+    out.assert_contains("warning: no .evnx/platform/vercel.json yet");
+    support::snapshot::check_golden(
+        "platform/push-development.txt",
+        &support::snapshot::normalise(&out.stdout, &[p.path()]),
+    );
+}
+
+#[test]
+fn push_a_config_that_differs_is_patched_by_id() {
+    let mut v = Vercel::start_for_diff();
+    let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
+    let writes = v.no_writes();
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"));
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    patch.assert();
+    for m in &writes {
+        m.assert(); // no create, no upsert
+    }
+    out.assert_contains("updated 1 variable");
+}
+
+#[test]
+fn push_a_secret_on_both_sides_is_an_update_unless_only_new() {
+    // As is: DB_URL (a Secret on both sides) is overwritten.
+    let mut v = Vercel::start_for_diff();
+    let patch = v.patch("e2", json!({ "value": P_DB }), 1);
+    let p = push_project(&format!("DB_URL={P_DB}\n"));
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    patch.assert();
+    out.assert_contains("~ DB_URL");
+
+    // --only-new: left alone, and nothing is sent.
+    let mut v = Vercel::start_for_diff();
+    let writes = v.no_writes();
+    let p = push_project(&format!("DB_URL={P_DB}\n"));
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--only-new"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_contains("= DB_URL");
+    out.assert_contains("--only-new leaves existing secrets alone");
+    out.assert_contains("already has everything");
+    for m in &writes {
+        m.assert();
+    }
+}
+
+#[test]
+fn push_a_shared_entry_loses_this_environment_and_gets_its_own() {
+    let mut v = Vercel::start_for_diff();
+    // e1 is [development, preview]: development leaves it, preview keeps it...
+    let drop_target = v.patch("e1", json!({ "target": ["preview"] }), 1);
+    // ...and development gets an entry of the same type (Config).
+    let create = v.post(
+        json!([new_var("API_URL", P_API, "encrypted")]),
+        201,
+        created_answer(&["API_URL"]),
+        1,
+    );
+    // The production entry (e1b) is not touched.
+    let other = v.patch("e1b", json!({ "target": [] }), 0);
+    // Reading e1's value is how a difference is found.
+    let p = push_project(&format!("API_URL={P_API}\n"));
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    drop_target.assert();
+    create.assert();
+    other.assert();
+    out.assert_contains("shared with preview, so development gets its own entry");
+    out.assert_contains("updated 1 variable");
+}
+
+#[test]
+fn push_a_partial_failure_exits_1_names_the_key_and_keeps_the_rest() {
+    let mut v = Vercel::start_for_diff();
+    let pk = fake_payment_key();
+    let create = v.post(
+        json!([
+            new_var("BRAND_NEW", P_NEW, "encrypted"),
+            new_var("STRIPE_SECRET_KEY", &pk, "sensitive"),
+        ]),
+        201,
+        json!({
+            "created": [{ "key": "BRAND_NEW", "value": CIPHER }],
+            "failed": [{ "error": {
+                "code": "ENV_ALREADY_EXISTS",
+                // A message may echo anything; it must never be printed.
+                "message": format!("cannot store {P_ECHO}"),
+                "key": "STRIPE_SECRET_KEY",
+            } }],
+        }),
+        1,
+    );
+    let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
+    let p = push_project(&format!(
+        "BRAND_NEW={P_NEW}\nSTRIPE_SECRET_KEY={pk}\nLOG_LEVEL={P_LOG}\n"
+    ));
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(1);
+    quiet_push(&out);
+    create.assert();
+    patch.assert(); // the in-place change still went through
+    assert!(
+        out.stderr.contains("STRIPE_SECRET_KEY") && out.stderr.contains("ENV_ALREADY_EXISTS"),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.stderr.contains("BRAND_NEW"), "{}", out.stderr);
+    out.assert_contains("created 1 variable");
+    out.assert_contains("updated 1 variable");
+    // What was applied is recorded.
+    assert!(p.exists(".evnx/platform/vercel.json"));
+}
+
+#[test]
+fn push_a_429_waits_then_succeeds_and_gives_up_after_three_tries() {
+    let mut v = Vercel::start_for_diff();
+    let pk = fake_payment_key();
+    let limited = v
+        .server
+        .mock("POST", "/v10/projects/prj_1/env")
+        .match_query(Matcher::Exact("teamId=team_1&upsert=false".into()))
+        .with_status(429)
+        .with_header("x-ratelimit-remaining", "0")
+        .with_header("x-ratelimit-reset", &unix_now())
+        .with_body(format!(
+            r#"{{"error":{{"code":"rate_limited","message":"{P_ECHO}"}}}}"#
+        ))
+        .expect(1)
+        .create();
+    let ok = v.post(
+        json!([new_var("STRIPE_SECRET_KEY", &pk, "sensitive")]),
+        201,
+        created_answer(&["STRIPE_SECRET_KEY"]),
+        1,
+    );
+    let p = push_project(&format!("STRIPE_SECRET_KEY={pk}\n"));
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    limited.assert();
+    ok.assert();
+
+    // Never clears: three tries, exit 15, nothing recorded.
+    let mut v = Vercel::start_for_diff();
+    let always = v
+        .server
+        .mock("POST", "/v10/projects/prj_1/env")
+        .match_query(Matcher::Exact("teamId=team_1&upsert=false".into()))
+        .with_status(429)
+        .with_header("x-ratelimit-remaining", "0")
+        .with_header("x-ratelimit-reset", &unix_now())
+        .with_body("{}")
+        .expect(3)
+        .create();
+    let p = push_project(&format!("STRIPE_SECRET_KEY={pk}\n"));
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(15);
+    out.assert_contains("3 tries");
+    quiet_push(&out);
+    always.assert();
+    assert!(!p.exists(".evnx/platform/vercel.json"));
+}
+
+#[test]
+fn push_stops_with_exit_14_before_any_write_when_vercel_changed() {
+    let mut v = Vercel::start_for_diff();
+    let writes = v.no_writes();
+    // The state says e3 was updated long ago; Vercel says it was updated since.
+    // e2 is as recorded. The new key is not an entry yet, so is not checked.
+    let p = push_project(&format!(
+        "LOG_LEVEL={P_LOG}\nDB_URL={P_DB}\nBRAND_NEW={P_NEW}\n"
+    ))
+    .file(
+        ".evnx/platform/vercel.json",
+        &state_file(&[("e3", 5), ("e2", updated_at("e2"))]),
+    );
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(14);
+    quiet_push(&out);
+    out.assert_contains("LOG_LEVEL");
+    out.assert_not_contains("DB_URL");
+    out.assert_contains("changed on Vercel since the last pull or push");
+    out.assert_contains("Nothing was written");
+    for m in &writes {
+        m.assert(); // zero write requests of any kind
+    }
+}
+
+#[test]
+fn push_goes_ahead_when_the_state_matches_or_does_not_know_the_entry_or_is_missing() {
+    // Matches: e3 as recorded.
+    let mut v = Vercel::start_for_diff();
+    let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n")).file(
+        ".evnx/platform/vercel.json",
+        &state_file(&[("e3", updated_at("e3"))]),
+    );
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    out.assert_not_contains("warning");
+    patch.assert();
+
+    // An entry the state does not list is fine.
+    let mut v = Vercel::start_for_diff();
+    let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"))
+        .file(".evnx/platform/vercel.json", &state_file(&[("e999", 1)]));
+    run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"])).assert_code(0);
+    patch.assert();
+
+    // No state file: a warning, and it goes ahead.
+    let mut v = Vercel::start_for_diff();
+    let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"));
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    assert!(
+        out.stderr
+            .contains("warning: no .evnx/platform/vercel.json yet"),
+        "{}",
+        out.stderr
+    );
+    patch.assert();
+
+    // A state file for another environment says nothing about this one.
+    let mut v = Vercel::start_for_diff();
+    let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
+    let other = state_file(&[("e3", 5)]).replace("development", "production");
+    let p =
+        push_project(&format!("LOG_LEVEL={P_LOG}\n")).file(".evnx/platform/vercel.json", &other);
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    out.assert_contains("is for production, not development");
+    patch.assert();
+}
+
+#[test]
+fn push_without_a_terminal_needs_yes() {
+    let mut v = Vercel::start_for_diff();
+    let writes = v.no_writes();
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"));
+    let out = run(&p, &v.url(), &push_args(&["--no-gitignore"]));
+    out.assert_code(2);
+    out.assert_contains("--yes");
+    quiet_push(&out);
+    for m in &writes {
+        m.assert();
+    }
+    assert!(!p.exists(".evnx/platform/vercel.json"));
+}
+
+#[cfg(unix)]
+#[test]
+fn declining_the_push_exits_4_and_sends_nothing() {
+    use support::pty::{Pty, ENTER};
+    let mut v = Vercel::start_for_diff();
+    let writes = v.no_writes();
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"));
+    let url = v.url();
+    let args = push_args(&["--no-gitignore"]);
+    let mut s = Pty::spawn_with(
+        p.path(),
+        &args,
+        &[
+            ("VERCEL_TOKEN", TOKEN),
+            ("EVNX_VERCEL_API_URL", &url),
+            ("VERCEL_PROJECT_ID", ""),
+            ("VERCEL_ORG_ID", ""),
+        ],
+    );
+    s.wait_for("[y/N]");
+    s.wait_for_echo_off();
+    s.press(&["n", ENTER]);
+    let (rest, code) = s.finish();
+    assert_eq!(code, 4, "{rest}");
+    assert!(rest.contains("Cancelled"), "{rest}");
+    for value in ALL_VALUES
+        .iter()
+        .map(|s| s.to_string())
+        .chain(push_values())
+    {
+        assert!(!rest.contains(&value), "{value} in:\n{rest}");
+    }
+    for m in &writes {
+        m.assert();
+    }
+    assert!(!p.exists(".evnx/platform/vercel.json"));
+}
+
+#[test]
+fn push_a_public_prefix_is_config_whatever_type_is_asked() {
+    let mut v = Vercel::start_for_diff();
+    let public = fake_public_key();
+    let post = v.post(
+        json!([new_var("NEXT_PUBLIC_STRIPE_KEY", &public, "encrypted")]),
+        201,
+        created_answer(&["NEXT_PUBLIC_STRIPE_KEY"]),
+        1,
+    );
+    let p = push_project(&format!("NEXT_PUBLIC_STRIPE_KEY={public}\n"));
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--yes", "--no-gitignore", "--type", "secret"]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_contains("public prefix: stays config");
+    post.assert();
+}
+
+#[test]
+fn push_type_overrides_the_classifier_for_new_keys_only() {
+    let pk = fake_payment_key();
+    // --type secret: a plain-looking new key becomes a Secret; the existing
+    // Config keeps its type (only its value is sent).
+    let mut v = Vercel::start_for_diff();
+    let post = v.post(
+        json!([new_var("BRAND_NEW", P_NEW, "sensitive")]),
+        201,
+        created_answer(&["BRAND_NEW"]),
+        1,
+    );
+    let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
+    let p = push_project(&format!("BRAND_NEW={P_NEW}\nLOG_LEVEL={P_LOG}\n"));
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--yes", "--no-gitignore", "--type", "secret"]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_contains("+ BRAND_NEW");
+    out.assert_contains("secret  create");
+    post.assert();
+    patch.assert();
+
+    // --type config: a credential-looking new key is created readable.
+    let mut v = Vercel::start_for_diff();
+    let post = v.post(
+        json!([new_var("STRIPE_SECRET_KEY", &pk, "encrypted")]),
+        201,
+        created_answer(&["STRIPE_SECRET_KEY"]),
+        1,
+    );
+    let p = push_project(&format!("STRIPE_SECRET_KEY={pk}\n"));
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--yes", "--no-gitignore", "--type", "config"]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    post.assert();
+}
+
+#[test]
+fn push_never_sends_an_empty_value_so_pull_then_push_cannot_blank_a_secret() {
+    let mut v = Vercel::start_for_diff();
+    // REDIS_URL= is what pull writes for a Secret it cannot fetch.
+    let blank_redis = v.patch("e5", json!({ "value": "" }), 0);
+    let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
+    let p = push_project(&format!("REDIS_URL=\nLOG_LEVEL={P_LOG}\nNEVER_SET=\n"));
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_contains("- REDIS_URL");
+    out.assert_contains("- NEVER_SET");
+    out.assert_not_contains("! REDIS_URL");
+    blank_redis.assert();
+    patch.assert();
+}
+
+#[test]
+fn push_json_is_one_document_with_no_values() {
+    let mut v = push_remote();
+    let writes = v.no_writes();
+    let p = push_project(&golden_file());
+    let out = run(&p, &v.url(), &push_args(&["--dry-run", "--format", "json"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    let j: Value = serde_json::from_str(&out.stdout).expect("stdout is JSON and nothing else");
+    assert_eq!(j["dry_run"], true);
+    assert_eq!(j["applied"], false);
+    assert_eq!(j["summary"]["create"], 3);
+    assert_eq!(j["summary"]["update"], 2);
+    assert_eq!(j["summary"]["unchanged"], 1);
+    assert_eq!(j["summary"]["skipped"], 2);
+    assert_eq!(j["summary"]["type_differs"], 1);
+    assert_eq!(j["summary"]["remote_only"], 1);
+    assert!(j["result"].is_null());
+    for m in &writes {
+        m.assert();
+    }
+
+    // Applied: still one document, and the result is in it.
+    let mut v = Vercel::start_for_diff();
+    let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"));
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--yes", "--no-gitignore", "--format", "json"]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    let j: Value = serde_json::from_str(&out.stdout).expect("stdout is JSON and nothing else");
+    assert_eq!(j["applied"], true);
+    assert_eq!(j["result"]["updated"], 1);
+    assert_eq!(j["result"]["failed"], json!([]));
+    patch.assert();
+}
+
+#[test]
+fn push_a_refusal_names_the_code_and_never_the_body() {
+    let mut v = Vercel::start_for_diff();
+    let pk = fake_payment_key();
+    let refused = v
+        .server
+        .mock("POST", "/v10/projects/prj_1/env")
+        .match_query(Matcher::Exact("teamId=team_1&upsert=false".into()))
+        .with_status(400)
+        .with_body(format!(
+            r#"{{"error":{{"code":"bad_request","message":"value {P_ECHO} {pk} is invalid"}}}}"#
+        ))
+        .expect(1)
+        .create();
+    let p = push_project(&format!("STRIPE_SECRET_KEY={pk}\n"));
+    let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(2);
+    out.assert_contains("bad_request");
+    quiet_push(&out);
+    refused.assert();
+    assert!(!p.exists(".evnx/platform/vercel.json"));
+}
+
+#[test]
+fn push_failures_use_the_same_exit_codes_and_the_write_403_can_be_a_bad_token() {
+    let pk = fake_payment_key();
+    for (status, body, code) in [
+        (401, "{}", 10),
+        (
+            403,
+            r#"{"error":{"code":"forbidden","invalidToken":true}}"#,
+            10,
+        ),
+        (403, r#"{"error":{"code":"forbidden"}}"#, 11),
+        (500, "boom", 15),
+    ] {
+        let mut v = Vercel::start_for_diff();
+        v.server
+            .mock("POST", "/v10/projects/prj_1/env")
+            .match_query(Matcher::Exact("teamId=team_1&upsert=false".into()))
+            .with_status(status)
+            .with_body(body)
+            .create();
+        let p = push_project(&format!("STRIPE_SECRET_KEY={pk}\n"));
+        let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
+        out.assert_code(code);
+        quiet_push(&out);
+    }
+}
+
+#[test]
+fn push_with_no_local_file_is_an_error() {
+    let v = Vercel::start_for_diff();
+    let p = Project::new();
+    let out = run(&p, &v.url(), &push_args(&["--yes"]));
+    out.assert_code(2);
+    out.assert_contains("not found");
+}
+
+#[test]
+fn f4_push_hints_at_gitignore_without_a_terminal() {
+    let mut v = Vercel::start_for_diff();
+    v.patch("e3", json!({ "value": P_LOG }), 1);
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n")).git();
+    let out = run(&p, &v.url(), &push_args(&["--yes"]));
+    out.assert_code(0);
+    quiet_push(&out);
+    assert!(
+        out.stderr
+            .contains("hint: .evnx/platform/vercel.json is per-machine state"),
+        "{}",
+        out.stderr
+    );
+    assert!(!p.is_ignored(".evnx/platform/vercel.json"));
+}
