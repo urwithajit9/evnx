@@ -424,6 +424,12 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
             weak_secret_policy,
         ));
 
+        issues.extend(checks::check_public_secrets(
+            vars,
+            env_path,
+            &config.ignore_issues,
+        ));
+
         issues.extend(check_localhost_docker(
             vars,
             env_path,

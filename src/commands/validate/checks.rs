@@ -811,6 +811,50 @@ pub fn check_boolean_trap(
         .collect()
 }
 
+/// F14-5: a secret-shaped value under a browser-exposed prefix.
+///
+/// The bundler inlines `VITE_*`, `NEXT_PUBLIC_*` and the rest into the client
+/// bundle, so the value is readable by anyone who loads the site. An error, and
+/// judged on the **value** only (a provider key, a private key, a password in a
+/// URL): a public-by-design key such as an analytics id or a publishable key is
+/// not secret-shaped, and a name that merely says `KEY` is not enough to fail.
+pub fn check_public_secrets(
+    env_vars: &IndexMap<String, String>,
+    env_path: &str,
+    ignore: &HashSet<String>,
+) -> Vec<Issue> {
+    if ignore.contains(IssueType::PublicSecret.as_str()) {
+        return Vec::new();
+    }
+    env_vars
+        .iter()
+        .filter_map(|(name, value)| {
+            let (prefix, tool) = crate::core::secretscan::rules::public_prefix(name)?;
+            let secret = crate::core::classify::is_secret_shaped(value)
+                || crate::core::classify::url_password(value).is_some();
+            if !secret || is_placeholder(name, value) {
+                return None;
+            }
+            Some(Issue {
+                severity: Severity::Error,
+                issue_type: IssueType::PublicSecret,
+                variable: name.clone(),
+                message: format!(
+                    "{name} holds a secret under {prefix}, which {tool} ships in the \
+                     browser bundle — anyone who loads the site can read it"
+                ),
+                location: env_path.to_string(),
+                suggestion: Some(
+                    "Rotate the value where it is issued, and read it on the server \
+                     under a name without the public prefix"
+                        .to_string(),
+                ),
+                auto_fixable: false,
+            })
+        })
+        .collect()
+}
+
 /// Check 5: Weak SECRET_KEY
 pub fn check_weak_secret(
     env_vars: &IndexMap<String, String>,

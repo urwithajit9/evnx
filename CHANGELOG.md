@@ -171,6 +171,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `remove` and `remove --check` say when two environment files differ only in
   case (`.env.Staging`, `.env.staging`): they are separate files except on a
   case-insensitive filesystem, and are never merged (G-2).
+- **A secret under a browser-exposed prefix is worse, and says why** (F14-5).
+  `VITE_`, `NEXT_PUBLIC_`, `REACT_APP_`, `EXPO_PUBLIC_` and the other prefixes
+  `scan` already knew are inlined into the client bundle. `scan` now raises such a
+  finding's severity one level (`low` stays `low`: a Maps browser key or a Sentry
+  DSN is meant to ship), and `validate` has a new error, `public_secret`, for a
+  secret-shaped value (a provider key, a private key, a password in a URL) under
+  one of them; `--ignore public_secret` skips it. The prefix list is one list,
+  shared with `platform ... --to vercel` (it gains `STORYBOOK_`, and matches in any
+  case).
 
 ## [0.13.0] - 2026-11-08
 

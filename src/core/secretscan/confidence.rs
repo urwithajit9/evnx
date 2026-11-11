@@ -116,6 +116,20 @@ impl Severity {
     }
 }
 
+impl Severity {
+    /// One level worse, for a finding behind a browser-exposed prefix (F14-5).
+    /// `Low` stays `Low`: those rules (a Maps browser key, a Sentry DSN) are
+    /// designed to ship in client code, so publishing them is not worse.
+    #[must_use]
+    pub fn escalated_for_public_prefix(self) -> Severity {
+        match self {
+            Severity::Low => Severity::Low,
+            Severity::Medium => Severity::High,
+            Severity::High | Severity::Critical => Severity::Critical,
+        }
+    }
+}
+
 impl PartialOrd for Severity {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))

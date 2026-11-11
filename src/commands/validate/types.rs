@@ -55,11 +55,14 @@ pub enum IssueType {
     /// A name some environment files hold and others lack (N14-12). A warning:
     /// environments legitimately differ, and the contract can say where.
     PartialPresence,
+    /// A secret-shaped value under a browser-exposed prefix (`VITE_`,
+    /// `NEXT_PUBLIC_`, …): the bundler ships it to every visitor (F14-5). An error.
+    PublicSecret,
 }
 
 impl IssueType {
     /// Every type, in the order `--ignore`'s error lists them.
-    pub const ALL: [IssueType; 21] = [
+    pub const ALL: [IssueType; 22] = [
         IssueType::MissingVariable,
         IssueType::ExtraVariable,
         IssueType::PlaceholderValue,
@@ -81,6 +84,7 @@ impl IssueType {
         IssueType::ForwardReference,
         IssueType::NotShellName,
         IssueType::PartialPresence,
+        IssueType::PublicSecret,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -106,6 +110,7 @@ impl IssueType {
             IssueType::ForwardReference => "forward_reference",
             IssueType::NotShellName => "not_shell_name",
             IssueType::PartialPresence => "partial_presence",
+            IssueType::PublicSecret => "public_secret",
         }
     }
 }
