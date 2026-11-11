@@ -132,7 +132,7 @@ pub fn record(
     yes: bool,
 ) -> Result<()> {
     let root = Path::new(".");
-    let written = state::write(root, &session.project, session.environment, entries)?;
+    let written = state::write(root, &session.project, session.environment.name(), entries)?;
     crate::say!(
         "  {} recorded {} (ids only, no values)",
         "✓".green(),

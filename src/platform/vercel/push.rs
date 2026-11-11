@@ -710,7 +710,7 @@ fn record(
     if json {
         // stdout carries only the JSON document: the usual lines are not wanted.
         let root = Path::new(".");
-        let written = state::write(root, &session.project, session.environment, entries)?;
+        let written = state::write(root, &session.project, session.environment.name(), entries)?;
         eprintln!("recorded {} (ids only, no values)", shown(&written));
         return Ok(());
     }
@@ -756,7 +756,7 @@ fn check_state(session: &Session, plan: &PushPlan, remote: &[Remote]) -> Result<
     if touched.is_empty() {
         return Ok(());
     }
-    let loaded = match state::load(Path::new("."), &session.project, session.environment) {
+    let loaded = match state::load(Path::new("."), &session.project, session.environment.name()) {
         state::Loaded::Usable(s) => s,
         state::Loaded::Missing => {
             eprintln!(

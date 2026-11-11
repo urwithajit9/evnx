@@ -873,7 +873,7 @@ fn pull_records_ids_and_timestamps_but_no_values() {
     for value in ALL_VALUES {
         assert!(!text.contains(value), "{value} in the state file:\n{text}");
     }
-    let s: Value = serde_json::from_str(&text).unwrap();
+    let s = record(&p, "development");
     assert_eq!(s["project"], "prj_1");
     assert_eq!(s["team"], "team_1");
     assert_eq!(s["environment"], "development");
@@ -1242,13 +1242,39 @@ fn updated_at(id: &str) -> u64 {
 }
 
 fn state_file(entries: &[(&str, u64)]) -> String {
+    state_file_for("development", entries)
+}
+
+/// The current (version 2) shape, with one record.
+fn state_file_for(environment: &str, entries: &[(&str, u64)]) -> String {
     json!({
-        "project": "prj_1", "team": "team_1", "environment": "development",
-        "entries": entries.iter().map(|(id, at)| json!({
-            "key": "K", "id": id, "target": ["development"], "type": "encrypted", "updatedAt": at,
-        })).collect::<Vec<_>>(),
+        "version": 2,
+        "records": [{
+            "project": "prj_1", "team": "team_1", "environment": environment,
+            "entries": entries.iter().map(|(id, at)| json!({
+                "key": "K", "id": id, "target": [environment], "type": "encrypted", "updatedAt": at,
+            })).collect::<Vec<_>>(),
+        }],
     })
     .to_string()
+}
+
+/// The shape before 0.14: the file is one record.
+fn old_state_file(environment: &str, entries: &[(&str, u64)]) -> String {
+    let v: Value = serde_json::from_str(&state_file_for(environment, entries)).unwrap();
+    v["records"][0].to_string()
+}
+
+/// The record for `environment` in the state file.
+fn record(p: &Project, environment: &str) -> Value {
+    let s: Value = serde_json::from_str(&p.read(".evnx/platform/vercel.json")).unwrap();
+    s["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["environment"] == environment)
+        .unwrap_or_else(|| panic!("no record for {environment}: {s}"))
+        .clone()
 }
 
 impl Vercel {
@@ -1337,7 +1363,7 @@ fn push_creates_new_keys_in_one_bulk_post_without_upsert() {
     {
         assert!(!text.contains(&value), "{value} in the state file:\n{text}");
     }
-    let s: Value = serde_json::from_str(&text).unwrap();
+    let s = record(&p, "development");
     assert_eq!(s["entries"].as_array().unwrap().len(), 5);
     assert!(s["entries"][0]["updatedAt"].is_u64());
 }
@@ -1574,6 +1600,75 @@ fn push_stops_with_exit_14_before_any_write_when_vercel_changed() {
     }
 }
 
+/// PLAT-STATE: pulling production after development used to replace
+/// development's record, so a development push saw "no state" instead of the
+/// change made on Vercel.
+#[test]
+fn plat_state_pull_dev_then_prod_then_a_change_on_vercel_still_stops_a_dev_push() {
+    let p = Project::new()
+        .file(".env.development", PULL_BEFORE)
+        .file(".env.production", "API_URL=old-prod-local\n");
+    let flags = ["--yes", "--no-gitignore"];
+
+    let v = Vercel::start();
+    run(&p, &v.url(), &pull_args(&flags)).assert_code(0);
+
+    let mut prod = Vercel::start_for_diff();
+    let e1b = prod.value_mock("e1b", 200, Some(R_PROD_API), 1);
+    let mut args = pull_args(&flags);
+    args.extend(["--env-name", "production"]);
+    let out = run(&p, &prod.url(), &args);
+    out.assert_code(0);
+    quiet(&out);
+    e1b.assert();
+
+    // Both records are in the one file.
+    assert_eq!(record(&p, "development")["entries"].as_array().unwrap().len(), 5);
+    assert_eq!(record(&p, "production")["entries"].as_array().unwrap().len(), 1);
+    let file: Value = serde_json::from_str(&p.read(".evnx/platform/vercel.json")).unwrap();
+    assert_eq!(file["records"].as_array().unwrap().len(), 2);
+
+    // LOG_LEVEL (e3) is changed on Vercel afterwards.
+    let mut envs = standard_envs();
+    for e in &mut envs {
+        if e["id"] == "e3" {
+            e["updatedAt"] = json!(1_800_000_000_000u64);
+        }
+    }
+    let mut changed = Vercel::with_list(json!({ "envs": envs }), 0);
+    let writes = changed.no_writes();
+    std::fs::write(p.join(".env.development"), format!("LOG_LEVEL={P_LOG}\n")).unwrap();
+    let out = run(&p, &changed.url(), &push_args(&flags));
+    out.assert_code(14);
+    quiet_push(&out);
+    out.assert_contains("LOG_LEVEL");
+    out.assert_contains("changed on Vercel since the last pull or push");
+    out.assert_not_contains("warning: no .evnx");
+    for m in &writes {
+        m.assert();
+    }
+}
+
+#[test]
+fn plat_state_the_old_single_record_file_still_protects_and_is_upgraded_on_the_next_pull() {
+    let mut v = Vercel::start_for_diff();
+    let writes = v.no_writes();
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n")).file(
+        ".evnx/platform/vercel.json",
+        &old_state_file("development", &[("e3", 5)]),
+    );
+    run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"])).assert_code(14);
+    for m in &writes {
+        m.assert();
+    }
+
+    let v = Vercel::start();
+    run(&p, &v.url(), &pull_args(&["--yes", "--no-gitignore"])).assert_code(0);
+    let file: Value = serde_json::from_str(&p.read(".evnx/platform/vercel.json")).unwrap();
+    assert_eq!(file["version"], 2);
+    assert_eq!(file["records"].as_array().unwrap().len(), 1);
+}
+
 #[test]
 fn push_goes_ahead_when_the_state_matches_or_does_not_know_the_entry_or_is_missing() {
     // Matches: e3 as recorded.
@@ -1610,15 +1705,16 @@ fn push_goes_ahead_when_the_state_matches_or_does_not_know_the_entry_or_is_missi
     );
     patch.assert();
 
-    // A state file for another environment says nothing about this one.
+    // A state file with only another environment's record says nothing about
+    // this one (here in the old single-record shape).
     let mut v = Vercel::start_for_diff();
     let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
-    let other = state_file(&[("e3", 5)]).replace("development", "production");
+    let other = old_state_file("production", &[("e3", 5)]);
     let p =
         push_project(&format!("LOG_LEVEL={P_LOG}\n")).file(".evnx/platform/vercel.json", &other);
     let out = run(&p, &v.url(), &push_args(&["--yes", "--no-gitignore"]));
     out.assert_code(0);
-    out.assert_contains("is for production, not development");
+    out.assert_contains("has no record for development yet");
     patch.assert();
 }
 

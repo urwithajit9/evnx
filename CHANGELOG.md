@@ -110,6 +110,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`platform`: the state file keeps one record per environment** (PLAT-STATE).
+  `.evnx/platform/vercel.json` held a single environment's record, so pulling
+  production after development made a development `push` warn "no state" instead
+  of stopping (exit 14) on a change made on Vercel. It now holds a record per
+  project, team and environment, and a push checks only its own. The old
+  single-record file is still read, and upgraded by the next `pull` or `push`.
 - **Backups no longer pile up.** Every command that keeps the replaced file as
   `<file>.bak` (`platform pull`, `cloud pull`, `restore`, `diff --apply`,
   `validate --fix`, `remove`) now keeps exactly one: `<file>.bak` is replaced on
