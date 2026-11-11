@@ -95,9 +95,8 @@ pub fn backup(path: impl AsRef<Path>, content: &[u8]) -> Result<PathBuf> {
     let candidate = PathBuf::from(format!("{base}.bak"));
     if let Ok(meta) = std::fs::symlink_metadata(&candidate) {
         if meta.file_type().is_symlink() {
-            std::fs::remove_file(&candidate).with_context(|| {
-                format!("could not replace the link {}", candidate.display())
-            })?;
+            std::fs::remove_file(&candidate)
+                .with_context(|| format!("could not replace the link {}", candidate.display()))?;
         } else if meta.is_dir() {
             bail!(
                 "refusing to change {base}: {} is a directory",
