@@ -126,6 +126,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `--env`, `--env-name`, `--direction`, `--force`, `--placeholder`,
     `--skip-without-env`, `--template-config` and `--naming-policy`.
 
+### Changed
+
+- **`scan` reads files in parallel** (RM-74). Files are scanned on all cores and
+  reported in path order, so text, JSON, SARIF and GitHub output, the exit code
+  and the notes on stderr are the same as before and the same at any thread
+  count. `RAYON_NUM_THREADS=N` caps the threads (`1` is the old behaviour).
+  Measured on a 4,500-file, 51 MB tree on two cores: 9.4 s to 4.9 s with the
+  built-in rules, 10.9 s to 6.2 s with the gitleaks pack. `-v` lines and
+  `evnx:allow` warnings are now printed together after the scan rather than as
+  each file is read.
+
 ### Fixed
 
 - **Monorepos: paths in `.evnx.toml` are read from the folder that holds it, and

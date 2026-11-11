@@ -394,46 +394,72 @@ impl ScanRunner {
         // `None` everywhere outside one, which leaves the report as it was.
         let git = crate::core::gitignore::exposures(&files);
 
+        // RM-74: files are scanned in parallel, each into a results of its own,
+        // and merged in `files` order (sorted by path), so the report is the
+        // same whatever the thread count. `RAYON_NUM_THREADS` caps the pool.
+        //
+        // ⚠️ Nothing a file's scan does is shared: its findings, notes and
+        // warnings land in its own results. Notes are printed by `finish`, in
+        // order, so stderr is as deterministic as stdout.
+        use rayon::prelude::*;
+        let scanned: Vec<(ScanResults, bool)> = files
+            .par_iter()
+            .zip(git.par_iter())
+            .map(|(file, view)| {
+                let mut local = ScanResults::new(0);
+                if self.verbose {
+                    local.log.push((
+                        false,
+                        format!(
+                            "Scanning: {} ({})",
+                            file.display(),
+                            Self::read_as(file).describe()
+                        ),
+                    ));
+                }
+                let walked = !collected.named.contains(file);
+                let outcome = self.scan_file(file, walked, &mut local);
+                // I-062: line, then rule. A `.env` is read twice — parsed, then the
+                // lines the parser dropped — so a commented-out key on line 1 used
+                // to come after a finding on line 5.
+                //
+                // A notebook is already in cell order: a line is within its cell.
+                if !is_notebook(file) {
+                    local
+                        .findings
+                        .sort_by(|a, b| (a.line, &a.pattern).cmp(&(b.line, &b.pattern)));
+                }
+                let read = local.skipped.is_empty();
+
+                // ⚠️ Held back only when git positively says ignored **and** not
+                // tracked, and only for a walk. A tracked file is in the
+                // repository whatever `.gitignore` says now (I-157); a file the
+                // user named is the file they asked about; and no answer from git
+                // is not "ignored". Each of those is reported exactly as before.
+                let ignored = view.as_ref().map(|v| v.exposure)
+                    == Some(crate::core::gitignore::Exposure::Protected);
+                if walked && ignored && !self.include_ignored {
+                    local.hold_back(0, display_portable(file));
+                } else if let Some(view) = view {
+                    for finding in &mut local.findings {
+                        finding.git = Some(view.exposure.into());
+                        finding.repo_path = Some(view.repo_path.clone());
+                    }
+                }
+                outcome.map(|()| (local, read))
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .collect::<Result<_>>()?;
+
         // The files actually read: `scanning …` must not name one that was
         // then set aside as binary.
         let mut read = Vec::with_capacity(files.len());
-        for (file, view) in files.iter().zip(&git) {
-            if self.verbose {
-                ui::scanning_file_stderr(file, Self::read_as(file).describe());
-            }
-            let walked = !collected.named.contains(file);
-            let before = results.skipped.len();
-            let first = results.findings.len();
-            self.scan_file(file, walked, &mut results)?;
-            if results.skipped.len() == before {
+        for (file, (local, was_read)) in files.iter().zip(scanned) {
+            if was_read {
                 read.push(file.clone());
             }
-            // I-062: line, then rule. A `.env` is read twice — parsed, then the
-            // lines the parser dropped — so a commented-out key on line 1 used
-            // to come after a finding on line 5.
-            // A notebook is already in cell order: a line is within its cell.
-            if !is_notebook(file) {
-                results.findings[first..]
-                    .sort_by(|a, b| (a.line, &a.pattern).cmp(&(b.line, &b.pattern)));
-            }
-
-            // ⚠️ Held back only when git positively says ignored **and** not
-            // tracked, and only for a walk. A tracked file is in the
-            // repository whatever `.gitignore` says now (I-157); a file the
-            // user named is the file they asked about; and no answer from git
-            // is not "ignored". Each of those is reported exactly as before.
-            let ignored = view.as_ref().map(|v| v.exposure)
-                == Some(crate::core::gitignore::Exposure::Protected);
-            if walked && ignored && !self.include_ignored {
-                results.hold_back(first, display_portable(file));
-                continue;
-            }
-            if let Some(view) = view {
-                for finding in &mut results.findings[first..] {
-                    finding.git = Some(view.exposure.into());
-                    finding.repo_path = Some(view.repo_path.clone());
-                }
-            }
+            results.merge(local);
         }
 
         if stdin {
@@ -522,7 +548,20 @@ impl ScanRunner {
 
     /// Report `results`, or write them as the baseline: shared by a walk and
     /// `--staged`.
-    fn finish(&self, results: ScanResults, format: OutputFormat, read: &[PathBuf]) -> Result<bool> {
+    fn finish(
+        &self,
+        mut results: ScanResults,
+        format: OutputFormat,
+        read: &[PathBuf],
+    ) -> Result<bool> {
+        // What the scan had to say, in the order it arose (RM-74).
+        for (warning, line) in std::mem::take(&mut results.log) {
+            if warning {
+                ui::warning(line);
+            } else {
+                ui::verbose_stderr(line);
+            }
+        }
         // `--update-baseline` (C5): this run's counted and known findings
         // become the baseline, and the run exits 0.
         if let Some(path) = &self.update_baseline {
@@ -751,7 +790,10 @@ impl ScanRunner {
         };
         if self.verbose {
             if let Some(note) = &note {
-                ui::verbose_stderr(format!("{}: {note}, read as text", display_portable(path)));
+                results.log.push((
+                    false,
+                    format!("{}: {note}, read as text", display_portable(path)),
+                ));
             }
         }
         results.files.push(super::models::ScannedFile {
@@ -946,9 +988,12 @@ impl ScanRunner {
         let here = display_portable(path);
         if let Some(m) = super::suppress::allowing(lines, line, &finding.rule_id) {
             if m.reason.is_none() {
-                ui::warning(format!(
-                    "{here}:{line}: evnx:allow {} has no reason; say why after it",
-                    finding.rule_id
+                results.log.push((
+                    true,
+                    format!(
+                        "{here}:{line}: evnx:allow {} has no reason; say why after it",
+                        finding.rule_id
+                    ),
                 ));
             }
             finding.status = super::models::Status::Allowed;
@@ -963,13 +1008,19 @@ impl ScanRunner {
         {
             if let Some(m) = lines.get(n - 1).and_then(|l| super::suppress::marker_in(l)) {
                 match m.rule {
-                    None => ui::warning(format!(
-                        "{here}:{n}: a bare evnx:allow allows nothing; name the rule: evnx:allow {}",
-                        finding.rule_id
+                    None => results.log.push((
+                        true,
+                        format!(
+                            "{here}:{n}: a bare evnx:allow allows nothing; name the rule: evnx:allow {}",
+                            finding.rule_id
+                        ),
                     )),
-                    Some(other) => ui::warning(format!(
-                        "{here}:{n}: evnx:allow {other} does not match this finding, which is {}",
-                        finding.rule_id
+                    Some(other) => results.log.push((
+                        true,
+                        format!(
+                            "{here}:{n}: evnx:allow {other} does not match this finding, which is {}",
+                            finding.rule_id
+                        ),
                     )),
                 }
             }
