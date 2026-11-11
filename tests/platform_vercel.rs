@@ -456,6 +456,29 @@ fn a_403_exits_11_with_the_servers_sentence() {
 }
 
 #[test]
+fn a_403_with_invalid_token_exits_10_and_says_to_create_one() {
+    let (out, _) = list_status(
+        403,
+        &[],
+        r#"{"error":{"code":"forbidden","message":"Not authorized","invalidToken":true}}"#,
+        1,
+    );
+    out.assert_code(10);
+    out.assert_contains("the token is invalid or expired; create one at vercel.com/account/tokens");
+    out.assert_not_contains("may not read that");
+    out.assert_not_contains("(--team");
+    quiet(&out);
+    // `invalidToken: false` is an ordinary 403.
+    let (out, _) = list_status(
+        403,
+        &[],
+        r#"{"error":{"code":"forbidden","message":"No","invalidToken":false}}"#,
+        1,
+    );
+    out.assert_code(11);
+}
+
+#[test]
 fn a_404_is_an_error_naming_the_flags() {
     let (out, _) = list_status(
         404,

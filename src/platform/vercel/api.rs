@@ -303,6 +303,7 @@ impl Api {
                 200..=299 => serde_json::from_str(&text)
                     .map_err(|_| PlatformError::Malformed("the body is not JSON".into())),
                 401 => Err(PlatformError::Unauthorized),
+                403 if invalid_token(&text) => Err(PlatformError::InvalidToken),
                 403 => Err(PlatformError::Forbidden {
                     detail: server_sentence(&text),
                 }),
@@ -373,6 +374,15 @@ fn server_sentence(body: &str) -> Option<String> {
     let m = v.pointer("/error/message")?.as_str()?;
     let m: String = m.chars().filter(|c| !c.is_control()).take(200).collect();
     (!m.is_empty()).then_some(m)
+}
+
+/// Whether a 403 body says the token itself is bad:
+/// `{"error":{"code":"forbidden","invalidToken":true}}`.
+fn invalid_token(body: &str) -> bool {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|v| v.pointer("/error/invalidToken").and_then(Value::as_bool))
+        == Some(true)
 }
 
 /// Validate and normalise the API base. Plain `http://` is allowed only for a
@@ -506,6 +516,18 @@ mod tests {
             "https://api.vercel.com/v10/projects/a%2Fb/env?teamId=team_1&until=5"
         );
         assert_eq!(Team::from_ref("acme"), Team::Slug("acme".into()));
+    }
+
+    #[test]
+    fn a_403_is_a_bad_token_only_when_vercel_says_so() {
+        assert!(invalid_token(
+            r#"{"error":{"code":"forbidden","invalidToken":true}}"#
+        ));
+        assert!(!invalid_token(
+            r#"{"error":{"code":"forbidden","invalidToken":false}}"#
+        ));
+        assert!(!invalid_token(r#"{"error":{"code":"forbidden"}}"#));
+        assert!(!invalid_token("not json"));
     }
 
     #[test]
