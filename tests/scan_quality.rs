@@ -650,6 +650,7 @@ fn the_manifest_and_the_templates_agree() {
         .into_iter()
         .collect();
 
+    let leftover = Regex::new(r"\{\{[a-z]+:").unwrap();
     for case in &manifest.case {
         assert!(
             ids.insert(case.id.to_ascii_lowercase()),
@@ -683,9 +684,7 @@ fn the_manifest_and_the_templates_agree() {
         }
         // Every marker must be one the filler knows, and none may survive it.
         assert!(
-            !Regex::new(r"\{\{[a-z]+:")
-                .unwrap()
-                .is_match(&fill(&template(case))),
+            !leftover.is_match(&fill(&template(case))),
             "{}: a marker was left unfilled (a typo in its name?)",
             case.id
         );
