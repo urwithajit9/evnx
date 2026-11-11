@@ -166,13 +166,18 @@ confidence = "medium"
 severity = "low"
 url = "https://dashboard.stripe.com/apikeys"
 
-# The three GitHub forms in one alternation with one name.
+# The three GitHub forms in one alternation with one name. The last branch is
+# the stateless installation token (including the Actions `GITHUB_TOKEN`) that
+# GitHub finished rolling out on 2026-10-02: `ghs_<appid>_<JWT>`, about 520
+# characters, header.payload.signature in base64url. It has no trailing `\b`
+# so a signature ending in `-` is whole; the classic branch is tried first and
+# cannot match it (`_` is not in `[A-Za-z0-9]`).
 [[rules]]
 id = "github-token"
 name = "GitHub Token"
 provider = "GitHub"
 category = "source-ci"
-regex = '\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,40}\b'
+regex = '\b(?:(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,40}\b|ghs_[0-9]+_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)'
 confidence = "high"
 severity = "high"
 url = "https://github.com/settings/tokens"

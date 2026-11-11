@@ -168,6 +168,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`scan`: the `github-token` rule matches stateless GitHub App installation
+  tokens** (SCAN-GHS). Since GitHub finished its rollout on 2026-10-02, `ghs_`
+  tokens, the Actions `GITHUB_TOKEN` among them, are `ghs_<appid>_<JWT>` (about
+  520 characters) and the classic 36 to 40 character shape missed them. The
+  rule now has a second branch for that form and keeps the classic one. It is
+  reported once, as `github-token`, not also as `jwt` or `high-entropy-string`;
+  a trailing `.`, `,` or `)` is not part of the match.
 - **Monorepos: paths in `.evnx.toml` are read from the folder that holds it, and
   `doctor` notices nested `.env` files** (F14-10, I-333, I-331).
   - A relative path in `.evnx.toml` means "from the folder holding this file",
