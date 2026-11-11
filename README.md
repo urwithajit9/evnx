@@ -1220,7 +1220,10 @@ Pipe the password rather than exporting it where you can: an environment variabl
 is visible in process listings and tends to end up in logs. Where piping is not
 possible, `EVNX_MASTER_PASSWORD` (v0.12.0+) unlocks without a prompt and warns each
 time it is used. It is separate from `EVNX_PASSWORD`, which only `backup` and
-`restore` read, so one leaked variable cannot open both.
+`restore` read, so one leaked variable cannot open both. `EVNX_MASTER_PASSWORD_FILE`
+(v0.14.0+) names a file whose first line is the password, for a mounted secret; it
+is read before `EVNX_MASTER_PASSWORD`, and a file that is missing or empty is an
+error rather than a fall-through.
 
 ### Self-hosting
 

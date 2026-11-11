@@ -1059,6 +1059,57 @@ fn d4_the_master_password_comes_from_its_own_variable() {
     assert!(!p.path().join(".env").exists());
 }
 
+/// CLOUD-PW: `EVNX_MASTER_PASSWORD_FILE` unlocks the same way, read by the
+/// same code as the variable and `--password-stdin`; it is announced without
+/// the value, and a file that is not there is an error, not a fall-through to
+/// the variable.
+#[test]
+fn cloud_pw_the_master_password_can_come_from_a_file() {
+    let a = account(RIGHT);
+    let s = pull_server(&a);
+    let p = Project::new().file(".gitignore", ".env*\n");
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &s.url());
+    let pw_file = p.path().join("master.pw");
+    std::fs::write(&pw_file, format!("{RIGHT}\n")).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&pw_file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let url = s.url();
+    let cfg_s = cfg.to_str().unwrap().to_string();
+    let pull = |file: &str| {
+        support::run_with(
+            p.path(),
+            PULL,
+            &[
+                ("EVNX_SERVER", url.as_str()),
+                ("EVNX_CONFIG_DIR", cfg_s.as_str()),
+                ("EVNX_MASTER_PASSWORD_FILE", file),
+            ],
+            None,
+        )
+    };
+
+    let out = pull(pw_file.to_str().unwrap());
+    out.assert_code(0);
+    assert_eq!(p.read(".env"), "A=1\n");
+    assert!(
+        out.stderr
+            .contains("using the master password from EVNX_MASTER_PASSWORD_FILE"),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.all().contains(RIGHT), "{}", out.all());
+
+    std::fs::remove_file(p.path().join(".env")).unwrap();
+    let out = pull(p.path().join("missing.pw").to_str().unwrap());
+    out.assert_code(2);
+    assert!(out.stderr.contains("not a readable file"), "{}", out.stderr);
+    assert!(!p.path().join(".env").exists());
+}
+
 /// RM-34 (D6): declining pull's overwrite question exits 4, as `restore`
 /// does, says the file was not changed, and leaves it alone.
 #[cfg(unix)]

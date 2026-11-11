@@ -196,6 +196,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `base_version` is now read just before encrypting, so the window in which a
   teammate's push makes yours answer 409 no longer includes a person typing a
   password. A wrong password also stops before any version request.
+- The cloud master password is read by `utils::secret_source`, as `backup` and
+  `restore` read theirs (CLOUD-PW, the cloud half of B-WP3). `--password-stdin`,
+  `EVNX_MASTER_PASSWORD` and the prompt behave as before, and the notice on
+  stderr is unchanged. New: `EVNX_MASTER_PASSWORD_FILE` names a file whose first
+  line is the password (nothing else is trimmed), read before the variable and
+  announced without the value; a missing or empty file is an error. Changing a
+  password (`rotate-master-password`) and `login` still always ask. Tests cover
+  each source in order.
 
 ## [0.13.0] - 2026-11-08
 
