@@ -322,9 +322,11 @@ id = "pos-notebook-ipynb"
 family = "ai"
 format = "ipynb"
 as = "analysis.ipynb"
+# Notebook findings carry the line within the cell or output (F14-6):
+# the key is line 2 of cells[0].source, the AWS id line 1 of cells[1].outputs[0].text.
 expect = [
-  { line = 10, rule = "openai-api-key" },
-  { line = 22, rule = "aws-access-key" },
+  { line = 2, rule = "openai-api-key" },
+  { line = 1, rule = "aws-access-key" },
 ]
 
 # ── Must NOT be found: look-alikes ──────────────────────────────────────
