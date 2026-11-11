@@ -539,6 +539,13 @@ struct Say {
 }
 
 impl Say {
+    /// A status line: hidden by `-q`, like pull's.
+    fn status(&self, s: impl AsRef<str>) {
+        if !crate::utils::ui::is_quiet() {
+            self.line(s);
+        }
+    }
+
     fn line(&self, s: impl AsRef<str>) {
         if self.json {
             eprintln!("{}", s.as_ref());
@@ -609,7 +616,7 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
     };
 
     if plan.writes() == 0 {
-        say.line(format!(
+        say.status(format!(
             "  Vercel already has everything in {file_name} that push would send."
         ));
         finish_json(None, false)?;
@@ -639,7 +646,7 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
 
     let outcome = apply(&session, &plan)?;
     if outcome.created > 0 {
-        say.line(format!(
+        say.status(format!(
             "  {} created {} variable{}",
             "✓".green(),
             outcome.created,
@@ -647,7 +654,7 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
         ));
     }
     if outcome.updated > 0 {
-        say.line(format!(
+        say.status(format!(
             "  {} updated {} variable{}",
             "✓".green(),
             outcome.updated,

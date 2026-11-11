@@ -1813,3 +1813,21 @@ fn f4_push_hints_at_gitignore_without_a_terminal() {
     );
     assert!(!p.is_ignored(".evnx/platform/vercel.json"));
 }
+
+#[test]
+fn quiet_push_with_yes_is_silent() {
+    let mut v = Vercel::start_for_diff();
+    let patch = v.patch("e3", json!({ "value": P_LOG }), 1);
+    let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"));
+    #[cfg(unix)]
+    let p = p.mode(".env.development", 0o600);
+    let mut args = vec!["-q"];
+    args.extend(push_args(&["--yes", "--no-gitignore"]));
+    let out = run(&p, &v.url(), &args);
+    out.assert_code(0);
+    quiet_push(&out);
+    patch.assert();
+    // Only the no-state-file warning, which -q keeps.
+    assert_eq!(out.stdout, "");
+    assert_eq!(out.stderr.lines().count(), 1, "{}", out.stderr);
+}
