@@ -468,7 +468,7 @@ pub struct MigrateOptions {
 }
 
 // ─────────────────────────────────────────────────────────────
-// platform: diff and pull against a hosting platform
+// platform: diff, pull and push against a hosting platform
 // ─────────────────────────────────────────────────────────────
 
 /// Subcommands for `evnx platform`.
@@ -479,7 +479,8 @@ pub enum PlatformCommands {
     ///
     /// Prints keys, types and actions, never a value. A Config variable's value
     /// is compared; a Secret's cannot be (Vercel never returns it), so one that
-    /// exists on both sides is shown as an update that cannot be compared.
+    /// exists on both sides is shown as `= present` (write-only, not compared)
+    /// and is not a difference. --strict counts it as one.
     ///
     /// Exit 0 when nothing differs, 1 when something does, 2 when it could not
     /// run, and 10, 11, 13, 15 for a Vercel failure (see `evnx platform --help`).
@@ -488,9 +489,11 @@ Examples:
   evnx platform diff --to vercel                         .env.development (or .env) vs development
   evnx platform diff --to vercel --env-name production   .env.production (or .env) vs production
   evnx platform diff --to vercel --format json           machine-readable: keys and actions only
+  evnx platform diff --to vercel --strict                a Secret on both sides counts as a difference
   evnx platform diff --to vercel --project prj_123 --team team_456 --token-file ~/.vercel-token
 
 Legend: + add (local only)   ~ update (on both sides)   = unchanged
+        = present (a Secret on both sides: write-only, not compared; a difference only with --strict)
         ! remote only (Vercel has it, the file does not)   ! type differs (not changed)
 
 Full guide: https://docs.evnx.dev/cli/commands/platform")]
@@ -519,6 +522,40 @@ Examples:
 
 Full guide: https://docs.evnx.dev/cli/commands/platform")]
     Pull(PlatformPullArgs),
+
+    /// Create and update Vercel variables from the local file.
+    ///
+    /// Shows the plan (never a value) and asks first. A key Vercel lacks is
+    /// created (a Secret or Config by the same rule `migrate` uses; a public
+    /// prefix such as NEXT_PUBLIC_ is always Config; --type overrides the rest).
+    /// A Config whose value differs is updated. A Secret already on Vercel
+    /// cannot be compared, so it counts as an update; --only-new skips those.
+    /// An existing variable keeps its type. Keys only Vercel has are kept.
+    ///
+    /// Never an upsert: a variable shared with other environments is split, so
+    /// only this environment changes. A key with an empty value is not pushed.
+    ///
+    /// Before writing, each variable is checked against `.evnx/platform/vercel.json`
+    /// (written by `pull` and `push`): if Vercel changed it since, nothing is
+    /// written and the exit code is 14. Without a terminal, --yes is required;
+    /// declining exits 4. Exit 1 when Vercel refused some variables (the rest
+    /// stays applied). --dry-run shows the plan and sends nothing.
+    #[command(after_help = "Examples:
+  evnx platform push --to vercel --dry-run                   the plan, nothing sent
+  evnx platform push --to vercel                             .env.development (or .env), after asking
+  evnx platform push --to vercel --env-name production --yes   no question (CI)
+  evnx platform push --to vercel --only-new                  create new keys, leave existing secrets alone
+  evnx platform push --to vercel --type secret               new keys become secrets (public prefixes stay config)
+
+Legend: + create   ~ update   = unchanged   - skipped (empty value)
+        ! type differs (not changed)   ! remote only (kept; deleting is --prune, coming)
+
+Exit codes: 0 done, 1 Vercel refused some variables, 2 could not run, 4 declined,
+10 token refused, 11 forbidden, 13 unreachable, 14 changed on Vercel since your last
+pull, 15 Vercel error or rate limit.
+
+Full guide: https://docs.evnx.dev/cli/commands/platform")]
+    Push(PlatformPushArgs),
 }
 
 /// What every `platform` subcommand needs to find its project, token and file.
@@ -580,6 +617,15 @@ pub struct PlatformDiffArgs {
     /// Output format: `pretty` or `json`.
     #[arg(long, value_enum, value_name = "FORMAT", default_value_t = PlatformFormat::Pretty)]
     pub format: PlatformFormat,
+
+    /// Count a Secret present on both sides as a difference (exit 1).
+    ///
+    /// Vercel never returns a Secret's value, so evnx cannot tell whether it
+    /// changed. By default such a variable shows as `= present` and is not a
+    /// difference, which keeps `diff` usable as a CI gate. With --strict it is
+    /// an update that cannot be compared, and the exit code is 1.
+    #[arg(long)]
+    pub strict: bool,
 }
 
 #[cfg(feature = "net")]
@@ -626,6 +672,80 @@ pub struct PlatformPullArgs {
     /// Skip the .gitignore check for the pulled file.
     #[arg(long, conflicts_with = "gitignore")]
     pub no_gitignore: bool,
+}
+
+/// Arguments of `evnx platform push`.
+#[cfg(feature = "net")]
+#[derive(Args, Debug, Clone)]
+pub struct PlatformPushArgs {
+    #[command(flatten)]
+    pub common: PlatformCommon,
+
+    /// Send the changes without asking.
+    ///
+    /// Without it, and without a terminal, the push stops (exit 2). Declining
+    /// the question exits 4.
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+
+    /// Show the plan and send nothing: no request carries a value.
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Leave existing Secrets alone; create new keys and update Config only.
+    ///
+    /// A Secret that is on both sides cannot be compared, so push otherwise
+    /// counts it as an update and overwrites it.
+    #[arg(long)]
+    pub only_new: bool,
+
+    /// The type of a variable that does not exist on Vercel yet.
+    ///
+    /// Overrides the classifier for new variables only; an existing variable
+    /// keeps its type, and a public prefix (NEXT_PUBLIC_, VITE_, …) is always
+    /// Config.
+    #[arg(long = "type", value_enum, value_name = "TYPE")]
+    pub type_: Option<PlatformVarType>,
+
+    /// Output format: `pretty` or `json` (one document on stdout).
+    #[arg(long, value_enum, value_name = "FORMAT", default_value_t = PlatformFormat::Pretty)]
+    pub format: PlatformFormat,
+
+    /// Add `.evnx/platform/` to .gitignore without asking (no prompt).
+    #[arg(long, conflicts_with = "no_gitignore")]
+    pub gitignore: bool,
+
+    /// Skip the .gitignore check for `.evnx/platform/`.
+    #[arg(long, conflicts_with = "gitignore")]
+    pub no_gitignore: bool,
+}
+
+#[cfg(feature = "net")]
+impl PlatformPushArgs {
+    /// Whether `--format json` was given.
+    pub fn json(&self) -> bool {
+        self.format == PlatformFormat::Json
+    }
+}
+
+/// `--type` of `platform push`.
+#[cfg(feature = "net")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum PlatformVarType {
+    /// Readable on Vercel (`encrypted`).
+    Config,
+    /// Write-only on Vercel (`sensitive`).
+    Secret,
+}
+
+#[cfg(feature = "net")]
+impl From<PlatformVarType> for crate::platform::vercel::api::Kind {
+    fn from(t: PlatformVarType) -> Self {
+        match t {
+            PlatformVarType::Config => Self::Config,
+            PlatformVarType::Secret => Self::Secret,
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────

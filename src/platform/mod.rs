@@ -2,8 +2,9 @@
 //! variables. Vercel is the first; others (Netlify, Fly, Railway, Render) slot in
 //! as another `--to` value and another module beside `vercel`.
 //!
-//! Phase 1 is read-only against the platform: `diff` and `pull`. Behind the `net`
-//! feature, like everything that opens a socket.
+//! `diff` and `pull` only read the platform; `push` creates and updates variables
+//! on it (never an upsert, never a delete). Behind the `net` feature, like
+//! everything that opens a socket.
 //!
 //! # Never
 //!
@@ -30,7 +31,8 @@ pub enum Platform {
 }
 
 /// Run a `platform` subcommand. `diff` answers with a verdict (1 when they
-/// differ); `pull` is `Clean` or an error, `Declined` among them.
+/// differ); `pull` is `Clean` or an error, `Declined` among them; `push` is the
+/// same, with `Findings` (1) when Vercel refused some of the variables.
 pub fn run(command: PlatformCommands) -> Result<Verdict> {
     match command {
         PlatformCommands::Diff(a) => match a.common.to {
@@ -38,6 +40,9 @@ pub fn run(command: PlatformCommands) -> Result<Verdict> {
         },
         PlatformCommands::Pull(a) => match a.common.to {
             Platform::Vercel => vercel::pull::run(&a).map(|()| Verdict::Clean),
+        },
+        PlatformCommands::Push(a) => match a.common.to {
+            Platform::Vercel => vercel::push::run(&a),
         },
     }
 }

@@ -9,7 +9,7 @@
       "vercel_type": "config"
     },
     {
-      "action": "update",
+      "action": "unchanged",
       "compare": "write_only",
       "key": "DB_URL",
       "type": "secret",
@@ -47,14 +47,17 @@
   "environment": "development",
   "file": ".env.development",
   "hidden_production_env_count": 0,
+  "local_file_found": true,
   "platform": "vercel",
   "project": "prj_1",
+  "strict": false,
   "summary": {
     "add": 1,
+    "present": 1,
     "remote_only": 2,
     "type_differs": 0,
     "unchanged": 1,
-    "update": 2
+    "update": 1
   },
   "team": "team_1"
 }

@@ -2,7 +2,8 @@
 //!
 //! The codes are `cloud`'s contract (X3): 10 the token was refused, 11 it may
 //! not do that, 13 the server could not be reached, 15 the server failed or the
-//! rate limit never cleared. Everything else keeps the usual 2.
+//! rate limit never cleared, 14 a variable changed on Vercel since the last
+//! pull or push. Everything else keeps the usual 2.
 //!
 //! Nothing here carries a value: a message names a status, a key or an id, and
 //! the one server sentence it may repeat (a 4xx `error.message`) is cut short.
@@ -17,6 +18,15 @@ pub enum PlatformError {
          or --token-file."
     )]
     Unauthorized,
+
+    /// 403 with `error.invalidToken: true`: the token itself is bad, which is
+    /// what a 401 would say. Vercel answers some bad tokens this way.
+    #[error(
+        "Vercel refused the token (HTTP 403): the token is invalid or expired; \
+         create one at vercel.com/account/tokens.\n  \
+         Pass it in VERCEL_TOKEN or --token-file."
+    )]
+    InvalidToken,
 
     /// 403.
     #[error(
@@ -66,6 +76,20 @@ pub enum PlatformError {
         tries: u32,
     },
 
+    /// A variable `push` was about to change is not as the last pull or push
+    /// left it (D4): someone changed it on Vercel. Nothing was written.
+    #[error(
+        "{} changed on Vercel since the last pull or push: {}.\n  \
+         Nothing was written. See what differs with `evnx platform diff --to vercel`, \
+         then `evnx platform pull --to vercel` to take Vercel's state, and push again.",
+        if keys.len() == 1 { "this variable" } else { "these variables" },
+        keys.join(", ")
+    )]
+    Changed {
+        /// The variables, by name.
+        keys: Vec<String>,
+    },
+
     /// The request never completed.
     #[error("could not reach {host}: {reason}")]
     Transport {
@@ -98,8 +122,9 @@ impl PlatformError {
     /// The process exit code this failure asks for, or `None` for the usual 2.
     pub fn exit_code(&self) -> Option<i32> {
         match self {
-            PlatformError::Unauthorized => Some(10),
+            PlatformError::Unauthorized | PlatformError::InvalidToken => Some(10),
             PlatformError::Forbidden { .. } => Some(11),
+            PlatformError::Changed { .. } => Some(14),
             PlatformError::Transport { .. } => Some(13),
             PlatformError::ServerError { .. } | PlatformError::RateLimited { .. } => Some(15),
             PlatformError::NotFound { .. }
@@ -131,6 +156,14 @@ mod tests {
     #[test]
     fn codes_follow_the_cloud_contract() {
         assert_eq!(PlatformError::Unauthorized.exit_code(), Some(10));
+        assert_eq!(PlatformError::InvalidToken.exit_code(), Some(10));
+        assert_eq!(
+            PlatformError::Changed {
+                keys: vec!["A".into()]
+            }
+            .exit_code(),
+            Some(14)
+        );
         assert_eq!(
             PlatformError::Forbidden { detail: None }.exit_code(),
             Some(11)

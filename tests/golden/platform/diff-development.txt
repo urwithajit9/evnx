@@ -1,8 +1,8 @@
 Vercel  team_1/prj_1  development        local  .env.development
   ~ API_URL     config  update  (value differs)
-  ~ DB_URL      secret  update  (value cannot be compared: write-only)
+  = DB_URL      secret  present  (write-only, not compared)
   = LOG_LEVEL   config  unchanged
   + BRAND_NEW   config  add
   ! NEW_REMOTE  config  remote only  (not in the local file)
   ! REDIS_URL   secret  remote only  (not in the local file)
-1 add · 2 update · 1 unchanged · 2 remote only · values never shown
+1 add · 1 update · 1 unchanged · 1 present (not compared) · 2 remote only · values never shown

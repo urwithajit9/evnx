@@ -168,6 +168,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "needs a Vercel server; -q with --yes is silent: tests/platform_vercel.rs",
     ),
     (
+        "platform push",
+        "needs a Vercel server; -q with --yes is silent: tests/platform_vercel.rs",
+    ),
+    (
         "spec check",
         "this project has no [vars], so it says it skipped, as every skip does \
          (DEC-U8-5); with a contract -q is silent: tests/spec_check.rs",

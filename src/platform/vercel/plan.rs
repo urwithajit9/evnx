@@ -145,6 +145,9 @@ pub enum Action {
     Update(Why),
     /// On both sides, and the same.
     Unchanged,
+    /// A Secret on both sides: it exists, and its value cannot be compared. Not
+    /// a difference (F1); `diff --strict` keeps it an [`Action::Update`].
+    Present,
     /// On Vercel only.
     RemoteOnly,
     /// The type evnx would give it differs from the one Vercel has.
@@ -158,6 +161,7 @@ impl Action {
             Action::Add => "add",
             Action::Update(_) => "update",
             Action::Unchanged => "unchanged",
+            Action::Present => "present",
             Action::RemoteOnly => "remote only",
             Action::TypeDiffers => "type differs",
         }
@@ -167,7 +171,7 @@ impl Action {
         match self {
             Action::Add => "+",
             Action::Update(_) => "~",
-            Action::Unchanged => "=",
+            Action::Unchanged | Action::Present => "=",
             Action::RemoteOnly | Action::TypeDiffers => "!",
         }
     }
@@ -201,6 +205,7 @@ impl Row {
                     format!("Vercel has {have}; this looks like a secret; not changed")
                 })
             }
+            Action::Present => Some("write-only, not compared".into()),
             Action::Add | Action::Unchanged => None,
         }
     }
@@ -222,6 +227,8 @@ pub struct Counts {
     pub update: usize,
     /// `=`.
     pub unchanged: usize,
+    /// `=` a Secret on both sides, not compared.
+    pub present: usize,
     /// `!` remote only.
     pub remote_only: usize,
     /// `!` type differs.
@@ -237,6 +244,7 @@ impl Plan {
                 Action::Add => c.add += 1,
                 Action::Update(_) => c.update += 1,
                 Action::Unchanged => c.unchanged += 1,
+                Action::Present => c.present += 1,
                 Action::RemoteOnly => c.remote_only += 1,
                 Action::TypeDiffers => c.type_differs += 1,
             }
@@ -244,9 +252,24 @@ impl Plan {
         c
     }
 
-    /// Whether anything differs (everything but `=`).
+    /// Whether anything differs (everything but `=`). A Secret that is present
+    /// on both sides is not a difference.
     pub fn differs(&self) -> bool {
-        self.rows.iter().any(|r| r.action != Action::Unchanged)
+        self.rows
+            .iter()
+            .any(|r| !matches!(r.action, Action::Unchanged | Action::Present))
+    }
+
+    /// The plan as `diff` reports it: a Secret on both sides, which cannot be
+    /// compared, becomes [`Action::Present`] and no longer counts as a
+    /// difference. `diff --strict` skips this and keeps it an update.
+    pub fn presented(mut self) -> Plan {
+        for r in &mut self.rows {
+            if r.action == Action::Update(Why::WriteOnly) {
+                r.action = Action::Present;
+            }
+        }
+        self
     }
 }
 
@@ -339,6 +362,7 @@ pub fn summary(c: Counts) -> String {
         (c.add, "add"),
         (c.update, "update"),
         (c.unchanged, "unchanged"),
+        (c.present, "present (not compared)"),
         (c.remote_only, "remote only"),
         (c.type_differs, "type differs"),
     ] {
@@ -361,6 +385,7 @@ pub fn to_json(
     environment: Environment,
     file: &str,
     hidden_production: u64,
+    strict: bool,
 ) -> serde_json::Value {
     let c = plan.counts();
     json!({
@@ -370,21 +395,30 @@ pub fn to_json(
         "environment": environment.name(),
         "file": file,
         "differs": plan.differs(),
+        "strict": strict,
         "hidden_production_env_count": hidden_production,
         "summary": {
             "add": c.add,
             "update": c.update,
             "unchanged": c.unchanged,
+            "present": c.present,
             "remote_only": c.remote_only,
             "type_differs": c.type_differs,
         },
         "entries": plan.rows.iter().map(|r| json!({
             "key": r.key,
             "type": r.kind.word(),
-            "action": r.action.word().replace(' ', "_"),
+            // Additive: a Secret that is present on both sides is
+            // `unchanged` with `compare: "write_only"`, so a consumer that only
+            // reads `action` sees "no difference", and one that wants to tell
+            // "compared and equal" from "not compared" reads `compare`.
+            "action": match r.action {
+                Action::Present => "unchanged".to_string(),
+                a => a.word().replace(' ', "_"),
+            },
             "compare": match r.action {
                 Action::Update(Why::ValueDiffers) => Some("value_differs"),
-                Action::Update(Why::WriteOnly) => Some("write_only"),
+                Action::Update(Why::WriteOnly) | Action::Present => Some("write_only"),
                 _ => None,
             },
             "vercel_type": r.vercel_kind.map(Kind::word),
@@ -570,6 +604,7 @@ mod tests {
                 add: 1,
                 update: 2,
                 unchanged: 1,
+                present: 0,
                 remote_only: 1,
                 type_differs: 1
             }
@@ -597,6 +632,35 @@ mod tests {
     }
 
     #[test]
+    fn a_secret_on_both_sides_is_present_not_a_difference_unless_strict() {
+        let p = diff(&local(&[("DB", "x")]), &[remote("DB", Kind::Secret, None)]);
+        // As `diff --strict` sees it.
+        assert!(p.differs());
+        let p = p.presented();
+        assert_eq!(p.rows[0].action, Action::Present);
+        assert!(!p.differs());
+        assert_eq!(p.counts().present, 1);
+        assert_eq!(p.counts().update, 0);
+        let text = format!("{}{}", render(&p), summary(p.counts()));
+        assert!(
+            text.contains("= DB") && text.contains("present  (write-only, not compared)"),
+            "{text}"
+        );
+        let j = to_json(&p, "prj", None, Environment::Development, ".env", 0, false);
+        assert_eq!(j["entries"][0]["action"], "unchanged");
+        assert_eq!(j["entries"][0]["compare"], "write_only");
+        assert_eq!(j["summary"]["present"], 1);
+        assert_eq!(j["strict"], false);
+        // A real difference next to it still differs.
+        let p = diff(
+            &local(&[("DB", "x"), ("NEW", "1")]),
+            &[remote("DB", Kind::Secret, None)],
+        )
+        .presented();
+        assert!(p.differs());
+    }
+
+    #[test]
     fn nothing_differing_is_clean() {
         let p = diff(
             &local(&[("A", "1")]),
@@ -615,7 +679,16 @@ mod tests {
         let p = diff(&l, &r);
         let text = format!("{}{}", render(&p), summary(p.counts()));
         assert!(!text.contains("very-secret"), "{text}");
-        let j = to_json(&p, "prj", Some("team"), Environment::Development, ".env", 0).to_string();
+        let j = to_json(
+            &p,
+            "prj",
+            Some("team"),
+            Environment::Development,
+            ".env",
+            0,
+            false,
+        )
+        .to_string();
         assert!(!j.contains("very-secret"), "{j}");
     }
 
