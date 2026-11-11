@@ -168,6 +168,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`scan -v` says names are checked in Dockerfiles, Containerfiles, shell
+  scripts and Python modules.** They print `read as text: value patterns, and
+  names in assignments`; other text files keep `value patterns only, names not
+  checked`. The JSON `read_as` stays `text`.
 - **`scan`: false positives found by the RM-70 corpus** (SCAN-FP).
   - A PEM or OpenSSH private key is one `private-key` finding; its base64 body
     lines are no longer also `high-entropy-string`.

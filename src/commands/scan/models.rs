@@ -466,6 +466,21 @@ impl ReadAs {
             ReadAs::Text => "read as text: value patterns only, names not checked",
         }
     }
+
+    /// [`describe`](Self::describe) for the file at `path`: a Dockerfile, shell
+    /// script or Python module is read as text but also has its assignments
+    /// checked by name (SCAN-NAMES). Decided by file name only; an extensionless
+    /// script found by its `#!` line keeps the plain text label.
+    pub fn describe_file(self, path: impl AsRef<std::path::Path>) -> &'static str {
+        let named = self == ReadAs::Text
+            && crate::core::secretscan::assign::Shape::of(&path.as_ref().to_string_lossy(), "")
+                .is_some();
+        if named {
+            "read as text: value patterns, and names in assignments"
+        } else {
+            self.describe()
+        }
+    }
 }
 
 /// A file the scan selected and could not read.

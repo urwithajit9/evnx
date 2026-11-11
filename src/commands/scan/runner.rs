@@ -413,7 +413,7 @@ impl ScanRunner {
                         format!(
                             "Scanning: {} ({})",
                             file.display(),
-                            Self::read_as(file).describe()
+                            Self::read_as(file).describe_file(file)
                         ),
                     ));
                 }
@@ -506,7 +506,7 @@ impl ScanRunner {
                 continue;
             };
             if self.verbose {
-                ui::scanning_file_stderr(&label, Self::read_as(&label).describe());
+                ui::scanning_file_stderr(&label, Self::read_as(&label).describe_file(&label));
             }
             let first = results.findings.len();
             if super::walk::is_pkcs12_bytes(&bytes) {
@@ -672,7 +672,7 @@ impl ScanRunner {
             super::models::ReadAs::Text
         };
         if self.verbose {
-            ui::scanning_file_stderr(label, read_as.describe());
+            ui::scanning_file_stderr(label, read_as.describe_file(label));
         }
         self.scan_text(label, &content, read_as, results)
     }
