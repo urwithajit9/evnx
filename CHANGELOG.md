@@ -110,6 +110,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`platform push`: the plan says when it splits a shared entry.** A row now reads
+  `~ KEY secret update (split: Preview, Production keep their own entry; …)`, the
+  summary counts `N split (shared entry left)`, and `--format json` has
+  `summary.split` and, per entry, `split` and `keeps_shared_entry`.
 - **`platform`: the state file keeps one record per environment** (PLAT-STATE).
   `.evnx/platform/vercel.json` held a single environment's record, so pulling
   production after development made a development `push` warn "no state" instead

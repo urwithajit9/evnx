@@ -1,5 +1,5 @@
 Vercel  team_1/prj_1  development        local  .env.development
-  ~ API_URL                 config  update  (value differs; shared with preview, so development gets its own entry)
+  ~ API_URL                 config  update  (split: Preview keeps its own entry; value differs)
   ~ DB_URL                  secret  update  (write-only: cannot tell whether it changed; --only-new skips)
   = LOG_LEVEL               config  unchanged
   ! AUTH_SECRET             secret  type differs  (Vercel has config; this looks like a secret; not changed)
@@ -9,5 +9,5 @@ Vercel  team_1/prj_1  development        local  .env.development
   - REDIS_URL               secret  skipped  (empty value locally; Vercel's is left as it is)
   - SPARE                   config  skipped  (empty value; nothing to create)
   ! NEW_REMOTE              config  remote only  (kept; --prune to delete (coming))
-3 create · 2 update · 1 unchanged · 2 skipped · 1 type differs (not changed) · 1 remote only (kept) · values never shown
+3 create · 2 update · 1 split (shared entry left) · 1 unchanged · 2 skipped · 1 type differs (not changed) · 1 remote only (kept) · values never shown
   Dry run: nothing was sent.

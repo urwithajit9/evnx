@@ -1479,7 +1479,8 @@ fn push_a_shared_entry_loses_this_environment_and_gets_its_own() {
     drop_target.assert();
     create.assert();
     other.assert();
-    out.assert_contains("shared with preview, so development gets its own entry");
+    out.assert_contains("split: Preview keeps its own entry");
+    out.assert_contains("1 split (shared entry left)");
     out.assert_contains("updated 1 variable");
 }
 
@@ -1868,8 +1869,17 @@ fn push_json_is_one_document_with_no_values() {
     assert_eq!(j["applied"], false);
     assert_eq!(j["summary"]["create"], 3);
     assert_eq!(j["summary"]["update"], 2);
+    assert_eq!(j["summary"]["split"], 1);
     assert_eq!(j["summary"]["unchanged"], 1);
     assert_eq!(j["summary"]["skipped"], 2);
+    let api = j["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["key"] == "API_URL")
+        .unwrap();
+    assert_eq!(api["split"], true);
+    assert_eq!(api["keeps_shared_entry"], json!(["preview"]));
     assert_eq!(j["summary"]["type_differs"], 1);
     assert_eq!(j["summary"]["remote_only"], 1);
     assert!(j["result"].is_null());

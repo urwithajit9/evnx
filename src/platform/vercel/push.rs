@@ -113,6 +113,9 @@ pub struct PushRow {
     pub op: PushOp,
     /// The parenthesised remark.
     pub note: Option<String>,
+    /// The targets that keep the old shared entry when this row splits it
+    /// (empty when it does not).
+    pub split: Vec<String>,
 }
 
 /// A value change of an entry that only this environment uses.
@@ -182,6 +185,20 @@ impl PushPlan {
     }
 }
 
+/// `preview, production` as `Preview, Production`.
+fn title_list(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|n| {
+            let mut c = n.chars();
+            c.next()
+                .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// The type an entry that is being recreated keeps.
 fn existing_type(r: &Remote) -> String {
     match (r.kind, r.var.raw_type.as_str()) {
@@ -227,6 +244,7 @@ pub fn build(
                 kind,
                 op: PushOp::SkipEmpty,
                 note: Some(note.into()),
+                split: vec![],
             });
             continue;
         }
@@ -236,6 +254,7 @@ pub fn build(
             kind: row.kind,
             op: PushOp::Unchanged,
             note: None,
+            split: vec![],
         };
         match row.action {
             Action::Add => {
@@ -289,10 +308,11 @@ pub fn build(
                         });
                     } else {
                         push_row.note = Some(format!(
-                            "{base}; shared with {}, so {} gets its own entry",
-                            others.join(", "),
-                            env.name()
+                            "split: {} {} own entry; {base}",
+                            title_list(&others),
+                            if others.len() == 1 { "keeps its" } else { "keep their" },
                         ));
+                        push_row.split = others.clone();
                         out.creates.push(NewEnv {
                             key: key.clone(),
                             value: SecretString::new(value.as_str()),
@@ -324,6 +344,7 @@ pub fn build(
                 kind: r.kind,
                 op: PushOp::Kept,
                 note: Some("kept; --prune to delete (coming)".into()),
+                split: vec![],
             });
         }
     }
@@ -367,6 +388,7 @@ pub fn summary(plan: &PushPlan) -> String {
     for (n, w) in [
         (plan.count(PushOp::Create), "create"),
         (plan.count(PushOp::Update), "update"),
+        (plan.splits.len(), "split (shared entry left)"),
         (plan.count(PushOp::Unchanged), "unchanged"),
         (skipped, "skipped"),
         (plan.count(PushOp::TypeKept), "type differs (not changed)"),
@@ -812,6 +834,7 @@ fn to_json(
         "summary": {
             "create": plan.count(PushOp::Create),
             "update": plan.count(PushOp::Update),
+            "split": plan.splits.len(),
             "unchanged": plan.count(PushOp::Unchanged),
             "skipped": plan.count(PushOp::SkipSecret) + plan.count(PushOp::SkipEmpty),
             "type_differs": plan.count(PushOp::TypeKept),
@@ -821,6 +844,8 @@ fn to_json(
             "key": r.key,
             "type": r.kind.word(),
             "action": r.op.word().replace(' ', "_"),
+            "split": !r.split.is_empty(),
+            "keeps_shared_entry": r.split,
         })).collect::<Vec<_>>(),
         "result": outcome.map(|o| json!({
             "created": o.created,
@@ -989,7 +1014,14 @@ mod tests {
             .note
             .as_deref()
             .unwrap()
-            .contains("shared with preview"));
+            .starts_with("split: Preview keeps its own entry"));
+        assert_eq!(p.rows[0].split, ["preview"]);
+        assert_eq!(p.rows[1].split, ["production"]);
+        assert_eq!(
+            summary(&p).split(" · ").filter(|x| x.contains("split")).count(),
+            1
+        );
+        assert!(summary(&p).contains("2 split"), "{}", summary(&p));
     }
 
     #[test]
