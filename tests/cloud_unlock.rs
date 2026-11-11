@@ -685,6 +685,63 @@ fn t_i234_yes_or_a_named_file_pushes_to_production() {
     }
 }
 
+/// CLOUD-409: `push` reads the vault's current version after the unlock, not
+/// before it, so the gap between reading `base_version` and posting it holds
+/// only the encryption. A password that does not open the keypair therefore
+/// stops before the version is ever asked for.
+#[test]
+fn cloud_409_push_reads_the_version_after_the_unlock() {
+    let a = account(RIGHT);
+    let vk = VaultKey::generate();
+    let mut s = mockito::Server::new();
+    me_mock(&mut s, &a);
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"development",
+            "role":"owner","version_count":0,"updated_at":"2026-10-20T09:00:00Z"}}]}}"#
+        ))
+        .create();
+    let latest = s
+        .mock(
+            "GET",
+            format!("/api/v1/vaults/{VAULT_ID}/versions/latest").as_str(),
+        )
+        .with_status(404)
+        .with_body(r#"{"error":"Not found","code":"NOT_FOUND"}"#)
+        .expect(0)
+        .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/my-key").as_str())
+        .with_status(200)
+        .with_body(own_copy(&vk, &master(RIGHT, &a)))
+        .create();
+    let push = s
+        .mock(
+            "POST",
+            format!("/api/v1/vaults/{VAULT_ID}/versions").as_str(),
+        )
+        .expect(0)
+        .create();
+    let p = Project::new();
+    std::fs::write(p.path().join(".env"), "A=dev\n").unwrap();
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &[
+            "cloud",
+            "push",
+            "--vault",
+            "app/development",
+            "--password-stdin",
+        ],
+        Some(format!("{TYPO}\n").as_bytes()),
+    );
+    out.assert_code(2);
+    assert!(out.stderr.contains(WRONG), "{}", out.stderr);
+    latest.assert();
+    push.assert();
+}
+
 // ── RM-07: `cloud export --to` takes convert's names and collision rule ──────
 
 const COLLIDING: &[u8] = b"A_B=1\na_b=2\nDB=x\n";

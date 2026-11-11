@@ -361,12 +361,17 @@ pub fn push(
         return Err(anyhow!("{} is empty; nothing to push", file.display()));
     }
 
-    let current = current_version(&client, &vault_ref)?;
-    let target_version = current + 1;
-
     let password = auth::read_master_password(password_stdin)?;
     let unlocked = auth::unlock(&client, &password)?;
     let vault_key = unwrap_vault_key(&client, &vault_ref, &unlocked)?;
+
+    // CLOUD-409: read after the password prompt and the Argon2id unlock, the
+    // slow part (a person typing, then a second of key stretching), not before
+    // it. `base_version` is what the server compares, so the longer the gap
+    // between reading it and posting, the likelier a teammate's push lands in
+    // it and this one answers 409. Only encryption is left between the two.
+    let current = current_version(&client, &vault_ref)?;
+    let target_version = current + 1;
 
     let (key_names, parse_note) = read_key_names(&plaintext);
 

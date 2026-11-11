@@ -191,6 +191,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   web bundle (`ANDROID_KEYSTORE_PASSWORD` does not match `*_SECRET*`). The output is
   unchanged and the exit code stays 0; the warning says to list what may go there
   with `--include`.
+- `cloud push` reads the vault's current version after the password prompt and
+  the Argon2id unlock, not before (CLOUD-409). The version it sends as
+  `base_version` is now read just before encrypting, so the window in which a
+  teammate's push makes yours answer 409 no longer includes a person typing a
+  password. A wrong password also stops before any version request.
 
 ## [0.13.0] - 2026-11-08
 
