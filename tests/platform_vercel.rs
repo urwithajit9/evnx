@@ -1053,3 +1053,72 @@ fn declining_the_pull_exits_4_and_changes_nothing() {
     assert_eq!(p.read(".env.development"), PULL_BEFORE);
     assert!(!p.exists(".evnx"));
 }
+
+// ── F4: the state file and .gitignore ────────────────────────────────────────
+
+#[test]
+fn f4_without_a_terminal_the_state_file_gets_the_hint_and_the_flag_adds_the_entry() {
+    let v = Vercel::start();
+    // No terminal: the hint, and .gitignore is not touched.
+    let p = pull_project().git().file(".gitignore", ".env*\n");
+    let out = run(&p, &v.url(), &pull_args(&["--yes"]));
+    out.assert_code(0);
+    quiet(&out);
+    out.assert_contains("hint: .evnx/platform/vercel.json is per-machine state");
+    assert_eq!(p.read(".gitignore"), ".env*\n");
+    assert!(!p.is_ignored(".evnx/platform/vercel.json"));
+
+    // --gitignore says yes in advance.
+    let p = pull_project().git().file(".gitignore", ".env*\n");
+    let out = run(&p, &v.url(), &pull_args(&["--yes", "--gitignore"]));
+    out.assert_code(0);
+    out.assert_not_contains("per-machine state");
+    assert!(p.read(".gitignore").contains(".evnx/platform/"));
+    assert!(p.is_ignored(".evnx/platform/vercel.json"));
+
+    // --no-gitignore says nothing at all about it.
+    let p = pull_project().git().file(".gitignore", ".env*\n");
+    let out = run(&p, &v.url(), &pull_args(&["--yes", "--no-gitignore"]));
+    out.assert_code(0);
+    out.assert_not_contains("per-machine state");
+    assert_eq!(p.read(".gitignore"), ".env*\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn f4_on_a_terminal_without_yes_the_state_file_gets_the_gitignore_question() {
+    use support::pty::{Pty, ENTER};
+    for (answer, added) in [("y", true), ("n", false)] {
+        let v = Vercel::start();
+        let p = pull_project().git().file(".gitignore", ".env*\n");
+        let url = v.url();
+        let args = pull_args(&[]);
+        let mut s = Pty::spawn_with(
+            p.path(),
+            &args,
+            &[
+                ("VERCEL_TOKEN", TOKEN),
+                ("EVNX_VERCEL_API_URL", &url),
+                ("VERCEL_PROJECT_ID", ""),
+                ("VERCEL_ORG_ID", ""),
+            ],
+        );
+        s.wait_for("[y/N]");
+        s.wait_for_echo_off();
+        s.press(&["y", ENTER]);
+        s.wait_for("per-machine state");
+        s.wait_for_echo_off();
+        s.press(&[answer, ENTER]);
+        let (rest, code) = s.finish();
+        assert_eq!(code, 0, "{rest}");
+        for value in ALL_VALUES {
+            assert!(!rest.contains(value), "{value} in:\n{rest}");
+        }
+        assert_eq!(
+            p.read(".gitignore").contains(".evnx/platform/"),
+            added,
+            "answer {answer}: {rest}"
+        );
+        assert_eq!(rest.contains("hint: .evnx"), !added, "{rest}");
+    }
+}

@@ -20,7 +20,7 @@ use colored::Colorize;
 
 use super::api::Kind;
 use super::plan::{self, PullChange, PullOp};
-use super::{shown, state, Session};
+use super::{shown, Session};
 use crate::cli::PlatformPullArgs;
 use crate::platform::local;
 use crate::utils::protect::GitignoreMode;
@@ -94,7 +94,7 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
     if set.is_empty() && add.is_empty() {
         crate::say!("  {} is already up to date.", shown(&path));
         if !args.dry_run {
-            record(&session, &sel.entries, &gitignore)?;
+            super::record(&session, &sel.entries, &gitignore, args.yes)?;
         }
         return Ok(());
     }
@@ -145,35 +145,10 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
         );
     }
 
-    record(&session, &sel.entries, &gitignore)?;
+    super::record(&session, &sel.entries, &gitignore, args.yes)?;
     crate::utils::protect::protect_output(&path.to_string_lossy(), &gitignore)?;
     if let Some(kept) = &kept {
         crate::utils::protect::protect_output(&kept.to_string_lossy(), &gitignore)?;
-    }
-    Ok(())
-}
-
-/// Write the D4 state file, and hint at `.gitignore` when it is not ignored.
-fn record(
-    session: &Session,
-    entries: &[super::api::RemoteVar],
-    gitignore: &GitignoreMode,
-) -> Result<()> {
-    let root = Path::new(".");
-    let written = state::write(root, &session.project, session.environment, entries)?;
-    crate::say!(
-        "  {} recorded {} (ids only, no values)",
-        "✓".green(),
-        shown(&written)
-    );
-    if !matches!(gitignore, GitignoreMode::Skip)
-        && crate::core::gitignore::in_work_tree(root)
-        && !crate::core::gitignore::is_protected(root, state::PATH)
-    {
-        eprintln!(
-            "hint: {} is per-machine state; add `.evnx/platform/` to .gitignore to keep it out of commits.",
-            state::PATH
-        );
     }
     Ok(())
 }
