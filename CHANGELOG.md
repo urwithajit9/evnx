@@ -216,6 +216,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`SECURITY.md` states the support policy** (RM-79). The latest minor gets fixes;
+  the previous minor gets security fixes for 90 days after the next minor ships;
+  older versions get none. It also states the minimum supported Rust version
+  (1.87, the `rust-version` in `Cargo.toml`, checked by the CI `MSRV` job) and
+  how it may change, and links to the security notices at evnx.dev/security.
+
 - **`scan` reads files in parallel** (RM-74). Files are scanned on all cores and
   reported in path order, so text, JSON, SARIF and GitHub output, the exit code
   and the notes on stderr are the same as before and the same at any thread

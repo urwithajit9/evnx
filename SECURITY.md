@@ -21,13 +21,35 @@ Good-faith research conducted that way will not result in action against you.
 
 ## Supported versions
 
-The latest release. evnx is pre-1.0 and fixes land in a new minor or patch
-release rather than being backported.
+evnx is pre-1.0, so a "minor" is the second number: `0.14` is a minor, `0.14.2`
+a patch of it. The policy:
 
-| Version | Supported |
-|---------|-----------|
-| latest  | ✅ |
-| older   | ❌ — upgrade |
+| Version | Receives |
+|---------|----------|
+| The latest minor (for example `0.14.x`) | Bug fixes and security fixes, as new patch releases |
+| The previous minor (for example `0.13.x`) | **Security fixes only, for 90 days** after the next minor is released |
+| Anything older | Nothing. Upgrade |
+
+The 90 days run from the release date of the minor that replaced it. After that
+the previous minor is unsupported too. A fix is released as a patch of each
+supported minor; it is not backported further. Release notes and the
+[changelog](CHANGELOG.md) say which versions carry a security fix.
+
+## Minimum supported Rust version
+
+evnx declares `rust-version = "1.87"` in `Cargo.toml`, and CI builds and checks
+every target on Rust 1.87.0 (the `MSRV` job in `.github/workflows/ci.yml`). It
+matters if you build from source or run `cargo install evnx`; the released
+binaries need no Rust at all.
+
+- A newer minimum may arrive in **a new minor release**, never in a patch.
+- It is raised only when a dependency needs it, and the changelog says so. For
+  example 1.87 came from a dependency fix for a security advisory.
+- Security fixes to a supported older minor keep that minor's minimum.
+
+## Security notices
+
+Advisories and notices are published at <https://www.evnx.dev/security>.
 
 ## What the threat model actually claims
 
