@@ -154,6 +154,11 @@ To verify a downloaded archive (v0.11.0+): `sha256sum -c` against its `.sha256`,
 `gh attestation verify <archive> -R urwithajit9/evnx` for its build provenance. Full
 steps: [Installation](https://docs.evnx.dev/guides/getting-started/installation#verify-your-download).
 
+Each release also carries a CycloneDX software bill of materials,
+`evnx-<version>.cdx.json` (every crate in `Cargo.lock`, all features on), with
+its own `.sha256` and the same kind of attestation:
+`gh attestation verify evnx-<version>.cdx.json -R urwithajit9/evnx`.
+
 `--version` is the same whether or not a feature is compiled in; `evnx commands`
 says `built with: net, migrate, backup, cloud` for a full build.
 

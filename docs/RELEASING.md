@@ -14,7 +14,7 @@ one of them:
 
 | Workflow | Fires on | Publishes |
 |---|---|---|
-| `release.yml` | `v*` tag | build provenance per archive → GitHub Release (16 assets) → ghcr.io image, Homebrew tap, Scoop bucket, **winget**, **crates.io** (`publish-crate`, RM-27); `verify-provenance` checks the published assets |
+| `release.yml` | `v*` tag | build provenance per archive; `sbom` (CycloneDX, attested) → GitHub Release (18 assets, the SBOM and its `.sha256` among them) → ghcr.io image, Homebrew tap, Scoop bucket, **winget**, **crates.io** (`publish-crate`, RM-27); `verify-provenance` checks the published assets |
 | `python-publish.yml` | `v*` tag | PyPI, by trusted publishing (RM-27) |
 | `npm-publish.yml` | **`release.yml` completing** | npm — 5 platform packages, then `@evnx/cli` |
 

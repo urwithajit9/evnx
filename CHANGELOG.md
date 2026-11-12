@@ -10,6 +10,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Each release carries a CycloneDX SBOM** (SEC-2). A new `sbom` job in
+  `release.yml` runs `cargo-cyclonedx` (0.5.10, installed with `--locked`) with
+  all features on and attaches `evnx-<version>.cdx.json` and its `.sha256` to the
+  GitHub release next to the archives. The SBOM gets a build provenance
+  attestation like the archives; `gh attestation verify` works on it. The
+  README's verify section says so.
+
 - **CI: `EVNX_KEY_BUNDLE` replaces fetching key material with an API token.**
   Create it with `evnx auth token create` or `evnx auth key-bundle`; it is
   required once the server stops serving key material to tokens. CI now sets
