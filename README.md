@@ -154,6 +154,11 @@ To verify a downloaded archive (v0.11.0+): `sha256sum -c` against its `.sha256`,
 `gh attestation verify <archive> -R urwithajit9/evnx` for its build provenance. Full
 steps: [Installation](https://docs.evnx.dev/guides/getting-started/installation#verify-your-download).
 
+Each release also carries a CycloneDX software bill of materials,
+`evnx-<version>.cdx.json` (every crate in `Cargo.lock`, all features on), with
+its own `.sha256` and the same kind of attestation:
+`gh attestation verify evnx-<version>.cdx.json -R urwithajit9/evnx`.
+
 `--version` is the same whether or not a feature is compiled in; `evnx commands`
 says `built with: net, migrate, backup, cloud` for a full build.
 
@@ -399,24 +404,32 @@ evnx convert --to yaml
 evnx convert --to shell
 evnx convert --to docker-compose
 evnx convert --to kubernetes --name myapp-env [--namespace prod]
-evnx convert --to terraform
+evnx convert --to terraform             # .tfvars values (keep the file out of git)
+evnx convert --to terraform --terraform-declarations   # variable blocks, no secret values
 evnx convert --to github-actions        # text to paste into the GitHub web form
 evnx convert --to aws-secrets           # JSON for create-secret --secret-string
 evnx convert --to gcp-secrets --project my-gcp-project
 evnx convert --to azure-keyvault --vault-name my-vault
 evnx convert --to heroku --heroku-app my-app
-evnx convert --to vercel                # experimental
+evnx convert --to vercel                # JSON body for Vercel's env API
 evnx convert --to railway               # experimental
-evnx convert --to doppler               # experimental
+evnx convert --to doppler               # flat JSON for doppler secrets upload
 ```
 
 The formats that write a place into their output need it named: `--project`,
 `--vault-name`, `--heroku-app`, `--name`. There is no placeholder to edit by
 hand. The `gcp-secrets` script creates each secret, or adds a new version when
-it already exists. `doppler`, `vercel` and `railway` are experimental: their
-shapes have not been checked against those services' importers, and evnx says
-so on stderr. For Doppler, `doppler secrets upload` documents the flat JSON
-that `--to json` prints.
+it already exists. `heroku` sets every variable in one `heroku config:set` call,
+so the app restarts once. `terraform` writes `.tfvars` assignments; names keep
+their case and `--transform` changes it. `--terraform-declarations` instead
+writes a `.tf` of `variable` blocks: a secret-looking one is `sensitive = true`
+with no default (give its value from the `.tfvars` output or `TF_VAR_<name>`),
+the rest keep their value as the default. `vercel` writes the array
+of `{key, value, type, target}` that Vercel's "create environment variables"
+API takes, with `type` `sensitive` for a secret-looking name or value. `doppler`
+writes the flat JSON object that `doppler secrets upload` reads. `railway` is
+still experimental: Railway's docs say the Raw Editor takes JSON but give no
+schema, and evnx says so on stderr.
 
 Choose and rename variables:
 
@@ -433,7 +446,7 @@ character), matched case-sensitively; repeat the flag or separate patterns
 with commas, and exclude wins. A filter that leaves nothing, or an empty
 `.env`, is an error (exit 2) unless `--allow-empty`. So is a pair of names that
 become one name in the output — `Api` and `API` under `--transform uppercase`,
-or `A_B` and `a_b` for gcp-secrets, terraform, Azure Key Vault or GitHub —
+or `A_B` and `a_b` for gcp-secrets, Azure Key Vault or GitHub —
 unless `--allow-collisions` keeps the last value.
 
 `--output` creates the file readable by you only (0600) and refuses to replace
@@ -1170,6 +1183,7 @@ guide is at [docs.evnx.dev/cli/commands/auth](https://docs.evnx.dev/cli/commands
 | `evnx auth register` | Create an evnx cloud account |
 | `evnx auth login` | Sign in on this machine. CI uses an API token instead ([below](#cicd)) |
 | `evnx auth logout` | Sign out. The stored login is removed even if the server cannot be reached |
+| `evnx auth resend-verification` | Send the email-verification link again (signed in, email not yet verified; 3 per hour) |
 | `evnx auth status` | Your account as the server sees it: verified, 2FA, plan and usage |
 | **API tokens**, for CI/CD | |
 | `evnx auth token create <name>` | Mint a token. Shown once, then only revocable |

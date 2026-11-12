@@ -10,7 +10,7 @@
 //!   `app-secrets`); the names are now flags, required for their format
 //!   (DEC-CV1).
 //! - I-085, I-087 labels: github-actions is for the web form; doppler, vercel
-//!   and railway are experimental (DEC-CV4).
+//!   and railway were experimental (DEC-CV4); RM-65 verified the first two.
 //! - I-089 a filter that matches nothing, or an empty `.env`, printed `{}` and
 //!   exited 0; now exit 2 unless `--allow-empty` (DEC-CV3).
 //! - I-090 unknown `--transform` ignored; `--include` had no `?`, no `*` in the
@@ -240,33 +240,44 @@ fn t_i085_help_says_github_actions_is_for_the_web_form() {
     assert!(out.stdout.contains("web form"), "{}", out.stdout);
 }
 
-/// DEC-CV4: doppler, vercel and railway are experimental — in `--help`, and
-/// on stderr when one is chosen. stdout stays the artefact alone.
+/// DEC-CV4: a shape not checked against its target is experimental — in
+/// `--help`, and on stderr when it is chosen. stdout stays the artefact alone.
+/// RM-65 checked doppler and vercel against their documented input; railway's
+/// schema is undocumented, so it alone is still marked.
 #[test]
 fn t_i087_experimental_formats_are_marked() {
     let help = run(Project::new().path(), &["convert", "--help"]);
-    for name in ["doppler", "vercel", "railway"] {
+    assert!(
+        help.stdout.contains("railway (experimental)"),
+        "railway not marked in --help:\n{}",
+        help.stdout
+    );
+    for name in ["doppler", "vercel"] {
         assert!(
-            help.stdout.contains(&format!("{name} (experimental)")),
-            "{name} not marked in --help:\n{}",
+            !help.stdout.contains(&format!("{name} (experimental)")),
+            "{name} still marked in --help:\n{}",
             help.stdout
         );
     }
     let p = project();
-    for name in ["doppler", "vercel", "railway"] {
+    let out = run(p.path(), &["convert", "--to", "railway"]);
+    out.assert_code(0);
+    assert!(
+        out.stderr.contains("experimental"),
+        "railway: {}",
+        out.stderr
+    );
+    serde_json::from_str::<serde_json::Value>(&out.stdout)
+        .unwrap_or_else(|e| panic!("railway: stdout is not the JSON alone: {e}"));
+    // The verified formats say nothing of the kind.
+    for name in ["json", "doppler", "vercel", "terraform"] {
         let out = run(p.path(), &["convert", "--to", name]);
-        out.assert_code(0);
         assert!(
-            out.stderr.contains("experimental"),
+            !out.stderr.contains("experimental"),
             "{name}: {}",
             out.stderr
         );
-        serde_json::from_str::<serde_json::Value>(&out.stdout)
-            .unwrap_or_else(|e| panic!("{name}: stdout is not the JSON alone: {e}"));
     }
-    // The verified formats say nothing of the kind.
-    let out = run(p.path(), &["convert", "--to", "json"]);
-    assert!(!out.stderr.contains("experimental"), "{}", out.stderr);
 }
 
 // ── I-089 ─────────────────────────────────────────────────────────────────────
@@ -500,7 +511,7 @@ fn colliding() -> Project {
 }
 
 /// The format's own renaming merges `A_B` and `a_b`: gcp lowercases and
-/// hyphenates, terraform lowercases, Key Vault and GitHub ignore case. Refused
+/// hyphenates, Key Vault and GitHub ignore case. Refused
 /// like a `--transform` collision (DEC-PL2), naming both and the format.
 #[test]
 fn t_i249_a_format_rename_that_merges_names_is_refused() {
@@ -508,7 +519,6 @@ fn t_i249_a_format_rename_that_merges_names_is_refused() {
     for args in [
         &["--to", "gcp-secrets", "--project", "acme-prod"][..],
         &["--to", "azure-keyvault", "--vault-name", "kv-prod"][..],
-        &["--to", "terraform"][..],
         &["--to", "github-actions"][..],
     ] {
         let mut full = vec!["convert"];
@@ -532,12 +542,64 @@ fn t_i249_formats_that_keep_names_do_not_collide() {
         &["--to", "yaml"][..],
         &["--to", "shell"][..],
         &["--to", "docker-compose"][..],
+        &["--to", "terraform"][..],
         &["--to", "kubernetes", "--name", "web-env"][..],
     ] {
         let mut full = vec!["convert"];
         full.extend_from_slice(args);
         run(p.path(), &full).assert_code(0);
     }
+}
+
+/// RM-65, I-093: terraform keeps the case the `.env` has and `--transform` is
+/// what changes it. The default output is the `.tfvars` values.
+#[test]
+fn rm65_terraform_keeps_case_and_transform_decides() {
+    let p = Project::new().env("Api_Key=abc123def456ghi789\nPORT=8080\n");
+    let out = run(p.path(), &["convert", "--to", "terraform"]);
+    out.assert_code(0);
+    assert!(
+        out.stdout.contains("Api_Key = \"abc123def456ghi789\""),
+        "{}",
+        out.stdout
+    );
+    assert!(out.stdout.contains("PORT = \"8080\""), "{}", out.stdout);
+    assert!(!out.stdout.contains("variable"), "{}", out.stdout);
+    let out = run(
+        p.path(),
+        &["convert", "--to", "terraform", "--transform", "lowercase"],
+    );
+    out.assert_code(0);
+    assert!(out.stdout.contains("api_key = "), "{}", out.stdout);
+}
+
+/// `--terraform-declarations` writes `variable` blocks; a secret is marked
+/// `sensitive` and its value is never written (a `.tf` file is committed).
+#[test]
+fn rm65_terraform_declarations_never_write_a_secret() {
+    let p = Project::new().env("Api_Key=abc123def456ghi789\nPORT=8080\n");
+    let out = run(
+        p.path(),
+        &["convert", "--to", "terraform", "--terraform-declarations"],
+    );
+    out.assert_code(0);
+    let lf = out.stdout.replace("\r\n", "\n");
+    assert!(
+        lf.contains("variable \"Api_Key\" {\n  type = string\n  sensitive = true\n}"),
+        "{lf}"
+    );
+    assert!(
+        lf.contains("variable \"PORT\" {\n  type = string\n  default = \"8080\"\n}"),
+        "{lf}"
+    );
+    assert!(!lf.contains("abc123def456ghi789"), "{lf}");
+    // Only for terraform.
+    let out = run(
+        p.path(),
+        &["convert", "--to", "json", "--terraform-declarations"],
+    );
+    out.assert_code(2);
+    assert!(out.stderr.contains("--to terraform"), "{}", out.stderr);
 }
 
 /// DEC-PL2: `--allow-collisions` keeps the last value, says so on stderr, and

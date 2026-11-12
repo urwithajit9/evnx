@@ -104,7 +104,8 @@ pub enum ApiError {
 
     /// 403 `EMAIL_NOT_VERIFIED`.
     #[error(
-        "your email address is not verified yet — check your inbox for the link from evnx. \
+        "your email address is not verified yet — check your inbox for the link from evnx, \
+             or run `evnx auth resend-verification` for a new one. \
              Vault commands stay unavailable until it is confirmed."
     )]
     EmailNotVerified,

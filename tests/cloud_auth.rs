@@ -750,3 +750,140 @@ fn t_i306_an_unknown_error_code_prints_the_servers_sentence() {
         out.stderr
     );
 }
+
+// ─── N14-5: `evnx auth resend-verification` ──────────────────────────────────
+
+const ME_UNVERIFIED: &str =
+    r#"{"user_id":"u-1","email":"me@example.com","email_verified":false,"totp_enabled":false}"#;
+
+/// `evnx auth resend-verification` signed in, with `/auth/me` answering `me`
+/// and (when given) the resend endpoint answering `(status, body, retry_after)`.
+fn resend_with(
+    me: &str,
+    resend: Option<(usize, &str, Option<&str>)>,
+    signed_in: bool,
+    extra: &[&str],
+) -> (support::Output, Vec<mockito::Mock>) {
+    let p = Project::new();
+    let mut server = mockito::Server::new();
+    let url = server.url();
+    if signed_in {
+        support::cloud::login(&p.path().join("cfg"), &url);
+    }
+    let mut mocks = vec![server
+        .mock("GET", "/api/v1/auth/me")
+        .with_status(200)
+        .with_body(me)
+        .expect(usize::from(signed_in))
+        .create()];
+    let mut m = server
+        .mock("POST", "/api/v1/auth/resend-verification")
+        .match_body(mockito::Matcher::JsonString(
+            r#"{"email":"me@example.com"}"#.into(),
+        ));
+    match resend {
+        Some((status, body, retry)) => {
+            m = m.with_status(status).with_body(body).expect(1);
+            if let Some(r) = retry {
+                m = m.with_header("Retry-After", r);
+            }
+        }
+        None => m = m.expect(0),
+    }
+    mocks.push(m.create());
+    let mut args = extra.to_vec();
+    args.extend(["auth", "resend-verification"]);
+    let out = evnx(&p, &url, None, &args);
+    for m in &mocks {
+        m.assert();
+    }
+    (out, mocks)
+}
+
+#[test]
+fn n14_5_sent() {
+    let (out, _) = resend_with(ME_UNVERIFIED, Some((202, "", None)), true, &[]);
+    out.assert_code(0);
+    assert!(
+        out.stdout
+            .contains("verification email sent to me@example.com"),
+        "{}",
+        out.stdout
+    );
+}
+
+#[test]
+fn n14_5_already_verified_sends_nothing() {
+    let (out, _) = resend_with(ME, None, true, &[]);
+    out.assert_code(0);
+    assert!(out.stdout.contains("already verified"), "{}", out.stdout);
+}
+
+#[test]
+fn n14_5_rate_limited_says_when_to_retry() {
+    let body = r#"{"error":"Too many requests. Try again in 1800 seconds.","code":"RATE_LIMITED"}"#;
+    let (out, _) = resend_with(ME_UNVERIFIED, Some((429, body, Some("1800"))), true, &[]);
+    out.assert_code(15);
+    assert!(out.stderr.contains("30 minutes"), "{}", out.stderr);
+    assert!(out.stderr.contains("1800 s"), "{}", out.stderr);
+}
+
+#[test]
+fn n14_5_rate_limited_without_a_header_keeps_the_servers_sentence() {
+    let body = r#"{"error":"Too many requests. Try again in 90 seconds.","code":"RATE_LIMITED"}"#;
+    let (out, _) = resend_with(ME_UNVERIFIED, Some((429, body, None)), true, &[]);
+    out.assert_code(15);
+    assert!(
+        out.stderr.contains("Try again in 90 seconds"),
+        "{}",
+        out.stderr
+    );
+}
+
+#[test]
+fn n14_5_not_signed_in_is_exit_10_and_sends_nothing() {
+    let (out, _) = resend_with(ME_UNVERIFIED, None, false, &[]);
+    out.assert_code(10);
+    assert!(out.stderr.contains("evnx auth login"), "{}", out.stderr);
+}
+
+#[test]
+fn n14_5_an_api_token_is_refused_before_any_request() {
+    let p = Project::new();
+    let (server, _mocks) = silent_server();
+    let out = evnx(
+        &p,
+        &server.url(),
+        Some(TOKEN),
+        &["auth", "resend-verification"],
+    );
+    assert_ne!(out.code, Some(0));
+    assert!(out.stderr.contains("API token"), "{}", out.stderr);
+}
+
+#[test]
+fn n14_5_quiet_is_silent_on_success() {
+    let (out, _) = resend_with(ME_UNVERIFIED, Some((202, "", None)), true, &["-q"]);
+    out.assert_code(0);
+    assert!(out.stdout.trim().is_empty(), "{}", out.stdout);
+    assert!(out.stderr.trim().is_empty(), "{}", out.stderr);
+    let (out, _) = resend_with(ME, None, true, &["-q"]);
+    out.assert_code(0);
+    assert!(out.stdout.trim().is_empty(), "{}", out.stdout);
+}
+
+#[test]
+fn n14_5_help_and_the_unverified_hint_name_the_command() {
+    let p = Project::new();
+    let out = run_with(
+        p.path(),
+        &["auth", "resend-verification", "--help"],
+        &[],
+        None,
+    );
+    out.assert_code(0);
+    assert!(out.stdout.contains("verification"), "{}", out.stdout);
+    assert!(evnx::cloud::client::ApiError::EmailNotVerified
+        .to_string()
+        .contains("evnx auth resend-verification"));
+}

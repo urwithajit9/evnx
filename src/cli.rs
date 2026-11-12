@@ -1033,6 +1033,21 @@ pub enum AuthCommands {
     /// `logout` on a borrowed machine always clears that disk.
     Logout,
 
+    /// Send the email-verification link again.
+    ///
+    /// For a signed-in account whose email is not verified yet: the first
+    /// message was lost, filtered, or its link expired (they last 24 hours).
+    /// Sending a new one makes the earlier links stop working. If the account is
+    /// already verified, nothing is sent.
+    ///
+    /// The server allows 3 per hour per address; past that it says when to
+    /// try again. An API token cannot do this: sign in with `evnx auth login`.
+    ///
+    /// EXIT CODES: 0 sent, or already verified; 10 not signed in; 15 rate
+    /// limited, or the server failed; 13 the server could not be reached.
+    #[command(name = "resend-verification")]
+    ResendVerification,
+
     /// Print the CI key bundle: your sealed key material, for EVNX_KEY_BUNDLE.
     ///
     /// An API token authenticates but does not decrypt, and the server no longer
@@ -2763,9 +2778,9 @@ Supported formats:
                   gcp-secrets (--project), azure-keyvault (--vault-name)
   CI/CD:          github-actions (text to paste into the GitHub web form)
   Containers:     docker-compose, kubernetes (--name, optional --namespace)
-  IaC:            terraform
-  Secret Managers: doppler (experimental), heroku (--heroku-app),
-                  vercel (experimental), railway (experimental)
+  IaC:            terraform (.tfvars; --terraform-declarations for variable blocks)
+  Secret Managers: doppler, heroku (--heroku-app), vercel,
+                  railway (experimental)
 
 Aliases:
   k8s → kubernetes, tf → terraform, yml → yaml
@@ -2855,7 +2870,7 @@ Use 'evnx convert' without --to for interactive format selection.
         ///
         /// `--transform` can merge names (`Api` and `API` under uppercase), and
         /// so can a format's own naming: gcp-secrets lowercases and uses `-`,
-        /// terraform lowercases, and Azure Key Vault and GitHub ignore case.
+        /// and Azure Key Vault and GitHub ignore case.
         /// Without this flag that is an error naming both, exit 2.
         #[arg(long)]
         allow_collisions: bool,
@@ -2908,6 +2923,15 @@ Use 'evnx convert' without --to for interactive format selection.
         /// Kubernetes namespace for --to kubernetes (optional)
         #[arg(long, value_name = "NAMESPACE")]
         namespace: Option<String>,
+
+        /// With --to terraform, write a .tf of `variable` blocks instead of
+        /// the .tfvars values.
+        ///
+        /// A secret-looking variable gets `sensitive = true` and no default;
+        /// supply its value from the .tfvars output or TF_VAR_<name>. Others
+        /// keep their value as the default.
+        #[arg(long)]
+        terraform_declarations: bool,
     },
 
     /// Move a .env into a secret manager: print the commands, or upload to GitHub.

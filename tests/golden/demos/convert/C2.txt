@@ -59,7 +59,7 @@ Supported formats:
     terraform
 
   Secret managers:
-    doppler (experimental), heroku, vercel (experimental), railway (experimental)
+    doppler, heroku, vercel, railway (experimental)
 
   Aliases:
     k8s → kubernetes, tf → terraform, yml → yaml

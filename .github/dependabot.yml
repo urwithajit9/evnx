@@ -36,6 +36,15 @@ updates:
     # patch release of every transitive crate is how a bot gets muted, and a
     # muted bot is worse than no bot. `cargo audit` already runs in CI for the
     # advisories that matter.
+    #
+    # G6: minor and patch updates are grouped, so if the limit below is ever
+    # raised the result is one PR a week, not one per crate. Majors are not
+    # grouped (the same reason as for actions above). With the limit at 0 this
+    # grouping applies to security updates only.
     open-pull-requests-limit: 0
+    groups:
+      cargo-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
     commit-message:
       prefix: "chore(deps)"

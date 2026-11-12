@@ -54,11 +54,8 @@ impl Converter for HerokuConfigConverter {
         }
 
         output.push_str("#\n");
-        output.push_str("# Or set variables individually:\n");
-        output.push_str(&format!(
-            "#   heroku config:set KEY=VALUE --app {}\n",
-            app.as_deref().unwrap_or("YOUR_APP_NAME")
-        ));
+        output.push_str("# One call sets every variable, so the app restarts once and\n");
+        output.push_str("# gets one release, not one per variable.\n");
         output.push('\n');
 
         // App name flag
@@ -68,26 +65,22 @@ impl Converter for HerokuConfigConverter {
         };
 
         output.push_str("set -e\n\n");
-
-        // Generate config:set commands
         output.push_str("echo \"Setting Heroku config vars...\"\n\n");
 
-        for (transformed_key, transformed_value) in options.prepare(vars, self)? {
-            // Escape value for shell
-            let escaped_value = transformed_value
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"")
-                .replace('$', "\\$")
-                .replace('`', "\\`");
-            let key = crate::core::shell::word(&transformed_key);
-
-            output.push_str(&format!(
-                "heroku config:set {}=\"{}\"{}",
-                key, escaped_value, app_flag
-            ));
-            output.push_str(" || echo \"Failed to set ");
-            output.push_str(&key);
-            output.push_str("\"\n");
+        // ⚠️ One `heroku config:set A=… B=…`, not one call per variable. Each
+        // call restarts the app and cuts a release (RM-65). Every pair goes
+        // through `core::shell::assignment`, so the shell hands heroku the
+        // value exactly.
+        let pairs = options.prepare(vars, self)?;
+        if !pairs.is_empty() {
+            output.push_str("heroku config:set");
+            for (key, value) in &pairs {
+                output.push_str(" \\\n  ");
+                output.push_str(&crate::core::shell::assignment(key, value));
+            }
+            output.push_str(" \\\n ");
+            output.push_str(&app_flag);
+            output.push('\n');
         }
 
         output.push_str("\necho \"✓ Config vars set successfully\"\n");
@@ -171,8 +164,8 @@ mod tests {
         let result = converter.convert(&vars, &options).unwrap();
 
         // Should escape special characters
-        assert!(result.contains("\\\""));
-        assert!(result.contains("\\$"));
+        // Single-quoted: the shell reads the value back untouched.
+        assert!(result.contains("KEY='value with \"quotes\" and $vars'"));
     }
 
     #[test]
@@ -185,5 +178,18 @@ mod tests {
     fn test_converter_description() {
         let converter = HerokuConfigConverter::default();
         assert!(!converter.description().is_empty());
+    }
+
+    #[test]
+    fn one_call_sets_every_variable() {
+        let mut vars = IndexMap::new();
+        vars.insert("A".to_string(), "1".to_string());
+        vars.insert("B".to_string(), "it's".to_string());
+        let out = HerokuConfigConverter::new("my-app".to_string())
+            .convert(&vars, &ConvertOptions::default())
+            .unwrap();
+        assert_eq!(out.matches("heroku config:set").count(), 1, "{out}");
+        assert!(out.contains("A='1'"), "{out}");
+        assert!(out.contains("B='it'\\''s'"), "{out}");
     }
 }

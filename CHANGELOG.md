@@ -10,6 +10,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`evnx auth resend-verification`** (N14-5). Sends the verification email again
+  for the signed-in account. It asks the server who you are first, so an
+  already-verified account is told so and nothing is sent (the server's resend
+  endpoint answers 202 for everything, by design). Rate limited (3 per hour per
+  address) it exits 15 and says how long to wait; not signed in exits 10; an
+  API token is refused. The "email not verified" error and `auth status` now
+  point at this command.
+
+- **Each release carries a CycloneDX SBOM** (SEC-2). A new `sbom` job in
+  `release.yml` runs `cargo-cyclonedx` (0.5.10, installed with `--locked`) with
+  all features on and attaches `evnx-<version>.cdx.json` and its `.sha256` to the
+  GitHub release next to the archives. The SBOM gets a build provenance
+  attestation like the archives; `gh attestation verify` works on it. The
+  README's verify section says so.
+
 - **CI: `EVNX_KEY_BUNDLE` replaces fetching key material with an API token.**
   Create it with `evnx auth token create` or `evnx auth key-bundle`; it is
   required once the server stops serving key material to tokens. CI now sets
@@ -209,6 +224,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Repo files: CODEOWNERS, Dependabot grouping for cargo, a PR template**
+  (G5 to G7). `.github/CODEOWNERS` assigns the workflows, scripts, build script,
+  manifests, `.cargo/`, Dockerfile, `pyproject.toml` and `src/assets/` to the
+  owner. The cargo entry in `dependabot.yml` groups minor and patch updates
+  (`open-pull-requests-limit` stays 0, as documented there). The PR template asks
+  what changed, how it was tested, and whether it touches workflows, scripts,
+  `build.rs` or dependencies.
+
+- **`SECURITY.md` states the support policy** (RM-79). The latest minor gets fixes;
+  the previous minor gets security fixes for 90 days after the next minor ships;
+  older versions get none. It also states the minimum supported Rust version
+  (1.87, the `rust-version` in `Cargo.toml`, checked by the CI `MSRV` job) and
+  how it may change, and links to the security notices at evnx.dev/security.
+
 - **`scan` reads files in parallel** (RM-74). Files are scanned on all cores and
   reported in path order, so text, JSON, SARIF and GitHub output, the exit code
   and the notes on stderr are the same as before and the same at any thread
@@ -219,6 +248,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   each file is read.
 
 ### Fixed
+
+- **`convert` output shapes checked against each tool's documented input
+  (RM-65, I-092, I-093, I-097).** `vercel` prints the array of
+  `{key, value, type, target}` that Vercel's create-environment-variables API
+  takes, with `type` `sensitive` for a secret-looking name or value (the same
+  classifier as `platform`). `doppler` prints the flat JSON object
+  `doppler secrets upload` reads, not `{value, computed}` per name. `terraform`
+  keeps the case of each name (it lowercased them) and lets `--transform`
+  change it; `A_B` and `a_b` no longer collide. It still writes `.tfvars`
+  values; the new `--terraform-declarations` writes a `.tf` of `variable` blocks
+  instead, with `sensitive = true` and no default for a secret-looking
+  variable, so no secret lands in a file people commit. `heroku` sets
+  every variable in one shell-quoted `heroku config:set A=… B=…` call, so the
+  app restarts once. `doppler` and `vercel` are no longer marked experimental;
+  `railway` still is, because Railway documents no schema for its JSON import.
 
 - **`scan -v` says names are checked in Dockerfiles, Containerfiles, shell
   scripts and Python modules.** They print `read as text: value patterns, and

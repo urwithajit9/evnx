@@ -655,7 +655,10 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
     if !me.email_verified && !quiet {
         println!();
         println!("  Vault commands stay unavailable until you open the verification");
-        println!("  link sent to {}.", me.email);
+        println!(
+            "  link sent to {}. Lost it? `evnx auth resend-verification`.",
+            me.email
+        );
     }
 
     // ── Plan and usage ───────────────────────────────────────────────────────
@@ -1064,6 +1067,84 @@ pub fn key_bundle(server_override: Option<&str>, _verbose: bool) -> Result<()> {
     crate::say!();
     println!("{}", bundle.encode());
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct ResendVerificationRequest<'a> {
+    email: &'a str,
+}
+
+/// "42 minutes", "5 s": a wait the way a person says it.
+fn human_wait(secs: u64) -> String {
+    match secs {
+        0..=119 => format!("{secs} s"),
+        120..=7199 => format!("{} minutes", secs.div_ceil(60)),
+        _ => format!("{} hours", secs.div_ceil(3600)),
+    }
+}
+
+/// `evnx auth resend-verification` (N14-5): ask the server for a new
+/// verification email for the signed-in account.
+///
+/// ⚠️ The server's endpoint takes an address and always answers 202, whether
+/// the address is unknown, already verified or pending (so it cannot be used to
+/// find out who has an account). It therefore cannot say "already verified".
+/// This asks `/auth/me` first, which can, and which also gives the address
+/// without prompting for it.
+pub fn resend_verification(server_override: Option<&str>, _verbose: bool) -> Result<()> {
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server)?;
+    // A token has no mailbox of its own to verify, and the server's own
+    // account endpoints refuse it. Signed out is exit 10.
+    client.require_user_session(
+        "resend a verification email",
+        "\x20 Verification belongs to the account you sign in with.\n",
+    )?;
+
+    let me: MeResponse = client.get("/api/v1/auth/me")?;
+    if me.email_verified {
+        crate::utils::ui::success(format!(
+            "{} is already verified; nothing was sent.",
+            me.email
+        ));
+        return Ok(());
+    }
+
+    let sent: Result<serde::de::IgnoredAny, _> = client.post_public(
+        "/api/v1/auth/resend-verification",
+        &ResendVerificationRequest { email: &me.email },
+    );
+    match sent {
+        Ok(_) => {
+            crate::utils::ui::success(format!("verification email sent to {}.", me.email));
+            crate::say!("  Open the link in it within 24 hours; earlier links no longer work.");
+            crate::say!("  Nothing there? Check spam, then run this again in a few minutes.");
+            Ok(())
+        }
+        Err(crate::cloud::client::ApiError::RateLimited {
+            message,
+            retry_after,
+        }) => {
+            // The server allows 3 per address per hour.
+            let message = match retry_after {
+                Some(n) => format!(
+                    "too many verification emails for {} (3 per hour). Try again in {} ({n} s).",
+                    me.email,
+                    human_wait(n)
+                ),
+                None => format!(
+                    "too many verification emails for {} (3 per hour). {message}",
+                    me.email
+                ),
+            };
+            Err(crate::cloud::client::ApiError::RateLimited {
+                message,
+                retry_after,
+            }
+            .into())
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// What the F1 backfill needs from `/auth/me`.

@@ -485,6 +485,7 @@ fn main() -> Result<()> {
             heroku_app,
             name,
             namespace,
+            terraform_declarations,
         } => {
             // ⚠️ Checked before anything is read: an unknown --transform was
             // dropped in silence (I-090), and a --prefix with shell syntax
@@ -499,6 +500,7 @@ fn main() -> Result<()> {
                 heroku_app,
                 name,
                 namespace,
+                terraform_declarations,
             };
             let early = evnx::core::args::check_opt(
                 "--prefix",
