@@ -321,7 +321,6 @@ fn the_fixture_reads_as_written() {
 /// The name a format gives a key (some lowercase it, some cannot hold `_`).
 fn norm(format: &str, key: &str) -> String {
     match format {
-        "terraform" => key.to_lowercase(),
         "gcp-secrets" => key.to_lowercase().replace('_', "-"),
         "azure-keyvault" => key.replace('_', "-"),
         _ => key.to_string(),
@@ -429,15 +428,18 @@ fn github_blocks(text: &str) -> Result<BTreeMap<String, String>, String> {
 fn read_back(format: &str, out: &str, p: &Project) -> Result<BTreeMap<String, String>, String> {
     let _ = p;
     match format {
-        "json" | "aws-secrets" | "railway" => json_strings(&json_in(out)),
-        "doppler" | "vercel" => {
-            let doc = json_in(out);
-            let obj = doc.as_object().ok_or("not an object")?;
-            obj.iter()
-                .map(|(k, v)| {
-                    v["value"]
+        "json" | "aws-secrets" | "railway" | "doppler" => json_strings(&json_in(out)),
+        // Vercel's env API takes an array of {key, value, type, target}.
+        "vercel" => {
+            let doc: serde_json::Value =
+                serde_json::from_str(out).map_err(|e| format!("bad JSON ({e})"))?;
+            let list = doc.as_array().ok_or("not an array")?;
+            list.iter()
+                .map(|e| {
+                    let k = e["key"].as_str().ok_or("entry without a key")?;
+                    e["value"]
                         .as_str()
-                        .map(|s| (k.clone(), lf(s)))
+                        .map(|s| (k.to_string(), lf(s)))
                         .ok_or_else(|| format!("{k} has no string value"))
                 })
                 .collect()
@@ -464,7 +466,8 @@ fn read_back(format: &str, out: &str, p: &Project) -> Result<BTreeMap<String, St
             Ok(map)
         }
         "terraform" => {
-            // Terraform reads `$${` as a literal `${`.
+            // `.tfvars`: `name = "value"` lines. Terraform reads `$${` as a
+            // literal `${`, and its string escapes are TOML's.
             let doc: toml::Table = out.parse().map_err(|e: toml::de::Error| e.to_string())?;
             doc.iter()
                 .map(|(k, v)| {
@@ -588,7 +591,7 @@ mod scripts {
                 let bin = stubs(
                     work.path(),
                     "heroku",
-                    "case \"$2\" in *=*) k=${2%%=*}; v=${2#*=}; printf %s \"$v\" > \"$OUT/$k\";; esac\n",
+                    "for a in \"$@\"; do case \"$a\" in *=*) k=${a%%=*}; v=${a#*=}; printf %s \"$v\" > \"$OUT/$k\";; esac; done\n",
                 );
                 run_script(&script, &bin, &out)
             }
@@ -968,4 +971,33 @@ fn a_generated_project_survives_add_sync_and_remove() {
         );
     }
     f.finish();
+}
+
+/// `--terraform-declarations`: every name is declared, a secret is
+/// `sensitive`, and no secret value appears in the output.
+#[test]
+fn terraform_declarations_declare_names_and_hold_no_secret() {
+    let p = Project::new().env(&fixture_env());
+    let out = run(
+        p.path(),
+        &["convert", "--to", "terraform", "--terraform-declarations"],
+    );
+    out.assert_code(0);
+    let text = lf(&out.stdout);
+    let values = fixture_values();
+    for name in values.keys() {
+        assert!(
+            text.contains(&format!("variable \"{name}\" {{")),
+            "{name} not declared:\n{text}"
+        );
+    }
+    assert!(text.contains("sensitive = true"), "{text}");
+    for (name, value) in &values {
+        if evnx::core::classify::holds_secret(name, value) && !value.is_empty() {
+            assert!(
+                !text.contains(value.as_str()),
+                "{name}'s value is in the output:\n{text}"
+            );
+        }
+    }
 }

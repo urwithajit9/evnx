@@ -10,23 +10,12 @@ use indexmap::IndexMap;
 pub struct DopplerConverter;
 
 impl Converter for DopplerConverter {
+    /// A flat JSON object of strings: the input `doppler secrets upload`
+    /// takes (RM-65, I-097). It was `{"KEY": {"value", "computed"}}`, which is
+    /// not an upload shape.
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
-        let transformed: IndexMap<String, serde_json::Value> = options
-            .prepare(vars, self)?
-            .into_iter()
-            .map(|(key, value)| {
-                (
-                    key,
-                    serde_json::json!({
-                        "value": value,
-                        "computed": false
-                    }),
-                )
-            })
-            .collect();
-
-        let json = serde_json::to_string_pretty(&transformed)?;
-        Ok(json)
+        let flat: IndexMap<String, String> = options.prepare(vars, self)?.into_iter().collect();
+        Ok(serde_json::to_string_pretty(&flat)?)
     }
 
     fn name(&self) -> &str {
@@ -34,6 +23,6 @@ impl Converter for DopplerConverter {
     }
 
     fn description(&self) -> &str {
-        "Doppler secrets JSON format"
+        "Doppler secrets JSON (for doppler secrets upload)"
     }
 }

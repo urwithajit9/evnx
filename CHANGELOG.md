@@ -220,6 +220,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`convert` output shapes checked against each tool's documented input
+  (RM-65, I-092, I-093, I-097).** `vercel` prints the array of
+  `{key, value, type, target}` that Vercel's create-environment-variables API
+  takes, with `type` `sensitive` for a secret-looking name or value (the same
+  classifier as `platform`). `doppler` prints the flat JSON object
+  `doppler secrets upload` reads, not `{value, computed}` per name. `terraform`
+  keeps the case of each name (it lowercased them) and lets `--transform`
+  change it; `A_B` and `a_b` no longer collide. It still writes `.tfvars`
+  values; the new `--terraform-declarations` writes a `.tf` of `variable` blocks
+  instead, with `sensitive = true` and no default for a secret-looking
+  variable, so no secret lands in a file people commit. `heroku` sets
+  every variable in one shell-quoted `heroku config:set A=… B=…` call, so the
+  app restarts once. `doppler` and `vercel` are no longer marked experimental;
+  `railway` still is, because Railway documents no schema for its JSON import.
+
 - **`scan -v` says names are checked in Dockerfiles, Containerfiles, shell
   scripts and Python modules.** They print `read as text: value patterns, and
   names in assignments`; other text files keep `value patterns only, names not

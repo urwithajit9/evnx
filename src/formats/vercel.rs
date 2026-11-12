@@ -29,30 +29,31 @@ pub fn is_sensitive(key: &str, value: &str) -> bool {
 }
 
 impl Converter for VercelEnvConverter {
+    /// The request body of Vercel's "create one or more environment variables"
+    /// (`POST /v10/projects/{idOrName}/env`): an array of
+    /// `{key, value, type, target}`, where `type` is `plain` or `sensitive`
+    /// (RM-65, I-092). It was a map keyed by name, which that endpoint does
+    /// not take.
     fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
-        let transformed: IndexMap<String, serde_json::Value> = options
+        let entries: Vec<serde_json::Value> = options
             .prepare(vars, self)?
             .into_iter()
             .map(|(key, value)| {
-                let entry = if is_sensitive(&key, &value) {
-                    serde_json::json!({
-                        "type": "sensitive",
-                        "value": value,
-                        "target": TARGETS
-                    })
+                let kind = if is_sensitive(&key, &value) {
+                    "sensitive"
                 } else {
-                    serde_json::json!({
-                        "type": "plain",
-                        "value": value,
-                        "target": TARGETS
-                    })
+                    "plain"
                 };
-                (key, entry)
+                serde_json::json!({
+                    "key": key,
+                    "value": value,
+                    "type": kind,
+                    "target": TARGETS
+                })
             })
             .collect();
 
-        let json = serde_json::to_string_pretty(&transformed)?;
-        Ok(json)
+        Ok(serde_json::to_string_pretty(&entries)?)
     }
 
     fn name(&self) -> &str {
@@ -60,7 +61,7 @@ impl Converter for VercelEnvConverter {
     }
 
     fn description(&self) -> &str {
-        "Vercel Environment Variables JSON"
+        "Vercel environment variables (JSON request body)"
     }
 }
 
@@ -69,6 +70,15 @@ mod tests {
     use super::*;
 
     fn run(pairs: &[(&str, &str)]) -> serde_json::Value {
+        let list = run_list(pairs);
+        let mut map = serde_json::Map::new();
+        for e in list.as_array().unwrap() {
+            map.insert(e["key"].as_str().unwrap().to_string(), e.clone());
+        }
+        serde_json::Value::Object(map)
+    }
+
+    fn run_list(pairs: &[(&str, &str)]) -> serde_json::Value {
         let vars: IndexMap<String, String> = pairs
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -97,5 +107,21 @@ mod tests {
             v["APP_NAME"]["target"],
             serde_json::json!(["production", "preview", "development"])
         );
+    }
+
+    /// The shape of the documented request body: an array, each entry with
+    /// exactly `key`, `value`, `type` and `target`.
+    #[test]
+    fn output_is_the_documented_request_body_array() {
+        let v = run_list(&[("APP_NAME", "demo"), ("DB_PASSWORD", "hunter2")]);
+        let list = v.as_array().expect("an array");
+        assert_eq!(list.len(), 2);
+        for e in list {
+            let mut keys: Vec<&str> = e.as_object().unwrap().keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            assert_eq!(keys, ["key", "target", "type", "value"]);
+        }
+        assert_eq!(list[0]["key"], "APP_NAME");
+        assert_eq!(list[1]["type"], "sensitive");
     }
 }

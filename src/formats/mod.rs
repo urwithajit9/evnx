@@ -140,7 +140,7 @@ pub const FORMATS: &[Format] = &[
         name: "terraform",
         aliases: &["tfvars", "tf"],
         group: "Infrastructure",
-        label: "Terraform .tfvars file",
+        label: "Terraform .tfvars file (--terraform-declarations: variable blocks)",
         extension: "tfvars",
         experimental: None,
     },
@@ -148,12 +148,9 @@ pub const FORMATS: &[Format] = &[
         name: "doppler",
         aliases: &[],
         group: "Secret managers",
-        label: "Doppler secrets JSON (experimental)",
+        label: "Doppler secrets JSON (for doppler secrets upload)",
         extension: "json",
-        experimental: Some(
-            "doppler output is experimental: `doppler secrets upload` is documented to take \
-             flat JSON (what --to json prints), not this shape.",
-        ),
+        experimental: None,
     },
     Format {
         name: "heroku",
@@ -167,22 +164,20 @@ pub const FORMATS: &[Format] = &[
         name: "vercel",
         aliases: &[],
         group: "Secret managers",
-        label: "Vercel environment variables JSON (experimental)",
+        label: "Vercel environment variables (JSON body for the env API)",
         extension: "json",
-        experimental: Some(
-            "vercel output is experimental: Vercel's API takes {key, value, type, target} \
-             objects, not this map.",
-        ),
+        experimental: None,
     },
     Format {
         name: "railway",
         aliases: &[],
         group: "Secret managers",
-        label: "Railway variables JSON (experimental)",
+        label: "Railway variables JSON (for the Raw Editor) (experimental)",
         extension: "json",
         experimental: Some(
-            "railway output is experimental: it is the JSON --to json prints, and Railway \
-             documents no import that takes it.",
+            "railway output is experimental: Railway's docs say the Raw Editor takes a \
+             JSON-formatted file but give no schema; this flat object of strings is the \
+             shape its error messages describe.",
         ),
     },
 ];
@@ -212,7 +207,7 @@ fn default_converter(name: &str) -> Box<dyn Converter> {
         "github-actions" => Box::new(GitHubActionsConverter::default()),
         "docker-compose" => Box::new(DockerComposeConverter),
         "kubernetes" => Box::new(KubernetesSecretConverter::default()),
-        "terraform" => Box::new(TerraformConverter),
+        "terraform" => Box::new(TerraformConverter::default()),
         "doppler" => Box::new(DopplerConverter),
         "heroku" => Box::new(HerokuConfigConverter::default()),
         "vercel" => Box::new(VercelEnvConverter),
@@ -264,6 +259,8 @@ pub struct Targets {
     pub name: Option<String>,
     /// `--namespace`: the Kubernetes namespace, optional (kubernetes).
     pub namespace: Option<String>,
+    /// `--terraform-declarations`: `variable` blocks, not values (terraform).
+    pub terraform_declarations: bool,
 }
 
 impl Targets {
@@ -310,6 +307,15 @@ impl Targets {
     ///
     /// Checked before the input is read, so a typo costs nothing.
     pub fn check(&self, format: Option<&Format>) -> Result<()> {
+        if let Some(f) = format {
+            if self.terraform_declarations && f.name != "terraform" {
+                bail!(
+                    "--terraform-declarations is for --to terraform; --to {} does not use it. \
+                     Nothing was printed.",
+                    f.name
+                );
+            }
+        }
         for (flag, value, belongs, rule) in self.flags() {
             let Some(value) = value else { continue };
             crate::core::args::check(flag, value, rule)?;
@@ -374,6 +380,9 @@ pub fn converter_for(
             "APP",
             "the Heroku app the config vars go to",
         )?)),
+        "terraform" => Box::new(TerraformConverter {
+            declarations: targets.terraform_declarations,
+        }),
         "kubernetes" => Box::new(KubernetesSecretConverter {
             secret_name: need(
                 &targets.name,
@@ -563,10 +572,14 @@ mod registry_tests {
         assert!(!label("kubernetes").contains("base64 encoded"));
         assert!(label("kubernetes").contains("stringData"));
         assert!(label("github-actions").contains("web form"));
-        for n in ["doppler", "vercel", "railway"] {
-            assert!(find(n).unwrap().experimental.is_some(), "{n}");
-            assert!(label(n).contains("experimental"), "{n}");
+        // RM-65: doppler and vercel were checked against their documented
+        // input; railway's schema is undocumented, so it stays experimental.
+        for n in ["doppler", "vercel"] {
+            assert!(find(n).unwrap().experimental.is_none(), "{n}");
+            assert!(!label(n).contains("experimental"), "{n}");
         }
+        assert!(find("railway").unwrap().experimental.is_some());
+        assert!(label("railway").contains("experimental"));
     }
 
     /// DEC-CV1: each named target requires its flag, and a flag for another

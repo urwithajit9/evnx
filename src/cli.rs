@@ -2763,9 +2763,9 @@ Supported formats:
                   gcp-secrets (--project), azure-keyvault (--vault-name)
   CI/CD:          github-actions (text to paste into the GitHub web form)
   Containers:     docker-compose, kubernetes (--name, optional --namespace)
-  IaC:            terraform
-  Secret Managers: doppler (experimental), heroku (--heroku-app),
-                  vercel (experimental), railway (experimental)
+  IaC:            terraform (.tfvars; --terraform-declarations for variable blocks)
+  Secret Managers: doppler, heroku (--heroku-app), vercel,
+                  railway (experimental)
 
 Aliases:
   k8s → kubernetes, tf → terraform, yml → yaml
@@ -2855,7 +2855,7 @@ Use 'evnx convert' without --to for interactive format selection.
         ///
         /// `--transform` can merge names (`Api` and `API` under uppercase), and
         /// so can a format's own naming: gcp-secrets lowercases and uses `-`,
-        /// terraform lowercases, and Azure Key Vault and GitHub ignore case.
+        /// and Azure Key Vault and GitHub ignore case.
         /// Without this flag that is an error naming both, exit 2.
         #[arg(long)]
         allow_collisions: bool,
@@ -2908,6 +2908,15 @@ Use 'evnx convert' without --to for interactive format selection.
         /// Kubernetes namespace for --to kubernetes (optional)
         #[arg(long, value_name = "NAMESPACE")]
         namespace: Option<String>,
+
+        /// With --to terraform, write a .tf of `variable` blocks instead of
+        /// the .tfvars values.
+        ///
+        /// A secret-looking variable gets `sensitive = true` and no default;
+        /// supply its value from the .tfvars output or TF_VAR_<name>. Others
+        /// keep their value as the default.
+        #[arg(long)]
+        terraform_declarations: bool,
     },
 
     /// Move a .env into a secret manager: print the commands, or upload to GitHub.

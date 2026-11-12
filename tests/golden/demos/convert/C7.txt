@@ -149,21 +149,23 @@ $ evnx convert --to heroku --heroku-app acme-web
 # Usage:
 #   bash heroku-config.sh
 #
-# Or set variables individually:
-#   heroku config:set KEY=VALUE --app acme-web
+# One call sets every variable, so the app restarts once and
+# gets one release, not one per variable.
 
 set -e
 
 echo "Setting Heroku config vars..."
 
-heroku config:set APP_NAME="demo app" --app acme-web || echo "Failed to set APP_NAME"
-heroku config:set DATABASE_URL="postgres://admin:s3cr3t@db.internal:5432/app" --app acme-web || echo "Failed to set DATABASE_URL"
-heroku config:set API_SECRET="abc123" --app acme-web || echo "Failed to set API_SECRET"
-heroku config:set DEBUG="true" --app acme-web || echo "Failed to set DEBUG"
-heroku config:set PORT="8080" --app acme-web || echo "Failed to set PORT"
-heroku config:set GREETING="hello \"world\"" --app acme-web || echo "Failed to set GREETING"
-heroku config:set EMPTY="" --app acme-web || echo "Failed to set EMPTY"
-heroku config:set PRICE="\$5" --app acme-web || echo "Failed to set PRICE"
+heroku config:set \
+  APP_NAME='demo app' \
+  DATABASE_URL='postgres://admin:s3cr3t@db.internal:5432/app' \
+  API_SECRET='abc123' \
+  DEBUG='true' \
+  PORT='8080' \
+  GREETING='hello "world"' \
+  EMPTY='' \
+  PRICE='$5' \
+  --app acme-web
 
 echo "✓ Config vars set successfully"
 

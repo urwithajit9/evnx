@@ -218,6 +218,7 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
                     heroku_app,
                     name,
                     namespace,
+                    ..Default::default()
                 },
                 allow_collisions,
             },
