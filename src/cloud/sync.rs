@@ -303,6 +303,14 @@ pub(crate) fn my_user_id(client: &Client) -> Option<String> {
 
 /// [`my_user_id`] with the account's email, for `history` (F6).
 fn my_identity(client: &Client) -> Option<MeId> {
+    // A token is not told about the account by `/auth/me`; the key bundle, when
+    // CI has one, names the user.
+    if client.is_api_token() {
+        return super::keybundle::from_env().ok().flatten().map(|b| MeId {
+            user_id: b.user_id,
+            email: None,
+        });
+    }
     client.get::<MeId>("/api/v1/auth/me").ok()
 }
 

@@ -212,6 +212,38 @@ fn an_old_bundle_after_a_password_change_says_to_regenerate() {
     me.assert();
 }
 
+#[test]
+fn auth_status_under_a_token_shows_token_info_when_auth_me_is_forbidden() {
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/auth/me")
+        .with_status(403)
+        .with_body(r#"{"error":"Forbidden","code":"FORBIDDEN"}"#)
+        .create();
+    let p = Project::new();
+    let cfg = p.path().join("cfg");
+    std::fs::create_dir_all(&cfg).unwrap();
+    let tok = token();
+    let url = s.url();
+    let out = run_with(
+        p.path(),
+        &["auth", "status"],
+        &[
+            ("EVNX_SERVER", url.as_str()),
+            ("EVNX_CONFIG_DIR", cfg.to_str().unwrap()),
+            ("EVNX_TOKEN", tok.as_str()),
+        ],
+        None,
+    );
+    out.assert_code(0);
+    assert!(out.stdout.contains("API token"), "{}", out.stdout);
+    assert!(
+        out.stdout.contains("need a signed-in session"),
+        "{}",
+        out.stdout
+    );
+    assert!(!out.all().contains("refused"), "{}", out.all());
+}
+
 /// The last whitespace-separated word of `text` that is a bundle.
 fn bundle_in(text: &str) -> Option<String> {
     text.split_whitespace()
@@ -355,4 +387,41 @@ fn token_create_still_succeeds_when_the_bundle_cannot_be_made() {
         "{}",
         out.stderr
     );
+}
+
+#[test]
+fn history_under_a_token_does_not_ask_auth_me_who_you_are() {
+    let a = account("u-ci", &right());
+    let mut s = mockito::Server::new();
+    let me = s.mock("GET", "/api/v1/auth/me").expect(0).create();
+    s.mock(
+        "GET",
+        format!("/api/v1/vaults/{VAULT_ID}/versions").as_str(),
+    )
+    .with_status(200)
+    .with_body(
+        r#"{"versions":[{"version_num":1,"key_count":1,"key_names":["A"],
+            "blob_hash":"h","blob_size_bytes":10,"pushed_by":"u-ci",
+            "pushed_at":"2026-11-01T10:00:00Z"}]}"#,
+    )
+    .create();
+    let p = Project::new();
+    let cfg = p.path().join("cfg");
+    std::fs::create_dir_all(&cfg).unwrap();
+    let tok = token();
+    let url = s.url();
+    let out = run_with(
+        p.path(),
+        &["cloud", "history", "--vault", VAULT_ID],
+        &[
+            ("EVNX_SERVER", url.as_str()),
+            ("EVNX_CONFIG_DIR", cfg.to_str().unwrap()),
+            ("EVNX_TOKEN", tok.as_str()),
+            ("EVNX_KEY_BUNDLE", a.bundle.as_str()),
+        ],
+        None,
+    );
+    out.assert_code(0);
+    assert!(out.stdout.contains("you"), "{}", out.stdout);
+    me.assert();
 }

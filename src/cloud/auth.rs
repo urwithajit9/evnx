@@ -586,6 +586,32 @@ pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
             }
             return Ok(());
         }
+        // A token is not told about the account: a 403 here means "not for
+        // tokens", not "this token is bad". Show what the token itself says.
+        Err(crate::cloud::client::ApiError::Forbidden { .. }) if client.is_api_token() => {
+            if !quiet {
+                println!("{}", "evnx account".bold());
+            }
+            println!("  server    {server}");
+            println!("  client    evnx {}", env!("CARGO_PKG_VERSION"));
+            println!("  using     API token (from {})", super::client::ENV_TOKEN);
+            println!(
+                "  key bundle  {}",
+                if std::env::var(super::keybundle::ENV_KEY_BUNDLE)
+                    .is_ok_and(|v| !v.trim().is_empty())
+                {
+                    format!("set ({})", super::keybundle::ENV_KEY_BUNDLE)
+                } else if std::env::var(super::keybundle::ENV_KEY_BUNDLE_FILE)
+                    .is_ok_and(|v| !v.trim().is_empty())
+                {
+                    format!("from file ({})", super::keybundle::ENV_KEY_BUNDLE_FILE)
+                } else {
+                    "not set".to_string()
+                }
+            );
+            println!("  account   details need a signed-in session (`evnx auth login`)");
+            return Ok(());
+        }
         Err(e) => return Err(anyhow::Error::from(e)),
     };
 
@@ -1084,6 +1110,12 @@ struct BackfillPublicKeysRequest {
 /// returns.
 fn backfill_mlkem_key(client: &Client, password: &Zeroizing<String>, verbose: bool) {
     use evnx_crypto::{decrypt_private_key, salt_from_base64, EncryptedPrivateKey};
+
+    // An API token is not given key material by `/auth/me`, and a login is the
+    // only moment the password and a user session are both in hand.
+    if client.is_api_token() {
+        return;
+    }
 
     let me: MeForBackfill = match client.get("/api/v1/auth/me") {
         Ok(m) => m,
@@ -1589,6 +1621,25 @@ mod tests {
 
     fn pw(s: &str) -> Zeroizing<String> {
         Zeroizing::new(s.to_string())
+    }
+
+    /// The F1 backfill needs a user session; under an API token it must not
+    /// call `/auth/me` at all.
+    #[test]
+    #[serial]
+    fn the_backfill_is_skipped_under_an_api_token() {
+        let _g = ConfigDirGuard::new();
+        let mut server = mockito::Server::new();
+        let m = server.mock("GET", "/api/v1/auth/me").expect(0).create();
+        std::env::set_var(
+            super::super::client::ENV_TOKEN,
+            format!("evnx_tok_{}", "0".repeat(8)),
+        );
+        let client = Client::new(server.url()).unwrap();
+        std::env::remove_var(super::super::client::ENV_TOKEN);
+        assert!(client.is_api_token());
+        backfill_mlkem_key(&client, &pw("unused"), true);
+        m.assert();
     }
 
     /// I-316, A-302: `unlock_with` proves the password by opening the sealed
