@@ -26,20 +26,22 @@ jobs:
       # release can only be exercised by tagging. Maximum information per
       # attempt matters more here than saving runner minutes.
       fail-fast: false
+      # Linux rows pinned to ubuntu-24.04: `ubuntu-latest` became 26.04, whose
+      # package mirrors did not resolve from GitHub's runners on 2026-11-12.
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04
           - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
+            os: ubuntu-24.04
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04
           # Added for the container image: arm64 Linux needs a *static* binary
           # to run on Alpine, and the gnu build above is dynamically linked.
           # It also gives arm64 Linux users a musl tarball, which they did not
           # have before.
           - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
+            os: ubuntu-24.04
           - target: x86_64-apple-darwin
             os: macos-latest
           - target: aarch64-apple-darwin
@@ -77,8 +79,12 @@ jobs:
       - name: Install musl tools
         if: contains(matrix.target, 'musl')
         run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
+          for i in 1 2 3; do
+            sudo apt-get -o Acquire::Retries=3 update &&
+              sudo apt-get -o Acquire::Retries=3 install -y musl-tools && break
+            echo "apt failed (attempt $i), retrying in 20s"; sleep 20
+          done
+          command -v musl-gcc
 
       # ⚠️ `musl-tools` provides `musl-gcc` for **x86_64 only**. It does not
       # provide `aarch64-linux-musl-gcc`, and `ring` — pulled in by rustls via
@@ -118,6 +124,10 @@ jobs:
           OPENSSL_DIR: "/usr"
           PKG_CONFIG_ALLOW_CROSS: "1"
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          # Build the C runtime into evnx.exe, so it starts on a Windows PC that
+          # has no Visual C++ Redistributable (VCRUNTIME140.dll). Target-specific,
+          # so host build scripts and proc macros are untouched.
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build --release --all-features --target ${{ matrix.target }}
 
       - name: Package
