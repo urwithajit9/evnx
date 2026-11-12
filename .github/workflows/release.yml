@@ -124,6 +124,10 @@ jobs:
           OPENSSL_DIR: "/usr"
           PKG_CONFIG_ALLOW_CROSS: "1"
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          # Build the C runtime into evnx.exe, so it starts on a Windows PC that
+          # has no Visual C++ Redistributable (VCRUNTIME140.dll). Target-specific,
+          # so host build scripts and proc macros are untouched.
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build --release --all-features --target ${{ matrix.target }}
 
       - name: Package

@@ -83,7 +83,9 @@ jobs:
       - name: Give Windows a Linux-sized main stack
         if: runner.os == 'Windows'
         shell: bash
-        run: echo "RUSTFLAGS=-C link-arg=/STACK:8388608" >> "$GITHUB_ENV"
+        # crt-static matches the release build (release.yml), so every PR tests
+        # the same statically linked C runtime that ships.
+        run: echo "RUSTFLAGS=-C link-arg=/STACK:8388608 -C target-feature=+crt-static" >> "$GITHUB_ENV"
 
       - name: Run tests
         run: cargo test --all-features
