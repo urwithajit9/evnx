@@ -77,8 +77,9 @@ pub fn regression(label: &str, seen: i32, latest: i32) -> Option<String> {
         format!(
             "the server says {label} is at version {latest}, but this machine has already \
              seen version {seen}.\n\
-             \x20 A newer version may have been removed, or the server may be serving older \
-             data than it did (a rollback or a restored backup). Check `evnx cloud history \
+             \x20 A newer version may have been removed (an admin deleted the latest version), \
+             or the server may be serving older data than it did (a rollback or a \
+             restored backup). Check `evnx cloud history \
              --vault {label}` before you rely on this."
         )
     })
@@ -138,6 +139,7 @@ mod tests {
             "{msg}"
         );
         assert!(msg.contains("evnx cloud history --vault app/production"));
+        assert!(msg.contains("admin deleted the latest version"), "{msg}");
         assert!(regression("app/production", 7, 7).is_none());
         assert!(regression("app/production", 7, 9).is_none());
         // Never seen: nothing to compare with, even for an empty vault.
