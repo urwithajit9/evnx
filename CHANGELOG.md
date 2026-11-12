@@ -8,6 +8,39 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-13
+
+**Read this first: what changes for scripts and CI.** Each item has its own
+entry below with the details and how to migrate.
+
+1. **CI needs `EVNX_KEY_BUNDLE` for the cloud vault.** Create it with
+   `evnx auth token create` or `evnx auth key-bundle`; it is required once the
+   server stops serving key material to tokens. Set it beside `EVNX_TOKEN` and
+   `EVNX_MASTER_PASSWORD`.
+2. **A vault id typed in upper case is stored in lower case.** Versions pushed
+   with an upper-case id open only with the same upper-case id, which only
+   0.13.0 and earlier send: pull them with 0.13.0 and push again.
+3. **`migrate --to vercel` prints the environment of the file it read**
+   (`development`, `preview` or `production`); it printed `production` for
+   every file. If you ran it for a development or preview file, check Vercel
+   production for development values.
+4. **Vercel secrets are `sensitive` in `development` too**, in `convert --to
+   vercel` and `migrate --to vercel`.
+5. **Backups no longer pile up**: `<file>.bak` is replaced on each write, and
+   old `<file>.bak.<digits>` copies are removed on the next write.
+6. **`convert` output shapes changed**: `vercel` and `doppler` print the
+   shapes those tools read, `terraform` keeps the case of names (it lowercased
+   them), and `heroku` is one `heroku config:set` call.
+7. **More `scan` findings**: names are checked in Dockerfiles, shell scripts
+   and Python modules; notebooks are read cell by cell; `ghs_` tokens in the
+   new form are found; a secret under a public prefix (`NEXT_PUBLIC_`, `VITE_`,
+   ...) is one severity level higher. A `--severity high` gate may start
+   failing. `validate` has a new error, `public_secret`, and a new warning,
+   `partial_presence`, for projects with several environment files.
+8. **`@evnx/cli` has no `postinstall`**: `bin/evnx` is a Node launcher.
+9. **Each release carries a CycloneDX SBOM**, `evnx-<version>.cdx.json` and its
+   `.sha256`.
+
 ### Added
 
 - **`evnx auth resend-verification`** (N14-5). Sends the verification email again
