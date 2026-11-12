@@ -1,0 +1,11 @@
+# Changes to anything that can alter what ships, or how it is built and
+# released, need a review from the owner.
+/.github/          @urwithajit9
+/scripts/          @urwithajit9
+/build.rs          @urwithajit9
+/Cargo.toml        @urwithajit9
+/Cargo.lock        @urwithajit9
+/.cargo/           @urwithajit9
+/Dockerfile        @urwithajit9
+/pyproject.toml    @urwithajit9
+/src/assets/       @urwithajit9

@@ -216,6 +216,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Repo files: CODEOWNERS, Dependabot grouping for cargo, a PR template**
+  (G5 to G7). `.github/CODEOWNERS` assigns the workflows, scripts, build script,
+  manifests, `.cargo/`, Dockerfile, `pyproject.toml` and `src/assets/` to the
+  owner. The cargo entry in `dependabot.yml` groups minor and patch updates
+  (`open-pull-requests-limit` stays 0, as documented there). The PR template asks
+  what changed, how it was tested, and whether it touches workflows, scripts,
+  `build.rs` or dependencies.
+
 - **`SECURITY.md` states the support policy** (RM-79). The latest minor gets fixes;
   the previous minor gets security fixes for 90 days after the next minor ships;
   older versions get none. It also states the minimum supported Rust version
