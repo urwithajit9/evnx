@@ -10,6 +10,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **CI: `EVNX_KEY_BUNDLE` replaces fetching key material with an API token.**
+  Create it with `evnx auth token create` or `evnx auth key-bundle`; it is
+  required once the server stops serving key material to tokens. CI now sets
+  `EVNX_TOKEN`, `EVNX_MASTER_PASSWORD` and `EVNX_KEY_BUNDLE` (or
+  `EVNX_KEY_BUNDLE_FILE`, first line of a file). The bundle (`evnxkb1_…`) is
+  your sealed keypair and Argon2 salt, with no plaintext secret in it; the
+  master password still opens it. `token create` prints it with the token
+  (`--no-key-bundle` skips it; `-q` prints the token only). Without a bundle a
+  token still asks an older server once; a server that refuses gets exit 11 and
+  a message saying how to make one. A bundle made before a master-password
+  change says to regenerate it. `auth status` under a token shows the token's
+  own info instead of "refused" when the server will not describe the account,
+  and the post-quantum key backfill at login is skipped under a token. The
+  high-water warning now also names an admin deleting the latest version.
+
 - **`evnx platform diff|pull --to vercel`: compare and pull a Vercel project's
   environment variables** (N14-10, phase 1; `push` is below, `--prune` comes later).
   `diff` prints a plan (`+ add`, `~ update`, `= unchanged`, `! remote only`,

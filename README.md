@@ -1056,7 +1056,7 @@ an error rather than a silent run with zero secrets.
 
 ⚠️ This removes the plaintext *file*, not the master password. The vault key is wrapped
 under your master key, so decryption needs it wherever the command runs. In CI, feed it
-with `--password-stdin`.
+with `--password-stdin`, and give the job `EVNX_KEY_BUNDLE` ([CI/CD](#cicd)).
 
 ### Sharing with a team
 
@@ -1175,6 +1175,7 @@ guide is at [docs.evnx.dev/cli/commands/auth](https://docs.evnx.dev/cli/commands
 | `evnx auth token create <name>` | Mint a token. Shown once, then only revocable |
 | `evnx auth token list` | List the account's live tokens |
 | `evnx auth token revoke <name-or-id>` | Revoke a token |
+| `evnx auth key-bundle` | Print the CI key bundle (sealed key material, no plaintext secret) for `EVNX_KEY_BUNDLE` |
 | **Two-factor** | |
 | `evnx auth totp enable` | Turn on two-factor authentication, and get ten recovery codes |
 | `evnx auth totp disable` | Turn it off. Needs a current code, not just a session |
@@ -1216,21 +1217,29 @@ are never written to disk, so every command that decrypts asks for the password.
 |---|---|
 | `EVNX_SERVER` | The server for this run. `--server` beats it; it beats `config.toml`; the default is `https://api.evnx.dev` |
 | `EVNX_TOKEN` | An API token, used instead of the stored login ([CI/CD](#cicd)) |
+| `EVNX_KEY_BUNDLE` | The CI key bundle from `evnx auth key-bundle`; with a token, unlocks without asking the server for key material. `EVNX_KEY_BUNDLE_FILE` names a file whose first line is the bundle |
 | `EVNX_CONFIG_DIR` | The folder above |
 
 ### CI/CD
 
-Mint a token scoped to one vault, read-only:
+Mint a token scoped to one vault, read-only. On a signed-in machine:
 
 ```bash
 evnx auth token create ci --scope read --vault app/production --expires-in-days 90
 ```
 
+It prints the token and, alongside it, a **key bundle** (`evnxkb1_…`). Store both
+as CI secrets, with the master password: `EVNX_TOKEN`, `EVNX_KEY_BUNDLE` and
+`EVNX_MASTER_PASSWORD`. Both are shown once. To print the bundle again, after a
+master-password change or to rotate CI, run `evnx auth key-bundle`; to skip it
+when creating a token, pass `--no-key-bundle`.
+
 Then in the pipeline:
 
 ```bash
 export EVNX_TOKEN=evnx_tok_...
-printf '%s\n' "$EVNX_PASSWORD" | evnx cloud pull --vault <VAULT_ID> --password-stdin
+export EVNX_KEY_BUNDLE=evnxkb1_...      # or EVNX_KEY_BUNDLE_FILE=/path (first line)
+printf '%s\n' "$EVNX_MASTER_PASSWORD" | evnx cloud pull --vault <VAULT_ID> --password-stdin
 ```
 
 Two things to understand:
@@ -1238,6 +1247,14 @@ Two things to understand:
 - **The token authenticates; it does not decrypt.** The master password is still
   required, and it is the more sensitive of the two. What the token buys is blast
   radius: scoped to one vault and `read`, it reaches that vault and nothing else.
+- **The key bundle replaces fetching key material with an API token.** CI no
+  longer fetches key material with an API token: the bundle carries your sealed
+  keypair and Argon2 salt, which the master password opens. It holds no plaintext
+  secret, but treat it like the token: store it as a CI secret and keep it out of
+  logs. After you change the master password the old bundle no longer unlocks;
+  run `evnx auth key-bundle` again. Without a bundle, evnx asks an older server
+  for the key material once; a server that has stopped giving it to tokens fails
+  with exit 11 and says so.
 - **Use the vault id, not `name/environment`.** A vault-scoped token is refused
   permission to list vaults — by design — so it cannot resolve a name. Get the id
   from `evnx vault list --verbose`. By id, a vault-scoped token works with

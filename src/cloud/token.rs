@@ -8,8 +8,11 @@
 //!
 //! ```text
 //! printf '%s\n' "$EVNX_PASSWORD" | evnx cloud pull --vault app/production --password-stdin
-//! # with EVNX_TOKEN=evnx_tok_... in the environment
+//! # with EVNX_TOKEN=evnx_tok_... and EVNX_KEY_BUNDLE=evnxkb1_... in the environment
 //! ```
+//!
+//! The key bundle (`evnx auth key-bundle`) carries the sealed key material the
+//! server no longer gives to a token; see [`super::keybundle`].
 //!
 //! That is the honest shape of zero-knowledge sync, and it is worth being blunt
 //! about: **the master password in CI is the weak point**, not the token. What the
@@ -82,6 +85,7 @@ pub fn create(
     scope: String,
     vault_target: Option<String>,
     expires_in_days: Option<i64>,
+    no_key_bundle: bool,
     verbose: bool,
 ) -> Result<()> {
     let scope = validate_scope(&scope)?;
@@ -138,7 +142,7 @@ pub fn create(
         println!("  token id  {}", created.id);
     }
     crate::say!();
-    crate::say!("  Use it in CI:");
+    crate::say!("  Use it in CI (with EVNX_MASTER_PASSWORD and EVNX_KEY_BUNDLE):");
     crate::say!("    export {ENV_TOKEN}={}", "evnx_tok_…".dimmed());
     crate::say!(
         "    echo \"$EVNX_PASSWORD\" | evnx cloud pull --vault {} --password-stdin",
@@ -159,6 +163,32 @@ pub fn create(
     crate::say!();
     crate::say!("  The token authenticates; it does not decrypt. The master password");
     crate::say!("  is still required, so treat it as the more sensitive of the two.");
+
+    // The key bundle: the sealed key material CI needs now that a token is not
+    // given it by `/auth/me`. `-q` keeps its contract of printing the token and
+    // nothing else, so a script can capture it; `evnx -q auth key-bundle` is the
+    // scriptable way to the bundle.
+    if no_key_bundle || crate::utils::ui::is_quiet() {
+        return Ok(());
+    }
+    // The token is already minted and shown: a failure here must not hide it.
+    match super::auth::fetch_key_bundle(&client) {
+        Ok(bundle) => {
+            crate::say!();
+            super::auth::say_key_bundle_guidance();
+            crate::say!("  Shown once here; `evnx auth key-bundle` prints it again.");
+            crate::say!();
+            println!("  {}", bundle.encode().bold());
+            crate::say!();
+            crate::say!("    export {}=evnxkb1_…", super::keybundle::ENV_KEY_BUNDLE);
+        }
+        Err(e) => {
+            crate::utils::ui::warning(format!(
+                "the token was created, but its key bundle could not be made: {e}\n\
+                 \x20 Run `evnx auth key-bundle` to try again."
+            ));
+        }
+    }
     Ok(())
 }
 
