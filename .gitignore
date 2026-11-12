@@ -34,3 +34,6 @@ venv/
 
 # Prebuilt binaries staged for the container image (see Dockerfile).
 evnx-bin-*
+/fuzz/target
+/fuzz/artifacts
+/fuzz/corpus

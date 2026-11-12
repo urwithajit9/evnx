@@ -1,0 +1,6 @@
+db:
+  password: hunter2
+list:
+  - token: abc
+---
+second: doc

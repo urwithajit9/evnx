@@ -1,0 +1,1 @@
+{"cells":[{"cell_type":"code","source":["import os\n","key = \"hunter2\"\n"],"outputs":[{"output_type":"stream","text":["PASSWORD=hunter2\n"]},{"output_type":"error","traceback":["line1","line2"]}]},{"cell_type":"markdown","source":"# title"}],"nbformat":4}

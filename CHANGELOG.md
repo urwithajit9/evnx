@@ -155,6 +155,43 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   It needs no target-format catalogue (RM-61): the rule ids come from the rule
   definitions.
 
+- **`tests/invariants.rs`: evnx accepts what evnx generates** (F14-8, OW-17).
+  Chains commands and feeds each one's output to the next: every `init`
+  component and blueprint must `validate` (placeholders are the only error),
+  `doctor` (no error) and `scan` (no finding) and parse; `convert` of a `.env`
+  holding quotes, `$`, `#`, spaces, `=`, unicode, an empty value, a multi-line
+  value and the words YAML reads as something else must read back to the same
+  keys and values in every format (JSON, YAML, TOML and base64 parsed by their
+  own readers, the script formats run under `sh` against stand-ins for
+  `gcloud`, `az` and `heroku`); every `migrate --print-only` script passes
+  `sh -n`; and `sync`, `add` and `remove` leave files that parse, with `diff`
+  of a file against itself clean. Found one bug, fixed below.
+
+- **Known-answer tests for every primitive and for evnx's own envelope** (SEC-1,
+  `tests/crypto_kat.rs`). The official vectors run against the crate versions in
+  `Cargo.lock`: BLAKE3 hash, keyed hash and derive_key (the BLAKE3 team's
+  `test_vectors.json`, vendored unchanged), HKDF-SHA256 (RFC 5869), X25519
+  (RFC 7748), Ed25519 (RFC 8032), ChaCha20-Poly1305 (RFC 8439),
+  XChaCha20-Poly1305 (draft-arciszewski-xchacha), AES-256-GCM (McGrew and
+  Viega, Test Case 16) and Argon2id (RFC 9106). Golden vectors generated once
+  from `evnx-crypto` 0.2.1 pin evnx's wire format: master-key derivation, the
+  vault key wrapped under the master key, the blob (`nonce || AES-256-GCM`
+  bound by `vault_aad`) and its BLAKE3 hash, an encrypted private key and the
+  three public keys derived from it, and a hybrid X25519 plus ML-KEM-768 wrapped
+  vault key. Changing any of them is a breaking protocol change. The tests live
+  here because `evnx-crypto` is a separate crate evnx consumes from crates.io.
+  Adds four dev-dependencies (`chacha20poly1305`, `x25519-dalek`, `hkdf`,
+  `ed25519-dalek`) that are already in the build graph.
+
+- **Local fuzz targets for the `.env` parser, the scan engine and decryption**
+  (SEC-1, `fuzz/`). A cargo-fuzz project of its own, outside every build and
+  without a CI job: `env_parser` (every `ParserConfig`), `scan_engine` (one
+  in-memory file read as `.env`, text, JSON, YAML, TOML or a Jupyter notebook)
+  and `crypto_decrypt` (`evnx-crypto` on arbitrary ciphertext, wrapped keys and
+  encodings, which must always return an error). `fuzz/README.md` says how to
+  run them; `fuzz/seeds/` holds small starting inputs. The directory is excluded
+  from the published crate.
+
 ### Changed
 
 - **`scan` reads files in parallel** (RM-74). Files are scanned on all cores and
@@ -208,6 +245,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rule now has a second branch for that form and keeps the classic one. It is
   reported once, as `github-token`, not also as `jwt` or `high-entropy-string`;
   a trailing `.`, `,` or `)` is not part of the match.
+- **`scan` no longer flags the Neon sample URL `init --with neon` writes**
+  (F14-8). `postgresql://user:password@ep-example-123456.<region>.aws.neon.tech/...`
+  was reported as a live connection-string credential, so a new project did not
+  scan clean. A host with an `example` label is now a placeholder host, as
+  `localhost` and `example.com` already were; `user:password` is still required,
+  so a real host with those credentials, or a real password on an example host,
+  stays a finding.
+
 - **Monorepos: paths in `.evnx.toml` are read from the folder that holds it, and
   `doctor` notices nested `.env` files** (F14-10, I-333, I-331).
   - A relative path in `.evnx.toml` means "from the folder holding this file",
