@@ -149,6 +149,10 @@ const EXEMPT: &[(&str, &str)] = &[
     ),
     ("auth status", "data: the answer stays under -q (DEC-G3)"),
     (
+        "auth resend-verification",
+        "needs a server; -q is silent on success: tests/cloud_auth.rs (n14_5_quiet_is_silent_on_success)",
+    ),
+    (
         "cloud unlink",
         "with no binding the answer stays; see t_cloud_status_keeps_the_answer",
     ),

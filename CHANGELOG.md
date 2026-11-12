@@ -10,6 +10,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`evnx auth resend-verification`** (N14-5). Sends the verification email again
+  for the signed-in account. It asks the server who you are first, so an
+  already-verified account is told so and nothing is sent (the server's resend
+  endpoint answers 202 for everything, by design). Rate limited (3 per hour per
+  address) it exits 15 and says how long to wait; not signed in exits 10; an
+  API token is refused. The "email not verified" error and `auth status` now
+  point at this command.
+
 - **Each release carries a CycloneDX SBOM** (SEC-2). A new `sbom` job in
   `release.yml` runs `cargo-cyclonedx` (0.5.10, installed with `--locked`) with
   all features on and attaches `evnx-<version>.cdx.json` and its `.sha256` to the

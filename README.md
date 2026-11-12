@@ -1183,6 +1183,7 @@ guide is at [docs.evnx.dev/cli/commands/auth](https://docs.evnx.dev/cli/commands
 | `evnx auth register` | Create an evnx cloud account |
 | `evnx auth login` | Sign in on this machine. CI uses an API token instead ([below](#cicd)) |
 | `evnx auth logout` | Sign out. The stored login is removed even if the server cannot be reached |
+| `evnx auth resend-verification` | Send the email-verification link again (signed in, email not yet verified; 3 per hour) |
 | `evnx auth status` | Your account as the server sees it: verified, 2FA, plan and usage |
 | **API tokens**, for CI/CD | |
 | `evnx auth token create <name>` | Mint a token. Shown once, then only revocable |

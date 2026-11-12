@@ -1033,6 +1033,21 @@ pub enum AuthCommands {
     /// `logout` on a borrowed machine always clears that disk.
     Logout,
 
+    /// Send the email-verification link again.
+    ///
+    /// For a signed-in account whose email is not verified yet: the first
+    /// message was lost, filtered, or its link expired (they last 24 hours).
+    /// Sending a new one makes the earlier links stop working. If the account is
+    /// already verified, nothing is sent.
+    ///
+    /// The server allows 3 per hour per address; past that it says when to
+    /// try again. An API token cannot do this: sign in with `evnx auth login`.
+    ///
+    /// EXIT CODES: 0 sent, or already verified; 10 not signed in; 15 rate
+    /// limited, or the server failed; 13 the server could not be reached.
+    #[command(name = "resend-verification")]
+    ResendVerification,
+
     /// Print the CI key bundle: your sealed key material, for EVNX_KEY_BUNDLE.
     ///
     /// An API token authenticates but does not decrypt, and the server no longer
