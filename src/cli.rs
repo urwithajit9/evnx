@@ -1033,6 +1033,20 @@ pub enum AuthCommands {
     /// `logout` on a borrowed machine always clears that disk.
     Logout,
 
+    /// Print the CI key bundle: your sealed key material, for EVNX_KEY_BUNDLE.
+    ///
+    /// An API token authenticates but does not decrypt, and the server no longer
+    /// hands key material to API tokens. CI therefore reads the bundle from its
+    /// own secret `EVNX_KEY_BUNDLE` (or the first line of the file named by
+    /// `EVNX_KEY_BUNDLE_FILE`), alongside `EVNX_TOKEN` and `EVNX_MASTER_PASSWORD`.
+    ///
+    /// The bundle holds no plaintext secret: it is the same sealed material the
+    /// server stores, still requiring the master password to open. Store it like
+    /// the token, and do not commit it or print it into logs. Run it on a
+    /// signed-in machine, again after a master-password change, or to rotate CI.
+    #[command(name = "key-bundle")]
+    KeyBundle,
+
     /// Manage API tokens for CI/CD.
     Token {
         #[command(subcommand)]
@@ -1212,6 +1226,11 @@ pub enum TokenCommands {
     ///
     /// A token authenticates API requests; it does not decrypt. A pipeline also
     /// needs the master password, so scope the token tightly.
+    ///
+    /// Alongside the token it prints a CI key bundle (your sealed key material,
+    /// with no plaintext secret in it) to store as `EVNX_KEY_BUNDLE`. Both are
+    /// shown once here. Under `-q` only the token is printed; use
+    /// `evnx auth key-bundle` for the bundle.
     Create {
         /// A name you will recognise later, e.g. "github-actions".
         name: String,
@@ -1227,6 +1246,12 @@ pub enum TokenCommands {
         /// Expire after this many days, 1 to 3650. Omit for a token that never expires.
         #[arg(long, value_name = "DAYS", value_parser = crate::core::args::parse_days, allow_hyphen_values = true)]
         expires_in_days: Option<i64>,
+
+        /// Do not print a CI key bundle with the token.
+        ///
+        /// Print it later with `evnx auth key-bundle`.
+        #[arg(long)]
+        no_key_bundle: bool,
     },
 
     /// List the account's live tokens.

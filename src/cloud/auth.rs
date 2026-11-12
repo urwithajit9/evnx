@@ -903,8 +903,54 @@ struct MeSealed {
 /// means the CLI does not have to cache anything between commands. `/auth/me`
 /// works before the email is verified, which is deliberate on the server side.
 pub(crate) fn unlock(client: &Client, password: &Zeroizing<String>) -> Result<Unlocked> {
+    if client.is_api_token() {
+        return unlock_for_token(client, password);
+    }
     let me: MeSealed = client.get("/api/v1/auth/me")?;
     unlock_with(&me.argon2_salt, &me.encrypted_private_key, password)
+}
+
+/// What a master password that does not open a **key bundle** means: the
+/// bundle was made under an earlier password, or the password is mistyped.
+const WRONG_PASSWORD_BUNDLE: &str =
+    "that master password did not open the key bundle in EVNX_KEY_BUNDLE.\n\
+     \x20 If the master password was changed after the bundle was made, the old bundle no \
+     longer unlocks: regenerate the key bundle with `evnx auth key-bundle` on a signed-in \
+     machine and replace the CI secret. Otherwise check the password.";
+
+/// The message for a server that no longer gives key material to API tokens.
+const NO_KEY_MATERIAL_FOR_TOKENS: &str =
+    "this server no longer gives key material to API tokens: create a key bundle with \
+     `evnx auth key-bundle` on a signed-in machine and store it as EVNX_KEY_BUNDLE";
+
+/// [`unlock`] for an API token.
+///
+/// The key material comes from the key bundle (`EVNX_KEY_BUNDLE`, or the first
+/// line of `EVNX_KEY_BUNDLE_FILE`), and `/auth/me` is not called. Only without a
+/// bundle does it ask `/auth/me` once, for a server that still answers tokens.
+///
+/// The bundle's user id is not compared with the token's: the API has no
+/// token-info endpoint a token may call. A bundle for another account fails
+/// later, when that account's copy of the vault key does not open.
+fn unlock_for_token(client: &Client, password: &Zeroizing<String>) -> Result<Unlocked> {
+    use super::client::ApiError;
+
+    if let Some(b) = super::keybundle::from_env()? {
+        return unlock_with(&b.argon2_salt, &b.encrypted_private_key, password).map_err(|e| {
+            if e.to_string() == WRONG_PASSWORD {
+                anyhow!(WRONG_PASSWORD_BUNDLE)
+            } else {
+                e
+            }
+        });
+    }
+    match client.get::<MeSealed>("/api/v1/auth/me") {
+        Ok(me) => unlock_with(&me.argon2_salt, &me.encrypted_private_key, password),
+        Err(e @ ApiError::Forbidden { .. }) => {
+            Err(reword(e.exit_code(), NO_KEY_MATERIAL_FOR_TOKENS))
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// [`unlock`], for a caller that already holds `/auth/me`'s salt and sealed
@@ -945,6 +991,53 @@ pub(crate) fn own_copy_will_not_open(label: &str) -> anyhow::Error {
          create it again. If something was, evnx 0.10.17 still opens it with that \
          same typo."
     )
+}
+
+#[derive(Deserialize)]
+struct MeForBundle {
+    user_id: String,
+    argon2_salt: String,
+    encrypted_private_key: String,
+}
+
+/// This account's key bundle, read from `/auth/me` with a signed-in session.
+/// The caller has already refused an API token.
+pub(crate) fn fetch_key_bundle(client: &Client) -> Result<super::keybundle::KeyBundle> {
+    let me: MeForBundle = client
+        .get("/api/v1/auth/me")
+        .context("could not read the account's key material")?;
+    Ok(super::keybundle::KeyBundle::new(
+        &me.user_id,
+        &me.argon2_salt,
+        &me.encrypted_private_key,
+    ))
+}
+
+/// Print the guidance that goes with a key bundle (not the bundle itself).
+pub(crate) fn say_key_bundle_guidance() {
+    crate::say!("  {}", "CI key bundle".bold());
+    crate::say!(
+        "  Store it as a CI secret named {}, next to EVNX_TOKEN and",
+        super::keybundle::ENV_KEY_BUNDLE
+    );
+    crate::say!("  EVNX_MASTER_PASSWORD. It holds no plaintext secret: it is your sealed key");
+    crate::say!("  material, and still needs the master password to open. Do not commit it");
+    crate::say!("  or paste it into logs. After a master-password change, make a new one.");
+}
+
+/// `evnx auth key-bundle` — print the CI key bundle on its own.
+pub fn key_bundle(server_override: Option<&str>, _verbose: bool) -> Result<()> {
+    let server = CloudConfig::resolve_server(server_override)?;
+    let client = Client::new(server)?;
+    client.require_user_session(
+        "create a key bundle",
+        "\x20 It is made from your account, on a machine you are signed in on.\n",
+    )?;
+    let bundle = fetch_key_bundle(&client)?;
+    say_key_bundle_guidance();
+    crate::say!();
+    println!("{}", bundle.encode());
+    Ok(())
 }
 
 /// What the F1 backfill needs from `/auth/me`.
@@ -2241,5 +2334,30 @@ mod tests {
         assert!(err.contains("refusing plain http"), "{err}");
         // Resolved before any prompt: the failure is the URL, not a missing tty.
         assert!(!err.contains("stdin"), "{err}");
+    }
+
+    /// A key bundle made from sealed material round-trips into `unlock_with`:
+    /// the right password opens it, a near miss does not.
+    #[test]
+    fn a_key_bundle_round_trips_into_unlock_with() {
+        use crate::cloud::keybundle::KeyBundle;
+        use evnx_crypto::{
+            derive_master_key, encrypt_private_key, generate_keypair, generate_salt, salt_to_base64,
+        };
+        let right = pw(&["bundle", "test", "pass", "phrase"].join("-"));
+        let wrong = pw(&["bundle", "test", "pass", "phrasf"].join("-"));
+        let salt = generate_salt();
+        let master = derive_master_key(right.as_bytes(), &salt).unwrap();
+        let sealed = encrypt_private_key(&generate_keypair(), &master)
+            .unwrap()
+            .to_base64();
+        let text = KeyBundle::new("u-1", &salt_to_base64(&salt), &sealed).encode();
+
+        let b = KeyBundle::decode(&text).unwrap();
+        assert!(unlock_with(&b.argon2_salt, &b.encrypted_private_key, &right).is_ok());
+        let e = unlock_with(&b.argon2_salt, &b.encrypted_private_key, &wrong)
+            .err()
+            .expect("wrong password");
+        assert_eq!(e.to_string(), WRONG_PASSWORD);
     }
 }

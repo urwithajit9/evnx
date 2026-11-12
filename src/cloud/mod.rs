@@ -52,6 +52,7 @@ pub mod creds;
 pub mod device;
 pub mod export;
 pub mod highwater;
+pub mod keybundle;
 pub(crate) mod merge;
 pub mod org;
 pub(crate) mod role;
@@ -280,18 +281,21 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
                 session::revoke_others(server_override, yes, verbose)
             }
         },
+        AuthCommands::KeyBundle => auth::key_bundle(server_override, verbose),
         AuthCommands::Token { command } => match command {
             TokenCommands::Create {
                 name,
                 scope,
                 vault,
                 expires_in_days,
+                no_key_bundle,
             } => token::create(
                 server_override,
                 name,
                 scope,
                 vault,
                 expires_in_days,
+                no_key_bundle,
                 verbose,
             ),
             TokenCommands::List => token::list(server_override, verbose),

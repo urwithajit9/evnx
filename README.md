@@ -1175,6 +1175,7 @@ guide is at [docs.evnx.dev/cli/commands/auth](https://docs.evnx.dev/cli/commands
 | `evnx auth token create <name>` | Mint a token. Shown once, then only revocable |
 | `evnx auth token list` | List the account's live tokens |
 | `evnx auth token revoke <name-or-id>` | Revoke a token |
+| `evnx auth key-bundle` | Print the CI key bundle (sealed key material, no plaintext secret) for `EVNX_KEY_BUNDLE` |
 | **Two-factor** | |
 | `evnx auth totp enable` | Turn on two-factor authentication, and get ten recovery codes |
 | `evnx auth totp disable` | Turn it off. Needs a current code, not just a session |
