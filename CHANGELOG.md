@@ -21,6 +21,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--password-stdin`, `EVNX_MASTER_PASSWORD` or `EVNX_MASTER_PASSWORD_FILE`
   were not affected.
 
+### Security
+
+- Dependencies updated: `quinn-udp` 0.5.16 (RUSTSEC-2026-0538, a receive loop
+  that could spin after a truncated datagram), `rustix` 1.1.6
+  (RUSTSEC-2026-0486) and `rand` 0.9.5 (RUSTSEC-2026-0097).
+
 ### Docs
 
 - PROTOCOL.md and THREAT_MODEL.md describe the cloud vault protocol and its threat model.
