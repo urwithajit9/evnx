@@ -8,6 +8,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-14
+
+### Fixed
+
+- **The master password prompt no longer hangs.** In 0.14.0 every command
+  that asks for the master password at a terminal waited forever after the
+  password was typed: `auth login`, `cloud pull`, `push`, `run`, `export`,
+  `merge`, the `vault` commands and `auth rotate-master-password`. The prompt
+  read the terminal through standard input while evnx itself held standard
+  input's lock. Upgrade to 0.14.1. Scripts and CI that pass the password with
+  `--password-stdin`, `EVNX_MASTER_PASSWORD` or `EVNX_MASTER_PASSWORD_FILE`
+  were not affected.
+
 ### Docs
 
 - PROTOCOL.md and THREAT_MODEL.md describe the cloud vault protocol and its threat model.
