@@ -60,6 +60,15 @@ brew install urwithajit9/evnx/evnx
 
 ```bash
 npm install -g @evnx/cli
+pnpm add -g @evnx/cli      # from 0.14.0: nothing runs at install time
+bun add -g @evnx/cli
+```
+
+Without a global install:
+
+```bash
+npx @evnx/cli --version       # or: pnpm dlx @evnx/cli / bunx @evnx/cli
+npm install --save-dev @evnx/cli   # per project (pnpm add -D / bun add -d)
 ```
 
 ### pipx (recommended for Python environments)
