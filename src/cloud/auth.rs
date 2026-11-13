@@ -835,6 +835,39 @@ pub(crate) fn read_master_password(from_stdin: bool) -> Result<Zeroizing<String>
     read_from(from_stdin, true, "Master password").map(|(pw, _)| pw)
 }
 
+/// Run [`resolve_master`], locking standard input only for `--password-stdin`.
+///
+/// The prompt (`dialoguer`, through `console`) reads the terminal through
+/// `std::io::stdin()` when stdin is a terminal. `Stdin`'s lock is not
+/// re-entrant, so holding it across the prompt deadlocks: the prompt shows,
+/// and the typed password is never read (0.14.0, every interactive cloud
+/// command). Only the `--password-stdin` path reads stdin, so only it locks.
+fn resolve_with_stdin(
+    from_stdin: bool,
+    allow_env: bool,
+    env: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+    prompt: &mut dyn FnMut() -> Result<Zeroizing<String>>,
+) -> Result<(Zeroizing<String>, MasterSource)> {
+    if from_stdin {
+        let stdin = std::io::stdin();
+        let mut locked = stdin.lock();
+        return resolve_master(MasterInputs {
+            from_stdin,
+            allow_env,
+            stdin: &mut locked,
+            env,
+            prompt,
+        });
+    }
+    resolve_master(MasterInputs {
+        from_stdin,
+        allow_env,
+        stdin: &mut std::io::empty(),
+        env,
+        prompt,
+    })
+}
+
 /// The one place the cloud commands read a password from, through
 /// `utils::secret_source::resolve_master`, announcing a variable or file.
 fn read_from(
@@ -842,8 +875,6 @@ fn read_from(
     allow_env: bool,
     prompt: &str,
 ) -> Result<(Zeroizing<String>, MasterSource)> {
-    let stdin = std::io::stdin();
-    let mut stdin = stdin.lock();
     let env = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
     let mut ask = || {
         require_password_terminal()?;
@@ -854,14 +885,7 @@ fn read_from(
                 .context("reading the master password")?,
         ))
     };
-    let got = resolve_master(MasterInputs {
-        from_stdin,
-        allow_env,
-        stdin: &mut stdin,
-        env: &env,
-        prompt: &mut ask,
-    })
-    .map_err(|e| {
+    let got = resolve_with_stdin(from_stdin, allow_env, &env, &mut ask).map_err(|e| {
         if from_stdin {
             e.context("reading the password from stdin")
         } else {
@@ -1670,6 +1694,29 @@ fn write_data_file(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// Regression (0.14.0): the prompt path must not hold the stdin lock, or
+    /// a prompt that reads the terminal through `std::io::stdin()` deadlocks.
+    #[test]
+    fn the_prompt_path_does_not_hold_the_stdin_lock() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let env = |_: &str| None;
+            let mut prompt = || {
+                // What `console` does for a terminal: take stdin's lock.
+                drop(std::io::stdin().lock());
+                Ok(Zeroizing::new("typed".to_string()))
+            };
+            let got = resolve_with_stdin(false, true, &env, &mut prompt);
+            let _ = tx.send(got.map(|(pw, src)| (pw.to_string(), src)));
+        });
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the prompt deadlocked on the stdin lock");
+        let (pw, src) = got.expect("prompt result");
+        assert_eq!(pw, "typed");
+        assert!(matches!(src, MasterSource::Prompt));
+    }
+
     use super::*;
     use crate::cloud::testutil::ConfigDirGuard;
     use serial_test::serial;
