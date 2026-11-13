@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Docs
+
+- PROTOCOL.md and THREAT_MODEL.md describe the cloud vault protocol and its threat model.
+
 ## [0.14.0] - 2026-11-13
 
 **Read this first: what changes for scripts and CI.** Each item has its own

@@ -64,7 +64,10 @@ documented rather than oversights:
   sealed against an adversary with a quantum computer. There is no X25519-only
   path — the database refuses to store half a wrap.
 - **Each version's ciphertext is bound to its version number**, so a server
-  cannot replay an old version as the current one.
+  cannot pass one version's ciphertext off as another version. It can still
+  withhold the newest version and serve an older, genuine one as the latest;
+  the CLI warns when the latest version goes backwards, but does not prevent
+  it. See [THREAT_MODEL.md](docs/THREAT_MODEL.md).
 - ⛔ **A server that can write its own database can choose your vault key.**
   The client decides how to unwrap a vault key from two fields the *server*
   sends — `eph_pub_key` and `mlkem_ciphertext`. Both absent means "your own
@@ -96,6 +99,10 @@ documented rather than oversights:
   bug.
 
 Full write-up: <https://www.evnx.dev/security>
+
+The wire format and the full threat model, with known limits, are in
+[docs/PROTOCOL.md](./docs/PROTOCOL.md) and
+[docs/THREAT_MODEL.md](./docs/THREAT_MODEL.md).
 
 ## Scope
 

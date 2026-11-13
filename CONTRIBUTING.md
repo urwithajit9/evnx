@@ -406,6 +406,8 @@ Project documentation files include:
 
 * `README.md`
 * `docs/GETTING_STARTED.md`
+* `docs/PROTOCOL.md` (how cloud vaults work: keys, bytes, requests)
+* `docs/THREAT_MODEL.md` (what cloud vaults protect, and known limits)
 * `docs/USE_CASES.md`
 * `docs/CICD_GUIDE.md`
 * `ARCHITECTURE.md`
