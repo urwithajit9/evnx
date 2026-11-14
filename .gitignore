@@ -18,6 +18,8 @@ venv/
 !.env.example
 !.env.sample
 !.env.template
+# Fake env files of the layout fixtures (tests/layouts.rs): they are the test data.
+!tests/fixtures/layouts/**/.env*
 
 # An orphaned prototype of the `sync --template-config` placeholder map, added
 # with sync in #5 and never read since — nothing in src/ looks in `.envx/`.
