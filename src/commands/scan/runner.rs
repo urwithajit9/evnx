@@ -120,9 +120,24 @@ pub struct ScanRunner {
     /// Report findings in walked files git ignores and does not track
     /// (`--include-ignored`). Off: they are summarised and not counted (I-285).
     include_ignored: bool,
+    /// What this run was set to leave out, recorded in its report.
+    effective_config: super::models::EffectiveConfig,
 }
 
 impl ScanRunner {
+    /// Record the settings that narrow this scan, for the report.
+    pub fn with_effective_config(mut self, effective: super::models::EffectiveConfig) -> Self {
+        self.effective_config = effective;
+        self
+    }
+
+    /// Read symlinked files in a walk when their target is inside the
+    /// scanned folder (`--follow-symlinks`).
+    pub fn with_follow_symlinks(mut self, follow: bool) -> Self {
+        self.filter = self.filter.with_follow_symlinks(follow);
+        self
+    }
+
     /// What `[scan] disable` turned off beyond the rule list (I-056): see
     /// [`DetectorRegistry::with_disabled`].
     pub fn with_disabled(
@@ -269,6 +284,11 @@ impl ScanRunner {
             rule_names,
             extensions_from: "",
             include_ignored: false,
+            effective_config: super::models::EffectiveConfig {
+                severity_floor: "low".to_string(),
+                confidence_floor: "low".to_string(),
+                ..Default::default()
+            },
         }
     }
 
@@ -376,6 +396,13 @@ impl ScanRunner {
             // reason it gave (`.git`, `node_modules`) was not the one that
             // applied.
             let mut why = String::new();
+            if !collected.unreadable.is_empty() {
+                why.push_str("Could not read:\n");
+                for (path, reason) in &collected.unreadable {
+                    why.push_str(&format!("  {}  {reason}\n", display_portable(path)));
+                }
+                why.push('\n');
+            }
             if !collected.skipped.is_empty() {
                 why.push_str("Skipped:\n");
                 for (path, reason) in &collected.skipped {
@@ -394,7 +421,8 @@ impl ScanRunner {
             }
             anyhow::bail!(
                 "nothing was scanned — every file in the paths given was skipped or excluded.\n\n\
-                 {why}Folder walks always skip .git, node_modules, target, dist and build, \
+                 {why}Folder walks always skip .git, node_modules, target, dist, build, .venv, \
+                 venv, .next, .nuxt, .turbo, vendor, __pycache__, .terraform, \
                  the .env.example family, and what --exclude or [scan] exclude names. \
                  Name a file directly to scan it regardless.\n\n\
                  Paths given: {}",
@@ -410,6 +438,12 @@ impl ScanRunner {
         // used to be the number *found* — which is how `1 file scanned` came to
         // be printed about a file that was never decoded.
         let mut results = ScanResults::new(0);
+        for (path, reason) in &collected.unreadable {
+            results.unreadable.push(UnreadableFile {
+                path: display_portable(path),
+                reason: reason.clone(),
+            });
+        }
         for (path, reason) in &collected.skipped {
             results.skipped.push(UnreadableFile {
                 path: display_portable(path),
@@ -420,6 +454,18 @@ impl ScanRunner {
         // What git says about each file (I-285): asked once per repository.
         // `None` everywhere outside one, which leaves the report as it was.
         let git = crate::core::gitignore::exposures(&files);
+        // Without a repository there is no ignore list to apply: the same tree
+        // reports more here than inside one. Said once, so that a different
+        // result between a laptop and a build image has an explanation.
+        if matches!(format, OutputFormat::Pretty)
+            && !crate::utils::ui::is_quiet()
+            && !files.is_empty()
+            && git.iter().all(Option::is_none)
+        {
+            eprintln!(
+                "  · not a git repository: git-ignore rules do not apply, every file is reported"
+            );
+        }
 
         // RM-74: files are scanned in parallel, each into a results of its own,
         // and merged in `files` order (sorted by path), so the report is the
@@ -581,6 +627,7 @@ impl ScanRunner {
         format: OutputFormat,
         read: &[PathBuf],
     ) -> Result<bool> {
+        results.effective_config = Some(self.effective_config.clone());
         // What the scan had to say, in the order it arose (RM-74).
         for (warning, line) in std::mem::take(&mut results.log) {
             if warning {
@@ -1134,7 +1181,7 @@ fn report_skipped(results: &ScanResults, verbose: bool, max_bytes: u64) {
         return;
     }
     eprintln!(
-        "  skipped {} file(s) that are not text or are over {}{}",
+        "  skipped {} file(s): not text, over {}, or symlinks{}",
         results.skipped.len(),
         super::filters::size_label(max_bytes),
         if verbose { ":" } else { " (-v lists them)" }

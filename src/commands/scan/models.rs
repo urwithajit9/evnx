@@ -367,6 +367,50 @@ pub struct ScanResults {
     /// (RM-74), so stderr reads the same whatever the thread count.
     #[serde(skip)]
     pub log: Vec<(bool, String)>,
+    /// What the run was configured to leave out, so a clean result can be read
+    /// for what it covers. `None` until the runner sets it.
+    #[serde(default)]
+    pub effective_config: Option<EffectiveConfig>,
+}
+
+/// The settings that decide what a scan can report: rules turned off, the
+/// lowest severity and confidence shown, and the baseline in force. Printed in
+/// pretty output and recorded in JSON and SARIF, so "no secrets detected" is
+/// never read without knowing what was not looked for.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EffectiveConfig {
+    /// `[scan] disable`, as written.
+    pub disabled_rules: Vec<String>,
+    /// `[scan] builtins = false`: no built-in rule runs.
+    #[serde(default)]
+    pub builtins_disabled: bool,
+    /// Lowest severity reported: `low` reports everything.
+    pub severity_floor: String,
+    /// Lowest confidence reported: `low` reports everything.
+    pub confidence_floor: String,
+    /// The baseline in force, when it holds entries.
+    pub baseline: Option<EffectiveBaseline>,
+    /// Configuration files read; empty with `--no-config`.
+    pub config_files: Vec<String>,
+}
+
+/// A baseline that sets findings aside.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EffectiveBaseline {
+    pub path: String,
+    /// Findings it accepts.
+    pub entries: usize,
+}
+
+impl EffectiveConfig {
+    /// Does anything here narrow what the scan reports?
+    pub fn narrows(&self) -> bool {
+        !self.disabled_rules.is_empty()
+            || self.builtins_disabled
+            || self.severity_floor != "low"
+            || self.confidence_floor != "low"
+            || self.baseline.is_some()
+    }
 }
 
 /// Aggregate counts, as a nested object.
@@ -539,6 +583,7 @@ impl ScanResults {
             medium_confidence: 0,
             low_confidence: 0,
             log: Vec::new(),
+            effective_config: None,
         }
     }
 

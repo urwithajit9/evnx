@@ -2564,12 +2564,13 @@ pub enum Commands {
         /// from the folder and against the file name: `'fixtures/**'`,
         /// `'*.log'`. Any other value matches a whole path component, or
         /// several in a row: `--exclude test` skips `test/` and a file named
-        /// `test`, not `latest/` or `contest.py`; `vendor/cache` skips that
+        /// `test`, not `latest/` or `contest.py`; `third_party/cache` skips that
         /// folder wherever it is.
         ///
         /// ⚠️ This narrows the scan. `.git`, `node_modules`, `target`, `dist`,
-        /// `build` and the `.env.example` family are skipped whatever this
-        /// says, and a file named on the command line is read regardless.
+        /// `build`, `.venv`, `venv`, `.next`, `.nuxt`, `.turbo`, `vendor`,
+        /// `__pycache__`, `.terraform` and the `.env.example` family are
+        /// skipped whatever this says, and a file named on the command line is read regardless.
         #[arg(long, default_value = ".env.example")]
         exclude: Vec<String>,
 
@@ -2696,6 +2697,23 @@ pub enum Commands {
         /// this before every commit.
         #[arg(long)]
         staged: bool,
+
+        /// Ignore the repository's `.evnx.toml` and use the built-in defaults.
+        ///
+        /// For a CI gate that must not depend on settings the scanned change
+        /// can edit: no disabled rules, no severity floor, no excludes, no
+        /// default `.evnx/baseline.json`. A `--baseline` you name is still
+        /// read, and rule files in `.evnx/rules/` still add rules.
+        #[arg(long)]
+        no_config: bool,
+
+        /// Read a symlinked file in a folder walk when its target is inside
+        /// the scanned folder.
+        ///
+        /// By default a symlink is skipped and counted. A link to a file
+        /// outside the folder, or to a folder, is skipped either way.
+        #[arg(long)]
+        follow_symlinks: bool,
     },
 
     /// Compare two env files: keys missing or extra, and values between environments.
