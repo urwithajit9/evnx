@@ -62,6 +62,63 @@ struct CreateTokenResponse {
     expires_at: Option<String>,
 }
 
+/// `--format json` and `-o FILE`: the token (and bundle) as data, not prose.
+fn deliver(
+    client: &Client,
+    name: &str,
+    scope: &str,
+    vault_id: Option<&str>,
+    created: &CreateTokenResponse,
+    no_key_bundle: bool,
+    delivery: &Delivery,
+) -> Result<()> {
+    let json = delivery.format == crate::cli::AuthFormat::Json;
+    // A token is minted: a bundle that cannot be made must not hide it.
+    let bundle = if no_key_bundle || !json {
+        None
+    } else {
+        match super::auth::fetch_key_bundle(client) {
+            Ok(b) => Some(b.encode()),
+            Err(e) => {
+                crate::utils::ui::warning(format!(
+                    "the token was created, but its key bundle could not be made: {e}\n\
+                     \x20 Run `evnx auth key-bundle` to try again."
+                ));
+                None
+            }
+        }
+    };
+    let body = if json {
+        created_json(
+            name,
+            &created.raw_token,
+            scope,
+            vault_id,
+            created.expires_at.as_deref(),
+            bundle.as_deref(),
+        )
+    } else {
+        format!("{}\n", created.raw_token)
+    };
+    match delivery.output.as_deref() {
+        Some(path) => {
+            super::auth::write_secret_file(path, &body, delivery.force)?;
+            crate::say!(
+                "  {} created token {}, written to {path}",
+                "✓".green(),
+                name.bold()
+            );
+            if !json && !no_key_bundle {
+                crate::say!(
+                    "  The file holds the token only. `evnx auth key-bundle -o FILE` writes the key bundle."
+                );
+            }
+        }
+        None => print!("{body}"),
+    }
+    Ok(())
+}
+
 #[derive(Deserialize)]
 struct TokenList {
     tokens: Vec<TokenSummary>,
@@ -78,6 +135,33 @@ struct TokenSummary {
     last_used_at: Option<String>,
 }
 
+/// Where a new token goes: `--format` and `-o FILE` (`--force`).
+pub struct Delivery {
+    pub format: crate::cli::AuthFormat,
+    pub output: Option<String>,
+    pub force: bool,
+}
+
+/// The document `--format json` prints for a new token.
+fn created_json(
+    name: &str,
+    token: &str,
+    scope: &str,
+    vault_id: Option<&str>,
+    expires_at: Option<&str>,
+    key_bundle: Option<&str>,
+) -> String {
+    let doc = serde_json::json!({
+        "name": name,
+        "token": token,
+        "scope": scope,
+        "vault": vault_id,
+        "expires_at": expires_at,
+        "key_bundle": key_bundle,
+    });
+    format!("{doc:#}\n")
+}
+
 /// Mint a token.
 pub fn create(
     server_override: Option<&str>,
@@ -86,6 +170,7 @@ pub fn create(
     vault_target: Option<String>,
     expires_in_days: Option<i64>,
     no_key_bundle: bool,
+    delivery: Delivery,
     verbose: bool,
 ) -> Result<()> {
     let scope = validate_scope(&scope)?;
@@ -93,6 +178,15 @@ pub fn create(
         return Err(anyhow!(
             "a token needs a name — it is how you recognise it later"
         ));
+    }
+
+    // Before minting: a refused file must not cost a token nobody can read.
+    if let (Some(path), false) = (delivery.output.as_deref(), delivery.force) {
+        if std::fs::symlink_metadata(path).is_ok() {
+            return Err(anyhow!(
+                "'{path}' already exists. Pass --force to replace it."
+            ));
+        }
     }
 
     let server = CloudConfig::resolve_server(server_override)?;
@@ -115,6 +209,19 @@ pub fn create(
             expires_in_days,
         },
     )?;
+
+    let json = delivery.format == crate::cli::AuthFormat::Json;
+    if json || delivery.output.is_some() {
+        return deliver(
+            &client,
+            name.trim(),
+            &scope,
+            vault_ref.as_ref().map(|v| v.id.as_str()),
+            &created,
+            no_key_bundle,
+            &delivery,
+        );
+    }
 
     crate::say!("  {} created token {}", "✓".green(), name.trim().bold());
     crate::say!();

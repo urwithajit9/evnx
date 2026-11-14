@@ -283,7 +283,11 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
                 session::revoke_others(server_override, yes, verbose)
             }
         },
-        AuthCommands::KeyBundle => auth::key_bundle(server_override, verbose),
+        AuthCommands::KeyBundle {
+            format,
+            output,
+            force,
+        } => auth::key_bundle(server_override, verbose, format, output.as_deref(), force),
         AuthCommands::Token { command } => match command {
             TokenCommands::Create {
                 name,
@@ -291,6 +295,9 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
                 vault,
                 expires_in_days,
                 no_key_bundle,
+                format,
+                output,
+                force,
             } => token::create(
                 server_override,
                 name,
@@ -298,6 +305,11 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
                 vault,
                 expires_in_days,
                 no_key_bundle,
+                token::Delivery {
+                    format,
+                    output,
+                    force,
+                },
                 verbose,
             ),
             TokenCommands::List => token::list(server_override, verbose),

@@ -542,7 +542,7 @@ uploads**, over the GitHub API.
 evnx migrate --to aws-secrets-manager --secret-name prod/myapp/config
 
 # Only the commands on stdout: a script to review, then run
-evnx migrate --to gcp-secret-manager --project my-gcp-project --print-only > upload.sh
+evnx migrate --to gcp-secret-manager --project my-gcp-project -o upload.sh
 
 # Another environment: reads .env.production ([defaults] env_name works too)
 evnx migrate --env-name production --to heroku --heroku-app my-app

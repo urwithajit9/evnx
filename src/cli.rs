@@ -1082,8 +1082,24 @@ pub enum AuthCommands {
     /// server stores, still requiring the master password to open. Store it like
     /// the token, and do not commit it or print it into logs. Run it on a
     /// signed-in machine, again after a master-password change, or to rotate CI.
+    ///
+    /// `--format json` prints `{"key_bundle": "..."}` and nothing else; `-o FILE`
+    /// writes the bundle (or that JSON) to FILE with mode 0600 instead of
+    /// printing it, so it can go straight to a secret store.
     #[command(name = "key-bundle")]
-    KeyBundle,
+    KeyBundle {
+        /// `text` (default) or `json`.
+        #[arg(long, value_enum, value_name = "FORMAT", default_value_t = AuthFormat::Text)]
+        format: AuthFormat,
+
+        /// Write to FILE (mode 0600) instead of stdout.
+        #[arg(long, short = 'o', value_name = "FILE")]
+        output: Option<String>,
+
+        /// Replace FILE when it already exists (with --output).
+        #[arg(long, requires = "output")]
+        force: bool,
+    },
 
     /// Manage API tokens for CI/CD.
     Token {
@@ -1256,6 +1272,17 @@ pub enum AuthCommands {
     },
 }
 
+/// How `auth token create` and `auth key-bundle` print their result.
+#[cfg(feature = "cloud")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub enum AuthFormat {
+    /// For a person: the result with its guidance.
+    #[default]
+    Text,
+    /// One JSON document and nothing else.
+    Json,
+}
+
 /// Subcommands for `evnx auth token`.
 #[cfg(feature = "cloud")]
 #[derive(Subcommand, Debug)]
@@ -1290,6 +1317,25 @@ pub enum TokenCommands {
         /// Print it later with `evnx auth key-bundle`.
         #[arg(long)]
         no_key_bundle: bool,
+
+        /// `text` (default) or `json`.
+        ///
+        /// `json` prints one document with `name`, `token`, `scope`, `vault`,
+        /// `expires_at` and `key_bundle` (null with --no-key-bundle) and no
+        /// other text, for a script to pass on to a secret store.
+        #[arg(long, value_enum, value_name = "FORMAT", default_value_t = AuthFormat::Text)]
+        format: AuthFormat,
+
+        /// Write the token to FILE (mode 0600) instead of printing it.
+        ///
+        /// With `--format json` the file holds the whole document, the key
+        /// bundle included; without it, only the token (one line).
+        #[arg(long, short = 'o', value_name = "FILE")]
+        output: Option<String>,
+
+        /// Replace FILE when it already exists (with --output).
+        #[arg(long, requires = "output")]
+        force: bool,
     },
 
     /// List the account's live tokens.
