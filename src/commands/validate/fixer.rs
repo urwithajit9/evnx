@@ -74,6 +74,18 @@ fn old_value_is_safe_to_show(key: &str, value: &str) -> bool {
         || is_placeholder(key, value)
 }
 
+/// The previous value as a report may show it: only when printing it is
+/// harmless, and then through the shared mask unless it is a placeholder.
+fn shown_old_value(key: &str, value: &str) -> Option<String> {
+    old_value_is_safe_to_show(key, value).then(|| {
+        if is_placeholder(key, value) {
+            value.to_string()
+        } else {
+            crate::core::mask::mask(key, value)
+        }
+    })
+}
+
 pub fn apply_fix(
     key: &str,
     value: &str,
@@ -88,9 +100,11 @@ pub fn apply_fix(
             Some(FixApplied {
                 variable: key.to_string(),
                 action: "Generated secure secret".to_string(),
-                old_value: show.then(|| value.to_string()),
+                old_value: shown_old_value(key, value),
                 old_value_withheld: !show,
+                new_length: new_val.chars().count(),
                 new_value: new_val,
+                generated: true,
             })
         }
         FixAction::ReplacePlaceholder(new_val) => {
@@ -99,9 +113,11 @@ pub fn apply_fix(
             Some(FixApplied {
                 variable: key.to_string(),
                 action: "Replaced placeholder".to_string(),
-                old_value: show.then(|| value.to_string()),
+                old_value: shown_old_value(key, value),
                 old_value_withheld: !show,
+                new_length: new_val.chars().count(),
                 new_value: new_val.clone(),
+                generated: false,
             })
         }
         FixAction::FixBoolean(new_val) => {
@@ -110,9 +126,11 @@ pub fn apply_fix(
             Some(FixApplied {
                 variable: key.to_string(),
                 action: "Fixed boolean format".to_string(),
-                old_value: show.then(|| value.to_string()),
+                old_value: shown_old_value(key, value),
                 old_value_withheld: !show,
+                new_length: new_val.chars().count(),
                 new_value: new_val.clone(),
+                generated: false,
             })
         }
         FixAction::AddSecret => {
@@ -124,7 +142,9 @@ pub fn apply_fix(
                 // There was no previous value.
                 old_value: None,
                 old_value_withheld: false,
+                new_length: new_val.chars().count(),
                 new_value: new_val,
+                generated: true,
             })
         }
         FixAction::AddMissing(new_val) => {
@@ -136,7 +156,9 @@ pub fn apply_fix(
                 // declining to show one.
                 old_value: None,
                 old_value_withheld: false,
+                new_length: new_val.chars().count(),
                 new_value: new_val.clone(),
+                generated: false,
             })
         }
         FixAction::Skip => None,
