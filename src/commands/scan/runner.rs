@@ -37,17 +37,44 @@ use anyhow::Result;
 // use colored::*;
 use std::path::{Path, PathBuf};
 
-/// Characters shown at each end of a masked secret.
-const VISIBLE_EDGE: usize = 4;
+/// A value shows characters only when a built-in format rule matched it and it
+/// is at least this long: a known public prefix is then most of what is shown.
+const MIN_PREVIEW_LEN: usize = 20;
 
-/// Below this length no characters are shown at all — four of eight would be
-/// half the secret.
-///
-/// ⚠️ There used to be a `MAX_VISIBLE = 20` here, under which a value was shown
-/// whole. An AWS access key ID is exactly 20 characters, so the threshold
-/// perfectly exempted the format the scanner detects most often. Length is not a
-/// safety property; a short secret is not a less secret one.
-const MIN_MASKABLE: usize = 8;
+/// Characters of the end shown after the prefix.
+const PREVIEW_TAIL: usize = 2;
+
+/// Prefixes that name a provider and are public by design (`ghp_`, `AKIA`).
+const PUBLIC_VALUE_PREFIXES: &[&str] = &[
+    "github_pat_",
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "AKIA",
+    "ASIA",
+    "sk_live_",
+    "sk_test_",
+    "rk_live_",
+    "sk-ant-",
+    "sk-proj-",
+    "xoxb-",
+    "xoxp-",
+    "xoxa-",
+    "xoxr-",
+    "xoxs-",
+    "xapp-",
+    "AIza",
+    "glpat-",
+    "npm_",
+    "hf_",
+    "dckr_pat_",
+    "whsec_",
+    "sntrys_",
+    "sntryu_",
+    "SG.",
+];
 
 /// Main orchestrator for secret scanning operations.
 ///
@@ -955,7 +982,7 @@ impl ScanRunner {
             "binary keystore (private key and certificate)".to_string()
         } else {
             pem_header(&detection.matched_value)
-                .unwrap_or_else(|| truncate_value(&detection.matched_value))
+                .unwrap_or_else(|| preview_value(&detection.rule_id, &detection.matched_value))
         };
         let rule = (detection.rule_id.clone(), detection.severity);
         let mut finding = Finding::new(
@@ -1066,51 +1093,38 @@ fn pem_header(value: &str) -> Option<String> {
     .then(|| v.to_string())
 }
 
-/// Truncate a value for safe display.
+/// What a finding shows of the value it found.
 ///
-/// ⚠️ **Masks by policy, never by length.** This used to return the value
-/// unchanged when it was `<= MAX_VISIBLE` (20) characters — and an AWS access key
-/// ID is `AKIA` plus sixteen characters, **exactly 20**. So the single
-/// most-detected credential format was printed in full, into terminal scrollback
-/// and, through `scan --format json`, into CI artefacts.
-///
-/// # What is shown, and why so little
-///
-/// At most four leading and four trailing characters, and never more than half
-/// the value. The preview exists so you can *recognise* which secret was found —
-/// `AKIA…LKEY` is plainly an AWS key — not so you can verify it. The finding
-/// already prints the variable name and the file and line, which is what actually
-/// identifies it; the value adds recognition, not identity.
-///
-/// A value under [`MIN_MASKABLE`] characters shows no characters at all. Four of
-/// eight is half a secret; there is no prefix short enough to be safe on a short
-/// value, so it reports the length instead.
+/// Nothing but its length (`<24 chars>`), unless a built-in format rule matched
+/// a value of [`MIN_PREVIEW_LEN`] or more characters that starts with a known
+/// public prefix: then that prefix and the last [`PREVIEW_TAIL`] characters.
+/// The finding already names the file, line and variable; the value adds
+/// recognition, not identity, and no length or shape of value is safe to show
+/// part of by default.
 ///
 /// # Example
 ///
 /// ```
-/// # use evnx::commands::scan::runner::truncate_value;
-/// assert_eq!(truncate_value("AKIA4OZRMFJ3VREALKEY"), "AKIA…LKEY");
-/// assert_eq!(truncate_value("tiny"), "<4 chars>");
+/// # use evnx::commands::scan::runner::preview_value;
+/// assert_eq!(preview_value("aws-access-key", "AKIA4OZRMFJ3VREALKEY"), "AKIA…EY");
+/// assert_eq!(preview_value("high-entropy-string", "AKIA4OZRMFJ3VREALKEY"), "<20 chars>");
+/// assert_eq!(preview_value("aws-access-key", "tiny"), "<4 chars>");
 /// ```
-pub fn truncate_value(value: &str) -> String {
-    let chars: Vec<char> = value.chars().collect();
-    let n = chars.len();
-
-    if n < MIN_MASKABLE {
-        // Nothing can be revealed safely, so reveal nothing.
-        return format!("<{n} chars>");
+pub fn preview_value(rule_id: &str, value: &str) -> String {
+    let n = value.chars().count();
+    let format_rule = crate::core::secretscan::rules::builtin_rules()
+        .iter()
+        .any(|r| r.id.as_deref() == Some(rule_id));
+    if format_rule && n >= MIN_PREVIEW_LEN {
+        if let Some(prefix) = PUBLIC_VALUE_PREFIXES
+            .iter()
+            .find(|p| value.starts_with(**p))
+        {
+            let tail: String = value.chars().skip(n - PREVIEW_TAIL).collect();
+            return format!("{prefix}…{tail}");
+        }
     }
-
-    // Never more than a quarter from each end, so at most half the value.
-    let keep = VISIBLE_EDGE.min(n / 4);
-    if keep == 0 {
-        return format!("<{n} chars>");
-    }
-
-    let prefix: String = chars[..keep].iter().collect();
-    let suffix: String = chars[n - keep..].iter().collect();
-    format!("{prefix}…{suffix}")
+    format!("<{n} chars>")
 }
 
 /// Say what a walk did not read (I-047, DEC-U8-2): a count always, each file
@@ -1245,64 +1259,38 @@ mod tests {
         assert!(matches!(decode(&path), Decoded::Unreadable { .. }));
     }
 
-    /// ⚠️ These two tests asserted the bug. `truncate_value("short") == "short"`
-    /// and `truncate_value("exactly20characters!")` returning its input whole
-    /// were written as the specification, so the suite passed for as long as the
-    /// scanner printed AWS keys in full.
     #[test]
-    fn no_detected_value_is_ever_shown_whole() {
-        for secret in [
-            "AKIA4OZRMFJ3VREALKEY",                          // 20 — the bug
-            "exactly20characters!",                          // 20 — the old test's own case
-            "short",                                         // 5
-            "sk_live_51Habc123def456",                       // 24
-            "this_is_a_very_long_secret_key_value_12345678", // 45
-        ] {
-            let masked = truncate_value(secret);
-            assert!(
-                !masked.contains(secret),
-                "{secret} was shown whole as {masked}"
-            );
-        }
-    }
-
-    /// Enough to recognise the provider, never enough to use.
-    #[test]
-    fn a_mask_keeps_the_shape_and_drops_the_secret() {
-        assert_eq!(truncate_value("AKIA4OZRMFJ3VREALKEY"), "AKIA…LKEY");
+    fn a_preview_shows_a_known_prefix_and_two_characters_for_a_format_rule() {
         assert_eq!(
-            truncate_value("this_is_a_very_long_secret_key_value_12345678"),
-            "this…5678"
+            preview_value("aws-access-key", "AKIA4OZRMFJ3VREALKEY"),
+            "AKIA…EY"
         );
+        let gh = format!("{}{}", "ghp_", "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8");
+        assert_eq!(preview_value("github-token", &gh), "ghp_…R8");
     }
 
-    /// Below `MIN_MASKABLE` there is no prefix short enough to be safe, so the
-    /// length is reported instead of any characters.
     #[test]
-    fn a_short_value_reveals_nothing_at_all() {
-        assert_eq!(truncate_value("short"), "<5 chars>");
-        assert_eq!(truncate_value("tiny"), "<4 chars>");
-        assert_eq!(truncate_value(""), "<0 chars>");
-    }
-
-    /// Never more than half the value, whatever its length.
-    #[test]
-    fn at_most_half_the_characters_survive() {
-        for n in 8..64 {
-            let secret: String = std::iter::repeat_n('x', n).collect();
-            let shown = truncate_value(&secret)
-                .chars()
-                .filter(|c| *c == 'x')
-                .count();
-            assert!(shown * 2 <= n, "{n}-char value revealed {shown} characters");
+    fn everything_else_is_a_length() {
+        // Not a format rule: a name check, entropy, a custom rule id.
+        for id in ["sensitive-config-key", "high-entropy-string", "my-rule"] {
+            assert_eq!(preview_value(id, "AKIA4OZRMFJ3VREALKEY"), "<20 chars>");
         }
+        // Format rule, no known prefix.
+        assert_eq!(
+            preview_value("jwt", "this_is_a_very_long_secret_key_value_12345678"),
+            "<45 chars>"
+        );
+        // Format rule, known prefix, under 20 characters.
+        assert_eq!(preview_value("aws-access-key", "AKIA12345"), "<9 chars>");
+        assert_eq!(preview_value("aws-access-key", ""), "<0 chars>");
     }
 
-    /// Multi-byte input must not panic on a character boundary.
     #[test]
-    fn masking_is_utf8_safe() {
-        let masked = truncate_value("🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑");
-        assert!(masked.contains('…'), "{masked}");
+    fn a_preview_is_utf8_safe() {
+        assert_eq!(
+            preview_value("jwt", "🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑🔑"),
+            "<12 chars>"
+        );
     }
 
     #[test]

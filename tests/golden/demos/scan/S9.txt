@@ -19,7 +19,7 @@ $ evnx scan utf16.env
   scanning utf16.env
 
   ✗  AWS Access Key                              critical
-     utf16.env:1 (AWS_ACCESS_KEY_ID)  AKIA…LKEY
+     utf16.env:1 (AWS_ACCESS_KEY_ID)  AKIA…EY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 

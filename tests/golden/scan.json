@@ -18,7 +18,7 @@
       "pattern": "AWS Access Key",
       "confidence": "high",
       "severity": "critical",
-      "value_preview": "AKIA…LKEY",
+      "value_preview": "AKIA…EY",
       "location": "./.env:2 (AWS_KEY)",
       "variable": "AWS_KEY",
       "action_url": "https://console.aws.amazon.com/iam",
