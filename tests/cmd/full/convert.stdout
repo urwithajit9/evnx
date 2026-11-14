@@ -1,0 +1,155 @@
+Transform `.env` files into multiple output formats.
+
+Supports 14 formats including JSON, YAML, cloud configs, CI/CD variables, and infrastructure-as-code.
+
+Usage: evnx convert [OPTIONS]
+
+Options:
+      --env <PATH>
+          Path to input .env file
+
+      --env-name <NAME>
+          Operate on `.env.<NAME>` instead of `.env`.
+          
+          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do — it never falls back to `.env`.
+
+      --to <FORMAT>
+          Target output format (omit for interactive selection)
+          
+          Supported: json, yaml, shell, aws-secrets, gcp-secrets, azure-keyvault, github-actions, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway
+
+  -o, --output <FILE>
+          Write output to file instead of stdout
+
+      --force
+          Replace FILE when it already exists (with --output).
+          
+          Without it an existing output is refused and nothing is written. The input file is never replaced, even with --force.
+
+      --gitignore
+          Add the --output file to .gitignore without asking (no prompt).
+          
+          The file holds every value from the .env. Without this flag evnx asks when there is a terminal, and warns when there is not.
+
+      --no-gitignore
+          Skip the .gitignore check for the --output file
+
+      --include <PATTERN>
+          Include only variables whose name matches a glob pattern
+          
+          `*` matches any run of characters, `?` exactly one; case-sensitive. Repeat the flag or separate patterns with commas. Examples: "AWS_*", "*_URL", "DB_*_URL", "PORT,API_*"
+
+      --exclude <PATTERN>
+          Exclude variables whose name matches a glob pattern
+          
+          Same patterns as --include; exclude wins over include. Examples: "*_DEBUG", "TEST_*"
+
+      --only <WHICH>
+          Keep only the secrets, or only the rest
+          
+          A variable is a secret when its name says so (`*_PASSWORD`, `*_SECRET`, `*_TOKEN`, …) or its value does (a provider key, a private key, a URL with a password). Applied with --include and --exclude. For example, public values to a build system and secrets to a secret manager.
+
+          Possible values:
+          - secrets: Variables whose name or value says secret
+          - public:  Everything else
+
+      --allow-empty
+          Convert even when no variable is left (an empty .env, or filters that match nothing). Without it that is an error, exit 2
+
+      --allow-collisions
+          When two names become one name in the output, keep the last value.
+          
+          `--transform` can merge names (`Api` and `API` under uppercase), and so can a format's own naming: gcp-secrets lowercases and uses `-`, and Azure Key Vault and GitHub ignore case. Without this flag that is an error naming both, exit 2.
+
+      --base64
+          Base64-encode all values before output.
+          
+          For `kubernetes` this chooses the field: with the flag values are base64 under `data:`; without it they are literal under `stringData:`, which Kubernetes encodes itself on apply.
+
+      --prefix <PREFIX>
+          Prefix to prepend to all variable names
+          
+          Example: --prefix "APP_" transforms "KEY" → "APP_KEY" Applied before key casing transformation
+          
+          Letters, digits and `_`, not starting with a digit, so every name stays a variable name.
+
+      --transform <MODE>
+          Transform variable name casing
+          
+          Options: uppercase, lowercase, camelCase, snake_case
+          
+          Examples: "database_url" --transform uppercase → "DATABASE_URL" "DATABASE_URL" --transform camelCase → "databaseUrl" "DatabaseURL" --transform snake_case → "database_url"
+
+      --project <PROJECT>
+          Google Cloud project for --to gcp-secrets (required there)
+
+      --vault-name <NAME>
+          Azure Key Vault for --to azure-keyvault (required there)
+
+      --heroku-app <APP>
+          Heroku app for --to heroku (required there)
+
+      --name <NAME>
+          Name of the Kubernetes Secret for --to kubernetes (required there)
+
+      --namespace <NAMESPACE>
+          Kubernetes namespace for --to kubernetes (optional)
+
+      --terraform-declarations
+          With --to terraform, write a .tf of `variable` blocks instead of the .tfvars values.
+          
+          A secret-looking variable gets `sensitive = true` and no default; supply its value from the .tfvars output or TF_VAR_<name>. Others keep their value as the default.
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Examples:
+  # Basic JSON conversion
+  evnx convert --to json
+
+  # Kubernetes secret with transformations
+  evnx convert /
+    --to kubernetes --name myapp-env /
+    --include "PROD_*" /
+    --prefix "MYAPP_" /
+    --transform uppercase /
+    --output k8s-secret.yaml
+
+  # A script that creates or updates every secret in a GCP project
+  evnx convert --to gcp-secrets --project my-gcp-project -o upload.sh
+
+  # Interactive mode (opens the format selector)
+  evnx convert
+
+Supported formats:
+  Generic:        json, yaml, shell
+  Cloud:          aws-secrets (JSON for create-secret),
+                  gcp-secrets (--project), azure-keyvault (--vault-name)
+  CI/CD:          github-actions (text to paste into the GitHub web form)
+  Containers:     docker-compose, kubernetes (--name, optional --namespace)
+  IaC:            terraform (.tfvars; --terraform-declarations for variable blocks)
+  Secret Managers: doppler, heroku (--heroku-app), vercel,
+                  railway (experimental)
+
+Aliases:
+  k8s → kubernetes, tf → terraform, yml → yaml
+  gh-actions → github-actions, compose → docker-compose
+
+Exit codes: 0 converted; 2 nothing converted (bad flag, missing file, names that
+collide, a filter or file with no variables).
+
+Use 'evnx convert' without --to for interactive format selection.
+
+📖  Full guide: https://docs.evnx.dev/cli/commands/convert

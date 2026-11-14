@@ -1,0 +1,75 @@
+Check .env files, Git config, project structure, and security
+
+Usage: evnx doctor [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]
+          Project directory to analyze
+          
+          [default: .]
+
+Options:
+      --path <PATH>
+          Project directory to analyze (same as the positional argument).
+          
+          Accepted because the documentation used this form for a long time before the positional existed in print. Giving both is an error rather than a silent preference.
+
+      --fix
+          Repair what can be repaired, instead of only reporting it.
+          
+          Fixes are conservative and local: `.gitignore` gains the `.env*` entries `evnx init` writes, and every env file other users can read is set to 0600 — a symlinked one only when its target is inside the project. Every fix is checked again afterwards; one that did not work says "not fixed". Nothing is deleted, nothing is committed, and no file's contents are edited.
+          
+          ⚠️ `EVNX_AUTO_FIX=1` does the same thing and still works. Either saying yes is enough — a flag can turn repair on, never off.
+
+      --strict
+          Count warnings as problems, so they affect the exit code.
+          
+          Without it, warnings are reported and exit 0 — a missing `.env.example` should not fail a build that never asked it to.
+
+      --skip-without-env
+          With no env file, skip (exit 0) and say so.
+          
+          For pre-commit hooks: a fresh clone has a template and no `.env`, and doctor calls that an error, which would block every new contributor's first commit. ⚠️ Not for CI, where a check that never ran must not pass.
+
+      --format <FORMAT>
+          Output format: `pretty` or `json`.
+          
+          ⚠️ `EVNX_OUTPUT_JSON=1` does the same thing and still works. It shipped first and is documented, but an environment variable is not a discoverable surface — which is how `--fix` came to be documented into existence before it existed. The flag wins when both are given.
+          
+          Unknown values are an error, not a silent fall back to `pretty`: a typo in a CI step must not quietly turn a JSON contract into prose that the next `jq` in the pipeline cannot read.
+
+  -v, --verbose
+          Show detailed diagnostic output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Env files: .env and .env.<name> (not .envrc), and plaintext copies such as
+.env.bak; each must be ignored by git and not tracked, valid dotenv, and
+private (no access for group or others). The template, meant to be
+committed: [defaults] example in .evnx.toml, else .env.example, .env.sample
+or .env.template, whichever is there.
+
+Environment:
+  EVNX_AUTO_FIX=1     same as --fix (stderr says so when it turns repair on)
+  EVNX_OUTPUT_JSON=1  same as --format json; an explicit --format wins
+
+Examples:
+  evnx doctor --fix                       # repair .gitignore and file modes
+  evnx doctor --strict --format json      # a CI gate: warnings fail too
+  evnx doctor --skip-without-env          # a pre-commit hook on a fresh clone
+
+Exit codes: 0 healthy (warnings pass unless --strict); 1 problems found;
+2 could not run (bad path or flag, nothing to diagnose), or a check could
+not finish.
+
+Full guide: https://docs.evnx.dev/cli/commands/doctor

@@ -1,0 +1,96 @@
+Check .env against .env.example, find issues
+
+Usage: evnx validate [OPTIONS]
+
+Options:
+      --env <ENV>
+          Path to the environment file to check, or `-` to read stdin.
+          
+          Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
+
+      --env-name <NAME>
+          Operate on `.env.<NAME>` instead of `.env`.
+          
+          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do — it never falls back to `.env`.
+
+      --input-format <FORMAT>
+          How to read `--env`: `dotenv` or `json`.
+          
+          `json` takes a flat `{"KEY": "value"}` object, or what `evnx parse --format json --values` prints. It is never guessed: `.env` text may start with `{`.
+          
+          [default: dotenv]
+
+      --example <EXAMPLE>
+          The template to compare against.
+          
+          Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`.
+
+      --strict
+          Also report variables that are present but not declared.
+          
+          Measured against `.env.example`, or against `[vars]` when the project has a contract. Without it, an undeclared variable is not mentioned.
+
+      --fix
+          Repair what can be repaired, instead of only reporting it.
+          
+          Fills missing variables, replaces placeholder values and corrects boolean traps. Only `.env` is written, the template is never touched, and the original is kept beside it as `.env.bak`.
+          
+          A missing variable gets the template's value. A new secret is generated only for one the app holds alone — its own signing key (`SECRET_KEY`, `JWT_SECRET`, `SESSION_SECRET`, …) or a password; a key a provider issues (`STRIPE_KEY`, an AWS secret, a token) gets a placeholder, because evnx cannot invent it. Those are listed under "Needs your input", not as fixed, and the run exits 1 until they are filled in.
+          
+          ⛔ **It will not overwrite a value that is not a placeholder.** A weak secret with a real value behind it is reported and left alone — see `--rotate-weak-secrets`.
+
+      --dry-run
+          With `--fix`, show what it would change and write nothing.
+          
+          No `.env` change and no backup. The report and the exit code are those of the file as it stands; a secret `--fix` would generate is not shown, because the real run makes a new one.
+
+      --rotate-weak-secrets
+          With `--fix`, also replace weak secrets that hold a **real value**.
+          
+          ⛔ **This destroys credentials, and that is what it is for.** Until 2026-10-07 `--fix` did it unasked: `DATABASE_PASSWORD="p@ss word#1"` became `DATABASE_PASSWORD=ad0da713…c508`, and the run reported "All checks passed".
+          
+          The check behind it judges length and wording. It cannot tell a placeholder nobody filled in from the real password, short because someone chose a short one — and the second is the common case, because shortness is what trips it. Whether anything *else* holds the credential is not a fact in the file, so evnx cannot decide it; you can.
+          
+          Rotate at the provider first. A new value here that the provider does not have is an outage, not a repair — so a key a provider issues is never replaced, even with this flag: only the app's own secrets and passwords are.
+
+      --format <FORMAT>
+          Output format: `pretty`, `json` or `github-actions`.
+          
+          `json` is the machine-readable form, with a `summary` object for `jq`. `github-actions` emits `::error` annotations that appear inline on a pull request. An unrecognised value is an error.
+          
+          [default: pretty]
+
+      --exit-zero
+          Always exit 0, even when problems are found.
+          
+          For a step that should report without failing the build. It suppresses the *findings* exit code only — a file that cannot be read still exits 2, because "I found nothing" and "I could not look" are different answers.
+
+      --ignore <IGNORE>
+          Comma-separated list of issue types to ignore
+          
+          Added to `[validate] ignore` in `.evnx.toml`. An unknown type is an error that lists the valid ones, so a typo cannot silence nothing.
+
+      --validate-formats
+          Validate value formats: url, port, email
+
+      --fail-on <LEVEL>
+          The lowest severity that fails the run: `error` or `warning`.
+          
+          Defaults to `error`, or `[validate] fail_on` from `.evnx.toml`. `warning` makes warnings exit 1 too, for gates that want them fixed. `--exit-zero` still wins.
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Full guide: https://docs.evnx.dev/cli/commands/validate

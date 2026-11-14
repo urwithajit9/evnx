@@ -1,0 +1,44 @@
+Manage organisations — billing and a directory.
+
+⛔ An organisation does **not** give anyone access to a vault. It owns a plan and a set of seats; a seat decides which plan's limits apply to the holder. Sharing a vault is `evnx vault share`, and only someone who holds the key can do it.
+
+Usage: evnx org [OPTIONS] <COMMAND>
+
+Commands:
+  create    Create an organisation. You become its owner
+  list      List the organisations this account belongs to
+  members   Who is in an organisation, and who holds a seat
+  invite    Invite someone by email
+  invites   Invitations sent but not yet redeemed
+  uninvite  Withdraw an invitation
+  accept    Redeem an invitation token
+  billing   What this organisation is on, and until when
+  seats     Show or set how many seats are purchased
+  assign    Give someone a seat
+  release   Take a seat back
+  role      Change someone's role
+  remove    Remove someone from an organisation
+  delete    Delete an organisation
+  leave     Leave an organisation
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+      --server <URL>
+          evnx server to talk to. Overrides EVNX_SERVER and config.toml
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Full guide: https://docs.evnx.dev/cli/commands/org

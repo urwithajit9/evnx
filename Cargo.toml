@@ -214,6 +214,10 @@ mockito            = "1"
 srp                = "0.6"
 sha2               = "0.10"
 assert_cmd         = "2"
+# Snapshots of `--help` (`tests/help_snapshots.rs`, `tests/cmd/`): a change to
+# a command's help text becomes a reviewed diff of a `.stdout` file, not a
+# surprise. A dev-dependency, so it never reaches the shipped binary.
+trycmd             = "0.15"
 predicates         = "3"
 serde_json         = "1.0"
 tempfile           = "3"

@@ -1,0 +1,131 @@
+Keep .env and .env.example in sync
+
+Usage: evnx sync [OPTIONS]
+
+Options:
+      --env <ENV>
+          The environment file to sync from (forward) or into (reverse)
+
+      --example <EXAMPLE>
+          The template to sync into (forward) or from (reverse)
+
+      --env-name <NAME>
+          Use `.env.<NAME>` instead of `.env`.
+          
+          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do.
+
+      --direction <DIRECTION>
+          Which file to fill: forward (the default) adds to the template, reverse adds to `.env`.
+          
+          Leaving it out also decides how far `--check` looks. Without it the check is two-way, for a developer's own pair: a name only the template has is drift as well. Naming a direction makes the check one-way — only names the target lacks — which is how CI and the pre-commit hook ask: `evnx sync --check --direction forward`.
+
+          Possible values:
+          - forward: Sync .env → .env.example (add new vars to template)
+          - reverse: Sync .env.example → .env (add missing vars to local env)
+
+      --placeholder
+          Deprecated: does what --force does (placeholders, no prompt).
+          
+          Without a terminal sync already uses placeholders and says so.
+
+  -n, --dry-run
+          Preview changes without writing to files
+
+      --check
+          Report whether the files are in step through the exit code.
+          
+          Implies --dry-run: nothing is ever written. This is the CI gate.
+          
+            0  in sync
+            1  out of sync — the message names the command that fixes each side
+            2  no verdict — a file is missing or will not parse, the config is
+               wrong, or (forward) .env is empty beside a populated template
+          
+          Without --direction it looks both ways: names the template lacks, and
+          names only the template has. With --direction it looks one way, as CI
+          and the pre-commit hook should:
+          
+            evnx sync --check --direction forward
+          
+          With no .env, the template is checked against the required `[vars]` in
+          .evnx.toml. The three codes follow `diff` and `grep`. Plain --dry-run
+          previews and always exits 0.
+
+      --format <FORMAT>
+          Output format for `--check`: `pretty` (default) or `json`.
+          
+          ⚠️ `json` requires `--check`, because without it `sync` edits files and a machine-readable report of an edit already made is worth less than the edit. The report says *what* drifted — until now the only answer a pipeline could get was the exit code.
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+  -f, --force
+          Skip the prompts and add placeholder values.
+          
+          Without a terminal, or with CI set, sync does this anyway and says so.
+
+      --skip-without-env
+          With no `.env` and nothing else to compare, skip (exit 0) and say so.
+          
+          For pre-commit hooks: a fresh clone has a template and no `.env`, and a hook that exits 2 there blocks every new contributor's first commit. A spec (`[vars]` in `.evnx.toml`) is still checked. Forward only.
+          
+          ⚠️ Not for CI: without it, `--check` with nothing to compare exits 2, so a gate cannot pass on a check that never ran.
+
+      --template-config <PATH>
+          A JSON file of placeholder rules: `patterns`, `default`, `allow_actual`.
+          
+          An unknown key is an error naming the accepted ones, so a misspelt setting cannot be silently off.
+
+      --prune
+          Remove from the template the names that no environment file has.
+          
+          Compares the template with `.env` and every `.env.<NAME>`, lists what
+          goes, and asks. A name declared in `.evnx.toml [vars]` is kept. Only the
+          template is written (git holds its history; no `.bak`). Refused when no
+          environment file exists or all are empty.
+          
+          Works on its own: it cannot be combined with the options that pick
+          one environment file or another mode (env, env-name, direction, check,
+          format, force, placeholder, skip-without-env, template-config,
+          naming-policy). Use --example for another template and --dry-run to
+          preview.
+          
+            0  pruned, nothing to prune, or a dry run
+            2  refused (no terminal without --yes, no environment file, a file it
+               cannot read, changed while running)
+            4  you answered no
+
+  -y, --yes
+          With --prune: remove without asking
+
+      --naming-policy <NAMING_POLICY>
+          What to do with a name that is not UPPER_SNAKE_CASE.
+          
+          Defaults to `[sync] naming_policy` in .evnx.toml, else `warn`. `error` stops the run with no verdict (exit 2), in every mode.
+
+          Possible values:
+          - warn:   Warn but continue (default)
+          - error:  Treat non-standard names as errors
+          - ignore: Ignore naming conventions entirely
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Examples:
+  evnx sync --check --direction forward   CI gate: does the template have everything .env has?
+  evnx sync --prune --dry-run             preview names in the template that no env file has
+  evnx sync --prune --yes                 remove them, without asking
+
+Full guide: https://docs.evnx.dev/cli/commands/sync

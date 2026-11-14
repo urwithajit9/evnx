@@ -1,0 +1,30 @@
+Manage your evnx cloud account
+
+Usage: evnx auth [OPTIONS] <COMMAND>
+
+Commands:
+  register                Create an evnx cloud account
+  login                   Sign in to evnx cloud
+  logout                  Sign out of evnx cloud
+  resend-verification     Send the email-verification link again
+  key-bundle              Print the CI key bundle: your sealed key material, for EVNX_KEY_BUNDLE
+  token                   Manage API tokens for CI/CD
+  totp                    Manage two-factor authentication
+  sessions                List and revoke active sessions
+  devices                 Networks and browsers this account has signed in from
+  status                  Show your account as the server sees it
+  rotate-master-password  Change your master password
+  undo-password-change    Undo a master password change, by proving the previous password
+  download-data           Download everything the server holds about your account, as JSON
+  delete-account          Delete your account and everything only you can reach
+  help                    Print this message or the help of the given subcommand(s)
+
+Options:
+      --server <URL>  evnx server to talk to. Overrides EVNX_SERVER and config.toml
+  -v, --verbose       Enable verbose output
+  -q, --quiet         Print nothing on success. Findings, warnings, errors and requested data still print
+      --no-color      Disable colored output
+  -h, --help          Print help
+  -V, --version       Print version
+
+Full guide: https://docs.evnx.dev/cli/commands/auth

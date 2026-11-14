@@ -1,0 +1,107 @@
+Compare two env files: keys missing or extra, and values between environments.
+
+Against a template (`.env.example`) only key names are compared; between two environments (`--against`) values are compared too.
+
+Usage: evnx diff [OPTIONS]
+
+Options:
+      --env <ENV>
+          The environment file on the left of the comparison.
+          
+          Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
+
+      --example <EXAMPLE>
+          The template on the right of the comparison: key names only.
+          
+          Defaults to `.env.example`, or `[defaults] example`. A template holds placeholders, so its values are not compared unless `--values` is given. To compare two real environments use `--against`.
+
+      --env-name <NAME>
+          Operate on `.env.<NAME>` instead of `.env`.
+          
+          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do — it never falls back to `.env`.
+
+      --against <NAME>
+          Compare against the environment `.env.<NAME>`: keys and values.
+          
+          `evnx diff --env-name production --against staging` lists the keys one environment lacks and the keys whose values differ (values are shown only with `--show-values`).
+
+      --values
+          Compare values against a template too, not only key names.
+          
+          Every filled-in value differs from its placeholder, so expect each one to be listed. `--against` compares values without it.
+
+      --show-values
+          Print the values, not just which keys differ.
+          
+          In `pretty` and `json` a secret stays masked: by its name, or by the value itself (`postgres://admin:***@db`). A `patch` that carries real values (`--values`, `--against`, `--reverse`) needs this flag, and then has the exact values so it applies; `--interactive` shows `<withheld>` in its questions without it.
+          
+          ⚠️ With `patch` and `--interactive` this puts real secrets on your terminal and into its scrollback, and into any CI log.
+
+      --format <FORMAT>
+          Output format: `pretty`, `json` or `patch`.
+          
+          An unrecognised value is an error (exit 2), not a silent fall back to `pretty` (I-074). `patch` is a unified diff of the left file that `patch -p1` applies: it adds the missing names and, when values are compared, replaces the different ones. Keys only in the left file are kept and named in comment lines.
+          
+          [default: pretty]
+          [possible values: pretty, json, patch]
+
+      --reverse
+          Swap the two sides: compare the example against the environment
+
+      --ignore-keys <KEYS>
+          Leave these keys out of the comparison (comma-separated, exact case).
+          
+          Added to `[diff] ignore_keys` from `.evnx.toml`. The summary says how many keys were ignored; `-v` lists names that matched nothing.
+
+      --fail-on <WHAT>
+          What fails the run (exit 1): `missing`, `extra`, `different`.
+          
+          Comma-separated; all three by default. Only the exit code changes — the report lists everything. `--fail-on missing` fails only when the left file lacks a key the right one has. `different` needs values to be compared (`--against`, or `--values`).
+          
+          [possible values: missing, extra, different]
+
+      --skip-without-env
+          With no `.env`, skip (exit 0) and say so.
+          
+          For pre-commit hooks: a fresh clone has a template and no `.env`, and a hook that exits 2 there blocks every new contributor's first commit. Only the left file is skipped; a missing template is still an error. ⚠️ Not for CI, where a check that never ran must not pass.
+
+      --with-stats
+          Add a `stats` object to the JSON (`--format json` only)
+
+  -i, --interactive
+          Prompt for each change and write the chosen ones (`--format patch` only).
+          
+          The previous file is kept as `.bak`. Needs a terminal. Not with `--reverse`, which would write `.env`'s values into the template.
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+What is compared:
+  .env against a template (.env.example, [defaults] example, or --example)
+      key names only: a filled-in value differs from its placeholder by design.
+      --values compares the values too.
+  two environments (--env-name production --against staging)
+      key names, and which values differ (values hidden unless --show-values).
+
+Examples:
+  evnx diff                                  # keys .env lacks, or the template lacks
+  evnx diff --fail-on missing                # fail only when .env lacks a template key
+  evnx diff --env-name production --against staging
+  evnx diff --format json | jq -e '.summary.missing == 0'
+
+Exit codes: 0 nothing --fail-on counts (default: missing, extra, different);
+1 differences found; 2 could not run (missing file, unknown name, bad flag).
+
+Full guide: https://docs.evnx.dev/cli/commands/diff
