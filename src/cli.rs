@@ -2569,11 +2569,12 @@ pub enum Commands {
         ///
         /// ⚠️ This narrows the scan. Below the folder scanned, `.git`,
         /// `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`,
-        /// `.turbo`, `__pycache__`, `.terraform`, Python virtualenvs (a
+        /// `.turbo`, `__pycache__`, Python virtualenvs (a
         /// `venv` or `.venv` holding `pyvenv.cfg`) and dependency `vendor`
         /// folders (beside `go.mod`, `composer.json` or `Gemfile`, or holding
-        /// `modules.txt`) are skipped, and so is the `.env.example` family;
-        /// `--include-dir` walks a skipped folder. A file named on the command
+        /// `modules.txt`) are skipped, unless git tracks files inside them, and
+        /// so is the `.env.example` family; `--include-dir` walks a skipped
+        /// folder. A file named on the command
         /// line is read regardless.
         #[arg(long, default_value = ".env.example")]
         exclude: Vec<String>,
@@ -2680,8 +2681,8 @@ pub enum Commands {
         /// ⚠️ Suppresses exit 1 only. A scan that could not run still exits 2 —
         /// the flag means "do not fail my build over findings", not "never tell
         /// me the scan was impossible" (an invalid `--exclude`, a path that does
-        /// not exist, nothing to scan). Files that could not be read are still
-        /// listed and counted, but with this flag they no longer fail the run.
+        /// not exist, nothing to scan). Files that could not be read are listed and
+        /// counted but are findings-class (exit 1), so this flag lets them pass.
         #[arg(long)]
         exit_zero: bool,
 
@@ -2724,7 +2725,7 @@ pub enum Commands {
         ///
         /// `--include-dir vendor` reads a `vendor/` folder, `--include-dir
         /// .venv` a virtualenv. Needed only for the folders the run lists as
-        /// "skipped dependency folders", or `.next`, `.terraform` and the like.
+        /// "skipped dependency folders", or `.next` and the like.
         #[arg(long, value_name = "NAME")]
         include_dir: Vec<String>,
 

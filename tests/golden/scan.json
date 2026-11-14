@@ -34,7 +34,12 @@
     "severity_floor": "low",
     "confidence_floor": "low",
     "baseline": null,
-    "config_files": []
+    "config_files": [],
+    "config_excludes": [],
+    "ignore_placeholders": false,
+    "extensions": null,
+    "max_file_size": null,
+    "secret_false": []
   },
   "summary": {
     "total": 1,

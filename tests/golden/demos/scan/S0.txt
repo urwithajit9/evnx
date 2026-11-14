@@ -32,7 +32,7 @@ Options:
           
           A value with `*`, `?` or `[` is a glob, matched against the path from the folder and against the file name: `'fixtures/**'`, `'*.log'`. Any other value matches a whole path component, or several in a row: `--exclude test` skips `test/` and a file named `test`, not `latest/` or `contest.py`; `third_party/cache` skips that folder wherever it is.
           
-          ⚠️ This narrows the scan. Below the folder scanned, `.git`, `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`, `.turbo`, `__pycache__`, `.terraform`, Python virtualenvs (a `venv` or `.venv` holding `pyvenv.cfg`) and dependency `vendor` folders (beside `go.mod`, `composer.json` or `Gemfile`, or holding `modules.txt`) are skipped, and so is the `.env.example` family; `--include-dir` walks a skipped folder. A file named on the command line is read regardless.
+          ⚠️ This narrows the scan. Below the folder scanned, `.git`, `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`, `.turbo`, `__pycache__`, Python virtualenvs (a `venv` or `.venv` holding `pyvenv.cfg`) and dependency `vendor` folders (beside `go.mod`, `composer.json` or `Gemfile`, or holding `modules.txt`) are skipped, unless git tracks files inside them, and so is the `.env.example` family; `--include-dir` walks a skipped folder. A file named on the command line is read regardless.
           
           [default: .env.example]
 
@@ -94,7 +94,7 @@ Options:
       --exit-zero
           Always exit 0, even when secrets are found.
           
-          ⚠️ Suppresses exit 1 only. A scan that could not run still exits 2 — the flag means "do not fail my build over findings", not "never tell me the scan was impossible" (an invalid `--exclude`, a path that does not exist, nothing to scan). Files that could not be read are still listed and counted, but with this flag they no longer fail the run.
+          ⚠️ Suppresses exit 1 only. A scan that could not run still exits 2 — the flag means "do not fail my build over findings", not "never tell me the scan was impossible" (an invalid `--exclude`, a path that does not exist, nothing to scan). Files that could not be read are listed and counted but are findings-class (exit 1), so this flag lets them pass.
 
       --include-ignored
           Report findings in files git ignores and does not track.
@@ -116,7 +116,7 @@ Options:
       --include-dir <NAME>
           Walk a folder the scan skips by default, by name. Repeatable.
           
-          `--include-dir vendor` reads a `vendor/` folder, `--include-dir .venv` a virtualenv. Needed only for the folders the run lists as "skipped dependency folders", or `.next`, `.terraform` and the like.
+          `--include-dir vendor` reads a `vendor/` folder, `--include-dir .venv` a virtualenv. Needed only for the folders the run lists as "skipped dependency folders", or `.next` and the like.
 
       --follow-symlinks
           Read a symlinked file in a folder walk when its target is inside the scanned folder.
@@ -182,7 +182,7 @@ $ evnx scan .
 
 Error: nothing was scanned — every file in the paths given was skipped or excluded.
 
-Folder walks always skip .git, node_modules, target, dist, build, .next, .nuxt, .turbo, __pycache__ and .terraform below the folder scanned, Python virtualenvs, Go/PHP/Ruby vendor folders, the .env.example family, and what --exclude or [scan] exclude names. Name a file directly to scan it regardless.
+Folder walks always skip .git, node_modules, target, dist, build, .next, .nuxt, .turbo and __pycache__ below the folder scanned (unless git tracks files in them), Python virtualenvs, Go/PHP/Ruby vendor folders, the .env.example family, and what --exclude or [scan] exclude names. Name a file directly to scan it regardless.
 
 Paths given: .
 

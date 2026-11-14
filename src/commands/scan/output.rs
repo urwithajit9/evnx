@@ -446,6 +446,31 @@ fn print_effective_config(results: &ScanResults) {
     if cfg.confidence_floor != "low" {
         notes.push(format!("confidence floor {}", cfg.confidence_floor));
     }
+    if !cfg.config_excludes.is_empty() {
+        notes.push(format!(
+            "{} excluded by {by}",
+            pluralize(cfg.config_excludes.len(), "path pattern", "path patterns")
+        ));
+    }
+    if cfg.ignore_placeholders {
+        notes.push(format!("placeholder-looking values ignored by {by}"));
+    }
+    if let Some(list) = &cfg.extensions {
+        notes.push(format!("folders read only for .{} files", list.join(", .")));
+    }
+    if let Some(bytes) = cfg.max_file_size {
+        notes.push(format!(
+            "files over {} not read in folders",
+            super::filters::size_label(bytes)
+        ));
+    }
+    if !cfg.secret_false.is_empty() {
+        notes.push(format!(
+            "{} marked secret = false by {by}: {}",
+            pluralize(cfg.secret_false.len(), "variable", "variables"),
+            cfg.secret_false.join(", ")
+        ));
+    }
     if let Some(b) = &cfg.baseline {
         notes.push(format!(
             "baseline {} accepts {}",
@@ -917,6 +942,10 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
         })
         .collect();
 
+    let mut run_properties = serde_json::json!({ "effective_config": results.effective_config });
+    if !results.skipped_dirs.is_empty() {
+        run_properties["skipped_dirs"] = serde_json::json!(results.skipped_dirs);
+    }
     let sarif = serde_json::json!({
         "version": "2.1.0",
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
@@ -930,7 +959,7 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
                 }
             },
             "results": sarif_results,
-            "properties": { "effective_config": results.effective_config }
+            "properties": run_properties
         }]
     });
 

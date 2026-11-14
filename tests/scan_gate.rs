@@ -282,7 +282,7 @@ fn key_line() -> String {
 #[test]
 fn plain_default_folders_are_not_walked() {
     let mut files = vec![(".env", "APP_NAME=demo\n".to_string())];
-    let dirs = [".next", ".nuxt", ".turbo", "__pycache__", ".terraform"];
+    let dirs = [".next", ".nuxt", ".turbo", "__pycache__"];
     let names: Vec<String> = dirs.iter().map(|d| format!("{d}/k.txt")).collect();
     for n in &names {
         files.push((n.as_str(), key_line()));
@@ -294,6 +294,135 @@ fn plain_default_folders_are_not_walked() {
     // A file named on the command line is still read.
     let (code, _, _) = run(d.path(), &["scan", ".next/k.txt"]);
     assert_eq!(code, 1);
+}
+
+#[test]
+fn terraform_state_folder_is_walked() {
+    let d = project(&[
+        (".env", "APP_NAME=demo\n".into()),
+        (".terraform/terraform.tfstate", key_line()),
+    ]);
+    let (code, v) = json(d.path(), &[]);
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["summary"]["total"], 1);
+}
+
+fn git_add_all(dir: &Path) -> bool {
+    let run = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    };
+    run(&["init", "-q"]) && run(&["add", "-A", "-f"])
+}
+
+#[test]
+fn a_skipped_folder_with_tracked_files_is_walked() {
+    let d = project(&[
+        (".env", "APP_NAME=demo\n".into()),
+        ("go.mod", "module x\n".into()),
+        ("vendor/k.txt", key_line()),
+        (".next/k.txt", key_line()),
+    ]);
+    if !git_add_all(d.path()) {
+        return;
+    }
+    let (code, v) = json(d.path(), &[]);
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["summary"]["total"], 2, "{v}");
+    assert!(v.get("skipped_dirs").is_none(), "{v}");
+}
+
+#[test]
+fn an_untracked_skipped_folder_in_a_repository_is_still_skipped() {
+    let d = project(&[
+        (".env", "APP_NAME=demo\n".into()),
+        ("go.mod", "module x\n".into()),
+    ]);
+    if !git_add_all(d.path()) {
+        return;
+    }
+    fs::create_dir_all(d.path().join("vendor")).unwrap();
+    fs::write(d.path().join("vendor/k.txt"), key_line()).unwrap();
+    let (code, v) = json(d.path(), &[]);
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["skipped_dirs"], serde_json::json!(["vendor (go.mod)"]));
+}
+
+#[test]
+fn skipped_dirs_are_recorded_in_valid_sarif() {
+    let d = project(&[
+        (".env", "APP_NAME=demo\n".into()),
+        ("go.mod", "module x\n".into()),
+        ("vendor/k.txt", key_line()),
+    ]);
+    let (_, stdout, _) = run(d.path(), &["scan", ".", "--format", "sarif"]);
+    let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        doc["runs"][0]["properties"]["skipped_dirs"],
+        serde_json::json!(["vendor (go.mod)"])
+    );
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("schemas/sarif-schema-2.1.0.json")).unwrap();
+    let validator = jsonschema::draft4::new(&schema).unwrap();
+    assert!(validator.iter_errors(&doc).next().is_none());
+}
+
+#[test]
+fn repository_settings_that_hide_findings_are_recorded() {
+    let d = project(&[
+        (".env", "APP_NAME=demo\n".into()),
+        (
+            ".evnx.toml",
+            "[scan]\nexclude = [\"gen/**\"]\nignore_placeholders = true\n\
+             extensions = [\"env\"]\nmax_file_size = 524288\n\n\
+             [vars.API_TOKEN]\nsecret = false\n"
+                .into(),
+        ),
+    ]);
+    let (_, stdout, _) = run(d.path(), &["scan", "."]);
+    for want in [
+        "1 path pattern excluded by .evnx.toml",
+        "placeholder-looking values ignored",
+        "folders read only for .env files",
+        "files over 512 KiB not read",
+        "1 variable marked secret = false by .evnx.toml: API_TOKEN",
+    ] {
+        assert!(stdout.contains(want), "{want}\n{stdout}");
+    }
+    let (_, v) = json(d.path(), &[]);
+    let c = &v["effective_config"];
+    assert_eq!(c["config_excludes"], serde_json::json!(["gen/**"]));
+    assert_eq!(c["ignore_placeholders"], true);
+    assert_eq!(c["extensions"], serde_json::json!(["env"]));
+    assert_eq!(c["max_file_size"], 524288);
+    assert_eq!(c["secret_false"], serde_json::json!(["API_TOKEN"]));
+    let (_, stdout, _) = run(d.path(), &["scan", ".", "--format", "sarif"]);
+    let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        doc["runs"][0]["properties"]["effective_config"]["secret_false"],
+        serde_json::json!(["API_TOKEN"])
+    );
+}
+
+#[test]
+fn no_config_with_update_baseline_is_refused() {
+    let d = project(&[(".env", key_line())]);
+    run(d.path(), &["scan", ".", "--update-baseline"]);
+    let before = fs::read_to_string(d.path().join(".evnx/baseline.json")).unwrap();
+    let (code, _, stderr) = run(d.path(), &["scan", ".", "--no-config", "--update-baseline"]);
+    assert_eq!(code, 2, "{stderr}");
+    assert!(
+        stderr.contains("--no-config cannot be combined"),
+        "{stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(d.path().join(".evnx/baseline.json")).unwrap(),
+        before
+    );
 }
 
 #[test]

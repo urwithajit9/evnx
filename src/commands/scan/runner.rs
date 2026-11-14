@@ -433,7 +433,8 @@ impl ScanRunner {
             anyhow::bail!(
                 "nothing was scanned — every file in the paths given was skipped or excluded.\n\n\
                  {why}Folder walks always skip .git, node_modules, target, dist, build, .next, \
-                 .nuxt, .turbo, __pycache__ and .terraform below the folder scanned, \
+                 .nuxt, .turbo and __pycache__ below the folder scanned (unless git tracks files \
+                 in them), \
                  Python virtualenvs, Go/PHP/Ruby vendor folders, \
                  the .env.example family, and what --exclude or [scan] exclude names. \
                  Name a file directly to scan it regardless.\n\n\

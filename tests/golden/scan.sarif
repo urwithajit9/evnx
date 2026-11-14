@@ -7,8 +7,13 @@
           "baseline": null,
           "builtins_disabled": false,
           "confidence_floor": "low",
+          "config_excludes": [],
           "config_files": [],
           "disabled_rules": [],
+          "extensions": null,
+          "ignore_placeholders": false,
+          "max_file_size": null,
+          "secret_false": [],
           "severity_floor": "low"
         }
       },

@@ -513,6 +513,20 @@ pub struct GitView {
     pub repo_path: String,
 }
 
+/// Does git track any file inside `dir`? `false` outside a work tree, when git
+/// is missing, or when it cannot answer. Tracked files are what a push
+/// publishes, whatever a scan would skip by name.
+pub fn tracks_files_in(dir: &Path) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["ls-files", "-z", "--cached", "--", "."])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .is_some_and(|o| !o.stdout.is_empty())
+}
+
 /// [`exposure`] for many files at once, in the order given (I-285).
 ///
 /// `None` for a file outside a work tree, or wherever git cannot answer — no

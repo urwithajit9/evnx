@@ -26,6 +26,9 @@ $ evnx scan .
   3 findings  ·  1 critical  ·  2 high
   ·  1 rule disabled by .evnx.toml: Stripe Secret Key (LIVE)
   ·  severity floor high
+  ·  1 path pattern excluded by .evnx.toml
+  ·  placeholder-looking values ignored by .evnx.toml
+  ·  1 variable marked secret = false by .evnx.toml: STRIPE_SECRET_KEY
 
 
 Next steps:
@@ -81,6 +84,9 @@ $ evnx scan . --severity low
 
   3 findings  ·  1 critical  ·  2 high
   ·  1 rule disabled by .evnx.toml: Stripe Secret Key (LIVE)
+  ·  1 path pattern excluded by .evnx.toml
+  ·  placeholder-looking values ignored by .evnx.toml
+  ·  1 variable marked secret = false by .evnx.toml: STRIPE_SECRET_KEY
 
 
 Next steps:

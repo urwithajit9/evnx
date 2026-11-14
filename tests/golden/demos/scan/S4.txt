@@ -77,7 +77,12 @@ $ evnx scan . --format json
     "severity_floor": "low",
     "confidence_floor": "low",
     "baseline": null,
-    "config_files": []
+    "config_files": [],
+    "config_excludes": [],
+    "ignore_placeholders": false,
+    "extensions": null,
+    "max_file_size": null,
+    "secret_false": []
   },
   "summary": {
     "total": 4,
@@ -116,8 +121,13 @@ $ evnx scan . --format sarif --exit-zero
           "baseline": null,
           "builtins_disabled": false,
           "confidence_floor": "low",
+          "config_excludes": [],
           "config_files": [],
           "disabled_rules": [],
+          "extensions": null,
+          "ignore_placeholders": false,
+          "max_file_size": null,
+          "secret_false": [],
           "severity_floor": "low"
         }
       },

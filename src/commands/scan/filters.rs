@@ -35,7 +35,8 @@ use walkdir::WalkDir;
 ///
 /// The following are always excluded regardless of configuration:
 /// - `.git/`, `node_modules/`, `target/`, `dist/`, `build/`, `.venv/`, `venv/`,
-///   `.next/`, `.nuxt/`, `.turbo/`, `vendor/`, `__pycache__/`, `.terraform/`
+///   `.next/`, `.nuxt/`, `.turbo/`, `__pycache__/`, and dependency `vendor/`
+///   and virtualenv folders
 /// - `.env.example`, `.env.sample`, `.env.template`
 ///
 /// # Example
@@ -75,7 +76,6 @@ pub const ALWAYS_EXCLUDE_DIRS: &[&str] = &[
     ".nuxt",
     ".turbo",
     "__pycache__",
-    ".terraform",
 ];
 
 /// Of those, the ones every run has always skipped: not named in the note a
@@ -352,6 +352,9 @@ impl FileFilter {
                 // file list and findings order in CI than locally (I-243, G14).
                 let root = canonical(path);
                 let mut left_out: Vec<String> = Vec::new();
+                // Default-skipped folders that git tracks files in: a push
+                // publishes those, so they are read.
+                let tracked_names: std::cell::RefCell<Vec<String>> = Default::default();
                 for entry in WalkDir::new(path)
                     .follow_links(false)
                     .sort_by_file_name()
@@ -363,6 +366,15 @@ impl FileFilter {
                             return true;
                         }
                         match self.skipped_dir(e.path()) {
+                            Some(_)
+                                if e.file_name() != ".git"
+                                    && crate::core::gitignore::tracks_files_in(e.path()) =>
+                            {
+                                tracked_names
+                                    .borrow_mut()
+                                    .push(e.file_name().to_string_lossy().into_owned());
+                                true
+                            }
                             Some(note) => {
                                 let plain = QUIET_DIRS.contains(&note.as_str());
                                 if !plain {
@@ -393,7 +405,9 @@ impl FileFilter {
                     // link to a file outside the tree was read as if it were here.
                     let kind = entry.file_type();
                     if kind.is_symlink() {
-                        if self.excluded(entry_path, Some(path)) || !self.walk_selects(entry_path) {
+                        if self.excluded(entry_path, Some(path), &tracked_names.borrow())
+                            || !self.walk_selects(entry_path)
+                        {
                             continue;
                         }
                         if !self.follow_symlinks {
@@ -432,7 +446,9 @@ impl FileFilter {
                     } else if !kind.is_file() {
                         continue;
                     }
-                    if self.excluded(entry_path, Some(path)) || !self.walk_selects(entry_path) {
+                    if self.excluded(entry_path, Some(path), &tracked_names.borrow())
+                        || !self.walk_selects(entry_path)
+                    {
                         continue;
                     }
                     // ⚠️ The default reads every file (I-047, DEC-U8-2): the old
@@ -537,14 +553,14 @@ impl FileFilter {
     /// pattern that worked before still works, so no project's exclusions change
     /// meaning on upgrade.
     pub fn should_exclude(&self, path: &Path) -> bool {
-        self.excluded(path, None)
+        self.excluded(path, None, &[])
     }
 
     /// [`FileFilter::should_exclude`] for a file found by walking `root`: the
     /// default folder names are looked for **below** `root`, so scanning
     /// `vendor/` itself, or a project under `/srv/build/app`, is not excluded
     /// by the name of a folder the user chose to scan.
-    fn excluded(&self, path: &Path, root: Option<&Path>) -> bool {
+    fn excluded(&self, path: &Path, root: Option<&Path>, tracked: &[String]) -> bool {
         // ⛔ **Normalised once, here, and every user pattern matches against
         // this rather than the raw string.**
         //
@@ -637,9 +653,11 @@ impl FileFilter {
         // affected, because the trailing `-notes` breaks the substring.
         let below = root.and_then(|r| path.strip_prefix(r).ok()).unwrap_or(path);
         if below.components().any(|c| {
-            ALWAYS_EXCLUDE_DIRS
-                .iter()
-                .any(|d| c.as_os_str() == *d && !self.include_dirs.iter().any(|i| i == d))
+            ALWAYS_EXCLUDE_DIRS.iter().any(|d| {
+                c.as_os_str() == *d
+                    && !self.include_dirs.iter().any(|i| i == d)
+                    && !tracked.iter().any(|t| t == d)
+            })
         }) {
             return true;
         }

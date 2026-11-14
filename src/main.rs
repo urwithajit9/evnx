@@ -346,6 +346,21 @@ fn main() -> Result<()> {
             include_dir,
         } => {
             let builtins = cfg.scan.builtins;
+            let repo_settings = commands::scan::models::RepoSettings {
+                exclude: cfg.scan.exclude.clone().unwrap_or_default(),
+                ignore_placeholders: cfg.scan.ignore_placeholders == Some(true),
+                extensions: cfg.scan.extensions.clone(),
+                max_file_size: match cfg.scan.max_file_size.as_ref().map(|s| s.bytes()) {
+                    Some(Ok(b)) if b < evnx::commands::scan::filters::MAX_WALK_BYTES => Some(b),
+                    _ => None,
+                },
+                secret_false: cfg
+                    .vars
+                    .iter()
+                    .filter(|(_, v)| v.secret == Some(false))
+                    .map(|(k, _)| k.clone())
+                    .collect(),
+            };
             commands::scan::run(commands::scan::ScanOptions {
                 paths: path,
                 exclude: evnx::core::config::extend(
@@ -424,6 +439,7 @@ fn main() -> Result<()> {
                     .map(|p| vec![evnx::utils::ui::short_path(p)])
                     .unwrap_or_default(),
                 builtins_disabled: builtins == Some(false),
+                repo_settings,
             })
         }
 
