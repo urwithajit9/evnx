@@ -3910,7 +3910,8 @@ const SPEC_CHECK_EXIT_CODES: &str = "\
 Exit codes:
   0  the template and .env agree with [vars], or there is no [vars] (skipped)
   1  they disagree: a name missing from the template, one it has that [vars]
-     does not declare, or a required variable missing from .env
+     does not declare, a required variable missing from .env, or a value in
+     .env that breaks the `format` declared for it
   2  no verdict: the template is missing or does not parse, or a file named
      by --env or --env-name does not exist";
 

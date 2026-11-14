@@ -93,18 +93,38 @@ pub fn check(
         );
     }
 
-    if problems == 0 {
-        crate::say!(
-            "  {} {example}{} agree{} with [vars] ({} declared)",
-            "✓".green(),
-            if env_vars.is_some() {
-                format!(" and {env_label}")
-            } else {
-                String::new()
-            },
-            if env_vars.is_some() { "" } else { "s" },
-            spec.len()
+    // The declared formats, by the check `validate` runs for the same
+    // declaration (`check_spec_format`): the contract says what a value looks
+    // like, and `.env` is the file whose values are real. A value is never
+    // printed, only the name and the format it breaks.
+    if let Some(vars) = &env_vars {
+        let issues = crate::commands::validate::checks::check_spec_format(
+            vars,
+            spec,
+            crate::core::env_name::name_of(env),
+            env,
+            &std::collections::HashSet::new(),
         );
+        for issue in &issues {
+            problems += 1;
+            println!("  {} {} (in {env_label})", "✗".red(), issue.message);
+        }
+    }
+
+    if problems == 0 {
+        if env_vars.is_some() {
+            crate::say!(
+                "  {} {example} and {env_label}: names and formats agree with [vars] ({} declared)",
+                "✓".green(),
+                spec.len()
+            );
+        } else {
+            crate::say!(
+                "  {} {example}: names agree with [vars] ({} declared); values were not checked",
+                "✓".green(),
+                spec.len()
+            );
+        }
     }
     // N14-12: a name some environment files hold and others lack. A warning:
     // it does not change the verdict. The contract excuses a file from a name

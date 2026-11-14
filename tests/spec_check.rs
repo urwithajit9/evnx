@@ -16,7 +16,16 @@ fn rm41_a_template_that_matches_passes_without_env() {
         .example("DB_URL=postgres://x\nPORT=8080\n");
     let out = run(p.path(), &["spec", "check"]);
     out.assert_code(0);
-    assert!(out.stdout.contains("agrees with [vars]"), "{}", out.stdout);
+    assert!(
+        out.stdout.contains("names agree with [vars]"),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains("values were not checked"),
+        "{}",
+        out.stdout
+    );
     // A production-only variable may live in its own template.
     assert!(!out.stdout.contains("STRIPE_KEY"), "{}", out.stdout);
     assert!(
@@ -96,4 +105,36 @@ fn rm41_quiet_prints_nothing_when_it_passes() {
     out.assert_code(0);
     assert_eq!(out.stdout, "", "{}", out.stdout);
     assert!(!out.stderr.contains("agrees"), "{}", out.stderr);
+}
+
+const FORMATS: &str = "[vars.PORT]\nformat = \"port\"\n\n[vars.ADMIN_EMAIL]\nformat = \"email\"\n";
+
+#[test]
+fn a_value_that_breaks_its_declared_format_fails_the_check() {
+    let p = Project::new()
+        .toml(FORMATS)
+        .example("PORT=3000\nADMIN_EMAIL=a@b.co\n")
+        .env("PORT=abc\nADMIN_EMAIL=nope\n");
+    let out = run(p.path(), &["spec", "check"]);
+    out.assert_code(1);
+    assert!(out.stdout.contains("PORT is not"), "{}", out.stdout);
+    assert!(out.stdout.contains("ADMIN_EMAIL is not"), "{}", out.stdout);
+    assert!(!out.stdout.contains("agree"), "{}", out.stdout);
+    // The value itself is never printed.
+    assert!(!out.all().contains("nope"), "{}", out.all());
+}
+
+#[test]
+fn matching_formats_say_names_and_formats_agree() {
+    let p = Project::new()
+        .toml(FORMATS)
+        .example("PORT=3000\nADMIN_EMAIL=a@b.co\n")
+        .env("PORT=8080\nADMIN_EMAIL=me@example.com\n");
+    let out = run(p.path(), &["spec", "check"]);
+    out.assert_code(0);
+    assert!(
+        out.stdout.contains("names and formats agree with [vars]"),
+        "{}",
+        out.stdout
+    );
 }
