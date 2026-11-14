@@ -124,3 +124,22 @@ mod next_steps {
         assert!(out.contains("replace placeholder values"), "{out}");
     }
 }
+
+#[test]
+fn a_kept_name_is_not_declared_in_the_contract() {
+    let p = Project::new()
+        .env("FLAG=false\nOTHER=1\n")
+        .example("OTHER=1\n")
+        .toml("[vars.OTHER]\n")
+        .file(".gitignore", ".env\n")
+        .mode(".env", 0o600);
+    run(
+        p.path(),
+        &["add", "custom", "FLAG=true", "NEW_ONE=2", "--yes"],
+    )
+    .assert_code(0);
+    let toml = p.read(".evnx.toml");
+    assert!(!toml.contains("FLAG"), "{toml}");
+    assert!(toml.contains("NEW_ONE"), "{toml}");
+    run(p.path(), &["spec", "check"]).assert_code(0);
+}

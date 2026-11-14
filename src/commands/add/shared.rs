@@ -134,6 +134,16 @@ pub struct Plan {
 }
 
 impl Plan {
+    /// What goes into `[vars]`: the names asked for, less the ones kept as they
+    /// were (nothing was written for those, so the contract must not declare them).
+    pub fn recordable(&self) -> VarCollection {
+        let mut vars = self.requested.clone();
+        for name in &self.env_kept {
+            vars.vars.remove(name);
+        }
+        vars
+    }
+
     /// Neither file needs anything.
     pub fn is_empty(&self) -> bool {
         self.to_example.vars.is_empty() && self.to_env.vars.is_empty()
@@ -411,7 +421,7 @@ pub fn apply_files(
 
 /// The contract, when the project keeps one: new names into `[vars]`.
 pub fn record_contract(output_path: &Path, plan: &Plan, verbose: bool) {
-    match crate::commands::spec::writeback::record(output_path, &plan.requested) {
+    match crate::commands::spec::writeback::record(output_path, &plan.recordable()) {
         Ok(outcome) => crate::commands::spec::writeback::report(&outcome, verbose),
         Err(e) => eprintln!("  could not update [vars]: {e:#}"),
     }
@@ -770,7 +780,7 @@ impl JsonExtra {
             } else {
                 Vec::new()
             },
-            contract: crate::commands::spec::writeback::pending(output_path, &plan.requested)?
+            contract: crate::commands::spec::writeback::pending(output_path, &plan.recordable())?
                 .0
                 .json(),
         })
