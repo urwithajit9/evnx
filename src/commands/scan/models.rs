@@ -371,6 +371,10 @@ pub struct ScanResults {
     /// for what it covers. `None` until the runner sets it.
     #[serde(default)]
     pub effective_config: Option<EffectiveConfig>,
+    /// Dependency folders a walk left out (`vendor (go.mod)`, `.venv`), so a
+    /// clean result says what it did not cover. `--include-dir` walks one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_dirs: Vec<String>,
 }
 
 /// The settings that decide what a scan can report: rules turned off, the
@@ -584,6 +588,7 @@ impl ScanResults {
             low_confidence: 0,
             log: Vec::new(),
             effective_config: None,
+            skipped_dirs: Vec::new(),
         }
     }
 
@@ -602,6 +607,7 @@ impl ScanResults {
         self.medium_confidence += other.medium_confidence;
         self.low_confidence += other.low_confidence;
         self.log.extend(other.log);
+        self.skipped_dirs.extend(other.skipped_dirs);
     }
 
     /// Add a finding and update confidence counters.

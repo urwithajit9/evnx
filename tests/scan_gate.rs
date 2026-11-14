@@ -231,7 +231,10 @@ fn a_folder_that_cannot_be_read_is_counted_and_blocks_the_all_clear() {
     let out = (!can_read).then(|| (run(d.path(), &["scan", "."]), json(d.path(), &[])));
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
     let Some(((code, stdout, _), (_, v))) = out else {
-        eprintln!("running as a user that ignores permissions; nothing to prove here");
+        // Not a pass: root reads a mode-000 folder. The same counting path is
+        // covered without permissions by
+        // `a_broken_symlink_followed_is_unreadable_not_clean`.
+        eprintln!("skipped: running as root, permissions are not enforced");
         return;
     };
     assert_eq!(code, 1, "{stdout}");
@@ -272,31 +275,196 @@ fn an_invalid_exclude_glob_in_config_is_exit_2() {
 
 // ── default excludes ───────────────────────────────────────────────────────
 
+fn key_line() -> String {
+    format!("AWS_ACCESS_KEY_ID={}\n", aws_key())
+}
+
 #[test]
-fn dependency_and_build_folders_are_not_walked() {
-    let key = format!("AWS_ACCESS_KEY_ID={}\n", aws_key());
+fn plain_default_folders_are_not_walked() {
     let mut files = vec![(".env", "APP_NAME=demo\n".to_string())];
-    let dirs = [
-        ".venv",
-        "venv",
-        ".next",
-        ".nuxt",
-        ".turbo",
-        "vendor",
-        "__pycache__",
-        ".terraform",
-    ];
+    let dirs = [".next", ".nuxt", ".turbo", "__pycache__", ".terraform"];
     let names: Vec<String> = dirs.iter().map(|d| format!("{d}/k.txt")).collect();
     for n in &names {
-        files.push((n.as_str(), key.clone()));
+        files.push((n.as_str(), key_line()));
     }
     let d = project(&files);
     let (code, v) = json(d.path(), &[]);
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["summary"]["total"], 0);
     // A file named on the command line is still read.
-    let (code, _, _) = run(d.path(), &["scan", "vendor/k.txt"]);
+    let (code, _, _) = run(d.path(), &["scan", ".next/k.txt"]);
     assert_eq!(code, 1);
+}
+
+#[test]
+fn a_vendor_folder_beside_a_manifest_is_skipped_and_said() {
+    for manifest in ["go.mod", "composer.json", "Gemfile"] {
+        let d = project(&[
+            (".env", "APP_NAME=demo\n".into()),
+            (manifest, "x\n".into()),
+            ("vendor/k.txt", key_line()),
+        ]);
+        let (code, v) = json(d.path(), &[]);
+        assert_eq!(code, 0, "{manifest}: {v}");
+        assert_eq!(
+            v["skipped_dirs"],
+            serde_json::json!([format!("vendor ({manifest})")])
+        );
+        let (_, _, stderr) = run(d.path(), &["scan", "."]);
+        assert!(
+            stderr.contains(&format!("skipped dependency folders: vendor ({manifest})")),
+            "{stderr}"
+        );
+        let (_, _, quiet) = run(d.path(), &["-q", "scan", "."]);
+        assert!(!quiet.contains("skipped dependency folders"), "{quiet}");
+    }
+}
+
+#[test]
+fn a_vendor_folder_with_modules_txt_is_skipped() {
+    let d = project(&[
+        (".env", "APP_NAME=demo\n".into()),
+        ("vendor/modules.txt", "# pkg\n".into()),
+        ("vendor/k.txt", key_line()),
+    ]);
+    let (code, v) = json(d.path(), &[]);
+    assert_eq!(code, 0, "{v}");
+}
+
+#[test]
+fn a_vendor_folder_without_a_manifest_is_walked() {
+    let d = project(&[
+        (".env", "APP_NAME=demo\n".into()),
+        ("vendor/k.txt", key_line()),
+    ]);
+    let (code, v) = json(d.path(), &[]);
+    assert_eq!(code, 1, "{v}");
+    assert!(v.get("skipped_dirs").is_none(), "{v}");
+}
+
+#[test]
+fn a_virtualenv_is_skipped_only_with_pyvenv_cfg() {
+    for name in ["venv", ".venv"] {
+        let with = project(&[
+            (".env", "APP_NAME=demo\n".into()),
+            (&format!("{name}/pyvenv.cfg"), "home = /usr\n".into()),
+            (&format!("{name}/k.txt"), key_line()),
+        ]);
+        let (code, v) = json(with.path(), &[]);
+        assert_eq!(code, 0, "{name} with pyvenv.cfg: {v}");
+        assert_eq!(v["skipped_dirs"], serde_json::json!([name]));
+
+        let without = project(&[
+            (".env", "APP_NAME=demo\n".into()),
+            (&format!("{name}/k.txt"), key_line()),
+        ]);
+        let (code, v) = json(without.path(), &[]);
+        assert_eq!(code, 1, "{name} without pyvenv.cfg: {v}");
+    }
+}
+
+#[test]
+fn include_dir_walks_a_skipped_folder() {
+    let d = project(&[
+        (".env", "APP_NAME=demo\n".into()),
+        ("go.mod", "module x\n".into()),
+        ("vendor/k.txt", key_line()),
+        (".next/k.txt", key_line()),
+    ]);
+    assert_eq!(json(d.path(), &[]).0, 0);
+    let (code, v) = json(d.path(), &["--include-dir", "vendor"]);
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["summary"]["total"], 1);
+    let (_, v) = json(
+        d.path(),
+        &["--include-dir", "vendor", "--include-dir", ".next"],
+    );
+    assert_eq!(v["summary"]["total"], 2);
+}
+
+#[test]
+fn scanning_a_default_folder_directly_reads_it() {
+    let d = project(&[
+        ("go.mod", "module x\n".into()),
+        ("vendor/k.txt", key_line()),
+        ("build/k.txt", key_line()),
+        ("venv/pyvenv.cfg", "x\n".into()),
+        ("venv/k.txt", key_line()),
+    ]);
+    for target in ["vendor/", "./vendor", "build", "venv"] {
+        let (code, stdout, stderr) = run(d.path(), &["scan", target, "--format", "json"]);
+        assert_eq!(code, 1, "{target}: {stdout}{stderr}");
+        let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(v["summary"]["total"], 1, "{target}");
+    }
+}
+
+#[test]
+fn a_root_below_a_default_folder_name_is_scanned() {
+    let d = project(&[("vendor/build/app/k.txt", key_line())]);
+    let root = d.path().join("vendor/build/app");
+    let (code, v) = json(&root, &[]);
+    assert_eq!(code, 1, "{v}");
+    // The same folder reached from outside by path.
+    let (code, stdout, _) = run(d.path(), &["scan", "vendor/build/app", "--format", "json"]);
+    assert_eq!(code, 1, "{stdout}");
+}
+
+// ── --exit-zero ────────────────────────────────────────────────────────────
+
+#[test]
+fn exit_zero_does_not_hide_a_run_that_could_not_start() {
+    let d = project(&[(".env", "APP_NAME=demo\n".into())]);
+    let (code, _, stderr) = run(d.path(), &["scan", ".", "--exclude", "[abc", "--exit-zero"]);
+    assert_eq!(code, 2, "{stderr}");
+}
+
+#[cfg(unix)]
+#[test]
+fn exit_zero_lets_unreadable_files_pass_but_still_counts_them() {
+    let d = project(&[(".env", "APP_NAME=demo\n".into())]);
+    std::os::unix::fs::symlink(d.path().join("missing"), d.path().join("dangling.txt")).unwrap();
+    let (code, v) = json(d.path(), &["--follow-symlinks", "--exit-zero"]);
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["summary"]["files_unreadable"], 1);
+}
+
+// ── --no-config ────────────────────────────────────────────────────────────
+
+#[test]
+fn no_config_keeps_inline_allow_markers() {
+    let d = project(&[(".env", key_line())]);
+    let (_, v) = json(d.path(), &["--no-config"]);
+    let rule = v["findings"][0]["rule_id"].as_str().unwrap().to_string();
+    fs::write(
+        d.path().join(".env"),
+        format!(
+            "AWS_ACCESS_KEY_ID={} # evnx:allow {rule} - test fixture\n",
+            aws_key()
+        ),
+    )
+    .unwrap();
+    let (code, v) = json(d.path(), &["--no-config"]);
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["summary"]["total"], 0);
+    assert_eq!(v["summary"]["allowed"], 1);
+}
+
+#[test]
+fn a_rule_file_cannot_disable_a_builtin_rule() {
+    let d = project(&[(".env", key_line())]);
+    let (_, v) = json(d.path(), &[]);
+    let rule = v["findings"][0]["rule_id"].as_str().unwrap().to_string();
+    // Same id as evnx's own rule: refused, not an override.
+    fs::create_dir_all(d.path().join(".evnx/rules")).unwrap();
+    fs::write(
+        d.path().join(".evnx/rules/x.toml"),
+        format!("version = 1\n\n[[rules]]\nid = \"{rule}\"\nname = \"x\"\nregex = 'zzzzzz'\nseverity = \"high\"\n"),
+    )
+    .unwrap();
+    let (code, _, stderr) = run(d.path(), &["scan", ".", "--no-config"]);
+    assert_eq!(code, 2, "{stderr}");
+    assert!(stderr.contains("cannot replace"), "{stderr}");
 }
 
 // ── outside a repository ───────────────────────────────────────────────────

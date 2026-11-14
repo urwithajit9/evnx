@@ -59,24 +59,50 @@ pub struct FileFilter {
     /// Read a symlinked file in a walk when its target is inside the scan root.
     /// Off: every symlink is skipped and counted.
     follow_symlinks: bool,
+    /// Default-skipped folder names to walk anyway (`--include-dir`).
+    include_dirs: Vec<String>,
 }
 
-/// Folders a walk never enters, by name, wherever they sit in the path.
+/// Folders a walk never enters, by name, wherever they sit **below** the
+/// folder being scanned. The folder named on the command line is always walked.
 pub const ALWAYS_EXCLUDE_DIRS: &[&str] = &[
     ".git",
     "node_modules",
     "target",
     "dist",
     "build",
-    ".venv",
-    "venv",
     ".next",
     ".nuxt",
     ".turbo",
-    "vendor",
     "__pycache__",
     ".terraform",
 ];
+
+/// Of those, the ones every run has always skipped: not named in the note a
+/// walk prints about the folders it left out.
+const QUIET_DIRS: &[&str] = &[".git", "node_modules", "target", "dist", "build"];
+
+/// Why a default-skipped folder is skipped, or `None` when it is walked.
+///
+/// `venv` and `.venv` are skipped only when they hold a `pyvenv.cfg`;
+/// `vendor` only beside a `go.mod`, `composer.json` or `Gemfile`, or with a
+/// `modules.txt` inside. A folder with those names that is not a dependency
+/// folder is project code and is read.
+fn conditional_skip(dir: &Path) -> Option<String> {
+    let name = dir.file_name()?.to_string_lossy();
+    match name.as_ref() {
+        "venv" | ".venv" => dir.join("pyvenv.cfg").is_file().then(|| name.into_owned()),
+        "vendor" => {
+            let parent = dir.parent().unwrap_or_else(|| Path::new("."));
+            let manifest = ["go.mod", "composer.json", "Gemfile"]
+                .into_iter()
+                .find(|m| parent.join(m).is_file())
+                .or_else(|| dir.join("modules.txt").is_file().then_some("modules.txt"))?;
+            Some(format!("vendor ({manifest})"))
+        }
+        _ => None,
+    }
+}
 
 /// Check every glob in `exclude` compiles, naming the first that does not.
 ///
@@ -126,6 +152,12 @@ pub struct Collected {
     /// `(path, reason)` for entries a walk could not read (a folder that denies
     /// access, an I/O error). Not skipped by choice: ground that was not looked at.
     pub unreadable: Vec<(PathBuf, String)>,
+    /// Default-skipped folders a walk did not enter, as `name` or
+    /// `name (why)`, without the ones every run skips (`node_modules`, …).
+    pub skipped_dirs: Vec<String>,
+    /// A followed symlink → the canonical file that was checked, which is the
+    /// path to read: the link could be repointed after the check.
+    pub read_through: std::collections::HashMap<PathBuf, PathBuf>,
     /// Files named on the command line, read whatever the rules say.
     pub named: std::collections::HashSet<PathBuf>,
 }
@@ -175,7 +207,30 @@ impl FileFilter {
             extensions: None,
             max_bytes: MAX_WALK_BYTES,
             follow_symlinks: false,
+            include_dirs: Vec::new(),
         }
+    }
+
+    /// Walk these default-skipped folders (`--include-dir NAME`).
+    pub fn with_include_dirs(mut self, names: &[String]) -> Self {
+        self.include_dirs = names
+            .iter()
+            .map(|n| n.trim_matches('/').to_string())
+            .collect();
+        self
+    }
+
+    /// Does the walk leave this folder out by default? The note it is listed
+    /// under, or `None` when it is walked. `--include-dir` overrides.
+    fn skipped_dir(&self, dir: &Path) -> Option<String> {
+        let name = dir.file_name()?.to_string_lossy();
+        if self.include_dirs.iter().any(|i| *i == name) {
+            return None;
+        }
+        if ALWAYS_EXCLUDE_DIRS.iter().any(|d| *d == name) {
+            return Some(name.into_owned());
+        }
+        conditional_skip(dir)
     }
 
     /// Read symlinked files in a walk when the target lies inside the scanned
@@ -296,15 +351,27 @@ impl FileFilter {
                 // hashes directory entries), so one project printed a different
                 // file list and findings order in CI than locally (I-243, G14).
                 let root = canonical(path);
+                let mut left_out: Vec<String> = Vec::new();
                 for entry in WalkDir::new(path)
                     .follow_links(false)
                     .sort_by_file_name()
                     .into_iter()
                     // Never entered, rather than entered and every file dropped.
+                    // The folder named on the command line is always walked.
                     .filter_entry(|e| {
-                        e.depth() == 0
-                            || !(e.file_type().is_dir()
-                                && ALWAYS_EXCLUDE_DIRS.iter().any(|d| e.file_name() == *d))
+                        if e.depth() == 0 || !e.file_type().is_dir() {
+                            return true;
+                        }
+                        match self.skipped_dir(e.path()) {
+                            Some(note) => {
+                                let plain = QUIET_DIRS.contains(&note.as_str());
+                                if !plain {
+                                    left_out.push(note);
+                                }
+                                false
+                            }
+                            None => true,
+                        }
                     })
                 {
                     // ⚠️ Kept, not dropped: a folder that cannot be read has
@@ -326,7 +393,7 @@ impl FileFilter {
                     // link to a file outside the tree was read as if it were here.
                     let kind = entry.file_type();
                     if kind.is_symlink() {
-                        if self.should_exclude(entry_path) || !self.walk_selects(entry_path) {
+                        if self.excluded(entry_path, Some(path)) || !self.walk_selects(entry_path) {
                             continue;
                         }
                         if !self.follow_symlinks {
@@ -350,7 +417,11 @@ impl FileFilter {
                                 ));
                                 continue;
                             }
-                            Ok(_) => {}
+                            Ok(target) => {
+                                collected
+                                    .read_through
+                                    .insert(entry_path.to_path_buf(), target);
+                            }
                             Err(e) => {
                                 collected
                                     .unreadable
@@ -361,7 +432,7 @@ impl FileFilter {
                     } else if !kind.is_file() {
                         continue;
                     }
-                    if self.should_exclude(entry_path) || !self.walk_selects(entry_path) {
+                    if self.excluded(entry_path, Some(path)) || !self.walk_selects(entry_path) {
                         continue;
                     }
                     // ⚠️ The default reads every file (I-047, DEC-U8-2): the old
@@ -391,6 +462,7 @@ impl FileFilter {
                     seen.insert(canonical(entry_path), files.len());
                     files.push(entry_path.to_path_buf());
                 }
+                collected.skipped_dirs.extend(left_out);
             } else {
                 // ⚠️ Neither a file nor a directory. Previously this branch did
                 // not exist, so a path that could not be scanned was skipped in
@@ -407,6 +479,8 @@ impl FileFilter {
         // produces — `a/x` before `a.txt` — so a single walk is unchanged.
         files.sort_by_key(|f| names(f));
         collected.skipped.sort_by_key(|(f, _)| names(f));
+        collected.skipped_dirs.sort();
+        collected.skipped_dirs.dedup();
         collected.unreadable.sort_by_key(|(f, _)| names(f));
         collected.files = files;
         if !unreadable.is_empty() {
@@ -463,6 +537,14 @@ impl FileFilter {
     /// pattern that worked before still works, so no project's exclusions change
     /// meaning on upgrade.
     pub fn should_exclude(&self, path: &Path) -> bool {
+        self.excluded(path, None)
+    }
+
+    /// [`FileFilter::should_exclude`] for a file found by walking `root`: the
+    /// default folder names are looked for **below** `root`, so scanning
+    /// `vendor/` itself, or a project under `/srv/build/app`, is not excluded
+    /// by the name of a folder the user chose to scan.
+    fn excluded(&self, path: &Path, root: Option<&Path>) -> bool {
         // ⛔ **Normalised once, here, and every user pattern matches against
         // this rather than the raw string.**
         //
@@ -553,10 +635,12 @@ impl FileFilter {
         // that were silently skipped. ⚠️ Note the shape: the extra text has to
         // come **before** the name. `my-node_modules-notes/` was *not*
         // affected, because the trailing `-notes` breaks the substring.
-        if path
-            .components()
-            .any(|c| ALWAYS_EXCLUDE_DIRS.iter().any(|d| c.as_os_str() == *d))
-        {
+        let below = root.and_then(|r| path.strip_prefix(r).ok()).unwrap_or(path);
+        if below.components().any(|c| {
+            ALWAYS_EXCLUDE_DIRS
+                .iter()
+                .any(|d| c.as_os_str() == *d && !self.include_dirs.iter().any(|i| i == d))
+        }) {
             return true;
         }
 

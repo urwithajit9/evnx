@@ -140,6 +140,8 @@ pub struct ScanOptions {
     /// `--follow-symlinks`: read a symlinked file in a walk when its target is
     /// inside the scanned folder.
     pub follow_symlinks: bool,
+    /// `--include-dir`: default-skipped folder names to walk.
+    pub include_dirs: Vec<String>,
     /// `--no-config`: repository configuration was not read, so the default
     /// baseline is not either (a named `--baseline` still is).
     pub no_config: bool,
@@ -173,6 +175,7 @@ impl Default for ScanOptions {
             disable: Vec::new(),
             staged: false,
             follow_symlinks: false,
+            include_dirs: Vec::new(),
             no_config: false,
             config_files: Vec::new(),
             builtins_disabled: false,
@@ -312,6 +315,7 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
         )
         .with_disabled(disabled, &opts.disable)
         .with_follow_symlinks(opts.follow_symlinks)
+        .with_include_dirs(&opts.include_dirs)
         .with_effective_config(effective);
         if opts.staged {
             runner.run_staged(opts.paths.clone(), output_format)

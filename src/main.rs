@@ -343,6 +343,7 @@ fn main() -> Result<()> {
             staged,
             no_config,
             follow_symlinks,
+            include_dir,
         } => {
             let builtins = cfg.scan.builtins;
             commands::scan::run(commands::scan::ScanOptions {
@@ -416,6 +417,7 @@ fn main() -> Result<()> {
                 include_ignored,
                 staged,
                 follow_symlinks,
+                include_dirs: include_dir,
                 no_config,
                 config_files: config_source
                     .as_deref()

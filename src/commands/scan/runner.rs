@@ -133,6 +133,11 @@ impl ScanRunner {
 
     /// Read symlinked files in a walk when their target is inside the
     /// scanned folder (`--follow-symlinks`).
+    pub fn with_include_dirs(mut self, names: &[String]) -> Self {
+        self.filter = self.filter.with_include_dirs(names);
+        self
+    }
+
     pub fn with_follow_symlinks(mut self, follow: bool) -> Self {
         self.filter = self.filter.with_follow_symlinks(follow);
         self
@@ -403,6 +408,12 @@ impl ScanRunner {
                 }
                 why.push('\n');
             }
+            if !collected.skipped_dirs.is_empty() {
+                why.push_str(&format!(
+                    "Skipped folders: {}. --include-dir NAME walks one.\n\n",
+                    collected.skipped_dirs.join(", ")
+                ));
+            }
             if !collected.skipped.is_empty() {
                 why.push_str("Skipped:\n");
                 for (path, reason) in &collected.skipped {
@@ -421,8 +432,9 @@ impl ScanRunner {
             }
             anyhow::bail!(
                 "nothing was scanned — every file in the paths given was skipped or excluded.\n\n\
-                 {why}Folder walks always skip .git, node_modules, target, dist, build, .venv, \
-                 venv, .next, .nuxt, .turbo, vendor, __pycache__, .terraform, \
+                 {why}Folder walks always skip .git, node_modules, target, dist, build, .next, \
+                 .nuxt, .turbo, __pycache__ and .terraform below the folder scanned, \
+                 Python virtualenvs, Go/PHP/Ruby vendor folders, \
                  the .env.example family, and what --exclude or [scan] exclude names. \
                  Name a file directly to scan it regardless.\n\n\
                  Paths given: {}",
@@ -438,6 +450,7 @@ impl ScanRunner {
         // used to be the number *found* — which is how `1 file scanned` came to
         // be printed about a file that was never decoded.
         let mut results = ScanResults::new(0);
+        results.skipped_dirs = collected.skipped_dirs.clone();
         for (path, reason) in &collected.unreadable {
             results.unreadable.push(UnreadableFile {
                 path: display_portable(path),
@@ -454,6 +467,15 @@ impl ScanRunner {
         // What git says about each file (I-285): asked once per repository.
         // `None` everywhere outside one, which leaves the report as it was.
         let git = crate::core::gitignore::exposures(&files);
+        if matches!(format, OutputFormat::Pretty)
+            && !crate::utils::ui::is_quiet()
+            && !collected.skipped_dirs.is_empty()
+        {
+            eprintln!(
+                "  · skipped dependency folders: {} (--include-dir NAME walks one)",
+                collected.skipped_dirs.join(", ")
+            );
+        }
         // Without a repository there is no ignore list to apply: the same tree
         // reports more here than inside one. Said once, so that a different
         // result between a laptop and a build image has an explanation.
@@ -491,7 +513,8 @@ impl ScanRunner {
                     ));
                 }
                 let walked = !collected.named.contains(file);
-                let outcome = self.scan_file(file, walked, &mut local);
+                let source = collected.read_through.get(file).unwrap_or(file);
+                let outcome = self.scan_file(file, source, walked, &mut local);
                 // I-062: line, then rule. A `.env` is read twice — parsed, then the
                 // lines the parser dropped — so a commented-out key on line 1 used
                 // to come after a finding on line 5.
@@ -770,13 +793,21 @@ impl ScanRunner {
         self.add_finding(results, path, 1, None, detection, &[]);
     }
 
-    fn scan_file(&self, path: &Path, walked: bool, results: &mut ScanResults) -> Result<()> {
+    /// Scan `path`, reading its content from `source`: the same file, except
+    /// for a followed symlink, which is read through the path that was checked.
+    fn scan_file(
+        &self,
+        path: &Path,
+        source: &Path,
+        walked: bool,
+        results: &mut ScanResults,
+    ) -> Result<()> {
         // C3: a keystore is binary, so it is found by its content, not read.
-        if is_pkcs12(path) {
+        if is_pkcs12(source) {
             self.add_pkcs12(path, results);
             return Ok(());
         }
-        let content = match decode(path) {
+        let content = match decode(source) {
             Decoded::Text(c) => c,
             // ⛔ **A file this command chose to scan and could not read is a
             // reportable failure, not a skip.**

@@ -2252,7 +2252,7 @@ fn s1_a_scan_that_filtered_everything_is_not_success() {
 
     let out = cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
-        .args(["scan", "node_modules", "--no-color"])
+        .args(["scan", ".", "--no-color"])
         .output()
         .unwrap();
     let err = String::from_utf8_lossy(&out.stderr);

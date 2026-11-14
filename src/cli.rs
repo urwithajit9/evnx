@@ -2567,10 +2567,14 @@ pub enum Commands {
         /// `test`, not `latest/` or `contest.py`; `third_party/cache` skips that
         /// folder wherever it is.
         ///
-        /// ⚠️ This narrows the scan. `.git`, `node_modules`, `target`, `dist`,
-        /// `build`, `.venv`, `venv`, `.next`, `.nuxt`, `.turbo`, `vendor`,
-        /// `__pycache__`, `.terraform` and the `.env.example` family are
-        /// skipped whatever this says, and a file named on the command line is read regardless.
+        /// ⚠️ This narrows the scan. Below the folder scanned, `.git`,
+        /// `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`,
+        /// `.turbo`, `__pycache__`, `.terraform`, Python virtualenvs (a
+        /// `venv` or `.venv` holding `pyvenv.cfg`) and dependency `vendor`
+        /// folders (beside `go.mod`, `composer.json` or `Gemfile`, or holding
+        /// `modules.txt`) are skipped, and so is the `.env.example` family;
+        /// `--include-dir` walks a skipped folder. A file named on the command
+        /// line is read regardless.
         #[arg(long, default_value = ".env.example")]
         exclude: Vec<String>,
 
@@ -2675,7 +2679,9 @@ pub enum Commands {
         ///
         /// ⚠️ Suppresses exit 1 only. A scan that could not run still exits 2 —
         /// the flag means "do not fail my build over findings", not "never tell
-        /// me the scan was impossible".
+        /// me the scan was impossible" (an invalid `--exclude`, a path that does
+        /// not exist, nothing to scan). Files that could not be read are still
+        /// listed and counted, but with this flag they no longer fail the run.
         #[arg(long)]
         exit_zero: bool,
 
@@ -2703,9 +2709,24 @@ pub enum Commands {
         /// For a CI gate that must not depend on settings the scanned change
         /// can edit: no disabled rules, no severity floor, no excludes, no
         /// default `.evnx/baseline.json`. A `--baseline` you name is still
-        /// read, and rule files in `.evnx/rules/` still add rules.
+        /// read.
+        ///
+        /// Still in force: rule files in `.evnx/rules/`, your personal rules
+        /// and `--rules` files, which can only add rules (a rule's own
+        /// `allow` lists apply to that rule alone; none can disable or
+        /// replace one of evnx's), and `evnx:allow` comments inside the
+        /// scanned files, which silence the line they sit on (`-v` lists
+        /// them).
         #[arg(long)]
         no_config: bool,
+
+        /// Walk a folder the scan skips by default, by name. Repeatable.
+        ///
+        /// `--include-dir vendor` reads a `vendor/` folder, `--include-dir
+        /// .venv` a virtualenv. Needed only for the folders the run lists as
+        /// "skipped dependency folders", or `.next`, `.terraform` and the like.
+        #[arg(long, value_name = "NAME")]
+        include_dir: Vec<String>,
 
         /// Read a symlinked file in a folder walk when its target is inside
         /// the scanned folder.
