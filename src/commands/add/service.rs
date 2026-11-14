@@ -57,6 +57,7 @@ pub fn handle(service_id: Option<&str>, path: &str, mode: &Mode) -> Result<Outco
         render: &|v| formatter::format_addition(v),
         example_render: None,
         env_from_values: false,
+        values: None,
     };
     confirm_and_apply(Path::new(path), &vars, &flow, mode)
 }

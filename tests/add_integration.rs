@@ -1094,7 +1094,7 @@ fn custom_argument_already_present_is_skipped() {
         &["add", "custom", "DEBUG=false", "NEW=1", "--yes"],
     )
     .assert_code(0)
-    .assert_contains("Added 1 custom variable, skipped 1 already present");
+    .assert_contains("Added 1 custom variable to .env, skipped 1 already present");
     assert_eq!(p.count_lines(".env.example", "DEBUG="), 1);
     assert_eq!(p.count_lines(".env.example", "NEW="), 1);
 }

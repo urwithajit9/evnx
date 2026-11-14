@@ -34,8 +34,12 @@ use crate::utils::ui::glyph;
 /// same defect init fixed as I-013).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
-    /// The variables were appended.
+    /// The variables were appended, and at least one went in without a value
+    /// of its own (a placeholder to replace).
     Written,
+    /// The variables were appended, and every name written carried a value
+    /// the user gave: there is no placeholder to replace (`add custom`).
+    WrittenWithValues,
     /// Every name was already present; nothing needed writing.
     Unchanged,
     /// Nothing was written: the user answered no, pressed Esc, or (in
@@ -111,6 +115,10 @@ pub struct Plan {
     pub present: Vec<String>,
     /// Names `.env.example` already has with another value. Never written.
     pub conflicts: Vec<Conflict>,
+    /// Names the env file already has with a value other than the one given
+    /// (`add custom`). Kept as they are, in neither file, and reported; the
+    /// values are never read into a message.
+    pub env_kept: Vec<String>,
     /// Whether `.env` existed when the plan was made.
     pub env_exists: bool,
     /// `.env` does not exist yet and will be created to hold the values
@@ -487,6 +495,10 @@ pub struct Flow<'a> {
     pub example_render: Option<&'a Render<'a>>,
     /// Create `.env` for the values when it does not exist (`add custom`).
     pub env_from_values: bool,
+    /// The value given for each name, `None` when none was (a placeholder
+    /// stands in): `add custom` only. With it, a name the env file already
+    /// has with another value is kept and reported, not counted as added.
+    pub values: Option<&'a IndexMap<String, Option<String>>>,
 }
 
 /// Plan, preview, ask (unless `--yes`), apply and report: the whole of an
@@ -498,12 +510,15 @@ pub fn confirm_and_apply(
     flow: &Flow,
     mode: &Mode,
 ) -> Result<Outcome> {
-    let plan = plan_with(
+    let mut plan = plan_with(
         output_path,
         requested,
         flow.env_from_values,
         mode.env_name.as_deref(),
     )?;
+    if let Some(values) = flow.values {
+        keep_differing(output_path, &mut plan, values)?;
+    }
     // For `--json`, worked out before the write, as `init` does (DQ-21): the
     // `.gitignore` entries a new `.env` brings, and the `[vars]` record.
     let extra = if mode.json {
@@ -590,7 +605,41 @@ pub fn confirm_and_apply(
         // Asked: the conflicts were shown with the question.
         report(&plan, flow, !mode.interactive());
     }
-    Ok(Outcome::Written)
+    let without_value = |name: &String| {
+        flow.values
+            .is_none_or(|v| v.get(name).is_none_or(Option::is_none))
+    };
+    Ok(
+        if flow.values.is_some() && !plan.to_env.vars.keys().any(without_value) {
+            Outcome::WrittenWithValues
+        } else {
+            Outcome::Written
+        },
+    )
+}
+
+/// `add custom`: a name the env file already has with a value other than the
+/// one given is kept, and taken out of the plan for both files (nothing about
+/// it is written), so the run cannot say it added it. A name given without a
+/// value never conflicts: the placeholder is not a value to compare.
+fn keep_differing(
+    output_path: &Path,
+    plan: &mut Plan,
+    values: &IndexMap<String, Option<String>>,
+) -> Result<()> {
+    let Some(env) = read_assignments(&output_path.join(&plan.env_file))? else {
+        return Ok(());
+    };
+    for (name, given) in values {
+        let (Some(existing), Some(given)) = (env.get(name), given) else {
+            continue;
+        };
+        if existing != given && !plan.conflicts.iter().any(|c| &c.var_name == name) {
+            plan.env_kept.push(name.clone());
+            plan.to_example.vars.remove(name);
+        }
+    }
+    Ok(())
 }
 
 /// `--dry-run`: what [`apply`] would do, file by file. Printed whatever `-q`
@@ -629,6 +678,12 @@ fn print_dry_run(plan: &Plan, flow: &Flow) {
             c.var_name, c.existing_value, c.new_value
         );
     }
+    for name in &plan.env_kept {
+        println!(
+            "  already set to a different value in {}, would keep: {name}",
+            plan.env_file
+        );
+    }
     if plan.env_exists {
         if !plan.to_env.vars.is_empty() {
             println!(
@@ -657,8 +712,9 @@ fn print_dry_run(plan: &Plan, flow: &Flow) {
 /// `.env.example` values they compare; nothing from `.env`, ever.
 ///
 /// Stable fields (I-026): `dry_run`, `written`, `added` (to the template),
-/// `skipped` (already there, same value), `conflicts` (`name`, `existing`,
-/// `new`; kept), `env_added`, `env_created`, `env_committable`; and since
+/// `skipped` (already there, same value), `conflicts` (`name`, `file`, and
+/// `existing`, `new` for the template's; kept — an env file's own value is
+/// never printed), `env_added`, `env_created`, `env_committable`; and since
 /// 0.10.16, shared with `init --json` (DQ-21, T-INIT-36): `template`,
 /// `gitignore` (entries added), `contract` (`action`, `file`, `added`),
 /// `notices`.
@@ -675,9 +731,14 @@ fn print_json(plan: &Plan, dry_run: bool, applied: &Applied, extra: &JsonExtra) 
         "skipped": plan.present,
         "conflicts": plan.conflicts.iter().map(|c| serde_json::json!({
             "name": c.var_name,
+            "file": plan.template.name,
             "existing": c.existing_value,
             "new": c.new_value,
-        })).collect::<Vec<_>>(),
+        })).chain(plan.env_kept.iter().map(|name| serde_json::json!({
+            "name": name,
+            "file": plan.env_file,
+            "reason": "already set to a different value; kept",
+        }))).collect::<Vec<_>>(),
         "env_added": sorted(&plan.to_env),
         "env_created": applied.env_created,
         "env_committable": applied.env_committable,
@@ -724,6 +785,10 @@ pub fn report(plan: &Plan, flow: &Flow, show_conflicts: bool) {
     if show_conflicts {
         print_conflicts(plan);
     }
+    if flow.values.is_some() {
+        report_values(plan, flow);
+        return;
+    }
     let what = &flow.what;
     let added = plan.to_example.vars.len();
     let skipped = plan.present.len() + plan.conflicts.len();
@@ -758,9 +823,73 @@ pub fn report(plan: &Plan, flow: &Flow, show_conflicts: bool) {
     }
 }
 
+/// The result of a run that was given values (`add custom`): what each name
+/// became, and a count of only the names written to the env file.
+///
+/// A name is written, kept (the env file has another value), or added to the
+/// template only (the env file already has the value given).
+fn report_values(plan: &Plan, flow: &Flow) {
+    let written = plan.to_env.vars.len();
+    let asked = plan.requested.vars.len();
+    let skipped = asked
+        .saturating_sub(written)
+        .saturating_sub(plan.env_kept.len());
+    if written > 0 {
+        let tail = if skipped > 0 {
+            format!(", skipped {skipped} already present")
+        } else {
+            String::new()
+        };
+        ui::success(format!(
+            "Added {} to {}{tail}",
+            count(written, flow.noun),
+            plan.env_file
+        ));
+    } else if plan.env_kept.is_empty() {
+        ui::info(format!(
+            "Nothing to add: {} already in {}",
+            count(asked, flow.noun),
+            plan.env_file
+        ));
+    } else {
+        ui::info(format!("Nothing was written to {}", plan.env_file));
+    }
+    let mut template_only: Vec<&str> = plan
+        .to_example
+        .vars
+        .keys()
+        .filter(|n| !plan.to_env.vars.contains_key(*n))
+        .map(String::as_str)
+        .collect();
+    template_only.sort_unstable();
+    if !template_only.is_empty() {
+        ui::info(format!(
+            "Added to {} only (the value is already in {}): {}",
+            plan.template.name,
+            plan.env_file,
+            template_only.join(", ")
+        ));
+    }
+}
+
 /// The conflicts in `plan`, as a warning and one line each. Values shown are
-/// `.env.example`'s, never `.env`'s.
+/// `.env.example`'s, never `.env`'s; a name the env file already sets to
+/// another value is listed without either value.
 pub fn print_conflicts(plan: &Plan) {
+    if !plan.env_kept.is_empty() {
+        ui::warning(format!(
+            "{} already set to a different value in {}: the existing value was kept",
+            count(plan.env_kept.len(), "variable"),
+            plan.env_file
+        ));
+        for name in &plan.env_kept {
+            ui::warning_detail(format!(
+                "  • {} (kept, not changed; edit {} to change it)",
+                name.bold(),
+                plan.env_file
+            ));
+        }
+    }
     if plan.conflicts.is_empty() {
         return;
     }
