@@ -53,6 +53,29 @@ path = "src/main.rs"
 name = "evnx"
 path = "src/lib.rs"
 
+# ─── Lints ───────────────────────────────────────────────────────────────────
+#
+# Only lints that already pass on the whole tree under
+# `cargo clippy --all-targets -- -D warnings` (default features and
+# `--all-features`), so each one is a rule from here on, not a backlog.
+# Applies to the library, the binary, the tests and the benches alike.
+#
+# Not here yet, on purpose: `unwrap_used`, `expect_used`, `exit` and
+# `unreachable_pub` each fail on existing code and are enabled as the code that
+# trips them is fixed.
+[lints.rust]
+# An unsafe fn's body is not an implicit unsafe block: each unsafe operation in it
+# needs its own `unsafe {}` and its own safety comment.
+# (Warn-by-default only from edition 2024.)
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+# A debugging print of a value, left in. It writes to stderr, so it reaches
+# a CI log with whatever it printed.
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+
 # ─── Dependencies ─────────────────────────────────────────────────────────────
 
 [dependencies]
