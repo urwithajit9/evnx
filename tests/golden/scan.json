@@ -28,6 +28,14 @@
   "high_confidence": 1,
   "medium_confidence": 0,
   "low_confidence": 0,
+  "effective_config": {
+    "disabled_rules": [],
+    "builtins_disabled": false,
+    "severity_floor": "low",
+    "confidence_floor": "low",
+    "baseline": null,
+    "config_files": []
+  },
   "summary": {
     "total": 1,
     "high": 1,

@@ -6,6 +6,7 @@ $ evnx scan .
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning ./.env, ./.evnx.toml
 
   ✗  AWS Access Key                              critical
@@ -23,6 +24,8 @@ $ evnx scan .
      !  a password in a postgres:// URL, not a placeholder
 
   3 findings  ·  1 critical  ·  2 high
+  ·  1 rule disabled by .evnx.toml: Stripe Secret Key (LIVE)
+  ·  severity floor high
 
 
 Next steps:
@@ -59,6 +62,7 @@ $ evnx scan . --severity low
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning ./.env, ./.evnx.toml
 
   ✗  AWS Access Key                              critical
@@ -76,6 +80,7 @@ $ evnx scan . --severity low
      !  a password in a postgres:// URL, not a placeholder
 
   3 findings  ·  1 critical  ·  2 high
+  ·  1 rule disabled by .evnx.toml: Stripe Secret Key (LIVE)
 
 
 Next steps:

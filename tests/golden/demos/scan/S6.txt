@@ -5,6 +5,7 @@ $ evnx scan .
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning ./.env
 
   ✓  No secrets detected
@@ -18,6 +19,7 @@ $ evnx scan . --pattern acme_live_[0-9a-f]{20}
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning ./.env
 
   !  Custom pattern 1                            medium

@@ -2,6 +2,16 @@
   "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
   "runs": [
     {
+      "properties": {
+        "effective_config": {
+          "baseline": null,
+          "builtins_disabled": false,
+          "confidence_floor": "low",
+          "config_files": [],
+          "disabled_rules": [],
+          "severity_floor": "low"
+        }
+      },
       "results": [
         {
           "hostedViewerUri": "https://console.aws.amazon.com/iam",

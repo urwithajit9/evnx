@@ -16,6 +16,7 @@ $ evnx scan utf16.env
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning utf16.env
 
   ✗  AWS Access Key                              critical
@@ -38,13 +39,14 @@ $ evnx scan bad.env
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning bad.env
 
   ✗  1 file could not be read, so it was NOT scanned
      bad.env  is not valid UTF-8: invalid utf-8 sequence of 1 bytes from index 2
      →  re-save as UTF-8 and scan again — a file that was not read is not clean
 
-  !  No secrets detected in the files that could be read
+  !  No secrets detected in the files that could be read; 1 could not be read
 
   0 files scanned  ·  1 unreadable
   Docs: https://docs.evnx.dev/cli/commands/scan

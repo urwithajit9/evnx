@@ -5,6 +5,7 @@ $ evnx scan .
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning ./config/id_rsa.pem, ./src/main.py
 
   ✗  Private Key                                 critical
@@ -32,6 +33,7 @@ $ evnx scan config/id_rsa.pem
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning config/id_rsa.pem
 
   ✗  Private Key                                 critical
@@ -53,6 +55,7 @@ $ evnx scan . .
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning ./config/id_rsa.pem, ./src/main.py
 
   ✗  Private Key                                 critical
