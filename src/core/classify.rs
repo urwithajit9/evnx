@@ -120,6 +120,8 @@ fn lenient_name(key: &str) -> bool {
         "PRIVATE_KEY",
         "AUTH",
         "CREDENTIAL",
+        // A webhook URL is a bearer credential: whoever holds it can post.
+        "WEBHOOK",
     ];
     // ⚠️ Suffix, added 2026-10-07 (S2). The substring list above misses every
     // `*_KEY` that is not spelled `API_KEY` or `PRIVATE_KEY`:

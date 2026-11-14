@@ -22,9 +22,8 @@
 //!
 //! # Known gaps
 //!
-//! Cases that still show part of a value today sit in their own `#[ignore]`d
-//! functions, so the passing ones run in CI and each gap names what it expects.
-//! Run them with `cargo test --test value_output -- --ignored`.
+//! Cases that show part of a value sit in their own `#[ignore]`d functions, so
+//! the passing ones run in CI and each gap names what it expects. None today.
 
 mod support;
 
@@ -99,6 +98,16 @@ fn shown_in(text: &str, secret: &str) -> Vec<&'static str> {
     let mut found = Vec::new();
     if text.contains(secret) {
         found.push("whole value");
+    }
+    // A short preview shows both ends at once (`ab…yz`), two characters each.
+    if secret.len() >= 6 {
+        let (head, tail) = (&secret[..2], &secret[secret.len() - 2..]);
+        if ["…", "..."]
+            .iter()
+            .any(|dots| text.contains(&format!("{head}{dots}{tail}")))
+        {
+            found.push("first and last two characters around an ellipsis");
+        }
     }
     if secret.len() >= 8 {
         let (head, tail) = (&secret[..4], &secret[secret.len() - 4..]);
@@ -279,10 +288,9 @@ fn scan_sarif_and_diff_without_show_values_print_no_value() {
     ]);
 }
 
-// ─── Gaps: each of these fails today and states what it expects ──────────────
+// ─── Previews, URL queries and generated values ──────────────────────────────
 
 #[test]
-#[ignore = "expected: a scan finding's preview shows no part of the value, only that it was found; fixed in a follow-up"]
 fn scan_previews_show_no_part_of_a_value() {
     assert_none_shown(&[
         case("scan .", &["scan", "."]),
@@ -291,7 +299,6 @@ fn scan_previews_show_no_part_of_a_value() {
 }
 
 #[test]
-#[ignore = "expected: --show-values still masks a secret held in a URL query (?token=) like one held in a URL password; fixed in a follow-up"]
 fn diff_show_values_masks_a_token_in_a_url_query() {
     assert_none_shown(&[
         case(
@@ -328,7 +335,6 @@ fn diff_show_values_masks_a_token_in_a_url_query() {
 /// this (the generated value is not the canary), so the test reads the value
 /// back from the file `--fix` wrote.
 #[test]
-#[ignore = "expected: validate --fix reports a generated secret by name and length, not its content; fixed in a follow-up"]
 fn validate_fix_does_not_print_the_secrets_it_generates() {
     let canary = Canary::new();
     let p = Project::new()

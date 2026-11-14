@@ -4,6 +4,7 @@
 //! |---|---|
 //! | values not requested | nothing (withheld), whatever the name |
 //! | values requested, URL with a password | `postgres://admin:***@db/app` — structure kept (DEC-G9) |
+//! | values requested, URL with a secret query value or token-shaped path segment | the URL with those parts as `***` |
 //! | values requested, secret by name or value | `***` |
 //! | values requested, plain value | the value |
 //!
@@ -74,17 +75,116 @@ impl Disclosure {
 /// (structure kept), a secret by name or shape entirely. A plain value comes
 /// back unchanged. UTF-8 safe: it only splits at the URL's ASCII delimiters.
 pub fn mask(key: &str, value: &str) -> String {
-    if let Some(range) = classify::url_password(value) {
-        let mut out = String::with_capacity(value.len());
-        out.push_str(&value[..range.start]);
-        out.push_str(MASK);
-        out.push_str(&value[range.end..]);
-        return out;
+    if let Some(masked) = mask_url(value) {
+        return masked;
     }
     if classify::is_sensitive_key(key) || classify::is_secret_shaped(value) {
         return MASK.to_string();
     }
     value.to_string()
+}
+
+/// Query parameters whose value is a credential, lower-case.
+const SECRET_QUERY_PARAMS: &[&str] = &[
+    "token",
+    "access_token",
+    "api_key",
+    "apikey",
+    "key",
+    "secret",
+    "sig",
+    "signature",
+    "password",
+    "auth",
+    "code",
+];
+
+/// Whether a URL path segment looks like a token: 20 or more characters of
+/// letters, digits, `-` and `_`, with at least two of the classes lower case,
+/// upper case and digit.
+fn token_shaped_segment(seg: &str) -> bool {
+    if seg.chars().count() < 20
+        || !seg
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+    {
+        return false;
+    }
+    let classes = [
+        seg.chars().any(|c| c.is_ascii_lowercase()),
+        seg.chars().any(|c| c.is_ascii_uppercase()),
+        seg.chars().any(|c| c.is_ascii_digit()),
+    ];
+    classes.iter().filter(|c| **c).count() >= 2
+}
+
+/// `value` as a URL with its secret parts replaced, or `None` when it is not a
+/// URL or holds nothing secret: the password, the value of a secret query
+/// parameter, and a token-shaped path segment become [`MASK`]. Everything else
+/// is kept, so the host and the shape of the URL stay readable.
+fn mask_url(value: &str) -> Option<String> {
+    let scheme_end = value.find("://")?;
+    let mut changed = false;
+    let mut out = String::with_capacity(value.len());
+    let mut rest = value;
+    if let Some(range) = classify::url_password(value) {
+        out.push_str(&value[..range.start]);
+        out.push_str(MASK);
+        rest = &value[range.end..];
+        changed = true;
+    } else {
+        out.push_str(&value[..scheme_end + 3]);
+        rest = &rest[scheme_end + 3..];
+    }
+    // `rest` starts at the authority's end (or after `://`): split off the
+    // fragment and query, then mask path segments and query values.
+    let (before_frag, frag) = match rest.find('#') {
+        Some(i) => (&rest[..i], &rest[i..]),
+        None => (rest, ""),
+    };
+    let (path_part, query) = match before_frag.find('?') {
+        Some(i) => (&before_frag[..i], Some(&before_frag[i + 1..])),
+        None => (before_frag, None),
+    };
+    // The path part still holds the host when no password was masked.
+    let (host, path) = match path_part.find('/') {
+        Some(i) => (&path_part[..i], &path_part[i..]),
+        None => (path_part, ""),
+    };
+    out.push_str(host);
+    for (i, seg) in path.split('/').enumerate() {
+        if i > 0 {
+            out.push('/');
+        }
+        if token_shaped_segment(seg) {
+            out.push_str(MASK);
+            changed = true;
+        } else {
+            out.push_str(seg);
+        }
+    }
+    if let Some(query) = query {
+        out.push('?');
+        for (i, pair) in query.split('&').enumerate() {
+            if i > 0 {
+                out.push('&');
+            }
+            match pair.split_once('=') {
+                Some((name, v))
+                    if !v.is_empty()
+                        && SECRET_QUERY_PARAMS.contains(&name.to_ascii_lowercase().as_str()) =>
+                {
+                    out.push_str(name);
+                    out.push('=');
+                    out.push_str(MASK);
+                    changed = true;
+                }
+                _ => out.push_str(pair),
+            }
+        }
+    }
+    out.push_str(frag);
+    changed.then_some(out)
 }
 
 /// What to show for `key=value`. `show_values` is the user's request
@@ -137,6 +237,64 @@ mod tests {
         assert_eq!(m, MASK);
         let m = mask("UPSTREAM", "sk_live_51H1234567890abcdefghijk");
         assert_eq!(m, MASK, "secret by value, under a harmless name");
+    }
+
+    #[test]
+    fn a_url_loses_its_secret_query_values_and_token_shaped_path_segments() {
+        assert_eq!(
+            mask(
+                "WEBHOOK_URL",
+                "https://h.example.com/notify?Token=abc123&x=1"
+            ),
+            "https://h.example.com/notify?Token=***&x=1"
+        );
+        for name in [
+            "access_token",
+            "api_key",
+            "apikey",
+            "key",
+            "secret",
+            "sig",
+            "signature",
+            "password",
+            "auth",
+            "code",
+        ] {
+            assert_eq!(
+                mask("U", &format!("https://h/p?a=1&{name}=v1#f")),
+                format!("https://h/p?a=1&{name}=***#f"),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            mask(
+                "U",
+                "https://hooks.example.com/services/Zq8Xk2mP9vLw3nB7rT5yD4Yc/x"
+            ),
+            "https://hooks.example.com/services/***/x"
+        );
+        // Password and query together.
+        assert_eq!(
+            mask("U", "https://u:pw@h/p?token=t"),
+            "https://u:***@h/p?token=***"
+        );
+        // Nothing secret: unchanged. A long word of one class is not a token.
+        assert_eq!(
+            mask(
+                "U",
+                "https://h/docs/internationalizationlocalization?page=2"
+            ),
+            "https://h/docs/internationalizationlocalization?page=2"
+        );
+        assert_eq!(
+            mask("U", "https://h/p?empty_token="),
+            "https://h/p?empty_token="
+        );
+    }
+
+    #[test]
+    fn a_webhook_name_is_a_secret_name() {
+        assert_eq!(mask("SLACK_WEBHOOK", "opaque"), MASK);
     }
 
     #[test]
