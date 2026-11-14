@@ -220,6 +220,9 @@ fn type_master_password(run: &mut Pty) {
     run.wait_for("Master password");
     run.wait_for_echo_off();
     run.type_line(PASSWORD);
+    // Argon2 and SRP at opt-level 0 on a slow runner: the prompt is waited for
+    // 15 s, what follows the password gets 60 s. A deadlock still times out.
+    run.allow(std::time::Duration::from_secs(60));
 }
 
 /// `evnx auth login` reads the password typed at its prompt and signs in.

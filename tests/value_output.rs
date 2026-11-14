@@ -24,7 +24,7 @@
 //!
 //! Cases that still show part of a value today sit in their own `#[ignore]`d
 //! functions, so the passing ones run in CI and each gap names what it expects.
-//! Run them with `cargo test --test no_value_leak -- --ignored`.
+//! Run them with `cargo test --test value_output -- --ignored`.
 
 mod support;
 
@@ -87,8 +87,7 @@ impl Canary {
             .file(".env.staging", &values)
     }
 
-    /// Everything that must not appear in output, with how to show it in a
-    /// failure message that does not itself print the value.
+    /// Every planted value that must not appear in output.
     fn secrets(&self) -> Vec<&str> {
         vec![&self.long, &self.short]
     }
@@ -96,7 +95,7 @@ impl Canary {
 
 /// The ways `secret` can show in `text`: whole, or four characters of either
 /// end beside an ellipsis. Empty when it does not.
-fn leaks_of(text: &str, secret: &str) -> Vec<&'static str> {
+fn shown_in(text: &str, secret: &str) -> Vec<&'static str> {
     let mut found = Vec::new();
     if text.contains(secret) {
         found.push("whole value");
@@ -132,7 +131,7 @@ fn redact(text: &str, secret: &str, label: &str) -> String {
 }
 
 /// Run `case` in a fresh project and return what leaked, one line per finding.
-fn leaks_in(canary: &Canary, case: &Case) -> Vec<String> {
+fn shown_by_case(canary: &Canary, case: &Case) -> Vec<String> {
     let p = canary.project();
     let out = run(p.path(), case.args);
     check_output(canary, case.name, &out)
@@ -150,10 +149,15 @@ fn check_output(canary: &Canary, name: &str, out: &Output) -> Vec<String> {
             "short"
         )
     );
+    // A command that printed nothing proves nothing about what it would show.
+    assert!(
+        !out.all().trim().is_empty(),
+        "{name}: printed nothing, so there is nothing to check"
+    );
     let text = out.all();
     let mut found = Vec::new();
     for (label, secret) in [("long", &canary.long), ("short", &canary.short)] {
-        for how in leaks_of(&text, secret) {
+        for how in shown_in(&text, secret) {
             found.push(format!("{name}: the {label} canary shows as its {how}"));
         }
     }
@@ -161,11 +165,11 @@ fn check_output(canary: &Canary, name: &str, out: &Output) -> Vec<String> {
 }
 
 #[track_caller]
-fn assert_no_leaks(cases: &[Case]) {
+fn assert_none_shown(cases: &[Case]) {
     let canary = Canary::new();
     let mut all = Vec::new();
     for c in cases {
-        all.extend(leaks_in(&canary, c));
+        all.extend(shown_by_case(&canary, c));
     }
     assert!(all.is_empty(), "values shown:\n{}", all.join("\n"));
 }
@@ -174,7 +178,7 @@ fn assert_no_leaks(cases: &[Case]) {
 
 #[test]
 fn validate_doctor_sync_parse_remove_and_migrate_print_no_value() {
-    assert_no_leaks(&[
+    assert_none_shown(&[
         case("validate", &["validate"]),
         case("validate --format json", &["validate", "--format", "json"]),
         case(
@@ -218,7 +222,7 @@ fn validate_doctor_sync_parse_remove_and_migrate_print_no_value() {
 
 #[test]
 fn scan_sarif_and_diff_without_show_values_print_no_value() {
-    assert_no_leaks(&[
+    assert_none_shown(&[
         case("scan . --format sarif", &["scan", ".", "--format", "sarif"]),
         case(
             "diff --values",
@@ -280,7 +284,7 @@ fn scan_sarif_and_diff_without_show_values_print_no_value() {
 #[test]
 #[ignore = "expected: a scan finding's preview shows no part of the value, only that it was found; fixed in a follow-up"]
 fn scan_previews_show_no_part_of_a_value() {
-    assert_no_leaks(&[
+    assert_none_shown(&[
         case("scan .", &["scan", "."]),
         case("scan . --format json", &["scan", ".", "--format", "json"]),
     ]);
@@ -289,7 +293,7 @@ fn scan_previews_show_no_part_of_a_value() {
 #[test]
 #[ignore = "expected: --show-values still masks a secret held in a URL query (?token=) like one held in a URL password; fixed in a follow-up"]
 fn diff_show_values_masks_a_token_in_a_url_query() {
-    assert_no_leaks(&[
+    assert_none_shown(&[
         case(
             "diff --values --show-values",
             &[
@@ -355,7 +359,7 @@ fn validate_fix_does_not_print_the_secrets_it_generates() {
         .into_iter()
         .chain(generated.iter().map(String::as_str))
     {
-        for how in leaks_of(&text, secret) {
+        for how in shown_in(&text, secret) {
             found.push(format!("validate --fix: a value shows as its {how}"));
         }
     }
