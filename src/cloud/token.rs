@@ -102,7 +102,13 @@ fn deliver(
     };
     match delivery.output.as_deref() {
         Some(path) => {
-            super::auth::write_secret_file(path, &body, delivery.force)?;
+            // The token exists now: a failed write must say so, or it is lost.
+            super::auth::write_secret_file(path, &body, delivery.force).map_err(|e| {
+                anyhow!(
+                    "the token '{name}' was created, but writing it to '{path}' failed: {e:#}\n\
+                     \x20 Revoke it with `evnx auth token revoke {name}` and create it again."
+                )
+            })?;
             crate::say!(
                 "  {} created token {}, written to {path}",
                 "✓".green(),

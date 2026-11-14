@@ -1099,8 +1099,12 @@ pub(crate) fn check_secret_target(path: &str, force: bool) -> Result<()> {
 /// is refused without `force`: it may hold the token or bundle this replaces.
 pub(crate) fn write_secret_file(path: &str, content: &str, force: bool) -> Result<()> {
     check_secret_target(path, force)?;
-    let written = crate::core::safe_write::write_private(path, content.as_bytes())
-        .with_context(|| format!("Failed to write '{path}'"))?;
+    let written = crate::core::safe_write::write_with_mode(
+        path,
+        content.as_bytes(),
+        crate::core::permissions::PRIVATE,
+    )
+    .with_context(|| format!("Failed to write '{path}'"))?;
     crate::core::safe_write::report(&written);
     Ok(())
 }

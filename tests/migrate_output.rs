@@ -550,3 +550,20 @@ fn on_a_terminal_the_values_are_hidden_unless_asked_for() {
     assert_eq!(code, 0, "{text}");
     assert!(text.contains(&value), "--print-only is an explicit request");
 }
+
+#[test]
+fn output_with_force_tightens_an_existing_file_to_0600() {
+    use std::os::unix::fs::PermissionsExt;
+    let p = Project::new()
+        .env("API_SECRET=abc123\n")
+        .file("run.sh", "old\n");
+    std::fs::set_permissions(p.join("run.sh"), std::fs::Permissions::from_mode(0o644)).unwrap();
+    let mut args = HEROKU.to_vec();
+    args.extend(["-o", "run.sh", "--force", "--no-gitignore"]);
+    migrate(&p, &args).assert_code(0);
+    let mode = std::fs::metadata(p.join("run.sh"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+}

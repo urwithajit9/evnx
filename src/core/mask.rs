@@ -76,7 +76,13 @@ impl Disclosure {
 /// back unchanged. UTF-8 safe: it only splits at the URL's ASCII delimiters.
 pub fn mask(key: &str, value: &str) -> String {
     if let Some(masked) = mask_url(value) {
-        return masked;
+        // A secret name with no password in the URL hides the whole value, as
+        // it always did; the URL form is for a password (structure kept) and
+        // for names that do not say "secret".
+        if classify::url_password(value).is_some() || !classify::is_sensitive_key(key) {
+            return masked;
+        }
+        return MASK.to_string();
     }
     if classify::is_sensitive_key(key) || classify::is_secret_shaped(value) {
         return MASK.to_string();
@@ -254,10 +260,7 @@ mod tests {
     #[test]
     fn a_url_loses_its_secret_query_values_and_token_shaped_path_segments() {
         assert_eq!(
-            mask(
-                "WEBHOOK_URL",
-                "https://h.example.com/notify?Token=abc123&x=1"
-            ),
+            mask("LINK", "https://h.example.com/notify?Token=abc123&x=1"),
             "https://h.example.com/notify?Token=***&x=1"
         );
         for name in [
@@ -337,6 +340,25 @@ mod tests {
         assert_eq!(
             mask("U", "https://h/p?a=1#section-2"),
             "https://h/p?a=1#section-2"
+        );
+    }
+
+    #[test]
+    fn a_secret_name_hides_a_url_without_a_password_whole() {
+        assert_eq!(
+            mask("AUTH_SECRET", "https://h/cb?access_token=a&refresh=r3fr3sh"),
+            MASK
+        );
+        assert_eq!(
+            mask("DATABASE_URL", "postgres://u:p@h/db?sslmode=require"),
+            "postgres://u:***@h/db?sslmode=require"
+        );
+        assert_eq!(
+            mask(
+                "DATABASE_URL",
+                "postgres://u:p@h/db?password=x&sslmode=require"
+            ),
+            "postgres://u:***@h/db?password=***&sslmode=require"
         );
     }
 

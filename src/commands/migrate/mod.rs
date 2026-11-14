@@ -349,8 +349,12 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
 
     if let Some(path) = args.output.as_deref() {
         let commands = Out::take_commands();
-        let written = crate::core::safe_write::write_private(path, commands.as_bytes())
-            .with_context(|| format!("Failed to write output to '{path}'"))?;
+        let written = crate::core::safe_write::write_with_mode(
+            path,
+            commands.as_bytes(),
+            crate::core::permissions::PRIVATE,
+        )
+        .with_context(|| format!("Failed to write output to '{path}'"))?;
         out.result(format!("Commands written to: {path}"));
         if written.replaced {
             out.result(format!("Replaced {path}"));
