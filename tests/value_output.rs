@@ -130,7 +130,7 @@ fn redact(text: &str, secret: &str, label: &str) -> String {
         .replace(tail, &format!("<{label}:tail>"))
 }
 
-/// Run `case` in a fresh project and return what leaked, one line per finding.
+/// Run `case` in a fresh project and return each planted value it showed, one line per finding.
 fn shown_by_case(canary: &Canary, case: &Case) -> Vec<String> {
     let p = canary.project();
     let out = run(p.path(), case.args);
@@ -138,7 +138,7 @@ fn shown_by_case(canary: &Canary, case: &Case) -> Vec<String> {
 }
 
 fn check_output(canary: &Canary, name: &str, out: &Output) -> Vec<String> {
-    // Proves the command ran: a usage error (2) would pass any leak check.
+    // Proves the command ran: a usage error (2) would pass any output check.
     assert!(
         matches!(out.code, Some(0) | Some(1)),
         "{name}: did not run (exit {:?})\n{}",
