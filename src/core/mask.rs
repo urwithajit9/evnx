@@ -84,20 +84,44 @@ pub fn mask(key: &str, value: &str) -> String {
     value.to_string()
 }
 
-/// Query parameters whose value is a credential, lower-case.
-const SECRET_QUERY_PARAMS: &[&str] = &[
+/// Words that make a query (or fragment) parameter's name a credential's,
+/// matched as lower-case substrings: `client_secret`, `refresh_token`,
+/// `id_token`, `x-amz-signature`, `private_token` and `passwd` all hit.
+const SECRET_PARAM_WORDS: &[&str] = &[
     "token",
-    "access_token",
-    "api_key",
-    "apikey",
-    "key",
     "secret",
+    "key",
     "sig",
-    "signature",
-    "password",
+    "pass",
+    "pwd",
     "auth",
     "code",
+    "credential",
 ];
+
+fn secret_param(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    SECRET_PARAM_WORDS.iter().any(|w| lower.contains(w))
+}
+
+/// `a=1&token=x` with the secret parameters' values replaced; `changed` is set
+/// when one was.
+fn mask_params(params: &str, changed: &mut bool, out: &mut String) {
+    for (i, pair) in params.split('&').enumerate() {
+        if i > 0 {
+            out.push('&');
+        }
+        match pair.split_once('=') {
+            Some((name, v)) if !v.is_empty() && secret_param(name) => {
+                out.push_str(name);
+                out.push('=');
+                out.push_str(MASK);
+                *changed = true;
+            }
+            _ => out.push_str(pair),
+        }
+    }
+}
 
 /// Whether a URL path segment looks like a token: 20 or more characters of
 /// letters, digits, `-` and `_`, with at least two of the classes lower case,
@@ -165,25 +189,13 @@ fn mask_url(value: &str) -> Option<String> {
     }
     if let Some(query) = query {
         out.push('?');
-        for (i, pair) in query.split('&').enumerate() {
-            if i > 0 {
-                out.push('&');
-            }
-            match pair.split_once('=') {
-                Some((name, v))
-                    if !v.is_empty()
-                        && SECRET_QUERY_PARAMS.contains(&name.to_ascii_lowercase().as_str()) =>
-                {
-                    out.push_str(name);
-                    out.push('=');
-                    out.push_str(MASK);
-                    changed = true;
-                }
-                _ => out.push_str(pair),
-            }
-        }
+        mask_params(query, &mut changed, &mut out);
     }
-    out.push_str(frag);
+    if let Some(frag) = frag.strip_prefix('#') {
+        out.push('#');
+        // A fragment that is not `a=b&c=d` has no `=`, and passes through.
+        mask_params(frag, &mut changed, &mut out);
+    }
     changed.then_some(out)
 }
 
@@ -289,6 +301,42 @@ mod tests {
         assert_eq!(
             mask("U", "https://h/p?empty_token="),
             "https://h/p?empty_token="
+        );
+    }
+
+    #[test]
+    fn parameters_are_matched_by_the_words_in_their_names() {
+        for name in [
+            "client_secret",
+            "refresh_token",
+            "id_token",
+            "X-Amz-Signature",
+            "private_token",
+            "PASSWD",
+            "db_pwd",
+            "credential",
+        ] {
+            assert_eq!(
+                mask("U", &format!("https://h/p?{name}=v1&n=2")),
+                format!("https://h/p?{name}=***&n=2"),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            mask("U", "https://h/p?page=2&sort=asc"),
+            "https://h/p?page=2&sort=asc"
+        );
+    }
+
+    #[test]
+    fn a_fragment_is_masked_like_a_query() {
+        assert_eq!(
+            mask("U", "https://h/cb#access_token=abc&state=1"),
+            "https://h/cb#access_token=***&state=1"
+        );
+        assert_eq!(
+            mask("U", "https://h/p?a=1#section-2"),
+            "https://h/p?a=1#section-2"
         );
     }
 

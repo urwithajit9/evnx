@@ -183,12 +183,8 @@ pub fn create(
     }
 
     // Before minting: a refused file must not cost a token nobody can read.
-    if let (Some(path), false) = (delivery.output.as_deref(), delivery.force) {
-        if std::fs::symlink_metadata(path).is_ok() {
-            return Err(anyhow!(
-                "'{path}' already exists. Pass --force to replace it."
-            ));
-        }
+    if let Some(path) = delivery.output.as_deref() {
+        super::auth::check_secret_target(path, delivery.force)?;
     }
 
     let server = CloudConfig::resolve_server(server_override)?;

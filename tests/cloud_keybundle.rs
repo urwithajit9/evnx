@@ -541,3 +541,19 @@ fn token_create_output_to_an_existing_file_mints_nothing() {
     assert_eq!(p.read("tok.txt"), "keep\n");
     mint.assert();
 }
+
+#[test]
+fn token_create_output_into_a_missing_folder_mints_nothing() {
+    let mut s = mockito::Server::new();
+    let mint = s.mock("POST", "/api/v1/auth/tokens").expect(0).create();
+    let p = Project::new();
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &["auth", "token", "create", "ci", "-o", "nope/tok.txt"],
+        None,
+    );
+    assert_ne!(out.code, Some(0));
+    assert!(out.all().contains("does not exist"), "{}", out.all());
+    mint.assert();
+}

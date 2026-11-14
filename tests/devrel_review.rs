@@ -838,16 +838,21 @@ fn validate_fix_repairs_each_variable_once() {
         reported.len()
     );
 
-    // Every value printed must be the value that landed.
+    // The report names the length of the value that landed, never the value.
     let landed = fs::read_to_string(dir.path().join(".env")).unwrap();
     let value = landed
         .trim()
         .strip_prefix("SECRET_KEY=")
         .expect("SECRET_KEY should be set");
     assert!(
-        reported[0].contains(value),
-        "the report printed a secret that is not in the file.\n  reported: {}\n  landed:   {value}",
-        reported[0]
+        reported[0].contains(&format!("generated ({} chars)", value.chars().count())),
+        "the report should give the length of the value in the file.\n  reported: {}\n  length:   {}",
+        reported[0],
+        value.chars().count()
+    );
+    assert!(
+        !out.contains(value),
+        "the generated value was printed:\n{out}"
     );
 }
 

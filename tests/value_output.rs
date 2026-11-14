@@ -371,3 +371,18 @@ fn validate_fix_does_not_print_the_secrets_it_generates() {
     }
     assert!(found.is_empty(), "{}", found.join("\n"));
 }
+
+/// The one branch that shows characters: a built-in format rule, 20+
+/// characters, a known prefix. Built at run time from random characters.
+#[test]
+fn a_preview_shows_a_known_prefix_and_two_characters_and_nothing_else() {
+    use evnx::commands::scan::preview_value;
+    let key = format!("{}{}", "AKIA", random_alnum(16).to_uppercase());
+    let shown = preview_value("aws-access-key", &key);
+    assert_eq!(shown, format!("AKIA…{}", &key[key.len() - 2..]));
+    assert!(!shown.contains(&key[4..key.len() - 2]));
+
+    let short = random_alnum(9);
+    assert_eq!(preview_value("aws-access-key", &short), "<9 chars>");
+    assert_eq!(preview_value("high-entropy-string", &key), "<20 chars>");
+}

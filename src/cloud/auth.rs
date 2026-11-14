@@ -1078,12 +1078,27 @@ pub(crate) fn say_key_bundle_guidance() {
     crate::say!("  or paste it into logs. After a master-password change, make a new one.");
 }
 
-/// Write `content` to `path` as a private file (0600, atomic). An existing file
-/// is refused without `force`: it may hold the token or bundle this replaces.
-pub(crate) fn write_secret_file(path: &str, content: &str, force: bool) -> Result<()> {
+/// Whether `path` can be written: its folder exists, and the file does not
+/// unless `force`. Run before anything that cannot be redone (minting a token).
+pub(crate) fn check_secret_target(path: &str, force: bool) -> Result<()> {
+    let parent = std::path::Path::new(path)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty());
+    if let Some(dir) = parent {
+        if !dir.is_dir() {
+            anyhow::bail!("the folder '{}' does not exist.", dir.display());
+        }
+    }
     if !force && std::fs::symlink_metadata(path).is_ok() {
         anyhow::bail!("'{path}' already exists. Pass --force to replace it.");
     }
+    Ok(())
+}
+
+/// Write `content` to `path` as a private file (0600, atomic). An existing file
+/// is refused without `force`: it may hold the token or bundle this replaces.
+pub(crate) fn write_secret_file(path: &str, content: &str, force: bool) -> Result<()> {
+    check_secret_target(path, force)?;
     let written = crate::core::safe_write::write_private(path, content.as_bytes())
         .with_context(|| format!("Failed to write '{path}'"))?;
     crate::core::safe_write::report(&written);
@@ -1111,10 +1126,8 @@ pub fn key_bundle(
         "\x20 It is made from your account, on a machine you are signed in on.\n",
     )?;
     // Refuse before asking the server, so a refusal changes nothing.
-    if let (Some(path), false) = (output, force) {
-        if std::fs::symlink_metadata(path).is_ok() {
-            anyhow::bail!("'{path}' already exists. Pass --force to replace it.");
-        }
+    if let Some(path) = output {
+        check_secret_target(path, force)?;
     }
     let bundle = fetch_key_bundle(&client)?;
     let json = format == crate::cli::AuthFormat::Json;
