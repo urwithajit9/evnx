@@ -137,6 +137,8 @@ struct TokenSummary {
 
 /// Where a new token goes: `--format` and `-o FILE` (`--force`).
 pub struct Delivery {
+    /// `--no-key-bundle`.
+    pub no_key_bundle: bool,
     pub format: crate::cli::AuthFormat,
     pub output: Option<String>,
     pub force: bool,
@@ -169,10 +171,10 @@ pub fn create(
     scope: String,
     vault_target: Option<String>,
     expires_in_days: Option<i64>,
-    no_key_bundle: bool,
     delivery: Delivery,
     verbose: bool,
 ) -> Result<()> {
+    let no_key_bundle = delivery.no_key_bundle;
     let scope = validate_scope(&scope)?;
     if name.trim().is_empty() {
         return Err(anyhow!(

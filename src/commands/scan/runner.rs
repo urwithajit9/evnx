@@ -1096,8 +1096,8 @@ fn pem_header(value: &str) -> Option<String> {
 /// What a finding shows of the value it found.
 ///
 /// Nothing but its length (`<24 chars>`), unless a built-in format rule matched
-/// a value of [`MIN_PREVIEW_LEN`] or more characters that starts with a known
-/// public prefix: then that prefix and the last [`PREVIEW_TAIL`] characters.
+/// a value of `MIN_PREVIEW_LEN` or more characters that starts with a known
+/// public prefix: then that prefix and the last `PREVIEW_TAIL` characters.
 /// The finding already names the file, line and variable; the value adds
 /// recognition, not identity, and no length or shape of value is safe to show
 /// part of by default.

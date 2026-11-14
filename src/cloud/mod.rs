@@ -304,8 +304,8 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
                 scope,
                 vault,
                 expires_in_days,
-                no_key_bundle,
                 token::Delivery {
+                    no_key_bundle,
                     format,
                     output,
                     force,
