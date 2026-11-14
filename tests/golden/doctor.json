@@ -39,9 +39,9 @@
     },
     {
       "name": "ai_agents",
-      "description": "Check that AI coding agents cannot read .env",
-      "severity": "ok",
-      "details": null,
+      "description": "AI coding agents and .env",
+      "severity": "info",
+      "details": "No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.",
       "fixable": false,
       "fixed": false,
       "ran": true
@@ -60,8 +60,8 @@
     "total": 6,
     "errors": 1,
     "warnings": 2,
-    "passed": 1,
-    "info": 2,
+    "passed": 0,
+    "info": 3,
     "fixable": 2
   },
   "timestamp": "<normalised>"

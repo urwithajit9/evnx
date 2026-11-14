@@ -52,10 +52,18 @@ fn exposed() -> Project {
 }
 
 #[test]
-fn rm25_no_agent_configuration_passes_and_nothing_is_created() {
+fn rm25_no_agent_configuration_is_not_a_pass_and_nothing_is_created() {
     let p = ignored();
     let c = agents(&p);
-    assert_eq!(c["severity"], "ok", "{c}");
+    assert_eq!(c["severity"], "info", "{c}");
+    assert_eq!(c["description"], "AI coding agents and .env", "{c}");
+    assert!(
+        c["details"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("nothing was checked"),
+        "{c}"
+    );
     run(p.path(), &["doctor", "--fix"]);
     for f in [
         ".cursorignore",

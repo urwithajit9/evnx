@@ -13,12 +13,18 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   !  Check file permissions for sensitive files
      .env.production: permissions 644 (recommended: 600)
 
-  1 warning  ·  3 checks passed
+  1 warning  ·  2 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -40,12 +46,18 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   !  Check file permissions for sensitive files
      .env.production: permissions 644 (recommended: 600)
 
-  1 warning  ·  3 checks passed
+  1 warning  ·  2 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -67,11 +79,17 @@ $ evnx doctor --fix
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   ✓  Check file permissions for sensitive files
 
-  4 checks passed
+  3 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -94,13 +112,19 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   !  Check file permissions for sensitive files
      .env (symlink to ../outside-DR6/real.env): permissions 644 (recommended: 600)
      → the target is outside the project, so --fix leaves it: chmod 600 ../outside-DR6/real.env
 
-  1 warning  ·  3 checks passed
+  1 warning  ·  2 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -121,13 +145,19 @@ $ evnx doctor --fix
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   !  Check file permissions for sensitive files
      .env (symlink to ../outside-DR6/real.env): permissions 644 (recommended: 600)
      → the target is outside the project, so --fix leaves it: chmod 600 ../outside-DR6/real.env
 
-  1 warning  ·  3 checks passed
+  1 warning  ·  2 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup

@@ -21,11 +21,17 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   ✓  Check file permissions for sensitive files
 
-  1 warning  ·  4 checks passed
+  1 warning  ·  3 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -46,11 +52,17 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   ✓  Check file permissions for sensitive files
 
-  1 warning  ·  4 checks passed
+  1 warning  ·  3 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -69,22 +81,27 @@ $ evnx doctor --verbose
   !  Check .env.example exists and is Git-tracked
      .env.example not found - consider creating a template
 
-  !  Detect project type and validate dependencies
+  ·  Detect project type and validate dependencies
      ✓ Detected Python project (Python (requirements))
-     python-dotenv not in requirements.txt
+     No library that loads .env found in requirements.txt (python-dotenv, pydantic-settings, django-environ, environs, python-decouple, dynaconf); fine if the platform, Docker `env_file` or `evnx run` supplies the variables
      ✓ Detected Node.js project
-     · Consider adding 'dotenv' package
+     No .env loader found (dotenv, a framework that loads it, or node --env-file)
 
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ✓  Check that AI coding agents cannot read .env
-     No AI coding agent configuration detected
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   ✓  Check file permissions for sensitive files
      .env: permissions 600 (private)
 
-  2 warnings  ·  3 checks passed
+  1 warning  ·  2 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -107,11 +124,17 @@ $ evnx doctor
      Dockerfile with no .dockerignore: a `COPY . .` copies .env into the image
      → evnx doctor --fix adds .env* to .dockerignore
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   ✓  Check file permissions for sensitive files
 
-  2 warnings  ·  3 checks passed
+  2 warnings  ·  2 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -135,11 +158,17 @@ $ evnx doctor
      .dockerignore does not exclude .env*: a `COPY . .` copies .env into the image
      → evnx doctor --fix adds .env* to .dockerignore
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   ✓  Check file permissions for sensitive files
 
-  2 warnings  ·  3 checks passed
+  2 warnings  ·  2 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -161,11 +190,17 @@ $ evnx doctor --fix
 
   ✓  Check for Docker configuration files
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   ✓  Check file permissions for sensitive files
 
-  1 warning  ·  4 checks passed
+  1 warning  ·  3 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup

@@ -319,6 +319,10 @@ fn run_text(
         print_recommendations_text(&report.checks, auto_fix);
     }
 
+    if !quiet {
+        print_not_examined_text();
+    }
+
     finish(&report, strict)
 }
 
@@ -897,25 +901,41 @@ impl DiagnosticCheck for ProjectStructureCheck {
         let detected = detect_project_types(project_root);
         let mut lines = Vec::new();
         let mut severity = Severity::Info;
-        let mut warnings = 0usize;
+        // Whether a line below is only a remark about how the project loads
+        // `.env`: it makes the result Info, never a warning, so it cannot
+        // change the exit code, `--strict` included.
+        let mut remarks = false;
 
         for project_type in detected.iter().map(String::as_str) {
             if project_type.starts_with("Python") {
                 lines.push(format!("✓ Detected Python project ({})", project_type));
                 if project_type.contains("requirements") {
                     if !check_requirements_txt_has_dotenv(project_root)? {
-                        lines.push("! python-dotenv not in requirements.txt".into());
-                        warnings += 1;
+                        lines.push(format!(
+                            "· No library that loads .env found in requirements.txt \
+                             ({}); fine if the platform, Docker `env_file` or `evnx run` \
+                             supplies the variables",
+                            PYTHON_ENV_LOADERS.join(", ")
+                        ));
+                        remarks = true;
                     } else if verbose {
-                        lines.push("✓ python-dotenv dependency found".into());
+                        lines.push("✓ A library that loads .env is listed".into());
                     }
                 } else if verbose && !check_python_manifest_has_dotenv(project_root)? {
-                    lines.push("· Consider adding python-dotenv or pydantic-settings".into());
+                    lines.push(format!(
+                        "· Consider adding a library that loads .env ({}), unless the \
+                         app gets its variables another way",
+                        PYTHON_ENV_LOADERS.join(", ")
+                    ));
                 }
             } else if project_type == "Node.js" {
                 lines.push("✓ Detected Node.js project".into());
                 if verbose && !check_package_json_has_dotenv(project_root)? {
-                    lines.push("· Consider adding 'dotenv' package".into());
+                    lines.push(
+                        "· No .env loader found (dotenv, a framework that loads it, or \
+                         node --env-file)"
+                            .into(),
+                    );
                 }
             } else if project_type == "Rust" {
                 lines.push("✓ Detected Rust project".into());
@@ -934,8 +954,8 @@ impl DiagnosticCheck for ProjectStructureCheck {
             }
         }
 
-        if warnings > 0 && severity == Severity::Ok {
-            severity = Severity::Warning;
+        if remarks {
+            severity = Severity::Info;
         }
 
         Ok(self.result(severity, details(lines)))
@@ -1127,10 +1147,10 @@ impl DiagnosticCheck for AgentCheck {
         "ai_agents"
     }
     fn description(&self) -> &'static str {
-        "Check that AI coding agents cannot read .env"
+        "AI coding agents and .env"
     }
 
-    fn run(&self, project_root: &Path, verbose: bool) -> Result<CheckResult> {
+    fn run(&self, project_root: &Path, _verbose: bool) -> Result<CheckResult> {
         let mut lines = Vec::new();
         let mut reachable = false;
         let mut fixable = false;
@@ -1177,12 +1197,17 @@ impl DiagnosticCheck for AgentCheck {
             );
         }
 
-        // A pass, not an info line: most projects use no agent, and a line in
-        // every report would be noise.
+        // Three states, not two: nothing found is not a pass. An agent may be
+        // set up only in the user's home directory, or be one this list does
+        // not know, so the report says that nothing was checked.
         if lines.is_empty() {
             return Ok(self.result(
-                Severity::Ok,
-                verbose.then(|| "No AI coding agent configuration detected".into()),
+                Severity::Info,
+                Some(
+                    "No agent configuration found in this project, so nothing was \
+                     checked. An agent set up outside the project can read .env."
+                        .into(),
+                ),
             ));
         }
         if !reachable {
@@ -1432,16 +1457,38 @@ fn python_type(project_root: &Path) -> Option<String> {
     None
 }
 
+/// Libraries that read `.env` for a Python project. Any one is enough: a
+/// project that loads it through `pydantic-settings` needs no `python-dotenv`.
+const PYTHON_ENV_LOADERS: &[&str] = &[
+    "python-dotenv",
+    "pydantic-settings",
+    "django-environ",
+    "environs",
+    "python-decouple",
+    "dynaconf",
+];
+
+/// The package a requirements line names, lower-cased with `_` and `.` as `-`
+/// (PEP 503), without extras, version, marker or URL.
+fn requirement_name(line: &str) -> String {
+    line.split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .replace(['_', '.'], "-")
+}
+
+fn is_python_env_loader(package: &str) -> bool {
+    PYTHON_ENV_LOADERS.contains(&package) || package == "dotenv"
+}
+
 fn check_requirements_txt_has_dotenv(project_root: &Path) -> Result<bool> {
     let content = read_project_file(project_root, "requirements.txt")?;
     Ok(content
         .lines()
         .map(str::trim)
         .filter(|l| !l.starts_with('#') && !l.is_empty())
-        .any(|line| {
-            line.starts_with("python-dotenv")
-                || (line.starts_with("dotenv") && !line.contains("django-dotenv"))
-        }))
+        .any(|line| is_python_env_loader(&requirement_name(line))))
 }
 
 /// Whether the Python project's manifest lists a dotenv loader (I-175).
@@ -1459,25 +1506,54 @@ fn check_python_manifest_has_dotenv(project_root: &Path) -> Result<bool> {
         if !project_root.join(manifest).is_file() {
             continue;
         }
-        let content = read_project_file(project_root, manifest)?;
-        found |= content.contains("python-dotenv")
-            || content.contains("pydantic-settings")
-            || content.contains("dynaconf");
+        let content = read_project_file(project_root, manifest)?.to_ascii_lowercase();
+        found |= PYTHON_ENV_LOADERS
+            .iter()
+            .any(|name| content.contains(name) || content.contains(&name.replace('-', "_")));
     }
     Ok(found)
 }
 
+/// Dependencies that load `.env` themselves: dotenv packages, and the
+/// frameworks and config modules that read it at start-up.
+const NODE_ENV_LOADERS: &[&str] = &[
+    "dotenv",
+    "dotenv-cli",
+    "dotenv-expand",
+    "@dotenvx/dotenvx",
+    "env-cmd",
+    "@nestjs/config",
+    "next",
+    "nuxt",
+    "vite",
+    "@sveltejs/kit",
+    "astro",
+    "@remix-run/dev",
+    "gatsby",
+    "expo",
+];
+
 fn check_package_json_has_dotenv(project_root: &Path) -> Result<bool> {
     let content = read_project_file(project_root, "package.json")?;
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-        let deps = json
-            .get("dependencies")
-            .or_else(|| json.get("devDependencies"));
-        if let Some(deps) = deps.and_then(|d| d.as_object()) {
-            return Ok(deps.contains_key("dotenv") || deps.contains_key("dotenv-cli"));
-        }
-    }
-    Ok(false)
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return Ok(false);
+    };
+    let in_deps = ["dependencies", "devDependencies"].iter().any(|section| {
+        json.get(section)
+            .and_then(|d| d.as_object())
+            .is_some_and(|deps| NODE_ENV_LOADERS.iter().any(|name| deps.contains_key(*name)))
+    });
+    // Node's own loader: `node --env-file=.env` in a script.
+    let in_scripts = json
+        .get("scripts")
+        .and_then(|s| s.as_object())
+        .is_some_and(|scripts| {
+            scripts
+                .values()
+                .filter_map(|v| v.as_str())
+                .any(|cmd| cmd.contains("--env-file"))
+        });
+    Ok(in_deps || in_scripts)
 }
 
 fn check_cargo_has_dotenv(project_root: &Path) -> Result<bool> {
@@ -1548,6 +1624,24 @@ fn print_summary_text(summary: &Summary) {
         println!("  {}", parts.join("  ·  "));
     }
 }
+
+/// What `doctor` does not look at, and the command that does: it checks where
+/// the files are and who can read them, not what is in them. Printed at the
+/// end of every text report, so a clean report is not read as "the values are
+/// right".
+fn print_not_examined_text() {
+    println!();
+    println!("  {}", "Not examined here:".bold());
+    for (what, command) in NOT_EXAMINED {
+        println!("    {what:<28} {}", command.dimmed());
+    }
+}
+
+const NOT_EXAMINED: &[(&str, &str)] = &[
+    ("values and required names", "evnx validate"),
+    ("template drift", "evnx sync --check"),
+    ("secrets in the project", "evnx scan"),
+];
 
 fn print_recommendations_text(checks: &[CheckResult], auto_fix_enabled: bool) {
     let fixable: Vec<_> = checks.iter().filter(|c| c.fixable && !c.fixed).collect();
