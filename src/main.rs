@@ -571,6 +571,12 @@ fn main() -> Result<()> {
             to: opts.to.clone(),
             dry_run: opts.dry_run,
             print_only: opts.print_only,
+            output: opts.output.clone(),
+            force: opts.force,
+            gitignore: evnx::utils::protect::GitignoreMode::from_flags(
+                opts.gitignore,
+                opts.no_gitignore,
+            ),
             skip_existing: opts.skip_existing,
             overwrite: opts.overwrite,
             yes: opts.yes,

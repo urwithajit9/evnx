@@ -677,7 +677,7 @@ fn print_format_help() {
 /// Refuse an output that would destroy something: the input itself (by any
 /// name — path, symlink or hard link), or an existing file without `--force`
 /// (DEC-G5).
-fn check_output(input: &str, output: &str, force: bool) -> Result<()> {
+pub(crate) fn check_output(input: &str, output: &str, force: bool) -> Result<()> {
     // template's wording: one rule, read the same way in both (R-template).
     crate::core::safe_write::refuse_same_file(output, "env file", input)?;
     if !force && std::fs::symlink_metadata(output).is_ok() {

@@ -443,3 +443,110 @@ fn t_mig_49_readme_migrate_examples_run() {
     }
     assert!(ran >= 5, "only {ran} examples found");
 }
+
+// ── --output and the terminal default ───────────────────────────────────────
+
+/// A value the project holds under a secret name, built at run time.
+fn planted() -> String {
+    format!("{}{}", "pw-", "Zq8Xk2mP9vLw3nB7")
+}
+
+#[test]
+fn output_writes_the_commands_with_values_to_a_private_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let value = planted();
+    let p = Project::new().env(&format!("API_SECRET={value}\nPORT=8080\n"));
+    let mut args = HEROKU.to_vec();
+    args.extend(["-o", "run.sh", "--no-gitignore"]);
+    let out = migrate(&p, &args);
+    out.assert_code(0);
+    assert!(
+        !out.stdout.contains(&value),
+        "the commands went to the file, not stdout:\n{}",
+        out.stdout
+    );
+    let script = p.read("run.sh");
+    assert!(script.contains("heroku config:set"), "{script}");
+    assert!(script.contains(&value), "the file holds the real values");
+    assert!(
+        !script.contains('\u{1b}'),
+        "no colour codes in a file: {script:?}"
+    );
+    let mode = std::fs::metadata(p.join("run.sh"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+    let check = std::process::Command::new("sh")
+        .args(["-n", "run.sh"])
+        .current_dir(p.path())
+        .output()
+        .unwrap();
+    assert!(check.status.success(), "{script}");
+}
+
+#[test]
+fn output_refuses_an_existing_file_without_force() {
+    let p = Project::new()
+        .env("API_SECRET=abc123\n")
+        .file("run.sh", "keep me\n");
+    let mut args = HEROKU.to_vec();
+    args.extend(["-o", "run.sh", "--no-gitignore"]);
+    let out = migrate(&p, &args);
+    assert_ne!(out.code, Some(0), "{}", out.all());
+    assert!(out.all().contains("--force"), "{}", out.all());
+    assert_eq!(p.read("run.sh"), "keep me\n");
+
+    args.push("--force");
+    migrate(&p, &args).assert_code(0);
+    assert!(p.read("run.sh").contains("heroku config:set"));
+}
+
+#[test]
+fn output_offers_to_git_ignore_the_file_like_convert() {
+    let p = Project::new().git().env("API_SECRET=abc123\n");
+    let mut args = HEROKU.to_vec();
+    args.extend(["-o", "run.sh", "--gitignore"]);
+    migrate(&p, &args).assert_code(0);
+    assert!(p.is_ignored("run.sh"));
+}
+
+#[test]
+fn output_does_not_combine_with_print_only() {
+    let p = Project::new().env("A=1\n");
+    let mut args = HEROKU.to_vec();
+    args.extend(["-o", "run.sh", "--print-only"]);
+    migrate(&p, &args).assert_code(2);
+    assert!(!p.exists("run.sh"));
+}
+
+/// Piped, with neither flag: the real commands, as before.
+#[test]
+fn without_a_terminal_and_without_flags_the_values_are_printed() {
+    let value = planted();
+    let p = Project::new().env(&format!("API_SECRET={value}\n"));
+    let out = migrate(&p, HEROKU);
+    out.assert_code(0);
+    assert!(out.stdout.contains(&value), "{}", out.stdout);
+}
+
+/// On a terminal the commands are for reading: values hidden, and one line
+/// says how to get the runnable form. `--print-only` still prints them.
+#[test]
+fn on_a_terminal_the_values_are_hidden_unless_asked_for() {
+    use support::pty::Pty;
+    let value = planted();
+    let p = Project::new().env(&format!("API_SECRET={value}\nPORT=8080\n"));
+    let mut args = vec!["migrate", "--from", "env-file"];
+    args.extend_from_slice(HEROKU);
+    let (text, code) = Pty::spawn(p.path(), &args).finish();
+    assert_eq!(code, 0, "{text}");
+    assert!(!text.contains(&value), "{text}");
+    assert!(text.contains("heroku config:set"), "{text}");
+    assert!(text.contains("--output FILE"), "{text}");
+
+    args.push("--print-only");
+    let (text, code) = Pty::spawn(p.path(), &args).finish();
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains(&value), "--print-only is an explicit request");
+}

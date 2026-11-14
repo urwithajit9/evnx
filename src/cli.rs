@@ -334,13 +334,36 @@ pub struct MigrateOptions {
     #[arg(long)]
     pub dry_run: bool,
 
-    /// Write only the commands to stdout; everything else goes to stderr.
+    /// Write only the commands to stdout, with the real values; everything
+    /// else goes to stderr.
     ///
-    /// `evnx migrate --to heroku --heroku-app my-app --print-only > run.sh`
-    /// saves a script you can read, then run. Not for github-actions, which
-    /// uploads instead of printing.
-    #[arg(long, conflicts_with = "dry_run")]
+    /// `evnx migrate --to heroku --heroku-app my-app --print-only | sh` runs
+    /// them. In a terminal, without --print-only or --output, the values are
+    /// shown as `<hidden>`; when stdout is not a terminal (a pipe, a file) and
+    /// neither flag is given, the real values are printed, so pipelines keep
+    /// working. Not for github-actions, which uploads instead of printing.
+    #[arg(long, conflicts_with_all = ["dry_run", "output"])]
     pub print_only: bool,
+
+    /// Write the commands, with the real values, to FILE (mode 0600).
+    ///
+    /// `evnx migrate --to gcp-secret-manager --project p -o upload.sh` saves a
+    /// script you can read, then run. An existing FILE is refused without
+    /// --force. Not for github-actions, which uploads instead of printing.
+    #[arg(long, short = 'o', value_name = "FILE", conflicts_with = "dry_run")]
+    pub output: Option<String>,
+
+    /// Replace FILE when it already exists (with --output).
+    #[arg(long, requires = "output")]
+    pub force: bool,
+
+    /// Add the --output file to .gitignore without asking (no prompt).
+    #[arg(long, requires = "output", conflicts_with = "no_gitignore")]
+    pub gitignore: bool,
+
+    /// Skip the .gitignore check for the --output file.
+    #[arg(long, requires = "output", conflicts_with = "gitignore")]
+    pub no_gitignore: bool,
 
     /// Skip secrets that already exist at the destination
     #[arg(long)]
@@ -2948,8 +2971,11 @@ Examples:
   # Print the commands, read them, then run them
   evnx migrate --to heroku --heroku-app my-app
 
-  # Save only the commands, as a script
-  evnx migrate --to gcp-secret-manager --project my-gcp-project --print-only > upload.sh
+  # Save the commands as a private script (0600), values included
+  evnx migrate --to gcp-secret-manager --project my-gcp-project -o upload.sh
+
+  # Run them straight away
+  evnx migrate --to heroku --heroku-app my-app --print-only | sh
 
   # Another environment: .env.production
   evnx migrate --env-name production --to azure-keyvault --vault-name prod-vault
