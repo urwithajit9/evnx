@@ -980,7 +980,24 @@ pub fn remove(
     ])?)?;
 
     crate::say!("  {} removed {}", "✓".green(), member.email);
+    say_vault_access_is_unchanged(&member.email);
     Ok(())
+}
+
+/// After `org remove`: organisations and vaults are separate, so the member's
+/// vault shares are untouched. Names the two commands that check and end them.
+fn say_vault_access_is_unchanged(email: &str) {
+    crate::say!();
+    crate::say!(
+        "  {} This did not change vault access: {} can still reach the vaults shared with them.",
+        "!".yellow(),
+        email
+    );
+    crate::say!("      evnx vault members <vault>                  to check");
+    crate::say!(
+        "      evnx vault revoke <vault> --user {}    to end access and rotate the key",
+        word(email)
+    );
 }
 
 /// `evnx org delete [--org <slug>] [--force]`

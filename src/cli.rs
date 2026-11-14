@@ -1458,7 +1458,10 @@ pub enum VaultCommands {
     ///
     /// Your master password opens the vault key on this machine, and it is
     /// re-wrapped to the recipient's public keys before it leaves. The server
-    /// never sees it unwrapped and cannot grant access itself.
+    /// never sees the key unwrapped.
+    ///
+    /// Note: the recipient's public keys are supplied by the server and are
+    /// not yet verified independently. See SECURITY.md.
     ///
     /// The wrap is hybrid X25519 + ML-KEM-768, so it holds even against an
     /// adversary recording it today for a quantum computer later.
