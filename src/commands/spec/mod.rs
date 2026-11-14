@@ -597,7 +597,7 @@ const INIT_GENERATED: &str =
 pub(crate) fn contract_into(
     path: &Path,
     vars: &crate::schema::models::VarCollection,
-) -> Result<Vec<String>> {
+) -> Result<Declared> {
     let (entries, left_out) = from_collection(vars)?;
     for (name, format) in &left_out {
         ui::warning(format!(
@@ -613,7 +613,7 @@ pub(crate) fn contract_into(
             Err(e) => return Err(e).with_context(|| format!("Failed to read {}", path.display())),
         };
         if config::has_vars_section(&existing) {
-            return Ok(Vec::new());
+            return Ok(Declared::default());
         }
         let mut out = existing;
         if !out.is_empty() && !out.ends_with('\n') {
@@ -623,11 +623,27 @@ pub(crate) fn contract_into(
         out.push_str("\n[vars]\n");
         let written = config::save(path, &out)?;
         crate::core::safe_write::report(&written);
-        return Ok(Vec::new());
+        return Ok(Declared::default());
     }
-    let names = entries.iter().map(|e| e.name.clone()).collect();
+    let declared = Declared {
+        names: entries.iter().map(|e| e.name.clone()).collect(),
+        secret: entries
+            .iter()
+            .filter(|e| e.spec.secret == Some(true))
+            .count(),
+        with_format: entries.iter().filter(|e| e.spec.format.is_some()).count(),
+    };
     write_into_with(path, &entries, true, INIT_GENERATED, MERGED)?;
-    Ok(names)
+    Ok(declared)
+}
+
+/// What [`contract_into`] declared: the names, and how many of them it marked
+/// secret or gave a format, so `init` can say what it guessed.
+#[derive(Debug, Default)]
+pub(crate) struct Declared {
+    pub names: Vec<String>,
+    pub secret: usize,
+    pub with_format: usize,
 }
 
 #[cfg(test)]

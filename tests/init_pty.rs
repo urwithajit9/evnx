@@ -179,7 +179,7 @@ fn an_abort_prints_no_next_steps() {
 }
 
 /// N-01 (fixed in 0.10.1, group C) and DQ-4 (group E): keeping an existing
-/// template says so, claims nothing was generated, gives no "Next steps", and
+/// template says so, does not claim nothing was generated, gives no "Next steps", and
 /// offers to create `.env` from it. Answering yes makes a byte copy.
 #[test]
 fn keeping_the_template_offers_to_create_env() {
@@ -201,7 +201,7 @@ fn keeping_the_template_offers_to_create_env() {
 
     assert_eq!(code, 0);
     assert!(
-        shown.contains("Kept the existing .env.example. Nothing was generated."),
+        shown.contains("Kept the existing .env.example: it was not changed."),
         "{shown}"
     );
     assert!(rest.contains("Created .env from .env.example"), "{rest}");

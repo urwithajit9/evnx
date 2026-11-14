@@ -9,7 +9,7 @@ $ evnx init --with next,pg --yes
 ✓ Created .env from template
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
 ✓ Created .env.example with 10 variables from 2 components
-  ✓ created .evnx.toml with 10 variable(s) in [vars]
+  ✓ 10 names from .env.example → .evnx.toml (3 secret, 5 with a format)
 
 Next steps:
   1. Edit .env and replace placeholder values

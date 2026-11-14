@@ -130,7 +130,7 @@ Generate .env files with these variables? yes
 Since 0.10.16 the run also writes the contract, one `[vars]` entry per variable:
 
 ```
-  ✓ created .evnx.toml with 28 variable(s) in [vars]
+  ✓ 28 names from .env.example → .evnx.toml (10 secret, 6 with a format)
 ```
 
 Next.js stacks also get `NEXT_PUBLIC_` copies of service values that are meant for the

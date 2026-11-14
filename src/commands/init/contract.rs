@@ -21,6 +21,7 @@
 //! which command made it. A write that fails is said and does not fail init:
 //! the env files are already written.
 
+use colored::Colorize;
 use std::path::Path;
 
 use crate::commands::spec::writeback::{self, Outcome};
@@ -42,28 +43,75 @@ pub(crate) fn record(
     whole: &VarCollection,
 ) -> impl FnOnce() {
     let verbose = target.verbose;
+    let template = target.template_name().to_string();
+    let mut counts = None;
     let done: Result<Outcome, (std::path::PathBuf, anyhow::Error)> = match plan(target) {
         Ok(Contract::Record(path)) => {
             writeback::record(&target.root, written).map_err(|e| (path, e))
         }
         Ok(Contract::Create(path)) => crate::commands::spec::contract_into(&path, whole)
-            .map(|names| Outcome::Created {
-                names,
-                config: path.clone(),
+            .map(|d| {
+                counts = Some((d.secret, d.with_format));
+                Outcome::Created {
+                    names: d.names,
+                    config: path.clone(),
+                }
             })
             .map_err(|e| (path, e)),
         Ok(Contract::Append(path)) => crate::commands::spec::contract_into(&path, whole)
-            .map(|names| Outcome::Wrote {
-                names,
-                config: path.clone(),
-                through: None,
+            .map(|d| {
+                counts = Some((d.secret, d.with_format));
+                Outcome::Wrote {
+                    names: d.names,
+                    config: path.clone(),
+                    through: None,
+                }
             })
             .map_err(|e| (path, e)),
         Err(e) => Err((target.root.clone(), e)),
     };
     move || match done {
+        // Only a contract built from the template: a record into an existing
+        // `[vars]` keeps `writeback`'s line.
+        Ok(Outcome::Created { names, config } | Outcome::Wrote { names, config, .. })
+            if !names.is_empty() && counts.is_some() =>
+        {
+            say_where_from(
+                &names,
+                &config,
+                &template,
+                counts.unwrap_or_default(),
+                verbose,
+            );
+        }
         Ok(outcome) => writeback::report(&outcome, verbose),
         Err((path, e)) => could_not(&path, &e),
+    }
+}
+
+/// The line for a contract `init` wrote: where its names came from, where they
+/// went, and what was guessed for them. stderr, hidden by `-q`, as the
+/// contract line always was.
+fn say_where_from(
+    names: &[String],
+    config: &Path,
+    template: &str,
+    (secret, with_format): (usize, usize),
+    verbose: bool,
+) {
+    if ui::is_quiet() {
+        return;
+    }
+    eprintln!(
+        "  {} {} from {template} → {} ({secret} secret, {with_format} with a format)",
+        ui::glyph::OK.green(),
+        crate::utils::string::count(names.len(), "name"),
+        ui::short_path(config),
+    );
+    if verbose {
+        for n in names {
+            eprintln!("     {n}");
+        }
     }
 }
 

@@ -2177,9 +2177,11 @@ pub enum Commands {
     /// • Architect: Build your stack step-by-step (language → framework → services → infra)
     ///
     /// Writes into the template the project uses (`[defaults] example`, else
-    /// .env.example, .env.sample or .env.template). `.env` is never replaced:
-    /// names it lacks are appended. `.evnx.toml` gets a [vars] entry per
-    /// variable, or the new names are recorded into the one in force.
+    /// .env.example, .env.sample or .env.template). An existing `.env` is never
+    /// replaced, and when `init` keeps a template you already have it leaves
+    /// `.env` as it is: it does not add the names `.env` lacks. Run
+    /// `evnx sync --direction reverse` to add them. `.evnx.toml` gets a [vars]
+    /// entry per variable, or the new names are recorded into the one in force.
     #[command(after_help = docs::INIT.after_help)]
     Init {
         /// Output path for .env files.
