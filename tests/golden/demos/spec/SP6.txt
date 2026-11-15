@@ -27,7 +27,7 @@ $ evnx scan live.env
   scanning live.env
 
   ✗  Stripe Secret Key (LIVE)                    critical
-     live.env:1 (STRIPE_KEY)  sk_l…aaaa
+     live.env:1 (STRIPE_KEY)  sk_live_…aa
      !  matches a live key format, not a placeholder
      →  revoke at https://dashboard.stripe.com/apikeys
 

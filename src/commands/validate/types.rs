@@ -155,7 +155,18 @@ pub struct FixApplied {
     /// one file, 0600, not a terminal scrollback or a CI log.
     #[serde(default)]
     pub old_value_withheld: bool,
+    /// What was written. ⛔ Never serialised: a report says how long the new
+    /// value is ([`new_length`](Self::new_length)), not what it is, because a
+    /// generated secret printed here lands in terminal scrollback and CI logs.
+    #[serde(skip_serializing, default)]
     pub new_value: String,
+    /// Characters in the value that was written.
+    #[serde(default)]
+    pub new_length: usize,
+    /// Whether evnx made the value up (a random secret), so the report names
+    /// its length and nothing else.
+    #[serde(skip, default)]
+    pub generated: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

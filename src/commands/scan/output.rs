@@ -810,6 +810,10 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
         }));
     }
 
+    // Findings with no variable are told apart by their order within the same
+    // file and rule: nothing about the value goes into the fingerprint.
+    let mut ordinals: std::collections::HashMap<(String, String), usize> =
+        std::collections::HashMap::new();
     let sarif_results: Vec<serde_json::Value> = results
         .findings
         .iter()
@@ -827,7 +831,13 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
             // should be able to see why.
             let fingerprint = match &f.variable {
                 Some(v) => format!("{file}::{v}::{id}"),
-                None => format!("{file}::{}::{id}", f.value_preview),
+                None => {
+                    let n = ordinals
+                        .entry((file.to_string(), id.to_string()))
+                        .or_insert(0);
+                    *n += 1;
+                    format!("{file}::{id}::#{n}")
+                }
             };
 
             let mut result = serde_json::json!({

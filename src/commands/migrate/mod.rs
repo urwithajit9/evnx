@@ -61,6 +61,10 @@ pub struct MigrateArgs {
     pub dry_run: bool,
     /// `--print-only`: stdout holds the commands and nothing else (I-111).
     pub print_only: bool,
+    /// `-o FILE`: the commands, real values, to a private file.
+    pub output: Option<String>,
+    pub force: bool,
+    pub gitignore: crate::utils::protect::GitignoreMode,
     pub skip_existing: bool,
     pub overwrite: bool,
     pub yes: bool,
@@ -106,6 +110,7 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
     let out = Out {
         quiet: ui::is_quiet(),
         print_only: args.print_only,
+        to_file: args.output.is_some(),
     };
 
     if args.verbose {
@@ -136,6 +141,16 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
             "--print-only applies to destinations evnx prints commands for. \
              `{destination}` uploads; drop --print-only, or preview with --dry-run."
         );
+    }
+    if args.output.is_some() && destinations::uploads(&destination) {
+        anyhow::bail!(
+            "--output applies to destinations evnx prints commands for. \
+             `{destination}` uploads; drop --output, or preview with --dry-run."
+        );
+    }
+    // Before anything is built, so a refusal writes nothing.
+    if let Some(path) = args.output.as_deref() {
+        crate::commands::convert::check_output(&args.source_file, path, args.force)?;
     }
 
     // ── Load secrets from source ──────────────────────────────────────────
@@ -304,9 +319,58 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         ..Default::default()
     };
 
-    let result = dest.migrate(&secrets, &opts)?;
+    // In a terminal, without --print-only or --output, the commands are for
+    // reading: values are hidden. A pipe or a file gets the real commands, as
+    // it always did.
+    let masked = !args.print_only
+        && args.output.is_none()
+        && !args.dry_run
+        && dest.kind() == DestinationKind::EmitsCommands
+        && std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let hidden: IndexMap<String, String> = if masked {
+        secrets
+            .keys()
+            .map(|k| (k.clone(), "<hidden>".to_string()))
+            .collect()
+    } else {
+        IndexMap::new()
+    };
+    let shown = if masked { &hidden } else { &secrets };
+
+    // `-o`: the commands are plain text for the file, never coloured.
+    if args.output.is_some() {
+        colored::control::set_override(false);
+    }
+    let result = dest.migrate(shown, &opts);
+    if args.output.is_some() {
+        colored::control::unset_override();
+    }
+    let result = result?;
+
+    if let Some(path) = args.output.as_deref() {
+        let commands = Out::take_commands();
+        let written = crate::core::safe_write::write_with_mode(
+            path,
+            commands.as_bytes(),
+            crate::core::permissions::PRIVATE,
+        )
+        .with_context(|| format!("Failed to write output to '{path}'"))?;
+        out.result(format!("Commands written to: {path}"));
+        if written.replaced {
+            out.result(format!("Replaced {path}"));
+        }
+        crate::core::safe_write::report(&written);
+        crate::utils::protect::protect_output(path, &args.gitignore)?;
+    }
 
     result.print_summary(dest.kind(), args.dry_run, out);
+    if masked {
+        out.result(format!(
+            "     {}",
+            "values are hidden here: use --output FILE, or --print-only | sh, for the runnable form"
+                .yellow()
+        ));
+    }
     if args.dry_run {
         // ⚠️ Deliberately *not* `print_next_steps()`. Every destination's next
         // steps are written for a migration that happened — "verify secrets

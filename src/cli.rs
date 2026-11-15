@@ -334,13 +334,36 @@ pub struct MigrateOptions {
     #[arg(long)]
     pub dry_run: bool,
 
-    /// Write only the commands to stdout; everything else goes to stderr.
+    /// Write only the commands to stdout, with the real values; everything
+    /// else goes to stderr.
     ///
-    /// `evnx migrate --to heroku --heroku-app my-app --print-only > run.sh`
-    /// saves a script you can read, then run. Not for github-actions, which
-    /// uploads instead of printing.
-    #[arg(long, conflicts_with = "dry_run")]
+    /// `evnx migrate --to heroku --heroku-app my-app --print-only | sh` runs
+    /// them. In a terminal, without --print-only or --output, the values are
+    /// shown as `<hidden>`; when stdout is not a terminal (a pipe, a file) and
+    /// neither flag is given, the real values are printed, so pipelines keep
+    /// working. Not for github-actions, which uploads instead of printing.
+    #[arg(long, conflicts_with_all = ["dry_run", "output"])]
     pub print_only: bool,
+
+    /// Write the commands, with the real values, to FILE (mode 0600).
+    ///
+    /// `evnx migrate --to gcp-secret-manager --project p -o upload.sh` saves a
+    /// script you can read, then run. An existing FILE is refused without
+    /// --force. Not for github-actions, which uploads instead of printing.
+    #[arg(long, short = 'o', value_name = "FILE", conflicts_with = "dry_run")]
+    pub output: Option<String>,
+
+    /// Replace FILE when it already exists (with --output).
+    #[arg(long, requires = "output")]
+    pub force: bool,
+
+    /// Add the --output file to .gitignore without asking (no prompt).
+    #[arg(long, requires = "output", conflicts_with = "no_gitignore")]
+    pub gitignore: bool,
+
+    /// Skip the .gitignore check for the --output file.
+    #[arg(long, requires = "output", conflicts_with = "gitignore")]
+    pub no_gitignore: bool,
 
     /// Skip secrets that already exist at the destination
     #[arg(long)]
@@ -1059,8 +1082,24 @@ pub enum AuthCommands {
     /// server stores, still requiring the master password to open. Store it like
     /// the token, and do not commit it or print it into logs. Run it on a
     /// signed-in machine, again after a master-password change, or to rotate CI.
+    ///
+    /// `--format json` prints `{"key_bundle": "..."}` and nothing else; `-o FILE`
+    /// writes the bundle (or that JSON) to FILE with mode 0600 instead of
+    /// printing it, so it can go straight to a secret store.
     #[command(name = "key-bundle")]
-    KeyBundle,
+    KeyBundle {
+        /// `text` (default) or `json`.
+        #[arg(long, value_enum, value_name = "FORMAT", default_value_t = AuthFormat::Text)]
+        format: AuthFormat,
+
+        /// Write to FILE (mode 0600) instead of stdout.
+        #[arg(long, short = 'o', value_name = "FILE")]
+        output: Option<String>,
+
+        /// Replace FILE when it already exists (with --output).
+        #[arg(long, requires = "output")]
+        force: bool,
+    },
 
     /// Manage API tokens for CI/CD.
     Token {
@@ -1233,6 +1272,17 @@ pub enum AuthCommands {
     },
 }
 
+/// How `auth token create` and `auth key-bundle` print their result.
+#[cfg(feature = "cloud")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub enum AuthFormat {
+    /// For a person: the result with its guidance.
+    #[default]
+    Text,
+    /// One JSON document and nothing else.
+    Json,
+}
+
 /// Subcommands for `evnx auth token`.
 #[cfg(feature = "cloud")]
 #[derive(Subcommand, Debug)]
@@ -1267,6 +1317,25 @@ pub enum TokenCommands {
         /// Print it later with `evnx auth key-bundle`.
         #[arg(long)]
         no_key_bundle: bool,
+
+        /// `text` (default) or `json`.
+        ///
+        /// `json` prints one document with `name`, `token`, `scope`, `vault`,
+        /// `expires_at` and `key_bundle` (null with --no-key-bundle) and no
+        /// other text, for a script to pass on to a secret store.
+        #[arg(long, value_enum, value_name = "FORMAT", default_value_t = AuthFormat::Text)]
+        format: AuthFormat,
+
+        /// Write the token to FILE (mode 0600) instead of printing it.
+        ///
+        /// With `--format json` the file holds the whole document, the key
+        /// bundle included; without it, only the token (one line).
+        #[arg(long, short = 'o', value_name = "FILE")]
+        output: Option<String>,
+
+        /// Replace FILE when it already exists (with --output).
+        #[arg(long, requires = "output")]
+        force: bool,
     },
 
     /// List the account's live tokens.
@@ -2948,8 +3017,11 @@ Examples:
   # Print the commands, read them, then run them
   evnx migrate --to heroku --heroku-app my-app
 
-  # Save only the commands, as a script
-  evnx migrate --to gcp-secret-manager --project my-gcp-project --print-only > upload.sh
+  # Save the commands as a private script (0600), values included
+  evnx migrate --to gcp-secret-manager --project my-gcp-project -o upload.sh
+
+  # Run them straight away
+  evnx migrate --to heroku --heroku-app my-app --print-only | sh
 
   # Another environment: .env.production
   evnx migrate --env-name production --to azure-keyvault --vault-name prod-vault

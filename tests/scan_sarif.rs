@@ -102,3 +102,26 @@ fn t_scan_62_the_validator_rejects_a_broken_document() {
     doc["version"] = serde_json::json!("2.0.0");
     assert!(validator().iter_errors(&doc).next().is_some());
 }
+
+/// Two findings of one rule and one length in one file, neither tied to a
+/// variable, must not share a fingerprint (GitHub would merge the alerts), and
+/// the fingerprint holds nothing of either value.
+#[test]
+fn findings_without_a_variable_get_different_fingerprints() {
+    let a = format!("AKIA{}", "QWERTYUIOPASDFGH");
+    let b = format!("AKIA{}", "ZXCVBNMLKJHGFDSA");
+    let doc = sarif_for(&[("notes.txt", &format!("see {a} and also {b}\n"))]);
+    let results = doc["runs"][0]["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2, "{doc}");
+    let prints: Vec<&str> = results
+        .iter()
+        .map(|r| r["partialFingerprints"]["evnxSecretV1"].as_str().unwrap())
+        .collect();
+    assert_ne!(prints[0], prints[1]);
+    for p in prints {
+        assert!(
+            !p.contains("AKIA") && !p.contains(&a[4..]) && !p.contains(&b[4..]),
+            "{p}"
+        );
+    }
+}

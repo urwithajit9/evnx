@@ -10,7 +10,7 @@ $ evnx validate --fix
      →  chmod 600 ./.env
 
 Fixed (2):
-  • SECRET_KEY: "changeme" → <random-hex64>
+  • SECRET_KEY: generated (64 chars), written to ./.env (was "changeme")
   • DEBUG: "False" → false
 
 Needs your input (2):
@@ -92,7 +92,7 @@ $ evnx validate --fix --dry-run
      ·  fixable with --fix
 
 Would fix (2):
-  • SECRET_KEY: "changeme" → (a new random secret)
+  • SECRET_KEY: would generate (64 chars) (was "changeme")
   • DEBUG: "False" → false
 
 Would need your input (2):

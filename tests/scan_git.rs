@@ -109,7 +109,7 @@ fn t_i285_an_ignored_untracked_env_is_not_counted() {
     assert!(stdout.contains("--include-ignored"), "{stdout}");
     assert!(!stdout.contains("compromised"), "{stdout}");
     assert!(
-        !stdout.contains("AKIA…LKEY"),
+        !stdout.contains("AKIA…EY"),
         "held back, not listed: {stdout}"
     );
 }
@@ -169,7 +169,7 @@ fn t_i285_a_named_ignored_file_is_reported_in_full() {
     };
     let (code, stdout, _) = scan(&d, &[".env"]);
     assert_eq!(code, 1, "{stdout}");
-    assert!(stdout.contains("AKIA…LKEY"), "{stdout}");
+    assert!(stdout.contains("AKIA…EY"), "{stdout}");
     let v = json(&d, &[".env"]);
     assert_eq!(v["findings"][0]["git"], "ignored", "{v:#}");
 }
@@ -184,7 +184,7 @@ fn t_i285_include_ignored_reports_them_as_findings() {
     };
     let (code, stdout, _) = scan(&d, &["--include-ignored"]);
     assert_eq!(code, 1, "{stdout}");
-    assert!(stdout.contains("AKIA…LKEY"), "{stdout}");
+    assert!(stdout.contains("AKIA…EY"), "{stdout}");
     assert!(!stdout.contains("--include-ignored lists"), "{stdout}");
 }
 

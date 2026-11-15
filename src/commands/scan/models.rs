@@ -62,7 +62,7 @@ pub use crate::core::secretscan::{Confidence, Severity};
 /// # Security Note
 ///
 /// The `value_preview` field should never contain the full secret value.
-/// Use [`truncate_value()`](super::runner::truncate_value) to safely truncate
+/// Use [`preview_value()`](super::runner::preview_value) to safely truncate
 /// before creating a Finding.
 ///
 /// # Example

@@ -12,7 +12,7 @@ $ evnx scan .
      !  matches a live key format, not a placeholder
 
   ✗  AWS Access Key                              critical
-     ./src/main.py:1  AKIA…LKEY
+     ./src/main.py:1  AKIA…EY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 
@@ -60,7 +60,7 @@ $ evnx scan . .
      !  matches a live key format, not a placeholder
 
   ✗  AWS Access Key                              critical
-     ./src/main.py:1  AKIA…LKEY
+     ./src/main.py:1  AKIA…EY
      !  matches a live key format, not a placeholder
      →  revoke at https://console.aws.amazon.com/iam
 

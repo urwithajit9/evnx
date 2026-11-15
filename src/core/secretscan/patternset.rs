@@ -111,7 +111,7 @@ enum Names<'a> {
 ///
 /// `value` is the **matched span**, not the whole line or the whole value — so a
 /// key embedded in a longer string is reported as the key, and masking in
-/// `runner::truncate_value` has the right thing to mask.
+/// `runner::preview_value` has the right thing to mask.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatternMatch {
     /// The rule's stable id (C2).

@@ -1078,15 +1078,77 @@ pub(crate) fn say_key_bundle_guidance() {
     crate::say!("  or paste it into logs. After a master-password change, make a new one.");
 }
 
+/// Whether `path` can be written: its folder exists, and the file does not
+/// unless `force`. Run before anything that cannot be redone (minting a token).
+pub(crate) fn check_secret_target(path: &str, force: bool) -> Result<()> {
+    let parent = std::path::Path::new(path)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty());
+    if let Some(dir) = parent {
+        if !dir.is_dir() {
+            anyhow::bail!("the folder '{}' does not exist.", dir.display());
+        }
+    }
+    if !force && std::fs::symlink_metadata(path).is_ok() {
+        anyhow::bail!("'{path}' already exists. Pass --force to replace it.");
+    }
+    Ok(())
+}
+
+/// Write `content` to `path` as a private file (0600, atomic). An existing file
+/// is refused without `force`: it may hold the token or bundle this replaces.
+pub(crate) fn write_secret_file(path: &str, content: &str, force: bool) -> Result<()> {
+    check_secret_target(path, force)?;
+    let written = crate::core::safe_write::write_with_mode(
+        path,
+        content.as_bytes(),
+        crate::core::permissions::PRIVATE,
+    )
+    .with_context(|| format!("Failed to write '{path}'"))?;
+    crate::core::safe_write::report(&written);
+    Ok(())
+}
+
+/// The document `--format json` prints for a key bundle.
+fn key_bundle_json(bundle: &str) -> String {
+    let doc = serde_json::json!({ "key_bundle": bundle });
+    format!("{doc:#}\n")
+}
+
 /// `evnx auth key-bundle` — print the CI key bundle on its own.
-pub fn key_bundle(server_override: Option<&str>, _verbose: bool) -> Result<()> {
+pub fn key_bundle(
+    server_override: Option<&str>,
+    _verbose: bool,
+    format: crate::cli::AuthFormat,
+    output: Option<&str>,
+    force: bool,
+) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server)?;
     client.require_user_session(
         "create a key bundle",
         "\x20 It is made from your account, on a machine you are signed in on.\n",
     )?;
+    // Refuse before asking the server, so a refusal changes nothing.
+    if let Some(path) = output {
+        check_secret_target(path, force)?;
+    }
     let bundle = fetch_key_bundle(&client)?;
+    let json = format == crate::cli::AuthFormat::Json;
+    if let Some(path) = output {
+        let body = if json {
+            key_bundle_json(&bundle.encode())
+        } else {
+            format!("{}\n", bundle.encode())
+        };
+        write_secret_file(path, &body, force)?;
+        crate::say!("  {} key bundle written to {path}", "✓".green());
+        return Ok(());
+    }
+    if json {
+        print!("{}", key_bundle_json(&bundle.encode()));
+        return Ok(());
+    }
     say_key_bundle_guidance();
     crate::say!();
     println!("{}", bundle.encode());

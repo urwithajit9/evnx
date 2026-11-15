@@ -888,3 +888,40 @@ fn t_i260_rotate_does_not_replace_a_provider_key() {
         .join("\n");
     assert!(!stripe.contains("--rotate-weak-secrets"), "{stripe}");
 }
+
+#[test]
+fn fix_reports_a_generated_value_by_length_in_text_and_json() {
+    let p = fixture();
+    let out = run(p.path(), &["validate", "--fix", "--format", "json"]);
+    let v: Value = serde_json::from_str(&out.stdout).expect("JSON");
+    let fixed = v["fixed"].as_array().expect("fixed array");
+    let secret = fixed
+        .iter()
+        .find(|f| f["variable"] == "SECRET_KEY")
+        .expect("SECRET_KEY fixed");
+    assert!(secret["new_length"].as_u64().unwrap_or(0) >= 32, "{secret}");
+    assert!(secret.get("new_value").is_none(), "{secret}");
+    let written = p.read(".env");
+    let value = written
+        .lines()
+        .find_map(|l| l.strip_prefix("SECRET_KEY="))
+        .expect("SECRET_KEY written");
+    assert!(
+        !out.all().contains(value),
+        "the generated value was printed"
+    );
+
+    let p = fixture();
+    let out = run(p.path(), &["validate", "--fix"]);
+    let value = p
+        .read(".env")
+        .lines()
+        .find_map(|l| l.strip_prefix("SECRET_KEY=").map(str::to_string))
+        .expect("SECRET_KEY written");
+    assert!(!out.all().contains(&value));
+    assert!(
+        out.stdout.contains("SECRET_KEY: generated (") && out.stdout.contains("chars), written to"),
+        "{}",
+        out.stdout
+    );
+}

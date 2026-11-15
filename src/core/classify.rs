@@ -120,6 +120,8 @@ fn lenient_name(key: &str) -> bool {
         "PRIVATE_KEY",
         "AUTH",
         "CREDENTIAL",
+        // A webhook URL is a bearer credential: whoever holds it can post.
+        "WEBHOOK",
     ];
     // ⚠️ Suffix, added 2026-10-07 (S2). The substring list above misses every
     // `*_KEY` that is not spelled `API_KEY` or `PRIVATE_KEY`:
@@ -312,6 +314,17 @@ const CONTEXT_WORDS: &[&str] = &[
     "fake",
 ];
 
+/// `<your-key>`, `<set me>`: the whole value in angle brackets, holding only
+/// letters, `_`, space and `-`. `<s3cr3t…>` (digits or symbols) may be a value.
+fn is_angle_hole(v: &str) -> bool {
+    v.len() >= 2
+        && v.starts_with('<')
+        && v.ends_with('>')
+        && v[1..v.len() - 1]
+            .chars()
+            .all(|c| c.is_ascii_alphabetic() || matches!(c, '_' | ' ' | '-'))
+}
+
 /// Whether `key=value`'s value is a placeholder rather than a real setting.
 /// `key` may be empty when the caller has none: a context word then keeps the
 /// answer each level gave before keys were passed (Lenient yes, Strict no).
@@ -320,10 +333,7 @@ pub fn is_placeholder(key: &str, value: &str, strictness: Strictness) -> bool {
     let lower = v.to_lowercase();
 
     // DEC-G10: holes at both levels.
-    if v.is_empty()
-        || (v.len() >= 2 && v.starts_with('<') && v.ends_with('>'))
-        || HOLES.contains(&lower.as_str())
-    {
+    if v.is_empty() || is_angle_hole(v) || HOLES.contains(&lower.as_str()) {
         return true;
     }
 
@@ -371,7 +381,7 @@ fn strict_rules(value: &str) -> bool {
 
     // `<anything>` — the **whole** value bracketed, which is how a template
     // marks a hole. `a<b` is not one.
-    if v.len() >= 2 && v.starts_with('<') && v.ends_with('>') {
+    if is_angle_hole(v) {
         return true;
     }
 
@@ -561,6 +571,21 @@ fn placeholder_pattern(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_angle_bracket_hole_holds_only_words() {
+        use super::{is_placeholder, Strictness::Strict};
+        assert!(is_placeholder("K", "<your-key>", Strict));
+        assert!(is_placeholder("K", "<set me>", Strict));
+        assert!(is_placeholder("K", "<your_value>", Strict));
+        for v in ["<s3cr3t>", "<abc123def>", "<s3cr3t...>", "<a/b>"] {
+            assert!(!is_placeholder("K", v, Strict), "{v}");
+        }
+        assert_eq!(
+            crate::core::mask::mask("API_PASSWORD", "<s3cr3t...>"),
+            "***"
+        );
+    }
+
     use super::Strictness::{Lenient, Strict};
 
     /// RM-31: a public or publishable key is not a secret by name, at either

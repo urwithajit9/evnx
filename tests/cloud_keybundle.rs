@@ -425,3 +425,163 @@ fn history_under_a_token_does_not_ask_auth_me_who_you_are() {
     assert!(out.stdout.contains("you"), "{}", out.stdout);
     me.assert();
 }
+
+// ── --format json and -o FILE ───────────────────────────────────────────────
+
+#[test]
+fn key_bundle_format_json_prints_one_document() {
+    let a = account("u-ci", &right());
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/auth/me")
+        .with_status(200)
+        .with_body(&a.me)
+        .create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["auth", "key-bundle", "--format", "json"],
+        None,
+    );
+    out.assert_code(0);
+    let v: serde_json::Value = serde_json::from_str(&out.stdout).expect("only JSON on stdout");
+    assert_eq!(v["key_bundle"], a.bundle.as_str());
+}
+
+#[cfg(unix)]
+#[test]
+fn key_bundle_output_writes_a_private_file_and_prints_no_bundle() {
+    use std::os::unix::fs::PermissionsExt;
+    let a = account("u-ci", &right());
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/auth/me")
+        .with_status(200)
+        .with_body(&a.me)
+        .expect_at_least(1)
+        .create();
+    let p = Project::new();
+    let out = signed_in(&p, &s.url(), &["auth", "key-bundle", "-o", "kb.txt"], None);
+    out.assert_code(0);
+    assert!(!out.all().contains(&a.bundle), "{}", out.all());
+    assert_eq!(p.read("kb.txt").trim(), a.bundle);
+    let mode = std::fs::metadata(p.join("kb.txt"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+
+    // A second run refuses to replace it, and --force does.
+    let again = signed_in(&p, &s.url(), &["auth", "key-bundle", "-o", "kb.txt"], None);
+    assert_ne!(again.code, Some(0));
+    assert!(again.all().contains("--force"), "{}", again.all());
+    signed_in(
+        &p,
+        &s.url(),
+        &["auth", "key-bundle", "-o", "kb.txt", "--force"],
+        None,
+    )
+    .assert_code(0);
+}
+
+#[test]
+fn token_create_format_json_has_the_token_and_the_bundle_as_fields() {
+    let a = account("u-ci", &right());
+    let mut s = mockito::Server::new();
+    create_token_mock(&mut s);
+    s.mock("GET", "/api/v1/auth/me")
+        .with_status(200)
+        .with_body(&a.me)
+        .create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["auth", "token", "create", "ci", "--format", "json"],
+        None,
+    );
+    out.assert_code(0);
+    let v: serde_json::Value = serde_json::from_str(&out.stdout).expect("only JSON on stdout");
+    assert_eq!(v["token"], token().as_str());
+    assert_eq!(v["key_bundle"], a.bundle.as_str());
+    assert_eq!(v["name"], "ci");
+    assert_eq!(v["scope"], "read");
+}
+
+#[cfg(unix)]
+#[test]
+fn token_create_output_writes_a_private_file_not_stdout() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut s = mockito::Server::new();
+    create_token_mock(&mut s);
+    let p = Project::new();
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &["auth", "token", "create", "ci", "-o", "tok.txt"],
+        None,
+    );
+    out.assert_code(0);
+    assert!(!out.all().contains(&token()), "{}", out.all());
+    assert_eq!(p.read("tok.txt").trim(), token());
+    let mode = std::fs::metadata(p.join("tok.txt"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+}
+
+#[test]
+fn token_create_output_to_an_existing_file_mints_nothing() {
+    let mut s = mockito::Server::new();
+    let mint = s.mock("POST", "/api/v1/auth/tokens").expect(0).create();
+    let p = Project::new().file("tok.txt", "keep\n");
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &["auth", "token", "create", "ci", "-o", "tok.txt"],
+        None,
+    );
+    assert_ne!(out.code, Some(0));
+    assert_eq!(p.read("tok.txt"), "keep\n");
+    mint.assert();
+}
+
+#[test]
+fn token_create_output_into_a_missing_folder_mints_nothing() {
+    let mut s = mockito::Server::new();
+    let mint = s.mock("POST", "/api/v1/auth/tokens").expect(0).create();
+    let p = Project::new();
+    let out = signed_in(
+        &p,
+        &s.url(),
+        &["auth", "token", "create", "ci", "-o", "nope/tok.txt"],
+        None,
+    );
+    assert_ne!(out.code, Some(0));
+    assert!(out.all().contains("does not exist"), "{}", out.all());
+    mint.assert();
+}
+
+/// `--force` over an older, looser file still ends at 0600.
+#[cfg(unix)]
+#[test]
+fn output_with_force_tightens_an_existing_file_to_0600() {
+    use std::os::unix::fs::PermissionsExt;
+    let a = account("u-ci", &right());
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/auth/me")
+        .with_status(200)
+        .with_body(&a.me)
+        .expect_at_least(1)
+        .create();
+    create_token_mock(&mut s);
+    let p = Project::new().file("out.txt", "old\n");
+    let path = p.join("out.txt");
+    for args in [
+        &["auth", "key-bundle", "-o", "out.txt", "--force"][..],
+        &["auth", "token", "create", "ci", "-o", "out.txt", "--force"][..],
+    ] {
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        signed_in(&p, &s.url(), args, None).assert_code(0);
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "{args:?}");
+    }
+}

@@ -75,7 +75,7 @@ pub use filters::FileFilter;
 pub use models::{Confidence, Finding, ScanResults};
 pub use output::{render, OutputFormat};
 pub use patternset::{PatternMatch, PatternSet};
-pub use runner::{truncate_value, ScanRunner};
+pub use runner::{preview_value, ScanRunner};
 
 // The codes are `core::verdict`'s, as in `sync`; these names stay for callers.
 /// Nothing at or above `--severity`.

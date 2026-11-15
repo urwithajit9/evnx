@@ -25,9 +25,23 @@ Options:
           Preview what would be migrated without making any changes
 
       --print-only
-          Write only the commands to stdout; everything else goes to stderr.
+          Write only the commands to stdout, with the real values; everything else goes to stderr.
           
-          `evnx migrate --to heroku --heroku-app my-app --print-only > run.sh` saves a script you can read, then run. Not for github-actions, which uploads instead of printing.
+          `evnx migrate --to heroku --heroku-app my-app --print-only | sh` runs them. In a terminal, without --print-only or --output, the values are shown as `<hidden>`; when stdout is not a terminal (a pipe, a file) and neither flag is given, the real values are printed, so pipelines keep working. Not for github-actions, which uploads instead of printing.
+
+  -o, --output <FILE>
+          Write the commands, with the real values, to FILE (mode 0600).
+          
+          `evnx migrate --to gcp-secret-manager --project p -o upload.sh` saves a script you can read, then run. An existing FILE is refused without --force. Not for github-actions, which uploads instead of printing.
+
+      --force
+          Replace FILE when it already exists (with --output)
+
+      --gitignore
+          Add the --output file to .gitignore without asking (no prompt)
+
+      --no-gitignore
+          Skip the .gitignore check for the --output file
 
       --skip-existing
           Skip secrets that already exist at the destination
@@ -78,11 +92,20 @@ Options:
       --infisical-env <INFISICAL_ENV>
           Infisical environment name (dev / staging / prod)
 
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
       --vault-name <VAULT_NAME>
           Azure Key Vault name
 
       --heroku-app <HEROKU_APP>
           Heroku application name
+
+      --no-color
+          Disable colored output
 
       --vercel-project <VERCEL_PROJECT>
           Vercel project ID or name (default: the linked project)
@@ -90,17 +113,8 @@ Options:
       --railway-project <RAILWAY_PROJECT>
           Railway project ID (default: the linked project). Needs --railway-environment, as Railway does
 
-  -v, --verbose
-          Enable verbose output
-
-  -q, --quiet
-          Print nothing on success. Findings, warnings, errors and requested data still print
-
       --railway-environment <RAILWAY_ENVIRONMENT>
           Railway environment, e.g. production
-
-      --no-color
-          Disable colored output
 
       --railway-service <RAILWAY_SERVICE>
           Railway service (default: the linked service, or the project's only one)
@@ -115,8 +129,11 @@ Examples:
   # Print the commands, read them, then run them
   evnx migrate --to heroku --heroku-app my-app
 
-  # Save only the commands, as a script
-  evnx migrate --to gcp-secret-manager --project my-gcp-project --print-only > upload.sh
+  # Save the commands as a private script (0600), values included
+  evnx migrate --to gcp-secret-manager --project my-gcp-project -o upload.sh
+
+  # Run them straight away
+  evnx migrate --to heroku --heroku-app my-app --print-only | sh
 
   # Another environment: .env.production
   evnx migrate --env-name production --to azure-keyvault --vault-name prod-vault

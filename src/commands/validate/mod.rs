@@ -926,8 +926,10 @@ fn failure_counts(result: &ValidationResult, fail_on: FailOn) -> String {
 // Output Functions (UI Integration)
 // ─────────────────────────────────────────────────────────────
 
-/// One applied fix: `• NAME: "old" → new`.
-fn print_fix(fix: &FixApplied) {
+/// One applied fix: `• NAME: "old" → new`, or for a value evnx generated
+/// `• NAME: generated (64 chars), written to .env`. A generated value is never
+/// printed; the file holds it.
+fn print_fix(fix: &FixApplied, env_path: &str, dry_run: bool) {
     // Three states, not two: shown, withheld, and never existed.
     // Collapsing the middle one into "(new)" would say a credential was
     // added when it was in fact replaced.
@@ -936,10 +938,35 @@ fn print_fix(fix: &FixApplied) {
         (None, true) => "(previous value withheld — see the .env.bak)".to_string(),
         (None, false) => "(new)".to_string(),
     };
+    if fix.generated {
+        let line = if dry_run {
+            format!("would generate ({} chars)", fix.new_length)
+        } else {
+            format!(
+                "generated ({} chars), written to {env_path}",
+                fix.new_length
+            )
+        };
+        let was = match (&fix.old_value, fix.old_value_withheld) {
+            (Some(v), _) => format!(" (was \"{v}\")"),
+            (None, true) => " (previous value in the .env.bak)".to_string(),
+            (None, false) => String::new(),
+        };
+        println!(
+            "  • {}: {}{}",
+            fix.variable.bold(),
+            line.green(),
+            was.dimmed()
+        );
+        return;
+    }
     let new = if fix.new_value.is_empty() {
         "(empty)".to_string()
-    } else {
+    } else if policy::is_placeholder(&fix.variable, &fix.new_value) {
+        // A placeholder is what the file asks the user to replace.
         fix.new_value.clone()
+    } else {
+        crate::core::mask::mask(&fix.variable, &fix.new_value)
     };
     println!(
         "  • {}: {} → {}",
@@ -963,7 +990,7 @@ fn output_pretty(result: &ValidationResult, env_path: &str) -> Result<()> {
     // A real run shows its fixes first: they already happened. A dry run
     // shows the file's findings first, then what `--fix` would do about them.
     if !result.dry_run {
-        print_fixes(result, true);
+        print_fixes(result, env_path, true);
     }
 
     // Show issues
@@ -995,7 +1022,7 @@ fn output_pretty(result: &ValidationResult, env_path: &str) -> Result<()> {
 
     if result.dry_run {
         // Each finding above ends with its own blank line.
-        print_fixes(result, result.issues.is_empty());
+        print_fixes(result, env_path, result.issues.is_empty());
         println!(
             "  {}",
             format!(
@@ -1063,7 +1090,7 @@ fn output_pretty(result: &ValidationResult, env_path: &str) -> Result<()> {
 
 /// "Fixed (n)" and "Needs your input (n)", or their dry-run forms.
 /// `lead` puts a blank line before the first heading.
-fn print_fixes(result: &ValidationResult, lead: bool) {
+fn print_fixes(result: &ValidationResult, env_path: &str, lead: bool) {
     let (fixed, needs) = if result.dry_run {
         ("Would fix", "Would need your input")
     } else {
@@ -1080,13 +1107,13 @@ fn print_fixes(result: &ValidationResult, lead: bool) {
     if !result.fixed.is_empty() {
         heading(format!("{fixed} ({})", result.fixed.len()));
         for fix in &result.fixed {
-            print_fix(fix);
+            print_fix(fix, env_path, result.dry_run);
         }
     }
     if !result.needs_input.is_empty() {
         heading(format!("{needs} ({})", result.needs_input.len()));
         for fix in &result.needs_input {
-            print_fix(fix);
+            print_fix(fix, env_path, result.dry_run);
             // The placeholder finding is not printed again, but its advice
             // ("Get from Stripe Dashboard") is still worth having.
             if let Some(advice) = result

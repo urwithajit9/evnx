@@ -30,12 +30,32 @@ pub struct Out {
     pub quiet: bool,
     /// `--print-only`: stdout holds commands and nothing else.
     pub print_only: bool,
+    /// `-o FILE`: the commands are collected for the file, not printed.
+    pub to_file: bool,
+}
+
+thread_local! {
+    /// The commands of a `--output` run, in order, until the caller takes them.
+    static COMMANDS: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
 impl Out {
     /// A command, or a comment or blank line that belongs to the commands.
     pub fn command(&self, line: impl Display) {
-        println!("{line}");
+        if self.to_file {
+            COMMANDS.with(|c| {
+                let mut c = c.borrow_mut();
+                c.push_str(&line.to_string());
+                c.push('\n');
+            });
+        } else {
+            println!("{line}");
+        }
+    }
+
+    /// The commands collected by [`command`](Out::command) under `to_file`.
+    pub fn take_commands() -> String {
+        COMMANDS.with(|c| std::mem::take(&mut *c.borrow_mut()))
     }
 
     /// A line about the run — what is being done, what to install, what was
@@ -147,7 +167,9 @@ impl MigrationResult {
                 out.result(format!("  ✓  {} command(s) generated", self.uploaded));
                 // With `--print-only` the commands went to stdout — a file,
                 // usually — and this line to stderr, so they are not "above".
-                let run = if out.print_only {
+                let run = if out.to_file {
+                    "nothing has been uploaded — run the commands in the file"
+                } else if out.print_only {
                     "nothing has been uploaded — run the commands written to stdout"
                 } else {
                     "nothing has been uploaded — run the commands above"
