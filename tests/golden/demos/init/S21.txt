@@ -36,7 +36,7 @@ $ evnx init --detect -p compose
 ✓ Created .env from template
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
 ✓ Created .env.example with 6 variables
-  ✓ added 6 variable(s) to [vars] in .evnx.toml
+  ✓ 6 names from .env.example → compose/.evnx.toml (2 secret, 2 with a format)
 
 Next steps:
   1. Edit .env and replace placeholder values

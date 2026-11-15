@@ -426,7 +426,12 @@ impl Parser {
                 .parent()
                 .filter(|d| !d.as_os_str().is_empty())
                 .unwrap_or(std::path::Path::new("."));
-            if let Some(hint) = crate::core::resolve::other_env_files(dir, None) {
+            let plain = std::path::Path::new(path).file_name()
+                == Some(std::ffi::OsStr::new(crate::core::env_name::DEFAULT_FILE));
+            if let Some(hint) = plain
+                .then(|| crate::core::resolve::other_env_files(dir, None))
+                .flatten()
+            {
                 return hint;
             }
             return "Create it with `evnx init`, or point at another file with --env.".into();

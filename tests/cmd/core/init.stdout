@@ -64,6 +64,9 @@ Options:
       --json
           Print the result as one JSON document on stdout (needs --yes or --dry-run: it never asks). The same fields as `evnx add --json`
 
+      --here
+          Make this folder a project of its own: write `.evnx.toml` here, even when the repository's root already has one, and do not take `[defaults]` from it. Without it, a folder inside a repository records its names in the root's `.evnx.toml`
+
   -v, --verbose
           Enable verbose output
 

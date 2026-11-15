@@ -195,7 +195,9 @@ fn per_env_template_add_with_the_env_name_writes_the_named_env_file() {
 
 /// Reading the parent's configuration stays: a monorepo's sub-folders share it.
 #[test]
-fn nested_commands_read_the_parents_config_and_the_child_files() {
+/// WP-5, D2 (FLD-11): with no git repository, the child is its own project.
+/// The parent's `.evnx.toml` is not read, and `-v` says why.
+fn nested_outside_a_repository_the_parents_config_is_not_read() {
     let l = Layout::new("nested");
     let before = l.snapshot();
     for args in [
@@ -206,8 +208,10 @@ fn nested_commands_read_the_parents_config_and_the_child_files() {
     ] {
         let out = l.evnx_in("child", args);
         out.assert_code(0);
-        out.assert_contains("config    ../.evnx.toml");
+        out.assert_not_contains("config    ../.evnx.toml");
     }
+    let out = l.evnx_in("child", &["-v", "validate"]);
+    out.assert_contains("../.evnx.toml not used: no git repository here");
     assert_eq!(before, l.snapshot(), "a read-only command wrote a file");
 }
 
@@ -266,7 +270,6 @@ fn add_with_the_env_name_writes_the_matching_template() {
 }
 
 #[test]
-#[ignore = "expected: add never writes to a .evnx.toml outside the current folder without being told to; WP-5 step 4"]
 fn nested_add_leaves_the_parents_config_alone() {
     let l = Layout::new("nested");
     let parent_before = l.read(".evnx.toml");
@@ -276,4 +279,32 @@ fn nested_add_leaves_the_parents_config_alone() {
         l.read(".evnx.toml"),
         "the parent's .evnx.toml was written to"
     );
+}
+
+/// WP-5: inside a repository, `init` in a subfolder leaves the root's
+/// `.evnx.toml` in force (I-177); `--here` makes the subfolder a project of
+/// its own.
+#[test]
+fn init_here_writes_the_folders_own_config_inside_a_repository() {
+    let p = support::Project::new()
+        .toml("[vars.ROOT_ONLY]\nrequired = false\n")
+        .git();
+    std::fs::create_dir_all(p.path().join("svc")).unwrap();
+    std::fs::write(p.path().join("svc/.env.example"), "PORT=\n").unwrap();
+    let root_before = p.read(".evnx.toml");
+
+    support::run(&p.path().join("svc"), &["init", "--here", "--yes"]).assert_code(0);
+    assert_eq!(
+        root_before,
+        p.read(".evnx.toml"),
+        "--here wrote the root's config"
+    );
+    assert!(p.read("svc/.evnx.toml").contains("PORT"));
+
+    std::fs::create_dir_all(p.path().join("web")).unwrap();
+    std::fs::write(p.path().join("web/.env.example"), "API_URL=\n").unwrap();
+    support::run(&p.path().join("web"), &["init", "--yes"]).assert_code(0);
+    // Without --here the root's config stays the one in force: no second
+    // file below it (I-177). What init records into it is WP-6's question.
+    assert!(!p.exists("web/.evnx.toml"));
 }

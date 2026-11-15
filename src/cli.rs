@@ -2313,6 +2313,13 @@ pub enum Commands {
         /// --dry-run: it never asks). The same fields as `evnx add --json`.
         #[arg(long)]
         json: bool,
+
+        /// Make this folder a project of its own: write `.evnx.toml` here,
+        /// even when the repository's root already has one, and do not take
+        /// `[defaults]` from it. Without it, a folder inside a repository
+        /// records its names in the root's `.evnx.toml`.
+        #[arg(long)]
+        here: bool,
     },
 
     /// Add environment variables to existing .env files.

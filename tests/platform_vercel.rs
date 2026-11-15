@@ -2418,13 +2418,7 @@ fn prune_in_a_custom_environment_deletes_its_own_and_detaches_the_shared() {
     let out = run(
         &p,
         &v.url(),
-        &push_args(&[
-            "--target",
-            "staging",
-            "--prune",
-            "--yes",
-            "--no-gitignore",
-        ]),
+        &push_args(&["--target", "staging", "--prune", "--yes", "--no-gitignore"]),
     );
     out.assert_code(0);
     quiet_push(&out);

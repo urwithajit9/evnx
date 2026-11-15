@@ -57,6 +57,7 @@ pub fn run(
     dry_run: bool,
     json: bool,
     env_name: Option<String>,
+    here: bool,
 ) -> Result<()> {
     // ⚠️ Before the header and before any project is touched. Listing is a
     // question about evnx, not about this directory — it has to work with no
@@ -91,7 +92,9 @@ pub fn run(
         dry_run,
         json,
     )?;
-    let target = shared::Target::new(Path::new(&path), config, verbose)?.with_env_name(env_name)?;
+    let mut target =
+        shared::Target::new(Path::new(&path), config, verbose)?.with_env_name(env_name)?;
+    target.here = here;
 
     if from_source {
         print_init_header();

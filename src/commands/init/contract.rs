@@ -127,7 +127,11 @@ pub(crate) enum Contract {
 }
 
 pub(crate) fn plan(target: &Target) -> anyhow::Result<Contract> {
-    let Some(path) = config::find(&target.root) else {
+    // `--here`: a config above this folder is not this project's.
+    let found = config::find(&target.root).filter(|found| {
+        !target.here || found.parent() == std::path::absolute(&target.root).ok().as_deref()
+    });
+    let Some(path) = found else {
         // Absolute, as `find` returns one, so it is shown like every other
         // config line (`.evnx.toml`, not `./.evnx.toml`).
         let root = std::path::absolute(&target.root).unwrap_or_else(|_| target.root.clone());

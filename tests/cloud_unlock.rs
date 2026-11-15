@@ -923,7 +923,8 @@ fn rm86_the_bound_file_is_the_same_from_every_folder() {
         )
         .file(".gitignore", ".env*\n")
         .file("deploy/.keep", "")
-        .file("tools/.keep", "");
+        .file("tools/.keep", "")
+        .git();
     let cfg = p.path().join("cfg");
     support::cloud::login(&cfg, &s.url());
     let out = support::run_with(

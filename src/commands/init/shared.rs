@@ -46,6 +46,8 @@ pub struct Target {
     /// The env file init writes: `.env`, or `.env.<name>` from `--env-name`
     /// or `[defaults] env_name`.
     pub env_file: String,
+    /// `--here`: this folder's own `.evnx.toml`, whatever is above (WP-5).
+    pub here: bool,
 }
 
 impl Target {
@@ -57,6 +59,7 @@ impl Target {
             verbose,
             env_name: None,
             env_file: String::new(),
+            here: false,
         };
         target.resolve()?;
         Ok(target)

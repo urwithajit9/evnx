@@ -118,7 +118,9 @@ fn stripe() -> String {
 /// run inside `apps/web`, as from the root.
 #[test]
 fn scan_exclude_is_read_from_the_config_folder() {
-    let p = Project::new().toml("[scan]\nexclude = [\"apps/web/fixtures/**\"]\n");
+    let p = Project::new()
+        .toml("[scan]\nexclude = [\"apps/web/fixtures/**\"]\n")
+        .git();
     let key = stripe();
     for f in ["apps/web/fixtures/a.txt", "apps/web/src/b.txt"] {
         let path = p.path().join(f);
@@ -143,7 +145,9 @@ fn scan_exclude_is_read_from_the_config_folder() {
 /// rest of the rule).
 #[test]
 fn defaults_example_is_read_from_the_config_folder_in_a_subfolder() {
-    let p = Project::new().toml("[defaults]\nexample = \"tpl/app.env\"\n");
+    let p = Project::new()
+        .toml("[defaults]\nexample = \"tpl/app.env\"\n")
+        .git();
     fs::create_dir_all(p.path().join("tpl")).unwrap();
     fs::write(p.path().join("tpl/app.env"), "A=x\nFROM_TEMPLATE=x\n").unwrap();
     fs::create_dir_all(p.path().join("sub")).unwrap();

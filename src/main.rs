@@ -146,6 +146,14 @@ fn main() -> Result<()> {
     for warning in &loaded.warnings {
         evnx::utils::ui::config_warning(warning, cli.quiet);
     }
+    // D2, FLD-11: outside a git repository a parent folder's config is not
+    // used; say which, under -v, so a missing policy is explainable.
+    if let (Some(parent), true, false) = (&loaded.ignored_parent, cli.verbose, cli.quiet) {
+        eprintln!(
+            "  config    {} not used: no git repository here, so only this folder's .evnx.toml applies",
+            evnx::utils::ui::short_path(parent)
+        );
+    }
     let config_source = loaded.source.clone();
     let cfg = loaded.config;
 
@@ -164,10 +172,13 @@ fn main() -> Result<()> {
             env_name,
             dry_run,
             json,
+            here,
         } => {
             // The target's own config, before anything is written (I-298).
-            // `--list-components` is about evnx, not a project.
-            let target_config = if list_components {
+            // `--list-components` is about evnx, not a project; `--here`
+            // takes nothing from a config above the folder.
+            let own = Path::new(&path).join(evnx::core::config::PROJECT_FILE);
+            let target_config = if list_components || (here && !own.is_file()) {
                 evnx::core::config::Config::default()
             } else {
                 match commands::init::target_config(Path::new(&path), config_source.as_deref()) {
@@ -189,6 +200,7 @@ fn main() -> Result<()> {
                 dry_run,
                 json,
                 env_name,
+                here,
             )
         }
 
