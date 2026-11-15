@@ -79,6 +79,13 @@ impl Pty {
         Pty { session }
     }
 
+    /// Change how long the next waits last (default 15 s). For the step after
+    /// a slow one, such as key derivation at opt-level 0 on a slow runner.
+    /// A hang still fails by timeout.
+    pub fn allow(&mut self, timeout: Duration) {
+        self.session.set_expect_timeout(Some(timeout));
+    }
+
     /// Wait until `text` has been printed; returns everything printed before it.
     #[track_caller]
     pub fn wait_for(&mut self, text: &str) -> String {

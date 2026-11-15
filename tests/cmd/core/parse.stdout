@@ -1,0 +1,42 @@
+List what evnx reads from a `.env`: line, key and flags, never a value.
+
+Flags say whether each value is empty, a placeholder or a secret. Every problem in the file is listed, and the exit code is 1 when there is one. `--format json` is what `evnx validate --input-format json` reads.
+
+Usage: evnx parse [OPTIONS]
+
+Options:
+      --env <ENV>
+          The file to read, or `-` for stdin. Defaults to `.env`, or `[defaults] env_name`
+
+      --env-name <NAME>
+          Read `.env.<NAME>` instead of `.env`
+
+      --format <FORMAT>
+          Output format: `pretty` or `json`
+          
+          [default: pretty]
+
+      --values
+          Print each value too, in plain text.
+          
+          Refused when stdout is a terminal, unless --yes: a value printed there stays in the scrollback.
+
+  -y, --yes
+          Print --values to a terminal anyway
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Full guide: https://docs.evnx.dev/cli/commands/parse

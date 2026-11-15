@@ -1,0 +1,88 @@
+Restore from encrypted backup
+
+Usage: evnx restore [OPTIONS] <BACKUP>
+
+Arguments:
+  <BACKUP>
+          The backup file to decrypt, as written by `evnx backup`.
+          
+          A file on disk. For a vault in evnx cloud, use `evnx cloud pull`.
+
+Options:
+      --output <OUTPUT>
+          Where to write the restored file.
+          
+          Defaults to the file the backup was made from — `.env.staging` for a backup of `.env.staging` — in the current folder (since 0.11.0; it was always `.env`). A recorded name that is not `.env` or `.env.<name>` restores to `.env`.
+          
+          An existing file is never replaced silently: evnx asks, or takes --yes, and keeps the replaced file as <output>.bak. Content that is not a .env evnx can read goes to <output>.restored instead (exit 5).
+
+  -y, --yes
+          Replace an existing --output without asking.
+          
+          For scripts and CI, where there is no terminal to ask on. The file it replaces is kept beside it as <output>.bak (replacing the previous copy). Without it, and without a terminal, an existing output stops the run (exit 2). Also accepted as --force, as in `cloud pull`.
+          
+          [aliases: --force]
+
+      --gitignore
+          Add the restored file to .gitignore without asking (no prompt)
+
+      --no-gitignore
+          Skip the .gitignore check for the restored file
+
+      --dry-run
+          Decrypt and validate but do not write any files
+
+      --inspect
+          List variable names (never values) without writing any files.
+          
+          Decrypts the backup and prints each key name to stdout. Values are never displayed. No files are written and no overwrite prompt is shown. Use this to answer "what keys are in this backup?" before committing to a full restore.
+          
+          Example: evnx restore .env.backup --inspect
+
+      --password-file <PATH>
+          Read the decryption password from a file instead of prompting.
+          
+          The file should contain only the password; leading and trailing whitespace, such as a final newline, is trimmed. Intended for CI/CD pipelines where interactive prompts are not possible.
+          
+          Security: less secure than the interactive prompt. The file path may appear in process listings and shell history. Use a secrets manager or a tmpfs-backed path (e.g. /run/secrets/) in production.
+          
+          EVNX_PASSWORD environment variable is also accepted and takes lower priority than --password-file; when both are set, the file wins and a warning says so.
+          
+          Also accepted as --key-file, which is what `evnx backup` calls the same thing. Either spelling reads the file identically on both sides, so one file round-trips.
+          
+          Examples: evnx restore .env.backup --password-file /run/secrets/evnx-pass EVNX_PASSWORD=mypass evnx restore .env.backup
+          
+          [aliases: --key-file]
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Replacing a file: an existing --output is never replaced silently. With a
+terminal evnx asks; without one, pass --yes (alias --force). Either way the
+replaced file is kept beside it as <output>.bak. Content identical to the
+backup is left alone.
+
+Exit codes:
+  0  Restored, inspected, checked (--dry-run), or already up to date
+  2  Could not run: wrong password, unreadable backup, output problem, no
+     terminal to ask on
+  3  Backup file not found
+  4  Cancelled at the overwrite question
+  5  Not a .env evnx can read: written to <output>.restored instead
+
+A backup file is not a vault. For evnx cloud, use `evnx cloud pull` (one
+version) or `evnx cloud export` (all of them).
+
+Full guide: https://docs.evnx.dev/cli/commands/restore

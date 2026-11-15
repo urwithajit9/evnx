@@ -1,0 +1,3 @@
+bin.name = "evnx"
+args = ["completions", "--help"]
+status.code = 0

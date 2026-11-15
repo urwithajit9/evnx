@@ -1,0 +1,69 @@
+Create encrypted backup of .env
+
+Usage: evnx backup [OPTIONS] [ENV]
+
+Arguments:
+  [ENV]
+          Path to the .env file to back up
+
+Options:
+      --env-name <NAME>
+          Back up `.env.<NAME>` instead.
+          
+          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do.
+
+      --output <OUTPUT>
+          Destination path for the encrypted backup (default: <env>.backup)
+
+      --key-file <PATH>
+          Path to a key file to use as the encryption password.
+          
+          Enables non-interactive / CI usage. The file's contents are read and fed into Argon2id in place of a typed password. UTF-8 content is used with leading and trailing whitespace trimmed; binary content is Base64-encoded first. It must come to at least 8 characters, as a typed passphrase must.
+          
+          Also accepted as --password-file, which is what `evnx restore` calls the same thing. EVNX_PASSWORD is honoured too, at lower priority, so a scheduled backup needs no passphrase on disk; when both are set, the key file wins and a warning says so.
+          
+          Examples: evnx backup --key-file /run/secrets/evnx-pass EVNX_PASSWORD=$PASS evnx backup
+          
+          [aliases: --password-file]
+
+      --keep <N>
+          Number of previous backups to retain alongside the new one.
+          
+          Once the new backup is written, existing ones shift up one place: <output> → <output>.1 → … → <output>.N. The one already at <output>.N is replaced by the shift (with a warning); files past it are never touched. Set to 0 to disable rotation (overwrite silently). Defaults to `3`, or `[backup] keep` from `.evnx.toml`.
+
+      --verify
+          Re-decrypt the backup after writing and verify content integrity.
+          
+          Costs one more Argon2id round (a fraction of a second to about a second, depending on the machine) but proves the backup is readable before you discard the source file. Exit code 6 on failure.
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Passphrase: --key-file, then EVNX_PASSWORD, then a prompt (asked twice). A new
+backup needs at least 8 characters from any of them.
+
+Exit codes:
+  0  Backup written (and verified, with --verify)
+  2  Could not run: source file, key file or passphrase, an output that is the
+     source or a directory, no terminal to ask on
+  3  Password confirmation did not match
+  4  Encryption failed
+  5  Could not write the backup file
+  6  Integrity check failed after writing (--verify)
+
+A backup is a file you keep, behind a passphrase you choose; it needs no account
+and no network. To share and version secrets instead, see `evnx cloud push`.
+
+📖  Full guide: https://docs.evnx.dev/cli/commands/backup

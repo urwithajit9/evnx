@@ -1,0 +1,82 @@
+Generate config files from templates
+
+Usage: evnx template [OPTIONS] --input <INPUT> --output <OUTPUT>
+
+Options:
+      --input <INPUT>
+          The template to render. `{{VAR}}`, `${VAR}` and `$VAR` are substituted; filters are listed below
+
+      --output <OUTPUT>
+          Where to write the rendered file, or `-` for stdout.
+          
+          ⚠️ The result usually contains real values — see `--gitignore`. A new file is created readable by you only (0600); an existing one is replaced and keeps its mode. The template and the env file are never overwritten.
+
+      --mode <MODE>
+          File mode for the output, in octal (e.g. 0640). Applied to a new or an existing file. Without it a new file is 0600
+
+      --mkdir
+          Create the output's missing directories, readable by you only (0700)
+
+      --dry-run
+          Render and report what would be written, and write nothing.
+          
+          Fails where the real run would (an unknown filter, an unresolved placeholder without `--allow-unresolved`, a missing directory without `--mkdir`). Never prints the rendered text, and leaves `.gitignore` alone.
+
+      --env <ENV>
+          The environment file to take values from.
+          
+          Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
+
+      --env-name <NAME>
+          Operate on `.env.<NAME>` instead of `.env`.
+          
+          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do — it never falls back to `.env`.
+
+      --gitignore
+          Automatically add the output file to .gitignore (no prompt). Useful in CI scripts. Mutually exclusive with --no-gitignore
+
+      --no-gitignore
+          Skip all .gitignore checks and warnings. Use when you manage .gitignore externally. Mutually exclusive with --gitignore
+
+      --allow-unresolved
+          Write an unresolved placeholder through literally and exit 0.
+          
+          Since 0.11.0 a placeholder with no value is an error: nothing is written, every unresolved name is listed, and the exit code is 2. An unresolved `{{DATABASE_URL}}` in a generated config is read by whatever runs next as the literal setting. Give a variable a fallback with `{{NAME|default:value}}` to keep it optional.
+
+      --strict
+          The default since 0.11.0; accepted, and removed in 1.0
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+References:
+  {{VAR}}  ${VAR}  $VAR        replaced by the value from the env file
+
+Filters: {{VAR|filter}}, chained left to right: {{VAR|default:8080|int}}
+  upper  lower                 case
+  title                        Title Case For Each Word
+  capitalize                   First character only
+  bool                         true/yes/on/1/y or false/no/off/0/n; anything else is an error
+  int                          a whole number; anything else is an error
+  json  yaml  toml            a quoted, escaped string for that syntax
+  sh                           one shell word, single-quoted
+  default:VALUE                VALUE when VAR is empty or not defined
+An unknown filter is an error and nothing is written.
+/${VAR} /{{VAR}} /$VAR are written as they are, without the backslash.
+$VAR is replaced only when VAR is defined, and never reported.
+A placeholder with no value is an error too (exit 2); --allow-unresolved
+writes it through as it is.
+
+Full guide: https://docs.evnx.dev/cli/commands/template

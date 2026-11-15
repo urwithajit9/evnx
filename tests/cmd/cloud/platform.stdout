@@ -1,0 +1,57 @@
+Compare or sync .env with a hosting platform's variables (Vercel).
+
+`diff` shows what differs between a local .env and a Vercel environment;
+`pull` writes Vercel's readable values into the local file. Vercel has two
+kinds of variable: a Config value can be read back, a Secret never can, so
+`diff` cannot compare Secrets and `pull` cannot fetch them. Values are
+never printed.
+
+Needs a Vercel token in VERCEL_TOKEN (or --token-file) and a project
+(--project, VERCEL_PROJECT_ID, or .vercel/project.json from `vercel link`).
+
+Exit codes:
+  0   done, or no differences
+  1   `diff` found differences
+  2   could not run (bad flag, no token, no project, unreadable file)
+  4   `pull` was declined at the confirmation
+  10  Vercel refused the token
+  11  the token may not read that project
+  13  Vercel could not be reached
+  15  Vercel server error, or the rate limit never cleared
+
+Usage: evnx platform [OPTIONS] <COMMAND>
+
+Commands:
+  diff  Show what differs between a local .env and a Vercel environment
+  pull  Write Vercel's readable values into the local file
+  push  Create and update Vercel variables from the local file
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Examples:
+  evnx platform diff --to vercel                         what differs from Vercel's development variables
+  evnx platform diff --to vercel --env-name production   .env.production against production
+  evnx platform pull --to vercel --dry-run               what a pull would change, nothing written
+  evnx platform pull --to vercel --yes                   write Vercel's readable values, no question
+
+Auth: VERCEL_TOKEN, or --token-file <path>. There is no --token flag.
+Project: --project / --team, or VERCEL_PROJECT_ID / VERCEL_ORG_ID, or .vercel/project.json.
+Config variables can be read back; Secrets cannot, so they are compared by presence only
+and never pulled. Values are never printed.
+
+Full guide: https://docs.evnx.dev/cli/commands/platform

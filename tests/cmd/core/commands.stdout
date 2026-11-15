@@ -1,0 +1,35 @@
+Every command this build has, and which features it was compiled with.
+
+⚠️ "This build" is the point. `cloud`, `migrate` and `backup` are optional features, so two binaries of the same version can have very different command sets — and nothing else tells you which one you have. PyPI shipped five releases with no cloud commands at all and nobody noticed, because every check anyone ran read `--version` and stopped.
+
+`-q` has no effect: the list is the answer.
+
+ⓘ Named `commands`; `surface` still works, because tooling calls it that.
+
+Usage: evnx commands [OPTIONS]
+
+Options:
+      --json
+          The whole command tree as JSON, for tooling.
+          
+          Versioned by a `schema` field, so the shape can change without breaking anyone. The plain output carries no such promise — do not parse it.
+
+      --compact
+          One line instead of indented JSON. Requires `--json`
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Full guide: https://docs.evnx.dev/cli/commands/commands

@@ -1,0 +1,56 @@
+Show how to upgrade, and optionally whether a newer release exists.
+
+Without `--check` this contacts nothing: it reads the path of the running binary, and the files pip leaves beside it, to work out which channel installed it — cargo, Homebrew, Scoop, winget, npm, pip or the install script — and prints that channel's upgrade command. Where the install script and pip share a folder and nothing tells them apart, it prints both; where it cannot tell at all, every channel's.
+
+⚠️ evnx never replaces its own binary. Each package manager owns the file it installed, and a self-updating binary fights it — Homebrew and winget would then report a version they did not install.
+
+`--check` trusts evnx's bundled root certificates plus any in the PEM bundle named by SSL_CERT_FILE or the directory named by SSL_CERT_DIR. Behind a TLS-inspecting proxy, set SSL_CERT_FILE to your organisation's CA bundle.
+
+Usage: evnx update [OPTIONS]
+
+Options:
+      --check
+          Ask api.github.com for the latest release.
+          
+          The only network request this command makes, and it is made only when you pass this flag. Nothing is sent but the request itself.
+          
+          Needs a build with network support (`cloud`, `migrate` or `net`); a bare `cargo install evnx` has none, and says so.
+
+      --list
+          List every copy of evnx on this machine, and which one runs.
+          
+          Looks on PATH, in order, then in the folders installers use (cargo, npm, pipx, Homebrew, ~/.local/bin). Versions are read from what the installer left; a copy with none is run with `--version`, for at most two seconds, and the output says so. No network. Exits 0 however many copies there are; `--json` gives `count` for a script to decide.
+
+      --json
+          With `--check` or `--list`: the answer as JSON on stdout.
+          
+          `--check`: `schema` (1), `installed`, `latest`, `status` (`current`, `behind` or `ahead`), `channel`, `command` (null when evnx cannot name one), `release_url` and `other_copies`. `--list`: `schema` (1), `count` and `copies`. The exit code is the same as without it.
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Exit codes:
+  0  without --check, always (--list too, however many copies it finds);
+     with it, this is the latest release or newer
+  1  --check: a newer release exists
+  2  --check could not tell: no network support, no answer, or rate-limited
+
+More than one evnx installed? `evnx update --list` shows each copy, its
+version, which one runs, and how to remove the rest. Only --check uses the
+network.
+
+-q prints only the upgrade command; with --check, the status line and the command.
+
+Full guide: https://docs.evnx.dev/cli/commands/update

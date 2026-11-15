@@ -1,0 +1,3 @@
+# The workspace's contract. A project below this folder is not part of it.
+[vars.REDIS_URL]
+required = false

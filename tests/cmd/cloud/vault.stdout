@@ -1,0 +1,25 @@
+Manage encrypted vaults
+
+Usage: evnx vault [OPTIONS] <COMMAND>
+
+Commands:
+  create   Create a vault
+  list     List the vaults you can reach
+  delete   Delete a vault and every version in it
+  share    Share a vault with another evnx account
+  members  List who can reach a vault
+  role     Change a member's role
+  revoke   Revoke a member's access, rotating the vault key
+  rekey    Rotate a vault's key without removing anyone
+  leave    Leave a vault that was shared with you
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --server <URL>  evnx server to talk to. Overrides EVNX_SERVER and config.toml
+  -v, --verbose       Enable verbose output
+  -q, --quiet         Print nothing on success. Findings, warnings, errors and requested data still print
+      --no-color      Disable colored output
+  -h, --help          Print help
+  -V, --version       Print version
+
+Full guide: https://docs.evnx.dev/cli/commands/vault

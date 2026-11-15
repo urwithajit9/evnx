@@ -1,0 +1,72 @@
+Remove variables from the env file, and the template and contract too.
+
+By default only the env file changes: `--env-name`, else `[defaults] env_name`, else `.env`. The run then lists where each name still is, with the flag that clears it. Every byte that is not part of a removed entry stays as it was; the env file is kept as a `.bak` copy first.
+
+Exit codes: 0 removed (or nothing to do with --ignore-missing, or a dry run); 1 only with --check, a name is still somewhere; 2 could not run or refused (a name that is not there, a file it cannot read, no terminal to ask on); 4 you answered no.
+
+Usage: evnx remove [OPTIONS] <NAME>...
+
+Arguments:
+  <NAME>...
+          Variable names, or quoted globs (`'TEST_*'`). Case-sensitive
+
+Options:
+  -p, --path <PATH>
+          Project folder (default: current directory)
+          
+          [default: .]
+
+      --env-name <NAME>
+          Remove from `.env.<NAME>` instead of `.env`. Defaults to `[defaults] env_name`
+
+      --template
+          Also remove from the template (`.env.example`, or `[defaults] example`)
+
+      --contract
+          Also remove the `[vars.NAME]` declaration from `.evnx.toml`
+
+      --all
+          Remove from every environment file, the template and the contract
+
+      --dry-run
+          Show what would be removed; write nothing. Needs no terminal
+
+  -y, --yes
+          Remove without asking
+
+      --ignore-missing
+          A name found nowhere is not an error (for scripts that run twice)
+
+      --no-backup
+          Keep no `.bak` copy of the env files (needs --yes; refused for a file git tracks)
+
+      --json
+          Print the result as one JSON document (needs --yes or --dry-run; with --check it never asks, so neither is needed)
+
+      --check
+          Only look: exit 1 if any NAME is still in an environment file, the template or `.evnx.toml`, listing where; 0 if it is gone everywhere.
+          
+          Read-only, for CI. Always looks everywhere (`.env`, every `.env.<NAME>`, the template, `[vars]`), so it takes no scope flags. Exit 2 means no verdict: a file it cannot read whole.
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Examples:
+  evnx remove OLD_TOKEN                     from .env only
+  evnx remove OLD_TOKEN --all --dry-run     every file, the template and .evnx.toml: preview
+  evnx rm 'TEST_*' --env-name staging --yes from .env.staging, without asking
+  evnx remove OLD_TOKEN --check             CI: exit 1 if it is still in any env file, the template or .evnx.toml
+
+Full guide: https://docs.evnx.dev/cli/commands/remove

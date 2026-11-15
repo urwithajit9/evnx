@@ -1,0 +1,40 @@
+Generate shell completions.
+
+The script is written to stdout and covers the commands this build has. `-q` has no effect: the script is the answer.
+
+Usage: evnx completions [OPTIONS] <SHELL>
+
+Arguments:
+  <SHELL>
+          The shell to write the script for, in any case
+          
+          [possible values: bash, elvish, fish, powershell, zsh]
+
+Options:
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Install, for the shell you use (create the folder first if it does not exist),
+then open a new shell:
+  bash        evnx completions bash > ~/.local/share/bash-completion/completions/evnx
+  zsh         evnx completions zsh > ~/.zfunc/_evnx
+              and in ~/.zshrc, before compinit: fpath=(~/.zfunc $fpath)
+  fish        evnx completions fish > ~/.config/fish/completions/evnx.fish
+  powershell  evnx completions powershell >> $PROFILE
+  elvish      evnx completions elvish >> ~/.config/elvish/rc.elv
+
+The script lists this build's commands: generate it again after an upgrade.
+
+Full guide: https://docs.evnx.dev/cli/commands/completions
