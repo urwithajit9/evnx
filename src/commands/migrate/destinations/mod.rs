@@ -74,7 +74,7 @@ pub(crate) enum ArgKind {
 /// 2. `--dry-run` **and a credential** — nothing will be uploaded, so a
 ///    placeholder costs nothing. An *identifier* still has to be real: it gets
 ///    printed into the command evnx tells the user to run. See [`ArgKind`].
-/// 3. A terminal — ask.
+/// 3. A terminal on stdin and stderr — ask.
 /// 4. Otherwise — fail naming the exact flag, rather than reporting the
 ///    absence of a terminal as though that were the problem.
 pub(crate) fn resolve_arg(
@@ -84,14 +84,22 @@ pub(crate) fn resolve_arg(
     dry_run: bool,
     kind: ArgKind,
 ) -> Result<String> {
-    resolve_arg_with(
-        value,
-        flag,
-        prompt,
-        dry_run,
-        kind,
-        crate::utils::term::interactive(),
-    )
+    resolve_arg_with(value, flag, prompt, dry_run, kind, prompt_allowed())
+}
+
+/// Whether [`resolve_arg`] may ask: [`can_prompt`](crate::utils::term::can_prompt),
+/// never in this crate's unit tests.
+///
+/// ⚠️ This read `term::interactive()`, which checks stdin only. At a terminal
+/// with stderr redirected (`evnx migrate --to github-actions 2>log`) evnx
+/// reached a prompt dialoguer could not draw and failed `IO error: not a
+/// terminal`, the I-280 defect `sync` and `init` already shed. The unit tests
+/// call `get_destination`, which lands here, so they also inherited how
+/// `cargo test` was launched: stdin and stderr at a terminal hung on the
+/// prompt; stdin at a terminal with stderr in a file failed. Tests that need
+/// the asking branch call [`resolve_arg_with`] directly.
+fn prompt_allowed() -> bool {
+    !cfg!(test) && crate::utils::term::can_prompt()
 }
 
 /// The logic, with the terminal decision handed in.
@@ -134,7 +142,7 @@ pub(crate) fn resolve_arg_with(
     };
     Err(anyhow!(
         "{prompt} is required. {how}.\n\
-         \x20 evnx would normally ask, but stdin is not a terminal."
+         \x20 evnx would normally ask, but there is no terminal to ask in."
     ))
 }
 
