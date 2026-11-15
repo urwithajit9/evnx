@@ -5,6 +5,7 @@ $ evnx scan .
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning ./.env
 
   ✗  AWS Access Key                              critical
@@ -41,6 +42,7 @@ $ evnx scan . --exclude nothing-matches
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning ./.env
 
   ✗  AWS Access Key                              critical
@@ -77,6 +79,7 @@ $ evnx scan .env.example
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning .env.example
 
   ✓  No secrets detected
@@ -90,6 +93,7 @@ $ evnx scan .env.example --ignore-placeholders
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning .env.example
 
   ✓  No secrets detected

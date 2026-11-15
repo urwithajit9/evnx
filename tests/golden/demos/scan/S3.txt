@@ -5,6 +5,7 @@ $ evnx scan . --severity high
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning ./.env
 
   ✗  AWS Access Key                              critical
@@ -27,6 +28,7 @@ $ evnx scan . --severity high
      !  a password in a postgres:// URL, not a placeholder
 
   4 findings  ·  2 critical  ·  2 high
+  ·  severity floor high
 
 
 Next steps:
@@ -41,6 +43,7 @@ $ evnx scan . --severity all
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning ./.env
 
   ✗  AWS Access Key                              critical

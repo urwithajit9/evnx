@@ -101,10 +101,13 @@ fn t_i053_a_plain_name_matches_a_whole_component_not_a_substring() {
 #[test]
 fn t_i053_a_plain_path_names_consecutive_components() {
     let key = format!("k = \"{AWS}\"\n");
-    let d = project(&[("vendor/cache/a.py", &key), ("vendor/src/b.py", &key)]);
-    let found = locations(&d, &["--exclude", "vendor/cache"]);
+    let d = project(&[
+        ("third_party/cache/a.py", &key),
+        ("third_party/src/b.py", &key),
+    ]);
+    let found = locations(&d, &["--exclude", "third_party/cache"]);
     assert_eq!(found.len(), 1, "{found:?}");
-    assert!(found[0].contains("vendor/src/b.py"), "{found:?}");
+    assert!(found[0].contains("third_party/src/b.py"), "{found:?}");
 }
 
 #[test]

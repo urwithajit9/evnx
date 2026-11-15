@@ -80,12 +80,21 @@ jobs:
       # on purpose so contributors can keep local overrides. A Windows
       # contributor hitting this locally wants the same flag in that file; see
       # CONTRIBUTING.
+      #
+      # ⚠️ `/STACK` sizes only the **main** thread. libtest runs each unit test
+      # on its own thread, sized by `RUST_MIN_STACK` (default 2 MB), and the
+      # `cli::tests` that build the whole command tree (`Cli::command()`,
+      # `debug_assert`) outgrew 2 MB on Windows in v0.14.2 as the CLI gained
+      # flags: the `--lib` run aborted with STATUS_STACK_OVERFLOW and no test
+      # name. Both get 8 MB.
       - name: Give Windows a Linux-sized main stack
         if: runner.os == 'Windows'
         shell: bash
         # crt-static matches the release build (release.yml), so every PR tests
         # the same statically linked C runtime that ships.
-        run: echo "RUSTFLAGS=-C link-arg=/STACK:8388608 -C target-feature=+crt-static" >> "$GITHUB_ENV"
+        run: |
+          echo "RUSTFLAGS=-C link-arg=/STACK:8388608 -C target-feature=+crt-static" >> "$GITHUB_ENV"
+          echo "RUST_MIN_STACK=8388608" >> "$GITHUB_ENV"
 
       - name: Run tests
         # ⚠️ `--no-fail-fast`: without it the first failing test binary stops the

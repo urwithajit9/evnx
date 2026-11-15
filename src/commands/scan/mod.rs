@@ -137,6 +137,21 @@ pub struct ScanOptions {
     pub disable: Vec<String>,
     /// `--staged` (C9): scan the git index, not the files on disk.
     pub staged: bool,
+    /// `--follow-symlinks`: read a symlinked file in a walk when its target is
+    /// inside the scanned folder.
+    pub follow_symlinks: bool,
+    /// `--include-dir`: default-skipped folder names to walk.
+    pub include_dirs: Vec<String>,
+    /// `--no-config`: repository configuration was not read, so the default
+    /// baseline is not either (a named `--baseline` still is).
+    pub no_config: bool,
+    /// The configuration files read, as shown to the user; recorded in the
+    /// report.
+    pub config_files: Vec<String>,
+    /// `[scan] builtins = false`, recorded in the report.
+    pub builtins_disabled: bool,
+    /// Other repository settings that hide findings, recorded in the report.
+    pub repo_settings: models::RepoSettings,
 }
 
 impl Default for ScanOptions {
@@ -161,6 +176,12 @@ impl Default for ScanOptions {
             max_file_size: None,
             disable: Vec::new(),
             staged: false,
+            follow_symlinks: false,
+            include_dirs: Vec::new(),
+            no_config: false,
+            config_files: Vec::new(),
+            builtins_disabled: false,
+            repo_settings: Default::default(),
         }
     }
 }
@@ -179,6 +200,10 @@ impl Default for ScanOptions {
 /// different answers, and collapsing them is what let `evnx scan ./typo` report
 /// success. A CI gate written as `evnx scan .` still fails on either, but one
 /// written to branch on the code can now tell a finding from a broken setup.
+///
+/// Files that were selected and could not be read (an unreadable folder, a
+/// broken followed link) are exit 1, the same class as a finding, so
+/// `--exit-zero` lets them pass; they are always listed and counted in the output.
 ///
 /// `--exit-zero` suppresses 1 only. Trouble still exits 2: the flag means "do
 /// not fail my build over findings", not "never tell me the scan was impossible".
@@ -204,6 +229,18 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
     // would format it as a generic error and collapse it onto 1 — the code that
     // already means "secrets found".
     let scan = || -> Result<bool, anyhow::Error> {
+        // An exclusion that does not parse would otherwise be dropped and the
+        // run would read files the user believes are left out.
+        filters::validate_excludes(&opts.exclude)?;
+        // `--no-config` starts from an empty baseline; writing it back would
+        // drop every accepted finding and its reason.
+        if opts.no_config && opts.update_baseline {
+            anyhow::bail!(
+                "--no-config cannot be combined with --update-baseline: it would overwrite \
+                 the baseline from an empty one and lose its entries. Run --update-baseline \
+                 without --no-config."
+            );
+        }
         let min_severity: crate::core::secretscan::Severity = opts.severity.parse()?;
         let min_confidence: Confidence = opts.confidence.parse()?;
         // C5: a named baseline must exist (unless it is about to be written);
@@ -212,10 +249,32 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
             Some(p) => std::path::PathBuf::from(p),
             None => opts.project_root.join(suppress::DEFAULT_BASELINE),
         };
-        let baseline = suppress::Baseline::load(
-            &baseline_path,
-            opts.baseline.is_some() && !opts.update_baseline,
-        )?;
+        // `--no-config` leaves out the repository's default baseline as well:
+        // it suppresses findings, which is what the flag is there to rule out.
+        let baseline = if opts.no_config && opts.baseline.is_none() {
+            suppress::Baseline::default()
+        } else {
+            suppress::Baseline::load(
+                &baseline_path,
+                opts.baseline.is_some() && !opts.update_baseline,
+            )?
+        };
+        let effective = models::EffectiveConfig {
+            disabled_rules: opts.disable.clone(),
+            builtins_disabled: opts.builtins_disabled,
+            severity_floor: min_severity.to_string(),
+            confidence_floor: min_confidence.to_string(),
+            baseline: (!baseline.findings.is_empty()).then(|| models::EffectiveBaseline {
+                path: ui::short_path(&baseline_path),
+                entries: baseline.findings.len(),
+            }),
+            config_files: opts.config_files.clone(),
+            config_excludes: opts.repo_settings.exclude.clone(),
+            ignore_placeholders: opts.repo_settings.ignore_placeholders,
+            extensions: opts.repo_settings.extensions.clone(),
+            max_file_size: opts.repo_settings.max_file_size,
+            secret_false: opts.repo_settings.secret_false.clone(),
+        };
         let output_format: OutputFormat = opts.format.parse()?;
         // Compiled before anything is printed, so a broken expression cannot be
         // mistaken for a finished scan.
@@ -275,7 +334,10 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
             baseline,
             opts.update_baseline.then(|| baseline_path.clone()),
         )
-        .with_disabled(disabled, &opts.disable);
+        .with_disabled(disabled, &opts.disable)
+        .with_follow_symlinks(opts.follow_symlinks)
+        .with_include_dirs(&opts.include_dirs)
+        .with_effective_config(effective);
         if opts.staged {
             runner.run_staged(opts.paths.clone(), output_format)
         } else {

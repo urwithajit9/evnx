@@ -2564,12 +2564,18 @@ pub enum Commands {
         /// from the folder and against the file name: `'fixtures/**'`,
         /// `'*.log'`. Any other value matches a whole path component, or
         /// several in a row: `--exclude test` skips `test/` and a file named
-        /// `test`, not `latest/` or `contest.py`; `vendor/cache` skips that
+        /// `test`, not `latest/` or `contest.py`; `third_party/cache` skips that
         /// folder wherever it is.
         ///
-        /// ⚠️ This narrows the scan. `.git`, `node_modules`, `target`, `dist`,
-        /// `build` and the `.env.example` family are skipped whatever this
-        /// says, and a file named on the command line is read regardless.
+        /// ⚠️ This narrows the scan. Below the folder scanned, `.git`,
+        /// `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`,
+        /// `.turbo`, `__pycache__`, Python virtualenvs (a
+        /// `venv` or `.venv` holding `pyvenv.cfg`) and dependency `vendor`
+        /// folders (beside `go.mod`, `composer.json` or `Gemfile`, or holding
+        /// `modules.txt`) are skipped, unless git tracks files inside them, and
+        /// so is the `.env.example` family; `--include-dir` walks a skipped
+        /// folder. A file named on the command
+        /// line is read regardless.
         #[arg(long, default_value = ".env.example")]
         exclude: Vec<String>,
 
@@ -2674,7 +2680,9 @@ pub enum Commands {
         ///
         /// ⚠️ Suppresses exit 1 only. A scan that could not run still exits 2 —
         /// the flag means "do not fail my build over findings", not "never tell
-        /// me the scan was impossible".
+        /// me the scan was impossible" (an invalid `--exclude`, a path that does
+        /// not exist, nothing to scan). Files that could not be read are listed and
+        /// counted but are findings-class (exit 1), so this flag lets them pass.
         #[arg(long)]
         exit_zero: bool,
 
@@ -2696,6 +2704,38 @@ pub enum Commands {
         /// this before every commit.
         #[arg(long)]
         staged: bool,
+
+        /// Ignore the repository's `.evnx.toml` and use the built-in defaults.
+        ///
+        /// For a CI gate that must not depend on settings the scanned change
+        /// can edit: no disabled rules, no severity floor, no excludes, no
+        /// default `.evnx/baseline.json`. A `--baseline` you name is still
+        /// read.
+        ///
+        /// Still in force: rule files in `.evnx/rules/`, your personal rules
+        /// and `--rules` files, which can only add rules (a rule's own
+        /// `allow` lists apply to that rule alone; none can disable or
+        /// replace one of evnx's), and `evnx:allow` comments inside the
+        /// scanned files, which silence the line they sit on (`-v` lists
+        /// them).
+        #[arg(long)]
+        no_config: bool,
+
+        /// Walk a folder the scan skips by default, by name. Repeatable.
+        ///
+        /// `--include-dir vendor` reads a `vendor/` folder, `--include-dir
+        /// .venv` a virtualenv. Needed only for the folders the run lists as
+        /// "skipped dependency folders", or `.next` and the like.
+        #[arg(long, value_name = "NAME")]
+        include_dir: Vec<String>,
+
+        /// Read a symlinked file in a folder walk when its target is inside
+        /// the scanned folder.
+        ///
+        /// By default a symlink is skipped and counted. A link to a file
+        /// outside the folder, or to a folder, is skipped either way.
+        #[arg(long)]
+        follow_symlinks: bool,
     },
 
     /// Compare two env files: keys missing or extra, and values between environments.

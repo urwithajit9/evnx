@@ -2252,7 +2252,7 @@ fn s1_a_scan_that_filtered_everything_is_not_success() {
 
     let out = cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
-        .args(["scan", "node_modules", "--no-color"])
+        .args(["scan", ".", "--no-color"])
         .output()
         .unwrap();
     let err = String::from_utf8_lossy(&out.stderr);
@@ -2485,8 +2485,12 @@ fn t2_a_project_can_disable_a_builtin_and_it_is_announced() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
+    // The report names a disabled rule on its own "disabled by" line; it must
+    // not appear as a finding.
     assert!(
-        !all.contains("Stripe Secret Key (test)"),
+        !all.lines()
+            .filter(|l| !l.contains("disabled by"))
+            .any(|l| l.contains("Stripe Secret Key (test)")),
         "the disabled rule must not fire:\n{all}"
     );
     assert!(

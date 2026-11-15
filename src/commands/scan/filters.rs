@@ -34,7 +34,9 @@ use walkdir::WalkDir;
 /// # Always Excluded
 ///
 /// The following are always excluded regardless of configuration:
-/// - `.git/`, `node_modules/`, `target/`, `dist/`, `build/`
+/// - `.git/`, `node_modules/`, `target/`, `dist/`, `build/`, `.venv/`, `venv/`,
+///   `.next/`, `.nuxt/`, `.turbo/`, `__pycache__/`, and dependency `vendor/`
+///   and virtualenv folders
 /// - `.env.example`, `.env.sample`, `.env.template`
 ///
 /// # Example
@@ -55,6 +57,65 @@ pub struct FileFilter {
     extensions: Option<Vec<String>>,
     /// A walked file larger than this is skipped and said (I-061).
     max_bytes: u64,
+    /// Read a symlinked file in a walk when its target is inside the scan root.
+    /// Off: every symlink is skipped and counted.
+    follow_symlinks: bool,
+    /// Default-skipped folder names to walk anyway (`--include-dir`).
+    include_dirs: Vec<String>,
+}
+
+/// Folders a walk never enters, by name, wherever they sit **below** the
+/// folder being scanned. The folder named on the command line is always walked.
+pub const ALWAYS_EXCLUDE_DIRS: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    ".turbo",
+    "__pycache__",
+];
+
+/// Of those, the ones every run has always skipped: not named in the note a
+/// walk prints about the folders it left out.
+const QUIET_DIRS: &[&str] = &[".git", "node_modules", "target", "dist", "build"];
+
+/// Why a default-skipped folder is skipped, or `None` when it is walked.
+///
+/// `venv` and `.venv` are skipped only when they hold a `pyvenv.cfg`;
+/// `vendor` only beside a `go.mod`, `composer.json` or `Gemfile`, or with a
+/// `modules.txt` inside. A folder with those names that is not a dependency
+/// folder is project code and is read.
+fn conditional_skip(dir: &Path) -> Option<String> {
+    let name = dir.file_name()?.to_string_lossy();
+    match name.as_ref() {
+        "venv" | ".venv" => dir.join("pyvenv.cfg").is_file().then(|| name.into_owned()),
+        "vendor" => {
+            let parent = dir.parent().unwrap_or_else(|| Path::new("."));
+            let manifest = ["go.mod", "composer.json", "Gemfile"]
+                .into_iter()
+                .find(|m| parent.join(m).is_file())
+                .or_else(|| dir.join("modules.txt").is_file().then_some("modules.txt"))?;
+            Some(format!("vendor ({manifest})"))
+        }
+        _ => None,
+    }
+}
+
+/// Check every glob in `exclude` compiles, naming the first that does not.
+///
+/// `FileFilter::new` drops a pattern it cannot parse; callers that take
+/// patterns from a user run this first so the run stops instead of scanning
+/// with a narrower exclusion list than was written.
+pub fn validate_excludes(exclude: &[String]) -> Result<()> {
+    for p in exclude.iter().filter(|p| is_glob(p)) {
+        if let Err(e) = Pattern::new(p) {
+            anyhow::bail!("invalid exclude pattern '{p}': {e}");
+        }
+    }
+    Ok(())
 }
 
 /// The default limit on a walked file, which `--max-file-size` and
@@ -88,6 +149,15 @@ pub struct Collected {
     pub files: Vec<PathBuf>,
     /// `(path, reason)` for files a walk did not read.
     pub skipped: Vec<(PathBuf, String)>,
+    /// `(path, reason)` for entries a walk could not read (a folder that denies
+    /// access, an I/O error). Not skipped by choice: ground that was not looked at.
+    pub unreadable: Vec<(PathBuf, String)>,
+    /// Default-skipped folders a walk did not enter, as `name` or
+    /// `name (why)`, without the ones every run skips (`node_modules`, …).
+    pub skipped_dirs: Vec<String>,
+    /// A followed symlink → the canonical file that was checked, which is the
+    /// path to read: the link could be repointed after the check.
+    pub read_through: std::collections::HashMap<PathBuf, PathBuf>,
     /// Files named on the command line, read whatever the rules say.
     pub named: std::collections::HashSet<PathBuf>,
 }
@@ -136,7 +206,39 @@ impl FileFilter {
             compiled_globs,
             extensions: None,
             max_bytes: MAX_WALK_BYTES,
+            follow_symlinks: false,
+            include_dirs: Vec::new(),
         }
+    }
+
+    /// Walk these default-skipped folders (`--include-dir NAME`).
+    pub fn with_include_dirs(mut self, names: &[String]) -> Self {
+        self.include_dirs = names
+            .iter()
+            .map(|n| n.trim_matches('/').to_string())
+            .collect();
+        self
+    }
+
+    /// Does the walk leave this folder out by default? The note it is listed
+    /// under, or `None` when it is walked. `--include-dir` overrides.
+    fn skipped_dir(&self, dir: &Path) -> Option<String> {
+        let name = dir.file_name()?.to_string_lossy();
+        if self.include_dirs.iter().any(|i| *i == name) {
+            return None;
+        }
+        if ALWAYS_EXCLUDE_DIRS.iter().any(|d| *d == name) {
+            return Some(name.into_owned());
+        }
+        conditional_skip(dir)
+    }
+
+    /// Read symlinked files in a walk when the target lies inside the scanned
+    /// folder (`--follow-symlinks`). A link to a folder, or to anything
+    /// outside it, is still skipped.
+    pub fn with_follow_symlinks(mut self, follow: bool) -> Self {
+        self.follow_symlinks = follow;
+        self
     }
 
     /// Skip walked files larger than `bytes` (I-061). Named files are read
@@ -248,15 +350,103 @@ impl FileFilter {
                 // filesystem returns, which differs between machines (ext4
                 // hashes directory entries), so one project printed a different
                 // file list and findings order in CI than locally (I-243, G14).
+                let root = canonical(path);
+                let mut left_out: Vec<String> = Vec::new();
+                // Default-skipped folders that git tracks files in: a push
+                // publishes those, so they are read.
+                let tracked_names: std::cell::RefCell<Vec<String>> = Default::default();
                 for entry in WalkDir::new(path)
                     .follow_links(false)
                     .sort_by_file_name()
                     .into_iter()
-                    .filter_map(|e| e.ok())
+                    // Never entered, rather than entered and every file dropped.
+                    // The folder named on the command line is always walked.
+                    .filter_entry(|e| {
+                        if e.depth() == 0 || !e.file_type().is_dir() {
+                            return true;
+                        }
+                        match self.skipped_dir(e.path()) {
+                            Some(_)
+                                if e.file_name() != ".git"
+                                    && crate::core::gitignore::tracks_files_in(e.path()) =>
+                            {
+                                tracked_names
+                                    .borrow_mut()
+                                    .push(e.file_name().to_string_lossy().into_owned());
+                                true
+                            }
+                            Some(note) => {
+                                let plain = QUIET_DIRS.contains(&note.as_str());
+                                if !plain {
+                                    left_out.push(note);
+                                }
+                                false
+                            }
+                            None => true,
+                        }
+                    })
                 {
+                    // ⚠️ Kept, not dropped: a folder that cannot be read has
+                    // not been scanned, and the run must say so.
+                    let entry = match entry {
+                        Ok(e) => e,
+                        Err(e) => {
+                            let at = e.path().unwrap_or(path).to_path_buf();
+                            let why = e
+                                .io_error()
+                                .map(ToString::to_string)
+                                .unwrap_or_else(|| e.to_string());
+                            collected.unreadable.push((at, why));
+                            continue;
+                        }
+                    };
                     let entry_path = entry.path();
-                    if !entry_path.is_file()
-                        || self.should_exclude(entry_path)
+                    // The entry's own type: `Path::is_file` follows a link, so a
+                    // link to a file outside the tree was read as if it were here.
+                    let kind = entry.file_type();
+                    if kind.is_symlink() {
+                        if self.excluded(entry_path, Some(path), &tracked_names.borrow())
+                            || !self.walk_selects(entry_path)
+                        {
+                            continue;
+                        }
+                        if !self.follow_symlinks {
+                            collected
+                                .skipped
+                                .push((entry_path.to_path_buf(), "symlink".to_string()));
+                            continue;
+                        }
+                        match std::fs::canonicalize(entry_path) {
+                            Ok(target) if !target.starts_with(&root) => {
+                                collected.skipped.push((
+                                    entry_path.to_path_buf(),
+                                    "symlink to a file outside the scanned folder".to_string(),
+                                ));
+                                continue;
+                            }
+                            Ok(target) if !target.is_file() => {
+                                collected.skipped.push((
+                                    entry_path.to_path_buf(),
+                                    "symlink to a folder or special file".to_string(),
+                                ));
+                                continue;
+                            }
+                            Ok(target) => {
+                                collected
+                                    .read_through
+                                    .insert(entry_path.to_path_buf(), target);
+                            }
+                            Err(e) => {
+                                collected
+                                    .unreadable
+                                    .push((entry_path.to_path_buf(), format!("symlink: {e}")));
+                                continue;
+                            }
+                        }
+                    } else if !kind.is_file() {
+                        continue;
+                    }
+                    if self.excluded(entry_path, Some(path), &tracked_names.borrow())
                         || !self.walk_selects(entry_path)
                     {
                         continue;
@@ -269,7 +459,13 @@ impl FileFilter {
                         continue;
                     }
                     if self.extensions.is_none() {
-                        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                        // A followed link is sized by its target, not the link.
+                        let size = if kind.is_symlink() {
+                            std::fs::metadata(entry_path).ok().map(|m| m.len())
+                        } else {
+                            entry.metadata().ok().map(|m| m.len())
+                        }
+                        .unwrap_or(0);
                         if size > self.max_bytes {
                             seen.insert(canonical(entry_path), usize::MAX);
                             collected.skipped.push((
@@ -282,6 +478,7 @@ impl FileFilter {
                     seen.insert(canonical(entry_path), files.len());
                     files.push(entry_path.to_path_buf());
                 }
+                collected.skipped_dirs.extend(left_out);
             } else {
                 // ⚠️ Neither a file nor a directory. Previously this branch did
                 // not exist, so a path that could not be scanned was skipped in
@@ -298,6 +495,9 @@ impl FileFilter {
         // produces — `a/x` before `a.txt` — so a single walk is unchanged.
         files.sort_by_key(|f| names(f));
         collected.skipped.sort_by_key(|(f, _)| names(f));
+        collected.skipped_dirs.sort();
+        collected.skipped_dirs.dedup();
+        collected.unreadable.sort_by_key(|(f, _)| names(f));
         collected.files = files;
         if !unreadable.is_empty() {
             let detail = unreadable
@@ -353,6 +553,14 @@ impl FileFilter {
     /// pattern that worked before still works, so no project's exclusions change
     /// meaning on upgrade.
     pub fn should_exclude(&self, path: &Path) -> bool {
+        self.excluded(path, None, &[])
+    }
+
+    /// [`FileFilter::should_exclude`] for a file found by walking `root`: the
+    /// default folder names are looked for **below** `root`, so scanning
+    /// `vendor/` itself, or a project under `/srv/build/app`, is not excluded
+    /// by the name of a folder the user chose to scan.
+    fn excluded(&self, path: &Path, root: Option<&Path>, tracked: &[String]) -> bool {
         // ⛔ **Normalised once, here, and every user pattern matches against
         // this rather than the raw string.**
         //
@@ -443,12 +651,14 @@ impl FileFilter {
         // that were silently skipped. ⚠️ Note the shape: the extra text has to
         // come **before** the name. `my-node_modules-notes/` was *not*
         // affected, because the trailing `-notes` breaks the substring.
-        const ALWAYS_EXCLUDE_DIRS: &[&str] = &[".git", "node_modules", "target", "dist", "build"];
-
-        if path
-            .components()
-            .any(|c| ALWAYS_EXCLUDE_DIRS.iter().any(|d| c.as_os_str() == *d))
-        {
+        let below = root.and_then(|r| path.strip_prefix(r).ok()).unwrap_or(path);
+        if below.components().any(|c| {
+            ALWAYS_EXCLUDE_DIRS.iter().any(|d| {
+                c.as_os_str() == *d
+                    && !self.include_dirs.iter().any(|i| i == d)
+                    && !tracked.iter().any(|t| t == d)
+            })
+        }) {
             return true;
         }
 

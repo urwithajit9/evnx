@@ -420,7 +420,7 @@ fn print_banner() {
 /// below shed: any failure of the menu became "env-file", silently. The
 /// terminal decision is now made first, so a failure at the menu is an error.
 fn select_source() -> Result<String> {
-    if !crate::utils::term::interactive() {
+    if !crate::utils::term::can_prompt() {
         return Ok("env-file".to_string());
     }
     let options: &[(&str, &str)] = &[
@@ -453,7 +453,7 @@ fn select_source() -> Result<String> {
 fn select_destination() -> Result<String> {
     let options = destinations::available_destinations();
 
-    if !crate::utils::term::interactive() {
+    if !crate::utils::term::can_prompt() {
         let ids: Vec<&str> = options.iter().map(|(id, _)| *id).collect();
         return Err(crate::utils::prompt::choice_needed(
             "--to",

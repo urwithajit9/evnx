@@ -5,6 +5,7 @@ $ evnx scan .
 
   evnx scan  Checking for exposed secrets
 
+  · not a git repository: git-ignore rules do not apply, every file is reported
   scanning ./.env
 
   ✓  No secrets detected

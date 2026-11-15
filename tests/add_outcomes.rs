@@ -30,6 +30,34 @@ fn a_kept_value_is_not_counted_as_added() {
     assert!(!p.read(".env.example").contains("FLAG"));
 }
 
+/// The usual layout: the template has the name too (`FLAG=`). The kept value
+/// in `.env` is still reported, and the template's placeholder difference is
+/// not listed as a second conflict.
+#[test]
+fn a_kept_value_is_reported_when_the_template_has_the_name_too() {
+    let p = Project::new()
+        .env("FLAG=false\n")
+        .example("FLAG=\n")
+        .file(".gitignore", ".env\n")
+        .private(".env");
+    let out = run(p.path(), &["add", "custom", "FLAG=true", "--yes"]);
+    out.assert_code(0)
+        .assert_contains("already set to a different value in .env")
+        .assert_contains("kept")
+        .assert_not_contains("Added 1")
+        .assert_not_contains("in .env.example: kept");
+    assert!(p.read(".env").contains("FLAG=false"));
+    assert_eq!(p.read(".env.example"), "FLAG=\n");
+
+    let out = run(p.path(), &["add", "custom", "FLAG=true", "--yes", "--json"]);
+    out.assert_code(0);
+    let doc: serde_json::Value = serde_json::from_str(&out.stdout).expect("json");
+    let conflicts = doc["conflicts"].as_array().expect("conflicts");
+    assert_eq!(conflicts.len(), 1, "{conflicts:?}");
+    assert_eq!(conflicts[0]["name"], "FLAG");
+    assert_eq!(conflicts[0]["file"], ".env");
+}
+
 #[test]
 fn the_count_is_names_written_to_the_env_file() {
     let p = project();

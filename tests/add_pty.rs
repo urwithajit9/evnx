@@ -161,7 +161,9 @@ fn y_enter_answers_exactly_one_question() {
 
 /// I-016 (fixed in 0.10.2, AD-S; was `known_i016f_*`): a name typed in
 /// `add custom` that `.env.example` already has is not appended again. Here
-/// its value differs, so it is listed as a conflict and nothing is written.
+/// `.env` holds a different value, so it is reported as kept there and
+/// nothing is written. (Since ADD-1: the `.env` difference is what is listed,
+/// not the template's; see `keep_differing`.)
 #[test]
 fn custom_does_not_re_add_an_existing_name() {
     let p = project();
@@ -172,10 +174,11 @@ fn custom_does_not_re_add_an_existing_name() {
     let (rest, code) = s.finish();
     assert_eq!(code, 0, "{rest}");
     assert!(
-        rest.contains("VITE_ENV (existing: \"development\""),
+        rest.contains("already set to a different value in .env"),
         "{rest}"
     );
-    assert!(rest.contains("Nothing to add"), "{rest}");
+    assert!(rest.contains("VITE_ENV"), "{rest}");
+    assert!(rest.contains("Nothing was written to .env"), "{rest}");
     assert_eq!(p.count_lines(".env.example", "VITE_ENV="), 1);
     assert_eq!(p.count_lines(".env", "VITE_ENV="), 1);
 }

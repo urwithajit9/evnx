@@ -192,12 +192,17 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
             println!(
                 "  {}  No secrets detected {}",
                 glyph::WARN.yellow(),
-                "in the files that could be read".dimmed()
+                format!(
+                    "in the files that could be read; {} could not be read",
+                    results.unreadable.len()
+                )
+                .dimmed()
             );
         }
         println!("\n  {}", files_line(results).dimmed());
         print_ignored_by_git(results);
         print_accepted(results);
+        print_effective_config(results);
         return Ok(());
     }
 
@@ -327,6 +332,7 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
     println!("  {}", parts.join("  ·  ").bold());
     print_ignored_by_git(results);
     print_accepted(results);
+    print_effective_config(results);
 
     if results.has_critical_findings() {
         println!();
@@ -409,6 +415,74 @@ fn render_pretty(results: &ScanResults, files: &[PathBuf]) -> Result<()> {
 /// The one line about walked files git ignores (I-285): which, how many
 /// findings they held, and that those are not counted. Not under `-q`, which
 /// keeps findings only.
+/// One line when configuration narrows the scan: rules turned off, a raised
+/// severity or confidence floor, a baseline in force. Not under `-q`; the
+/// config banner on stderr already says so there.
+fn print_effective_config(results: &ScanResults) {
+    let Some(cfg) = results.effective_config.as_ref().filter(|c| c.narrows()) else {
+        return;
+    };
+    if crate::utils::ui::is_quiet() {
+        return;
+    }
+    let by = match cfg.config_files.first() {
+        Some(f) => f.clone(),
+        None => "configuration".to_string(),
+    };
+    let mut notes: Vec<String> = Vec::new();
+    if !cfg.disabled_rules.is_empty() {
+        notes.push(format!(
+            "{} disabled by {by}: {}",
+            pluralize(cfg.disabled_rules.len(), "rule", "rules"),
+            cfg.disabled_rules.join(", ")
+        ));
+    }
+    if cfg.builtins_disabled {
+        notes.push(format!("built-in rules disabled by {by}"));
+    }
+    if cfg.severity_floor != "low" {
+        notes.push(format!("severity floor {}", cfg.severity_floor));
+    }
+    if cfg.confidence_floor != "low" {
+        notes.push(format!("confidence floor {}", cfg.confidence_floor));
+    }
+    if !cfg.config_excludes.is_empty() {
+        notes.push(format!(
+            "{} excluded by {by}",
+            pluralize(cfg.config_excludes.len(), "path pattern", "path patterns")
+        ));
+    }
+    if cfg.ignore_placeholders {
+        notes.push(format!("placeholder-looking values ignored by {by}"));
+    }
+    if let Some(list) = &cfg.extensions {
+        notes.push(format!("folders read only for .{} files", list.join(", .")));
+    }
+    if let Some(bytes) = cfg.max_file_size {
+        notes.push(format!(
+            "files over {} not read in folders",
+            super::filters::size_label(bytes)
+        ));
+    }
+    if !cfg.secret_false.is_empty() {
+        notes.push(format!(
+            "{} marked secret = false by {by}: {}",
+            pluralize(cfg.secret_false.len(), "variable", "variables"),
+            cfg.secret_false.join(", ")
+        ));
+    }
+    if let Some(b) = &cfg.baseline {
+        notes.push(format!(
+            "baseline {} accepts {}",
+            b.path,
+            pluralize(b.entries, "finding", "findings")
+        ));
+    }
+    for note in notes {
+        println!("  {}  {}", glyph::INFO.dimmed(), note.dimmed());
+    }
+}
+
 /// What `evnx:allow` markers and the baseline set aside (C5): one line. `-v`
 /// lists each one (the runner, after the report).
 fn print_accepted(results: &ScanResults) {
@@ -868,6 +942,10 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
         })
         .collect();
 
+    let mut run_properties = serde_json::json!({ "effective_config": results.effective_config });
+    if !results.skipped_dirs.is_empty() {
+        run_properties["skipped_dirs"] = serde_json::json!(results.skipped_dirs);
+    }
     let sarif = serde_json::json!({
         "version": "2.1.0",
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
@@ -880,7 +958,8 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
                     "rules": rules
                 }
             },
-            "results": sarif_results
+            "results": sarif_results,
+            "properties": run_properties
         }]
     });
 
@@ -1009,11 +1088,17 @@ fn render_unreadable(results: &ScanResults) {
     for f in &results.unreadable {
         println!("     {}  {}", f.path.dimmed(), f.reason.dimmed());
     }
-    println!(
-        "     {}  {}",
-        glyph::ARROW.dimmed(),
-        "re-save as UTF-8 and scan again — a file that was not read is not clean".dimmed()
-    );
+    // An operating-system error is an access problem, not an encoding one.
+    let hint = if results
+        .unreadable
+        .iter()
+        .all(|f| f.reason.contains("os error"))
+    {
+        "make it readable and scan again — a file that was not read is not clean"
+    } else {
+        "re-save as UTF-8 and scan again — a file that was not read is not clean"
+    };
+    println!("     {}  {}", glyph::ARROW.dimmed(), hint.dimmed());
     println!();
 }
 

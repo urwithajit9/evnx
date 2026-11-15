@@ -85,7 +85,16 @@ fn main() -> Result<()> {
         cli.command,
         Commands::Update { .. } | Commands::Surface { .. } | Commands::Completions { .. }
     );
-    let loaded = if describes_the_binary {
+    // `scan --no-config`: nothing from the repository's `.evnx.toml` applies.
+    let no_config = matches!(
+        cli.command,
+        Commands::Scan {
+            no_config: true,
+            action: None,
+            ..
+        }
+    );
+    let loaded = if describes_the_binary || no_config {
         evnx::core::config::Loaded::default()
     } else {
         match evnx::core::config::load(&here) {
@@ -93,6 +102,9 @@ fn main() -> Result<()> {
             Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
         }
     };
+    if no_config && !cli.quiet {
+        eprintln!("  config    ignored (--no-config): built-in defaults");
+    }
     if let Some(source) = &loaded.source {
         let overrides = loaded.config.security_overrides();
         // I-060: `-q` is findings only — except, for `scan`, the line saying a
@@ -329,77 +341,107 @@ fn main() -> Result<()> {
             exit_zero,
             include_ignored,
             staged,
-        } => commands::scan::run(commands::scan::ScanOptions {
-            paths: path,
-            exclude: evnx::core::config::extend(
-                exclude,
-                // Read from the folder holding `.evnx.toml` (I-333).
-                match (
-                    cfg.scan.exclude,
-                    config_source.as_deref().and_then(Path::parent),
-                ) {
-                    (Some(patterns), Some(dir)) => {
-                        Some(evnx::core::config::rebase_exclude(patterns, dir, &here))
-                    }
-                    (patterns, _) => patterns,
+            no_config,
+            follow_symlinks,
+            include_dir,
+        } => {
+            let builtins = cfg.scan.builtins;
+            let repo_settings = commands::scan::models::RepoSettings {
+                exclude: cfg.scan.exclude.clone().unwrap_or_default(),
+                ignore_placeholders: cfg.scan.ignore_placeholders == Some(true),
+                extensions: cfg.scan.extensions.clone(),
+                max_file_size: match cfg.scan.max_file_size.as_ref().map(|s| s.bytes()) {
+                    Some(Ok(b)) if b < evnx::commands::scan::filters::MAX_WALK_BYTES => Some(b),
+                    _ => None,
                 },
-            ),
-            // Additive, like `exclude` above: `--pattern` is this run's rule and
-            // `[[scan.patterns]]` is the project's standing set.
-            disable: cfg.scan.disable.clone().unwrap_or_default(),
-            patterns: commands::scan::patternset::merge(
-                pattern,
-                cfg.scan.patterns,
-                cfg.scan.builtins.unwrap_or(true),
-                cfg.scan.disable,
-            ),
-            // `--no-ignore-placeholders` can undo a project's `true` (I-057).
-            ignore_placeholders: evnx::core::config::pick(
-                evnx::core::config::either(ignore_placeholders, no_ignore_placeholders),
-                cfg.scan.ignore_placeholders,
-                false,
-            ),
-            // The flag beats `[scan] max_file_size`; a bad config value is
-            // "could not run", like a bad `--max-file-size` (I-061).
-            max_file_size: match max_file_size {
-                Some(bytes) => Some(bytes),
-                None => match cfg.scan.max_file_size.as_ref().map(|s| s.bytes()) {
-                    Some(Ok(bytes)) => Some(bytes),
-                    Some(Err(e)) => verdict::no_verdict(
-                        &anyhow::anyhow!(".evnx.toml [scan] max_file_size: {e}"),
-                        Stage::BeforeRun,
-                    ),
-                    None => None,
+                secret_false: cfg
+                    .vars
+                    .iter()
+                    .filter(|(_, v)| v.secret == Some(false))
+                    .map(|(k, _)| k.clone())
+                    .collect(),
+            };
+            commands::scan::run(commands::scan::ScanOptions {
+                paths: path,
+                exclude: evnx::core::config::extend(
+                    exclude,
+                    // Read from the folder holding `.evnx.toml` (I-333).
+                    match (
+                        cfg.scan.exclude,
+                        config_source.as_deref().and_then(Path::parent),
+                    ) {
+                        (Some(patterns), Some(dir)) => {
+                            Some(evnx::core::config::rebase_exclude(patterns, dir, &here))
+                        }
+                        (patterns, _) => patterns,
+                    },
+                ),
+                // Additive, like `exclude` above: `--pattern` is this run's rule and
+                // `[[scan.patterns]]` is the project's standing set.
+                disable: cfg.scan.disable.clone().unwrap_or_default(),
+                patterns: commands::scan::patternset::merge(
+                    pattern,
+                    cfg.scan.patterns,
+                    builtins.unwrap_or(true),
+                    cfg.scan.disable,
+                ),
+                // `--no-ignore-placeholders` can undo a project's `true` (I-057).
+                ignore_placeholders: evnx::core::config::pick(
+                    evnx::core::config::either(ignore_placeholders, no_ignore_placeholders),
+                    cfg.scan.ignore_placeholders,
+                    false,
+                ),
+                // The flag beats `[scan] max_file_size`; a bad config value is
+                // "could not run", like a bad `--max-file-size` (I-061).
+                max_file_size: match max_file_size {
+                    Some(bytes) => Some(bytes),
+                    None => match cfg.scan.max_file_size.as_ref().map(|s| s.bytes()) {
+                        Some(Ok(bytes)) => Some(bytes),
+                        Some(Err(e)) => verdict::no_verdict(
+                            &anyhow::anyhow!(".evnx.toml [scan] max_file_size: {e}"),
+                            Stage::BeforeRun,
+                        ),
+                        None => None,
+                    },
                 },
-            },
-            severity: evnx::core::config::pick(severity, cfg.scan.severity, "low".to_string()),
-            confidence: evnx::core::config::pick(
-                confidence,
-                cfg.scan.confidence,
-                "low".to_string(),
-            ),
-            baseline,
-            update_baseline,
-            rule_files,
-            project_root: config_source
-                .as_deref()
-                .and_then(|p| p.parent())
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| here.clone()),
-            format,
-            exit_zero,
-            verbose: cli.verbose,
-            spec: cfg.vars.clone(),
-            // The flag wins; either way the run announces the limit (DEC-U8-2).
-            extensions: extensions.map(|e| (e, "--extensions")).or_else(|| {
-                cfg.scan
-                    .extensions
-                    .clone()
-                    .map(|e| (e, ".evnx.toml [scan] extensions"))
-            }),
-            include_ignored,
-            staged,
-        }),
+                severity: evnx::core::config::pick(severity, cfg.scan.severity, "low".to_string()),
+                confidence: evnx::core::config::pick(
+                    confidence,
+                    cfg.scan.confidence,
+                    "low".to_string(),
+                ),
+                baseline,
+                update_baseline,
+                rule_files,
+                project_root: config_source
+                    .as_deref()
+                    .and_then(|p| p.parent())
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| here.clone()),
+                format,
+                exit_zero,
+                verbose: cli.verbose,
+                spec: cfg.vars.clone(),
+                // The flag wins; either way the run announces the limit (DEC-U8-2).
+                extensions: extensions.map(|e| (e, "--extensions")).or_else(|| {
+                    cfg.scan
+                        .extensions
+                        .clone()
+                        .map(|e| (e, ".evnx.toml [scan] extensions"))
+                }),
+                include_ignored,
+                staged,
+                follow_symlinks,
+                include_dirs: include_dir,
+                no_config,
+                config_files: config_source
+                    .as_deref()
+                    .map(|p| vec![evnx::utils::ui::short_path(p)])
+                    .unwrap_or_default(),
+                builtins_disabled: builtins == Some(false),
+                repo_settings,
+            })
+        }
 
         Commands::Diff {
             env,
