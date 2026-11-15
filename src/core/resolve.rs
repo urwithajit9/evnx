@@ -256,6 +256,50 @@ pub fn environment_templates(dir: &Path) -> Vec<String> {
     out
 }
 
+/// INIT-3, ADD-6: `--env-name prodution` would create `.env.prodution`.
+/// When the name is one or two edits from a suggested or existing
+/// environment, ask in a terminal; without one, refuse unless `yes`, which
+/// goes ahead with a warning. A dry run only warns: it creates nothing.
+/// `json` never asks (its stdout is a document).
+pub fn confirm_new_env_name(
+    dir: &Path,
+    given: Option<&str>,
+    yes: bool,
+    dry_run: bool,
+    json: bool,
+) -> Result<()> {
+    let Some(given) = given else {
+        return Ok(());
+    };
+    let file = env_name::file_name(Some(given))?;
+    let name = file.trim_start_matches(".env.");
+    let Some(meant) = env_name::near_miss(dir, name) else {
+        return Ok(());
+    };
+    let question = format!("{file} does not exist; did you mean '{meant}'?");
+    if yes {
+        crate::utils::ui::warning(format!("{question} Creating {file} (--yes)."));
+        return Ok(());
+    }
+    if dry_run {
+        crate::utils::ui::warning(question);
+        return Ok(());
+    }
+    if json || !crate::utils::term::can_prompt() {
+        anyhow::bail!(
+            "{question}\n  To create {file} anyway, add --yes; for '{meant}', use --env-name {meant}."
+        );
+    }
+    let create = crate::utils::prompt::yes_no()
+        .with_prompt(format!("{question} Create {file} anyway?"))
+        .default(false)
+        .interact_opt()?;
+    if create != Some(true) {
+        anyhow::bail!("not created: use --env-name {meant}");
+    }
+    Ok(())
+}
+
 /// The one "env file not found" message (FLD-6), for `command` run in `dir`
 /// where `env` was needed and is missing.
 ///

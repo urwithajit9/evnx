@@ -196,41 +196,16 @@ fn resolve_with(
     resolve(output_path, flags, config, Need::MayCreate)
 }
 
-/// INIT-3, ADD-6: `--env-name prodution` would create `.env.prodution`. When
-/// the name is one or two edits from a suggested or existing environment,
-/// ask in a terminal; without one, refuse unless `--yes`, which goes ahead
-/// with a warning.
+/// INIT-3, ADD-6: a new `--env-name` close to a known one
+/// (`core::resolve::confirm_new_env_name`).
 pub fn check_new_env_name(output_path: &Path, mode: &Mode) -> Result<()> {
-    let Some(given) = mode.env_name.as_deref() else {
-        return Ok(());
-    };
-    let file = crate::core::env_name::file_name(Some(given))?;
-    let name = file.trim_start_matches(".env.");
-    let Some(meant) = crate::core::env_name::near_miss(output_path, name) else {
-        return Ok(());
-    };
-    let question = format!("{file} does not exist; did you mean '{meant}'?");
-    if mode.yes {
-        crate::utils::ui::warning(format!("{question} Creating {file} (--yes)."));
-        return Ok(());
-    }
-    if mode.dry_run {
-        crate::utils::ui::warning(question);
-        return Ok(());
-    }
-    if mode.json || !crate::utils::term::can_prompt() {
-        anyhow::bail!(
-            "{question}\n  To create {file} anyway, add --yes; for '{meant}', use --env-name {meant}."
-        );
-    }
-    let create = crate::utils::prompt::yes_no()
-        .with_prompt(format!("{question} Create {file} anyway?"))
-        .default(false)
-        .interact_opt()?;
-    if create != Some(true) {
-        anyhow::bail!("not created: use --env-name {meant}");
-    }
-    Ok(())
+    crate::core::resolve::confirm_new_env_name(
+        output_path,
+        mode.env_name.as_deref(),
+        mode.yes,
+        mode.dry_run,
+        mode.json,
+    )
 }
 
 /// The template a run in `output_path` writes to, for a message that names

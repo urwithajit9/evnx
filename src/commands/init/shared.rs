@@ -50,25 +50,43 @@ pub struct Target {
 
 impl Target {
     pub fn new(root: &Path, config: Config, verbose: bool) -> Result<Target> {
-        let template = Template::of(root, &config);
-        let env_file = crate::core::env_name::file_name(config.defaults.env_name.as_deref())?;
-        Ok(Target {
+        let mut target = Target {
             root: root.to_path_buf(),
             config,
-            template,
+            template: Template::default(),
             verbose,
             env_name: None,
-            env_file,
-        })
+            env_file: String::new(),
+        };
+        target.resolve()?;
+        Ok(target)
     }
 
-    /// `--env-name NAME`: write `.env.NAME`. `None` keeps the config's choice.
+    /// `--env-name NAME`: write `.env.NAME`, with its own template when it has
+    /// one (FLD-4). `None` keeps the config's choice.
     pub fn with_env_name(mut self, name: Option<String>) -> Result<Target> {
         if name.is_some() {
-            self.env_file = crate::core::env_name::file_name(name.as_deref())?;
             self.env_name = name;
+            self.resolve()?;
         }
         Ok(self)
+    }
+
+    /// The env file and template by the one rule (`core::resolve`, WP-5).
+    fn resolve(&mut self) -> Result<()> {
+        use crate::core::resolve::{resolve, Flags, Need, TemplateFrom};
+        let flags = Flags {
+            env: None,
+            env_name: self.env_name.as_deref(),
+            example: None,
+        };
+        let r = resolve(&self.root, flags, &self.config, Need::MayCreate)?;
+        self.template = Template {
+            configured: r.template_from != TemplateFrom::Project,
+            name: r.template,
+        };
+        self.env_file = r.env;
+        Ok(())
     }
 
     pub fn template_path(&self) -> PathBuf {

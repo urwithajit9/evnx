@@ -84,6 +84,13 @@ pub fn run(
     // mode selection because it replaces it entirely.
     // The folder init writes to: its template (DQ-28) and the config `main`
     // loaded for it (I-298).
+    crate::core::resolve::confirm_new_env_name(
+        Path::new(&path),
+        env_name.as_deref(),
+        yes,
+        dry_run,
+        json,
+    )?;
     let target = shared::Target::new(Path::new(&path), config, verbose)?.with_env_name(env_name)?;
 
     if from_source {
