@@ -77,6 +77,21 @@ impl Project {
         self
     }
 
+    /// Make `name` private to its owner (0600 on Unix), so a test whose
+    /// subject is not file permissions gets no permission warning. A no-op
+    /// elsewhere: Windows has no mode bits and evnx checks none there. Use
+    /// [`mode`](Self::mode) when the mode itself is what the test is about.
+    #[cfg(unix)]
+    pub fn private(self, name: &str) -> Project {
+        self.mode(name, 0o600)
+    }
+
+    /// See the Unix version: nothing to set here.
+    #[cfg(not(unix))]
+    pub fn private(self, _name: &str) -> Project {
+        self
+    }
+
     /// Set Unix permission bits, e.g. `0o444` for a read-only file.
     #[cfg(unix)]
     pub fn mode(self, name: &str, mode: u32) -> Project {

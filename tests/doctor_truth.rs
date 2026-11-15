@@ -12,7 +12,7 @@ fn healthy() -> Project {
         .env("A=1\n")
         .example("A=\n")
         .file(".gitignore", ".env*\n!.env.example\n")
-        .mode(".env", 0o600);
+        .private(".env");
     p.track(".env.example");
     p
 }

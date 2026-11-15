@@ -11,7 +11,7 @@ fn project() -> Project {
         .env("FLAG=false\nSAME=1\n")
         .example("OTHER=1\n")
         .file(".gitignore", ".env\n")
-        .mode(".env", 0o600)
+        .private(".env")
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn a_secret_looking_kept_name_prints_no_value() {
     let p = Project::new()
         .env("API_TOKEN=old-secret-value\n")
         .file(".gitignore", ".env\n")
-        .mode(".env", 0o600);
+        .private(".env");
     let out = run(
         p.path(),
         &["add", "custom", "API_TOKEN=new-secret-value", "--yes"],
@@ -132,7 +132,7 @@ fn a_kept_name_is_not_declared_in_the_contract() {
         .example("OTHER=1\n")
         .toml("[vars.OTHER]\n")
         .file(".gitignore", ".env\n")
-        .mode(".env", 0o600);
+        .private(".env");
     run(
         p.path(),
         &["add", "custom", "FLAG=true", "NEW_ONE=2", "--yes"],
