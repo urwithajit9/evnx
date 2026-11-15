@@ -632,6 +632,15 @@ pub fn confirm_and_apply(
 /// one given is kept, and taken out of the plan for both files (nothing about
 /// it is written), so the run cannot say it added it. A name given without a
 /// value never conflicts: the placeholder is not a value to compare.
+///
+/// ⚠️ The env file's difference wins over a template conflict for the same
+/// name. It used to be skipped when `.env.example` also conflicted, and the
+/// template nearly always does: it holds `FLAG=` while `add` would write the
+/// placeholder. So `FLAG=true` against `.env`'s `FLAG=false` reported only
+/// "already in .env" and a template conflict about a placeholder nobody typed,
+/// and `--json` never named `.env` (ADD-1, found re-running the review
+/// reproductions). The template conflict is dropped: a name given with a
+/// value never puts that value in the template, so what differs is `.env`.
 fn keep_differing(
     output_path: &Path,
     plan: &mut Plan,
@@ -644,9 +653,10 @@ fn keep_differing(
         let (Some(existing), Some(given)) = (env.get(name), given) else {
             continue;
         };
-        if existing != given && !plan.conflicts.iter().any(|c| &c.var_name == name) {
+        if existing != given {
             plan.env_kept.push(name.clone());
             plan.to_example.vars.remove(name);
+            plan.conflicts.retain(|c| &c.var_name != name);
         }
     }
     Ok(())
