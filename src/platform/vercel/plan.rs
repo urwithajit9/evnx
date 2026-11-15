@@ -27,7 +27,7 @@ pub enum Environment {
     Custom(CustomEnv),
 }
 
-/// A custom environment (`--env-name <slug>`).
+/// A custom environment (`--target <slug>`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomEnv {
     /// The slug the person typed, and Vercel lists.
@@ -73,7 +73,7 @@ impl Environment {
         }
     }
 
-    /// `--env-name`: `production`, `preview`, `development`, or a custom
+    /// `--target`: `production`, `preview`, `development`, or a custom
     /// environment's slug. The slug becomes part of a file name (`.env.<slug>`),
     /// so it is limited to the characters a slug has.
     pub fn parse(s: &str) -> Result<Environment, String> {

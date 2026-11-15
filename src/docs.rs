@@ -300,7 +300,7 @@ pub const PLATFORM: CommandDoc = CommandDoc {
     description: "Compare and sync .env with Vercel's variables",
     after_help: "Examples:
   evnx platform diff --to vercel                         what differs from Vercel's development variables
-  evnx platform diff --to vercel --env-name production   .env.production against production
+  evnx platform diff --to vercel --target production   .env.production against production
   evnx platform pull --to vercel --dry-run               what a pull would change, nothing written
   evnx platform pull --to vercel --yes                   write Vercel's readable values, no question
 

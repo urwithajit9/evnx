@@ -121,7 +121,7 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
         shown(&path)
     );
     let example = format!(
-        "evnx platform pull --to vercel --env-name {} --yes",
+        "evnx platform pull --to vercel --target {} --yes",
         session.environment.name()
     );
     if !crate::utils::prompt::confirm(&question, args.yes, &example)? {

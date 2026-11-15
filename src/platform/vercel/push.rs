@@ -784,8 +784,8 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
     // anything is read or sent. A dry run sends nothing, so it needs no answer.
     if args.prune && !args.yes && !args.dry_run {
         crate::utils::prompt::require_terminal_or(&format!(
-            "--prune deletes variables on Vercel. Add --yes (-y) to go ahead without being asked:\n  evnx platform push --to vercel --env-name {} --prune --yes",
-            args.common.env_name.name()
+            "--prune deletes variables on Vercel. Add --yes (-y) to go ahead without being asked:\n  evnx platform push --to vercel --target {} --prune --yes",
+            args.common.environment().name()
         ))?;
     }
     let session = Session::open(&args.common)?;
@@ -887,7 +887,7 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
         session.env_label()
     );
     let example = format!(
-        "evnx platform push --to vercel --env-name {} --yes",
+        "evnx platform push --to vercel --target {} --yes",
         env.name()
     );
     if !crate::utils::prompt::confirm(&question, args.yes, &example)? {

@@ -540,7 +540,7 @@ impl Api {
 pub struct CustomEnvironment {
     /// Vercel's id (`env_…`).
     pub id: String,
-    /// The slug `--env-name` takes.
+    /// The slug `--target` takes.
     pub slug: String,
 }
 

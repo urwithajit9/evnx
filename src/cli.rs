@@ -510,7 +510,7 @@ pub enum PlatformCommands {
     #[command(after_help = "\
 Examples:
   evnx platform diff --to vercel                         .env.development (or .env) vs development
-  evnx platform diff --to vercel --env-name production   .env.production (or .env) vs production
+  evnx platform diff --to vercel --target production   .env.production (or .env) vs production
   evnx platform diff --to vercel --format json           machine-readable: keys and actions only
   evnx platform diff --to vercel --strict                a Secret on both sides counts as a difference
   evnx platform diff --to vercel --project prj_123 --team team_456 --token-file ~/.vercel-token
@@ -540,7 +540,7 @@ Full guide: https://docs.evnx.dev/cli/commands/platform")]
 Examples:
   evnx platform pull --to vercel --dry-run               what would change, nothing written
   evnx platform pull --to vercel                         update .env.development (or .env), after asking
-  evnx platform pull --to vercel --env-name preview --yes   no question (CI)
+  evnx platform pull --to vercel --target preview --yes   no question (CI)
   evnx platform pull --to vercel --file .env.local       write a file of your choice
 
 Full guide: https://docs.evnx.dev/cli/commands/platform")]
@@ -566,7 +566,7 @@ Full guide: https://docs.evnx.dev/cli/commands/platform")]
     #[command(after_help = "Examples:
   evnx platform push --to vercel --dry-run                   the plan, nothing sent
   evnx platform push --to vercel                             .env.development (or .env), after asking
-  evnx platform push --to vercel --env-name production --yes   no question (CI)
+  evnx platform push --to vercel --target production --yes   no question (CI)
   evnx platform push --to vercel --only-new                  create new keys, leave existing secrets alone
   evnx platform push --to vercel --type secret               new keys become secrets (public prefixes stay config)
 
@@ -609,8 +609,8 @@ pub struct PlatformCommon {
     #[arg(long, value_name = "PATH")]
     pub token_file: Option<std::path::PathBuf>,
 
-    /// The Vercel environment: `production`, `preview`, `development`, or the
-    /// slug of a custom environment.
+    /// The Vercel environment (Vercel calls it the target): `production`,
+    /// `preview`, `development` (default), or the slug of a custom environment.
     ///
     /// A custom environment is looked up in the project
     /// (`GET /v9/projects/<id>/custom-environments`); its variables are the
@@ -621,14 +621,24 @@ pub struct PlatformCommon {
     #[arg(
         long,
         value_name = "ENV",
-        default_value = "development",
         value_parser = crate::platform::vercel::plan::Environment::parse
     )]
-    pub env_name: crate::platform::vercel::plan::Environment,
+    pub target: Option<crate::platform::vercel::plan::Environment>,
+
+    /// The old name of `--target` (PLAT-5): every other command's `--env-name`
+    /// names a local env file. Still accepted, with a warning.
+    #[arg(
+        long,
+        value_name = "ENV",
+        hide = true,
+        conflicts_with = "target",
+        value_parser = crate::platform::vercel::plan::Environment::parse
+    )]
+    pub env_name: Option<crate::platform::vercel::plan::Environment>,
 
     /// A preview branch: work on the variables for this git branch only.
     ///
-    /// Only with `--env-name preview` (anything else exits 2). A key with an
+    /// Only with `--target preview` (anything else exits 2). A key with an
     /// entry for the branch uses it; a key without one falls back to its
     /// all-branches preview entry, read-only and labelled in the plan, and a
     /// push that must change it creates a branch entry instead. New variables
@@ -644,6 +654,27 @@ pub struct PlatformCommon {
     /// The Vercel API address (for testing against a local server).
     #[arg(long, hide = true, env = "EVNX_VERCEL_API_URL", value_name = "URL")]
     pub api_url: Option<String>,
+}
+
+#[cfg(feature = "net")]
+impl PlatformCommon {
+    /// `--target`, or the old `--env-name`, else `development`.
+    pub fn environment(&self) -> crate::platform::vercel::plan::Environment {
+        self.target
+            .clone()
+            .or_else(|| self.env_name.clone())
+            .unwrap_or(crate::platform::vercel::plan::Environment::Development)
+    }
+
+    /// One warning when the old spelling was used (PLAT-5).
+    pub fn warn_old_flag(&self) {
+        if self.env_name.is_some() {
+            eprintln!(
+                "warning: `platform --env-name` is now `--target`; --env-name names a \
+                 local env file in every other command, and is removed here in 1.0."
+            );
+        }
+    }
 }
 
 /// Arguments of `evnx platform diff`.
