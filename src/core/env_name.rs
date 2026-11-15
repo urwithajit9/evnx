@@ -199,7 +199,8 @@ pub const STRUCTURED_EXTENSIONS: &[&str] = &[
 pub enum FileKind {
     /// `.env` or `.env.<name>`: holds real values.
     Env,
-    /// `.env.example`, `.env.sample`, `.env.template`.
+    /// `.env.example`, `.env.sample`, `.env.template`, and one environment's
+    /// own (`.env.prod.example`, WP-5).
     Template,
     /// A copy of an env file ([`is_copy`]). Plaintext or an `evnx backup`;
     /// only the content can tell ([`crate::core::envfile::is_evnx_backup`]).

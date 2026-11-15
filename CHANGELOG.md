@@ -8,6 +8,50 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Breaking
+
+- **`--env-name` pairs the environment with its own template.** With
+  `--env-name prod`, commands use `.env.prod.example` (or `.sample`,
+  `.template`) when it exists, instead of the shared `.env.example`. The order
+  is: `--example`, the environment's own template for an `--env-name` given on
+  the command line, `[defaults] example`, the own template for
+  `[defaults] env_name`, then the project template. A project that relied on
+  `.env.example` being used with `--env-name` sets `[defaults] example`.
+- **`--env-name` takes a name, not a path.** `--env-name .env.prod` now means
+  `prod` (it used to create `.env..env.prod`); a path or a template name is
+  refused with the flag that takes it (`--env`, `--example`).
+- **Outside a git repository, only the working folder's `.evnx.toml` applies.**
+  A `.evnx.toml` in a parent folder is no longer read or written there; `-v`
+  names one that was skipped. Inside a repository nothing changes.
+- **`platform --env-name` is now `--target`.** Every other command's
+  `--env-name` names a local env file; for `platform` it meant the Vercel
+  environment. The old spelling still works, with a warning, until 1.0.
+
+### Fixed
+
+- **Projects with only named env files** (`.env.prod`, no `.env`) are
+  understood. A command that needs `.env` names the env files that are there,
+  the one-off `--env-name`, and the `[defaults]` block that makes it stick,
+  instead of suggesting `evnx init`. `sync` shows its "Getting started" box only
+  when the folder has neither an env file nor a `.evnx.toml`.
+- `.env.prod.example` is a template, not an environment: it is no longer
+  listed as "Available: prod.example" or compared with `.env.prod` as a
+  sibling env file.
+- A mistyped new environment (`--env-name prodution`) is no longer created
+  silently by `add` or `init`: evnx asks in a terminal and refuses without one
+  unless `--yes`.
+- `.gitignore`: new blocks keep every environment's template tracked
+  (`!.env*.example`, `!.env*.sample`, `!.env*.template`). An existing block is
+  extended only once a `.env.<name>.example` exists.
+
+### Added
+
+- `add --example FILE`.
+- `init --here`: make a folder inside a repository a project of its own.
+- A `files` line on stderr (`.env.prod ↔ .env.prod.example (template matched
+  to --env-name prod)`) whenever the pairing is not the plain `.env` and
+  `.env.example`; always with `-v`, never with `-q`.
+
 ## [0.14.1] - 2026-11-14
 
 ### Fixed
