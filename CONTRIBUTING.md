@@ -157,9 +157,15 @@ Create `.cargo/config.toml` — it is gitignored, so this stays local to you:
 ```toml
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "link-arg=/STACK:8388608"]
+
+[env]
+RUST_MIN_STACK = "8388608"
 ```
 
-That reserves 8 MB, matching Linux. CI sets the same flag for its Windows job.
+That reserves 8 MB, matching Linux. `/STACK` covers the main thread;
+`RUST_MIN_STACK` covers the threads `cargo test` runs unit tests on, where
+the tests that build the whole command tree otherwise overflow 2 MB. CI sets
+both for its Windows job.
 
 ⓘ **This affects debug builds only and no released binary.** The optimised
 build runs in under 256 KB, and every published artefact is built
