@@ -256,13 +256,16 @@ pub fn check_ignored(gitignore_path: &Path, entry: &str) -> Result<GitignoreStat
         )
     })?;
 
-    let matched = content
-        .lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            !trimmed.is_empty() && !trimmed.starts_with('#')
-        })
-        .any(|line| line.trim() == entry.trim());
+    let has = |wanted: &str| {
+        content
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim();
+                !trimmed.is_empty() && !trimmed.starts_with('#')
+            })
+            .any(|line| line.trim() == wanted)
+    };
+    let matched = has(entry.trim()) || old_exception_still_enough(gitignore_path, entry, &has);
 
     if matched {
         Ok(GitignoreStatus::AlreadyIgnored)
@@ -372,6 +375,32 @@ pub fn append_entries(gitignore_path: &Path, entries: &[&str]) -> Result<Vec<Str
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// `!.env*.example` is written since 0.14.2 (WP-5); every older `.gitignore`
+/// evnx wrote holds `!.env.example`. The old line still does the job while no
+/// environment has its own template (`.env.prod.example`) beside it, so it
+/// counts as present: an existing `.gitignore` is not rewritten for nothing,
+/// and one that re-includes `.env` on purpose is not touched (G8). Once such
+/// a template exists, the wildcard line is what keeps it tracked.
+fn old_exception_still_enough(
+    gitignore_path: &Path,
+    entry: &str,
+    has: &dyn Fn(&str) -> bool,
+) -> bool {
+    let Some(suffix) = entry.trim().strip_prefix("!.env*.") else {
+        return false;
+    };
+    if !has(&format!("!.env.{suffix}")) {
+        return false;
+    }
+    let folder = gitignore_path
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    !crate::core::resolve::environment_templates(folder)
+        .iter()
+        .any(|t| t.ends_with(&format!(".{suffix}")))
+}
+
 /// Insert `entry` inside the existing evnx section in `content`.
 ///
 /// The section ends at the first blank line after the header, or at EOF.
@@ -438,7 +467,18 @@ fn append_new_section(content: &str, entry: &str) -> String {
 ///
 /// The negations must follow `.env*`, because gitignore resolves last-match-wins
 /// and a negation placed above the pattern it carves out of does nothing.
-pub const ENV_ENTRIES: &[&str] = &[".env*", "!.env.example", "!.env.sample", "!.env.template"];
+///
+/// ⚠️ `!.env*.example`, not `!.env.example` (WP-5): one template per
+/// environment (`.env.prod.example`) matched `.env*` and none of the old
+/// exceptions, so a new one was ignored without a word — on the field-test
+/// server, `.env.prod.example` stopped being tracked. The wildcard form keeps
+/// `.env.example` too.
+pub const ENV_ENTRIES: &[&str] = &[
+    ".env*",
+    "!.env*.example",
+    "!.env*.sample",
+    "!.env*.template",
+];
 
 /// The [`ENV_ENTRIES`] `.gitignore` in `project_root` does not hold as a line:
 /// what [`append_entries`] would add there, said before it does (`--dry-run`,
@@ -1011,13 +1051,35 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    /// WP-5: an old `!.env.example` counts as the new `!.env*.example` until
+    /// an environment has a template of its own; then the new line is added.
+    #[test]
+    fn wp5_old_exceptions_count_until_an_environment_template_exists() {
+        let d = TempDir::new().unwrap();
+        let g = d.path().join(".gitignore");
+        fs::write(&g, ".env*\n!.env.example\n!.env.sample\n!.env.template\n").unwrap();
+        assert!(append_entries(&g, ENV_ENTRIES).unwrap().is_empty());
+
+        fs::write(d.path().join(".env.prod.example"), "A=\n").unwrap();
+        assert_eq!(
+            append_entries(&g, ENV_ENTRIES).unwrap(),
+            vec!["!.env*.example".to_string()]
+        );
+
+        // A new .gitignore gets the wildcard lines.
+        let fresh = TempDir::new().unwrap();
+        let g = fresh.path().join(".gitignore");
+        assert_eq!(append_entries(&g, ENV_ENTRIES).unwrap().len(), 4);
+        assert!(fs::read_to_string(&g).unwrap().contains("!.env*.example"));
+    }
+
     /// The negations carve out exactly the template family `core::env_name`
     /// names, so the two lists cannot drift apart.
     #[test]
     fn env_entries_negate_the_template_family() {
         let negated: Vec<&str> = ENV_ENTRIES
             .iter()
-            .filter_map(|e| e.strip_prefix("!.env."))
+            .filter_map(|e| e.strip_prefix("!.env*."))
             .collect();
         assert_eq!(negated, crate::core::env_name::TEMPLATE_SUFFIXES);
     }

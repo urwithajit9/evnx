@@ -7,7 +7,7 @@ $ evnx init --with next,pg --yes
   evnx init  Set up environment variables for your project
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 10 variables from 2 components
   ✓ 10 names from .env.example → .evnx.toml (3 secret, 5 with a format)
 

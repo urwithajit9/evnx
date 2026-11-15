@@ -7,7 +7,7 @@ $ evnx init --with nextjs,supabase,stripe --yes
   evnx init  Set up environment variables for your project
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 14 variables from 3 components
   ✓ 14 names from .env.example → .evnx.toml (7 secret, 5 with a format)
 

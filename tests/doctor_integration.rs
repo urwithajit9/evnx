@@ -127,7 +127,7 @@ fn auto_fix_covers_every_env_file_and_keeps_the_example_committable() {
         "{gitignore}"
     );
     assert!(
-        gitignore.lines().any(|l| l.trim() == "!.env.example"),
+        gitignore.lines().any(|l| l.trim() == "!.env*.example"),
         "the template must stay committable:\n{gitignore}"
     );
 
@@ -181,7 +181,7 @@ fn fix_repairs_what_it_reports() {
 
     let gitignore = fs::read_to_string(d.path().join(".gitignore")).unwrap();
     assert!(gitignore.contains(".env*"), "{gitignore}");
-    assert!(gitignore.contains("!.env.example"), "{gitignore}");
+    assert!(gitignore.contains("!.env*.example"), "{gitignore}");
 
     // And the project is now healthy without --fix.
     cargo_bin_cmd!("evnx")

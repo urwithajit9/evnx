@@ -6,7 +6,7 @@ $ evnx init --yes
   evnx init  Set up environment variables for your project
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example (no variables yet)
 · Tip: Run 'evnx add' to add variables interactively
   ✓ created .evnx.toml with an empty [vars]: evnx add records new variables there

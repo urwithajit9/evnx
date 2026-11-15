@@ -22,7 +22,7 @@ $ evnx init --with postgresql --yes --force -p sample
   evnx init  Set up environment variables for your project
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.sample with 6 variables from 1 component
   ✓ 6 names from .env.sample → sample/.evnx.toml (2 secret, 2 with a format)
 
@@ -42,7 +42,7 @@ $ evnx init --with redis --yes -p cfg
   evnx init  Set up environment variables for your project
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.template with 5 variables from 1 component
   ✓ 5 names from .env.template → cfg/.evnx.toml (1 secret, 3 with a format)
 

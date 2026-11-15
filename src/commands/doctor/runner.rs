@@ -1750,7 +1750,7 @@ mod tests {
         assert!(!fix_dockerignore(root, false).unwrap(), "idempotent");
         let text = fs::read_to_string(root.join(".dockerignore")).unwrap();
         assert!(text.starts_with("node_modules\n"), "{text}");
-        assert!(text.contains("!.env.example"), "{text}");
+        assert!(text.contains("!.env*.example"), "{text}");
     }
 
     #[test]

@@ -418,7 +418,7 @@ fn init_updates_gitignore() {
         "Should add the .env* rule:\n{gitignore}"
     );
     assert!(
-        gitignore.lines().any(|l| l.trim() == "!.env.example"),
+        gitignore.lines().any(|l| l.trim() == "!.env*.example"),
         "Should keep .env.example committable:\n{gitignore}"
     );
 }
@@ -466,14 +466,14 @@ fn init_gitignores_every_env_file_but_not_the_template() {
     let rules: Vec<&str> = gitignore.lines().map(str::trim).collect();
 
     assert!(rules.contains(&".env*"), "{gitignore}");
-    for exempt in ["!.env.example", "!.env.sample", "!.env.template"] {
+    for exempt in ["!.env*.example", "!.env*.sample", "!.env*.template"] {
         assert!(rules.contains(&exempt), "missing {exempt}:\n{gitignore}");
     }
 
     // Order is load-bearing: a negation before the pattern it carves out of
     // does nothing in gitignore.
     let glob = rules.iter().position(|r| *r == ".env*").unwrap();
-    let negation = rules.iter().position(|r| *r == "!.env.example").unwrap();
+    let negation = rules.iter().position(|r| *r == "!.env*.example").unwrap();
     assert!(
         glob < negation,
         "the negation must follow the pattern:\n{gitignore}"
