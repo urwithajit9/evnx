@@ -360,6 +360,39 @@ pub(crate) fn template_vars(target: &Target) -> Result<VarCollection> {
     Ok(vars)
 }
 
+/// The kept template's names that the existing env file does not have, with
+/// the command that adds them: `init` leaves the env file as it is.
+fn say_names_env_lacks(target: &Target, env: &str) {
+    let (Ok(Some(template)), Ok(Some(have))) = (
+        crate::commands::add::shared::read_assignments(&target.template_path()),
+        crate::commands::add::shared::read_assignments(&target.root.join(env)),
+    ) else {
+        return;
+    };
+    let lacking: Vec<&str> = template
+        .keys()
+        .filter(|n| !have.contains_key(*n))
+        .map(String::as_str)
+        .collect();
+    if lacking.is_empty() {
+        return;
+    }
+    let shown = lacking
+        .iter()
+        .take(5)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(", ");
+    let more = match lacking.len() {
+        n if n > 5 => format!(" and {} more", n - 5),
+        _ => String::new(),
+    };
+    ui::info(format!(
+        "{env} lacks {}: {shown}{more}. init does not add them; run `evnx sync --direction reverse`",
+        crate::utils::string::count(lacking.len(), "name"),
+    ));
+}
+
 /// `init --yes` with no stack named, in a folder that has its template: a
 /// fresh clone (DQ-31). Keep the template, create `.env` from it when there
 /// is none, keep the contract; nothing is generated.
@@ -396,8 +429,9 @@ fn set_up(target: &Target, name: &str) -> Result<Outcome> {
                     ui::say(line);
                 }
                 ui::success(format!(
-                    "already set up: {name} and {env} are here; nothing was generated"
+                    "already set up: {name} and {env} are here, and neither was changed"
                 ));
+                say_names_env_lacks(target, env);
                 warn_if_env_is_still_committable(&target.root, env);
             },
         )?;
@@ -591,7 +625,7 @@ pub(crate) fn write_files(
             Some(false) => {
                 let gitignore_line = update_gitignore(output_path)?;
                 crate::utils::ui::say(
-                    format!("Kept the existing {name}. Nothing was generated.").yellow(),
+                    format!("Kept the existing {name}: it was not changed.").yellow(),
                 );
                 if let Some(line) = gitignore_line {
                     crate::utils::ui::say(line);

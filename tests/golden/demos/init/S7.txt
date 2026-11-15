@@ -17,7 +17,7 @@ $ evnx init --detect --yes
 ✓ Created .env from template
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
 ✓ Created .env.example with 16 variables
-  ✓ created .evnx.toml with 16 variable(s) in [vars]
+  ✓ 16 names from .env.example → .evnx.toml (7 secret, 3 with a format)
 
 Next steps:
   1. Edit .env and replace placeholder values

@@ -93,18 +93,38 @@ pub fn check(
         );
     }
 
-    if problems == 0 {
-        crate::say!(
-            "  {} {example}{} agree{} with [vars] ({} declared)",
-            "✓".green(),
-            if env_vars.is_some() {
-                format!(" and {env_label}")
-            } else {
-                String::new()
-            },
-            if env_vars.is_some() { "" } else { "s" },
-            spec.len()
+    // The declared formats, by the check `validate` runs for the same
+    // declaration (`check_spec_format`): the contract says what a value looks
+    // like, and `.env` is the file whose values are real. A value is never
+    // printed, only the name and the format it breaks.
+    if let Some(vars) = &env_vars {
+        let issues = crate::commands::validate::checks::check_spec_format(
+            vars,
+            spec,
+            crate::core::env_name::name_of(env),
+            env,
+            &std::collections::HashSet::new(),
         );
+        for issue in &issues {
+            problems += 1;
+            println!("  {} {} (in {env_label})", "✗".red(), issue.message);
+        }
+    }
+
+    if problems == 0 {
+        if env_vars.is_some() {
+            crate::say!(
+                "  {} {example} and {env_label}: names and formats agree with [vars] ({} declared)",
+                "✓".green(),
+                spec.len()
+            );
+        } else {
+            crate::say!(
+                "  {} {example}: names agree with [vars] ({} declared); values were not checked",
+                "✓".green(),
+                spec.len()
+            );
+        }
     }
     // N14-12: a name some environment files hold and others lack. A warning:
     // it does not change the verdict. The contract excuses a file from a name
@@ -597,7 +617,7 @@ const INIT_GENERATED: &str =
 pub(crate) fn contract_into(
     path: &Path,
     vars: &crate::schema::models::VarCollection,
-) -> Result<Vec<String>> {
+) -> Result<Declared> {
     let (entries, left_out) = from_collection(vars)?;
     for (name, format) in &left_out {
         ui::warning(format!(
@@ -613,7 +633,7 @@ pub(crate) fn contract_into(
             Err(e) => return Err(e).with_context(|| format!("Failed to read {}", path.display())),
         };
         if config::has_vars_section(&existing) {
-            return Ok(Vec::new());
+            return Ok(Declared::default());
         }
         let mut out = existing;
         if !out.is_empty() && !out.ends_with('\n') {
@@ -623,11 +643,27 @@ pub(crate) fn contract_into(
         out.push_str("\n[vars]\n");
         let written = config::save(path, &out)?;
         crate::core::safe_write::report(&written);
-        return Ok(Vec::new());
+        return Ok(Declared::default());
     }
-    let names = entries.iter().map(|e| e.name.clone()).collect();
+    let declared = Declared {
+        names: entries.iter().map(|e| e.name.clone()).collect(),
+        secret: entries
+            .iter()
+            .filter(|e| e.spec.secret == Some(true))
+            .count(),
+        with_format: entries.iter().filter(|e| e.spec.format.is_some()).count(),
+    };
     write_into_with(path, &entries, true, INIT_GENERATED, MERGED)?;
-    Ok(names)
+    Ok(declared)
+}
+
+/// What [`contract_into`] declared: the names, and how many of them it marked
+/// secret or gave a format, so `init` can say what it guessed.
+#[derive(Debug, Default)]
+pub(crate) struct Declared {
+    pub names: Vec<String>,
+    pub secret: usize,
+    pub with_format: usize,
 }
 
 #[cfg(test)]

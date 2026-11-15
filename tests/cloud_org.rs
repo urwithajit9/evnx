@@ -179,3 +179,45 @@ fn t_dec_vl10_org_roles_are_read_like_vault_roles() {
         out.stderr
     );
 }
+
+/// Removing a member ends their seat, not their vault shares, and the output
+/// says so and names the commands that check and end them.
+#[test]
+fn removing_a_member_says_vault_access_is_unchanged() {
+    let mut s = org_server(2);
+    let del = s
+        .mock(
+            "DELETE",
+            format!("/api/v1/orgs/{ORG_ID}/members/u-bob").as_str(),
+        )
+        .with_status(204)
+        .expect(1)
+        .create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["org", "remove", "bob@example.com", "--org", "acme", "--yes"],
+        None,
+    );
+    out.assert_code(0);
+    del.assert();
+    for needle in [
+        "did not change vault access",
+        "evnx vault members <vault>",
+        "evnx vault revoke <vault> --user bob@example.com",
+    ] {
+        assert!(out.stdout.contains(needle), "{needle}:\n{}", out.stdout);
+    }
+}
+
+/// The share help states the documented limit, not a stronger claim.
+#[test]
+fn vault_share_help_names_the_unverified_recipient_keys() {
+    let out = support::run(Project::new().path(), &["vault", "share", "--help"]);
+    let text = out.all();
+    assert!(!text.contains("cannot grant access itself"), "{text}");
+    assert!(
+        text.contains("not yet verified independently") && text.contains("SECURITY.md"),
+        "{text}"
+    );
+}

@@ -13,11 +13,17 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   ✓  Check file permissions for sensitive files
 
-  4 checks passed
+  3 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -38,11 +44,17 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   ✓  Check file permissions for sensitive files
 
-  4 checks passed
+  3 checks passed
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup
@@ -65,14 +77,20 @@ $ evnx doctor
   ·  Check for Docker configuration files
      No Docker configuration detected
 
-  ✓  Check that AI coding agents cannot read .env
+  ·  AI coding agents and .env
+     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
 
   ✓  Check file permissions for sensitive files
 
-  1 error  ·  3 checks passed
+  1 error  ·  2 checks passed
 
   →  1 issue evnx doctor --fix can repair:
      ·  Validate .env file existence, security, and syntax
+
+  Not examined here:
+    values and required names    evnx validate
+    template drift               evnx sync --check
+    secrets in the project       evnx scan
 [stderr]
 
   evnx doctor  Diagnosing environment setup

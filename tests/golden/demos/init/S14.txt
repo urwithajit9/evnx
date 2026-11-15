@@ -9,7 +9,7 @@ $ evnx init --with nextjs,postgresql,stripe --yes
 ✓ Created .env from template
 ✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
 ✓ Created .env.example with 14 variables from 3 components
-  ✓ created .evnx.toml with 14 variable(s) in [vars]
+  ✓ 14 names from .env.example → .evnx.toml (5 secret, 5 with a format)
 
 Next steps:
   1. Edit .env and replace placeholder values

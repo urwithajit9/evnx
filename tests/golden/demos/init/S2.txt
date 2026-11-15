@@ -24,7 +24,7 @@ $ evnx init --yes
 
   evnx init  Set up environment variables for your project
 
-✓ already set up: .env.example and .env are here; nothing was generated
+✓ already set up: .env.example and .env are here, and neither was changed
   Docs: https://docs.evnx.dev/cli/commands/init
 [exit 0]
   ok: FIXED DQ-31 (R-init): a second init --yes is already set up, not a refusal (exit 0)

@@ -150,6 +150,7 @@ pub fn handle(
         render: &render,
         example_render: None,
         env_from_values: false,
+        values: None,
     };
     confirm_and_apply(output_path, &vars, &flow, mode)
 }

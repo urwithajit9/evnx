@@ -1458,7 +1458,10 @@ pub enum VaultCommands {
     ///
     /// Your master password opens the vault key on this machine, and it is
     /// re-wrapped to the recipient's public keys before it leaves. The server
-    /// never sees it unwrapped and cannot grant access itself.
+    /// never sees the key unwrapped.
+    ///
+    /// Note: the recipient's public keys are supplied by the server and are
+    /// not yet verified independently. See SECURITY.md.
     ///
     /// The wrap is hybrid X25519 + ML-KEM-768, so it holds even against an
     /// adversary recording it today for a quantum computer later.
@@ -2177,9 +2180,11 @@ pub enum Commands {
     /// • Architect: Build your stack step-by-step (language → framework → services → infra)
     ///
     /// Writes into the template the project uses (`[defaults] example`, else
-    /// .env.example, .env.sample or .env.template). `.env` is never replaced:
-    /// names it lacks are appended. `.evnx.toml` gets a [vars] entry per
-    /// variable, or the new names are recorded into the one in force.
+    /// .env.example, .env.sample or .env.template). An existing `.env` is never
+    /// replaced, and when `init` keeps a template you already have it leaves
+    /// `.env` as it is: it does not add the names `.env` lacks. Run
+    /// `evnx sync --direction reverse` to add them. `.evnx.toml` gets a [vars]
+    /// entry per variable, or the new names are recorded into the one in force.
     #[command(after_help = docs::INIT.after_help)]
     Init {
         /// Output path for .env files.
@@ -3908,7 +3913,8 @@ const SPEC_CHECK_EXIT_CODES: &str = "\
 Exit codes:
   0  the template and .env agree with [vars], or there is no [vars] (skipped)
   1  they disagree: a name missing from the template, one it has that [vars]
-     does not declare, or a required variable missing from .env
+     does not declare, a required variable missing from .env, or a value in
+     .env that breaks the `format` declared for it
   2  no verdict: the template is missing or does not parse, or a file named
      by --env or --env-name does not exist";
 

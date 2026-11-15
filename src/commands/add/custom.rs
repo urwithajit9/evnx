@@ -406,6 +406,16 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
         );
     }
 
+    // What each name was given, `None` for a placeholder: so the env file's own
+    // value is kept, and said so, rather than counted as added.
+    let values: indexmap::IndexMap<String, Option<String>> = customs
+        .iter()
+        .map(|c| {
+            let given = (c.value != placeholder_for(&c.name)).then(|| c.value.clone());
+            (c.name.clone(), given)
+        })
+        .collect();
+
     // One renderer, two files: `.env` gets the values, `.env.example` the
     // placeholders (I-245, DEC-U8-1 — every name, not only secret-looking ones).
     let render_with = |v: &VarCollection, values: bool| -> Result<String> {
@@ -462,6 +472,7 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
         render: &render,
         example_render: Some(&render_example),
         env_from_values: true,
+        values: Some(&values),
     };
     confirm_and_apply(output_path, &collected, &flow, mode)
 }

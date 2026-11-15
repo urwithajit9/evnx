@@ -111,7 +111,14 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
     };
 
     // Next steps only after a write: they used to follow "Aborted." (N-12).
-    if mode.interactive() && outcome == shared::Outcome::Written {
+    // "Replace placeholder values" only when a name went in without a value of
+    // its own; after `add custom NAME=value` there is nothing to replace.
+    if mode.interactive() && outcome == shared::Outcome::WrittenWithValues {
+        print_next_steps(&[
+            "Run 'evnx validate' to check for issues",
+            "Use 'evnx add' again to add more variables, 'evnx remove' to take one out",
+        ]);
+    } else if mode.interactive() && outcome == shared::Outcome::Written {
         let edit = format!(
             "Edit {} and replace placeholder values",
             shared::env_file_of(output_path, mode.env_name.as_deref())
