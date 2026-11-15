@@ -41,6 +41,35 @@ fn resolve_env(
     }
 }
 
+/// The env file and template for a command that compares the two
+/// (`core::resolve`, WP-5), with the `files` line on stderr when the pairing
+/// is not the plain default (D3). A bad name is "no verdict", as above.
+fn resolve_files(
+    env: Option<&str>,
+    env_name: Option<&str>,
+    example: Option<&str>,
+    cfg: &evnx::core::config::Config,
+    need: evnx::core::resolve::Need,
+    quiet: bool,
+    verbose: bool,
+) -> evnx::core::resolve::Resolved {
+    use evnx::core::resolve::{resolve, Flags};
+    let flags = Flags {
+        env,
+        env_name,
+        example,
+    };
+    match resolve(Path::new("."), flags, cfg, need) {
+        Ok(r) => {
+            if let Some(line) = r.line(verbose) {
+                evnx::utils::ui::files_line(&line, quiet);
+            }
+            r
+        }
+        Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
+    }
+}
+
 fn main() -> Result<()> {
     // Before anything prints: a closed stdout ends evnx quietly (exit 141)
     // instead of panicking, and Ctrl-C at a prompt gives the cursor back.
@@ -171,6 +200,7 @@ fn main() -> Result<()> {
             path,
             yes,
             env_name,
+            example,
         } => commands::add::run(
             target,
             commands::add::Options {
@@ -181,6 +211,7 @@ fn main() -> Result<()> {
                 json,
                 verbose: cli.verbose,
                 env_name,
+                example,
             },
         )
         .or_else(declined),
@@ -235,36 +266,42 @@ fn main() -> Result<()> {
             ignore,
             validate_formats,
             fail_on,
-        } => commands::validate::run(commands::validate::Options {
-            // RM-32: `./.env` in every message and report.
-            env: label(&resolve_env(
-                Path::new("."),
+        } => {
+            let files = resolve_files(
                 env.as_deref(),
                 env_name.as_deref(),
-                cfg.defaults.env_name.as_deref(),
-            )),
-            input_format,
-            example: label(&cfg.example_path(example)),
-            strict: evnx::core::config::any(strict, cfg.validate.strict),
-            fix,
-            dry_run,
-            rotate_weak_secrets,
-            format,
-            exit_zero,
-            // The flag wins over `[validate] fail_on`; both are checked (I-038).
-            fail_on,
-            fail_on_configured: cfg.validate.fail_on.clone(),
-            verbose: cli.verbose,
-            // Additive, as before; kept apart so an unknown type names its
-            // source (I-038).
-            ignore,
-            ignore_configured: cfg.validate.ignore.clone().unwrap_or_default(),
-            validate_formats: evnx::core::config::any(
-                validate_formats,
-                cfg.validate.validate_formats,
-            ),
-            spec: cfg.vars.clone(),
-        }),
+                example.as_deref(),
+                &cfg,
+                evnx::core::resolve::Need::Existing,
+                cli.quiet,
+                cli.verbose,
+            );
+            commands::validate::run(commands::validate::Options {
+                // RM-32: `./.env` in every message and report.
+                env: label(&files.env),
+                input_format,
+                example: label(&files.template),
+                strict: evnx::core::config::any(strict, cfg.validate.strict),
+                fix,
+                dry_run,
+                rotate_weak_secrets,
+                format,
+                exit_zero,
+                // The flag wins over `[validate] fail_on`; both are checked (I-038).
+                fail_on,
+                fail_on_configured: cfg.validate.fail_on.clone(),
+                verbose: cli.verbose,
+                // Additive, as before; kept apart so an unknown type names its
+                // source (I-038).
+                ignore,
+                ignore_configured: cfg.validate.ignore.clone().unwrap_or_default(),
+                validate_formats: evnx::core::config::any(
+                    validate_formats,
+                    cfg.validate.validate_formats,
+                ),
+                spec: cfg.vars.clone(),
+            })
+        }
 
         // C6: `evnx scan rules …`.
         Commands::Scan {
@@ -460,12 +497,16 @@ fn main() -> Result<()> {
         } => {
             use commands::diff::{Compare, DiffOptions, FailOn};
             let here = Path::new(".");
-            let env = resolve_env(
-                here,
+            let files = resolve_files(
                 env.as_deref(),
                 env_name.as_deref(),
-                cfg.defaults.env_name.as_deref(),
+                example.as_deref(),
+                &cfg,
+                evnx::core::resolve::Need::Existing,
+                cli.quiet || against.is_some(),
+                cli.verbose && against.is_none(),
             );
+            let env = files.env.clone();
             // The right-hand side, and with it what is compared (I-078):
             // `--against` names an environment, so values are compared too;
             // otherwise it is the template — `--example`, `[defaults] example`
@@ -474,8 +515,8 @@ fn main() -> Result<()> {
             // consulted here: it names the *left* side.
             let (example, compare) = match against.as_deref() {
                 Some(name) => (resolve_env(here, None, Some(name), None), Compare::Values),
-                None if values => (cfg.example_path(example), Compare::Values),
-                None => (cfg.example_path(example), Compare::Keys),
+                None if values => (files.template.clone(), Compare::Values),
+                None => (files.template.clone(), Compare::Keys),
             };
             if let Err(e) =
                 commands::diff::check_flags(&format, with_stats, interactive, compare, &fail_on)
@@ -653,7 +694,16 @@ fn main() -> Result<()> {
         Commands::Sync { args } if args.prune => {
             commands::remove::prune::run(commands::remove::prune::PruneOptions {
                 path: ".".to_string(),
-                example: cfg.example_path(args.example.clone()),
+                example: resolve_files(
+                    None,
+                    None,
+                    args.example.as_deref(),
+                    &cfg,
+                    evnx::core::resolve::Need::MayCreate,
+                    cli.quiet,
+                    cli.verbose,
+                )
+                .template,
                 declared: cfg.vars.keys().cloned().collect(),
                 dry_run: args.dry_run,
                 yes: args.yes,
@@ -669,14 +719,18 @@ fn main() -> Result<()> {
             .transpose()
             .with_context(|| format!("{} [sync] naming_policy", evnx::core::config::PROJECT_FILE))
             .and_then(|configured| {
+                let files = resolve_files(
+                    args.env.as_deref(),
+                    args.env_name.as_deref(),
+                    args.example.as_deref(),
+                    &cfg,
+                    evnx::core::resolve::Need::Existing,
+                    cli.quiet,
+                    cli.verbose,
+                );
                 commands::sync::run(
-                    resolve_env(
-                        Path::new("."),
-                        args.env.as_deref(),
-                        args.env_name.as_deref(),
-                        cfg.defaults.env_name.as_deref(),
-                    ),
-                    cfg.example_path(args.example.clone()),
+                    files.env,
+                    files.template,
                     args.direction,
                     args.placeholder,
                     cli.verbose,
@@ -885,24 +939,34 @@ fn main() -> Result<()> {
                 // not stop a run that never reads it.
                 let source = match with {
                     Some(ids) => commands::spec::Source::Components(ids),
-                    None => commands::spec::Source::Project(commands::spec::Inputs {
-                        env_named_by: env.is_some().then_some("--env"),
+                    None => {
+                        use evnx::core::resolve::TemplateFrom;
                         // The same resolution as validate and sync (I-189).
-                        env: resolve_env(
-                            Path::new("."),
+                        let files = resolve_files(
                             env.as_deref(),
                             env_name.as_deref(),
-                            cfg.defaults.env_name.as_deref(),
-                        ),
-                        example_named_by: if example.is_some() {
-                            Some("--example")
-                        } else if cfg.defaults.example.is_some() {
-                            Some("[defaults] example in .evnx.toml")
-                        } else {
-                            None
-                        },
-                        example: cfg.example_path(example),
-                    }),
+                            example.as_deref(),
+                            &cfg,
+                            evnx::core::resolve::Need::Existing,
+                            cli.quiet,
+                            cli.verbose,
+                        );
+                        commands::spec::Source::Project(commands::spec::Inputs {
+                            env_named_by: env.is_some().then_some("--env"),
+                            env: files.env,
+                            example_named_by: match files.template_from {
+                                TemplateFrom::Flag => Some("--example"),
+                                TemplateFrom::Configured => {
+                                    Some("[defaults] example in .evnx.toml")
+                                }
+                                TemplateFrom::MatchedFlag | TemplateFrom::MatchedConfigured => {
+                                    Some("the environment's own template")
+                                }
+                                TemplateFrom::Project => None,
+                            },
+                            example: files.template,
+                        })
+                    }
                 };
                 commands::spec::run(source, stdout, merge, force, cli.verbose)
             }
@@ -912,13 +976,16 @@ fn main() -> Result<()> {
                 env_name,
             } => {
                 let named = env.is_some() || env_name.is_some();
-                let env = resolve_env(
-                    Path::new("."),
+                let files = resolve_files(
                     env.as_deref(),
                     env_name.as_deref(),
-                    cfg.defaults.env_name.as_deref(),
+                    example.as_deref(),
+                    &cfg,
+                    evnx::core::resolve::Need::Existing,
+                    cli.quiet,
+                    cli.verbose,
                 );
-                commands::spec::check(&cfg.vars, &cfg.example_path(example), &env, named)
+                commands::spec::check(&cfg.vars, &files.template, &files.env, named)
                     .map(verdict::finish)
             }
         },

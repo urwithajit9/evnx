@@ -75,8 +75,8 @@ pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
             "Give the variables as arguments instead:\n  \
              evnx add custom NAME=value OTHER_NAME=value --yes",
         )?;
-        let template = super::shared::template_of(output_path);
-        let env_file = super::shared::env_file_of(output_path, mode.env_name.as_deref());
+        let template = super::shared::template_of(output_path, mode);
+        let env_file = super::shared::env_file_of(output_path, mode);
         match prompt_loop(
             yes,
             args.desc,
@@ -110,7 +110,7 @@ pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
     }
     let outcome = write(output_path, &customs, mode)?;
     if outcome != Outcome::Aborted {
-        say_how_to_make_optional(output_path, &customs);
+        say_how_to_make_optional(output_path, &customs, mode);
     }
     Ok(outcome)
 }
@@ -123,7 +123,7 @@ pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
 /// required — so the advice starts from `evnx spec init`, which declares them
 /// all. stderr, and not hidden by `-q`: the flag asked for something this run
 /// could not do.
-fn say_how_to_make_optional(output_path: &Path, customs: &[Custom]) {
+fn say_how_to_make_optional(output_path: &Path, customs: &[Custom], mode: &Mode) {
     let optional: Vec<&str> = customs
         .iter()
         .filter(|c| c.optional)
@@ -135,7 +135,7 @@ fn say_how_to_make_optional(output_path: &Path, customs: &[Custom]) {
     crate::utils::ui::warning(format!(
         "{} not marked optional: {} cannot say it, and there is no [vars] contract",
         optional.join(", "),
-        super::shared::template_of(output_path).name
+        super::shared::template_of(output_path, mode).name
     ));
     crate::utils::ui::warning_detail(format!(
         "     →  run `evnx spec init`, then set `required = false` under [vars.{}]",

@@ -26,6 +26,7 @@ Missing from ./.env (present in ./.env.example):
 
   2 missing from ./.env  ·  1 key ignored
 [stderr]
+  files     .env ↔ .env.example  (project template)
 
   evnx diff  ./.env ↔ ./.env.example
 

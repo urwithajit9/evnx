@@ -749,6 +749,19 @@ pub fn run(opts: Options) -> Result<()> {
         ..ParserConfig::default()
     });
 
+    // FLD-6: with no `.env` but a `.env.<name>` here, that is what to say,
+    // before the template — which is usually missing in that layout too.
+    let plain_env = crate::core::env_name::name_of(&env_path).is_none();
+    if !stdin && plain_env && !Path::new(&env_path).exists() {
+        let dir = folder_of(&env_path);
+        if crate::core::resolve::other_env_files(dir, None).is_some() {
+            anyhow::bail!(
+                "{}",
+                crate::core::resolve::not_found(dir, &env_path, "validate")
+            );
+        }
+    }
+
     let example_file = parser
         .parse_file_or_hint(
             &example,

@@ -150,7 +150,24 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
         places.push(read_place(Kind::Env, p)?);
     }
 
-    let template = Template::of(project, &cfg);
+    // The environment's own template when there is one (WP-5, FLD-4):
+    // `remove X --env-name prod` previews `.env.prod.example`, not the shared
+    // `.env.example`.
+    let template = {
+        use crate::core::resolve::{resolve, Flags, Need, TemplateFrom};
+        let flags = Flags {
+            env: None,
+            env_name: opts.env_name.as_deref(),
+            example: None,
+        };
+        match resolve(project, flags, &cfg, Need::MayCreate) {
+            Ok(r) => Template {
+                configured: r.template_from != TemplateFrom::Project,
+                name: r.template,
+            },
+            Err(_) => Template::of(project, &cfg),
+        }
+    };
     let template_path = in_dir(project, &template.name);
     let template_scope = opts.template || opts.all;
     if template_path.is_file() {
@@ -476,9 +493,8 @@ fn resolve_env(
             bail!("{} is not a file", label(&path.to_string_lossy()));
         }
         bail!(
-            "{} does not exist, so there is nothing to remove from.\n  {}",
-            label(&path.to_string_lossy()),
-            crate::core::Parser::missing_env_hint(&path.to_string_lossy())
+            "{}\n  Nothing was removed.",
+            crate::core::resolve::not_found(project, &label(&path.to_string_lossy()), "remove")
         );
     }
     Ok((Some(path), source))

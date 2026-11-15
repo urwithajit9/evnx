@@ -804,6 +804,16 @@ pub fn config_banner(path: &std::path::Path, overrides: &[String], quiet: bool) 
     );
 }
 
+/// The `files` line: which env file is paired with which template, and why
+/// (`core::resolve::Resolved::line`, WP-5). Dimmed like the `config` line;
+/// nothing under `-q`.
+pub fn files_line(line: &str, quiet: bool) {
+    if quiet {
+        return;
+    }
+    eprintln!("{}", line.dimmed());
+}
+
 /// A committed config's path, shortened for a line printed on every run.
 ///
 /// The loader resolves an absolute path, which is unambiguous but too long to

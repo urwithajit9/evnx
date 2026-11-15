@@ -2325,9 +2325,16 @@ pub enum Commands {
         path: String,
 
         /// Write to `.env.<NAME>` instead of `.env` (one file per run; loop
-        /// over names for several). Defaults to `[defaults] env_name`.
+        /// over names for several). `prod` and `.env.prod` both work.
+        /// Defaults to `[defaults] env_name`.
         #[arg(long, value_name = "NAME", global = true)]
         env_name: Option<String>,
+
+        /// The template to add names to, from the project folder. Default:
+        /// the environment's own (`.env.<NAME>.example`) when there is one,
+        /// else `[defaults] example`, else `.env.example`.
+        #[arg(long, value_name = "FILE", global = true)]
+        example: Option<String>,
 
         /// Skip confirmation prompts.
         #[arg(long, short, global = true)]

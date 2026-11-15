@@ -51,6 +51,7 @@ Next steps:
   2. Or copy your existing nope.env file to this directory
   3. Then run 'evnx sync' again
 [stderr]
+  files     nope.env ↔ .env.example  (--env; project template)
 
   evnx sync  nope.env ↔ .env.example  (forward)
 

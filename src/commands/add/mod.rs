@@ -31,6 +31,8 @@ pub struct Options {
     pub verbose: bool,
     /// `--env-name` (RM-17).
     pub env_name: Option<String>,
+    /// `--example` (FLD-4).
+    pub example: Option<String>,
 }
 
 /// Main entry point for `evnx add`
@@ -64,7 +66,14 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
         json: opts.json,
         verbose: opts.verbose,
         env_name: opts.env_name.clone(),
+        example: opts.example.clone(),
     };
+    shared::check_new_env_name(Path::new(&opts.path), &mode)?;
+    if !opts.json {
+        if let Some(line) = shared::resolved(Path::new(&opts.path), &mode)?.line(opts.verbose) {
+            crate::utils::ui::files_line(&line, crate::utils::ui::is_quiet());
+        }
+    }
 
     if mode.interactive() {
         print_header(
@@ -121,7 +130,7 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
     } else if mode.interactive() && outcome == shared::Outcome::Written {
         let edit = format!(
             "Edit {} and replace placeholder values",
-            shared::env_file_of(output_path, mode.env_name.as_deref())
+            shared::env_file_of(output_path, &mode)
         );
         print_next_steps(&[
             &edit,

@@ -93,10 +93,11 @@ pub enum Need {
 /// The answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolved {
-    /// As a person types it from the folder: `.env.prod`, or the `--env` path.
+    /// Relative to the folder resolved in (`.env.prod`), or the `--env` path
+    /// as given. Join it to that folder to open it.
     pub env: String,
     pub env_from: EnvFrom,
-    /// As a person types it from the folder.
+    /// Relative to the folder resolved in, or the `--example` path as given.
     pub template: String,
     pub template_from: TemplateFrom,
     /// The environment in effect: from `--env-name`, the `--env` file's name,
@@ -183,7 +184,7 @@ pub fn resolve(dir: &Path, flags: Flags, cfg: &Config, need: Need) -> Result<Res
         let name = env_name::name_of(&file).map(str::to_string);
         (file, EnvFrom::Configured, None, name)
     } else {
-        (in_dir(dir, DEFAULT_FILE), EnvFrom::Default, None, None)
+        (DEFAULT_FILE.to_string(), EnvFrom::Default, None, None)
     };
 
     let (template, template_from) = if let Some(example) = flags.example {
@@ -192,19 +193,16 @@ pub fn resolve(dir: &Path, flags: Flags, cfg: &Config, need: Need) -> Result<Res
         .as_deref()
         .and_then(|n| env_name::template_for(dir, n))
     {
-        (in_dir(dir, &own), TemplateFrom::MatchedFlag)
+        (own, TemplateFrom::MatchedFlag)
     } else if let Some(example) = &cfg.defaults.example {
         (example.clone(), TemplateFrom::Configured)
     } else if let Some(own) = config_name
         .as_deref()
         .and_then(|n| env_name::template_for(dir, n))
     {
-        (in_dir(dir, &own), TemplateFrom::MatchedConfigured)
+        (own, TemplateFrom::MatchedConfigured)
     } else {
-        (
-            in_dir(dir, &Template::of(dir, cfg).name),
-            TemplateFrom::Project,
-        )
+        (Template::of(dir, cfg).name, TemplateFrom::Project)
     };
 
     let name = flag_name.or(config_name);
@@ -232,12 +230,11 @@ pub fn resolve(dir: &Path, flags: Flags, cfg: &Config, need: Need) -> Result<Res
 
 /// `.env.<name>` for a command that reads it (must exist) or writes it.
 fn env_file(dir: &Path, name: &str, need: Need) -> Result<String> {
-    Ok(match need {
-        Need::Existing => env_name::resolve(dir, Some(name))?
-            .to_string_lossy()
-            .into_owned(),
-        Need::MayCreate => in_dir(dir, &env_name::file_name(Some(name))?),
-    })
+    if need == Need::Existing {
+        // The error names the environments that do exist.
+        env_name::resolve(dir, Some(name))?;
+    }
+    env_name::file_name(Some(name))
 }
 
 /// The `.env.<name>.example|sample|template` files in `dir`, sorted.
@@ -259,44 +256,40 @@ pub fn environment_templates(dir: &Path) -> Vec<String> {
     out
 }
 
-/// `file` inside `dir`, as a person types it: no `./` in the working folder.
-fn in_dir(dir: &Path, file: &str) -> String {
-    if dir == Path::new(".") || dir.as_os_str().is_empty() {
-        file.to_string()
-    } else {
-        dir.join(file).to_string_lossy().into_owned()
-    }
-}
-
 /// The one "env file not found" message (FLD-6), for `command` run in `dir`
 /// where `env` was needed and is missing.
 ///
 /// Lists the environment files that are there, the one-off flag for each, and
 /// the `[defaults]` block that makes it stick. With none, the create hint.
 pub fn not_found(dir: &Path, env: &str, command: &str) -> String {
+    match other_env_files(dir, Some(command)) {
+        Some(hint) => format!("{env} not found.\n\n{hint}"),
+        None => format!(
+            "{env} not found.\n\n  Create it with `evnx init`, or point at another file with --env FILE."
+        ),
+    }
+}
+
+/// The part of [`not_found`] that names what is there: `None` when the
+/// folder has no `.env.<name>` file. `command` completes the one-off line
+/// (`evnx sync --env-name prod`); without it the line is the flag alone.
+pub fn other_env_files(dir: &Path, command: Option<&str>) -> Option<String> {
     let present = env_name::available(dir);
-    let mut msg = format!("{env} not found");
-    if present.is_empty() {
-        msg.push_str(
-            ".\n\n  Create it with `evnx init`, or point at another file with --env FILE.",
-        );
-        return msg;
-    }
+    let first = present.first()?;
     let files: Vec<String> = present.iter().map(|n| format!(".env.{n}")).collect();
-    msg.push_str(&format!(".\n\n  Found: {}\n", files.join(", ")));
-    let first = &present[0];
-    msg.push_str(&format!(
-        "  Use it once:    evnx {command} --env-name {first}\n"
-    ));
-    let mut block =
-        format!("[defaults]\n                                    env_name = \"{first}\"");
+    let once = match command {
+        Some(c) => format!("evnx {c} --env-name {first}"),
+        None => format!("add --env-name {first} to the command"),
+    };
+    let pad = "                                    ";
+    let mut block = format!("[defaults]\n{pad}env_name = \"{first}\"");
     if let Some(own) = env_name::template_for(dir, first) {
-        block.push_str(&format!(
-            "\n                                    example  = \"{own}\""
-        ));
+        block.push_str(&format!("\n{pad}example  = \"{own}\""));
     }
-    msg.push_str(&format!("  Use it always:  add to .evnx.toml →  {block}"));
-    msg
+    Some(format!(
+        "  Found: {}\n  Use it once:    {once}\n  Use it always:  add to .evnx.toml →  {block}",
+        files.join(", ")
+    ))
 }
 
 #[cfg(test)]

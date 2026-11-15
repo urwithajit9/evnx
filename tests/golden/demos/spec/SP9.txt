@@ -42,6 +42,7 @@ required = false
 format = "int"
 [stderr]
   config    ../.evnx.toml
+  files     .env ↔ ../env.sample  (template from [defaults] example)
 
   evnx spec  Generate the variable contract
 
@@ -58,6 +59,7 @@ Next steps:
   3. Commit .evnx.toml; the spec is the contract
 [stderr]
   config    ../.evnx.toml
+  files     .env ↔ .env.example  (template from --example)
 
   evnx spec  Generate the variable contract
 
@@ -107,6 +109,7 @@ required = false
 format = "int"
 [stderr]
   config    .evnx.toml
+  files     .env ↔ env.sample  (template from [defaults] example)
 
   evnx spec  Generate the variable contract
 
@@ -139,6 +142,7 @@ required = false
 format = "int"
 [stderr]
   config    .evnx.toml
+  files     .env.staging ↔ env.sample  (template from [defaults] example)
 
   evnx spec  Generate the variable contract
 

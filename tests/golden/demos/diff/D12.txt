@@ -60,6 +60,7 @@ No verdict: evnx did not run. This is not a clean result.
 
 $ evnx diff --env nope
 [stderr]
+  files     nope ↔ .env.example  (--env; project template)
 Error: ./nope does not exist
 
 Create it with `evnx init`, or point at another file with --env.

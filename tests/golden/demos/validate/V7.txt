@@ -2,6 +2,7 @@
 ================ V7 ================
 
 $ evnx validate --env-name staging
+  files     .env.staging ↔ .env.example  (no .env.staging.example, so the project template)
 
   evnx validate  Check environment configuration
 

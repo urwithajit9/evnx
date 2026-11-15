@@ -335,6 +335,18 @@ fn check_without_env(
         .filter(|v| v.is_required() && v.applies_to(label))
         .count();
 
+    // FLD-6: `.env` is missing but `.env.prod` is here — the likely meaning.
+    if label.is_none() && !skip_without_env {
+        let dir = paths.env.parent().filter(|d| !d.as_os_str().is_empty());
+        let dir = dir.unwrap_or(std::path::Path::new("."));
+        if crate::core::resolve::other_env_files(dir, None).is_some() {
+            anyhow::bail!(
+                "{}",
+                crate::core::resolve::not_found(dir, &env_path, "sync --check")
+            );
+        }
+    }
+
     if required == 0 {
         if skip_without_env {
             say_skipped(paths);

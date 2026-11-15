@@ -105,7 +105,9 @@ fn named_only_an_unknown_env_name_lists_the_ones_that_exist() {
     let l = Layout::new("named-only");
     let out = l.evnx(&["sync", "--check", "--env-name", "staging"]);
     out.assert_code(2);
-    out.assert_contains("Available: prod, prod.example");
+    // WP-5: the per-environment template is not an environment (FLD-4).
+    out.assert_contains("Available: prod");
+    out.assert_not_contains("prod.example");
 }
 
 #[test]
@@ -150,7 +152,9 @@ fn per_env_template_an_unknown_env_name_lists_the_ones_that_exist() {
     let l = Layout::new("per-env-template");
     let out = l.evnx(&["sync", "--check", "--env-name", "prod"]);
     out.assert_code(2);
-    out.assert_contains("Available: staging, staging.example");
+    // WP-5: the per-environment template is not an environment (FLD-4).
+    out.assert_contains("Available: staging");
+    out.assert_not_contains("staging.example");
 }
 
 #[test]
@@ -210,7 +214,6 @@ fn nested_commands_read_the_parents_config_and_the_child_files() {
 // ─── Expected, not there yet ─────────────────────────────────────────────────
 
 #[test]
-#[ignore = "expected: with no .env but one .env.<name>, the missing-file message names that file and --env-name <name>; fixed in a follow-up"]
 fn named_only_the_missing_env_message_names_the_env_file_that_exists() {
     let l = Layout::new("named-only");
     for args in [
@@ -228,7 +231,6 @@ fn named_only_the_missing_env_message_names_the_env_file_that_exists() {
 }
 
 #[test]
-#[ignore = "expected: with --env-name <name>, sync pairs .env.<name> with .env.<name>.example when it exists; fixed in a follow-up"]
 fn sync_with_the_env_name_pairs_it_with_the_matching_template() {
     for (layout, name) in [("named-only", "prod"), ("per-env-template", "staging")] {
         let l = Layout::new(layout);
@@ -241,7 +243,6 @@ fn sync_with_the_env_name_pairs_it_with_the_matching_template() {
 }
 
 #[test]
-#[ignore = "expected: with --env-name <name>, validate compares against .env.<name>.example when it exists, not a missing .env.example; fixed in a follow-up"]
 fn validate_with_the_env_name_uses_the_matching_template() {
     let l = Layout::new("named-only");
     let out = l.evnx(&["validate", "--env-name", "prod"]);
@@ -250,7 +251,6 @@ fn validate_with_the_env_name_uses_the_matching_template() {
 }
 
 #[test]
-#[ignore = "expected: with --env-name <name>, add writes the name to .env.<name>.example, not .env.example; fixed in a follow-up"]
 fn add_with_the_env_name_writes_the_matching_template() {
     for (layout, name) in [("named-only", "prod"), ("per-env-template", "staging")] {
         let l = Layout::new(layout);
@@ -266,7 +266,7 @@ fn add_with_the_env_name_writes_the_matching_template() {
 }
 
 #[test]
-#[ignore = "expected: add never writes to a .evnx.toml outside the current folder without being told to; fixed in a follow-up"]
+#[ignore = "expected: add never writes to a .evnx.toml outside the current folder without being told to; WP-5 step 4"]
 fn nested_add_leaves_the_parents_config_alone() {
     let l = Layout::new("nested");
     let parent_before = l.read(".evnx.toml");
