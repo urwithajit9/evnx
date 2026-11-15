@@ -70,8 +70,30 @@ pub fn file_name(name: Option<&str>) -> Result<String> {
 
 /// `name`, trimmed, if it is one path segment a person could mean as an
 /// environment.
+///
+/// ⚠️ The file's own name is accepted too: `--env-name .env.prod` is `prod`
+/// (FLD-3). Passing the file name is the natural first try, and it used to
+/// become `.env..env.prod` — a new, oddly named file `add` then wrote secrets
+/// into. A path, the plain `.env`, or a template is refused with the flag that
+/// does take it.
 fn checked(name: &str) -> Result<&str> {
     let name = name.trim();
+    if name == DEFAULT_FILE {
+        bail!("--env-name .env is the default file: drop --env-name to use it");
+    }
+    if name.contains('/') || name.contains('\\') {
+        bail!(
+            "--env-name takes an environment name such as 'prod', not a path; \
+             for a file elsewhere use --env {name}"
+        );
+    }
+    let name = name.strip_prefix(".env.").unwrap_or(name);
+    if kind(&format!(".env.{name}")) == FileKind::Template {
+        bail!(
+            "'.env.{name}' is a template, not an environment: pass it with \
+             --example .env.{name}"
+        );
+    }
     if name.is_empty() {
         bail!(
             "--env-name cannot be empty (suggested: {})",
@@ -202,6 +224,7 @@ pub fn kind(file_name: &str) -> FileKind {
     match file_name.strip_prefix(".env.") {
         None | Some("") => FileKind::Other,
         Some(rest) if TEMPLATE_SUFFIXES.contains(&rest) => FileKind::Template,
+        Some(rest) if is_environment_template(rest) => FileKind::Template,
         Some(rest) if is_copy(rest) => FileKind::Copy,
         Some(_) => FileKind::Env,
     }
@@ -230,6 +253,52 @@ pub fn is_structured(file_name: &str) -> bool {
 /// list read `1, bak`, and `validate`'s known environments took `bak` for one.
 /// `old`, `save` and `~` joined with `doctor`'s list (DEC-D20), which reads
 /// these copies because a plaintext one exposes what `.env` does (I-160).
+/// `prod.example`, `staging.sample`: the template of one environment, as in
+/// `.env.prod.example` (FLD-4). Until 0.14.2 only `.env.example`, `.sample`
+/// and `.template` were templates, so `.env.prod.example` was listed as an
+/// environment ("Available: prod, prod.example") and `validate` compared it
+/// to `.env.prod` as a sibling env file.
+fn is_environment_template(rest: &str) -> bool {
+    rest.rsplit_once('.')
+        .is_some_and(|(env, suffix)| !env.is_empty() && TEMPLATE_SUFFIXES.contains(&suffix))
+}
+
+/// The template made for environment `name` in `dir`: the first of
+/// `.env.<name>.example`, `.sample`, `.template` that exists (FLD-4).
+pub fn template_for(dir: &Path, name: &str) -> Option<String> {
+    TEMPLATE_SUFFIXES
+        .iter()
+        .map(|suffix| format!(".env.{name}.{suffix}"))
+        .find(|file| dir.join(file).is_file())
+}
+
+/// The name meant, when `name` would **create** `.env.<name>` and is one or
+/// two edits from a suggested name or an environment already in `dir`
+/// (INIT-3, ADD-6): `prodution` → `production`. `None` when the file exists,
+/// or the name is a known one, or nothing is close.
+///
+/// ⚠️ Edit distance only, not the abbreviation rule [`meant`] also uses:
+/// `prod` is a fine name of its own and must not be questioned for being the
+/// start of `production`.
+pub fn near_miss(dir: &Path, name: &str) -> Option<String> {
+    if dir.join(format!(".env.{name}")).is_file() {
+        return None;
+    }
+    let present = available(dir);
+    let mut candidates: Vec<&str> = present.iter().map(String::as_str).collect();
+    for s in SUGGESTED {
+        if !candidates.contains(s) {
+            candidates.push(s);
+        }
+    }
+    if candidates.contains(&name) {
+        return None;
+    }
+    crate::utils::string::closest(name, candidates.iter().map(|c| (*c, *c)))
+        .first()
+        .map(|c| c.to_string())
+}
+
 fn is_copy(name: &str) -> bool {
     name.contains("backup")
         || name.ends_with('~')
@@ -438,6 +507,80 @@ mod tests {
         }
     }
 
+    /// FLD-3: the file's own name is the name; never `.env..env.prod`.
+    #[test]
+    fn fld3_the_file_name_is_accepted_as_the_name() {
+        let dir = project(&[".env.prod"]);
+        assert_eq!(file_name(Some(".env.prod")).unwrap(), ".env.prod");
+        assert_eq!(file_name(Some("prod")).unwrap(), ".env.prod");
+        assert_eq!(file_name(Some(" .env.prod ")).unwrap(), ".env.prod");
+        let found = resolve(dir.path(), Some(".env.prod")).unwrap();
+        assert!(found.ends_with(".env.prod"), "{found:?}");
+        assert!(!file_name(Some(".env.prod")).unwrap().contains(".env..env"));
+    }
+
+    /// FLD-3: what is not an environment name says which flag takes it.
+    #[test]
+    fn fld3_paths_the_default_and_templates_name_the_right_flag() {
+        let err = file_name(Some("config/.env.prod")).unwrap_err().to_string();
+        assert!(err.contains("--env config/.env.prod"), "{err}");
+        let err = file_name(Some(".env")).unwrap_err().to_string();
+        assert!(err.contains("drop --env-name"), "{err}");
+        for t in [
+            ".env.example",
+            "example",
+            ".env.prod.example",
+            "prod.sample",
+        ] {
+            let err = file_name(Some(t)).unwrap_err().to_string();
+            assert!(err.contains("--example"), "{t}: {err}");
+        }
+    }
+
+    /// FLD-4: `.env.<name>.example` is a template, not an environment.
+    #[test]
+    fn fld4_an_environment_template_is_a_template() {
+        assert_eq!(kind(".env.prod.example"), FileKind::Template);
+        assert_eq!(kind(".env.staging.sample"), FileKind::Template);
+        assert_eq!(kind(".env.production.template"), FileKind::Template);
+        assert_eq!(kind(".env.prod.example.bak"), FileKind::Copy);
+        assert_eq!(kind(".env.prod.local"), FileKind::Env);
+        assert_eq!(name_of(".env.prod.example"), None);
+        let dir = project(&[".env.prod", ".env.prod.example", ".env.example"]);
+        assert_eq!(available(dir.path()), vec!["prod".to_string()]);
+    }
+
+    #[test]
+    fn fld4_template_for_finds_the_environments_own() {
+        let dir = project(&[".env.prod.sample", ".env.example"]);
+        assert_eq!(
+            template_for(dir.path(), "prod").as_deref(),
+            Some(".env.prod.sample")
+        );
+        assert_eq!(template_for(dir.path(), "staging"), None);
+    }
+
+    /// INIT-3, ADD-6: a near miss of a known name is caught before a new file
+    /// is made; a short name of its own is not questioned.
+    #[test]
+    fn init3_a_new_name_close_to_a_known_one_is_a_near_miss() {
+        let dir = project(&[".env.staging"]);
+        assert_eq!(
+            near_miss(dir.path(), "prodution").as_deref(),
+            Some("production")
+        );
+        assert_eq!(near_miss(dir.path(), "stagin").as_deref(), Some("staging"));
+        assert_eq!(near_miss(dir.path(), "prod"), None);
+        assert_eq!(near_miss(dir.path(), "production"), None);
+        assert_eq!(near_miss(dir.path(), "qa"), None);
+        let dir = project(&[".env.prodution"]);
+        assert_eq!(
+            near_miss(dir.path(), "prodution"),
+            None,
+            "it exists: use it"
+        );
+    }
+
     #[test]
     fn select_prefers_the_named_environment() {
         let dir = project(&[".env", ".env.production"]);
@@ -589,7 +732,7 @@ pub fn name_of(path: &str) -> Option<&str> {
     let rest = file.strip_prefix(".env.")?;
     // `.env.example` and `.env.local.bak` are not environments anyone declares
     // rules for; an empty remainder is not a name at all.
-    if rest.is_empty() || TEMPLATE_SUFFIXES.contains(&rest) {
+    if rest.is_empty() || kind(file) == FileKind::Template {
         return None;
     }
     // Re-borrow from `path` so the lifetime is the caller's.
