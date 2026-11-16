@@ -46,9 +46,24 @@ struct Registry {
 /// The folder a registry for `file` belongs to: the repository holding it, or
 /// its own folder outside one.
 pub fn root_for(file: &Path) -> PathBuf {
-    let abs = std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    let abs = located(file);
     let dir = abs.parent().map(Path::to_path_buf).unwrap_or_default();
     repo_root(&dir).unwrap_or(dir)
+}
+
+/// `file` with its folder made absolute, and the file itself **not** followed:
+/// a `.env` that is a symlink is recorded, and its backup kept, where the link
+/// is (`safe_write::backup` writes `<link>.bak`), not where it points.
+fn located(file: &Path) -> PathBuf {
+    let dir = match file.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    };
+    let dir = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    match file.file_name() {
+        Some(name) => dir.join(name),
+        None => dir,
+    }
 }
 
 fn repo_root(dir: &Path) -> Option<PathBuf> {
@@ -138,7 +153,7 @@ pub fn root_of_dir(dir: &Path) -> PathBuf {
 
 /// `file` as the registry names it: relative to `root`, `/`-separated.
 pub fn name_in(root: &Path, file: &Path) -> String {
-    let abs = std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    let abs = located(file);
     abs.strip_prefix(root)
         .map(|r| r.to_string_lossy().replace('\\', "/"))
         .unwrap_or_else(|_| abs.to_string_lossy().into_owned())
@@ -208,6 +223,26 @@ mod tests {
         after_backup(&env, &bak, true);
         assert!(!d.path().join(".gitignore").exists());
         assert_eq!(list(&std::fs::canonicalize(d.path()).unwrap()).len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_file_is_recorded_where_the_link_is() {
+        let d = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(d.path().join("real")).unwrap();
+        std::fs::write(d.path().join("real/.env.dev"), "A=1\n").unwrap();
+        std::os::unix::fs::symlink("real/.env.dev", d.path().join(".env.dev")).unwrap();
+        std::fs::write(d.path().join(".env.dev.bak"), "A=0\n").unwrap();
+        after_backup(
+            &d.path().join(".env.dev"),
+            &d.path().join(".env.dev.bak"),
+            true,
+        );
+        let root = std::fs::canonicalize(d.path()).unwrap();
+        let list = list(&root);
+        assert_eq!(list.len(), 1, "{list:?}");
+        assert_eq!(list[0].file, ".env.dev");
+        assert!(!d.path().join("real/.evnx").exists());
     }
 
     #[test]

@@ -164,8 +164,8 @@ pub struct AlignArgs {
 
     /// Keep no `.bak` copy of a file before replacing it.
     ///
-    /// Without it, a `.bak` that `.gitignore` does not cover is refused
-    /// before anything is written: it would hold a copy of the secrets.
+    /// Without it, each changed file is kept as a private `.bak` (git-ignored,
+    /// listed by `evnx history`, put back by `evnx undo`).
     #[arg(long)]
     pub no_backup: bool,
 }

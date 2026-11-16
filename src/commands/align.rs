@@ -18,9 +18,10 @@
 //!    the same file under two names (a symlink or a hard link) is refused.
 //! 3. Every target is read and aligned in memory. A problem in **any** target
 //!    stops the run before **any** file is written.
-//! 4. `--check` and `--dry-run` report and stop. Otherwise a backup that git
-//!    would see is refused, before anything is written: `.gitignore` often
-//!    covers `.env` and not `.env.bak`.
+//! 4. `--check` and `--dry-run` report and stop.
+//!    (A backup is private, recorded and git-ignored by `safe_write::backup`,
+//!    as every command's is since WP-7, so `align` no longer refuses a
+//!    `.gitignore` that does not cover `.env.bak`: the backup adds `*.bak`.)
 //! 5. The files that change are written through [`safe_write::replace_all`],
 //!    as `remove` writes them: each kept as `.bak` (unless `--no-backup`), all
 //!    staged, then each committed only if it still holds what was read. If one
@@ -32,14 +33,13 @@
 
 use anyhow::{bail, Result};
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use crate::core::gitignore::{self, Exposure};
 use crate::core::layout::{LayoutError, Plan, Reference, EXTRAS_HEADING};
 use crate::core::verdict::Verdict;
 use crate::core::{resolve, safe_write};
 use crate::utils::path::label;
-use crate::utils::{protect, ui};
+use crate::utils::ui;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -149,23 +149,6 @@ pub fn run_with(mut opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) 
     }
 
     let drifted = prepared.iter().filter(|p| p.plan.changed).count();
-    let exposed = if opts.no_backup || opts.mode == Mode::Check {
-        Vec::new()
-    } else {
-        exposed_backups(&prepared)
-    };
-    match opts.mode {
-        Mode::Write if !exposed.is_empty() => bail!(
-            "nothing was aligned and no file was written:\n{}",
-            exposed.join("\n")
-        ),
-        Mode::DryRun => {
-            for e in &exposed {
-                ui::warning(format!("a real run would refuse: {}", e.trim_start()));
-            }
-        }
-        _ => {}
-    }
     match opts.mode {
         Mode::Check | Mode::DryRun => {
             report(&opts, &prepared, &Written::default());
@@ -265,40 +248,11 @@ fn prepare(reference: &Reference, target: &Target) -> std::result::Result<Prepar
     })
 }
 
-/// The backup of each changing file that git would see, worded for output.
-///
-/// ⚠️ `.gitignore` covering `.env` says nothing about `.env.bak`, and a copy of
-/// the secrets that `git add .` would take is worse than no backup. Outside a
-/// git work tree there is nothing to ask, and nothing is refused.
-fn exposed_backups(prepared: &[Prepared]) -> Vec<String> {
-    let mut out = Vec::new();
-    for p in prepared.iter().filter(|p| p.plan.changed) {
-        let backup = safe_write::backup_path(&p.path);
-        let dir = match backup.parent() {
-            Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
-            _ => PathBuf::from("."),
-        };
-        let name = backup.file_name().unwrap_or_default().to_string_lossy();
-        if gitignore::in_work_tree(&dir) && gitignore::exposure(&dir, &name) != Exposure::Protected
-        {
-            out.push(format!(
-                "  {} would be backed up to {}, which .gitignore does not cover, so \
-                 `git add` would take a copy of its secrets. Add `{}` to \
-                 .gitignore, or pass --no-backup.",
-                label(&p.path),
-                label(&backup.to_string_lossy()),
-                protect::BACKUP_PATTERN
-            ));
-        }
-    }
-    out
-}
-
 /// What a write did: the files replaced, and each one's backup.
 #[derive(Default)]
 struct Written {
     paths: Vec<String>,
-    backups: Vec<(String, PathBuf)>,
+    backups: Vec<(String, safe_write::Backup)>,
 }
 
 impl Written {
@@ -309,7 +263,14 @@ impl Written {
         self.backups
             .iter()
             .find(|(p, _)| p == path)
-            .map(|(_, b)| label(&b.to_string_lossy()))
+            .map(|(_, b)| label(&b.path.to_string_lossy()))
+    }
+    /// `evnx undo .env`, for the file's backup.
+    fn undo_of(&self, path: &str) -> Option<String> {
+        self.backups
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, b)| b.undo())
     }
 }
 
@@ -339,7 +300,7 @@ fn write_all(
         backups: changing
             .iter()
             .zip(backups)
-            .filter_map(|(p, b)| b.map(|b| (p.path.clone(), b.path)))
+            .filter_map(|(p, b)| b.map(|b| (p.path.clone(), b)))
             .collect(),
     })
 }
@@ -483,7 +444,8 @@ fn report(opts: &Options, prepared: &[Prepared], written: &Written) {
         if p.plan.changed {
             details(&p.plan);
             if let Some(b) = written.backup_of(&p.path) {
-                println!("    backup  {b}");
+                let undo = written.undo_of(&p.path).unwrap_or_default();
+                println!("    backup  {b}   undo: {undo}");
             }
         }
     }

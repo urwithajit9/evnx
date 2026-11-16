@@ -525,20 +525,21 @@ fn sync_is_unaffected_by_the_extras_heading() {
 
 #[cfg(unix)]
 #[test]
-fn a_changed_file_is_kept_as_bak_with_its_mode_first() {
+fn a_changed_file_is_kept_as_a_private_bak_first() {
     use std::os::unix::fs::PermissionsExt;
     let before = format!("DB_PORT=1\nDB_HOST={MARK}\n");
     let p = project(&[(".env", &before)]).mode(".env", 0o640);
     align(&p, &[])
         .assert_code(0)
-        .assert_contains("    backup  ./.env.bak");
+        .assert_contains("    backup  ./.env.bak   undo: evnx undo .env");
     assert_eq!(p.read(".env.bak"), before);
     let mode = std::fs::metadata(p.join(".env.bak"))
         .unwrap()
         .permissions()
         .mode()
         & 0o777;
-    assert_eq!(mode, 0o640, "the copy is as private as the original");
+    // Every backup is 0600 whatever the original's mode (WP-7, VAL-2).
+    assert_eq!(mode, 0o600, "the copy is private");
 
     // Already aligned: nothing written, so no second copy.
     align(&p, &[]).assert_code(0);
@@ -562,36 +563,27 @@ fn no_backup_keeps_no_copy_and_json_says_where_one_went() {
 }
 
 #[test]
-fn a_backup_git_would_see_is_refused_before_anything_is_written() {
-    // `.gitignore` covers `.env` and not `.env.bak`.
+fn a_backup_git_would_see_is_git_ignored_for_you() {
+    // `.gitignore` covers `.env` and not `.env.bak`. Since WP-7 every backup
+    // adds `*.bak` itself, as for every command, instead of being refused.
     let p = project(&[
         (".env", &format!("DB_PORT=1\nDB_HOST={MARK}\n")),
         (".gitignore", ".env\n"),
     ])
     .git();
-    age(&p.join(".env"));
-    let before = state(&p.join(".env"));
-
-    align(&p, &[])
-        .assert_code(2)
-        .assert_contains("./.env would be backed up to ./.env.bak, which .gitignore does not cover")
-        .assert_contains("Add `*.bak` to .gitignore, or pass --no-backup");
-    assert_eq!(state(&p.join(".env")), before);
-    assert!(!p.exists(".env.bak"));
-
-    // A dry run says so and still writes nothing; --check is not about writes.
-    align(&p, &["--dry-run"])
-        .assert_code(0)
-        .assert_contains("a real run would refuse: ./.env would be backed up");
-    align(&p, &["--check"])
-        .assert_code(1)
-        .assert_not_contains("would refuse");
-    assert_eq!(state(&p.join(".env")), before);
-
-    // Covered: the run goes ahead, and git still sees nothing new.
-    std::fs::write(p.join(".gitignore"), ".env\n.env.bak*\n").unwrap();
     align(&p, &[]).assert_code(0);
     assert!(p.exists(".env.bak") && p.is_ignored(".env.bak"));
+    assert!(p.read(".gitignore").contains("*.bak"));
+
+    // Listed by `evnx history`, and `evnx undo` puts it back.
+    run(p.path(), &["history"])
+        .assert_code(0)
+        .assert_contains("align")
+        .assert_not_contains(MARK);
+    run(p.path(), &["undo", ".env", "--yes"])
+        .assert_code(0)
+        .assert_not_contains(MARK);
+    assert_eq!(p.read(".env"), format!("DB_PORT=1\nDB_HOST={MARK}\n"));
 }
 
 // ── Which template: the same rule as every other command (core::resolve) ─────

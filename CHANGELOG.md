@@ -142,10 +142,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Every target is checked before any is written, and written as `remove`
     writes: locked against another run, kept as `.bak` first (`--no-backup`
     skips it), replaced only if it still holds what was read, and put back if
-    a later file fails. A `.bak`
-    that `.gitignore` does not cover is refused before anything is written. Each
-    file keeps its mode and line endings; a file already aligned is not touched,
-    and a second run changes nothing.
+    a later file fails. Its backups are private, git-ignored and recorded like
+    every command's, so `evnx history` lists them and `evnx undo` puts a file
+    back. Each file keeps its mode and line endings; a file already aligned is
+    not touched, and a second run changes nothing.
   - Output, `--format json` and errors name files, keys and lines only.
     Exits: 0 aligned, 1 `--check` found drift, 2 no verdict. `sync` is
     unchanged.
