@@ -185,7 +185,11 @@ fn allow_list_has_no_duplicates() {
 fn removed_spellings_are_reported_by_check() {
     use evnx::cli::removed::{check, message, Removed};
     use std::ffi::OsString;
+    let all = entries();
     for r in evnx::cli::removed::REMOVED {
+        if !all.iter().any(|e| e.path == r.path()) {
+            continue; // the command's feature is not built
+        }
         let (typed, tail): (String, Vec<&str>) = match r {
             Removed::Flag { old, .. } => (old[old.len() - 1].to_string(), vec![old[old.len() - 1]]),
             Removed::Value { flag, value, .. } => (format!("{flag} {value}"), vec![flag, value]),
