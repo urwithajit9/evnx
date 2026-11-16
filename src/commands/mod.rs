@@ -1,4 +1,5 @@
 pub mod add;
+pub mod align;
 pub mod backup;
 pub mod convert;
 pub mod diff;

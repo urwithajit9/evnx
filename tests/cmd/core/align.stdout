@@ -1,0 +1,87 @@
+Give .env files the template's sections, comments and key order, keeping their values.
+
+Each assignment is moved exactly as written; a key the file lacks gets a `# KEY=` placeholder, and keys the template lacks are kept at the end. Prints file names, key names and line numbers, never a value.
+
+Usage: evnx align [OPTIONS]
+
+Options:
+      --example <FILE>
+          The template whose layout every file follows. Without it, each file follows its own: `.env.<name>.example` for `.env.<name>` when there is one, else `[defaults] example`, else `.env.example`
+
+      --env <FILE>
+          A file to align. Repeat for several: every one is checked before any is written. Defaults to `[defaults] env_name`, else `.env`
+
+      --env-name <NAME>
+          Align `.env.<NAME>`. Repeatable, and combines with --env
+
+  -n, --dry-run
+          Show what would move, what is missing and what is extra; write nothing
+
+      --check
+          Report alignment through the exit code; write nothing.
+          
+            0  every file already has the template's layout (`evnx sync --check`
+               is what reports keys with no value)
+            1  a file is out of alignment
+            2  no verdict — a file is missing, will not parse, or is the
+               same file as another one named
+
+      --format <FORMAT>
+          Output format: `pretty` (default) or `json`
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+      --no-backup
+          Keep no `.bak` copy of a file before replacing it.
+          
+          Without it, a `.bak` that `.gitignore` does not cover is refused before anything is written: it would hold a copy of the secrets.
+
+  -v, --verbose
+          Enable verbose output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+      --no-color
+          Disable colored output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+What it does:
+  The template decides headings, comments, blank lines and key order. Each
+  file keeps its own assignments, moved byte for byte: values, quoting,
+  inline comments and multiline values are never rewritten.
+  A key the file lacks gets a # KEY= placeholder: never the template's value,
+  and never a blank KEY=, so what the app reads does not change. Keys the
+  template lacks are kept, in order, under "Environment-specific settings".
+
+Which template: the one every command pairs with the file. --example, else
+.env.<name>.example for .env.<name> when it exists, else [defaults] example,
+else .env.example. Files named together may follow different templates.
+
+Comments only the file has are kept: one directly above an assignment moves
+with it, one followed by a blank line stays after the assignment above it.
+A comment the template also has is the template's. Duplicate keys, a line
+that does not parse, mixed line endings, or more copies of a template comment
+than the template has stop the run, and nothing is written.
+
+Examples:
+  evnx align --env .env.development --env .env.test
+  evnx align --example .env.example --env .env --dry-run
+  evnx align --env-name production --check
+
+Every file is read and checked before any is written, and one already aligned
+is not touched. A file that changes is kept as .bak first, replacing the last
+one (--no-backup to skip); a .bak that .gitignore does not cover is refused,
+since it would hold the secrets. If a later file fails, the ones already
+replaced are put back. Another evnx run writing the same file stops this one.
+
+Exit codes: 0 aligned (or written, or a dry run); 1 --check found a file out
+of alignment; 2 could not run (missing file, parse error, same file twice).
+
+Full guide: https://docs.evnx.dev/cli/commands/align

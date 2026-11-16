@@ -14,6 +14,7 @@ pub mod glob;
 pub mod http;
 pub mod inject;
 pub mod key_rules;
+pub mod layout;
 pub mod lock;
 pub mod mask;
 pub mod parser;
