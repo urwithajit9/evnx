@@ -67,6 +67,9 @@ Options:
       --here
           Make this folder a project of its own: write `.evnx.toml` here, even when the repository's root already has one, and do not take `[defaults]` from it. Without it, a folder inside a repository records its names in the root's `.evnx.toml`
 
+      --no-contract
+          Write no `[vars]` contract into `.evnx.toml`: only the env files and `.gitignore`, as `cp .env.example .env` would. The contract is what `evnx validate` checks names and formats against; it is safe to delete, and `evnx spec init` writes one later. When init adopts named env files it still sets `[defaults] env_name`
+
   -v, --verbose
           Enable verbose output
 

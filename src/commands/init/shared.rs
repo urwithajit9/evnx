@@ -48,6 +48,8 @@ pub struct Target {
     pub env_file: String,
     /// `--here`: this folder's own `.evnx.toml`, whatever is above (WP-5).
     pub here: bool,
+    /// `--no-contract`: no `[vars]` written (INIT-4).
+    pub no_contract: bool,
 }
 
 impl Target {
@@ -60,6 +62,7 @@ impl Target {
             env_name: None,
             env_file: String::new(),
             here: false,
+            no_contract: false,
         };
         target.resolve()?;
         Ok(target)
@@ -280,9 +283,11 @@ pub(crate) fn write(
     }
     let (outcome, talk) = write_files(target, vars, example_content, env_content, opts)?;
     match outcome {
+        // GEN-7: the template first, then `.env` made from it. It was the
+        // other way round: ".env from template", then "Created .env.example".
         Outcome::Written => finish(target, vars, vars, || {
-            talk();
             report();
+            talk();
         })?,
         Outcome::KeptExisting => finish(
             target,
@@ -313,7 +318,7 @@ pub(crate) fn emit(planned: Option<&super::report::Planned>, opts: WriteOptions,
 /// there. The way to add a stack's variables to a template you keep is
 /// `evnx add`, and the refusal did not say so (I-302).
 fn refusal(example_path: &Path) -> anyhow::Error {
-    anyhow::anyhow!(
+    crate::core::verdict::stopped(format!(
         "{} already exists.\n\n\
          Refusing to overwrite it without being asked to — it is a tracked file \
          and the contents may be hand-maintained.\n\
@@ -321,7 +326,7 @@ fn refusal(example_path: &Path) -> anyhow::Error {
          To add the variables to it instead, keeping what is there: \
          evnx add blueprint <id> or evnx add service <id>.",
         example_path.display()
-    )
+    ))
 }
 
 /// After the files: the `.evnx.toml` contract (IN-15), then `say` (the
@@ -359,21 +364,25 @@ pub(crate) fn keep<'a>(
 }
 
 /// The template's own variables, for a contract made from a template init
-/// kept rather than wrote: every name required, its value the sample — what
-/// `spec init` reads from a template.
+/// kept rather than wrote: its value the sample, required unless the
+/// template gives a default (WP-6 Q3, [`infer::required`]) — what `spec init`
+/// reads from a template.
+///
+/// [`infer::required`]: crate::commands::spec::infer::required
 pub(crate) fn template_vars(target: &Target) -> Result<VarCollection> {
     let mut vars = VarCollection::default();
     let Some(map) = crate::commands::add::shared::read_assignments(&target.template_path())? else {
         return Ok(vars);
     };
     for (name, value) in map {
+        let required = crate::commands::spec::infer::required(&name, &value);
         vars.vars.insert(
             name,
             VarMetadata {
                 example_value: value,
                 description: None,
                 category: None,
-                required: true,
+                required,
                 source: VarSource::BlueprintOverride,
             },
         );
@@ -381,9 +390,38 @@ pub(crate) fn template_vars(target: &Target) -> Result<VarCollection> {
     Ok(vars)
 }
 
+/// INIT-1: a value in the kept template that looks like a live credential
+/// (`sk_live_…`, a private key, a URL with a password). A template is
+/// committed, so such a key has already leaked; `init` is the first command
+/// a new contributor runs, so it says so. Names only, never values.
+pub(crate) fn warn_template_secrets(target: &Target) {
+    let Ok(Some(map)) = crate::commands::add::shared::read_assignments(&target.template_path())
+    else {
+        return;
+    };
+    let names: Vec<&str> = map
+        .iter()
+        // `user:password@localhost` is evnx's own sample, as `scan` knows (N-20).
+        .filter(|(_, v)| {
+            crate::core::classify::is_secret_shaped(v)
+                && !crate::core::placeholder::is_url_placeholder(v)
+        })
+        .map(|(n, _)| n.as_str())
+        .collect();
+    if names.is_empty() {
+        return;
+    }
+    let template = target.template_name();
+    ui::warning(format!(
+        "{template} holds what looks like a real credential: {}. A template is committed, \
+         so if it is live, rotate it where it is issued and put a placeholder here.",
+        names.join(", ")
+    ));
+}
+
 /// The kept template's names that the existing env file does not have, with
 /// the command that adds them: `init` leaves the env file as it is.
-fn say_names_env_lacks(target: &Target, env: &str) {
+pub(crate) fn say_names_env_lacks(target: &Target, env: &str) {
     let (Ok(Some(template)), Ok(Some(have))) = (
         crate::commands::add::shared::read_assignments(&target.template_path()),
         crate::commands::add::shared::read_assignments(&target.root.join(env)),
@@ -439,6 +477,7 @@ pub(crate) fn set_up_from_template(target: &Target, opts: WriteOptions) -> Resul
 
 fn set_up(target: &Target, name: &str) -> Result<Outcome> {
     let env = target.env_file.as_str();
+    warn_template_secrets(target);
     if target.root.join(env).exists() {
         let gitignore_line = update_gitignore(&target.root)?;
         finish(
@@ -694,10 +733,11 @@ pub(crate) fn write_files(
     // printed, so the caller can write the contract first (RM-03).
     let root = output_path.to_path_buf();
     let env = target.env_file.clone();
+    let template = target.template_name().to_string();
     let talk: Talk = Box::new(move || {
         crate::core::safe_write::report(&example);
         if created_env {
-            crate::utils::ui::say(format!("{} Created {env} from template", "✓".green()));
+            crate::utils::ui::say(format!("{} Created {env} from {template}", "✓".green()));
         }
         if caught_up > 0 {
             crate::utils::ui::say(format!(

@@ -21,10 +21,10 @@ Next steps:
 # Generated from .env
 # Replace all placeholder values with real credentials
 
-SUPPORT_EMAIL=YOUR_VALUE_HERE
-MONKEY_COUNT=YOUR_VALUE_HERE
-BYPASS_CACHE=YOUR_VALUE_HERE
-GHOST_MODE=YOUR_VALUE_HERE
+SUPPORT_EMAIL=you@example.com
+MONKEY_COUNT=0
+BYPASS_CACHE=0
+GHOST_MODE=false
 DEBUG=false
 DB_URL=postgres://user:password@localhost:5432/dbname
 MONGO_URL=mongodb://user:password@localhost:27017/dbname

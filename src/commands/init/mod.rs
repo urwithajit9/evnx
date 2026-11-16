@@ -15,6 +15,7 @@ use colored::*;
 use dialoguer::Select;
 use std::path::Path;
 
+mod adopt;
 mod architect;
 mod blank;
 mod blueprint;
@@ -58,6 +59,7 @@ pub fn run(
     json: bool,
     env_name: Option<String>,
     here: bool,
+    no_contract: bool,
 ) -> Result<()> {
     // ⚠️ Before the header and before any project is touched. Listing is a
     // question about evnx, not about this directory — it has to work with no
@@ -95,6 +97,7 @@ pub fn run(
     let mut target =
         shared::Target::new(Path::new(&path), config, verbose)?.with_env_name(env_name)?;
     target.here = here;
+    target.no_contract = no_contract;
 
     if from_source {
         print_init_header();
@@ -121,6 +124,43 @@ pub fn run(
         dry_run,
         json,
     };
+
+    // FLD-10: named env files and no default among them. Adoption comes
+    // first, before detection proposes a stack over the top of them; only
+    // when nothing else was asked for.
+    if with.is_empty() && blueprint.is_none() && !detect_flag {
+        let found = adopt::Found::in_dir(&target.root);
+        if adopt::applies(&target, &found) {
+            let choice = if no_questions || dry_run {
+                adopt::Choice::Adopt
+            } else if !shared::can_ask() {
+                return Err(crate::core::verdict::stopped(format!(
+                    "{}.\n\n\
+                     This project already has env files. To record them in .evnx.toml \
+                     (no env file is changed):\n  \
+                     evnx init --yes\n\
+                     To see what that writes first:\n  \
+                     evnx init --dry-run",
+                    shared::no_question_reason("there is no terminal to ask on")
+                )));
+            } else {
+                adopt::ask(&target, &found)?
+            };
+            match choice {
+                adopt::Choice::Adopt => {
+                    adopt::handle(&target, opts, &found)?;
+                    print_docs_hint(&docs::INIT);
+                    return Ok(());
+                }
+                adopt::Choice::Nothing => {
+                    shared::aborted();
+                    print_docs_hint(&docs::INIT);
+                    return Ok(());
+                }
+                adopt::Choice::Generate => {}
+            }
+        }
+    }
 
     // ⚠️ Detection runs before the menu, and only when nothing was asked for
     // explicitly. `--with`, `--blueprint` and `--yes` all say what the user
@@ -152,7 +192,7 @@ pub fn run(
         // this was the one door that did not (I-014). Exit code stays 2. "A
         // terminal" means stdin and stderr, outside CI (I-299, DQ-30).
         if !shared::can_ask() {
-            anyhow::bail!(
+            return Err(crate::core::verdict::stopped(format!(
                 "{}.\n\n\
                  Name what you want instead:\n  \
                  evnx init --yes                     blank files\n  \
@@ -160,7 +200,7 @@ pub fn run(
                  evnx init --yes --with <a,b,c>      components (evnx init --list-components)\n  \
                  evnx init --detect                  what the project's manifests declare",
                 shared::no_question_reason("there is no terminal to show the menu on")
-            );
+            )));
         }
 
         let modes = [
@@ -207,7 +247,17 @@ pub fn run(
     // times about a `.env` that did not exist (I-013, N-01). Exit code is 0 in
     // all three cases (DQ-3).
     if outcome == shared::Outcome::Written {
-        print_next_steps_ui(target.template_name(), &target.env_file);
+        // GEN-7: "replace placeholder values" in a file with none.
+        let empty = crate::commands::add::shared::read_assignments(&target.template_path())
+            .ok()
+            .flatten()
+            .is_none_or(|m| m.is_empty());
+        print_next_steps_ui(
+            target.template_name(),
+            &target.env_file,
+            !target.no_contract,
+            empty,
+        );
     }
     print_docs_hint(&docs::INIT);
     Ok(())
@@ -232,13 +282,30 @@ fn print_init_header() {
     );
 }
 
-fn print_next_steps_ui(template: &str, env_file: &str) {
+fn print_next_steps_ui(template: &str, env_file: &str, contract: bool, empty: bool) {
+    let edit = if empty {
+        "Add variables: evnx add custom NAME=value (or evnx add for a menu)".to_string()
+    } else {
+        format!("Edit {env_file} and replace placeholder values")
+    };
+    if !contract {
+        let commit = format!("Commit {template}; never commit {env_file}");
+        print_next_steps(&[
+            &edit,
+            &commit,
+            "Run 'evnx validate' to check configuration",
+            "Use 'evnx add' to add more variables later",
+        ]);
+        return;
+    }
     // The contract init now keeps is committed with the template (IN-15).
+    // INIT-4: what that third file is, and that it can go.
     let commit = format!("Commit {template} and .evnx.toml; never commit {env_file}");
-    let edit = format!("Edit {env_file} and replace placeholder values");
     print_next_steps(&[
         &edit,
         &commit,
+        ".evnx.toml is the contract 'evnx validate' checks: safe to delete \
+         ('evnx init --no-contract' skips it)",
         "Run 'evnx validate' to check configuration",
         "Use 'evnx add' to add more variables later",
     ]);

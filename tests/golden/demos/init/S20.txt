@@ -20,9 +20,9 @@ $ evnx init --from-source --yes
      SPLIT_LINE                   src/a.js:3
 
   0 already in .env.example  ·  8 new
-✓ Created .env from template
-✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Added 8 variables from the source
+✓ Created .env from .env.example
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
   ✓ 8 names from .env.example → .evnx.toml (1 secret, 1 with a format)
 [exit 0]
   ok: from-source (exit 0)

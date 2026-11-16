@@ -20,7 +20,7 @@ $ evnx sync -n
 Preview:
 Target: .env.example (action: Add)
 
-  · NEW_FEATURE = YOUR_VALUE_HERE
+  · NEW_FEATURE = false
   · stripe_key = YOUR_KEY_HERE
 
 (dry-run: no files were modified)
@@ -80,7 +80,7 @@ $ evnx sync -n --naming-policy ignore
 Preview:
 Target: .env.example (action: Add)
 
-  · NEW_FEATURE = YOUR_VALUE_HERE
+  · NEW_FEATURE = false
   · stripe_key = YOUR_KEY_HERE
 
 (dry-run: no files were modified)

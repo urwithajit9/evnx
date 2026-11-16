@@ -48,6 +48,11 @@ pub struct SourceVar {
     pub location: String,
     /// What matched: the access call, or the file's role.
     pub context: String,
+    /// Every read the scan saw gives a default (`os.getenv("X", "d")`,
+    /// `process.env.X ?? d`, `{ X = 3000 }`, `.unwrap_or(…)`), so the code
+    /// works when nobody sets it: optional in the contract (WP-6 Q3). A name
+    /// only named in a config file is not defaulted: nothing says so.
+    pub defaulted: bool,
 }
 
 /// Directories never worth reading: dependencies, build output, and evnx's own
@@ -151,8 +156,20 @@ pub fn scan(root: &Path) -> Result<Scan> {
     // file, reported at the line the name is on.
     let statements = Statements::new()?;
 
+    // What comes right after a read when it has a default: a second argument,
+    // `.unwrap_or…`/`.ok()`, or `||`/`??`.
+    let defaulted_after = Regex::new(
+        r#"(?x) ^ \s* (?: , | [\)\]] \s* (?: \.\s*(?:unwrap_or|ok\s*\(\s*\)) | \|\| | \?\? ) | \|\| | \?\? )"#,
+    )?;
+
     // Keyed by name so the first sighting wins and repeats collapse.
     let mut found: BTreeMap<String, SourceVar> = BTreeMap::new();
+    // Per name: whether every read seen so far had a default.
+    let mut all_defaulted: BTreeMap<String, bool> = BTreeMap::new();
+    let mut saw = |name: &str, defaulted: bool| {
+        let e = all_defaulted.entry(name.to_string()).or_insert(true);
+        *e &= defaulted;
+    };
     let mut mentioned: std::collections::BTreeSet<String> = Default::default();
     let mut walk = Walk::default();
     collect(root, &mut walk);
@@ -179,6 +196,11 @@ pub fn scan(root: &Path) -> Result<Scan> {
             for caps in direct.captures_iter(line) {
                 // The one group that matched: each alternative has its own.
                 if let Some(name) = caps.iter().skip(1).flatten().next() {
+                    let whole = caps.get(0).expect("the match");
+                    saw(
+                        name.as_str(),
+                        defaulted_after.is_match(&line[whole.end()..]),
+                    );
                     // I-239: a name the code reads is a name the code mentions.
                     // Without this, `process.env.X` — no quotes, so the literal
                     // pass never sees it — was "named nowhere in the source".
@@ -194,6 +216,7 @@ pub fn scan(root: &Path) -> Result<Scan> {
                         name: name.as_str().to_string(),
                         location: at.clone(),
                         context: "read from the environment".into(),
+                        defaulted: false,
                     });
                 }
             }
@@ -206,6 +229,7 @@ pub fn scan(root: &Path) -> Result<Scan> {
                         name: name.to_string(),
                         location: at.clone(),
                         context: "named in a config file".into(),
+                        defaulted: false,
                     });
                 }
             }
@@ -215,6 +239,9 @@ pub fn scan(root: &Path) -> Result<Scan> {
         // that location; before the next file, so file order still decides.
         for read in statements.reads(&text) {
             mentioned.insert(read.name.clone());
+            let defaulted =
+                read.defaulted || defaulted_after.is_match(&text[read.offset + read.name.len()..]);
+            saw(&read.name, defaulted);
             if read.import_meta && IMPORT_META_BUILTINS.contains(&read.name.as_str()) {
                 continue;
             }
@@ -223,8 +250,12 @@ pub fn scan(root: &Path) -> Result<Scan> {
                 location: format!("{relative}:{line}"),
                 name: read.name,
                 context: "read from the environment".into(),
+                defaulted: false,
             });
         }
+    }
+    for v in found.values_mut() {
+        v.defaulted = all_defaulted.get(&v.name).copied().unwrap_or(false);
     }
 
     Ok(Scan {
@@ -243,6 +274,8 @@ struct Read {
     offset: usize,
     /// Through `import.meta.env`, where the framework's built-ins live.
     import_meta: bool,
+    /// A destructuring default: `{ PORT = 3000 } = process.env`.
+    defaulted: bool,
 }
 
 /// The reads a line-at-a-time match cannot see (I-236, DQ-22).
@@ -298,6 +331,7 @@ impl Statements {
                         name: name.as_str().to_string(),
                         offset: at + name.start(),
                         import_meta,
+                        defaulted: element[name.end()..].contains('='),
                     });
                 }
                 at += element.len() + 1;
@@ -309,6 +343,7 @@ impl Statements {
                 name: name.as_str().to_string(),
                 offset: name.start(),
                 import_meta: caps["src"].contains("meta"),
+                defaulted: false,
             });
         }
         out
@@ -453,6 +488,66 @@ pub fn compare(scan: &Scan, template: &Path) -> Result<Drift> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn wp6_a_read_with_a_default_is_marked_defaulted() {
+        let d = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(d.path().join("src")).unwrap();
+        std::fs::write(
+            d.path().join("src/app.py"),
+            "import os\n\
+             a = os.getenv(\"PY_DEFAULT\", \"x\")\n\
+             b = os.environ.get(\"PY_GET_DEFAULT\", 3)\n\
+             c = os.environ[\"PY_REQUIRED\"]\n\
+             e = os.getenv(\"PY_BOTH\", \"x\")\n\
+             f = os.environ[\"PY_BOTH\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            d.path().join("src/main.rs"),
+            "let p = std::env::var(\"RS_PORT\").unwrap_or_else(|_| \"80\".into());\n\
+             let o = std::env::var(\"RS_OPTIONAL\").ok();\n\
+             let u = std::env::var(\"RS_REQUIRED\").expect(\"set it\");\n",
+        )
+        .unwrap();
+        std::fs::write(
+            d.path().join("src/server.js"),
+            "const a = process.env.JS_OR || 'x';\n\
+             const b = process.env.JS_NULLISH ?? 3;\n\
+             const c = process.env.JS_REQUIRED;\n\
+             const { JS_DESTRUCTURED = 3000, JS_PLAIN } = process.env;\n",
+        )
+        .unwrap();
+        let scan = scan(d.path()).unwrap();
+        let defaulted = |n: &str| {
+            scan.found
+                .iter()
+                .find(|v| v.name == n)
+                .unwrap_or_else(|| panic!("{n} not found"))
+                .defaulted
+        };
+        for n in [
+            "PY_DEFAULT",
+            "PY_GET_DEFAULT",
+            "RS_PORT",
+            "RS_OPTIONAL",
+            "JS_OR",
+            "JS_NULLISH",
+            "JS_DESTRUCTURED",
+        ] {
+            assert!(defaulted(n), "{n} should be defaulted");
+        }
+        for n in [
+            "PY_REQUIRED",
+            "PY_BOTH",
+            "RS_REQUIRED",
+            "JS_REQUIRED",
+            "JS_PLAIN",
+        ] {
+            assert!(!defaulted(n), "{n} should not be defaulted");
+        }
+    }
+
     use super::*;
     use std::fs;
     use tempfile::TempDir;

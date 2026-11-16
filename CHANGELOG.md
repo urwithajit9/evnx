@@ -26,6 +26,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`platform --env-name` is now `--target`.** Every other command's
   `--env-name` names a local env file; for `platform` it meant the Vercel
   environment. The old spelling still works, with a warning, until 1.0.
+- **Generated contracts mark a name required only when the template gives
+  it no default.** `init` and `spec init` used to mark every template name
+  `required = true`. Now `PORT=8080` or `DEBUG=false` in the template makes the
+  name optional; an empty value, a placeholder, a `localhost` or `example.com`
+  URL, or a secret's name keeps it required. `init --from-source` marks a name
+  optional when every read in the code gives a default
+  (`os.getenv("X", "d")`, `process.env.X ?? d`, `.unwrap_or(…)`), and required
+  otherwise; it used to write every name it found as optional. Existing
+  `.evnx.toml` entries are never rewritten.
+- **Templates never turn debugging on.** `sync`, `add` and `init` write
+  `DEBUG=false` (Django's and Laravel's defaults were `True`), and a
+  non-secret number or switch keeps its type (`MAX_CONN=0`, not
+  `YOUR_VALUE_HERE`); `DATABASE_URL` and the like get a database URL.
 
 ### Fixed
 
@@ -43,6 +56,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `.gitignore`: new blocks keep every environment's template tracked
   (`!.env*.example`, `!.env*.sample`, `!.env*.template`). An existing block is
   extended only once a `.env.<name>.example` exists.
+- **`init` adopts a project that already has env files.** With `.env.prod`
+  and no `.env`, `init` says what it found and offers to adopt them: it writes
+  `[defaults] env_name = "prod"` and a contract from `.env.prod.example`, and
+  changes no env file. `validate` then works with no flags. `.env.local`
+  overrides are never adopted.
+- `init` warns when the template holds what looks like a real credential,
+  naming the variable and never the value.
+- `init`'s first run in an empty folder reports the template before the
+  `.env` made from it, and says how to add variables instead of "replace
+  placeholder values".
+- `init`'s refusals end with "evnx stopped before making changes (exit 2)"
+  instead of "No verdict: evnx did not finish".
+- `add custom DEBUG=false` beside a template that already says so writes the
+  value to `.env` instead of reporting a conflict with evnx's own placeholder.
 
 ### Added
 
@@ -51,6 +78,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A `files` line on stderr (`.env.prod ↔ .env.prod.example (template matched
   to --env-name prod)`) whenever the pairing is not the plain `.env` and
   `.env.example`; always with `-v`, never with `-q`.
+- `init --no-contract`: no `.evnx.toml` contract, only the env files and
+  `.gitignore`.
+- `spec check --format json` (names only, never values) and
+  `spec check --skip-without-env`.
 
 ## [0.14.1] - 2026-11-14
 

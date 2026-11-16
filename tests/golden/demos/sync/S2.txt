@@ -20,7 +20,7 @@ $ evnx sync -n
 Preview:
 Target: .env.example (action: Add)
 
-  · NEW_FEATURE = YOUR_VALUE_HERE
+  · NEW_FEATURE = false
   · stripe_key = YOUR_KEY_HERE
 
 (dry-run: no files were modified)
@@ -53,7 +53,7 @@ $ evnx sync --check
 Preview:
 Target: .env.example (action: Add)
 
-  · NEW_FEATURE = YOUR_VALUE_HERE
+  · NEW_FEATURE = false
   · stripe_key = YOUR_KEY_HERE
 
 (dry-run: no files were modified)
@@ -106,7 +106,7 @@ API_PORT=8080
 REDIS_URL=redis://localhost:6379
 
 # Synced from .env
-NEW_FEATURE=YOUR_VALUE_HERE
+NEW_FEATURE=false
 stripe_key=YOUR_KEY_HERE
 
 $ evnx sync --check

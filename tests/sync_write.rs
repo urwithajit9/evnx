@@ -1,8 +1,9 @@
 //! What `sync` writes and says when it writes (R-sync, 0.10.12).
 //!
 //! - I-120, DEC-S10, DEC-S19: placeholders are chosen by whole `_`-separated
-//!   words, URL placeholders follow the value's scheme, and `DEBUG` keeps its
-//!   own value. `add custom` shares the generator, so it is fixed with it.
+//!   words, and URL placeholders follow the value's scheme. Since GEN-20 and
+//!   SYNC-3, `DEBUG` is `false` and a safe value keeps its type. `add custom`
+//!   shares the generator, so it is fixed with it.
 //! - I-124, DEC-S9: with no terminal, sync uses placeholders on an existing
 //!   template and in reverse, and says so; `--placeholder` is a deprecated
 //!   alias of `--force`.
@@ -34,15 +35,18 @@ fn t_i120_placeholders_follow_whole_words_and_schemes() {
             .unwrap_or_else(|| panic!("{k} not written:\n{t}"))
             .to_string()
     };
-    for k in [
-        "SUPPORT_EMAIL",
-        "MONKEY_COUNT",
-        "BYPASS_CACHE",
-        "GHOST_MODE",
-    ] {
-        assert_eq!(value(k), "YOUR_VALUE_HERE", "{k}:\n{t}");
-    }
-    assert_eq!(value("DEBUG"), "false", "DEBUG keeps its value");
+    // Look-alike names still get no rule of the word they contain (SUPPORT_
+    // is not PORT, MONKEY not KEY, BYPASS not PASS, GHOST not HOST). Since
+    // SYNC-3 a safe value keeps its type: an email, a number, a switch.
+    assert_eq!(value("SUPPORT_EMAIL"), "you@example.com", "{t}");
+    assert_eq!(value("MONKEY_COUNT"), "0", "{t}");
+    assert_eq!(value("BYPASS_CACHE"), "0", "{t}");
+    assert_eq!(value("GHOST_MODE"), "false", "{t}");
+    assert_eq!(
+        value("DEBUG"),
+        "false",
+        "DEBUG is off in a template (GEN-20)"
+    );
     assert!(value("DB_URL").starts_with("postgres://"), "{t}");
     assert!(value("MONGO_URL").starts_with("mongodb://"), "{t}");
     for k in ["DB_URL", "MONGO_URL"] {
@@ -65,7 +69,7 @@ fn t_i120_add_custom_uses_the_same_placeholder_rules() {
     .assert_code(0);
     let t = p.read(".env.example");
     assert!(
-        t.lines().any(|l| l == "SUPPORT_EMAIL=YOUR_VALUE_HERE"),
+        t.lines().any(|l| l == "SUPPORT_EMAIL=you@example.com"),
         "not `8000` because the name contains PORT:\n{t}"
     );
 }
@@ -117,7 +121,8 @@ fn t_i124_placeholder_flag_is_a_deprecated_alias_of_force() {
     out.assert_code(0);
     out.assert_contains("deprecated");
     out.assert_contains("--force");
-    assert!(p.read(".env.example").contains("B=YOUR_VALUE_HERE"));
+    // SYNC-3: a number keeps its type.
+    assert!(p.read(".env.example").contains("B=0"));
 }
 
 // ── I-125: real file names ──────────────────────────────────────────────────

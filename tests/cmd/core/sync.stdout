@@ -17,6 +17,8 @@ Options:
       --direction <DIRECTION>
           Which file to fill: forward (the default) adds to the template, reverse adds to `.env`.
           
+          With only a template (a fresh clone), reverse creates `.env` from it.
+          
           Leaving it out also decides how far `--check` looks. Without it the check is two-way, for a developer's own pair: a name only the template has is drift as well. Naming a direction makes the check one-way — only names the target lacks — which is how CI and the pre-commit hook ask: `evnx sync --check --direction forward`.
 
           Possible values:

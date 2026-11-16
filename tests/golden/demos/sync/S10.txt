@@ -18,7 +18,7 @@ $ evnx sync --check --direction forward --skip-without-env
 Preview:
 Target: .env.example (action: Add)
 
-  · B = YOUR_VALUE_HERE
+  · B = 0
 
 (dry-run: no files were modified)
 [stderr]

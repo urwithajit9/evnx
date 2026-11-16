@@ -25,6 +25,11 @@ use super::models::{
 /// The values stay recognisably fake — `example.com` is reserved by RFC 2606 for
 /// exactly this — so `scan` and `validate` still treat them as placeholders.
 fn placeholder_for(var_name: &str) -> String {
+    // GEN-20: the typed rule `sync` and `add` use (a database scheme for
+    // `DATABASE_URL`, `false` for a debug switch); this shape otherwise.
+    if let Some(t) = crate::core::placeholder::typed(var_name, None) {
+        return t;
+    }
     let upper = var_name.to_uppercase();
     let ends_with = |suffix: &str| upper.ends_with(suffix);
 

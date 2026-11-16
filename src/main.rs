@@ -173,6 +173,7 @@ fn main() -> Result<()> {
             dry_run,
             json,
             here,
+            no_contract,
         } => {
             // The target's own config, before anything is written (I-298).
             // `--list-components` is about evnx, not a project; `--here`
@@ -201,6 +202,7 @@ fn main() -> Result<()> {
                 json,
                 env_name,
                 here,
+                no_contract,
             )
         }
 
@@ -986,18 +988,32 @@ fn main() -> Result<()> {
                 example,
                 env,
                 env_name,
+                format,
+                skip_without_env,
             } => {
-                let named = env.is_some() || env_name.is_some();
+                let json = format == evnx::cli::SpecFormat::Json;
+                if json {
+                    evnx::utils::ui::set_quiet(true);
+                }
+                // `--skip-without-env`: a named file may be missing, and is
+                // then skipped like an unnamed `.env` (SPEC-3).
+                let need = if skip_without_env {
+                    evnx::core::resolve::Need::MayCreate
+                } else {
+                    evnx::core::resolve::Need::Existing
+                };
                 let files = resolve_files(
                     env.as_deref(),
                     env_name.as_deref(),
                     example.as_deref(),
                     &cfg,
-                    evnx::core::resolve::Need::Existing,
-                    cli.quiet,
+                    need,
+                    cli.quiet || json,
                     cli.verbose,
                 );
-                commands::spec::check(&cfg.vars, &files.template, &files.env, named)
+                let named = (env.is_some() || env_name.is_some())
+                    && !(skip_without_env && !Path::new(&files.env).exists());
+                commands::spec::check(&cfg.vars, &files.template, &files.env, named, json)
                     .map(verdict::finish)
             }
         },

@@ -196,6 +196,61 @@ impl Default for PlaceholderConfig {
     }
 }
 
+/// The typed placeholder for `key`, shared by every writer of a template:
+/// `sync`, `add` and `init` (GEN-20, SYNC-3). `None` leaves the caller's own
+/// fallback (`YOUR_VALUE_HERE`, init's `your_<name>_value`), which differ on
+/// purpose (see the module docs).
+///
+/// - A debug switch is always `false`: a template is what a deployment copies,
+///   and `DEBUG=true` there turns debugging on in production (GEN-20).
+/// - A URL keeps its scheme's shape when the value has one; with no value, a
+///   database, cache or broker name gets its scheme
+///   (`DATABASE_URL=postgresql://user:password@localhost:5432/dbname`).
+/// - An email name: `you@example.com`.
+/// - A non-secret value keeps its type: a number becomes `0`, a switch
+///   `false` (SYNC-3: `MAX_CONN=25` became `YOUR_VALUE_HERE`). A port is the
+///   caller's (`8000`, `8080`).
+pub fn typed(key: &str, value: Option<&str>) -> Option<String> {
+    use crate::core::classify::{has_word, is_secret_name, Strictness};
+
+    if has_word(key, &["DEBUG"]) {
+        return Some("false".to_string());
+    }
+    if has_word(key, &["URL", "URI", "DSN"]) {
+        // A value with a scheme decides: its own shape, or none for a scheme
+        // this does not know (`ftp://`), never one guessed from the name.
+        if let Some(v) = value.filter(|v| v.contains("://")) {
+            return url_placeholder(v).map(str::to_string);
+        }
+        let by_name: &[(&[&str], &str)] = &[
+            (&["MYSQL", "MARIADB"], "mysql"),
+            (&["MONGO", "MONGODB"], "mongodb"),
+            (&["REDIS"], "redis"),
+            (&["AMQP", "RABBIT", "RABBITMQ"], "amqp"),
+            (
+                &["DATABASE", "DB", "POSTGRES", "POSTGRESQL", "PG"],
+                "postgresql",
+            ),
+        ];
+        return by_name
+            .iter()
+            .find(|(words, _)| has_word(key, words))
+            .and_then(|(_, scheme)| URL_PLACEHOLDERS.iter().find(|(s, _)| s == scheme))
+            .map(|(_, p)| p.to_string());
+    }
+    if has_word(key, &["EMAIL"]) {
+        return Some("you@example.com".to_string());
+    }
+    if is_secret_name(key, Strictness::Lenient) || has_word(key, &["PORT"]) {
+        return None;
+    }
+    let v = value?.trim();
+    if !v.is_empty() && v.len() <= 12 && v.bytes().all(|b| b.is_ascii_digit()) {
+        return Some("0".to_string());
+    }
+    is_switch(v).then(|| "false".to_string())
+}
+
 /// Generate placeholder using built-in rules + custom config
 pub fn generate_placeholder(
     key: &str,
@@ -232,25 +287,17 @@ pub fn generate_placeholder(
         return "YOUR_PASSWORD_HERE".to_string();
     }
 
+    // GEN-20, SYNC-3: the shared typed rule, for init, add and sync alike.
+    if let Some(t) = typed(key, value.map(String::as_str)) {
+        return t;
+    }
+
     if has_word(key, &["URL", "URI", "DSN"]) {
-        return value
-            .and_then(|v| url_placeholder(v))
-            .unwrap_or("YOUR_URL_HERE")
-            .to_string();
+        return "YOUR_URL_HERE".to_string();
     }
 
     if has_word(key, &["PORT"]) {
         return "8000".to_string();
-    }
-
-    // ⚠️ The value, when it is a switch. `DEBUG=false` became `DEBUG=true`,
-    // turning debugging on for whoever copies the template (DEC-S10). A switch
-    // is not a secret; anything else under the name falls back as before.
-    if has_word(key, &["DEBUG"]) {
-        return match value {
-            Some(v) if is_switch(v) => v.trim().to_string(),
-            _ => "true".to_string(),
-        };
     }
 
     if has_word(key, &["HOST", "SERVER", "HOSTNAME"]) {
@@ -420,6 +467,8 @@ pub fn is_generated_value(value: &str, config: &PlaceholderConfig) -> bool {
         || value == "8000"
         || value == "true"
         || value == "false"
+        || value == "0"
+        || value == "you@example.com"
         || URL_PLACEHOLDERS.iter().any(|(_, p)| *p == value)
 }
 
@@ -430,6 +479,38 @@ pub fn is_generated_value(value: &str, config: &PlaceholderConfig) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gen20_sync3_typed_placeholders() {
+        // A debug switch is never on in a template.
+        assert_eq!(typed("DEBUG", Some("true")).as_deref(), Some("false"));
+        assert_eq!(typed("APP_DEBUG", None).as_deref(), Some("false"));
+        // URLs: the value's scheme, else the name's.
+        assert_eq!(
+            typed("DATABASE_URL", None).as_deref(),
+            Some("postgresql://user:password@localhost:5432/dbname")
+        );
+        assert_eq!(
+            typed("REDIS_URL", None).as_deref(),
+            Some("redis://localhost:6379/0")
+        );
+        assert_eq!(
+            typed("DB_URL", Some("mysql://a:b@db.prod:3306/x")).as_deref(),
+            Some("mysql://user:password@localhost:3306/dbname")
+        );
+        assert_eq!(typed("API_URL", None), None, "the caller's URL shape");
+        // Safe values keep their type.
+        assert_eq!(typed("MAX_CONN", Some("25")).as_deref(), Some("0"));
+        assert_eq!(typed("FEATURE_FLAG", Some("on")).as_deref(), Some("false"));
+        assert_eq!(
+            typed("ADMIN_EMAIL", Some("ops@shop.io")).as_deref(),
+            Some("you@example.com")
+        );
+        // Never for a secret, and a port is the caller's.
+        assert_eq!(typed("API_TOKEN", Some("12345")), None);
+        assert_eq!(typed("PORT", Some("3000")), None);
+        assert_eq!(typed("APP_NAME", Some("shop")), None);
+    }
 
     #[test]
     fn test_placeholder_config_default() {
@@ -640,7 +721,8 @@ mod tests {
             "YOUR_PASSWORD_HERE"
         );
         assert_eq!(generate_placeholder("PORT", None, &config), "8000");
-        assert_eq!(generate_placeholder("DEBUG_MODE", None, &config), "true");
+        // GEN-20: a debug switch in a template is off.
+        assert_eq!(generate_placeholder("DEBUG_MODE", None, &config), "false");
         assert_eq!(generate_placeholder("DB_HOST", None, &config), "localhost");
         assert_eq!(
             generate_placeholder("RANDOM_VAR", None, &config),
@@ -814,8 +896,12 @@ mod tests {
     #[test]
     fn t_i120_look_alike_names_get_the_default() {
         let config = PlaceholderConfig::default();
+        // SUPPORT_EMAIL is an email name: `you@example.com` (SYNC-3).
+        assert_eq!(
+            generate_placeholder("SUPPORT_EMAIL", None, &config),
+            "you@example.com"
+        );
         for key in [
-            "SUPPORT_EMAIL",
             "MONKEY_COUNT",
             "BYPASS_CACHE",
             "GHOST_MODE",
@@ -858,15 +944,16 @@ mod tests {
             generate_placeholder("DEBUG", Some(&v("false")), &config),
             "false"
         );
+        // GEN-20: always off, whatever the env file has.
         assert_eq!(
-            generate_placeholder("APP_DEBUG", Some(&v(" Off ")), &config),
-            "Off"
+            generate_placeholder("APP_DEBUG", Some(&v(" On ")), &config),
+            "false"
         );
         assert_eq!(
             generate_placeholder("DEBUG", Some(&v("verbose")), &config),
-            "true"
+            "false"
         );
-        assert_eq!(generate_placeholder("DEBUG", None, &config), "true");
+        assert_eq!(generate_placeholder("DEBUG", None, &config), "false");
     }
 
     /// T-SYNC-28: the placeholder follows the scheme, never the credential.

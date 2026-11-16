@@ -63,6 +63,8 @@ pub(crate) struct Planned {
     pub gitignore: Vec<String>,
     pub contract: ContractPlan,
     pub notices: Vec<String>,
+    /// `[defaults] env_name` the run sets: adoption only (FLD-10).
+    pub defaults: Option<String>,
 }
 
 /// The `.gitignore` entries init would add.
@@ -82,6 +84,13 @@ pub(crate) fn contract_pending(
     written: &VarCollection,
     whole: &VarCollection,
 ) -> Result<ContractPlan> {
+    if target.no_contract {
+        return Ok(ContractPlan {
+            action: "skipped",
+            file: None,
+            added: Vec::new(),
+        });
+    }
     Ok(match super::contract::plan(target)? {
         Contract::Create(path) => ContractPlan {
             action: "created",
@@ -144,6 +153,7 @@ pub(crate) fn plan_write(target: &Target, vars: &VarCollection) -> Result<Planne
         gitignore: gitignore_pending(root),
         contract: contract_pending(target, vars, vars)?,
         notices: super::shared::notice_lines(target),
+        defaults: None,
     })
 }
 
@@ -166,6 +176,7 @@ pub(crate) fn plan_keep(target: &Target, whole: &VarCollection) -> Result<Planne
         gitignore: gitignore_pending(root),
         contract: contract_pending(target, &VarCollection::default(), whole)?,
         notices: super::shared::notice_lines(target),
+        defaults: None,
     })
 }
 
@@ -196,6 +207,7 @@ pub(crate) fn plan_append(
         gitignore: gitignore_pending(root),
         contract: contract_pending(target, &plan.requested, whole)?,
         notices: super::shared::notice_lines(target),
+        defaults: None,
     })
 }
 
@@ -248,6 +260,15 @@ pub(crate) fn print_dry_run(p: &Planned, root: &Path) {
         ),
         EnvAction::Unchanged => println!("  {env}: unchanged"),
     }
+    if let Some(name) = &p.defaults {
+        let file = p
+            .contract
+            .file
+            .as_deref()
+            .map(ui::short_path)
+            .unwrap_or_else(|| ".evnx.toml".to_string());
+        println!("  {file}: would set [defaults] env_name = \"{name}\"");
+    }
     let gitignore = at(".gitignore");
     if p.gitignore.is_empty() {
         println!("  {gitignore}: unchanged");
@@ -262,6 +283,7 @@ pub(crate) fn print_dry_run(p: &Planned, root: &Path) {
         .unwrap_or_else(|| ".evnx.toml".to_string());
     let n = p.contract.added.len();
     match p.contract.action {
+        "skipped" => println!("  {file}: no contract (--no-contract)"),
         "created" if n == 0 => println!("  {file}: would be created with an empty [vars]"),
         "created" => println!("  {file}: would be created with {} in [vars]", count(n)),
         "appended" if n == 0 => println!("  {file}: would get an empty [vars]"),
@@ -305,5 +327,10 @@ pub(crate) fn print_json(p: &Planned, dry_run: bool, root: &Path) {
         },
         "notices": p.notices,
     });
+    // Only when set, so every other run's document is as it was.
+    let mut doc = doc;
+    if let Some(name) = &p.defaults {
+        doc["defaults"] = serde_json::json!({ "env_name": name });
+    }
     println!("{doc:#}");
 }
