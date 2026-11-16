@@ -299,3 +299,25 @@ fn tpl3_a_link_to_outside_the_folder_is_refused() {
     .assert_code(0);
     assert_eq!(p.read("conf/real.conf"), "port=3000\n");
 }
+
+// ── Part 5: convert --to yaml (CONV-1) ──────────────────────────────────────
+
+#[test]
+fn conv1_yaml_values_are_quoted_strings() {
+    let p = Project::new().env("A=yes\nE=on\nI=No\nJ=2026-01-01\nB=true\nK=123\n");
+    let out = run(p.path(), &["convert", "--to", "yaml"]);
+    out.assert_code(0);
+    for line in [
+        "A: \"yes\"",
+        "E: \"on\"",
+        "I: \"No\"",
+        "J: \"2026-01-01\"",
+        "K: \"123\"",
+    ] {
+        assert!(
+            out.stdout.lines().any(|l| l == line),
+            "{line}:\n{}",
+            out.stdout
+        );
+    }
+}

@@ -26,8 +26,8 @@ Replaced out.json
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]
   ok: --force replaces it and says Replaced (exit 0)
-APP_NAME: demo app
-DATABASE_URL: postgres://admin:s3cr3t@db.internal:5432/app
+APP_NAME: "demo app"
+DATABASE_URL: "postgres://admin:s3cr3t@db.internal:5432/app"
 
 $ evnx convert --to json -o nodir/out.json
 [stderr]
