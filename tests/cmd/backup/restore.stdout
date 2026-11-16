@@ -27,7 +27,7 @@ Options:
       --no-gitignore
           Skip the .gitignore check for the restored file
 
-      --dry-run
+  -n, --dry-run
           Decrypt and validate but do not write any files
 
       --inspect

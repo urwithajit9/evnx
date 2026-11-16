@@ -3344,7 +3344,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         no_gitignore: bool,
 
         /// Decrypt and validate but do not write any files.
-        #[arg(long)]
+        #[arg(short = 'n', long)]
         dry_run: bool,
         /// List variable names (never values) without writing any files.
         ///

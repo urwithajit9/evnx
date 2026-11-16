@@ -988,7 +988,8 @@ fn creating_the_example_file_does_not_copy_real_values() {
 /// change cannot fix the default and quietly regress these.
 #[test]
 fn creating_the_example_file_is_safe_under_yes() {
-    for flag in ["--yes"] {
+    {
+        let flag = "--yes";
         let dir = TempDir::new().unwrap();
         std::fs::write(dir.path().join(".env"), "API_KEY=sk_live_SUPER_SECRET\n").unwrap();
 

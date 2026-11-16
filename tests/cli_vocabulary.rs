@@ -34,7 +34,6 @@ const ALLOW: &[(&str, &str)] = &[
     ("scan rules add", "b"),
     ("migrate", "d1"),
     ("migrate", "d2"),
-    ("restore", "d2"),
     ("auth key-bundle", "a"),
     ("auth key-bundle", "b"),
     ("auth token create", "a"),
