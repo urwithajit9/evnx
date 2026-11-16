@@ -304,17 +304,15 @@ fn diff_with_nothing_different_exits_0() {
     out.assert_contains("1 unchanged · values never shown");
 }
 
-/// PLAT-5: the old spelling still works, with one warning naming `--target`.
+/// PLAT-5 (WP-8d): the old spelling is gone, and the error names `--target`.
 #[test]
-fn plat5_env_name_is_an_alias_of_target_with_a_warning() {
-    let mut v = Vercel::start_for_diff();
-    let prod = v.value_mock("e1b", 200, Some(R_PROD_API), 1);
+fn plat5_env_name_was_removed_in_favour_of_target() {
+    let v = Vercel::start_for_diff();
     let p = Project::new().file(".env.production", &format!("API_URL={R_PROD_API}\n"));
     let out = run(&p, &v.url(), &diff_args(&["--env-name", "production"]));
-    out.assert_code(0);
-    out.assert_contains("now `--target`");
-    out.assert_contains("local  .env.production");
-    prod.assert();
+    out.assert_code(2);
+    out.assert_contains("'--env-name' was removed from 'evnx platform diff'");
+    out.assert_contains("use '--target'");
 }
 
 #[test]
@@ -382,8 +380,8 @@ fn f3_nothing_on_vercel_and_no_local_file_is_clean_and_a_missing_explicit_file_i
     let out = run(&p, &s.url(), &diff_args(&[]));
     out.assert_code(0);
     out.assert_contains("neither");
-    // --file names a path on purpose: a missing one is a typo.
-    let out = run(&p, &s.url(), &diff_args(&["--file", "nope.env"]));
+    // --env names a path on purpose: a missing one is a typo.
+    let out = run(&p, &s.url(), &diff_args(&["--env", "nope.env"]));
     out.assert_code(2);
     out.assert_contains("nope.env not found");
 }

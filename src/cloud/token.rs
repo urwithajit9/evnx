@@ -72,7 +72,7 @@ fn deliver(
     no_key_bundle: bool,
     delivery: &Delivery,
 ) -> Result<()> {
-    let json = delivery.format == crate::cli::AuthFormat::Json;
+    let json = delivery.format == crate::cli::args::Format::Json;
     // A token is minted: a bundle that cannot be made must not hide it.
     let bundle = if no_key_bundle || !json {
         None
@@ -145,7 +145,7 @@ struct TokenSummary {
 pub struct Delivery {
     /// `--no-key-bundle`.
     pub no_key_bundle: bool,
-    pub format: crate::cli::AuthFormat,
+    pub format: crate::cli::args::Format,
     pub output: Option<String>,
     pub force: bool,
 }
@@ -214,7 +214,7 @@ pub fn create(
         },
     )?;
 
-    let json = delivery.format == crate::cli::AuthFormat::Json;
+    let json = delivery.format == crate::cli::args::Format::Json;
     if json || delivery.output.is_some() {
         return deliver(
             &client,

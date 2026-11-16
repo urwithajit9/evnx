@@ -47,7 +47,6 @@ impl Session {
     /// Resolve project, token and API base. A custom environment's slug is looked
     /// up here (one `GET`); nothing else is sent.
     pub fn open(common: &PlatformCommon) -> Result<Session> {
-        common.warn_old_flag();
         // Before anything is read or sent: a flag that cannot apply is a usage error.
         if let Some(branch) = &common.git_branch {
             if common.environment() != Environment::Preview {

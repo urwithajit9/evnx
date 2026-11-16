@@ -767,7 +767,7 @@ fn t_i303_a_missing_version_is_named_without_the_api_path() {
             VAULT_ID,
             "--version",
             "7",
-            "--file",
+            "--env",
             "-",
         ],
         None,

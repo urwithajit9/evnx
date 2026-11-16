@@ -83,7 +83,7 @@ pub fn read(start: &Path) -> Result<Option<Bound>> {
         Some("") => {
             return Err(anyhow!(
                 "{} has an empty `[cloud] file`. Set it with \
-                 `evnx cloud link <vault> --file <path>`, or remove the line.",
+                 `evnx cloud link <vault> --env <path>`, or remove the line.",
                 path.display()
             ))
         }

@@ -85,7 +85,7 @@ fn pull(s: &mockito::ServerGuard, password: &str) -> support::Output {
             VAULT_ID,
             "--version",
             "1",
-            "--file",
+            "--env",
             "-",
             "--password-stdin",
         ],
@@ -399,7 +399,7 @@ fn t_i218_pull_over_a_different_file_names_force_without_a_terminal() {
     );
 }
 
-/// RM-34: `cloud pull --force` over a different `.env` writes through the
+/// RM-34: `cloud pull --yes` over a different `.env` writes through the
 /// shared writer: the replaced file is kept as `.env.bak` and is named; the
 /// pulled file is private (WP-7; RM-34 kept an existing mode); a pull of
 /// identical content keeps no copy.
@@ -445,7 +445,7 @@ fn rm34_pull_keeps_the_replaced_file_and_its_mode() {
         )
     };
 
-    let out = pull("--force");
+    let out = pull("--yes");
     out.assert_code(0);
     assert_eq!(p.read(".env"), "A=1\n");
     assert_eq!(p.read(".env.bak"), "A=local\n");
@@ -476,7 +476,7 @@ fn rm34_pull_keeps_the_replaced_file_and_its_mode() {
 }
 
 /// I-225 (DEC-CL3): with real keys, `-q` silences `vault create` and
-/// `cloud push`, and `cloud pull --file -` prints the file and nothing else.
+/// `cloud push`, and `cloud pull --env -` prints the file and nothing else.
 #[test]
 fn t_i225_quiet_create_push_and_pull() {
     let a = account(RIGHT);
@@ -545,7 +545,7 @@ fn t_i225_quiet_create_push_and_pull() {
             VAULT_ID,
             "--version",
             "1",
-            "--file",
+            "--env",
             "-",
             "--password-stdin",
         ],
@@ -560,7 +560,7 @@ fn t_i225_quiet_create_push_and_pull() {
 /// the project and did nothing about git. It now takes the shared step
 /// `template`, `convert` and `restore` use: in a repository, a file git would
 /// pick up is warned about without a terminal, or added with `--gitignore`.
-/// `--file -` writes no file and checks nothing.
+/// `--env -` writes no file and checks nothing.
 #[test]
 fn t_dec_t11_pull_protects_the_file_it_writes() {
     let a = account(RIGHT);
@@ -603,12 +603,12 @@ fn t_dec_t11_pull_protects_the_file_it_writes() {
         out.stderr
     );
 
-    let out = pull(&["--file", "prod.env", "--gitignore"]);
+    let out = pull(&["--env", "prod.env", "--gitignore"]);
     out.assert_code(0);
     let ignore = std::fs::read_to_string(p.path().join(".gitignore")).unwrap_or_default();
     assert!(ignore.lines().any(|l| l == "prod.env"), "{ignore}");
 
-    let out = pull(&["--file", "-"]);
+    let out = pull(&["--env", "-"]);
     out.assert_code(0);
     assert!(!out.stderr.contains(".gitignore"), "{}", out.stderr);
 }
@@ -647,7 +647,7 @@ fn production_server(a: &Account, vk: &VaultKey) -> (mockito::ServerGuard, mocki
     (s, push)
 }
 
-/// I-234 (DEC-CL9): a forgotten `--file` pushed local development secrets
+/// I-234 (DEC-CL9): a forgotten `--env` pushed local development secrets
 /// into production, with only a warning. On a terminal it now asks; without
 /// one it is refused unless `--yes` — before the password, nothing sent. By id,
 /// a signed-in session looks the environment up for this question (owner,
@@ -688,7 +688,7 @@ fn t_i234_a_default_env_push_to_production_needs_yes_without_a_terminal() {
 fn t_i234_yes_or_a_named_file_pushes_to_production() {
     let a = account(RIGHT);
     let vk = VaultKey::generate();
-    for extra in [&["--yes"][..], &["--file", ".env"][..]] {
+    for extra in [&["--yes"][..], &["--env", ".env"][..]] {
         let (s, push) = production_server(&a, &vk);
         let p = Project::new();
         std::fs::write(p.path().join(".env"), "A=dev\n").unwrap();
@@ -1163,7 +1163,7 @@ fn rm89_a_latest_lower_than_the_last_seen_version_warns() {
     let latest = || {
         support::run_with(
             p.path(),
-            &["cloud", "pull", "--vault", VAULT_ID, "--file", "-"],
+            &["cloud", "pull", "--vault", VAULT_ID, "--env", "-"],
             &[
                 ("EVNX_SERVER", url.as_str()),
                 ("EVNX_CONFIG_DIR", cfg_s.as_str()),

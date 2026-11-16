@@ -619,7 +619,7 @@ Examples:
   evnx platform pull --to vercel --dry-run               what would change, nothing written
   evnx platform pull --to vercel                         update .env.development (or .env), after asking
   evnx platform pull --to vercel --target preview --yes   no question (CI)
-  evnx platform pull --to vercel --file .env.local       write a file of your choice
+  evnx platform pull --to vercel --env .env.local        write a file of your choice
 
 Full guide: https://docs.evnx.dev/cli/commands/platform")]
     Pull(PlatformPullArgs),
@@ -703,17 +703,6 @@ pub struct PlatformCommon {
     )]
     pub target: Option<crate::platform::vercel::plan::Environment>,
 
-    /// The old name of `--target` (PLAT-5): every other command's `--env-name`
-    /// names a local env file. Still accepted, with a warning.
-    #[arg(
-        long,
-        value_name = "ENV",
-        hide = true,
-        conflicts_with = "target",
-        value_parser = crate::platform::vercel::plan::Environment::parse
-    )]
-    pub env_name: Option<crate::platform::vercel::plan::Environment>,
-
     /// A preview branch: work on the variables for this git branch only.
     ///
     /// Only with `--target preview` (anything else exits 2). A key with an
@@ -726,8 +715,8 @@ pub struct PlatformCommon {
     pub git_branch: Option<String>,
 
     /// The local file, instead of `.env.<environment>` or `.env`.
-    #[arg(long, short, value_name = "PATH")]
-    pub file: Option<std::path::PathBuf>,
+    #[arg(long, value_name = "FILE", help_heading = "Files")]
+    pub env: Option<std::path::PathBuf>,
 
     /// The Vercel API address (for testing against a local server).
     #[arg(long, hide = true, env = "EVNX_VERCEL_API_URL", value_name = "URL")]
@@ -736,22 +725,11 @@ pub struct PlatformCommon {
 
 #[cfg(feature = "net")]
 impl PlatformCommon {
-    /// `--target`, or the old `--env-name`, else `development`.
+    /// `--target`, else `development`.
     pub fn environment(&self) -> crate::platform::vercel::plan::Environment {
         self.target
             .clone()
-            .or_else(|| self.env_name.clone())
             .unwrap_or(crate::platform::vercel::plan::Environment::Development)
-    }
-
-    /// One warning when the old spelling was used (PLAT-5).
-    pub fn warn_old_flag(&self) {
-        if self.env_name.is_some() {
-            eprintln!(
-                "warning: `platform --env-name` is now `--target`; --env-name names a \
-                 local env file in every other command, and is removed here in 1.0."
-            );
-        }
     }
 }
 
@@ -762,9 +740,8 @@ pub struct PlatformDiffArgs {
     #[command(flatten)]
     pub common: PlatformCommon,
 
-    /// Output format: `pretty` or `json`.
-    #[arg(long, value_enum, value_name = "FORMAT", default_value_t = PlatformFormat::Pretty)]
-    pub format: PlatformFormat,
+    #[command(flatten)]
+    pub output: args::OutputArgs,
 
     /// Count a Secret present on both sides as a difference (exit 1).
     ///
@@ -780,38 +757,24 @@ pub struct PlatformDiffArgs {
 impl PlatformDiffArgs {
     /// Whether `--format json` was given.
     pub fn json(&self) -> bool {
-        self.format == PlatformFormat::Json
+        self.output.resolved() == args::Format::Json
     }
-}
-
-/// `--format` of `platform diff`.
-#[cfg(feature = "net")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum PlatformFormat {
-    /// The table.
-    Pretty,
-    /// Keys, types and actions as JSON.
-    Json,
 }
 
 /// Arguments of `evnx platform pull`.
 #[cfg(feature = "net")]
 #[derive(Args, Debug, Clone)]
+#[command(mut_arg("yes", |a| a.help("Change the file without asking").long_help("Change the file without asking.\n\nThe replaced file is kept beside it as a .bak copy. Without it, and without a terminal, the pull stops (exit 2). Declining the question exits 4.")))]
+#[command(mut_arg("dry_run", |a| a.help("Show what would change and write nothing (the file or the state)")))]
 pub struct PlatformPullArgs {
     #[command(flatten)]
     pub common: PlatformCommon,
 
-    /// Change the file without asking.
-    ///
-    /// The replaced file is kept beside it as a .bak copy. Without it, and
-    /// without a terminal, the pull stops (exit 2). Declining the question
-    /// exits 4.
-    #[arg(long, short = 'y')]
-    pub yes: bool,
+    #[command(flatten)]
+    pub confirm: args::ConfirmArgs,
 
-    /// Show what would change and write nothing (the file or the state).
-    #[arg(long)]
-    pub dry_run: bool,
+    #[command(flatten)]
+    pub dry: args::DryRunArgs,
 
     /// Add the pulled file to .gitignore without asking (no prompt).
     #[arg(long, conflicts_with = "no_gitignore")]
@@ -825,20 +788,17 @@ pub struct PlatformPullArgs {
 /// Arguments of `evnx platform push`.
 #[cfg(feature = "net")]
 #[derive(Args, Debug, Clone)]
+#[command(mut_arg("yes", |a| a.help("Send the changes without asking").long_help("Send the changes without asking.\n\nWithout it, and without a terminal, the push stops (exit 2). Declining the question exits 4.")))]
+#[command(mut_arg("dry_run", |a| a.help("Show the plan and send nothing: no request carries a value")))]
 pub struct PlatformPushArgs {
     #[command(flatten)]
     pub common: PlatformCommon,
 
-    /// Send the changes without asking.
-    ///
-    /// Without it, and without a terminal, the push stops (exit 2). Declining
-    /// the question exits 4.
-    #[arg(long, short = 'y')]
-    pub yes: bool,
+    #[command(flatten)]
+    pub confirm: args::ConfirmArgs,
 
-    /// Show the plan and send nothing: no request carries a value.
-    #[arg(long)]
-    pub dry_run: bool,
+    #[command(flatten)]
+    pub dry: args::DryRunArgs,
 
     /// Leave existing Secrets alone; create new keys and update Config only.
     ///
@@ -865,9 +825,8 @@ pub struct PlatformPushArgs {
     #[arg(long = "type", value_enum, value_name = "TYPE")]
     pub type_: Option<PlatformVarType>,
 
-    /// Output format: `pretty` or `json` (one document on stdout).
-    #[arg(long, value_enum, value_name = "FORMAT", default_value_t = PlatformFormat::Pretty)]
-    pub format: PlatformFormat,
+    #[command(flatten)]
+    pub output: args::OutputArgs,
 
     /// Add `.evnx/platform/` to .gitignore without asking (no prompt).
     #[arg(long, conflicts_with = "no_gitignore")]
@@ -882,7 +841,7 @@ pub struct PlatformPushArgs {
 impl PlatformPushArgs {
     /// Whether `--format json` was given.
     pub fn json(&self) -> bool {
-        self.format == PlatformFormat::Json
+        self.output.resolved() == args::Format::Json
     }
 }
 
@@ -1196,10 +1155,10 @@ pub enum AuthCommands {
     /// writes the bundle (or that JSON) to FILE with mode 0600 instead of
     /// printing it, so it can go straight to a secret store.
     #[command(name = "key-bundle")]
+    #[command(mut_arg("format", |a| a.help("`pretty` (default) or `json`: {\"key_bundle\": \"...\"} and nothing else")))]
     KeyBundle {
-        /// `text` (default) or `json`.
-        #[arg(long, value_enum, value_name = "FORMAT", default_value_t = AuthFormat::Text)]
-        format: AuthFormat,
+        #[command(flatten)]
+        fmt: args::OutputArgs,
 
         /// Write to FILE (mode 0600) instead of stdout.
         #[arg(long, short = 'o', value_name = "FILE")]
@@ -1381,17 +1340,6 @@ pub enum AuthCommands {
     },
 }
 
-/// How `auth token create` and `auth key-bundle` print their result.
-#[cfg(feature = "cloud")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
-pub enum AuthFormat {
-    /// For a person: the result with its guidance.
-    #[default]
-    Text,
-    /// One JSON document and nothing else.
-    Json,
-}
-
 /// Subcommands for `evnx auth token`.
 #[cfg(feature = "cloud")]
 #[derive(Subcommand, Debug)]
@@ -1405,6 +1353,7 @@ pub enum TokenCommands {
     /// with no plaintext secret in it) to store as `EVNX_KEY_BUNDLE`. Both are
     /// shown once here. Under `-q` only the token is printed; use
     /// `evnx auth key-bundle` for the bundle.
+    #[command(mut_arg("format", |a| a.help("`pretty` (default) or `json`").long_help("`pretty` (default) or `json`.\n\n`json` prints one document with `name`, `token`, `scope`, `vault`, `expires_at` and `key_bundle` (null with --no-key-bundle) and no other text, for a script to pass on to a secret store.")))]
     Create {
         /// A name you will recognise later, e.g. "github-actions".
         name: String,
@@ -1427,13 +1376,8 @@ pub enum TokenCommands {
         #[arg(long)]
         no_key_bundle: bool,
 
-        /// `text` (default) or `json`.
-        ///
-        /// `json` prints one document with `name`, `token`, `scope`, `vault`,
-        /// `expires_at` and `key_bundle` (null with --no-key-bundle) and no
-        /// other text, for a script to pass on to a secret store.
-        #[arg(long, value_enum, value_name = "FORMAT", default_value_t = AuthFormat::Text)]
-        format: AuthFormat,
+        #[command(flatten)]
+        fmt: args::OutputArgs,
 
         /// Write the token to FILE (mode 0600) instead of printing it.
         ///
@@ -1542,8 +1486,8 @@ pub enum VaultCommands {
         name: String,
 
         /// One of: production, staging, development, test.
-        #[arg(long, short, default_value = "development")]
-        env: String,
+        #[arg(long, default_value = "development")]
+        environment: String,
 
         /// Read the master password from stdin instead of prompting.
         #[arg(long)]
@@ -1737,13 +1681,18 @@ pub enum CloudCommands {
         /// Defaults to `.env.<environment>` when the vault names one and that
         /// file exists — pushing `app/production` picks up `.env.production` —
         /// and to `.env` otherwise. The file chosen is always printed.
-        #[arg(long, short)]
-        file: Option<std::path::PathBuf>,
+        #[arg(long, value_name = "FILE", help_heading = "Files")]
+        env: Option<std::path::PathBuf>,
 
         /// Use `.env.<NAME>` instead of the derived or default file.
         ///
         /// A name whose file does not exist is an error listing the ones that do.
-        #[arg(long, value_name = "NAME", conflicts_with = "file")]
+        #[arg(
+            long,
+            value_name = "NAME",
+            conflicts_with = "env",
+            help_heading = "Files"
+        )]
         env_name: Option<String>,
 
         /// Read the master password from stdin instead of prompting.
@@ -1752,7 +1701,7 @@ pub enum CloudCommands {
 
         /// Push the default `.env` into a production vault without asking.
         ///
-        /// Only that case asks: a file named with --file or --env-name never does.
+        /// Only that case asks: a file named with --env or --env-name never does.
         #[arg(long, short = 'y')]
         yes: bool,
     },
@@ -1792,25 +1741,30 @@ pub enum CloudCommands {
         ///
         /// `-` writes it to stdout instead, and no file is created; the status
         /// lines go to stderr, so stdout holds only the `.env` text.
-        #[arg(long, short)]
-        file: Option<std::path::PathBuf>,
+        #[arg(long, value_name = "FILE", help_heading = "Files")]
+        env: Option<std::path::PathBuf>,
 
         /// Use `.env.<NAME>` instead of the derived or default file.
         ///
         /// A name whose file does not exist is an error listing the ones that do.
-        #[arg(long, value_name = "NAME", conflicts_with = "file")]
+        #[arg(
+            long,
+            value_name = "NAME",
+            conflicts_with = "env",
+            help_heading = "Files"
+        )]
         env_name: Option<String>,
 
         /// Version to pull. Defaults to the latest.
         #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..))]
         version: Option<i32>,
 
-        /// Overwrite the target without asking. Also accepted as --force.
+        /// Overwrite the target without asking.
         ///
         /// The replaced file is kept beside it as a .bak copy. Without it, and
         /// without a terminal, a different existing file stops the run (exit 2).
         /// Declining the question exits 4, as `restore` does (RM-34, D5, D6).
-        #[arg(long = "yes", short = 'y', visible_alias = "force")]
+        #[arg(long = "yes", short = 'y')]
         force: bool,
 
         /// Read the master password from stdin instead of prompting.
@@ -2016,7 +1970,7 @@ pub enum CloudCommands {
         /// they differ.
         ///
         /// Decrypted in memory, so it needs the master password; nothing is
-        /// written. The file is chosen as `cloud pull` chooses it (`--file`,
+        /// written. The file is chosen as `cloud pull` chooses it (`--env`,
         /// `--env-name`, `[cloud] file`, then `.env`).
         #[arg(long, conflicts_with_all = ["from", "to"])]
         local: bool,
@@ -2026,11 +1980,17 @@ pub enum CloudCommands {
         version: Option<i32>,
 
         /// With --local: the local file.
-        #[arg(long, short = 'f', value_name = "FILE", requires = "local")]
-        file: Option<std::path::PathBuf>,
+        #[arg(long, value_name = "FILE", requires = "local", help_heading = "Files")]
+        env: Option<std::path::PathBuf>,
 
         /// With --local: use `.env.<NAME>`.
-        #[arg(long, value_name = "NAME", requires = "local", conflicts_with = "file")]
+        #[arg(
+            long,
+            value_name = "NAME",
+            requires = "local",
+            conflicts_with = "env",
+            help_heading = "Files"
+        )]
         env_name: Option<String>,
 
         /// With --local: read the master password from stdin.
@@ -2108,12 +2068,12 @@ pub enum CloudCommands {
         vault: String,
 
         /// The file push and pull use with this vault, from any folder below
-        /// the binding (`--file deploy/.env`). Stored as `[cloud] file`,
+        /// the binding (`--env deploy/.env`). Stored as `[cloud] file`,
         /// relative to the folder the `.evnx.toml` is in, so it names the
-        /// same file wherever the command runs. `--file` and `--env-name` on
+        /// same file wherever the command runs. `--env` and `--env-name` on
         /// push and pull still win.
-        #[arg(long, short = 'f', value_name = "FILE")]
-        file: Option<std::path::PathBuf>,
+        #[arg(long, value_name = "FILE", help_heading = "Files")]
+        env: Option<std::path::PathBuf>,
     },
 
     /// Remove this directory's vault binding.
@@ -2162,10 +2122,10 @@ pub enum CloudCommands {
         /// file as it was pushed.
         ///
         /// Supported: json, yaml, shell, aws-secrets, gcp-secrets,
-        /// azure-keyvault, github-actions, docker-compose, kubernetes,
+        /// azure-keyvault, github, docker-compose, kubernetes,
         /// terraform, doppler, heroku, vercel, railway
-        #[arg(long, value_name = "FORMAT")]
-        to: Option<String>,
+        #[arg(long, value_enum, value_name = "FORMAT")]
+        to: Option<args::ConvertTarget>,
 
         /// Google Cloud project for --to gcp-secrets (required there)
         #[arg(long, requires = "to", value_name = "PROJECT")]

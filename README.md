@@ -667,7 +667,7 @@ Vercel  acme/web  production        local  .env.production
 
 - **Project:** `--project` / `--team`, else `VERCEL_PROJECT_ID` / `VERCEL_ORG_ID`, else
   `.vercel/project.json` from `vercel link`.
-- **File:** `.env.<target>` when it exists, else `.env` (`--file` overrides); the run
+- **File:** `.env.<target>` when it exists, else `.env` (`--env` overrides); the run
   prints which. `--target` is `production`, `preview` or `development` (the default), or
   the slug of a **custom environment** of the project (`.env.<slug>`, else `.env`): its
   variables are the entries whose `customEnvironmentIds` include it, and a new one is
@@ -871,7 +871,7 @@ other's files:
 | Secret | a passphrase or key file you choose | your account's master password |
 | History | `--keep N` numbered files | server versions: `--version N`, `history`, `diff` |
 | Non-interactive | `--password-file`, `EVNX_PASSWORD` | `--password-stdin` |
-| Replacing a file | `--yes`, keeps `.bak` | `--yes` (alias `--force`), keeps `.bak` |
+| Replacing a file | `--yes`, keeps `.bak` | `--yes`, keeps `.bak` |
 | Declining the question | exit 4, nothing changed | exit 4, nothing changed (v0.12.0+) |
 | Works with no account or network | yes | no |
 | Everything back at once | the file is the backup | `cloud export` |
@@ -991,9 +991,9 @@ correction is tracked in [`SECURITY.md`](./SECURITY.md#what-the-threat-model-act
 ```bash
 evnx auth register                       # create an account
 evnx auth login                          # sign in on this machine
-evnx vault create app --env production   # a vault holds one .env, versioned
+evnx vault create app --environment production   # a vault holds one .env, versioned
 evnx cloud link app/production           # bind this folder (and every folder below it) to it
-evnx cloud link app/production --file deploy/.env   # v0.11.0+: the binding names the file too
+evnx cloud link app/production --env deploy/.env   # v0.11.0+: the binding names the file too
 evnx cloud push                          # encrypt locally, upload ciphertext
 evnx cloud pull                          # download, decrypt, write .env
 evnx cloud status                        # server, sign-in, this directory's binding
@@ -1002,7 +1002,7 @@ evnx cloud unlink                        # forget the binding
 
 A vault name is lower-case letters, digits and hyphens. `-q` silences what a
 cloud command says it did; errors, warnings and anything you asked for — a
-table, a new token, `pull --file -` — still print.
+table, a new token, `pull --env -` — still print.
 
 ### Installing with cloud support
 
@@ -1083,10 +1083,10 @@ an API token.
 
 `push` and `pull` use `.env.<environment>` when that file exists —
 `.env.production` for an `app/production` vault — and `.env` otherwise;
-`--file` or `--env-name` names one outright. Each says which file it used.
+`--env` or `--env-name` names one outright. Each says which file it used.
 
 Pushing the **default** `.env` into a **production** vault asks first; with no
-terminal to ask on (CI), it is refused unless `--yes`. A file named with `--file`
+terminal to ask on (CI), it is refused unless `--yes`. A file named with `--env`
 or `--env-name` is not asked about. Addressed by id, a vault's environment is
 not known for choosing the file (the file is `.env`); a signed-in session still
 looks it up to ask, a vault-scoped token cannot and is not asked.

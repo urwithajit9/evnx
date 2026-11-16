@@ -782,7 +782,7 @@ impl Say {
 pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
     // `--prune` deletes: with nothing to ask on, it needs `--yes` — said before
     // anything is read or sent. A dry run sends nothing, so it needs no answer.
-    if args.prune && !args.yes && !args.dry_run {
+    if args.prune && !args.confirm.yes && !args.dry.dry_run {
         crate::utils::prompt::require_terminal_or(&format!(
             "--prune deletes variables on Vercel. Add --yes (-y) to go ahead without being asked:\n  evnx platform push --to vercel --target {} --prune --yes",
             args.common.environment().name()
@@ -791,13 +791,13 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
     let session = Session::open(&args.common)?;
     let (path, choice) = local::resolve(
         Path::new("."),
-        args.common.file.as_deref(),
+        args.common.env.as_deref(),
         session.environment.name(),
     );
     let file = local::read(&path)?;
     if file.text.is_none() {
         bail!(
-            "{} not found. Pass --file <path>, or create .env.{} or .env.",
+            "{} not found. Pass --env <path>, or create .env.{} or .env.",
             shown(&path),
             session.environment.name()
         );
@@ -806,7 +806,7 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
     let env = &session.environment;
     if choice == local::Choice::Default && *env == Environment::Production {
         eprintln!(
-            "warning: pushing {} to production — pass --file .env.production if that is not what you meant",
+            "warning: pushing {} to production — pass --env .env.production if that is not what you meant",
             shown(&path)
         );
     }
@@ -828,7 +828,8 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
     // D4: before anything is written, has Vercel moved since the last pull/push?
     check_state(&session, &plan, &remote)?;
 
-    let nothing_to_say = crate::utils::ui::is_quiet() && args.yes && !args.dry_run && !args.json();
+    let nothing_to_say =
+        crate::utils::ui::is_quiet() && args.confirm.yes && !args.dry.dry_run && !args.json();
     if !args.json() && !nothing_to_say {
         println!(
             "Vercel  {}  {}        local  {file_name}",
@@ -855,7 +856,7 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
         return Ok(Verdict::Clean);
     }
 
-    if args.dry_run {
+    if args.dry.dry_run {
         say.line("  Dry run: nothing was sent.");
         finish_json(None, false)?;
         return Ok(Verdict::Clean);
@@ -890,7 +891,7 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
         "evnx platform push --to vercel --target {} --yes",
         env.name()
     );
-    if !crate::utils::prompt::confirm(&question, args.yes, &example)? {
+    if !crate::utils::prompt::confirm(&question, args.confirm.yes, &example)? {
         say.line("  Cancelled; nothing was sent to Vercel.");
         return Err(crate::utils::prompt::Declined.into());
     }
@@ -943,7 +944,7 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
             &session,
             &after.0.entries,
             &gitignore,
-            args.yes,
+            args.confirm.yes,
             args.json(),
         )?;
     }
@@ -1075,7 +1076,7 @@ fn to_json(
         "team": session.project.team,
         "environment": session.environment.name(),
         "file": file,
-        "dry_run": args.dry_run,
+        "dry_run": args.dry.dry_run,
         "applied": applied,
         "summary": {
             "create": plan.count(PushOp::Create),

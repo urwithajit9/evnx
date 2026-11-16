@@ -82,7 +82,7 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
     match command {
         CloudCommands::Push {
             vault,
-            file,
+            env: file,
             env_name,
             password_stdin,
             yes,
@@ -98,7 +98,7 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
         CloudCommands::Pull {
             vault,
             allow_override,
-            file,
+            env: file,
             env_name,
             version,
             force,
@@ -160,7 +160,7 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             to,
             local,
             version,
-            file,
+            env: file,
             env_name,
             password_stdin,
         } => {
@@ -188,7 +188,7 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             vault,
             yes,
         } => sync::delete_version(server_override, vault, version_num, yes, verbose),
-        CloudCommands::Link { vault, file } => {
+        CloudCommands::Link { vault, env: file } => {
             sync::link(server_override, vault, file.as_deref(), verbose)
         }
         CloudCommands::Unlink => sync::unlink(verbose),
@@ -211,7 +211,7 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             output,
             all_versions,
             export::Conversion {
-                to,
+                to: to.map(|t| t.format_name().to_string()),
                 targets: crate::formats::Targets {
                     project,
                     vault_name,
@@ -283,11 +283,13 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
                 session::revoke_others(server_override, yes, verbose)
             }
         },
-        AuthCommands::KeyBundle {
-            format,
-            output,
+        AuthCommands::KeyBundle { fmt, output, force } => auth::key_bundle(
+            server_override,
+            verbose,
+            fmt.resolved(),
+            output.as_deref(),
             force,
-        } => auth::key_bundle(server_override, verbose, format, output.as_deref(), force),
+        ),
         AuthCommands::Token { command } => match command {
             TokenCommands::Create {
                 name,
@@ -295,7 +297,7 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
                 vault,
                 expires_in_days,
                 no_key_bundle,
-                format,
+                fmt,
                 output,
                 force,
             } => token::create(
@@ -306,7 +308,7 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
                 expires_in_days,
                 token::Delivery {
                     no_key_bundle,
-                    format,
+                    format: fmt.resolved(),
                     output,
                     force,
                 },
@@ -394,9 +396,9 @@ pub fn run_vault(
     match command {
         VaultCommands::Create {
             name,
-            env,
+            environment,
             password_stdin,
-        } => vault::create(server_override, name, env, password_stdin, verbose),
+        } => vault::create(server_override, name, environment, password_stdin, verbose),
         VaultCommands::List => vault::list(server_override, verbose),
         VaultCommands::Delete { target, yes } => {
             vault::delete(server_override, target, yes, verbose)

@@ -59,6 +59,70 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   booleans and dates. The `doctor --format json` report has one more check,
   `empty_sections`.
 
+### Breaking: one flag vocabulary (WP-8)
+
+Every command now spells the same idea the same way. The old spellings are removed, not aliased: typing one exits 2 with `error: '<old>' was removed from 'evnx <command>' in 0.14.2; use '<new>'`, and nothing runs. `evnx commands --json` lists them under `removed`.
+
+| Command | Old | Use instead |
+|---|---|---|
+| `evnx sync` | `-f, --force` | `--yes` |
+| `evnx sync` | `--placeholder` | `--yes` |
+| `evnx validate` | `--format text` | `--format pretty` |
+| `evnx validate` | `--format github-actions` | `--format github` |
+| `evnx convert` | `--to github-actions` | `--to github` |
+| `evnx convert` | `--to gh-actions` | `--to github` |
+| `evnx init` | `-p, --path` | `-C/--dir` |
+| `evnx add` | `-p, --path` | `-C/--dir` |
+| `evnx add service` | `-p, --path` | `-C/--dir` |
+| `evnx add framework` | `-p, --path` | `-C/--dir` |
+| `evnx add blueprint` | `-p, --path` | `-C/--dir` |
+| `evnx add custom` | `-p, --path` | `-C/--dir` |
+| `evnx remove` | `-p, --path` | `-C/--dir` |
+| `evnx backup` | `--key-file` | `--password-file` |
+| `evnx restore` | `--key-file` | `--password-file` |
+| `evnx restore` | `--force` | `--yes` |
+| `evnx parse` | `--format text` | `--format pretty` |
+| `evnx parse` | `-y, --yes` | `--show-values` |
+| `evnx scan` | `--format text` | `--format pretty` |
+| `evnx scan` | `--format github-actions` | `--format github` |
+| `evnx scan rules add` | `--format` | `--from` |
+| `evnx doctor` | `--path` | `-C/--dir` |
+| `evnx doctor` | `--format text` | `--format pretty` |
+| `evnx migrate` | `--source-file` | `--env` |
+| `evnx migrate` | `--to github-actions` | `--to github` |
+| `evnx migrate` | `--to aws` | `--to aws-secrets-manager` |
+| `evnx migrate` | `--to gcp` | `--to gcp-secret-manager` |
+| `evnx migrate` | `--to azure` | `--to azure-keyvault` |
+| `evnx migrate` | `--from env` | `--from env-file` |
+| `evnx platform diff` | `--env-name` | `--target` |
+| `evnx platform diff` | `-f, --file` | `--env` |
+| `evnx platform pull` | `--env-name` | `--target` |
+| `evnx platform pull` | `-f, --file` | `--env` |
+| `evnx platform push` | `--env-name` | `--target` |
+| `evnx platform push` | `-f, --file` | `--env` |
+| `evnx cloud push` | `-f, --file` | `--env` |
+| `evnx cloud pull` | `-f, --file` | `--env` |
+| `evnx cloud diff` | `-f, --file` | `--env` |
+| `evnx cloud link` | `-f, --file` | `--env` |
+| `evnx cloud pull` | `--force` | `--yes` |
+| `evnx cloud export` | `--to github-actions` | `--to github` |
+| `evnx cloud export` | `--to gh-actions` | `--to github` |
+| `evnx vault create` | `-e, --env` | `--environment` |
+| `evnx auth key-bundle` | `--format text` | `--format pretty` |
+| `evnx auth token create` | `--format text` | `--format pretty` |
+
+New in the same change:
+
+- `--json` is a visible shorthand for `--format json` on every command that has `--format`.
+- `-n` is the short form of `--dry-run` everywhere.
+- `-C/--dir` names the project folder (init, add, remove, doctor).
+- `--env <FILE>` names the env file on cloud and platform too.
+- `sync --yes` works without `--prune`, and `sync --json` works in every mode.
+- `validate --fix --yes`, and `convert --yes` / `convert --dry-run`.
+- `sync --to example|env` as another spelling of `--direction forward|reverse`.
+- `migrate --github-token` is hidden, and warns when used (it still works).
+- `platform` keeps `--to` required and `--target` as the Vercel environment.
+
 ### Fixed
 
 - **Projects with only named env files** (`.env.prod`, no `.env`) are

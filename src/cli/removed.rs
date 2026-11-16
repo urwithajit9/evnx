@@ -222,6 +222,94 @@ pub const REMOVED: &[Removed] = &[
         value: "env",
         new: "--from env-file",
     },
+    // platform: `--env-name` was the old name of `--target`; the local file is `--env`.
+    Removed::Flag {
+        path: &["platform", "diff"],
+        old: &["--env-name"],
+        new: "--target",
+    },
+    Removed::Flag {
+        path: &["platform", "diff"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["platform", "pull"],
+        old: &["--env-name"],
+        new: "--target",
+    },
+    Removed::Flag {
+        path: &["platform", "pull"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["platform", "push"],
+        old: &["--env-name"],
+        new: "--target",
+    },
+    Removed::Flag {
+        path: &["platform", "push"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    // cloud: the local file is `--env`; `--yes` is the one spelling of "overwrite without asking".
+    Removed::Flag {
+        path: &["cloud", "push"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["cloud", "pull"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["cloud", "diff"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["cloud", "link"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["cloud", "pull"],
+        old: &["--force"],
+        new: "--yes",
+    },
+    Removed::Value {
+        path: &["cloud", "export"],
+        flag: "--to",
+        value: "github-actions",
+        new: "--to github",
+    },
+    Removed::Value {
+        path: &["cloud", "export"],
+        flag: "--to",
+        value: "gh-actions",
+        new: "--to github",
+    },
+    // vault create: `--env` is a file everywhere else; this one is an environment slug.
+    Removed::Flag {
+        path: &["vault", "create"],
+        old: &["-e", "--env"],
+        new: "--environment",
+    },
+    // auth: `pretty` is the default format.
+    Removed::Value {
+        path: &["auth", "key-bundle"],
+        flag: "--format",
+        value: "text",
+        new: "--format pretty",
+    },
+    Removed::Value {
+        path: &["auth", "token", "create"],
+        flag: "--format",
+        value: "text",
+        new: "--format pretty",
+    },
 ];
 
 /// The message for a match: the spelling as typed.
