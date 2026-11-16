@@ -201,11 +201,52 @@ fn drop_emptied_sections(
                 cut[n] = true;
             }
         }
-        // The blank line `add` put above the header.
-        if !own_comment_left && h > 1 && lines[h - 2].trim().is_empty() {
+        // The blank line `add` put above the header, when the section was
+        // the file's last; in the middle it now separates the sections on
+        // either side.
+        if !own_comment_left && end > lines.len() && h > 1 && lines[h - 2].trim().is_empty() {
             cut[h - 1] = true;
         }
     }
+}
+
+/// `doctor --fix` (WP-7): `content` without the evnx sections that have no
+/// entry, by the rule [`cut_entries`] applies to the ones it empties. `None`
+/// when there is none, or the file has a line the parser refuses. The number
+/// is how many sections went.
+pub fn without_empty_sections(content: &str) -> Option<(String, usize)> {
+    let doc = document(content);
+    if !doc.problems.is_empty() {
+        return None;
+    }
+    let (bom, body) = match content.strip_prefix('\u{feff}') {
+        Some(rest) => ("\u{feff}", rest),
+        None => ("", content),
+    };
+    let lines: Vec<&str> = body.split_inclusive('\n').collect();
+    let headers: BTreeSet<usize> = doc
+        .comments
+        .iter()
+        .filter(|c| is_section_header(&c.text))
+        .map(|c| c.line)
+        .collect();
+    let mut cut = vec![false; lines.len() + 1];
+    drop_emptied_sections(&doc, &lines, &headers, &mut cut);
+    let gone = headers.iter().filter(|&&h| cut[h]).count();
+    if gone == 0 {
+        return None;
+    }
+    let mut text = bom.to_string();
+    for (i, l) in lines.iter().enumerate() {
+        if !cut[i + 1] {
+            text.push_str(l);
+        }
+    }
+    // Same keys, same values: only comment and blank lines went.
+    if keys(&document(&text)) != keys(&doc) {
+        return None;
+    }
+    Some((text, gone))
 }
 
 /// REM-1: the entries of `content` that a removal of `removed` keeps and whose
@@ -464,6 +505,18 @@ mod tests {
             cut(f, &["A"]).text,
             "# ── Old ──\n\n# ── Stripe ──\nSTRIPE_KEY=\n"
         );
+    }
+
+    #[test]
+    fn doctor_clears_every_empty_evnx_section_and_nothing_else() {
+        let f = "A=1\n\n# ── Stripe ──\n\n# Added by evnx add on 2026-11-01 10:00\n\n# ── Redis ──\nREDIS_URL=\n\n# ── Notes ──\n# keep: the user's own\n";
+        let (text, gone) = without_empty_sections(f).unwrap();
+        assert_eq!(gone, 1);
+        assert_eq!(
+            text,
+            "A=1\n\n# ── Redis ──\nREDIS_URL=\n\n# ── Notes ──\n# keep: the user's own\n"
+        );
+        assert!(without_empty_sections(&text).is_none(), "tidy stays tidy");
     }
 
     #[test]

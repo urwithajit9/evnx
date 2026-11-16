@@ -471,6 +471,7 @@ fn get_all_checks(template: &Template) -> Vec<Box<dyn DiagnosticCheck>> {
         Box::new(DockerCheck),
         Box::new(AgentCheck),
         Box::new(PermissionCheck),
+        Box::new(SectionsCheck),
     ]
 }
 
@@ -1258,6 +1259,90 @@ fn fix_agent_ignores(project_root: &Path, _verbose: bool) -> Result<bool> {
 }
 
 /// Check: File permissions for sensitive files (Unix only)
+/// Check: evnx sections with no variable left in them (WP-7). `add` wrote a
+/// `# ── Stripe ──` header (and, before 0.14.2, an `# Added by evnx … on
+/// <date>` line); `remove` before 0.14.2 left them behind when the last
+/// variable went. `--fix` clears them, by the rule `remove` now applies.
+struct SectionsCheck;
+
+impl DiagnosticCheck for SectionsCheck {
+    fn name(&self) -> &'static str {
+        "empty_sections"
+    }
+    fn description(&self) -> &'static str {
+        "Check env files and templates for empty evnx sections"
+    }
+
+    fn run(&self, project_root: &Path, _verbose: bool) -> Result<CheckResult> {
+        let mut lines = Vec::new();
+        for (label, _, gone) in files_with_empty_sections(project_root) {
+            lines.push(format!(
+                "! {label}: {} (an evnx header with no variable under it)",
+                crate::utils::string::count(gone, "empty section")
+            ));
+        }
+        if lines.is_empty() {
+            return Ok(self.result(Severity::Ok, None));
+        }
+        Ok(CheckResult {
+            fixable: true,
+            fix_action: Some(fix_empty_sections),
+            ..self.result(Severity::Info, details(lines))
+        })
+    }
+}
+
+/// The env files and templates in `project_root` that hold an empty evnx
+/// section: label, the text without them, and how many.
+fn files_with_empty_sections(project_root: &Path) -> Vec<(String, PathBuf, usize)> {
+    let mut names: Vec<String> = env_files(project_root)
+        .into_iter()
+        .filter(|f| f.link.is_none())
+        .map(|f| f.name)
+        .collect();
+    names.extend(crate::core::resolve::environment_templates(project_root));
+    for suffix in crate::core::env_name::TEMPLATE_SUFFIXES {
+        names.push(format!(".env.{suffix}"));
+    }
+    names.sort();
+    names.dedup();
+    let mut out = Vec::new();
+    for name in names {
+        let path = project_root.join(&name);
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        if let Some((_, gone)) = crate::commands::remove::edit::without_empty_sections(&text) {
+            out.push((name, path, gone));
+        }
+    }
+    out
+}
+
+fn fix_empty_sections(project_root: &Path, _verbose: bool) -> Result<bool> {
+    let mut changed = false;
+    for (label, path, gone) in files_with_empty_sections(project_root) {
+        let text = fs::read_to_string(&path)?;
+        let Some((tidy, _)) = crate::commands::remove::edit::without_empty_sections(&text) else {
+            continue;
+        };
+        // Only comment and blank lines go; the file keeps its mode.
+        let written = if crate::core::env_name::kind(&label) == crate::core::env_name::FileKind::Env
+        {
+            crate::core::safe_write::write_private(&path, tidy.as_bytes())
+        } else {
+            crate::core::safe_write::write_shared(&path, tidy.as_bytes())
+        }?;
+        crate::core::safe_write::report(&written);
+        report_fix(format!(
+            "{label}: removed {}",
+            crate::utils::string::count(gone, "empty section")
+        ));
+        changed = true;
+    }
+    Ok(changed)
+}
+
 struct PermissionCheck;
 
 impl DiagnosticCheck for PermissionCheck {

@@ -59,13 +59,22 @@ $ env EVNX_OUTPUT_JSON=1 evnx doctor
       "fixable": false,
       "fixed": false,
       "ran": true
+    },
+    {
+      "name": "empty_sections",
+      "description": "Check env files and templates for empty evnx sections",
+      "severity": "ok",
+      "details": null,
+      "fixable": false,
+      "fixed": false,
+      "ran": true
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 7,
     "errors": 0,
     "warnings": 0,
-    "passed": 3,
+    "passed": 4,
     "info": 3,
     "fixable": 0
   },
@@ -94,7 +103,9 @@ $ evnx doctor --format text
 
   ✓  Check file permissions for sensitive files
 
-  3 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  4 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -127,7 +138,9 @@ $ env EVNX_AUTO_FIX=1 evnx doctor
 
   ✓  Check file permissions for sensitive files
 
-  1 error  ·  2 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 error  ·  3 checks passed
 
   Not examined here:
     values and required names    evnx validate

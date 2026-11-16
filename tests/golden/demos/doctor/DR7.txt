@@ -19,7 +19,9 @@ $ evnx doctor
 
   ✓  Check file permissions for sensitive files
 
-  1 error  ·  2 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 error  ·  3 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -50,7 +52,9 @@ $ evnx doctor --strict
 
   ✓  Check file permissions for sensitive files
 
-  1 error  ·  2 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 error  ·  3 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -80,7 +84,9 @@ $ evnx doctor
 
   ✓  Check file permissions for sensitive files
 
-  3 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  4 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -112,7 +118,9 @@ $ evnx doctor
 
   ✓  Check file permissions for sensitive files
 
-  1 error  ·  2 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 error  ·  3 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -142,7 +150,9 @@ $ evnx doctor
 
   ✓  Check file permissions for sensitive files
 
-  3 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  4 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -174,7 +184,9 @@ $ evnx doctor
 
   ✓  Check file permissions for sensitive files
 
-  1 error  ·  2 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 error  ·  3 checks passed
 
   Not examined here:
     values and required names    evnx validate

@@ -29,7 +29,9 @@ $ evnx doctor
   ·  Check file permissions for sensitive files
      Skipped: no env file to check
 
-  1 error  ·  1 check passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 error  ·  2 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -62,7 +64,9 @@ $ evnx doctor --strict
   ·  Check file permissions for sensitive files
      Skipped: no env file to check
 
-  1 error  ·  1 check passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 error  ·  2 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -100,7 +104,9 @@ $ evnx doctor
 
   ✓  Check file permissions for sensitive files
 
-  2 errors  ·  1 warning  ·  1 check passed
+  ✓  Check env files and templates for empty evnx sections
+
+  2 errors  ·  1 warning  ·  2 checks passed
 
   →  1 issue evnx doctor --fix can repair:
      ·  Validate .env file existence, security, and syntax
@@ -175,13 +181,22 @@ $ evnx doctor --format json
       "fixable": false,
       "fixed": false,
       "ran": true
+    },
+    {
+      "name": "empty_sections",
+      "description": "Check env files and templates for empty evnx sections",
+      "severity": "ok",
+      "details": null,
+      "fixable": false,
+      "fixed": false,
+      "ran": true
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 7,
     "errors": 2,
     "warnings": 1,
-    "passed": 1,
+    "passed": 2,
     "info": 2,
     "fixable": 1
   },

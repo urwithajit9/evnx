@@ -321,3 +321,20 @@ fn conv1_yaml_values_are_quoted_strings() {
         );
     }
 }
+
+// ── Part 6: doctor --fix (WP-7) ─────────────────────────────────────────────
+
+#[test]
+fn doctor_fix_clears_empty_sections_older_runs_left() {
+    let p = Project::new()
+        .git()
+        .env("A=1\n\n# ── Stripe ──\n\n# Added by evnx add on 2026-11-01 10:00\n")
+        .example("A=\n\n# ── Stripe ──\n");
+    let out = run(p.path(), &["doctor"]);
+    out.assert_contains("empty section");
+    let out = run(p.path(), &["doctor", "--fix"]);
+    out.assert_contains("removed 1 empty section");
+    assert_eq!(p.read(".env"), "A=1\n");
+    assert_eq!(p.read(".env.example"), "A=\n");
+    run(p.path(), &["doctor"]).assert_not_contains("empty section");
+}
