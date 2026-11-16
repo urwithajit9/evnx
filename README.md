@@ -307,7 +307,7 @@ evnx validate --strict                   # also report variables nothing declare
 evnx validate --fail-on warning          # warnings exit 1 too
 evnx validate --fix --dry-run            # what --fix would change; writes nothing
 evnx validate --format json              # machine-readable output
-evnx validate --format github-actions    # inline GitHub annotations
+evnx validate --format github            # inline GitHub annotations
 cat staged.env | evnx validate --env -    # v0.12.0+: stdin, nothing written to disk
 evnx parse --format json --values | evnx validate --env - --input-format json   # v0.12.0+
 ```
@@ -405,7 +405,7 @@ differences found, `2` could not run. ⚠️ `--format patch --show-values` and
 ### `evnx convert`
 
 Converts your `.env` file to the format one of 14 deployment targets expects.
-`--help` lists them; `k8s`, `tf`, `yml`, `gh-actions` and `compose` are aliases.
+`--help` lists them; `k8s`, `tf`, `yml` and `compose` are aliases.
 
 ```bash
 evnx convert --to json
@@ -415,7 +415,7 @@ evnx convert --to docker-compose
 evnx convert --to kubernetes --name myapp-env [--namespace prod]
 evnx convert --to terraform             # .tfvars values (keep the file out of git)
 evnx convert --to terraform --terraform-declarations   # variable blocks, no secret values
-evnx convert --to github-actions        # text to paste into the GitHub web form
+evnx convert --to github                # text to paste into the GitHub web form
 evnx convert --to aws-secrets           # JSON for create-secret --secret-string
 evnx convert --to gcp-secrets --project my-gcp-project
 evnx convert --to azure-keyvault --vault-name my-vault
@@ -506,17 +506,16 @@ evnx sync --check --direction forward
 | Flag | What it does |
 |---|---|
 | `--direction forward\|reverse` | Which file to fill (default `forward`). With `--check`, naming one makes the check one-way |
+| `--to example\|env` | Another spelling of `--direction`: `example` is `forward`, `env` is `reverse`. Not with `--direction` |
 | `-n`, `--dry-run` | Preview; writes nothing, never prompts, exits 0 |
 | `--check` | Exit 0 in sync, 1 out of sync (the message names the command that fixes each side), 2 no verdict. Implies `--dry-run` |
-| `--format json` | With `--check`: `missing`, plus `template_only` when no `--direction` is given |
-| `-f`, `--force` | Skip the prompts and add placeholder values. With no terminal, or `CI` set, sync does this anyway and says so |
+| `--format json`, `--json` | In every mode: the `--check` report (`missing`, plus `template_only` when no `--direction` is given). A run that writes, or with `--dry-run` would write, adds `added`: the names added, sorted. A run that would ask needs `--yes` or `--dry-run` |
+| `-y`, `--yes` | Skip the prompts and add placeholder values. With no terminal, or `CI` set, sync does this anyway and says so. With `--prune`: remove without asking (no terminal and no `--yes` is exit 2) |
 | `--env`, `--env-name`, `--example` | The pair to compare (default `.env` and `.env.example`) |
 | `--template-config FILE` | JSON placeholder rules: `patterns`, `default`, `allow_actual` (real values for configuration such as `LOG_LEVEL`; a credential is refused). An unknown key is an error |
 | `--naming-policy warn\|error\|ignore` | Names that are not `UPPER_SNAKE_CASE`; `error` stops with exit 2 |
 | `--skip-without-env` | For a pre-commit hook: with no `.env` and no spec, skip (exit 0) and say so |
-| `--placeholder` | Deprecated; does what `--force` does |
-| `--prune` | Remove from the template the names that no environment file (`.env`, `.env.<name>`) has. Asks first (exit 4 on no); `-n`/`--dry-run` previews; a name declared in `[vars]` is kept. A mode of its own: not with `--check`, `--direction`, `--env`, `--env-name` or `--force` |
-| `-y`, `--yes` | With `--prune`: remove without asking. No terminal and no `--yes` is exit 2 |
+| `--prune` | Remove from the template the names that no environment file (`.env`, `.env.<name>`) has. Asks first (exit 4 on no); `-n`/`--dry-run` previews; a name declared in `[vars]` is kept. A mode of its own: not with `--check`, `--direction`, `--to`, `--env`, `--env-name` or `--format` |
 
 ---
 
@@ -1393,7 +1392,7 @@ jobs:
           curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
 
       - name: Validate configuration
-        run: evnx validate --strict --format github-actions
+        run: evnx validate --strict --format github
 
       - name: Scan for secrets
         run: evnx scan --format sarif > scan-results.sarif

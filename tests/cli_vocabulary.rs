@@ -15,6 +15,10 @@
 //! * `d2` `--dry-run` has `-n`
 //! * `d3` `--yes` has `-y`
 //! * `e`  every removed spelling exits 2 with its message (see below)
+//!
+//! No rule says a command must take `--yes`. `align` never asks a question (it
+//! keeps a `.bak` of every file it changes, and `evnx undo` puts them back), so
+//! it has none, on purpose.
 
 mod support;
 
@@ -44,9 +48,6 @@ const ALLOW: &[(&str, &str)] = &[
     ("remove", "b"),
     ("remove", "d1"),
     ("remove", "d2"),
-    ("validate", "a"),
-    ("validate", "b"),
-    ("validate", "d2"),
     ("scan", "a"),
     ("scan", "b"),
     ("scan rules list", "b"),
@@ -54,10 +55,6 @@ const ALLOW: &[(&str, &str)] = &[
     ("scan rules add", "b"),
     ("migrate", "d1"),
     ("migrate", "d2"),
-    ("sync", "b"),
-    ("sync", "c"),
-    ("align", "b"),
-    ("template", "d2"),
     ("backup", "d1"),
     ("restore", "d2"),
     ("auth key-bundle", "a"),

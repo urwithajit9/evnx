@@ -151,7 +151,7 @@ fn t_i277_new_template_actual_values_never_copies_a_refused_value() {
     assert!(example.contains("STRIPE_KEY="), "{example}");
     // I-278: the advice is a command that does what it says.
     assert!(
-        !out.contains("re-create it with `evnx sync --force`"),
+        !out.contains("re-create it with `evnx sync --yes`"),
         "{out}"
     );
     assert!(out.contains("delete .env.example"), "{out}");

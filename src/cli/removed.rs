@@ -51,7 +51,45 @@ impl Removed {
 }
 
 /// Every removed spelling. Each change that removes one adds a row here.
-pub const REMOVED: &[Removed] = &[];
+pub const REMOVED: &[Removed] = &[
+    // sync: `--yes` is the one spelling of "do not ask, use placeholders".
+    Removed::Flag {
+        path: &["sync"],
+        old: &["-f", "--force"],
+        new: "--yes",
+    },
+    Removed::Flag {
+        path: &["sync"],
+        old: &["--placeholder"],
+        new: "--yes",
+    },
+    // validate: the one word for annotations is `github`; `pretty` is the default.
+    Removed::Value {
+        path: &["validate"],
+        flag: "--format",
+        value: "text",
+        new: "--format pretty",
+    },
+    Removed::Value {
+        path: &["validate"],
+        flag: "--format",
+        value: "github-actions",
+        new: "--format github",
+    },
+    // convert: GitHub Actions is `github` everywhere.
+    Removed::Value {
+        path: &["convert"],
+        flag: "--to",
+        value: "github-actions",
+        new: "--to github",
+    },
+    Removed::Value {
+        path: &["convert"],
+        flag: "--to",
+        value: "gh-actions",
+        new: "--to github",
+    },
+];
 
 /// The message for a match: the spelling as typed.
 pub fn message(path: &[&str], typed: &str, new: &str) -> String {

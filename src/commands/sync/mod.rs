@@ -126,11 +126,9 @@ pub fn run(
         }
     }
 
-    // DEC-S9: kept so scripts and the old hook entry keep working.
-    if placeholder {
-        ui::warning("--placeholder is deprecated: it does what --force does (placeholder values, no prompt). Use --force.");
-    }
-
+    // `placeholder` is not a command-line flag any more (removed in 0.14.2,
+    // with `-f/--force`: `--yes` is the one spelling); the argument stays so
+    // that a direct caller of this library function keeps compiling.
     let ctx = executor::SyncCtx {
         paths,
         direction,
@@ -140,16 +138,19 @@ pub fn run(
         dry_run: dry_run || check,
         check,
         force: force || placeholder,
+        json: format == "json",
         naming_policy,
         spec,
     };
 
-    // ⚠️ `--format json` is accepted only with `--check` (clap enforces it).
-    // It reads the same drift the pretty output prints (I-117): it was a
-    // second implementation that left out the spec, the naming policy and the
-    // `allow_actual` guard, and gave a missing `.env` in reverse a different
-    // exit code. An `Err` is exit 2 with the "No verdict" line, from `main`.
-    let out_of_step = if format == "json" {
+    // ⚠️ `--format json` works in every mode (SYNC-2). It reads the same drift
+    // the pretty output prints (I-117): it was a second implementation that
+    // left out the spec, the naming policy and the `allow_actual` guard, and
+    // gave a missing `.env` in reverse a different exit code. An `Err` is exit
+    // 2 with the "No verdict" line, from `main`.
+    let out_of_step = if format == "json" && !check {
+        return run_as_json(&ctx, &config);
+    } else if format == "json" {
         check_as_json(&ctx, &config)?
     } else {
         executor::execute(&ctx, &config)?
@@ -242,6 +243,10 @@ struct CheckReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     template_only: Option<Vec<String>>,
     summary: CheckSummary,
+    /// A run that writes, or with `--dry-run` would write: the names added to
+    /// the target, sorted. Absent under `--check`, which writes nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    added: Option<Vec<String>>,
     /// `"spec"` when there was no `.env` and the template was checked against
     /// the required `[vars]` instead (DEC-S4). Absent otherwise, so the report
     /// for the usual comparison is unchanged.
@@ -272,10 +277,43 @@ fn check_as_json(
     config: &crate::core::placeholder::PlaceholderConfig,
 ) -> Result<bool> {
     let loaded = executor::load(ctx, config, false)?;
-    let drift = &loaded.drift;
+    let report = report_of(ctx, &loaded.drift);
+    // stdout, and nothing else on it — the property the golden tests pin.
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(loaded.drift.out_of_step())
+}
+
+/// `--format json` without `--check` (SYNC-2): the `--check` report, plus
+/// `added`. `in_sync`, `missing` and `template_only` describe the files as they
+/// were found, before any write; `added` is what was written, or with
+/// `--dry-run` what would be.
+///
+/// ⚠️ stdout holds the document and nothing else: the status lines are
+/// suppressed, and a run that would stop to ask is refused (as `init --json`
+/// is) rather than asking into the middle of it. The document is printed only
+/// after the write succeeded, so an `Err` leaves stdout empty.
+fn run_as_json(
+    ctx: &executor::SyncCtx,
+    config: &crate::core::placeholder::PlaceholderConfig,
+) -> Result<Verdict> {
+    if !ctx.dry_run && !ctx.force && executor::no_prompt_reason().is_none() {
+        anyhow::bail!("--format json needs --yes or --dry-run: it never asks.");
+    }
+    ui::set_quiet(true);
+    let loaded = executor::load(ctx, config, false)?;
+    let mut report = report_of(ctx, &loaded.drift);
+    report.added = Some(report.missing.clone());
+    if !ctx.dry_run {
+        executor::execute(ctx, config)?;
+    }
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(Verdict::Clean)
+}
+
+fn report_of(ctx: &executor::SyncCtx, drift: &executor::Drift) -> CheckReport {
     let template_only = (ctx.two_way && ctx.direction == SyncDirection::Forward)
         .then(|| sorted(drift.template_only.clone()));
-    let report = CheckReport {
+    CheckReport {
         in_sync: !drift.out_of_step(),
         direction: match ctx.direction {
             SyncDirection::Forward => "forward",
@@ -289,12 +327,9 @@ fn check_as_json(
             template_only: template_only.as_ref().map(Vec::len),
         },
         template_only,
+        added: None,
         compared_with: None,
-    };
-
-    // stdout, and nothing else on it — the property the golden tests pin.
-    println!("{}", serde_json::to_string_pretty(&report)?);
-    Ok(drift.out_of_step())
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -391,6 +426,7 @@ fn check_without_env(
             },
             missing: sorted(missing.clone()),
             template_only: None,
+            added: None,
             compared_with: Some("spec"),
         };
         println!("{}", serde_json::to_string_pretty(&report)?);

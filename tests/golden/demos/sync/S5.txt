@@ -1,7 +1,7 @@
 
 ================ S5 ================
 
-$ evnx sync -f
+$ evnx sync -y
 · .env.example not found, creating from .env
 ✓ Created .env.example
 

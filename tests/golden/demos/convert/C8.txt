@@ -1,7 +1,7 @@
 
 ================ C8 ================
 
-$ evnx convert --to github-actions
+$ evnx convert --to github
 Paste these into Settings → Secrets and variables → Actions:
 
 Name: APP_NAME

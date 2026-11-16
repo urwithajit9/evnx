@@ -222,7 +222,7 @@ fn sync_fills_a_placeholder_and_aligning_again_tidies_up() {
     align(&p, &[]).assert_code(0);
     assert_eq!(p.read(".env"), "A=1\n# About B\n# B=\nC=3\n");
 
-    run(p.path(), &["sync", "--direction", "reverse", "--force"]).assert_code(0);
+    run(p.path(), &["sync", "--direction", "reverse", "--yes"]).assert_code(0);
     assert!(p.read(".env").contains("B=template-value\n"));
 
     align(&p, &[]).assert_code(0);

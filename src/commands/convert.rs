@@ -128,6 +128,10 @@ pub struct ConvertConfig {
     pub allow_empty: bool,
     /// `.gitignore` handling for `--output` (`--gitignore`, `--no-gitignore`).
     pub gitignore: GitignoreMode,
+    /// `--yes`: never ask, so a missing `--to` is an error, not the menu.
+    pub yes: bool,
+    /// `--dry-run`: do everything but write the `--output` file.
+    pub dry_run: bool,
 }
 
 impl ConvertConfig {
@@ -184,6 +188,8 @@ impl Default for ConvertConfig {
             targets: Targets::default(),
             allow_empty: false,
             gitignore: GitignoreMode::Default,
+            yes: false,
+            dry_run: false,
         }
     }
 }
@@ -224,9 +230,25 @@ pub struct ConfigBuilder {
     allow_collisions: bool,
     gitignore: Option<GitignoreMode>,
     only: Option<crate::core::converter::Only>,
+    yes: bool,
+    dry_run: bool,
 }
 
 impl ConfigBuilder {
+    /// Never ask: a missing target is an error naming `--to`.
+    #[must_use]
+    pub fn yes(mut self, enabled: bool) -> Self {
+        self.yes = enabled;
+        self
+    }
+
+    /// Check everything, report what would be written, write nothing.
+    #[must_use]
+    pub fn dry_run(mut self, enabled: bool) -> Self {
+        self.dry_run = enabled;
+        self
+    }
+
     /// Set the input .env file path.
     #[must_use]
     pub fn env(mut self, path: impl Into<String>) -> Self {
@@ -358,6 +380,8 @@ impl ConfigBuilder {
             targets: self.targets,
             allow_empty: self.allow_empty,
             gitignore: self.gitignore.unwrap_or(GitignoreMode::Default),
+            yes: self.yes,
+            dry_run: self.dry_run,
         }
     }
 }
@@ -451,6 +475,14 @@ pub fn run(config: ConvertConfig) -> Result<()> {
     // Determine target format (interactive if not specified)
     let format_name = match &config.target_format {
         Some(f) => f.clone(),
+        None if config.yes => {
+            // `--yes` never asks, and the menu is a question.
+            return Err(crate::utils::prompt::choice_needed(
+                "--to",
+                "evnx convert --yes --to <FORMAT>",
+                &formats::names(),
+            ));
+        }
         None => select_format_interactive(config.verbose)?,
     };
 
@@ -514,6 +546,20 @@ pub fn run(config: ConvertConfig) -> Result<()> {
 
     if let Some(note) = exclude_on_public_target(format.name, &config.options) {
         ui::warning(note);
+    }
+
+    // `--dry-run` has been through every check a real run makes; it stops
+    // before the file is written and before `.gitignore` is touched.
+    if config.dry_run {
+        if let Some(path) = config.output_path.as_deref() {
+            ui::say(format!(
+                "Dry run: would convert {} variable(s) to {} ({} bytes) in {path}; nothing was written",
+                prepared.len(),
+                format.name,
+                crate::core::converter::newline_terminated(result).len()
+            ));
+            return Ok(());
+        }
     }
 
     // Output result

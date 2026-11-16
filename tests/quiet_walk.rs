@@ -64,7 +64,7 @@ fn cases() -> Vec<Case> {
                 "--no-gitignore",
             ],
         ),
-        case("sync", &["sync", "-f"]),
+        case("sync", &["sync", "--yes"]),
         case("align", &["align"]),
         case(
             "template",

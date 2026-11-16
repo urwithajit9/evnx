@@ -192,13 +192,30 @@ fn t_i038_every_listed_type_is_accepted() {
     }
 }
 
-/// `--format` takes the same spellings as `scan` and `doctor` (one helper).
+/// `--format` is a clap value list since WP-8b: a wrong value is clap's error
+/// (exit 2) naming what is accepted, and `text` / `github-actions` are gone.
 #[test]
-fn t_i038_format_is_case_insensitive_like_scan_and_doctor() {
+fn t_i038_format_is_a_clap_value_list() {
     let out = run(
         fixture().path(),
-        &["validate", "--format", " JSON ", "--exit-zero"],
+        &["validate", "--format", "xml", "--exit-zero"],
     );
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("possible values: pretty, json, github"),
+        "{}",
+        out.stderr
+    );
+    for (old, new) in [("text", "pretty"), ("github-actions", "github")] {
+        let out = run(fixture().path(), &["validate", "--format", old]);
+        out.assert_code(2);
+        assert!(
+            out.stderr.contains(&format!("use '--format {new}'")),
+            "{}",
+            out.stderr
+        );
+    }
+    let out = run(fixture().path(), &["validate", "--json", "--exit-zero"]);
     out.assert_code(0);
     serde_json::from_str::<Value>(&out.stdout).expect("JSON on stdout");
 }
@@ -643,7 +660,7 @@ fn t_s2_an_unknown_level_exits_2() {
     );
     out.assert_code(2);
     assert!(
-        out.stderr.contains("expected one of: warning, error"),
+        out.stderr.contains("possible values: error, warning"),
         "{}",
         out.stderr
     );

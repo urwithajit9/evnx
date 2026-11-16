@@ -180,3 +180,99 @@ pub struct DirArgs {
     #[arg(short = 'C', long, value_name = "DIR", help_heading = "Files")]
     pub dir: Option<PathBuf>,
 }
+
+/// What `evnx convert --to` can write (and, from 0.14.2, `cloud export --to`).
+///
+/// Fourteen formats, spelled as [`crate::formats::FORMATS`] names them, except
+/// that GitHub Actions is `github`: the one word every command uses for it.
+/// The other short spellings `convert` has always taken (`yml`, `k8s`, `tf`,
+/// …) stay as hidden aliases; `github-actions` and `gh-actions` do not.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConvertTarget {
+    Json,
+    #[value(alias = "yml")]
+    Yaml,
+    #[value(aliases = ["bash", "export"])]
+    Shell,
+    #[value(aliases = ["aws", "aws-secrets-manager"])]
+    AwsSecrets,
+    #[value(aliases = ["gcp", "gcp-secret-manager"])]
+    GcpSecrets,
+    #[value(aliases = ["azure", "azure-key-vault"])]
+    AzureKeyvault,
+    Github,
+    #[value(aliases = ["docker", "compose"])]
+    DockerCompose,
+    #[value(aliases = ["k8s", "kubectl"])]
+    Kubernetes,
+    #[value(aliases = ["tfvars", "tf"])]
+    Terraform,
+    Doppler,
+    Heroku,
+    Vercel,
+    Railway,
+}
+
+impl ConvertTarget {
+    /// The name [`crate::formats::find`] knows it by.
+    pub fn format_name(self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::Yaml => "yaml",
+            Self::Shell => "shell",
+            Self::AwsSecrets => "aws-secrets",
+            Self::GcpSecrets => "gcp-secrets",
+            Self::AzureKeyvault => "azure-keyvault",
+            Self::Github => "github-actions",
+            Self::DockerCompose => "docker-compose",
+            Self::Kubernetes => "kubernetes",
+            Self::Terraform => "terraform",
+            Self::Doppler => "doppler",
+            Self::Heroku => "heroku",
+            Self::Vercel => "vercel",
+            Self::Railway => "railway",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The enum and the format table are one list: a format added to one and
+    /// not the other fails here.
+    #[test]
+    fn convert_target_matches_the_format_table() {
+        let from_enum: Vec<&str> = ConvertTarget::value_variants()
+            .iter()
+            .map(|t| t.format_name())
+            .collect();
+        let table: Vec<&str> = crate::formats::FORMATS.iter().map(|f| f.name).collect();
+        assert_eq!(from_enum, table);
+    }
+
+    /// Every alias the table lists still parses, except the two GitHub ones
+    /// that were removed.
+    #[test]
+    fn convert_target_keeps_the_table_aliases() {
+        for f in crate::formats::FORMATS {
+            for alias in f.aliases {
+                if ["github", "gh-actions"].contains(alias) && f.name == "github-actions" {
+                    continue;
+                }
+                assert!(
+                    ConvertTarget::from_str(alias, true).is_ok(),
+                    "{alias} no longer parses"
+                );
+            }
+        }
+        assert!(ConvertTarget::from_str("github-actions", true).is_err());
+        assert!(ConvertTarget::from_str("gh-actions", true).is_err());
+        assert_eq!(
+            ConvertTarget::from_str("github", true)
+                .unwrap()
+                .format_name(),
+            "github-actions"
+        );
+    }
+}

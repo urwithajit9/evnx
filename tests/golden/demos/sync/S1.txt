@@ -1,7 +1,7 @@
 
 ================ S1 ================
 
-$ evnx sync -f
+$ evnx sync -y
 · .env.example not found, creating from .env
 ✓ Created .env.example
 
@@ -17,7 +17,7 @@ Next steps:
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
-  ok: no template: created with placeholders (no terminal / -f) (exit 0)
+  ok: no template: created with placeholders (no terminal / -y) (exit 0)
 --- .env.example:
 # Generated from .env
 # Replace all placeholder values with real credentials
@@ -40,7 +40,7 @@ $ evnx sync --check
 [exit 0]
   ok: second run: in sync (exit 0)
 
-$ evnx sync -f
+$ evnx sync -y
 ✓ .env.example is up to date
 [stderr]
 

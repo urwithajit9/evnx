@@ -28,7 +28,7 @@ fn t_i114_sync_actual_values_survive_a_round_trip() {
             "tc.json",
             r#"{"allow_actual":["APP_NAME","GREETING","PRICE","LOG"]}"#,
         );
-    run(p.path(), &["sync", "-f", "--template-config", "tc.json"]).assert_code(0);
+    run(p.path(), &["sync", "--yes", "--template-config", "tc.json"]).assert_code(0);
     let got = read_back(&p, ".env.example");
     assert_eq!(got["APP_NAME"], "My App # prod");
     assert_eq!(got["GREETING"], "hi there");

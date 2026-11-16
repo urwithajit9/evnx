@@ -1,7 +1,7 @@
 
 ================ S4 ================
 
-$ evnx sync -f --direction reverse
+$ evnx sync -y --direction reverse
 
 ┌─ Missing Variables ──────────────────────────────────────────────────────────┐
 │ Found 1 variable missing from .env:                                          │
@@ -30,7 +30,7 @@ stripe_key=sk_live_abcdefghijklmnopqrstuvwx
 REDIS_URL=redis://localhost:6379
 FIXED I-115 (U8d, DEC-S2): REDIS_URL keeps the template's own value
 
-$ evnx sync -f --direction reverse
+$ evnx sync -y --direction reverse
 · .env not found, creating from .env.example
 ✓ Created .env
 

@@ -184,8 +184,8 @@ fn it_refuses_to_mix_with_the_modes_it_does_not_share_a_file_with() {
         &["--env", ".env"],
         &["--env-name", "staging"],
         &["--direction", "forward"],
-        &["--force"],
-        &["--placeholder"],
+        &["--to", "env"],
+        &["--json"],
         &["--skip-without-env"],
         &["--naming-policy", "warn"],
         &["--template-config", "x.json"],
@@ -197,8 +197,8 @@ fn it_refuses_to_mix_with_the_modes_it_does_not_share_a_file_with() {
         out.assert_code(2).assert_contains("cannot be used with");
         assert_eq!(p.read(".env.example"), before, "{extra:?}");
     }
-    // --yes means nothing without --prune.
-    evnx(&p, &["sync", "--yes"]).assert_code(2);
+    // Without --prune, --yes skips the prompts (SYNC-1).
+    evnx(&p, &["sync", "--yes", "--dry-run"]).assert_code(0);
     // --dry-run is allowed.
     evnx(&p, &["sync", "--prune", "--dry-run"]).assert_code(0);
 }

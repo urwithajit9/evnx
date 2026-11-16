@@ -23,20 +23,10 @@ Options:
       --mkdir
           Create the output's missing directories, readable by you only (0700)
 
-      --dry-run
+  -n, --dry-run
           Render and report what would be written, and write nothing.
           
           Fails where the real run would (an unknown filter, an unresolved placeholder without `--allow-unresolved`, a missing directory without `--mkdir`). Never prints the rendered text, and leaves `.gitignore` alone.
-
-      --env <ENV>
-          The environment file to take values from.
-          
-          Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
-
-      --env-name <NAME>
-          Operate on `.env.<NAME>` instead of `.env`.
-          
-          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do — it never falls back to `.env`.
 
       --gitignore
           Automatically add the output file to .gitignore (no prompt). Useful in CI scripts. Mutually exclusive with --no-gitignore
@@ -66,6 +56,17 @@ Options:
 
   -V, --version
           Print version
+
+Files:
+      --env <FILE>
+          The environment file to take values from. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`
+
+      --env-name <NAME>
+          Use `.env.<NAME>` instead of `.env`
+
+Confirmation:
+  -y, --yes
+          Do not ask: add the output file to .gitignore without the prompt (as `--gitignore`). An explicit `--no-gitignore` wins.
 
 References:
   {{VAR}}  ${VAR}  $VAR        replaced by the value from the env file

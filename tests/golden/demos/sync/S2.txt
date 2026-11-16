@@ -72,7 +72,7 @@ Target: .env.example (action: Add)
 [exit 1]
   ok: --check: out of sync (exit 1)
 
-$ evnx sync -f
+$ evnx sync -y
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
 │ Found 2 variables in .env missing from .env.example:                         │
@@ -98,7 +98,7 @@ $ evnx sync -f
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
-  ok: -f appends placeholders (exit 0)
+  ok: -y appends placeholders (exit 0)
 --- .env.example:
 DATABASE_URL=postgres://user:pass@localhost:5432/app
 API_SECRET=

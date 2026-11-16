@@ -69,7 +69,7 @@ Validation failed: 3 errors
 [exit 1]
   ok: FIXED I-034: required_present counts the declared variables that are there (6 of 8)
 
-$ evnx validate --format github-actions
+$ evnx validate --format github
 ::error file=.env,line=1::Missing required variable: STRIPE_KEY%0ASuggestion: Add STRIPE_KEY=<value> to ./.env
 ::error file=.env,line=1::Missing required variable: OPTIONAL_X%0ASuggestion: Add OPTIONAL_X=<value> to ./.env. If it is optional: run `evnx spec init`, then set `required = false` under [vars.OPTIONAL_X] in .evnx.toml
 ::warning file=.env,line=7::A is assigned 2 times (lines 7, 8) — only line 8 takes effect%0ASuggestion: Remove the earlier assignments of A, or rename them if they were meant to differ
@@ -80,9 +80,10 @@ Validation failed: 3 errors
 [exit 1]
 
 $ evnx validate --format xml
-Error: unknown format 'xml' — expected one of: pretty, json, github-actions
+error: invalid value 'xml' for '--format <FORMAT>'
+  [possible values: pretty, json, github]
 
-No verdict: evnx did not finish. This is not a clean result.
+For more information, try '--help'.
 [exit 2]
   ok: bad format value is an error (exit 2)
 

@@ -281,24 +281,24 @@ fn main() -> Result<()> {
         }
 
         Commands::Validate {
-            env,
-            env_name,
+            files: file_args,
             input_format,
-            example,
             strict,
             fix,
-            dry_run,
+            dry,
+            confirm: _,
             rotate_weak_secrets,
-            format,
+            output,
             exit_zero,
             ignore,
             validate_formats,
             fail_on,
         } => {
+            let flags = file_args.flags();
             let files = resolve_files(
-                env.as_deref(),
-                env_name.as_deref(),
-                example.as_deref(),
+                flags.env,
+                flags.env_name,
+                flags.example,
                 &cfg,
                 evnx::core::resolve::Need::Existing,
                 cli.quiet,
@@ -311,9 +311,9 @@ fn main() -> Result<()> {
                 example: label(&files.template),
                 strict: evnx::core::config::any(strict, cfg.validate.strict),
                 fix,
-                dry_run,
+                dry_run: dry.dry_run,
                 rotate_weak_secrets,
-                format,
+                format: output.resolved(),
                 exit_zero,
                 // The flag wins over `[validate] fail_on`; both are checked (I-038).
                 fail_on,
@@ -576,8 +576,7 @@ fn main() -> Result<()> {
         }
 
         Commands::Convert {
-            env,
-            env_name,
+            env: env_args,
             to,
             output,
             force,
@@ -597,7 +596,10 @@ fn main() -> Result<()> {
             name,
             namespace,
             terraform_declarations,
+            confirm,
+            dry,
         } => {
+            let to = to.map(|t| t.format_name());
             // ⚠️ Checked before anything is read: an unknown --transform was
             // dropped in silence (I-090), and a --prefix with shell syntax
             // reached the generated scripts (I-263).
@@ -618,17 +620,20 @@ fn main() -> Result<()> {
                 prefix.as_deref(),
                 evnx::core::args::Name::VarPrefix,
             )
-            .and_then(|()| targets.check(to.as_deref().and_then(evnx::formats::find)));
+            .and_then(|()| targets.check(to.and_then(evnx::formats::find)));
             if let Err(e) = early {
                 verdict::no_verdict(&e, Stage::BeforeRun);
             }
 
             let env = resolve_env(
                 Path::new("."),
-                env.as_deref(),
-                env_name.as_deref(),
+                env_args.env.as_deref(),
+                env_args.env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
             );
+            // `--yes` answers the .gitignore question with yes, as `--gitignore`
+            // does; an explicit `--no-gitignore` still wins.
+            let gitignore = gitignore || (confirm.yes && output.is_some() && !no_gitignore);
             let config = commands::convert::ConvertConfig::builder()
                 .env(env)
                 .target_format(to)
@@ -648,6 +653,8 @@ fn main() -> Result<()> {
                 ))
                 .verbose(cli.verbose)
                 .force(force)
+                .yes(confirm.yes)
+                .dry_run(dry.dry_run)
                 .build();
 
             // No "Convert command failed:" in front: every other command's
@@ -725,7 +732,7 @@ fn main() -> Result<()> {
                 example: resolve_files(
                     None,
                     None,
-                    args.example.as_deref(),
+                    args.files.example.as_deref(),
                     &cfg,
                     evnx::core::resolve::Need::MayCreate,
                     cli.quiet,
@@ -733,8 +740,8 @@ fn main() -> Result<()> {
                 )
                 .template,
                 declared: cfg.vars.keys().cloned().collect(),
-                dry_run: args.dry_run,
-                yes: args.yes,
+                dry_run: args.dry.dry_run,
+                yes: args.confirm.yes,
             })
             .or_else(declined)
         }
@@ -747,10 +754,11 @@ fn main() -> Result<()> {
             .transpose()
             .with_context(|| format!("{} [sync] naming_policy", evnx::core::config::PROJECT_FILE))
             .and_then(|configured| {
+                let flags = args.files.flags();
                 let files = resolve_files(
-                    args.env.as_deref(),
-                    args.env_name.as_deref(),
-                    args.example.as_deref(),
+                    flags.env,
+                    flags.env_name,
+                    flags.example,
                     &cfg,
                     evnx::core::resolve::Need::Existing,
                     cli.quiet,
@@ -759,13 +767,13 @@ fn main() -> Result<()> {
                 commands::sync::run(
                     files.env,
                     files.template,
-                    args.direction,
-                    args.placeholder,
+                    args.direction.or(args.to.map(Into::into)),
+                    false,
                     cli.verbose,
-                    args.dry_run,
-                    args.force,
+                    args.dry.dry_run,
+                    args.confirm.yes,
                     args.check,
-                    args.format.clone(),
+                    args.output.resolved().to_string(),
                     args.template_config.clone(),
                     evnx::core::config::pick(
                         args.naming_policy,
@@ -785,7 +793,7 @@ fn main() -> Result<()> {
                 env_name,
                 dry_run,
                 check,
-                format,
+                output,
                 no_backup,
             } = args;
             // Each file paired with its template the way every other command
@@ -820,7 +828,7 @@ fn main() -> Result<()> {
                 } else {
                     commands::align::Mode::Write
                 },
-                json: format == "json",
+                json: output.resolved() == evnx::cli::args::Format::Json,
                 no_backup,
             })
             .map(verdict::finish)
@@ -832,15 +840,15 @@ fn main() -> Result<()> {
         Commands::Template {
             input,
             output,
-            env,
-            env_name,
+            env: env_args,
+            confirm,
             gitignore,
             no_gitignore,
             allow_unresolved,
             strict,
             mode: file_mode,
             mkdir,
-            dry_run,
+            dry: dry_args,
             force,
             follow_symlinks,
         } => {
@@ -851,11 +859,15 @@ fn main() -> Result<()> {
                      it is removed in 1.0",
                 );
             }
+            let dry_run = dry_args.dry_run;
+            // `--yes` answers the .gitignore question with yes, as `--gitignore`
+            // does; an explicit `--no-gitignore` still wins.
+            let gitignore = gitignore || (confirm.yes && output != "-" && !no_gitignore);
             let mode = evnx::utils::protect::GitignoreMode::from_flags(gitignore, no_gitignore);
             let env = resolve_env(
                 Path::new("."),
-                env.as_deref(),
-                env_name.as_deref(),
+                env_args.env.as_deref(),
+                env_args.env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
             );
             commands::template::run_options(

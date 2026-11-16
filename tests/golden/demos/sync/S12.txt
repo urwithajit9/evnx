@@ -49,7 +49,7 @@ No verdict: evnx did not run. This is not a clean result.
 [exit 2]
   ok: unknown environment: error listing the existing ones (exit 2)
 
-$ evnx sync --env-name production -f
+$ evnx sync --env-name production -y
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
 │ Found 2 variables in .env.production missing from .env.example:              │

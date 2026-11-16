@@ -191,8 +191,8 @@ fn validate_doctor_sync_parse_remove_and_migrate_print_no_value() {
         case("validate", &["validate"]),
         case("validate --format json", &["validate", "--format", "json"]),
         case(
-            "validate --format github-actions",
-            &["validate", "--format", "github-actions"],
+            "validate --format github",
+            &["validate", "--format", "github"],
         ),
         case("validate --strict", &["validate", "--strict"]),
         case(

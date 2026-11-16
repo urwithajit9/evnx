@@ -5,8 +5,8 @@
 //!   SYNC-3, `DEBUG` is `false` and a safe value keeps its type. `add custom`
 //!   shares the generator, so it is fixed with it.
 //! - I-124, DEC-S9: with no terminal, sync uses placeholders on an existing
-//!   template and in reverse, and says so; `--placeholder` is a deprecated
-//!   alias of `--force`.
+//!   template and in reverse, and says so; `--yes` is the one way to ask for
+//!   that on a terminal (`--force` and `--placeholder` were removed in 0.14.2).
 //! - I-125: messages name the files actually in play.
 //! - I-126: "1 variable", modes as `644`; I-276: one permission warning.
 //! - I-129, DEC-S20: a new `.env` does not carry the template's
@@ -27,7 +27,7 @@ fn t_i120_placeholders_follow_whole_words_and_schemes() {
          DEBUG=false\nDB_URL=postgres://u:p@h/db\nMONGO_URL=mongodb://u:p@h/db\n\
          API_PORT=80\nSTRIPE_KEY=x\nDB_PASSWORD=x\n",
     );
-    run(p.path(), &["sync", "-f"]).assert_code(0);
+    run(p.path(), &["sync", "--yes"]).assert_code(0);
     let t = p.read(".env.example");
     let value = |k: &str| {
         t.lines()
@@ -112,17 +112,26 @@ fn t_i124_ci_is_named_as_the_reason() {
     out.assert_contains("no terminal");
 }
 
-/// T-SYNC-46 / T-SYNC-65: `--placeholder` works on an existing template and
-/// says it is deprecated.
+/// T-SYNC-46 / T-SYNC-65: `--yes` adds placeholders without asking.
 #[test]
-fn t_i124_placeholder_flag_is_a_deprecated_alias_of_force() {
+fn t_i124_yes_adds_placeholders() {
     let p = Project::new().env("A=1\nB=2\n").example("A=\n");
-    let out = run(p.path(), &["sync", "--placeholder"]);
+    let out = run(p.path(), &["sync", "--yes"]);
     out.assert_code(0);
-    out.assert_contains("deprecated");
-    out.assert_contains("--force");
     // SYNC-3: a number keeps its type.
     assert!(p.read(".env.example").contains("B=0"));
+}
+
+/// The old spellings are gone, with a hint (WP-8b).
+#[test]
+fn t_removed_force_and_placeholder_name_yes() {
+    let p = Project::new().env("A=1\nB=2\n").example("A=\n");
+    for old in ["-f", "--force", "--placeholder"] {
+        let out = run(p.path(), &["sync", old]);
+        out.assert_code(2);
+        assert!(out.stderr.contains("use '--yes'"), "{old}: {}", out.stderr);
+        assert_eq!(p.read(".env.example"), "A=\n", "{old} wrote");
+    }
 }
 
 // ── I-125: real file names ──────────────────────────────────────────────────
@@ -141,7 +150,7 @@ fn t_i125_messages_name_the_files_in_play() {
         .file("tmpl", "A=\n");
     let out = run(
         p.path(),
-        &["sync", "-f", "--env", "a.env", "--example", "tmpl"],
+        &["sync", "--yes", "--env", "a.env", "--example", "tmpl"],
     );
     out.assert_code(0);
     out.assert_contains("to tmpl");
@@ -152,7 +161,7 @@ fn t_i125_messages_name_the_files_in_play() {
         p.path(),
         &[
             "sync",
-            "-f",
+            "--yes",
             "--direction",
             "reverse",
             "--env",
@@ -181,7 +190,7 @@ fn t_i125_messages_name_the_files_in_play() {
 #[test]
 fn t_i126_singular_and_plain_octal() {
     let p = Project::new().env("A=1\nB=2\n").example("A=\n");
-    run(p.path(), &["sync", "-f"])
+    run(p.path(), &["sync", "--yes"])
         .assert_code(0)
         .assert_contains("Added 1 variable to .env.example")
         .assert_not_contains("1 variables");
@@ -194,7 +203,7 @@ fn t_i276_one_permission_warning_in_plain_octal() {
         .env("A=1\n")
         .mode(".env", 0o644)
         .example("A=\nB=\n");
-    let out = run(p.path(), &["sync", "-f", "--direction", "reverse"]);
+    let out = run(p.path(), &["sync", "--yes", "--direction", "reverse"]);
     out.assert_code(0);
     out.assert_not_contains("0o644");
     let warnings = out.all().matches("mode 644").count();
@@ -211,7 +220,7 @@ fn t_i129_new_env_has_no_stale_header() {
         "# Generated from .env\n# Replace all placeholder values with real credentials\n\n\
          # Database\nA=1\n",
     );
-    run(p.path(), &["sync", "-f", "--direction", "reverse"]).assert_code(0);
+    run(p.path(), &["sync", "--yes", "--direction", "reverse"]).assert_code(0);
     let env = p.read(".env");
     assert!(!env.contains("Generated from .env"), "{env}");
     assert!(

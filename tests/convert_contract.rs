@@ -519,7 +519,7 @@ fn t_i249_a_format_rename_that_merges_names_is_refused() {
     for args in [
         &["--to", "gcp-secrets", "--project", "acme-prod"][..],
         &["--to", "azure-keyvault", "--vault-name", "kv-prod"][..],
-        &["--to", "github-actions"][..],
+        &["--to", "github"][..],
     ] {
         let mut full = vec!["convert"];
         full.extend_from_slice(args);
@@ -948,17 +948,17 @@ fn p1_d12_each_format_refuses_only_names_it_cannot_hold() {
 
     for (to, accepted) in [
         ("shell", "letters, digits and _, not starting with a digit"),
-        (
-            "github-actions",
-            "letters, digits and _, not starting with a digit",
-        ),
+        ("github", "letters, digits and _, not starting with a digit"),
         ("vercel", "letters, digits and _, not starting with a digit"),
     ] {
         let out = run(p.path(), &["convert", "--to", to]);
         out.assert_code(2);
+        // The message names the format as the table does: GitHub Actions is
+        // `--to github`, and `github-actions` in prose.
+        let name = if to == "github" { "github-actions" } else { to };
         assert!(
             out.stderr.contains(&format!(
-                "{to} cannot hold these names: names there are {accepted}."
+                "{name} cannot hold these names: names there are {accepted}."
             )),
             "{to}: {}",
             out.stderr

@@ -241,7 +241,7 @@ fn t_i119_json_reports_template_only() {
 #[test]
 fn t_i119_plain_sync_lists_template_only_names_and_removes_nothing() {
     let p = Project::new().env("A=1\n").example("A=\nOLD_FEATURE=x\n");
-    let out = run(p.path(), &["sync", "-f"]);
+    let out = run(p.path(), &["sync", "--yes"]);
     out.assert_code(0);
     out.assert_contains("OLD_FEATURE");
     assert!(p.read(".env.example").contains("OLD_FEATURE=x"));
@@ -287,7 +287,7 @@ fn t_i127_empty_env_beside_a_full_template_is_no_verdict() {
     let out = run(p.path(), &["sync", "--check"]);
     out.assert_code(2);
     // Plain sync stays a warning.
-    run(p.path(), &["sync", "-f"]).assert_code(0);
+    run(p.path(), &["sync", "--yes"]).assert_code(0);
 }
 
 // ── I-255: where a missing name comes from ──────────────────────────────────
@@ -315,7 +315,7 @@ fn t_i255_spec_only_name_is_not_attributed_to_the_template() {
 #[test]
 fn t_i275_new_env_gets_the_specs_required_names() {
     let p = Project::new().example("A=1\n").toml("[vars.ONLY_SPEC]\n");
-    run(p.path(), &["sync", "-f", "--direction", "reverse"]).assert_code(0);
+    run(p.path(), &["sync", "--yes", "--direction", "reverse"]).assert_code(0);
     let env = p.read(".env");
     assert!(env.lines().any(|l| l == "A=1"), "{env}");
     assert!(

@@ -1,7 +1,7 @@
 
 ================ S9 ================
 
-$ evnx sync -f
+$ evnx sync -y
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
 │ Found 5 variables in .env missing from .env.example:                         │
@@ -46,7 +46,7 @@ stripe_key=YOUR_KEY_HERE
 [exit 0]
 I-122 fixed (DEC-S6): the link stays and its target is written
 
-$ evnx sync -f
+$ evnx sync -y
 
 ┌─ Variables to Add ───────────────────────────────────────────────────────────┐
 │ Found 2 variables in .env missing from .env.example:                         │

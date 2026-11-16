@@ -86,6 +86,8 @@ pub(super) struct SyncCtx {
     pub check: bool,
     /// `--force`, or the deprecated `--placeholder` (DEC-S9).
     pub force: bool,
+    /// `--format json`: stdout is reserved for the document.
+    pub json: bool,
     pub naming_policy: NamingPolicy,
     /// The project's declared contract, when it has one.
     ///
@@ -309,7 +311,7 @@ impl Drift {
 /// ⚠️ Without a terminal every prompt used to fail with "IO error: not a
 /// terminal: not a terminal", naming neither `--force` nor `--dry-run`, and
 /// `CI=1` — documented as "like `--force`" — was never read (I-124, D-74).
-fn no_prompt_reason() -> Option<&'static str> {
+pub(super) fn no_prompt_reason() -> Option<&'static str> {
     if crate::utils::term::ci() {
         Some("CI is set")
     } else if !crate::utils::term::can_prompt() {
@@ -317,6 +319,13 @@ fn no_prompt_reason() -> Option<&'static str> {
         Some("no terminal")
     } else {
         None
+    }
+}
+
+/// A box on stdout, unless stdout is the JSON document.
+fn boxed(ctx: &SyncCtx, title: &str, message: &str) {
+    if !ctx.json {
+        ui::print_box(title, message);
     }
 }
 
@@ -444,7 +453,8 @@ fn print_template_only(ctx: &SyncCtx, names: &[String]) {
     if names.is_empty() {
         return;
     }
-    ui::print_box(
+    boxed(
+        ctx,
         &format!("Only in {}", ctx.paths.example_str()),
         &format!(
             "Found {} in {} that {} does not have:\n{}",
@@ -717,7 +727,8 @@ To fill {} from the template instead, run `{}`.",
         return Ok(drift);
     }
 
-    ui::print_box(
+    boxed(
+        ctx,
         "Variables to Add",
         &format!(
             "Found {} in {} missing from {}:\n{}",
@@ -798,7 +809,8 @@ To fill {} from the template instead, run `{}`.",
             missing.len()
         }
         1 => {
-            ui::print_box(
+            boxed(
+                ctx,
                 "! SECURITY WARNING",
                 &format!(
                     "Adding actual values to {example} may expose secrets if \
@@ -1006,10 +1018,10 @@ fn handle_new_example_file(
             paths.example_str(),
             paths.env_str()
         ));
-        // ⚠️ `evnx sync --force` alone does nothing here: the template now
+        // ⚠️ `evnx sync --yes` alone does nothing here: the template now
         // exists and has every name (I-278).
         let recreate = format!(
-            "Or delete {} and run `evnx sync --force` to create it with placeholders",
+            "Or delete {} and run `evnx sync --yes` to create it with placeholders",
             paths.example_str()
         );
         ui::print_next_steps(&[
@@ -1089,7 +1101,8 @@ fn sync_reverse(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<Drift> {
     // ⚠️ Each name says where it is declared. They were all listed as "in
     // .env.example", including names only `[vars]` requires (I-255).
     let spec_file = crate::core::config::PROJECT_FILE;
-    ui::print_box(
+    boxed(
+        ctx,
         "Missing Variables",
         &format!(
             "Found {} missing from {}:\n{}",
