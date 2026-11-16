@@ -76,6 +76,14 @@ fn main() -> Result<()> {
     evnx::utils::term::exit_quietly_on_broken_pipe();
     evnx::utils::term::restore_cursor_on_interrupt();
 
+    // A removed spelling stops here, before clap: the message names what to
+    // type instead, and nothing has been read or written.
+    let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if let Some(message) = evnx::cli::removed::check(&argv) {
+        eprintln!("{message}");
+        std::process::exit(verdict::EXIT_ERROR);
+    }
+
     let cli = Cli::parse();
     evnx::utils::ui::set_quiet(cli.quiet);
 
@@ -501,13 +509,11 @@ fn main() -> Result<()> {
         }
 
         Commands::Diff {
-            env,
-            env_name,
-            example,
+            files: file_args,
             against,
             values,
             show_values,
-            format,
+            output,
             reverse,
             ignore_keys,
             fail_on,
@@ -517,10 +523,12 @@ fn main() -> Result<()> {
         } => {
             use commands::diff::{Compare, DiffOptions, FailOn};
             let here = Path::new(".");
+            let format = output.resolved().to_string();
+            let flags = file_args.flags();
             let files = resolve_files(
-                env.as_deref(),
-                env_name.as_deref(),
-                example.as_deref(),
+                flags.env,
+                flags.env_name,
+                flags.example,
                 &cfg,
                 evnx::core::resolve::Need::Existing,
                 cli.quiet || against.is_some(),

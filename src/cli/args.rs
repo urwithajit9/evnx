@@ -1,0 +1,182 @@
+//! Argument groups shared by many commands, so a flag is spelled, typed and
+//! described the same way everywhere. Flatten one into a command with
+//! `#[command(flatten)]`.
+
+use crate::core::resolve::Flags;
+use clap::{Args, ValueEnum};
+use std::fmt;
+use std::path::PathBuf;
+
+/// A set of output formats that has a JSON member, for `--json`.
+pub trait FormatSet: ValueEnum + Clone + Default + Send + Sync + 'static {
+    /// The value `--json` stands for.
+    fn json() -> Self;
+}
+
+macro_rules! format_enum {
+    ($(#[$m:meta])* $name:ident { $first:ident => $ftext:literal $(, $variant:ident => $text:literal)* $(,)? }) => {
+        $(#[$m])*
+        #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+        pub enum $name {
+            #[default]
+            #[value(name = $ftext)]
+            $first,
+            $(
+                #[value(name = $text)]
+                $variant,
+            )*
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(match self { Self::$first => $ftext, $(Self::$variant => $text),* })
+            }
+        }
+
+        impl FormatSet for $name {
+            fn json() -> Self {
+                Self::Json
+            }
+        }
+    };
+}
+
+format_enum!(
+    /// `pretty` or `json`.
+    Format {
+        Pretty => "pretty",
+        Json => "json",
+    }
+);
+format_enum!(
+    /// What `evnx scan` can print.
+    ScanFormat {
+        Pretty => "pretty",
+        Json => "json",
+        Sarif => "sarif",
+        Github => "github",
+    }
+);
+format_enum!(
+    /// What `evnx validate` can print.
+    ValidateFormat {
+        Pretty => "pretty",
+        Json => "json",
+        Github => "github",
+    }
+);
+format_enum!(
+    /// What `evnx diff` can print.
+    DiffFormat {
+        Pretty => "pretty",
+        Json => "json",
+        Patch => "patch",
+    }
+);
+
+/// `--format` and its shorthand `--json`.
+#[derive(Args, Debug, Clone)]
+pub struct OutputArgs<F: FormatSet = Format> {
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = F::default(), help_heading = "Output")]
+    pub format: F,
+
+    /// Same as --format json.
+    #[arg(long, conflicts_with = "format", help_heading = "Output")]
+    pub json: bool,
+}
+
+impl<F: FormatSet> OutputArgs<F> {
+    /// The format to print: `json` when `--json` was given, else `--format`.
+    pub fn resolved(&self) -> F {
+        if self.json {
+            F::json()
+        } else {
+            self.format.clone()
+        }
+    }
+}
+
+/// `-y, --yes`: do not ask.
+#[derive(Args, Debug, Clone, Copy, Default)]
+pub struct ConfirmArgs {
+    /// Do not ask for confirmation.
+    #[arg(short = 'y', long, help_heading = "Confirmation")]
+    pub yes: bool,
+}
+
+/// `-n, --dry-run`: show what would change, write nothing.
+#[derive(Args, Debug, Clone, Copy, Default)]
+pub struct DryRunArgs {
+    /// Show what would change without writing anything.
+    #[arg(short = 'n', long)]
+    pub dry_run: bool,
+}
+
+/// The env file, chosen by path or by name, and the template to compare it with.
+#[derive(Args, Debug, Clone, Default)]
+pub struct FileArgs {
+    /// Env file to use. Defaults to `.env`.
+    #[arg(long, value_name = "FILE", help_heading = "Files")]
+    pub env: Option<String>,
+
+    /// Use `.env.<NAME>` instead of `.env`.
+    #[arg(
+        long,
+        value_name = "NAME",
+        conflicts_with = "env",
+        help_heading = "Files"
+    )]
+    pub env_name: Option<String>,
+
+    /// Template to compare with. Defaults to `.env.example`.
+    #[arg(long, value_name = "FILE", help_heading = "Files")]
+    pub example: Option<String>,
+}
+
+impl FileArgs {
+    /// The flags as `core::resolve` takes them.
+    pub fn flags(&self) -> Flags<'_> {
+        Flags {
+            env: self.env.as_deref(),
+            env_name: self.env_name.as_deref(),
+            example: self.example.as_deref(),
+        }
+    }
+}
+
+/// The env file, chosen by path or by name, for commands with no template.
+#[derive(Args, Debug, Clone, Default)]
+pub struct EnvArgs {
+    /// Env file to use. Defaults to `.env`.
+    #[arg(long, value_name = "FILE", help_heading = "Files")]
+    pub env: Option<String>,
+
+    /// Use `.env.<NAME>` instead of `.env`.
+    #[arg(
+        long,
+        value_name = "NAME",
+        conflicts_with = "env",
+        help_heading = "Files"
+    )]
+    pub env_name: Option<String>,
+}
+
+impl EnvArgs {
+    /// The flags as `core::resolve` takes them (no template).
+    pub fn flags(&self) -> Flags<'_> {
+        Flags {
+            env: self.env.as_deref(),
+            env_name: self.env_name.as_deref(),
+            example: None,
+        }
+    }
+}
+
+/// `-C, --dir`: the project folder.
+#[derive(Args, Debug, Clone, Default)]
+pub struct DirArgs {
+    /// Project folder to work in. Defaults to the current folder.
+    #[arg(short = 'C', long, value_name = "DIR", help_heading = "Files")]
+    pub dir: Option<PathBuf>,
+}

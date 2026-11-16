@@ -113,7 +113,15 @@ struct CommandNode {
     /// command that ships before its guide. Every top-level command has one
     /// today (I-195).
     docs_url: Option<&'static str>,
+    /// Spellings that no longer work here, and what replaced them.
+    removed: Vec<RemovedNode>,
     args: Vec<ArgNode>,
+}
+
+#[derive(Serialize)]
+struct RemovedNode {
+    old: String,
+    new: &'static str,
 }
 
 #[derive(Serialize)]
@@ -133,6 +141,8 @@ struct ArgNode {
     /// `--include` and friends, which may be given more than once.
     multiple: bool,
     hidden: bool,
+    /// The values clap accepts, when it knows them (hidden values left out).
+    possible_values: Vec<String>,
 }
 
 fn arg_node(arg: &clap::Arg) -> ArgNode {
@@ -182,6 +192,12 @@ fn arg_node(arg: &clap::Arg) -> ArgNode {
             clap::ArgAction::Append | clap::ArgAction::Count
         ),
         hidden: arg.is_hide_set(),
+        possible_values: arg
+            .get_possible_values()
+            .iter()
+            .filter(|v| !v.is_hide_set())
+            .map(|v| v.get_name().to_string())
+            .collect(),
     }
 }
 
@@ -213,6 +229,14 @@ fn walk(cmd: &Command, prefix: &[String], out: &mut Vec<CommandNode>) {
             } else {
                 None
             },
+            removed: crate::cli::removed::REMOVED
+                .iter()
+                .filter(|r| r.path().iter().copied().eq(path.iter().map(String::as_str)))
+                .map(|r| RemovedNode {
+                    old: r.old_display(),
+                    new: r.new_spelling(),
+                })
+                .collect(),
             args: sub
                 .get_arguments()
                 // `--help` and `--version` are on every command and say nothing
