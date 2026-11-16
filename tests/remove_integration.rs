@@ -202,7 +202,9 @@ fn b6_b7_unknown_and_invalid_env_names() {
         .assert_contains("staging");
     evnx(&p, &["remove", "X", "--env-name", "../x", "--yes"])
         .assert_code(2)
-        .assert_contains("invalid environment name");
+        // WP-5: a path is named as one, with the flag that takes it.
+        .assert_contains("not a path")
+        .assert_contains("--env ../x");
 }
 
 #[test]

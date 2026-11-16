@@ -8,7 +8,7 @@ $ evnx init --yes -p named
   evnx init  Set up environment variables for your project
 
 ✓ Created .env.local from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example (no variables yet)
 · Tip: Run 'evnx add' to add variables interactively
   ✓ added an empty [vars] to named/.evnx.toml
@@ -28,7 +28,7 @@ $ evnx init --with stripe --yes -p multi
   evnx init  Set up environment variables for your project
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 3 variables from 1 component
   ✓ 3 names from .env.example → multi/.evnx.toml (2 secret, 0 with a format)
 · not changed: .env.production, .env.staging, .env.test — check one with: evnx validate --env-name production
@@ -48,7 +48,7 @@ $ evnx init --yes -p rc
   evnx init  Set up environment variables for your project
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example (no variables yet)
 · Tip: Run 'evnx add' to add variables interactively
   ✓ created rc/.evnx.toml with an empty [vars]: evnx add records new variables there

@@ -7,7 +7,7 @@ $ evnx init --with redis --yes -p new
   evnx init  Set up environment variables for your project
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 5 variables from 1 component
   ✓ 5 names from .env.example → new/.evnx.toml (1 secret, 3 with a format)
 
@@ -27,7 +27,7 @@ $ evnx init --with redis --yes -p vars
   evnx init  Set up environment variables for your project
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 5 variables from 1 component
   ✓ added 5 variable(s) to [vars] in vars/.evnx.toml
 
@@ -47,7 +47,7 @@ $ evnx init --with redis --yes -p novars
   evnx init  Set up environment variables for your project
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 5 variables from 1 component
   ✓ 5 names from .env.example → novars/.evnx.toml (1 secret, 3 with a format)
 
@@ -66,7 +66,7 @@ $ evnx init --with nextjs --yes -p mono/apps/web
   evnx init  Set up environment variables for your project
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 4 variables from 1 component
   ✓ 4 names from .env.example → mono/apps/web/.evnx.toml (1 secret, 3 with a format)
 

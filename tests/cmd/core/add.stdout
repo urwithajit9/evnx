@@ -29,7 +29,10 @@ Options:
           [default: .]
 
       --env-name <NAME>
-          Write to `.env.<NAME>` instead of `.env` (one file per run; loop over names for several). Defaults to `[defaults] env_name`
+          Write to `.env.<NAME>` instead of `.env` (one file per run; loop over names for several). `prod` and `.env.prod` both work. Defaults to `[defaults] env_name`
+
+      --example <FILE>
+          The template to add names to, from the project folder. Default: the environment's own (`.env.<NAME>.example`) when there is one, else `[defaults] example`, else `.env.example`
 
   -y, --yes
           Skip confirmation prompts

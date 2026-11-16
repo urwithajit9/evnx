@@ -59,6 +59,7 @@ $ evnx sync --check --env t.env --example t.example
 └──────────────────────────────────────────────────────────────────────────────┘
 
 [stderr]
+  files     t.env ↔ t.example  (--env; template from --example)
 
   evnx sync  t.env ↔ t.example  (forward)
 
@@ -74,6 +75,7 @@ $ evnx sync --check --env t.env --example t.example
 $ evnx sync --check --direction forward --env t.env --example t.example
 ✓ t.example is up to date
 [stderr]
+  files     t.env ↔ t.example  (--env; template from --example)
 
   evnx sync  t.env ↔ t.example  (forward)
 

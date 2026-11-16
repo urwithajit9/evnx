@@ -58,14 +58,23 @@ pub fn run(opts: Options) -> Result<Verdict> {
         env_files.push(in_dir(project, &format!(".env.{n}")));
     }
     super::case_collisions(&env_files);
+    // The project template and every environment's own (`.env.prod.example`,
+    // WP-5): a name still in any of them is still somewhere.
     let template = Template::of(project, &loaded.config);
-    let template_path = in_dir(project, &template.name);
+    let mut templates: Vec<PathBuf> = vec![in_dir(project, &template.name)];
+    for t in crate::core::resolve::environment_templates(project) {
+        let p = in_dir(project, &t);
+        if !templates.contains(&p) {
+            templates.push(p);
+        }
+    }
+    templates.retain(|t| t.is_file());
 
-    for (kind, path) in env_files.iter().map(|p| (Kind::Env, p)).chain(
-        template_path
-            .is_file()
-            .then_some((Kind::Template, &template_path)),
-    ) {
+    for (kind, path) in env_files
+        .iter()
+        .map(|p| (Kind::Env, p))
+        .chain(templates.iter().map(|t| (Kind::Template, t)))
+    {
         let shown = label(&path.to_string_lossy());
         looked_in.push(shown.clone());
         for (name, line) in entries(path, &shown)? {

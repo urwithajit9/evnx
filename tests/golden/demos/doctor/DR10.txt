@@ -205,7 +205,7 @@ $ evnx doctor --fix
 
   evnx doctor  Diagnosing environment setup
 
-✓ Fixed: .dockerignore: added .env*, !.env.example, !.env.sample, !.env.template
+✓ Fixed: .dockerignore: added .env*, !.env*.example, !.env*.sample, !.env*.template
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: RM-22: --fix adds .env* to .dockerignore (exit 0)
@@ -216,9 +216,9 @@ node_modules
 # ── evnx generated ─────────────────────────────────────────
 # Written by evnx. These files may contain secrets — do not commit.
 .env*
-!.env.example
-!.env.sample
-!.env.template
+!.env*.example
+!.env*.sample
+!.env*.template
 [exit 0]
   ok: RM-22: a second --fix changes nothing
   ok: RM-22: a correct .dockerignore is not warned about

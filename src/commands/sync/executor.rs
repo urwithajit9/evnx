@@ -183,7 +183,17 @@ pub(super) fn load(ctx: &SyncCtx, config: &PlaceholderConfig, pretty: bool) -> R
     let loaded = match ctx.direction {
         SyncDirection::Forward => {
             if !p.env.exists() {
-                if pretty {
+                // FLD-6: another env file is here, or the project has a
+                // config — it is set up, and "run evnx init" is wrong advice.
+                let dir = p.env.parent().filter(|d| !d.as_os_str().is_empty());
+                let dir = dir.unwrap_or(std::path::Path::new("."));
+                if crate::core::resolve::other_env_files(dir, None).is_some() {
+                    anyhow::bail!(
+                        "{}",
+                        crate::core::resolve::not_found(dir, &p.env_str(), "sync")
+                    );
+                }
+                if pretty && crate::core::config::find(dir).is_none() {
                     env_not_found(p);
                 }
                 anyhow::bail!("{} not found - run 'evnx init' to get started", p.env_str());

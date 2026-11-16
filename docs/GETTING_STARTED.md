@@ -123,7 +123,7 @@ Preview:
   Categories: API, Application, Authentication, CI/CD, Cloud Storage, Database, Deployment Platform, Payments
 Generate .env files with these variables? yes
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 28 variables
 ```
 

@@ -12,6 +12,7 @@ Different values:
 
   1 missing from ./left  ·  1 different value
 [stderr]
+  files     left ↔ right  (--env; template from --example)
 
   evnx diff  ./left ↔ ./right
 

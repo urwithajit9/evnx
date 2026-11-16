@@ -629,6 +629,9 @@ pub struct Loaded {
     pub source: Option<PathBuf>,
     /// One entry per unrecognised key, ready to print.
     pub warnings: Vec<String>,
+    /// Outside a git repository, a `.evnx.toml` in a parent folder that was
+    /// not used (D2, FLD-11). Said under `-v`.
+    pub ignored_parent: Option<PathBuf>,
 }
 
 /// Locate the `.evnx.toml` governing `start`, if any.
@@ -666,7 +669,14 @@ fn walk(start: &Path) -> Walk {
     // passing on Linux, where `/tmp` is a real directory. It also means a
     // directory that does not exist is still answered for, rather than erroring.
     let absolute = std::path::absolute(start).ok();
-    let mut dir = absolute.as_deref().or(Some(start));
+    let start = absolute.as_deref().unwrap_or(start);
+    // ⚠️ Only inside a git repository does the walk go up (owner decision D2,
+    // FLD-11). Outside one nothing bounds it: the remove demo, run in a
+    // scratch folder under `~/…/evnx-cloud`, found and wrote `[vars]` into
+    // that parent's `.evnx.toml`. Without a repository, the working folder
+    // alone is the project.
+    let in_repository = start.ancestors().any(|d| d.join(".git").exists());
+    let mut dir = Some(start);
     while let Some(d) = dir {
         let candidate = d.join(PROJECT_FILE);
         let bare = Some(d.join(BARE_FILE)).filter(|b| b.is_file());
@@ -683,7 +693,7 @@ fn walk(start: &Path) -> Walk {
         }
         // Checked *after* looking in this directory, so a repository root
         // holding the config is still found.
-        if d.join(".git").exists() {
+        if d.join(".git").exists() || !in_repository {
             break;
         }
         dir = d.parent();
@@ -701,6 +711,26 @@ fn walk(start: &Path) -> Walk {
 /// with policy the user believes is in force. So is a bare `evnx.toml` with no
 /// `.evnx.toml` beside it, for the same reason (I-040, DEC-SP15).
 pub fn load(start: &Path) -> Result<Loaded> {
+    let mut loaded = load_found(start)?;
+    loaded.ignored_parent = ignored_parent(start);
+    Ok(loaded)
+}
+
+/// A `.evnx.toml` above `start` that [`walk`] did not use because no git
+/// repository bounds the folders above: the nearest one, if any.
+fn ignored_parent(start: &Path) -> Option<PathBuf> {
+    let start = std::path::absolute(start).ok()?;
+    if start.ancestors().any(|d| d.join(".git").exists()) {
+        return None;
+    }
+    start
+        .ancestors()
+        .skip(1)
+        .map(|d| d.join(PROJECT_FILE))
+        .find(|p| p.is_file())
+}
+
+fn load_found(start: &Path) -> Result<Loaded> {
     let w = walk(start);
     let Some(path) = w.found else {
         if let Some(bare) = w.bare {
@@ -840,6 +870,7 @@ pub fn load_file(path: &Path) -> Result<Loaded> {
         config,
         source: Some(path.to_path_buf()),
         warnings,
+        ignored_parent: None,
     })
 }
 
@@ -1115,10 +1146,36 @@ vault = "my-api/production"
     fn the_search_walks_up_to_the_project_root() {
         let dir = TempDir::new().unwrap();
         fs::create_dir_all(dir.path().join("a/b/c")).unwrap();
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
         write(dir.path(), "[scan]\nseverity = \"high\"\n");
 
         let found = find(&dir.path().join("a/b/c")).expect("should walk up");
         assert_eq!(found, dir.path().join(PROJECT_FILE));
+    }
+
+    /// D2, FLD-11: outside a git repository only the working folder counts.
+    /// The parent's config is neither read nor written, and `load` names it
+    /// so `-v` can say why it did not apply.
+    #[test]
+    fn d2_outside_a_repository_a_parents_config_is_not_used() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("demo")).unwrap();
+        write(dir.path(), "[vars.TEST_VAR]\nrequired = false\n");
+        let demo = dir.path().join("demo");
+
+        assert_eq!(find(&demo), None);
+        assert_eq!(project_file(&demo), demo.join(PROJECT_FILE));
+        let loaded = load(&demo).unwrap();
+        assert!(loaded.source.is_none());
+        assert_eq!(loaded.ignored_parent, Some(dir.path().join(PROJECT_FILE)));
+
+        // Its own folder's config is still read.
+        write(&demo, "[scan]\nseverity = \"high\"\n");
+        assert_eq!(find(&demo), Some(demo.join(PROJECT_FILE)));
+
+        // Inside a repository nothing is reported as ignored.
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        assert_eq!(load(&demo).unwrap().ignored_parent, None);
     }
 
     /// ⚠️ The boundary that stops one repository's policy reaching another.
@@ -1152,6 +1209,7 @@ vault = "my-api/production"
         let dir = TempDir::new().unwrap();
         let real = dir.path().join("real");
         fs::create_dir_all(real.join("a/b")).unwrap();
+        fs::create_dir_all(real.join(".git")).unwrap();
         write(&real, "[scan]\nseverity = \"high\"\n");
 
         let link = dir.path().join("link");

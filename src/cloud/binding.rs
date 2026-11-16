@@ -300,6 +300,8 @@ mod tests {
         let d = tmp();
         let nested = d.path().join("a/b/c");
         std::fs::create_dir_all(&nested).unwrap();
+        // A repository: outside one only the working folder counts (D2).
+        std::fs::create_dir_all(d.path().join(".git")).unwrap();
         write(d.path(), "app/production").unwrap();
         assert_eq!(read(&nested).unwrap().unwrap().vault, "app/production");
     }

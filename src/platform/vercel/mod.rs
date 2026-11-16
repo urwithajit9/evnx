@@ -47,12 +47,13 @@ impl Session {
     /// Resolve project, token and API base. A custom environment's slug is looked
     /// up here (one `GET`); nothing else is sent.
     pub fn open(common: &PlatformCommon) -> Result<Session> {
+        common.warn_old_flag();
         // Before anything is read or sent: a flag that cannot apply is a usage error.
         if let Some(branch) = &common.git_branch {
-            if common.env_name != Environment::Preview {
+            if common.environment() != Environment::Preview {
                 anyhow::bail!(
-                    "--git-branch only applies to --env-name preview (got {}).",
-                    common.env_name.name()
+                    "--git-branch only applies to --target preview (got {}).",
+                    common.environment().name()
                 );
             }
             if branch.trim().is_empty() {
@@ -70,7 +71,7 @@ impl Session {
         let base = api::parse_base(common.api_url.as_deref().unwrap_or(api::DEFAULT_BASE))?;
         let team = project.team.as_deref().map(Team::from_ref);
         let api = Api::new(base, token, team)?;
-        let mut environment = common.env_name.clone();
+        let mut environment = common.environment();
         let mut custom_names = std::collections::HashMap::new();
         if let Environment::Custom(custom) = &mut environment {
             let known = api.list_custom_environments(&project.project)?;
@@ -175,7 +176,7 @@ impl Session {
             );
         } else if sel.skipped_branch > 0 {
             eprintln!(
-                "warning: {} preview variable{} scoped to a git branch skipped (use --git-branch <branch> with --env-name preview to work on one).",
+                "warning: {} preview variable{} scoped to a git branch skipped (use --git-branch <branch> with --target preview to work on one).",
                 sel.skipped_branch,
                 if sel.skipped_branch == 1 { " is" } else { "s are" }
             );

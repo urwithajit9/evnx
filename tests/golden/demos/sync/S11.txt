@@ -3,6 +3,7 @@
 
 $ evnx sync --check --env empty.env
 [stderr]
+  files     empty.env ↔ .env.example  (--env; project template)
 
   evnx sync  empty.env ↔ .env.example  (forward)
 
@@ -29,6 +30,7 @@ Target: nope.env (action: Add)
 
 (dry-run: no files were modified)
 [stderr]
+  files     nope.env ↔ .env.example  (--env; project template)
 
   evnx sync  nope.env ↔ .env.example  (reverse)
 
@@ -56,6 +58,8 @@ $ evnx sync --check --format json --direction reverse --env nope.env
     "missing": 4
   }
 }
+[stderr]
+  files     nope.env ↔ .env.example  (--env; project template)
 [exit 1]
   ok: FIXED I-117: one drift computation: json says 1 as well, every template name missing (exit 1)
 

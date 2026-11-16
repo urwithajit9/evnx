@@ -60,6 +60,9 @@ pub struct Mode {
     /// `--env-name`: write `.env.<name>` instead of `.env` (RM-17). `None`
     /// takes `[defaults] env_name`, then `.env`.
     pub env_name: Option<String>,
+    /// `--example`: the template, from the project folder (FLD-4). `None`
+    /// takes the rule in `core::resolve`.
+    pub example: Option<String>,
 }
 
 impl Mode {
@@ -164,24 +167,66 @@ impl Plan {
     }
 }
 
-/// The project's template in `output_path` (DQ-28), for a message that names
-/// it before there is a plan. A config that does not parse names nothing here;
-/// the plan reports it.
-pub fn template_of(output_path: &Path) -> crate::core::config::Template {
-    let config = crate::core::config::load(output_path)
-        .map(|l| l.config)
-        .unwrap_or_default();
-    crate::core::config::Template::of(output_path, &config)
+/// The env file and template a run in `output_path` writes, by the one rule
+/// (`core::resolve`, WP-5): `--env-name`, else `[defaults] env_name`, else
+/// `.env`; the template `--example`, else the environment's own, else
+/// `[defaults] example`, else the project's.
+pub fn resolved(output_path: &Path, mode: &Mode) -> Result<crate::core::resolve::Resolved> {
+    let config = crate::core::config::load(output_path)?.config;
+    resolve_with(
+        output_path,
+        mode.env_name.as_deref(),
+        mode.example.as_deref(),
+        &config,
+    )
+}
+
+fn resolve_with(
+    output_path: &Path,
+    env_name: Option<&str>,
+    example: Option<&str>,
+    config: &crate::core::config::Config,
+) -> Result<crate::core::resolve::Resolved> {
+    use crate::core::resolve::{resolve, Flags, Need};
+    let flags = Flags {
+        env: None,
+        env_name,
+        example,
+    };
+    resolve(output_path, flags, config, Need::MayCreate)
+}
+
+/// INIT-3, ADD-6: a new `--env-name` close to a known one
+/// (`core::resolve::confirm_new_env_name`).
+pub fn check_new_env_name(output_path: &Path, mode: &Mode) -> Result<()> {
+    crate::core::resolve::confirm_new_env_name(
+        output_path,
+        mode.env_name.as_deref(),
+        mode.yes,
+        mode.dry_run,
+        mode.json,
+    )
+}
+
+/// The template a run in `output_path` writes to, for a message that names
+/// it before there is a plan. A config that does not parse names the project
+/// default here; the plan reports it.
+pub fn template_of(output_path: &Path, mode: &Mode) -> crate::core::config::Template {
+    match resolved(output_path, mode) {
+        Ok(r) => crate::core::config::Template {
+            configured: r.template_from != crate::core::resolve::TemplateFrom::Project,
+            name: r.template,
+        },
+        Err(_) => crate::core::config::Template::default(),
+    }
 }
 
 /// The env file a run in `output_path` writes, for a message before there
-/// is a plan: `--env-name`, else `[defaults] env_name`, else `.env` (RM-17).
-/// A config or name that does not parse says `.env`; the plan reports it.
-pub fn env_file_of(output_path: &Path, flag: Option<&str>) -> String {
-    let config = crate::core::config::load(output_path)
-        .map(|l| l.config)
-        .unwrap_or_default();
-    crate::core::env_name::file_name(flag.or(config.defaults.env_name.as_deref()))
+/// is a plan. A config or name that does not parse says `.env`; the plan
+/// reports it.
+pub fn env_file_of(output_path: &Path, mode: &Mode) -> String {
+    resolved(output_path, mode)
+        .map(|r| r.env)
         .unwrap_or_else(|_| crate::core::env_name::DEFAULT_FILE.to_string())
 }
 
@@ -197,7 +242,7 @@ pub fn env_file_of(output_path: &Path, flag: Option<&str>) -> String {
 /// which differ from the catalogue's placeholders by design; a name it has is
 /// simply skipped, and its value is never read into a message.
 pub fn plan(output_path: &Path, requested: &VarCollection, env_name: Option<&str>) -> Result<Plan> {
-    plan_with(output_path, requested, false, env_name)
+    plan_with(output_path, requested, false, env_name, None)
 }
 
 /// [`plan`], and with `create_env_file` a missing `.env` is planned as an
@@ -208,12 +253,16 @@ pub fn plan_with(
     requested: &VarCollection,
     create_env_file: bool,
     env_name: Option<&str>,
+    example_flag: Option<&str>,
 ) -> Result<Plan> {
     let config = crate::core::config::load(output_path)?.config;
-    let template = crate::core::config::Template::of(output_path, &config);
+    let files = resolve_with(output_path, env_name, example_flag, &config)?;
+    let template = crate::core::config::Template {
+        configured: files.template_from != crate::core::resolve::TemplateFrom::Project,
+        name: files.template,
+    };
     let example = read_assignments(&template.path(output_path))?;
-    let env_file =
-        crate::core::env_name::file_name(env_name.or(config.defaults.env_name.as_deref()))?;
+    let env_file = files.env;
     let env_path = output_path.join(&env_file);
     let mut env = read_assignments(&env_path)?;
     let create_env_file = create_env_file && env.is_none();
@@ -525,6 +574,7 @@ pub fn confirm_and_apply(
         requested,
         flow.env_from_values,
         mode.env_name.as_deref(),
+        mode.example.as_deref(),
     )?;
     if let Some(values) = flow.values {
         keep_differing(output_path, &mut plan, values)?;

@@ -582,16 +582,16 @@ are never printed.**
 ```bash
 export VERCEL_TOKEN=…                   # or --token-file <path>; there is no --token flag
 evnx platform diff --to vercel          # .env.development (or .env) vs Vercel's development
-evnx platform diff --to vercel --env-name production --format json
+evnx platform diff --to vercel --target production --format json
 evnx platform pull --to vercel --dry-run   # what would change, nothing written
 evnx platform pull --to vercel --yes       # write Vercel's readable values (asks without --yes)
 evnx platform diff --to vercel --strict    # a Secret on both sides counts as a difference (exit 1)
 evnx platform push --to vercel --dry-run   # the plan; nothing is sent
 evnx platform push --to vercel             # create and update on Vercel, after asking
-evnx platform push --to vercel --env-name production --only-new --yes   # CI: new keys only
+evnx platform push --to vercel --target production --only-new --yes   # CI: new keys only
 evnx platform push --to vercel --prune     # also delete what only Vercel has (listed first, asks first)
-evnx platform push --to vercel --env-name staging          # a custom environment, by slug
-evnx platform push --to vercel --env-name preview --git-branch feature   # one preview branch
+evnx platform push --to vercel --target staging            # a custom environment, by slug
+evnx platform push --to vercel --target preview --git-branch feature   # one preview branch
 ```
 
 ```text
@@ -606,13 +606,13 @@ Vercel  acme/web  production        local  .env.production
 
 - **Project:** `--project` / `--team`, else `VERCEL_PROJECT_ID` / `VERCEL_ORG_ID`, else
   `.vercel/project.json` from `vercel link`.
-- **File:** `.env.<env-name>` when it exists, else `.env` (`--file` overrides); the run
-  prints which. `--env-name` is `production`, `preview` or `development` (the default), or
+- **File:** `.env.<target>` when it exists, else `.env` (`--file` overrides); the run
+  prints which. `--target` is `production`, `preview` or `development` (the default), or
   the slug of a **custom environment** of the project (`.env.<slug>`, else `.env`): its
   variables are the entries whose `customEnvironmentIds` include it, and a new one is
   created with `customEnvironmentIds` and no `target`. An unknown slug exits 2 and names the
   project's custom environments.
-- **`--git-branch <branch>`** (with `--env-name preview` only; any other environment exits
+- **`--git-branch <branch>`** (with `--target preview` only; any other environment exits
   2): a key's entry for that branch is used; a key with none falls back to its
   all-branches preview entry, which the plan labels, is never changed by this run, and
   gets a branch entry of its own beside it when its value must differ. New variables are

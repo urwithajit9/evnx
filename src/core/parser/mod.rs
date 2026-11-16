@@ -420,6 +420,20 @@ impl Parser {
     /// be followed (C-2, RM-17).
     pub fn missing_env_hint(path: &str) -> String {
         let Some(name) = crate::core::env_name::name_of(path) else {
+            // The plain `.env` is missing: say which `.env.<name>` files are
+            // there and how to use one (FLD-6), before suggesting a new one.
+            let dir = std::path::Path::new(path)
+                .parent()
+                .filter(|d| !d.as_os_str().is_empty())
+                .unwrap_or(std::path::Path::new("."));
+            let plain = std::path::Path::new(path).file_name()
+                == Some(std::ffi::OsStr::new(crate::core::env_name::DEFAULT_FILE));
+            if let Some(hint) = plain
+                .then(|| crate::core::resolve::other_env_files(dir, None))
+                .flatten()
+            {
+                return hint;
+            }
             return "Create it with `evnx init`, or point at another file with --env.".into();
         };
         let dir = std::path::Path::new(path)

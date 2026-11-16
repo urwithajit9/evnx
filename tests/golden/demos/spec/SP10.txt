@@ -10,6 +10,7 @@ $ evnx -q spec init
 
 $ evnx spec init --env nope.env --stdout
 [stderr]
+  files     nope.env ↔ .env.example  (--env; project template)
 
   evnx spec  Generate the variable contract
 

@@ -126,7 +126,18 @@ pub fn run(
         Ok(loaded) => loaded.config,
         Err(e) => no_verdict(format!("{e:#}")),
     };
-    let template = Template::of(&project_root, &config);
+    // The template by the one rule (WP-5): `[defaults] env_name`'s own
+    // (`.env.prod.example`) when there is one.
+    let template = {
+        use crate::core::resolve::{resolve, Flags, Need, TemplateFrom};
+        match resolve(&project_root, Flags::default(), &config, Need::MayCreate) {
+            Ok(r) => Template {
+                configured: r.template_from != TemplateFrom::Project,
+                name: r.template,
+            },
+            Err(_) => Template::of(&project_root, &config),
+        }
+    };
 
     // No env file is a verdict of its own (I-162, DEC-D8), decided before any
     // check: a folder with nothing in it was "healthy", exit 0, so a CI step
@@ -138,6 +149,7 @@ pub fn run(
         }
         if !template.exists(&project_root)
             && templates_in(&project_root).is_empty()
+            && crate::core::resolve::environment_templates(&project_root).is_empty()
             && !is_a_project(&project_root)
         {
             no_verdict(format!(
@@ -1738,7 +1750,7 @@ mod tests {
         assert!(!fix_dockerignore(root, false).unwrap(), "idempotent");
         let text = fs::read_to_string(root.join(".dockerignore")).unwrap();
         assert!(text.starts_with("node_modules\n"), "{text}");
-        assert!(text.contains("!.env.example"), "{text}");
+        assert!(text.contains("!.env*.example"), "{text}");
     }
 
     #[test]

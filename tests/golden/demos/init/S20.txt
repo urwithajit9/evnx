@@ -21,7 +21,7 @@ $ evnx init --from-source --yes
 
   0 already in .env.example  ·  8 new
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Added 8 variables from the source
   ✓ 8 names from .env.example → .evnx.toml (1 secret, 1 with a format)
 [exit 0]

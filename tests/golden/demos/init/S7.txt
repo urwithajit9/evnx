@@ -15,7 +15,7 @@ $ evnx init --detect --yes
   16 variables from 4 components
 
 ✓ Created .env from template
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 16 variables
   ✓ 16 names from .env.example → .evnx.toml (7 secret, 3 with a format)
 

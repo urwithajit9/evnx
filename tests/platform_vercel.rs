@@ -304,13 +304,26 @@ fn diff_with_nothing_different_exits_0() {
     out.assert_contains("1 unchanged · values never shown");
 }
 
+/// PLAT-5: the old spelling still works, with one warning naming `--target`.
+#[test]
+fn plat5_env_name_is_an_alias_of_target_with_a_warning() {
+    let mut v = Vercel::start_for_diff();
+    let prod = v.value_mock("e1b", 200, Some(R_PROD_API), 1);
+    let p = Project::new().file(".env.production", &format!("API_URL={R_PROD_API}\n"));
+    let out = run(&p, &v.url(), &diff_args(&["--env-name", "production"]));
+    out.assert_code(0);
+    out.assert_contains("now `--target`");
+    out.assert_contains("local  .env.production");
+    prod.assert();
+}
+
 #[test]
 fn diff_uses_the_production_entry_for_production() {
     let mut v = Vercel::start_for_diff();
     // For production the Config read is the other API_URL entry (e1b).
     let prod = v.value_mock("e1b", 200, Some(R_PROD_API), 1);
     let p = Project::new().file(".env.production", &format!("API_URL={R_PROD_API}\n"));
-    let out = run(&p, &v.url(), &diff_args(&["--env-name", "production"]));
+    let out = run(&p, &v.url(), &diff_args(&["--target", "production"]));
     // Same value on both sides: API_URL is unchanged; the other variables are
     // not in production, so none is listed.
     out.assert_code(0);
@@ -334,7 +347,7 @@ fn diff_says_which_file_it_used() {
 fn f3_no_local_file_means_an_empty_local_side() {
     let v = Vercel::start_for_diff();
     let p = Project::new();
-    let out = run(&p, &v.url(), &diff_args(&["--env-name", "development"]));
+    let out = run(&p, &v.url(), &diff_args(&["--target", "development"]));
     // Five development variables, all remote only: a difference, but not an error.
     out.assert_code(1);
     quiet(&out);
@@ -1642,7 +1655,7 @@ fn plat_state_pull_dev_then_prod_then_a_change_on_vercel_still_stops_a_dev_push(
     let mut prod = Vercel::start_for_diff();
     let e1b = prod.value_mock("e1b", 200, Some(R_PROD_API), 1);
     let mut args = pull_args(&flags);
-    args.extend(["--env-name", "production"]);
+    args.extend(["--target", "production"]);
     let out = run(&p, &prod.url(), &args);
     out.assert_code(0);
     quiet(&out);
@@ -2299,7 +2312,7 @@ fn a_custom_environment_is_found_by_slug_and_its_entries_by_id() {
         ".env.staging",
         &format!("STG_ONLY={R_API}\nSHARED_CFG={R_LOG}\n"),
     );
-    let mut args = diff_args(&["--env-name", "staging"]);
+    let mut args = diff_args(&["--target", "staging"]);
     args.push("--format");
     args.push("json");
     let out = run(&p, &v.url(), &args);
@@ -2326,7 +2339,7 @@ fn an_unknown_custom_environment_is_exit_2_naming_the_ones_there_are() {
     let mut v = custom_remote();
     let writes = v.no_writes();
     let p = Project::new().file(".env", "A=1\n");
-    let out = run(&p, &v.url(), &diff_args(&["--env-name", "nope"]));
+    let out = run(&p, &v.url(), &diff_args(&["--target", "nope"]));
     out.assert_code(2);
     quiet(&out);
     out.assert_contains("no custom environment 'nope'");
@@ -2335,9 +2348,9 @@ fn an_unknown_custom_environment_is_exit_2_naming_the_ones_there_are() {
         m.assert();
     }
     // A name that cannot be a slug never reaches the network.
-    let out = run(&p, &v.url(), &diff_args(&["--env-name", "../x"]));
+    let out = run(&p, &v.url(), &diff_args(&["--target", "../x"]));
     out.assert_code(2);
-    let out = run(&p, &v.url(), &diff_args(&["--env-name", "Production"]));
+    let out = run(&p, &v.url(), &diff_args(&["--target", "Production"]));
     out.assert_code(2);
     out.assert_contains("lowercase");
 }
@@ -2374,7 +2387,7 @@ fn push_to_a_custom_environment_creates_with_ids_and_no_target_and_splits_by_ids
     let out = run(
         &p,
         &v.url(),
-        &push_args(&["--env-name", "staging", "--yes", "--no-gitignore"]),
+        &push_args(&["--target", "staging", "--yes", "--no-gitignore"]),
     );
     out.assert_code(0);
     quiet_push(&out);
@@ -2405,13 +2418,7 @@ fn prune_in_a_custom_environment_deletes_its_own_and_detaches_the_shared() {
     let out = run(
         &p,
         &v.url(),
-        &push_args(&[
-            "--env-name",
-            "staging",
-            "--prune",
-            "--yes",
-            "--no-gitignore",
-        ]),
+        &push_args(&["--target", "staging", "--prune", "--yes", "--no-gitignore"]),
     );
     out.assert_code(0);
     quiet_push(&out);
@@ -2487,7 +2494,7 @@ fn git_branch_uses_the_branch_entry_falls_back_to_all_branches_and_creates_with_
         &p,
         &v.url(),
         &push_args(&[
-            "--env-name",
+            "--target",
             "preview",
             "--git-branch",
             "feature",
@@ -2532,7 +2539,7 @@ fn git_branch_with_prune_deletes_only_the_branchs_own_entries() {
         &p,
         &v.url(),
         &push_args(&[
-            "--env-name",
+            "--target",
             "preview",
             "--git-branch",
             "feature",
@@ -2559,11 +2566,11 @@ fn git_branch_is_only_for_preview() {
         let out = run(
             &p,
             &v.url(),
-            &push_args(&["--env-name", env, "--git-branch", "feature", "--yes"]),
+            &push_args(&["--target", env, "--git-branch", "feature", "--yes"]),
         );
         out.assert_code(2);
         quiet_push(&out);
-        out.assert_contains("--git-branch only applies to --env-name preview");
+        out.assert_contains("--git-branch only applies to --target preview");
     }
     // Also on the default environment, and for diff and pull.
     let out = run(
@@ -2589,13 +2596,13 @@ fn git_branch_is_only_for_preview() {
 fn without_git_branch_branch_scoped_preview_variables_are_skipped_and_the_warning_says_how() {
     let v = branch_remote();
     let p = Project::new().file(".env.preview", &format!("ONLY_ALL={R_LOG}\n"));
-    let mut args = diff_args(&["--env-name", "preview"]);
+    let mut args = diff_args(&["--target", "preview"]);
     args.extend(["--format", "json"]);
     let out = run(&p, &v.url(), &args);
     quiet(&out);
     assert!(
         out.stderr
-            .contains("use --git-branch <branch> with --env-name preview"),
+            .contains("use --git-branch <branch> with --target preview"),
         "{}",
         out.stderr
     );

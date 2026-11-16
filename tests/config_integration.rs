@@ -10,6 +10,13 @@ use tempfile::TempDir;
 
 fn project(config: &str) -> TempDir {
     let d = TempDir::new().unwrap();
+    // A monorepo has a repository at its root; outside one a parent's
+    // .evnx.toml is not read (WP-5, D2).
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(d.path())
+        .status()
+        .expect("git init");
     fs::write(d.path().join(".env"), "A=1\nEXTRA_ONLY_HERE=2\n").unwrap();
     fs::write(d.path().join(".env.example"), "A=x\n").unwrap();
     fs::write(d.path().join(".env.production"), "A=prod\n").unwrap();

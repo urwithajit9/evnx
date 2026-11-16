@@ -24,6 +24,7 @@ Target: .env.example (action: Add)
 
 (dry-run: no files were modified)
 [stderr]
+  files     .env.production ↔ .env.example  (no .env.production.example, so the project template)
 
   evnx sync  .env.production ↔ .env.example  (forward)
 
@@ -66,6 +67,7 @@ $ evnx sync --env-name production -f
 · Force mode: using placeholder values and skipping prompts
 ✓ Added 2 variables to .env.example
 [stderr]
+  files     .env.production ↔ .env.example  (no .env.production.example, so the project template)
 
   evnx sync  .env.production ↔ .env.example  (forward)
 

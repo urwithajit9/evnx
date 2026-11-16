@@ -2,7 +2,7 @@
 ================ SP5 ================
 
 $ evnx add service redis --yes
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env from .env.example
 ✓ Added 5 variables for Redis
 [stderr]
@@ -39,7 +39,7 @@ Validation failed: 2 errors
 validate reads the appended entries
 
 $ evnx add service redis --yes
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env from .env.example
 ✓ Added 5 variables for Redis
 [stderr]

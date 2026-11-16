@@ -8,7 +8,7 @@ $ evnx init --with vite --yes
 ! ./.env is readable by other users (mode 644); evnx keeps the mode you set
      →  chmod 600 ./.env
 ✓ Added 3 variables to .env; the values already there are kept
-✓ Created .gitignore with .env*, !.env.example, !.env.sample, !.env.template
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 3 variables from 1 component
   ✓ 3 names from .env.example → .evnx.toml (0 secret, 1 with a format)
 

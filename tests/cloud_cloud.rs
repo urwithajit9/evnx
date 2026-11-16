@@ -125,7 +125,8 @@ fn t_i230_export_refuses_a_git_work_tree_before_any_request() {
 fn rm85_link_names_the_folder_it_bound() {
     let p = Project::new()
         .file(".evnx.toml", "[sync]\nnaming_policy = \"warn\"\n")
-        .file("deploy/.keep", "");
+        .file("deploy/.keep", "")
+        .git();
     let mut s = mockito::Server::new();
     s.mock("GET", "/api/v1/vaults")
         .with_status(200)
@@ -164,7 +165,8 @@ fn rm85_link_names_the_folder_it_bound() {
 fn rm86_link_file_is_stored_from_the_toml_folder() {
     let p = Project::new()
         .file(".evnx.toml", "[sync]\nnaming_policy = \"warn\"\n")
-        .file("deploy/.keep", "");
+        .file("deploy/.keep", "")
+        .git();
     let mut s = mockito::Server::new();
     s.mock("GET", "/api/v1/vaults")
         .with_status(200)

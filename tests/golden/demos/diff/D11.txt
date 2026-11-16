@@ -23,6 +23,7 @@ Extra in ./.env (not in ./.env.example):
 
   2 missing from ./.env  ·  1 not in ./.env.example
 [stderr]
+  files     .env ↔ .env.example  (project template)
 
   evnx diff  ./.env ↔ ./.env.example
 
@@ -38,7 +39,10 @@ $ evnx diff
 [stderr]
 Error: ./.env does not exist
 
-Create it with `evnx init`, or point at another file with --env.
+  Found: .env.production, .env.staging
+  Use it once:    add --env-name production to the command
+  Use it always:  add to .evnx.toml →  [defaults]
+                                    env_name = "production"
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
