@@ -6,10 +6,10 @@
 //! use evnx::commands::doctor::run;
 //!
 //! fn main() -> Result<()> {
-//!     // path, verbose, fix, strict, format, skip_without_env
+//!     // path, verbose, fix, strict, json (None: EVNX_OUTPUT_JSON decides), skip_without_env
 //!     run("./my-app".into(), true, false, false, None, false)?;
 //!     // ...or ask for machine-readable output:
-//!     run("./my-app".into(), false, false, true, Some("json".into()), false)?;
+//!     run("./my-app".into(), false, false, true, Some(true), false)?;
 //!     Ok(())
 //! }
 //! ```
