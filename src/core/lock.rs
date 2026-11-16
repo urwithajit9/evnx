@@ -51,18 +51,42 @@ pub fn lock_path(target: &Path) -> PathBuf {
     real.with_file_name(format!(".evnx-{name}.lock"))
 }
 
+/// How often, and how long apart, a lock still being deleted is tried again
+/// (Windows only; see [`acquire`]). At most 200 ms in all.
+const DELETE_PENDING_TRIES: u32 = 8;
+const DELETE_PENDING_PAUSE: Duration = Duration::from_millis(25);
+
 /// Take the lock on `target`, or fail naming who holds it.
+///
+/// ⚠️ Windows: a lock file the previous owner just deleted stays "delete
+/// pending" until its last handle closes, and creating it then fails with
+/// `ERROR_ACCESS_DENIED` (os error 5), not "already exists". That is a lock
+/// being released, not a permission problem, so it is tried again for a
+/// moment; a folder that really refuses writes still reports its own error
+/// after that. (`remove_deferred::e7` hit it on the Windows runner.)
 pub fn acquire(target: &Path) -> Result<FileLock> {
     let lock = lock_path(target);
-    for _ in 0..2 {
+    let mut takeovers = 0;
+    let mut pending = 0;
+    loop {
         match create(&lock) {
             Ok(()) => return Ok(FileLock { lock }),
+            Err(e)
+                if cfg!(windows)
+                    && e.kind() == std::io::ErrorKind::PermissionDenied
+                    && pending < DELETE_PENDING_TRIES =>
+            {
+                pending += 1;
+                std::thread::sleep(DELETE_PENDING_PAUSE);
+            }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 match owner(&lock) {
-                    Owner::Stale => {
+                    Owner::Stale if takeovers < 1 => {
                         // Take it over; `create_new` above decides a tie.
+                        takeovers += 1;
                         let _ = std::fs::remove_file(&lock);
                     }
+                    Owner::Stale => bail!(held(target, &lock, None)),
                     Owner::Live(pid) => bail!(held(target, &lock, Some(pid))),
                     Owner::Unknown => bail!(held(target, &lock, None)),
                 }
@@ -72,7 +96,6 @@ pub fn acquire(target: &Path) -> Result<FileLock> {
             }
         }
     }
-    bail!(held(target, &lock, None))
 }
 
 fn held(target: &Path, lock: &Path, pid: Option<u32>) -> String {
