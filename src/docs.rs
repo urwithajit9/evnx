@@ -340,6 +340,20 @@ pub const PARSE: CommandDoc = CommandDoc {
     after_help: "Full guide: https://docs.evnx.dev/cli/commands/parse",
 };
 
+pub const HISTORY: CommandDoc = CommandDoc {
+    command: "history",
+    url: "https://docs.evnx.dev/cli/commands/history",
+    description: "The copies evnx kept before changing a file: which file, command and time",
+    after_help: "Full guide: https://docs.evnx.dev/cli/commands/history",
+};
+
+pub const UNDO: CommandDoc = CommandDoc {
+    command: "undo",
+    url: "https://docs.evnx.dev/cli/commands/undo",
+    description: "Put a file back as it was before evnx last changed it",
+    after_help: "Full guide: https://docs.evnx.dev/cli/commands/undo",
+};
+
 pub const RUN: CommandDoc = CommandDoc {
     command: "run",
     url: "https://docs.evnx.dev/cli/commands/run",
@@ -424,6 +438,8 @@ pub const ALL: &[&CommandDoc] = &[
     &VAULT,
     &ORG,
     &PARSE,
+    &HISTORY,
+    &UNDO,
     &RUN,
     &COMMANDS,
     &COMPLETIONS,

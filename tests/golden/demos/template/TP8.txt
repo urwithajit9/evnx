@@ -48,7 +48,7 @@ $ bash -c git check-ignore -q out3.yml && echo "git: ignored" || echo "git: NOT 
 git: ignored
 [exit 0]
 
-$ evnx template --input config.tpl.yml --output out4.yml --gitignore
+$ evnx template --input config.tpl.yml --output out4.yml --force --gitignore
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at out4.yml

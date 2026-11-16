@@ -2384,6 +2384,11 @@ pub enum Commands {
         #[arg(long, value_name = "FILE", global = true)]
         example: Option<String>,
 
+        /// Write only the env file: no names into the template, and no
+        /// template created. For a server that keeps `.env.prod` alone.
+        #[arg(long, global = true, conflicts_with = "example")]
+        no_template: bool,
+
         /// Skip confirmation prompts.
         #[arg(long, short, global = true)]
         yes: bool,
@@ -2448,6 +2453,18 @@ pub enum Commands {
         #[arg(long)]
         no_backup: bool,
 
+        /// Remove a name even when a line that stays refers to it
+        /// (`URL=http://h/${PORT}`). Without it, remove names those lines and
+        /// changes nothing.
+        #[arg(long)]
+        allow_dangling: bool,
+
+        /// Let a pattern remove every variable in a file (`remove '*'`). Needed
+        /// with --yes or without a terminal; in a terminal, typing the count
+        /// does the same.
+        #[arg(long)]
+        all_names: bool,
+
         /// Print the result as one JSON document (needs --yes or --dry-run;
         /// with --check it never asks, so neither is needed).
         #[arg(long)]
@@ -2463,7 +2480,7 @@ pub enum Commands {
             long,
             conflicts_with_all = [
                 "template", "contract", "all", "env_name", "dry_run", "yes",
-                "ignore_missing", "no_backup",
+                "ignore_missing", "no_backup", "allow_dangling", "all_names",
             ]
         )]
         check: bool,
@@ -3167,11 +3184,20 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// Where to write the rendered file, or `-` for stdout.
         ///
         /// ⚠️ The result usually contains real values — see `--gitignore`. A
-        /// new file is created readable by you only (0600); an existing one is
-        /// replaced and keeps its mode. The template and the env file are never
-        /// overwritten.
+        /// new file is created readable by you only (0600). An existing file is
+        /// only replaced with `--force`, and keeps its mode. The template and
+        /// the env file are never overwritten.
         #[arg(long)]
         output: String,
+
+        /// Replace an existing output file.
+        #[arg(long)]
+        force: bool,
+
+        /// Write through an output that is a symlink to a file outside this
+        /// folder. Without it, such an output is refused.
+        #[arg(long)]
+        follow_symlinks: bool,
 
         /// File mode for the output, in octal (e.g. 0640). Applied to a new or
         /// an existing file. Without it a new file is 0600.
@@ -3547,6 +3573,43 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     Spec {
         #[command(subcommand)]
         action: SpecAction,
+    },
+
+    /// List the copies evnx kept before changing a file: which file, which
+    /// command, when.
+    ///
+    /// `remove`, `validate --fix`, `diff --apply`, `restore`, `cloud pull` and
+    /// `platform pull` keep the file as it was in `<file>.bak` (one per file)
+    /// and record it in `.evnx/backups.json`. Never shows a value.
+    #[command(after_help = docs::HISTORY.after_help)]
+    History {
+        /// One JSON document on stdout.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Put a file back as it was before evnx last changed it.
+    ///
+    /// Swaps the file and its `<file>.bak`, so running it again puts the newer
+    /// text back. Shows what changes by name, never a value, and asks first.
+    /// `--clear` deletes the copies instead. Not for `evnx backup` archives:
+    /// those are `evnx restore`.
+    #[command(after_help = docs::UNDO.after_help)]
+    Undo {
+        /// The file to put back, e.g. `.env`. Default: the only one with a copy.
+        file: Option<String>,
+
+        /// Do not ask.
+        #[arg(long, short)]
+        yes: bool,
+
+        /// Show what would change; write nothing.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Delete the copies (all, or FILE's) instead of putting one back.
+        #[arg(long)]
+        clear: bool,
     },
 
     /// List what evnx reads from a `.env`: line, key and flags, never a value.

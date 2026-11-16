@@ -26,7 +26,7 @@ Target: .env.example (action: Add)
   evnx sync  .env ↔ .env.example  (forward)
 
 ! .env is readable by other users (mode 644)
-     →  chmod 600 .env
+     →  chmod 600 .env   (or evnx doctor --fix, for every env file)
   Docs: https://docs.evnx.dev/cli/commands/sync
 
 ✗ Out of sync.

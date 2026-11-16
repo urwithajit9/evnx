@@ -29,7 +29,7 @@ Target: .env.example (action: Add)
   evnx sync  .env.production ↔ .env.example  (forward)
 
 ! .env.production is readable by other users (mode 644)
-     →  chmod 600 .env.production
+     →  chmod 600 .env.production   (or evnx doctor --fix, for every env file)
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 
@@ -72,7 +72,7 @@ $ evnx sync --env-name production -f
   evnx sync  .env.production ↔ .env.example  (forward)
 
 ! .env.production is readable by other users (mode 644)
-     →  chmod 600 .env.production
+     →  chmod 600 .env.production   (or evnx doctor --fix, for every env file)
 ! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]

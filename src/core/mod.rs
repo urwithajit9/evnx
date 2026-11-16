@@ -1,4 +1,5 @@
 pub mod args;
+pub mod backups;
 pub mod build;
 pub mod classify;
 pub mod config;

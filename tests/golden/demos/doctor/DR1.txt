@@ -18,7 +18,9 @@ $ evnx doctor
 
   ✓  Check file permissions for sensitive files
 
-  3 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  4 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -55,7 +57,9 @@ $ evnx doctor --verbose
   ✓  Check file permissions for sensitive files
      .env: permissions 600 (private)
 
-  3 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  4 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -126,13 +130,22 @@ $ evnx doctor --format json
       "fixable": false,
       "fixed": false,
       "ran": true
+    },
+    {
+      "name": "empty_sections",
+      "description": "Check env files and templates for empty evnx sections",
+      "severity": "ok",
+      "details": null,
+      "fixable": false,
+      "fixed": false,
+      "ran": true
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 7,
     "errors": 0,
     "warnings": 0,
-    "passed": 3,
+    "passed": 4,
     "info": 3,
     "fixable": 0
   },
@@ -142,7 +155,7 @@ $ evnx doctor --format json
   Docs: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
   ok: json (exit 0)
-  ok: JSON on stdout only: 6 checks (ai_agents since RM-25), 0 errors
+  ok: JSON on stdout only: 7 checks (empty_sections since WP-7), 0 errors
   ok: no colour escapes when piped
 
 ================ summary: 5 ok, 0 mismatch   ================

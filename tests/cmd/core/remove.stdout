@@ -40,6 +40,12 @@ Options:
       --no-backup
           Keep no `.bak` copy of the env files (needs --yes; refused for a file git tracks)
 
+      --allow-dangling
+          Remove a name even when a line that stays refers to it (`URL=http://h/${PORT}`). Without it, remove names those lines and changes nothing
+
+      --all-names
+          Let a pattern remove every variable in a file (`remove '*'`). Needed with --yes or without a terminal; in a terminal, typing the count does the same
+
       --json
           Print the result as one JSON document (needs --yes or --dry-run; with --check it never asks, so neither is needed)
 

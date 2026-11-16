@@ -18,11 +18,8 @@ $ bash -c "$0" convert --to json | python3 -c "import sys,json; print(repr(json.
 [exit 0]
 
 $ evnx convert --to yaml
-PEM: |-
-  -----BEGIN KEY-----
-  abc
-  -----END KEY-----
-PLAIN: ok
+PEM: "-----BEGIN KEY-----\nabc\n-----END KEY-----"
+PLAIN: "ok"
 [stderr]
   Docs: https://docs.evnx.dev/cli/commands/convert
 [exit 0]

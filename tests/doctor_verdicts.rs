@@ -174,8 +174,8 @@ fn t_i163_json_still_prints_and_marks_the_check_as_not_run() {
     let out = run(p.path(), &["doctor", "--format", "json"]);
     out.assert_code(2);
     let report = json(&out);
-    // Six since RM-25 added ai_agents.
-    assert_eq!(report["checks"].as_array().unwrap().len(), 6);
+    // Seven since WP-7 added empty_sections (six since RM-25's ai_agents).
+    assert_eq!(report["checks"].as_array().unwrap().len(), 7);
     let failed = check(&report, "project_structure");
     assert_eq!(failed["ran"], false);
     assert_eq!(failed["severity"], "error");

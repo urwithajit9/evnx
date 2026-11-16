@@ -165,7 +165,12 @@ RUST_MIN_STACK = "8388608"
 That reserves 8 MB, matching Linux. `/STACK` covers the main thread;
 `RUST_MIN_STACK` covers the threads `cargo test` runs unit tests on, where
 the tests that build the whole command tree otherwise overflow 2 MB. CI sets
-both for its Windows job.
+`/STACK` for its Windows job and `RUST_MIN_STACK` for every job.
+
+**On Linux and macOS too**, `cargo test --lib` needs the `[env]` part since
+0.14.2: the `cli::tests` that parse arguments overflow libtest's 2 MB test
+threads in a debug build. Add it to your `.cargo/config.toml`, or run
+`RUST_MIN_STACK=8388608 cargo test`.
 
 ⓘ **This affects debug builds only and no released binary.** The optimised
 build runs in under 256 KB, and every published artefact is built

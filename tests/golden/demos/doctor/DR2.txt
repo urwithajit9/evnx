@@ -21,7 +21,9 @@ $ evnx doctor
   !  Check file permissions for sensitive files
      .env: permissions 644 (recommended: 600)
 
-  1 error  ·  2 warnings
+  ✓  Check env files and templates for empty evnx sections
+
+  1 error  ·  2 warnings  ·  1 check passed
 
   →  2 issues evnx doctor --fix can repair:
      ·  Validate .env file existence, security, and syntax
@@ -56,7 +58,9 @@ $ evnx doctor --fix
 
   ✓  Check file permissions for sensitive files
 
-  1 warning  ·  2 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 warning  ·  3 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -102,7 +106,9 @@ $ evnx doctor
 
   ✓  Check file permissions for sensitive files
 
-  1 warning  ·  2 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 warning  ·  3 checks passed
 
   Not examined here:
     values and required names    evnx validate

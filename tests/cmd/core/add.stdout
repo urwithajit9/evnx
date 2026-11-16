@@ -34,6 +34,9 @@ Options:
       --example <FILE>
           The template to add names to, from the project folder. Default: the environment's own (`.env.<NAME>.example`) when there is one, else `[defaults] example`, else `.env.example`
 
+      --no-template
+          Write only the env file: no names into the template, and no template created. For a server that keeps `.env.prod` alone
+
   -y, --yes
           Skip confirmation prompts
 

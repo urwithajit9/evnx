@@ -54,13 +54,22 @@
       "fixable": true,
       "fixed": false,
       "ran": true
+    },
+    {
+      "name": "empty_sections",
+      "description": "Check env files and templates for empty evnx sections",
+      "severity": "ok",
+      "details": null,
+      "fixable": false,
+      "fixed": false,
+      "ran": true
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 7,
     "errors": 1,
     "warnings": 2,
-    "passed": 0,
+    "passed": 1,
     "info": 3,
     "fixable": 2
   },

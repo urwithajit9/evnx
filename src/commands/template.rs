@@ -202,6 +202,9 @@ pub fn run_with(
             file_mode,
             mkdir: false,
             dry_run: false,
+            // The library keeps what it always did; the CLI asks (TPL-1, TPL-3).
+            force: true,
+            follow_symlinks: true,
         },
     )
 }
@@ -221,6 +224,10 @@ pub struct Options {
     pub mkdir: bool,
     /// `--dry-run`: render and report, write nothing (DEC-T9).
     pub dry_run: bool,
+    /// `--force`: replace an existing output (TPL-1).
+    pub force: bool,
+    /// `--follow-symlinks`: write through a link to outside the folder (TPL-3).
+    pub follow_symlinks: bool,
 }
 
 /// [`run`] with every option (`--mkdir`, `--dry-run` included).
@@ -348,6 +355,24 @@ pub fn run_options(input: String, output: String, env: String, opts: Options) ->
         }
     }
 
+    // TPL-1: the output is often a real config with values in it; replacing
+    // it is asked for, not assumed. Before the dry run, which reports the same.
+    if plan.replaces && !opts.force && !to_stdout {
+        return Err(crate::core::verdict::stopped(format!(
+            "{output} already exists, so nothing was written.\n  \
+             Replace it:  evnx template --input {input} --output {output} --force"
+        )));
+    }
+    // TPL-3: a link committed at the output path would make the run write
+    // wherever it points. Inside this folder it is announced, as before.
+    if plan.through_link && !opts.follow_symlinks && !inside_cwd(&plan.target) {
+        return Err(crate::core::verdict::stopped(format!(
+            "{output} is a link to {}, outside this folder, so nothing was written.\n  \
+             Write through it anyway:  add --follow-symlinks",
+            plan.target.display()
+        )));
+    }
+
     if opts.dry_run {
         print_dry_run(&plan, &output, &undefined);
         return Ok(());
@@ -401,6 +426,19 @@ pub fn run_options(input: String, output: String, env: String, opts: Options) ->
     crate::utils::protect::protect_output(&output, &opts.gitignore)?;
     ui::print_docs_hint(&docs::TEMPLATE);
     Ok(())
+}
+
+/// Whether `target` is in the current folder or below it. A target that does
+/// not exist yet is judged by its folder.
+fn inside_cwd(target: &std::path::Path) -> bool {
+    let Ok(cwd) = std::env::current_dir().and_then(std::fs::canonicalize) else {
+        return false;
+    };
+    let real = std::fs::canonicalize(target).or_else(|_| {
+        let parent = target.parent().unwrap_or(std::path::Path::new("."));
+        std::fs::canonicalize(parent).map(|p| p.join(target.file_name().unwrap_or_default()))
+    });
+    real.is_ok_and(|p| p.starts_with(&cwd))
 }
 
 /// `--dry-run` with a file output: what the write would do (DEC-T9). Printed

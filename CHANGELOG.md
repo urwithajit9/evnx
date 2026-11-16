@@ -39,6 +39,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `DEBUG=false` (Django's and Laravel's defaults were `True`), and a
   non-secret number or switch keeps its type (`MAX_CONN=0`, not
   `YOUR_VALUE_HERE`); `DATABASE_URL` and the like get a database URL.
+- **`template` no longer replaces an existing output without `--force`**, and
+  refuses an output that is a symlink to a file outside the current folder
+  unless `--follow-symlinks` is given. A dry run reports the same refusal.
+  Scripts that regenerate a file on every run add `--force`.
+- **`remove` refuses to leave dangling references.** Removing `PORT` while
+  `URL=http://h/${PORT}` stays names that line and changes nothing; pass
+  `--allow-dangling` to remove it anyway. A pattern that matches every
+  variable in a file (`remove '*'`) needs `--all-names`; `--yes` alone is no
+  longer enough.
+- **`cloud pull` and `platform pull` write the pulled file 600**, whatever mode
+  it had. They used to keep an existing mode and warn.
+- **`add` and `init --from-source` write no dated `# Added by evnx … on
+  <date>` line**, so two identical runs write the same bytes. `add custom`
+  adds to the file's existing "Custom Variables" section instead of starting
+  a new one.
+- **`convert --to yaml` quotes every value**, so YAML 1.1 readers (PyYAML,
+  most CI tools) read `yes`, `on`, `No` and `2026-01-01` as strings, not
+  booleans and dates. The `doctor --format json` report has one more check,
+  `empty_sections`.
 
 ### Fixed
 
@@ -71,6 +90,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `add custom DEBUG=false` beside a template that already says so writes the
   value to `.env` instead of reporting a conflict with evnx's own placeholder.
 
+- **Backups are private and accounted for.** Every `.bak` evnx keeps
+  (`validate --fix`, `remove`, `restore`, `diff --apply`, `cloud pull`,
+  `platform pull`) is mode 600 whatever the original's mode, is recorded in
+  `.evnx/backups.json` (file, time, command; no values), and in a git
+  repository `*.bak` and that file are added to `.gitignore` (the pulls and
+  `restore` keep their own `--gitignore` choice). Each write says when it
+  replaced the previous backup and how to undo it (`evnx undo .env`), and
+  `remove` names the copies it kept instead of "any .bak copy".
+- `remove` no longer leaves a section header (`# ── Stripe ──`) or a dated
+  line behind when it removes the section's last variable; `add` then
+  `remove` leaves the file as it was. A comment you wrote keeps its section.
+- The "readable by other users" warning for an env file also names
+  `evnx doctor --fix`.
+
 ### Added
 
 - `add --example FILE`.
@@ -82,6 +115,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.gitignore`.
 - `spec check --format json` (names only, never values) and
   `spec check --skip-without-env`.
+- `evnx history`: the copies evnx kept before changing a file (which file,
+  which command, when; `--json`). `evnx undo FILE`: put the file back as it
+  was by swapping it with its `.bak`, so running it again puts the newer text
+  back; it shows the change by name and asks first. `evnx undo --clear`
+  deletes the copies. (`evnx restore` stays for `evnx backup` archives.)
+- `add --no-template`: write only the env file, for a server that keeps
+  `.env.prod` alone.
+- `doctor` checks env files and templates for empty evnx sections, and
+  `--fix` clears them.
 
 ## [0.14.1] - 2026-11-14
 

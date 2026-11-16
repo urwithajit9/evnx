@@ -19,7 +19,9 @@ $ evnx doctor
   !  Check file permissions for sensitive files
      .env.production: permissions 644 (recommended: 600)
 
-  1 warning  ·  2 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 warning  ·  3 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -52,7 +54,9 @@ $ evnx doctor
   !  Check file permissions for sensitive files
      .env.production: permissions 644 (recommended: 600)
 
-  1 warning  ·  2 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 warning  ·  3 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -84,7 +88,9 @@ $ evnx doctor --fix
 
   ✓  Check file permissions for sensitive files
 
-  3 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  4 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -119,7 +125,9 @@ $ evnx doctor
      .env (symlink to ../outside-DR6/real.env): permissions 644 (recommended: 600)
      → the target is outside the project, so --fix leaves it: chmod 600 ../outside-DR6/real.env
 
-  1 warning  ·  2 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 warning  ·  3 checks passed
 
   Not examined here:
     values and required names    evnx validate
@@ -152,7 +160,9 @@ $ evnx doctor --fix
      .env (symlink to ../outside-DR6/real.env): permissions 644 (recommended: 600)
      → the target is outside the project, so --fix leaves it: chmod 600 ../outside-DR6/real.env
 
-  1 warning  ·  2 checks passed
+  ✓  Check env files and templates for empty evnx sections
+
+  1 warning  ·  3 checks passed
 
   Not examined here:
     values and required names    evnx validate

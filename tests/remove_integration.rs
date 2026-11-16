@@ -94,7 +94,8 @@ fn a17_a18_modes_are_kept_and_a_loose_one_is_reported() {
     evnx(&p, &["remove", "X", "--yes"])
         .assert_code(0)
         .assert_contains("chmod 600");
-    assert_eq!((mode(&p, ".env"), mode(&p, ".env.bak")), (0o644, 0o644));
+    // The file keeps its mode, with the hint; the copy is private (REM-6).
+    assert_eq!((mode(&p, ".env"), mode(&p, ".env.bak")), (0o644, 0o600));
 }
 
 #[cfg(unix)]
@@ -468,10 +469,12 @@ fn d8_d9_s10_globs_and_wide_matches() {
     evnx(&p, &["remove", "TEST_*", "--yes"]).assert_code(0);
     assert_eq!(p.read(".env"), "KEEP=3\n");
 
+    // REM-2: in a terminal, the count has to be typed.
     let p = Project::new().env("A=1\nB=2\n");
     let mut s = Pty::spawn(p.path(), &["remove", "*"]);
     let (rest, code) = {
-        s.wait_for("matches every variable");
+        s.wait_for("Type 2 to remove them all");
+        s.type_line("y");
         s.finish()
     };
     assert_eq!(code, 2, "{rest}");
@@ -479,7 +482,12 @@ fn d8_d9_s10_globs_and_wide_matches() {
     evnx(&p, &["remove", "*", "--dry-run"])
         .assert_code(0)
         .assert_contains("A (line 1), B (line 2)");
-    evnx(&p, &["remove", "*", "--yes"]).assert_code(0);
+    // `--yes` alone is what a script with an empty prefix passes.
+    evnx(&p, &["remove", "*", "--yes"])
+        .assert_code(2)
+        .assert_contains("--all-names");
+    assert_eq!(p.read(".env"), "A=1\nB=2\n");
+    evnx(&p, &["remove", "*", "--yes", "--all-names"]).assert_code(0);
     assert_eq!(p.read(".env"), "");
 }
 
@@ -692,4 +700,22 @@ fn i2_help_shows_exit_codes_and_examples() {
 fn i4_sync_points_at_remove() {
     let p = Project::new().env("A=1\n").example("A=\nSTALE=\n");
     run_with(p.path(), &["sync"], &[], None).assert_contains("evnx remove STALE --template");
+}
+
+/// REM-2: typing the count is the terminal's `--all-names`.
+#[cfg(unix)]
+#[test]
+fn rem2_typing_the_count_removes_them_all() {
+    let p = Project::new().env("A=1\nB=2\n");
+    let mut s = Pty::spawn(p.path(), &["remove", "*"]);
+    let (rest, code) = {
+        s.wait_for("Type 2 to remove them all");
+        s.type_line("2");
+        // The usual confirmation follows.
+        s.wait_for("Remove");
+        s.type_line("y");
+        s.finish()
+    };
+    assert_eq!(code, 0, "{rest}");
+    assert_eq!(p.read(".env"), "");
 }

@@ -215,6 +215,7 @@ fn main() -> Result<()> {
             yes,
             env_name,
             example,
+            no_template,
         } => commands::add::run(
             target,
             commands::add::Options {
@@ -226,6 +227,7 @@ fn main() -> Result<()> {
                 verbose: cli.verbose,
                 env_name,
                 example,
+                no_template,
             },
         )
         .or_else(declined),
@@ -241,6 +243,8 @@ fn main() -> Result<()> {
             yes,
             ignore_missing,
             no_backup,
+            allow_dangling,
+            all_names,
             json,
             check,
         } => {
@@ -255,6 +259,8 @@ fn main() -> Result<()> {
                 yes,
                 ignore_missing,
                 no_backup,
+                allow_dangling,
+                all_names,
                 json,
                 verbose: cli.verbose,
                 check,
@@ -779,6 +785,8 @@ fn main() -> Result<()> {
             mode: file_mode,
             mkdir,
             dry_run,
+            force,
+            follow_symlinks,
         } => {
             // RM-14 (DEC-T2): refusing is the default; --strict asked for it.
             if strict {
@@ -805,6 +813,8 @@ fn main() -> Result<()> {
                     file_mode,
                     mkdir,
                     dry_run,
+                    force,
+                    follow_symlinks,
                 },
             )
         }
@@ -1044,6 +1054,20 @@ fn main() -> Result<()> {
                 &command,
             )
         }
+
+        Commands::History { json } => commands::undo::history(json),
+
+        Commands::Undo {
+            file,
+            yes,
+            dry_run,
+            clear,
+        } => commands::undo::run(commands::undo::Options {
+            file,
+            yes,
+            dry_run,
+            clear,
+        }),
 
         Commands::Parse {
             env,

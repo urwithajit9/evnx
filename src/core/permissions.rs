@@ -95,7 +95,20 @@ pub fn readable_warning(path: &Path, mode: u32, note: Option<&str>) {
         mode,
         note.map(|n| format!("; {n}")).unwrap_or_default()
     ));
-    ui::warning_detail(format!("     →  {}", chmod_hint(path)));
+    // SYNC-4: the one command that tightens every env file at once, named
+    // only for a file it would fix.
+    let is_env = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| crate::core::env_name::kind(n) == crate::core::env_name::FileKind::Env);
+    if is_env {
+        ui::warning_detail(format!(
+            "     →  {}   (or evnx doctor --fix, for every env file)",
+            chmod_hint(path)
+        ));
+    } else {
+        ui::warning_detail(format!("     →  {}", chmod_hint(path)));
+    }
 }
 
 /// [`readable_warning`] for `path` when it exists and group or others can

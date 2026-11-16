@@ -196,8 +196,11 @@ pub fn format_addition(vars: &VarCollection) -> Result<String> {
     format_addition_from(vars, "evnx add")
 }
 
-/// [`format_addition`], stamped with the command that made the addition:
-/// `# Added by <origin> on <date>`.
+/// [`format_addition`] for `origin` (`evnx add`, `evnx init`).
+///
+/// ADD-3, FLD-12: no `# Added by <origin> on <date>` line any more. It made two
+/// identical runs write different bytes, and outlived the section it dated;
+/// git records when a line arrived. `origin` is kept for the API.
 ///
 /// ⚠️ A separate function rather than a new parameter: `format_addition` is
 /// re-exported from the library, and changing its signature would break every
@@ -207,16 +210,8 @@ pub fn format_addition_from(vars: &VarCollection, origin: &str) -> Result<String
     // The same sections `init` writes. `evnx add postgresql` and
     // `evnx init --with postgresql` put the same component in the same file, and
     // used to disagree about what that looked like.
-    let mut content = format_sections(vars);
-
-    // Kept: *when* something arrived is still worth recording, and unlike the old
-    // `# [ADDED]` heading it does not change the shape of a section.
-    content.push_str(&format!(
-        "# Added by {origin} on {}\n",
-        chrono::Local::now().format("%Y-%m-%d %H:%M")
-    ));
-
-    Ok(content)
+    let _ = origin;
+    Ok(format_sections(vars))
 }
 
 /// Generate preview summary for interactive confirmation

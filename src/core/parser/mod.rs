@@ -352,6 +352,7 @@ mod lines;
 mod tests;
 
 pub use document::{Comment, Document, Entry, Problem, Span};
+pub(crate) use expand::references;
 use expand::strip_markers;
 pub use lines::{closes_multiline, line_opens_multiline, opens_multiline, strip_export};
 

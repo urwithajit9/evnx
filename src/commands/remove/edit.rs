@@ -77,6 +77,8 @@ pub fn cut_entries(content: &str, names: &BTreeSet<String>, label: &str) -> Resu
 
     let mut cut = vec![false; lines.len() + 1];
     let mut removed = Vec::new();
+    // REM-3, FLD-12: the sections that lose an entry here, by header line.
+    let mut emptied_from: BTreeSet<usize> = BTreeSet::new();
     for e in doc.entries.iter().filter(|e| names.contains(&e.key)) {
         let mut taken: Vec<usize> = (e.span.line..=e.span.end_line).collect();
         let above = e.span.line.saturating_sub(1);
@@ -92,12 +94,17 @@ pub fn cut_entries(content: &str, names: &BTreeSet<String>, label: &str) -> Resu
         for &n in &taken {
             cut[n] = true;
         }
+        if let Some(h) = section_of(&doc, e.span.line) {
+            emptied_from.insert(h);
+        }
         removed.push(Removed {
             name: e.key.clone(),
             line: e.span.line,
             lines: taken,
         });
     }
+
+    drop_emptied_sections(&doc, &lines, &emptied_from, &mut cut);
 
     let mut text: String = bom.to_string();
     for (i, l) in lines.iter().enumerate() {
@@ -127,6 +134,137 @@ pub fn cut_entries(content: &str, names: &BTreeSet<String>, label: &str) -> Resu
         bail!("removing from {label} would change more than the entries asked for, so nothing was written");
     }
     Ok(Cut { text, removed })
+}
+
+/// The line of the `# ── … ──` section header above `line`, if any.
+fn section_of(doc: &Document, line: usize) -> Option<usize> {
+    doc.comments
+        .iter()
+        .filter(|c| c.line < line && is_section_header(&c.text))
+        .map(|c| c.line)
+        .max()
+}
+
+/// `# ── Stripe ──`, `# ── Custom Variables ──`: a section `add` and `init`
+/// write. (`gitignore`'s `# ── evnx generated ──` never reaches an env file.)
+fn is_section_header(text: &str) -> bool {
+    text.trim().starts_with("──")
+}
+
+/// `# Added by evnx add custom on 2026-11-16 15:02`: the dated line `add`
+/// wrote under its section before WP-7.
+fn is_evnx_dated(text: &str) -> bool {
+    text.trim().starts_with("Added by evnx")
+}
+
+/// REM-3, FLD-12: a section this cut left with no entry loses the lines evnx
+/// wrote for it — its header, its dated line, its blank lines and the blank
+/// line above the header — so a file does not collect empty sections. A
+/// comment the user wrote keeps the section's header with it. Only sections
+/// that lost an entry in this cut: an empty section already there is
+/// `doctor --fix`'s.
+fn drop_emptied_sections(
+    doc: &Document,
+    lines: &[&str],
+    emptied: &BTreeSet<usize>,
+    cut: &mut [bool],
+) {
+    let headers: Vec<usize> = doc
+        .comments
+        .iter()
+        .filter(|c| is_section_header(&c.text))
+        .map(|c| c.line)
+        .collect();
+    for &h in emptied {
+        let end = headers
+            .iter()
+            .copied()
+            .find(|&n| n > h)
+            .unwrap_or(lines.len() + 1);
+        let range = h..end;
+        let entry_left = doc.entries.iter().any(|e| {
+            range.contains(&e.span.line) && (e.span.line..=e.span.end_line).any(|n| !cut[n])
+        });
+        if entry_left {
+            continue;
+        }
+        let own_comment_left = doc.comments.iter().any(|c| {
+            range.contains(&c.line) && c.line != h && !cut[c.line] && !is_evnx_dated(&c.text)
+        });
+        for n in range.clone() {
+            let blank = lines[n - 1].trim().is_empty();
+            let dated = doc
+                .comments
+                .iter()
+                .any(|c| c.line == n && is_evnx_dated(&c.text));
+            if dated || (!own_comment_left && (n == h || blank)) {
+                cut[n] = true;
+            }
+        }
+        // The blank line `add` put above the header, when the section was
+        // the file's last; in the middle it now separates the sections on
+        // either side.
+        if !own_comment_left && end > lines.len() && h > 1 && lines[h - 2].trim().is_empty() {
+            cut[h - 1] = true;
+        }
+    }
+}
+
+/// `doctor --fix` (WP-7): `content` without the evnx sections that have no
+/// entry, by the rule [`cut_entries`] applies to the ones it empties. `None`
+/// when there is none, or the file has a line the parser refuses. The number
+/// is how many sections went.
+pub fn without_empty_sections(content: &str) -> Option<(String, usize)> {
+    let doc = document(content);
+    if !doc.problems.is_empty() {
+        return None;
+    }
+    let (bom, body) = match content.strip_prefix('\u{feff}') {
+        Some(rest) => ("\u{feff}", rest),
+        None => ("", content),
+    };
+    let lines: Vec<&str> = body.split_inclusive('\n').collect();
+    let headers: BTreeSet<usize> = doc
+        .comments
+        .iter()
+        .filter(|c| is_section_header(&c.text))
+        .map(|c| c.line)
+        .collect();
+    let mut cut = vec![false; lines.len() + 1];
+    drop_emptied_sections(&doc, &lines, &headers, &mut cut);
+    let gone = headers.iter().filter(|&&h| cut[h]).count();
+    if gone == 0 {
+        return None;
+    }
+    let mut text = bom.to_string();
+    for (i, l) in lines.iter().enumerate() {
+        if !cut[i + 1] {
+            text.push_str(l);
+        }
+    }
+    // Same keys, same values: only comment and blank lines went.
+    if keys(&document(&text)) != keys(&doc) {
+        return None;
+    }
+    Some((text, gone))
+}
+
+/// REM-1: the entries of `content` that a removal of `removed` keeps and whose
+/// value refers to one of those names: `(line, key, name)`, lines as in
+/// `content`. A single-quoted value is literal and refers to nothing.
+pub fn dangling(content: &str, removed: &BTreeSet<String>) -> Vec<(usize, String, String)> {
+    let doc = document(content);
+    let kept = doc.entries.iter().filter(|e| !removed.contains(&e.key));
+    let defined: BTreeSet<&str> = kept.clone().map(|e| e.key.as_str()).collect();
+    let mut out = Vec::new();
+    for e in kept.filter(|e| e.quote != Some('\'')) {
+        for name in crate::core::parser::references(&e.value) {
+            if removed.contains(&name) && !defined.contains(name.as_str()) {
+                out.push((e.span.line, e.key.clone(), name));
+            }
+        }
+    }
+    out
 }
 
 /// A comment that heads a group rather than describing one variable: never
@@ -223,8 +361,9 @@ mod tests {
             "# ── Database ──\n# Postgres URL (required)\nDB=x\n",
             &["DB"],
         );
-        assert_eq!(c.text, "# ── Database ──\n");
-        // A header straight above the key stays.
+        // REM-3: the section it emptied goes with it.
+        assert_eq!(c.text, "");
+        // A header straight above the key stays while the section has one.
         let c = cut("# ── Custom Variables ──\nA=1\nB=2\n", &["A"]);
         assert_eq!(c.text, "# ── Custom Variables ──\nB=2\n");
         // A person's comment block of two lines stays whole.
@@ -333,6 +472,62 @@ mod tests {
             }
             let _ = cut_entries(&s, &names(&["A", "B", "AB"]), "t");
         }
+    }
+
+    #[test]
+    fn rem3_an_emptied_evnx_section_goes_with_its_dated_line() {
+        let f = "APP=1\n\n# ── Custom Variables ──\nK1=a\nK2=b\n\n# Added by evnx add custom on 2026-11-16 18:34\n";
+        assert_eq!(cut(f, &["K1", "K2"]).text, "APP=1\n");
+        // One left: the section stays whole.
+        assert_eq!(
+            cut(f, &["K1"]).text,
+            "APP=1\n\n# ── Custom Variables ──\nK2=b\n\n# Added by evnx add custom on 2026-11-16 18:34\n"
+        );
+    }
+
+    #[test]
+    fn rem3_the_next_section_and_a_users_comment_stay() {
+        let f = "# ── Stripe ──\nSTRIPE_KEY=\n\n# ── Redis ──\nREDIS_URL=\n";
+        assert_eq!(cut(f, &["STRIPE_KEY"]).text, "# ── Redis ──\nREDIS_URL=\n");
+        // A note the user wrote in the section keeps its header.
+        let f = "# ── Stripe ──\n# rotate monthly, see the runbook\n\nSTRIPE_KEY=\n";
+        let out = cut(f, &["STRIPE_KEY"]).text;
+        assert!(
+            out.contains("rotate monthly") && out.contains("── Stripe ──"),
+            "{out:?}"
+        );
+    }
+
+    #[test]
+    fn rem3_an_empty_section_already_there_is_left_to_doctor() {
+        let f = "# ── Old ──\n\n# ── Stripe ──\nSTRIPE_KEY=\nA=1\n";
+        assert_eq!(
+            cut(f, &["A"]).text,
+            "# ── Old ──\n\n# ── Stripe ──\nSTRIPE_KEY=\n"
+        );
+    }
+
+    #[test]
+    fn doctor_clears_every_empty_evnx_section_and_nothing_else() {
+        let f = "A=1\n\n# ── Stripe ──\n\n# Added by evnx add on 2026-11-01 10:00\n\n# ── Redis ──\nREDIS_URL=\n\n# ── Notes ──\n# keep: the user's own\n";
+        let (text, gone) = without_empty_sections(f).unwrap();
+        assert_eq!(gone, 1);
+        assert_eq!(
+            text,
+            "A=1\n\n# ── Redis ──\nREDIS_URL=\n\n# ── Notes ──\n# keep: the user's own\n"
+        );
+        assert!(without_empty_sections(&text).is_none(), "tidy stays tidy");
+    }
+
+    #[test]
+    fn rem1_references_left_behind() {
+        let f = "PORT=3000\nURL=http://h/${PORT}\nB=$PORT\nLIT='$PORT'\nC=${PORT:-80}\n";
+        let left = dangling(f, &names(&["PORT"]));
+        let keys: Vec<&str> = left.iter().map(|(_, k, _)| k.as_str()).collect();
+        assert_eq!(keys, ["URL", "B", "C"]);
+        assert_eq!(left[0].0, 2, "the line in the file as it is");
+        // Removed together: nothing is left to refer to it.
+        assert!(dangling(f, &names(&["PORT", "URL", "B", "C"])).is_empty());
     }
 
     #[test]

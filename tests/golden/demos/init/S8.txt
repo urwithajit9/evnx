@@ -64,7 +64,6 @@ VITE_CLERK_PUBLISHABLE_KEY=
 # read at src/config.ts:1 (required)
 VITE_SUPABASE_URL=
 
-# Added by evnx init --from-source on <date>
 [exit 0]
   ok: existing line kept
 

@@ -1092,18 +1092,16 @@ fn one_component_is_singular() {
 /// I-009 (fixed in 0.10.1, group B1; was `known_i009_from_source_*`): an append
 /// by `init --from-source` names `init`, not `add`. `add` keeps its own stamp.
 #[test]
-fn a_from_source_append_is_stamped_as_init() {
+fn a_from_source_append_carries_no_stamp() {
     let d = sourced_project();
     std::fs::write(d.path().join(".env.example"), "HAND_WRITTEN=1\n").unwrap();
     assert!(init_in(d.path(), &["--from-source", "--yes"])
         .status
         .success());
     let example = std::fs::read_to_string(d.path().join(".env.example")).unwrap();
-    assert!(
-        example.contains("# Added by evnx init --from-source on"),
-        "{example}"
-    );
-    assert!(!example.contains("# Added by evnx add"), "{example}");
+    // ADD-3 (WP-7): no dated stamp from init or add.
+    assert!(!example.contains("# Added by"), "{example}");
+    assert!(example.starts_with("HAND_WRITTEN=1\n"), "{example}");
 }
 
 /// I-012 (fixed in 0.10.1, group A10; was `known_i012_*`). `--force` never had an

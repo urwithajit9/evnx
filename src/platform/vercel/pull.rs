@@ -133,21 +133,33 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
     let updated = local::edit(current, &file.doc, &set, &add)?;
     let kept = match &file.text {
         Some(previous) if previous.as_str() != updated.as_str() => Some(
-            crate::core::safe_write::backup(&path, previous.as_bytes())
+            crate::core::safe_write::backup_unignored(&path, previous.as_bytes())
                 .with_context(|| format!("keeping a copy of {}", shown(&path)))?,
         ),
         _ => None,
     };
-    let written = crate::core::safe_write::write_private(&path, updated.as_bytes())
-        .with_context(|| format!("writing {}", shown(&path)))?;
+    // BUG-PLATFORM-MODE: pulled secrets are private, whatever mode the file
+    // had (as `cloud pull`).
+    let written = crate::core::safe_write::write_with_mode(
+        &path,
+        updated.as_bytes(),
+        crate::core::permissions::PRIVATE,
+    )
+    .with_context(|| format!("writing {}", shown(&path)))?;
     crate::core::safe_write::report(&written);
     crate::say!("  {} wrote {}", "✓".green(), shown(&path));
     if let Some(kept) = &kept {
         crate::say!(
-            "  {} kept the previous {} as {}",
+            "  {} kept the previous {} as {}{}   undo: {}",
             "✓".green(),
             shown(&path),
-            shown(kept)
+            shown(kept),
+            if kept.replaced {
+                " (replaced the previous backup)"
+            } else {
+                ""
+            },
+            kept.undo()
         );
     }
 

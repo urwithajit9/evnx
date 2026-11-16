@@ -15,7 +15,7 @@ $ evnx sync -f --direction reverse
   evnx sync  .env ↔ .env.example  (reverse)
 
 ! .env is readable by other users (mode 644)
-     →  chmod 600 .env
+     →  chmod 600 .env   (or evnx doctor --fix, for every env file)
   Docs: https://docs.evnx.dev/cli/commands/sync
 [exit 0]
   ok: reverse adds template-only keys (exit 0)

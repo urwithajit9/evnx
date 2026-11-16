@@ -94,7 +94,15 @@ jobs:
         # the same statically linked C runtime that ships.
         run: |
           echo "RUSTFLAGS=-C link-arg=/STACK:8388608 -C target-feature=+crt-static" >> "$GITHUB_ENV"
-          echo "RUST_MIN_STACK=8388608" >> "$GITHUB_ENV"
+
+      # ⚠️ Every platform since WP-7: with the flags it added, building the
+      # derived command tree in a debug test thread outgrew libtest's 2 MB on
+      # Linux too, and the `--lib` run aborted (stack overflow in
+      # `cli::tests`). Debug-only frame bloat, as above; the released binary's
+      # main thread has 8 MB everywhere.
+      - name: Give test threads 8 MB
+        shell: bash
+        run: echo "RUST_MIN_STACK=8388608" >> "$GITHUB_ENV"
 
       - name: Run tests
         # ⚠️ `--no-fail-fast`: without it the first failing test binary stops the

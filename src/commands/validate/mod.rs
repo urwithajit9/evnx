@@ -850,8 +850,10 @@ pub fn run(opts: Options) -> Result<()> {
         let (backup, written) = write_fixed_file(&env_path, &env_vars, &original, &changed)?;
         if format == Format::Pretty {
             ui::success(format!(
-                "Saved fixes to {env_path} — original kept at {backup}"
+                "Saved fixes to {env_path} — original kept at {}",
+                backup.describe()
             ));
+            ui::say(format!("  undo: {}", backup.undo()));
             crate::core::safe_write::report(&written);
         }
     }
