@@ -48,6 +48,8 @@ pub struct Target {
     pub env_file: String,
     /// `--here`: this folder's own `.evnx.toml`, whatever is above (WP-5).
     pub here: bool,
+    /// `--no-contract`: no `[vars]` written (INIT-4).
+    pub no_contract: bool,
 }
 
 impl Target {
@@ -60,6 +62,7 @@ impl Target {
             env_name: None,
             env_file: String::new(),
             here: false,
+            no_contract: false,
         };
         target.resolve()?;
         Ok(target)
@@ -385,6 +388,35 @@ pub(crate) fn template_vars(target: &Target) -> Result<VarCollection> {
     Ok(vars)
 }
 
+/// INIT-1: a value in the kept template that looks like a live credential
+/// (`sk_live_…`, a private key, a URL with a password). A template is
+/// committed, so such a key has already leaked; `init` is the first command
+/// a new contributor runs, so it says so. Names only, never values.
+pub(crate) fn warn_template_secrets(target: &Target) {
+    let Ok(Some(map)) = crate::commands::add::shared::read_assignments(&target.template_path())
+    else {
+        return;
+    };
+    let names: Vec<&str> = map
+        .iter()
+        // `user:password@localhost` is evnx's own sample, as `scan` knows (N-20).
+        .filter(|(_, v)| {
+            crate::core::classify::is_secret_shaped(v)
+                && !crate::core::placeholder::is_url_placeholder(v)
+        })
+        .map(|(n, _)| n.as_str())
+        .collect();
+    if names.is_empty() {
+        return;
+    }
+    let template = target.template_name();
+    ui::warning(format!(
+        "{template} holds what looks like a real credential: {}. A template is committed, \
+         so if it is live, rotate it where it is issued and put a placeholder here.",
+        names.join(", ")
+    ));
+}
+
 /// The kept template's names that the existing env file does not have, with
 /// the command that adds them: `init` leaves the env file as it is.
 pub(crate) fn say_names_env_lacks(target: &Target, env: &str) {
@@ -443,6 +475,7 @@ pub(crate) fn set_up_from_template(target: &Target, opts: WriteOptions) -> Resul
 
 fn set_up(target: &Target, name: &str) -> Result<Outcome> {
     let env = target.env_file.as_str();
+    warn_template_secrets(target);
     if target.root.join(env).exists() {
         let gitignore_line = update_gitignore(&target.root)?;
         finish(

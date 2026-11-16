@@ -173,6 +173,7 @@ fn main() -> Result<()> {
             dry_run,
             json,
             here,
+            no_contract,
         } => {
             // The target's own config, before anything is written (I-298).
             // `--list-components` is about evnx, not a project; `--here`
@@ -201,6 +202,7 @@ fn main() -> Result<()> {
                 json,
                 env_name,
                 here,
+                no_contract,
             )
         }
 

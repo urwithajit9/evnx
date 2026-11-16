@@ -121,7 +121,7 @@ fn t_i124_ci_set_skips_the_prompt_at_a_terminal() {
     let (out, code) = s.finish();
     assert_eq!(code, 0, "{out}");
     assert!(!out.contains("Add these to"), "no prompt:\n{out}");
-    assert!(p.read(".env.example").contains("NEW_ONE=YOUR_VALUE_HERE"));
+    assert!(p.read(".env.example").contains("NEW_ONE=0"));
 }
 
 /// I-277: the new-template "actual values" choice rewrote `.env` line by line,
@@ -168,7 +168,7 @@ fn t_i280_no_prompt_when_stderr_is_not_a_terminal() {
     assert!(out.contains("rc=0"), "{out}");
     let err = p.read("err.txt");
     assert!(!err.contains("not a terminal"), "{err}");
-    assert!(p.read(".env.example").contains("NEW_ONE=YOUR_VALUE_HERE"));
+    assert!(p.read(".env.example").contains("NEW_ONE=0"));
 }
 
 /// Reverse, "Let me choose individually", nothing chosen: nothing is

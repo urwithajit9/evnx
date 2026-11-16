@@ -41,7 +41,7 @@ KEEP=1
 DATABASE_URL=postgres://user:password@localhost:5432/dbname
 API_SECRET=YOUR_KEY_HERE
 API_PORT=8000
-NEW_FEATURE=YOUR_VALUE_HERE
+NEW_FEATURE=false
 stripe_key=YOUR_KEY_HERE
 [exit 0]
 I-122 fixed (DEC-S6): the link stays and its target is written

@@ -19,7 +19,7 @@ $ evnx sync --env-name production --check
 Preview:
 Target: .env.example (action: Add)
 
-  · NEW_FEATURE = YOUR_VALUE_HERE
+  · NEW_FEATURE = false
   · stripe_key = YOUR_KEY_HERE
 
 (dry-run: no files were modified)
@@ -80,7 +80,7 @@ $ evnx sync --env-name production -f
 
 $ bash -c tail -n 3 .env.example
 # Synced from .env.production
-NEW_FEATURE=YOUR_VALUE_HERE
+NEW_FEATURE=false
 stripe_key=YOUR_KEY_HERE
 [exit 0]
 

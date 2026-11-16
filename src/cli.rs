@@ -2320,6 +2320,14 @@ pub enum Commands {
         /// records its names in the root's `.evnx.toml`.
         #[arg(long)]
         here: bool,
+
+        /// Write no `[vars]` contract into `.evnx.toml`: only the env files and
+        /// `.gitignore`, as `cp .env.example .env` would. The contract is what
+        /// `evnx validate` checks names and formats against; it is safe to
+        /// delete, and `evnx spec init` writes one later. When init adopts named
+        /// env files it still sets `[defaults] env_name`.
+        #[arg(long)]
+        no_contract: bool,
     },
 
     /// Add environment variables to existing .env files.

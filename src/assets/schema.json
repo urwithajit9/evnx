@@ -197,7 +197,7 @@
           "defaults": {
             "DATABASE_URL": "sqlite:///db.sqlite3",
             "DJANGO_SETTINGS_MODULE": "myproject.settings",
-            "DEBUG": "True",
+            "DEBUG": "False",
             "ALLOWED_HOSTS": "localhost,127.0.0.1"
           },
           "categories": {
@@ -291,7 +291,7 @@
             "APP_KEY": "Laravel encryption key (generate with: php artisan key:generate)"
           },
           "defaults": {
-            "APP_DEBUG": "true",
+            "APP_DEBUG": "false",
             "APP_URL": "http://localhost",
             "LOG_CHANNEL": "stack",
             "DB_CONNECTION": "mysql"

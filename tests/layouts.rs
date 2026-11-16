@@ -395,7 +395,11 @@ fn named_only_adopted_contract_relaxes_only_real_defaults() {
             .unwrap_or_else(|| panic!("{name} missing: {toml}"));
         toml[at..].lines().nth(1).unwrap().trim().to_string()
     };
-    assert_eq!(required("PORT"), "required = false", "PORT=8080 is a default");
+    assert_eq!(
+        required("PORT"),
+        "required = false",
+        "PORT=8080 is a default"
+    );
     assert_eq!(required("APP_NAME"), "required = true", "an empty value");
     assert_eq!(required("STRIPE_KEY"), "required = true", "a secret");
     assert_eq!(

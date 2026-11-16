@@ -985,7 +985,9 @@ fn custom_takes_name_value_arguments() {
             "add",
             "custom",
             "API_URL=https://api.example.com",
-            "DEBUG=false",
+            // Not `false`: that is DEBUG's placeholder (GEN-20), so it would
+            // be in the template either way.
+            "DEBUG=true",
             "--yes",
         ],
     )
@@ -1000,10 +1002,10 @@ fn custom_takes_name_value_arguments() {
     // ⚠️ DEC-U8-1 (I-245): the value goes to `.env` only; `.env.example` gets a placeholder.
     let env = p.read(".env");
     assert!(env.contains("\nAPI_URL=https://api.example.com\n"), "{env}");
-    assert!(env.contains("\nDEBUG=false\n"), "{env}");
+    assert!(env.contains("\nDEBUG=true\n"), "{env}");
     let example = p.read(".env.example");
     assert!(
-        !example.contains("api.example.com") && !example.contains("DEBUG=false"),
+        !example.contains("api.example.com") && !example.contains("DEBUG=true"),
         "{example}"
     );
 }
@@ -1088,7 +1090,10 @@ fn custom_flags_go_into_the_written_block() {
 /// T-ADD-45: a name the template already has is skipped and reported (AD-S).
 #[test]
 fn custom_argument_already_present_is_skipped() {
-    let p = Project::new().example("DEBUG=false\n");
+    // In both files already. (Only in the template, `.env` now gets the
+    // value: DEBUG's placeholder is the template's `false`, so it is no
+    // longer a conflict, GEN-20.)
+    let p = Project::new().example("DEBUG=false\n").env("DEBUG=false\n");
     run(
         p.path(),
         &["add", "custom", "DEBUG=false", "NEW=1", "--yes"],

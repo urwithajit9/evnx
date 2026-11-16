@@ -51,6 +51,10 @@ pub struct Args {
 struct Custom {
     name: String,
     value: String,
+    /// A value was given (an argument, or typed at a prompt), not the
+    /// placeholder put in for a missing one. Said, not inferred from the value:
+    /// a typed `DEBUG=false` is also `DEBUG`'s placeholder (GEN-20).
+    given: bool,
     description: Option<String>,
     category: Option<String>,
     required: bool,
@@ -190,8 +194,8 @@ fn from_arguments(
     let can_ask = !yes && crate::utils::term::interactive();
     let mut customs = Vec::new();
     for (name, value) in parsed {
-        let value = match value {
-            Some(v) => v,
+        let (value, given) = match value {
+            Some(v) => (v, true),
             None if can_ask && hides_value(&name) => {
                 let v = Password::new()
                     .with_prompt(format!(
@@ -200,18 +204,19 @@ fn from_arguments(
                     .allow_empty_password(true)
                     .interact()?;
                 if v.is_empty() {
-                    placeholder_for(&name)
+                    (placeholder_for(&name), false)
                 } else {
-                    v
+                    (v, true)
                 }
             }
             // The same placeholder `.env.example` gets, so the two files agree
             // (it was `your_value_here` here and `YOUR_VALUE_HERE` there).
-            None => placeholder_for(&name),
+            None => (placeholder_for(&name), false),
         };
         customs.push(Custom {
             name,
             value,
+            given,
             description: desc.clone(),
             category: category.clone(),
             required,
@@ -302,9 +307,13 @@ fn prompt_loop(
                 .interact_text()?
         };
 
+        // At the prompt, Enter takes the default, which is the placeholder:
+        // the one case where the value is all there is to go on.
+        let given = value != placeholder_for(&name);
         let mut custom = Custom {
             name,
             value,
+            given,
             description: desc.clone(),
             category: category.clone(),
             required,
@@ -411,7 +420,7 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
     let values: indexmap::IndexMap<String, Option<String>> = customs
         .iter()
         .map(|c| {
-            let given = (c.value != placeholder_for(&c.name)).then(|| c.value.clone());
+            let given = c.given.then(|| c.value.clone());
             (c.name.clone(), given)
         })
         .collect();

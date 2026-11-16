@@ -84,6 +84,13 @@ pub(crate) fn contract_pending(
     written: &VarCollection,
     whole: &VarCollection,
 ) -> Result<ContractPlan> {
+    if target.no_contract {
+        return Ok(ContractPlan {
+            action: "skipped",
+            file: None,
+            added: Vec::new(),
+        });
+    }
     Ok(match super::contract::plan(target)? {
         Contract::Create(path) => ContractPlan {
             action: "created",
@@ -276,6 +283,7 @@ pub(crate) fn print_dry_run(p: &Planned, root: &Path) {
         .unwrap_or_else(|| ".evnx.toml".to_string());
     let n = p.contract.added.len();
     match p.contract.action {
+        "skipped" => println!("  {file}: no contract (--no-contract)"),
         "created" if n == 0 => println!("  {file}: would be created with an empty [vars]"),
         "created" => println!("  {file}: would be created with {} in [vars]", count(n)),
         "appended" if n == 0 => println!("  {file}: would get an empty [vars]"),

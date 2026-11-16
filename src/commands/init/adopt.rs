@@ -170,6 +170,7 @@ pub(crate) fn handle(target: &Target, opts: WriteOptions, found: &Found) -> Resu
         .with_env_name(Some(name.clone()))?;
     let adopted = Target {
         here: target.here,
+        no_contract: target.no_contract,
         ..adopted
     };
     let has_template = adopted.template_path().is_file();
@@ -203,6 +204,7 @@ pub(crate) fn handle(target: &Target, opts: WriteOptions, found: &Found) -> Resu
 
     // Every file first, then every line (RM-03).
     let config = set_default(&adopted, &name)?;
+    shared::warn_template_secrets(&adopted);
     let gitignore_line = shared::update_gitignore(&target.root)?;
     let template = adopted.template_name().to_string();
     let env = adopted.env_file.clone();

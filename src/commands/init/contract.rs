@@ -44,33 +44,19 @@ pub(crate) fn record(
 ) -> impl FnOnce() {
     let verbose = target.verbose;
     let template = target.template_name().to_string();
+    let skipped = target.no_contract;
     let mut counts = None;
-    let done: Result<Outcome, (std::path::PathBuf, anyhow::Error)> = match plan(target) {
-        Ok(Contract::Record(path)) => {
-            writeback::record(&target.root, written).map_err(|e| (path, e))
-        }
-        Ok(Contract::Create(path)) => crate::commands::spec::contract_into(&path, whole)
-            .map(|d| {
-                counts = Some((d.secret, d.with_format));
-                Outcome::Created {
-                    names: d.names,
-                    config: path.clone(),
-                }
-            })
-            .map_err(|e| (path, e)),
-        Ok(Contract::Append(path)) => crate::commands::spec::contract_into(&path, whole)
-            .map(|d| {
-                counts = Some((d.secret, d.with_format));
-                Outcome::Wrote {
-                    names: d.names,
-                    config: path.clone(),
-                    through: None,
-                }
-            })
-            .map_err(|e| (path, e)),
-        Err(e) => Err((target.root.clone(), e)),
+    let done = if skipped {
+        Ok(Outcome::AlreadyDeclared)
+    } else {
+        write_contract(target, written, whole, &mut counts)
     };
     move || match done {
+        Ok(_) if skipped => {
+            if verbose && !ui::is_quiet() {
+                eprintln!("  .evnx.toml: no contract written (--no-contract)");
+            }
+        }
         // Only a contract built from the template: a record into an existing
         // `[vars]` keeps `writeback`'s line.
         Ok(Outcome::Created { names, config } | Outcome::Wrote { names, config, .. })
@@ -87,6 +73,42 @@ pub(crate) fn record(
         Ok(outcome) => writeback::report(&outcome, verbose),
         Err((path, e)) => could_not(&path, &e),
     }
+}
+
+type Done = Result<Outcome, (std::path::PathBuf, anyhow::Error)>;
+
+fn write_contract(
+    target: &Target,
+    written: &VarCollection,
+    whole: &VarCollection,
+    counts: &mut Option<(usize, usize)>,
+) -> Done {
+    let done: Result<Outcome, (std::path::PathBuf, anyhow::Error)> = match plan(target) {
+        Ok(Contract::Record(path)) => {
+            writeback::record(&target.root, written).map_err(|e| (path, e))
+        }
+        Ok(Contract::Create(path)) => crate::commands::spec::contract_into(&path, whole)
+            .map(|d| {
+                *counts = Some((d.secret, d.with_format));
+                Outcome::Created {
+                    names: d.names,
+                    config: path.clone(),
+                }
+            })
+            .map_err(|e| (path, e)),
+        Ok(Contract::Append(path)) => crate::commands::spec::contract_into(&path, whole)
+            .map(|d| {
+                *counts = Some((d.secret, d.with_format));
+                Outcome::Wrote {
+                    names: d.names,
+                    config: path.clone(),
+                    through: None,
+                }
+            })
+            .map_err(|e| (path, e)),
+        Err(e) => Err((target.root.clone(), e)),
+    };
+    done
 }
 
 /// The line for a contract `init` wrote: where its names came from, where they
