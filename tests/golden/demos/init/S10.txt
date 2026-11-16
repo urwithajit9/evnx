@@ -35,8 +35,6 @@ VITE_ENV=development
 # ── Connection ──
 # Base URL for API requests (required)
 VITE_API_BASE_URL=https://example.com
-
-# Added by evnx init on <date>
 [exit 0]
   ok: .env unchanged (never overwritten)
 

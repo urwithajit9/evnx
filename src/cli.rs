@@ -2384,6 +2384,11 @@ pub enum Commands {
         #[arg(long, value_name = "FILE", global = true)]
         example: Option<String>,
 
+        /// Write only the env file: no names into the template, and no
+        /// template created. For a server that keeps `.env.prod` alone.
+        #[arg(long, global = true, conflicts_with = "example")]
+        no_template: bool,
+
         /// Skip confirmation prompts.
         #[arg(long, short, global = true)]
         yes: bool,

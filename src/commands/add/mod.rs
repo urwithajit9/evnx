@@ -33,6 +33,8 @@ pub struct Options {
     pub env_name: Option<String>,
     /// `--example` (FLD-4).
     pub example: Option<String>,
+    /// `--no-template` (ADD-3).
+    pub no_template: bool,
 }
 
 /// Main entry point for `evnx add`
@@ -67,6 +69,7 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
         verbose: opts.verbose,
         env_name: opts.env_name.clone(),
         example: opts.example.clone(),
+        no_template: opts.no_template,
     };
     shared::check_new_env_name(Path::new(&opts.path), &mode)?;
     if !opts.json {

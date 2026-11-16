@@ -148,3 +148,64 @@ fn rem3_add_then_remove_leaves_the_file_as_it_was() {
     assert_eq!(p.read(".env"), "APP=1\n");
     assert_eq!(p.read(".env.example"), "APP=\n");
 }
+
+// ── Part 3: add (ADD-3, FLD-12) ─────────────────────────────────────────────
+
+/// Two identical runs write the same bytes, and the second `add custom`
+/// continues the section the first wrote.
+#[test]
+fn add3_add_custom_is_reproducible_and_reuses_its_section() {
+    let a = Project::new().env("APP=1\n").example("APP=\n");
+    let b = Project::new().env("APP=1\n").example("APP=\n");
+    for p in [&a, &b] {
+        run(p.path(), &["add", "custom", "K1=a", "--yes"]).assert_code(0);
+        run(p.path(), &["add", "custom", "K2=b", "--yes"]).assert_code(0);
+    }
+    assert_eq!(a.read(".env"), b.read(".env"));
+    assert_eq!(
+        a.read(".env"),
+        "APP=1\n\n# ── Custom Variables ──\nK1=a\nK2=b\n"
+    );
+    assert!(!a.read(".env.example").contains("Added by"));
+    assert_eq!(
+        a.read(".env.example").matches("Custom Variables").count(),
+        1
+    );
+}
+
+/// ADD-3: on a server, only the env file.
+#[test]
+fn add3_no_template_writes_only_the_env_file() {
+    let p = Project::new().file(".env.prod", "A=1\n");
+    let out = run(
+        p.path(),
+        &[
+            "add",
+            "custom",
+            "K=v",
+            "--env-name",
+            "prod",
+            "--no-template",
+            "--yes",
+        ],
+    );
+    out.assert_code(0);
+    assert!(p.read(".env.prod").contains("K=v"));
+    assert!(!p.exists(".env.example"));
+    assert!(!p.exists(".env.prod.example"));
+    // Already there: nothing to add.
+    run(
+        p.path(),
+        &[
+            "add",
+            "custom",
+            "K=v",
+            "--env-name",
+            "prod",
+            "--no-template",
+            "--yes",
+        ],
+    )
+    .assert_code(0);
+    assert_eq!(p.read(".env.prod").matches("K=v").count(), 1);
+}

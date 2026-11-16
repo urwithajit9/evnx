@@ -425,10 +425,26 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
         })
         .collect();
 
+    // ADD-3: a file whose last section is already "Custom Variables" gets the
+    // new names under it, not a second header.
+    let env_has_section =
+        ends_in_custom_section(&output_path.join(super::shared::env_file_of(output_path, mode)));
+    let example_has_section =
+        ends_in_custom_section(&super::shared::template_of(output_path, mode).path(output_path));
+
     // One renderer, two files: `.env` gets the values, `.env.example` the
     // placeholders (I-245, DEC-U8-1 — every name, not only secret-looking ones).
     let render_with = |v: &VarCollection, values: bool| -> Result<String> {
-        let mut content = String::from("\n# ── Custom Variables ──\n");
+        let has_section = if values {
+            env_has_section
+        } else {
+            example_has_section
+        };
+        let mut content = if has_section {
+            String::new()
+        } else {
+            String::from("\n# ── Custom Variables ──\n")
+        };
         for c in customs.iter().filter(|c| v.vars.contains_key(&c.name)) {
             // A categorised entry keeps the blank line above it that it always had.
             if c.category.is_some() {
@@ -449,10 +465,8 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
             ));
             content.push('\n');
         }
-        content.push_str(&format!(
-            "\n# Added by evnx add custom on {}\n",
-            chrono::Local::now().format("%Y-%m-%d %H:%M")
-        ));
+        // ADD-3, FLD-12: no "# Added by evnx add custom on <date>" line any
+        // more. Two identical runs now write the same bytes.
         Ok(content)
     };
     let render = |v: &VarCollection| render_with(v, true);
@@ -484,6 +498,20 @@ fn write(output_path: &Path, customs: &[Custom], mode: &Mode) -> Result<Outcome>
         values: Some(&values),
     };
     confirm_and_apply(output_path, &collected, &flow, mode)
+}
+
+/// Whether the last section header in `path` is `# ── Custom Variables ──`:
+/// what `add custom` appends under. A missing file has none.
+fn ends_in_custom_section(path: &Path) -> bool {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|t| {
+            t.lines()
+                .rev()
+                .find(|l| l.trim_start().starts_with("# ──"))
+                .map(|l| l.trim() == "# ── Custom Variables ──")
+        })
+        .unwrap_or(false)
 }
 
 /// What `.env.example` holds for `name`: the same placeholder `sync` writes

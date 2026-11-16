@@ -215,6 +215,7 @@ fn main() -> Result<()> {
             yes,
             env_name,
             example,
+            no_template,
         } => commands::add::run(
             target,
             commands::add::Options {
@@ -226,6 +227,7 @@ fn main() -> Result<()> {
                 verbose: cli.verbose,
                 env_name,
                 example,
+                no_template,
             },
         )
         .or_else(declined),

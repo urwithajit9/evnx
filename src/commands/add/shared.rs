@@ -63,6 +63,8 @@ pub struct Mode {
     /// `--example`: the template, from the project folder (FLD-4). `None`
     /// takes the rule in `core::resolve`.
     pub example: Option<String>,
+    /// `--no-template`: the env file only (ADD-3).
+    pub no_template: bool,
 }
 
 impl Mode {
@@ -308,6 +310,37 @@ pub fn plan_with(
     Ok(plan)
 }
 
+/// ADD-3, `--no-template`: the plan for the env file alone. Every requested
+/// name the env file lacks goes to it, whatever the template says; nothing
+/// goes to the template, and it is not created.
+fn env_only(
+    output_path: &Path,
+    plan: &mut Plan,
+    requested: &VarCollection,
+    create_env_file: bool,
+) -> Result<()> {
+    let env = read_assignments(&output_path.join(&plan.env_file))?;
+    if env.is_none() && !create_env_file {
+        plan.to_example.vars.clear();
+        plan.to_env.vars.clear();
+        return Ok(());
+    }
+    let env = env.unwrap_or_default();
+    plan.to_example.vars.clear();
+    plan.conflicts.clear();
+    plan.present.clear();
+    plan.to_env.vars.clear();
+    for (name, meta) in &requested.vars {
+        if env.contains_key(name) {
+            plan.present.push(name.clone());
+        } else {
+            plan.to_env.vars.insert(name.clone(), meta.clone());
+        }
+    }
+    plan.present.sort();
+    Ok(())
+}
+
 /// `KEY → value` for every assignment in `path`, or `None` if it does not
 /// exist.
 ///
@@ -481,11 +514,19 @@ pub fn record_contract(output_path: &Path, plan: &Plan, verbose: bool) {
 /// existing file's mode kept. Shared with `init`, which catches an existing
 /// `.env` up with a new template (DQ-29).
 pub(crate) fn append_block(path: &Path, existing: &str, addition: &str) -> Result<()> {
+    // A new block starts with a blank line before its `# ── … ──` header; one
+    // that continues the file's last section (`add custom` under an existing
+    // "Custom Variables", ADD-3) follows it directly.
+    let gap = if addition.starts_with('\n') || addition.starts_with("\r\n") {
+        "\n\n"
+    } else {
+        "\n"
+    };
     let body = addition.trim();
     let updated = if existing.trim().is_empty() {
         format!("{body}\n")
     } else {
-        let tail = in_line_endings_of(existing, format!("\n\n{body}\n"));
+        let tail = in_line_endings_of(existing, format!("{gap}{body}\n"));
         format!("{}{tail}", existing.trim_end())
     };
     write_private(path, updated)
@@ -576,6 +617,9 @@ pub fn confirm_and_apply(
         mode.env_name.as_deref(),
         mode.example.as_deref(),
     )?;
+    if mode.no_template {
+        env_only(output_path, &mut plan, requested, flow.env_from_values)?;
+    }
     if let Some(values) = flow.values {
         keep_differing(output_path, &mut plan, values)?;
     }

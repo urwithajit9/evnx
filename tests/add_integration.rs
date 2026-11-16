@@ -619,12 +619,16 @@ fn add_service_takes_aliases_and_suggests_on_typos() {
 /// the last line of the block it describes, the way init's footer closes its
 /// output.
 #[test]
-fn the_add_stamp_closes_its_block() {
-    let p = Project::new().example("APP_NAME=test\n");
-    run(p.path(), &["add", "service", "redis", "--yes"]).assert_code(0);
-    let example = p.read(".env.example");
-    let last = example.lines().rfind(|l| !l.trim().is_empty()).unwrap();
-    assert!(last.starts_with("# Added by evnx add on "), "{example}");
+fn add3_an_add_writes_no_dated_stamp() {
+    // ADD-3 (WP-7): two identical runs write the same bytes.
+    let a = Project::new().example("APP_NAME=test\n");
+    let b = Project::new().example("APP_NAME=test\n");
+    for p in [&a, &b] {
+        run(p.path(), &["add", "service", "redis", "--yes"]).assert_code(0);
+    }
+    let example = a.read(".env.example");
+    assert!(!example.contains("Added by"), "{example}");
+    assert_eq!(example, b.read(".env.example"));
 }
 
 /// I-022b, DQ-A5: an add after `init` appends below init's footer; the footer

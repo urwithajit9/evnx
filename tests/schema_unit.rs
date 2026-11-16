@@ -60,24 +60,11 @@ fn test_list_tags() {
 /// names the command that made the addition (I-009). Both use the library's
 /// re-exports, which is how a crate depending on evnx would call them.
 #[test]
-fn addition_stamps_name_their_origin() {
+fn add3_additions_carry_no_stamp_whatever_the_origin() {
     let vars = evnx::schema::component::resolve(&["redis".to_string()]).unwrap();
-
     let from_add = evnx::format_addition(&vars).unwrap();
-    assert!(from_add.contains("# Added by evnx add on "), "{from_add}");
-
     let from_init = evnx::format_addition_from(&vars, "evnx init --from-source").unwrap();
-    assert!(
-        from_init.contains("# Added by evnx init --from-source on "),
-        "{from_init}"
-    );
-
-    // Same body; only the stamp differs.
-    let body = |s: &str| {
-        s.lines()
-            .filter(|l| !l.starts_with("# Added by "))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    assert_eq!(body(&from_add), body(&from_init));
+    // ADD-3 (WP-7): no dated line, so the same addition is the same bytes.
+    assert!(!from_add.contains("Added by"), "{from_add}");
+    assert_eq!(from_add, from_init);
 }
