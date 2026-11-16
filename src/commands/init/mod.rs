@@ -15,6 +15,7 @@ use colored::*;
 use dialoguer::Select;
 use std::path::Path;
 
+mod adopt;
 mod architect;
 mod blank;
 mod blueprint;
@@ -121,6 +122,43 @@ pub fn run(
         dry_run,
         json,
     };
+
+    // FLD-10: named env files and no default among them. Adoption comes
+    // first, before detection proposes a stack over the top of them; only
+    // when nothing else was asked for.
+    if with.is_empty() && blueprint.is_none() && !detect_flag {
+        let found = adopt::Found::in_dir(&target.root);
+        if adopt::applies(&target, &found) {
+            let choice = if no_questions || dry_run {
+                adopt::Choice::Adopt
+            } else if !shared::can_ask() {
+                anyhow::bail!(
+                    "{}.\n\n\
+                     This project already has env files. To record them in .evnx.toml \
+                     (no env file is changed):\n  \
+                     evnx init --yes\n\
+                     To see what that writes first:\n  \
+                     evnx init --dry-run",
+                    shared::no_question_reason("there is no terminal to ask on")
+                );
+            } else {
+                adopt::ask(&target, &found)?
+            };
+            match choice {
+                adopt::Choice::Adopt => {
+                    adopt::handle(&target, opts, &found)?;
+                    print_docs_hint(&docs::INIT);
+                    return Ok(());
+                }
+                adopt::Choice::Nothing => {
+                    shared::aborted();
+                    print_docs_hint(&docs::INIT);
+                    return Ok(());
+                }
+                adopt::Choice::Generate => {}
+            }
+        }
+    }
 
     // ⚠️ Detection runs before the menu, and only when nothing was asked for
     // explicitly. `--with`, `--blueprint` and `--yes` all say what the user

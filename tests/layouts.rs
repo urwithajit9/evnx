@@ -308,3 +308,78 @@ fn init_here_writes_the_folders_own_config_inside_a_repository() {
     // file below it (I-177). What init records into it is WP-6's question.
     assert!(!p.exists("web/.evnx.toml"));
 }
+
+// ─── WP-6: init adopts the named-only layout (FLD-10) ───────────────────────
+
+#[test]
+fn named_only_init_adopts_and_validate_then_needs_no_flags() {
+    let l = Layout::new("named-only");
+    let env_before = l.read(".env.prod");
+    let template_before = l.read(".env.prod.example");
+
+    let out = l.evnx(&["init", "--yes"]);
+    out.assert_code(0);
+    out.assert_contains("adopted .env.prod");
+    out.assert_not_contains("Generate");
+    let toml = l.read(".evnx.toml");
+    assert!(toml.contains("[defaults]\nenv_name = \"prod\""), "{toml}");
+    assert!(toml.contains("[vars.STRIPE_KEY]"), "{toml}");
+    assert_eq!(
+        l.read(".env.prod"),
+        env_before,
+        "adopt changed the env file"
+    );
+    assert_eq!(l.read(".env.prod.example"), template_before);
+    assert!(!l.root.join(".env").exists(), "adopt created .env");
+
+    let out = l.evnx(&["validate", "--exit-zero"]);
+    out.assert_code(0);
+    out.assert_contains(".env.prod ↔ .env.prod.example");
+    out.assert_contains("All required variables present");
+}
+
+#[test]
+fn named_only_init_dry_run_shows_the_adoption_and_writes_nothing() {
+    let l = Layout::new("named-only");
+    let before = l.snapshot();
+    let out = l.evnx(&["init", "--dry-run"]);
+    out.assert_code(0);
+    out.assert_contains("Found");
+    out.assert_contains(".env.prod (5 names)");
+    out.assert_contains("would set [defaults] env_name = \"prod\"");
+    assert_eq!(l.snapshot(), before);
+}
+
+#[test]
+fn named_only_init_json_reports_the_default() {
+    let l = Layout::new("named-only");
+    let out = l.evnx(&["init", "--yes", "--json"]);
+    out.assert_code(0);
+    let doc: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(doc["defaults"]["env_name"], "prod");
+    assert_eq!(doc["template"], ".env.prod.example");
+}
+
+#[test]
+fn named_only_init_without_a_terminal_or_yes_asks_for_yes() {
+    let l = Layout::new("named-only");
+    let before = l.snapshot();
+    let out = l.evnx(&["init"]);
+    out.assert_code(2);
+    out.assert_contains("evnx init --yes");
+    assert_eq!(l.snapshot(), before);
+}
+
+#[test]
+fn several_named_env_files_need_env_name_to_adopt() {
+    let l = Layout::new("named-only");
+    std::fs::write(l.root.join(".env.staging"), "APP_NAME=shop\n").unwrap();
+    let out = l.evnx(&["init", "--yes"]);
+    out.assert_code(2);
+    out.assert_contains(".env.prod, .env.staging");
+    out.assert_contains("evnx init --yes --env-name prod");
+    let out = l.evnx(&["init", "--yes", "--env-name", "staging"]);
+    out.assert_code(0);
+    out.assert_contains("adopted .env.staging");
+    assert!(l.read(".evnx.toml").contains("env_name = \"staging\""));
+}

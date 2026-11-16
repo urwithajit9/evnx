@@ -383,7 +383,7 @@ pub(crate) fn template_vars(target: &Target) -> Result<VarCollection> {
 
 /// The kept template's names that the existing env file does not have, with
 /// the command that adds them: `init` leaves the env file as it is.
-fn say_names_env_lacks(target: &Target, env: &str) {
+pub(crate) fn say_names_env_lacks(target: &Target, env: &str) {
     let (Ok(Some(template)), Ok(Some(have))) = (
         crate::commands::add::shared::read_assignments(&target.template_path()),
         crate::commands::add::shared::read_assignments(&target.root.join(env)),
