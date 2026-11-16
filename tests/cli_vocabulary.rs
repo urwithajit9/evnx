@@ -27,13 +27,6 @@ use support::surface::{entries, Entry};
 
 /// (command path, rule) pairs that fail today.
 const ALLOW: &[(&str, &str)] = &[
-    ("scan", "a"),
-    ("scan", "b"),
-    ("scan rules list", "b"),
-    ("scan rules add", "a"),
-    ("scan rules add", "b"),
-    ("migrate", "d1"),
-    ("migrate", "d2"),
     ("auth key-bundle", "a"),
     ("auth key-bundle", "b"),
     ("auth token create", "a"),
@@ -49,11 +42,6 @@ const ALLOW: &[(&str, &str)] = &[
     ("platform push", "b"),
     ("platform push", "d1"),
     ("platform push", "d2"),
-    ("doctor", "a"),
-    ("doctor", "b"),
-    ("doctor", "d1"),
-    ("commands", "b"), // converted in 8c
-    ("update", "b"),
 ];
 
 fn s(v: &Value) -> &str {

@@ -9,11 +9,6 @@ Arguments:
           [default: .]
 
 Options:
-      --path <PATH>
-          Project directory to analyze (same as the positional argument).
-          
-          Accepted because the documentation used this form for a long time before the positional existed in print. Giving both is an error rather than a silent preference.
-
       --fix
           Repair what can be repaired, instead of only reporting it.
           
@@ -31,13 +26,6 @@ Options:
           
           For pre-commit hooks: a fresh clone has a template and no `.env`, and doctor calls that an error, which would block every new contributor's first commit. ⚠️ Not for CI, where a check that never ran must not pass.
 
-      --format <FORMAT>
-          Output format: `pretty` or `json`.
-          
-          ⚠️ `EVNX_OUTPUT_JSON=1` does the same thing and still works. It shipped first and is documented, but an environment variable is not a discoverable surface — which is how `--fix` came to be documented into existence before it existed. The flag wins when both are given.
-          
-          Unknown values are an error, not a silent fall back to `pretty`: a typo in a CI step must not quietly turn a JSON contract into prose that the next `jq` in the pipeline cannot read.
-
   -v, --verbose
           Show detailed diagnostic output
 
@@ -52,6 +40,24 @@ Options:
 
   -V, --version
           Print version
+
+Files:
+  -C, --dir <DIR>
+          Project directory to analyze (same as the positional argument). Giving both is an error rather than a silent preference.
+
+Output:
+      --format <FORMAT>
+          Output format: `pretty` or `json`.
+          
+          ⚠️ `EVNX_OUTPUT_JSON=1` does the same thing and still works. It shipped first and is documented, but an environment variable is not a discoverable surface — which is how `--fix` came to be documented into existence before it existed. `--format` and `--json` win when given.
+          
+          Unknown values are an error, not a silent fall back to `pretty`: a typo in a CI step must not quietly turn a JSON contract into prose that the next `jq` in the pipeline cannot read.
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+      --json
+          Same as --format json.
 
 Env files: .env and .env.<name> (not .envrc), and plaintext copies such as
 .env.bak; each must be ignored by git and not tracked, valid dotenv, and

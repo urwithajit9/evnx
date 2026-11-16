@@ -177,7 +177,7 @@ fn the_pinned_gitleaks_rules_convert() {
             "rules",
             "add",
             "gitleaks.toml",
-            "--format",
+            "--from",
             "gitleaks",
         ],
     );

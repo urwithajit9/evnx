@@ -8,7 +8,7 @@ e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf  gitleaks.toml
 ```
 
 `LICENSE` is gitleaks' MIT licence from the same tag. `tests/scan_packs.rs` converts
-this file with `evnx scan rules add --format gitleaks` and asserts the exact counts (221
+this file with `evnx scan rules add --from gitleaks` and asserts the exact counts (221
 converted, 1 skipped), so a change to the importer, or a re-pin, shows up as a test
 diff. It holds detection rules, not secrets.
 

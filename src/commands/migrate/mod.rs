@@ -48,7 +48,7 @@ use crate::utils::ui;
 pub struct MigrateArgs {
     // ── Source ────────────────────────────────────────────────────────────
     pub from: Option<String>,
-    /// The `.env` to read: `--source-file`, else `.env.<--env-name>`, else
+    /// The `.env` to read: `--env`, else `.env.<--env-name>`, else
     /// `[defaults] env_name`, else `.env` — resolved by `main` (I-031).
     pub source_file: String,
     /// `--env-name`, kept to refuse it with `--from environment`.
@@ -186,7 +186,7 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         anyhow::bail!(
             "{what} holds no variables, so there is nothing to migrate.\n\n\
              Check you are in the right directory, or point at another file \
-             with --source-file. `evnx validate` will confirm what evnx can read."
+             with --env. `evnx validate` will confirm what evnx can read."
         );
     }
 
@@ -276,7 +276,7 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
              you to run, so it cannot see which secrets are already there. \
              Drop the flag, or pass the platform's own equivalent to the \
              printed command.\n\n\
-             Only `--to github-actions` uploads, and it honours both."
+             Only `--to github` uploads, and it honours both."
         );
     }
 

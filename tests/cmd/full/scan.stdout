@@ -59,6 +59,8 @@ Options:
           Lowest severity worth reporting: critical, high, medium or low.
           
           Severity is how bad a finding is if it is real: `critical` for cloud, payment and AI keys and private keys, `high` for account tokens, database passwords and variables named like a secret, `low` for test keys and keys meant to ship in a web page. Filters what is reported, counted and exited on. `--severity high` is the usual blocking CI gate. ⚠️ Until 0.13.0 this filtered on confidence; that is now `--confidence`. Defaults to `low` (report everything), or `[scan] severity` from `.evnx.toml`.
+          
+          [possible values: critical, high, medium, low]
 
       --rules <FILE>
           A rule file for this run, on top of `.evnx/rules/` and your personal rules. Repeatable. Same format as those: see `evnx scan rules new`
@@ -75,13 +77,8 @@ Options:
           Lowest confidence worth reporting: high, medium or low.
           
           Confidence is how sure evnx is that a match is a real credential of that kind. Combine with `--severity`: both must pass. Defaults to `low`, or `[scan] confidence` from `.evnx.toml`.
-
-      --format <FORMAT>
-          Output format: `pretty`, `json`, `sarif` or `github`.
           
-          `sarif` uploads to GitHub's Security tab; `github` emits `::error` annotations inline on a pull request; `json` carries a `summary` object for `jq`. An unrecognised value is an error, not a silent fall back to `pretty`.
-          
-          [default: pretty]
+          [possible values: high, medium, low]
 
       --exit-zero
           Always exit 0, even when secrets are found.
@@ -129,6 +126,18 @@ Options:
 
   -V, --version
           Print version
+
+Output:
+      --format <FORMAT>
+          Output format: `pretty`, `json`, `sarif` or `github`.
+          
+          `sarif` uploads to GitHub's Security tab; `github` emits `::error` annotations inline on a pull request; `json` carries a `summary` object for `jq`.
+          
+          [default: pretty]
+          [possible values: pretty, json, sarif, github]
+
+      --json
+          Same as --format json: one JSON document with a `summary` object for `jq`.
 
 What a folder walk reads:
   every file, except .git, node_modules, target, dist and build, the

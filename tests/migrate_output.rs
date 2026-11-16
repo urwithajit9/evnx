@@ -183,10 +183,7 @@ fn t_i111_default_output_keeps_status_on_stdout() {
 #[test]
 fn t_i111_print_only_is_refused_where_nothing_is_printed() {
     let p = Project::new().env("A=1\n");
-    let github = migrate(
-        &p,
-        &["--to", "github-actions", "--repo", "o/r", "--print-only"],
-    );
+    let github = migrate(&p, &["--to", "github", "--repo", "o/r", "--print-only"]);
     github.assert_code(2);
     assert!(github.stderr.contains("--print-only"), "{}", github.stderr);
 
@@ -259,7 +256,7 @@ fn t_i108_a_token_on_the_command_line_is_warned_about() {
         &p,
         &[
             "--to",
-            "github-actions",
+            "github",
             "--repo",
             "o/r",
             "--github-token",
@@ -283,7 +280,7 @@ fn t_i108_a_token_from_the_environment_is_not_warned_about() {
             "--from",
             "env-file",
             "--to",
-            "github-actions",
+            "github",
             "--repo",
             "o/r",
             "--dry-run",
@@ -328,9 +325,9 @@ fn t_i031_defaults_env_name_is_followed() {
 
 /// An explicit file beats the config, as `--env` does for the other commands.
 #[test]
-fn t_i031_source_file_beats_the_config() {
+fn t_i031_env_file_beats_the_config() {
     let p = two_environments().toml("[defaults]\nenv_name = \"staging\"\n");
-    let mut args = vec!["--source-file", ".env"];
+    let mut args = vec!["--env", ".env"];
     args.extend_from_slice(HEROKU);
     let out = migrate(&p, &args);
     out.assert_code(0);
@@ -420,7 +417,7 @@ fn t_mig_49_readme_migrate_examples_run() {
         if !line.starts_with("evnx migrate") || line.ends_with('\\') {
             continue;
         }
-        if line.contains("github-actions") {
+        if line.contains("--to github ") {
             continue;
         }
         let line = line.split(" #").next().unwrap();

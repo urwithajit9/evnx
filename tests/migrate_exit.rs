@@ -1,4 +1,4 @@
-//! `evnx migrate --to github-actions` reports failed uploads in its exit code
+//! `evnx migrate --to github` reports failed uploads in its exit code
 //! (I-106, U4 pilot).
 //!
 //! An upload GitHub refused was listed under "✗ 1 failed" and the run exited
@@ -88,7 +88,7 @@ const ARGS: &[&str] = &[
     "--from",
     "env-file",
     "--to",
-    "github-actions",
+    "github",
     "--repo",
     "o/r",
     "--github-token",

@@ -649,7 +649,7 @@ fn f11_migrate_without_a_destination_refuses_rather_than_guessing() {
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
     assert!(stderr.contains("--to is required"), "{stderr}");
     assert!(
-        stderr.contains("github-actions"),
+        stderr.contains("github"),
         "the error should list what is available: {stderr}"
     );
 
@@ -658,14 +658,7 @@ fn f11_migrate_without_a_destination_refuses_rather_than_guessing() {
     // command evnx tells the user to run; this test used to omit it.
     cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
-        .args([
-            "migrate",
-            "--to",
-            "github-actions",
-            "--repo",
-            "o/r",
-            "--dry-run",
-        ])
+        .args(["migrate", "--to", "github", "--repo", "o/r", "--dry-run"])
         .assert()
         .code(0);
 }
@@ -958,14 +951,7 @@ fn f11_dry_run_needs_the_identifier_it_would_print() {
     // still work without one. This is what PR #51 fixed and must not regress.
     cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
-        .args([
-            "migrate",
-            "--to",
-            "github-actions",
-            "--repo",
-            "o/r",
-            "--dry-run",
-        ])
+        .args(["migrate", "--to", "github", "--repo", "o/r", "--dry-run"])
         .assert()
         .code(0);
 }
@@ -1557,7 +1543,7 @@ fn f10_flags_that_cannot_work_are_refused_not_ignored() {
     assert_eq!(out.status.code(), Some(2), "stdout+stderr:\n{err}");
     assert!(err.contains("--skip-existing"), "{err}");
     assert!(
-        err.contains("github-actions"),
+        err.contains("github"),
         "it must say which destination does honour it:\n{err}"
     );
 
@@ -1568,7 +1554,7 @@ fn f10_flags_that_cannot_work_are_refused_not_ignored() {
         .args([
             "migrate",
             "--to",
-            "github-actions",
+            "github",
             "--repo",
             "o/r",
             "--dry-run",

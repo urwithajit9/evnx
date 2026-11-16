@@ -584,7 +584,7 @@ evnx align --env-name production --check
 ### `evnx migrate` _(requires `--features migrate`)_
 
 Moves a `.env` into a secret manager. For **eight** destinations evnx **prints the
-commands** for you to read and run, and contacts nothing; only **`github-actions`
+commands** for you to read and run, and contacts nothing; only **`github`
 uploads**, over the GitHub API.
 
 | Destination | What evnx prints or does | Needs |
@@ -596,7 +596,7 @@ uploads**, over the GitHub API.
 | `vercel` | `vercel env add … --force` per key, value on stdin | `--vercel-project` or a linked directory |
 | `doppler`, `infisical` | `secrets set` per key | `--project`, optional config / env |
 | `railway` | one `railway variable set` | `--railway-project` with `--railway-environment`, or a linked directory |
-| `github-actions` | uploads each secret, encrypted for the repository | `--repo`, `GITHUB_TOKEN` |
+| `github` | uploads each secret, encrypted for the repository | `--repo`, `GITHUB_TOKEN` |
 
 ```bash
 # Print the commands, read them, run them
@@ -617,13 +617,13 @@ evnx migrate --to doppler --project myapp --dry-run
 # GitHub Actions from CI. The token comes from GITHUB_TOKEN; --github-token works
 # but puts it in shell history. --yes skips the question; existing secrets still
 # need --overwrite or --skip-existing. Exit 1 if any upload failed.
-evnx migrate --to github-actions --repo owner/repo --yes --skip-existing
+evnx migrate --to github --repo owner/repo --yes --skip-existing
 ```
 
 `--include` / `--exclude` take comma-separated globs; `--strip-prefix` and `--add-prefix`
 rename. Two names that end up as one — by renaming, or because Azure Key Vault and GitHub
 ignore case — are refused (exit 2) unless `--allow-collisions` keeps the last value.
-`--skip-existing` and `--overwrite` only apply to `github-actions`; the destinations evnx
+`--skip-existing` and `--overwrite` only apply to `github`; the destinations evnx
 prints commands for are refused them, since evnx cannot see what is already there.
 Exit codes: 0 done, 1 some GitHub uploads failed, 2 could not run.
 
@@ -727,7 +727,7 @@ Runs a health check on your environment configuration setup.
 
 ```bash
 evnx doctor                          # check current directory
-evnx doctor path/to/project          # or --path path/to/project
+evnx doctor path/to/project          # or -C path/to/project
 evnx doctor --fix                    # repair .gitignore and file modes, then check again
 evnx doctor --strict --format json   # a CI gate: warnings fail too
 evnx doctor --skip-without-env       # a pre-commit hook: a fresh clone with no .env passes
@@ -983,7 +983,7 @@ wraps and locally pinned identities, which are not built.
 ⚠️ **Cloud sync is therefore beta.** Do not put secrets there that you could not
 rotate. The rest of evnx — validate, scan, diff, sync, convert, and the commands
 `migrate` prints — runs entirely offline and is not affected. (`migrate --to
-github-actions` is the exception: it calls the GitHub API, and talks to nothing else.)
+github` is the exception: it calls the GitHub API, and talks to nothing else.)
 
 ⓘ This README previously said "not after a breach". That was wrong, and the
 correction is tracked in [`SECURITY.md`](./SECURITY.md#what-the-threat-model-actually-claims).

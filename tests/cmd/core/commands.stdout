@@ -9,13 +9,8 @@ Every command this build has, and which features it was compiled with.
 Usage: evnx commands [OPTIONS]
 
 Options:
-      --json
-          The whole command tree as JSON, for tooling.
-          
-          Versioned by a `schema` field, so the shape can change without breaking anyone. The plain output carries no such promise — do not parse it.
-
       --compact
-          One line instead of indented JSON. Requires `--json`
+          One line instead of indented JSON. Requires `--format json` (or `--json`)
 
   -v, --verbose
           Enable verbose output
@@ -31,5 +26,17 @@ Options:
 
   -V, --version
           Print version
+
+Output:
+      --format <FORMAT>
+          Output format. `json` is the whole command tree, for tooling.
+          
+          Versioned by a `schema` field, so the shape can change without breaking anyone. The plain output carries no such promise — do not parse it.
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+      --json
+          The whole command tree as JSON, for tooling. Same as --format json.
 
 Full guide: https://docs.evnx.dev/cli/commands/commands

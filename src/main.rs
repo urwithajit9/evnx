@@ -1,7 +1,6 @@
 //! evnx CLI entry point.
 
 use anyhow::{Context, Result};
-use clap::Parser;
 // Only the backup and restore arms colour anything here now; the convert arm
 // that printed "Invalid transform … ignoring" refuses instead (I-090).
 #[cfg(feature = "backup")]
@@ -90,7 +89,13 @@ fn main() -> Result<()> {
         std::process::exit(verdict::EXIT_ERROR);
     }
 
-    let cli = Cli::parse();
+    // Parsed from the matches, not `Cli::parse()`, so that a flag with a default
+    // can still be asked "did the person type it?" (`doctor --format`).
+    let matches = <Cli as clap::CommandFactory>::command().get_matches();
+    let cli = <Cli as clap::FromArgMatches>::from_arg_matches(&matches).unwrap_or_else(|e| {
+        e.format(&mut <Cli as clap::CommandFactory>::command())
+            .exit()
+    });
     evnx::utils::ui::set_quiet(cli.quiet);
 
     // Configure colored output
@@ -354,28 +359,33 @@ fn main() -> Result<()> {
                 .unwrap_or_else(|| here.clone());
             let configured = cfg.scan.patterns.clone().unwrap_or_default();
             match command {
-                RulesCommand::List { category, json } => commands::scan::rules_cmd::list(
+                RulesCommand::List { category, output } => commands::scan::rules_cmd::list(
                     &project_root,
                     &configured,
                     category.as_deref(),
-                    json,
+                    output.resolved() == evnx::cli::args::Format::Json,
                 ),
                 RulesCommand::New { id, personal } => {
                     commands::scan::rules_cmd::new(&project_root, &id, personal).map(drop)
                 }
                 RulesCommand::Add {
                     source,
-                    format,
+                    from,
                     personal,
-                } => commands::scan::packs_cmd::add(&project_root, &source, &format, personal),
+                } => {
+                    commands::scan::packs_cmd::add(&project_root, &source, from.as_str(), personal)
+                }
                 RulesCommand::Update {
                     name,
                     personal,
-                    yes,
-                } => {
-                    commands::scan::packs_cmd::update(&project_root, name.as_deref(), personal, yes)
-                        .or_else(declined)
-                }
+                    confirm,
+                } => commands::scan::packs_cmd::update(
+                    &project_root,
+                    name.as_deref(),
+                    personal,
+                    confirm.yes,
+                )
+                .or_else(declined),
                 RulesCommand::Remove { name, personal } => {
                     commands::scan::packs_cmd::remove(&project_root, &name, personal)
                 }
@@ -412,7 +422,7 @@ fn main() -> Result<()> {
             baseline,
             update_baseline,
             rule_files,
-            format,
+            output,
             exit_zero,
             include_ignored,
             staged,
@@ -479,9 +489,13 @@ fn main() -> Result<()> {
                         None => None,
                     },
                 },
-                severity: evnx::core::config::pick(severity, cfg.scan.severity, "low".to_string()),
+                severity: evnx::core::config::pick(
+                    severity.map(|s| s.as_str().to_string()),
+                    cfg.scan.severity,
+                    "low".to_string(),
+                ),
                 confidence: evnx::core::config::pick(
-                    confidence,
+                    confidence.map(|c| c.as_str().to_string()),
                     cfg.scan.confidence,
                     "low".to_string(),
                 ),
@@ -493,7 +507,12 @@ fn main() -> Result<()> {
                     .and_then(|p| p.parent())
                     .map(Path::to_path_buf)
                     .unwrap_or_else(|| here.clone()),
-                format,
+                format: match output.resolved() {
+                    evnx::cli::args::ScanFormat::Pretty => commands::scan::OutputFormat::Pretty,
+                    evnx::cli::args::ScanFormat::Json => commands::scan::OutputFormat::Json,
+                    evnx::cli::args::ScanFormat::Sarif => commands::scan::OutputFormat::Sarif,
+                    evnx::cli::args::ScanFormat::Github => commands::scan::OutputFormat::Github,
+                },
                 exit_zero,
                 verbose: cli.verbose,
                 spec: cfg.vars.clone(),
@@ -678,57 +697,66 @@ fn main() -> Result<()> {
         // small on the stack (~8 bytes for this arm vs. ~435 bytes inline).
         // All fields are accessed via `opts.` after auto-deref.
         #[cfg(feature = "migrate")]
-        Commands::Migrate(opts) => commands::migrate::run(commands::migrate::MigrateArgs {
-            from: opts.from.clone(),
-            // I-031, S-M1: the file every other command would read. Migrate
-            // took `.env` whatever `[defaults] env_name` said, so with
-            // `env_name = "staging"` it pushed development values while
-            // `validate`, `diff` and `sync` all checked `.env.staging`. The
-            // process environment has no file, so nothing to resolve there.
-            source_file: if opts.from.as_deref() == Some("environment") {
-                opts.source_file.clone().unwrap_or_default()
-            } else {
-                resolve_env(
-                    Path::new("."),
-                    opts.source_file.as_deref(),
-                    opts.env_name.as_deref(),
-                    cfg.defaults.env_name.as_deref(),
-                )
-            },
-            env_name: opts.env_name.clone(),
-            to: opts.to.clone(),
-            dry_run: opts.dry_run,
-            print_only: opts.print_only,
-            output: opts.output.clone(),
-            force: opts.force,
-            gitignore: evnx::utils::protect::GitignoreMode::from_flags(
-                opts.gitignore,
-                opts.no_gitignore,
-            ),
-            skip_existing: opts.skip_existing,
-            overwrite: opts.overwrite,
-            yes: opts.yes,
-            verbose: cli.verbose,
-            include: opts.include.clone(),
-            exclude: opts.exclude.clone(),
-            strip_prefix: opts.strip_prefix.clone(),
-            add_prefix: opts.add_prefix.clone(),
-            allow_collisions: opts.allow_collisions,
-            repo: opts.repo.clone(),
-            github_token: opts.github_token.clone(),
-            secret_name: opts.secret_name.clone(),
-            aws_profile: opts.aws_profile.clone(),
-            project: opts.project.clone(),
-            doppler_config: opts.doppler_config.clone(),
-            infisical_env: opts.infisical_env.clone(),
-            vault_name: opts.vault_name.clone(),
-            heroku_app: opts.heroku_app.clone(),
-            vercel_project: opts.vercel_project.clone(),
-            railway_project: opts.railway_project.clone(),
-            railway_environment: opts.railway_environment.clone(),
-            railway_service: opts.railway_service.clone(),
-        })
-        .map(verdict::finish),
+        Commands::Migrate(opts) => {
+            // The flag still works; the shell history and the process list are
+            // where it leaks (I-108). Said once, whatever the destination.
+            if opts.github_token.is_some() {
+                eprintln!(
+                    "warning: --github-token puts the token in your shell history and process list; set GITHUB_TOKEN instead"
+                );
+            }
+            commands::migrate::run(commands::migrate::MigrateArgs {
+                from: opts.from.map(|f| f.slug().to_string()),
+                // I-031, S-M1: the file every other command would read. Migrate
+                // took `.env` whatever `[defaults] env_name` said, so with
+                // `env_name = "staging"` it pushed development values while
+                // `validate`, `diff` and `sync` all checked `.env.staging`. The
+                // process environment has no file, so nothing to resolve there.
+                source_file: if opts.from == Some(evnx::cli::MigrateSource::Environment) {
+                    opts.files.env.clone().unwrap_or_default()
+                } else {
+                    resolve_env(
+                        Path::new("."),
+                        opts.files.env.as_deref(),
+                        opts.files.env_name.as_deref(),
+                        cfg.defaults.env_name.as_deref(),
+                    )
+                },
+                env_name: opts.files.env_name.clone(),
+                to: opts.to.map(|t| t.slug().to_string()),
+                dry_run: opts.dry_run.dry_run,
+                print_only: opts.print_only,
+                output: opts.output.clone(),
+                force: opts.force,
+                gitignore: evnx::utils::protect::GitignoreMode::from_flags(
+                    opts.gitignore,
+                    opts.no_gitignore,
+                ),
+                skip_existing: opts.skip_existing,
+                overwrite: opts.overwrite,
+                yes: opts.confirm.yes,
+                verbose: cli.verbose,
+                include: opts.include.clone(),
+                exclude: opts.exclude.clone(),
+                strip_prefix: opts.strip_prefix.clone(),
+                add_prefix: opts.add_prefix.clone(),
+                allow_collisions: opts.allow_collisions,
+                repo: opts.repo.clone(),
+                github_token: opts.github_token.clone(),
+                secret_name: opts.secret_name.clone(),
+                aws_profile: opts.aws_profile.clone(),
+                project: opts.project.clone(),
+                doppler_config: opts.doppler_config.clone(),
+                infisical_env: opts.infisical_env.clone(),
+                vault_name: opts.vault_name.clone(),
+                heroku_app: opts.heroku_app.clone(),
+                vercel_project: opts.vercel_project.clone(),
+                railway_project: opts.railway_project.clone(),
+                railway_environment: opts.railway_environment.clone(),
+                railway_service: opts.railway_service.clone(),
+            })
+            .map(verdict::finish)
+        }
 
         // ⚠️ `[sync] naming_policy` is checked even when the flag overrides it,
         // as `[validate] fail_on` is (I-038, I-121): a typo in the file is not
@@ -1009,20 +1037,30 @@ fn main() -> Result<()> {
 
         Commands::Doctor {
             path,
-            project_path,
+            dir,
             fix,
             strict,
             skip_without_env,
-            format,
+            output,
             verbose,
         } => evnx::commands::doctor::run(
-            project_path.unwrap_or(path),
+            dir.dir
+                .map(|d| d.to_string_lossy().into_owned())
+                .unwrap_or(path),
             verbose,
             // Either saying yes is enough: a flag can turn repair on, never off,
             // which is the same rule `.evnx.toml` booleans follow.
             fix,
             strict,
-            format,
+            // `None` when neither `--format` nor `--json` was typed, so that
+            // `EVNX_OUTPUT_JSON` can decide (and an explicit `pretty` beat it).
+            {
+                use clap::parser::ValueSource::CommandLine;
+                let doctor = matches.subcommand_matches("doctor");
+                let typed = output.json
+                    || doctor.and_then(|m| m.value_source("format")) == Some(CommandLine);
+                typed.then(|| output.resolved() == evnx::cli::args::Format::Json)
+            },
             skip_without_env,
         ),
 
@@ -1168,11 +1206,20 @@ fn main() -> Result<()> {
             )
         }
 
-        Commands::Surface { json, compact } => commands::surface::run(json, compact),
-        Commands::Completions { shell } => commands::completions::run(shell),
-        Commands::Update { check, list, json } => {
-            commands::update::run(check, list, json).map(verdict::finish)
+        Commands::Surface { output, compact } => {
+            commands::surface::run(output.resolved() == evnx::cli::args::Format::Json, compact)
         }
+        Commands::Completions { shell } => commands::completions::run(shell),
+        Commands::Update {
+            check,
+            list,
+            output,
+        } => commands::update::run(
+            check,
+            list,
+            output.resolved() == evnx::cli::args::Format::Json,
+        )
+        .map(verdict::finish),
     };
 
     // ⚠️ An error is exit **2**, not 1.

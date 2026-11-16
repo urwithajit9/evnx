@@ -50,7 +50,7 @@ No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: a filter that matches nothing is an error (convert prints {}) (exit 2)
 
-$ evnx migrate --source-file empty.env --to heroku --heroku-app demo-app
+$ evnx migrate --env empty.env --to heroku --heroku-app demo-app
 
 ✓ Loaded 0 secrets from empty.env
 [stderr]
@@ -60,13 +60,13 @@ $ evnx migrate --source-file empty.env --to heroku --heroku-app demo-app
   Docs: https://docs.evnx.dev/cli/commands/migrate
 Error: empty.env holds no variables, so there is nothing to migrate.
 
-Check you are in the right directory, or point at another file with --source-file. `evnx validate` will confirm what evnx can read.
+Check you are in the right directory, or point at another file with --env. `evnx validate` will confirm what evnx can read.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: an empty source is an error (exit 2)
 
-$ evnx migrate --source-file col.env --to heroku --heroku-app demo-app --strip-prefix API_
+$ evnx migrate --env col.env --to heroku --heroku-app demo-app --strip-prefix API_
 
 ✓ Loaded 2 secrets from col.env
 [stderr]
@@ -81,7 +81,7 @@ No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: FIXED I-104: API_X and X both become X: refused, naming both (exit 2)
 
-$ evnx migrate --source-file col.env --to heroku --heroku-app demo-app --strip-prefix API_ --allow-collisions
+$ evnx migrate --env col.env --to heroku --heroku-app demo-app --strip-prefix API_ --allow-collisions
 
 ✓ Loaded 2 secrets from col.env
 

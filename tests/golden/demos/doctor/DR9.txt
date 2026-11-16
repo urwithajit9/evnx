@@ -87,37 +87,10 @@ $ env EVNX_OUTPUT_JSON=1 evnx doctor
   ok: explicit --format pretty beats EVNX_OUTPUT_JSON
 
 $ evnx doctor --format text
-
-  ✓  Validate .env file existence, security, and syntax
-
-  ✓  Check .env.example exists and is Git-tracked
-
-  ·  Detect project type and validate dependencies
-     No recognized project configuration
-
-  ·  Check for Docker configuration files
-     No Docker configuration detected
-
-  ·  AI coding agents and .env
-     No agent configuration found in this project, so nothing was checked. An agent set up outside the project can read .env.
-
-  ✓  Check file permissions for sensitive files
-
-  ✓  Check env files and templates for empty evnx sections
-
-  4 checks passed
-
-  Not examined here:
-    values and required names    evnx validate
-    template drift               evnx sync --check
-    secrets in the project       evnx scan
 [stderr]
-
-  evnx doctor  Diagnosing environment setup
-
-  Docs: https://docs.evnx.dev/cli/commands/doctor
-[exit 0]
-  ok: hidden alias --format text is accepted (decided: stays) (exit 0)
+error: '--format text' was removed from 'evnx doctor' in 0.14.2; use '--format pretty'
+[exit 2]
+  ok: WP-8: --format text was removed, with a hint to pretty (exit 2)
 
 $ env EVNX_AUTO_FIX=1 evnx doctor
 

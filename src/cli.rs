@@ -340,6 +340,58 @@ impl NamingPolicy {
 // large_enum_variant clippy warning without boxing individual fields.
 // ─────────────────────────────────────────────────────────────
 
+/// Where `evnx migrate` reads from.
+#[cfg(feature = "migrate")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum MigrateSource {
+    EnvFile,
+    Environment,
+}
+
+#[cfg(feature = "migrate")]
+impl MigrateSource {
+    /// The identifier `commands::migrate` keys on.
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::EnvFile => "env-file",
+            Self::Environment => "environment",
+        }
+    }
+}
+
+/// Where `evnx migrate` sends the secrets.
+#[cfg(feature = "migrate")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum MigrateTarget {
+    Github,
+    AwsSecretsManager,
+    Doppler,
+    Infisical,
+    GcpSecretManager,
+    AzureKeyvault,
+    Vercel,
+    Heroku,
+    Railway,
+}
+
+#[cfg(feature = "migrate")]
+impl MigrateTarget {
+    /// The identifier `commands::migrate::destinations` keys on.
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::Github => "github",
+            Self::AwsSecretsManager => "aws-secrets-manager",
+            Self::Doppler => "doppler",
+            Self::Infisical => "infisical",
+            Self::GcpSecretManager => "gcp-secret-manager",
+            Self::AzureKeyvault => "azure-keyvault",
+            Self::Vercel => "vercel",
+            Self::Heroku => "heroku",
+            Self::Railway => "railway",
+        }
+    }
+}
+
 #[cfg(feature = "migrate")]
 #[derive(Args, Debug)]
 pub struct MigrateOptions {
@@ -349,31 +401,21 @@ pub struct MigrateOptions {
     /// Without --from, evnx asks in a terminal and uses `env-file` without one.
     /// `environment` requires `--include`: a shell's or CI job's environment holds
     /// tokens you did not mean to send. evnx lists the names it will send.
-    #[arg(long)]
-    pub from: Option<String>,
+    #[arg(long, value_enum)]
+    pub from: Option<MigrateSource>,
 
-    /// The .env file to read (default: .env, or `[defaults] env_name`)
-    #[arg(long, value_name = "PATH", conflicts_with = "env_name")]
-    pub source_file: Option<String>,
-
-    /// Read `.env.<NAME>` instead of `.env`.
-    ///
-    /// `--env-name production` reads `.env.production`. A name whose file does
-    /// not exist is an error listing the environments that do. Without it,
-    /// `[defaults] env_name` in `.evnx.toml` applies, as for the other commands.
-    #[arg(long, value_name = "NAME")]
-    pub env_name: Option<String>,
+    #[command(flatten)]
+    pub files: args::EnvArgs,
 
     // ── Destination ───────────────────────────────────────────────────────────
-    /// Destination system: github-actions | aws-secrets-manager | doppler |
-    /// infisical | gcp-secret-manager | azure-keyvault | vercel | heroku | railway
-    #[arg(long)]
-    pub to: Option<String>,
+    /// Destination system: github | aws-secrets-manager | doppler | infisical |
+    /// gcp-secret-manager | azure-keyvault | vercel | heroku | railway
+    #[arg(long, value_enum)]
+    pub to: Option<MigrateTarget>,
 
     // ── Behaviour ─────────────────────────────────────────────────────────────
-    /// Preview what would be migrated without making any changes
-    #[arg(long)]
-    pub dry_run: bool,
+    #[command(flatten)]
+    pub dry_run: args::DryRunArgs,
 
     /// Write only the commands to stdout, with the real values; everything
     /// else goes to stderr.
@@ -382,7 +424,7 @@ pub struct MigrateOptions {
     /// them. In a terminal, without --print-only or --output, the values are
     /// shown as `<hidden>`; when stdout is not a terminal (a pipe, a file) and
     /// neither flag is given, the real values are printed, so pipelines keep
-    /// working. Not for github-actions, which uploads instead of printing.
+    /// working. Not for github, which uploads instead of printing.
     #[arg(long, conflicts_with_all = ["dry_run", "output"])]
     pub print_only: bool,
 
@@ -390,7 +432,7 @@ pub struct MigrateOptions {
     ///
     /// `evnx migrate --to gcp-secret-manager --project p -o upload.sh` saves a
     /// script you can read, then run. An existing FILE is refused without
-    /// --force. Not for github-actions, which uploads instead of printing.
+    /// --force. Not for github, which uploads instead of printing.
     #[arg(long, short = 'o', value_name = "FILE", conflicts_with = "dry_run")]
     pub output: Option<String>,
 
@@ -414,13 +456,8 @@ pub struct MigrateOptions {
     #[arg(long)]
     pub overwrite: bool,
 
-    /// Upload without asking "Proceed with migration?" (github-actions).
-    ///
-    /// For CI. Without a terminal and without `--yes` the upload stops before
-    /// contacting GitHub (exit 2). ⚠️ It does not answer "overwrite?": a secret
-    /// that already exists still needs `--overwrite` or `--skip-existing`.
-    #[arg(long, short = 'y')]
-    pub yes: bool,
+    #[command(flatten)]
+    pub confirm: args::ConfirmArgs,
 
     // ── Filtering / key transforms ────────────────────────────────────────────
     /// Comma-separated glob patterns — only migrate matching keys.
@@ -475,7 +512,7 @@ pub struct MigrateOptions {
     // variable's value now.
     /// GitHub token. Prefer exporting GITHUB_TOKEN: evnx reads it when this flag
     /// is absent, and a flag value lands in shell history
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub github_token: Option<String>,
 
     // ── AWS Secrets Manager ───────────────────────────────────────────────────
@@ -2627,6 +2664,8 @@ pub enum Commands {
     /// pre-commit hook. A folder literally named `rules` or `hook` is scanned
     /// as `evnx scan ./rules`.
     #[command(after_help = docs::SCAN.after_help, args_conflicts_with_subcommands = true)]
+    #[command(mut_arg("format", |a| a.ignore_case(true).long_help("Output format: `pretty`, `json`, `sarif` or `github`.\n\n`sarif` uploads to GitHub's Security tab; `github` emits `::error` annotations inline on a pull request; `json` carries a `summary` object for `jq`.")))]
+    #[command(mut_arg("json", |a| a.help("Same as --format json: one JSON document with a `summary` object for `jq`.")))]
     Scan {
         #[command(subcommand)]
         action: Option<ScanAction>,
@@ -2719,8 +2758,8 @@ pub enum Commands {
         /// blocking CI gate. ⚠️ Until 0.13.0 this filtered on confidence; that
         /// is now `--confidence`. Defaults to `low` (report everything), or
         /// `[scan] severity` from `.evnx.toml`.
-        #[arg(long, value_name = "LEVEL")]
-        severity: Option<String>,
+        #[arg(long, value_name = "LEVEL", value_enum, ignore_case = true)]
+        severity: Option<ScanSeverity>,
 
         /// A rule file for this run, on top of `.evnx/rules/` and your personal
         /// rules. Repeatable. Same format as those: see `evnx scan rules new`.
@@ -2747,17 +2786,11 @@ pub enum Commands {
         /// Confidence is how sure evnx is that a match is a real credential of
         /// that kind. Combine with `--severity`: both must pass. Defaults to
         /// `low`, or `[scan] confidence` from `.evnx.toml`.
-        #[arg(long, value_name = "LEVEL")]
-        confidence: Option<String>,
+        #[arg(long, value_name = "LEVEL", value_enum, ignore_case = true)]
+        confidence: Option<ScanConfidence>,
 
-        /// Output format: `pretty`, `json`, `sarif` or `github`.
-        ///
-        /// `sarif` uploads to GitHub's Security tab; `github` emits `::error`
-        /// annotations inline on a pull request; `json` carries a `summary`
-        /// object for `jq`. An unrecognised value is an error, not a silent
-        /// fall back to `pretty`.
-        #[arg(long, default_value = "pretty")]
-        format: String,
+        #[command(flatten)]
+        output: args::OutputArgs<args::ScanFormat>,
 
         /// Always exit 0, even when secrets are found.
         ///
@@ -3111,7 +3144,7 @@ Use 'evnx convert' without --to for interactive format selection.
     /// Move a .env into a secret manager: print the commands, or upload to GitHub.
     ///
     /// For eight destinations evnx prints the commands for you to run and
-    /// contacts nothing; only github-actions uploads (over the GitHub API).
+    /// contacts nothing; only github uploads (over the GitHub API).
     // ⚠️ The first line said "Full migration workflow to secret managers", and
     // the banner "Generate destination commands" — true for eight of nine
     // (D-59). The examples were a `///` block, which clap folded into one line
@@ -3132,7 +3165,7 @@ Examples:
   evnx migrate --env-name production --to azure-keyvault --vault-name prod-vault
 
   # Upload to GitHub Actions from CI (token from GITHUB_TOKEN)
-  evnx migrate --to github-actions --repo owner/repo --yes --skip-existing
+  evnx migrate --to github --repo owner/repo --yes --skip-existing
 
   # Preview: no commands printed, nothing uploaded
   evnx migrate --to doppler --project myapp --doppler-config dev --dry-run
@@ -3141,7 +3174,7 @@ Destinations:
   Prints commands: aws-secrets-manager (--secret-name), gcp-secret-manager (--project),
                    azure-keyvault (--vault-name), heroku (--heroku-app), vercel,
                    doppler, infisical, railway
-  Uploads:         github-actions (--repo; GITHUB_TOKEN)
+  Uploads:         github (--repo; GITHUB_TOKEN)
 
 Exit codes: 0 done; 1 some GitHub uploads failed; 2 could not run (bad flag, missing
 file, names that collide, a filter that leaves nothing).
@@ -3152,6 +3185,10 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
 
 📖  Full guide: https://docs.evnx.dev/cli/commands/migrate
 ")]
+    #[command(mut_arg("env", |a| a.help("The .env file to read (default: .env, or `[defaults] env_name`)")))]
+    #[command(mut_arg("env_name", |a| a.help("Read `.env.<NAME>` instead of `.env`.").long_help("Read `.env.<NAME>` instead of `.env`.\n\n`--env-name production` reads `.env.production`. A name whose file does not exist is an error listing the environments that do. Without it, `[defaults] env_name` in `.evnx.toml` applies, as for the other commands.")))]
+    #[command(mut_arg("dry_run", |a| a.help("Preview what would be migrated without making any changes")))]
+    #[command(mut_arg("yes", |a| a.help("Upload without asking \"Proceed with migration?\" (github).").long_help("Upload without asking \"Proceed with migration?\" (github).\n\nFor CI. Without a terminal and without `--yes` the upload stops before contacting GitHub (exit 2). ⚠️ It does not answer \"overwrite?\": a secret that already exists still needs `--overwrite` or `--skip-existing`.")))]
     Migrate(Box<MigrateOptions>),
 
     /// Keep .env and .env.example in sync.
@@ -3495,18 +3532,16 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     /// Diagnose common setup issues.
     #[command(about = "Check .env files, Git config, project structure, and security")]
     #[command(after_help = docs::DOCTOR.after_help)]
+    #[command(mut_arg("dir", |a| a.help("Project directory to analyze (same as the positional argument). Giving both is an error rather than a silent preference.")))]
+    #[command(mut_arg("format", |a| a.ignore_case(true).long_help("Output format: `pretty` or `json`.\n\n⚠️ `EVNX_OUTPUT_JSON=1` does the same thing and still works. It shipped first and is documented, but an environment variable is not a discoverable surface — which is how `--fix` came to be documented into existence before it existed. `--format` and `--json` win when given.\n\nUnknown values are an error, not a silent fall back to `pretty`: a typo in a CI step must not quietly turn a JSON contract into prose that the next `jq` in the pipeline cannot read.")))]
+    #[command(mut_arg("json", |a| a.help("Same as --format json.")))]
     Doctor {
         /// Project directory to analyze
-        #[arg(default_value = ".", index = 1)]
+        #[arg(default_value = ".", index = 1, conflicts_with = "dir")]
         path: String,
 
-        /// Project directory to analyze (same as the positional argument).
-        ///
-        /// Accepted because the documentation used this form for a long time
-        /// before the positional existed in print. Giving both is an error
-        /// rather than a silent preference.
-        #[arg(long = "path", value_name = "PATH", conflicts_with = "path")]
-        project_path: Option<String>,
+        #[command(flatten)]
+        dir: args::DirArgs,
 
         /// Repair what can be repaired, instead of only reporting it.
         ///
@@ -3538,18 +3573,8 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         #[arg(long)]
         skip_without_env: bool,
 
-        /// Output format: `pretty` or `json`.
-        ///
-        /// ⚠️ `EVNX_OUTPUT_JSON=1` does the same thing and still works. It
-        /// shipped first and is documented, but an environment variable is not a
-        /// discoverable surface — which is how `--fix` came to be documented into
-        /// existence before it existed. The flag wins when both are given.
-        ///
-        /// Unknown values are an error, not a silent fall back to `pretty`: a
-        /// typo in a CI step must not quietly turn a JSON contract into prose
-        /// that the next `jq` in the pipeline cannot read.
-        #[arg(long, value_name = "FORMAT")]
-        format: Option<String>,
+        #[command(flatten)]
+        output: args::OutputArgs,
 
         /// Show detailed diagnostic output
         #[arg(short, long)]
@@ -3700,16 +3725,13 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     ///
     /// ⓘ Named `commands`; `surface` still works, because tooling calls it that.
     #[command(name = "commands", visible_alias = "surface", after_help = docs::COMMANDS.after_help)]
+    #[command(mut_arg("format", |a| a.long_help("Output format. `json` is the whole command tree, for tooling.\n\nVersioned by a `schema` field, so the shape can change without breaking anyone. The plain output carries no such promise — do not parse it.")))]
+    #[command(mut_arg("json", |a| a.help("The whole command tree as JSON, for tooling. Same as --format json.")))]
     Surface {
-        /// The whole command tree as JSON, for tooling.
-        ///
-        /// Versioned by a `schema` field, so the shape can change without
-        /// breaking anyone. The plain output carries no such promise — do not
-        /// parse it.
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        output: args::OutputArgs,
 
-        /// One line instead of indented JSON. Requires `--json`.
+        /// One line instead of indented JSON. Requires `--format json` (or `--json`).
         #[arg(long)]
         compact: bool,
     },
@@ -3743,6 +3765,8 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     /// Behind a TLS-inspecting proxy, set SSL_CERT_FILE to your organisation's
     /// CA bundle.
     #[command(after_help = docs::UPDATE.after_help)]
+    #[command(mut_arg("format", |a| a.long_help("With `--check` or `--list`: the answer as JSON on stdout.\n\n`--check`: `schema` (1), `installed`, `latest`, `status` (`current`, `behind` or `ahead`), `channel`, `command` (null when evnx cannot name one), `release_url` and `other_copies`. `--list`: `schema` (1), `count` and `copies`. The exit code is the same as without it.")))]
+    #[command(mut_arg("json", |a| a.help("With `--check` or `--list`: the answer as JSON on stdout. Same as --format json.")))]
     Update {
         /// Ask api.github.com for the latest release.
         ///
@@ -3764,14 +3788,8 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         #[arg(long, conflicts_with = "check")]
         list: bool,
 
-        /// With `--check` or `--list`: the answer as JSON on stdout.
-        ///
-        /// `--check`: `schema` (1), `installed`, `latest`, `status` (`current`,
-        /// `behind` or `ahead`), `channel`, `command` (null when evnx cannot name
-        /// one), `release_url` and `other_copies`. `--list`: `schema` (1),
-        /// `count` and `copies`. The exit code is the same as without it.
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
 }
 
@@ -3901,22 +3919,82 @@ pub enum HookCommand {
     Status,
 }
 
+/// The lowest severity `evnx scan --severity` reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ScanSeverity {
+    Critical,
+    High,
+    #[value(alias = "med")]
+    Medium,
+    #[value(alias = "all")]
+    Low,
+}
+
+impl ScanSeverity {
+    /// The name `core::secretscan::Severity` parses, and `[scan] severity` uses.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Critical => "critical",
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+        }
+    }
+}
+
+/// The lowest confidence `evnx scan --confidence` reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ScanConfidence {
+    High,
+    #[value(alias = "med")]
+    Medium,
+    #[value(alias = "all")]
+    Low,
+}
+
+impl ScanConfidence {
+    /// The name `Confidence` parses, and `[scan] confidence` uses.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+        }
+    }
+}
+
+/// What `evnx scan rules add` reads its source as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub enum PackFormat {
+    #[default]
+    Evnx,
+    Gitleaks,
+}
+
+impl PackFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Evnx => "evnx",
+            Self::Gitleaks => "gitleaks",
+        }
+    }
+}
+
 /// `evnx scan rules` subcommands (C6, S3).
 #[derive(Subcommand, Debug)]
 pub enum RulesCommand {
     /// Every rule a scan here would use: evnx's own, `.evnx/rules/`, your
     /// personal rules and `[[scan.patterns]]`, with id, source, severity and
     /// confidence, grouped by category with each rule's provider.
+    #[command(mut_arg("json", |a| a.help("One JSON document on stdout; each rule carries `provider` and `category` (null when unset).")))]
     List {
         /// Show only this category: cloud, source-ci, ai, payments,
         /// databases-backends, auth, messaging-email, observability,
         /// infra-secrets, saas, keys-certificates or generic.
         #[arg(long, value_name = "NAME")]
         category: Option<String>,
-        /// One JSON document on stdout; each rule carries `provider` and
-        /// `category` (null when unset).
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
     /// Write a rule file to fill in: `.evnx/rules/<ID>.toml`, committed so the
     /// team shares it.
@@ -3948,8 +4026,8 @@ pub enum RulesCommand {
         source: String,
         /// What the source is written in. `gitleaks` converts it; rules whose
         /// regex Rust cannot compile are listed and left out.
-        #[arg(long, default_value = "evnx", value_parser = ["evnx", "gitleaks"])]
-        format: String,
+        #[arg(long, value_enum, default_value_t = PackFormat::Evnx)]
+        from: PackFormat,
         /// Add it to your personal rules instead (never committed).
         #[arg(long)]
         personal: bool,
@@ -3962,9 +4040,8 @@ pub enum RulesCommand {
         /// Your personal packs instead.
         #[arg(long)]
         personal: bool,
-        /// Replace without asking (for CI).
-        #[arg(long, short = 'y')]
-        yes: bool,
+        #[command(flatten)]
+        confirm: args::ConfirmArgs,
     },
     /// Remove an added pack and its lock entry.
     Remove {

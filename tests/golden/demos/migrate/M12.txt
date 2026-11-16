@@ -60,14 +60,14 @@ Summary:
 [exit 0]
   ok: FIXED I-105: -q leaves the commands and the summary (exit 0)
 
-$ evnx migrate --source-file nope.env --to heroku --heroku-app demo-app
+$ evnx migrate --env nope.env --to heroku --heroku-app demo-app
 [stderr]
 
   evnx migrate  Generate destination commands from your .env
 
 Error: nope.env does not exist
 
-Create it with `evnx init`, or point at another file with --source-file.
+Create it with `evnx init`, or point at another file with --env.
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]

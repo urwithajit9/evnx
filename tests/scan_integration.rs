@@ -428,7 +428,7 @@ fn an_unknown_severity_is_an_error_not_a_default() {
         .args(["scan", "--severity", "extreme"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("unknown severity"));
+        .stderr(predicates::str::contains("invalid value 'extreme'"));
     // ⚠️ `critical` is a severity since C2, not a typo; `--confidence` has
     // its own error.
     cargo_bin_cmd!("evnx")
@@ -436,7 +436,7 @@ fn an_unknown_severity_is_an_error_not_a_default() {
         .args(["scan", "--confidence", "critical"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("unknown confidence"));
+        .stderr(predicates::str::contains("invalid value 'critical'"));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -527,7 +527,7 @@ fn an_unknown_format_is_an_error_not_pretty_output() {
         .args(["scan", "--format", "bogus", "--exit-zero"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("unknown format 'bogus'"))
+        .stderr(predicates::str::contains("invalid value 'bogus'"))
         .stderr(predicates::str::contains("sarif"));
 }
 
@@ -545,19 +545,25 @@ fn validate_also_rejects_an_unknown_format() {
         .stderr(predicates::str::contains("invalid value 'bogus'"));
 }
 
-/// scan says `github`, validate says `github-actions`. Both accept both, so
-/// nobody has to remember which command wanted which spelling.
 #[test]
-fn both_spellings_of_the_github_format_work() {
+fn github_is_the_one_spelling_of_the_github_format() {
     let dir = setup_test_env("AKIA4OZRMFJ3VREALKEY");
 
-    for spelling in ["github", "github-actions"] {
-        cargo_bin_cmd!("evnx")
-            .current_dir(dir.path())
-            .args(["scan", "--format", spelling, "--exit-zero"])
-            .assert()
-            .success();
-    }
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "--format", "github", "--exit-zero"])
+        .assert()
+        .success();
+
+    // WP-8: `github-actions` was removed, with a hint (exit 2).
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["scan", "--format", "github-actions", "--exit-zero"])
+        .assert()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "'--format github-actions' was removed from 'evnx scan' in 0.14.2; use '--format github'",
+        ));
 }
 
 // ─────────────────────────────────────────────────────────────
