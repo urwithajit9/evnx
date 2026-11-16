@@ -785,6 +785,8 @@ fn main() -> Result<()> {
             mode: file_mode,
             mkdir,
             dry_run,
+            force,
+            follow_symlinks,
         } => {
             // RM-14 (DEC-T2): refusing is the default; --strict asked for it.
             if strict {
@@ -811,6 +813,8 @@ fn main() -> Result<()> {
                     file_mode,
                     mkdir,
                     dry_run,
+                    force,
+                    follow_symlinks,
                 },
             )
         }

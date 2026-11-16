@@ -1,7 +1,7 @@
 
 ================ TP7 ================
 
-$ evnx template --input config.tpl.yml --output link.yml --no-gitignore
+$ evnx template --input config.tpl.yml --output link.yml --force --no-gitignore
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
 ✓ Generated config at link.yml
@@ -15,7 +15,7 @@ Replaced link.yml
      →  chmod 600 link.yml
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: I-140 fixed (DEC-T12): the symlink is written through with a notice (exit 0)
+  ok: I-140 fixed (DEC-T12): a symlink inside the folder is written through with a notice (--force: its target exists) (exit 0)
 
 $ bash -c test -L link.yml && echo "link kept"; head -2 real/target.yml
 link kept

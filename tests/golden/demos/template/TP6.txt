@@ -20,6 +20,24 @@ the template is untouched: it still holds its placeholders
 $ evnx template --input config.tpl.yml --output exist.yml --no-gitignore
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
+[stderr]
+
+  Generate config from template
+
+Error: exist.yml already exists, so nothing was written.
+  Replace it:  evnx template --input config.tpl.yml --output exist.yml --force
+
+evnx stopped before making changes (exit 2). Run one of the commands above.
+[exit 2]
+  ok: TPL-1 (WP-7): an existing output is not replaced without --force (exit 2)
+
+$ cat exist.yml
+old
+[exit 0]
+
+$ evnx template --input config.tpl.yml --output exist.yml --force --no-gitignore
+✓ Loaded 7 variables from .env
+✓ Read template from config.tpl.yml
 ✓ Generated config at exist.yml
 Replaced exist.yml
 [stderr]
@@ -30,6 +48,6 @@ Replaced exist.yml
      →  chmod 600 exist.yml
   Docs: https://docs.evnx.dev/cli/commands/template
 [exit 0]
-  ok: I-132 fixed (DEC-T4): an existing output is replaced with a Replaced notice (exit 0)
+  ok: I-132 fixed (DEC-T4): with --force an existing output is replaced with a Replaced notice (exit 0)
 
-================ summary: 2 ok, 0 mismatch   ================
+================ summary: 3 ok, 0 mismatch   ================

@@ -70,7 +70,7 @@ fn t_dec_t6_mode_sets_the_mode_new_or_existing() {
         std::os::unix::fs::PermissionsExt::from_mode(0o600),
     )
     .unwrap();
-    run(p.path(), &with(&["--mode", "644"])).assert_code(0);
+    run(p.path(), &with(&["--mode", "644", "--force"])).assert_code(0);
     assert_eq!(mode(&p, "out.yml"), 0o644);
 }
 
@@ -87,7 +87,10 @@ fn t_dec_t6_a_bad_mode_is_refused() {
 #[cfg(unix)]
 fn t_dec_t4_an_existing_output_is_replaced_and_keeps_its_mode() {
     let p = project().file("out.yml", "old\n").mode("out.yml", 0o644);
-    let out = run(p.path(), RENDER);
+    // TPL-1 (WP-7): not without --force.
+    run(p.path(), RENDER).assert_code(2);
+    assert_eq!(p.read("out.yml"), "old\n");
+    let out = run(p.path(), &[RENDER, &["--force"]].concat());
     out.assert_code(0).assert_contains("Replaced out.yml");
     assert_eq!(mode(&p, "out.yml"), 0o644, "DEC-G6");
     assert!(
@@ -169,7 +172,8 @@ fn t_i140_a_symlinked_output_is_written_through() {
     let p = project().dir("deploy");
     std::fs::write(p.join("deploy/real.yml"), "old\n").unwrap();
     std::os::unix::fs::symlink("deploy/real.yml", p.join("out.yml")).unwrap();
-    run(p.path(), RENDER)
+    // Inside the folder, so followed (TPL-3); its target exists, so --force.
+    run(p.path(), &[RENDER, &["--force"]].concat())
         .assert_code(0)
         .assert_contains("wrote through out.yml -> deploy/real.yml");
     assert!(std::fs::symlink_metadata(p.join("out.yml"))
@@ -234,7 +238,7 @@ fn t_dec_t11_a_tracked_output_is_reported() {
     let p = project().git().file("out.yml", "old\n");
     p.track("out.yml");
     p.commit_all("x");
-    let out = run(p.path(), RENDER_GITIGNORE);
+    let out = run(p.path(), &[RENDER_GITIGNORE, &["--force"]].concat());
     out.assert_code(0);
     assert!(out.stderr.contains("tracked by git"), "{}", out.stderr);
     assert!(
@@ -348,7 +352,9 @@ fn t_dec_t9_dry_run_writes_nothing_and_shows_no_value() {
 #[test]
 fn t_dec_t9_dry_run_says_an_existing_output_would_be_replaced() {
     let p = project().file("out.yml", "old\n");
-    run_dry(&p, &[])
+    // TPL-1: the dry run refuses where the run would.
+    run_dry(&p, &[]).assert_code(2).assert_contains("--force");
+    run_dry(&p, &["--force"])
         .assert_code(0)
         .assert_contains("would replace out.yml");
     assert_eq!(p.read("out.yml"), "old\n");

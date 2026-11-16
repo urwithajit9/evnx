@@ -4,6 +4,20 @@
 $ evnx template --input config.tpl.yml --output exist.yml --dry-run --gitignore
 ✓ Loaded 7 variables from .env
 ✓ Read template from config.tpl.yml
+[stderr]
+
+  Generate config from template
+
+Error: exist.yml already exists, so nothing was written.
+  Replace it:  evnx template --input config.tpl.yml --output exist.yml --force
+
+evnx stopped before making changes (exit 2). Run one of the commands above.
+[exit 2]
+  ok: TPL-1 (WP-7): a dry run refuses an existing output as the run would (exit 2)
+
+$ evnx template --input config.tpl.yml --output exist.yml --dry-run --force --gitignore
+✓ Loaded 7 variables from .env
+✓ Read template from config.tpl.yml
 Dry run: nothing was written.
   would replace exist.yml
 [stderr]
@@ -11,7 +25,7 @@ Dry run: nothing was written.
   Generate config from template
 
 [exit 0]
-  ok: DEC-T9: --dry-run says it would replace exist.yml, prints no value, writes nothing (exit 0)
+  ok: DEC-T9: --dry-run --force says it would replace exist.yml, prints no value, writes nothing (exit 0)
 
 $ bash -c cat exist.yml; test -e .gitignore && echo ".gitignore exists" || echo "no .gitignore"
 old
@@ -54,4 +68,4 @@ No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: DEC-T9: a dry run fails where the run would (--strict) (exit 2)
 
-================ summary: 3 ok, 0 mismatch   ================
+================ summary: 4 ok, 0 mismatch   ================

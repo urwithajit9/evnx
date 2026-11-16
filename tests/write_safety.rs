@@ -209,3 +209,93 @@ fn add3_no_template_writes_only_the_env_file() {
     .assert_code(0);
     assert_eq!(p.read(".env.prod").matches("K=v").count(), 1);
 }
+
+// ── Part 4: template (TPL-1, TPL-3) ─────────────────────────────────────────
+
+fn rendered() -> Project {
+    Project::new()
+        .env("PORT=3000\n")
+        .file("t.tpl", "port={{PORT}}\n")
+}
+
+/// TPL-1: an existing output is replaced only with `--force`.
+#[test]
+fn tpl1_an_existing_output_needs_force() {
+    let p = rendered().file("out.conf", "precious\n");
+    let out = run(
+        p.path(),
+        &["template", "--input", "t.tpl", "--output", "out.conf"],
+    );
+    out.assert_code(2);
+    out.assert_contains("out.conf already exists, so nothing was written");
+    out.assert_contains("--force");
+    out.assert_contains("evnx stopped before making changes");
+    assert_eq!(p.read("out.conf"), "precious\n");
+    // The dry run reports the same refusal.
+    run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "t.tpl",
+            "--output",
+            "out.conf",
+            "--dry-run",
+        ],
+    )
+    .assert_code(2);
+    run(
+        p.path(),
+        &[
+            "template", "--input", "t.tpl", "--output", "out.conf", "--force",
+        ],
+    )
+    .assert_code(0);
+    assert_eq!(p.read("out.conf"), "port=3000\n");
+    // A new output needs nothing.
+    run(
+        p.path(),
+        &["template", "--input", "t.tpl", "--output", "new.conf"],
+    )
+    .assert_code(0);
+}
+
+/// TPL-3: a link to outside the folder is refused; inside, it is followed.
+#[cfg(unix)]
+#[test]
+fn tpl3_a_link_to_outside_the_folder_is_refused() {
+    let p = rendered();
+    let outside = tempfile::TempDir::new().unwrap();
+    let target = outside.path().join("elsewhere.conf");
+    std::os::unix::fs::symlink(&target, p.path().join("link.conf")).unwrap();
+    let out = run(
+        p.path(),
+        &["template", "--input", "t.tpl", "--output", "link.conf"],
+    );
+    out.assert_code(2);
+    out.assert_contains("outside this folder");
+    assert!(!target.exists());
+    run(
+        p.path(),
+        &[
+            "template",
+            "--input",
+            "t.tpl",
+            "--output",
+            "link.conf",
+            "--follow-symlinks",
+        ],
+    )
+    .assert_code(0);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "port=3000\n");
+
+    // Inside the folder: written through, as before.
+    std::fs::create_dir(p.path().join("conf")).unwrap();
+    std::os::unix::fs::symlink("conf/real.conf", p.path().join("inside.conf")).unwrap();
+    run(
+        p.path(),
+        &["template", "--input", "t.tpl", "--output", "inside.conf"],
+    )
+    .assert_code(0);
+    assert_eq!(p.read("conf/real.conf"), "port=3000\n");
+}

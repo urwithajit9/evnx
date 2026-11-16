@@ -3184,11 +3184,20 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// Where to write the rendered file, or `-` for stdout.
         ///
         /// ⚠️ The result usually contains real values — see `--gitignore`. A
-        /// new file is created readable by you only (0600); an existing one is
-        /// replaced and keeps its mode. The template and the env file are never
-        /// overwritten.
+        /// new file is created readable by you only (0600). An existing file is
+        /// only replaced with `--force`, and keeps its mode. The template and
+        /// the env file are never overwritten.
         #[arg(long)]
         output: String,
+
+        /// Replace an existing output file.
+        #[arg(long)]
+        force: bool,
+
+        /// Write through an output that is a symlink to a file outside this
+        /// folder. Without it, such an output is refused.
+        #[arg(long)]
+        follow_symlinks: bool,
 
         /// File mode for the output, in octal (e.g. 0640). Applied to a new or
         /// an existing file. Without it a new file is 0600.
