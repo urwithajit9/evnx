@@ -359,21 +359,25 @@ pub(crate) fn keep<'a>(
 }
 
 /// The template's own variables, for a contract made from a template init
-/// kept rather than wrote: every name required, its value the sample — what
-/// `spec init` reads from a template.
+/// kept rather than wrote: its value the sample, required unless the
+/// template gives a default (WP-6 Q3, [`infer::required`]) — what `spec init`
+/// reads from a template.
+///
+/// [`infer::required`]: crate::commands::spec::infer::required
 pub(crate) fn template_vars(target: &Target) -> Result<VarCollection> {
     let mut vars = VarCollection::default();
     let Some(map) = crate::commands::add::shared::read_assignments(&target.template_path())? else {
         return Ok(vars);
     };
     for (name, value) in map {
+        let required = crate::commands::spec::infer::required(&name, &value);
         vars.vars.insert(
             name,
             VarMetadata {
                 example_value: value,
                 description: None,
                 category: None,
-                required: true,
+                required,
                 source: VarSource::BlueprintOverride,
             },
         );

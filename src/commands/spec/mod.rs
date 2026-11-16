@@ -357,10 +357,11 @@ fn from_collection(
 /// Build entries from `.env.example` (which names) and `.env` (what they look
 /// like).
 ///
-/// ⚠️ `.env.example` decides membership and `required`, because that is what it
-/// already means: `validate` treats every line in the template as required
-/// today. So a project generating its first spec keeps the behaviour it had,
-/// and relaxes it per variable afterwards.
+/// ⚠️ `.env.example` decides membership and `required`. Without a contract,
+/// `validate` treats every template line as required; a generated contract
+/// relaxes the lines that already give a default (`PORT=8080`,
+/// `DEBUG=false`: WP-6 Q3, SPEC-2), because code reading them works with no
+/// one setting them. Empty values and placeholders stay required.
 ///
 /// The template's order is kept, so its grouping survives; a name only in the
 /// environment file follows, `required = false`, with a comment saying so —
@@ -398,9 +399,17 @@ fn from_project(inputs: &Inputs) -> Result<(Vec<Entry>, LeftOut)> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| inputs.env.clone());
 
+    // From the template: required unless it gives a default (WP-6 Q3). From
+    // the env file alone, with no template to say otherwise: required, as
+    // before. Only in the env file beside a template: optional (DEC-SP9).
+    let from_template = !template.is_empty();
     for (name, required) in names
         .into_iter()
-        .map(|n| (n, true))
+        .map(|n| {
+            let required = !from_template
+                || infer::required(n, template.get(n).map(String::as_str).unwrap_or(""));
+            (n, required)
+        })
         .chain(extras.into_iter().map(|n| (n, false)))
     {
         // A real value says more than a template placeholder, so prefer it.

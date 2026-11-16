@@ -30,6 +30,50 @@ pub struct Guess {
     pub secret: bool,
 }
 
+/// Whether a template line makes `name` required (WP-6 Q3, SPEC-2): yes when
+/// the template gives it no usable value, no when it gives a default.
+///
+/// `PORT=8080` and `DEBUG=false` are defaults: code reading them works
+/// without anyone setting them, so a missing name is not an error. An empty
+/// value, `<your-key>`, `changeme` and the like are holes someone must fill.
+/// One rule for `init` and `spec init`; `add` takes `--required` and
+/// `--optional` from the person adding the name.
+///
+/// ⚠️ A secret's name is never a default, whatever its sample: a key in a
+/// committed template is either a placeholder or a leak (INIT-1).
+pub fn required(name: &str, template_value: &str) -> bool {
+    classify::is_placeholder(name, template_value, Strictness::Lenient)
+        || classify::is_secret_name(name, Strictness::Strict)
+        || is_sample_url(template_value)
+}
+
+/// `postgres://localhost:5432/dbname`, `https://api.example.com`: a URL on
+/// the local machine or a documentation domain shows the shape to fill in.
+/// It is not a value a deployment can run on, so it is not a default.
+fn is_sample_url(value: &str) -> bool {
+    let v = value.trim();
+    if crate::core::placeholder::is_url_placeholder(v) {
+        return true;
+    }
+    let Some((_, rest)) = v.split_once("://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = if host.starts_with('[') {
+        host.split_once(']')
+            .map_or(host, |(h, _)| h)
+            .trim_start_matches('[')
+    } else {
+        host.rsplit_once(':').map_or(host, |(h, _)| h)
+    }
+    .to_ascii_lowercase();
+    matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1" | "0.0.0.0")
+        || ["example.com", "example.org", "example.net"]
+            .iter()
+            .any(|d| host == *d || host.ends_with(&format!(".{d}")))
+}
+
 /// Guess `name`'s contract from a sample value (`""` when there is none).
 ///
 /// ⚠️ A format is kept only when the sample passes [`Format::matches`] — the
@@ -103,6 +147,29 @@ fn shape_of(name: &str, v: &str) -> Option<Format> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn wp6_a_template_default_makes_a_name_optional() {
+        assert!(!required("PORT", "8080"));
+        assert!(!required("DEBUG", "false"));
+        assert!(!required("LOG_LEVEL", "info"));
+        assert!(required("DATABASE_URL", ""));
+        assert!(required("APP_NAME", "<app name>"));
+        assert!(required("API_URL", "changeme"));
+        // A URL on localhost or an example domain shows a shape, not a default.
+        assert!(required("DATABASE_URL", "postgres://localhost:5432/dbname"));
+        assert!(required("REDIS_URL", "redis://127.0.0.1:6379/0"));
+        assert!(required("API_BASE", "https://api.example.com/v1"));
+        assert!(required(
+            "DB",
+            "postgresql://user:password@localhost:5432/app"
+        ));
+        assert!(!required("STATUS_PAGE", "https://status.shop.io"));
+        // A secret's name: required whatever the sample.
+        assert!(required("STRIPE_SECRET_KEY", "sk_test_123"));
+        assert!(required("JWT_SECRET", "dev-secret-value"));
+    }
+
     use super::*;
 
     fn format_of(name: &str, v: &str) -> Option<Format> {

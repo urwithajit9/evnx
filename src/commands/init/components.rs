@@ -354,7 +354,9 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
                 example_value: String::new(),
                 description: Some(format!("read at {}", v.location)),
                 category: None,
-                required: false,
+                // WP-6 Q3: the code reads it; required unless every read
+                // gives a default.
+                required: !v.defaulted,
                 source: VarSource::BlueprintOverride,
             }),
         );
@@ -415,7 +417,8 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
         ));
         // Nothing to add, and still a project init set up: `.env` from the
         // template when there is none (N-06), and the contract.
-        let whole = super::shared::template_vars(target)?;
+        let mut whole = super::shared::template_vars(target)?;
+        relax_defaulted(&mut whole, &scan);
         let planned = if opts.dry_run || opts.json {
             Some(super::report::plan_keep(target, &whole)?)
         } else {
@@ -476,6 +479,7 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
         let plan = crate::commands::add::shared::plan(root, &vars, target.env_name.as_deref())?;
         let mut whole = super::shared::template_vars(target)?;
         whole.vars.extend(plan.to_example.vars.clone());
+        relax_defaulted(&mut whole, &scan);
         let planned = if opts.dry_run || opts.json {
             Some(super::report::plan_append(target, &plan, &whole)?)
         } else {
@@ -523,4 +527,14 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
         )?;
     }
     Ok(())
+}
+
+/// WP-6 Q3: a template name the code always reads with a default is
+/// optional, whatever the template says.
+fn relax_defaulted(vars: &mut VarCollection, scan: &super::source::Scan) {
+    for v in scan.found.iter().filter(|v| v.defaulted) {
+        if let Some(meta) = vars.vars.get_mut(&v.name) {
+            meta.required = false;
+        }
+    }
 }
