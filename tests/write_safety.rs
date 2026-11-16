@@ -30,7 +30,7 @@ fn val2_a_backup_is_private_ignored_and_recorded() {
         // Nothing to fix on this platform's rules: the rest needs a backup.
         return;
     }
-    out.assert_contains("undo: mv");
+    out.assert_contains("undo: evnx undo .env");
     #[cfg(unix)]
     assert_eq!(mode(&p, ".env.bak"), 0o600);
     let gi = p.read(".gitignore");
@@ -55,7 +55,7 @@ fn rem4_fld9_the_shared_slot_is_said_and_the_copy_is_named() {
     out.assert_code(0);
     out.assert_not_contains("replaced the previous backup");
     out.assert_contains("The value still exists in ./.env.bak");
-    out.assert_contains("rm ./.env.bak");
+    out.assert_contains("evnx undo --clear");
 
     let out = run(p.path(), &["remove", "B", "--yes"]);
     out.assert_code(0);
@@ -337,4 +337,80 @@ fn doctor_fix_clears_empty_sections_older_runs_left() {
     assert_eq!(p.read(".env"), "A=1\n");
     assert_eq!(p.read(".env.example"), "A=\n");
     run(p.path(), &["doctor"]).assert_not_contains("empty section");
+}
+
+// ── Part 7: evnx history and evnx undo (owner, 2026-11-16) ───────────────────
+
+/// `undo` swaps: once puts the old text back, twice the newer one.
+#[test]
+fn undo_swaps_the_file_and_its_copy() {
+    let p = Project::new().git().env("A=1\nB=2\n");
+    run(p.path(), &["remove", "B", "--yes"]).assert_code(0);
+    assert_eq!(p.read(".env"), "A=1\n");
+
+    let out = run(p.path(), &["history"]);
+    out.assert_code(0);
+    out.assert_contains(".env");
+    out.assert_contains("remove");
+
+    let out = run(p.path(), &["undo", ".env", "--yes"]);
+    out.assert_code(0);
+    out.assert_contains("+ B  back");
+    out.assert_not_contains("B=2");
+    assert_eq!(p.read(".env"), "A=1\nB=2\n");
+    assert_eq!(p.read(".env.bak"), "A=1\n");
+
+    // No FILE: the only one recorded. Again: the newer text.
+    run(p.path(), &["undo", "--yes"]).assert_code(0);
+    assert_eq!(p.read(".env"), "A=1\n");
+}
+
+#[test]
+fn undo_asks_shows_and_dry_runs() {
+    let p = Project::new().git().env("A=1\nB=2\n");
+    run(p.path(), &["remove", "B", "--yes"]).assert_code(0);
+    // No terminal and no --yes: refused, nothing changed.
+    let out = run(p.path(), &["undo", ".env"]);
+    out.assert_code(2);
+    out.assert_contains("--yes");
+    let out = run(p.path(), &["undo", ".env", "--dry-run"]);
+    out.assert_code(0);
+    out.assert_contains("+ B  back");
+    assert_eq!(p.read(".env"), "A=1\n");
+}
+
+#[test]
+fn undo_clear_deletes_the_copies_and_history_forgets_them() {
+    let p = Project::new().git().env("A=1\nB=2\n");
+    run(p.path(), &["remove", "B", "--yes"]).assert_code(0);
+    run(p.path(), &["undo", "--clear"]).assert_code(2);
+    assert!(p.exists(".env.bak"));
+    run(p.path(), &["undo", "--clear", "--yes"]).assert_code(0);
+    assert!(!p.exists(".env.bak"));
+    let out = run(p.path(), &["history", "--json"]);
+    let doc: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(doc["backups"].as_array().unwrap().len(), 0);
+    run(p.path(), &["undo", ".env", "--yes"])
+        .assert_code(2)
+        .assert_contains("no copy of .env");
+}
+
+/// `restore` stays for `evnx backup` archives.
+#[test]
+fn undo_is_not_restore() {
+    let p = Project::new().git();
+    run(p.path(), &["undo", "--help"])
+        .assert_code(0)
+        .assert_contains("evnx restore");
+}
+
+/// `-q`: the swap happens and nothing is printed.
+#[test]
+fn undo_is_quiet_under_q() {
+    let p = Project::new().git().env("A=1\nB=2\n");
+    run(p.path(), &["remove", "B", "--yes"]).assert_code(0);
+    let out = run(p.path(), &["-q", "undo", ".env", "--yes"]);
+    out.assert_code(0);
+    assert_eq!(out.stdout, "", "{}", out.stderr);
+    assert_eq!(p.read(".env"), "A=1\nB=2\n");
 }

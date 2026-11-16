@@ -22,6 +22,8 @@ Commands:
   platform     Compare or sync .env with a hosting platform's variables (Vercel).
   doctor       Check .env files, Git config, project structure, and security
   spec         Declare what each variable is: required, format, secret
+  history      List the copies evnx kept before changing a file: which file, which command, when
+  undo         Put a file back as it was before evnx last changed it
   parse        List what evnx reads from a `.env`: line, key and flags, never a value
   run          Run a command with a `.env`'s variables in its environment
   commands     Every command this build has, and which features it was compiled with [aliases: surface]

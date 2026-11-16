@@ -113,6 +113,11 @@ const EXEMPT: &[(&str, &str)] = &[
     ("commands", "data"),
     ("completions", "data"),
     ("parse", "data: the listing is the answer"),
+    ("history", "data: the listing is the answer"),
+    (
+        "undo",
+        "needs a copy an earlier write kept; its quiet run is in tests/write_safety.rs",
+    ),
     ("scan rules list", "data: the listing is the answer"),
     ("scan hook status", "data: the answer stays under -q"),
     (

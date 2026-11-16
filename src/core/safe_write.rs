@@ -159,13 +159,19 @@ impl Backup {
         }
     }
 
-    /// `mv .env.bak .env`: how to put the file back as it was.
+    /// `evnx undo .env`: how to put the file back as it was (`evnx undo`
+    /// swaps the file and this copy; owner, 2026-11-16).
     pub fn undo(&self) -> String {
-        format!(
-            "mv {} {}",
-            sh_quote(&self.path.to_string_lossy()),
-            sh_quote(&self.original.to_string_lossy())
-        )
+        format!("evnx undo {}", sh_quote(&self.file_shown()))
+    }
+
+    /// The original as a person types it: without a leading `./` (`.` and a
+    /// backslash on Windows), so a hint reads the same on every platform.
+    pub fn file_shown(&self) -> String {
+        match self.original.strip_prefix(".") {
+            Ok(rest) if !rest.as_os_str().is_empty() => rest.to_string_lossy().into_owned(),
+            _ => self.original.to_string_lossy().into_owned(),
+        }
     }
 }
 
@@ -583,10 +589,7 @@ mod tests {
         assert!(!first.replaced);
         assert_eq!(second.path, first.path);
         assert!(second.replaced, "REM-4: says it replaced the first");
-        assert_eq!(
-            second.undo(),
-            format!("mv {} {}", first.path.display(), p.display())
-        );
+        assert_eq!(second.undo(), format!("evnx undo {}", p.display()));
         assert_eq!(std::fs::read_to_string(&*second).unwrap(), "A=2\n");
         assert!(!d.path().join(".env.bak.2").exists());
     }

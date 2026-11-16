@@ -14,6 +14,7 @@ pub mod spec;
 pub mod surface;
 pub mod sync;
 pub mod template;
+pub mod undo;
 pub mod update;
 pub mod validate;
 

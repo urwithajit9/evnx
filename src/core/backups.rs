@@ -113,12 +113,7 @@ fn record(root: &Path, file: &Path, backup: &Path) -> Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Registry::default(),
         Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
     };
-    let rel = |p: &Path| {
-        let abs = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-        abs.strip_prefix(root)
-            .map(|r| r.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_else(|_| abs.to_string_lossy().into_owned())
-    };
+    let rel = |p: &Path| name_in(root, p);
     let entry = Entry {
         file: rel(file),
         backup: rel(backup),
@@ -130,6 +125,33 @@ fn record(root: &Path, file: &Path, backup: &Path) -> Result<()> {
     reg.backups.push(entry);
     reg.backups.sort_by(|a, b| a.backup.cmp(&b.backup));
     crate::core::safe_write::create_dirs_private(path.parent().expect("a parent"))?;
+    let text = serde_json::to_string_pretty(&reg)? + "\n";
+    crate::core::safe_write::write_private(&path, text.as_bytes())?;
+    Ok(())
+}
+
+/// The registry's root for a command run in `dir`: its repository, or `dir`.
+pub fn root_of_dir(dir: &Path) -> PathBuf {
+    let abs = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    repo_root(&abs).unwrap_or(abs)
+}
+
+/// `file` as the registry names it: relative to `root`, `/`-separated.
+pub fn name_in(root: &Path, file: &Path) -> String {
+    let abs = std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    abs.strip_prefix(root)
+        .map(|r| r.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| abs.to_string_lossy().into_owned())
+}
+
+/// Drop the entries whose backup is in `backups` (names as in the registry).
+pub fn forget(root: &Path, backups: &[String]) -> Result<()> {
+    let path = root.join(REGISTRY);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(());
+    };
+    let mut reg: Registry = serde_json::from_str(&text).unwrap_or_default();
+    reg.backups.retain(|e| !backups.contains(&e.backup));
     let text = serde_json::to_string_pretty(&reg)? + "\n";
     crate::core::safe_write::write_private(&path, text.as_bytes())?;
     Ok(())

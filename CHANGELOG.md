@@ -96,7 +96,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.evnx/backups.json` (file, time, command; no values), and in a git
   repository `*.bak` and that file are added to `.gitignore` (the pulls and
   `restore` keep their own `--gitignore` choice). Each write says when it
-  replaced the previous backup and how to undo it (`mv .env.bak .env`), and
+  replaced the previous backup and how to undo it (`evnx undo .env`), and
   `remove` names the copies it kept instead of "any .bak copy".
 - `remove` no longer leaves a section header (`# ── Stripe ──`) or a dated
   line behind when it removes the section's last variable; `add` then
@@ -115,6 +115,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.gitignore`.
 - `spec check --format json` (names only, never values) and
   `spec check --skip-without-env`.
+- `evnx history`: the copies evnx kept before changing a file (which file,
+  which command, when; `--json`). `evnx undo FILE`: put the file back as it
+  was by swapping it with its `.bak`, so running it again puts the newer text
+  back; it shows the change by name and asks first. `evnx undo --clear`
+  deletes the copies. (`evnx restore` stays for `evnx backup` archives.)
 - `add --no-template`: write only the env file, for a server that keeps
   `.env.prod` alone.
 - `doctor` checks env files and templates for empty evnx sections, and

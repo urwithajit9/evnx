@@ -510,9 +510,9 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
             ui::say(format!(
                 "  {}",
                 format!(
-                    "undo: {}   clear the copy: rm {}",
+                    "undo: {}   delete the copy: evnx undo --clear {}",
                     b.undo(),
-                    label(&b.to_string_lossy())
+                    b.file_shown()
                 )
                 .dimmed()
             ));

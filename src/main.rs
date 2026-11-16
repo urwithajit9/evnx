@@ -1055,6 +1055,20 @@ fn main() -> Result<()> {
             )
         }
 
+        Commands::History { json } => commands::undo::history(json),
+
+        Commands::Undo {
+            file,
+            yes,
+            dry_run,
+            clear,
+        } => commands::undo::run(commands::undo::Options {
+            file,
+            yes,
+            dry_run,
+            clear,
+        }),
+
         Commands::Parse {
             env,
             env_name,

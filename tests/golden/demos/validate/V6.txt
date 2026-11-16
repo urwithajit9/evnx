@@ -6,7 +6,7 @@ $ evnx validate --fix
   evnx validate  Check environment configuration
 
 ✓ Saved fixes to ./.env — original kept at ./.env.bak
-  undo: mv ./.env.bak ./.env
+  undo: evnx undo .env
 ! ./.env is readable by other users (mode 644); evnx keeps the mode you set
      →  chmod 600 ./.env   (or evnx doctor --fix, for every env file)
 

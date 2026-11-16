@@ -3575,6 +3575,43 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         action: SpecAction,
     },
 
+    /// List the copies evnx kept before changing a file: which file, which
+    /// command, when.
+    ///
+    /// `remove`, `validate --fix`, `diff --apply`, `restore`, `cloud pull` and
+    /// `platform pull` keep the file as it was in `<file>.bak` (one per file)
+    /// and record it in `.evnx/backups.json`. Never shows a value.
+    #[command(after_help = docs::HISTORY.after_help)]
+    History {
+        /// One JSON document on stdout.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Put a file back as it was before evnx last changed it.
+    ///
+    /// Swaps the file and its `<file>.bak`, so running it again puts the newer
+    /// text back. Shows what changes by name, never a value, and asks first.
+    /// `--clear` deletes the copies instead. Not for `evnx backup` archives:
+    /// those are `evnx restore`.
+    #[command(after_help = docs::UNDO.after_help)]
+    Undo {
+        /// The file to put back, e.g. `.env`. Default: the only one with a copy.
+        file: Option<String>,
+
+        /// Do not ask.
+        #[arg(long, short)]
+        yes: bool,
+
+        /// Show what would change; write nothing.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Delete the copies (all, or FILE's) instead of putting one back.
+        #[arg(long)]
+        clear: bool,
+    },
+
     /// List what evnx reads from a `.env`: line, key and flags, never a value.
     ///
     /// Flags say whether each value is empty, a placeholder or a secret. Every
