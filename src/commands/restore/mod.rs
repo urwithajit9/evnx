@@ -299,9 +299,17 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
                 }
                 // DEC-B11: what was there is kept, whichever way the yes came.
                 let kept = keep_previous(&outcome, &previous)?;
+                // VAL-2: the copy holds the same secrets; the same
+                // `--gitignore` choice as the restored file.
+                crate::utils::protect::protect_backup(&kept.to_string_lossy(), &gitignore)?;
                 ui::info(format!(
-                    "Kept the previous {path} as {}",
-                    crate::utils::path::label(&kept.display().to_string())
+                    "Kept the previous {path} as {}{}",
+                    crate::utils::path::label(&kept.display().to_string()),
+                    if kept.replaced {
+                        " (replaced the previous backup)"
+                    } else {
+                        ""
+                    }
                 ));
             }
         }

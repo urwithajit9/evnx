@@ -400,9 +400,9 @@ fn t_i218_pull_over_a_different_file_names_force_without_a_terminal() {
 }
 
 /// RM-34: `cloud pull --force` over a different `.env` writes through the
-/// shared writer: the replaced file is kept as `.env.bak` and is named; an
-/// existing file keeps its mode, with a warning when others can read it; a
-/// pull of identical content keeps no copy.
+/// shared writer: the replaced file is kept as `.env.bak` and is named; the
+/// pulled file is private (WP-7; RM-34 kept an existing mode); a pull of
+/// identical content keeps no copy.
 #[test]
 fn rm34_pull_keeps_the_replaced_file_and_its_mode() {
     let a = account(RIGHT);
@@ -459,12 +459,14 @@ fn rm34_pull_keeps_the_replaced_file_and_its_mode() {
     );
     #[cfg(unix)]
     {
+        // WP-7 (owner, 2026-11-16): pulled secrets are private, whatever
+        // mode the file had (RM-34 kept it), so there is nothing to warn of.
         assert_eq!(
             evnx::core::permissions::mode(&p.path().join(".env")),
-            Some(0o644),
-            "an existing file keeps its mode"
+            Some(0o600),
+            "a pulled file is private"
         );
-        assert!(out.stderr.contains("chmod"), "{}", out.stderr);
+        assert!(!out.stderr.contains("chmod"), "{}", out.stderr);
     }
 
     // Already up to date: nothing more is kept.

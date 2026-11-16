@@ -430,7 +430,14 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
         let what = describe(c);
         let backup = b
             .as_ref()
-            .map(|b| format!("   backup {}", label(&b.to_string_lossy())))
+            .map(|b| {
+                let shown = label(&b.to_string_lossy());
+                if b.replaced {
+                    format!("   backup {shown} (replaced the previous backup)")
+                } else {
+                    format!("   backup {shown}")
+                }
+            })
             .unwrap_or_default();
         ui::success(format!("{:<18} removed {what}{}", p.label, backup.dimmed()));
     }
@@ -438,11 +445,32 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
     for n in &notes {
         ui::say(format!("  {}", n.dimmed()));
     }
-    // S-20: removal is not rotation.
-    ui::info(
-        "The value still exists in git history, older vault versions and any .bak copy. \
-         Rotate it at the provider if it was ever real.",
-    );
+    // S-20: removal is not rotation. FLD-9: name the copies this run kept.
+    let kept: Vec<&safe_write::Backup> = backups.iter().flatten().collect();
+    if kept.is_empty() {
+        ui::info(
+            "The value still exists in git history and older vault versions. \
+             Rotate it at the provider if it was ever real.",
+        );
+    } else {
+        let names: Vec<String> = kept.iter().map(|b| label(&b.to_string_lossy())).collect();
+        ui::info(format!(
+            "The value still exists in {}, in git history and in older vault versions. \
+             Rotate it at the provider if it was ever real.",
+            names.join(", ")
+        ));
+        for b in &kept {
+            ui::say(format!(
+                "  {}",
+                format!(
+                    "undo: {}   clear the copy: rm {}",
+                    b.undo(),
+                    label(&b.to_string_lossy())
+                )
+                .dimmed()
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -726,7 +754,7 @@ fn apply(
     changes: &[Change],
     no_backup: bool,
     before_commit: &mut dyn FnMut(usize, &Path),
-) -> Result<Vec<Option<PathBuf>>> {
+) -> Result<Vec<Option<safe_write::Backup>>> {
     // E-7: one run at a time per file. Held until this function returns, so the
     // check below, the backups and the swaps all happen under it. Sorted, and
     // never waited for, so two runs cannot deadlock: the second stops.
@@ -831,7 +859,7 @@ fn print_json(
     changes: &[Change],
     still: &[(String, String, &'static str)],
     missing: &[&String],
-    backups: &[Option<PathBuf>],
+    backups: &[Option<safe_write::Backup>],
 ) {
     let mut removed = Vec::new();
     for c in changes {

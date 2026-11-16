@@ -582,22 +582,29 @@ pub fn pull(
     // whichever way the yes came (DEC-B11), like `restore`.
     let kept = match existing.as_deref() {
         Some(previous) if previous.as_slice() != plaintext.as_slice() => Some(
-            crate::core::safe_write::backup(&file, previous)
+            crate::core::safe_write::backup_unignored(&file, previous)
                 .with_context(|| format!("keeping a copy of {}", file.display()))?,
         ),
         _ => None,
     };
-    let written = crate::core::safe_write::write_private(&file, &plaintext)
-        .with_context(|| format!("writing {}", file.display()))?;
+    // Pulled secrets are private, whatever mode the file had (as `platform
+    // pull`, BUG-PLATFORM-MODE).
+    let written = crate::core::safe_write::write_with_mode(
+        &file,
+        &plaintext,
+        crate::core::permissions::PRIVATE,
+    )
+    .with_context(|| format!("writing {}", file.display()))?;
     crate::core::safe_write::report(&written);
 
     crate::say!("  {} pulled {what} into {}", "✓".green(), file.display());
     if let Some(kept) = &kept {
         crate::say!(
-            "  {} kept the previous {} as {}",
+            "  {} kept the previous {} as {}   undo: {}",
             "✓".green(),
             file.display(),
-            kept.display()
+            kept.describe(),
+            kept.undo()
         );
     }
     if verbose {

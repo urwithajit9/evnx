@@ -882,8 +882,9 @@ fn output_patch_interactive(
         "\n  {} wrote {} to {target_file}; the previous file is kept as {}",
         "✓".green(),
         crate::utils::string::pluralize(done, "change", "changes"),
-        kept.display()
+        kept.describe()
     );
+    println!("  undo: {}", kept.undo());
     for key in &edit.by_hand {
         println!(
             "  {} {key} spans several lines; it was not changed — edit it by hand",

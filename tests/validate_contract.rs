@@ -722,13 +722,14 @@ fn t_fix_keeps_the_mode_and_writes_through_a_symlink() {
         .mode()
         & 0o777;
     assert_eq!(mode, 0o640, "mode changed to {mode:o}");
-    // The backup holds the same values, at the same mode.
+    // The backup holds the same values, and is private whatever the mode of
+    // the original (VAL-2).
     let bak = std::fs::metadata(p.join(".env.bak"))
         .unwrap()
         .permissions()
         .mode()
         & 0o777;
-    assert_eq!(bak, 0o640, "backup mode {bak:o}");
+    assert_eq!(bak, 0o600, "backup mode {bak:o}");
     assert_eq!(p.read(".env.bak"), "DEBUG=True\n");
 }
 

@@ -361,8 +361,11 @@ pub fn existing_output(outcome: &RestoreOutcome) -> Result<Existing> {
 /// # Errors
 ///
 /// The copy could not be written; the output is then left as it was.
-pub fn keep_previous(outcome: &RestoreOutcome, previous: &[u8]) -> Result<PathBuf> {
-    crate::core::safe_write::backup(&outcome.write_path, previous)
+pub fn keep_previous(
+    outcome: &RestoreOutcome,
+    previous: &[u8],
+) -> Result<crate::core::safe_write::Backup> {
+    crate::core::safe_write::backup_unignored(&outcome.write_path, previous)
 }
 
 /// What [`commit_restore`] wrote, for the steps after it.

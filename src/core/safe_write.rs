@@ -82,15 +82,30 @@ pub fn write_with_mode(path: impl AsRef<Path>, bytes: &[u8], mode: u32) -> Resul
 /// exactly that and nothing else) are removed once the new copy is on disk, and
 /// one line on stderr says how many.
 ///
-/// The copy holds what the original held, so it gets the original's mode
-/// (0600 when that cannot be read) — set on the temp file before it is
-/// renamed, so it is never readable by others for a moment either. A symlink
-/// where the backup goes is replaced, not written through.
+/// ⚠️ **Always 0600** (VAL-2, REM-6): the copy holds the same secrets as the
+/// original, and a 644 original gave a 644 backup. The mode is set on the temp
+/// file before it is renamed, so it is never readable by others for a moment
+/// either. A symlink where the backup goes is replaced, not written through.
+///
+/// Then [`crate::core::backups::after_backup`] records it in
+/// `.evnx/backups.json` (FLD-9) and makes git ignore it. A command with its own
+/// `--gitignore` choice (`cloud pull`, `platform pull`, `restore`) protects the
+/// copy with that choice instead: [`backup_unignored`].
 ///
 /// `validate --fix`, `restore`, `diff --apply`, `remove`, `cloud pull` and
-/// `platform pull` are the callers.
-pub fn backup(path: impl AsRef<Path>, content: &[u8]) -> Result<PathBuf> {
-    let path = path.as_ref();
+/// `platform pull` are the callers; each says where the copy went with
+/// [`Backup::describe`] and [`Backup::undo`].
+pub fn backup(path: impl AsRef<Path>, content: &[u8]) -> Result<Backup> {
+    keep(path.as_ref(), content, true)
+}
+
+/// [`backup`], leaving `.gitignore` to the caller's own `--gitignore` choice
+/// (`protect::protect_backup`). Still private and recorded.
+pub fn backup_unignored(path: impl AsRef<Path>, content: &[u8]) -> Result<Backup> {
+    keep(path.as_ref(), content, false)
+}
+
+fn keep(path: &Path, content: &[u8], ignore: bool) -> Result<Backup> {
     let base = path.as_os_str().to_string_lossy();
     let candidate = PathBuf::from(format!("{base}.bak"));
     if let Ok(meta) = std::fs::symlink_metadata(&candidate) {
@@ -104,11 +119,10 @@ pub fn backup(path: impl AsRef<Path>, content: &[u8]) -> Result<PathBuf> {
             );
         }
     }
-    let mode = existing_file(&resolve(path)?.0)?
-        .and_then(|m| existing_mode(&m))
-        .unwrap_or(permissions::PRIVATE);
-    write_with_mode(&candidate, content, mode)
+    let replaced = candidate.exists();
+    write_with_mode(&candidate, content, permissions::PRIVATE)
         .with_context(|| format!("could not keep a backup at {}", candidate.display()))?;
+    crate::core::backups::after_backup(path, &candidate, ignore);
     let removed = remove_stale_backups(path);
     if removed > 0 && !crate::utils::ui::is_quiet() {
         eprintln!(
@@ -116,7 +130,69 @@ pub fn backup(path: impl AsRef<Path>, content: &[u8]) -> Result<PathBuf> {
             if removed == 1 { "" } else { "s" }
         );
     }
-    Ok(candidate)
+    Ok(Backup {
+        path: candidate,
+        original: path.to_path_buf(),
+        replaced,
+    })
+}
+
+/// A backup [`backup`] kept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Backup {
+    /// `<file>.bak`.
+    pub path: PathBuf,
+    /// The file it is a copy of.
+    pub original: PathBuf,
+    /// An older backup of the same file was there, and is gone now (REM-4:
+    /// one slot per file, shared by every command).
+    pub replaced: bool,
+}
+
+impl Backup {
+    /// `.env.bak`, or `.env.bak (replaced the previous backup)`.
+    pub fn describe(&self) -> String {
+        if self.replaced {
+            format!("{} (replaced the previous backup)", self.path.display())
+        } else {
+            self.path.display().to_string()
+        }
+    }
+
+    /// `mv .env.bak .env`: how to put the file back as it was.
+    pub fn undo(&self) -> String {
+        format!(
+            "mv {} {}",
+            sh_quote(&self.path.to_string_lossy()),
+            sh_quote(&self.original.to_string_lossy())
+        )
+    }
+}
+
+/// A path as one shell word: bare when it is only safe characters, else in
+/// single quotes.
+fn sh_quote(s: &str) -> String {
+    if !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._/-~:\\".contains(&b))
+    {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', r"'\''"))
+    }
+}
+
+impl std::ops::Deref for Backup {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl AsRef<Path> for Backup {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
 }
 
 /// Remove `<path>.bak.<digits>` beside `path` (the numbered copies older
@@ -503,9 +579,15 @@ mod tests {
         std::fs::write(&p, "A=1\n").unwrap();
         let first = backup(&p, b"A=1\n").unwrap();
         let second = backup(&p, b"A=2\n").unwrap();
-        assert_eq!(first, d.path().join(".env.bak"));
-        assert_eq!(second, first);
-        assert_eq!(std::fs::read_to_string(second).unwrap(), "A=2\n");
+        assert_eq!(first.path, d.path().join(".env.bak"));
+        assert!(!first.replaced);
+        assert_eq!(second.path, first.path);
+        assert!(second.replaced, "REM-4: says it replaced the first");
+        assert_eq!(
+            second.undo(),
+            format!("mv {} {}", first.path.display(), p.display())
+        );
+        assert_eq!(std::fs::read_to_string(&*second).unwrap(), "A=2\n");
         assert!(!d.path().join(".env.bak.2").exists());
     }
 
@@ -554,15 +636,17 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_backup_has_the_originals_mode() {
+    fn vals2_a_backup_is_private_whatever_the_originals_mode() {
         use std::os::unix::fs::PermissionsExt;
         let d = TempDir::new().unwrap();
         let p = d.path().join(".env");
         std::fs::write(&p, "A=1\n").unwrap();
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o640)).unwrap();
-        let b = backup(&p, b"A=1\n").unwrap();
-        let mode = std::fs::metadata(b).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o640);
+        for original in [0o644, 0o640, 0o600] {
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(original)).unwrap();
+            let b = backup(&p, b"A=1\n").unwrap();
+            let mode = std::fs::metadata(&*b).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "original {original:o}");
+        }
     }
 
     #[test]

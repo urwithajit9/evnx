@@ -219,7 +219,10 @@ pub fn write_fixed_file(
     env_vars: &IndexMap<String, String>,
     original_content: &str,
     changed: &BTreeSet<String>,
-) -> Result<(String, crate::core::safe_write::Written)> {
+) -> Result<(
+    crate::core::safe_write::Backup,
+    crate::core::safe_write::Written,
+)> {
     let mut output = String::new();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
 
@@ -302,7 +305,7 @@ pub fn write_fixed_file(
     let backup = crate::core::safe_write::backup(env_path, original_content.as_bytes())?;
     let written = crate::core::safe_write::write_private(env_path, output.as_bytes())
         .with_context(|| format!("Failed to write fixes to {env_path}"))?;
-    Ok((backup.to_string_lossy().into_owned(), written))
+    Ok((backup, written))
 }
 
 /// A value, quoted if it would not survive being read back unquoted.
@@ -598,7 +601,8 @@ mod tests {
         let (b2, _) =
             write_fixed_file(p, &map, &second, &["A".to_string()].into_iter().collect()).unwrap();
 
-        assert_eq!(b1, b2, "one backup per file");
+        assert_eq!(b1.path, b2.path, "one backup per file");
+        assert!(b2.replaced);
         assert!(!dir.join(".env.bak.2").exists());
         assert_eq!(fs::read_to_string(&b2).unwrap(), "A=two\n");
         let _ = fs::remove_dir_all(&dir);

@@ -76,14 +76,14 @@ fn t_i148_force_is_yes() {
     assert_eq!(p.read(".env.bak"), OLD);
 }
 
-/// The copy keeps the replaced file's mode: a 0640 `.env` is not left
-/// readable by more people as its copy, nor less (it is still theirs).
+/// The copy is private whatever the replaced file's mode (VAL-2: a copy is a
+/// second set of the secrets); the output keeps its own.
 #[cfg(unix)]
 #[test]
-fn t_dec_b11_the_kept_copy_has_the_old_mode() {
+fn t_dec_b11_the_kept_copy_is_private() {
     let p = backed_up().env(OLD).mode(".env", 0o640);
     restore(&p, &["-y"]).assert_code(0);
-    assert_eq!(mode(&p, ".env.bak"), 0o640);
+    assert_eq!(mode(&p, ".env.bak"), 0o600);
     assert_eq!(mode(&p, ".env"), 0o640, "an existing output keeps its mode");
 }
 

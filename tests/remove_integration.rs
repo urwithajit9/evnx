@@ -94,7 +94,8 @@ fn a17_a18_modes_are_kept_and_a_loose_one_is_reported() {
     evnx(&p, &["remove", "X", "--yes"])
         .assert_code(0)
         .assert_contains("chmod 600");
-    assert_eq!((mode(&p, ".env"), mode(&p, ".env.bak")), (0o644, 0o644));
+    // The file keeps its mode, with the hint; the copy is private (REM-6).
+    assert_eq!((mode(&p, ".env"), mode(&p, ".env.bak")), (0o644, 0o600));
 }
 
 #[cfg(unix)]
