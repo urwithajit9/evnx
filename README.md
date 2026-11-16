@@ -520,6 +520,68 @@ evnx sync --check --direction forward
 
 ---
 
+### `evnx align`
+
+Gives `.env` files the **layout** of the template: its section headings, comments,
+blank lines and key order. Each file keeps its own assignments, moved byte for byte, so
+values, quoting, escapes, `${VAR}` references, inline comments and multiline values
+are never rewritten. Where `sync` adds missing *names*, `align` arranges what is already
+there.
+
+```bash
+# Several environments at once: every file is checked before any is written
+evnx align --env .env.development --env .env.test
+
+# Preview what would move, what is missing and what is extra; write nothing, exit 0
+evnx align --env .env --dry-run
+
+# CI: exit 1 when a file is out of alignment
+evnx align --env-name production --check
+```
+
+- **Which template** is the one every evnx command pairs with the file: `--example`,
+  else the environment's own `.env.<name>.example` when it exists, else
+  `[defaults] example`, else `.env.example`. Files named together can follow
+  different templates; with more than one, each file's line names its own.
+- A key the file lacks gets a `# KEY=` placeholder, which is dropped once the key has a
+  value. It is never the template's value, and never a blank `KEY=`, which programs read
+  differently from an absent key. `evnx sync --check` still reports the key, and
+  `evnx sync --direction reverse` still fills it.
+- **Order comes from the template**, so list variables there in an order that works if
+  one refers to another: Docker Compose resolves `${VAR}` from the top down. A key only
+  the file has moves to the end, below any template key that refers to it.
+- Keys the template lacks are kept, in their order, at the end under
+  `# Environment-specific settings`.
+- **Comments.** A comment the template also has belongs to the template, which
+  writes it in its own place. Any other comment is kept. One directly above an
+  assignment moves with it. One followed by a blank line stays after the
+  assignment above it, and one above every assignment stays at the top.
+- **Refusals (nothing is written).** Duplicate keys, a line that does not parse,
+  mixed CRLF/LF line endings, and more copies of a template comment than the
+  template has all stop the run, because guessing could lose content. So does the
+  template given again as a file to align, under any name (symlink or hard link).
+- **Writes.** Line endings, the final newline and the file's mode are kept. A file
+  that changes is first kept as `.bak`, replacing the previous one, as `evnx remove`
+  does, unless `--no-backup`. A `.bak` that `.gitignore` does not cover is refused
+  before anything is written, because it would be an untracked copy of the
+  secrets: add `*.bak` to `.gitignore`. Each file is locked against another evnx
+  run, and replaced atomically only if it still holds what was read; if a later
+  file fails, the ones already replaced are put back. A file that is already aligned is not touched and gets
+  no backup, and running `align` again changes nothing.
+- **Output** names files, keys and line numbers only, never a value or a source
+  line, errors included.
+
+| Flag | What it does |
+|---|---|
+| `--example FILE` | The template every file follows (default: each file's own, as above) |
+| `--env FILE`, `--env-name NAME` | Files to align; both repeatable (default `[defaults] env_name`, else `.env`) |
+| `-n`, `--dry-run` | Report; write nothing; exit 0 |
+| `--check` | Exit 0 aligned, 1 out of alignment, 2 no verdict; writes nothing |
+| `--format json` | Per file: its `template`, `moved`, `missing` and `extra` with line numbers, and `backup` |
+| `--no-backup` | Keep no `.bak` copy of a file before replacing it |
+
+---
+
 ### `evnx migrate` _(requires `--features migrate`)_
 
 Moves a `.env` into a secret manager. For **eight** destinations evnx **prints the
@@ -884,7 +946,7 @@ on `PATH` is the usual reason a new install "did not work". No network.
 
 ## Working with multiple environments
 
-`--env-name` resolves `.env.<name>` across `validate`, `diff`, `sync`, `convert`,
+`--env-name` resolves `.env.<name>` across `validate`, `diff`, `sync`, `align`, `convert`,
 `migrate`, `backup` and `template`. `scan` has no `--env-name`: it reads every `.env`
 variant a folder walk finds, or the file you name.
 

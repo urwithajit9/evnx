@@ -229,6 +229,26 @@ fn validate_doctor_sync_parse_remove_and_migrate_print_no_value() {
     ]);
 }
 
+/// `align` moves the values without reading them; its report names keys and
+/// lines. The template lacks `NEW_SECRET_KEY` in `.env`, so every run here has
+/// something to say, and the plain run writes.
+#[test]
+fn align_prints_no_value() {
+    assert_none_shown(&[
+        case("align --dry-run", &["align", "--dry-run"]),
+        case("align --check", &["align", "--check"]),
+        case(
+            "align --format json --dry-run",
+            &["align", "--format", "json", "--dry-run"],
+        ),
+        case("align", &["align"]),
+        case(
+            "align --env-name staging --format json",
+            &["align", "--env-name", "staging", "--format", "json"],
+        ),
+    ]);
+}
+
 #[test]
 fn scan_sarif_and_diff_without_show_values_print_no_value() {
     assert_none_shown(&[
