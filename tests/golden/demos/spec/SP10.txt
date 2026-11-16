@@ -24,7 +24,7 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx spec init --with django --env .env --stdout
 [stderr]
-error: the argument '--with <WITH>' cannot be used with '--env <ENV>'
+error: the argument '--with <WITH>' cannot be used with '--env <FILE>'
 
 Usage: evnx spec init --with <WITH> --stdout
 

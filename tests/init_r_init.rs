@@ -57,7 +57,7 @@ fn t_i298_a_malformed_config_at_the_target_stops_before_anything_is_written() {
     let target = Project::new().git().toml("[vars\nbroken");
     let out = run(
         here.path(),
-        &["init", "--yes", "-p", target.path().to_str().unwrap()],
+        &["init", "--yes", "--dir", target.path().to_str().unwrap()],
     );
     out.assert_code(2).assert_contains("TOML parse error");
     for f in [".env", ".env.example", ".gitignore"] {
@@ -73,7 +73,7 @@ fn t_i298_a_bare_evnx_toml_at_the_target_stops_before_anything_is_written() {
         .file("evnx.toml", "[vars.A]\nrequired = true\n");
     let out = run(
         here.path(),
-        &["init", "--yes", "-p", target.path().to_str().unwrap()],
+        &["init", "--yes", "--dir", target.path().to_str().unwrap()],
     );
     out.assert_code(2)
         .assert_contains("mv evnx.toml .evnx.toml");
@@ -455,7 +455,7 @@ fn t_dq26_a_package_below_the_root_gets_its_own_contract() {
     let p = Project::new().git().dir("apps/web");
     run(
         p.path(),
-        &["init", "--with", "nextjs", "--yes", "-p", "apps/web"],
+        &["init", "--with", "nextjs", "--yes", "--dir", "apps/web"],
     )
     .assert_code(0);
     assert!(p
@@ -473,7 +473,7 @@ fn t_dq26_a_config_above_the_package_is_recorded_into() {
         .dir("apps/web");
     run(
         p.path(),
-        &["init", "--with", "redis", "--yes", "-p", "apps/web"],
+        &["init", "--with", "redis", "--yes", "--dir", "apps/web"],
     )
     .assert_code(0);
     assert!(p.read(".evnx.toml").contains("[vars.REDIS_URL]"));

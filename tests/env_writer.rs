@@ -57,13 +57,20 @@ fn restore_of(content: &str) -> (Project, support::Output) {
         .file("pw", "correct horse battery staple long\n");
     run(
         p.path(),
-        &["backup", "--key-file", "pw", "--output", "e.bak"],
+        &["backup", "--password-file", "pw", "--output", "e.bak"],
     )
     .assert_code(0);
     std::fs::remove_file(p.path().join(".env")).unwrap();
     let out = run(
         p.path(),
-        &["restore", "e.bak", "--key-file", "pw", "--output", ".env"],
+        &[
+            "restore",
+            "e.bak",
+            "--password-file",
+            "pw",
+            "--output",
+            ".env",
+        ],
     );
     (p, out)
 }

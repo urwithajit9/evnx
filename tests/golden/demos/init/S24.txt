@@ -2,7 +2,7 @@
 ================ S24 ================
 Other env files
 
-$ evnx init --yes -p named
+$ evnx init --yes --dir named
   config    named/.evnx.toml
 
   evnx init  Set up environment variables for your project
@@ -24,7 +24,7 @@ Next steps:
   ok: [defaults] env_name = local (exit 0)
   ok: RM-17: init writes .env.local, the file [defaults] env_name names, and no .env
 
-$ evnx init --with stripe --yes -p multi
+$ evnx init --with stripe --yes --dir multi
 
   evnx init  Set up environment variables for your project
 
@@ -45,7 +45,7 @@ Next steps:
   ok: .env.production, .env.staging, .env.test present (exit 0)
   ok: FIXED I-296: the env files left unchanged are named, with how to check one
 
-$ evnx init --yes -p rc
+$ evnx init --yes --dir rc
 
   evnx init  Set up environment variables for your project
 

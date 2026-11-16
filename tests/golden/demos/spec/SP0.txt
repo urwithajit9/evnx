@@ -43,21 +43,6 @@ Options:
           
           Example: --with django,postgres,redis
 
-      --env <ENV>
-          The environment file to read sample values from.
-          
-          Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`. A file named here must exist.
-
-      --env-name <NAME>
-          Read sample values from `.env.<NAME>` instead of `.env`.
-          
-          `--env-name production` reads `.env.production`. A name whose file does not exist is an error listing the environments that do.
-
-      --example <EXAMPLE>
-          The template that decides which variables are in the contract.
-          
-          Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`. A file named here must exist.
-
       --stdout
           Print the generated block instead of writing it.
           
@@ -82,6 +67,18 @@ Options:
 
   -V, --version
           Print version
+
+Files:
+      --env <FILE>
+          The environment file to read sample values from. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`. A file named here must exist.
+
+      --env-name <NAME>
+          Read sample values from `.env.<NAME>` instead of `.env`.
+          
+          `--env-name production` reads `.env.production`. A name whose file does not exist is an error listing the environments that do.
+
+      --example <FILE>
+          The template that decides which variables are in the contract. Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`. A file named here must exist.
 
 Exit codes:
   0  the contract was written, printed, or every variable was already declared

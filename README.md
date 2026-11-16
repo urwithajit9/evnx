@@ -211,7 +211,7 @@ No flags are required: the interactive flow handles stack and service selection.
 | `--detect` | accept what `package.json`, compose files and other manifests declare |
 | `--from-source` | add the variables the code reads; never removes |
 | `--force` | replace an existing template (`.env` is never overwritten); not with `--from-source` |
-| `--path <dir>`, `-p` | write somewhere other than `.` |
+| `-C`, `--dir <dir>` | write somewhere other than `.` |
 | `--dry-run` | say what would be written (template, `.env`, `.gitignore`, `.evnx.toml`); write nothing |
 | `--json` | the result as one JSON document, the fields `evnx add --json` prints (with `--yes` or `--dry-run`) |
 
@@ -221,7 +221,7 @@ What init writes, in a project that already has files:
 
 - **The template the project uses**: `[defaults] example` in `.evnx.toml`, else `.env.example`, `.env.sample` or `.env.template`, else a new `.env.example`. It is replaced only with `--force`.
 - **`.env`**, created `0600`, or, when it exists, given the names the new template has and it lacks; a value already there is never touched.
-- **`.evnx.toml`**: created with one `[vars]` entry per variable (in the folder `--path` names, also below the repository root), or the new names recorded into the one in force, as `evnx add` records them. Commit it with the template.
+- **`.evnx.toml`**: created with one `[vars]` entry per variable (in the folder `--dir` names, also below the repository root), or the new names recorded into the one in force, as `evnx add` records them. Commit it with the template.
 - Other env files (`.env.production`, `.env.local` …) are left alone and listed, with the command that checks one; `[defaults] env_name` is named when `.env` is not the file it points at.
 
 With `CI` set, init asks nothing: a run that would show the menu stops with exit 2 and names the flags. Full reference: [docs.evnx.dev/cli/commands/init](https://docs.evnx.dev/cli/commands/init).
@@ -242,7 +242,7 @@ evnx add --list                   # every id
 evnx add service redis --dry-run  # what would be written; --json for scripts
 ```
 
-`--path` names the folder that holds `.env.example` and `.env`. When the project keeps a
+`--dir` names the folder that holds `.env.example` and `.env`. When the project keeps a
 contract, the new names are recorded in the nearest `.evnx.toml` at or above that folder,
 which may be the repository root rather than the folder itself.
 
@@ -323,7 +323,7 @@ refused for stdin and JSON input: there is no file to rewrite.
 
 **v0.12.0+.** What evnx reads from a `.env`, line by line: each key, its line, and
 whether the value is empty, a placeholder or a secret. **Names only** — values appear
-only with `--values`, which a terminal refuses without `--yes`. Every problem in the
+only with `--values`, which a terminal refuses without `--show-values`. Every problem in the
 file is listed, and the exit code is 1 when there is one.
 
 ```bash
@@ -827,7 +827,7 @@ evnx restore .env.backup --dry-run           # decrypt and check, write nothing
 evnx restore .env.backup --output .env       # asks before replacing an existing .env
 ```
 
-**The passphrase** comes from `--key-file` (also spelled `--password-file`), then
+**The passphrase** comes from `--password-file`, then
 `EVNX_PASSWORD`, then a prompt. A new backup needs at least 8 characters from any
 of them; `restore` takes any length, so an older backup made with a shorter one
 still opens. A key file is trimmed of surrounding whitespace, or Base64-encoded
@@ -840,7 +840,7 @@ place is replaced, and older files are left alone. `--keep 0` overwrites. The
 output may not be the source file, or a directory.
 
 **Replacing a file:** `restore` never replaces an existing output silently. With
-a terminal it asks; in a script pass `--yes` (alias `--force`). Either way the
+a terminal it asks; in a script pass `--yes`. Either way the
 replaced file is kept as `<output>.bak`. An output that already holds exactly the
 backup's content is left alone. Content that is not a `.env` evnx can read goes
 to `<output>.restored`, exit 5. In a git repository the restored file gets the
@@ -850,7 +850,7 @@ In CI:
 
 ```bash
 EVNX_PASSWORD="$BACKUP_PASSPHRASE" evnx backup --output "backups/env-$(date +%F).backup" --keep 0 --verify
-evnx restore backups/env-2026-10-20.backup --key-file /run/secrets/backup-key --yes
+evnx restore backups/env-2026-10-20.backup --password-file /run/secrets/backup-key --yes
 ```
 
 | Exit | `backup` | `restore` |
@@ -870,8 +870,8 @@ other's files:
 | Where the ciphertext lives | a file you keep | the evnx server, as versions |
 | Secret | a passphrase or key file you choose | your account's master password |
 | History | `--keep N` numbered files | server versions: `--version N`, `history`, `diff` |
-| Non-interactive | `--key-file`, `EVNX_PASSWORD` | `--password-stdin` |
-| Replacing a file | `--yes` (alias `--force`), keeps `.bak` | `--yes` (alias `--force`), keeps `.bak` |
+| Non-interactive | `--password-file`, `EVNX_PASSWORD` | `--password-stdin` |
+| Replacing a file | `--yes`, keeps `.bak` | `--yes` (alias `--force`), keeps `.bak` |
 | Declining the question | exit 4, nothing changed | exit 4, nothing changed (v0.12.0+) |
 | Works with no account or network | yes | no |
 | Everything back at once | the file is the backup | `cloud export` |
@@ -1094,7 +1094,7 @@ looks it up to ask, a vault-scoped token cannot and is not asked.
 `pull` writing a file inside a git repository checks that git ignores it: it asks
 on a terminal, warns without one, adds it with `--gitignore`, and skips the check
 with `--no-gitignore`. Over a file that differs it asks first, the same question
-`restore` asks; `--yes` (alias `--force`) skips it, and declining exits 4 (v0.12.0+).
+`restore` asks; `--yes` skips it, and declining exits 4 (v0.12.0+).
 
 ⚠️ `cloud diff` compares **key names**, not values. The server holds ciphertext
 and a list of names, so it can tell you a variable appeared, disappeared or

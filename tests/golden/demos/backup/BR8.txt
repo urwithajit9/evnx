@@ -1,7 +1,7 @@
 
 ================ BR8 ================
 
-$ evnx restore .env.backup --key-file bad --inspect
+$ evnx restore .env.backup --password-file bad --inspect
 ✓ Read backup from .env.backup
 · Using key file for decryption (non-interactive mode)
 [stderr]
@@ -12,7 +12,7 @@ Error: Wrong password or corrupt backup — decryption failed
 [exit 2]
   ok: wrong password (exit 2)
 
-$ evnx restore nope.backup --key-file pw
+$ evnx restore nope.backup --password-file pw
 [stderr]
 
   evnx restore  Decrypt and restore from an encrypted backup
@@ -21,7 +21,7 @@ Error: Backup file not found: nope.backup
 [exit 3]
   ok: backup not found (exit 3)
 
-$ evnx restore adir --key-file pw
+$ evnx restore adir --password-file pw
 [stderr]
 
   evnx restore  Decrypt and restore from an encrypted backup
@@ -30,7 +30,7 @@ Error: Backup file not found: adir (not a regular file)
 [exit 3]
   ok: directory: not a regular file (exit 3)
 
-$ evnx restore trunc.bak --key-file pw --inspect
+$ evnx restore trunc.bak --password-file pw --inspect
 ✓ Read backup from trunc.bak
 · Using key file for decryption (non-interactive mode)
 [stderr]
@@ -41,7 +41,7 @@ Error: The backup file is truncated or damaged (75 bytes after decoding; an evnx
 [exit 2]
   ok: FIXED I-149: a truncated file says truncated (exit 2)
 
-$ evnx restore garb.bak --key-file pw --inspect
+$ evnx restore garb.bak --password-file pw --inspect
 ✓ Read backup from garb.bak
 · Using key file for decryption (non-interactive mode)
 [stderr]
@@ -52,7 +52,7 @@ Error: This file is not an evnx backup: it is not the Base64 text evnx backup wr
 [exit 2]
   ok: FIXED I-149: a file that is not a backup says so (exit 2)
 
-$ evnx restore ver2.bak --key-file pw --inspect
+$ evnx restore ver2.bak --password-file pw --inspect
 ✓ Read backup from ver2.bak
 · Using key file for decryption (non-interactive mode)
 [stderr]
@@ -63,7 +63,7 @@ Error: This backup uses format version 2, made by a newer evnx; this version rea
 [exit 2]
   ok: FIXED I-149: a newer format (version byte 2) says upgrade (exit 2)
 
-$ evnx restore flip.bak --key-file pw --inspect
+$ evnx restore flip.bak --password-file pw --inspect
 ✓ Read backup from flip.bak
 · Using key file for decryption (non-interactive mode)
 [stderr]

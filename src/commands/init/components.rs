@@ -310,7 +310,7 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
     if scan.truncated {
         // A warning, so `-q` does not hide it: everything below is partial.
         ui::warning(format!(
-            "stopped after {} source files; run it on a smaller directory with --path",
+            "stopped after {} source files; run it on a smaller directory with --dir",
             scan.files_scanned
         ));
     }

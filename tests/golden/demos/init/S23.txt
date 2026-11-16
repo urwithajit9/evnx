@@ -2,7 +2,7 @@
 ================ S23 ================
 The project's own template
 
-$ evnx init --with postgresql --yes -p sample
+$ evnx init --with postgresql --yes --dir sample
 
   evnx init  Set up environment variables for your project
 
@@ -17,7 +17,7 @@ evnx stopped before making changes (exit 2). Run one of the commands above.
   ok: FIXED I-295 (R-init, DQ-28): .env.sample is the template; a stack over it is refused, as over .env.example (exit 2)
   ok: FIXED I-295: no second template
 
-$ evnx init --with postgresql --yes --force -p sample
+$ evnx init --with postgresql --yes --force --dir sample
 
   evnx init  Set up environment variables for your project
 
@@ -37,7 +37,7 @@ Next steps:
   ok: --force replaces .env.sample (exit 0)
   ok: the stack is in .env.sample
 
-$ evnx init --with redis --yes -p cfg
+$ evnx init --with redis --yes --dir cfg
   config    cfg/.evnx.toml
 
   evnx init  Set up environment variables for your project

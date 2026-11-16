@@ -23,7 +23,7 @@ Next steps:
   ok: FIXED I-002b (R-init, DQ-23): no NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY on a Vite stack; VITE_CLERK_PUBLISHABLE_KEY instead
   ok: FIXED I-002b (R-init): no NEXT_PUBLIC_VERCEL_ENV on a Vite stack
 
-$ evnx init --detect -p compose
+$ evnx init --detect --dir compose
   config    .evnx.toml
 
   evnx init  Set up environment variables for your project

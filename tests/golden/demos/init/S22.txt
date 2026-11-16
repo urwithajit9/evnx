@@ -2,7 +2,7 @@
 ================ S22 ================
 The contract: .evnx.toml
 
-$ evnx init --with redis --yes -p new
+$ evnx init --with redis --yes --dir new
 
   evnx init  Set up environment variables for your project
 
@@ -22,7 +22,7 @@ Next steps:
   ok: init in a repo (exit 0)
   ok: FIXED I-242 (R-init, DQ-18): .evnx.toml is created with [vars]
 
-$ evnx init --with redis --yes -p vars
+$ evnx init --with redis --yes --dir vars
   config    vars/.evnx.toml
 
   evnx init  Set up environment variables for your project
@@ -43,7 +43,7 @@ Next steps:
   ok: beside a contract (exit 0)
   ok: FIXED I-242 (DQ-17): new names are recorded into [vars]; the entry there is kept
 
-$ evnx init --with redis --yes -p novars
+$ evnx init --with redis --yes --dir novars
   config    novars/.evnx.toml (scan.severity=high)
 
   evnx init  Set up environment variables for your project
@@ -64,7 +64,7 @@ Next steps:
   ok: beside a config without [vars] (exit 0)
   ok: FIXED DQ-27 (R-init): [vars.NAME] tables are appended, [scan] kept
 
-$ evnx init --with nextjs --yes -p mono/apps/web
+$ evnx init --with nextjs --yes --dir mono/apps/web
 
   evnx init  Set up environment variables for your project
 

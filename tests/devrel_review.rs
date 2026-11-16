@@ -1089,7 +1089,7 @@ fn f7_evnx_password_drives_a_backup_with_no_file_on_disk() {
 }
 
 /// ⚠️ The deeper half of F7, and the reason the flag aliases could not be added
-/// on their own. `backup --key-file` Base64-encodes a **binary** key file before
+/// on their own. `backup --password-file` Base64-encodes a **binary** key file before
 /// Argon2id; `restore --password-file` read the same file with `read_to_string`
 /// and stripped a trailing newline. So one file produced two different
 /// passwords, and the only symptom was a backup that would not open.
@@ -1129,7 +1129,7 @@ fn f7_one_key_file_round_trips_under_either_flag_spelling() {
         .args([
             "restore",
             "b.backup",
-            "--key-file",
+            "--password-file",
             "binary.key",
             "--output",
             "out.env",

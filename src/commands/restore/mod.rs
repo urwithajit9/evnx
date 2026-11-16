@@ -26,7 +26,7 @@
 //!
 //! [`crate::utils::secret_source`], the same rule `backup` uses:
 //!
-//! 1. `--password-file <path>` (also `--key-file`) — read from a file (CI/CD friendly).
+//! 1. `--password-file <path>` — read from a file (CI/CD friendly).
 //! 2. `EVNX_PASSWORD` environment variable — read and immediately unset.
 //! 3. Interactive prompt — default; most secure.
 //!

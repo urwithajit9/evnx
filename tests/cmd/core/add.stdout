@@ -17,16 +17,8 @@ Options:
       --list
           List every id `add` takes: services, infrastructure, frameworks and blueprints
 
-      --dry-run
-          Show what would be added, skipped and kept; write nothing. Needs no terminal
-
-      --json
-          Print the result as one JSON document on stdout (needs --yes or --dry-run: it never asks)
-
-  -p, --path <PATH>
-          Output path (default: current directory)
-          
-          [default: .]
+  -n, --dry-run
+          Show what would be added, skipped and kept; write nothing. Needs no terminal.
 
       --env-name <NAME>
           Write to `.env.<NAME>` instead of `.env` (one file per run; loop over names for several). `prod` and `.env.prod` both work. Defaults to `[defaults] env_name`
@@ -36,9 +28,6 @@ Options:
 
       --no-template
           Write only the env file: no names into the template, and no template created. For a server that keeps `.env.prod` alone
-
-  -y, --yes
-          Skip confirmation prompts
 
   -v, --verbose
           Enable verbose output
@@ -54,5 +43,23 @@ Options:
 
   -V, --version
           Print version
+
+Files:
+  -C, --dir <DIR>
+          Output path (default: current directory)
+
+Confirmation:
+  -y, --yes
+          Do not ask for confirmation
+
+Output:
+      --format <FORMAT>
+          Output format
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+      --json
+          Print the result as one JSON document on stdout (needs --yes or --dry-run: it never asks).
 
 Full guide: https://docs.evnx.dev/cli/commands/add

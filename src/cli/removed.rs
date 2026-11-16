@@ -89,6 +89,71 @@ pub const REMOVED: &[Removed] = &[
         value: "gh-actions",
         new: "--to github",
     },
+    // init, add, remove: the project folder is `-C, --dir`.
+    Removed::Flag {
+        path: &["init"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["add"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["add", "service"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["add", "framework"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["add", "blueprint"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["add", "custom"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["remove"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    // backup, restore: the password file is `--password-file` everywhere.
+    Removed::Flag {
+        path: &["backup"],
+        old: &["--key-file"],
+        new: "--password-file",
+    },
+    Removed::Flag {
+        path: &["restore"],
+        old: &["--key-file"],
+        new: "--password-file",
+    },
+    // restore: `--yes` is the one spelling of "replace without asking".
+    Removed::Flag {
+        path: &["restore"],
+        old: &["--force"],
+        new: "--yes",
+    },
+    // parse: `pretty` is the default format; `-y` never confirmed anything.
+    Removed::Value {
+        path: &["parse"],
+        flag: "--format",
+        value: "text",
+        new: "--format pretty",
+    },
+    Removed::Flag {
+        path: &["parse"],
+        old: &["-y", "--yes"],
+        new: "--show-values",
+    },
 ];
 
 /// The message for a match: the spelling as typed.

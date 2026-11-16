@@ -58,7 +58,7 @@ fn add_service_postgresql_appends_vars() {
     setup_minimal_project(dir.path()).unwrap();
 
     cargo_bin_cmd!("evnx")
-        .args(["add", "service", "postgresql", "--yes", "--path"])
+        .args(["add", "service", "postgresql", "--yes", "--dir"])
         .arg(dir.path())
         .assert()
         .success()
@@ -93,7 +93,7 @@ fn add_service_unknown_returns_error() {
         .arg("add")
         .arg("service")
         .arg("nonexistent_service_xyz")
-        .arg("--path")
+        .arg("--dir")
         .arg(dir.path())
         .arg("--yes")
         .assert()
@@ -134,7 +134,7 @@ fn add_framework_django_appends_vars() {
         .arg("--language")
         .arg("python")
         .arg("django")
-        .arg("--path")
+        .arg("--dir")
         .arg(dir.path())
         .arg("--yes")
         .assert()
@@ -168,7 +168,7 @@ fn add_framework_unknown_language_error() {
         .arg("--language")
         .arg("unknown_lang_xyz")
         .arg("django")
-        .arg("--path")
+        .arg("--dir")
         .arg(dir.path())
         .arg("--yes")
         .assert()
@@ -190,7 +190,7 @@ fn add_blueprint_skips_conflicting_vars() {
         .arg("add")
         .arg("blueprint")
         .arg("t3_modern")
-        .arg("--path")
+        .arg("--dir")
         .arg(dir.path())
         .arg("--yes")
         .assert()
@@ -226,7 +226,7 @@ fn add_blueprint_to_empty_project() {
         .arg("add")
         .arg("blueprint")
         .arg("rust_high_perf")
-        .arg("--path")
+        .arg("--dir")
         .arg(dir.path())
         .arg("--yes")
         .assert()
@@ -271,7 +271,7 @@ fn workflow_init_then_add_service() {
     cargo_bin_cmd!("evnx")
         .arg("init")
         .arg("--yes")
-        .arg("--path")
+        .arg("--dir")
         .arg(dir.path())
         .write_stdin("0\n") // Blank
         .assert()
@@ -282,7 +282,7 @@ fn workflow_init_then_add_service() {
         .arg("add")
         .arg("service")
         .arg("postgresql")
-        .arg("--path")
+        .arg("--dir")
         .arg(dir.path())
         .arg("--yes")
         .assert()
@@ -318,7 +318,7 @@ fn workflow_add_multiple_services() {
 
     for service in ["redis", "stripe", "sentry"] {
         cargo_bin_cmd!("evnx")
-            .args(["add", "service", service, "--yes", "--path"])
+            .args(["add", "service", service, "--yes", "--dir"])
             .arg(dir.path())
             .assert()
             .success();
@@ -355,7 +355,7 @@ fn add_warns_when_env_is_committable() {
     std::fs::write(dir.path().join(".env"), "SECRET=live_value\n").unwrap();
 
     let assert = cargo_bin_cmd!("evnx")
-        .args(["add", "service", "postgresql", "--yes", "--path"])
+        .args(["add", "service", "postgresql", "--yes", "--dir"])
         .arg(dir.path())
         .assert()
         .success();
@@ -383,7 +383,7 @@ fn add_is_quiet_when_env_is_already_ignored() {
         std::fs::write(dir.path().join(".gitignore"), gitignore).unwrap();
 
         let assert = cargo_bin_cmd!("evnx")
-            .args(["add", "service", "postgresql", "--yes", "--path"])
+            .args(["add", "service", "postgresql", "--yes", "--dir"])
             .arg(dir.path())
             .assert()
             .success();
@@ -407,7 +407,7 @@ fn add_says_nothing_when_there_is_no_env_file() {
         .unwrap();
 
     let assert = cargo_bin_cmd!("evnx")
-        .args(["add", "service", "postgresql", "--yes", "--path"])
+        .args(["add", "service", "postgresql", "--yes", "--dir"])
         .arg(dir.path())
         .assert()
         .success();
@@ -1405,12 +1405,12 @@ fn add_flags_work_before_the_subcommand() {
     let p = Project::new().dir("api");
     run(
         p.path(),
-        &["add", "--path", "api", "--yes", "service", "redis"],
+        &["add", "--dir", "api", "--yes", "service", "redis"],
     )
     .assert_code(0);
     run(
         p.path(),
-        &["add", "-p", "api", "service", "stripe", "--yes"],
+        &["add", "--dir", "api", "service", "stripe", "--yes"],
     )
     .assert_code(0);
     run(p.path(), &["add", "--dry-run", "service", "sentry"]).assert_code(0);

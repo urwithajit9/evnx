@@ -3,7 +3,7 @@
 //!
 //! Highest priority first:
 //!
-//! 1. a key file (`--key-file`, also spelled `--password-file`),
+//! 1. a password file (`--password-file`),
 //! 2. the `EVNX_PASSWORD` environment variable,
 //! 3. a hidden prompt, when there is a terminal to show it on.
 //!
@@ -183,7 +183,7 @@ fn from_prompt(purpose: Purpose, example: &str, verbose: bool) -> Result<Zeroizi
         return Err(anyhow!(
             "there is no terminal to ask for the passphrase on.\n\n\
              \x20 Give it without a prompt, from a file or the environment:\n\
-             \x20   {example} --key-file <path>\n\
+             \x20   {example} --password-file <path>\n\
              \x20   {ENV_VAR}=… {example}"
         ));
     }

@@ -285,7 +285,7 @@ pub const BACKUP: CommandDoc = CommandDoc {
     url: "https://docs.evnx.dev/cli/commands/backup",
     description: "AES-256-GCM encrypted backups",
     after_help: "\
-Passphrase: --key-file, then EVNX_PASSWORD, then a prompt (asked twice). A new\n\
+Passphrase: --password-file, then EVNX_PASSWORD, then a prompt (asked twice). A new\n\
 backup needs at least 8 characters from any of them.\n\
 \n\
 Exit codes:\n\
@@ -309,7 +309,7 @@ pub const RESTORE: CommandDoc = CommandDoc {
     description: "Restoring from encrypted backups",
     after_help: "\
 Replacing a file: an existing --output is never replaced silently. With a\n\
-terminal evnx asks; without one, pass --yes (alias --force). Either way the\n\
+terminal evnx asks; without one, pass --yes. Either way the\n\
 replaced file is kept beside it as <output>.bak. Content identical to the\n\
 backup is left alone.\n\
 \n\

@@ -188,12 +188,16 @@ fn a9_path_quiet_verbose() {
     let p = Project::new().dir("pkg");
     run(
         p.path(),
-        &["add", "--path", "packages/api", "service", "redis", "--yes"],
+        &["add", "--dir", "packages/api", "service", "redis", "--yes"],
     )
     .assert_code(2)
     .assert_contains("packages/api");
     assert!(!p.exists("packages"));
-    run(p.path(), &["add", "service", "redis", "-p", "pkg", "--yes"]).assert_code(0);
+    run(
+        p.path(),
+        &["add", "service", "redis", "--dir", "pkg", "--yes"],
+    )
+    .assert_code(0);
     assert!(p.exists("pkg/.env.example"));
     let quiet = run(p.path(), &["add", "-q", "service", "stripe", "--yes"]);
     quiet.assert_code(0);

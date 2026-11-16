@@ -72,7 +72,7 @@ fn wait_after_kdf(run: &mut Pty, text: &str) {
 /// A project with `.env.backup` (of [`ENV`]) and a different `.env`.
 fn existing_output() -> Project {
     let p = Project::new().env(ENV).file("pw", PW);
-    run(p.path(), &["backup", "--key-file", "pw"]).assert_code(0);
+    run(p.path(), &["backup", "--password-file", "pw"]).assert_code(0);
     std::fs::write(p.join(".env"), "OLD=1\n").unwrap();
     p
 }
@@ -82,7 +82,10 @@ fn existing_output() -> Project {
 #[test]
 fn t_br32_yes_at_the_question_replaces_and_keeps_a_copy() {
     let p = existing_output();
-    let mut run = Pty::spawn(p.path(), &["restore", ".env.backup", "--key-file", "pw"]);
+    let mut run = Pty::spawn(
+        p.path(),
+        &["restore", ".env.backup", "--password-file", "pw"],
+    );
     wait_after_kdf(&mut run, "Overwrite ./.env?");
     run.wait_for("[y/N]");
     run.press(&["y", ENTER]);
@@ -96,7 +99,10 @@ fn t_br32_yes_at_the_question_replaces_and_keeps_a_copy() {
 #[test]
 fn t_br32_enter_at_the_question_cancels() {
     let p = existing_output();
-    let mut run = Pty::spawn(p.path(), &["restore", ".env.backup", "--key-file", "pw"]);
+    let mut run = Pty::spawn(
+        p.path(),
+        &["restore", ".env.backup", "--password-file", "pw"],
+    );
     wait_after_kdf(&mut run, "Overwrite ./.env?");
     run.wait_for("[y/N]");
     run.press(&[ENTER]);
