@@ -5,9 +5,9 @@ $ evnx init --with vite,supabase,clerk,vercel --yes
 
   evnx init  Set up environment variables for your project
 
-✓ Created .env from template
-✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 15 variables from 4 components
+✓ Created .env from .env.example
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
   ✓ 15 names from .env.example → .evnx.toml (6 secret, 3 with a format)
 
 Next steps:

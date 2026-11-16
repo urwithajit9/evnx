@@ -14,9 +14,9 @@ $ evnx init --from-source --yes
      VITE_SUPABASE_URL            src/config.ts:1
 
   0 already in .env.example  ·  3 new
-✓ Created .env from template
-✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Added 3 variables from the source
+✓ Created .env from .env.example
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
   ✓ 3 names from .env.example → .evnx.toml (1 secret, 0 with a format)
 [exit 0]
   ok: from-source on a fresh project (exit 0)

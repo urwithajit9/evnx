@@ -8,9 +8,9 @@ $ evnx init --with nextjs,postgresql --yes -p old
 
 ! old/.env is readable by other users (mode 644); evnx keeps the mode you set
      →  chmod 600 old/.env
+✓ Created .env.example with 10 variables from 2 components
 ✓ Added 9 variables to .env; the values already there are kept
 ✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
-✓ Created .env.example with 10 variables from 2 components
   ✓ 10 names from .env.example → old/.evnx.toml (3 secret, 5 with a format)
 
 Next steps:

@@ -5,9 +5,9 @@ $ evnx init --blueprint t3_modern --yes
 
   evnx init  Set up environment variables for your project
 
-✓ Created .env from template
-✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 28 variables
+✓ Created .env from .env.example
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
   ✓ 28 names from .env.example → .evnx.toml (10 secret, 6 with a format)
 
 Next steps:

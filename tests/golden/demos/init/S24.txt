@@ -7,14 +7,14 @@ $ evnx init --yes -p named
 
   evnx init  Set up environment variables for your project
 
-✓ Created .env.local from template
-✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example (no variables yet)
 · Tip: Run 'evnx add' to add variables interactively
+✓ Created .env.local from .env.example
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
   ✓ added an empty [vars] to named/.evnx.toml
 
 Next steps:
-  1. Edit .env.local and replace placeholder values
+  1. Add variables: evnx add custom NAME=value (or evnx add for a menu)
   2. Commit .env.example and .evnx.toml; never commit .env.local
   3. .evnx.toml is the contract 'evnx validate' checks: safe to delete ('evnx init --no-contract' skips it)
   4. Run 'evnx validate' to check configuration
@@ -28,9 +28,9 @@ $ evnx init --with stripe --yes -p multi
 
   evnx init  Set up environment variables for your project
 
-✓ Created .env from template
-✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 3 variables from 1 component
+✓ Created .env from .env.example
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
   ✓ 3 names from .env.example → multi/.evnx.toml (2 secret, 0 with a format)
 · not changed: .env.production, .env.staging, .env.test — check one with: evnx validate --env-name production
 
@@ -49,15 +49,15 @@ $ evnx init --yes -p rc
 
   evnx init  Set up environment variables for your project
 
-✓ Created .env from template
-✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example (no variables yet)
 · Tip: Run 'evnx add' to add variables interactively
+✓ Created .env from .env.example
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
   ✓ created rc/.evnx.toml with an empty [vars]: evnx add records new variables there
 · .envrc is ignored by the .env* rule in .gitignore; to commit it, add !.envrc there
 
 Next steps:
-  1. Edit .env and replace placeholder values
+  1. Add variables: evnx add custom NAME=value (or evnx add for a menu)
   2. Commit .env.example and .evnx.toml; never commit .env
   3. .evnx.toml is the contract 'evnx validate' checks: safe to delete ('evnx init --no-contract' skips it)
   4. Run 'evnx validate' to check configuration

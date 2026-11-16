@@ -6,9 +6,9 @@ $ evnx init --with vite,clerk,vercel --yes
 
   evnx init  Set up environment variables for your project
 
-✓ Created .env from template
-✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 9 variables from 3 components
+✓ Created .env from .env.example
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
   ✓ 9 names from .env.example → .evnx.toml (2 secret, 1 with a format)
 
 Next steps:
@@ -34,9 +34,9 @@ $ evnx init --detect -p compose
 
   6 variables from 1 component
 
-✓ Created .env from template
-✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
 ✓ Created .env.example with 6 variables
+✓ Created .env from .env.example
+✓ Created .gitignore with .env*, !.env*.example, !.env*.sample, !.env*.template
   ✓ 6 names from .env.example → compose/.evnx.toml (2 secret, 2 with a format)
 
 Next steps:

@@ -144,13 +144,13 @@ fn which(target: &Target, found: &Found, opts: WriteOptions) -> Result<String> {
     }
     if opts.yes || !shared::can_ask() {
         let files: Vec<String> = found.named.iter().map(|n| format!(".env.{n}")).collect();
-        anyhow::bail!(
+        return Err(crate::core::verdict::stopped(format!(
             "{} are here, and none is the default yet.\n\n\
              Choose the one this project reads by default:\n  \
              evnx init --yes --env-name {}",
             files.join(", "),
             found.named[0]
-        );
+        )));
     }
     let items: Vec<String> = found.named.iter().map(|n| format!(".env.{n}")).collect();
     let picked = Select::with_theme(&crate::utils::prompt::MENU)

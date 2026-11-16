@@ -31,12 +31,21 @@ pub fn check(
     example: &str,
     env: &str,
     env_named: bool,
+    json: bool,
 ) -> Result<crate::core::verdict::Verdict> {
     use crate::core::verdict::{self, Verdict};
     use colored::Colorize;
 
     if spec.is_empty() {
-        verdict::skipped("no [vars] in .evnx.toml");
+        if json {
+            print_check_json(&serde_json::json!({
+                "checked": false,
+                "reason": "no [vars] in .evnx.toml",
+                "ok": true,
+            }));
+        } else {
+            verdict::skipped("no [vars] in .evnx.toml");
+        }
         return Ok(Verdict::Clean);
     }
     let keys = |path: &str| -> Result<indexmap::IndexMap<String, String>> {
@@ -74,10 +83,76 @@ pub fn check(
         )
     });
 
-    let mut problems = 0;
-    let mut report = |title: String, names: &[&str]| {
+    // The declared formats, by the check `validate` runs for the same
+    // declaration (`check_spec_format`): the contract says what a value looks
+    // like, and `.env` is the file whose values are real. A value is never
+    // printed, only the name and the format it breaks.
+    let format_issues = env_vars
+        .as_ref()
+        .map(|vars| {
+            crate::commands::validate::checks::check_spec_format(
+                vars,
+                spec,
+                crate::core::env_name::name_of(env),
+                env,
+                &std::collections::HashSet::new(),
+            )
+        })
+        .unwrap_or_default();
+
+    // N14-12: a name some environment files hold and others lack. A warning:
+    // it does not change the verdict. The contract excuses a file from a name
+    // it declares optional or limited to other environments.
+    let folder = match Path::new(env).parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    };
+    let env_file = Path::new(env).file_name().and_then(|f| f.to_str());
+    let in_env_files = crate::core::presence::read_dir(folder, None);
+    let already = |f: &crate::core::presence::EnvNames, name: &str| {
+        Some(f.file.as_str()) == env_file
+            && missing_from_env.as_ref().is_some_and(|m| m.contains(&name))
+    };
+    let partial = crate::core::presence::partial(&in_env_files, spec, &already);
+
+    let problems = not_in_template.len()
+        + undeclared.len()
+        + missing_from_env.as_ref().map_or(0, Vec::len)
+        + format_issues.len();
+
+    // SPEC-3: names only, as everywhere else in evnx's JSON.
+    if json {
+        print_check_json(&serde_json::json!({
+            "checked": true,
+            "ok": problems == 0,
+            "template": example,
+            "env": env_vars.is_some().then_some(env),
+            "declared": spec.len(),
+            "not_in_template": not_in_template,
+            "undeclared": undeclared,
+            "missing_from_env": missing_from_env,
+            "format": format_issues
+                .iter()
+                .map(|i| serde_json::json!({ "name": i.variable, "message": i.message }))
+                .collect::<Vec<_>>(),
+            "partial_presence": partial
+                .iter()
+                .map(|p| serde_json::json!({
+                    "name": p.name,
+                    "present_in": p.present_in,
+                    "absent_from": p.absent_from,
+                }))
+                .collect::<Vec<_>>(),
+        }));
+        return Ok(if problems == 0 {
+            Verdict::Clean
+        } else {
+            Verdict::Findings
+        });
+    }
+
+    let report = |title: String, names: &[&str]| {
         if !names.is_empty() {
-            problems += names.len();
             println!("  {} {title}: {}", "✗".red(), names.join(", "));
         }
     };
@@ -92,23 +167,8 @@ pub fn check(
             missing,
         );
     }
-
-    // The declared formats, by the check `validate` runs for the same
-    // declaration (`check_spec_format`): the contract says what a value looks
-    // like, and `.env` is the file whose values are real. A value is never
-    // printed, only the name and the format it breaks.
-    if let Some(vars) = &env_vars {
-        let issues = crate::commands::validate::checks::check_spec_format(
-            vars,
-            spec,
-            crate::core::env_name::name_of(env),
-            env,
-            &std::collections::HashSet::new(),
-        );
-        for issue in &issues {
-            problems += 1;
-            println!("  {} {} (in {env_label})", "✗".red(), issue.message);
-        }
+    for issue in &format_issues {
+        println!("  {} {} (in {env_label})", "✗".red(), issue.message);
     }
 
     if problems == 0 {
@@ -126,20 +186,7 @@ pub fn check(
             );
         }
     }
-    // N14-12: a name some environment files hold and others lack. A warning:
-    // it does not change the verdict. The contract excuses a file from a name
-    // it declares optional or limited to other environments.
-    let folder = match Path::new(env).parent() {
-        Some(p) if !p.as_os_str().is_empty() => p,
-        _ => Path::new("."),
-    };
-    let env_file = Path::new(env).file_name().and_then(|f| f.to_str());
-    let in_env_files = crate::core::presence::read_dir(folder, None);
-    let already = |f: &crate::core::presence::EnvNames, name: &str| {
-        Some(f.file.as_str()) == env_file
-            && missing_from_env.as_ref().is_some_and(|m| m.contains(&name))
-    };
-    for p in crate::core::presence::partial(&in_env_files, spec, &already) {
+    for p in &partial {
         ui::warning(format!(
             "{} is in {} but not in {} (partial_presence)",
             p.name,
@@ -155,6 +202,11 @@ pub fn check(
     } else {
         Verdict::Findings
     })
+}
+
+/// `spec check --format json`: one document on stdout.
+fn print_check_json(doc: &serde_json::Value) {
+    println!("{doc:#}");
 }
 
 /// Where the variables come from.

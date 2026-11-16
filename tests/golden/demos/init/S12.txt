@@ -13,7 +13,7 @@ Name what you want instead:
   evnx init --yes --with <a,b,c>      components (evnx init --list-components)
   evnx init --detect                  what the project's manifests declare
 
-No verdict: evnx did not finish. This is not a clean result.
+evnx stopped before making changes (exit 2). Run one of the commands above.
 [exit 2]
   ok: no terminal and no flags: stops (exit 2)
   ok: the hint names the flags

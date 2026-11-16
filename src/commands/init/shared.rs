@@ -283,9 +283,11 @@ pub(crate) fn write(
     }
     let (outcome, talk) = write_files(target, vars, example_content, env_content, opts)?;
     match outcome {
+        // GEN-7: the template first, then `.env` made from it. It was the
+        // other way round: ".env from template", then "Created .env.example".
         Outcome::Written => finish(target, vars, vars, || {
-            talk();
             report();
+            talk();
         })?,
         Outcome::KeptExisting => finish(
             target,
@@ -316,7 +318,7 @@ pub(crate) fn emit(planned: Option<&super::report::Planned>, opts: WriteOptions,
 /// there. The way to add a stack's variables to a template you keep is
 /// `evnx add`, and the refusal did not say so (I-302).
 fn refusal(example_path: &Path) -> anyhow::Error {
-    anyhow::anyhow!(
+    crate::core::verdict::stopped(format!(
         "{} already exists.\n\n\
          Refusing to overwrite it without being asked to — it is a tracked file \
          and the contents may be hand-maintained.\n\
@@ -324,7 +326,7 @@ fn refusal(example_path: &Path) -> anyhow::Error {
          To add the variables to it instead, keeping what is there: \
          evnx add blueprint <id> or evnx add service <id>.",
         example_path.display()
-    )
+    ))
 }
 
 /// After the files: the `.evnx.toml` contract (IN-15), then `say` (the
@@ -731,10 +733,11 @@ pub(crate) fn write_files(
     // printed, so the caller can write the contract first (RM-03).
     let root = output_path.to_path_buf();
     let env = target.env_file.clone();
+    let template = target.template_name().to_string();
     let talk: Talk = Box::new(move || {
         crate::core::safe_write::report(&example);
         if created_env {
-            crate::utils::ui::say(format!("{} Created {env} from template", "✓".green()));
+            crate::utils::ui::say(format!("{} Created {env} from {template}", "✓".green()));
         }
         if caught_up > 0 {
             crate::utils::ui::say(format!(

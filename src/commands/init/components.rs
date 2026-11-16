@@ -230,14 +230,14 @@ pub fn handle_detected(
     // Detection is a *proposal*, so accepting it without a human is opting in,
     // and there has to be a way to say so.
     if !opts.yes && !super::shared::can_ask() {
-        anyhow::bail!(
+        return Err(crate::core::verdict::stopped(format!(
             "detected {} components but {}.\n\n\
              Accept them:   evnx init --detect\n\
              Name them:     evnx init --with <a,b,c>\n\
              Skip them:     evnx init --yes      (writes blank files)",
             found.len(),
             super::shared::no_question_reason("there is nobody to confirm with")
-        );
+        )));
     }
 
     if !opts.yes {
@@ -442,13 +442,13 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
     }
 
     if !opts.yes && !super::shared::can_ask() {
-        anyhow::bail!(
+        return Err(crate::core::verdict::stopped(format!(
             "found {} variables the code reads that {name} does not declare, \
              but {}.\n\n\
              Accept them:  evnx init --from-source --yes",
             drift.missing.len(),
             super::shared::no_question_reason("there is nobody to confirm with")
-        );
+        )));
     }
     if !opts.yes {
         let confirm = super::shared::yes_no()

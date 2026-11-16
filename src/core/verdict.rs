@@ -79,6 +79,29 @@ pub fn no_verdict_line(stage: Stage) -> &'static str {
     }
 }
 
+/// A refusal before anything was changed, whose message already says what to
+/// run instead (INIT-7). Its footer says so, rather than "No verdict: evnx
+/// did not finish", which a beginner read as a crash. Exit code 2, as before.
+#[derive(Debug)]
+pub struct Stopped(pub String);
+
+impl std::fmt::Display for Stopped {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Stopped {}
+
+/// A [`Stopped`] refusal.
+pub fn stopped(message: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(Stopped(message.into()))
+}
+
+/// The footer of a [`Stopped`] refusal.
+pub const STOPPED_LINE: &str =
+    "evnx stopped before making changes (exit 2). Run one of the commands above.";
+
 /// Print `err` and the no-verdict line to stderr, then exit 2.
 pub fn no_verdict(err: &anyhow::Error, stage: Stage) -> ! {
     no_verdict_with_code(err, stage, EXIT_ERROR)
@@ -89,7 +112,11 @@ pub fn no_verdict(err: &anyhow::Error, stage: Stage) -> ! {
 pub fn no_verdict_with_code(err: &anyhow::Error, stage: Stage, code: i32) -> ! {
     eprintln!("{} {:#}", "Error:".on_red().bold(), err);
     eprintln!();
-    eprintln!("{}", no_verdict_line(stage));
+    if err.downcast_ref::<Stopped>().is_some() {
+        eprintln!("{STOPPED_LINE}");
+    } else {
+        eprintln!("{}", no_verdict_line(stage));
+    }
     std::process::exit(code);
 }
 

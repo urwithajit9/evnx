@@ -139,6 +139,8 @@ pub struct SyncArgs {
     /// Which file to fill: forward (the default) adds to the template,
     /// reverse adds to `.env`.
     ///
+    /// With only a template (a fresh clone), reverse creates `.env` from it.
+    ///
     /// Leaving it out also decides how far `--check` looks. Without
     /// it the check is two-way, for a developer's own pair: a name only the
     /// template has is drift as well. Naming a direction makes the check
@@ -3998,7 +4000,29 @@ pub enum SpecAction {
         /// Check `.env.<NAME>` instead of `.env`.
         #[arg(long, value_name = "NAME", conflicts_with = "env")]
         env_name: Option<String>,
+
+        /// Output format: `pretty` or `json` (one document on stdout, names
+        /// only, never a value).
+        #[arg(long, value_enum, default_value_t = SpecFormat::Pretty)]
+        format: SpecFormat,
+
+        /// Skip the env file named with `--env` or `--env-name` when it does
+        /// not exist, as an unnamed `.env` is skipped, instead of exiting 2.
+        ///
+        /// For pre-commit hooks on a fresh clone. ⚠️ Not for CI, where a check
+        /// that never ran must not pass.
+        #[arg(long)]
+        skip_without_env: bool,
     },
+}
+
+/// `--format` of `spec check`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SpecFormat {
+    /// Lines for a person.
+    Pretty,
+    /// One JSON document.
+    Json,
 }
 
 /// `spec check --help`: what each exit code means (RM-41).

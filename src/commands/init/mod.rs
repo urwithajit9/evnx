@@ -134,7 +134,7 @@ pub fn run(
             let choice = if no_questions || dry_run {
                 adopt::Choice::Adopt
             } else if !shared::can_ask() {
-                anyhow::bail!(
+                return Err(crate::core::verdict::stopped(format!(
                     "{}.\n\n\
                      This project already has env files. To record them in .evnx.toml \
                      (no env file is changed):\n  \
@@ -142,7 +142,7 @@ pub fn run(
                      To see what that writes first:\n  \
                      evnx init --dry-run",
                     shared::no_question_reason("there is no terminal to ask on")
-                );
+                )));
             } else {
                 adopt::ask(&target, &found)?
             };
@@ -192,7 +192,7 @@ pub fn run(
         // this was the one door that did not (I-014). Exit code stays 2. "A
         // terminal" means stdin and stderr, outside CI (I-299, DQ-30).
         if !shared::can_ask() {
-            anyhow::bail!(
+            return Err(crate::core::verdict::stopped(format!(
                 "{}.\n\n\
                  Name what you want instead:\n  \
                  evnx init --yes                     blank files\n  \
@@ -200,7 +200,7 @@ pub fn run(
                  evnx init --yes --with <a,b,c>      components (evnx init --list-components)\n  \
                  evnx init --detect                  what the project's manifests declare",
                 shared::no_question_reason("there is no terminal to show the menu on")
-            );
+            )));
         }
 
         let modes = [
@@ -247,10 +247,16 @@ pub fn run(
     // times about a `.env` that did not exist (I-013, N-01). Exit code is 0 in
     // all three cases (DQ-3).
     if outcome == shared::Outcome::Written {
+        // GEN-7: "replace placeholder values" in a file with none.
+        let empty = crate::commands::add::shared::read_assignments(&target.template_path())
+            .ok()
+            .flatten()
+            .is_none_or(|m| m.is_empty());
         print_next_steps_ui(
             target.template_name(),
             &target.env_file,
             !target.no_contract,
+            empty,
         );
     }
     print_docs_hint(&docs::INIT);
@@ -276,8 +282,12 @@ fn print_init_header() {
     );
 }
 
-fn print_next_steps_ui(template: &str, env_file: &str, contract: bool) {
-    let edit = format!("Edit {env_file} and replace placeholder values");
+fn print_next_steps_ui(template: &str, env_file: &str, contract: bool, empty: bool) {
+    let edit = if empty {
+        "Add variables: evnx add custom NAME=value (or evnx add for a menu)".to_string()
+    } else {
+        format!("Edit {env_file} and replace placeholder values")
+    };
     if !contract {
         let commit = format!("Commit {template}; never commit {env_file}");
         print_next_steps(&[
