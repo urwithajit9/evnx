@@ -197,8 +197,8 @@ pub struct Replacement<'a> {
 /// to change a file under the run or to make a write fail; callers pass a
 /// closure that does nothing.
 ///
-/// `remove` (S-5, S-6) writes through this, so the next command that edits
-/// several files shares the rollback instead of copying it.
+/// `remove` (S-5, S-6) and `align` share this, so a fix to the rollback is made
+/// once.
 pub fn replace_all(
     files: &[Replacement<'_>],
     before_commit: &mut dyn FnMut(usize, &Path),

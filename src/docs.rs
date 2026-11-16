@@ -177,6 +177,46 @@ pub const SYNC: CommandDoc = CommandDoc {
 Full guide: https://docs.evnx.dev/cli/commands/sync",
 };
 
+pub const ALIGN: CommandDoc = CommandDoc {
+    command: "align",
+    url: "https://docs.evnx.dev/cli/commands/align",
+    description: "Giving every .env the template's sections and key order",
+    after_help: "\
+What it does:\n\
+\x20 The template decides headings, comments, blank lines and key order. Each\n\
+\x20 file keeps its own assignments, moved byte for byte: values, quoting,\n\
+\x20 inline comments and multiline values are never rewritten.\n\
+\x20 A key the file lacks gets a # KEY= placeholder: never the template's value,\n\
+\x20 and never a blank KEY=, so what the app reads does not change. Keys the\n\
+\x20 template lacks are kept, in order, under \"Environment-specific settings\".\n\
+\n\
+Which template: the one every command pairs with the file. --example, else\n\
+.env.<name>.example for .env.<name> when it exists, else [defaults] example,\n\
+else .env.example. Files named together may follow different templates.\n\
+\n\
+Comments only the file has are kept: one directly above an assignment moves\n\
+with it, one followed by a blank line stays after the assignment above it.\n\
+A comment the template also has is the template's. Duplicate keys, a line\n\
+that does not parse, mixed line endings, or more copies of a template comment\n\
+than the template has stop the run, and nothing is written.\n\
+\n\
+Examples:\n\
+\x20 evnx align --env .env.development --env .env.test\n\
+\x20 evnx align --example .env.example --env .env --dry-run\n\
+\x20 evnx align --env-name production --check\n\
+\n\
+Every file is read and checked before any is written, and one already aligned\n\
+is not touched. A file that changes is kept as .bak first, replacing the last\n\
+one (--no-backup to skip); a .bak that .gitignore does not cover is refused,\n\
+since it would hold the secrets. If a later file fails, the ones already\n\
+replaced are put back. Another evnx run writing the same file stops this one.\n\
+\n\
+Exit codes: 0 aligned (or written, or a dry run); 1 --check found a file out\n\
+of alignment; 2 could not run (missing file, parse error, same file twice).\n\
+\n\
+Full guide: https://docs.evnx.dev/cli/commands/align",
+};
+
 pub const MIGRATE: CommandDoc = CommandDoc {
     command: "migrate",
     url: "https://docs.evnx.dev/cli/commands/migrate",
@@ -413,6 +453,7 @@ pub const ALL: &[&CommandDoc] = &[
     &DIFF,
     &CONVERT,
     &SYNC,
+    &ALIGN,
     &MIGRATE,
     &DOCTOR,
     &TEMPLATE,

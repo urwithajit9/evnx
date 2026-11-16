@@ -82,6 +82,31 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.gitignore`.
 - `spec check --format json` (names only, never values) and
   `spec check --skip-without-env`.
+- **`evnx align`: one layout for every `.env`.** The file's template decides
+  section headings, comments, blank lines and key order. It is chosen as every
+  command chooses it (`--example`, the environment's own
+  `.env.<name>.example`, `[defaults] example`, `.env.example`), so files named
+  together can follow different templates. Each target keeps
+  its assignments, moved as slices of the original text, so values, quoting,
+  escapes, interpolation, inline comments and multiline values are unchanged.
+  - A missing key gets a `# KEY=` placeholder, never a blank `KEY=`, which
+    readers treat differently from an absent key and which would hide it from
+    `sync --check` and `diff`. Extra keys are kept at the end, in order, under
+    `# Environment-specific settings`.
+  - Comments only the target has are always kept, by a fixed rule (attached
+    to the next assignment, or standalone after the one above). A case the
+    rule cannot decide is refused, as are duplicate keys, a line that does
+    not parse, mixed line endings, and a template named as a file to align.
+  - Every target is checked before any is written, and written as `remove`
+    writes: locked against another run, kept as `.bak` first (`--no-backup`
+    skips it), replaced only if it still holds what was read, and put back if
+    a later file fails. A `.bak`
+    that `.gitignore` does not cover is refused before anything is written. Each
+    file keeps its mode and line endings; a file already aligned is not touched,
+    and a second run changes nothing.
+  - Output, `--format json` and errors name files, keys and lines only.
+    Exits: 0 aligned, 1 `--check` found drift, 2 no verdict. `sync` is
+    unchanged.
 
 ## [0.14.1] - 2026-11-14
 
@@ -1009,7 +1034,6 @@ character, not per byte, which raised it for non-ASCII text.
     is not there (`--ignore-missing` makes that 0); 4 you answered no.
   - A run ends by saying that removal is not rotation: the value is still in
     git history, older vault versions and the `.bak` copy.
-
 ### Changed
 - `sync`'s "sync only adds" hint names `evnx remove NAME --template` instead
   of "by hand", and `add`'s next steps mention `evnx remove`.

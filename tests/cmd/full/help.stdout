@@ -12,6 +12,7 @@ Commands:
   convert      Transform `.env` files into multiple output formats
   migrate      Move a .env into a secret manager: print the commands, or upload to GitHub
   sync         Keep .env and .env.example in sync
+  align        Give .env files the template's sections, comments and key order, keeping their values
   template     Generate config files from templates
   backup       Create encrypted backup of .env
   restore      Restore from encrypted backup

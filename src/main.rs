@@ -764,6 +764,54 @@ fn main() -> Result<()> {
             })
             .map(verdict::finish),
 
+        Commands::Align { args } => {
+            let evnx::cli::AlignArgs {
+                example,
+                env,
+                env_name,
+                dry_run,
+                check,
+                format,
+                no_backup,
+            } = args;
+            // Each file paired with its template the way every other command
+            // pairs them (core::resolve): `--env` files first, then each
+            // `--env-name`; neither given means `[defaults] env_name` or `.env`.
+            let pair = |env: Option<&str>, env_name: Option<&str>| {
+                let r = resolve_files(
+                    env,
+                    env_name,
+                    example.as_deref(),
+                    &cfg,
+                    evnx::core::resolve::Need::Existing,
+                    cli.quiet,
+                    cli.verbose,
+                );
+                commands::align::Target {
+                    env: r.env,
+                    template: r.template,
+                }
+            };
+            let mut targets: Vec<_> = env.iter().map(|e| pair(Some(e), None)).collect();
+            targets.extend(env_name.iter().map(|n| pair(None, Some(n))));
+            if targets.is_empty() {
+                targets.push(pair(None, None));
+            }
+            commands::align::run(commands::align::Options {
+                targets,
+                mode: if check {
+                    commands::align::Mode::Check
+                } else if dry_run {
+                    commands::align::Mode::DryRun
+                } else {
+                    commands::align::Mode::Write
+                },
+                json: format == "json",
+                no_backup,
+            })
+            .map(verdict::finish)
+        }
+
         // Commands::Template { input, output, env } => {
         //     commands::template::run(input, output, env, cli.verbose)
         // }

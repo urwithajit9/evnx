@@ -118,6 +118,58 @@ impl std::fmt::Display for SyncDirection {
     }
 }
 
+/// `evnx align`'s flags. A struct of their own, as `sync`'s are: clap builds
+/// it in its own function, so the `Commands` parser's debug-build stack frame
+/// does not grow with them (the unit tests that build the whole command tree
+/// run on 2 MB threads; see CONTRIBUTING.md).
+#[derive(Args, Debug)]
+pub struct AlignArgs {
+    /// The template whose layout every file follows. Without it, each file
+    /// follows its own: `.env.<name>.example` for `.env.<name>` when there
+    /// is one, else `[defaults] example`, else `.env.example`.
+    #[arg(long, value_name = "FILE")]
+    pub example: Option<String>,
+
+    /// A file to align. Repeat for several: every one is checked before
+    /// any is written. Defaults to `[defaults] env_name`, else `.env`.
+    #[arg(long, value_name = "FILE")]
+    pub env: Vec<String>,
+
+    /// Align `.env.<NAME>`. Repeatable, and combines with --env.
+    #[arg(long, value_name = "NAME")]
+    pub env_name: Vec<String>,
+
+    /// Show what would move, what is missing and what is extra; write nothing.
+    #[arg(long, short = 'n')]
+    pub dry_run: bool,
+
+    /// Report alignment through the exit code; write nothing.
+    ///
+    ///   0  every file already has the template's layout (`evnx sync --check`
+    ///      is what reports keys with no value)
+    ///   1  a file is out of alignment
+    ///   2  no verdict — a file is missing, will not parse, or is the
+    ///      same file as another one named
+    #[arg(long, verbatim_doc_comment)]
+    pub check: bool,
+
+    /// Output format: `pretty` (default) or `json`.
+    #[arg(
+        long,
+        value_name = "FORMAT",
+        default_value = "pretty",
+        value_parser = ["pretty", "json"]
+    )]
+    pub format: String,
+
+    /// Keep no `.bak` copy of a file before replacing it.
+    ///
+    /// Without it, a `.bak` that `.gitignore` does not cover is refused
+    /// before anything is written: it would hold a copy of the secrets.
+    #[arg(long)]
+    pub no_backup: bool,
+}
+
 /// Keep .env and .env.example in sync.
 #[derive(Args, Debug)]
 pub struct SyncArgs {
@@ -3154,6 +3206,17 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     Sync {
         #[command(flatten)]
         args: SyncArgs,
+    },
+
+    /// Give .env files the template's sections, comments and key order, keeping their values.
+    ///
+    /// Each assignment is moved exactly as written; a key the file lacks gets a
+    /// `# KEY=` placeholder, and keys the template lacks are kept at the end.
+    /// Prints file names, key names and line numbers, never a value.
+    #[command(after_help = docs::ALIGN.after_help)]
+    Align {
+        #[command(flatten)]
+        args: AlignArgs,
     },
 
     /// Generate config files from templates.

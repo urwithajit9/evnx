@@ -65,6 +65,7 @@ fn cases() -> Vec<Case> {
             ],
         ),
         case("sync", &["sync", "-f"]),
+        case("align", &["align"]),
         case(
             "template",
             &[
