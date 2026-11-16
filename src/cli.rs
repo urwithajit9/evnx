@@ -2448,6 +2448,18 @@ pub enum Commands {
         #[arg(long)]
         no_backup: bool,
 
+        /// Remove a name even when a line that stays refers to it
+        /// (`URL=http://h/${PORT}`). Without it, remove names those lines and
+        /// changes nothing.
+        #[arg(long)]
+        allow_dangling: bool,
+
+        /// Let a pattern remove every variable in a file (`remove '*'`). Needed
+        /// with --yes or without a terminal; in a terminal, typing the count
+        /// does the same.
+        #[arg(long)]
+        all_names: bool,
+
         /// Print the result as one JSON document (needs --yes or --dry-run;
         /// with --check it never asks, so neither is needed).
         #[arg(long)]
@@ -2463,7 +2475,7 @@ pub enum Commands {
             long,
             conflicts_with_all = [
                 "template", "contract", "all", "env_name", "dry_run", "yes",
-                "ignore_missing", "no_backup",
+                "ignore_missing", "no_backup", "allow_dangling", "all_names",
             ]
         )]
         check: bool,

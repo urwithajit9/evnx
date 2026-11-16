@@ -241,6 +241,8 @@ fn main() -> Result<()> {
             yes,
             ignore_missing,
             no_backup,
+            allow_dangling,
+            all_names,
             json,
             check,
         } => {
@@ -255,6 +257,8 @@ fn main() -> Result<()> {
                 yes,
                 ignore_missing,
                 no_backup,
+                allow_dangling,
+                all_names,
                 json,
                 verbose: cli.verbose,
                 check,

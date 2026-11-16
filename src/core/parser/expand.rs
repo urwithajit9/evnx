@@ -327,7 +327,7 @@ fn split_operator(inner: &str) -> Option<(&str, &str, &str)> {
 
 /// The variable names `value` refers to, `${NAME…}` or `$NAME`, in order and
 /// once each. A `$` written `\$` is not a reference.
-pub(super) fn references(value: &str) -> Vec<String> {
+pub(crate) fn references(value: &str) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     let mut chars = value.chars().peekable();
     while let Some(c) = chars.next() {

@@ -100,3 +100,51 @@ fn no_backup_records_nothing() {
     out.assert_not_contains(".env.bak");
     assert!(!p.exists(".evnx/backups.json"));
 }
+
+// ── Part 2: remove (REM-1, REM-2, REM-3, FLD-12) ────────────────────────────
+
+/// REM-1's reproduction: the file stays readable.
+#[test]
+fn rem1_a_name_another_line_uses_is_refused() {
+    let p = Project::new()
+        .env("PORT=3000\nURL=http://h/${PORT}\n")
+        .example("PORT=3000\nURL=http://h/${PORT}\n");
+    let out = run(p.path(), &["remove", "PORT", "--all", "--yes"]);
+    out.assert_code(2);
+    out.assert_contains("line 2: URL uses ${PORT}");
+    out.assert_contains("--allow-dangling");
+    assert_eq!(p.read(".env"), "PORT=3000\nURL=http://h/${PORT}\n");
+    assert_eq!(p.read(".env.example"), "PORT=3000\nURL=http://h/${PORT}\n");
+
+    run(
+        p.path(),
+        &["remove", "PORT", "--all", "--yes", "--allow-dangling"],
+    )
+    .assert_code(0);
+    assert_eq!(p.read(".env"), "URL=http://h/${PORT}\n");
+}
+
+/// REM-2: `--yes` is not enough for a pattern that takes everything.
+#[test]
+fn rem2_a_match_all_pattern_needs_all_names() {
+    let p = Project::new().env("A=1\nB=2\n");
+    let out = run(p.path(), &["remove", "*", "--yes"]);
+    out.assert_code(2);
+    out.assert_contains("--all-names");
+    assert_eq!(p.read(".env"), "A=1\nB=2\n");
+    run(p.path(), &["remove", "*", "--yes", "--all-names"]).assert_code(0);
+    assert_eq!(p.read(".env"), "");
+    // A pattern that leaves something is not a match-all.
+    let p = Project::new().env("A_1=1\nA_2=2\nB=3\n");
+    run(p.path(), &["remove", "A_*", "--yes"]).assert_code(0);
+}
+
+/// REM-3, FLD-12: a section `add` wrote goes with its last variable.
+#[test]
+fn rem3_add_then_remove_leaves_the_file_as_it_was() {
+    let p = Project::new().env("APP=1\n").example("APP=\n");
+    run(p.path(), &["add", "custom", "K1=a", "K2=b", "--yes"]).assert_code(0);
+    run(p.path(), &["remove", "K1", "K2", "--all", "--yes"]).assert_code(0);
+    assert_eq!(p.read(".env"), "APP=1\n");
+    assert_eq!(p.read(".env.example"), "APP=\n");
+}

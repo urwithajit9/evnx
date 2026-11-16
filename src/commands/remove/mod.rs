@@ -53,6 +53,11 @@ pub struct Options {
     pub yes: bool,
     pub ignore_missing: bool,
     pub no_backup: bool,
+    /// `--allow-dangling`: remove even when a kept line refers to the name
+    /// (REM-1).
+    pub allow_dangling: bool,
+    /// `--all-names`: a pattern may take every variable in a file (REM-2).
+    pub all_names: bool,
     pub json: bool,
     pub verbose: bool,
     /// `--check`: read-only; see [`check`].
@@ -240,8 +245,10 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
     if !missing.is_empty() && !opts.ignore_missing {
         bail!("{}", not_found(&missing, &places, &in_scope));
     }
-    // S-10: a glob that takes every variable in a file needs `--yes`.
-    if !opts.yes && !opts.dry_run {
+    // S-10, REM-2: a pattern that takes every variable in a file is said
+    // out loud. `--yes` alone is what a script with an empty `"${PREFIX}*"`
+    // passes, so it needs `--all-names`, or the count typed in a terminal.
+    if !opts.all_names && !opts.dry_run {
         for p in places
             .iter()
             .filter(|p| in_scope(p) && p.kind != Kind::Contract)
@@ -251,15 +258,32 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
                 .iter()
                 .filter(|pat| pat.contains(['*', '?']))
                 .any(|pat| !p.names.is_empty() && p.names.iter().all(|k| glob_match(pat, k)));
-            if wide {
-                bail!(
-                    "{} matches every variable in {} ({}). Pass --yes if that is what you mean; \
-                     --dry-run lists them.",
-                    opts.names.join(" "),
-                    p.label,
-                    count(p.names.len(), "variable")
-                );
+            if !wide {
+                continue;
             }
+            let n = p.names.len();
+            if !opts.yes && !opts.json && crate::utils::term::can_prompt() {
+                let typed: String = dialoguer::Input::new()
+                    .with_prompt(format!(
+                        "{} matches every variable in {} ({}). Type {n} to remove them all",
+                        opts.names.join(" "),
+                        p.label,
+                        count(n, "variable")
+                    ))
+                    .allow_empty(true)
+                    .interact_text()?;
+                if typed.trim() == n.to_string() {
+                    continue;
+                }
+                bail!("nothing was removed: {} was not typed", n);
+            }
+            bail!(
+                "{} matches every variable in {} ({}), so nothing was removed. Pass --all-names \
+                 if that is what you mean; --dry-run lists them.",
+                opts.names.join(" "),
+                p.label,
+                count(n, "variable")
+            );
         }
     }
 
@@ -281,6 +305,29 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
             },
             _ => {
                 let cut = edit::cut_entries(&p.original, &m, &p.label)?;
+                // REM-1: a kept line that still uses a removed name would read
+                // as `http://h/` or a literal `${PORT}`, and evnx itself could
+                // no longer parse the file.
+                let left = edit::dangling(&p.original, &m);
+                if !left.is_empty() && !opts.allow_dangling {
+                    let lines: Vec<String> = left
+                        .iter()
+                        .map(|(line, key, name)| {
+                            format!("  {} line {line}: {key} uses ${{{name}}}", p.label)
+                        })
+                        .collect();
+                    bail!(
+                        "{} still uses {}, so nothing was changed:\n{}\n\
+                         Rewrite those lines first, or pass --allow-dangling.",
+                        if left.len() == 1 {
+                            "a line that stays".to_string()
+                        } else {
+                            format!("{} lines that stay", left.len())
+                        },
+                        m.iter().cloned().collect::<Vec<_>>().join(", "),
+                        lines.join("\n")
+                    );
+                }
                 Change {
                     place_index: i,
                     text: cut.text,
