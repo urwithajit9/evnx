@@ -719,108 +719,33 @@ fn warn_after(required: &[&String], tracked: &[String], unignored: &[String]) {
     }
 }
 
-/// Back up, stage, then commit each change; on a failure, put back the files
-/// already committed (S-5). Returns each change's backup.
+/// Lock, back up, stage, then commit each change; on a failure, put back the
+/// files already committed (E-7, S-5, S-6, in [`safe_write::replace_all`]).
+/// Returns each change's backup.
 fn apply(
     places: &[Place],
     changes: &[Change],
     no_backup: bool,
     before_commit: &mut dyn FnMut(usize, &Path),
 ) -> Result<Vec<Option<PathBuf>>> {
-    // E-7: one run at a time per file. Held until this function returns, so the
-    // check below, the backups and the swaps all happen under it. Sorted, and
-    // never waited for, so two runs cannot deadlock: the second stops.
-    let mut targets: Vec<&Path> = changes
+    let files: Vec<safe_write::Replacement<'_>> = changes
         .iter()
-        .map(|c| places[c.place_index].path.as_path())
+        .map(|c| {
+            let p = &places[c.place_index];
+            let env = p.kind == Kind::Env;
+            safe_write::Replacement {
+                path: &p.path,
+                label: &p.label,
+                original: p.original.as_bytes(),
+                content: c.text.as_bytes(),
+                private: env,
+                // Env files hold the only copy of a secret; the template and
+                // the contract are committed, so git keeps theirs (S-14).
+                backup: env && !no_backup,
+            }
+        })
         .collect();
-    targets.sort();
-    targets.dedup();
-    let mut _locks = Vec::new();
-    for t in targets {
-        _locks.push(crate::core::lock::acquire(t)?);
-    }
-    // A run that held the lock before us may have finished since we read: stop
-    // before taking a backup of a file that is no longer what we planned from.
-    for c in changes {
-        let p = &places[c.place_index];
-        if !matches!(std::fs::read(&p.path), Ok(now) if now == p.original.as_bytes()) {
-            bail!("{} changed while evnx was running", p.label);
-        }
-    }
-    let mut backups = Vec::new();
-    for c in changes {
-        let p = &places[c.place_index];
-        // Env files hold the only copy of a secret; the template and the
-        // contract are committed, so git keeps theirs (S-14).
-        backups.push(if p.kind == Kind::Env && !no_backup {
-            Some(safe_write::backup(&p.path, p.original.as_bytes())?)
-        } else {
-            None
-        });
-    }
-    let mut staged = Vec::new();
-    for c in changes {
-        let p = &places[c.place_index];
-        staged.push(if p.kind == Kind::Env {
-            safe_write::stage_private(&p.path, c.text.as_bytes())?
-        } else {
-            safe_write::stage_shared(&p.path, c.text.as_bytes())?
-        });
-    }
-    let mut done: Vec<usize> = Vec::new();
-    for (i, (c, s)) in changes.iter().zip(staged).enumerate() {
-        let p = &places[c.place_index];
-        before_commit(i, &p.path);
-        let result = match std::fs::read(&p.path) {
-            // S-6: compare and swap.
-            Ok(now) if now == p.original.as_bytes() => s.commit().map(|w| safe_write::report(&w)),
-            Ok(_) => Err(anyhow::anyhow!(
-                "{} changed while evnx was running",
-                p.label
-            )),
-            Err(e) => Err(anyhow::Error::from(e).context(format!("reading {}", p.label))),
-        };
-        if let Err(e) = result {
-            let mut restored = Vec::new();
-            let mut failed = Vec::new();
-            for &j in &done {
-                let q = &places[changes[j].place_index];
-                let put_back = if q.kind == Kind::Env {
-                    safe_write::write_private(&q.path, q.original.as_bytes())
-                } else {
-                    safe_write::write_shared(&q.path, q.original.as_bytes())
-                };
-                match put_back {
-                    Ok(_) => restored.push(q.label.clone()),
-                    Err(_) => failed.push(q.label.clone()),
-                }
-            }
-            let mut msg = format!("{e:#}\n  {} was not changed.", p.label);
-            if !restored.is_empty() {
-                msg.push_str(&format!(
-                    "\n  Put back as they were: {}.",
-                    restored.join(", ")
-                ));
-            }
-            if !failed.is_empty() {
-                msg.push_str(&format!(
-                    "\n  ⚠ Could not put back: {}. Their .bak copies hold the originals.",
-                    failed.join(", ")
-                ));
-            }
-            let untouched: Vec<&str> = changes[i + 1..]
-                .iter()
-                .map(|c| places[c.place_index].label.as_str())
-                .collect();
-            if !untouched.is_empty() {
-                msg.push_str(&format!("\n  Not reached: {}.", untouched.join(", ")));
-            }
-            bail!(msg);
-        }
-        done.push(i);
-    }
-    Ok(backups)
+    safe_write::replace_all(&files, before_commit)
 }
 
 /// `--json` (§7.2): names, files and lines only, never a value.
