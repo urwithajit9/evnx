@@ -49,10 +49,17 @@ Options:
   -V, --version
           Print version
 
+Signals and exit (Unix): without masking the command replaces evnx, so signals,
+the terminal and the exit status are the command's own. With masking evnx stays
+to filter the output and passes SIGTERM, SIGHUP, SIGQUIT and SIGINT on to the
+command (not to what it starts), then exits with its code, or 128+n when signal
+n killed it. Windows: no signal forwarding and no job object, so the command can
+outlive evnx when the console closes; its exit code is passed through.
+
 Exit codes:
     0  Ran, nothing to report
     2  Could not run: usage, config, I/O, or refused before any change
   141  Output closed early (broken pipe)
-    N  Once the command has started: its own exit code
+    N  Once the command has started: its own exit code, or 128+n if signal n killed it
 
 Full guide: https://docs.evnx.dev/cli/commands/run

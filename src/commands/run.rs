@@ -7,8 +7,9 @@ use anyhow::{anyhow, Result};
 use crate::core::inject;
 use crate::core::Parser;
 
-/// Read `env`, then run `command` with its variables. Exits with the
-/// command's code; returns only on an error before it starts.
+/// Read `env`, then run `command` with its variables. The result is the
+/// command's code (`inject::ChildExit`) or an error before it started; with no
+/// masking on Unix the command replaces evnx and this does not return.
 pub fn run(
     env: &str,
     include: Option<&[String]>,
@@ -40,7 +41,7 @@ pub fn run(
     inject::check_names(&vars, allow_unsafe_names, env, &format!("edit {env}"))?;
 
     let masker = mask.then(|| inject::Masker::new(&vars)).flatten();
-    let status = inject::spawn_with_env(program, args, &vars, masker.as_ref());
+    let status = inject::run_with_env(program, args, &vars, masker.as_ref());
     for value in vars.values_mut() {
         zeroize::Zeroize::zeroize(value);
     }

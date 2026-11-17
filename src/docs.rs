@@ -368,7 +368,15 @@ pub const RUN: CommandDoc = CommandDoc {
     command: "run",
     url: "https://docs.evnx.dev/cli/commands/run",
     description: "Run a command with a .env's variables, secrets masked in its output",
-    after_help: "Full guide: https://docs.evnx.dev/cli/commands/run",
+    after_help: "\
+Signals and exit (Unix): without masking the command replaces evnx, so signals,\n\
+the terminal and the exit status are the command's own. With masking evnx stays\n\
+to filter the output and passes SIGTERM, SIGHUP, SIGQUIT and SIGINT on to the\n\
+command (not to what it starts), then exits with its code, or 128+n when signal\n\
+n killed it. Windows: no signal forwarding and no job object, so the command can\n\
+outlive evnx when the console closes; its exit code is passed through.\n\
+\n\
+Full guide: https://docs.evnx.dev/cli/commands/run",
 };
 
 pub const COMMANDS: CommandDoc = CommandDoc {

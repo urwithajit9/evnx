@@ -21,7 +21,7 @@ and in `exit_codes` of `evnx commands --json`.
 | 15 | `server_error` | Server error, or rate limited | `auth` and its subcommands, `org` and its subcommands, `vault` and its subcommands, `cloud push`, `cloud pull`, `cloud run`, `cloud history`, `cloud watch`, `cloud diff`, `cloud audit`, `cloud delete-version`, `cloud link`, `cloud export`, `cloud status`, `platform` and its subcommands |
 | 141 | `broken_pipe` | Output closed early (broken pipe) | every command |
 
-`cloud run` and `run`: once the command has started, evnx exits with the command's own code.
+`cloud run` and `run`: once the command has started, evnx exits with the command's own code, or 128+n when signal n killed it (the shell's rule).
 
 A code means the same everywhere: `2` is never a finding, and `1` never a failure to run.
 

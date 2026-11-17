@@ -41,8 +41,10 @@ use crate::utils::ui;
 
 /// Decrypt a vault and run `command` with its variables in the environment.
 ///
-/// Never returns on success: it exits with the child's own status, so
-/// `evnx cloud run -- false` fails a pipeline the way `false` would.
+/// Without masking (Unix) the child replaces evnx (`exec`) and this never
+/// returns on success. With masking it returns the child's status as a
+/// `ChildExit` error that `main` reports, so `evnx cloud run -- false` fails a
+/// pipeline the way `false` would.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     server_override: Option<&str>,
@@ -195,7 +197,7 @@ pub fn run(
     let masker = mask
         .then(|| crate::core::inject::Masker::new(&env_vars))
         .flatten();
-    let status = crate::core::inject::spawn_with_env(program, args, &env_vars, masker.as_ref())
+    let status = crate::core::inject::run_with_env(program, args, &env_vars, masker.as_ref())
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 anyhow!(

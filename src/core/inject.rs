@@ -119,15 +119,51 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-/// Exit as the child did: its code, or 1 with a note when a signal killed it
-/// (128+signal is not portable).
-pub fn exit_as(status: std::process::ExitStatus) -> ! {
-    match status.code() {
-        Some(code) => std::process::exit(code),
-        None => {
-            eprintln!("  ! the command was killed by a signal");
-            std::process::exit(1)
+/// The child's own exit code, carried to `main` as an error so the report path
+/// (`core::error::report`) turns it into the process code and every destructor
+/// runs, the `Masker`'s zeroize among them. Silent: the child said what there
+/// was to say.
+#[derive(Debug)]
+pub struct ChildExit(pub u8);
+
+impl std::fmt::Display for ChildExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "the command exited with {}", self.0)
+    }
+}
+
+impl std::error::Error for ChildExit {}
+
+/// The code evnx exits with for how the child ended: its own code, or 128+n
+/// when signal n killed it (the shell's rule). Windows: its code.
+fn code_of(status: std::process::ExitStatus) -> (u8, Option<i32>) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(sig) = status.signal() {
+            return (u8::try_from(128 + sig).unwrap_or(255), Some(sig));
         }
+    }
+    let code = status.code().unwrap_or(1);
+    // Low byte, as a shell would see it; never 0 for a failure.
+    let byte = (code & 0xff) as u8;
+    (if code != 0 && byte == 0 { 1 } else { byte }, None)
+}
+
+/// Finish as the child did: `Ok` for 0, else an error [`ChildExit`] that `main`
+/// reports as the child's code (128+n for a signal, with a note on stderr
+/// unless `-q`).
+pub fn exit_as(status: std::process::ExitStatus) -> Result<()> {
+    let (code, signal) = code_of(status);
+    if let Some(sig) = signal {
+        if !crate::utils::ui::is_quiet() {
+            eprintln!("  ! the command was killed by signal {sig}");
+        }
+    }
+    if code == 0 {
+        Ok(())
+    } else {
+        Err(anyhow::Error::new(ChildExit(code)))
     }
 }
 
@@ -166,7 +202,18 @@ pub fn check_names(
     ))
 }
 
-/// Run `program` with `env_vars` laid over the inherited environment.
+/// How the child is started.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Launch {
+    /// Unix, nothing to mask: `exec`, so evnx is gone and the child owns the
+    /// signals, the terminal and the exit status. Returns only on failure.
+    Replace,
+    /// Spawn and wait; with a masker, forward signals meanwhile.
+    Wait,
+}
+
+/// Run `program` with `env_vars` laid over the inherited environment and
+/// **wait** for it. The commands call [`run_with_env`], which may `exec`.
 ///
 /// ⚠️ Separated from `run` so the properties that matter can be tested without a
 /// server, a vault or a password: that the child receives the variables, that
@@ -176,6 +223,33 @@ pub fn check_names(
 /// The parent's environment is inherited rather than cleared. Clearing it would
 /// remove `PATH`, and nothing would start.
 pub fn spawn_with_env(
+    program: &str,
+    args: &[String],
+    env_vars: &IndexMap<String, String>,
+    mask: Option<&Masker>,
+) -> std::io::Result<std::process::ExitStatus> {
+    launch(Launch::Wait, program, args, env_vars, mask)
+}
+
+/// What `run` and `cloud run` call. On Unix with nothing to mask the child
+/// replaces evnx (`exec`) and this returns only if that failed; otherwise it
+/// behaves as [`spawn_with_env`] (WP-11a).
+pub fn run_with_env(
+    program: &str,
+    args: &[String],
+    env_vars: &IndexMap<String, String>,
+    mask: Option<&Masker>,
+) -> std::io::Result<std::process::ExitStatus> {
+    let how = if cfg!(unix) && mask.is_none() {
+        Launch::Replace
+    } else {
+        Launch::Wait
+    };
+    launch(how, program, args, env_vars, mask)
+}
+
+fn launch(
+    how: Launch,
     program: &str,
     args: &[String],
     env_vars: &IndexMap<String, String>,
@@ -199,11 +273,24 @@ pub fn spawn_with_env(
         // this command over `export $(cat .env | xargs)`.
         cmd.env(key, value);
     }
+    #[cfg(unix)]
+    if how == Launch::Replace {
+        use std::os::unix::process::CommandExt;
+        // Nothing buffered may be lost when this process image goes away.
+        let _ = std::io::stdout().flush();
+        let _ = std::io::stderr().flush();
+        // `exec` returns only on failure: the error keeps its kind, so the
+        // NotFound hint still works.
+        return Err(cmd.exec());
+    }
     let Some(masker) = mask else {
         return cmd.status();
     };
     // RM-43: the child's output passes through the masker on its way out.
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(unix)]
+    let (mut child, forwarder) = crate::core::signals::Forwarder::spawn(&mut cmd)?;
+    #[cfg(not(unix))]
     let mut child = cmd.spawn()?;
     let out = child.stdout.take();
     let err = child.stderr.take();
@@ -215,6 +302,9 @@ pub fn spawn_with_env(
             scope.spawn(move || masker.copy(err, std::io::stderr()));
         }
     });
+    #[cfg(unix)]
+    return forwarder.wait(&mut child);
+    #[cfg(not(unix))]
     child.wait()
 }
 

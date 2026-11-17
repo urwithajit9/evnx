@@ -632,7 +632,7 @@ fn render_doc() -> String {
         .map(|e| format!("`{}`", e.name()))
         .collect();
     s.push_str(&format!(
-        "\n{}: once the command has started, evnx exits with the command's own code.\n",
+        "\n{}: once the command has started, evnx exits with the command's own code, or 128+n when signal n killed it (the shell's rule).\n",
         child.join(" and ")
     ));
     s.push_str("\nA code means the same everywhere: `2` is never a finding, and `1` never a failure to run.\n");

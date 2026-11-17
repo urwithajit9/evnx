@@ -7,7 +7,7 @@
 //! confirmation nobody could give, a cloud failure, a restore written aside —
 //! and [`report`] prints it and returns the code. Nothing else in `src/` maps an
 //! error to a code, and nothing else calls `process::exit` (but `utils::term`,
-//! broken pipe, and `core::inject::exit_as`, the child's code).
+//! broken pipe). The child's code of `run` comes back as `Child`.
 //!
 //! | Code | Variants |
 //! |---|---|
@@ -111,6 +111,11 @@ pub enum EvnxError {
     #[error(transparent)]
     Restore(RestoreError),
 
+    /// The command `run` started ended with this code (its own, or 128+n for a
+    /// signal). Silent: the command said what there was to say.
+    #[error("the command exited with {0}")]
+    Child(u8),
+
     /// Anything else: could not run, exit 2.
     #[error("{0:#}")]
     Other(anyhow::Error),
@@ -135,6 +140,7 @@ impl EvnxError {
             EvnxError::Platform { code, .. } => *code,
             EvnxError::Backup(be) => be.exit_code() as u8,
             EvnxError::Restore(re) => re.exit_code() as u8,
+            EvnxError::Child(code) => *code,
             _ => EXIT_ERROR,
         }
     }
@@ -158,6 +164,7 @@ impl EvnxError {
             EvnxError::Platform { code, .. } => request_code(*code),
             EvnxError::Backup(_) => "backup_failed",
             EvnxError::Restore(_) => "restore_failed",
+            EvnxError::Child(_) => "child_exit",
             EvnxError::Other(_) => "error",
         }
     }
@@ -168,6 +175,7 @@ impl EvnxError {
             EvnxError::Declined
             | EvnxError::RestoredAside(_)
             | EvnxError::Said
+            | EvnxError::Child(_)
             | EvnxError::SignedOut => true,
             EvnxError::Restore(re) => re.is_silent(),
             _ => false,
@@ -216,6 +224,9 @@ fn request_code(code: u8) -> &'static str {
 
 /// Find the typed meaning of an error anywhere in its chain.
 pub fn classify(e: anyhow::Error) -> EvnxError {
+    if let Some(c) = e.downcast_ref::<crate::core::inject::ChildExit>() {
+        return EvnxError::Child(c.0);
+    }
     if e.chain().any(|c| c.is::<crate::utils::prompt::Declined>()) {
         return EvnxError::Declined;
     }
