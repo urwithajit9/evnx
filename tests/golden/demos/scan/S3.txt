@@ -77,9 +77,10 @@ Next steps:
   ok: all = low and above (exit 1)
 
 $ evnx scan . --severity bogus
-Error: unknown severity 'bogus' — expected one of: critical, high, medium, low
+error: invalid value 'bogus' for '--severity <LEVEL>'
+  [possible values: critical, high, medium, low]
 
-No verdict: evnx did not scan anything. This is not a clean result.
+For more information, try '--help'.
 [exit 2]
   ok: bad severity is a usage error (exit 2)
 

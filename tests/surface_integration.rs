@@ -84,7 +84,7 @@ fn t_sf03_compact_is_one_line_and_needs_json() {
 
     evnx(&["commands", "--compact"])
         .assert_code(2)
-        .assert_contains("--compact only applies to --json output");
+        .assert_contains("--compact only applies to --format json output");
 }
 
 /// T-SF-04, T-SF-05: the `surface` alias answers the same, and two runs are
@@ -845,5 +845,5 @@ fn rm42_json_needs_check_or_list() {
     Install::at("bin")
         .run(&["update", "--json"])
         .assert_code(2)
-        .assert_contains("--json goes with --check or --list");
+        .assert_contains("--format json goes with --check or --list");
 }

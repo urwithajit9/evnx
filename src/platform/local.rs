@@ -1,6 +1,6 @@
 //! The local `.env` file a platform command compares with or pulls into.
 //!
-//! Which file: `--file`, else `.env.<environment>` when it exists, else `.env`,
+//! Which file: `--env`, else `.env.<environment>` when it exists, else `.env`,
 //! the rule `cloud push` and `cloud pull` use. The run always says which.
 //!
 //! Editing keeps every byte it does not need to change: comments, blank lines,
@@ -20,7 +20,7 @@ use crate::core::parser::{Document, Entry, Parser, ParserConfig};
 /// How the file was chosen, so the command can say so.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Choice {
-    /// `--file <path>`.
+    /// `--env <path>`.
     Explicit,
     /// `.env.<environment>`, because it exists.
     MatchedEnvironment,
@@ -32,7 +32,7 @@ impl Choice {
     /// The parenthesised note printed after the file name.
     pub fn note(self) -> &'static str {
         match self {
-            Choice::Explicit => "--file",
+            Choice::Explicit => "--env",
             Choice::MatchedEnvironment => "matched the environment",
             Choice::Default => "default",
         }

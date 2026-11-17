@@ -47,14 +47,14 @@ Options:
           
           Plain http:// is refused for anything but a loopback address, because the access and refresh tokens travel in request headers.
 
-  -v, --verbose
-          Enable verbose output
+      --no-color
+          Disable colored output
 
   -q, --quiet
           Print nothing on success. Findings, warnings, errors and requested data still print
 
-      --no-color
-          Disable colored output
+  -v, --verbose
+          Enable verbose output
 
   -h, --help
           Print help (see a summary with '-h')

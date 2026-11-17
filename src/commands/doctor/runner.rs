@@ -18,7 +18,7 @@
 //! # Usage
 //! ```bash
 //! evnx doctor                    # Check current directory
-//! evnx doctor --path ./my-app   # Check specific project
+//! evnx doctor -C ./my-app   # Check specific project
 //! evnx doctor --verbose         # Show detailed diagnostics
 //! EVNX_OUTPUT_JSON=1 evnx doctor | jq '.summary.errors'  # CI/CD integration
 //! ```
@@ -77,7 +77,7 @@ pub fn run(
     verbose: bool,
     fix: bool,
     strict: bool,
-    format: Option<String>,
+    json: Option<bool>,
     skip_without_env: bool,
 ) -> Result<()> {
     let project_root = PathBuf::from(&path);
@@ -95,18 +95,11 @@ pub fn run(
     // ⚠️ Precedence, not "either wins" — unlike `fix` below. A format is a
     // choice between two answers rather than a guard, so an explicit
     // `--format pretty` must be able to override `EVNX_OUTPUT_JSON=1` exported
-    // by a CI image. `Option<String>` is what makes "asked for pretty"
-    // distinguishable from "did not ask".
-    let json_output = match format.as_deref() {
-        Some(value) => match crate::core::args::one_of(
-            "format",
-            value,
-            &[("json", true), ("pretty", false), ("text", false)],
-            &["pretty", "json"],
-        ) {
-            Ok(json) => json,
-            Err(e) => no_verdict(e.to_string()),
-        },
+    // by a CI image. `Option` is what makes "asked for pretty" distinguishable
+    // from "did not ask": `main` passes `None` when neither `--format` nor
+    // `--json` was typed.
+    let json_output = match json {
+        Some(json) => json,
         None => std::env::var("EVNX_OUTPUT_JSON")
             .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "json"))
             .unwrap_or(false),

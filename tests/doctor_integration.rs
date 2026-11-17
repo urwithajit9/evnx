@@ -255,13 +255,13 @@ fn a_missing_directory_is_trouble_not_a_verdict() {
     assert!(stderr.contains("No verdict"), "{stderr}");
 }
 
-/// The documented spelling, which was never accepted.
+/// `-C, --dir` is the flag spelling of the positional.
 #[test]
-fn path_is_accepted_as_a_flag_and_conflicts_with_the_positional() {
+fn dir_is_accepted_as_a_flag_and_conflicts_with_the_positional() {
     let d = unhealthy_project();
 
     cargo_bin_cmd!("evnx")
-        .args(["doctor", "--path"])
+        .args(["doctor", "-C"])
         .arg(d.path())
         .arg("--fix")
         .assert()
@@ -271,11 +271,19 @@ fn path_is_accepted_as_a_flag_and_conflicts_with_the_positional() {
     cargo_bin_cmd!("evnx")
         .arg("doctor")
         .arg(d.path())
-        .arg("--path")
+        .arg("--dir")
         .arg(d.path())
         .assert()
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
+
+    // The old spelling was removed, with a hint.
+    cargo_bin_cmd!("evnx")
+        .args(["doctor", "--path"])
+        .arg(d.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("use '-C/--dir'"));
 }
 
 /// ⚠️ `env_example`'s "not tracked" branch was `fixable: true` with a fix action
@@ -391,6 +399,6 @@ fn an_unknown_format_exits_2_rather_than_falling_back() {
         .code(2);
 
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
-    assert!(stderr.contains("unknown format"), "{stderr}");
-    assert!(stderr.contains("No verdict"), "{stderr}");
+    assert!(stderr.contains("invalid value 'yaml'"), "{stderr}");
+    assert!(stderr.contains("pretty, json"), "{stderr}");
 }

@@ -159,7 +159,7 @@ fn rm85_link_names_the_folder_it_bound() {
     assert!(p.read(".evnx.toml").contains(r#"vault = "app/production""#));
 }
 
-/// RM-86: `link --file` stores the file relative to the `.evnx.toml`'s
+/// RM-86: `link --env` stores the file relative to the `.evnx.toml`'s
 /// folder, and refuses one outside it.
 #[test]
 fn rm86_link_file_is_stored_from_the_toml_folder() {
@@ -186,7 +186,7 @@ fn rm86_link_file_is_stored_from_the_toml_folder() {
 
     let out = run_with(
         &deploy,
-        &["cloud", "link", "app/production", "--file", ".env"],
+        &["cloud", "link", "app/production", "--env", ".env"],
         &env,
         None,
     );
@@ -201,7 +201,7 @@ fn rm86_link_file_is_stored_from_the_toml_folder() {
             "cloud",
             "link",
             "app/production",
-            "--file",
+            "--env",
             "../../elsewhere.env",
         ],
         &env,

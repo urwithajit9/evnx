@@ -59,14 +59,14 @@ Options:
       --no-contract
           Write no `[vars]` contract into `.evnx.toml`: only the env files and `.gitignore`, as `cp .env.example .env` would. The contract is what `evnx validate` checks names and formats against; it is safe to delete, and `evnx spec init` writes one later. When init adopts named env files it still sets `[defaults] env_name`
 
-  -v, --verbose
-          Enable verbose output
+      --no-color
+          Disable colored output
 
   -q, --quiet
           Print nothing on success. Findings, warnings, errors and requested data still print
 
-      --no-color
-          Disable colored output
+  -v, --verbose
+          Enable verbose output
 
   -h, --help
           Print help (see a summary with '-h')

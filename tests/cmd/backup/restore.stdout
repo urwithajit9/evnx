@@ -50,14 +50,14 @@ Options:
           
           Examples: evnx restore .env.backup --password-file /run/secrets/evnx-pass EVNX_PASSWORD=mypass evnx restore .env.backup
 
-  -v, --verbose
-          Enable verbose output
+      --no-color
+          Disable colored output
 
   -q, --quiet
           Print nothing on success. Findings, warnings, errors and requested data still print
 
-      --no-color
-          Disable colored output
+  -v, --verbose
+          Enable verbose output
 
   -h, --help
           Print help (see a summary with '-h')

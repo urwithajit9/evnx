@@ -289,7 +289,7 @@ fn cloud_push_reads_the_typed_master_password() {
     let mut run = Pty::spawn_with(
         p.path(),
         &[
-            "cloud", "push", "--vault", VAULT_ID, "--file", ".env", "--yes",
+            "cloud", "push", "--vault", VAULT_ID, "--env", ".env", "--yes",
         ],
         &[
             ("EVNX_SERVER", url.as_str()),

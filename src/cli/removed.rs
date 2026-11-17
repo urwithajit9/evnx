@@ -154,12 +154,168 @@ pub const REMOVED: &[Removed] = &[
         old: &["-y", "--yes"],
         new: "--show-values",
     },
+    // scan: `pretty` is the default format, GitHub annotations are `github`; the
+    // source format of `scan rules add` is `--from`.
+    Removed::Value {
+        path: &["scan"],
+        flag: "--format",
+        value: "text",
+        new: "--format pretty",
+    },
+    Removed::Value {
+        path: &["scan"],
+        flag: "--format",
+        value: "github-actions",
+        new: "--format github",
+    },
+    Removed::Flag {
+        path: &["scan", "rules", "add"],
+        old: &["--format"],
+        new: "--from",
+    },
+    // doctor: the project folder is `-C, --dir` (or the positional).
+    Removed::Flag {
+        path: &["doctor"],
+        old: &["--path"],
+        new: "-C/--dir",
+    },
+    Removed::Value {
+        path: &["doctor"],
+        flag: "--format",
+        value: "text",
+        new: "--format pretty",
+    },
+    // migrate: the env file is `--env`; GitHub is `github`; the other short
+    // destination names and `--from env` went with the enums.
+    Removed::Flag {
+        path: &["migrate"],
+        old: &["--source-file"],
+        new: "--env",
+    },
+    Removed::Value {
+        path: &["migrate"],
+        flag: "--to",
+        value: "github-actions",
+        new: "--to github",
+    },
+    Removed::Value {
+        path: &["migrate"],
+        flag: "--to",
+        value: "aws",
+        new: "--to aws-secrets-manager",
+    },
+    Removed::Value {
+        path: &["migrate"],
+        flag: "--to",
+        value: "gcp",
+        new: "--to gcp-secret-manager",
+    },
+    Removed::Value {
+        path: &["migrate"],
+        flag: "--to",
+        value: "azure",
+        new: "--to azure-keyvault",
+    },
+    Removed::Value {
+        path: &["migrate"],
+        flag: "--from",
+        value: "env",
+        new: "--from env-file",
+    },
+    // platform: `--env-name` was the old name of `--target`; the local file is `--env`.
+    Removed::Flag {
+        path: &["platform", "diff"],
+        old: &["--env-name"],
+        new: "--target",
+    },
+    Removed::Flag {
+        path: &["platform", "diff"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["platform", "pull"],
+        old: &["--env-name"],
+        new: "--target",
+    },
+    Removed::Flag {
+        path: &["platform", "pull"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["platform", "push"],
+        old: &["--env-name"],
+        new: "--target",
+    },
+    Removed::Flag {
+        path: &["platform", "push"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    // cloud: the local file is `--env`; `--yes` is the one spelling of "overwrite without asking".
+    Removed::Flag {
+        path: &["cloud", "push"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["cloud", "pull"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["cloud", "diff"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["cloud", "link"],
+        old: &["-f", "--file"],
+        new: "--env",
+    },
+    Removed::Flag {
+        path: &["cloud", "pull"],
+        old: &["--force"],
+        new: "--yes",
+    },
+    Removed::Value {
+        path: &["cloud", "export"],
+        flag: "--to",
+        value: "github-actions",
+        new: "--to github",
+    },
+    Removed::Value {
+        path: &["cloud", "export"],
+        flag: "--to",
+        value: "gh-actions",
+        new: "--to github",
+    },
+    // vault create: `--env` is a file everywhere else; this one is an environment slug.
+    Removed::Flag {
+        path: &["vault", "create"],
+        old: &["-e", "--env"],
+        new: "--environment",
+    },
+    // auth: `pretty` is the default format.
+    Removed::Value {
+        path: &["auth", "key-bundle"],
+        flag: "--format",
+        value: "text",
+        new: "--format pretty",
+    },
+    Removed::Value {
+        path: &["auth", "token", "create"],
+        flag: "--format",
+        value: "text",
+        new: "--format pretty",
+    },
 ];
 
 /// The message for a match: the spelling as typed.
 pub fn message(path: &[&str], typed: &str, new: &str) -> String {
     format!(
-        "error: '{typed}' was removed from 'evnx {}' in 0.14.2; use '{new}'",
+        "error: '{typed}' was removed from 'evnx {}' in 0.15.0; use '{new}'",
         path.join(" ")
     )
 }
@@ -347,7 +503,7 @@ mod tests {
     fn long_flag_matches_and_names_the_replacement() {
         assert_eq!(
             run(&["remove", "--path", "x"]).as_deref(),
-            Some("error: '--path' was removed from 'evnx remove' in 0.14.2; use '-C, --dir'")
+            Some("error: '--path' was removed from 'evnx remove' in 0.15.0; use '-C, --dir'")
         );
     }
 
@@ -399,7 +555,7 @@ mod tests {
     fn value_entries_match_both_forms() {
         assert_eq!(
             run(&["diff", "--format", "text"]).as_deref(),
-            Some("error: '--format text' was removed from 'evnx diff' in 0.14.2; use '--format pretty'")
+            Some("error: '--format text' was removed from 'evnx diff' in 0.15.0; use '--format pretty'")
         );
         assert_eq!(run(&["diff", "--format", "json"]), None);
     }

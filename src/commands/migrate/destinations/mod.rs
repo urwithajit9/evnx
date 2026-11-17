@@ -163,18 +163,8 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                     ArgKind::Identifier,
                 )?;
                 args::check("--repo", &repo, Name::GitHubRepo)?;
-                // I-108: a token typed as a flag sits in shell history and in
-                // `ps` for as long as the upload runs. Said, not refused — the
-                // flag has always worked, and it is the token's owner's call.
-                // ⚠️ The flag no longer has clap's `env = "GITHUB_TOKEN"`, so
-                // `Some` here means it was typed, never that it was exported.
-                if args.github_token.is_some() {
-                    crate::utils::ui::warning(
-                        "--github-token puts the token in your shell history and in `ps` \
-                         while evnx runs. Export GITHUB_TOKEN instead: evnx reads it when \
-                         the flag is absent.",
-                    );
-                }
+                // I-108: the warning about a token typed as a flag is printed by
+                // `main`, once, before anything runs.
                 // ⚠️ `GITHUB_TOKEN` stays ahead of the prompt. Inside a GitHub
                 // Actions job that variable is already set, and this is the one
                 // destination that really uploads — losing the fallback would
@@ -344,10 +334,7 @@ pub fn uploads(slug: &str) -> bool {
 /// `migrate/mod.rs`. Update this list whenever a new destination is added.
 pub fn available_destinations() -> &'static [(&'static str, &'static str)] {
     &[
-        (
-            "github-actions",
-            "github-actions      — GitHub Actions Secrets",
-        ),
+        ("github", "github              — GitHub Actions Secrets"),
         (
             "aws-secrets-manager",
             "aws-secrets-manager — AWS Secrets Manager",
@@ -474,7 +461,7 @@ mod tests {
     fn test_available_destinations_are_all_resolvable() {
         let args = full_args();
         for (slug, _) in available_destinations() {
-            if *slug == "github-actions" {
+            if *slug == "github" {
                 continue;
             } // needs feature flag
             get_destination(slug, &args).unwrap_or_else(|e| {

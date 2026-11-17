@@ -238,7 +238,7 @@ impl MigrationDestination for GitHubDestination {
         if !opts.dry_run && !opts.yes {
             prompt::require_terminal_or(&format!(
                 "Add --yes to upload without asking:\n  \
-                 evnx migrate --to github-actions --repo {} --yes",
+                 evnx migrate --to github --repo {} --yes",
                 self.repository
             ))?;
         }

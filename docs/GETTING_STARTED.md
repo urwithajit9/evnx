@@ -341,7 +341,7 @@ Other output formats:
 
 ```bash
 evnx validate --format json             # machine-readable
-evnx validate --format github-actions   # inline PR annotations
+evnx validate --format github   # inline PR annotations
 ```
 
 ### Declare the contract
@@ -645,7 +645,7 @@ jobs:
           curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
 
       - name: Validate configuration
-        run: evnx validate --strict --format github-actions
+        run: evnx validate --strict --format github
 
       - name: Scan for secrets
         run: evnx scan --format sarif > scan-results.sarif

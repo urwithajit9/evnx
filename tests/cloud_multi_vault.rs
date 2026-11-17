@@ -87,7 +87,7 @@ const PULL2: &[&str] = &[
     "shared",
     "--vault",
     "app/production",
-    "--file",
+    "--env",
     "-",
     "--password-stdin",
 ];
@@ -225,7 +225,7 @@ fn one_vault_is_unchanged() {
             "pull",
             "--vault",
             "shared",
-            "--file",
+            "--env",
             "-",
             "--password-stdin",
         ],

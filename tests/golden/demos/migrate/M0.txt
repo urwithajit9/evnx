@@ -8,7 +8,7 @@ evnx <version>
 $ evnx migrate --help
 Move a .env into a secret manager: print the commands, or upload to GitHub.
 
-For eight destinations evnx prints the commands for you to run and contacts nothing; only github-actions uploads (over the GitHub API).
+For eight destinations evnx prints the commands for you to run and contacts nothing; only github uploads (over the GitHub API).
 
 Usage: evnx migrate [OPTIONS]
 
@@ -17,30 +17,26 @@ Options:
           Source system: `env-file` or `environment`
           
           Without --from, evnx asks in a terminal and uses `env-file` without one. `environment` requires `--include`: a shell's or CI job's environment holds tokens you did not mean to send. evnx lists the names it will send.
-
-      --source-file <PATH>
-          The .env file to read (default: .env, or `[defaults] env_name`)
-
-      --env-name <NAME>
-          Read `.env.<NAME>` instead of `.env`.
           
-          `--env-name production` reads `.env.production`. A name whose file does not exist is an error listing the environments that do. Without it, `[defaults] env_name` in `.evnx.toml` applies, as for the other commands.
+          [possible values: env-file, environment]
 
       --to <TO>
-          Destination system: github-actions | aws-secrets-manager | doppler | infisical | gcp-secret-manager | azure-keyvault | vercel | heroku | railway
+          Destination system: github | aws-secrets-manager | doppler | infisical | gcp-secret-manager | azure-keyvault | vercel | heroku | railway
+          
+          [possible values: github, aws-secrets-manager, doppler, infisical, gcp-secret-manager, azure-keyvault, vercel, heroku, railway]
 
-      --dry-run
+  -n, --dry-run
           Preview what would be migrated without making any changes
 
       --print-only
           Write only the commands to stdout, with the real values; everything else goes to stderr.
           
-          `evnx migrate --to heroku --heroku-app my-app --print-only | sh` runs them. In a terminal, without --print-only or --output, the values are shown as `<hidden>`; when stdout is not a terminal (a pipe, a file) and neither flag is given, the real values are printed, so pipelines keep working. Not for github-actions, which uploads instead of printing.
+          `evnx migrate --to heroku --heroku-app my-app --print-only | sh` runs them. In a terminal, without --print-only or --output, the values are shown as `<hidden>`; when stdout is not a terminal (a pipe, a file) and neither flag is given, the real values are printed, so pipelines keep working. Not for github, which uploads instead of printing.
 
   -o, --output <FILE>
           Write the commands, with the real values, to FILE (mode 0600).
           
-          `evnx migrate --to gcp-secret-manager --project p -o upload.sh` saves a script you can read, then run. An existing FILE is refused without --force. Not for github-actions, which uploads instead of printing.
+          `evnx migrate --to gcp-secret-manager --project p -o upload.sh` saves a script you can read, then run. An existing FILE is refused without --force. Not for github, which uploads instead of printing.
 
       --force
           Replace FILE when it already exists (with --output)
@@ -56,11 +52,6 @@ Options:
 
       --overwrite
           Overwrite secrets that already exist without prompting
-
-  -y, --yes
-          Upload without asking "Proceed with migration?" (github-actions).
-          
-          For CI. Without a terminal and without `--yes` the upload stops before contacting GitHub (exit 2). ⚠️ It does not answer "overwrite?": a secret that already exists still needs `--overwrite` or `--skip-existing`.
 
       --include <INCLUDE>
           Comma-separated glob patterns — only migrate matching keys. Example: --include "DB_*,AWS_*"
@@ -81,9 +72,6 @@ Options:
 
       --repo <REPO>
           GitHub repository in owner/repo format
-
-      --github-token <GITHUB_TOKEN>
-          GitHub token. Prefer exporting GITHUB_TOKEN: evnx reads it when this flag is absent, and a flag value lands in shell history
 
       --secret-name <SECRET_NAME>
           AWS Secrets Manager secret name, e.g. prod/myapp/config
@@ -106,20 +94,11 @@ Options:
       --heroku-app <HEROKU_APP>
           Heroku application name
 
-  -v, --verbose
-          Enable verbose output
-
       --vercel-project <VERCEL_PROJECT>
           Vercel project ID or name (default: the linked project)
 
-  -q, --quiet
-          Print nothing on success. Findings, warnings, errors and requested data still print
-
       --railway-project <RAILWAY_PROJECT>
           Railway project ID (default: the linked project). Needs --railway-environment, as Railway does
-
-      --no-color
-          Disable colored output
 
       --railway-environment <RAILWAY_ENVIRONMENT>
           Railway environment, e.g. production
@@ -127,11 +106,35 @@ Options:
       --railway-service <RAILWAY_SERVICE>
           Railway service (default: the linked service, or the project's only one)
 
+      --no-color
+          Disable colored output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+  -v, --verbose
+          Enable verbose output
+
   -h, --help
           Print help (see a summary with '-h')
 
   -V, --version
           Print version
+
+Files:
+      --env <FILE>
+          The .env file to read (default: .env, or `[defaults] env_name`)
+
+      --env-name <NAME>
+          Read `.env.<NAME>` instead of `.env`.
+          
+          `--env-name production` reads `.env.production`. A name whose file does not exist is an error listing the environments that do. Without it, `[defaults] env_name` in `.evnx.toml` applies, as for the other commands.
+
+Confirmation:
+  -y, --yes
+          Upload without asking "Proceed with migration?" (github).
+          
+          For CI. Without a terminal and without `--yes` the upload stops before contacting GitHub (exit 2). ⚠️ It does not answer "overwrite?": a secret that already exists still needs `--overwrite` or `--skip-existing`.
 
 Examples:
   # Print the commands, read them, then run them
@@ -147,7 +150,7 @@ Examples:
   evnx migrate --env-name production --to azure-keyvault --vault-name prod-vault
 
   # Upload to GitHub Actions from CI (token from GITHUB_TOKEN)
-  evnx migrate --to github-actions --repo owner/repo --yes --skip-existing
+  evnx migrate --to github --repo owner/repo --yes --skip-existing
 
   # Preview: no commands printed, nothing uploaded
   evnx migrate --to doppler --project myapp --doppler-config dev --dry-run
@@ -156,7 +159,7 @@ Destinations:
   Prints commands: aws-secrets-manager (--secret-name), gcp-secret-manager (--project),
                    azure-keyvault (--vault-name), heroku (--heroku-app), vercel,
                    doppler, infisical, railway
-  Uploads:         github-actions (--repo; GITHUB_TOKEN)
+  Uploads:         github (--repo; GITHUB_TOKEN)
 
 Exit codes: 0 done; 1 some GitHub uploads failed; 2 could not run (bad flag, missing
 file, names that collide, a filter that leaves nothing).
@@ -178,7 +181,7 @@ Error: --to is required when there is no terminal to ask.
   Pass one explicitly:
     evnx migrate --to <DESTINATION>
 
-  Available: github-actions, aws-secrets-manager, doppler, infisical, gcp-secret-manager, azure-keyvault, vercel, heroku, railway
+  Available: github, aws-secrets-manager, doppler, infisical, gcp-secret-manager, azure-keyvault, vercel, heroku, railway
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
@@ -186,14 +189,10 @@ No verdict: evnx did not finish. This is not a clean result.
 
 $ evnx migrate --to bogus --dry-run
 [stderr]
+error: invalid value 'bogus' for '--to <TO>'
+  [possible values: github, aws-secrets-manager, doppler, infisical, gcp-secret-manager, azure-keyvault, vercel, heroku, railway]
 
-  evnx migrate  Generate destination commands from your .env
-
-Error: .env does not exist
-
-Create it with `evnx init`, or point at another file with --source-file.
-
-No verdict: evnx did not finish. This is not a clean result.
+For more information, try '--help'.
 [exit 2]
   ok: unknown destination (exit 2)
 

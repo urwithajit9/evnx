@@ -13,7 +13,7 @@
 //!
 //! - `convert`: its output is the converted file.
 //! - `run`: the values are the child process's environment.
-//! - `cloud export`, `cloud pull --file -`: the decrypted vault is the output.
+//! - `cloud export`, `cloud pull --env -`: the decrypted vault is the output.
 //! - `migrate` without `--dry-run`: the values are uploaded or printed as the
 //!   commands that upload them.
 //! - `diff --format patch` with `--values --show-values`: the patch carries the

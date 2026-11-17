@@ -117,7 +117,7 @@ pub struct ScanOptions {
     /// where `.evnx/rules` and `.evnx/baseline.json` are (C5, C6).
     pub project_root: std::path::PathBuf,
     /// `pretty`, `json`, `sarif` or `github`.
-    pub format: String,
+    pub format: OutputFormat,
     /// Exit 0 even with findings (never hides exit 2).
     pub exit_zero: bool,
     /// Progress lines on stderr.
@@ -167,7 +167,7 @@ impl Default for ScanOptions {
             update_baseline: false,
             rule_files: Vec::new(),
             project_root: std::path::PathBuf::from("."),
-            format: "pretty".to_string(),
+            format: OutputFormat::Pretty,
             exit_zero: false,
             verbose: false,
             spec: Default::default(),
@@ -275,7 +275,7 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
             max_file_size: opts.repo_settings.max_file_size,
             secret_false: opts.repo_settings.secret_false.clone(),
         };
-        let output_format: OutputFormat = opts.format.parse()?;
+        let output_format: OutputFormat = opts.format;
         // Compiled before anything is printed, so a broken expression cannot be
         // mistaken for a finished scan.
         // C6: the project's, the user's and this run's rule files, after the

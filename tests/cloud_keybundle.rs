@@ -97,7 +97,7 @@ fn ci_pull(server: &str, password: &str, extra: &[(&str, &str)]) -> support::Out
             VAULT_ID,
             "--version",
             "1",
-            "--file",
+            "--env",
             "-",
             "--password-stdin",
         ],

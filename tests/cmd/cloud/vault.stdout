@@ -16,9 +16,9 @@ Commands:
 
 Options:
       --server <URL>  evnx server to talk to. Overrides EVNX_SERVER and config.toml
-  -v, --verbose       Enable verbose output
-  -q, --quiet         Print nothing on success. Findings, warnings, errors and requested data still print
       --no-color      Disable colored output
+  -q, --quiet         Print nothing on success. Findings, warnings, errors and requested data still print
+  -v, --verbose       Enable verbose output
   -h, --help          Print help
   -V, --version       Print version
 

@@ -220,31 +220,35 @@ fn t_i038_format_is_a_clap_value_list() {
     serde_json::from_str::<Value>(&out.stdout).expect("JSON on stdout");
 }
 
-/// The other callers of the shared helper keep their exact messages.
+/// scan and doctor now refuse an unknown value in clap's own words (WP-8).
 #[test]
 fn t_i038_scan_and_doctor_messages_are_unchanged() {
     let p = fixture();
     let scan = run(p.path(), &["scan", "--format", "Bogus"]);
     scan.assert_code(2);
     assert!(
-        scan.stderr
-            .contains("unknown format 'bogus' — expected one of: pretty, json, sarif, github"),
+        scan.stderr.contains("invalid value 'Bogus'")
+            && scan
+                .stderr
+                .contains("[possible values: pretty, json, sarif, github]"),
         "{}",
         scan.stderr
     );
     let sev = run(p.path(), &["scan", "--severity", "hgh"]);
     sev.assert_code(2);
     assert!(
-        sev.stderr
-            .contains("unknown severity 'hgh' — expected one of: critical, high, medium, low"),
+        sev.stderr.contains("invalid value 'hgh'")
+            && sev
+                .stderr
+                .contains("[possible values: critical, high, medium, low]"),
         "{}",
         sev.stderr
     );
     let doc = run(p.path(), &["doctor", "--format", "xml"]);
     doc.assert_code(2);
     assert!(
-        doc.stderr
-            .contains("unknown format 'xml' — expected one of: pretty, json"),
+        doc.stderr.contains("invalid value 'xml'")
+            && doc.stderr.contains("[possible values: pretty, json]"),
         "{}",
         doc.stderr
     );

@@ -50,7 +50,7 @@ mod check;
 pub fn run(check: bool, list: bool, json: bool) -> Result<Verdict> {
     if json && !check && !list {
         anyhow::bail!(
-            "--json goes with --check or --list: plain `evnx update` has no data to print"
+            "--format json goes with --check or --list: plain `evnx update` has no data to print"
         );
     }
     if list {

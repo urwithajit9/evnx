@@ -1,9 +1,9 @@
 //! The flag vocabulary (WP-8): every command spells the same idea the same way.
 //!
 //! Walks `evnx commands --json` and checks the rules below for every command
-//! not on [`ALLOW`]. The list holds what has not been converted yet; a change
-//! that converts a command removes its rows, and a row that no longer fails its
-//! rule is itself an error, so the list cannot go stale.
+//! not on [`ALLOW`]. Since WP-8d the list holds permanent exceptions only, each
+//! with a `// permanent: <reason>` comment; a row that no longer fails its rule
+//! is itself an error, so the list cannot go stale.
 //!
 //! Rules:
 //! * `a`  every `--format` is a value list with `pretty` and `json`, and no
@@ -25,36 +25,10 @@ mod support;
 use serde_json::Value;
 use support::surface::{entries, Entry};
 
-/// (command path, rule) pairs that fail today.
-const ALLOW: &[(&str, &str)] = &[
-    ("scan", "a"),
-    ("scan", "b"),
-    ("scan rules list", "b"),
-    ("scan rules add", "a"),
-    ("scan rules add", "b"),
-    ("migrate", "d1"),
-    ("migrate", "d2"),
-    ("auth key-bundle", "a"),
-    ("auth key-bundle", "b"),
-    ("auth token create", "a"),
-    ("auth token create", "b"),
-    ("cloud push", "d1"),
-    ("cloud pull", "d1"),
-    ("cloud diff", "d1"),
-    ("cloud link", "d1"),
-    ("platform diff", "b"),
-    ("platform diff", "d1"),
-    ("platform pull", "d1"),
-    ("platform pull", "d2"),
-    ("platform push", "b"),
-    ("platform push", "d1"),
-    ("platform push", "d2"),
-    ("doctor", "a"),
-    ("doctor", "b"),
-    ("doctor", "d1"),
-    ("commands", "b"), // converted in 8c
-    ("update", "b"),
-];
+/// (command path, rule) pairs that are allowed to fail. Every row is a permanent
+/// exception and says why (`// permanent: <reason>`); a command that merely has
+/// not been converted yet does not belong here. Empty since WP-8d.
+const ALLOW: &[(&str, &str)] = &[];
 
 fn s(v: &Value) -> &str {
     v.as_str().unwrap_or("")
@@ -231,4 +205,28 @@ fn removed_spellings_exit_2_with_the_message_only() {
         );
         assert!(out.stdout.is_empty(), "stdout: {}", out.stdout);
     }
+}
+
+/// The CHANGELOG lists every removed spelling, so the table and the release
+/// notes cannot drift apart.
+#[test]
+fn changelog_lists_every_removed_spelling() {
+    let log = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/CHANGELOG.md"))
+        .expect("CHANGELOG.md");
+    let mut missing = Vec::new();
+    for r in evnx::cli::removed::REMOVED {
+        let row = format!("`evnx {}`", r.path().join(" "));
+        let old = format!("`{}`", r.old_display());
+        let found = log
+            .lines()
+            .any(|l| l.contains(&row) && l.contains(&old) && l.contains(r.new_spelling()));
+        if !found {
+            missing.push(format!("evnx {}: {}", r.path().join(" "), r.old_display()));
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "not in CHANGELOG.md (add a table row):\n{}",
+        missing.join("\n")
+    );
 }

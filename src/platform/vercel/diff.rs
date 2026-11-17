@@ -14,12 +14,12 @@ pub fn run(args: &PlatformDiffArgs) -> Result<Verdict> {
     let session = Session::open(&args.common)?;
     let (path, choice) = local::resolve(
         Path::new("."),
-        args.common.file.as_deref(),
+        args.common.env.as_deref(),
         session.environment.name(),
     );
     let file = local::read(&path)?;
     // F3: with no `.env.<env>` and no `.env`, the local side is empty and every
-    // Vercel variable is "remote only", which the run says. A `--file` that does
+    // Vercel variable is "remote only", which the run says. A `--env` that does
     // not exist is a typo, and stays an error.
     let local_found = file.text.is_some();
     if !local_found {

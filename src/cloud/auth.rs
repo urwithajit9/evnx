@@ -1119,7 +1119,7 @@ fn key_bundle_json(bundle: &str) -> String {
 pub fn key_bundle(
     server_override: Option<&str>,
     _verbose: bool,
-    format: crate::cli::AuthFormat,
+    format: crate::cli::args::Format,
     output: Option<&str>,
     force: bool,
 ) -> Result<()> {
@@ -1134,7 +1134,7 @@ pub fn key_bundle(
         check_secret_target(path, force)?;
     }
     let bundle = fetch_key_bundle(&client)?;
-    let json = format == crate::cli::AuthFormat::Json;
+    let json = format == crate::cli::args::Format::Json;
     if let Some(path) = output {
         let body = if json {
             key_bundle_json(&bundle.encode())

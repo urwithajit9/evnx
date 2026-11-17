@@ -33,8 +33,8 @@ Commands:
   help         Print this message or the help of the given subcommand(s)
 
 Options:
-  -v, --verbose   Enable verbose output
-  -q, --quiet     Print nothing on success. Findings, warnings, errors and requested data still print
       --no-color  Disable colored output
+  -q, --quiet     Print nothing on success. Findings, warnings, errors and requested data still print
+  -v, --verbose   Enable verbose output
   -h, --help      Print help
   -V, --version   Print version

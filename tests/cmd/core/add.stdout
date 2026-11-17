@@ -29,14 +29,14 @@ Options:
       --no-template
           Write only the env file: no names into the template, and no template created. For a server that keeps `.env.prod` alone
 
-  -v, --verbose
-          Enable verbose output
+      --no-color
+          Disable colored output
 
   -q, --quiet
           Print nothing on success. Findings, warnings, errors and requested data still print
 
-      --no-color
-          Disable colored output
+  -v, --verbose
+          Enable verbose output
 
   -h, --help
           Print help (see a summary with '-h')

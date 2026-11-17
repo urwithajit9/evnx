@@ -25,7 +25,6 @@ const WIDTH: usize = 44;
 use anyhow::Result;
 use colored::*;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 /// Output format for scan results.
 ///
@@ -69,41 +68,6 @@ pub enum OutputFormat {
 //         }
 //     }
 // }
-impl OutputFormat {
-    /// Accepted spellings, for error messages and `--help`.
-    pub const NAMES: &'static [&'static str] = &["pretty", "json", "sarif", "github"];
-}
-
-impl FromStr for OutputFormat {
-    type Err = anyhow::Error;
-
-    /// ⚠️ An unrecognised format is an **error**.
-    ///
-    /// This used to be `_ => Ok(Self::Pretty)`. A typo, or a format that was only
-    /// ever documented, therefore printed human-readable output and exited 0 —
-    /// `evnx scan --format github` did exactly that for as long as the flag was
-    /// documented and unimplemented, so a CI step that looked configured was
-    /// checking nothing. Failing loudly is the only safe default for a secret
-    /// scanner's output contract.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        crate::core::args::one_of(
-            "format",
-            s,
-            &[
-                ("pretty", Self::Pretty),
-                ("text", Self::Pretty),
-                ("json", Self::Json),
-                ("sarif", Self::Sarif),
-                // `evnx validate` spells this `github-actions`; accept both
-                // everywhere rather than making people remember which is which.
-                ("github", Self::Github),
-                ("github-actions", Self::Github),
-            ],
-            Self::NAMES,
-        )
-    }
-}
-
 /// Render scan results in the specified format.
 ///
 /// # Arguments
@@ -971,29 +935,6 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
 mod tests {
     use super::super::models::{Confidence, Finding};
     use super::*;
-
-    #[test]
-    fn test_output_format_from_str() {
-        for (input, want) in [
-            ("json", OutputFormat::Json),
-            ("JSON", OutputFormat::Json),
-            ("sarif", OutputFormat::Sarif),
-            ("pretty", OutputFormat::Pretty),
-            ("github", OutputFormat::Github),
-            ("github-actions", OutputFormat::Github),
-            ("  Github  ", OutputFormat::Github),
-        ] {
-            assert_eq!(input.parse::<OutputFormat>().unwrap(), want, "{input}");
-        }
-
-        // ⚠️ Previously this asserted `unknown` silently became Pretty.
-        let err = "unknown".parse::<OutputFormat>().unwrap_err().to_string();
-        assert!(err.contains("unknown format"), "{err}");
-        assert!(
-            err.contains("sarif"),
-            "the error must list what is valid: {err}"
-        );
-    }
 
     #[test]
     fn test_render_json_structure() {

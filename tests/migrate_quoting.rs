@@ -281,7 +281,7 @@ fn k8_the_aws_temp_file_is_created_private() {
             "--from",
             "env-file",
             "--to",
-            "aws",
+            "aws-secrets-manager",
             "--secret-name",
             "s",
         ],
@@ -343,7 +343,7 @@ fn k8_argv_destinations_warn_about_ps_and_history() {
             "--from",
             "env-file",
             "--to",
-            "aws",
+            "aws-secrets-manager",
             "--secret-name",
             "s",
         ],
@@ -454,8 +454,8 @@ fn t_mig_09_i102_bad_names_are_refused() {
             "dev`id`",
         ][..],
         &["--to", "railway", "--railway-project", "p|sh"][..],
-        &["--to", "github-actions", "--repo", "notarepo", "--dry-run"][..],
-        &["--to", "github-actions", "--repo", "o/r;x", "--dry-run"][..],
+        &["--to", "github", "--repo", "notarepo", "--dry-run"][..],
+        &["--to", "github", "--repo", "o/r;x", "--dry-run"][..],
     ] {
         let flag = args[args.len() - 2];
         let flag = if flag == "--dry-run" { args[3] } else { flag };
@@ -488,7 +488,7 @@ fn t_mig_32_real_names_are_accepted() {
             "dev.admin",
         ][..],
         &["--to", "vercel", "--vercel-project", "prj_AbC123"][..],
-        &["--to", "github-actions", "--repo", "my-org/my.repo_1"][..],
+        &["--to", "github", "--repo", "my-org/my.repo_1"][..],
     ] {
         let mut full = vec!["migrate", "--from", "env-file", "--dry-run"];
         full.extend_from_slice(args);

@@ -61,7 +61,7 @@ No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: dry run still needs the name it would print: heroku (exit 2)
 
-$ evnx migrate --to github-actions --dry-run
+$ evnx migrate --to github --dry-run
 
 ✓ Loaded 8 secrets from .env
 [stderr]
@@ -74,6 +74,6 @@ Error: GitHub repository (owner/repo) is required for this destination. Pass `--
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: dry run still needs the name it would print: github-actions (exit 2)
+  ok: dry run still needs the name it would print: github (exit 2)
 
 ================ summary: 5 ok, 0 mismatch   ================

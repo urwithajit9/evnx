@@ -30,7 +30,7 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
     let session = Session::open(&args.common)?;
     let (path, choice) = local::resolve(
         Path::new("."),
-        args.common.file.as_deref(),
+        args.common.env.as_deref(),
         session.environment.name(),
     );
     let file = local::read(&path)?;
@@ -44,7 +44,7 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
     crate::say!("  file      {} ({})", shown(&path), choice.note());
     if choice == local::Choice::Default && session.environment == plan::Environment::Production {
         eprintln!(
-            "warning: pulling production values into {} — pass --file .env.production if that is not what you meant",
+            "warning: pulling production values into {} — pass --env .env.production if that is not what you meant",
             shown(&path)
         );
     }
@@ -66,7 +66,7 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
         .filter(|c| c.op == PullOp::WriteEmpty)
         .map(|c| c.key.as_str())
         .collect();
-    if !crate::utils::ui::is_quiet() || args.dry_run || !args.yes {
+    if !crate::utils::ui::is_quiet() || args.dry.dry_run || !args.confirm.yes {
         print!("{}", render(&changes));
         println!("{}", summary(&changes, local_only));
         if !empty.is_empty() {
@@ -99,13 +99,13 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
             // to date: "up to date" would suggest there is one.
             crate::say!("  nothing to pull; {} not created.", shown(&path));
         }
-        if !args.dry_run {
-            super::record(&session, &sel.entries, &gitignore, args.yes)?;
+        if !args.dry.dry_run {
+            super::record(&session, &sel.entries, &gitignore, args.confirm.yes)?;
         }
         return Ok(());
     }
 
-    if args.dry_run {
+    if args.dry.dry_run {
         println!("  Dry run: nothing was written.");
         return Ok(());
     }
@@ -124,7 +124,7 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
         "evnx platform pull --to vercel --target {} --yes",
         session.environment.name()
     );
-    if !crate::utils::prompt::confirm(&question, args.yes, &example)? {
+    if !crate::utils::prompt::confirm(&question, args.confirm.yes, &example)? {
         println!("  Cancelled; {} was not changed.", shown(&path));
         return Err(crate::utils::prompt::Declined.into());
     }
@@ -163,7 +163,7 @@ pub fn run(args: &PlatformPullArgs) -> Result<()> {
         );
     }
 
-    super::record(&session, &sel.entries, &gitignore, args.yes)?;
+    super::record(&session, &sel.entries, &gitignore, args.confirm.yes)?;
     crate::utils::protect::protect_output(&path.to_string_lossy(), &gitignore)?;
     if let Some(kept) = &kept {
         crate::utils::protect::protect_backup(&kept.to_string_lossy(), &gitignore)?;

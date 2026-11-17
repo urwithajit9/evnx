@@ -584,7 +584,7 @@ evnx align --env-name production --check
 ### `evnx migrate` _(requires `--features migrate`)_
 
 Moves a `.env` into a secret manager. For **eight** destinations evnx **prints the
-commands** for you to read and run, and contacts nothing; only **`github-actions`
+commands** for you to read and run, and contacts nothing; only **`github`
 uploads**, over the GitHub API.
 
 | Destination | What evnx prints or does | Needs |
@@ -596,7 +596,7 @@ uploads**, over the GitHub API.
 | `vercel` | `vercel env add … --force` per key, value on stdin | `--vercel-project` or a linked directory |
 | `doppler`, `infisical` | `secrets set` per key | `--project`, optional config / env |
 | `railway` | one `railway variable set` | `--railway-project` with `--railway-environment`, or a linked directory |
-| `github-actions` | uploads each secret, encrypted for the repository | `--repo`, `GITHUB_TOKEN` |
+| `github` | uploads each secret, encrypted for the repository | `--repo`, `GITHUB_TOKEN` |
 
 ```bash
 # Print the commands, read them, run them
@@ -617,13 +617,13 @@ evnx migrate --to doppler --project myapp --dry-run
 # GitHub Actions from CI. The token comes from GITHUB_TOKEN; --github-token works
 # but puts it in shell history. --yes skips the question; existing secrets still
 # need --overwrite or --skip-existing. Exit 1 if any upload failed.
-evnx migrate --to github-actions --repo owner/repo --yes --skip-existing
+evnx migrate --to github --repo owner/repo --yes --skip-existing
 ```
 
 `--include` / `--exclude` take comma-separated globs; `--strip-prefix` and `--add-prefix`
 rename. Two names that end up as one — by renaming, or because Azure Key Vault and GitHub
 ignore case — are refused (exit 2) unless `--allow-collisions` keeps the last value.
-`--skip-existing` and `--overwrite` only apply to `github-actions`; the destinations evnx
+`--skip-existing` and `--overwrite` only apply to `github`; the destinations evnx
 prints commands for are refused them, since evnx cannot see what is already there.
 Exit codes: 0 done, 1 some GitHub uploads failed, 2 could not run.
 
@@ -667,7 +667,7 @@ Vercel  acme/web  production        local  .env.production
 
 - **Project:** `--project` / `--team`, else `VERCEL_PROJECT_ID` / `VERCEL_ORG_ID`, else
   `.vercel/project.json` from `vercel link`.
-- **File:** `.env.<target>` when it exists, else `.env` (`--file` overrides); the run
+- **File:** `.env.<target>` when it exists, else `.env` (`--env` overrides); the run
   prints which. `--target` is `production`, `preview` or `development` (the default), or
   the slug of a **custom environment** of the project (`.env.<slug>`, else `.env`): its
   variables are the entries whose `customEnvironmentIds` include it, and a new one is
@@ -727,7 +727,7 @@ Runs a health check on your environment configuration setup.
 
 ```bash
 evnx doctor                          # check current directory
-evnx doctor path/to/project          # or --path path/to/project
+evnx doctor path/to/project          # or -C path/to/project
 evnx doctor --fix                    # repair .gitignore and file modes, then check again
 evnx doctor --strict --format json   # a CI gate: warnings fail too
 evnx doctor --skip-without-env       # a pre-commit hook: a fresh clone with no .env passes
@@ -871,7 +871,7 @@ other's files:
 | Secret | a passphrase or key file you choose | your account's master password |
 | History | `--keep N` numbered files | server versions: `--version N`, `history`, `diff` |
 | Non-interactive | `--password-file`, `EVNX_PASSWORD` | `--password-stdin` |
-| Replacing a file | `--yes`, keeps `.bak` | `--yes` (alias `--force`), keeps `.bak` |
+| Replacing a file | `--yes`, keeps `.bak` | `--yes`, keeps `.bak` |
 | Declining the question | exit 4, nothing changed | exit 4, nothing changed (v0.12.0+) |
 | Works with no account or network | yes | no |
 | Everything back at once | the file is the backup | `cloud export` |
@@ -983,7 +983,7 @@ wraps and locally pinned identities, which are not built.
 ⚠️ **Cloud sync is therefore beta.** Do not put secrets there that you could not
 rotate. The rest of evnx — validate, scan, diff, sync, convert, and the commands
 `migrate` prints — runs entirely offline and is not affected. (`migrate --to
-github-actions` is the exception: it calls the GitHub API, and talks to nothing else.)
+github` is the exception: it calls the GitHub API, and talks to nothing else.)
 
 ⓘ This README previously said "not after a breach". That was wrong, and the
 correction is tracked in [`SECURITY.md`](./SECURITY.md#what-the-threat-model-actually-claims).
@@ -991,9 +991,9 @@ correction is tracked in [`SECURITY.md`](./SECURITY.md#what-the-threat-model-act
 ```bash
 evnx auth register                       # create an account
 evnx auth login                          # sign in on this machine
-evnx vault create app --env production   # a vault holds one .env, versioned
+evnx vault create app --environment production   # a vault holds one .env, versioned
 evnx cloud link app/production           # bind this folder (and every folder below it) to it
-evnx cloud link app/production --file deploy/.env   # v0.11.0+: the binding names the file too
+evnx cloud link app/production --env deploy/.env   # v0.11.0+: the binding names the file too
 evnx cloud push                          # encrypt locally, upload ciphertext
 evnx cloud pull                          # download, decrypt, write .env
 evnx cloud status                        # server, sign-in, this directory's binding
@@ -1002,7 +1002,7 @@ evnx cloud unlink                        # forget the binding
 
 A vault name is lower-case letters, digits and hyphens. `-q` silences what a
 cloud command says it did; errors, warnings and anything you asked for — a
-table, a new token, `pull --file -` — still print.
+table, a new token, `pull --env -` — still print.
 
 ### Installing with cloud support
 
@@ -1083,10 +1083,10 @@ an API token.
 
 `push` and `pull` use `.env.<environment>` when that file exists —
 `.env.production` for an `app/production` vault — and `.env` otherwise;
-`--file` or `--env-name` names one outright. Each says which file it used.
+`--env` or `--env-name` names one outright. Each says which file it used.
 
 Pushing the **default** `.env` into a **production** vault asks first; with no
-terminal to ask on (CI), it is refused unless `--yes`. A file named with `--file`
+terminal to ask on (CI), it is refused unless `--yes`. A file named with `--env`
 or `--env-name` is not asked about. Addressed by id, a vault's environment is
 not known for choosing the file (the file is `.env`); a signed-in session still
 looks it up to ask, a vault-scoped token cannot and is not asked.

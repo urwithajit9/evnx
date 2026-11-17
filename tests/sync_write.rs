@@ -6,7 +6,7 @@
 //!   shares the generator, so it is fixed with it.
 //! - I-124, DEC-S9: with no terminal, sync uses placeholders on an existing
 //!   template and in reverse, and says so; `--yes` is the one way to ask for
-//!   that on a terminal (`--force` and `--placeholder` were removed in 0.14.2).
+//!   that on a terminal (`--force` and `--placeholder` were removed in 0.15.0).
 //! - I-125: messages name the files actually in play.
 //! - I-126: "1 variable", modes as `644`; I-276: one permission warning.
 //! - I-129, DEC-S20: a new `.env` does not carry the template's

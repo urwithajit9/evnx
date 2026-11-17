@@ -88,7 +88,7 @@ pub(crate) fn resolve_target_and_file(
 /// How the env file for a push or pull was arrived at, so the command can say so.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum FileChoice {
-    /// `--file <path>`.
+    /// `--env <path>`.
     Explicit,
     /// `--env-name <name>`.
     Named,
@@ -103,7 +103,7 @@ enum FileChoice {
 impl FileChoice {
     fn note(self) -> &'static str {
         match self {
-            FileChoice::Explicit => "--file",
+            FileChoice::Explicit => "--env",
             FileChoice::Named => "--env-name",
             FileChoice::Bound => "[cloud] file",
             FileChoice::MatchedEnvironment => "matched the vault environment",
@@ -114,7 +114,7 @@ impl FileChoice {
 
 /// Decide which local file a push or pull should use.
 ///
-/// ⚠️ Why this exists: `--file` defaulted to `.env` whatever the vault was, so
+/// ⚠️ Why this exists: `--env` defaulted to `.env` whatever the vault was, so
 /// `evnx cloud push --vault app/production` with a forgotten flag pushed local
 /// development secrets into the production vault — encrypted, versioned, and
 /// shared with everyone holding a key. Nothing said which file it had read.
@@ -168,7 +168,7 @@ fn resolve_env_file(
 /// The default `.env` into a production vault: asked on a terminal, `--yes`
 /// without one (I-234, DEC-CL9).
 ///
-/// ⚠️ A forgotten `--file` pushed local development secrets into production —
+/// ⚠️ A forgotten `--env` pushed local development secrets into production —
 /// encrypted, versioned, shared with everyone holding a key — with only the
 /// warning `report_file` prints. CI cannot answer a question, so there it is a
 /// refusal naming `--yes`; nothing has been read or sent yet.
@@ -196,7 +196,7 @@ fn confirm_production_push(
     }
     crate::utils::prompt::require_terminal_or(&format!(
         "{} is the default file and {label} is a production vault, so this is asked \
-         first. Name the file you mean (--file or --env-name), or add --yes:\n  \
+         first. Name the file you mean (--env or --env-name), or add --yes:\n  \
          evnx cloud push --vault {vault_target} --yes",
         file.display()
     ))?;
@@ -211,7 +211,7 @@ fn confirm_production_push(
     Ok(ok)
 }
 
-/// Whether `--file` names stdout: exactly `-`, as `template --output -` (DEC-T8).
+/// Whether `--env` names stdout: exactly `-`, as `template --output -` (DEC-T8).
 fn is_stdout(file: Option<&Path>) -> bool {
     file.is_some_and(crate::core::safe_write::is_stdout)
 }
@@ -229,7 +229,7 @@ fn report_file(file: &Path, choice: FileChoice) {
 fn warn_default_into_production(file: &Path, choice: FileChoice, vault_env: &str) {
     if choice == FileChoice::Default && vault_env == "production" {
         println!(
-            "  {} pushing to a production vault from {} — pass --env-name or --file if that is not what you meant",
+            "  {} pushing to a production vault from {} — pass --env-name or --env if that is not what you meant",
             "!".yellow(),
             file.display()
         );
@@ -487,7 +487,7 @@ pub fn pull(
     // first pull into a fresh checkout still writes `.env`. That is the right
     // default: pull must not invent `.env.production` in a project that has no
     // such convention. Name it explicitly to create one.
-    // `--file -` is stdout (I-244, DEC-U8-4): it wrote a file named `-`,
+    // `--env -` is stdout (I-244, DEC-U8-4): it wrote a file named `-`,
     // holding plaintext, in the working directory.
     let to_stdout = is_stdout(file.as_deref());
     let (file, choice) = resolve_env_file(
@@ -891,12 +891,12 @@ fn bound_file_entry(toml: &Path, file: &Path) -> Result<String> {
     let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     let name = file
         .file_name()
-        .ok_or_else(|| anyhow!("--file {} names no file", file.display()))?;
+        .ok_or_else(|| anyhow!("--env {} names no file", file.display()))?;
     let folder = canon(file.parent().unwrap_or(Path::new(".")));
     let full = folder.join(name);
     let rel = full.strip_prefix(canon(root)).map_err(|_| {
         anyhow!(
-            "--file {} is outside {}, which the binding covers. Name a file inside it.",
+            "--env {} is outside {}, which the binding covers. Name a file inside it.",
             file.display(),
             root.display()
         )
@@ -1255,7 +1255,7 @@ mod env_file_tests {
     }
 
     /// ⚠️ The bug this exists for: `--vault app/production` with a forgotten
-    /// `--file` pushed local development secrets into the production vault.
+    /// `--env` pushed local development secrets into the production vault.
     #[test]
     fn the_vault_environment_picks_the_file() {
         let d = project(&[".env", ".env.production"]);
