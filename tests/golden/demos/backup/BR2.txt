@@ -91,19 +91,13 @@ Error: EVNX_PASSWORD is set but empty.
 
 An empty passphrase would encrypt the backup behind nothing. Unset it to be prompted, or give it a value.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: empty EVNX_PASSWORD refused (exit 2)
 
 $ evnx backup --password-file empty.key --output b4.bak
-✓ Read 258 bytes from .env
 [stderr]
-
-  evnx backup  Encrypt and back up your .env file
-
 Error: Key file is empty: empty.key
-
-No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: empty key file refused (exit 2)
 
@@ -144,16 +138,10 @@ Error: Wrong password or corrupt backup — decryption failed
   ok: the env secret does not open it (the file was used) (exit 2)
 
 $ evnx backup --password-file short.key --output b6.bak
-✓ Read 258 bytes from .env
 [stderr]
-
-  evnx backup  Encrypt and back up your .env file
-
 Error: The key file short.key must be at least 8 characters (got 1)
 
   Only a new backup needs it: one made earlier with a shorter passphrase still restores.
-
-No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: FIXED I-147: a one-character key file is refused (8 characters for a new backup, DEC-B2) (exit 2)
 
@@ -169,7 +157,7 @@ Error: there is no terminal to ask for the passphrase on.
     evnx backup .env --password-file <path>
     EVNX_PASSWORD=… evnx backup .env
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED D-101: no terminal, no secret: a line naming --password-file and EVNX_PASSWORD (exit 2)
 

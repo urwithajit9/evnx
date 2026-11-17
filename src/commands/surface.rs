@@ -408,7 +408,9 @@ pub fn run(json: bool, compact: bool) -> Result<()> {
         // ⚠️ `--compact` without `--json` is a mistake worth naming rather than
         // ignoring: somebody expects machine output and would get prose.
         if compact {
-            anyhow::bail!("--compact only applies to --format json output");
+            return Err(crate::core::verdict::usage(
+                "--compact only applies to --format json output",
+            ));
         }
         print!("{}", render_human(&surface));
         return Ok(());

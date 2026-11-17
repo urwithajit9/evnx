@@ -78,8 +78,49 @@ pub enum Stage {
 pub fn no_verdict_line(stage: Stage) -> &'static str {
     match stage {
         Stage::BeforeRun => "No verdict: evnx did not run. This is not a clean result.",
-        Stage::DuringRun => "No verdict: evnx did not finish. This is not a clean result.",
+        Stage::DuringRun => {
+            "No verdict: evnx stopped at the error above. This is not a clean result."
+        }
     }
+}
+
+/// A command line that asks for something that cannot be done: a flag value
+/// that is not valid, a file named on it that is not there, two flags that do
+/// not go together. Exit code 2, as for every error; the message stands alone,
+/// with no footer (WP-10). A usage error is not a run that failed, so it has no
+/// verdict to deny.
+#[derive(Debug)]
+pub struct UsageError(pub String);
+
+impl std::fmt::Display for UsageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for UsageError {}
+
+/// A [`UsageError`].
+pub fn usage(message: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(UsageError(message.into()))
+}
+
+/// A file the command needs is not there. Exit code 2 like any error; the
+/// footer says so, rather than a general line.
+#[derive(Debug)]
+pub struct MissingFile(pub String);
+
+impl std::fmt::Display for MissingFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for MissingFile {}
+
+/// A [`MissingFile`].
+pub fn missing_file(message: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(MissingFile(message.into()))
 }
 
 /// A refusal before anything was changed, whose message already says what to

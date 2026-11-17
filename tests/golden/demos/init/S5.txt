@@ -23,9 +23,6 @@ Next steps:
 
 $ evnx init --blueprint nope --yes
   config    .evnx.toml
-
-  evnx init  Set up environment variables for your project
-
 Error: Unknown blueprint 'nope'.
 
 Available blueprints:
@@ -39,8 +36,6 @@ Available blueprints:
   django_enterprise      Django Secure (Django + Postgres + Celery)
   firebase_mobile        App Backend (Node + Firebase)
   content_marketing      SEO Content Stack (Nuxt + S3 + Stripe)
-
-No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: unknown blueprint lists ids (exit 2)
 

@@ -125,16 +125,13 @@ KNOWN: spaces are trimmed and duplicates tolerated
 $ evnx spec init --with Django --stdout
 [stderr]
   config    .evnx.toml
-
-  evnx spec  Generate the variable contract
-
 Error: unknown component 'Django'
 
 Did you mean: django
 
 Run `evnx init --list-components` for the full list.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: ids are case-sensitive: 'Django' is refused (exit 2)
 

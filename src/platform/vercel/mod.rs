@@ -56,7 +56,9 @@ impl Session {
                 );
             }
             if branch.trim().is_empty() {
-                anyhow::bail!("--git-branch needs a branch name.");
+                return Err(crate::core::verdict::usage(
+                    "--git-branch needs a branch name.",
+                ));
             }
         }
         let env = |k: &str| std::env::var(k).ok();

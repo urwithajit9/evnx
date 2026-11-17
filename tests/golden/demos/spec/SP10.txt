@@ -11,14 +11,11 @@ $ evnx -q spec init
 $ evnx spec init --env nope.env --stdout
 [stderr]
   files     nope.env ↔ .env.example  (--env; project template)
-
-  evnx spec  Generate the variable contract
-
 Error: nope.env does not exist
 
 nope.env was named by --env; check the path.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: a file evnx needed was not found. This is not a clean result.
 [exit 2]
   ok: FIXED I-182 (DEC-SP8): an explicit --env that does not exist is an error (exit 2)
 
@@ -41,7 +38,7 @@ Error: nothing to write: --with named no variables.
   Name components (--with django,postgresql), or leave out --with to read
   .env.example and .env.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-186 (DEC-SP8): nothing to write is exit 2 (exit 2)
 

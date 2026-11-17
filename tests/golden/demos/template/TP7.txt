@@ -57,7 +57,7 @@ $ evnx template --input config.tpl.yml --output nodir/x.yml --no-gitignore
 
 Error: Failed to write generated config to: nodir/x.yml: the directory nodir does not exist. Add --mkdir to create it.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-144: a missing output directory names --mkdir (exit 2)
 

@@ -94,6 +94,55 @@ pub struct MigrateArgs {
     pub railway_service: Option<String>,
 }
 
+/// The flag combinations that cannot work for this source and destination,
+/// refused as usage errors. Called before the banner when both are named on the
+/// command line, and again once a prompt has chosen them (WP-10).
+fn check_combinations(args: &MigrateArgs, source: &str, destination: &str) -> Result<()> {
+    use crate::core::verdict::usage;
+    if source == "environment" && args.env_name.is_some() {
+        return Err(usage(
+            "--env-name names a .env file, and --from environment reads the process \
+             environment instead. Drop one of them.",
+        ));
+    }
+    // I-111: `--print-only` is about printed commands. The one destination
+    // that uploads prints none, so the flag could only be ignored there.
+    if args.print_only && destinations::uploads(destination) {
+        return Err(usage(format!(
+            "--print-only applies to destinations evnx prints commands for. \
+             `{destination}` uploads; drop --print-only, or preview with --dry-run."
+        )));
+    }
+    if args.output.is_some() && destinations::uploads(destination) {
+        return Err(usage(format!(
+            "--output applies to destinations evnx prints commands for. \
+             `{destination}` uploads; drop --output, or preview with --dry-run."
+        )));
+    }
+    // ⚠️ `--skip-existing` and `--overwrite` are about secrets that already
+    // exist at the destination, which only a destination evnx actually talks to
+    // can know. The other eight print commands for you to run, and accepted
+    // both flags in silence — no warning, no effect, exit 0 (F10, flagged in
+    // three consecutive reviews). Refusing is better than a warning: a flag
+    // that cannot work should not look like it did.
+    if !destinations::uploads(destination) && (args.skip_existing || args.overwrite) {
+        let which = match (args.skip_existing, args.overwrite) {
+            (true, true) => "--skip-existing and --overwrite",
+            (true, false) => "--skip-existing",
+            _ => "--overwrite",
+        };
+        return Err(usage(format!(
+            "{which} cannot apply to `{destination}`.\n\n\
+             evnx does not contact {destination} — it prints the commands for \
+             you to run, so it cannot see which secrets are already there. \
+             Drop the flag, or pass the platform's own equivalent to the \
+             printed command.\n\n\
+             Only `--to github` uploads, and it honours both."
+        )));
+    }
+    Ok(())
+}
+
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 pub fn run(args: MigrateArgs) -> Result<Verdict> {
@@ -117,6 +166,20 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         out.status("Running migrate in verbose mode".dimmed());
     }
 
+    // ⚠️ Argument problems are said before the banner (WP-10). With both ends
+    // named there is nothing to ask, so what is wrong with the flags is known
+    // now; a destination's missing `--repo` or `--project` is too, when there
+    // is no terminal to ask on.
+    if let Some(destination) = args.to.as_deref() {
+        let source = args.from.as_deref().unwrap_or("env-file");
+        check_combinations(&args, source, destination)?;
+        if !crate::utils::term::can_prompt() {
+            destinations::get_destination(destination, &args)
+                .map(drop)
+                .map_err(|e| crate::core::verdict::usage(format!("{e:#}")))?;
+        }
+    }
+
     print_banner();
 
     // ── Resolve source and destination ────────────────────────────────────
@@ -124,30 +187,11 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         Some(s) => s,
         None => select_source()?,
     };
-    if source == "environment" && args.env_name.is_some() {
-        anyhow::bail!(
-            "--env-name names a .env file, and --from environment reads the process \
-             environment instead. Drop one of them."
-        );
-    }
     let destination = match args.to.clone() {
         Some(d) => d,
         None => select_destination()?,
     };
-    // I-111: `--print-only` is about printed commands. The one destination
-    // that uploads prints none, so the flag could only be ignored there.
-    if args.print_only && destinations::uploads(&destination) {
-        anyhow::bail!(
-            "--print-only applies to destinations evnx prints commands for. \
-             `{destination}` uploads; drop --print-only, or preview with --dry-run."
-        );
-    }
-    if args.output.is_some() && destinations::uploads(&destination) {
-        anyhow::bail!(
-            "--output applies to destinations evnx prints commands for. \
-             `{destination}` uploads; drop --output, or preview with --dry-run."
-        );
-    }
+    check_combinations(&args, &source, &destination)?;
     // Before anything is built, so a refusal writes nothing.
     if let Some(path) = args.output.as_deref() {
         crate::commands::convert::check_output(&args.source_file, path, args.force)?;
@@ -257,28 +301,6 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
 
     // ── Dispatch to destination registry ─────────────────────────────────
     let dest = destinations::get_destination(&destination, &args)?;
-
-    // ⚠️ `--skip-existing` and `--overwrite` are about secrets that already
-    // exist at the destination, which only a destination evnx actually talks to
-    // can know. The other eight print commands for you to run, and accepted
-    // both flags in silence — no warning, no effect, exit 0 (F10, flagged in
-    // three consecutive reviews). Refusing is better than a warning: a flag
-    // that cannot work should not look like it did.
-    if dest.kind() == DestinationKind::EmitsCommands && (args.skip_existing || args.overwrite) {
-        let which = match (args.skip_existing, args.overwrite) {
-            (true, true) => "--skip-existing and --overwrite",
-            (true, false) => "--skip-existing",
-            _ => "--overwrite",
-        };
-        anyhow::bail!(
-            "{which} cannot apply to `{destination}`.\n\n\
-             evnx does not contact {destination} — it prints the commands for \
-             you to run, so it cannot see which secrets are already there. \
-             Drop the flag, or pass the platform's own equivalent to the \
-             printed command.\n\n\
-             Only `--to github` uploads, and it honours both."
-        );
-    }
 
     // ── Collisions, by the destination's own naming (I-104) ──────────────
     // ⚠️ `--strip-prefix API_` on `API_X` and `X` printed one `X` and said

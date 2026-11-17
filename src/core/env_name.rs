@@ -79,7 +79,9 @@ pub fn file_name(name: Option<&str>) -> Result<String> {
 fn checked(name: &str) -> Result<&str> {
     let name = name.trim();
     if name == DEFAULT_FILE {
-        bail!("--env-name .env is the default file: drop --env-name to use it");
+        return Err(crate::core::verdict::usage(
+            "--env-name .env is the default file: drop --env-name to use it",
+        ));
     }
     if name.contains('/') || name.contains('\\') {
         bail!(

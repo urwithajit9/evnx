@@ -653,6 +653,10 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
 // Main Entry Point
 // ─────────────────────────────────────────────────────────────
 
+const EXAMPLE_HINT: &str = "validate compares .env against it, so it needs one. Create it with \
+     `evnx sync` (from your .env) or `evnx init`, or point at another file \
+     with --example.";
+
 /// Run the validate command.
 ///
 /// This function is called from `main.rs` after CLI args are parsed.
@@ -688,22 +692,6 @@ pub fn run(opts: Options) -> Result<Verdict> {
         .with_context(|| format!("{} [validate] fail_on", crate::core::config::PROJECT_FILE))?;
     let fail_on = opts.fail_on.or(configured_fail_on).unwrap_or(FailOn::Error);
 
-    // ─────────────────────────────────────────
-    // UI: Header (only for pretty output)
-    // ─────────────────────────────────────────
-    if format == Format::Pretty {
-        ui::print_header("evnx validate", Some("Check environment configuration"));
-        if opts.verbose {
-            ui::info("Running in verbose mode");
-        }
-    } else if opts.verbose {
-        // Verbose for machine formats goes to stderr
-        eprintln!(
-            "[verbose] validate: env={}, example={}",
-            opts.env, opts.example
-        );
-    }
-
     // `--env` already carries the resolved path: `--env-name production` is
     // turned into `.env.production` before the command is called.
     let env_path = opts.env.clone();
@@ -720,7 +708,6 @@ pub fn run(opts: Options) -> Result<Verdict> {
     };
 
     // Parse files with progress indicator
-    let pb = ui::spinner("Parsing configuration files...");
     let parser = Parser::new(ParserConfig {
         strict: opts.strict,
         ..ParserConfig::default()
@@ -739,13 +726,40 @@ pub fn run(opts: Options) -> Result<Verdict> {
         }
     }
 
+    // ⚠️ Inputs that are not there are an argument problem, said before the
+    // banner (WP-10): a banner followed by "does not exist" reads as a run that
+    // started and failed.
+    if !stdin && !Path::new(&example).exists() {
+        parser
+            .parse_file_or_hint(&example, EXAMPLE_HINT)
+            .map_err(|e| every_problem(e, &parser, &example))?;
+    }
+    if !stdin && input_format == InputFormat::Dotenv && !Path::new(&env_path).exists() {
+        parser
+            .parse_file_or_hint(&env_path, &Parser::missing_env_hint(&env_path))
+            .map_err(|e| every_problem(e, &parser, &env_path))?;
+    }
+
+    // ─────────────────────────────────────────
+    // UI: Header (only for pretty output)
+    // ─────────────────────────────────────────
+    if format == Format::Pretty {
+        ui::print_header("evnx validate", Some("Check environment configuration"));
+        if opts.verbose {
+            ui::info("Running in verbose mode");
+        }
+    } else if opts.verbose {
+        // Verbose for machine formats goes to stderr
+        eprintln!(
+            "[verbose] validate: env={}, example={}",
+            opts.env, opts.example
+        );
+    }
+
+    let pb = ui::spinner("Parsing configuration files...");
+
     let example_file = parser
-        .parse_file_or_hint(
-            &example,
-            "validate compares .env against it, so it needs one. Create it with \
-         `evnx sync` (from your .env) or `evnx init`, or point at another file \
-         with --example.",
-        )
+        .parse_file_or_hint(&example, EXAMPLE_HINT)
         .map_err(|e| every_problem(e, &parser, &example))?;
     let origin = if stdin {
         STDIN_LABEL.to_string()

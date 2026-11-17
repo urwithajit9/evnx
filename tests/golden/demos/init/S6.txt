@@ -2,31 +2,21 @@
 ================ S6 ================
 
 $ evnx init --with vite,supabse --yes
-
-  evnx init  Set up environment variables for your project
-
 Error: Failed to resolve components: unknown component 'supabse'
 
 Did you mean: supabase
 
 Run `evnx init --list-components` for the full list.
-
-No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: typo is refused (exit 2)
   ok: typo gets a suggestion
 
 $ evnx init --with postgre --yes
-
-  evnx init  Set up environment variables for your project
-
 Error: Failed to resolve components: unknown component 'postgre'
 
 Did you mean: postgresql
 
 Run `evnx init --list-components` for the full list.
-
-No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: prefix hint works (exit 2)
 

@@ -31,9 +31,11 @@ use super::verdict::{
 /// Why a command did not reach a verdict, or reached "no" without a finding.
 #[derive(Debug, thiserror::Error)]
 pub enum EvnxError {
-    /// The command line asked for something that cannot be done. Before the run.
-    #[error("{0}")]
-    Usage(String),
+    /// The command line asked for something that cannot be done ([`verdict::usage`]):
+    /// a value that is not valid, a file named on it that is not there, flags
+    /// that do not go together. The message stands alone, with no footer.
+    #[error("{0:#}")]
+    Usage(anyhow::Error),
 
     /// A setting could not be used: `.evnx.toml`, `--env-name`, a named file.
     /// Before the run.
@@ -184,6 +186,7 @@ impl EvnxError {
     fn chain(&self) -> Option<&anyhow::Error> {
         match self {
             EvnxError::Config(e)
+            | EvnxError::Usage(e)
             | EvnxError::Stopped(e)
             | EvnxError::NeedsConfirmation(e)
             | EvnxError::Footed(e)
@@ -266,6 +269,9 @@ pub fn classify(e: anyhow::Error) -> EvnxError {
             code: code as u8,
         };
     }
+    if e.chain().any(|c| c.is::<verdict::UsageError>()) {
+        return EvnxError::Usage(e);
+    }
     if e.chain().any(|c| c.is::<Stopped>()) {
         return EvnxError::Stopped(e);
     }
@@ -292,7 +298,41 @@ fn footer(error: &EvnxError) -> String {
     if has(|e| e.chain().any(|c| c.is::<Stopped>())) {
         return verdict::STOPPED_LINE.to_string();
     }
+    if let Some(reason) = reason(error) {
+        return format!("No verdict: {reason}. This is not a clean result.");
+    }
     verdict::no_verdict_line(error.stage()).to_string()
+}
+
+/// Why there is no verdict, when the error says: a request that failed, or a
+/// file that could not be read. Anything else gets the general line.
+fn reason(error: &EvnxError) -> Option<&'static str> {
+    if matches!(error, EvnxError::NeedsConfirmation(_)) {
+        return Some("a question needed an answer and there is no terminal to ask on");
+    }
+    match error.exit_code() {
+        10 => return Some("nobody is signed in"),
+        11 => return Some("the server refused access"),
+        12 => return Some("the plan's limit was reached"),
+        13 => return Some("the server could not be reached"),
+        14 => return Some("the server holds a newer version"),
+        15 => return Some("the server reported an error"),
+        _ => {}
+    }
+    let chain = error.chain()?;
+    if chain.chain().any(|c| c.is::<verdict::MissingFile>()) {
+        return Some("a file evnx needed was not found");
+    }
+    let io = chain
+        .chain()
+        .find_map(|c| c.downcast_ref::<std::io::Error>())?;
+    Some(match io.kind() {
+        std::io::ErrorKind::NotFound => "a file evnx needed was not found",
+        std::io::ErrorKind::PermissionDenied => {
+            "a file could not be read or written (permission denied)"
+        }
+        _ => "a file could not be read or written",
+    })
 }
 
 /// Print an error as `main` always has: `Error: …`, a blank line, then what it
@@ -305,6 +345,14 @@ fn print(error: &EvnxError) {
     match error {
         // These two never had a footer: their message stands alone.
         EvnxError::Backup(_) | EvnxError::Restore(_) => {
+            eprintln!("{label} {error}");
+        }
+        // A usage error is not a run that failed: the message is all there is.
+        // Whichever way it got here (`Config` carries the main-side checks).
+        _ if error
+            .chain()
+            .is_some_and(|e| e.chain().any(|c| c.is::<verdict::UsageError>())) =>
+        {
             eprintln!("{label} {error}");
         }
         EvnxError::Footed(e) => {
@@ -390,9 +438,10 @@ mod tests {
 
     #[test]
     fn footers_follow_the_stage() {
-        let before = EvnxError::Usage("x".into());
+        let before = EvnxError::Usage(anyhow::anyhow!("x"));
         assert_eq!(before.exit_code(), 2);
         assert_eq!(footer(&before), verdict::no_verdict_line(Stage::BeforeRun));
+        assert!(classify(verdict::usage("bad value")).code() == "usage");
         let during = classify(anyhow::anyhow!("x"));
         assert_eq!(footer(&during), verdict::no_verdict_line(Stage::DuringRun));
     }

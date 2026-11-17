@@ -17,7 +17,7 @@
 //! Also the one rule for a value chosen from a fixed list — a format, a level,
 //! an issue type: [`one_of`].
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 /// The kinds of name evnx checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,11 +186,11 @@ pub fn check(flag: &str, value: &str, kind: Name) -> Result<()> {
     if kind.accepts(value) {
         return Ok(());
     }
-    bail!(
+    Err(crate::core::verdict::usage(format!(
         "{flag} {value:?} is not a valid name here.\n\n\
          Expected {}. Nothing was printed or sent.",
         kind.rule()
-    )
+    )))
 }
 
 /// Refuse `value` for `flag` unless it looks like an email address: one `@`
@@ -206,7 +206,9 @@ pub fn check_email(flag: &str, value: &str) -> Result<()> {
     if ok {
         return Ok(());
     }
-    bail!("{flag} {value:?} is not an email address. Nothing was sent.")
+    Err(crate::core::verdict::usage(format!(
+        "{flag} {value:?} is not an email address. Nothing was sent."
+    )))
 }
 
 /// [`check`] for an optional flag.
@@ -239,10 +241,10 @@ pub fn one_of<T: Copy>(
     let wanted = value.trim().to_lowercase();
     match accepted.iter().find(|(name, _)| *name == wanted) {
         Some((_, meant)) => Ok(*meant),
-        None => bail!(
+        None => Err(crate::core::verdict::usage(format!(
             "unknown {what} '{wanted}' — expected one of: {}",
             shown.join(", ")
-        ),
+        ))),
     }
 }
 

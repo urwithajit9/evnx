@@ -12,7 +12,7 @@ $ evnx sync --check --env empty.env
 Error: empty.env has no variables, while .env.example has 4: evnx could not verify the pair.
   An empty empty.env beside a populated template is far more likely a mistake — a truncated file, the wrong directory, a failed secret fetch — than a pair in step.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-127 (DEC-S14): empty source, full template: no verdict under --check (exit 2)
 

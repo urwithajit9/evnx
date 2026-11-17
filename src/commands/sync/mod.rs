@@ -290,7 +290,9 @@ fn run_as_json(
     config: &crate::core::placeholder::PlaceholderConfig,
 ) -> Result<Verdict> {
     if !ctx.dry_run && !ctx.force && executor::no_prompt_reason().is_none() {
-        anyhow::bail!("--format json needs --yes or --dry-run: it never asks.");
+        return Err(crate::core::verdict::usage(
+            "--format json needs --yes or --dry-run: it never asks.",
+        ));
     }
     ui::set_quiet(true);
     let loaded = executor::load(ctx, config, false)?;

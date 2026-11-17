@@ -187,6 +187,15 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
             );
         }
 
+        // ── Fetch encoded blob, and check the key file ────────────────────────
+        // Before the banner: a backup or key file that is not there is an
+        // argument problem (WP-10).
+        let mut encoded = source::fetch(&backup)?;
+        if let Err(e) = secret_source::check_key_file(password_file.as_deref(), Purpose::Decrypt) {
+            encoded.zeroize();
+            return Err(e);
+        }
+
         // ── Header ────────────────────────────────────────────────────────────
         ui::print_header(
             "evnx restore",
@@ -199,8 +208,6 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
             ui::verbose_stderr(format!("Dry-run: {dry_run}"));
         }
 
-        // ── Fetch encoded blob ────────────────────────────────────────────────
-        let mut encoded = source::fetch(&backup)?;
         ui::success(format!("Read backup from {backup}"));
 
         // ── The output may not be the backup itself (DEC-B3) ──────────────────

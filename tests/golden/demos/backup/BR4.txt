@@ -3,12 +3,9 @@
 
 $ evnx backup --password-file pw --output odir
 [stderr]
-
-  evnx backup  Encrypt and back up your .env file
-
 Error: odir exists and is not a regular file
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-146/DEC-B3: an existing directory is refused (exit 2) and nothing is renamed (exit 2)
 
@@ -19,12 +16,9 @@ odir.1: absent
 
 $ evnx backup src.env --password-file pw --output src.env
 [stderr]
-
-  evnx backup  Encrypt and back up your .env file
-
 Error: --output 'src.env' is the same file as the env file 'src.env'. Nothing was written; choose another --output.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-146: output equals source: refused, the .env stays plaintext (exit 2)
 

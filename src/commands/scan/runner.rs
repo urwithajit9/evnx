@@ -329,6 +329,18 @@ impl ScanRunner {
     /// }
     /// ```
     pub fn run(&self, paths: Vec<String>, format: OutputFormat) -> Result<bool> {
+        // RM-48: `-` is stdin, read once and scanned in memory; nothing of it
+        // is written to disk. It can sit beside paths.
+        let stdin = paths.iter().any(|p| p == "-");
+        let on_disk: Vec<String> = paths.iter().filter(|p| *p != "-").cloned().collect();
+        let collected = if on_disk.is_empty() {
+            super::filters::Collected::default()
+        } else {
+            self.filter.collect(&on_disk)?
+        };
+        let files = collected.files.clone();
+        // ⚠️ After the paths are checked (WP-10): a banner followed by "does
+        // not exist" reads as a scan that started.
         // Only show header for human-readable output
         // Machine formats (JSON/SARIF) skip the UI header to keep stdout clean
         if matches!(format, OutputFormat::Pretty) {
@@ -357,16 +369,6 @@ impl ScanRunner {
             }
         }
 
-        // RM-48: `-` is stdin, read once and scanned in memory; nothing of it
-        // is written to disk. It can sit beside paths.
-        let stdin = paths.iter().any(|p| p == "-");
-        let on_disk: Vec<String> = paths.iter().filter(|p| *p != "-").cloned().collect();
-        let collected = if on_disk.is_empty() {
-            super::filters::Collected::default()
-        } else {
-            self.filter.collect(&on_disk)?
-        };
-        let files = collected.files.clone();
         // Said before scanning: a limited walk is a weaker scan (DEC-U8-2).
         if let Some(list) = self.filter.extensions() {
             eprintln!(
@@ -570,7 +572,9 @@ impl ScanRunner {
     /// `paths` (pathspecs) when any are given.
     pub fn run_staged(&self, paths: Vec<String>, format: OutputFormat) -> Result<bool> {
         if paths.iter().any(|p| p == "-") {
-            anyhow::bail!("--staged reads the git index; it cannot be combined with `-` (stdin)");
+            return Err(crate::core::verdict::usage(
+                "--staged reads the git index; it cannot be combined with `-` (stdin)",
+            ));
         }
         let cwd = std::env::current_dir()?;
         super::staged::toplevel(&cwd)?;

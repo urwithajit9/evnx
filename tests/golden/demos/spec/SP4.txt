@@ -11,7 +11,7 @@ Error: .evnx.toml already has a [vars] section.
   Pass --merge to add only the variables it does not declare yet;
   existing entries are kept as they are.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: existing [vars]: refused (exit 2)
   ok: the file is untouched, byte for byte
@@ -23,7 +23,7 @@ Error: --force was removed: it appended a second [vars] section that TOML refuse
   Use --merge to add only the variables .evnx.toml does not declare yet;
   existing entries are kept as they are.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-178 (U8d, DEC-SP3): --force is refused with a hint to --merge (exit 2)
   ok: still untouched
@@ -56,7 +56,7 @@ Error: .evnx.toml already has a [vars] section.
   Pass --merge to add only the variables it does not declare yet;
   existing entries are kept as they are.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-179 (U8d): an inline vars table is seen and refused (exit 2)
 
@@ -71,7 +71,7 @@ Error: changing .evnx.toml would leave a file TOML refuses, so nothing was writt
   [vars] is an inline `vars = { … }` table, which cannot be extended:
   write one [vars.NAME] table per variable, then run this again.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-179: --merge cannot extend an inline table; nothing written (exit 2)
   ok: the file is untouched

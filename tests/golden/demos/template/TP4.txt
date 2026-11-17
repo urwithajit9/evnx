@@ -14,7 +14,7 @@ Error: f.tpl has a filter evnx cannot apply:
 Filters: upper, lower, title, capitalize, bool, int, json, yaml, toml, sh, default:VALUE. They chain left to right.
 Nothing was written to f.out.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-136 (DEC-T7): an unknown filter is an error naming its line; the chained filter is not (B3); nothing is written (exit 2)
 

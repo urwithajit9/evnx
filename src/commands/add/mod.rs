@@ -56,7 +56,9 @@ pub fn run(target: Option<crate::cli::AddTarget>, opts: Options) -> Result<()> {
     // `--json` never asks: a question would land in the middle of the
     // document a script is about to parse.
     if opts.json && !opts.yes && !opts.dry_run {
-        bail!("--json needs --yes or --dry-run: it never asks.");
+        return Err(crate::core::verdict::usage(
+            "--json needs --yes or --dry-run: it never asks.",
+        ));
     }
     if opts.json {
         // Headers, hints and result lines would share stdout with the JSON.

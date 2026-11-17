@@ -46,7 +46,7 @@ Error: every one of the 8 variable(s) in .env was filtered out, so there is noth
 
 Check --include / --exclude: a pattern that matches nothing leaves the destination untouched.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: a filter that matches nothing is an error (convert prints {}) (exit 2)
 
@@ -62,7 +62,7 @@ Error: empty.env holds no variables, so there is nothing to migrate.
 
 Check you are in the right directory, or point at another file with --env. `evnx validate` will confirm what evnx can read.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: an empty source is an error (exit 2)
 
@@ -77,7 +77,7 @@ Error: these names become the same name after renaming, and one value would be l
   API_X, X → X
 Rename one in the .env, migrate without --strip-prefix, or pass --allow-collisions to keep the last value. Nothing was printed or sent.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-104: API_X and X both become X: refused, naming both (exit 2)
 

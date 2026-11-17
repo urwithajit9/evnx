@@ -61,7 +61,7 @@ Error: --force was removed: it appended a second [vars] section that TOML refuse
   Use --merge to add only the variables .evnx.toml does not declare yet;
   existing entries are kept as they are.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-182 (U8d, DEC-SP3): --force is refused everywhere, with a hint to --merge (exit 2)
 

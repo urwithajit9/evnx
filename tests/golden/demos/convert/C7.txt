@@ -7,7 +7,7 @@ Error: --to gcp-secrets needs --project: the Google Cloud project the secrets go
 
   evnx convert --to gcp-secrets --project <PROJECT>
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-084: --project is required, no my-project placeholder (exit 2)
 
@@ -45,7 +45,7 @@ Error: --to azure-keyvault needs --vault-name: the Key Vault the secrets go to. 
 
   evnx convert --to azure-keyvault --vault-name <NAME>
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-084: --vault-name is required (exit 2)
 
@@ -137,7 +137,7 @@ Error: --to heroku needs --heroku-app: the Heroku app the config vars go to. Not
 
   evnx convert --to heroku --heroku-app <APP>
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-084: --heroku-app is required (exit 2)
 

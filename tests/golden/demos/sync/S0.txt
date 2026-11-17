@@ -58,7 +58,7 @@ Next steps:
 ✗ File not found: nope.env
 Error: nope.env not found - run 'evnx init' to get started
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: missing .env: exit 2 (FIXED I-125: the message names nope.env) (exit 2)
 
