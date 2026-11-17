@@ -322,6 +322,43 @@ fn run() -> Result<Verdict, EvnxError> {
             }
         }
 
+        Commands::Set {
+            assignment,
+            env,
+            dir,
+            if_missing,
+            dry,
+            confirm,
+            output,
+        } => commands::set::run(commands::set::Options {
+            assignment,
+            dir: project_dir(dir),
+            env: env.env,
+            env_name: env.env_name,
+            if_missing,
+            dry_run: dry.dry_run,
+            yes: confirm.yes,
+            json: output.resolved() == evnx::cli::args::Format::Json,
+        })
+        .map(clean),
+
+        Commands::Get {
+            name,
+            env,
+            dir,
+            exists,
+            reveal,
+            output,
+        } => commands::get::run(commands::get::Options {
+            name,
+            dir: project_dir(dir),
+            env: env.env,
+            env_name: env.env_name,
+            exists,
+            reveal,
+            json: output.resolved() == evnx::cli::args::Format::Json,
+        }),
+
         Commands::Validate {
             files: file_args,
             input_format,

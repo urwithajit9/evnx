@@ -397,6 +397,33 @@ The script lists this build's commands: generate it again after an upgrade.\n\
 Full guide: https://docs.evnx.dev/cli/commands/completions",
 };
 
+pub const SET: CommandDoc = CommandDoc {
+    command: "set",
+    url: "https://docs.evnx.dev/cli/commands/set",
+    description: "Setting one variable in place",
+    after_help: "Examples:
+  evnx set PORT=8080                        change one line, keep the rest
+  evnx set API_TOKEN                        typed with no echo, or read from stdin
+  printf %s \"$TOKEN\" | evnx set API_TOKEN   from a pipe, nothing in shell history
+  evnx set LOG_LEVEL=info --if-missing      only when the name is not there yet
+  evnx set PORT=8080 --dry-run              show the change, write nothing
+
+Full guide: https://docs.evnx.dev/cli/commands/set",
+};
+
+pub const GET: CommandDoc = CommandDoc {
+    command: "get",
+    url: "https://docs.evnx.dev/cli/commands/get",
+    description: "Printing one variable's value",
+    after_help: "Examples:
+  PORT=$(evnx get PORT)                     one value, no sourcing
+  evnx get --exists DATABASE_URL            exit 0 when set, 1 when not; prints nothing
+  evnx get API_TOKEN --reveal               a secret is printed only on request
+  evnx get PORT --env-name staging          from .env.staging
+
+Full guide: https://docs.evnx.dev/cli/commands/get",
+};
+
 pub const UPDATE: CommandDoc = CommandDoc {
     command: "update",
     url: "https://docs.evnx.dev/cli/commands/update",
@@ -429,6 +456,8 @@ pub const ALL: &[&CommandDoc] = &[
     &SPEC,
     &ADD,
     &REMOVE,
+    &SET,
+    &GET,
     &VALIDATE,
     &SCAN,
     &DIFF,

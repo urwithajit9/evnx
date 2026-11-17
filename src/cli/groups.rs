@@ -49,6 +49,8 @@ pub const GROUPS: &[Group] = &[
         commands: &[
             ("init", Local),
             ("add", Local),
+            ("set", Local),
+            ("get", Local),
             ("remove", Local),
             ("validate", Local),
             ("sync", Local),
