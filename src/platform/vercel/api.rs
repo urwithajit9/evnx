@@ -196,7 +196,13 @@ pub struct Api {
 impl Api {
     /// A client for `base` (see [`parse_base`]).
     pub fn new(base: Url, token: SecretString, team: Option<Team>) -> Result<Api> {
-        let host = base.host_str().unwrap_or("the Vercel API").to_string();
+        // With the port when it is not the scheme's own: "could not reach
+        // localhost" names a server the person cannot tell from another one.
+        let host = match (base.host_str(), base.port()) {
+            (Some(h), Some(port)) => format!("{h}:{port}"),
+            (Some(h), None) => h.to_string(),
+            (None, _) => "the Vercel API".to_string(),
+        };
         Ok(Api {
             http: crate::core::http::client(REQUEST_TIMEOUT, Some(CONNECT_TIMEOUT))?,
             base,

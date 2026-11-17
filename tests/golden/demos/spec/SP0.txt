@@ -188,14 +188,11 @@ secret = true
 
 $ evnx spec init --with nonsense --stdout
 [stderr]
-
-  evnx spec  Generate the variable contract
-
 Error: unknown component 'nonsense'
 
 Run `evnx init --list-components` for the full list.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: unknown component: exit 2 with suggestion (exit 2)
 

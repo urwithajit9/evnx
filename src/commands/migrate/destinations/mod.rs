@@ -121,8 +121,10 @@ pub(crate) fn resolve_arg_with(
     if let Some(v) = value {
         return Ok(v);
     }
-    if dry_run && matches!(kind, ArgKind::Credential { .. }) {
-        return Ok(format!("<{flag} not set>"));
+    if dry_run {
+        if let ArgKind::Credential { env } = kind {
+            return Ok(format!("<{env} not set>"));
+        }
     }
     if dry_run {
         return Err(anyhow!(
@@ -137,7 +139,9 @@ pub(crate) fn resolve_arg_with(
             .interact_text()?);
     }
     let how = match kind {
-        ArgKind::Credential { env } => format!("Set `{env}`, or pass `{flag}`"),
+        // The flag exists, but evnx warns against it (the token lands in shell
+        // history), so the way out names the variable only.
+        ArgKind::Credential { env } => format!("Set `{env}`"),
         ArgKind::Identifier => format!("Pass `{flag}`"),
     };
     Err(anyhow!(
@@ -506,7 +510,7 @@ mod tests {
             false,
         )
         .unwrap();
-        assert_eq!(got, "<--github-token not set>");
+        assert_eq!(got, "<GITHUB_TOKEN not set>");
     }
 
     /// I-273: a missing credential names the variable first; the flag is the
@@ -526,7 +530,7 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(
-            err.contains("Set `GITHUB_TOKEN`, or pass `--github-token`"),
+            err.contains("Set `GITHUB_TOKEN`.") && !err.contains("--github-token"),
             "{err}"
         );
     }

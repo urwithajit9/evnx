@@ -191,7 +191,14 @@ pub fn run_with(opts: PruneOptions, before_commit: &mut dyn FnMut(usize, &Path))
             return Err(Declined.into());
         }
     } else {
-        ui::say(format!("  template  {}", places[0].label));
+        // The same first line as the plan and the dry run: what was compared
+        // with what, so the "removed" line below can be checked against it.
+        ui::say(format!(
+            "  {:<9} {} against {}",
+            "compared",
+            places[0].label,
+            compared.join(", ")
+        ));
     }
 
     // ── Apply ────────────────────────────────────────────────────────────────

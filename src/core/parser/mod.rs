@@ -456,7 +456,9 @@ impl Parser {
     /// replaces it with `hint` — what to run to create the file — otherwise.
     pub fn parse_file_or_hint(&self, path: &str, hint: &str) -> anyhow::Result<EnvFile> {
         self.parse_file(path).map_err(|e| match e {
-            ParseError::FileNotFound { .. } => anyhow::anyhow!("{e}\n\n{hint}"),
+            ParseError::FileNotFound { .. } => {
+                crate::core::verdict::missing_file(format!("{e}\n\n{hint}"))
+            }
             other => anyhow::Error::from(other).context(format!("Failed to parse {path}")),
         })
     }

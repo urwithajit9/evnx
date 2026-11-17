@@ -2,35 +2,45 @@ Manage .env files — validation, secret scanning, and format conversion
 
 Usage: evnx [OPTIONS] <COMMAND>
 
-Commands:
+Local files:
   init         Interactive project setup — the template, .env and the .evnx.toml contract
   add          Add environment variables to existing .env files
   remove       Remove variables from the env file, and the template and contract too [aliases: rm]
   validate     Check .env against .env.example, find issues
-  scan         Detect secrets that look real (AWS keys, tokens, etc.)
-  diff         Compare two env files: keys missing or extra, and values between environments
-  convert      Transform `.env` files into multiple output formats
-  migrate      Move a .env into a secret manager: print the commands, or upload to GitHub
   sync         Keep .env and .env.example in sync
   align        Give .env files the template's sections, comments and key order, keeping their values
+  diff         Compare two env files: keys missing or extra, and values between environments
+  scan         Detect secrets that look real (AWS keys, tokens, etc.)
+  doctor       Check .env files, Git config, project structure, and security
+
+Convert and run:
+  convert      Transform `.env` files into multiple output formats
   template     Generate config files from templates
+  run          Run a command with a `.env`'s variables in its environment
+  migrate      Move a .env into a secret manager: print the commands, or upload to GitHub
+  parse        List what evnx reads from a `.env`: line, key and flags, never a value
+  spec         Declare what each variable is: required, format, secret
   backup       Create encrypted backup of .env
   restore      Restore from encrypted backup
+  undo         Put a file back as it was before evnx last changed it
+  history      List the copies evnx kept before changing a file: which file, which command, when
+
+Cloud:
   auth         Manage your evnx cloud account
   org          Manage organisations — billing and a directory
   vault        Manage encrypted vaults
-  cloud        Sync encrypted .env files with evnx cloud.
-  platform     Compare or sync .env with a hosting platform's variables (Vercel).
-  doctor       Check .env files, Git config, project structure, and security
-  spec         Declare what each variable is: required, format, secret
-  history      List the copies evnx kept before changing a file: which file, which command, when
-  undo         Put a file back as it was before evnx last changed it
-  parse        List what evnx reads from a `.env`: line, key and flags, never a value
-  run          Run a command with a `.env`'s variables in its environment
-  commands     Every command this build has, and which features it was compiled with [aliases: surface]
-  completions  Generate shell completions
+  cloud        Sync encrypted .env files with evnx cloud
+  platform     Compare or sync .env with a hosting platform's variables (Vercel)
+
+This tool:
   update       Show how to upgrade, and optionally whether a newer release exists
-  help         Print this message or the help of the given subcommand(s)
+  completions  Generate shell completions
+  commands     Every command this build has, and which features it was compiled with [aliases: surface]
+
+Start here:
+  New project       evnx init
+  Existing project  evnx validate, then evnx doctor
+  Any command       evnx <command> --help
 
 Options:
       --no-color  Disable colored output

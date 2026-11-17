@@ -83,7 +83,7 @@ pub enum PlatformError {
          Nothing was written. See what differs with `evnx platform diff --to vercel`, \
          then `evnx platform pull --to vercel` to take Vercel's state, and push again.",
         if keys.len() == 1 { "this variable" } else { "these variables" },
-        keys.join(", ")
+        crate::utils::string::name_list(keys)
     )]
     Changed {
         /// The variables, by name.

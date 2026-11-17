@@ -35,7 +35,7 @@ pub struct CommandDoc {
 impl CommandDoc {
     /// Compact one-line hint for end of command output.
     ///
-    /// Output: `  📖 Docs: https://docs.evnx.dev/cli/commands/init`
+    /// Output: `  Docs: https://docs.evnx.dev/cli/commands/init`
     pub fn hint_line(&self) -> String {
         format!("  Docs: {}", self.url)
     }
@@ -278,7 +278,7 @@ backup needs at least 8 characters from any of them.\n\
 A backup is a file you keep, behind a passphrase you choose; it needs no account\n\
 and no network. To share and version secrets instead, see `evnx cloud push`.\n\
 \n\
-📖  Full guide: https://docs.evnx.dev/cli/commands/backup",
+Full guide: https://docs.evnx.dev/cli/commands/backup",
 };
 
 pub const RESTORE: CommandDoc = CommandDoc {
@@ -420,8 +420,8 @@ Full guide: https://docs.evnx.dev/cli/commands/update",
 /// `the_list_above_covers_every_command_doc_in_this_file` counts the
 /// declarations in this file's own source and fails if the two disagree.
 ///
-/// ⚠️ Not test-only. `evnx surface` reads it so the documentation URL the tour
-/// links to is the **same string** the binary prints in `--help`. Two lists
+/// Not test-only. `evnx surface` reads it so the documentation URL the tour
+/// links to is the same string the binary prints in `--help`. Two lists
 /// would be two things to keep in step, which is the failure this whole area
 /// exists to stop.
 pub const ALL: &[&CommandDoc] = &[
@@ -456,7 +456,7 @@ pub const ALL: &[&CommandDoc] = &[
 
 /// The documentation URL for a top-level command, if it has one.
 ///
-/// ⚠️ `None` is a real answer, not a gap to paper over: a command that ships
+/// `None` is a real answer, not a gap to paper over: a command that ships
 /// before its guide has no `CommandDoc` yet. A caller that invented a URL from
 /// the command name would produce a 404 for exactly that command. Today every
 /// top-level command has an entry, and `tests/surface_integration.rs` checks
@@ -469,7 +469,7 @@ pub fn url_for(command: &str) -> Option<&'static str> {
 mod tests {
     use super::*;
 
-    /// ⚠️ The test P6 needed and did not have.
+    /// The test P6 needed and did not have.
     ///
     /// A stale URL that 301s is the one kind of wrong nothing notices: it
     /// resolves, the reader lands on the right page, and the extra hop is
@@ -501,7 +501,7 @@ mod tests {
         }
     }
 
-    /// ⚠️ A trailing slash is a 308 here, and the instinct to add one comes
+    /// A trailing slash is a 308 here, and the instinct to add one comes
     /// from `app.evnx.dev`, where it is the opposite: that host is a static
     /// export and 308s `/login` *to* `/login/`. Verified against the live
     /// host — `/cli/commands/init/` redirects back to `/cli/commands/init`.

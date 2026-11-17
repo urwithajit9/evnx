@@ -258,10 +258,23 @@ pub fn run_options(input: String, output: String, env: String, opts: Options) ->
         ui::verbose_stderr("Running template in verbose mode");
     }
 
+    // The inputs are checked before the banner (WP-10): a banner followed by
+    // "No such file" reads as a run that started.
+    let parser = Parser::default();
+    if !std::path::Path::new(&env).exists() {
+        parser
+            .parse_file(&env)
+            .with_context(|| format!("Failed to parse environment file: {}", env))?;
+    }
+    if let Err(e) = fs::metadata(&input) {
+        return Err(crate::core::verdict::usage(format!(
+            "Failed to read template file: {input}: {e}"
+        )));
+    }
+
     ui::print_header("Generate config from template", None);
 
     // Parse .env file
-    let parser = Parser::default();
     let env_file = parser
         .parse_file(&env)
         .with_context(|| format!("Failed to parse environment file: {}", env))?;

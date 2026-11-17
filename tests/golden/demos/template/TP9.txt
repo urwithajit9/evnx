@@ -28,25 +28,16 @@ No verdict: evnx did not run. This is not a clean result.
   ok: unknown environment lists the existing ones (exit 2)
 
 $ evnx template --input nope.tpl --output p3.yml --no-gitignore
-✓ Loaded 7 variables from .env
 [stderr]
-
-  Generate config from template
-
 Error: Failed to read template file: nope.tpl: No such file or directory (os error 2)
-
-No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: missing input (exit 2)
 
 $ evnx template --input config.tpl.yml --output p4.yml --env nope.env --no-gitignore
 [stderr]
-
-  Generate config from template
-
 Error: Failed to parse environment file: nope.env: nope.env does not exist
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: missing env file (exit 2)
 

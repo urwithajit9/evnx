@@ -24,9 +24,6 @@ Next steps:
 
 $ evnx init --blueprint t3modern --yes
   config    .evnx.toml
-
-  evnx init  Set up environment variables for your project
-
 Error: Unknown blueprint 't3modern'.
 
 Did you mean: t3_modern
@@ -42,8 +39,6 @@ Available blueprints:
   django_enterprise      Django Secure (Django + Postgres + Celery)
   firebase_mobile        App Backend (Node + Firebase)
   content_marketing      SEO Content Stack (Nuxt + S3 + Stripe)
-
-No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: mistyped blueprint (exit 2)
   ok: blueprint typo hint

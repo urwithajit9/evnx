@@ -14,18 +14,12 @@ Error: Wrong password or corrupt backup — decryption failed
 
 $ evnx restore nope.backup --password-file pw
 [stderr]
-
-  evnx restore  Decrypt and restore from an encrypted backup
-
 Error: Backup file not found: nope.backup
 [exit 2]
   ok: backup not found (exit 2)
 
 $ evnx restore adir --password-file pw
 [stderr]
-
-  evnx restore  Decrypt and restore from an encrypted backup
-
 Error: Backup file not found: adir (not a regular file)
 [exit 2]
   ok: directory: not a regular file (exit 2)

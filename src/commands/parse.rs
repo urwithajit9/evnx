@@ -58,7 +58,10 @@ pub fn run(env: &str, json: bool, values: bool, show_values: bool) -> Result<Ver
     } else {
         let content = std::fs::read_to_string(env).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                anyhow::anyhow!("{env} does not exist\n\n{}", Parser::missing_env_hint(env))
+                crate::core::verdict::missing_file(format!(
+                    "{env} does not exist\n\n{}",
+                    Parser::missing_env_hint(env)
+                ))
             } else {
                 anyhow::Error::new(e).context(format!("could not read {env}"))
             }

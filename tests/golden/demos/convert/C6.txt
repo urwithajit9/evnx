@@ -7,7 +7,7 @@ Error: these names become the same name after renaming, and one value would be l
   Api, API → API
 Rename one in the .env, convert without the transform, or pass --allow-collisions to keep the last value. Nothing was written.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-088: Api and API collide; refused, both named, nothing written (DEC-U8-3) (exit 2)
 
@@ -27,7 +27,7 @@ Error: these names become the same name after renaming, and one value would be l
   DB_URL, db_url → dbUrl
 Rename one in the .env, convert without the transform, or pass --allow-collisions to keep the last value. Nothing was written.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-088: both become dbUrl; refused, both named (a prefix alone cannot collide: it is applied to every key) (exit 2)
 
@@ -37,7 +37,7 @@ Error: these names become the same name in gcp-secrets, and one value would be l
   A_B, a_b → a-b
 Rename one in the .env, or pass --allow-collisions to keep the last value. Nothing was written.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-249: gcp's own naming makes A_B and a_b one secret a-b; refused (exit 2)
 
@@ -54,8 +54,6 @@ $ evnx convert --to json
 $ evnx convert --to json --transform Title
 [stderr]
 Error: unknown transform 'title' — expected one of: uppercase, lowercase, camelCase, snake_case
-
-No verdict: evnx did not run. This is not a clean result.
 [exit 2]
   ok: FIXED I-090: unknown mode refused, the modes listed (exit 2)
 

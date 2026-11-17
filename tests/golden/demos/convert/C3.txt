@@ -7,7 +7,7 @@ Error: --to kubernetes needs --name: the name of the Secret (--namespace places 
 
   evnx convert --to kubernetes --name <NAME>
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-084: --name is required, no placeholder Secret name (DEC-CV1) (exit 2)
 

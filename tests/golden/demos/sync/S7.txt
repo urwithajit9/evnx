@@ -44,7 +44,7 @@ $ evnx sync -n --naming-policy error
      →  chmod 600 .env   (or evnx doctor --fix, for every env file)
 Error: Non-standard variable name 'stripe_key'. Expected: UPPERCASE_WITH_UNDERSCORES
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: policy error in plain mode: no verdict (I-116, DEC-S13) (exit 2)
 
@@ -57,7 +57,7 @@ $ evnx sync --check --naming-policy error
      →  chmod 600 .env   (or evnx doctor --fix, for every env file)
 Error: Non-standard variable name 'stripe_key'. Expected: UPPERCASE_WITH_UNDERSCORES
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-116: under --check a refused name is no verdict, not 'out of sync' (exit 2)
 

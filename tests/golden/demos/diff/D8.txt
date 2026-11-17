@@ -7,7 +7,7 @@ Error: there is no terminal to confirm with.
 
 --interactive asks about each change. Without a terminal, leave it out: `evnx diff --format patch` prints every change.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-073, the honest half (RM-40): piped answers are not a terminal, so --interactive refuses and names evnx diff --format patch (exit 2)
   .env is byte-identical

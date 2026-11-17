@@ -195,6 +195,21 @@ pub fn names() -> Vec<&'static str> {
     FORMATS.iter().map(|f| f.name).collect()
 }
 
+/// The name `convert --to` takes for a format: GitHub Actions is `github`
+/// there (`github-actions` is refused), every other name is its own.
+pub fn convert_name(name: &'static str) -> &'static str {
+    if name == "github-actions" {
+        "github"
+    } else {
+        name
+    }
+}
+
+/// [`names`] as `convert --to` spells them: what its errors list as available.
+pub fn convert_names() -> Vec<&'static str> {
+    FORMATS.iter().map(|f| convert_name(f.name)).collect()
+}
+
 /// A converter with every target name at its default.
 fn default_converter(name: &str) -> Box<dyn Converter> {
     match name {
@@ -415,8 +430,8 @@ pub fn format_help() {
             .iter()
             .filter(|f| f.group == group)
             .map(|f| match f.experimental {
-                Some(_) => format!("{} (experimental)", f.name),
-                None => f.name.to_string(),
+                Some(_) => format!("{} (experimental)", convert_name(f.name)),
+                None => convert_name(f.name).to_string(),
             })
             .collect();
         eprintln!("  {}", format!("{group}:").yellow());
@@ -425,7 +440,7 @@ pub fn format_help() {
     }
     eprintln!("  {}", "Aliases:".dimmed());
     eprintln!("    k8s → kubernetes, tf → terraform, yml → yaml");
-    eprintln!("    gh-actions → github-actions, compose → docker-compose");
+    eprintln!("    compose → docker-compose");
 }
 
 /// The file extension a format's output belongs in, without the dot.

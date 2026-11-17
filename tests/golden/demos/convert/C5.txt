@@ -35,7 +35,7 @@ Error: --include/--exclude left nothing to convert — all 8 variable(s) were fi
   Check the patterns: they are case-sensitive globs matched against variable names.
   Pass --allow-empty to write the empty output anyway.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-089: a filter that matches nothing is refused, stdout empty (DEC-CV3) (exit 2)
 
@@ -70,7 +70,7 @@ $ evnx convert --env empty --to json
 Error: empty holds no variables, so there is nothing to convert.
   Pass --allow-empty to write the empty output anyway.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-089: an empty .env is refused (DEC-CV3) (exit 2)
 

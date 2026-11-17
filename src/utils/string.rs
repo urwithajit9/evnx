@@ -54,6 +54,27 @@ pub fn count(n: usize, noun: &str) -> String {
     pluralize(n, noun, &format!("{noun}s"))
 }
 
+/// How many names [`name_list`] spells out.
+pub const NAMES_SHOWN: usize = 3;
+
+/// A list of names for one line of output: the first three, then a count of
+/// the rest (WP-10). Fifteen names on a line are read by nobody.
+///
+/// ```
+/// use evnx::utils::string::name_list;
+/// assert_eq!(name_list(&["A", "B"]), "A, B");
+/// assert_eq!(name_list(&["A", "B", "C", "D"]), "A, B, C and 1 more");
+/// let fifteen: Vec<String> = (0..15).map(|i| format!("V{i}")).collect();
+/// assert_eq!(name_list(&fifteen), "V0, V1, V2 and 12 more");
+/// ```
+pub fn name_list<S: AsRef<str>>(names: &[S]) -> String {
+    let shown: Vec<&str> = names.iter().take(NAMES_SHOWN).map(AsRef::as_ref).collect();
+    match names.len().saturating_sub(NAMES_SHOWN) {
+        0 => shown.join(", "),
+        rest => format!("{} and {rest} more", shown.join(", ")),
+    }
+}
+
 /// The names to offer under "Did you mean": ids that start with or contain
 /// `input` (up to six, in the order given), else the ids and aliases within a
 /// small edit distance ([`closest`]), each alias suggesting its id.

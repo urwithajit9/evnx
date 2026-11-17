@@ -111,6 +111,34 @@ pub fn read_key_file(path: &Path) -> Result<Zeroizing<String>> {
     }))
 }
 
+/// The checks [`resolve`] makes of a `--password-file`, without using it or
+/// printing: for a command that says so before its banner (WP-10). `None` is
+/// fine: the passphrase comes from elsewhere.
+pub fn check_key_file(kf: Option<&str>, purpose: Purpose) -> Result<()> {
+    let Some(kf) = kf else { return Ok(()) };
+    let path = Path::new(kf);
+    if !path.exists() {
+        return Err(crate::core::verdict::usage(format!(
+            "Key file not found: {kf}"
+        )));
+    }
+    if !path.is_file() {
+        return Err(crate::core::verdict::usage(format!(
+            "Key file is not a regular file: {kf}"
+        )));
+    }
+    let pw = read_key_file(path)?;
+    if pw.is_empty() {
+        return Err(crate::core::verdict::usage(format!(
+            "Key file is empty: {kf}"
+        )));
+    }
+    if purpose == Purpose::Encrypt {
+        floor(&format!("The key file {kf}"), &pw, true)?;
+    }
+    Ok(())
+}
+
 fn from_key_file(kf: &str, purpose: Purpose, verbose: bool) -> Result<Zeroizing<String>> {
     let path = Path::new(kf);
     if !path.exists() {
@@ -349,7 +377,7 @@ fn floor(label: &str, pw: &str, not_typed: bool) -> Result<()> {
              passphrase still restores.",
         );
     }
-    Err(anyhow!(msg))
+    Err(crate::core::verdict::usage(msg))
 }
 
 #[cfg(test)]

@@ -64,7 +64,7 @@ Define it there, or give it a fallback with {{NAME|default:value}}.
 To write unresolved placeholders through as they are: --allow-unresolved.
 Nothing was written to u.out.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: DEC-T9: a dry run fails where the run would (--strict) (exit 2)
 

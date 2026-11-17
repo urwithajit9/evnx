@@ -658,7 +658,8 @@ fn h6_a_narrow_removal_leaves_drift_that_the_hint_names() {
     let p = clean_project();
     evnx(&p, &["remove", "DROP", "--yes"])
         .assert_code(0)
-        .assert_contains("./.env.example     DROP             add --template");
+        .assert_contains("./.env.example     DROP")
+        .assert_contains("evnx remove DROP --template");
     evnx(&p, &["sync", "--check"]).assert_code(1);
 }
 

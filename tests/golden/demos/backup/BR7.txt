@@ -44,7 +44,7 @@ Error: there is no terminal to confirm with.
 Add --yes to replace it (the current file is kept as a .bak copy), or restore somewhere else with --output <path>:
   evnx restore .env.backup --yes
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: a question needed an answer and there is no terminal to ask on. This is not a clean result.
 [exit 4]
   ok: FIXED I-148 (D3): a different .env, no terminal: one line naming --yes and --output (exit 4)
   ok: and the .env is untouched

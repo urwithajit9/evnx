@@ -158,9 +158,6 @@ pub fn run(
 
         use self::core::BackupOptions;
 
-        // ── Header ────────────────────────────────────────────────────────────
-        ui::print_header("evnx backup", Some("Encrypt and back up your .env file"));
-
         // ── Validate source file ──────────────────────────────────────────────
         if !Path::new(&env).exists() {
             return Err(BackupError::FileNotFound(env.clone()).into());
@@ -176,6 +173,10 @@ pub fn run(
         let output_path_str = output.unwrap_or_else(|| format!("{}.backup", env));
         let output_path = std::path::PathBuf::from(&output_path_str);
         core::check_output(Path::new(&env), &output_path, keep)?;
+        secret_source::check_key_file(key_file.as_deref(), Purpose::Encrypt)?;
+
+        // ── Header ────────────────────────────────────────────────────────────
+        ui::print_header("evnx backup", Some("Encrypt and back up your .env file"));
 
         if verbose {
             ui::verbose_stderr(format!("Source path  : {}", env));

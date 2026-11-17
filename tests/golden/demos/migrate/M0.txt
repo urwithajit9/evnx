@@ -134,7 +134,7 @@ Confirmation:
   -y, --yes
           Upload without asking "Proceed with migration?" (github).
           
-          For CI. Without a terminal and without `--yes` the upload stops before contacting GitHub (exit 4). ⚠️ It does not answer "overwrite?": a secret that already exists still needs `--overwrite` or `--skip-existing`.
+          For CI. Without a terminal and without `--yes` the upload stops before contacting GitHub (exit 4). It does not answer "overwrite?": a secret that already exists still needs `--overwrite` or `--skip-existing`.
 
 Examples:
   # Print the commands, read them, then run them
@@ -172,7 +172,7 @@ Exit codes:
     4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
   141  Output closed early (broken pipe)
 
-📖  Full guide: https://docs.evnx.dev/cli/commands/migrate
+Full guide: https://docs.evnx.dev/cli/commands/migrate
 [exit 0]
 
 $ evnx migrate
@@ -186,8 +186,6 @@ Error: --to is required when there is no terminal to ask.
     evnx migrate --to <DESTINATION>
 
   Available: github, aws-secrets-manager, doppler, infisical, gcp-secret-manager, azure-keyvault, vercel, heroku, railway
-
-No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: no --to and no terminal: refuses, lists the destinations (exit 2)
 

@@ -660,7 +660,7 @@ where
 /// now also hidden by `-q` (scan printed its banner under `-q`, I-060).
 #[deprecated(
     since = "0.10.3",
-    note = "`print_header` writes to stderr now (DEC-G1); call it instead"
+    note = "`print_header` writes to stderr now; call it instead"
 )]
 pub fn print_header_stderr(title: &str, subtitle: Option<&str>) {
     print_header(title, subtitle);

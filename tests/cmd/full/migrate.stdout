@@ -126,7 +126,7 @@ Confirmation:
   -y, --yes
           Upload without asking "Proceed with migration?" (github).
           
-          For CI. Without a terminal and without `--yes` the upload stops before contacting GitHub (exit 4). ⚠️ It does not answer "overwrite?": a secret that already exists still needs `--overwrite` or `--skip-existing`.
+          For CI. Without a terminal and without `--yes` the upload stops before contacting GitHub (exit 4). It does not answer "overwrite?": a secret that already exists still needs `--overwrite` or `--skip-existing`.
 
 Examples:
   # Print the commands, read them, then run them
@@ -164,4 +164,4 @@ Exit codes:
     4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
   141  Output closed early (broken pipe)
 
-📖  Full guide: https://docs.evnx.dev/cli/commands/migrate
+Full guide: https://docs.evnx.dev/cli/commands/migrate

@@ -75,7 +75,7 @@ Error: .evnx.toml already has a [vars] section.
   Pass --merge to add only the variables it does not declare yet;
   existing entries are kept as they are.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: second run refuses (never a second [vars]) (exit 2)
   ok: file still has one DATABASE_URL table

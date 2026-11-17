@@ -72,7 +72,9 @@ pub fn run(
     // `--json` never asks, as for `add`: a question would land in the middle
     // of the document a script is about to parse (IN-16).
     if json && !yes && !dry_run {
-        anyhow::bail!("--json needs --yes or --dry-run: it never asks.");
+        return Err(crate::core::verdict::usage(
+            "--json needs --yes or --dry-run: it never asks.",
+        ));
     }
     if json {
         // Headers, hints and result lines would share stdout with the JSON.
@@ -98,6 +100,10 @@ pub fn run(
         shared::Target::new(Path::new(&path), config, verbose)?.with_env_name(env_name)?;
     target.here = here;
     target.no_contract = no_contract;
+
+    // Said before the banner: a stack or component that does not exist is an
+    // argument problem, not a run that started and failed (WP-10).
+    check_choices(&with, blueprint.as_deref())?;
 
     if from_source {
         print_init_header();
@@ -260,6 +266,34 @@ pub fn run(
         );
     }
     print_docs_hint(&docs::INIT);
+    Ok(())
+}
+
+/// Refuse a `--blueprint` or `--with` that names nothing evnx knows, before
+/// anything is printed. The messages are the ones the mode handlers give.
+fn check_choices(with: &[String], blueprint: Option<&str>) -> Result<()> {
+    use crate::core::verdict::usage;
+    if let Some(id) = blueprint {
+        if crate::schema::loader::get_blueprint(id).is_none() {
+            if crate::schema::component::find(id)?.is_some() {
+                return Err(usage(format!("{id} is a component: use --with {id}")));
+            }
+            return Err(usage(crate::schema::loader::unknown_blueprint(id)));
+        }
+    }
+    for id in with {
+        let id = id.trim();
+        if crate::schema::component::find(id)?.is_none()
+            && crate::schema::loader::get_blueprint(id).is_some()
+        {
+            return Err(usage(format!("{id} is a blueprint: use --blueprint {id}")));
+        }
+    }
+    if !with.is_empty() {
+        crate::schema::component::resolve(with).map_err(|e| {
+            crate::core::verdict::usage(format!("Failed to resolve components: {e:#}"))
+        })?;
+    }
     Ok(())
 }
 

@@ -29,14 +29,14 @@ Options:
           
           Run interactively with no flags, `init` reads `package.json`, `docker-compose.yml` and friends and proposes what it finds. This is how a script says yes to that proposal.
           
-          ⚠️ Detection is a heuristic — a `stripe` dependency in a test fixture looks exactly like one in a checkout flow. Prefer `--with` where the answer is known; this is for bootstrapping a project you trust.
+          Detection is a heuristic — a `stripe` dependency in a test fixture looks exactly like one in a checkout flow. Prefer `--with` where the answer is known; this is for bootstrapping a project you trust.
 
       --from-source
           Build the template from the variables the code actually reads.
           
           Scans the project's source and compares it to `.env.example`, so it finds both what is missing and what is declared but named nowhere — the second being something no other evnx command can tell you, since they all treat `.env.example` as the definition of "required".
           
-          ⚠️ A heuristic. Variables consumed entirely inside a library, and dynamic access like `process.env[key]`, are invisible in principle.
+          A heuristic. Variables consumed entirely inside a library, and dynamic access like `process.env[key]`, are invisible in principle.
           
           Only ever appends, so it cannot be combined with --force.
 

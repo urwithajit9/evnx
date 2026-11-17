@@ -62,13 +62,13 @@ pub fn require_terminal_for_input(hint: &str) -> Result<()> {
 ///
 /// `example` is the command line with the flag, `available` what it accepts.
 pub fn choice_needed(flag: &str, example: &str, available: &[&str]) -> anyhow::Error {
-    anyhow::anyhow!(
+    crate::core::verdict::usage(format!(
         "{flag} is required when there is no terminal to ask.\n\n\
          \x20 Pass one explicitly:\n\
          \x20   {example}\n\n\
          \x20 Available: {}",
         available.join(", ")
-    )
+    ))
 }
 
 /// A prompt was needed and there was no terminal to show it on.

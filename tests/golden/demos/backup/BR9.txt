@@ -3,9 +3,6 @@
 
 $ evnx restore cloud://myproject --password-file pw
 [stderr]
-
-  evnx restore  Decrypt and restore from an encrypted backup
-
 Error: Backup file not found: cloud://myproject
 
   restore reads a file made by `evnx backup`; it does not read from evnx cloud.

@@ -36,7 +36,7 @@ use std::path::Path;
 #[deprecated(
     since = "0.10.3",
     note = "use `core::safe_write::write_private`: atomic, symlinks written through, \
-            existing mode kept with a warning (C-04, DEC-G6)"
+            existing mode kept with a warning"
 )]
 pub fn write_secure<P: AsRef<Path>>(path: P, content: &[u8]) -> Result<()> {
     let path = path.as_ref();

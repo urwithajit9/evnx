@@ -40,7 +40,7 @@ Error: nothing to compare: .env does not exist, and .evnx.toml declares no requi
 
 Create .env (`evnx sync --direction reverse`), declare the contract with `evnx spec init`, or — in a pre-commit hook, where a missing .env is expected — pass --skip-without-env.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: DEC-S4: plain --check with no .env and no spec has nothing to compare (exit 2)
 

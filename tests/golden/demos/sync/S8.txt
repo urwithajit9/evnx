@@ -7,7 +7,8 @@ $ evnx sync -y --template-config tc.json
 
 Next steps:
   1. Review .env.example to ensure the placeholders are appropriate
-  2. Commit .env.example to Git (never commit .env)
+  2. Check it holds no real value: evnx scan .env.example
+  3. Commit .env.example to Git (never commit .env)
 [stderr]
 
   evnx sync  .env ↔ .env.example  (forward)

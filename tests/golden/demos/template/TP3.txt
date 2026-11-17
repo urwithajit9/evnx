@@ -16,7 +16,7 @@ Define them there, or give each a fallback with {{NAME|default:value}}.
 To write unresolved placeholders through as they are: --allow-unresolved.
 Nothing was written to u.out.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-142 (RM-14, DEC-T2): an unresolved reference is an error by default, nothing written (exit 2)
 
@@ -51,7 +51,7 @@ Define them there, or give each a fallback with {{NAME|default:value}}.
 To write unresolved placeholders through as they are: --allow-unresolved.
 Nothing was written to u2.out.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: --strict, now the default: accepted with a notice; names {{MISSING}} and ${NOPE2}, and leaves bare $ALSO and $HOME alone (FIXED I-135, DEC-T3), writes nothing (exit 2)
 

@@ -480,7 +480,7 @@ pub fn run(config: ConvertConfig) -> Result<()> {
             return Err(crate::utils::prompt::choice_needed(
                 "--to",
                 "evnx convert --yes --to <FORMAT>",
-                &formats::names(),
+                &formats::convert_names(),
             ));
         }
         None => select_format_interactive(config.verbose)?,
@@ -659,7 +659,7 @@ fn select_format_interactive(verbose: bool) -> Result<String> {
         return Err(crate::utils::prompt::choice_needed(
             "--to",
             "evnx convert --to <FORMAT>",
-            &formats::names(),
+            &formats::convert_names(),
         ));
     }
 

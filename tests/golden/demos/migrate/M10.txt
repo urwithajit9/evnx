@@ -11,7 +11,7 @@ Error: --from environment needs --include.
 The environment of a shell or CI job holds tokens you did not mean to send — the runner's own among them. Name what to migrate:
   evnx migrate --from environment --include 'APP_*,DATABASE_URL' …
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: FIXED I-103: refused without --include (exit 2)
 

@@ -5,7 +5,7 @@ $ evnx template --input same.yml --output same.yml --no-gitignore
 [stderr]
 Error: --output 'same.yml' is the same file as the template 'same.yml'. Nothing was written; choose another --output.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: I-131 fixed (DEC-T4): input equal to output is refused (exit 2)
 

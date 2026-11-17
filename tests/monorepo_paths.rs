@@ -68,15 +68,15 @@ fn doctor_notes_nested_env_files_as_info_with_a_hint() {
 }
 
 #[test]
-fn doctor_lists_at_most_five_and_counts_the_rest() {
+fn doctor_lists_three_and_counts_the_rest() {
     let p = repo();
     let dirs: Vec<String> = (1..=8).map(|i| format!("apps/app{i}")).collect();
     nested(&p, &dirs.iter().map(String::as_str).collect::<Vec<_>>());
     let out = run(p.path(), &["doctor"]);
     out.assert_contains("apps/app1/.env");
-    out.assert_contains("apps/app5/.env");
-    out.assert_not_contains("apps/app6/.env");
-    out.assert_contains("and 3 more");
+    out.assert_contains("apps/app3/.env");
+    out.assert_not_contains("apps/app4/.env");
+    out.assert_contains("and 5 more");
 }
 
 #[test]

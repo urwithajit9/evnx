@@ -104,18 +104,10 @@ Next steps:
   ok: shape the tool accepts: gcp-secret-manager --project my-gcp-project (exit 0)
 
 $ evnx migrate --to railway --railway-project p-1 --include APP_NAME
-
-✓ Loaded 8 secrets from .env
-· After filtering: 1 of 8 secrets remain.
 [stderr]
-
-  evnx migrate  Generate destination commands from your .env
-
 Error: --railway-project needs --railway-environment: Railway asks for the environment whenever a command names the project.
   evnx migrate --to railway --railway-project <ID> --railway-environment production
   Or leave both out and run the command in a directory linked with `railway link`.
-
-No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: Railway needs --environment with --project: refused (DEC-MG1) (exit 2)
 
@@ -131,7 +123,7 @@ Error: these values cannot be passed to `infisical secrets set` as they are:
 
 Set them in Infisical directly, or leave them out with --exclude. Nothing was printed.
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: evnx stopped at the error above. This is not a clean result.
 [exit 2]
   ok: infisical: the empty value is refused before printing (I-270) (exit 2)
 
@@ -140,8 +132,6 @@ $ evnx migrate --to gcp-secret-manager --project my-gcp-project --add-prefix X;t
 Error: --add-prefix "X;touch PWNED;" is not a valid name here.
 
 Expected a letter or `_`, then letters, digits and `_`, so every name stays a variable name. Nothing was printed or sent.
-
-No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: FIXED I-267: --add-prefix must keep names variable names (exit 2)
 

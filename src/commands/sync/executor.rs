@@ -878,7 +878,12 @@ To fill {} from the template instead, run `{}`.",
         paths.example_str(),
         paths.env_str()
     );
-    ui::print_next_steps(&[&review, &commit, "Share changes with your team"]);
+    let scan = scan_step(paths);
+    let mut steps: Vec<&str> = vec![&review, &scan, &commit];
+    if cfg!(feature = "cloud") {
+        steps.push("Share .env with your team: evnx cloud push");
+    }
+    ui::print_next_steps(&steps);
 
     Ok(drift)
 }
@@ -1010,7 +1015,8 @@ fn handle_new_example_file(
             paths.example_str(),
             paths.env_str()
         );
-        ui::print_next_steps(&[&review, &commit]);
+        let scan = scan_step(paths);
+        ui::print_next_steps(&[&review, &scan, &commit]);
     } else {
         // ⚠️ Do not tell someone to commit a file that holds their real values.
         ui::warning(format!(
@@ -1672,6 +1678,15 @@ fn value_preview(value: &str, is_placeholder: bool) -> ColoredString {
 // ─────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────
+
+/// The next step that names `scan`: a template is committed, so a real value
+/// that reached it should be caught before the commit.
+fn scan_step(paths: &SyncPaths) -> String {
+    format!(
+        "Check it holds no real value: evnx scan {}",
+        paths.example_str()
+    )
+}
 
 #[cfg(test)]
 mod tests {

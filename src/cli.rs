@@ -6,6 +6,7 @@ use crate::docs;
 
 pub mod args;
 pub mod exit_help;
+pub mod groups;
 pub mod removed;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
@@ -251,7 +252,7 @@ pub struct SyncArgs {
     /// hook that exits 2 there blocks every new contributor's first commit.
     /// A spec (`[vars]` in `.evnx.toml`) is still checked. Forward only.
     ///
-    /// ⚠️ Not for CI: without it, `--check` with nothing to compare exits 2, so
+    /// Not for CI: without it, `--check` with nothing to compare exits 2, so
     /// a gate cannot pass on a check that never ran.
     #[arg(long)]
     pub skip_without_env: bool,
@@ -315,7 +316,7 @@ impl NamingPolicy {
     /// an error naming them (I-121, DEC-S11). The shared rule for a value from
     /// a fixed list, as `[validate] fail_on` uses.
     ///
-    /// ⚠️ An unknown value used to fall through to `warn` without a word, so
+    /// An unknown value used to fall through to `warn` without a word, so
     /// `naming_policy = "eror"` switched off the protection it was written to
     /// turn on.
     pub fn from_config(value: &str) -> anyhow::Result<Self> {
@@ -867,7 +868,7 @@ impl From<PlatformVarType> for crate::platform::vercel::api::Kind {
 /// Subcommands for `evnx auth`.
 /// Organisations — billing and a directory.
 ///
-/// ⛔ **An organisation does not give anyone access to a vault.** It owns a plan
+/// An organisation does not give anyone access to a vault. It owns a plan
 /// and a set of seats; a seat holder gets that plan's limits. The server cannot
 /// wrap a vault key, so no membership, role or seat can grant vault access —
 /// sharing is `evnx vault share`, done by someone who holds the key.
@@ -907,13 +908,13 @@ pub enum OrgCommands {
 
     /// Invite someone by email.
     ///
-    /// ⚠️ They will not gain access to any vault. The invitation decides which
+    /// They will not gain access to any vault. The invitation decides which
     /// plan's limits apply to them once an administrator assigns a seat.
     Invite {
         /// Email address to invite.
         email: String,
 
-        /// `member` (default) or `admin`. ⚠️ `owner` cannot be granted — an
+        /// `member` (default) or `admin`. `owner` cannot be granted — an
         /// organisation has exactly one, set when it is created.
         #[arg(long, value_name = "ROLE")]
         role: Option<String>,
@@ -956,11 +957,11 @@ pub enum OrgCommands {
 
     /// What this organisation is on, and until when.
     ///
-    /// ⚠️ Read-only. Changing a plan, a seat count or a payment method happens in
+    /// Read-only. Changing a plan, a seat count or a payment method happens in
     /// the browser — a card form does not belong in a terminal, and Paddle is
     /// the merchant of record for the transaction either way. This answers the
-    /// question a terminal is actually the right place for: *why are my limits
-    /// what they are?*
+    /// question a terminal is actually the right place for: why are my limits
+    /// what they are?
     Billing {
         /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
         #[arg(long, value_name = "SLUG")]
@@ -972,7 +973,7 @@ pub enum OrgCommands {
 
     /// Show or set how many seats are purchased.
     ///
-    /// Bare, it shows. ⚠️ Setting the count is owner-only — it is what an invoice
+    /// Bare, it shows. Setting the count is owner-only — it is what an invoice
     /// is computed from.
     Seats {
         /// Set the purchased seat count.
@@ -991,7 +992,7 @@ pub enum OrgCommands {
 
     /// Give someone a seat.
     ///
-    /// ⚠️ A seat is a plan change: their limits become this organisation's.
+    /// A seat is a plan change: their limits become this organisation's.
     Assign {
         /// Email address, or user id.
         who: String,
@@ -1004,7 +1005,7 @@ pub enum OrgCommands {
 
     /// Take a seat back.
     ///
-    /// ⚠️ Their limits drop to their own plan. Nothing is deleted — a vault over
+    /// Their limits drop to their own plan. Nothing is deleted — a vault over
     /// the new limit stays readable, and the next push to it is refused.
     Release {
         /// Email address, or user id.
@@ -1048,7 +1049,7 @@ pub enum OrgCommands {
 
     /// Delete an organisation.
     ///
-    /// ⚠️ Every seat holder drops back to their own plan. No vault is touched and
+    /// Every seat holder drops back to their own plan. No vault is touched and
     /// nothing anyone already pulled is recalled.
     ///
     /// Owner-only. This is also the release valve for account deletion, which is
@@ -1146,8 +1147,8 @@ pub enum AuthCommands {
 
     /// Print the CI key bundle: your sealed key material, for EVNX_KEY_BUNDLE.
     ///
-    /// An API token authenticates but does not decrypt, and the server no longer
-    /// hands key material to API tokens. CI therefore reads the bundle from its
+    /// An API token authenticates but does not decrypt, and the server does not
+    /// hand key material to API tokens. CI therefore reads the bundle from its
     /// own secret `EVNX_KEY_BUNDLE` (or the first line of the file named by
     /// `EVNX_KEY_BUNDLE_FILE`), alongside `EVNX_TOKEN` and `EVNX_MASTER_PASSWORD`.
     ///
@@ -1199,11 +1200,11 @@ pub enum AuthCommands {
 
     /// Networks and browsers this account has signed in from.
     ///
-    /// ⚠️ Not the same as `sessions`. A session is a live credential you can
+    /// Not the same as `sessions`. A session is a live credential you can
     /// revoke; a device is somewhere you have signed in from, which may have no
     /// session left at all.
     ///
-    /// ⚠️ There is no location in this. evnx stores a keyed hash of the client
+    /// There is no location in this. evnx stores a keyed hash of the client
     /// address and the user agent, never the values, so it cannot tell where
     /// you were — a device that looks new can simply be a phone that
     /// reconnected.
@@ -1227,19 +1228,19 @@ pub enum AuthCommands {
 
     /// Change your master password.
     ///
-    /// ⚠️ **Not a settings toggle.** The master key is derived from the password,
+    /// Not a settings toggle. The master key is derived from the password,
     /// so changing it re-derives the key and every vault key wrapped under it is
     /// re-wrapped here, on this machine, in the same command. The server receives
     /// a new verifier and a set of blobs it cannot read.
     ///
     /// What it does: signs out every other device; re-wraps the vault keys you
     /// hold under your own master key. What it does not: touch vaults shared
-    /// *with* you (those are wrapped to your keypair, which this re-seals rather
+    /// with you (those are wrapped to your keypair, which this re-seals rather
     /// than replaces), and it does not re-key a vault — a former member who kept
     /// a key is unaffected. Rotating a vault key is what `evnx vault rekey`
     /// does, and what `evnx vault revoke` does when it removes someone.
     ///
-    /// ⚠️ **API tokens keep working, but CI breaks.** A token authenticates; it
+    /// API tokens keep working, but CI breaks. A token authenticates; it
     /// does not decrypt. Any pipeline holding your master password as a secret
     /// fails until that secret is updated.
     ///
@@ -1257,12 +1258,12 @@ pub enum AuthCommands {
 
         /// The current password is believed to be in someone else's hands.
         ///
-        /// Keeps **no undo at all**: no server-side undo window, and no local
+        /// Keeps no undo at all: no server-side undo window, and no local
         /// recovery file. The change takes effect immediately and cannot be
         /// reversed. Both of those are redeemed with the OLD password, which is
         /// the thing you are saying leaked.
         ///
-        /// ⚠️ **This rotates the password, not your keys.** Your identity
+        /// This rotates the password, not your keys. Your identity
         /// keypair and every vault key are re-wrapped under the new password,
         /// not replaced — so anyone who already extracted a vault key still has
         /// it. Follow this with `evnx vault rekey <vault>` for each vault that
@@ -1277,7 +1278,7 @@ pub enum AuthCommands {
 
     /// Undo a master password change, by proving the previous password.
     ///
-    /// Does **not** need a session — whoever needs this is whoever the change
+    /// Does not need a session — whoever needs this is whoever the change
     /// locked out, and a session is exactly what they do not have. The only
     /// credential it asks for is the old master password.
     ///
@@ -1298,7 +1299,7 @@ pub enum AuthCommands {
     /// Which vaults exist, who can reach them, what each version contained by
     /// variable NAME, your API tokens by name and scope, and your activity.
     ///
-    /// ⚠️ **Your secrets are not in it, and cannot be.** They are encrypted on
+    /// Your secrets are not in it, and cannot be. They are encrypted on
     /// your machine under a key derived from your master password, and the
     /// server has never held that password, that key, or any plaintext value.
     /// To get the secrets themselves, run `evnx cloud pull` for each vault. The
@@ -1307,15 +1308,12 @@ pub enum AuthCommands {
     /// Nothing that could be used as a credential is included — not your SRP
     /// verifier, not your 2FA secret, not your API token values.
     ///
-    /// ⚠️ The file still describes the SHAPE of your configuration: variable
+    /// The file still describes the SHAPE of your configuration: variable
     /// names, vault names, and the email of everyone you share with. Treat it
     /// as sensitive even though no secret value appears in it.
     ///
-    /// ⚠️ Deliberately NOT called `export`. `evnx cloud export` is the
-    /// anti-lock-in escape hatch — it writes every vault's secrets, DECRYPTED, to
-    /// disk. Two commands named `export` with opposite risk profiles would mean
-    /// anyone who learned "export holds no secrets" here carried that belief to
-    /// the one that writes plaintext credentials.
+    /// To get your secrets out, use `evnx cloud export`: it writes every vault's
+    /// secrets, decrypted, to disk. This command never does.
     DownloadData {
         /// Where to write it. Defaults to `evnx-account-data-<date>.json` here.
         #[arg(long, short = 'o', value_name = "PATH")]
@@ -1328,12 +1326,12 @@ pub enum AuthCommands {
 
     /// Delete your account and everything only you can reach.
     ///
-    /// ⚠️ **Irreversible, and it is not a logout.** The account, its sessions,
+    /// Irreversible, and it is not a logout. The account, its sessions,
     /// its API tokens, its 2FA enrolment and every vault you are the only member
     /// of are destroyed, ciphertext included. There is no undo and no support
     /// path back — the server never held anything that could rebuild them.
     ///
-    /// Vaults you own that other people are members of **block the deletion**,
+    /// Vaults you own that other people are members of block the deletion,
     /// and are named when they do. Deleting the account would delete those vaults
     /// and everyone else's access with them, so the choice is left to you: remove
     /// the other members, or delete the vaults.
@@ -1343,7 +1341,7 @@ pub enum AuthCommands {
     DeleteAccount {
         /// Read the confirmation email from stdin instead of prompting.
         ///
-        /// For the rare scripted case. ⚠️ There is no `--yes`: a flag that
+        /// For the rare scripted case. There is no `--yes`: a flag that
         /// deletes an account is one typo in a shell history away from doing it,
         /// and the whole point of the typed confirmation is that it cannot be
         /// supplied by accident.
@@ -1478,7 +1476,7 @@ pub enum DeviceCommands {
 
     /// Report that a device was not you.
     ///
-    /// Records the judgement, signs out **every** session including this one,
+    /// Records the judgement, signs out every session including this one,
     /// and tells you to change your master password — which is the part that
     /// actually protects your vaults.
     Disavow {
@@ -1545,11 +1543,8 @@ pub enum VaultCommands {
 
         /// Email address of the evnx account to share with.
         ///
-        /// ⚠️ `--user` is accepted too. `share` took `--with` while `revoke` and
-        /// `role` took `--user` for the same thing — the member's email — so
-        /// whichever you learned first was wrong half the time. Both work
-        /// everywhere now; neither is deprecated, because there is no reason to
-        /// break the muscle memory of anyone who learned either one.
+        /// `--user` is accepted too, as `revoke` and `role` take it for the same
+        /// thing, the member's email.
         #[arg(long, visible_alias = "user")]
         with: String,
 
@@ -1598,7 +1593,7 @@ pub enum VaultCommands {
 
     /// Revoke a member's access, rotating the vault key.
     ///
-    /// ⚠️ This re-encrypts every version of the vault under a fresh key and
+    /// This re-encrypts every version of the vault under a fresh key and
     /// re-wraps it for everyone who stays. It is not a quick operation and it is
     /// not reversible.
     ///
@@ -1621,7 +1616,7 @@ pub enum VaultCommands {
 
         /// Remove the member WITHOUT rotating the vault key.
         ///
-        /// ⚠️ They keep the ability to decrypt every version they already had
+        /// They keep the ability to decrypt every version they already had
         /// access to, including ones pushed after this. Only use it when you are
         /// re-keying separately, or when the member never held the key.
         #[arg(long)]
@@ -1642,7 +1637,7 @@ pub enum VaultCommands {
     /// lost laptop with a signed-in CLI, a compromised CI runner that held the
     /// master password, an account breach where the person stays.
     ///
-    /// ⚠️ This fixes the future, not the past. Anyone who could already read a
+    /// This fixes the future, not the past. Anyone who could already read a
     /// version may still hold a copy of it, and no rotation recalls that. Rotate
     /// those secrets at their source.
     ///
@@ -1687,7 +1682,7 @@ pub enum CloudCommands {
     /// Encrypt a .env and upload it as a new version.
     ///
     /// The file is encrypted here, byte for byte — comments, ordering and
-    /// quoting all survive. Only the key *names* are sent in the clear, so the
+    /// quoting all survive. Only the key names are sent in the clear, so the
     /// dashboard can list what a vault holds.
     Push {
         /// Vault to push to: `name`, `name/environment`, or an id.
@@ -1787,7 +1782,7 @@ pub enum CloudCommands {
         ///
         /// The replaced file is kept beside it as a .bak copy. Without it, and
         /// without a terminal, a different existing file stops the run (exit 4).
-        /// Declining the question exits 4, as `restore` does (RM-34, D5, D6).
+        /// Declining the question exits 4, as `restore` does.
         #[arg(long = "yes", short = 'y')]
         force: bool,
 
@@ -1811,7 +1806,7 @@ pub enum CloudCommands {
     /// nothing appears in `ps` — values travel in the environment block, never
     /// in the argument vector.
     ///
-    /// ⚠️ This removes the plaintext *file*, not the master password. The vault
+    /// This removes the plaintext file, not the master password. The vault
     /// key is wrapped under your master key, so decryption needs it wherever
     /// this runs; in CI, feed it with --password-stdin.
     ///
@@ -1931,13 +1926,13 @@ pub enum CloudCommands {
     ///
     /// Runs in the foreground until Ctrl-C, like `tail -f`.
     ///
-    /// ⚠️ **It never pulls.** Two reasons: overwriting your `.env` because a
+    /// It never pulls. Two reasons: overwriting your `.env` because a
     /// teammate pushed would destroy local edits with no undo, and pulling needs
     /// the master password — a watcher that auto-pulled would hold the vault key
     /// in memory for hours. Taking a change stays a deliberate `evnx cloud pull`.
     ///
     /// Polls metadata only: no password, no decryption, no blob download. What
-    /// it buys you is finding out a teammate changed a secret **before** your
+    /// it buys you is finding out a teammate changed a secret before your
     /// next deploy picks it up silently.
     Watch {
         /// Vault to watch. Optional in a bound directory.
@@ -1959,14 +1954,14 @@ pub enum CloudCommands {
 
     /// What changed between two versions — key names only, never values.
     ///
-    /// ⚠️ **`+` here means "added in the newer version"**, which is the opposite
+    /// `+` here means "added in the newer version", which is the opposite
     /// of `evnx diff`, where `+` means "missing from .env". The direction is
     /// printed above the list so the two cannot be confused.
     ///
     /// Defaults to the two newest versions, which is usually the question:
     /// what did that last push change?
     ///
-    /// ⚠️ **A changed value is invisible to this command.** The server holds key
+    /// A changed value is invisible to this command. The server holds key
     /// names and ciphertext and has never held a value, so rotating a secret
     /// without renaming it produces two versions with identical key sets. When
     /// that happens the blob hashes are compared and the answer says so, rather
@@ -2033,12 +2028,12 @@ pub enum CloudCommands {
     /// Pushes, pulls, member changes, re-keys and token creation. Any member can
     /// read it — the trail is how a team notices something it did not expect.
     ///
-    /// ⚠️ **`--last` filters what the server already returned**, and the server
+    /// `--last` filters what the server already returned, and the server
     /// trims by plan first. On a plan with seven days of visibility,
     /// `--last 30d` still shows seven; the output says so rather than implying
     /// the vault was quiet.
     ///
-    /// ⚠️ Retention is a **visibility** limit, not deletion. The events table is
+    /// Retention is a visibility limit, not deletion. The events table is
     /// append-only and nothing prunes it; the plan decides how far back the API
     /// will show.
     ///
@@ -2062,10 +2057,10 @@ pub enum CloudCommands {
 
     /// Delete one version of a vault, and its encrypted blob.
     ///
-    /// ⚠️ Permanent. The blob is removed from storage and the server has never
+    /// Permanent. The blob is removed from storage and the server has never
     /// held anything that could rebuild it.
     ///
-    /// **The latest version cannot be deleted.** `evnx cloud pull` and `evnx
+    /// The latest version cannot be deleted. `evnx cloud pull` and `evnx
     /// cloud run` fetch it, so removing it would silently change what every
     /// consumer of the vault receives. Push a newer version first, or delete the
     /// whole vault.
@@ -2074,12 +2069,6 @@ pub enum CloudCommands {
     /// remove old ones. Use `evnx cloud history` to see what a vault holds.
     DeleteVersion {
         /// Version number to delete, as `evnx cloud history` shows it.
-        ///
-        /// ⚠️ Named `version_num` rather than `version` on purpose: clap derives an
-        /// argument name from the field, and `version` collides with the
-        /// auto-generated `--version` flag. `value_name` keeps the help reading
-        /// `<VERSION>`. Caught by `cli_definition_is_valid`, which exists because
-        /// this same collision once shipped and only appeared at runtime.
         #[arg(value_name = "VERSION", value_parser = clap::value_parser!(i32).range(1..))]
         version_num: i32,
 
@@ -2114,7 +2103,7 @@ pub enum CloudCommands {
 
     /// Write a vault's secrets to a directory, decrypted — the way out.
     ///
-    /// ⚠️ This is the one evnx command whose purpose is to put plaintext
+    /// This is the one evnx command whose purpose is to put plaintext
     /// secrets on a filesystem. Everything else works to avoid that: `cloud
     /// pull` writes a single file and asks first, and `cloud run` writes none
     /// at all. Use this to leave, to archive, or to prove you can — not as part
@@ -2125,7 +2114,7 @@ pub enum CloudCommands {
     /// were encrypted. --to converts instead, through the same 14 formats
     /// `evnx convert` offers, and a conversion keeps only keys and values.
     ///
-    /// ⚠️ Not the same as `evnx auth download-data`, which writes account
+    /// Not the same as `evnx auth download-data`, which writes account
     /// metadata and contains no secrets at all.
     Export {
         /// Vault to export: `name`, `name/environment`, or an id.
@@ -2139,7 +2128,7 @@ pub enum CloudCommands {
         /// A per-vault subdirectory is created inside it, so exporting two
         /// vaults into one place does not mix them up.
         ///
-        /// ⚠️ Point this outside your working tree. An export inside a
+        /// Point this outside your working tree. An export inside a
         /// repository is one `git add .` away from being committed.
         #[arg(long, short, value_name = "DIR")]
         output: Option<std::path::PathBuf>,
@@ -2338,7 +2327,7 @@ pub enum Commands {
         /// `docker-compose.yml` and friends and proposes what it finds. This is
         /// how a script says yes to that proposal.
         ///
-        /// ⚠️ Detection is a heuristic — a `stripe` dependency in a test fixture
+        /// Detection is a heuristic — a `stripe` dependency in a test fixture
         /// looks exactly like one in a checkout flow. Prefer `--with` where the
         /// answer is known; this is for bootstrapping a project you trust.
         // ⚠️ No longer conflicts with `--yes`. `--detect` already implies it —
@@ -2356,7 +2345,7 @@ pub enum Commands {
         /// the second being something no other evnx command can tell you, since
         /// they all treat `.env.example` as the definition of "required".
         ///
-        /// ⚠️ A heuristic. Variables consumed entirely inside a library, and
+        /// A heuristic. Variables consumed entirely inside a library, and
         /// dynamic access like `process.env[key]`, are invisible in principle.
         ///
         /// Only ever appends, so it cannot be combined with --force.
@@ -2587,7 +2576,7 @@ pub enum Commands {
         /// "Needs your input", not as fixed, and the run exits 1 until they are
         /// filled in.
         ///
-        /// ⛔ **It will not overwrite a value that is not a placeholder.** A
+        /// It will not overwrite a value that is not a placeholder. A
         /// weak secret with a real value behind it is reported and left alone —
         /// see `--rotate-weak-secrets`.
         #[arg(long)]
@@ -2599,17 +2588,16 @@ pub enum Commands {
         #[command(flatten)]
         confirm: args::ConfirmArgs,
 
-        /// With `--fix`, also replace weak secrets that hold a **real value**.
+        /// With `--fix`, also replace weak secrets that hold a real value.
         ///
-        /// ⛔ **This destroys credentials, and that is what it is for.** Until
-        /// 2026-10-07 `--fix` did it unasked: `DATABASE_PASSWORD="p@ss word#1"`
-        /// became `DATABASE_PASSWORD=ad0da713…c508`, and the run reported "All
-        /// checks passed".
+        /// This destroys credentials, and that is what it is for:
+        /// `DATABASE_PASSWORD="p@ss word#1"` becomes `DATABASE_PASSWORD=ad0da713…c508`.
+        /// Without this flag, `--fix` leaves a weak secret with a real value alone.
         ///
         /// The check behind it judges length and wording. It cannot tell a
         /// placeholder nobody filled in from the real password, short because
         /// someone chose a short one — and the second is the common case,
-        /// because shortness is what trips it. Whether anything *else* holds
+        /// because shortness is what trips it. Whether anything else holds
         /// the credential is not a fact in the file, so evnx cannot decide it;
         /// you can.
         ///
@@ -2626,7 +2614,7 @@ pub enum Commands {
         /// Always exit 0, even when problems are found.
         ///
         /// For a step that should report without failing the build. It
-        /// suppresses the *findings* exit code only — a file that cannot be read
+        /// suppresses the findings exit code only — a file that cannot be read
         /// still exits 2, because "I found nothing" and "I could not look" are
         /// different answers.
         #[arg(long)]
@@ -2683,7 +2671,7 @@ pub enum Commands {
         /// `test`, not `latest/` or `contest.py`; `third_party/cache` skips that
         /// folder wherever it is.
         ///
-        /// ⚠️ This narrows the scan. Below the folder scanned, `.git`,
+        /// This narrows the scan. Below the folder scanned, `.git`,
         /// `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`,
         /// `.turbo`, `__pycache__`, Python virtualenvs (a
         /// `venv` or `.venv` holding `pyvenv.cfg`) and dependency `vendor`
@@ -2707,7 +2695,7 @@ pub enum Commands {
         /// `env,yml,json`). By default every file is read, and binary or very
         /// large files are skipped with a note.
         ///
-        /// ⚠️ This narrows the scan, and the run says so. A file named on the
+        /// This narrows the scan, and the run says so. A file named on the
         /// command line is read whatever this says. `[scan] extensions` in
         /// `.evnx.toml` sets the same thing for a project.
         #[arg(long, value_delimiter = ',', value_name = "EXT")]
@@ -2749,7 +2737,7 @@ pub enum Commands {
         /// tokens, database passwords and variables named like a secret, `low`
         /// for test keys and keys meant to ship in a web page. Filters what is
         /// reported, counted and exited on. `--severity high` is the usual
-        /// blocking CI gate. ⚠️ Until 0.13.0 this filtered on confidence; that
+        /// blocking CI gate. Until 0.13.0 this filtered on confidence; that
         /// is now `--confidence`. Defaults to `low` (report everything), or
         /// `[scan] severity` from `.evnx.toml`.
         #[arg(long, value_name = "LEVEL", value_enum, ignore_case = true)]
@@ -2788,7 +2776,7 @@ pub enum Commands {
 
         /// Always exit 0, even when secrets are found.
         ///
-        /// ⚠️ Suppresses exit 1 only. A scan that could not run still exits 2 —
+        /// Suppresses exit 1 only. A scan that could not run still exits 2 —
         /// the flag means "do not fail my build over findings", not "never tell
         /// me the scan was impossible" (an invalid `--exclude`, a path that does
         /// not exist, nothing to scan). Files that could not be read are listed and
@@ -2888,7 +2876,7 @@ pub enum Commands {
         /// and then has the exact values so it applies; `--interactive` shows
         /// `<withheld>` in its questions without it.
         ///
-        /// ⚠️ With `patch` and `--interactive` this puts real secrets on your
+        /// With `patch` and `--interactive` this puts real secrets on your
         /// terminal and into its scrollback, and into any CI log.
         #[arg(long)]
         show_values: bool,
@@ -2926,7 +2914,7 @@ pub enum Commands {
         /// For pre-commit hooks: a fresh clone has a template and no `.env`, and
         /// a hook that exits 2 there blocks every new contributor's first
         /// commit. Only the left file is skipped; a missing template is still
-        /// an error. ⚠️ Not for CI, where a check that never ran must not pass.
+        /// an error. Not for CI, where a check that never ran must not pass.
         #[arg(long)]
         skip_without_env: bool,
 
@@ -2989,7 +2977,7 @@ Aliases:
 
 Use 'evnx convert' without --to for interactive format selection.
 
-📖  Full guide: https://docs.evnx.dev/cli/commands/convert
+Full guide: https://docs.evnx.dev/cli/commands/convert
 ")]
     #[command(mut_arg("env", |a| a.help("Path to input .env file. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
     #[command(mut_arg("yes", |a| a.help("Add the --output file to .gitignore without asking; with no --to, fail instead of showing the menu").long_help("Do not ask: add the --output file to .gitignore without the prompt (as `--gitignore`). With no `--to` it is an error naming `--to`, because the format menu is a question too.")))]
@@ -3171,12 +3159,12 @@ TLS (GitHub upload): evnx trusts its bundled root certificates plus any in the P
 named by SSL_CERT_FILE or the directory named by SSL_CERT_DIR. Behind a TLS-inspecting
 proxy, set SSL_CERT_FILE to your organisation's CA bundle.
 
-📖  Full guide: https://docs.evnx.dev/cli/commands/migrate
+Full guide: https://docs.evnx.dev/cli/commands/migrate
 ")]
     #[command(mut_arg("env", |a| a.help("The .env file to read (default: .env, or `[defaults] env_name`)")))]
     #[command(mut_arg("env_name", |a| a.help("Read `.env.<NAME>` instead of `.env`.").long_help("Read `.env.<NAME>` instead of `.env`.\n\n`--env-name production` reads `.env.production`. A name whose file does not exist is an error listing the environments that do. Without it, `[defaults] env_name` in `.evnx.toml` applies, as for the other commands.")))]
     #[command(mut_arg("dry_run", |a| a.help("Preview what would be migrated without making any changes")))]
-    #[command(mut_arg("yes", |a| a.help("Upload without asking \"Proceed with migration?\" (github).").long_help("Upload without asking \"Proceed with migration?\" (github).\n\nFor CI. Without a terminal and without `--yes` the upload stops before contacting GitHub (exit 4). ⚠️ It does not answer \"overwrite?\": a secret that already exists still needs `--overwrite` or `--skip-existing`.")))]
+    #[command(mut_arg("yes", |a| a.help("Upload without asking \"Proceed with migration?\" (github).").long_help("Upload without asking \"Proceed with migration?\" (github).\n\nFor CI. Without a terminal and without `--yes` the upload stops before contacting GitHub (exit 4). It does not answer \"overwrite?\": a secret that already exists still needs `--overwrite` or `--skip-existing`.")))]
     Migrate(Box<MigrateOptions>),
 
     /// Keep .env and .env.example in sync.
@@ -3214,7 +3202,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
 
         /// Where to write the rendered file, or `-` for stdout.
         ///
-        /// ⚠️ The result usually contains real values — see `--gitignore`. A
+        /// The result usually contains real values — see `--gitignore`. A
         /// new file is created readable by you only (0600). An existing file is
         /// only replaced with `--force`, and keeps its mode. The template and
         /// the env file are never overwritten.
@@ -3260,7 +3248,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
 
         /// Write an unresolved placeholder through literally and exit 0.
         ///
-        /// Since 0.11.0 a placeholder with no value is an error: nothing is
+        /// A placeholder with no value is an error: nothing is
         /// written, every unresolved name is listed, and the exit code is 2. An
         /// unresolved `{{DATABASE_URL}}` in a generated config is read by
         /// whatever runs next as the literal setting. Give a variable a fallback
@@ -3268,7 +3256,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         #[arg(long, conflicts_with = "strict")]
         allow_unresolved: bool,
 
-        /// The default since 0.11.0; accepted, and removed in 1.0.
+        /// Accepted for scripts that pass it; it changes nothing, and it goes away in 1.0.
         #[arg(long)]
         strict: bool,
     },
@@ -3341,8 +3329,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// Where to write the restored file.
         ///
         /// Defaults to the file the backup was made from — `.env.staging` for a
-        /// backup of `.env.staging` — in the current folder (since 0.11.0; it
-        /// was always `.env`). A recorded name that is not `.env` or `.env.<name>`
+        /// backup of `.env.staging` — in the current folder. A recorded name that is not `.env` or `.env.<name>`
         /// restores to `.env`.
         ///
         /// An existing file is never replaced silently: evnx asks, or takes
@@ -3420,7 +3407,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
 
     /// Manage organisations — billing and a directory.
     ///
-    /// ⛔ An organisation does **not** give anyone access to a vault. It owns a
+    /// An organisation does not give anyone access to a vault. It owns a
     /// plan and a set of seats; a seat decides which plan's limits apply to the
     /// holder. Sharing a vault is `evnx vault share`, and only someone who holds
     /// the key can do it.
@@ -3502,7 +3489,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     #[command(about = "Check .env files, Git config, project structure, and security")]
     #[command(after_help = docs::DOCTOR.after_help)]
     #[command(mut_arg("dir", |a| a.help("Project directory to analyze (same as the positional argument). Giving both is an error rather than a silent preference.")))]
-    #[command(mut_arg("format", |a| a.ignore_case(true).long_help("Output format: `pretty` or `json`.\n\n⚠️ `EVNX_OUTPUT_JSON=1` does the same thing and still works. It shipped first and is documented, but an environment variable is not a discoverable surface — which is how `--fix` came to be documented into existence before it existed. `--format` and `--json` win when given.\n\nUnknown values are an error, not a silent fall back to `pretty`: a typo in a CI step must not quietly turn a JSON contract into prose that the next `jq` in the pipeline cannot read.")))]
+    #[command(mut_arg("format", |a| a.ignore_case(true).long_help("Output format: `pretty` or `json`.\n\n`EVNX_OUTPUT_JSON=1` does the same thing. `--format` and `--json` win when given.\n\nUnknown values are an error, not a silent fall back to `pretty`: a typo in a CI step must not quietly turn a JSON contract into prose that the next `jq` in the pipeline cannot read.")))]
     #[command(mut_arg("json", |a| a.help("Same as --format json.")))]
     Doctor {
         /// Project directory to analyze
@@ -3521,7 +3508,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// work says "not fixed". Nothing is deleted, nothing is committed, and
         /// no file's contents are edited.
         ///
-        /// ⚠️ `EVNX_AUTO_FIX=1` does the same thing and still works. Either
+        /// `EVNX_AUTO_FIX=1` does the same thing. Either
         /// saying yes is enough — a flag can turn repair on, never off.
         #[arg(long)]
         fix: bool,
@@ -3537,7 +3524,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         ///
         /// For pre-commit hooks: a fresh clone has a template and no `.env`,
         /// and doctor calls that an error, which would block every new
-        /// contributor's first commit. ⚠️ Not for CI, where a check that never
+        /// contributor's first commit. Not for CI, where a check that never
         /// ran must not pass.
         #[arg(long)]
         skip_without_env: bool,
@@ -3563,7 +3550,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     /// List the copies evnx kept before changing a file: which file, which
     /// command, when.
     ///
-    /// `remove`, `validate --fix`, `diff --apply`, `restore`, `cloud pull` and
+    /// `remove`, `validate --fix`, `diff --format patch --interactive`, `restore`, `cloud pull` and
     /// `platform pull` keep the file as it was in `<file>.bak` (one per file)
     /// and record it in `.evnx/backups.json`. Never shows a value.
     #[command(after_help = docs::HISTORY.after_help)]
@@ -3684,15 +3671,14 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
 
     /// Every command this build has, and which features it was compiled with.
     ///
-    /// ⚠️ "This build" is the point. `cloud`, `migrate` and `backup` are
+    /// "This build" is the point. `cloud`, `migrate` and `backup` are
     /// optional features, so two binaries of the same version can have very
     /// different command sets — and nothing else tells you which one you have.
-    /// PyPI shipped five releases with no cloud commands at all and nobody
-    /// noticed, because every check anyone ran read `--version` and stopped.
+    /// The version number alone does not say which commands a binary has.
     ///
     /// `-q` has no effect: the list is the answer.
     ///
-    /// ⓘ Named `commands`; `surface` still works, because tooling calls it that.
+    /// `surface` is accepted as another name for `commands`.
     #[command(name = "commands", visible_alias = "surface", after_help = docs::COMMANDS.after_help)]
     #[command(mut_arg("format", |a| a.long_help("Output format. `json` is the whole command tree, for tooling.\n\nVersioned by a `schema` field, so the shape can change without breaking anyone. The plain output carries no such promise — do not parse it.")))]
     #[command(mut_arg("json", |a| a.help("The whole command tree as JSON, for tooling. Same as --format json.")))]
@@ -3720,12 +3706,12 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     ///
     /// Without `--check` this contacts nothing: it reads the path of the running
     /// binary, and the files pip leaves beside it, to work out which channel
-    /// installed it — cargo, Homebrew, Scoop, winget, npm, pip or the install
+    /// installed it — cargo, Homebrew, Scoop, winget, npm, pip, pipx or the install
     /// script — and prints that channel's upgrade command. Where the install
     /// script and pip share a folder and nothing tells them apart, it prints
     /// both; where it cannot tell at all, every channel's.
     ///
-    /// ⚠️ evnx never replaces its own binary. Each package manager owns the file
+    /// evnx never replaces its own binary. Each package manager owns the file
     /// it installed, and a self-updating binary fights it — Homebrew and winget
     /// would then report a version they did not install.
     ///
@@ -3800,7 +3786,7 @@ mod tests {
     /// Every command describes itself, and no two siblings describe themselves
     /// the same way.
     ///
-    /// ⚠️ This exists because of a real mistake that every other gate missed. A
+    /// This exists because of a real mistake that every other gate missed. A
     /// variant was inserted between a doc comment and the variant that comment
     /// belonged to, so `rotate-master-password` inherited "Delete your account
     /// and everything only you can reach" and `delete-account` was left blank.
@@ -4082,7 +4068,7 @@ pub enum SpecAction {
         /// Skip the env file named with `--env` or `--env-name` when it does
         /// not exist, as an unnamed `.env` is skipped, instead of exiting 2.
         ///
-        /// For pre-commit hooks on a fresh clone. ⚠️ Not for CI, where a check
+        /// For pre-commit hooks on a fresh clone. Not for CI, where a check
         /// that never ran must not pass.
         #[arg(long)]
         skip_without_env: bool,

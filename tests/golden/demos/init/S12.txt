@@ -33,7 +33,7 @@ Error: there is no terminal to confirm with.
 Add --yes to write without asking:
   evnx init --with stripe --yes
 
-No verdict: evnx did not finish. This is not a clean result.
+No verdict: a question needed an answer and there is no terminal to ask on. This is not a clean result.
 [exit 4]
   ok: --with without --yes and no terminal (D3) (exit 4)
   ok: ...says to add --yes

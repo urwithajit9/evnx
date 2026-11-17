@@ -20,7 +20,7 @@ Options:
           
           In `pretty` and `json` a secret stays masked: by its name, or by the value itself (`postgres://admin:***@db`). A `patch` that carries real values (`--values`, `--against`, `--reverse`) needs this flag, and then has the exact values so it applies; `--interactive` shows `<withheld>` in its questions without it.
           
-          ⚠️ With `patch` and `--interactive` this puts real secrets on your terminal and into its scrollback, and into any CI log.
+          With `patch` and `--interactive` this puts real secrets on your terminal and into its scrollback, and into any CI log.
 
       --reverse
           Swap the two sides: compare the example against the environment
@@ -40,7 +40,7 @@ Options:
       --skip-without-env
           With no `.env`, skip (exit 0) and say so.
           
-          For pre-commit hooks: a fresh clone has a template and no `.env`, and a hook that exits 2 there blocks every new contributor's first commit. Only the left file is skipped; a missing template is still an error. ⚠️ Not for CI, where a check that never ran must not pass.
+          For pre-commit hooks: a fresh clone has a template and no `.env`, and a hook that exits 2 there blocks every new contributor's first commit. Only the left file is skipped; a missing template is still an error. Not for CI, where a check that never ran must not pass.
 
       --with-stats
           Add a `stats` object to the JSON (`--format json` only)

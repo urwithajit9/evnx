@@ -2,9 +2,6 @@
 ================ S9 ================
 
 $ evnx scan does-not-exist
-
-  evnx scan  Checking for exposed secrets
-
 Error: cannot scan 1 of the 1 path(s) given:
   does-not-exist (does not exist)
 
