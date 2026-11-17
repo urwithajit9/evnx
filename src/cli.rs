@@ -3,6 +3,9 @@
 //! Uses clap derive macros for type-safe argument handling.
 
 use crate::docs;
+
+pub mod args;
+pub mod removed;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 // ─────────────────────────────────────────────────────────────
@@ -2872,28 +2875,12 @@ pub enum Commands {
     // a filled-in `.env` exited 1 on every real project (I-078). The rule is
     // in `after_help` (`docs::DIFF`), where clap prints it as written.
     #[command(after_help = docs::DIFF.after_help)]
+    #[command(mut_arg("env", |a| a.help("The env file on the left of the comparison. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
+    #[command(mut_arg("example", |a| a.help("The template on the right: key names only, unless `--values` is given. Defaults to `.env.example`, or `[defaults] example`")))]
+    #[command(mut_arg("format", |a| a.long_help("Output format. `patch` is a unified diff of the left file that `patch -p1` applies: it adds the missing names and, when values are compared, replaces the different ones. Keys only in the left file are kept and named in comment lines.")))]
     Diff {
-        /// The environment file on the left of the comparison.
-        ///
-        /// Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
-        #[arg(long)]
-        env: Option<String>,
-
-        /// The template on the right of the comparison: key names only.
-        ///
-        /// Defaults to `.env.example`, or `[defaults] example`. A template holds
-        /// placeholders, so its values are not compared unless `--values` is
-        /// given. To compare two real environments use `--against`.
-        #[arg(long)]
-        example: Option<String>,
-
-        /// Operate on `.env.<NAME>` instead of `.env`.
-        ///
-        /// `--env-name production` resolves to `.env.production`. A name whose
-        /// file does not exist is an error listing the environments that do —
-        /// it never falls back to `.env`.
-        #[arg(long, value_name = "NAME", conflicts_with = "env")]
-        env_name: Option<String>,
+        #[command(flatten)]
+        files: args::FileArgs,
 
         /// Compare against the environment `.env.<NAME>`: keys and values.
         ///
@@ -2923,15 +2910,8 @@ pub enum Commands {
         #[arg(long)]
         show_values: bool,
 
-        /// Output format: `pretty`, `json` or `patch`.
-        ///
-        /// An unrecognised value is an error (exit 2), not a silent fall back
-        /// to `pretty` (I-074). `patch` is a unified diff of the left file that
-        /// `patch -p1` applies: it adds the missing names and, when values are
-        /// compared, replaces the different ones. Keys only in the left file
-        /// are kept and named in comment lines.
-        #[arg(long, default_value = "pretty", value_parser = ["pretty", "json", "patch"])]
-        format: String,
+        #[command(flatten)]
+        output: args::OutputArgs<args::DiffFormat>,
 
         /// Swap the two sides: compare the example against the environment.
         #[arg(long)]
