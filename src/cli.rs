@@ -6,6 +6,7 @@ use crate::docs;
 
 pub mod args;
 pub mod exit_help;
+pub mod groups;
 pub mod removed;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 

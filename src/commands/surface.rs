@@ -112,6 +112,16 @@ struct CommandNode {
     /// command that ships before its guide. Every top-level command has one
     /// today (I-195).
     docs_url: Option<&'static str>,
+    /// Which of the four groups in `evnx --help` the command is listed under:
+    /// "Local files", "Convert and run", "Cloud" or "This tool". Top-level
+    /// commands only, from `cli::groups::GROUPS` (WP-10).
+    group: Option<&'static str>,
+    /// What the command needs from the network: `local` (files only),
+    /// `local-with-network` (local, and some modes reach GitHub, Vercel or the
+    /// release list) or `account` (an evnx account and a connection). A
+    /// subcommand has its command's value. `null` for a command the table does
+    /// not name.
+    network: Option<&'static str>,
     /// Spellings that no longer work here, and what replaced them.
     removed: Vec<RemovedNode>,
     /// Every exit code this command can produce, from `core::exit_table` — the
@@ -234,6 +244,12 @@ fn walk(cmd: &Command, prefix: &[String], out: &mut Vec<CommandNode>) {
             } else {
                 None
             },
+            group: if path.len() == 1 {
+                crate::cli::groups::lookup(sub.get_name()).map(|(g, _)| g)
+            } else {
+                None
+            },
+            network: crate::cli::groups::lookup(&path[0]).map(|(_, n)| n.as_str()),
             removed: crate::cli::removed::REMOVED
                 .iter()
                 .filter(|r| r.path().iter().copied().eq(path.iter().map(String::as_str)))
@@ -284,14 +300,6 @@ fn build_surface() -> Surface {
     }
 }
 
-/// Which top-level commands need an account.
-///
-/// ⚠️ Four names, not a second copy of the command list. It exists only to
-/// split the printed output in two, and anything not named here is printed
-/// under "on your machine" — so a new cloud command is mis-grouped at worst,
-/// never missing.
-const NEEDS_ACCOUNT: &[&str] = &["auth", "vault", "org", "cloud"];
-
 /// The plain output, as one string, so it can be checked for any feature set
 /// (the no-cloud warning only prints from a build without `cloud`).
 fn render_human(s: &Surface) -> String {
@@ -320,16 +328,27 @@ fn render_human(s: &Surface) -> String {
         .collect();
     let width = roots.iter().map(|c| c.name.len()).max().unwrap_or(8);
 
-    for (title, want_account) in [("On this machine", false), ("With an evnx account", true)] {
-        let group: Vec<&&CommandNode> = roots
-            .iter()
-            .filter(|c| NEEDS_ACCOUNT.contains(&c.name.as_str()) == want_account)
-            .collect();
-        if group.is_empty() {
+    // The same four groups as `evnx --help` (`cli::groups::GROUPS`). A command
+    // the table does not name is printed last, never dropped.
+    let mut titles: Vec<&str> = crate::cli::groups::GROUPS.iter().map(|g| g.title).collect();
+    titles.push("Other");
+    for title in titles {
+        let members: Vec<&&CommandNode> = if title == "Other" {
+            roots.iter().filter(|c| c.group.is_none()).collect()
+        } else {
+            crate::cli::groups::GROUPS
+                .iter()
+                .find(|g| g.title == title)
+                .into_iter()
+                .flat_map(|g| g.commands.iter())
+                .filter_map(|(n, _)| roots.iter().find(|c| c.name == *n))
+                .collect()
+        };
+        if members.is_empty() {
             continue;
         }
         line!("  {title}");
-        for c in group {
+        for c in members {
             line!(
                 "    {:width$}  {}",
                 c.name,

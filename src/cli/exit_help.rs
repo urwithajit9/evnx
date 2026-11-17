@@ -14,7 +14,15 @@ use crate::core::exit_table::render_block;
 
 /// The whole command tree, with every command's exit codes in its help.
 pub fn command() -> Command {
-    with_exit_blocks(Cli::command(), &mut Vec::new())
+    let mut root = with_exit_blocks(Cli::command(), &mut Vec::new());
+    let list = crate::cli::groups::render(&root, "");
+    let before = format!("{list}\n{}", crate::cli::groups::START_HERE);
+    root = root.before_help(before);
+    // The command list is ours (four groups, not clap's flat "Commands:"), so
+    // the template leaves out `{subcommands}`.
+    root.help_template(
+        "{about-with-newline}\n{usage-heading} {usage}\n\n{before-help}Options:\n{options}{after-help}",
+    )
 }
 
 /// `cmd` and its subcommands with the block appended to each `after_help`.
