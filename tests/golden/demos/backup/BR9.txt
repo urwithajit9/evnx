@@ -10,8 +10,8 @@ Error: Backup file not found: cloud://myproject
 
   restore reads a file made by `evnx backup`; it does not read from evnx cloud.
   For a vault, use:  evnx cloud pull --vault <name>
-[exit 3]
-  ok: FIXED D-112 (DEC-B4): cloud:// is a missing file (exit 3) with a hint for evnx cloud pull (exit 3)
+[exit 2]
+  ok: FIXED D-112 (DEC-B4): cloud:// is a missing file (exit 2) with a hint for evnx cloud pull (exit 2)
 
 $ evnx restore .env.backup --password-file pw --output lnk.env
 ✓ Read backup from .env.backup

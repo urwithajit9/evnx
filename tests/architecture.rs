@@ -81,22 +81,34 @@ fn t_share_01_placeholder_and_mask_have_one_definition() {
     );
 }
 
-/// Commands that report through a `Verdict` never exit on their own (U4,
-/// I-116): a `process::exit` inside one skips `main`, so its error got its own
-/// wording and, under `sync --check`, the wrong code.
+/// Nothing in `src/` ends the process itself but the two places that cannot
+/// return (WP-9, RUST-2): `utils/term.rs` (a broken pipe, exit 141, from a panic
+/// hook) and `core/inject.rs` (`exit_as`, the child's own code). Everything else
+/// returns a `Verdict` or an error, and `main` alone turns it into a code
+/// (`core::error::report`): a `process::exit` inside a command skips `main`, so
+/// its error got its own wording and, under `sync --check`, the wrong code
+/// (U4, I-116).
+///
+/// Formerly `t_u4_verdict_commands_do_not_exit_themselves`, which covered only
+/// `commands/sync` and `commands/migrate`.
 #[test]
-fn t_u4_verdict_commands_do_not_exit_themselves() {
+fn t_u4_only_term_and_inject_call_process_exit() {
+    let allowed = [
+        Path::new("utils").join("term.rs"),
+        Path::new("core").join("inject.rs"),
+    ];
     let mut offenders = Vec::new();
-    for dir in ["commands/sync", "commands/migrate"] {
-        let mut files = Vec::new();
-        rust_files(&src().join(dir), &mut files);
-        for f in files {
-            let text = std::fs::read_to_string(&f).unwrap();
-            if text
-                .lines()
-                .any(|l| !l.trim_start().starts_with("//") && l.contains("process::exit("))
-            {
-                offenders.push(f.display().to_string());
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    for f in files {
+        let rel = f.strip_prefix(src()).unwrap().to_path_buf();
+        if allowed.contains(&rel) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&f).unwrap();
+        for (n, l) in text.lines().enumerate() {
+            if !l.trim_start().starts_with("//") && l.contains("process::exit(") {
+                offenders.push(format!("{}:{}", rel.display(), n + 1));
             }
         }
     }

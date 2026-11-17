@@ -5,24 +5,32 @@
 //! | 0 | [`EXIT_OK`] | ran, nothing to report |
 //! | 1 | [`EXIT_FINDINGS`] | ran, and the answer is "no" — secrets found, invalid, different, drifted, uploads failed |
 //! | 2 | [`EXIT_ERROR`] | could not run, so **there is no verdict** |
+//! | 4 | [`EXIT_DECLINED`] | a prompt answered no, or a confirmation needed with no terminal and no `--yes` |
+//! | 5 | [`EXIT_ASIDE`] | `restore` wrote the result aside |
+//! | 10-15 | [`EXIT_SIGNED_OUT`]… | cloud and platform request failures |
 //!
 //! ⚠️ 2 must never be reported as 1. A pipeline branches on the code, and a
 //! broken setup that exits 1 reads as a real finding — `sync --naming-policy
 //! error` did exactly that under `--check` (I-116). Anything that stops a
-//! command from reaching its answer is an `Err` that `main` turns into 2,
-//! through [`no_verdict`], so the stderr line is the same everywhere.
-//!
-//! Commands with their own documented codes — `backup`, `restore` (their own
-//! error enums), `cloud run` (the child's code) — keep them.
-
-use colored::Colorize;
+//! command from reaching its answer is an `Err`, and `main` alone turns it into
+//! a code (`core::error::report`), so the stderr line is the same everywhere.
+//! No command calls `process::exit`: the only exceptions are `utils::term`
+//! (broken pipe, 141) and `core::inject::exit_as` (the child's code).
 
 /// Ran, nothing to report.
-pub const EXIT_OK: i32 = 0;
+pub const EXIT_OK: u8 = 0;
 /// Ran, and the answer is "no".
-pub const EXIT_FINDINGS: i32 = 1;
+pub const EXIT_FINDINGS: u8 = 1;
 /// Could not run: no verdict.
-pub const EXIT_ERROR: i32 = 2;
+pub const EXIT_ERROR: u8 = 2;
+/// Declined: a prompt answered no, or a confirmation was needed and there was
+/// no terminal and no `--yes`.
+pub const EXIT_DECLINED: u8 = 4;
+/// `restore` wrote the result aside (`<output>.restored`).
+pub const EXIT_ASIDE: u8 = 5;
+/// Not signed in, or the token was rejected: the first of the cloud and
+/// platform request failures (10-15, `ApiError::exit_code`).
+pub const EXIT_SIGNED_OUT: u8 = 10;
 
 /// The answer of a command that ran to the end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,23 +39,18 @@ pub enum Verdict {
     Clean,
     /// Something to report: exit 1.
     Findings,
+    /// A prompt was answered no: already said, exit 4.
+    Declined,
 }
 
 impl Verdict {
     /// The exit code for this verdict.
-    pub fn code(self) -> i32 {
+    pub fn code(self) -> u8 {
         match self {
             Verdict::Clean => EXIT_OK,
             Verdict::Findings => EXIT_FINDINGS,
+            Verdict::Declined => EXIT_DECLINED,
         }
-    }
-}
-
-/// Exit 1 on [`Verdict::Findings`]; return on [`Verdict::Clean`], so `main`
-/// finishes normally. For `outcome.map(verdict::finish)`.
-pub fn finish(verdict: Verdict) {
-    if verdict == Verdict::Findings {
-        std::process::exit(EXIT_FINDINGS);
     }
 }
 
@@ -102,22 +105,87 @@ pub fn stopped(message: impl Into<String>) -> anyhow::Error {
 pub const STOPPED_LINE: &str =
     "evnx stopped before making changes (exit 2). Run one of the commands above.";
 
-/// Print `err` and the no-verdict line to stderr, then exit 2.
-pub fn no_verdict(err: &anyhow::Error, stage: Stage) -> ! {
-    no_verdict_with_code(err, stage, EXIT_ERROR)
+/// The footer of a refusal that needed a confirmation nobody could give.
+pub const STOPPED_FOR_YES_LINE: &str =
+    "evnx stopped before making changes (exit 4). Run one of the commands above.";
+
+/// A confirmation was needed and could not be asked (no terminal, no `--yes`):
+/// exit 4, as a prompt answered no (D3). `message` names `--yes`.
+///
+/// `stopped` picks the footer: a refusal that was a [`Stopped`] says so, one that
+/// was a plain error keeps the "No verdict" line it always had.
+#[derive(Debug)]
+pub struct NeedsConfirmation {
+    /// What to say, and what to run instead.
+    pub message: String,
+    /// Whether the footer is the [`Stopped`] one.
+    pub stopped: bool,
 }
 
-/// [`no_verdict`] with a specific exit code, for failures that have their own
-/// (the cloud commands' 10–15).
-pub fn no_verdict_with_code(err: &anyhow::Error, stage: Stage, code: i32) -> ! {
-    eprintln!("{} {:#}", "Error:".on_red().bold(), err);
-    eprintln!();
-    if err.downcast_ref::<Stopped>().is_some() {
-        eprintln!("{STOPPED_LINE}");
-    } else {
-        eprintln!("{}", no_verdict_line(stage));
+impl std::fmt::Display for NeedsConfirmation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
     }
-    std::process::exit(code);
+}
+
+impl std::error::Error for NeedsConfirmation {}
+
+/// A [`Stopped`]-style refusal because a confirmation was needed: exit 4.
+pub fn stopped_needs_yes(message: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(NeedsConfirmation {
+        message: message.into(),
+        stopped: true,
+    })
+}
+
+/// A plain error because a confirmation was needed: exit 4.
+pub fn needs_yes(message: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(NeedsConfirmation {
+        message: message.into(),
+        stopped: false,
+    })
+}
+
+/// Already said on stderr, in full: exit 2 with nothing more. For a command that
+/// prints its own explanation (`convert`'s list of formats) and has no verdict.
+#[derive(Debug)]
+pub struct Said;
+
+impl std::fmt::Display for Said {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("already reported")
+    }
+}
+
+impl std::error::Error for Said {}
+
+/// An error that ends with its own footer instead of the stage's: `scan` and
+/// `doctor` say what they did not do ("evnx did not scan anything").
+///
+/// With `message`, the report is `Error: message`, a blank line and the footer;
+/// without, a blank line and the footer.
+#[derive(Debug)]
+pub struct Footed {
+    /// The `Error:` line, when there is one.
+    pub message: Option<String>,
+    /// The last line.
+    pub footer: String,
+}
+
+impl std::fmt::Display for Footed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.message.as_deref().unwrap_or(&self.footer))
+    }
+}
+
+impl std::error::Error for Footed {}
+
+/// A [`Footed`] error.
+pub fn footed(message: Option<String>, footer: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(Footed {
+        message,
+        footer: footer.into(),
+    })
 }
 
 #[cfg(test)]
@@ -133,6 +201,8 @@ mod tests {
         );
         assert_eq!(Verdict::Clean.code(), 0);
         assert_eq!(Verdict::Findings.code(), 1);
+        assert_eq!(Verdict::Declined.code(), 4);
+        assert_eq!((EXIT_DECLINED, EXIT_ASIDE, EXIT_SIGNED_OUT), (4, 5, 10));
     }
 
     #[test]

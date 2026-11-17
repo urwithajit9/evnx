@@ -368,7 +368,7 @@ fn t_i218_pull_over_a_different_file_names_force_without_a_terminal() {
         ],
         Some(format!("{RIGHT}\n").as_bytes()),
     );
-    out.assert_code(2);
+    out.assert_code(4);
     // RM-34 (D5): `--yes`, as in `restore`; `--force` still works.
     assert!(
         out.stderr.contains("Add --yes to replace"),
@@ -666,7 +666,7 @@ fn t_i234_a_default_env_push_to_production_needs_yes_without_a_terminal() {
             &["cloud", "push", "--vault", target, "--password-stdin"],
             Some(format!("{RIGHT}\n").as_bytes()),
         );
-        out.assert_code(2);
+        out.assert_code(4);
         assert!(out.stderr.contains("--yes"), "{target}:\n{}", out.stderr);
         assert!(
             out.stderr.contains("production"),

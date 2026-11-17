@@ -54,12 +54,9 @@ backup needs at least 8 characters from any of them.
 
 Exit codes:
   0  Backup written (and verified, with --verify)
-  2  Could not run: source file, key file or passphrase, an output that is the
-     source or a directory, no terminal to ask on
-  3  Password confirmation did not match
-  4  Encryption failed
-  5  Could not write the backup file
-  6  Integrity check failed after writing (--verify)
+  2  Could not run: source file, key file or passphrase (or the confirmation did
+     not match), an output that is the source or a directory, encryption, writing
+     the file, or the integrity check after it (--verify); the message says which
 
 A backup is a file you keep, behind a passphrase you choose; it needs no account
 and no network. To share and version secrets instead, see `evnx cloud push`.

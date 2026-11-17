@@ -67,23 +67,15 @@ pub mod walk;
 // importing a command (A-09). Its old paths keep working.
 pub use crate::core::secretscan::{detector, patternset};
 
+use crate::core::verdict::Verdict;
 use crate::docs;
 use crate::utils::ui;
-use colored::Colorize;
 pub use detector::{Detection, DetectorRegistry, SecretDetector};
 pub use filters::FileFilter;
 pub use models::{Confidence, Finding, ScanResults};
 pub use output::{render, OutputFormat};
 pub use patternset::{PatternMatch, PatternSet};
 pub use runner::{preview_value, ScanRunner};
-
-// The codes are `core::verdict`'s, as in `sync`; these names stay for callers.
-/// Nothing at or above `--severity`.
-pub const EXIT_CLEAN: i32 = crate::core::verdict::EXIT_OK;
-/// Secrets found.
-pub const EXIT_FOUND: i32 = crate::core::verdict::EXIT_FINDINGS;
-/// The scan could not be completed, so there is no verdict.
-pub const EXIT_ERROR: i32 = crate::core::verdict::EXIT_ERROR;
 
 /// Everything `evnx scan` was asked to do, resolved from flags and `.evnx.toml`.
 ///
@@ -224,7 +216,7 @@ impl Default for ScanOptions {
 ///     ..Default::default()
 /// }).unwrap();
 /// ```
-pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
+pub fn run(opts: ScanOptions) -> Result<Verdict, anyhow::Error> {
     // Trouble prints here and exits 2 rather than propagating to `main`, which
     // would format it as a generic error and collapse it onto 1 — the code that
     // already means "secrets found".
@@ -345,24 +337,21 @@ pub fn run(opts: ScanOptions) -> Result<(), anyhow::Error> {
         }
     };
 
-    let secrets_found = match scan() {
-        Ok(found) => found,
-        Err(e) => {
-            eprintln!("{} {:#}", "Error:".on_red().bold(), e);
-            eprintln!();
-            eprintln!("No verdict: evnx did not scan anything. This is not a clean result.");
-            std::process::exit(EXIT_ERROR);
-        }
-    };
+    let secrets_found = scan().map_err(|e| {
+        crate::core::verdict::footed(
+            Some(format!("{e:#}")),
+            "No verdict: evnx did not scan anything. This is not a clean result.",
+        )
+    })?;
 
     // Always print — eprintln never pollutes stdout
     ui::print_docs_hint(&docs::SCAN);
 
-    if secrets_found && !opts.exit_zero {
-        std::process::exit(EXIT_FOUND);
-    }
-
-    Ok(())
+    Ok(if secrets_found && !opts.exit_zero {
+        Verdict::Findings
+    } else {
+        Verdict::Clean
+    })
 }
 
 #[cfg(test)]

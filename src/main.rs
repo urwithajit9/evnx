@@ -1,22 +1,21 @@
 //! evnx CLI entry point.
 
-use anyhow::{Context, Result};
-// Only the backup and restore arms colour anything here now; the convert arm
-// that printed "Invalid transform … ignoring" refuses instead (I-090).
-#[cfg(feature = "backup")]
-use colored::Colorize;
-use std::path::Path;
+use anyhow::Context;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use evnx::cli::{Cli, Commands, SpecAction};
 use evnx::commands;
 use evnx::core::converter::KeyTransform;
-use evnx::core::verdict::{self, Stage};
+use evnx::core::error::{report, EvnxError};
+use evnx::core::verdict::Verdict;
 
-/// Resolve which `.env.<name>` a command operates on, or exit 2.
+/// Resolve which `.env.<name>` a command operates on, or fail with
+/// [`EvnxError::Config`] (exit 2).
 ///
-/// ⚠️ **Not `?`**, for the same reason `config::load` below is not. A
-/// `--env-name` that names a file which does not exist is "evnx could not run",
-/// and `?` surfaces that through `main`'s `Result` as exit **1** — which
+/// ⚠️ **Not a bare `?` into `main`'s `Result`**, for the same reason `config::load`
+/// below is not. A `--env-name` that names a file which does not exist is
+/// "evnx could not run", and surfaced as a plain error it would exit **1** — which
 /// `validate` uses to mean *invalid*, `diff` to mean *differences found*, and
 /// `sync --check` to mean *drifted*.
 ///
@@ -39,11 +38,8 @@ fn resolve_env(
     env: Option<&str>,
     env_name: Option<&str>,
     configured: Option<&str>,
-) -> String {
-    match evnx::core::env_name::select(dir, env, env_name, configured) {
-        Ok(path) => path,
-        Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
-    }
+) -> Result<String, EvnxError> {
+    evnx::core::env_name::select(dir, env, env_name, configured).map_err(EvnxError::Config)
 }
 
 /// The env file and template for a command that compares the two
@@ -57,45 +53,71 @@ fn resolve_files(
     need: evnx::core::resolve::Need,
     quiet: bool,
     verbose: bool,
-) -> evnx::core::resolve::Resolved {
+) -> Result<evnx::core::resolve::Resolved, EvnxError> {
     use evnx::core::resolve::{resolve, Flags};
     let flags = Flags {
         env,
         env_name,
         example,
     };
-    match resolve(Path::new("."), flags, cfg, need) {
-        Ok(r) => {
-            if let Some(line) = r.line(verbose) {
-                evnx::utils::ui::files_line(&line, quiet);
-            }
-            r
-        }
-        Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
+    let r = resolve(Path::new("."), flags, cfg, need).map_err(EvnxError::Config)?;
+    if let Some(line) = r.line(verbose) {
+        evnx::utils::ui::files_line(&line, quiet);
+    }
+    Ok(r)
+}
+
+/// Print clap's own message (usage error, `--help`, `--version`) and give its
+/// code: 2 for an error, 0 for the others.
+fn clap_done(e: clap::Error) -> Result<Verdict, EvnxError> {
+    let _ = e.print();
+    if e.use_stderr() {
+        Err(EvnxError::Said)
+    } else {
+        Ok(Verdict::Clean)
     }
 }
 
-fn main() -> Result<()> {
+/// `Ok(())` is a clean run.
+fn clean(_: ()) -> Verdict {
+    Verdict::Clean
+}
+
+/// The only thing `main` does: run, and let [`report`] turn the result into a
+/// code. Nothing below it calls `process::exit` (WP-9).
+fn main() -> ExitCode {
     // Before anything prints: a closed stdout ends evnx quietly (exit 141)
     // instead of panicking, and Ctrl-C at a prompt gives the cursor back.
     evnx::utils::term::exit_quietly_on_broken_pipe();
     evnx::utils::term::restore_cursor_on_interrupt();
 
+    report(run())
+}
+
+fn run() -> Result<Verdict, EvnxError> {
     // A removed spelling stops here, before clap: the message names what to
     // type instead, and nothing has been read or written.
     let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
     if let Some(message) = evnx::cli::removed::check(&argv) {
         eprintln!("{message}");
-        std::process::exit(verdict::EXIT_ERROR);
+        return Err(EvnxError::Said);
     }
 
     // Parsed from the matches, not `Cli::parse()`, so that a flag with a default
     // can still be asked "did the person type it?" (`doctor --format`).
-    let matches = <Cli as clap::CommandFactory>::command().get_matches();
-    let cli = <Cli as clap::FromArgMatches>::from_arg_matches(&matches).unwrap_or_else(|e| {
-        e.format(&mut <Cli as clap::CommandFactory>::command())
-            .exit()
-    });
+    //
+    // A usage error, `--help` and `--version` are clap's to print; its code
+    // (2, 0, 0) is returned, not exited with.
+    let matches = match <Cli as clap::CommandFactory>::command().try_get_matches() {
+        Ok(m) => m,
+        Err(e) => return clap_done(e),
+    };
+    let cli = match <Cli as clap::FromArgMatches>::from_arg_matches(&matches) {
+        Ok(cli) => cli,
+        Err(e) => {
+            return clap_done(e.format(&mut <Cli as clap::CommandFactory>::command()));
+        }
+    };
     evnx::utils::ui::set_quiet(cli.quiet);
 
     // Configure colored output
@@ -115,7 +137,11 @@ fn main() -> Result<()> {
     // — so a relative start makes the walk inert and the file is found only in
     // the working directory. `cloud::sync` and `cloud::status` already pass
     // `current_dir()` for this reason.
-    let here = std::env::current_dir().context("reading the current directory")?;
+    // ⚠️ Not `?` into `main`: that is exit 1, "findings". It is `Io`, exit 2.
+    let here = std::env::current_dir().map_err(|source| EvnxError::Io {
+        path: PathBuf::from("the current directory"),
+        source,
+    })?;
     // ⚠️ Not `?`. A `.evnx.toml` that will not parse is "evnx could not run",
     // and `?` would surface it through `main`'s `Result` as exit **1** — which
     // for `scan` is the code that means *secrets found*, and for `sync --check`
@@ -147,7 +173,7 @@ fn main() -> Result<()> {
     } else {
         match evnx::core::config::load(&here) {
             Ok(loaded) => loaded,
-            Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
+            Err(e) => return Err(EvnxError::Config(e)),
         }
     };
     if no_config && !cli.quiet {
@@ -177,8 +203,8 @@ fn main() -> Result<()> {
     let cfg = loaded.config;
 
     // Route to command handler
-    // ⚠️ Bound, not returned. See the exit-code handling at the end of `main`.
-    let outcome = match cli.command {
+    // ⚠️ Bound, not returned. See the exit-code handling at the end of `run`.
+    let outcome: anyhow::Result<Verdict> = match cli.command {
         Commands::Init {
             dir,
             confirm,
@@ -207,7 +233,7 @@ fn main() -> Result<()> {
             } else {
                 match commands::init::target_config(Path::new(&path), config_source.as_deref()) {
                     Ok(loaded) => loaded.config,
-                    Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
+                    Err(e) => return Err(EvnxError::Config(e)),
                 }
             };
             commands::init::run(
@@ -227,6 +253,7 @@ fn main() -> Result<()> {
                 here,
                 no_contract,
             )
+            .map(clean)
         }
 
         Commands::Add {
@@ -253,7 +280,7 @@ fn main() -> Result<()> {
                 no_template,
             },
         )
-        .or_else(declined),
+        .map(clean),
 
         Commands::Remove {
             names,
@@ -289,9 +316,9 @@ fn main() -> Result<()> {
                 check,
             };
             if check {
-                commands::remove::check::run(opts).map(verdict::finish)
+                commands::remove::check::run(opts)
             } else {
-                commands::remove::run(opts).or_else(declined)
+                commands::remove::run(opts).map(clean)
             }
         }
 
@@ -318,7 +345,7 @@ fn main() -> Result<()> {
                 evnx::core::resolve::Need::Existing,
                 cli.quiet,
                 cli.verbose,
-            );
+            )?;
             commands::validate::run(commands::validate::Options {
                 // RM-32: `./.env` in every message and report.
                 env: label(&files.env),
@@ -364,9 +391,11 @@ fn main() -> Result<()> {
                     &configured,
                     category.as_deref(),
                     output.resolved() == evnx::cli::args::Format::Json,
-                ),
+                )
+                .map(clean),
                 RulesCommand::New { id, personal } => {
-                    commands::scan::rules_cmd::new(&project_root, &id, personal).map(drop)
+                    commands::scan::rules_cmd::new(&project_root, &id, personal)
+                        .map(|_| Verdict::Clean)
                 }
                 RulesCommand::Add {
                     source,
@@ -374,6 +403,7 @@ fn main() -> Result<()> {
                     personal,
                 } => {
                     commands::scan::packs_cmd::add(&project_root, &source, from.as_str(), personal)
+                        .map(clean)
                 }
                 RulesCommand::Update {
                     name,
@@ -385,13 +415,12 @@ fn main() -> Result<()> {
                     personal,
                     confirm.yes,
                 )
-                .or_else(declined),
+                .map(clean),
                 RulesCommand::Remove { name, personal } => {
-                    commands::scan::packs_cmd::remove(&project_root, &name, personal)
+                    commands::scan::packs_cmd::remove(&project_root, &name, personal).map(clean)
                 }
                 RulesCommand::Test { file } => {
                     commands::scan::rules_cmd::test(&project_root, file.as_deref())
-                        .map(verdict::finish)
                 }
             }
         }
@@ -402,9 +431,11 @@ fn main() -> Result<()> {
         } => {
             use evnx::cli::HookCommand;
             match command {
-                HookCommand::Install => commands::scan::hook::install(&here).map(drop),
-                HookCommand::Uninstall => commands::scan::hook::uninstall(&here),
-                HookCommand::Status => commands::scan::hook::status(&here),
+                HookCommand::Install => {
+                    commands::scan::hook::install(&here).map(|_| Verdict::Clean)
+                }
+                HookCommand::Uninstall => commands::scan::hook::uninstall(&here).map(clean),
+                HookCommand::Status => commands::scan::hook::status(&here).map(clean),
             }
         }
 
@@ -482,10 +513,11 @@ fn main() -> Result<()> {
                     Some(bytes) => Some(bytes),
                     None => match cfg.scan.max_file_size.as_ref().map(|s| s.bytes()) {
                         Some(Ok(bytes)) => Some(bytes),
-                        Some(Err(e)) => verdict::no_verdict(
-                            &anyhow::anyhow!(".evnx.toml [scan] max_file_size: {e}"),
-                            Stage::BeforeRun,
-                        ),
+                        Some(Err(e)) => {
+                            return Err(EvnxError::Config(anyhow::anyhow!(
+                                ".evnx.toml [scan] max_file_size: {e}"
+                            )))
+                        }
                         None => None,
                     },
                 },
@@ -562,7 +594,7 @@ fn main() -> Result<()> {
                 evnx::core::resolve::Need::Existing,
                 cli.quiet || against.is_some(),
                 cli.verbose && against.is_none(),
-            );
+            )?;
             let env = files.env.clone();
             // The right-hand side, and with it what is compared (I-078):
             // `--against` names an environment, so values are compared too;
@@ -571,16 +603,21 @@ fn main() -> Result<()> {
             // only key names are, unless `--values`. `env_name` is not
             // consulted here: it names the *left* side.
             let (example, compare) = match against.as_deref() {
-                Some(name) => (resolve_env(here, None, Some(name), None), Compare::Values),
+                Some(name) => (resolve_env(here, None, Some(name), None)?, Compare::Values),
                 None if values => (files.template.clone(), Compare::Values),
                 None => (files.template.clone(), Compare::Keys),
             };
             if let Err(e) =
                 commands::diff::check_flags(&format, with_stats, interactive, compare, &fail_on)
             {
-                verdict::no_verdict(&e, Stage::BeforeRun);
+                return Err(EvnxError::Config(e));
             }
-            match commands::diff::run(DiffOptions {
+            // ⚠️ Errors print `{:#}` through `report`: with `{}` only the
+            // outermost context printed, so `diff` reported "Failed to parse
+            // .env.example" and dropped the "Invalid format at line 1" that says
+            // what to fix. It also lacked the "No verdict" line every other
+            // command prints (U4).
+            commands::diff::run(DiffOptions {
                 env: label(&env),
                 example: label(&example),
                 compare,
@@ -593,15 +630,7 @@ fn main() -> Result<()> {
                 with_stats,
                 interactive,
                 skip_without_env,
-            }) {
-                Ok(exit_code) => std::process::exit(exit_code),
-                // ⚠️ Through `no_verdict`, which prints `{:#}`: with `{}` only
-                // the outermost context printed, so `diff` reported "Failed to
-                // parse .env.example" and dropped the "Invalid format at line
-                // 1" that says what to fix. It also lacked the "No verdict"
-                // line every other command prints (U4).
-                Err(e) => verdict::no_verdict(&e, Stage::DuringRun),
-            }
+            })
         }
 
         Commands::Convert {
@@ -634,7 +663,7 @@ fn main() -> Result<()> {
             // reached the generated scripts (I-263).
             let transform = match transform.as_deref().map(KeyTransform::parse).transpose() {
                 Ok(t) => t,
-                Err(e) => verdict::no_verdict(&e, Stage::BeforeRun),
+                Err(e) => return Err(EvnxError::Config(e)),
             };
             let targets = evnx::formats::Targets {
                 project,
@@ -651,7 +680,7 @@ fn main() -> Result<()> {
             )
             .and_then(|()| targets.check(to.and_then(evnx::formats::find)));
             if let Err(e) = early {
-                verdict::no_verdict(&e, Stage::BeforeRun);
+                return Err(EvnxError::Config(e));
             }
 
             let env = resolve_env(
@@ -659,7 +688,7 @@ fn main() -> Result<()> {
                 env_args.env.as_deref(),
                 env_args.env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
-            );
+            )?;
             // `--yes` answers the .gitignore question with yes, as `--gitignore`
             // does; an explicit `--no-gitignore` still wins.
             let gitignore = gitignore || (confirm.yes && output.is_some() && !no_gitignore);
@@ -688,7 +717,7 @@ fn main() -> Result<()> {
 
             // No "Convert command failed:" in front: every other command's
             // error stands on its own, and this one nested three deep (I-091).
-            commands::convert::run(config)
+            commands::convert::run(config).map(clean)
         }
 
         // ── Migrate ───────────────────────────────────────────────────────────
@@ -720,7 +749,7 @@ fn main() -> Result<()> {
                         opts.files.env.as_deref(),
                         opts.files.env_name.as_deref(),
                         cfg.defaults.env_name.as_deref(),
-                    )
+                    )?
                 },
                 env_name: opts.files.env_name.clone(),
                 to: opts.to.map(|t| t.slug().to_string()),
@@ -755,7 +784,6 @@ fn main() -> Result<()> {
                 railway_environment: opts.railway_environment.clone(),
                 railway_service: opts.railway_service.clone(),
             })
-            .map(verdict::finish)
         }
 
         // ⚠️ `[sync] naming_policy` is checked even when the flag overrides it,
@@ -775,54 +803,55 @@ fn main() -> Result<()> {
                     evnx::core::resolve::Need::MayCreate,
                     cli.quiet,
                     cli.verbose,
-                )
+                )?
                 .template,
                 declared: cfg.vars.keys().cloned().collect(),
                 dry_run: args.dry.dry_run,
                 yes: args.confirm.yes,
             })
-            .or_else(declined)
+            .map(clean)
         }
 
-        Commands::Sync { args } => cfg
-            .sync
-            .naming_policy
-            .as_deref()
-            .map(evnx::cli::NamingPolicy::from_config)
-            .transpose()
-            .with_context(|| format!("{} [sync] naming_policy", evnx::core::config::PROJECT_FILE))
-            .and_then(|configured| {
-                let flags = args.files.flags();
-                let files = resolve_files(
-                    flags.env,
-                    flags.env_name,
-                    flags.example,
-                    &cfg,
-                    evnx::core::resolve::Need::Existing,
-                    cli.quiet,
-                    cli.verbose,
-                );
-                commands::sync::run(
-                    files.env,
-                    files.template,
-                    args.direction.or(args.to.map(Into::into)),
-                    false,
-                    cli.verbose,
-                    args.dry.dry_run,
-                    args.confirm.yes,
-                    args.check,
-                    args.output.resolved().to_string(),
-                    args.template_config.clone(),
-                    evnx::core::config::pick(
-                        args.naming_policy,
-                        configured,
-                        evnx::cli::NamingPolicy::Warn,
-                    ),
-                    cfg.vars.clone(),
-                    args.skip_without_env,
-                )
-            })
-            .map(verdict::finish),
+        Commands::Sync { args } => {
+            let configured = cfg
+                .sync
+                .naming_policy
+                .as_deref()
+                .map(evnx::cli::NamingPolicy::from_config)
+                .transpose()
+                .with_context(|| {
+                    format!("{} [sync] naming_policy", evnx::core::config::PROJECT_FILE)
+                })?;
+            let flags = args.files.flags();
+            let files = resolve_files(
+                flags.env,
+                flags.env_name,
+                flags.example,
+                &cfg,
+                evnx::core::resolve::Need::Existing,
+                cli.quiet,
+                cli.verbose,
+            )?;
+            commands::sync::run(
+                files.env,
+                files.template,
+                args.direction.or(args.to.map(Into::into)),
+                false,
+                cli.verbose,
+                args.dry.dry_run,
+                args.confirm.yes,
+                args.check,
+                args.output.resolved().to_string(),
+                args.template_config.clone(),
+                evnx::core::config::pick(
+                    args.naming_policy,
+                    configured,
+                    evnx::cli::NamingPolicy::Warn,
+                ),
+                cfg.vars.clone(),
+                args.skip_without_env,
+            )
+        }
 
         Commands::Align { args } => {
             let evnx::cli::AlignArgs {
@@ -846,16 +875,21 @@ fn main() -> Result<()> {
                     evnx::core::resolve::Need::Existing,
                     cli.quiet,
                     cli.verbose,
-                );
-                commands::align::Target {
+                )?;
+                Ok::<_, EvnxError>(commands::align::Target {
                     env: r.env,
                     template: r.template,
-                }
+                })
             };
-            let mut targets: Vec<_> = env.iter().map(|e| pair(Some(e), None)).collect();
-            targets.extend(env_name.iter().map(|n| pair(None, Some(n))));
+            let mut targets = Vec::new();
+            for e in &env {
+                targets.push(pair(Some(e), None)?);
+            }
+            for n in &env_name {
+                targets.push(pair(None, Some(n))?);
+            }
             if targets.is_empty() {
-                targets.push(pair(None, None));
+                targets.push(pair(None, None)?);
             }
             commands::align::run(commands::align::Options {
                 targets,
@@ -869,7 +903,6 @@ fn main() -> Result<()> {
                 json: output.resolved() == evnx::cli::args::Format::Json,
                 no_backup,
             })
-            .map(verdict::finish)
         }
 
         // Commands::Template { input, output, env } => {
@@ -907,7 +940,7 @@ fn main() -> Result<()> {
                 env_args.env.as_deref(),
                 env_args.env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
-            );
+            )?;
             commands::template::run_options(
                 input,
                 output,
@@ -923,6 +956,7 @@ fn main() -> Result<()> {
                     follow_symlinks,
                 },
             )
+            .map(clean)
         }
 
         #[cfg(feature = "backup")]
@@ -933,30 +967,20 @@ fn main() -> Result<()> {
             password_file,
             keep,
             verify,
-        } => match commands::backup::run(
+        } => commands::backup::run(
             resolve_env(
                 Path::new("."),
                 env.as_deref(),
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
-            ),
+            )?,
             output,
             cli.verbose,
             password_file,
             evnx::core::config::pick(keep, cfg.backup.keep, 3),
             verify,
-        ) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                if let Some(be) = e.downcast_ref::<commands::backup::BackupError>() {
-                    if !be.is_silent() {
-                        eprintln!("{} {}", "Error:".on_red().bold(), be);
-                    }
-                    std::process::exit(be.exit_code());
-                }
-                Err(e)
-            }
-        },
+        )
+        .map(clean),
 
         #[cfg(feature = "backup")]
         Commands::Restore {
@@ -968,72 +992,45 @@ fn main() -> Result<()> {
             dry_run,
             inspect,
             password_file,
-        } => {
-            match commands::restore::run(
-                backup,
-                commands::restore::Options {
-                    output,
-                    verbose: cli.verbose,
-                    dry_run,
-                    inspect,
-                    password_file,
-                    yes,
-                    gitignore: evnx::utils::protect::GitignoreMode::from_flags(
-                        gitignore,
-                        no_gitignore,
-                    ),
-                },
-            ) {
-                Ok(()) => Ok(()),
-                Err(e) => {
-                    if let Some(re) = e.downcast_ref::<commands::restore::RestoreError>() {
-                        // Cancelled and ValidationFallback are silent — they
-                        // already printed a complete inline explanation.
-                        if !re.is_silent() {
-                            eprintln!("{} {}", "Error:".on_red().bold(), re);
-                        }
-                        std::process::exit(re.exit_code());
-                    }
-                    // Generic anyhow error — propagate for default formatting.
-                    Err(e)
-                }
-            }
-        }
+        } => commands::restore::run(
+            backup,
+            commands::restore::Options {
+                output,
+                verbose: cli.verbose,
+                dry_run,
+                inspect,
+                password_file,
+                yes,
+                gitignore: evnx::utils::protect::GitignoreMode::from_flags(gitignore, no_gitignore),
+            },
+        )
+        .map(clean),
 
         #[cfg(feature = "cloud")]
         Commands::Auth { command, server } => {
-            evnx::cloud::run_auth(command, server.as_deref(), cli.verbose)
+            evnx::cloud::run_auth(command, server.as_deref(), cli.verbose).map(clean)
         }
 
         #[cfg(feature = "cloud")]
         Commands::Vault { command, server } => {
-            evnx::cloud::run_vault(command, server.as_deref(), cli.verbose)
+            evnx::cloud::run_vault(command, server.as_deref(), cli.verbose).map(clean)
         }
 
         #[cfg(feature = "cloud")]
         Commands::Org { command, server } => {
-            evnx::cloud::run_org(command, server.as_deref(), cli.verbose)
+            evnx::cloud::run_org(command, server.as_deref(), cli.verbose).map(clean)
         }
 
         #[cfg(feature = "cloud")]
+        // `pull` declined: already said, and 4 as in `restore` (D6): `classify`.
         Commands::Cloud { command, server } => {
-            match evnx::cloud::run(command, server.as_deref(), cli.verbose) {
-                // `pull` declined: already said, and 4 as in `restore` (D6).
-                Err(e) => declined(e),
-                r => r,
-            }
+            evnx::cloud::run(command, server.as_deref(), cli.verbose)
         }
 
+        // `diff` found differences: 1, as `cloud diff --local` and `diff`.
+        // `pull` and `push` declined: 4, as in `cloud pull` (D6).
         #[cfg(feature = "net")]
-        Commands::Platform { command } => match evnx::platform::run(command) {
-            // `diff` found differences: 1, as `cloud diff --local` and `diff`.
-            Ok(v) => {
-                verdict::finish(v);
-                Ok(())
-            }
-            // `pull` and `push` declined: already said, and 4 as in `cloud pull` (D6).
-            Err(e) => declined(e),
-        },
+        Commands::Platform { command } => evnx::platform::run(command),
 
         Commands::Doctor {
             path,
@@ -1089,7 +1086,7 @@ fn main() -> Result<()> {
                             evnx::core::resolve::Need::Existing,
                             cli.quiet,
                             cli.verbose,
-                        );
+                        )?;
                         commands::spec::Source::Project(commands::spec::Inputs {
                             env_named_by: flags.env.is_some().then_some("--env"),
                             env: files.env,
@@ -1107,7 +1104,7 @@ fn main() -> Result<()> {
                         })
                     }
                 };
-                commands::spec::run(source, stdout, merge, force, cli.verbose)
+                commands::spec::run(source, stdout, merge, force, cli.verbose).map(clean)
             }
             SpecAction::Check {
                 files: file_args,
@@ -1134,11 +1131,10 @@ fn main() -> Result<()> {
                     need,
                     cli.quiet || json,
                     cli.verbose,
-                );
+                )?;
                 let named = (flags.env.is_some() || flags.env_name.is_some())
                     && !(skip_without_env && !Path::new(&files.env).exists());
                 commands::spec::check(&cfg.vars, &files.template, &files.env, named, json)
-                    .map(verdict::finish)
             }
         },
 
@@ -1157,7 +1153,7 @@ fn main() -> Result<()> {
                 env.as_deref(),
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
-            );
+            )?;
             commands::run::run(
                 &env,
                 include.as_deref(),
@@ -1167,10 +1163,11 @@ fn main() -> Result<()> {
                 cli.verbose,
                 &command,
             )
+            .map(clean)
         }
 
         Commands::History { output } => {
-            commands::undo::history(output.resolved() == evnx::cli::args::Format::Json)
+            commands::undo::history(output.resolved() == evnx::cli::args::Format::Json).map(clean)
         }
 
         Commands::Undo {
@@ -1183,7 +1180,8 @@ fn main() -> Result<()> {
             yes: confirm.yes,
             dry_run: dry.dry_run,
             clear,
-        }),
+        })
+        .map(clean),
 
         Commands::Parse {
             env,
@@ -1197,7 +1195,7 @@ fn main() -> Result<()> {
                 env.as_deref(),
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
-            );
+            )?;
             commands::parse::run(
                 &env,
                 output.resolved() == evnx::cli::args::Format::Json,
@@ -1208,8 +1206,9 @@ fn main() -> Result<()> {
 
         Commands::Surface { output, compact } => {
             commands::surface::run(output.resolved() == evnx::cli::args::Format::Json, compact)
+                .map(clean)
         }
-        Commands::Completions { shell } => commands::completions::run(shell),
+        Commands::Completions { shell } => commands::completions::run(shell).map(clean),
         Commands::Update {
             check,
             list,
@@ -1218,47 +1217,21 @@ fn main() -> Result<()> {
             check,
             list,
             output.resolved() == evnx::cli::args::Format::Json,
-        )
-        .map(verdict::finish),
+        ),
     };
 
     // ⚠️ An error is exit **2**, not 1.
     //
-    // `scan`, `diff`, `doctor` and `sync --check` already document 2 as "could
-    // not run, so there is no verdict", and 1 as a real finding — *secrets
-    // found*, *differences*, *unhealthy*, *drifted*. Returning the command's
-    // `Result` from `main` gave Rust's default `Termination`, which numbers any
-    // error 1, so `evnx validate --env ./missing.env` reported **validation
+    // `scan`, `diff`, `doctor` and `sync --check` document 2 as "could not run,
+    // so there is no verdict", and 1 as a real finding — *secrets found*,
+    // *differences*, *unhealthy*, *drifted*. Returning the command's `Result`
+    // from `main` would give Rust's default `Termination`, which numbers any
+    // error 1, so `evnx validate --env ./missing.env` would report **validation
     // failed** for a file it never opened.
     //
-    // `diff` and `sync` were already wrapped individually and are unaffected;
-    // this catches `validate`, `convert` and `template`, and anything added
-    // later, by default rather than by remembering.
-    //
-    // Commands that exit on their own — `scan`, `doctor`, `backup`, `restore`
-    // and the findings path in `validate` — never reach here.
-    if let Err(e) = outcome {
-        // A cloud failure that has its own exit code (X3: 10–15) keeps the same
-        // text and "no verdict" line as any other error; only the code differs.
-        #[cfg(feature = "cloud")]
-        if let Some(code) = evnx::cloud::client::exit_code_of(&e) {
-            verdict::no_verdict_with_code(&e, Stage::DuringRun, code);
-        }
-        #[cfg(feature = "net")]
-        if let Some(code) = evnx::platform::exit_code_of(&e) {
-            verdict::no_verdict_with_code(&e, Stage::DuringRun, code);
-        }
-        verdict::no_verdict(&e, Stage::DuringRun);
-    }
-
-    Ok(())
-}
-
-/// A confirmation answered no: already said, so exit 4 with nothing more, as
-/// `restore` does (D6). `cloud pull`, `add` and `remove` (R1).
-fn declined(e: anyhow::Error) -> Result<()> {
-    if e.is::<evnx::utils::prompt::Declined>() {
-        std::process::exit(4);
-    }
-    Err(e)
+    // So the error is classified here (`core::error::classify`: a prompt
+    // answered no is 4, a cloud failure 10–15, a restore written aside 5, the
+    // rest 2), and `report`, in `main`, prints it and returns the code. No
+    // command exits on its own.
+    outcome.map_err(EvnxError::from)
 }

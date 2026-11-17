@@ -98,8 +98,9 @@ fn gen7_an_empty_start_reports_the_template_first_and_says_how_to_add() {
 fn init7_a_refusal_says_nothing_was_changed_not_no_verdict() {
     let p = Project::new().git();
     let out = run(p.path(), &["init"]);
-    out.assert_code(2);
-    out.assert_contains("evnx stopped before making changes (exit 2)");
+    // Exit 4 since 0.15.0 (WP-9, D3): the menu cannot be asked without a terminal.
+    out.assert_code(4);
+    out.assert_contains("evnx stopped before making changes (exit 4)");
     out.assert_not_contains("No verdict");
 }
 

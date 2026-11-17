@@ -165,12 +165,13 @@ fn t_i106_every_upload_succeeding_exits_0() {
     assert_eq!(code, 0, "{out}");
 }
 
+/// Exit 4 since 0.15.0 (WP-9, D3): a confirmation nobody could give. It was 2.
 #[test]
 fn t_i109_no_terminal_and_no_yes_stops_before_github() {
     let mut server = mockito::Server::new();
     let any = server.mock("GET", mockito::Matcher::Any).expect(0).create();
     let out = migrate_piped(&server, &[]);
-    out.assert_code(2);
+    out.assert_code(4);
     assert!(out.stderr.contains("--yes"), "{}", out.stderr);
     assert!(out.stderr.contains("No verdict"), "{}", out.stderr);
     any.assert();

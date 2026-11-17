@@ -28,7 +28,6 @@
 
 // Re-export the main entry point so callers use: doctor::run(...)
 pub use runner::run;
-pub use runner::{EXIT_ERROR, EXIT_HEALTHY, EXIT_PROBLEMS};
 // use crate::{docs, utils::ui};
 
 // Internal modules — not public API yet

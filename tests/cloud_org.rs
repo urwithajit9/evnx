@@ -105,7 +105,7 @@ fn t_i218_piped_yes_does_not_confirm_a_removal() {
         (&["org", "delete"][..], "evnx org delete --org acme --yes"),
     ] {
         let out = signed_in(&Project::new(), &s.url(), args, Some(b"y\n"));
-        out.assert_code(2);
+        out.assert_code(4);
         assert!(out.stderr.contains(example), "{args:?}:\n{}", out.stderr);
     }
     del.assert();

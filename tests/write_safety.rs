@@ -369,9 +369,9 @@ fn undo_swaps_the_file_and_its_copy() {
 fn undo_asks_shows_and_dry_runs() {
     let p = Project::new().git().env("A=1\nB=2\n");
     run(p.path(), &["remove", "B", "--yes"]).assert_code(0);
-    // No terminal and no --yes: refused, nothing changed.
+    // No terminal and no --yes: refused (exit 4, D3), nothing changed.
     let out = run(p.path(), &["undo", ".env"]);
-    out.assert_code(2);
+    out.assert_code(4);
     out.assert_contains("--yes");
     let out = run(p.path(), &["undo", ".env", "--dry-run"]);
     out.assert_code(0);
@@ -383,7 +383,7 @@ fn undo_asks_shows_and_dry_runs() {
 fn undo_clear_deletes_the_copies_and_history_forgets_them() {
     let p = Project::new().git().env("A=1\nB=2\n");
     run(p.path(), &["remove", "B", "--yes"]).assert_code(0);
-    run(p.path(), &["undo", "--clear"]).assert_code(2);
+    run(p.path(), &["undo", "--clear"]).assert_code(4);
     assert!(p.exists(".env.bak"));
     run(p.path(), &["undo", "--clear", "--yes"]).assert_code(0);
     assert!(!p.exists(".env.bak"));

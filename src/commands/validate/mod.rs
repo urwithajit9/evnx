@@ -18,6 +18,7 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use serde_json;
 
+use crate::core::verdict::Verdict;
 use crate::core::{Parser, ParserConfig};
 use crate::docs;
 use crate::utils::string::pluralize;
@@ -655,7 +656,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
 /// Run the validate command.
 ///
 /// This function is called from `main.rs` after CLI args are parsed.
-pub fn run(opts: Options) -> Result<()> {
+pub fn run(opts: Options) -> Result<Verdict> {
     let format = opts.format;
 
     // ⚠️ I-038: a typo in `--ignore placeholder_vlaue` used to suppress
@@ -857,14 +858,14 @@ pub fn run(opts: Options) -> Result<()> {
         eprintln!("Validation failed: {}", failure_counts(&result, fail_on));
     }
 
-    // ✅ Always print — eprintln never pollutes stdout, always before process::exit
+    // ✅ Always print — eprintln never pollutes stdout, always before the verdict
     ui::print_docs_hint(&docs::VALIDATE);
 
-    if !opts.exit_zero && fails {
-        std::process::exit(1);
-    }
-
-    Ok(())
+    Ok(if !opts.exit_zero && fails {
+        Verdict::Findings
+    } else {
+        Verdict::Clean
+    })
 }
 
 // ─────────────────────────────────────────────────────────────

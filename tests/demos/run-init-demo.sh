@@ -49,9 +49,9 @@ S9() { scene S9; run "$EVNX" init --yes --dir packages/api; expect 0 "path creat
 S10() { scene S10; echo "SECRET=real-value" > .env; run "$EVNX" init --with vite --yes; expect 0 "init with existing .env"; run cat .env
   check ".env unchanged (never overwritten)" grep -qx 'SECRET=real-value' .env; }
 S11() { echo; echo "================ S11 (interactive) ================"; echo "Not scripted. Run by hand: $EVNX init   then follow the runbook keys (Blank is pre-selected). Or use drive-pty.py."; }
-S12() { scene S12; run bash -c "echo '1' | '$EVNX' init"; expect 2 "no terminal and no flags: stops"
+S12() { scene S12; run bash -c "echo '1' | '$EVNX' init"; expect 4 "no terminal and no flags: stops (D3)"
   check "the hint names the flags" bash -c "echo 1 | '$EVNX' init 2>&1 | grep -q -- '--blueprint <id>'"
-  run bash -c "'$EVNX' init --with stripe </dev/null"; expect 2 "--with without --yes and no terminal"
+  run bash -c "'$EVNX' init --with stripe </dev/null"; expect 4 "--with without --yes and no terminal (D3)"
   check "...says to add --yes" bash -c "'$EVNX' init --with stripe </dev/null 2>&1 | grep -q 'evnx init --with stripe --yes'"; }
 S13() { scene S13; run "$EVNX" -q init --yes; expect 0 "quiet init"
   check "-q prints nothing" bash -c "rm -f .env* .gitignore; [ -z \"\$('$EVNX' -q init --yes 2>&1)\" ]"; }

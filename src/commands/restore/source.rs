@@ -68,7 +68,7 @@ mod tests {
         let missing = std::env::temp_dir().join("does-not-exist-evnx-test-source-xq39.backup");
         let e = error_of(missing.to_str().unwrap());
         assert!(matches!(e, RestoreError::FileNotFound(_)), "{e}");
-        assert_eq!(e.exit_code(), 3);
+        assert_eq!(e.exit_code(), 2);
     }
 
     /// ⛔ **This asserts the DIRECTORY arm**, which needs a path that exists and
@@ -92,13 +92,13 @@ mod tests {
         assert!(e.to_string().contains("not a regular file"), "{e}");
     }
 
-    /// DEC-B4: a `cloud://` argument is a missing file, exit 3, and the
+    /// DEC-B4: a `cloud://` argument is a missing file, exit 2, and the
     /// message names the commands that restore from a vault.
     #[test]
     fn t_dec_b4_a_cloud_reference_is_a_missing_file_with_a_hint() {
         let e = error_of("cloud://myproject/backup-abc123");
         assert!(matches!(e, RestoreError::CloudReference(_)), "{e}");
-        assert_eq!(e.exit_code(), 3);
+        assert_eq!(e.exit_code(), 2);
         let msg = e.to_string();
         assert!(msg.contains("cloud://myproject/backup-abc123"), "{msg}");
         assert!(msg.contains("evnx cloud pull"), "{msg}");

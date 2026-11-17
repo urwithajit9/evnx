@@ -41,8 +41,8 @@ $ evnx backup --password-file pw --output nodir/x.bak
   evnx backup  Encrypt and back up your .env file
 
 Error: Failed to write backup file: the directory nodir does not exist
-[exit 5]
-  ok: I-152 fixed (U2): a missing directory is named plainly (exit 5)
+[exit 2]
+  ok: I-152 fixed (U2): a missing directory is named plainly (exit 2)
 
 $ evnx backup --password-file pw --output lnk.bak
 ✓ Read 258 bytes from .env

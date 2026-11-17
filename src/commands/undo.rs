@@ -142,7 +142,7 @@ pub fn run(opts: Options) -> Result<()> {
     }
     if !opts.yes {
         if !crate::utils::term::can_prompt() {
-            return Err(verdict::stopped(format!(
+            return Err(verdict::stopped_needs_yes(format!(
                 "undo replaces {} and needs a yes.\n  evnx undo {} --yes",
                 file.display(),
                 file.display()
@@ -230,7 +230,7 @@ fn clear(root: &Path, opts: &Options) -> Result<()> {
     }
     if !opts.yes {
         if !crate::utils::term::can_prompt() {
-            return Err(verdict::stopped(
+            return Err(verdict::stopped_needs_yes(
                 "deleting the copies needs a yes.\n  evnx undo --clear --yes".to_string(),
             ));
         }

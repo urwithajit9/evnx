@@ -65,11 +65,7 @@
 //! | Code | Meaning |
 //! |------|---------|
 //! | 0 | Success |
-//! | 2 | Could not run: source not found or not a file, key file or passphrase, an output that is the source or a directory, no terminal to ask on — with the "No verdict" line |
-//! | 3 | Password confirmation did not match |
-//! | 4 | Encryption failed |
-//! | 5 | Failed to write backup file |
-//! | 6 | Post-write integrity check failed |
+//! | 2 | Could not run: source not found or not a file, key file or passphrase, a confirmation that did not match, encryption, writing the file, the integrity check after it, an output that is the source or a directory, no terminal to ask on. The message says which (until 0.15.0 these were 3 to 6) |
 //!
 //! Exit 1 is never produced (DEC-B9): it means "findings" for the commands
 //! that have them, and a backup has none.
@@ -94,7 +90,8 @@
 //!   integrity can be checked without a full decryption round-trip.
 
 pub mod core;
-pub mod error;
+// Defined in `core` so that `core::error::EvnxError` can name it.
+pub use crate::core::backup_error as error;
 
 pub use error::BackupError;
 

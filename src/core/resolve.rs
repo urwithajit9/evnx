@@ -285,10 +285,16 @@ pub fn confirm_new_env_name(
         crate::utils::ui::warning(question);
         return Ok(());
     }
-    if json || !crate::utils::term::can_prompt() {
-        anyhow::bail!(
-            "{question}\n  To create {file} anyway, add --yes; for '{meant}', use --env-name {meant}."
-        );
+    let refusal = format!(
+        "{question}\n  To create {file} anyway, add --yes; for '{meant}', use --env-name {meant}."
+    );
+    if json {
+        // `--json` never asks, whatever the terminal: a usage error.
+        anyhow::bail!(refusal);
+    }
+    if !crate::utils::term::can_prompt() {
+        // The question needs asking and nobody can answer it (D3).
+        return Err(crate::core::verdict::needs_yes(refusal));
     }
     let create = crate::utils::prompt::yes_no()
         .with_prompt(format!("{question} Create {file} anyway?"))

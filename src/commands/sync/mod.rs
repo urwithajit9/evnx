@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 use crate::cli::{NamingPolicy, SyncDirection};
-use crate::core::verdict::{self, Verdict};
+use crate::core::verdict::Verdict;
 use crate::utils::ui;
 
 mod executor;
@@ -19,13 +19,6 @@ mod security;
 // re-exported so `evnx::commands::sync::PlaceholderConfig` keeps working.
 pub use crate::core::placeholder::PlaceholderConfig;
 pub use models::{SyncAction, SyncPreview, VarChange};
-
-/// In sync — nothing to do.
-pub const EXIT_IN_SYNC: i32 = verdict::EXIT_OK;
-/// `--check` only: the files are out of step.
-pub const EXIT_OUT_OF_SYNC: i32 = verdict::EXIT_FINDINGS;
-/// `--check` only: the command could not reach a verdict.
-pub const EXIT_ERROR: i32 = verdict::EXIT_ERROR;
 
 /// Public entry point called from main.rs.
 ///

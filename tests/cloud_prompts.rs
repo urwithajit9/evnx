@@ -93,7 +93,7 @@ fn t_i218_every_cloud_confirmation_names_yes_without_a_terminal() {
             .collect();
         let password = s.mock("GET", "/api/v1/auth/me").expect(0).create();
         let out = signed_in(&Project::new(), &s.url(), args, None);
-        out.assert_code(2);
+        out.assert_code(4);
         assert!(
             !out.stderr.contains("not a terminal: not a terminal"),
             "{args:?}:\n{}",

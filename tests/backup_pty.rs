@@ -33,13 +33,13 @@ fn t_br06_a_short_typed_passphrase_is_refused() {
 }
 
 #[test]
-fn t_br06_a_mismatched_confirmation_is_exit_3() {
+fn t_br06_a_mismatched_confirmation_is_exit_2() {
     let p = Project::new().env(ENV);
     let mut run = Pty::spawn(p.path(), &["backup"]);
     type_secret(&mut run, "Enter encryption password", "long-enough-1");
     type_secret(&mut run, "Confirm password", "long-enough-2");
     let (rest, code) = run.finish();
-    assert_eq!(code, 3, "{rest}");
+    assert_eq!(code, 2, "{rest}");
     assert!(!p.exists(".env.backup"));
 }
 

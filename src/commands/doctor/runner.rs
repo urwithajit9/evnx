@@ -32,7 +32,8 @@ use std::path::{Path, PathBuf};
 // Import existing UI utilities from project
 use super::types::*;
 use crate::core::env_name::{self, FileKind};
-use crate::core::{gitignore, permissions, verdict};
+use crate::core::verdict::{self, Verdict};
+use crate::core::{gitignore, permissions};
 use crate::docs;
 use crate::utils::string::pluralize;
 use crate::utils::ui;
@@ -79,17 +80,17 @@ pub fn run(
     strict: bool,
     json: Option<bool>,
     skip_without_env: bool,
-) -> Result<()> {
+) -> Result<Verdict> {
     let project_root = PathBuf::from(&path);
 
     // ⚠️ Checked before anything else. Diagnosing a directory that is not there
     // would otherwise report "no .env file" — a finding about the project rather
     // than about the path, which is the shape of fail-open `scan` just had fixed.
     if !project_root.is_dir() {
-        no_verdict(format!(
+        return Err(no_verdict(format!(
             "{} is not a directory evnx can read",
             project_root.display()
-        ));
+        )));
     }
 
     // ⚠️ Precedence, not "either wins" — unlike `fix` below. A format is a
@@ -117,7 +118,7 @@ pub fn run(
     // as it is for every command.
     let config = match crate::core::config::load(&project_root) {
         Ok(loaded) => loaded.config,
-        Err(e) => no_verdict(format!("{e:#}")),
+        Err(e) => return Err(no_verdict(format!("{e:#}"))),
     };
     // The template by the one rule (WP-5): `[defaults] env_name`'s own
     // (`.env.prod.example`) when there is one.
@@ -138,18 +139,18 @@ pub fn run(
     if env_files(&project_root).is_empty() {
         if skip_without_env {
             verdict::skipped(&format!("no env file in {}", project_root.display()));
-            return Ok(());
+            return Ok(Verdict::Clean);
         }
         if !template.exists(&project_root)
             && templates_in(&project_root).is_empty()
             && crate::core::resolve::environment_templates(&project_root).is_empty()
             && !is_a_project(&project_root)
         {
-            no_verdict(format!(
+            return Err(no_verdict(format!(
                 "{} has no env file, no .env.example and no project files: nothing to \
                  diagnose here",
                 project_root.display()
-            ));
+            )));
         }
     }
 
@@ -163,25 +164,21 @@ pub fn run(
         run_text(&project_root, &template, verbose, auto_fix, strict, notice)
     };
 
-    // ✅ Always print — eprintln never pollutes stdout
-    ui::print_docs_hint(&docs::DOCTOR);
+    // ✅ Always print — eprintln never pollutes stdout. After a clean run only,
+    // as before: a run that ended in problems or an error used to exit first.
+    if matches!(result, Ok(Verdict::Clean)) {
+        ui::print_docs_hint(&docs::DOCTOR);
+    }
 
     result
 }
 
-/// Healthy — no errors, and no warnings under `--strict`.
-pub const EXIT_HEALTHY: i32 = verdict::EXIT_OK;
-/// Problems found.
-pub const EXIT_PROBLEMS: i32 = verdict::EXIT_FINDINGS;
-/// Doctor could not run, so there is no verdict.
-pub const EXIT_ERROR: i32 = verdict::EXIT_ERROR;
-
-/// Say why doctor examined nothing, on stderr, and exit 2.
-fn no_verdict(message: String) -> ! {
-    eprintln!("{} {message}", "Error:".on_red().bold());
-    eprintln!();
-    eprintln!("No verdict: doctor examined nothing. This is not a clean result.");
-    std::process::exit(EXIT_ERROR);
+/// Doctor examined nothing: an error (exit 2) whose report says so.
+fn no_verdict(message: String) -> anyhow::Error {
+    verdict::footed(
+        Some(message),
+        "No verdict: doctor examined nothing. This is not a clean result.",
+    )
 }
 
 /// Drop a detail line's marker when it only repeats the check's own severity.
@@ -241,22 +238,24 @@ fn build_report(
     report
 }
 
-/// Exit with the report's verdict: 2 when a check could not run (DEC-D9),
-/// 1 on problems, otherwise return.
-fn finish(report: &DiagnosticReport, strict: bool) -> Result<()> {
+/// The report's verdict: an error (2) when a check could not run (DEC-D9),
+/// `Findings` on problems, otherwise `Clean`.
+fn finish(report: &DiagnosticReport, strict: bool) -> Result<Verdict> {
     let not_run = report.checks.iter().filter(|c| !c.ran).count();
     if not_run > 0 {
-        eprintln!();
-        eprintln!(
-            "No complete verdict: {} could not run. This is not a clean result.",
-            pluralize(not_run, "check", "checks")
-        );
-        std::process::exit(EXIT_ERROR);
+        return Err(verdict::footed(
+            None,
+            format!(
+                "No complete verdict: {} could not run. This is not a clean result.",
+                pluralize(not_run, "check", "checks")
+            ),
+        ));
     }
-    if is_failure(&report.summary, strict) {
-        std::process::exit(EXIT_PROBLEMS);
-    }
-    Ok(())
+    Ok(if is_failure(&report.summary, strict) {
+        Verdict::Findings
+    } else {
+        Verdict::Clean
+    })
 }
 
 /// DEC-D12. On stderr, so `--format json` keeps stdout as JSON; hidden by `-q`.
@@ -280,7 +279,7 @@ fn run_text(
     auto_fix: bool,
     strict: bool,
     notice: bool,
-) -> Result<()> {
+) -> Result<Verdict> {
     // Use existing UI header function (requires subtitle param)
     ui::print_header("evnx doctor", Some("Diagnosing environment setup"));
     if notice {
@@ -308,7 +307,7 @@ fn run_text(
     if quiet {
         // No errors and no warnings cannot be a failure, even under `--strict`.
         if report.summary.errors == 0 && report.summary.warnings == 0 {
-            return Ok(());
+            return Ok(Verdict::Clean);
         }
         println!();
         for result in &report.checks {
@@ -342,7 +341,7 @@ fn run_json(
     auto_fix: bool,
     strict: bool,
     notice: bool,
-) -> Result<()> {
+) -> Result<Verdict> {
     if notice {
         auto_fix_notice();
     }

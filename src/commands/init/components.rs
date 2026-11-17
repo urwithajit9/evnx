@@ -230,7 +230,7 @@ pub fn handle_detected(
     // Detection is a *proposal*, so accepting it without a human is opting in,
     // and there has to be a way to say so.
     if !opts.yes && !super::shared::can_ask() {
-        return Err(crate::core::verdict::stopped(format!(
+        return Err(crate::core::verdict::stopped_needs_yes(format!(
             "detected {} components but {}.\n\n\
              Accept them:   evnx init --detect\n\
              Name them:     evnx init --with <a,b,c>\n\
@@ -442,7 +442,7 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
     }
 
     if !opts.yes && !super::shared::can_ask() {
-        return Err(crate::core::verdict::stopped(format!(
+        return Err(crate::core::verdict::stopped_needs_yes(format!(
             "found {} variables the code reads that {name} does not declare, \
              but {}.\n\n\
              Accept them:  evnx init --from-source --yes",

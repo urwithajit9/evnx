@@ -8,12 +8,18 @@
 //! | Code | Variant | Meaning |
 //! |------|---------|---------|
 //! | 0 | — | Success |
-//! | 1 | (generic anyhow) | IO, encoding, unexpected failure |
-//! | 2 | [`FileNotFound`] / [`NotAFile`] | Source `.env` not found or not a regular file |
-//! | 3 | [`PasswordMismatch`] | Confirmation prompt did not match |
-//! | 4 | [`EncryptionFailed`] | Crypto failure |
-//! | 5 | [`WriteFailed`] | Could not write backup to disk |
-//! | 6 | [`VerifyFailed`] | Post-write integrity check failed |
+//! | 2 | every variant below, and any other failure | could not run (WP-9, D2) |
+//!
+//! Until 0.15.0 the variants had codes 2-6 of their own. They are all 2 now, so
+//! "could not run" is one code in every command; the message still says which.
+//!
+//! | Variant | Meaning |
+//! |---------|---------|
+//! | [`FileNotFound`] / [`NotAFile`] | Source `.env` not found or not a regular file |
+//! | [`PasswordMismatch`] | Confirmation prompt did not match |
+//! | [`EncryptionFailed`] | Crypto failure |
+//! | [`WriteFailed`] | Could not write backup to disk |
+//! | [`VerifyFailed`] | Post-write integrity check failed |
 //!
 //! [`FileNotFound`]: BackupError::FileNotFound
 //! [`NotAFile`]: BackupError::NotAFile
@@ -43,19 +49,19 @@ pub enum BackupError {
     /// Exit code 2.
     NotAFile(String),
 
-    /// The password and its confirmation prompt did not match. Exit code 3.
+    /// The password and its confirmation prompt did not match. Exit code 2.
     PasswordMismatch,
 
-    /// AES-256-GCM encryption or Argon2id key derivation failed. Exit code 4.
+    /// AES-256-GCM encryption or Argon2id key derivation failed. Exit code 2.
     EncryptionFailed(String),
 
-    /// The encrypted backup could not be written to disk. Exit code 5.
+    /// The encrypted backup could not be written to disk. Exit code 2.
     WriteFailed(String),
 
     /// Post-write integrity check failed: the backup file could not be
     /// re-decrypted, or the recovered content did not match the original.
     ///
-    /// The backup file is left on disk so the user can inspect it. Exit code 6.
+    /// The backup file is left on disk so the user can inspect it. Exit code 2.
     VerifyFailed(String),
 }
 
@@ -63,11 +69,12 @@ impl BackupError {
     /// The process exit code that `main.rs` should use for this error.
     pub fn exit_code(&self) -> i32 {
         match self {
-            Self::FileNotFound(_) | Self::NotAFile(_) => 2,
-            Self::PasswordMismatch => 3,
-            Self::EncryptionFailed(_) => 4,
-            Self::WriteFailed(_) => 5,
-            Self::VerifyFailed(_) => 6,
+            Self::FileNotFound(_)
+            | Self::NotAFile(_)
+            | Self::PasswordMismatch
+            | Self::EncryptionFailed(_)
+            | Self::WriteFailed(_)
+            | Self::VerifyFailed(_) => 2,
         }
     }
 
@@ -77,7 +84,7 @@ impl BackupError {
     /// the user. Mirrors the [`RestoreError::is_silent`] contract so that
     /// `main.rs` can use the same dispatch pattern for both subcommands.
     ///
-    /// [`RestoreError::is_silent`]: crate::commands::restore::error::RestoreError::is_silent
+    /// [`RestoreError::is_silent`]: crate::core::restore_error::RestoreError::is_silent
     pub fn is_silent(&self) -> bool {
         false
     }
@@ -112,10 +119,10 @@ mod tests {
     fn backup_error_exit_codes_are_stable() {
         assert_eq!(BackupError::FileNotFound("/path".into()).exit_code(), 2);
         assert_eq!(BackupError::NotAFile("/path".into()).exit_code(), 2);
-        assert_eq!(BackupError::PasswordMismatch.exit_code(), 3);
-        assert_eq!(BackupError::EncryptionFailed("x".into()).exit_code(), 4);
-        assert_eq!(BackupError::WriteFailed("x".into()).exit_code(), 5);
-        assert_eq!(BackupError::VerifyFailed("x".into()).exit_code(), 6);
+        assert_eq!(BackupError::PasswordMismatch.exit_code(), 2);
+        assert_eq!(BackupError::EncryptionFailed("x".into()).exit_code(), 2);
+        assert_eq!(BackupError::WriteFailed("x".into()).exit_code(), 2);
+        assert_eq!(BackupError::VerifyFailed("x".into()).exit_code(), 2);
     }
 
     // ── is_silent is always false ─────────────────────────────────────────────
@@ -177,16 +184,5 @@ mod tests {
     fn backup_error_is_std_error() {
         let e: &dyn std::error::Error = &BackupError::PasswordMismatch;
         assert!(!e.to_string().is_empty());
-    }
-
-    // ── VerifyFailed exit code is distinct from all others ────────────────────
-
-    #[test]
-    fn verify_failed_exit_code_is_6() {
-        // Ensures no accidental collision if new variants are added between
-        // WriteFailed (5) and VerifyFailed (6).
-        let code = BackupError::VerifyFailed("sha mismatch".into()).exit_code();
-        assert_eq!(code, 6);
-        assert_ne!(code, BackupError::WriteFailed("x".into()).exit_code());
     }
 }

@@ -42,12 +42,12 @@ fn mode(p: &Project, name: &str) -> u32 {
 
 /// I-148: with no terminal the only answer was dialoguer's "IO error: not a
 /// terminal: not a terminal". Now one line names `--yes` and `--output`, and
-/// the file is left alone.
+/// the file is left alone. Exit 4 (D3): a confirmation nobody could give.
 #[test]
 fn t_i148_an_existing_output_without_a_terminal_names_yes_and_output() {
     let p = backed_up().env(OLD);
     restore(&p, &[])
-        .assert_code(2)
+        .assert_code(4)
         .assert_contains("--yes")
         .assert_contains("--output")
         .assert_not_contains("IO error");
@@ -297,7 +297,8 @@ fn t_i154_the_fallback_has_no_success_tick() {
 // ── DEC-B4: no cloud:// in restore ───────────────────────────────────────────
 
 /// `cloud://` was parsed and then refused with exit 6 "not yet available".
-/// It is now an ordinary missing file, exit 3, with the command that does it.
+/// It is now an ordinary missing file, exit 2 (3 before WP-9), with the command
+/// that does it.
 #[test]
 fn t_dec_b4_a_cloud_reference_is_not_found_and_points_at_cloud_pull() {
     let p = backed_up();
@@ -305,7 +306,7 @@ fn t_dec_b4_a_cloud_reference_is_not_found_and_points_at_cloud_pull() {
         p.path(),
         &["restore", "cloud://myproject", "--password-file", "pw"],
     )
-    .assert_code(3)
+    .assert_code(2)
     .assert_contains("cloud://myproject")
     .assert_contains("evnx cloud pull")
     .assert_not_contains("not yet available");
@@ -378,14 +379,14 @@ fn t_br_gitignore_restored_output_is_protected() {
 // ── Exit codes and help (T-BR-24, T-BR-43, T-BR-45, D-108) ──────────────────
 
 #[test]
-fn t_br24_missing_and_directory_backups_exit_3() {
+fn t_br24_missing_and_directory_backups_exit_2() {
     let p = backed_up().dir("adir");
     run(
         p.path(),
         &["restore", "nope.backup", "--password-file", "pw"],
     )
-    .assert_code(3);
-    run(p.path(), &["restore", "adir", "--password-file", "pw"]).assert_code(3);
+    .assert_code(2);
+    run(p.path(), &["restore", "adir", "--password-file", "pw"]).assert_code(2);
 }
 
 /// D-108, D-109: every argument has a description, and the overwrite rule and

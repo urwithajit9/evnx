@@ -18,8 +18,8 @@ $ evnx restore nope.backup --password-file pw
   evnx restore  Decrypt and restore from an encrypted backup
 
 Error: Backup file not found: nope.backup
-[exit 3]
-  ok: backup not found (exit 3)
+[exit 2]
+  ok: backup not found (exit 2)
 
 $ evnx restore adir --password-file pw
 [stderr]
@@ -27,8 +27,8 @@ $ evnx restore adir --password-file pw
   evnx restore  Decrypt and restore from an encrypted backup
 
 Error: Backup file not found: adir (not a regular file)
-[exit 3]
-  ok: directory: not a regular file (exit 3)
+[exit 2]
+  ok: directory: not a regular file (exit 2)
 
 $ evnx restore trunc.bak --password-file pw --inspect
 ✓ Read backup from trunc.bak

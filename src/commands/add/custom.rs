@@ -22,7 +22,7 @@ use std::path::Path;
 
 use super::shared::{aborted, confirm_and_apply, Flow, Mode, Outcome};
 use crate::schema::models::{VarCollection, VarMetadata, VarSource};
-use crate::utils::prompt::{require_terminal, require_terminal_or, yes_no};
+use crate::utils::prompt::{require_terminal, yes_no};
 use crate::utils::string::count;
 use crate::utils::ui::{info, print_header, print_preview_header};
 
@@ -75,7 +75,7 @@ pub fn handle(output_path: &Path, args: Args, mode: &Mode) -> Result<Outcome> {
     let customs = if args.vars.is_empty() {
         // With no arguments every variable is typed at a prompt: `--yes`
         // cannot stand in for a terminal here (I-020).
-        require_terminal_or(
+        crate::utils::prompt::require_terminal_for_input(
             "Give the variables as arguments instead:\n  \
              evnx add custom NAME=value OTHER_NAME=value --yes",
         )?;

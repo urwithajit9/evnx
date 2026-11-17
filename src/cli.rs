@@ -764,7 +764,7 @@ impl PlatformDiffArgs {
 /// Arguments of `evnx platform pull`.
 #[cfg(feature = "net")]
 #[derive(Args, Debug, Clone)]
-#[command(mut_arg("yes", |a| a.help("Change the file without asking").long_help("Change the file without asking.\n\nThe replaced file is kept beside it as a .bak copy. Without it, and without a terminal, the pull stops (exit 2). Declining the question exits 4.")))]
+#[command(mut_arg("yes", |a| a.help("Change the file without asking").long_help("Change the file without asking.\n\nThe replaced file is kept beside it as a .bak copy. Without it, and without a terminal, the pull stops (exit 4). Declining the question exits 4.")))]
 #[command(mut_arg("dry_run", |a| a.help("Show what would change and write nothing (the file or the state)")))]
 pub struct PlatformPullArgs {
     #[command(flatten)]
@@ -788,7 +788,7 @@ pub struct PlatformPullArgs {
 /// Arguments of `evnx platform push`.
 #[cfg(feature = "net")]
 #[derive(Args, Debug, Clone)]
-#[command(mut_arg("yes", |a| a.help("Send the changes without asking").long_help("Send the changes without asking.\n\nWithout it, and without a terminal, the push stops (exit 2). Declining the question exits 4.")))]
+#[command(mut_arg("yes", |a| a.help("Send the changes without asking").long_help("Send the changes without asking.\n\nWithout it, and without a terminal, the push stops (exit 4). Declining the question exits 4.")))]
 #[command(mut_arg("dry_run", |a| a.help("Show the plan and send nothing: no request carries a value")))]
 pub struct PlatformPushArgs {
     #[command(flatten)]
@@ -1762,7 +1762,7 @@ pub enum CloudCommands {
         /// Overwrite the target without asking.
         ///
         /// The replaced file is kept beside it as a .bak copy. Without it, and
-        /// without a terminal, a different existing file stops the run (exit 2).
+        /// without a terminal, a different existing file stops the run (exit 4).
         /// Declining the question exits 4, as `restore` does (RM-34, D5, D6).
         #[arg(long = "yes", short = 'y')]
         force: bool,
@@ -3148,7 +3148,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     #[command(mut_arg("env", |a| a.help("The .env file to read (default: .env, or `[defaults] env_name`)")))]
     #[command(mut_arg("env_name", |a| a.help("Read `.env.<NAME>` instead of `.env`.").long_help("Read `.env.<NAME>` instead of `.env`.\n\n`--env-name production` reads `.env.production`. A name whose file does not exist is an error listing the environments that do. Without it, `[defaults] env_name` in `.evnx.toml` applies, as for the other commands.")))]
     #[command(mut_arg("dry_run", |a| a.help("Preview what would be migrated without making any changes")))]
-    #[command(mut_arg("yes", |a| a.help("Upload without asking \"Proceed with migration?\" (github).").long_help("Upload without asking \"Proceed with migration?\" (github).\n\nFor CI. Without a terminal and without `--yes` the upload stops before contacting GitHub (exit 2). ⚠️ It does not answer \"overwrite?\": a secret that already exists still needs `--overwrite` or `--skip-existing`.")))]
+    #[command(mut_arg("yes", |a| a.help("Upload without asking \"Proceed with migration?\" (github).").long_help("Upload without asking \"Proceed with migration?\" (github).\n\nFor CI. Without a terminal and without `--yes` the upload stops before contacting GitHub (exit 4). ⚠️ It does not answer \"overwrite?\": a secret that already exists still needs `--overwrite` or `--skip-existing`.")))]
     Migrate(Box<MigrateOptions>),
 
     /// Keep .env and .env.example in sync.
@@ -3328,7 +3328,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// For scripts and CI, where there is no terminal to ask on. The file
         /// it replaces is kept beside it as <output>.bak (replacing the previous
         /// copy). Without it, and without a terminal, an existing output
-        /// stops the run (exit 2).
+        /// stops the run (exit 4).
         #[arg(long, short = 'y')]
         yes: bool,
 

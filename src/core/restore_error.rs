@@ -10,8 +10,8 @@
 //! |------|-------------------------|------------------------------------------------|
 //! | 2    | `WrongPassword`         | Decryption failed — wrong password or tampered |
 //! | 2    | `Unreadable`            | Not a backup, truncated, or a newer format (I-149) |
-//! | 3    | `FileNotFound`          | Backup file does not exist at the given path   |
-//! | 3    | `CloudReference`        | A `cloud://…` argument: not a file (DEC-B4)    |
+//! | 2    | `FileNotFound`          | Backup file does not exist at the given path   |
+//! | 2    | `CloudReference`        | A `cloud://…` argument: not a file (DEC-B4)    |
 //! | 4    | `Cancelled`             | User declined the overwrite prompt             |
 //! | 5    | `ValidationFallback`    | Restored, but to `.restored` path (bad content)|
 //!
@@ -110,7 +110,7 @@ impl RestoreError {
     pub fn exit_code(&self) -> i32 {
         match self {
             Self::WrongPassword | Self::Unreadable(_) => 2,
-            Self::FileNotFound(_) | Self::CloudReference(_) => 3,
+            Self::FileNotFound(_) | Self::CloudReference(_) => 2,
             Self::Cancelled => 4,
             Self::ValidationFallback { .. } => 5,
         }
@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn exit_codes_are_stable() {
         assert_eq!(RestoreError::WrongPassword.exit_code(), 2);
-        assert_eq!(RestoreError::FileNotFound("f".into()).exit_code(), 3);
+        assert_eq!(RestoreError::FileNotFound("f".into()).exit_code(), 2);
         assert_eq!(RestoreError::Cancelled.exit_code(), 4);
         assert_eq!(
             RestoreError::ValidationFallback {
@@ -182,7 +182,7 @@ mod tests {
         assert_eq!(RestoreError::Unreadable("x".into()).exit_code(), 2);
         assert_eq!(
             RestoreError::CloudReference("cloud://p".into()).exit_code(),
-            3
+            2
         );
     }
 
@@ -239,6 +239,6 @@ mod tests {
             .downcast_ref::<RestoreError>()
             .map(|e| e.exit_code())
             .unwrap_or(1);
-        assert_eq!(code, 3);
+        assert_eq!(code, 2);
     }
 }

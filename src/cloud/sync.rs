@@ -1561,7 +1561,7 @@ pub fn diff_local(
     env_name: Option<String>,
     version: Option<i32>,
     password_stdin: bool,
-) -> Result<()> {
+) -> Result<crate::core::verdict::Verdict> {
     let (vault_target, bound_file) = resolve_target_and_file(vault_target)?;
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
@@ -1612,7 +1612,7 @@ pub fn diff_local(
             "✓".green(),
             file.display()
         );
-        return Ok(());
+        return Ok(crate::core::verdict::Verdict::Clean);
     }
 
     let parse = |bytes: &[u8]| {
@@ -1661,8 +1661,7 @@ pub fn diff_local(
             "!".yellow()
         ),
     }
-    crate::core::verdict::finish(crate::core::verdict::Verdict::Findings);
-    Ok(())
+    Ok(crate::core::verdict::Verdict::Findings)
 }
 
 pub fn diff(
