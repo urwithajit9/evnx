@@ -354,7 +354,10 @@ mod tests;
 pub use document::{Comment, Document, Entry, Problem, Span};
 pub(crate) use expand::references;
 use expand::strip_markers;
-pub use lines::{closes_multiline, line_opens_multiline, opens_multiline, strip_export};
+pub use lines::{
+    closes_multiline, closing_quote_index, line_opens_multiline, opens_multiline, strip_export,
+    strip_inline_comment,
+};
 
 impl Parser {
     /// Create a parser with a custom [`ParserConfig`].

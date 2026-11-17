@@ -7,6 +7,7 @@ pub mod config;
 pub mod converter;
 pub mod dialect;
 pub mod env_name;
+pub mod env_set;
 pub mod envfile;
 pub mod envsource;
 pub mod error;

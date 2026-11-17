@@ -36,7 +36,7 @@ use super::{is_env_key, ParseError, ParseResult, Parser};
 /// does — so `KEY= # c` is the value `# c`, and there is no way to write an
 /// empty value followed by a comment. That is Compose's behaviour verbatim,
 /// checked with `docker compose config`.
-pub(super) fn strip_inline_comment(value: &str) -> &str {
+pub fn strip_inline_comment(value: &str) -> &str {
     let bytes = value.as_bytes();
     let mut from = 0;
     while let Some(offset) = value[from..].find('#') {
@@ -309,7 +309,7 @@ pub(super) fn ends_with_closing_quote(s: &str, q: char) -> bool {
 /// Escapes are honoured for `"` only, matching [`ends_with_closing_quote`] and
 /// the value parser: `'` and backtick values are literal, so the first quote
 /// they meet closes them.
-pub(super) fn closing_quote_index(s: &str, q: char) -> Option<usize> {
+pub fn closing_quote_index(s: &str, q: char) -> Option<usize> {
     let mut it = s.char_indices();
     // Skip the opening quote. A string with nothing after it cannot close.
     it.next()?;
