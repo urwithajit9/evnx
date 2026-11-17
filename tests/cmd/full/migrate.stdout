@@ -158,10 +158,10 @@ named by SSL_CERT_FILE or the directory named by SSL_CERT_DIR. Behind a TLS-insp
 proxy, set SSL_CERT_FILE to your organisation's CA bundle.
 
 Exit codes:
-  0  Ran, nothing to report
-  1  Ran, and found something: findings, problems, a difference, not in sync
-  2  Could not run: usage, config, I/O, or refused before any change
-  4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
+    0  Ran, nothing to report
+    1  Ran, and found something: findings, problems, a difference, not in sync
+    2  Could not run: usage, config, I/O, or refused before any change
+    4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
   141  Output closed early (broken pipe)
 
 📖  Full guide: https://docs.evnx.dev/cli/commands/migrate

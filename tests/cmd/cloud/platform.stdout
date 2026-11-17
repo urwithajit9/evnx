@@ -48,15 +48,15 @@ Config variables can be read back; Secrets cannot, so they are compared by prese
 and never pulled. Values are never printed.
 
 Exit codes:
-  0  Ran, nothing to report
-  1  Ran, and found something: findings, problems, a difference, not in sync
-  2  Could not run: usage, config, I/O, or refused before any change
-  4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
-  10  Not signed in, or the token was rejected
-  11  Forbidden, or the email is not verified
-  13  Server unreachable, not an evnx server, or TLS roots unusable
-  14  Conflict, or locked
-  15  Server error, or rate limited
+    0  Ran, nothing to report
+    1  Ran, and found something: findings, problems, a difference, not in sync
+    2  Could not run: usage, config, I/O, or refused before any change
+    4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
+   10  Not signed in, or the token was rejected
+   11  Forbidden, or the email is not verified
+   13  Server unreachable, not an evnx server, or TLS roots unusable
+   14  Conflict, or locked
+   15  Server error, or rate limited
   141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/platform

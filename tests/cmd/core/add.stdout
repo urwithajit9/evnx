@@ -63,9 +63,9 @@ Output:
           Print the result as one JSON document on stdout (needs --yes or --dry-run: it never asks).
 
 Exit codes:
-  0  Ran, nothing to report
-  2  Could not run: usage, config, I/O, or refused before any change
-  4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
+    0  Ran, nothing to report
+    2  Could not run: usage, config, I/O, or refused before any change
+    4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
   141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/add

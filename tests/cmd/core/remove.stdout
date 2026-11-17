@@ -83,10 +83,10 @@ Examples:
   evnx remove OLD_TOKEN --check             CI: exit 1 if it is still in any env file, the template or .evnx.toml
 
 Exit codes:
-  0  Ran, nothing to report
-  1  Ran, and found something: findings, problems, a difference, not in sync
-  2  Could not run: usage, config, I/O, or refused before any change
-  4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
+    0  Ran, nothing to report
+    1  Ran, and found something: findings, problems, a difference, not in sync
+    2  Could not run: usage, config, I/O, or refused before any change
+    4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
   141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/remove

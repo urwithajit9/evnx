@@ -38,8 +38,8 @@ then open a new shell:
 The script lists this build's commands: generate it again after an upgrade.
 
 Exit codes:
-  0  Ran, nothing to report
-  2  Could not run: usage, config, I/O, or refused before any change
+    0  Ran, nothing to report
+    2  Could not run: usage, config, I/O, or refused before any change
   141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/completions

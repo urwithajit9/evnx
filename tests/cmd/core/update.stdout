@@ -58,9 +58,9 @@ network.
 -q prints only the upgrade command; with --check, the status line and the command.
 
 Exit codes:
-  0  Ran, nothing to report
-  1  Ran, and found something: findings, problems, a difference, not in sync
-  2  Could not run: usage, config, I/O, or refused before any change
+    0  Ran, nothing to report
+    1  Ran, and found something: findings, problems, a difference, not in sync
+    2  Could not run: usage, config, I/O, or refused before any change
   141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/update

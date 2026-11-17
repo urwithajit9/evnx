@@ -496,7 +496,7 @@ fn b_the_driven_cases_name_real_commands() {
 /// "exit 4", "exits 2", "exit code is 14" in prose.
 fn mentioned(help: &str) -> BTreeSet<u64> {
     let prose = regex::Regex::new(r"(?i)\bexit(?:s|ed)?(?:\s+code)?(?:\s+is)?\s+(\d+)\b").unwrap();
-    let block = regex::Regex::new(r"(?m)^  (\d+)  \S").unwrap();
+    let block = regex::Regex::new(r"(?m)^ +(\d+)  \S").unwrap();
     let mut out = BTreeSet::new();
     for re in [&prose, &block] {
         for m in re.captures_iter(help) {
@@ -524,11 +524,15 @@ fn c_no_help_mentions_a_code_outside_its_table() {
         }
         // The block is there, and says what the table says.
         assert!(
-            out.stdout.contains("Exit codes:\n  0  "),
+            out.stdout.contains("Exit codes:\n    0  "),
             "evnx {name} --help has no Exit codes block"
         );
         for r in e.json["exit_codes"].as_array().unwrap() {
-            let line = format!("\n  {}  {}", r["code"], r["meaning"].as_str().unwrap());
+            let line = format!(
+                "\n  {:>3}  {}",
+                r["code"].as_u64().unwrap(),
+                r["meaning"].as_str().unwrap()
+            );
             assert!(
                 out.stdout.contains(&line),
                 "evnx {name} --help lacks `{}`",

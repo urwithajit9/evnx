@@ -166,8 +166,8 @@ Aliases:
 Use 'evnx convert' without --to for interactive format selection.
 
 Exit codes:
-  0  Ran, nothing to report
-  2  Could not run: usage, config, I/O, or refused before any change
+    0  Ran, nothing to report
+    2  Could not run: usage, config, I/O, or refused before any change
   141  Output closed early (broken pipe)
 
 📖  Full guide: https://docs.evnx.dev/cli/commands/convert

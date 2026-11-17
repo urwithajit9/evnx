@@ -56,8 +56,8 @@ A backup is a file you keep, behind a passphrase you choose; it needs no account
 and no network. To share and version secrets instead, see `evnx cloud push`.
 
 Exit codes:
-  0  Ran, nothing to report
-  2  Could not run: usage, config, I/O, or refused before any change
+    0  Ran, nothing to report
+    2  Could not run: usage, config, I/O, or refused before any change
   141  Output closed early (broken pipe)
 
 📖  Full guide: https://docs.evnx.dev/cli/commands/backup

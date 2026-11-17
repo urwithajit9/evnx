@@ -99,9 +99,9 @@ Examples:
   evnx diff --format json | jq -e '.summary.missing == 0'
 
 Exit codes:
-  0  Ran, nothing to report
-  1  Ran, and found something: findings, problems, a difference, not in sync
-  2  Could not run: usage, config, I/O, or refused before any change
+    0  Ran, nothing to report
+    1  Ran, and found something: findings, problems, a difference, not in sync
+    2  Could not run: usage, config, I/O, or refused before any change
   141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/diff

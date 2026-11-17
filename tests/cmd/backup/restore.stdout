@@ -74,10 +74,10 @@ A backup file is not a vault. For evnx cloud, use `evnx cloud pull` (one
 version) or `evnx cloud export` (all of them).
 
 Exit codes:
-  0  Ran, nothing to report
-  2  Could not run: usage, config, I/O, or refused before any change
-  4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
-  5  restore wrote the result aside, to <output>.restored
+    0  Ran, nothing to report
+    2  Could not run: usage, config, I/O, or refused before any change
+    4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
+    5  restore wrote the result aside, to <output>.restored
   141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/restore

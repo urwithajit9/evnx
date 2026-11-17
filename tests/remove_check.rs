@@ -170,5 +170,5 @@ fn help_documents_check() {
     evnx(&p, &["remove", "--help"])
         .assert_code(0)
         .assert_contains("--check")
-        .assert_contains("\n  1  Ran, and found something");
+        .assert_contains("\n    1  Ran, and found something");
 }

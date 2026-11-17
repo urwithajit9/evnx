@@ -40,8 +40,8 @@ Output:
           The whole command tree as JSON, for tooling. Same as --format json.
 
 Exit codes:
-  0  Ran, nothing to report
-  2  Could not run: usage, config, I/O, or refused before any change
+    0  Ran, nothing to report
+    2  Could not run: usage, config, I/O, or refused before any change
   141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/commands

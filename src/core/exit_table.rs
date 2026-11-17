@@ -181,10 +181,10 @@ pub fn passes_child_code(command_path: &[&str]) -> bool {
 pub fn render_block(command_path: &[&str]) -> String {
     let mut out = String::from("Exit codes:");
     for r in exit_codes(command_path) {
-        out.push_str(&format!("\n  {}  {}", r.code, r.meaning));
+        out.push_str(&format!("\n  {:>3}  {}", r.code, r.meaning));
     }
     if passes_child_code(command_path) {
-        out.push_str("\n  N  Once the command has started: its own exit code");
+        out.push_str("\n    N  Once the command has started: its own exit code");
     }
     out
 }
@@ -216,7 +216,7 @@ mod tests {
     #[test]
     fn block_shape() {
         let b = render_block(&["restore"]);
-        assert!(b.starts_with("Exit codes:\n  0  "), "{b}");
-        assert!(b.contains("\n  5  restore wrote"), "{b}");
+        assert!(b.starts_with("Exit codes:\n    0  "), "{b}");
+        assert!(b.contains("\n    5  restore wrote"), "{b}");
     }
 }
