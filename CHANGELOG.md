@@ -235,6 +235,23 @@ new `network` field below.
 
 ### Added
 
+- **`evnx set` and `evnx get`: one variable, in place.** `evnx set NAME[=VALUE]`
+  changes one line of the env file and keeps its position, comments, `export`
+  prefix and quoting; a name that is not there is appended. The file is written
+  atomically, keeps its mode and leaves one `.bak`; no template, contract or
+  `.gitignore` entry is touched. A secret-looking name takes its value from a
+  no-echo prompt or stdin; a value on the command line works and warns about
+  shell history. Replacing a value asks first (`-y/--yes`); with no terminal and
+  no `--yes`, or no value on stdin, the exit code is 4. The result is
+  `old → new`, or `changed (value hidden)` for a secret. Also `--if-missing`,
+  `-n/--dry-run`, `--format json` / `--json` (names and statuses, never a
+  value), `--env`, `--env-name`, `-C/--dir`. `evnx get NAME` prints one value
+  without sourcing the file, so `PORT=$(evnx get PORT)` works; a secret-looking
+  name is refused without `--reveal` (exit 4), also when piped.
+  `evnx get --exists NAME` prints nothing and exits 0 or 1; a name that is not
+  in the file is exit 1 (documented in `docs/exit-codes.md`). Both are in the
+  "Local files" group of `evnx --help`.
+
 - **JSON output.**
   - Every `--format json` / `--json` document has a top-level `run` object:
     `{"tool": "evnx", "version", "schema_version", "ruleset", "features"}`.

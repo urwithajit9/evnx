@@ -56,6 +56,8 @@ fn local_args(path: &str) -> Option<Vec<&'static str>> {
         "add framework" => vec!["add", "framework", "django", "--dry-run"],
         "add blueprint" => vec!["add", "blueprint", "t3_modern", "--dry-run"],
         "remove" => vec!["remove", "--check", "B"],
+        "set" => vec!["set", "B=2", "--dry-run"],
+        "get" => vec!["get", "A"],
         "validate" => vec!["validate"],
         "scan" => vec!["scan"],
         "diff" => vec!["diff"],

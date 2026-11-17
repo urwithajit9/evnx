@@ -37,6 +37,10 @@ const ALLOWED: &[u64] = &[0, 1, 2, 4, 5, 10, 11, 12, 13, 14, 15, 141];
 /// ⚠️ Accepted for consistency (WP-8); the code wins over the flag.
 const YES_WITHOUT_A_QUESTION: &[&str] = &["validate", "convert", "template"];
 
+/// Commands that exit 4 and have no `--yes`: `get` refuses a secret without
+/// `--reveal`. The flag that answers is `--reveal`, not `--yes`.
+const FOUR_WITHOUT_YES: &[&str] = &["get"];
+
 fn codes(e: &Entry) -> Vec<u64> {
     e.json["exit_codes"]
         .as_array()
@@ -107,7 +111,7 @@ fn a_declined_goes_with_yes() {
             && !entries()
                 .iter()
                 .any(|o| o.path.len() == e.path.len() + 1 && o.path[..e.path.len()] == e.path[..]);
-        if leaf && has_4 {
+        if leaf && has_4 && !FOUR_WITHOUT_YES.contains(&name.as_str()) {
             assert!(has_yes(&e), "{name} can exit 4 but has no --yes");
         }
     }
@@ -192,6 +196,20 @@ fn cases() -> Vec<Case> {
         case("remove", 1, || (clean(), vec!["remove", "A", "--check"])),
         case("remove", 2, || (clean(), vec!["remove", "ZZZ", "--yes"])),
         case("remove", 4, || (clean(), vec!["remove", "A"])),
+        // set
+        case("set", 0, || (clean(), vec!["set", "A=2", "--yes"])),
+        case("set", 2, || (Project::new(), vec!["set", "A=2"])),
+        case("set", 4, || (clean(), vec!["set", "A=2"])),
+        // get: 1 is a name that is not there, 4 a secret without --reveal
+        case("get", 0, || (clean(), vec!["get", "A"])),
+        case("get", 1, || (clean(), vec!["get", "NOPE"])),
+        case("get", 2, || (Project::new(), vec!["get", "A"])),
+        case("get", 4, || {
+            (
+                Project::new().env("API_TOKEN=x\n"),
+                vec!["get", "API_TOKEN"],
+            )
+        }),
         // validate
         case("validate", 0, || (clean(), vec!["validate"])),
         case("validate", 1, || {
@@ -408,6 +426,8 @@ fn support_has(command: &str) -> bool {
 const LOCAL: &[&str] = &[
     "init",
     "add",
+    "set",
+    "get",
     "remove",
     "validate",
     "sync",
@@ -616,6 +636,11 @@ fn render_doc() -> String {
         child.join(" and ")
     ));
     s.push_str("\nA code means the same everywhere: `2` is never a finding, and `1` never a failure to run.\n");
+    s.push_str(
+        "\n`get` answers with them too: `1` is a name that is not in the file (also `get --exists`), \
+         and `4` a secret read without `--reveal`. `set` exits `4` when it needs a value or \
+         an answer and there is no terminal and nothing on stdin.\n",
+    );
     s
 }
 

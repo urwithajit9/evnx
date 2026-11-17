@@ -81,6 +81,7 @@ fn cases() -> Vec<Case> {
         case("spec init", &["spec", "init"]),
         case("run", &["run", "--", "true"]),
         case("remove", &["remove", "PORT", "--yes"]),
+        case("set", &["set", "PORT=1", "--yes"]),
         case("scan rules new", &["scan", "rules", "new", "quiet-rule"]),
     ];
     if cfg!(feature = "backup") {
@@ -114,6 +115,7 @@ const EXEMPT: &[(&str, &str)] = &[
     ("commands", "data"),
     ("completions", "data"),
     ("parse", "data: the listing is the answer"),
+    ("get", "data: the value is the answer"),
     ("history", "data: the listing is the answer"),
     (
         "undo",

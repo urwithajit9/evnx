@@ -1,0 +1,74 @@
+Set one variable in the env file, in place.
+
+Only that line changes: its position, comments, `export` prefix and quoting stay. A name that is not in the file is added at the end. The file is written atomically, keeps its mode, and is kept as a `.bak` copy first. Nothing else is touched: no template, contract or .gitignore.
+
+Without a value, it is read from standard input when that is piped, and asked for when there is a terminal. A name that looks secret (`API_TOKEN`, `DB_PASSWORD`) is asked for with no echo, and a value typed on the command line works but warns: your shell keeps it.
+
+A value that is replaced is confirmed first, unless --yes. With no terminal and no value on stdin, the exit code is 4.
+
+Usage: evnx set [OPTIONS] <NAME[=VALUE]>
+
+Arguments:
+  <NAME[=VALUE]>
+          The variable, as NAME or NAME=VALUE
+
+Options:
+      --if-missing
+          Do nothing when the name is already in the file
+
+  -n, --dry-run
+          Show what would change; write nothing. Needs no terminal.
+
+      --no-color
+          Disable colored output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+  -v, --verbose
+          Enable verbose output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Files:
+      --env <FILE>
+          Env file to use. Defaults to `.env`
+
+      --env-name <NAME>
+          Use `.env.<NAME>` instead of `.env`
+
+  -C, --dir <DIR>
+          Project folder to work in. Defaults to the current folder
+
+Confirmation:
+  -y, --yes
+          Do not ask for confirmation
+
+Output:
+      --format <FORMAT>
+          Output format
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+      --json
+          Print the result as JSON: names and statuses, never a value.
+
+Examples:
+  evnx set PORT=8080                        change one line, keep the rest
+  evnx set API_TOKEN                        typed with no echo, or read from stdin
+  printf %s "$TOKEN" | evnx set API_TOKEN   from a pipe, nothing in shell history
+  evnx set LOG_LEVEL=info --if-missing      only when the name is not there yet
+  evnx set PORT=8080 --dry-run              show the change, write nothing
+
+Exit codes:
+    0  Ran, nothing to report
+    2  Could not run: usage, config, I/O, or refused before any change
+    4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
+  141  Output closed early (broken pipe)
+
+Full guide: https://docs.evnx.dev/cli/commands/set
