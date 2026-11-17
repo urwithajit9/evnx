@@ -70,10 +70,18 @@ fn start(
     for (k, v) in env {
         cmd.env(k, v);
     }
-    // SAFETY: runs in the forked child before exec and only calls `signal`, which
-    // is async-signal-safe, with valid signal numbers.
+    // SAFETY: runs in the forked child before exec and only calls `signal`,
+    // `sigemptyset` and `sigprocmask`, which are async-signal-safe, with valid
+    // arguments. The mask is cleared because a test runner (an IDE task, a
+    // terminal multiplexer, a service manager) may start `cargo test` with some
+    // of these signals blocked, and evnx would inherit that mask: a blocked
+    // SIGTERM is never delivered, so the tests would wait for an exit that
+    // cannot come.
     unsafe {
         cmd.pre_exec(move || {
+            let mut empty = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+            libc::sigemptyset(empty.as_mut_ptr());
+            libc::sigprocmask(libc::SIG_SETMASK, empty.as_ptr(), std::ptr::null_mut());
             for sig in [libc::SIGTERM, libc::SIGQUIT, libc::SIGINT] {
                 libc::signal(sig, libc::SIG_DFL);
             }
