@@ -14,7 +14,7 @@
 //! | 2 | `Usage`, `Config`, `Io`, `Stopped`, `Said`, `Footed`, `Backup`, `Restore`, `Other` |
 //! | 4 | `Declined`, `NeedsConfirmation` |
 //! | 5 | `RestoredAside` |
-//! | 10-15 | `Cloud`, `Platform` |
+//! | 10-15 | `Cloud`, `Platform`, `SignedOut` (10) |
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -72,6 +72,10 @@ pub enum EvnxError {
     #[error("already reported")]
     Said,
 
+    /// `status --check` with nobody signed in: exit 10, nothing more printed.
+    #[error("not signed in")]
+    SignedOut,
+
     /// An error with its own footer ([`verdict::footed`]).
     #[error("{0:#}")]
     Footed(anyhow::Error),
@@ -122,6 +126,7 @@ impl EvnxError {
         match self {
             EvnxError::Declined | EvnxError::NeedsConfirmation(_) => EXIT_DECLINED,
             EvnxError::RestoredAside(_) => EXIT_ASIDE,
+            EvnxError::SignedOut => 10,
             #[cfg(feature = "cloud")]
             EvnxError::Cloud { code, .. } => *code,
             #[cfg(feature = "net")]
@@ -143,6 +148,7 @@ impl EvnxError {
             EvnxError::NeedsConfirmation(_) => "needs_confirmation",
             EvnxError::RestoredAside(_) => "restored_aside",
             EvnxError::Said => "reported",
+            EvnxError::SignedOut => "not_signed_in",
             EvnxError::Footed(_) => "no_verdict",
             #[cfg(feature = "cloud")]
             EvnxError::Cloud { code, .. } => request_code(*code),
@@ -157,7 +163,10 @@ impl EvnxError {
     /// Whether the command already said everything: nothing is printed.
     pub fn is_silent(&self) -> bool {
         match self {
-            EvnxError::Declined | EvnxError::RestoredAside(_) | EvnxError::Said => true,
+            EvnxError::Declined
+            | EvnxError::RestoredAside(_)
+            | EvnxError::Said
+            | EvnxError::SignedOut => true,
             EvnxError::Restore(re) => re.is_silent(),
             _ => false,
         }
@@ -226,6 +235,9 @@ pub fn classify(e: anyhow::Error) -> EvnxError {
             }
             unreachable!("downcast_ref said it was a BackupError");
         }
+    }
+    if e.chain().any(|c| c.is::<verdict::SignedOut>()) {
+        return EvnxError::SignedOut;
     }
     if e.chain().any(|c| c.is::<Said>()) {
         return EvnxError::Said;

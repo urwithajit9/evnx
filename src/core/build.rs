@@ -26,17 +26,18 @@ pub const CARGO_UPGRADE: &str = "cargo install evnx --all-features --force";
 /// already knows.
 pub fn features() -> Vec<&'static str> {
     let mut f = Vec::new();
-    if cfg!(feature = "net") {
-        f.push("net");
-    }
-    if cfg!(feature = "migrate") {
-        f.push("migrate");
-    }
+    // Alphabetical: `run.features` in every JSON output is the same list.
     if cfg!(feature = "backup") {
         f.push("backup");
     }
     if cfg!(feature = "cloud") {
         f.push("cloud");
+    }
+    if cfg!(feature = "migrate") {
+        f.push("migrate");
+    }
+    if cfg!(feature = "net") {
+        f.push("net");
     }
     f
 }

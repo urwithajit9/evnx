@@ -7,6 +7,43 @@ use super::client::Client;
 use super::config::{self, CloudConfig};
 use super::creds::Store;
 
+/// `status --check` (`auth` and `cloud`): signed in is exit 0, signed out is
+/// exit 10, and nothing else is looked at (no network).
+///
+/// (`enforce` is `--check`: without it, `--format json` prints the same document
+/// and the exit stays 0.) `-q` prints nothing, `--format json` prints `{signed_in, server, user?}`
+/// (`user` is left out when signed out or when an API token is the credential),
+/// and otherwise one line says which.
+pub(crate) fn check(server: &str, json: bool, enforce: bool) -> Result<()> {
+    let token_set = std::env::var(super::client::ENV_TOKEN).is_ok_and(|t| !t.trim().is_empty());
+    let store = Store::load()?;
+    let session = store.session(server);
+    let signed_in = token_set || session.is_some();
+    let user = if token_set {
+        None
+    } else {
+        session.map(|s| s.email.as_str())
+    };
+    if json {
+        let mut doc = serde_json::json!({ "signed_in": signed_in, "server": server });
+        if let Some(u) = user {
+            doc["user"] = u.into();
+        }
+        crate::core::json::emit(&doc, 1, None)?;
+    } else if !crate::utils::ui::is_quiet() {
+        match (signed_in, user) {
+            (true, Some(u)) => println!("Signed in to {server} as {u}."),
+            (true, None) => println!("Signed in to {server} with an API token."),
+            (false, _) => println!("Not signed in to {server}. Run `evnx auth login`."),
+        }
+    }
+    if signed_in || !enforce {
+        Ok(())
+    } else {
+        Err(crate::core::verdict::SignedOut.into())
+    }
+}
+
 /// Print the cloud-sync state for the resolved server.
 ///
 /// Without `ping` this reads local files only and makes no network request, so it
@@ -17,8 +54,18 @@ use super::creds::Store;
 /// With `ping` it also calls `GET /health` and **returns an error when the server
 /// cannot be reached**, so `evnx cloud status --ping` works as a health check in a
 /// script. The local state is printed either way, before the check runs.
-pub fn run(server_override: Option<&str>, ping: bool, verbose: bool) -> Result<()> {
+pub fn run(
+    server_override: Option<&str>,
+    ping: bool,
+    check_only: bool,
+    json: bool,
+    verbose: bool,
+) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
+    // `--format json` alone prints the same document and keeps exit 0.
+    if check_only || json {
+        return check(&server, json, check_only);
+    }
     let store = Store::load()?;
     let now = chrono::Utc::now().timestamp();
     // `-q` (DEC-G3, I-225): the answer is data and stays — server, account,
@@ -193,8 +240,8 @@ mod tests {
     #[serial]
     fn status_works_with_no_config_at_all() {
         let _g = ConfigDirGuard::new();
-        run(None, false, false).unwrap();
-        run(None, false, true).unwrap();
+        run(None, false, false, false, false).unwrap();
+        run(None, false, false, false, true).unwrap();
     }
 
     #[test]
@@ -214,16 +261,16 @@ mod tests {
         store.save().unwrap();
 
         // Default server has no session; the localhost one does. Both render.
-        run(None, false, false).unwrap();
-        run(Some("http://localhost:8099"), false, true).unwrap();
+        run(None, false, false, false, false).unwrap();
+        run(Some("http://localhost:8099"), false, false, false, true).unwrap();
     }
 
     #[test]
     #[serial]
     fn an_unusable_server_url_is_an_error_not_a_silent_default() {
         let _g = ConfigDirGuard::new();
-        assert!(run(Some("http://api.evnx.dev"), false, false).is_err());
-        assert!(run(Some("not-a-url"), false, false).is_err());
+        assert!(run(Some("http://api.evnx.dev"), false, false, false, false).is_err());
+        assert!(run(Some("not-a-url"), false, false, false, false).is_err());
     }
 
     #[test]
@@ -237,7 +284,7 @@ mod tests {
             .with_body(r#"{"status":"ok","version":"0.1.0"}"#)
             .create();
 
-        run(Some(&server.url()), true, false).unwrap();
+        run(Some(&server.url()), true, false, false, false).unwrap();
         m.assert();
     }
 
@@ -246,7 +293,7 @@ mod tests {
     fn ping_exits_non_zero_when_the_server_is_down() {
         // The whole point of --ping: a script can rely on the exit code.
         let _g = ConfigDirGuard::new();
-        let err = run(Some("http://127.0.0.1:1"), true, false).unwrap_err();
+        let err = run(Some("http://127.0.0.1:1"), true, false, false, false).unwrap_err();
         let rendered = format!("{err:#}");
         assert!(rendered.contains("could not reach"), "{rendered}");
         // One line, not an anyhow chain through reqwest and hyper.
@@ -258,6 +305,6 @@ mod tests {
     fn without_ping_a_dead_server_is_not_an_error() {
         // Local state must still be answerable when the server is unreachable.
         let _g = ConfigDirGuard::new();
-        run(Some("http://127.0.0.1:1"), false, false).unwrap();
+        run(Some("http://127.0.0.1:1"), false, false, false, false).unwrap();
     }
 }

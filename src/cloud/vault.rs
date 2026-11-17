@@ -199,7 +199,7 @@ impl VaultRef {
 
 /// `Debug` is safe here: a summary carries an id, a name, an environment, a role
 /// and counts — no key material and nothing derived from the master password.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 struct VaultSummary {
     id: String,
     name: String,
@@ -271,12 +271,15 @@ pub fn create(
 }
 
 /// List the vaults this account can reach.
-pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
+pub fn list(server_override: Option<&str>, json: bool, verbose: bool) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     client.require_credential()?;
 
     let listed: VaultList = client.get("/api/v1/vaults")?;
+    if json {
+        return crate::core::json::emit(&serde_json::json!({ "vaults": listed.vaults }), 1, None);
+    }
 
     if listed.vaults.is_empty() {
         println!("  No vaults yet on {server}.");
@@ -1045,7 +1048,7 @@ struct MemberList {
     members: Vec<MemberSummary>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct MemberSummary {
     user_id: String,
     email: String,
@@ -1058,7 +1061,12 @@ struct MemberSummary {
 }
 
 /// Show who can reach a vault.
-pub fn members(server_override: Option<&str>, target: String, verbose: bool) -> Result<()> {
+pub fn members(
+    server_override: Option<&str>,
+    target: String,
+    json: bool,
+    verbose: bool,
+) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     client.require_credential()?;
@@ -1068,6 +1076,9 @@ pub fn members(server_override: Option<&str>, target: String, verbose: bool) -> 
     let vault = fetch_and_resolve(&client, &target)?;
 
     let people: MemberList = client.get(&api_path(&["vaults", &vault.id, "members"])?)?;
+    if json {
+        return crate::core::json::emit(&serde_json::json!({ "members": people.members }), 1, None);
+    }
 
     let label = if vault.name.is_empty() {
         vault.id.bold().to_string()

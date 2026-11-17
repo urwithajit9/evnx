@@ -159,6 +159,20 @@ impl std::fmt::Display for Said {
 
 impl std::error::Error for Said {}
 
+/// `auth status --check` / `cloud status --check` found nobody signed in: exit
+/// 10 with nothing more said (the answer was already printed, or `-q` asked for
+/// silence).
+#[derive(Debug)]
+pub struct SignedOut;
+
+impl std::fmt::Display for SignedOut {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("not signed in")
+    }
+}
+
+impl std::error::Error for SignedOut {}
+
 /// An error that ends with its own footer instead of the stage's: `scan` and
 /// `doctor` say what they did not do ("evnx did not scan anything").
 ///

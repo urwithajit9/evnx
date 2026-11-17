@@ -23,7 +23,7 @@
 //! EVNX_OUTPUT_JSON=1 evnx doctor | jq '.summary.errors'  # CI/CD integration
 //! ```
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use chrono::Utc;
 use colored::*;
 use std::fs;
@@ -348,9 +348,7 @@ fn run_json(
     let report = build_report(project_root, template, verbose, auto_fix, |_| {});
 
     // Output JSON to stdout (machine-readable for CI/CD)
-    let json =
-        serde_json::to_string_pretty(&report).context("Failed to serialize diagnostic report")?;
-    println!("{}", json);
+    crate::core::json::emit(&report, 1, None)?;
 
     finish(&report, strict)
 }

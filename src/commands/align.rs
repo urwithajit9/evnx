@@ -151,7 +151,7 @@ pub fn run_with(mut opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) 
     let drifted = prepared.iter().filter(|p| p.plan.changed).count();
     match opts.mode {
         Mode::Check | Mode::DryRun => {
-            report(&opts, &prepared, &Written::default());
+            report(&opts, &prepared, &Written::default())?;
             let verdict = if opts.mode == Mode::Check && drifted > 0 {
                 Verdict::Findings
             } else {
@@ -161,7 +161,7 @@ pub fn run_with(mut opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) 
         }
         Mode::Write => {
             let written = write_all(&prepared, opts.no_backup, before_commit)?;
-            report(&opts, &prepared, &written);
+            report(&opts, &prepared, &written)?;
             Ok(Verdict::Clean)
         }
     }
@@ -356,7 +356,7 @@ fn status(p: &Prepared, written: &Written) -> &'static str {
     }
 }
 
-fn report(opts: &Options, prepared: &[Prepared], written: &Written) {
+fn report(opts: &Options, prepared: &[Prepared], written: &Written) -> Result<()> {
     if opts.json {
         let r = JsonReport {
             schema_version: 1,
@@ -388,12 +388,8 @@ fn report(opts: &Options, prepared: &[Prepared], written: &Written) {
                 })
                 .collect(),
         };
-        // Serialising names and numbers cannot fail.
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&r).expect("a report of names and numbers")
-        );
-        return;
+        crate::core::json::emit(&r, 1, None)?;
+        return Ok(());
     }
 
     let quiet = ui::is_quiet();
@@ -487,6 +483,7 @@ fn report(opts: &Options, prepared: &[Prepared], written: &Written) {
         Mode::DryRun => ui::info("Dry run: no file was written."),
         _ => {}
     }
+    Ok(())
 }
 
 fn plural(n: usize) -> &'static str {

@@ -44,6 +44,13 @@ Target: nope.env (action: Add)
 
 $ evnx sync --check --format json --direction reverse --env nope.env
 {
+  "run": {
+    "tool": "evnx",
+    "version": "<version>",
+    "schema_version": 1,
+    "ruleset": null,
+    "features": "<features>"
+  },
   "in_sync": false,
   "direction": "reverse",
   "env": "nope.env",

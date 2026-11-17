@@ -80,10 +80,7 @@ pub fn run(channel: Channel, json: bool, other_copies: usize) -> Result<Verdict>
 
     let report = Report::new(env!("CARGO_PKG_VERSION"), &fetch()?, channel);
     if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&report.payload(other_copies))?
-        );
+        crate::core::json::emit(&report.payload(other_copies), SCHEMA, None)?;
     } else if quiet {
         // DEC-SF5: the status line and the command.
         println!("{}", report.status_line());

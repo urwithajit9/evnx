@@ -267,7 +267,7 @@ pub(crate) struct VersionList {
     pub versions: Vec<VersionSummary>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, serde::Serialize)]
 pub(crate) struct VersionSummary {
     pub version_num: i32,
     pub key_count: i32,
@@ -738,6 +738,7 @@ pub fn history(
     server_override: Option<&str>,
     vault_target: Option<String>,
     limit: usize,
+    json: bool,
     verbose: bool,
 ) -> Result<()> {
     let vault_target = resolve_target(vault_target)?;
@@ -747,6 +748,14 @@ pub fn history(
     let vault_ref = vault::fetch_and_resolve(&client, &vault_target)?;
 
     let versions = list_versions(&client, &vault_ref)?;
+
+    if json {
+        // Names, sizes and times as the server gives them; no value exists here.
+        let mut rows: Vec<&VersionSummary> = versions.iter().collect();
+        rows.sort_by_key(|v| std::cmp::Reverse(v.version_num));
+        rows.truncate(limit);
+        return crate::core::json::emit(&serde_json::json!({ "versions": rows }), 1, None);
+    }
 
     if versions.is_empty() {
         println!("  {} has no versions yet.", vault_ref.label());
@@ -1561,6 +1570,7 @@ pub fn diff_local(
     env_name: Option<String>,
     version: Option<i32>,
     password_stdin: bool,
+    json: bool,
 ) -> Result<crate::core::verdict::Verdict> {
     let (vault_target, bound_file) = resolve_target_and_file(vault_target)?;
     let server = CloudConfig::resolve_server(server_override)?;
@@ -1599,6 +1609,52 @@ pub fn diff_local(
     let remote = zeroize::Zeroizing::new(decrypt_version(&blob, &vault_ref, version, &vault_key)?);
 
     let against = format!("version {version} of {}", vault_ref.label());
+    if json {
+        // Key names only; a value never leaves the comparison.
+        let identical = local.as_slice() == remote.as_slice();
+        let keys = |bytes: &[u8]| {
+            std::str::from_utf8(bytes).ok().and_then(|t| {
+                crate::core::parser::Parser::new(Default::default())
+                    .parse_content(t)
+                    .ok()
+            })
+        };
+        let (mut only_vault, mut only_local, mut changed): (Vec<String>, Vec<String>, Vec<String>) =
+            (Vec::new(), Vec::new(), Vec::new());
+        if let (Some(mine), Some(theirs)) = (keys(&local), keys(&remote)) {
+            only_vault = theirs
+                .keys()
+                .filter(|k| !mine.contains_key(*k))
+                .cloned()
+                .collect();
+            only_local = mine
+                .keys()
+                .filter(|k| !theirs.contains_key(*k))
+                .cloned()
+                .collect();
+            changed = mine
+                .iter()
+                .filter(|(k, v)| theirs.get(*k).is_some_and(|t| t != *v))
+                .map(|(k, _)| k.clone())
+                .collect();
+        }
+        crate::core::json::emit(
+            &serde_json::json!({
+                "against_version": version,
+                "identical": identical,
+                "added": only_vault,
+                "removed": only_local,
+                "changed": changed,
+            }),
+            1,
+            None,
+        )?;
+        return Ok(if identical {
+            crate::core::verdict::Verdict::Clean
+        } else {
+            crate::core::verdict::Verdict::Findings
+        });
+    }
     println!();
     println!(
         "  {}  {} ↔ {against}",
@@ -1669,6 +1725,7 @@ pub fn diff(
     vault_target: Option<String>,
     from: Option<i32>,
     to: Option<i32>,
+    json: bool,
     verbose: bool,
 ) -> Result<()> {
     let vault_target = resolve_target(vault_target)?;
@@ -1680,6 +1737,17 @@ pub fn diff(
     let mut versions = list_versions(&client, &vault_ref)?;
     versions.sort_by_key(|v| v.version_num);
 
+    if versions.len() < 2 && json {
+        return crate::core::json::emit(
+            &serde_json::json!({
+                "from": null, "to": null,
+                "added": [], "removed": [], "changed": [],
+                "contents_differ": false,
+            }),
+            1,
+            None,
+        );
+    }
     if versions.len() < 2 {
         println!(
             "  {} has {} version{} — there is nothing to compare.",
@@ -1728,6 +1796,24 @@ pub fn diff(
     let delta = key_delta(a, b);
     let added = &delta.added;
     let removed = &delta.removed;
+
+    if json {
+        // Key names only. The server holds no value, so it cannot name a key
+        // whose value changed: `changed` stays empty and `contents_differ`
+        // says that the ciphertext is not the same.
+        return crate::core::json::emit(
+            &serde_json::json!({
+                "from": from_num,
+                "to": to_num,
+                "added": added,
+                "removed": removed,
+                "changed": [],
+                "contents_differ": a.blob_hash != b.blob_hash,
+            }),
+            1,
+            None,
+        );
+    }
 
     // ⚠️ Direction is stated, not implied. `+` means "added in v{to}" here and
     // "missing from .env" in `evnx diff`, and the header is what keeps the two

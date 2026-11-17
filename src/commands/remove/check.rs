@@ -111,7 +111,7 @@ pub fn run(opts: Options) -> Result<Verdict> {
 
     let clean = found.is_empty();
     if opts.json {
-        print_json(&opts, &looked_in, &found);
+        print_json(&opts, &looked_in, &found)?;
     } else if clean {
         ui::success(format!(
             "{} gone from {}",
@@ -185,7 +185,7 @@ fn read_text(path: &Path, shown: &str) -> Result<String> {
 }
 
 /// `--json`: names, files and lines, never a value.
-fn print_json(opts: &Options, looked_in: &[String], found: &[Found]) {
+fn print_json(opts: &Options, looked_in: &[String], found: &[Found]) -> Result<()> {
     let doc = serde_json::json!({
         "schema_version": 1,
         "check": true,
@@ -202,5 +202,5 @@ fn print_json(opts: &Options, looked_in: &[String], found: &[Found]) {
             o
         }).collect::<Vec<_>>(),
     });
-    println!("{doc:#}");
+    crate::core::json::emit(&doc, 1, None)
 }

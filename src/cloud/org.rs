@@ -32,7 +32,7 @@ use crate::cloud::client::api_path;
 use crate::core::shell::word;
 use anyhow::{anyhow, Result};
 use colored::Colorize;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::client::Client;
 use super::config::CloudConfig;
@@ -48,7 +48,7 @@ struct OrgList {
     organizations: Vec<OrgSummary>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub(crate) struct OrgSummary {
     id: String,
     name: String,
@@ -59,7 +59,7 @@ pub(crate) struct OrgSummary {
     seats: Seats,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub(crate) struct Seats {
     used: i64,
     purchased: Option<i64>,
@@ -79,7 +79,7 @@ struct MemberList {
     members: Vec<MemberSummary>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 struct MemberSummary {
     user_id: String,
     email: String,
@@ -107,7 +107,7 @@ struct InviteList {
     invites: Vec<InviteSummary>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 struct InviteSummary {
     id: String,
     email: String,
@@ -343,12 +343,15 @@ pub fn create(server_override: Option<&str>, name: &str, slug: &str, verbose: bo
 }
 
 /// `evnx org list`
-pub fn list(server_override: Option<&str>, _verbose: bool) -> Result<()> {
+pub fn list(server_override: Option<&str>, json: bool, _verbose: bool) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
     let orgs = fetch_orgs(&client)?;
+    if json {
+        return crate::core::json::emit(&serde_json::json!({ "organizations": orgs }), 1, None);
+    }
     if orgs.is_empty() {
         println!("  No organisations on {server}.");
         println!("  Create one with `evnx org create <name> --slug <slug>`.");
@@ -389,13 +392,21 @@ pub fn list(server_override: Option<&str>, _verbose: bool) -> Result<()> {
 }
 
 /// `evnx org members [--org <slug>]`
-pub fn members(server_override: Option<&str>, org: Option<&str>, verbose: bool) -> Result<()> {
+pub fn members(
+    server_override: Option<&str>,
+    org: Option<&str>,
+    json: bool,
+    verbose: bool,
+) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
     let target = resolve_org(&client, org)?;
     let members = members_of(&client, &target.id)?;
+    if json {
+        return crate::core::json::emit(&serde_json::json!({ "members": members }), 1, None);
+    }
 
     println!();
     println!("  {} — {}", target.name.bold(), target.slug.dimmed());
@@ -487,7 +498,12 @@ pub fn invite(
 }
 
 /// `evnx org invites [--org <slug>]`
-pub fn invites(server_override: Option<&str>, org: Option<&str>, _verbose: bool) -> Result<()> {
+pub fn invites(
+    server_override: Option<&str>,
+    org: Option<&str>,
+    json: bool,
+    _verbose: bool,
+) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
@@ -495,6 +511,9 @@ pub fn invites(server_override: Option<&str>, org: Option<&str>, _verbose: bool)
     let target = resolve_org(&client, org)?;
     let listed: InviteList =
         client.get(&api_path(&["orgs", &target.id.to_string(), "invites"])?)?;
+    if json {
+        return crate::core::json::emit(&serde_json::json!({ "invites": listed.invites }), 1, None);
+    }
 
     if listed.invites.is_empty() {
         println!("  No invitations outstanding for {}.", target.slug);
@@ -661,7 +680,7 @@ pub fn seats(
     Ok(())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct BillingState {
     plan: String,
     seats: Seats,
@@ -671,7 +690,7 @@ struct BillingState {
     subscription: SubscriptionState,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct SubscriptionState {
     exists: bool,
     status: Option<String>,
@@ -679,7 +698,7 @@ struct SubscriptionState {
     scheduled_change: Option<ScheduledChange>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct ScheduledChange {
     action: String,
     effective_at: Option<String>,
@@ -702,7 +721,12 @@ fn day_of(iso: &str) -> &str {
 /// rebuilding Paddle's flows would mean claiming authority over a contract evnx
 /// is not party to. What a terminal *is* the right place for is the question
 /// this answers: why are my limits what they are, and is that about to change?
-pub fn billing(server_override: Option<&str>, org: Option<&str>, _verbose: bool) -> Result<()> {
+pub fn billing(
+    server_override: Option<&str>,
+    org: Option<&str>,
+    json: bool,
+    _verbose: bool,
+) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
@@ -710,6 +734,9 @@ pub fn billing(server_override: Option<&str>, org: Option<&str>, _verbose: bool)
     let target = resolve_org(&client, org)?;
     let state: BillingState =
         client.get(&api_path(&["orgs", &target.id.to_string(), "billing"])?)?;
+    if json {
+        return crate::core::json::emit(&serde_json::json!({ "billing": state }), 1, None);
+    }
 
     println!();
     println!("  {} — {} plan", target.slug.bold(), state.plan.bold());

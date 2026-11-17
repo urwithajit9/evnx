@@ -73,6 +73,11 @@ use crate::cli::{
 };
 use anyhow::Result;
 
+/// Whether `--format json` / `--json` was given.
+fn is_json(output: &crate::cli::args::OutputArgs) -> bool {
+    output.resolved() == crate::cli::args::Format::Json
+}
+
 /// Dispatch an `evnx cloud …` subcommand.
 ///
 /// `server_override` is the `--server` flag. It is resolved here rather than in
@@ -93,6 +98,7 @@ pub fn run(
         env: file,
         env_name,
         password_stdin,
+        output,
         ..
     } = command
     {
@@ -103,6 +109,7 @@ pub fn run(
             env_name,
             version,
             password_stdin,
+            is_json(&output),
         );
     }
     dispatch(command, server_override, verbose).map(|()| crate::core::verdict::Verdict::Clean)
@@ -193,17 +200,30 @@ fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool
             env: file,
             env_name,
             password_stdin,
+            output,
         } => {
             // `local` was answered by `run`.
             let _ = (local, version, file, env_name, password_stdin);
-            sync::diff(server_override, vault, from, to, verbose)
+            sync::diff(server_override, vault, from, to, is_json(&output), verbose)
         }
-        CloudCommands::Audit { vault, last, event } => {
-            audit::run(server_override, vault, &last, event, verbose)
-        }
-        CloudCommands::History { vault, limit } => {
-            sync::history(server_override, vault, limit, verbose)
-        }
+        CloudCommands::Audit {
+            vault,
+            last,
+            event,
+            output,
+        } => audit::run(
+            server_override,
+            vault,
+            &last,
+            event,
+            is_json(&output),
+            verbose,
+        ),
+        CloudCommands::History {
+            vault,
+            limit,
+            output,
+        } => sync::history(server_override, vault, limit, is_json(&output), verbose),
         CloudCommands::DeleteVersion {
             version_num,
             vault,
@@ -247,7 +267,17 @@ fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool
             password_stdin,
             verbose,
         ),
-        CloudCommands::Status { ping } => status::run(server_override, ping, verbose),
+        CloudCommands::Status {
+            ping,
+            check,
+            output,
+        } => status::run(
+            server_override,
+            ping,
+            check,
+            output.resolved() == crate::cli::args::Format::Json,
+            verbose,
+        ),
     }
 }
 
@@ -268,7 +298,12 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
         } => auth::login(server_override, email, password_stdin, verbose),
         AuthCommands::Logout => auth::logout(server_override, verbose),
         AuthCommands::ResendVerification => auth::resend_verification(server_override, verbose),
-        AuthCommands::Status => auth::status(server_override, verbose),
+        AuthCommands::Status { check, output } => auth::status(
+            server_override,
+            check,
+            output.resolved() == crate::cli::args::Format::Json,
+            verbose,
+        ),
         AuthCommands::DeleteAccount { confirm_stdin } => {
             auth::delete_account(server_override, confirm_stdin, verbose)
         }
@@ -290,13 +325,17 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
             TotpCommands::RecoveryCodes => totp::regenerate(server_override, verbose),
         },
         AuthCommands::Devices { command } => match command {
-            DeviceCommands::List => device::list(server_override, verbose),
+            DeviceCommands::List { output } => {
+                device::list(server_override, is_json(&output), verbose)
+            }
             DeviceCommands::Disavow { device_id, yes } => {
                 device::disavow(server_override, device_id, yes, verbose)
             }
         },
         AuthCommands::Sessions { command } => match command {
-            SessionCommands::List => session::list(server_override, verbose),
+            SessionCommands::List { output } => {
+                session::list(server_override, is_json(&output), verbose)
+            }
             SessionCommands::Revoke { target, yes } => {
                 session::revoke(server_override, target, yes, verbose)
             }
@@ -350,9 +389,9 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
 pub fn run_org(command: OrgCommands, server_override: Option<&str>, verbose: bool) -> Result<()> {
     match command {
         OrgCommands::Create { name, slug } => org::create(server_override, &name, &slug, verbose),
-        OrgCommands::List => org::list(server_override, verbose),
-        OrgCommands::Members { org: which } => {
-            org::members(server_override, which.as_deref(), verbose)
+        OrgCommands::List { output } => org::list(server_override, is_json(&output), verbose),
+        OrgCommands::Members { org: which, output } => {
+            org::members(server_override, which.as_deref(), is_json(&output), verbose)
         }
         OrgCommands::Invite {
             email,
@@ -365,16 +404,16 @@ pub fn run_org(command: OrgCommands, server_override: Option<&str>, verbose: boo
             which.as_deref(),
             verbose,
         ),
-        OrgCommands::Invites { org: which } => {
-            org::invites(server_override, which.as_deref(), verbose)
+        OrgCommands::Invites { org: which, output } => {
+            org::invites(server_override, which.as_deref(), is_json(&output), verbose)
         }
         OrgCommands::Uninvite {
             invite_id,
             org: which,
         } => org::uninvite(server_override, &invite_id, which.as_deref(), verbose),
         OrgCommands::Accept { token } => org::accept(server_override, &token, verbose),
-        OrgCommands::Billing { org: which } => {
-            org::billing(server_override, which.as_deref(), verbose)
+        OrgCommands::Billing { org: which, output } => {
+            org::billing(server_override, which.as_deref(), is_json(&output), verbose)
         }
         OrgCommands::Seats {
             set,
@@ -420,7 +459,7 @@ pub fn run_vault(
             environment,
             password_stdin,
         } => vault::create(server_override, name, environment, password_stdin, verbose),
-        VaultCommands::List => vault::list(server_override, verbose),
+        VaultCommands::List { output } => vault::list(server_override, is_json(&output), verbose),
         VaultCommands::Delete { target, yes } => {
             vault::delete(server_override, target, yes, verbose)
         }
@@ -430,7 +469,9 @@ pub fn run_vault(
             role,
             password_stdin,
         } => vault::share(server_override, target, with, role, password_stdin, verbose),
-        VaultCommands::Members { target } => vault::members(server_override, target, verbose),
+        VaultCommands::Members { target, output } => {
+            vault::members(server_override, target, is_json(&output), verbose)
+        }
         VaultCommands::Role { target, user, role } => {
             vault::set_role(server_override, target, user, role, verbose)
         }

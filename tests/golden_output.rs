@@ -67,7 +67,20 @@ fn normalise(raw: &str) -> String {
     let version = env!("CARGO_PKG_VERSION");
     let mut out = String::with_capacity(raw.len());
 
+    // `run.features` is the build's feature list: it differs between a default
+    // and an `--all-features` build, so it is not part of the shape.
+    let mut in_features = false;
     for line in raw.lines() {
+        if in_features {
+            in_features = !line.trim_start().starts_with(']');
+            continue;
+        }
+        if line.trim_start().starts_with("\"features\": [") {
+            let indent = &line[..line.len() - line.trim_start().len()];
+            out.push_str(&format!("{indent}\"features\": \"<features>\"\n"));
+            in_features = !line.trim_end().ends_with(']') && !line.trim_end().ends_with("],");
+            continue;
+        }
         let line = if line.trim_start().starts_with("\"timestamp\"") {
             // RFC3339 with nanoseconds — different every run.
             let indent = &line[..line.len() - line.trim_start().len()];

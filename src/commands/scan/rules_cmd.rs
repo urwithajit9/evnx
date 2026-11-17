@@ -85,7 +85,8 @@ pub fn list(
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&doc)?);
+        // A top-level array: no `run` header (see `core::json::emit_unwrapped`).
+        crate::core::json::emit_unwrapped(&doc)?;
         return Ok(());
     }
     let width = rows.iter().map(|r| r.id.len()).max().unwrap_or(2);

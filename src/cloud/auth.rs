@@ -530,8 +530,16 @@ pub fn logout(server_override: Option<&str>, verbose: bool) -> Result<()> {
 /// Distinct from `evnx cloud status`, which reports what is on this disk without
 /// a network call. This one answers "is my email verified, is 2FA on" — questions
 /// only the server can answer, and the first authenticated request the CLI makes.
-pub fn status(server_override: Option<&str>, verbose: bool) -> Result<()> {
+pub fn status(
+    server_override: Option<&str>,
+    check_only: bool,
+    json: bool,
+    verbose: bool,
+) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
+    if check_only || json {
+        return super::status::check(&server, json, check_only);
+    }
     let client = Client::new(server.clone())?;
 
     // `-q` (DEC-G3, I-225): the answer stays, the heading and hints go.
@@ -1110,9 +1118,9 @@ pub(crate) fn write_secret_file(path: &str, content: &str, force: bool) -> Resul
 }
 
 /// The document `--format json` prints for a key bundle.
-fn key_bundle_json(bundle: &str) -> String {
+fn key_bundle_json(bundle: &str) -> Result<String> {
     let doc = serde_json::json!({ "key_bundle": bundle });
-    format!("{doc:#}\n")
+    Ok(crate::core::json::render(&doc, 1, None, true)? + "\n")
 }
 
 /// `evnx auth key-bundle` — print the CI key bundle on its own.
@@ -1137,7 +1145,7 @@ pub fn key_bundle(
     let json = format == crate::cli::args::Format::Json;
     if let Some(path) = output {
         let body = if json {
-            key_bundle_json(&bundle.encode())
+            key_bundle_json(&bundle.encode())?
         } else {
             format!("{}\n", bundle.encode())
         };
@@ -1146,8 +1154,7 @@ pub fn key_bundle(
         return Ok(());
     }
     if json {
-        print!("{}", key_bundle_json(&bundle.encode()));
-        return Ok(());
+        return crate::core::json::emit_rendered(&key_bundle_json(&bundle.encode())?);
     }
     say_key_bundle_guidance();
     crate::say!();
@@ -2452,7 +2459,7 @@ mod tests {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
         let m = server.mock("GET", "/api/v1/auth/me").expect(0).create();
-        status(Some(&server.url()), false).unwrap();
+        status(Some(&server.url()), false, false, false).unwrap();
         m.assert();
     }
 
@@ -2483,7 +2490,7 @@ mod tests {
             .expect(1)
             .create();
 
-        status(Some(&server.url()), true).unwrap();
+        status(Some(&server.url()), false, false, true).unwrap();
         m.assert();
     }
 

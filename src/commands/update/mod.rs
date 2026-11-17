@@ -131,14 +131,15 @@ fn run_list(json: bool) -> Result<Verdict> {
                 })
             })
             .collect();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
+        crate::core::json::emit(
+            &serde_json::json!({
                 "schema": 1,
                 "count": found.len(),
                 "copies": list,
-            }))?
-        );
+            }),
+            1,
+            None,
+        )?;
         return Ok(Verdict::Clean);
     }
 

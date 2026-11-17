@@ -429,7 +429,7 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
             super::shared::env_from_template(root, &target.template, &target.env_file, !opts.yes)?;
             done();
         }
-        super::shared::emit(planned.as_ref(), opts, root);
+        super::shared::emit(planned.as_ref(), opts, root)?;
         return Ok(());
     }
 
@@ -486,7 +486,7 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
             None
         };
         if opts.dry_run {
-            super::shared::emit(planned.as_ref(), opts, root);
+            super::shared::emit(planned.as_ref(), opts, root)?;
             return Ok(());
         }
         // Protect before writing, as every init path does (I-008). `add` only
@@ -511,7 +511,7 @@ pub fn handle_from_source(target: &Target, opts: WriteOptions, verbose: bool) ->
         super::shared::env_from_template(root, &target.template, &target.env_file, !opts.yes)?;
         added();
         done();
-        super::shared::emit(planned.as_ref(), opts, root);
+        super::shared::emit(planned.as_ref(), opts, root)?;
     } else {
         let example_content = formatter::format_env_example(&vars, true)?;
         let template_content = formatter::format_env_template(&vars)?;

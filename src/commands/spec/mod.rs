@@ -42,7 +42,7 @@ pub fn check(
                 "checked": false,
                 "reason": "no [vars] in .evnx.toml",
                 "ok": true,
-            }));
+            }))?;
         } else {
             verdict::skipped("no [vars] in .evnx.toml");
         }
@@ -143,7 +143,7 @@ pub fn check(
                     "absent_from": p.absent_from,
                 }))
                 .collect::<Vec<_>>(),
-        }));
+        }))?;
         return Ok(if problems == 0 {
             Verdict::Clean
         } else {
@@ -205,8 +205,8 @@ pub fn check(
 }
 
 /// `spec check --format json`: one document on stdout.
-fn print_check_json(doc: &serde_json::Value) {
-    println!("{doc:#}");
+fn print_check_json(doc: &serde_json::Value) -> Result<()> {
+    crate::core::json::emit(doc, 1, None)
 }
 
 /// Where the variables come from.

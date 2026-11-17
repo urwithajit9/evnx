@@ -394,7 +394,7 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
     // ── Dry run ──────────────────────────────────────────────────────────────
     if opts.dry_run {
         if opts.json {
-            print_json(true, resolved, &places, &changes, &still, &missing, &[]);
+            print_json(true, resolved, &places, &changes, &still, &missing, &[])?;
         } else {
             print_resolved(resolved);
             println!("Dry run: nothing was written.");
@@ -411,7 +411,7 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
     if changes.is_empty() {
         // Only reachable with --ignore-missing.
         if opts.json {
-            print_json(false, resolved, &places, &changes, &still, &missing, &[]);
+            print_json(false, resolved, &places, &changes, &still, &missing, &[])?;
         } else {
             print_resolved(resolved);
             ui::say("  Nothing to remove.");
@@ -469,7 +469,7 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
     if opts.json {
         print_json(
             false, resolved, &places, &changes, &still, &missing, &backups,
-        );
+        )?;
         return Ok(());
     }
     for (c, b) in changes.iter().zip(&backups) {
@@ -832,7 +832,7 @@ fn print_json(
     still: &[(String, String, &'static str)],
     missing: &[&String],
     backups: &[Option<safe_write::Backup>],
-) {
+) -> Result<()> {
     let mut removed = Vec::new();
     for c in changes {
         let file = &places[c.place_index].label;
@@ -858,7 +858,7 @@ fn print_json(
         "missing": missing,
         "backups": backups.iter().flatten().map(|b| label(&b.to_string_lossy())).collect::<Vec<_>>(),
     });
-    println!("{doc:#}");
+    crate::core::json::emit(&doc, 1, None)
 }
 
 #[cfg(test)]

@@ -31,7 +31,34 @@ pub fn normalise(raw: &str, dirs: &[&Path]) -> String {
         s = s.replace(&spelling, "<dir>");
     }
     s = replace_dates(&s);
+    s = collapse_features(&s);
     replace_version(&s, env!("CARGO_PKG_VERSION"))
+}
+
+/// `run.features` lists the build's features, which differ between a default
+/// and an `--all-features` run: pin the shape, not the build.
+fn collapse_features(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut skipping = false;
+    for line in s.lines() {
+        let t = line.trim_start();
+        if skipping {
+            skipping = !t.starts_with(']');
+            continue;
+        }
+        if t.starts_with("\"features\": [") {
+            let indent = &line[..line.len() - t.len()];
+            out.push_str(&format!("{indent}\"features\": \"<features>\"\n"));
+            skipping = !t.trim_end().ends_with(']') && !t.trim_end().ends_with("],");
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    if !s.ends_with('\n') {
+        out.pop();
+    }
+    out
 }
 
 /// `version` → `<version>`, except where a message names it as history

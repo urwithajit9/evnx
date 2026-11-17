@@ -57,7 +57,7 @@ pub fn run(args: &PlatformDiffArgs) -> Result<Verdict> {
             args.strict,
         );
         j["local_file_found"] = local_found.into();
-        println!("{}", serde_json::to_string_pretty(&j)?);
+        crate::core::json::emit(&j, 1, None)?;
     } else {
         println!(
             "Vercel  {label}  {}        local  {file_name}",

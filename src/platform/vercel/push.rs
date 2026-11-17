@@ -843,7 +843,7 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
     let finish_json = |outcome: Option<&Outcome>, applied: bool| -> Result<()> {
         if args.json() {
             let j = to_json(&plan, &session, &file_name, args, outcome, applied);
-            println!("{}", serde_json::to_string_pretty(&j)?);
+            crate::core::json::emit(&j, 1, None)?;
         }
         Ok(())
     };

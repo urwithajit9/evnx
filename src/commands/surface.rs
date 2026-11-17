@@ -397,13 +397,11 @@ pub fn run(json: bool, compact: bool) -> Result<()> {
 
     // Pretty by default: the output is committed to another repository and read
     // in diffs, where one line of 40 KB is unreviewable.
-    let out = if compact {
-        serde_json::to_string(&surface)?
+    if compact {
+        crate::core::json::emit_compact(&surface, SCHEMA, None)
     } else {
-        serde_json::to_string_pretty(&surface)?
-    };
-    println!("{out}");
-    Ok(())
+        crate::core::json::emit(&surface, SCHEMA, None)
+    }
 }
 
 #[cfg(test)]

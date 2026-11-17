@@ -272,7 +272,7 @@ fn check_as_json(
     let loaded = executor::load(ctx, config, false)?;
     let report = report_of(ctx, &loaded.drift);
     // stdout, and nothing else on it — the property the golden tests pin.
-    println!("{}", serde_json::to_string_pretty(&report)?);
+    crate::core::json::emit(&report, 1, None)?;
     Ok(loaded.drift.out_of_step())
 }
 
@@ -299,7 +299,7 @@ fn run_as_json(
     if !ctx.dry_run {
         executor::execute(ctx, config)?;
     }
-    println!("{}", serde_json::to_string_pretty(&report)?);
+    crate::core::json::emit(&report, 1, None)?;
     Ok(Verdict::Clean)
 }
 
@@ -422,7 +422,7 @@ fn check_without_env(
             added: None,
             compared_with: Some("spec"),
         };
-        println!("{}", serde_json::to_string_pretty(&report)?);
+        crate::core::json::emit(&report, 1, None)?;
     } else {
         ui::print_header(
             "evnx sync",

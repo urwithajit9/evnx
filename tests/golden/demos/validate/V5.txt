@@ -3,6 +3,13 @@
 
 $ evnx validate --format json
 {
+  "run": {
+    "tool": "evnx",
+    "version": "<version>",
+    "schema_version": 1,
+    "ruleset": null,
+    "features": "<features>"
+  },
   "status": "failed",
   "dry_run": false,
   "required_present": 6,

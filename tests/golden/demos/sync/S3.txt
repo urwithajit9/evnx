@@ -3,6 +3,13 @@
 
 $ evnx sync --check --format json
 {
+  "run": {
+    "tool": "evnx",
+    "version": "<version>",
+    "schema_version": 1,
+    "ruleset": null,
+    "features": "<features>"
+  },
   "in_sync": false,
   "direction": "forward",
   "env": ".env",
@@ -26,6 +33,13 @@ $ evnx sync --check --format json
 
 $ evnx sync --check --format json --direction reverse
 {
+  "run": {
+    "tool": "evnx",
+    "version": "<version>",
+    "schema_version": 1,
+    "ruleset": null,
+    "features": "<features>"
+  },
   "in_sync": false,
   "direction": "reverse",
   "env": ".env",
@@ -42,6 +56,13 @@ $ evnx sync --check --format json --direction reverse
 
 $ evnx sync --dry-run --format json
 {
+  "run": {
+    "tool": "evnx",
+    "version": "<version>",
+    "schema_version": 1,
+    "ruleset": null,
+    "features": "<features>"
+  },
   "in_sync": false,
   "direction": "forward",
   "env": ".env",

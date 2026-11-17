@@ -19,7 +19,7 @@
 use crate::cloud::client::api_path;
 use anyhow::{anyhow, Result};
 use colored::Colorize;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::client::Client;
 use super::config::CloudConfig;
@@ -29,7 +29,7 @@ struct SessionList {
     sessions: Vec<SessionSummary>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 struct SessionSummary {
     session_id: String,
     created_at: String,
@@ -40,12 +40,19 @@ struct SessionSummary {
 }
 
 /// List the account's active sessions.
-pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
+pub fn list(server_override: Option<&str>, json: bool, verbose: bool) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
     let listed: SessionList = client.get("/api/v1/auth/sessions")?;
+    if json {
+        return crate::core::json::emit(
+            &serde_json::json!({ "sessions": listed.sessions }),
+            1,
+            None,
+        );
+    }
 
     if listed.sessions.is_empty() {
         println!("  No active sessions on {server}.");

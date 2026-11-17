@@ -58,6 +58,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   most CI tools) read `yes`, `on`, `No` and `2026-01-01` as strings, not
   booleans and dates. The `doctor --format json` report has one more check,
   `empty_sections`.
+- **Exit codes follow one table** (`docs/exit-codes.md`, and the "Exit codes"
+  block in every `--help`).
+  - `backup`: 3, 4, 5 and 6 are now **2**. `restore`: 3 is now **2**; 4
+    (cancelled) and 5 (written aside) stay. The messages still name what
+    failed.
+  - A command that needs a confirmation, has no terminal and was not given
+    `--yes` exits **4** everywhere (it was 2 on `migrate` and some others).
+    The message names `--yes`.
+  - A current folder that cannot be read exits **2**, not 1.
 
 ### Breaking: one flag vocabulary (WP-8)
 
@@ -170,6 +179,19 @@ New in the same change:
 
 ### Added
 
+- **JSON output.**
+  - Every `--format json` / `--json` document has a top-level `run` object:
+    `{"tool": "evnx", "version", "schema_version", "ruleset", "features"}`.
+    `ruleset` is the rule-set id on `scan` and `null` elsewhere; there is no
+    timestamp. The keys each command already printed stay where they were,
+    including its own `schema_version` / `schema`. Two outputs have no `run`:
+    `scan rules list --json` (a top-level array) and `scan --format sarif`.
+  - `--format json` / `--json` on `org list|members|invites|billing`,
+    `vault list|members`, `cloud history|audit|diff` and
+    `auth sessions list|devices list`. Names and metadata only, never a value.
+  - `auth status --check` and `cloud status --check`: exit 0 when signed in,
+    10 when not, without a request. `-q` prints nothing; `--json` prints
+    `{signed_in, server, user}` (`user` is left out when signed out).
 - `add --example FILE`.
 - `init --here`: make a folder inside a repository a project of its own.
 - A `files` line on stderr (`.env.prod ↔ .env.prod.example (template matched
