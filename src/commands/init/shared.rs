@@ -582,7 +582,7 @@ fn notices_of(target: &Target) -> Vec<(bool, String)> {
             true,
             format!(
                 "{} {}: commands run here read {}, not that one — to set up that folder \
-                 instead: evnx init -p {dir}",
+                 instead: evnx init --dir {dir}",
                 nested.join(", "),
                 if nested.len() == 1 {
                     "also exists"

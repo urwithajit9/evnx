@@ -1,7 +1,7 @@
 
 ================ S8 ================
 
-$ evnx sync -f --template-config tc.json
+$ evnx sync -y --template-config tc.json
 · .env.example not found, creating from .env
 ✓ Created .env.example
 

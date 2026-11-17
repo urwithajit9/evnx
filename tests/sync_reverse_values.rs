@@ -20,7 +20,7 @@ fn t_i115_reverse_keeps_the_templates_values() {
     let p = Project::new()
         .env("APP=1\n")
         .example("APP=\nREDIS_URL=redis://localhost:6379\nAPI_PORT=8080\nLOG_LEVEL=info\n");
-    run(p.path(), &["sync", "--direction", "reverse", "-f"]).assert_code(0);
+    run(p.path(), &["sync", "--direction", "reverse", "--yes"]).assert_code(0);
     let env = env_of(&p);
     for line in [
         "REDIS_URL=redis://localhost:6379",
@@ -44,7 +44,7 @@ fn t_i115_reverse_with_allow_actual_keeps_the_value() {
             "sync",
             "--direction",
             "reverse",
-            "-f",
+            "--yes",
             "--template-config",
             "tc.json",
         ],
@@ -73,7 +73,7 @@ fn t_i115_reverse_honours_the_template_config() {
             "sync",
             "--direction",
             "reverse",
-            "-f",
+            "--yes",
             "--template-config",
             "tc.json",
         ],
@@ -91,7 +91,7 @@ fn t_i115_a_template_placeholder_stays_a_placeholder() {
     let p = Project::new()
         .env("APP=1\n")
         .example("APP=\nSTRIPE_SECRET_KEY=YOUR_KEY_HERE\nDB_PASSWORD=\n");
-    run(p.path(), &["sync", "--direction", "reverse", "-f"]).assert_code(0);
+    run(p.path(), &["sync", "--direction", "reverse", "--yes"]).assert_code(0);
     let env = env_of(&p);
     assert!(
         env.lines().any(|l| l == "STRIPE_SECRET_KEY=YOUR_KEY_HERE"),

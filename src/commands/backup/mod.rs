@@ -51,12 +51,12 @@
 //! evnx backup
 //! evnx backup .env.production --output prod.backup
 //! evnx backup --env-name production
-//! evnx backup --key-file /run/secrets/backup-key --keep 5 --verify
+//! evnx backup --password-file /run/secrets/backup-key --keep 5 --verify
 //! ```
 //!
 //! # Passphrase
 //!
-//! `--key-file` (also `--password-file`), then `EVNX_PASSWORD`, then a prompt
+//! `--password-file`, then `EVNX_PASSWORD`, then a prompt
 //! asked twice — [`crate::utils::secret_source`], the same rule `restore` reads
 //! with. A new backup needs at least 8 characters from any of them (DEC-B2).
 //!
@@ -77,7 +77,7 @@
 //! # Module layout
 //!
 //! - **`mod.rs`** (this file) — CLI adapter: header, password prompts,
-//!   key-file resolution, validation, orchestration. No pure logic lives here.
+//!   password-file resolution, validation, orchestration. No pure logic lives here.
 //! - **`core.rs`** — Pure logic: [`BackupOptions`](core::BackupOptions),
 //!   [`backup_inner`](core::backup_inner), [`check_output`](core::check_output),
 //!   `rotate_backups`, `verify_backup`, `encrypt_content`, [`decrypt_content`],
@@ -127,7 +127,7 @@ pub use self::core::DecryptError;
 /// * `env`      — Path to the `.env` file to back up (default: `.env`).
 /// * `output`   — Destination path for the encrypted backup (default: `<env>.backup`).
 /// * `verbose`  — Print extra diagnostic information during the run.
-/// * `key_file` — Path to a key file to use instead of an interactive password.
+/// * `key_file` — Path to a password file to use instead of an interactive password.
 /// * `keep`     — Number of previous backups to retain (default: 3, `0` = overwrite).
 /// * `verify`   — Re-decrypt and integrity-check after writing.
 pub fn run(

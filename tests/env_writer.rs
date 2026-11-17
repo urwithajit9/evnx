@@ -28,7 +28,7 @@ fn t_i114_sync_actual_values_survive_a_round_trip() {
             "tc.json",
             r#"{"allow_actual":["APP_NAME","GREETING","PRICE","LOG"]}"#,
         );
-    run(p.path(), &["sync", "-f", "--template-config", "tc.json"]).assert_code(0);
+    run(p.path(), &["sync", "--yes", "--template-config", "tc.json"]).assert_code(0);
     let got = read_back(&p, ".env.example");
     assert_eq!(got["APP_NAME"], "My App # prod");
     assert_eq!(got["GREETING"], "hi there");
@@ -57,13 +57,20 @@ fn restore_of(content: &str) -> (Project, support::Output) {
         .file("pw", "correct horse battery staple long\n");
     run(
         p.path(),
-        &["backup", "--key-file", "pw", "--output", "e.bak"],
+        &["backup", "--password-file", "pw", "--output", "e.bak"],
     )
     .assert_code(0);
     std::fs::remove_file(p.path().join(".env")).unwrap();
     let out = run(
         p.path(),
-        &["restore", "e.bak", "--key-file", "pw", "--output", ".env"],
+        &[
+            "restore",
+            "e.bak",
+            "--password-file",
+            "pw",
+            "--output",
+            ".env",
+        ],
     );
     (p, out)
 }

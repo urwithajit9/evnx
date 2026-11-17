@@ -74,7 +74,7 @@ fn t_i282_hints_carry_the_files_in_play() {
 #[test]
 fn t_i283_own_generated_from_line_is_kept() {
     let p = Project::new().example("# Generated from terraform output\nA=1\n");
-    run(p.path(), &["sync", "-f", "--direction", "reverse"]).assert_code(0);
+    run(p.path(), &["sync", "--yes", "--direction", "reverse"]).assert_code(0);
     let env = p.read(".env");
     assert!(
         env.starts_with("# Generated from terraform output\n"),

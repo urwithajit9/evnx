@@ -1,7 +1,7 @@
 
 ================ BR9 ================
 
-$ evnx restore cloud://myproject --key-file pw
+$ evnx restore cloud://myproject --password-file pw
 [stderr]
 
   evnx restore  Decrypt and restore from an encrypted backup
@@ -13,7 +13,7 @@ Error: Backup file not found: cloud://myproject
 [exit 3]
   ok: FIXED D-112 (DEC-B4): cloud:// is a missing file (exit 3) with a hint for evnx cloud pull (exit 3)
 
-$ evnx restore .env.backup --key-file pw --output lnk.env
+$ evnx restore .env.backup --password-file pw --output lnk.env
 ✓ Read backup from .env.backup
 · Using key file for decryption (non-interactive mode)
 

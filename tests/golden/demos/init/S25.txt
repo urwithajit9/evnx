@@ -2,7 +2,7 @@
 ================ S25 ================
 An existing .env; a fresh clone
 
-$ evnx init --with nextjs,postgresql --yes -p old
+$ evnx init --with nextjs,postgresql --yes --dir old
 
   evnx init  Set up environment variables for your project
 
@@ -25,7 +25,7 @@ Next steps:
   ok: .env values kept
   ok: FIXED I-297 (R-init, DQ-29): .env has every name the template has
 
-$ evnx init --yes -p clone
+$ evnx init --yes --dir clone
 
   evnx init  Set up environment variables for your project
 

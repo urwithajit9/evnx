@@ -156,14 +156,8 @@ pub struct AlignArgs {
     #[arg(long, verbatim_doc_comment)]
     pub check: bool,
 
-    /// Output format: `pretty` (default) or `json`.
-    #[arg(
-        long,
-        value_name = "FORMAT",
-        default_value = "pretty",
-        value_parser = ["pretty", "json"]
-    )]
-    pub format: String,
+    #[command(flatten)]
+    pub output: args::OutputArgs,
 
     /// Keep no `.bak` copy of a file before replacing it.
     ///
@@ -173,23 +167,32 @@ pub struct AlignArgs {
     pub no_backup: bool,
 }
 
+/// Which side of the pair `sync` fills, named by what it writes.
+///
+/// A spelling of `--direction` that says the file instead of the arrow:
+/// `--to example` is `--direction forward`, `--to env` is `--direction reverse`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SyncTo {
+    /// Add the names `.env` has and the template lacks to the template (forward)
+    Example,
+    /// Add the names the template has and `.env` lacks to `.env` (reverse)
+    Env,
+}
+
+impl From<SyncTo> for SyncDirection {
+    fn from(to: SyncTo) -> Self {
+        match to {
+            SyncTo::Example => SyncDirection::Forward,
+            SyncTo::Env => SyncDirection::Reverse,
+        }
+    }
+}
+
 /// Keep .env and .env.example in sync.
 #[derive(Args, Debug)]
 pub struct SyncArgs {
-    /// The environment file to sync from (forward) or into (reverse).
-    #[arg(long)]
-    pub env: Option<String>,
-
-    /// The template to sync into (forward) or from (reverse).
-    #[arg(long)]
-    pub example: Option<String>,
-
-    /// Use `.env.<NAME>` instead of `.env`.
-    ///
-    /// `--env-name production` resolves to `.env.production`. A name whose file
-    /// does not exist is an error listing the environments that do.
-    #[arg(long, value_name = "NAME", conflicts_with = "env")]
-    pub env_name: Option<String>,
+    #[command(flatten)]
+    pub files: args::FileArgs,
 
     /// Which file to fill: forward (the default) adds to the template,
     /// reverse adds to `.env`.
@@ -204,15 +207,15 @@ pub struct SyncArgs {
     #[arg(long, value_enum)]
     pub direction: Option<SyncDirection>,
 
-    /// Deprecated: does what --force does (placeholders, no prompt).
+    /// The file to fill: `example` is `--direction forward`, `env` is
+    /// `--direction reverse`.
     ///
-    /// Without a terminal sync already uses placeholders and says so.
-    #[arg(long)]
-    pub placeholder: bool,
+    /// Another spelling of `--direction`; give one or the other.
+    #[arg(long, value_enum, conflicts_with = "direction")]
+    pub to: Option<SyncTo>,
 
-    /// Preview changes without writing to files
-    #[arg(long, short = 'n')]
-    pub dry_run: bool,
+    #[command(flatten)]
+    pub dry: args::DryRunArgs,
 
     /// Report whether the files are in step through the exit code.
     ///
@@ -235,26 +238,11 @@ pub struct SyncArgs {
     #[arg(long, verbatim_doc_comment)]
     pub check: bool,
 
-    /// Output format for `--check`: `pretty` (default) or `json`.
-    ///
-    /// ⚠️ `json` requires `--check`, because without it `sync` edits files and a
-    /// machine-readable report of an edit already made is worth less than the
-    /// edit. The report says *what* drifted — until now the only answer a
-    /// pipeline could get was the exit code.
-    #[arg(
-        long,
-        value_name = "FORMAT",
-        default_value = "pretty",
-        value_parser = ["pretty", "json"],
-        requires = "check"
-    )]
-    pub format: String,
+    #[command(flatten)]
+    pub output: args::OutputArgs,
 
-    /// Skip the prompts and add placeholder values.
-    ///
-    /// Without a terminal, or with CI set, sync does this anyway and says so.
-    #[arg(long, short = 'f')]
-    pub force: bool,
+    #[command(flatten)]
+    pub confirm: args::ConfirmArgs,
 
     /// With no `.env` and nothing else to compare, skip (exit 0) and say so.
     ///
@@ -283,7 +271,7 @@ pub struct SyncArgs {
     ///
     /// Works on its own: it cannot be combined with the options that pick
     /// one environment file or another mode (env, env-name, direction, check,
-    /// format, force, placeholder, skip-without-env, template-config,
+    /// format, json, to, skip-without-env, template-config,
     /// naming-policy). Use --example for another template and --dry-run to
     /// preview.
     ///
@@ -295,15 +283,11 @@ pub struct SyncArgs {
         long,
         verbatim_doc_comment,
         conflicts_with_all = [
-            "env", "env_name", "direction", "check", "format", "force",
-            "placeholder", "skip_without_env", "template_config", "naming_policy",
+            "env", "env_name", "direction", "to", "check", "format", "json",
+            "skip_without_env", "template_config", "naming_policy",
         ]
     )]
     pub prune: bool,
-
-    /// With --prune: remove without asking.
-    #[arg(long, short = 'y', requires = "prune")]
-    pub yes: bool,
 
     /// What to do with a name that is not UPPER_SNAKE_CASE.
     ///
@@ -2274,16 +2258,16 @@ pub enum Commands {
     /// `evnx sync --direction reverse` to add them. `.evnx.toml` gets a [vars]
     /// entry per variable, or the new names are recorded into the one in force.
     #[command(after_help = docs::INIT.after_help)]
+    #[command(mut_arg("dir", |a| a.help("Output path for .env files. Defaults to the current folder")))]
+    #[command(mut_arg("yes", |a| a.help("Skip all prompts. Creates blank .env files unless --blueprint names a stack.")))]
+    #[command(mut_arg("dry_run", |a| a.help("Show what would be written — the template, `.env`, `.gitignore` and `.evnx.toml` — and write nothing. Asks no confirmation; a menu is still shown when nothing was named.")))]
+    #[command(mut_arg("json", |a| a.help("Print the result as one JSON document on stdout (needs --yes or --dry-run: it never asks). The same fields as `evnx add --json`.")))]
     Init {
-        /// Output path for .env files.
-        // `-p` matches `evnx add`, and the documentation showed it for `init`
-        // before it existed (I-023).
-        #[arg(short, long, default_value = ".")]
-        path: String,
+        #[command(flatten)]
+        dir: args::DirArgs,
 
-        /// Skip all prompts. Creates blank .env files unless --blueprint names a stack.
-        #[arg(short, long)]
-        yes: bool,
+        #[command(flatten)]
+        confirm: args::ConfirmArgs,
 
         /// Generate from a named stack blueprint, e.g. `t3_modern`.
         ///
@@ -2360,16 +2344,11 @@ pub enum Commands {
         #[arg(long, value_name = "NAME")]
         env_name: Option<String>,
 
-        /// Show what would be written — the template, `.env`, `.gitignore` and
-        /// `.evnx.toml` — and write nothing. Asks no confirmation; a menu is
-        /// still shown when nothing was named.
-        #[arg(long)]
-        dry_run: bool,
+        #[command(flatten)]
+        dry: args::DryRunArgs,
 
-        /// Print the result as one JSON document on stdout (needs --yes or
-        /// --dry-run: it never asks). The same fields as `evnx add --json`.
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        output: args::OutputArgs,
 
         /// Make this folder a project of its own: write `.evnx.toml` here,
         /// even when the repository's root already has one, and do not take
@@ -2404,6 +2383,11 @@ pub enum Commands {
     // written before the subcommand (`evnx add --path api service redis`),
     // which has always worked. `--list` with a subcommand is refused in `run`.
     #[command(after_help = docs::ADD.after_help, arg_required_else_help = true)]
+    #[command(mut_arg("dir", |a| a.global(true).help("Output path (default: current directory)")))]
+    #[command(mut_arg("yes", |a| a.global(true)))]
+    #[command(mut_arg("dry_run", |a| a.global(true).help("Show what would be added, skipped and kept; write nothing. Needs no terminal.")))]
+    #[command(mut_arg("json", |a| a.global(true).help("Print the result as one JSON document on stdout (needs --yes or --dry-run: it never asks).")))]
+    #[command(mut_arg("format", |a| a.global(true)))]
     Add {
         #[command(subcommand)]
         target: Option<AddTarget>,
@@ -2413,19 +2397,17 @@ pub enum Commands {
         #[arg(long)]
         list: bool,
 
-        /// Show what would be added, skipped and kept; write nothing. Needs no
-        /// terminal.
-        #[arg(long, global = true)]
-        dry_run: bool,
+        #[command(flatten)]
+        dry: args::DryRunArgs,
 
-        /// Print the result as one JSON document on stdout (needs --yes or
-        /// --dry-run: it never asks).
-        #[arg(long, global = true)]
-        json: bool,
+        #[command(flatten)]
+        output: args::OutputArgs,
 
-        /// Output path (default: current directory).
-        #[arg(long, short, default_value = ".", global = true)]
-        path: String,
+        #[command(flatten)]
+        dir: args::DirArgs,
+
+        #[command(flatten)]
+        confirm: args::ConfirmArgs,
 
         /// Write to `.env.<NAME>` instead of `.env` (one file per run; loop
         /// over names for several). `prod` and `.env.prod` both work.
@@ -2443,10 +2425,6 @@ pub enum Commands {
         /// template created. For a server that keeps `.env.prod` alone.
         #[arg(long, global = true, conflicts_with = "example")]
         no_template: bool,
-
-        /// Skip confirmation prompts.
-        #[arg(long, short, global = true)]
-        yes: bool,
     },
 
     /// Remove variables from the env file, and the template and contract too.
@@ -2465,14 +2443,24 @@ pub enum Commands {
         after_help = docs::REMOVE.after_help,
         arg_required_else_help = true
     )]
+    #[command(mut_arg("dry_run", |a| a.help("Show what would be removed; write nothing. Needs no terminal.")))]
+    #[command(mut_arg("json", |a| a.help("Print the result as one JSON document (needs --yes or --dry-run; with --check it never asks, so neither is needed).")))]
     Remove {
         /// Variable names, or quoted globs (`'TEST_*'`). Case-sensitive.
         #[arg(required = true, value_name = "NAME")]
         names: Vec<String>,
 
-        /// Project folder (default: current directory).
-        #[arg(long, short, default_value = ".")]
-        path: String,
+        #[command(flatten)]
+        dir: args::DirArgs,
+
+        #[command(flatten)]
+        dry: args::DryRunArgs,
+
+        #[command(flatten)]
+        confirm: args::ConfirmArgs,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
 
         /// Remove from `.env.<NAME>` instead of `.env`. Defaults to
         /// `[defaults] env_name`.
@@ -2490,14 +2478,6 @@ pub enum Commands {
         /// Remove from every environment file, the template and the contract.
         #[arg(long)]
         all: bool,
-
-        /// Show what would be removed; write nothing. Needs no terminal.
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Remove without asking.
-        #[arg(long, short)]
-        yes: bool,
 
         /// A name found nowhere is not an error (for scripts that run twice).
         #[arg(long)]
@@ -2520,11 +2500,6 @@ pub enum Commands {
         #[arg(long)]
         all_names: bool,
 
-        /// Print the result as one JSON document (needs --yes or --dry-run;
-        /// with --check it never asks, so neither is needed).
-        #[arg(long)]
-        json: bool,
-
         /// Only look: exit 1 if any NAME is still in an environment file, the
         /// template or `.evnx.toml`, listing where; 0 if it is gone everywhere.
         ///
@@ -2543,34 +2518,22 @@ pub enum Commands {
 
     /// Check .env against .env.example, find issues.
     #[command(after_help = docs::VALIDATE.after_help)]
+    #[command(mut_arg("env", |a| a.help("Path to the environment file to check, or `-` to read stdin. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
+    #[command(mut_arg("example", |a| a.help("The template to compare against. Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`")))]
+    #[command(mut_arg("format", |a| a.ignore_case(true).long_help("Output format. `json` is the machine-readable form, with a `summary` object for `jq`. `github` emits `::error` annotations that appear inline on a pull request.")))]
+    #[command(mut_arg("dry_run", |a| a.help("With `--fix`, show what it would change and write nothing").long_help("With `--fix`, show what it would change and write nothing.\n\nNo `.env` change and no backup. The report and the exit code are those of the file as it stands; a secret `--fix` would generate is not shown, because the real run makes a new one.").requires("fix")))]
+    #[command(mut_arg("yes", |a| a.help("With `--fix`, apply the fixes without asking").long_help("With `--fix`, apply the fixes without asking.\n\n`--fix` never stops to ask, so this changes nothing today; it is accepted so a script can say so, and holds if a confirmation is ever added.").requires("fix")))]
     Validate {
-        /// Path to the environment file to check, or `-` to read stdin.
-        ///
-        /// Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
-        #[arg(long)]
-        env: Option<String>,
-
-        /// Operate on `.env.<NAME>` instead of `.env`.
-        ///
-        /// `--env-name production` resolves to `.env.production`. A name whose
-        /// file does not exist is an error listing the environments that do —
-        /// it never falls back to `.env`.
-        #[arg(long, value_name = "NAME", conflicts_with = "env")]
-        env_name: Option<String>,
+        #[command(flatten)]
+        files: args::FileArgs,
 
         /// How to read `--env`: `dotenv` or `json`.
         ///
         /// `json` takes a flat `{"KEY": "value"}` object, or what
         /// `evnx parse --format json --values` prints. It is never guessed:
         /// `.env` text may start with `{`.
-        #[arg(long, value_name = "FORMAT", default_value = "dotenv")]
-        input_format: String,
-
-        /// The template to compare against.
-        ///
-        /// Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`.
-        #[arg(long)]
-        example: Option<String>,
+        #[arg(long, value_enum, value_name = "FORMAT", default_value = "dotenv")]
+        input_format: crate::commands::validate::InputFormat,
 
         /// Also report variables that are present but not declared.
         ///
@@ -2599,13 +2562,11 @@ pub enum Commands {
         #[arg(long)]
         fix: bool,
 
-        /// With `--fix`, show what it would change and write nothing.
-        ///
-        /// No `.env` change and no backup. The report and the exit code are
-        /// those of the file as it stands; a secret `--fix` would generate is
-        /// not shown, because the real run makes a new one.
-        #[arg(long, requires = "fix")]
-        dry_run: bool,
+        #[command(flatten)]
+        dry: args::DryRunArgs,
+
+        #[command(flatten)]
+        confirm: args::ConfirmArgs,
 
         /// With `--fix`, also replace weak secrets that hold a **real value**.
         ///
@@ -2628,13 +2589,8 @@ pub enum Commands {
         #[arg(long, requires = "fix")]
         rotate_weak_secrets: bool,
 
-        /// Output format: `pretty`, `json` or `github-actions`.
-        ///
-        /// `json` is the machine-readable form, with a `summary` object for
-        /// `jq`. `github-actions` emits `::error` annotations that appear
-        /// inline on a pull request. An unrecognised value is an error.
-        #[arg(long, default_value = "pretty")]
-        format: String,
+        #[command(flatten)]
+        output: args::OutputArgs<args::ValidateFormat>,
 
         /// Always exit 0, even when problems are found.
         ///
@@ -2661,8 +2617,8 @@ pub enum Commands {
         /// Defaults to `error`, or `[validate] fail_on` from `.evnx.toml`.
         /// `warning` makes warnings exit 1 too, for gates that want them
         /// fixed. `--exit-zero` still wins.
-        #[arg(long, value_name = "LEVEL")]
-        fail_on: Option<String>,
+        #[arg(long, value_enum, value_name = "LEVEL")]
+        fail_on: Option<crate::commands::validate::FailOn>,
     },
 
     /// Detect secrets that look real (AWS keys, tokens, etc.).
@@ -2994,7 +2950,7 @@ Supported formats:
   Generic:        json, yaml, shell
   Cloud:          aws-secrets (JSON for create-secret),
                   gcp-secrets (--project), azure-keyvault (--vault-name)
-  CI/CD:          github-actions (text to paste into the GitHub web form)
+  CI/CD:          github (text to paste into the GitHub web form)
   Containers:     docker-compose, kubernetes (--name, optional --namespace)
   IaC:            terraform (.tfvars; --terraform-declarations for variable blocks)
   Secret Managers: doppler, heroku (--heroku-app), vercel,
@@ -3002,7 +2958,7 @@ Supported formats:
 
 Aliases:
   k8s → kubernetes, tf → terraform, yml → yaml
-  gh-actions → github-actions, compose → docker-compose
+  compose → docker-compose
 
 Exit codes: 0 converted; 2 nothing converted (bad flag, missing file, names that
 collide, a filter or file with no variables).
@@ -3011,26 +2967,20 @@ Use 'evnx convert' without --to for interactive format selection.
 
 📖  Full guide: https://docs.evnx.dev/cli/commands/convert
 ")]
+    #[command(mut_arg("env", |a| a.help("Path to input .env file. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
+    #[command(mut_arg("yes", |a| a.help("Add the --output file to .gitignore without asking; with no --to, fail instead of showing the menu").long_help("Do not ask: add the --output file to .gitignore without the prompt (as `--gitignore`). With no `--to` it is an error naming `--to`, because the format menu is a question too.")))]
+    #[command(mut_arg("dry_run", |a| a.help("With --output, check everything and say what would be written, but write nothing").requires("output")))]
     Convert {
-        /// Path to input .env file
-        #[arg(long, value_name = "PATH")]
-        env: Option<String>,
-
-        /// Operate on `.env.<NAME>` instead of `.env`.
-        ///
-        /// `--env-name production` resolves to `.env.production`. A name whose
-        /// file does not exist is an error listing the environments that do —
-        /// it never falls back to `.env`.
-        #[arg(long, value_name = "NAME", conflicts_with = "env")]
-        env_name: Option<String>,
+        #[command(flatten)]
+        env: args::EnvArgs,
 
         /// Target output format (omit for interactive selection)
         ///
         /// Supported: json, yaml, shell, aws-secrets, gcp-secrets,
-        /// azure-keyvault, github-actions, docker-compose, kubernetes,
+        /// azure-keyvault, github, docker-compose, kubernetes,
         /// terraform, doppler, heroku, vercel, railway
-        #[arg(long, value_name = "FORMAT")]
-        to: Option<String>,
+        #[arg(long, value_enum, value_name = "FORMAT", ignore_case = true)]
+        to: Option<args::ConvertTarget>,
 
         /// Write output to file instead of stdout
         #[arg(long, short, value_name = "FILE")]
@@ -3150,6 +3100,12 @@ Use 'evnx convert' without --to for interactive format selection.
         /// keep their value as the default.
         #[arg(long)]
         terraform_declarations: bool,
+
+        #[command(flatten)]
+        confirm: args::ConfirmArgs,
+
+        #[command(flatten)]
+        dry: args::DryRunArgs,
     },
 
     /// Move a .env into a secret manager: print the commands, or upload to GitHub.
@@ -3200,6 +3156,10 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
 
     /// Keep .env and .env.example in sync.
     #[command(after_help = docs::SYNC.after_help)]
+    #[command(mut_arg("env", |a| a.help("The environment file to sync from (forward) or into (reverse). Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
+    #[command(mut_arg("example", |a| a.help("The template to sync into (forward) or from (reverse). Defaults to `.env.example`, or `[defaults] example`")))]
+    #[command(mut_arg("format", |a| a.long_help("Output format, in every mode.\n\n`json` prints the `--check` report on stdout and nothing else. A run that writes (or, with `--dry-run`, would write) adds an `added` array: the names added to the target, sorted. A run that would stop to ask needs `--yes` or `--dry-run`.")))]
+    #[command(mut_arg("yes", |a| a.help("Skip the prompts and add placeholder values; with `--prune`, also remove without asking").long_help("Skip the prompts and add placeholder values.\n\nWithout a terminal, or with CI set, sync does this anyway and says so. With `--prune` it also confirms the removal.")))]
     Sync {
         #[command(flatten)]
         args: SyncArgs,
@@ -3218,6 +3178,9 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
 
     /// Generate config files from templates.
     #[command(after_help = docs::TEMPLATE.after_help)]
+    #[command(mut_arg("env", |a| a.help("The environment file to take values from. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
+    #[command(mut_arg("dry_run", |a| a.long_help("Render and report what would be written, and write nothing.\n\nFails where the real run would (an unknown filter, an unresolved placeholder without `--allow-unresolved`, a missing directory without `--mkdir`). Never prints the rendered text, and leaves `.gitignore` alone.")))]
+    #[command(mut_arg("yes", |a| a.help("Add the output file to .gitignore without asking").long_help("Do not ask: add the output file to .gitignore without the prompt (as `--gitignore`). An explicit `--no-gitignore` wins.")))]
     Template {
         /// The template to render. `{{VAR}}`, `${VAR}` and `$VAR` are
         /// substituted; filters are listed below.
@@ -3251,28 +3214,15 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         #[arg(long)]
         mkdir: bool,
 
-        /// Render and report what would be written, and write nothing.
-        ///
-        /// Fails where the real run would (an unknown filter, an unresolved
-        /// placeholder without `--allow-unresolved`, a missing directory without
-        /// `--mkdir`).
-        /// Never prints the rendered text, and leaves `.gitignore` alone.
-        #[arg(long)]
-        dry_run: bool,
+        #[command(flatten)]
+        dry: args::DryRunArgs,
 
-        /// The environment file to take values from.
-        ///
-        /// Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
-        #[arg(long)]
-        env: Option<String>,
+        #[command(flatten)]
+        env: args::EnvArgs,
 
-        /// Operate on `.env.<NAME>` instead of `.env`.
-        ///
-        /// `--env-name production` resolves to `.env.production`. A name whose
-        /// file does not exist is an error listing the environments that do —
-        /// it never falls back to `.env`.
-        #[arg(long, value_name = "NAME", conflicts_with = "env")]
-        env_name: Option<String>,
+        #[command(flatten)]
+        confirm: args::ConfirmArgs,
+
         /// Automatically add the output file to .gitignore (no prompt).
         /// Useful in CI scripts. Mutually exclusive with --no-gitignore.
         #[arg(long, conflicts_with = "no_gitignore")]
@@ -3316,7 +3266,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         #[arg(long)]
         output: Option<String>,
 
-        /// Path to a key file to use as the encryption password.
+        /// Path to a file holding the encryption password.
         ///
         /// Enables non-interactive / CI usage. The file's contents are read and
         /// fed into Argon2id in place of a typed password. UTF-8 content is used
@@ -3324,16 +3274,16 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// Base64-encoded first. It must come to at least 8 characters, as a
         /// typed passphrase must.
         ///
-        /// Also accepted as --password-file, which is what `evnx restore` calls
-        /// the same thing. EVNX_PASSWORD is honoured too, at lower priority,
-        /// so a scheduled backup needs no passphrase on disk; when both are
-        /// set, the key file wins and a warning says so.
+        /// `evnx restore` takes the same flag, so one file round-trips.
+        /// EVNX_PASSWORD is honoured too, at lower priority, so a scheduled
+        /// backup needs no passphrase on disk; when both are set, the file
+        /// wins and a warning says so.
         ///
         /// Examples:
-        ///   evnx backup --key-file /run/secrets/evnx-pass
+        ///   evnx backup --password-file /run/secrets/evnx-pass
         ///   EVNX_PASSWORD=$PASS evnx backup
-        #[arg(long, value_name = "PATH", visible_alias = "password-file")]
-        key_file: Option<String>,
+        #[arg(long, value_name = "PATH")]
+        password_file: Option<String>,
 
         /// Number of previous backups to retain alongside the new one.
         ///
@@ -3381,8 +3331,8 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// For scripts and CI, where there is no terminal to ask on. The file
         /// it replaces is kept beside it as <output>.bak (replacing the previous
         /// copy). Without it, and without a terminal, an existing output
-        /// stops the run (exit 2). Also accepted as --force, as in `cloud pull`.
-        #[arg(long, short = 'y', visible_alias = "force")]
+        /// stops the run (exit 2).
+        #[arg(long, short = 'y')]
         yes: bool,
 
         /// Add the restored file to .gitignore without asking (no prompt).
@@ -3394,7 +3344,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         no_gitignore: bool,
 
         /// Decrypt and validate but do not write any files.
-        #[arg(long)]
+        #[arg(short = 'n', long)]
         dry_run: bool,
         /// List variable names (never values) without writing any files.
         ///
@@ -3422,14 +3372,12 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// lower priority than --password-file; when both are set, the file
         /// wins and a warning says so.
         ///
-        /// Also accepted as --key-file, which is what `evnx backup` calls the
-        /// same thing. Either spelling reads the file identically on both
-        /// sides, so one file round-trips.
+        /// `evnx backup` takes the same flag, so one file round-trips.
         ///
         /// Examples:
         ///   evnx restore .env.backup --password-file /run/secrets/evnx-pass
         ///   EVNX_PASSWORD=mypass evnx restore .env.backup
-        #[arg(long, value_name = "PATH", visible_alias = "key-file")]
+        #[arg(long, value_name = "PATH")]
         password_file: Option<String>,
     },
 
@@ -3625,10 +3573,10 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     /// `platform pull` keep the file as it was in `<file>.bak` (one per file)
     /// and record it in `.evnx/backups.json`. Never shows a value.
     #[command(after_help = docs::HISTORY.after_help)]
+    #[command(mut_arg("json", |a| a.help("One JSON document on stdout.")))]
     History {
-        /// One JSON document on stdout.
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
 
     /// Put a file back as it was before evnx last changed it.
@@ -3642,13 +3590,11 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         /// The file to put back, e.g. `.env`. Default: the only one with a copy.
         file: Option<String>,
 
-        /// Do not ask.
-        #[arg(long, short)]
-        yes: bool,
+        #[command(flatten)]
+        confirm: args::ConfirmArgs,
 
-        /// Show what would change; write nothing.
-        #[arg(long)]
-        dry_run: bool,
+        #[command(flatten)]
+        dry: args::DryRunArgs,
 
         /// Delete the copies (all, or FILE's) instead of putting one back.
         #[arg(long)]
@@ -3671,20 +3617,19 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         #[arg(long, value_name = "NAME", conflicts_with = "env")]
         env_name: Option<String>,
 
-        /// Output format: `pretty` or `json`.
-        #[arg(long, default_value = "pretty")]
-        format: String,
+        #[command(flatten)]
+        output: args::OutputArgs,
 
         /// Print each value too, in plain text.
         ///
-        /// Refused when stdout is a terminal, unless --yes: a value printed
-        /// there stays in the scrollback.
+        /// Refused when stdout is a terminal, unless --show-values: a value
+        /// printed there stays in the scrollback.
         #[arg(long)]
         values: bool,
 
         /// Print --values to a terminal anyway.
-        #[arg(short, long, requires = "values")]
-        yes: bool,
+        #[arg(long, requires = "values")]
+        show_values: bool,
     },
 
     /// Run a command with a `.env`'s variables in its environment.
@@ -4036,6 +3981,9 @@ pub enum RulesCommand {
 pub enum SpecAction {
     /// Generate a first spec from this project, or from named components.
     #[command(after_help = SPEC_INIT_EXIT_CODES)]
+    #[command(mut_arg("env", |a| a.help("The environment file to read sample values from. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`. A file named here must exist.")))]
+    #[command(mut_arg("env_name", |a| a.help("Read sample values from `.env.<NAME>` instead of `.env`.").long_help("Read sample values from `.env.<NAME>` instead of `.env`.\n\n`--env-name production` reads `.env.production`. A name whose file does not exist is an error listing the environments that do.")))]
+    #[command(mut_arg("example", |a| a.help("The template that decides which variables are in the contract. Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`. A file named here must exist.")))]
     Init {
         /// Build from the component catalogue instead of the project's files.
         ///
@@ -4043,26 +3991,8 @@ pub enum SpecAction {
         #[arg(long, value_delimiter = ',', conflicts_with_all = ["env", "env_name", "example"])]
         with: Option<Vec<String>>,
 
-        /// The environment file to read sample values from.
-        ///
-        /// Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`. A
-        /// file named here must exist.
-        #[arg(long)]
-        env: Option<String>,
-
-        /// Read sample values from `.env.<NAME>` instead of `.env`.
-        ///
-        /// `--env-name production` reads `.env.production`. A name whose file
-        /// does not exist is an error listing the environments that do.
-        #[arg(long, value_name = "NAME", conflicts_with = "env")]
-        env_name: Option<String>,
-
-        /// The template that decides which variables are in the contract.
-        ///
-        /// Defaults to `.env.example`, or `[defaults] example` from
-        /// `.evnx.toml`. A file named here must exist.
-        #[arg(long)]
-        example: Option<String>,
+        #[command(flatten)]
+        files: args::FileArgs,
 
         /// Print the generated block instead of writing it.
         ///
@@ -4092,25 +4022,16 @@ pub enum SpecAction {
     /// exists, every required variable must be in it. A project without
     /// `[vars]` is skipped, and says so.
     #[command(after_help = SPEC_CHECK_EXIT_CODES)]
+    #[command(mut_arg("env", |a| a.help("The environment file to check. Defaults to `.env`, or `[defaults] env_name`. Skipped when it does not exist, unless named.")))]
+    #[command(mut_arg("example", |a| a.help("The template to check. Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`.")))]
+    #[command(mut_arg("env_name", |a| a.help("Check `.env.<NAME>` instead of `.env`.")))]
+    #[command(mut_arg("json", |a| a.help("Output as one JSON document on stdout (names only, never a value).")))]
     Check {
-        /// The template to check. Defaults to `.env.example`, or
-        /// `[defaults] example` from `.evnx.toml`.
-        #[arg(long)]
-        example: Option<String>,
+        #[command(flatten)]
+        files: args::FileArgs,
 
-        /// The environment file to check. Defaults to `.env`, or
-        /// `[defaults] env_name`. Skipped when it does not exist, unless named.
-        #[arg(long)]
-        env: Option<String>,
-
-        /// Check `.env.<NAME>` instead of `.env`.
-        #[arg(long, value_name = "NAME", conflicts_with = "env")]
-        env_name: Option<String>,
-
-        /// Output format: `pretty` or `json` (one document on stdout, names
-        /// only, never a value).
-        #[arg(long, value_enum, default_value_t = SpecFormat::Pretty)]
-        format: SpecFormat,
+        #[command(flatten)]
+        output: args::OutputArgs,
 
         /// Skip the env file named with `--env` or `--env-name` when it does
         /// not exist, as an unnamed `.env` is skipped, instead of exiting 2.
@@ -4120,15 +4041,6 @@ pub enum SpecAction {
         #[arg(long)]
         skip_without_env: bool,
     },
-}
-
-/// `--format` of `spec check`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum SpecFormat {
-    /// Lines for a person.
-    Pretty,
-    /// One JSON document.
-    Json,
 }
 
 /// `spec check --help`: what each exit code means (RM-41).

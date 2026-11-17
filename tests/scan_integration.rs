@@ -541,8 +541,8 @@ fn validate_also_rejects_an_unknown_format() {
         .current_dir(dir.path())
         .args(["validate", "--format", "bogus"])
         .assert()
-        .failure()
-        .stderr(predicates::str::contains("unknown format 'bogus'"));
+        .code(2)
+        .stderr(predicates::str::contains("invalid value 'bogus'"));
 }
 
 /// scan says `github`, validate says `github-actions`. Both accept both, so

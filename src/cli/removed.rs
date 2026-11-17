@@ -51,7 +51,110 @@ impl Removed {
 }
 
 /// Every removed spelling. Each change that removes one adds a row here.
-pub const REMOVED: &[Removed] = &[];
+pub const REMOVED: &[Removed] = &[
+    // sync: `--yes` is the one spelling of "do not ask, use placeholders".
+    Removed::Flag {
+        path: &["sync"],
+        old: &["-f", "--force"],
+        new: "--yes",
+    },
+    Removed::Flag {
+        path: &["sync"],
+        old: &["--placeholder"],
+        new: "--yes",
+    },
+    // validate: the one word for annotations is `github`; `pretty` is the default.
+    Removed::Value {
+        path: &["validate"],
+        flag: "--format",
+        value: "text",
+        new: "--format pretty",
+    },
+    Removed::Value {
+        path: &["validate"],
+        flag: "--format",
+        value: "github-actions",
+        new: "--format github",
+    },
+    // convert: GitHub Actions is `github` everywhere.
+    Removed::Value {
+        path: &["convert"],
+        flag: "--to",
+        value: "github-actions",
+        new: "--to github",
+    },
+    Removed::Value {
+        path: &["convert"],
+        flag: "--to",
+        value: "gh-actions",
+        new: "--to github",
+    },
+    // init, add, remove: the project folder is `-C, --dir`.
+    Removed::Flag {
+        path: &["init"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["add"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["add", "service"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["add", "framework"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["add", "blueprint"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["add", "custom"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    Removed::Flag {
+        path: &["remove"],
+        old: &["-p", "--path"],
+        new: "-C/--dir",
+    },
+    // backup, restore: the password file is `--password-file` everywhere.
+    Removed::Flag {
+        path: &["backup"],
+        old: &["--key-file"],
+        new: "--password-file",
+    },
+    Removed::Flag {
+        path: &["restore"],
+        old: &["--key-file"],
+        new: "--password-file",
+    },
+    // restore: `--yes` is the one spelling of "replace without asking".
+    Removed::Flag {
+        path: &["restore"],
+        old: &["--force"],
+        new: "--yes",
+    },
+    // parse: `pretty` is the default format; `-y` never confirmed anything.
+    Removed::Value {
+        path: &["parse"],
+        flag: "--format",
+        value: "text",
+        new: "--format pretty",
+    },
+    Removed::Flag {
+        path: &["parse"],
+        old: &["-y", "--yes"],
+        new: "--show-values",
+    },
+];
 
 /// The message for a match: the spelling as typed.
 pub fn message(path: &[&str], typed: &str, new: &str) -> String {

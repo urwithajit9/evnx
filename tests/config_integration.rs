@@ -612,7 +612,7 @@ fn sync_reverse_adds_what_the_contract_declares() {
 
     cargo_bin_cmd!("evnx")
         .current_dir(d.path())
-        .args(["sync", "--direction", "reverse", "--force"])
+        .args(["sync", "--direction", "reverse", "--yes"])
         .assert()
         .success();
 
@@ -644,7 +644,7 @@ fn sync_reverse_respects_the_environments_a_variable_applies_to() {
 
     cargo_bin_cmd!("evnx")
         .current_dir(d.path())
-        .args(["sync", "--direction", "reverse", "--force"])
+        .args(["sync", "--direction", "reverse", "--yes"])
         .assert()
         .success();
     let base = fs::read_to_string(d.path().join(".env")).unwrap();
@@ -659,7 +659,7 @@ fn sync_reverse_respects_the_environments_a_variable_applies_to() {
             "sync",
             "--direction",
             "reverse",
-            "--force",
+            "--yes",
             "--env-name",
             "production",
         ])

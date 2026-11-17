@@ -3,27 +3,16 @@ Check .env against .env.example, find issues
 Usage: evnx validate [OPTIONS]
 
 Options:
-      --env <ENV>
-          Path to the environment file to check, or `-` to read stdin.
-          
-          Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`.
-
-      --env-name <NAME>
-          Operate on `.env.<NAME>` instead of `.env`.
-          
-          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do — it never falls back to `.env`.
-
       --input-format <FORMAT>
           How to read `--env`: `dotenv` or `json`.
           
           `json` takes a flat `{"KEY": "value"}` object, or what `evnx parse --format json --values` prints. It is never guessed: `.env` text may start with `{`.
+
+          Possible values:
+          - dotenv: `.env` text
+          - json:   A flat `{"KEY": "value"}` object
           
           [default: dotenv]
-
-      --example <EXAMPLE>
-          The template to compare against.
-          
-          Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`.
 
       --strict
           Also report variables that are present but not declared.
@@ -39,7 +28,7 @@ Options:
           
           ⛔ **It will not overwrite a value that is not a placeholder.** A weak secret with a real value behind it is reported and left alone — see `--rotate-weak-secrets`.
 
-      --dry-run
+  -n, --dry-run
           With `--fix`, show what it would change and write nothing.
           
           No `.env` change and no backup. The report and the exit code are those of the file as it stands; a secret `--fix` would generate is not shown, because the real run makes a new one.
@@ -52,13 +41,6 @@ Options:
           The check behind it judges length and wording. It cannot tell a placeholder nobody filled in from the real password, short because someone chose a short one — and the second is the common case, because shortness is what trips it. Whether anything *else* holds the credential is not a fact in the file, so evnx cannot decide it; you can.
           
           Rotate at the provider first. A new value here that the provider does not have is an outage, not a repair — so a key a provider issues is never replaced, even with this flag: only the app's own secrets and passwords are.
-
-      --format <FORMAT>
-          Output format: `pretty`, `json` or `github-actions`.
-          
-          `json` is the machine-readable form, with a `summary` object for `jq`. `github-actions` emits `::error` annotations that appear inline on a pull request. An unrecognised value is an error.
-          
-          [default: pretty]
 
       --exit-zero
           Always exit 0, even when problems are found.
@@ -78,6 +60,10 @@ Options:
           
           Defaults to `error`, or `[validate] fail_on` from `.evnx.toml`. `warning` makes warnings exit 1 too, for gates that want them fixed. `--exit-zero` still wins.
 
+          Possible values:
+          - error:   Only errors fail the run
+          - warning: Warnings fail it too
+
   -v, --verbose
           Enable verbose output
 
@@ -92,5 +78,31 @@ Options:
 
   -V, --version
           Print version
+
+Files:
+      --env <FILE>
+          Path to the environment file to check, or `-` to read stdin. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`
+
+      --env-name <NAME>
+          Use `.env.<NAME>` instead of `.env`
+
+      --example <FILE>
+          The template to compare against. Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`
+
+Output:
+      --format <FORMAT>
+          Output format. `json` is the machine-readable form, with a `summary` object for `jq`. `github` emits `::error` annotations that appear inline on a pull request.
+          
+          [default: pretty]
+          [possible values: pretty, json, github]
+
+      --json
+          Same as --format json
+
+Confirmation:
+  -y, --yes
+          With `--fix`, apply the fixes without asking.
+          
+          `--fix` never stops to ask, so this changes nothing today; it is accepted so a script can say so, and holds if a confirmation is ever added.
 
 Full guide: https://docs.evnx.dev/cli/commands/validate

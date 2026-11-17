@@ -330,7 +330,7 @@ fn c7_s4_a_malformed_contract_changes_no_file() {
             "X",
             "--all",
             "--yes",
-            "-p",
+            "--dir",
             &p.path().to_string_lossy(),
         ],
     );
@@ -431,7 +431,7 @@ fn d5_d6_s1_no_value_leaks() {
                 "A",
                 "--all",
                 "--yes",
-                "-p",
+                "--dir",
                 &p3.path().to_string_lossy(),
             ],
         )

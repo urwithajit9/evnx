@@ -1,7 +1,7 @@
 
 ================ BR2 ================
 
-$ evnx backup --key-file bin.key --output b1.bak
+$ evnx backup --password-file bin.key --output b1.bak
 ✓ Read 258 bytes from .env
 · Using key file for encryption (non-interactive mode)
 
@@ -24,7 +24,7 @@ $ evnx backup --key-file bin.key --output b1.bak
 [exit 0]
   ok: binary key file (exit 0)
 
-$ evnx restore b1.bak --key-file bin.key --inspect
+$ evnx restore b1.bak --password-file bin.key --inspect
 ✓ Read backup from b1.bak
 · Using key file for decryption (non-interactive mode)
 
@@ -95,7 +95,7 @@ No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: empty EVNX_PASSWORD refused (exit 2)
 
-$ evnx backup --key-file empty.key --output b4.bak
+$ evnx backup --password-file empty.key --output b4.bak
 ✓ Read 258 bytes from .env
 [stderr]
 
@@ -107,7 +107,7 @@ No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
   ok: empty key file refused (exit 2)
 
-$ env EVNX_PASSWORD=env-passphrase-1 evnx backup --key-file pw --output b5.bak
+$ env EVNX_PASSWORD=env-passphrase-1 evnx backup --password-file pw --output b5.bak
 ✓ Read 258 bytes from .env
 · Using key file for encryption (non-interactive mode)
 
@@ -143,7 +143,7 @@ Error: Wrong password or corrupt backup — decryption failed
 [exit 2]
   ok: the env secret does not open it (the file was used) (exit 2)
 
-$ evnx backup --key-file short.key --output b6.bak
+$ evnx backup --password-file short.key --output b6.bak
 ✓ Read 258 bytes from .env
 [stderr]
 
@@ -166,11 +166,11 @@ $ evnx backup --output b7.bak
 Error: there is no terminal to ask for the passphrase on.
 
   Give it without a prompt, from a file or the environment:
-    evnx backup .env --key-file <path>
+    evnx backup .env --password-file <path>
     EVNX_PASSWORD=… evnx backup .env
 
 No verdict: evnx did not finish. This is not a clean result.
 [exit 2]
-  ok: FIXED D-101: no terminal, no secret: a line naming --key-file and EVNX_PASSWORD (exit 2)
+  ok: FIXED D-101: no terminal, no secret: a line naming --password-file and EVNX_PASSWORD (exit 2)
 
 ================ summary: 9 ok, 0 mismatch   ================

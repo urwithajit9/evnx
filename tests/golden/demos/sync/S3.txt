@@ -40,16 +40,32 @@ $ evnx sync --check --format json --direction reverse
 [exit 1]
   ok: reverse: keys the .env lacks (exit 1)
 
-$ evnx sync --format json
+$ evnx sync --dry-run --format json
+{
+  "in_sync": false,
+  "direction": "forward",
+  "env": ".env",
+  "example": ".env.example",
+  "missing": [
+    "NEW_FEATURE",
+    "stripe_key"
+  ],
+  "template_only": [
+    "REDIS_URL"
+  ],
+  "summary": {
+    "missing": 2,
+    "template_only": 1
+  },
+  "added": [
+    "NEW_FEATURE",
+    "stripe_key"
+  ]
+}
 [stderr]
-error: the following required arguments were not provided:
-  --check
-
-Usage: evnx sync --check --format <FORMAT>
-
-For more information, try '--help'.
-[exit 2]
-  ok: json needs --check (clap error) (exit 2)
+! Variable 'stripe_key' doesn't follow convention (UPPERCASE_WITH_UNDERSCORES)
+[exit 0]
+  ok: SYNC-2: json in every mode, with added (exit 0)
 
 $ evnx sync --check --env t.env --example t.example
 

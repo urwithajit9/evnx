@@ -22,7 +22,7 @@ No verdict: evnx did not run. This is not a clean result.
   ok: no silent fallback; lists existing names (exit 2)
 
 $ evnx validate --env-name staging --env .env.production
-error: the argument '--env-name <NAME>' cannot be used with '--env <ENV>'
+error: the argument '--env-name <NAME>' cannot be used with '--env <FILE>'
 
 Usage: evnx validate --env-name <NAME>
 

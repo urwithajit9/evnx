@@ -1,7 +1,7 @@
 
 ================ BR11 ================
 
-$ evnx -q backup --key-file pw
+$ evnx -q backup --password-file pw
 [exit 0]
   ok: I-153 fixed (DEC-G4): -q backup prints nothing on success (exit 0)
   ok: I-153 fixed (DEC-G4): -q output is empty, without -q the summary prints

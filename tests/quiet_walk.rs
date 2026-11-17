@@ -64,7 +64,7 @@ fn cases() -> Vec<Case> {
                 "--no-gitignore",
             ],
         ),
-        case("sync", &["sync", "-f"]),
+        case("sync", &["sync", "--yes"]),
         case("align", &["align"]),
         case(
             "template",
@@ -84,7 +84,7 @@ fn cases() -> Vec<Case> {
         case("scan rules new", &["scan", "rules", "new", "quiet-rule"]),
     ];
     if cfg!(feature = "backup") {
-        v.push(case("backup", &["backup", "--key-file", "pw"]));
+        v.push(case("backup", &["backup", "--password-file", "pw"]));
         v.push(Case {
             path: "restore",
             // `--no-gitignore`, as for convert and template above: the restored
@@ -95,7 +95,7 @@ fn cases() -> Vec<Case> {
             args: &[
                 "restore",
                 ".env.backup",
-                "--key-file",
+                "--password-file",
                 "pw",
                 "--output",
                 "restored.env",
@@ -247,7 +247,7 @@ fn t_share_60_quiet_is_silent_on_success() {
             std::fs::remove_file(p.join(".env.example")).unwrap();
         }
         if c.needs_backup {
-            run(p.path(), &["backup", "--key-file", "pw"]).assert_code(0);
+            run(p.path(), &["backup", "--password-file", "pw"]).assert_code(0);
         }
         let mut args = vec!["-q"];
         args.extend_from_slice(c.args);

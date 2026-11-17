@@ -337,7 +337,14 @@ fn expected_for(format: &str) -> BTreeMap<String, String> {
 /// The flags a format cannot run without.
 fn convert_args(format: &str) -> Vec<&'static str> {
     let mut a = vec!["convert", "--to"];
-    a.push(Box::leak(format.to_string().into_boxed_str()));
+    // The CLI spells the GitHub Actions target `github` (WP-8); the table's
+    // internal name stays `github-actions`.
+    let cli_name = if format == "github-actions" {
+        "github"
+    } else {
+        format
+    };
+    a.push(Box::leak(cli_name.to_string().into_boxed_str()));
     match format {
         "gcp-secrets" => a.extend(["--project", "my-project"]),
         "azure-keyvault" => a.extend(["--vault-name", "my-vault"]),

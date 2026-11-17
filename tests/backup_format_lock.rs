@@ -43,7 +43,7 @@ fn restores_byte_for_byte(backup: &str) {
         &[
             "restore",
             "golden.bak",
-            "--key-file",
+            "--password-file",
             "golden.key",
             "--output",
             "golden.out",
@@ -74,7 +74,7 @@ fn backup_written_today_round_trips() {
         p.path(),
         &[
             "backup",
-            "--key-file",
+            "--password-file",
             "golden.key",
             "--output",
             "today.bak",
@@ -86,7 +86,7 @@ fn backup_written_today_round_trips() {
         &[
             "restore",
             "today.bak",
-            "--key-file",
+            "--password-file",
             "golden.key",
             "--output",
             "today.out",

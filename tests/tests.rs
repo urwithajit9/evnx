@@ -402,7 +402,7 @@ fn test_convert_to_github_actions() {
     create_env(&dir, r#"SECRET_KEY=abc123"#);
 
     cargo_bin_cmd!("evnx")
-        .args(["convert", "--to", "github-actions"])
+        .args(["convert", "--to", "github"])
         .current_dir(dir.path())
         .assert()
         .success()
@@ -607,5 +607,5 @@ fn test_convert_invalid_format() {
         .current_dir(dir.path())
         .assert()
         .failure()
-        .stderr(predicate::str::contains("Unknown format"));
+        .stderr(predicate::str::contains("invalid value"));
 }

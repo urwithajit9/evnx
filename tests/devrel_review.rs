@@ -422,7 +422,7 @@ fn f6_sync_writes_variables_in_the_order_they_appear() {
         let _ = fs::remove_file(dir.path().join(".env.example"));
         cargo_bin_cmd!("evnx")
             .current_dir(dir.path())
-            .args(["sync", "--direction", "forward", "--placeholder"])
+            .args(["sync", "--direction", "forward", "--yes"])
             .assert()
             .success();
         let body = fs::read_to_string(dir.path().join(".env.example")).unwrap();
@@ -494,7 +494,7 @@ fn b1_a_line_inside_a_multiline_value_is_not_an_assignment() {
 
     let assert = cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
-        .args(["validate", "--format", "github-actions", "--exit-zero"])
+        .args(["validate", "--format", "github", "--exit-zero"])
         .assert();
     let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     assert!(!out.contains("assigned"), "false duplicate:\n{out}");
@@ -788,7 +788,7 @@ fn f16_every_flag_has_help_text() {
 #[test]
 fn f16_format_names_the_formats_it_accepts() {
     for (command, expected) in [
-        ("validate", vec!["json", "github-actions"]),
+        ("validate", vec!["json", "github"]),
         ("scan", vec!["json", "sarif", "github"]),
     ] {
         let assert = cargo_bin_cmd!("evnx").args([command, "--help"]).assert();
@@ -1089,7 +1089,7 @@ fn f7_evnx_password_drives_a_backup_with_no_file_on_disk() {
 }
 
 /// ⚠️ The deeper half of F7, and the reason the flag aliases could not be added
-/// on their own. `backup --key-file` Base64-encodes a **binary** key file before
+/// on their own. `backup --password-file` Base64-encodes a **binary** key file before
 /// Argon2id; `restore --password-file` read the same file with `read_to_string`
 /// and stripped a trailing newline. So one file produced two different
 /// passwords, and the only symptom was a backup that would not open.
@@ -1129,7 +1129,7 @@ fn f7_one_key_file_round_trips_under_either_flag_spelling() {
         .args([
             "restore",
             "b.backup",
-            "--key-file",
+            "--password-file",
             "binary.key",
             "--output",
             "out.env",

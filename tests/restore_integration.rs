@@ -17,13 +17,13 @@ const OLD: &str = "DB_URL=postgres://old\n";
 /// no `.env` left behind.
 fn backed_up() -> Project {
     let p = Project::new().env(ENV).file("pw", PW);
-    run(p.path(), &["backup", "--key-file", "pw"]).assert_code(0);
+    run(p.path(), &["backup", "--password-file", "pw"]).assert_code(0);
     std::fs::remove_file(p.join(".env")).unwrap();
     p
 }
 
 fn restore(p: &Project, extra: &[&str]) -> support::Output {
-    let mut args = vec!["restore", ".env.backup", "--key-file", "pw"];
+    let mut args = vec!["restore", ".env.backup", "--password-file", "pw"];
     args.extend_from_slice(extra);
     run(p.path(), &args)
 }
@@ -71,7 +71,7 @@ fn t_i148_yes_replaces_and_keeps_the_previous_file() {
 #[test]
 fn t_i148_force_is_yes() {
     let p = backed_up().env(OLD);
-    restore(&p, &["--force"]).assert_code(0);
+    restore(&p, &["--yes"]).assert_code(0);
     assert_eq!(p.read(".env"), ENV);
     assert_eq!(p.read(".env.bak"), OLD);
 }
@@ -180,7 +180,7 @@ fn t_i149_a_newer_format_says_upgrade() {
     let p = p.file("v2.bak", &encoded(&raw));
     run(
         p.path(),
-        &["restore", "v2.bak", "--key-file", "pw", "--inspect"],
+        &["restore", "v2.bak", "--password-file", "pw", "--inspect"],
     )
     .assert_code(2)
     .assert_contains("newer evnx")
@@ -197,10 +197,13 @@ fn t_i149_a_truncated_file_says_truncated() {
         .file("t100.bak", &blob[..100])
         .file("t101.bak", &blob[..101]);
     for f in ["t100.bak", "t101.bak"] {
-        run(p.path(), &["restore", f, "--key-file", "pw", "--inspect"])
-            .assert_code(2)
-            .assert_contains("truncated")
-            .assert_not_contains("Wrong password");
+        run(
+            p.path(),
+            &["restore", f, "--password-file", "pw", "--inspect"],
+        )
+        .assert_code(2)
+        .assert_contains("truncated")
+        .assert_not_contains("Wrong password");
     }
 }
 
@@ -209,7 +212,13 @@ fn t_i149_a_file_that_is_not_a_backup_says_so() {
     let p = backed_up().file("garbage.bak", "this is not a backup!!\n");
     run(
         p.path(),
-        &["restore", "garbage.bak", "--key-file", "pw", "--inspect"],
+        &[
+            "restore",
+            "garbage.bak",
+            "--password-file",
+            "pw",
+            "--inspect",
+        ],
     )
     .assert_code(2)
     .assert_contains("not an evnx backup")
@@ -226,11 +235,17 @@ fn t_i149_tamper_and_a_wrong_password_stay_one_message() {
     let p = p.file("flip.bak", &encoded(&raw));
     let wrong = run(
         p.path(),
-        &["restore", ".env.backup", "--key-file", "bad", "--inspect"],
+        &[
+            "restore",
+            ".env.backup",
+            "--password-file",
+            "bad",
+            "--inspect",
+        ],
     );
     let flip = run(
         p.path(),
-        &["restore", "flip.bak", "--key-file", "pw", "--inspect"],
+        &["restore", "flip.bak", "--password-file", "pw", "--inspect"],
     );
     wrong
         .assert_code(2)
@@ -252,7 +267,7 @@ fn t_i154_the_fallback_has_no_success_tick() {
         &[
             "backup",
             "prose.env",
-            "--key-file",
+            "--password-file",
             "pw",
             "--output",
             "prose.bak",
@@ -263,7 +278,7 @@ fn t_i154_the_fallback_has_no_success_tick() {
         let mut args = vec![
             "restore",
             "prose.bak",
-            "--key-file",
+            "--password-file",
             "pw",
             "--output",
             "out.env",
@@ -288,7 +303,7 @@ fn t_dec_b4_a_cloud_reference_is_not_found_and_points_at_cloud_pull() {
     let p = backed_up();
     run(
         p.path(),
-        &["restore", "cloud://myproject", "--key-file", "pw"],
+        &["restore", "cloud://myproject", "--password-file", "pw"],
     )
     .assert_code(3)
     .assert_contains("cloud://myproject")
@@ -330,7 +345,7 @@ fn t_dec_b2_a_backup_made_with_a_short_secret_still_restores() {
         &[
             "restore",
             "short.bak",
-            "--key-file",
+            "--password-file",
             "short.key",
             "--output",
             "out.env",
@@ -365,8 +380,12 @@ fn t_br_gitignore_restored_output_is_protected() {
 #[test]
 fn t_br24_missing_and_directory_backups_exit_3() {
     let p = backed_up().dir("adir");
-    run(p.path(), &["restore", "nope.backup", "--key-file", "pw"]).assert_code(3);
-    run(p.path(), &["restore", "adir", "--key-file", "pw"]).assert_code(3);
+    run(
+        p.path(),
+        &["restore", "nope.backup", "--password-file", "pw"],
+    )
+    .assert_code(3);
+    run(p.path(), &["restore", "adir", "--password-file", "pw"]).assert_code(3);
 }
 
 /// D-108, D-109: every argument has a description, and the overwrite rule and
@@ -403,13 +422,13 @@ fn rm18_restore_writes_back_to_the_file_the_backup_came_from() {
         .file("pw", PW);
     run(
         p.path(),
-        &["backup", "--env-name", "staging", "--key-file", "pw"],
+        &["backup", "--env-name", "staging", "--password-file", "pw"],
     )
     .assert_code(0);
     std::fs::remove_file(p.join(".env.staging")).unwrap();
 
     let restore = |extra: &[&str]| {
-        let mut args = vec!["restore", ".env.staging.backup", "--key-file", "pw"];
+        let mut args = vec!["restore", ".env.staging.backup", "--password-file", "pw"];
         args.extend_from_slice(extra);
         run(p.path(), &args)
     };

@@ -1,7 +1,7 @@
 
 ================ BR10 ================
 
-$ evnx restore golden.bak --key-file golden.key --output golden.out
+$ evnx restore golden.bak --password-file golden.key --output golden.out
 ✓ Read backup from golden.bak
 · Using key file for decryption (non-interactive mode)
 

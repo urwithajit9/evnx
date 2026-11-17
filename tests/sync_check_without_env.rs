@@ -93,7 +93,13 @@ fn t_i128_skip_without_env_is_forward_only() {
     let p = Project::new().example("APP=\n");
     let out = run(
         p.path(),
-        &["sync", "--direction", "reverse", "--skip-without-env", "-f"],
+        &[
+            "sync",
+            "--direction",
+            "reverse",
+            "--skip-without-env",
+            "--yes",
+        ],
     );
     out.assert_code(2);
     assert!(out.all().contains("forward"), "{}", out.all());

@@ -1,7 +1,7 @@
 
 ================ BR4 ================
 
-$ evnx backup --key-file pw --output odir
+$ evnx backup --password-file pw --output odir
 [stderr]
 
   evnx backup  Encrypt and back up your .env file
@@ -17,7 +17,7 @@ directory odir
 odir.1: absent
 [exit 0]
 
-$ evnx backup src.env --key-file pw --output src.env
+$ evnx backup src.env --password-file pw --output src.env
 [stderr]
 
   evnx backup  Encrypt and back up your .env file
@@ -33,7 +33,7 @@ src.env
 1
 [exit 0]
 
-$ evnx backup --key-file pw --output nodir/x.bak
+$ evnx backup --password-file pw --output nodir/x.bak
 ✓ Read 258 bytes from .env
 · Using key file for encryption (non-interactive mode)
 [stderr]
@@ -44,7 +44,7 @@ Error: Failed to write backup file: the directory nodir does not exist
 [exit 5]
   ok: I-152 fixed (U2): a missing directory is named plainly (exit 5)
 
-$ evnx backup --key-file pw --output lnk.bak
+$ evnx backup --password-file pw --output lnk.bak
 ✓ Read 258 bytes from .env
 · Using key file for encryption (non-interactive mode)
 · wrote through lnk.bak -> real.bak

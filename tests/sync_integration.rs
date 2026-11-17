@@ -602,7 +602,7 @@ mod check_exit_codes {
         let d = dir(Some(b"A=1\n"), Some(CORRUPT));
 
         cargo_bin_cmd!("evnx")
-            .args(["sync", "--force"])
+            .args(["sync", "--yes"])
             .current_dir(d.path())
             .assert()
             .failure();
@@ -725,7 +725,7 @@ mod file_selection {
         let d = project();
 
         cargo_bin_cmd!("evnx")
-            .args(["sync", "--env-name", "production", "--force"])
+            .args(["sync", "--env-name", "production", "--yes"])
             .current_dir(d.path())
             .assert()
             .success();
@@ -867,19 +867,79 @@ fn check_json_follows_the_direction() {
     assert_eq!(report["missing"][0], "ONLY_IN_TEMPLATE");
 }
 
-/// `--format json` without `--check` is refused: `sync` edits files, and a
-/// machine-readable report of an edit already made is worth less than the edit.
+/// `--format json` works without `--check` (SYNC-2): the same report, plus
+/// `added`, and nothing but the document on stdout.
 #[test]
-fn json_requires_check() {
+fn json_works_in_every_mode() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".env"), "B=1\nA=2\n").unwrap();
+    std::fs::write(dir.path().join(".env.example"), "C=\n").unwrap();
+    let run = |args: &[&str]| {
+        let out = cargo_bin_cmd!("evnx")
+            .current_dir(dir.path())
+            .args(args)
+            .assert()
+            .success()
+            .get_output()
+            .clone();
+        serde_json::from_slice::<serde_json::Value>(&out.stdout)
+            .unwrap_or_else(|e| panic!("stdout is not one JSON document ({e}): {:?}", out.stdout))
+    };
+
+    // A dry run reports what would be added and writes nothing.
+    let v = run(&["sync", "--dry-run", "--json"]);
+    assert_eq!(v["added"], serde_json::json!(["A", "B"]));
+    assert_eq!(v["missing"], serde_json::json!(["A", "B"]));
+    assert_eq!(v["in_sync"], false);
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".env.example")).unwrap(),
+        "C=\n"
+    );
+
+    // A real run writes, and reports the same.
+    let v = run(&["sync", "--yes", "--format", "json"]);
+    assert_eq!(v["added"], serde_json::json!(["A", "B"]));
+    let example = std::fs::read_to_string(dir.path().join(".env.example")).unwrap();
+    assert!(
+        example.contains("A=") && example.contains("B="),
+        "{example}"
+    );
+
+    // Nothing left to add: an empty array, not an absent one.
+    let v = run(&["sync", "--yes", "--direction", "forward", "--json"]);
+    assert_eq!(v["added"], serde_json::json!([]));
+
+    // `--check` keeps its report, with no `added`.
+    let out = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["sync", "--check", "--json"])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(v.get("added").is_none());
+}
+
+/// `--to` is `--direction` by the file it fills (GEN-9), and the two conflict.
+#[test]
+fn to_is_another_spelling_of_direction() {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join(".env"), "A=1\n").unwrap();
-
+    std::fs::write(dir.path().join(".env.example"), "B=2\n").unwrap();
     cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
-        .args(["sync", "--format", "json"])
+        .args(["sync", "--to", "env", "--yes"])
         .assert()
-        .failure()
-        .stderr(predicates::prelude::predicate::str::contains("--check"));
+        .success();
+    let env = std::fs::read_to_string(dir.path().join(".env")).unwrap();
+    assert!(env.contains("B=2"), "{env}");
+    cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["sync", "--to", "env", "--direction", "reverse"])
+        .assert()
+        .code(2)
+        .stderr(predicates::prelude::predicate::str::contains(
+            "cannot be used with",
+        ));
 }
 
 // ─── Creating .env.example must not copy real values ─────────────────────────
@@ -927,8 +987,9 @@ fn creating_the_example_file_does_not_copy_real_values() {
 /// The same guarantee under the two flags that already implied it, so a future
 /// change cannot fix the default and quietly regress these.
 #[test]
-fn creating_the_example_file_is_safe_under_placeholder_and_force() {
-    for flag in ["--placeholder", "--force"] {
+fn creating_the_example_file_is_safe_under_yes() {
+    {
+        let flag = "--yes";
         let dir = TempDir::new().unwrap();
         std::fs::write(dir.path().join(".env"), "API_KEY=sk_live_SUPER_SECRET\n").unwrap();
 
@@ -980,7 +1041,7 @@ fn d1_repeated_syncs_of_one_env_produce_one_answer() -> Result<()> {
 
         cargo_bin_cmd!("evnx")
             .current_dir(f.temp_dir.path())
-            .args(["sync", "--template-config", "placeholders.json", "--force"])
+            .args(["sync", "--template-config", "placeholders.json", "--yes"])
             .assert()
             .code(0);
 
@@ -1018,7 +1079,7 @@ fn d2_allow_actual_writes_configuration_values_through() -> Result<()> {
 
     cargo_bin_cmd!("evnx")
         .current_dir(f.temp_dir.path())
-        .args(["sync", "--template-config", "placeholders.json", "--force"])
+        .args(["sync", "--template-config", "placeholders.json", "--yes"])
         .assert()
         .code(0);
 
@@ -1098,7 +1159,7 @@ fn d2_a_credential_in_allow_actual_fails_the_sync_and_writes_nothing() -> Result
 
     let assert = cargo_bin_cmd!("evnx")
         .current_dir(f.temp_dir.path())
-        .args(["sync", "--template-config", "placeholders.json", "--force"])
+        .args(["sync", "--template-config", "placeholders.json", "--yes"])
         .assert()
         .code(2);
 
@@ -1169,7 +1230,7 @@ fn a_template_pattern_that_does_not_compile_is_refused_at_load() -> Result<()> {
 
     let assert = cargo_bin_cmd!("evnx")
         .current_dir(f.temp_dir.path())
-        .args(["sync", "--template-config", "placeholders.json", "--force"])
+        .args(["sync", "--template-config", "placeholders.json", "--yes"])
         .assert()
         .code(2);
 
@@ -1207,7 +1268,7 @@ fn naming_convention_in_the_template_config_says_it_is_not_read() -> Result<()> 
 
     let assert = cargo_bin_cmd!("evnx")
         .current_dir(f.temp_dir.path())
-        .args(["sync", "--template-config", "placeholders.json", "--force"])
+        .args(["sync", "--template-config", "placeholders.json", "--yes"])
         .assert()
         .code(0); // $schema and description are accepted silently; the sync works
 
@@ -1234,7 +1295,7 @@ fn t_i122_a_symlinked_template_is_written_through() {
 
     cargo_bin_cmd!("evnx")
         .current_dir(d.path())
-        .args(["sync", "-f"])
+        .args(["sync", "--yes"])
         .assert()
         .success()
         .stdout(predicates::str::contains(

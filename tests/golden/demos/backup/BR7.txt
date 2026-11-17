@@ -1,7 +1,7 @@
 
 ================ BR7 ================
 
-$ evnx restore .env.backup --key-file pw
+$ evnx restore .env.backup --password-file pw
 ✓ Read backup from .env.backup
 · Using key file for decryption (non-interactive mode)
 
@@ -22,7 +22,7 @@ Backup information:
 [exit 0]
   ok: FIXED (DEC-B12): .env already holds the backup's content: nothing asked, nothing written (exit 0)
 
-$ evnx restore .env.backup --key-file pw
+$ evnx restore .env.backup --password-file pw
 ✓ Read backup from .env.backup
 · Using key file for decryption (non-interactive mode)
 
@@ -49,7 +49,7 @@ No verdict: evnx did not finish. This is not a clean result.
   ok: FIXED I-148: a different .env, no terminal: one line naming --yes and --output (exit 2)
   ok: and the .env is untouched
 
-$ evnx restore .env.backup --key-file pw --yes
+$ evnx restore .env.backup --password-file pw --yes
 ✓ Read backup from .env.backup
 · Using key file for decryption (non-interactive mode)
 
@@ -80,7 +80,7 @@ Next steps:
   ok: FIXED I-148 (DEC-B1): --yes replaces it (exit 0)
   ok: DEC-B11: the replaced .env is kept as .env.bak
 
-$ evnx restore .env.backup --key-file pw --output .env.new
+$ evnx restore .env.backup --password-file pw --output .env.new
 ✓ Read backup from .env.backup
 · Using key file for decryption (non-interactive mode)
 

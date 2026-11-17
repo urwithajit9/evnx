@@ -11,7 +11,7 @@ restore of valid-looking inputs (named path vs .restored):
   [FIXED I-145 PEM-heavy] exit 0 lk.out 
   [prose (correct)] exit 5 lk.out.restored 
 
-$ evnx restore prose.txt.backup --key-file pw --output r.env
+$ evnx restore prose.txt.backup --password-file pw --output r.env
 ✓ Read backup from prose.txt.backup
 · Using key file for decryption (non-interactive mode)
 

@@ -13,18 +13,12 @@ Supports 14 formats including JSON, YAML, cloud configs, CI/CD variables, and in
 Usage: evnx convert [OPTIONS]
 
 Options:
-      --env <PATH>
-          Path to input .env file
-
-      --env-name <NAME>
-          Operate on `.env.<NAME>` instead of `.env`.
-          
-          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do — it never falls back to `.env`.
-
       --to <FORMAT>
           Target output format (omit for interactive selection)
           
-          Supported: json, yaml, shell, aws-secrets, gcp-secrets, azure-keyvault, github-actions, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway
+          Supported: json, yaml, shell, aws-secrets, gcp-secrets, azure-keyvault, github, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway
+          
+          [possible values: json, yaml, shell, aws-secrets, gcp-secrets, azure-keyvault, github, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway]
 
   -o, --output <FILE>
           Write output to file instead of stdout
@@ -108,6 +102,9 @@ Options:
           
           A secret-looking variable gets `sensitive = true` and no default; supply its value from the .tfvars output or TF_VAR_<name>. Others keep their value as the default.
 
+  -n, --dry-run
+          With --output, check everything and say what would be written, but write nothing
+
   -v, --verbose
           Enable verbose output
 
@@ -122,6 +119,17 @@ Options:
 
   -V, --version
           Print version
+
+Files:
+      --env <FILE>
+          Path to input .env file. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`
+
+      --env-name <NAME>
+          Use `.env.<NAME>` instead of `.env`
+
+Confirmation:
+  -y, --yes
+          Do not ask: add the --output file to .gitignore without the prompt (as `--gitignore`). With no `--to` it is an error naming `--to`, because the format menu is a question too.
 
 Examples:
   # Basic JSON conversion
@@ -145,7 +153,7 @@ Supported formats:
   Generic:        json, yaml, shell
   Cloud:          aws-secrets (JSON for create-secret),
                   gcp-secrets (--project), azure-keyvault (--vault-name)
-  CI/CD:          github-actions (text to paste into the GitHub web form)
+  CI/CD:          github (text to paste into the GitHub web form)
   Containers:     docker-compose, kubernetes (--name, optional --namespace)
   IaC:            terraform (.tfvars; --terraform-declarations for variable blocks)
   Secret Managers: doppler, heroku (--heroku-app), vercel,
@@ -153,7 +161,7 @@ Supported formats:
 
 Aliases:
   k8s → kubernetes, tf → terraform, yml → yaml
-  gh-actions → github-actions, compose → docker-compose
+  compose → docker-compose
 
 Exit codes: 0 converted; 2 nothing converted (bad flag, missing file, names that
 collide, a filter or file with no variables).

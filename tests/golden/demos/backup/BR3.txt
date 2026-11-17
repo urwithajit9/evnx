@@ -10,7 +10,7 @@
 .env.backup.3
   ok: newest first, up to .3
 
-$ evnx backup --key-file pw --keep 1
+$ evnx backup --password-file pw --keep 1
 ✓ Read 4 bytes from .env
 · Using key file for encryption (non-interactive mode)
 
@@ -34,7 +34,7 @@ $ evnx backup --key-file pw --keep 1
 [exit 0]
   ok: --keep 1 replaces .1 and warns (exit 0)
 
-$ evnx backup --key-file pw --keep 0
+$ evnx backup --password-file pw --keep 0
 ✓ Read 4 bytes from .env
 · Using key file for encryption (non-interactive mode)
 
@@ -60,7 +60,7 @@ toml keep=1:
 .env.backup
 .env.backup.1
 
-$ evnx backup --key-file pw
+$ evnx backup --password-file pw
 [stderr]
 Error: parsing <dir>/scenes/BR3/t/.evnx.toml: TOML parse error at line 2, column 8
   |

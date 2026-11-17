@@ -120,7 +120,7 @@ fn t_n20_a_real_connection_string_is_still_a_finding() {
 fn t_n20_blueprint(blueprint: &str) {
     let d = TempDir::new().unwrap();
     cargo_bin_cmd!("evnx")
-        .args(["init", "--yes", "--blueprint", blueprint, "--path"])
+        .args(["init", "--yes", "--blueprint", blueprint, "--dir"])
         .arg(d.path())
         .assert()
         .success();

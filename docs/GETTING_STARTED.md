@@ -155,7 +155,7 @@ evnx init --yes --with nextjs,postgresql,stripe  # name the components directly
 evnx init --list-components                      # every name --with accepts
 evnx init --detect                               # accept what package.json, compose files etc. declare
 evnx init --from-source --yes                    # add the variables the code reads
-evnx init --yes --path ./packages/api            # write into another directory
+evnx init --yes --dir ./packages/api            # write into another directory
 evnx init --with redis --dry-run                 # what would be written; --json for scripts
 ```
 

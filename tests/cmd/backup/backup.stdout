@@ -15,16 +15,14 @@ Options:
       --output <OUTPUT>
           Destination path for the encrypted backup (default: <env>.backup)
 
-      --key-file <PATH>
-          Path to a key file to use as the encryption password.
+      --password-file <PATH>
+          Path to a file holding the encryption password.
           
           Enables non-interactive / CI usage. The file's contents are read and fed into Argon2id in place of a typed password. UTF-8 content is used with leading and trailing whitespace trimmed; binary content is Base64-encoded first. It must come to at least 8 characters, as a typed passphrase must.
           
-          Also accepted as --password-file, which is what `evnx restore` calls the same thing. EVNX_PASSWORD is honoured too, at lower priority, so a scheduled backup needs no passphrase on disk; when both are set, the key file wins and a warning says so.
+          `evnx restore` takes the same flag, so one file round-trips. EVNX_PASSWORD is honoured too, at lower priority, so a scheduled backup needs no passphrase on disk; when both are set, the file wins and a warning says so.
           
-          Examples: evnx backup --key-file /run/secrets/evnx-pass EVNX_PASSWORD=$PASS evnx backup
-          
-          [aliases: --password-file]
+          Examples: evnx backup --password-file /run/secrets/evnx-pass EVNX_PASSWORD=$PASS evnx backup
 
       --keep <N>
           Number of previous backups to retain alongside the new one.
@@ -51,7 +49,7 @@ Options:
   -V, --version
           Print version
 
-Passphrase: --key-file, then EVNX_PASSWORD, then a prompt (asked twice). A new
+Passphrase: --password-file, then EVNX_PASSWORD, then a prompt (asked twice). A new
 backup needs at least 8 characters from any of them.
 
 Exit codes:

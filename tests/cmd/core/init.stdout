@@ -7,14 +7,6 @@ Writes into the template the project uses (`[defaults] example`, else .env.examp
 Usage: evnx init [OPTIONS]
 
 Options:
-  -p, --path <PATH>
-          Output path for .env files
-          
-          [default: .]
-
-  -y, --yes
-          Skip all prompts. Creates blank .env files unless --blueprint names a stack
-
       --blueprint <ID>
           Generate from a named stack blueprint, e.g. `t3_modern`.
           
@@ -58,11 +50,8 @@ Options:
           
           `--env-name production` creates or fills `.env.production` from the template; the template and `.gitignore` are the project's, as without it. Defaults to `[defaults] env_name` from `.evnx.toml`.
 
-      --dry-run
-          Show what would be written — the template, `.env`, `.gitignore` and `.evnx.toml` — and write nothing. Asks no confirmation; a menu is still shown when nothing was named
-
-      --json
-          Print the result as one JSON document on stdout (needs --yes or --dry-run: it never asks). The same fields as `evnx add --json`
+  -n, --dry-run
+          Show what would be written — the template, `.env`, `.gitignore` and `.evnx.toml` — and write nothing. Asks no confirmation; a menu is still shown when nothing was named.
 
       --here
           Make this folder a project of its own: write `.evnx.toml` here, even when the repository's root already has one, and do not take `[defaults]` from it. Without it, a folder inside a repository records its names in the root's `.evnx.toml`
@@ -84,5 +73,23 @@ Options:
 
   -V, --version
           Print version
+
+Output:
+      --format <FORMAT>
+          Output format
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+      --json
+          Print the result as one JSON document on stdout (needs --yes or --dry-run: it never asks). The same fields as `evnx add --json`.
+
+Files:
+  -C, --dir <DIR>
+          Output path for .env files. Defaults to the current folder
+
+Confirmation:
+  -y, --yes
+          Skip all prompts. Creates blank .env files unless --blueprint names a stack.
 
 Full guide: https://docs.evnx.dev/cli/commands/init

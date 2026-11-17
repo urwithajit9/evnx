@@ -1,7 +1,7 @@
 
 ================ BR1 ================
 
-$ evnx backup --key-file pw --verify
+$ evnx backup --password-file pw --verify
 ✓ Read 258 bytes from .env
 · Using key file for encryption (non-interactive mode)
 
@@ -28,7 +28,7 @@ $ modes .env.backup
 600 .env.backup
 [exit 0]
 
-$ evnx restore .env.backup --key-file pw
+$ evnx restore .env.backup --password-file pw
 ✓ Read backup from .env.backup
 · Using key file for decryption (non-interactive mode)
 

@@ -11,17 +11,12 @@ Options:
       --env-name <NAME>
           Read `.env.<NAME>` instead of `.env`
 
-      --format <FORMAT>
-          Output format: `pretty` or `json`
-          
-          [default: pretty]
-
       --values
           Print each value too, in plain text.
           
-          Refused when stdout is a terminal, unless --yes: a value printed there stays in the scrollback.
+          Refused when stdout is a terminal, unless --show-values: a value printed there stays in the scrollback.
 
-  -y, --yes
+      --show-values
           Print --values to a terminal anyway
 
   -v, --verbose
@@ -38,5 +33,15 @@ Options:
 
   -V, --version
           Print version
+
+Output:
+      --format <FORMAT>
+          Output format
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+      --json
+          Same as --format json
 
 Full guide: https://docs.evnx.dev/cli/commands/parse

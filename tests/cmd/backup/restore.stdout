@@ -19,9 +19,7 @@ Options:
   -y, --yes
           Replace an existing --output without asking.
           
-          For scripts and CI, where there is no terminal to ask on. The file it replaces is kept beside it as <output>.bak (replacing the previous copy). Without it, and without a terminal, an existing output stops the run (exit 2). Also accepted as --force, as in `cloud pull`.
-          
-          [aliases: --force]
+          For scripts and CI, where there is no terminal to ask on. The file it replaces is kept beside it as <output>.bak (replacing the previous copy). Without it, and without a terminal, an existing output stops the run (exit 2).
 
       --gitignore
           Add the restored file to .gitignore without asking (no prompt)
@@ -29,7 +27,7 @@ Options:
       --no-gitignore
           Skip the .gitignore check for the restored file
 
-      --dry-run
+  -n, --dry-run
           Decrypt and validate but do not write any files
 
       --inspect
@@ -48,11 +46,9 @@ Options:
           
           EVNX_PASSWORD environment variable is also accepted and takes lower priority than --password-file; when both are set, the file wins and a warning says so.
           
-          Also accepted as --key-file, which is what `evnx backup` calls the same thing. Either spelling reads the file identically on both sides, so one file round-trips.
+          `evnx backup` takes the same flag, so one file round-trips.
           
           Examples: evnx restore .env.backup --password-file /run/secrets/evnx-pass EVNX_PASSWORD=mypass evnx restore .env.backup
-          
-          [aliases: --key-file]
 
   -v, --verbose
           Enable verbose output
@@ -70,7 +66,7 @@ Options:
           Print version
 
 Replacing a file: an existing --output is never replaced silently. With a
-terminal evnx asks; without one, pass --yes (alias --force). Either way the
+terminal evnx asks; without one, pass --yes. Either way the
 replaced file is kept beside it as <output>.bak. Content identical to the
 backup is left alone.
 

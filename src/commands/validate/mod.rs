@@ -41,17 +41,17 @@ pub struct Options {
     /// `[defaults] env_name`.
     pub env: String,
     /// `--input-format`: `dotenv` or `json`.
-    pub input_format: String,
+    pub input_format: InputFormat,
     pub example: String,
     pub strict: bool,
     pub fix: bool,
     /// `--fix --dry-run`: work the fixes out, write nothing.
     pub dry_run: bool,
     pub rotate_weak_secrets: bool,
-    pub format: String,
+    pub format: Format,
     pub exit_zero: bool,
     /// `--fail-on`.
-    pub fail_on: Option<String>,
+    pub fail_on: Option<FailOn>,
     /// `[validate] fail_on`.
     pub fail_on_configured: Option<String>,
     pub verbose: bool,
@@ -63,18 +63,15 @@ pub struct Options {
     pub spec: crate::core::spec::Spec,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Format {
-    Pretty,
-    Json,
-    Github,
-}
+use crate::cli::args::ValidateFormat as Format;
 
 /// The lowest severity that fails the run (`--fail-on`, `[validate] fail_on`).
 /// How `--env` is read (B2). Never inferred (D3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum InputFormat {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum InputFormat {
+    /// `.env` text
     Dotenv,
+    /// A flat `{"KEY": "value"}` object
     Json,
 }
 
@@ -136,9 +133,11 @@ fn document_from_json(text: &str) -> Result<crate::core::parser::Document> {
     Ok(doc)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum FailOn {
+    /// Only errors fail the run
     Error,
+    /// Warnings fail it too
     Warning,
 }
 
@@ -657,22 +656,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
 ///
 /// This function is called from `main.rs` after CLI args are parsed.
 pub fn run(opts: Options) -> Result<()> {
-    // Reject an unknown --format before doing any work. Discovering it after a
-    // full parse-and-check pass wastes the run and buries the message under
-    // output the user did not ask for. One rule with scan and doctor: any case,
-    // spaces trimmed (I-038).
-    let format = crate::core::args::one_of(
-        "format",
-        &opts.format,
-        &[
-            ("pretty", Format::Pretty),
-            ("text", Format::Pretty),
-            ("json", Format::Json),
-            ("github-actions", Format::Github),
-            ("github", Format::Github),
-        ],
-        &["pretty", "json", "github-actions"],
-    )?;
+    let format = opts.format;
 
     // ⚠️ I-038: a typo in `--ignore placeholder_vlaue` used to suppress
     // nothing and say nothing. Both lists are checked, whichever is used.
@@ -686,12 +670,7 @@ pub fn run(opts: Options) -> Result<()> {
         ignore_issues.insert(t.to_string());
     }
 
-    let input_format = crate::core::args::one_of(
-        "input format",
-        &opts.input_format,
-        &[("dotenv", InputFormat::Dotenv), ("json", InputFormat::Json)],
-        &["dotenv", "json"],
-    )?;
+    let input_format = opts.input_format;
     let stdin = opts.env == "-";
     if opts.fix && (stdin || input_format == InputFormat::Json) {
         anyhow::bail!(
@@ -706,10 +685,7 @@ pub fn run(opts: Options) -> Result<()> {
         .map(parse_fail_on)
         .transpose()
         .with_context(|| format!("{} [validate] fail_on", crate::core::config::PROJECT_FILE))?;
-    let fail_on = match opts.fail_on.as_deref() {
-        Some(v) => parse_fail_on(v)?,
-        None => configured_fail_on.unwrap_or(FailOn::Error),
-    };
+    let fail_on = opts.fail_on.or(configured_fail_on).unwrap_or(FailOn::Error);
 
     // ─────────────────────────────────────────
     // UI: Header (only for pretty output)

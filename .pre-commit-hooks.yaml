@@ -109,7 +109,7 @@
 - id: evnx-sync-fix
   name: evnx — Add missing names to .env.example
   description: Add variables missing from .env.example, with placeholder values (skipped with no .env)
-  entry: evnx sync --force --skip-without-env
+  entry: evnx sync --yes --skip-without-env
   language: rust
   pass_filenames: false
   stages: [pre-commit]

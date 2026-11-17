@@ -3,17 +3,6 @@ Keep .env and .env.example in sync
 Usage: evnx sync [OPTIONS]
 
 Options:
-      --env <ENV>
-          The environment file to sync from (forward) or into (reverse)
-
-      --example <EXAMPLE>
-          The template to sync into (forward) or from (reverse)
-
-      --env-name <NAME>
-          Use `.env.<NAME>` instead of `.env`.
-          
-          `--env-name production` resolves to `.env.production`. A name whose file does not exist is an error listing the environments that do.
-
       --direction <DIRECTION>
           Which file to fill: forward (the default) adds to the template, reverse adds to `.env`.
           
@@ -25,13 +14,17 @@ Options:
           - forward: Sync .env → .env.example (add new vars to template)
           - reverse: Sync .env.example → .env (add missing vars to local env)
 
-      --placeholder
-          Deprecated: does what --force does (placeholders, no prompt).
+      --to <TO>
+          The file to fill: `example` is `--direction forward`, `env` is `--direction reverse`.
           
-          Without a terminal sync already uses placeholders and says so.
+          Another spelling of `--direction`; give one or the other.
+
+          Possible values:
+          - example: Add the names `.env` has and the template lacks to the template (forward)
+          - env:     Add the names the template has and `.env` lacks to `.env` (reverse)
 
   -n, --dry-run
-          Preview changes without writing to files
+          Show what would change without writing anything
 
       --check
           Report whether the files are in step through the exit code.
@@ -52,19 +45,6 @@ Options:
           With no .env, the template is checked against the required `[vars]` in
           .evnx.toml. The three codes follow `diff` and `grep`. Plain --dry-run
           previews and always exits 0.
-
-      --format <FORMAT>
-          Output format for `--check`: `pretty` (default) or `json`.
-          
-          ⚠️ `json` requires `--check`, because without it `sync` edits files and a machine-readable report of an edit already made is worth less than the edit. The report says *what* drifted — until now the only answer a pipeline could get was the exit code.
-          
-          [default: pretty]
-          [possible values: pretty, json]
-
-  -f, --force
-          Skip the prompts and add placeholder values.
-          
-          Without a terminal, or with CI set, sync does this anyway and says so.
 
       --skip-without-env
           With no `.env` and nothing else to compare, skip (exit 0) and say so.
@@ -88,7 +68,7 @@ Options:
           
           Works on its own: it cannot be combined with the options that pick
           one environment file or another mode (env, env-name, direction, check,
-          format, force, placeholder, skip-without-env, template-config,
+          format, json, to, skip-without-env, template-config,
           naming-policy). Use --example for another template and --dry-run to
           preview.
           
@@ -96,9 +76,6 @@ Options:
             2  refused (no terminal without --yes, no environment file, a file it
                cannot read, changed while running)
             4  you answered no
-
-  -y, --yes
-          With --prune: remove without asking
 
       --naming-policy <NAMING_POLICY>
           What to do with a name that is not UPPER_SNAKE_CASE.
@@ -124,6 +101,34 @@ Options:
 
   -V, --version
           Print version
+
+Files:
+      --env <FILE>
+          The environment file to sync from (forward) or into (reverse). Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`
+
+      --env-name <NAME>
+          Use `.env.<NAME>` instead of `.env`
+
+      --example <FILE>
+          The template to sync into (forward) or from (reverse). Defaults to `.env.example`, or `[defaults] example`
+
+Output:
+      --format <FORMAT>
+          Output format, in every mode.
+          
+          `json` prints the `--check` report on stdout and nothing else. A run that writes (or, with `--dry-run`, would write) adds an `added` array: the names added to the target, sorted. A run that would stop to ask needs `--yes` or `--dry-run`.
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+      --json
+          Same as --format json
+
+Confirmation:
+  -y, --yes
+          Skip the prompts and add placeholder values.
+          
+          Without a terminal, or with CI set, sync does this anyway and says so. With `--prune` it also confirms the removal.
 
 Examples:
   evnx sync --check --direction forward   CI gate: does the template have everything .env has?

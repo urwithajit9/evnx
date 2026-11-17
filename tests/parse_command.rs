@@ -55,8 +55,8 @@ fn rm88_values_appear_only_when_asked() {
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(json["entries"][0]["value"], "8080");
     assert_eq!(json["entries"][3]["key"], "TOKEN");
-    // `--yes` means nothing without `--values`.
-    assert_eq!(parse(&d, None, &["--yes"]).status.code(), Some(2));
+    // `--show-values` means nothing without `--values`.
+    assert_eq!(parse(&d, None, &["--show-values"]).status.code(), Some(2));
 }
 
 #[test]

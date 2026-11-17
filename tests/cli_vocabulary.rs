@@ -15,6 +15,10 @@
 //! * `d2` `--dry-run` has `-n`
 //! * `d3` `--yes` has `-y`
 //! * `e`  every removed spelling exits 2 with its message (see below)
+//!
+//! No rule says a command must take `--yes`. `align` never asks a question (it
+//! keeps a `.bak` of every file it changes, and `evnx undo` puts them back), so
+//! it has none, on purpose.
 
 mod support;
 
@@ -23,30 +27,6 @@ use support::surface::{entries, Entry};
 
 /// (command path, rule) pairs that fail today.
 const ALLOW: &[(&str, &str)] = &[
-    ("init", "b"),
-    ("init", "d1"),
-    ("init", "d2"),
-    ("add", "b"),
-    ("add", "d2"),
-    ("add", "d1"),
-    ("add service", "b"),
-    ("add service", "d2"),
-    ("add service", "d1"),
-    ("add framework", "b"),
-    ("add framework", "d2"),
-    ("add framework", "d1"),
-    ("add blueprint", "b"),
-    ("add blueprint", "d2"),
-    ("add blueprint", "d1"),
-    ("add custom", "b"),
-    ("add custom", "d2"),
-    ("add custom", "d1"),
-    ("remove", "b"),
-    ("remove", "d1"),
-    ("remove", "d2"),
-    ("validate", "a"),
-    ("validate", "b"),
-    ("validate", "d2"),
     ("scan", "a"),
     ("scan", "b"),
     ("scan rules list", "b"),
@@ -54,12 +34,6 @@ const ALLOW: &[(&str, &str)] = &[
     ("scan rules add", "b"),
     ("migrate", "d1"),
     ("migrate", "d2"),
-    ("sync", "b"),
-    ("sync", "c"),
-    ("align", "b"),
-    ("template", "d2"),
-    ("backup", "d1"),
-    ("restore", "d2"),
     ("auth key-bundle", "a"),
     ("auth key-bundle", "b"),
     ("auth token create", "a"),
@@ -78,11 +52,6 @@ const ALLOW: &[(&str, &str)] = &[
     ("doctor", "a"),
     ("doctor", "b"),
     ("doctor", "d1"),
-    ("spec check", "b"),
-    ("history", "b"),
-    ("undo", "d2"),
-    ("parse", "a"),
-    ("parse", "b"),
     ("commands", "b"), // converted in 8c
     ("update", "b"),
 ];
@@ -216,7 +185,11 @@ fn allow_list_has_no_duplicates() {
 fn removed_spellings_are_reported_by_check() {
     use evnx::cli::removed::{check, message, Removed};
     use std::ffi::OsString;
+    let all = entries();
     for r in evnx::cli::removed::REMOVED {
+        if !all.iter().any(|e| e.path == r.path()) {
+            continue; // the command's feature is not built
+        }
         let (typed, tail): (String, Vec<&str>) = match r {
             Removed::Flag { old, .. } => (old[old.len() - 1].to_string(), vec![old[old.len() - 1]]),
             Removed::Value { flag, value, .. } => (format!("{flag} {value}"), vec![flag, value]),

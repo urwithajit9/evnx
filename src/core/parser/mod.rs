@@ -416,7 +416,7 @@ impl Parser {
     /// The hint for an `--env` file that does not exist, worded once for every
     /// command that reads one (`validate`, `diff`, `convert`; I-091).
     ///
-    /// For `.env.<name>` it names `evnx init --env-name <name>` (and `-p` for
+    /// For `.env.<name>` it names `evnx init --env-name <name>` (and `--dir` for
     /// another folder): plain `evnx init` writes `.env`, so the hint could not
     /// be followed (C-2, RM-17).
     pub fn missing_env_hint(path: &str) -> String {
@@ -440,7 +440,7 @@ impl Parser {
         let dir = std::path::Path::new(path)
             .parent()
             .filter(|d| !d.as_os_str().is_empty() && *d != std::path::Path::new("."))
-            .map(|d| format!(" -p {}", crate::core::shell::word(&d.to_string_lossy())))
+            .map(|d| format!(" --dir {}", crate::core::shell::word(&d.to_string_lossy())))
             .unwrap_or_default();
         format!(
             "Create it with `evnx init --env-name {}{dir}`, or point at another file with --env.",

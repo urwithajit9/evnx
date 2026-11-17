@@ -71,7 +71,7 @@ fn init_blank_creates_minimal_files() {
     cargo_bin_cmd!("evnx")
         .arg("init")
         .arg("--yes")
-        .arg("--path")
+        .arg("--dir")
         .arg(dir.path())
         .assert()
         .success()
@@ -112,7 +112,7 @@ fn init_yes_is_deterministic() {
         cargo_bin_cmd!("evnx")
             .arg("init")
             .arg("--yes")
-            .arg("--path")
+            .arg("--dir")
             .arg(dir.path())
             .assert()
             .success();
@@ -135,7 +135,7 @@ fn init_blueprint_is_deterministic() {
     for _ in 0..4 {
         let dir = TempDir::new().unwrap();
         cargo_bin_cmd!("evnx")
-            .args(["init", "--yes", "--blueprint", "t3_modern", "--path"])
+            .args(["init", "--yes", "--blueprint", "t3_modern", "--dir"])
             .arg(dir.path())
             .assert()
             .success();
@@ -155,7 +155,7 @@ fn init_unknown_blueprint_lists_the_real_ones() {
     let dir = TempDir::new().unwrap();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--yes", "--blueprint", "no_such_stack", "--path"])
+        .args(["init", "--yes", "--blueprint", "no_such_stack", "--dir"])
         .arg(dir.path())
         .assert()
         .failure()
@@ -182,7 +182,7 @@ fn init_yes_refuses_to_overwrite_an_existing_example() {
     cargo_bin_cmd!("evnx")
         .arg("init")
         .args(["--with", "redis", "--yes"])
-        .arg("--path")
+        .arg("--dir")
         .arg(dir.path())
         .assert()
         .failure()
@@ -202,7 +202,7 @@ fn init_force_replaces_the_example_but_never_the_env() {
     std::fs::write(dir.path().join(".env"), "REAL_SECRET=keepme\n").unwrap();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--yes", "--force", "--path"])
+        .args(["init", "--yes", "--force", "--dir"])
         .arg(dir.path())
         .assert()
         .success();
@@ -226,7 +226,7 @@ fn init_blueprint_t3_modern_generates_expected_vars() {
     let dir = TempDir::new().unwrap();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--yes", "--blueprint", "t3_modern", "--path"])
+        .args(["init", "--yes", "--blueprint", "t3_modern", "--dir"])
         .arg(dir.path())
         .assert()
         .success()
@@ -269,7 +269,7 @@ fn init_blueprint_rust_high_perf() {
     let dir = TempDir::new().unwrap();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--yes", "--blueprint", "rust_high_perf", "--path"])
+        .args(["init", "--yes", "--blueprint", "rust_high_perf", "--dir"])
         .arg(dir.path())
         .assert()
         .success();
@@ -301,7 +301,7 @@ fn init_blueprint_with_many_services() {
     let dir = TempDir::new().unwrap();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--yes", "--blueprint", "go_microservice", "--path"])
+        .args(["init", "--yes", "--blueprint", "go_microservice", "--dir"])
         .arg(dir.path())
         .assert()
         .success();
@@ -329,13 +329,7 @@ fn init_blueprint_django_enterprise() {
     let dir = TempDir::new().unwrap();
 
     cargo_bin_cmd!("evnx")
-        .args([
-            "init",
-            "--yes",
-            "--blueprint",
-            "django_enterprise",
-            "--path",
-        ])
+        .args(["init", "--yes", "--blueprint", "django_enterprise", "--dir"])
         .arg(dir.path())
         .assert()
         .success();
@@ -371,7 +365,7 @@ fn init_creates_nested_directory() {
     cargo_bin_cmd!("evnx")
         .arg("init")
         .arg("--yes")
-        .arg("--path")
+        .arg("--dir")
         .arg(&nested_path)
         .write_stdin("0\n") // Blank mode
         .assert()
@@ -395,7 +389,7 @@ fn init_updates_gitignore() {
     cargo_bin_cmd!("evnx")
         .arg("init")
         .arg("--yes")
-        .arg("--path")
+        .arg("--dir")
         .arg(dir.path())
         .write_stdin("0\n") // Blank mode
         .assert()
@@ -434,7 +428,7 @@ fn init_does_not_overwrite_existing_env() {
     cargo_bin_cmd!("evnx")
         .arg("init")
         .arg("--yes")
-        .arg("--path")
+        .arg("--dir")
         .arg(dir.path())
         .write_stdin("0\n") // Blank mode
         .assert()
@@ -457,7 +451,7 @@ fn init_gitignores_every_env_file_but_not_the_template() {
     let dir = TempDir::new().unwrap();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--yes", "--path"])
+        .args(["init", "--yes", "--dir"])
         .arg(dir.path())
         .assert()
         .success();
@@ -653,7 +647,7 @@ fn detect_reads_the_project_and_writes_its_variables() {
     let d = detectable_project();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--detect", "--path"])
+        .args(["init", "--detect", "--dir"])
         .arg(d.path())
         .assert()
         .success();
@@ -672,7 +666,7 @@ fn a_non_tty_is_told_how_to_proceed_rather_than_failing_obscurely() {
     let d = detectable_project();
 
     let assert = cargo_bin_cmd!("evnx")
-        .args(["init", "--path"])
+        .args(["init", "--dir"])
         .arg(d.path())
         .assert()
         .failure();
@@ -693,7 +687,7 @@ fn a_non_tty_is_told_how_to_proceed_rather_than_failing_obscurely() {
 fn detected_output_equals_naming_the_same_components() {
     let detected = detectable_project();
     cargo_bin_cmd!("evnx")
-        .args(["init", "--detect", "--path"])
+        .args(["init", "--detect", "--dir"])
         .arg(detected.path())
         .assert()
         .success();
@@ -705,7 +699,7 @@ fn detected_output_equals_naming_the_same_components() {
             "--with",
             "nextjs,stripe,clerk,postgresql",
             "--yes",
-            "--path",
+            "--dir",
         ])
         .arg(named.path())
         .assert()
@@ -729,7 +723,7 @@ fn an_explicit_request_suppresses_detection() {
     let d = detectable_project();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--with", "redis", "--yes", "--path"])
+        .args(["init", "--with", "redis", "--yes", "--dir"])
         .arg(d.path())
         .assert()
         .success();
@@ -749,7 +743,7 @@ fn an_undetectable_project_still_gets_the_blank_path() {
     let d = TempDir::new().unwrap();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--yes", "--path"])
+        .args(["init", "--yes", "--dir"])
         .arg(d.path())
         .assert()
         .success()
@@ -778,7 +772,7 @@ fn from_source_builds_a_template_from_the_code() {
     let d = sourced_project();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--from-source", "--yes", "--path"])
+        .args(["init", "--from-source", "--yes", "--dir"])
         .arg(d.path())
         .assert()
         .success();
@@ -802,7 +796,7 @@ fn from_source_appends_and_never_replaces() {
     .unwrap();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--from-source", "--yes", "--path"])
+        .args(["init", "--from-source", "--yes", "--dir"])
         .arg(d.path())
         .assert()
         .success();
@@ -829,7 +823,7 @@ fn from_source_is_idempotent() {
 
     for _ in 0..2 {
         cargo_bin_cmd!("evnx")
-            .args(["init", "--from-source", "--yes", "--path"])
+            .args(["init", "--from-source", "--yes", "--dir"])
             .arg(d.path())
             .assert()
             .success();
@@ -849,7 +843,7 @@ fn from_source_on_an_empty_project_writes_nothing() {
     let d = TempDir::new().unwrap();
 
     cargo_bin_cmd!("evnx")
-        .args(["init", "--from-source", "--yes", "--path"])
+        .args(["init", "--from-source", "--yes", "--dir"])
         .arg(d.path())
         .assert()
         .success()
@@ -944,7 +938,7 @@ fn a_path_that_is_a_file_is_refused() {
     let d = TempDir::new().unwrap();
     std::fs::write(d.path().join("afile"), "").unwrap();
 
-    let out = init_in(d.path(), &["--yes", "--path", "afile"]);
+    let out = init_in(d.path(), &["--yes", "--dir", "afile"]);
 
     assert_eq!(out.status.code(), Some(2), "{}", text_of(&out));
     assert!(text_of(&out).contains("Failed to create directory"));
@@ -966,7 +960,7 @@ fn an_unwritable_path_is_refused() {
         return; // running as root
     }
 
-    let out = init_in(d.path(), &["--yes", "--path", "ro"]);
+    let out = init_in(d.path(), &["--yes", "--dir", "ro"]);
     std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     assert_eq!(out.status.code(), Some(2), "{}", text_of(&out));
@@ -1217,7 +1211,7 @@ fn from_source_never_replaces_an_existing_env() {
 #[test]
 fn short_p_is_path() {
     let d = TempDir::new().unwrap();
-    let out = init_in(d.path(), &["-p", "packages/api", "--yes"]);
+    let out = init_in(d.path(), &["--dir", "packages/api", "--yes"]);
     assert!(out.status.success(), "{}", text_of(&out));
     assert!(d.path().join("packages/api/.env.example").exists());
 }
@@ -1601,7 +1595,7 @@ fn i333_dry_run_under_path_names_every_file_with_its_folder() {
     std::fs::create_dir_all(dir.path().join("deploy/compose")).unwrap();
     let out = cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
-        .args(["init", "--dry-run", "--yes", "-p", "deploy/compose"])
+        .args(["init", "--dry-run", "--yes", "--dir", "deploy/compose"])
         .env("NO_COLOR", "1")
         .output()
         .unwrap();
@@ -1701,7 +1695,7 @@ fn i331_init_names_a_nested_env_file() {
     };
     let dry = run(&["--dry-run"]);
     assert!(dry.contains("deploy/compose/.env also exists"), "{dry}");
-    assert!(dry.contains("evnx init -p deploy/compose"), "{dry}");
+    assert!(dry.contains("evnx init --dir deploy/compose"), "{dry}");
     assert!(
         !dry.contains("node_modules") && !dry.contains(".cache"),
         "{dry}"

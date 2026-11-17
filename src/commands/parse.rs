@@ -3,7 +3,7 @@
 //!
 //! ⛔ **Names, never values, by default.** Each entry is its line, its key and
 //! three flags. Values appear only with `--values`, which a terminal refuses
-//! without `--yes`: printed there, they stay in the scrollback.
+//! without `--show-values`: printed there, they stay in the scrollback.
 
 use anyhow::Result;
 use serde::Serialize;
@@ -11,12 +11,6 @@ use serde::Serialize;
 use crate::core::classify::{self, Strictness};
 use crate::core::parser::Document;
 use crate::core::Parser;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Format {
-    Pretty,
-    Json,
-}
 
 /// `--format json`. `schema_version` changes only when a field changes meaning.
 #[derive(Serialize)]
@@ -47,21 +41,11 @@ struct ProblemOut {
 
 /// Read `env` (`-` for stdin) and print its entries. Exits 1 when the file has
 /// problems; returns an error only when it could not be read.
-pub fn run(env: &str, format: &str, values: bool, yes: bool) -> Result<()> {
-    let format = crate::core::args::one_of(
-        "format",
-        format,
-        &[
-            ("pretty", Format::Pretty),
-            ("text", Format::Pretty),
-            ("json", Format::Json),
-        ],
-        &["pretty", "json"],
-    )?;
-    if values && !yes && std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+pub fn run(env: &str, json: bool, values: bool, show_values: bool) -> Result<()> {
+    if values && !show_values && std::io::IsTerminal::is_terminal(&std::io::stdout()) {
         anyhow::bail!(
             "--values prints every value in plain text, and stdout is a terminal, \
-             where it stays in the scrollback. Pipe it, or pass --yes."
+             where it stays in the scrollback. Pipe it, or pass --show-values."
         );
     }
 
@@ -84,9 +68,10 @@ pub fn run(env: &str, format: &str, values: bool, yes: bool) -> Result<()> {
 
     let doc = Parser::default().parse_document(&content);
     let report = report(&doc, file, values);
-    match format {
-        Format::Json => println!("{}", serde_json::to_string_pretty(&report)?),
-        Format::Pretty => print_pretty(&report),
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print_pretty(&report);
     }
     if !report.problems.is_empty() {
         std::process::exit(1);

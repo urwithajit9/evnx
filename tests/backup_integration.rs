@@ -43,7 +43,7 @@ fn t_i146_output_equal_to_the_source_is_refused() {
         &[
             "backup",
             "src.env",
-            "--key-file",
+            "--password-file",
             "pw",
             "--output",
             "src.env",
@@ -66,7 +66,14 @@ fn t_i146_a_link_to_the_source_is_the_source() {
     for output in ["link.env", "hard.env", "./src.env"] {
         run(
             p.path(),
-            &["backup", "src.env", "--key-file", "pw", "--output", output],
+            &[
+                "backup",
+                "src.env",
+                "--password-file",
+                "pw",
+                "--output",
+                output,
+            ],
         )
         .assert_code(2);
         assert_eq!(p.read("src.env"), ENV, "{output}: the source was changed");
@@ -80,7 +87,14 @@ fn t_i146_rotation_that_would_move_the_source_is_refused() {
     let p = project().file("out.1", ENV);
     run(
         p.path(),
-        &["backup", "out.1", "--key-file", "pw", "--output", "out"],
+        &[
+            "backup",
+            "out.1",
+            "--password-file",
+            "pw",
+            "--output",
+            "out",
+        ],
     )
     .assert_code(2)
     .assert_contains("out.1");
@@ -97,9 +111,9 @@ fn t_i146_rotation_through_a_symlink_rotates_the_target() {
     let p = project()
         .dir("vault")
         .symlink("vault/app.backup", ".env.backup");
-    run(p.path(), &["backup", "--key-file", "pw"]).assert_code(0);
+    run(p.path(), &["backup", "--password-file", "pw"]).assert_code(0);
     std::fs::write(p.join(".env"), "SECOND=1\n").unwrap();
-    run(p.path(), &["backup", "--key-file", "pw"]).assert_code(0);
+    run(p.path(), &["backup", "--password-file", "pw"]).assert_code(0);
 
     let link = std::fs::symlink_metadata(p.join(".env.backup")).unwrap();
     assert!(link.file_type().is_symlink(), "the link was replaced");
@@ -115,7 +129,7 @@ fn t_dec_b3_a_directory_at_the_output_is_exit_2() {
     let p = project().dir("odir");
     run(
         p.path(),
-        &["backup", "--key-file", "pw", "--output", "odir"],
+        &["backup", "--password-file", "pw", "--output", "odir"],
     )
     .assert_code(2)
     .assert_contains("odir");
@@ -130,7 +144,7 @@ fn t_dec_b3_a_directory_in_a_rotation_slot_is_refused() {
     let p = project()
         .file(".env.backup", "previous backup\n")
         .dir(".env.backup.1");
-    run(p.path(), &["backup", "--key-file", "pw"])
+    run(p.path(), &["backup", "--password-file", "pw"])
         .assert_code(2)
         .assert_contains(".env.backup.1");
     assert_eq!(p.read(".env.backup"), "previous backup\n");
@@ -145,7 +159,7 @@ fn t_i147_a_short_key_file_is_refused() {
     let p = project().file("short", "abc\n");
     run(
         p.path(),
-        &["backup", "--key-file", "short", "--output", "s.bak"],
+        &["backup", "--password-file", "short", "--output", "s.bak"],
     )
     .assert_code(2)
     .assert_contains("at least 8 characters (got 3)");
@@ -174,7 +188,7 @@ fn t_i147_the_floor_counts_characters() {
     let p = project().file("pw8", "äöüßäöüß\n");
     run(
         p.path(),
-        &["backup", "--key-file", "pw8", "--output", "u.bak"],
+        &["backup", "--password-file", "pw8", "--output", "u.bak"],
     )
     .assert_code(0);
 }
@@ -188,7 +202,7 @@ fn t_i155_key_file_and_evnx_password_both_set_says_which_wins() {
     let p = project();
     let out = run_with(
         p.path(),
-        &["backup", "--key-file", "pw", "--output", "b.bak"],
+        &["backup", "--password-file", "pw", "--output", "b.bak"],
         &[("EVNX_PASSWORD", "another-passphrase-456")],
         None,
     );
@@ -197,7 +211,14 @@ fn t_i155_key_file_and_evnx_password_both_set_says_which_wins() {
         .assert_contains("not used");
     run(
         p.path(),
-        &["restore", "b.bak", "--key-file", "pw", "--output", "b.env"],
+        &[
+            "restore",
+            "b.bak",
+            "--password-file",
+            "pw",
+            "--output",
+            "b.env",
+        ],
     )
     .assert_code(0);
     assert_eq!(p.read("b.env"), ENV);
@@ -212,7 +233,7 @@ fn t_br07_no_terminal_and_no_secret_names_the_ways_in() {
     let p = project();
     run(p.path(), &["backup"])
         .assert_code(2)
-        .assert_contains("--key-file")
+        .assert_contains("--password-file")
         .assert_contains("EVNX_PASSWORD")
         .assert_not_contains("IO error");
     assert!(!p.exists(".env.backup"));
@@ -221,10 +242,10 @@ fn t_br07_no_terminal_and_no_secret_names_the_ways_in() {
 #[test]
 fn t_br09_an_empty_key_file_and_an_empty_evnx_password_are_refused() {
     let p = project().file("empty", "  \n");
-    run(p.path(), &["backup", "--key-file", "empty"])
+    run(p.path(), &["backup", "--password-file", "empty"])
         .assert_code(2)
         .assert_contains("empty");
-    run(p.path(), &["backup", "--key-file", "missing"])
+    run(p.path(), &["backup", "--password-file", "missing"])
         .assert_code(2)
         .assert_contains("not found");
     run_with(p.path(), &["backup"], &[("EVNX_PASSWORD", "")], None)
@@ -238,10 +259,10 @@ fn t_br09_an_empty_key_file_and_an_empty_evnx_password_are_refused() {
 #[test]
 fn t_br43_source_problems_exit_2() {
     let p = Project::new().file("pw", PW).dir("adir");
-    run(p.path(), &["backup", "--key-file", "pw"])
+    run(p.path(), &["backup", "--password-file", "pw"])
         .assert_code(2)
         .assert_contains("File not found");
-    run(p.path(), &["backup", "adir", "--key-file", "pw"])
+    run(p.path(), &["backup", "adir", "--password-file", "pw"])
         .assert_code(2)
         .assert_contains("Not a regular file");
 }
@@ -253,7 +274,7 @@ fn t_br43_a_missing_output_directory_is_exit_5() {
     let p = project();
     run(
         p.path(),
-        &["backup", "--key-file", "pw", "--output", "nodir/x.bak"],
+        &["backup", "--password-file", "pw", "--output", "nodir/x.bak"],
     )
     .assert_code(5)
     .assert_contains("nodir")
@@ -278,7 +299,7 @@ fn restored(p: &Project, backup: &str) -> String {
         &[
             "restore",
             backup,
-            "--key-file",
+            "--password-file",
             "pw",
             "--output",
             "check.env",
@@ -295,7 +316,7 @@ fn t_br13_rotation_keeps_the_newest_first() {
     let p = project();
     for i in 1..=5 {
         std::fs::write(p.join(".env"), format!("N={i}\n")).unwrap();
-        run(p.path(), &["backup", "--key-file", "pw"]).assert_code(0);
+        run(p.path(), &["backup", "--password-file", "pw"]).assert_code(0);
     }
     assert_eq!(restored(&p, ".env.backup"), "N=5\n");
     assert_eq!(restored(&p, ".env.backup.1"), "N=4\n");
@@ -307,15 +328,30 @@ fn t_br13_rotation_keeps_the_newest_first() {
 #[test]
 fn t_br14_keep_0_overwrites_and_keep_1_warns() {
     let p = project();
-    run(p.path(), &["backup", "--key-file", "pw", "--keep", "0"]).assert_code(0);
-    run(p.path(), &["backup", "--key-file", "pw", "--keep", "0"]).assert_code(0);
+    run(
+        p.path(),
+        &["backup", "--password-file", "pw", "--keep", "0"],
+    )
+    .assert_code(0);
+    run(
+        p.path(),
+        &["backup", "--password-file", "pw", "--keep", "0"],
+    )
+    .assert_code(0);
     assert!(!p.exists(".env.backup.1"), "--keep 0 rotated");
 
-    run(p.path(), &["backup", "--key-file", "pw", "--keep", "1"]).assert_code(0);
+    run(
+        p.path(),
+        &["backup", "--password-file", "pw", "--keep", "1"],
+    )
+    .assert_code(0);
     assert!(p.exists(".env.backup.1"));
-    run(p.path(), &["backup", "--key-file", "pw", "--keep", "1"])
-        .assert_code(0)
-        .assert_contains("will be overwritten by rotation");
+    run(
+        p.path(),
+        &["backup", "--password-file", "pw", "--keep", "1"],
+    )
+    .assert_code(0)
+    .assert_contains("will be overwritten by rotation");
     assert!(!p.exists(".env.backup.2"));
 }
 
@@ -323,12 +359,16 @@ fn t_br14_keep_0_overwrites_and_keep_1_warns() {
 fn t_br15_backup_keep_in_config_and_the_flag_wins() {
     let p = project().toml("[backup]\nkeep = 1\n");
     for _ in 0..3 {
-        run(p.path(), &["backup", "--key-file", "pw"]).assert_code(0);
+        run(p.path(), &["backup", "--password-file", "pw"]).assert_code(0);
     }
     assert!(p.exists(".env.backup.1") && !p.exists(".env.backup.2"));
 
     for _ in 0..2 {
-        run(p.path(), &["backup", "--key-file", "pw", "--keep", "2"]).assert_code(0);
+        run(
+            p.path(),
+            &["backup", "--password-file", "pw", "--keep", "2"],
+        )
+        .assert_code(0);
     }
     assert!(
         p.exists(".env.backup.2"),
@@ -345,7 +385,7 @@ fn t_br15_backup_keep_in_config_and_the_flag_wins() {
 #[test]
 fn t_br01_the_backup_is_0600_and_holds_nothing_in_clear() {
     let p = project();
-    let out = run(p.path(), &["backup", "--key-file", "pw"]);
+    let out = run(p.path(), &["backup", "--password-file", "pw"]);
     out.assert_code(0)
         .assert_not_contains("sk_demo_000")
         .assert_not_contains("postgres://");
@@ -362,7 +402,13 @@ fn t_br03_env_name_picks_the_file() {
     let p = project().file(".env.production", "P=1\n");
     run(
         p.path(),
-        &["backup", "--env-name", "production", "--key-file", "pw"],
+        &[
+            "backup",
+            "--env-name",
+            "production",
+            "--password-file",
+            "pw",
+        ],
     )
     .assert_code(0);
     assert!(p.exists(".env.production.backup"));
@@ -385,7 +431,7 @@ fn t_i272_copies_are_not_listed_as_environments() {
         .file(".env.production.bak", "A=1\n");
     let out = run(
         p.path(),
-        &["backup", "--env-name", "nope", "--key-file", "pw"],
+        &["backup", "--env-name", "nope", "--password-file", "pw"],
     );
     out.assert_code(2)
         .assert_contains("Available: production\n");
@@ -446,9 +492,12 @@ fn t_br44_readme_examples_use_flags_that_exist() {
 #[test]
 fn q1_output_dash_is_refused_and_no_file_named_dash_appears() {
     let p = project();
-    run(p.path(), &["backup", "--key-file", "pw", "--output", "-"])
-        .assert_code(2)
-        .assert_contains("cannot write to stdout yet");
+    run(
+        p.path(),
+        &["backup", "--password-file", "pw", "--output", "-"],
+    )
+    .assert_code(2)
+    .assert_contains("cannot write to stdout yet");
     assert!(!p.exists("-"));
     assert!(!p.exists("-.1"));
 }

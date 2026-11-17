@@ -11,10 +11,8 @@ Arguments:
           Variable names, or quoted globs (`'TEST_*'`). Case-sensitive
 
 Options:
-  -p, --path <PATH>
-          Project folder (default: current directory)
-          
-          [default: .]
+  -n, --dry-run
+          Show what would be removed; write nothing. Needs no terminal.
 
       --env-name <NAME>
           Remove from `.env.<NAME>` instead of `.env`. Defaults to `[defaults] env_name`
@@ -28,12 +26,6 @@ Options:
       --all
           Remove from every environment file, the template and the contract
 
-      --dry-run
-          Show what would be removed; write nothing. Needs no terminal
-
-  -y, --yes
-          Remove without asking
-
       --ignore-missing
           A name found nowhere is not an error (for scripts that run twice)
 
@@ -45,9 +37,6 @@ Options:
 
       --all-names
           Let a pattern remove every variable in a file (`remove '*'`). Needed with --yes or without a terminal; in a terminal, typing the count does the same
-
-      --json
-          Print the result as one JSON document (needs --yes or --dry-run; with --check it never asks, so neither is needed)
 
       --check
           Only look: exit 1 if any NAME is still in an environment file, the template or `.evnx.toml`, listing where; 0 if it is gone everywhere.
@@ -68,6 +57,24 @@ Options:
 
   -V, --version
           Print version
+
+Files:
+  -C, --dir <DIR>
+          Project folder to work in. Defaults to the current folder
+
+Confirmation:
+  -y, --yes
+          Do not ask for confirmation
+
+Output:
+      --format <FORMAT>
+          Output format
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+      --json
+          Print the result as one JSON document (needs --yes or --dry-run; with --check it never asks, so neither is needed).
 
 Examples:
   evnx remove OLD_TOKEN                     from .env only

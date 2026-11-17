@@ -26,12 +26,6 @@ Options:
             2  no verdict — a file is missing, will not parse, or is the
                same file as another one named
 
-      --format <FORMAT>
-          Output format: `pretty` (default) or `json`
-          
-          [default: pretty]
-          [possible values: pretty, json]
-
       --no-backup
           Keep no `.bak` copy of a file before replacing it.
           
@@ -51,6 +45,16 @@ Options:
 
   -V, --version
           Print version
+
+Output:
+      --format <FORMAT>
+          Output format
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+      --json
+          Same as --format json
 
 What it does:
   The template decides headings, comments, blank lines and key order. Each

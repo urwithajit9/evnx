@@ -23,7 +23,7 @@ No verdict: evnx did not run. This is not a clean result.
 
 $ evnx convert --env-name production --env .env --to json
 [stderr]
-error: the argument '--env-name <NAME>' cannot be used with '--env <PATH>'
+error: the argument '--env-name <NAME>' cannot be used with '--env <FILE>'
 
 Usage: evnx convert --env-name <NAME> --to <FORMAT>
 
