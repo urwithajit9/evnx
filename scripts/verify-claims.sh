@@ -102,7 +102,7 @@ claim_kind() {
 }
 claim_text() {
     case "$1" in
-    N1)   echo "--format accepts both 'github' and 'github-actions' on validate and scan, but each command's error lists only its own spelling" ;;
+    N1)   echo "--format github is the one annotations name on validate and scan; github-actions exits 2 and names it" ;;
     C11)  echo "init has a non-interactive surface: --list-components, --detect, --with, --from-source, --blueprint, --yes" ;;
     C12)  echo "spec init infers a contract from .env and writes .evnx.toml with required/secret per variable" ;;
     F1)   echo "a secret behind a build-time public prefix is high confidence, names what inlines it, and the remedy leads with renaming rather than rewriting git history" ;;
@@ -243,35 +243,32 @@ printf '%sverifying claims about%s %s\n' "$C_DIM" "$C_OFF" "$EVNX"
 printf '%s%s%s\n' "$C_DIM" "$("$EVNX" --version 2>&1 | head -1)" "$C_OFF"
 
 # ── N1 · --format spellings ─────────────────────────────────────────────────
-# The original step ran `validate --help | grep -iA4 -- '--format'` and left a
-# human to compare two help texts. What is actually true is narrower and more
-# interesting: both spellings work on both commands, and each command's error
-# advertises only one of them. The two exact-list assertions are the point — if
-# either list changes, this claim must be re-read.
+# WP-8: one annotations name, `github`, on both commands. `github-actions` was
+# removed in 0.14.2 and names its replacement; a bad value is clap's error,
+# which lists the possible values.
 if begin N1; then
     printf 'A=1\n' > .env
     printf 'A=\nMISSING_VAR=\n' > .env.example
 
-    run "$EVNX" validate --format github-actions
+    run "$EVNX" validate --format github
     want_rc 1                      # 1 = MISSING_VAR found, which is the point
     want_out '::error'
-    run "$EVNX" validate --format github
-    want_rc 1
-    want_out '::error'             # the undocumented spelling is accepted
+    run "$EVNX" validate --format github-actions
+    want_rc 2
+    want_out "use '--format github'"
 
     run "$EVNX" scan --format github
     want_rc_in 0 1
-    want_not_out 'unknown format'
     run "$EVNX" scan --format github-actions
-    want_rc_in 0 1
-    want_not_out 'unknown format'  # likewise, in the other direction
+    want_rc 2
+    want_out "use '--format github'"
 
     run "$EVNX" validate --format bogus
     want_rc 2
-    want_out 'expected one of: pretty, json, github-actions'
+    want_out 'possible values: pretty, json, github'
     run "$EVNX" scan --format bogus
     want_rc 2
-    want_out 'expected one of: pretty, json, sarif, github'
+    want_out 'possible values: pretty, json, sarif, github'
     settle
 fi
 
