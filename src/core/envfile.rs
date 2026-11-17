@@ -32,6 +32,26 @@ pub fn quote(value: &str) -> Cow<'_, str> {
     if !breaks && !value.contains('\'') && (value.contains('$') || value.contains('\\')) {
         return Cow::Owned(format!("'{value}'"));
     }
+    Cow::Owned(double_quoted(value))
+}
+
+/// `value` as it must appear after `KEY=`, keeping the quote style of the
+/// value it replaces (`set`): `style` is the old value's quote, `None` for a
+/// bare one.
+///
+/// A bare value is written as [`quote`] writes it. A quoted one stays quoted
+/// with the same character when that can hold the new value (`'` and a
+/// backtick are literal, so they cannot hold themselves), and falls back to
+/// double quotes, which can hold anything.
+pub fn quote_like(value: &str, style: Option<char>) -> Cow<'_, str> {
+    match style {
+        Some(q @ ('\'' | '`')) if !value.contains(q) => Cow::Owned(format!("{q}{value}{q}")),
+        Some(_) => Cow::Owned(double_quoted(value)),
+        None => quote(value),
+    }
+}
+
+fn double_quoted(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
     out.push('"');
     for c in value.chars() {
@@ -45,7 +65,7 @@ pub fn quote(value: &str) -> Cow<'_, str> {
         }
     }
     out.push('"');
-    Cow::Owned(out)
+    out
 }
 
 /// One `KEY=value` line, without the newline.

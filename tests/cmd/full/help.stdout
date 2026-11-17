@@ -5,6 +5,8 @@ Usage: evnx [OPTIONS] <COMMAND>
 Local files:
   init         Interactive project setup — the template, .env and the .evnx.toml contract
   add          Add environment variables to existing .env files
+  set          Set one variable in the env file, in place
+  get          Print one variable's value, without sourcing the file
   remove       Remove variables from the env file, and the template and contract too [aliases: rm]
   validate     Check .env against .env.example, find issues
   sync         Keep .env and .env.example in sync

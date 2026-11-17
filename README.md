@@ -248,6 +248,37 @@ which may be the repository root rather than the folder itself.
 
 ---
 
+### `evnx set` / `evnx get`
+
+Change or read one variable without opening the file.
+
+```bash
+evnx set PORT=8080                         # one line changes: position, comments, `export` and quotes stay
+evnx set API_TOKEN                         # a secret-looking name is typed with no echo, or read from stdin
+printf %s "$TOKEN" | evnx set API_TOKEN    # nothing in your shell history
+evnx set LOG_LEVEL=info --if-missing       # only when the name is not there yet
+evnx set PORT=8080 --dry-run               # the change, nothing written
+
+PORT=$(evnx get PORT)                      # the value alone, no sourcing
+evnx get --exists DATABASE_URL             # prints nothing; exit 0 when set, 1 when not
+evnx get API_TOKEN --reveal                # a secret is printed only on request
+```
+
+`set` writes atomically, keeps the file's mode and leaves one `.bak` copy. It
+touches no template, contract or `.gitignore` entry of its own. A value that is
+replaced is confirmed first (`--yes` skips it); without a terminal and without
+`--yes` that is exit **4**, as is a missing value with nothing on stdin. The
+result line is `old → new`, and `changed (value hidden)` for a secret; `--json`
+carries names and statuses, never a value. A value given on the command line
+works for a secret-looking name and warns that your shell history has it.
+
+`get` refuses a secret-looking name (or a value that looks like a credential)
+without `--reveal`, also when piped: exit **4**. A name that is not in the file
+is exit **1**; no such file, exit **2**. `--env FILE`, `--env-name NAME` and
+`-C/--dir` choose the file.
+
+---
+
 ### `evnx spec`
 
 Declares what each variable **is** — something `.env.example` cannot express. Written

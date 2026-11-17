@@ -1,0 +1,70 @@
+Print one variable's value, without sourcing the file.
+
+The value is printed alone, so `PORT=$(evnx get PORT)` works. It is read as `evnx run` would pass it on: quotes removed, escapes resolved, `${NAME}` expanded.
+
+A name that looks secret (`API_TOKEN`, `DB_PASSWORD`), or a value that looks like a credential, is refused without --reveal, also when the output is piped. `evnx get NAME --exists` prints nothing and says in the exit code whether the name is there, secret or not.
+
+A name that is not in the file exits 1.
+
+Usage: evnx get [OPTIONS] <NAME>
+
+Arguments:
+  <NAME>
+          The variable to print
+
+Options:
+      --exists
+          Print nothing; exit 0 when the name is in the file, 1 when it is not
+
+      --reveal
+          Print the value even when the name looks secret
+
+      --no-color
+          Disable colored output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+  -v, --verbose
+          Enable verbose output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Files:
+      --env <FILE>
+          Env file to use. Defaults to `.env`
+
+      --env-name <NAME>
+          Use `.env.<NAME>` instead of `.env`
+
+  -C, --dir <DIR>
+          Project folder to work in. Defaults to the current folder
+
+Output:
+      --format <FORMAT>
+          Output format
+          
+          [default: pretty]
+          [possible values: pretty, json]
+
+      --json
+          Print the result as JSON. A secret value is left out unless --reveal.
+
+Examples:
+  PORT=$(evnx get PORT)                     one value, no sourcing
+  evnx get --exists DATABASE_URL            exit 0 when set, 1 when not; prints nothing
+  evnx get API_TOKEN --reveal               a secret is printed only on request
+  evnx get PORT --env-name staging          from .env.staging
+
+Exit codes:
+    0  Ran, nothing to report
+    1  Ran, and found something: findings, problems, a difference, not in sync
+    2  Could not run: usage, config, I/O, or refused before any change
+    4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
+  141  Output closed early (broken pipe)
+
+Full guide: https://docs.evnx.dev/cli/commands/get

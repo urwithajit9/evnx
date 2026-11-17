@@ -194,7 +194,8 @@ fn the_groups_are_the_ones_the_owner_named() {
         (
             "Local files",
             &[
-                "init", "add", "remove", "validate", "sync", "align", "diff", "scan", "doctor",
+                "init", "add", "set", "get", "remove", "validate", "sync", "align", "diff", "scan",
+                "doctor",
             ][..],
         ),
         (

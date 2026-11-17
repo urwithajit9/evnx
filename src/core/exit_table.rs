@@ -108,6 +108,11 @@ fn spec(path: &[&str]) -> (Vec<u8>, bool) {
         // ── local commands ──────────────────────────────────────────────
         ["init"] | ["add", ..] | ["undo"] => (vec![0, 2, 4], false),
         ["remove"] | ["sync"] | ["migrate"] => (vec![0, 1, 2, 4], false),
+        // `set` asks before it replaces a value, and needs a value from stdin
+        // or a prompt (4); `get` exits 1 for a name that is not there and 4
+        // for a secret read without `--reveal`.
+        ["set"] => (vec![0, 2, 4], false),
+        ["get"] => (vec![0, 1, 2, 4], false),
         // ⚠️ `validate`, `convert` and `template` take `--yes` but never ask a
         // question that can be declined, so they never exit 4.
         ["validate"] | ["scan"] | ["diff"] | ["align"] | ["doctor"] | ["parse"] | ["update"] => {

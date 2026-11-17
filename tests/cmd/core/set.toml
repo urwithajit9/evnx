@@ -1,0 +1,3 @@
+bin.name = "evnx"
+args = ["set", "--help"]
+status.code = 0

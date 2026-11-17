@@ -2536,6 +2536,86 @@ pub enum Commands {
         check: bool,
     },
 
+    /// Set one variable in the env file, in place.
+    ///
+    /// Only that line changes: its position, comments, `export` prefix and
+    /// quoting stay. A name that is not in the file is added at the end. The
+    /// file is written atomically, keeps its mode, and is kept as a `.bak`
+    /// copy first. Nothing else is touched: no template, contract or
+    /// .gitignore.
+    ///
+    /// Without a value, it is read from standard input when that is piped, and
+    /// asked for when there is a terminal. A name that looks secret
+    /// (`API_TOKEN`, `DB_PASSWORD`) is asked for with no echo, and a value
+    /// typed on the command line works but warns: your shell keeps it.
+    ///
+    /// A value that is replaced is confirmed first, unless --yes. With no
+    /// terminal and no value on stdin, the exit code is 4.
+    #[command(after_help = docs::SET.after_help, arg_required_else_help = true)]
+    #[command(mut_arg("dry_run", |a| a.help("Show what would change; write nothing. Needs no terminal.")))]
+    #[command(mut_arg("json", |a| a.help("Print the result as JSON: names and statuses, never a value.")))]
+    Set {
+        /// The variable, as NAME or NAME=VALUE.
+        #[arg(value_name = "NAME[=VALUE]")]
+        assignment: String,
+
+        #[command(flatten)]
+        env: args::EnvArgs,
+
+        #[command(flatten)]
+        dir: args::DirArgs,
+
+        /// Do nothing when the name is already in the file.
+        #[arg(long)]
+        if_missing: bool,
+
+        #[command(flatten)]
+        dry: args::DryRunArgs,
+
+        #[command(flatten)]
+        confirm: args::ConfirmArgs,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
+    },
+
+    /// Print one variable's value, without sourcing the file.
+    ///
+    /// The value is printed alone, so `PORT=$(evnx get PORT)` works. It is
+    /// read as `evnx run` would pass it on: quotes removed, escapes resolved,
+    /// `${NAME}` expanded.
+    ///
+    /// A name that looks secret (`API_TOKEN`, `DB_PASSWORD`), or a value that
+    /// looks like a credential, is refused without --reveal, also when the
+    /// output is piped. `evnx get NAME --exists` prints nothing and says in
+    /// the exit code whether the name is there, secret or not.
+    ///
+    /// A name that is not in the file exits 1.
+    #[command(after_help = docs::GET.after_help, arg_required_else_help = true)]
+    #[command(mut_arg("json", |a| a.help("Print the result as JSON. A secret value is left out unless --reveal.")))]
+    Get {
+        /// The variable to print.
+        #[arg(value_name = "NAME")]
+        name: String,
+
+        #[command(flatten)]
+        env: args::EnvArgs,
+
+        #[command(flatten)]
+        dir: args::DirArgs,
+
+        /// Print nothing; exit 0 when the name is in the file, 1 when it is not.
+        #[arg(long, conflicts_with_all = ["format", "json", "reveal"])]
+        exists: bool,
+
+        /// Print the value even when the name looks secret.
+        #[arg(long)]
+        reveal: bool,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
+    },
+
     /// Check .env against .env.example, find issues.
     #[command(after_help = docs::VALIDATE.after_help)]
     #[command(mut_arg("env", |a| a.help("Path to the environment file to check, or `-` to read stdin. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
