@@ -562,7 +562,7 @@ fn github_is_the_one_spelling_of_the_github_format() {
         .assert()
         .code(2)
         .stderr(predicates::str::contains(
-            "'--format github-actions' was removed from 'evnx scan' in 0.14.2; use '--format github'",
+            "'--format github-actions' was removed from 'evnx scan' in 0.15.0; use '--format github'",
         ));
 }
 

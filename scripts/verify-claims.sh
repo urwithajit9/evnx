@@ -244,7 +244,7 @@ printf '%s%s%s\n' "$C_DIM" "$("$EVNX" --version 2>&1 | head -1)" "$C_OFF"
 
 # ── N1 · --format spellings ─────────────────────────────────────────────────
 # WP-8: one annotations name, `github`, on both commands. `github-actions` was
-# removed in 0.14.2 and names its replacement; a bad value is clap's error,
+# removed in 0.15.0 and names its replacement; a bad value is clap's error,
 # which lists the possible values.
 if begin N1; then
     printf 'A=1\n' > .env

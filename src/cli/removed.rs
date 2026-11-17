@@ -315,7 +315,7 @@ pub const REMOVED: &[Removed] = &[
 /// The message for a match: the spelling as typed.
 pub fn message(path: &[&str], typed: &str, new: &str) -> String {
     format!(
-        "error: '{typed}' was removed from 'evnx {}' in 0.14.2; use '{new}'",
+        "error: '{typed}' was removed from 'evnx {}' in 0.15.0; use '{new}'",
         path.join(" ")
     )
 }
@@ -503,7 +503,7 @@ mod tests {
     fn long_flag_matches_and_names_the_replacement() {
         assert_eq!(
             run(&["remove", "--path", "x"]).as_deref(),
-            Some("error: '--path' was removed from 'evnx remove' in 0.14.2; use '-C, --dir'")
+            Some("error: '--path' was removed from 'evnx remove' in 0.15.0; use '-C, --dir'")
         );
     }
 
@@ -555,7 +555,7 @@ mod tests {
     fn value_entries_match_both_forms() {
         assert_eq!(
             run(&["diff", "--format", "text"]).as_deref(),
-            Some("error: '--format text' was removed from 'evnx diff' in 0.14.2; use '--format pretty'")
+            Some("error: '--format text' was removed from 'evnx diff' in 0.15.0; use '--format pretty'")
         );
         assert_eq!(run(&["diff", "--format", "json"]), None);
     }

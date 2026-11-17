@@ -61,7 +61,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking: one flag vocabulary (WP-8)
 
-Every command now spells the same idea the same way. The old spellings are removed, not aliased: typing one exits 2 with `error: '<old>' was removed from 'evnx <command>' in 0.14.2; use '<new>'`, and nothing runs. `evnx commands --json` lists them under `removed`.
+Every command now spells the same idea the same way. The old spellings are removed, not aliased: typing one exits 2 with `error: '<old>' was removed from 'evnx <command>' in 0.15.0; use '<new>'`, and nothing runs. `evnx commands --json` lists them under `removed`.
 
 | Command | Old | Use instead |
 |---|---|---|

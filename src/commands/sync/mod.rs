@@ -126,7 +126,7 @@ pub fn run(
         }
     }
 
-    // `placeholder` is not a command-line flag any more (removed in 0.14.2,
+    // `placeholder` is not a command-line flag any more (removed in 0.15.0,
     // with `-f/--force`: `--yes` is the one spelling); the argument stays so
     // that a direct caller of this library function keeps compiling.
     let ctx = executor::SyncCtx {
