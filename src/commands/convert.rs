@@ -486,10 +486,11 @@ pub fn run(config: ConvertConfig) -> Result<()> {
         None => select_format_interactive(config.verbose)?,
     };
 
-    // ⚠️ The exit lives here, not in the dispatch. `formats::get_converter`
+    // ⚠️ The refusal lives here, not in the dispatch. `formats::get_converter`
     // returns an error so that `cloud export` can reach the same 14 formats
     // without a library function ending the process underneath it — but
-    // `convert`'s own contract is unchanged: unknown format, this help, exit 2.
+    // `convert`'s own contract is unchanged: unknown format, this help, exit 2
+    // (`Said`: what is printed here is all that is printed).
     let Some(format) = formats::find(&format_name) else {
         eprintln!("{} Unknown format: {}", "✗".red(), format_name);
         eprintln!();
@@ -499,7 +500,7 @@ pub fn run(config: ConvertConfig) -> Result<()> {
         // 2, not 1: convert was asked for something it cannot produce, so
         // there is no output — the same "could not run" every other command
         // reports with 2. Nothing here converted anything badly.
-        std::process::exit(2);
+        return Err(anyhow::Error::new(crate::core::verdict::Said));
     };
 
     // The names the format writes into its output, required where it needs

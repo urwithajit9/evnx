@@ -510,7 +510,7 @@ fn t_i299_stderr_not_a_terminal_refuses_with_the_flag_hint() {
     let d = TempDir::new().unwrap();
     let s = Pty::spawn_shell(d.path(), "\"$EVNX\" init 2>err.txt; echo \"rc=$?\"");
     let (out, _) = s.finish();
-    assert!(out.contains("rc=2"), "{out}");
+    assert!(out.contains("rc=4"), "{out}");
     let err = std::fs::read_to_string(d.path().join("err.txt")).unwrap();
     assert!(!err.contains("not a terminal: not a terminal"), "{err}");
     assert!(err.contains("evnx init --yes --with <a,b,c>"), "{err}");
@@ -518,13 +518,13 @@ fn t_i299_stderr_not_a_terminal_refuses_with_the_flag_hint() {
 }
 
 /// DQ-30 (T-INIT-42): `CI=1` at a terminal is no terminal for init's
-/// prompts: the same refusal and flag hint, exit 2, nothing written.
+/// prompts: the same refusal and flag hint, exit 4 (D3), nothing written.
 #[test]
 fn t_dq30_ci_at_a_terminal_refuses_the_menu() {
     let d = TempDir::new().unwrap();
     let s = Pty::spawn_shell(d.path(), "CI=true \"$EVNX\" init; echo \"rc=$?\"");
     let (out, _) = s.finish();
-    assert!(out.contains("rc=2"), "{out}");
+    assert!(out.contains("rc=4"), "{out}");
     assert!(out.contains("evnx init --yes --with <a,b,c>"), "{out}");
     assert!(!out.contains("Blank      —"), "the menu was drawn:\n{out}");
     assert!(!d.path().join(".env.example").exists());
@@ -536,7 +536,7 @@ fn t_dq30_ci_at_a_terminal_refuses_a_confirmation() {
     let d = TempDir::new().unwrap();
     let s = Pty::spawn_shell(d.path(), "CI=1 \"$EVNX\" init --with redis; echo \"rc=$?\"");
     let (out, _) = s.finish();
-    assert!(out.contains("rc=2"), "{out}");
+    assert!(out.contains("rc=4"), "{out}");
     assert!(out.contains("evnx init --with redis --yes"), "{out}");
     assert!(!d.path().join(".env.example").exists());
 }
@@ -559,13 +559,13 @@ fn t_i303_ci_is_named_as_the_reason() {
     let d = TempDir::new().unwrap();
     let s = Pty::spawn_shell(d.path(), "CI=true \"$EVNX\" init; echo \"rc=$?\"");
     let (out, _) = s.finish();
-    assert!(out.contains("rc=2"), "{out}");
+    assert!(out.contains("rc=4"), "{out}");
     assert!(out.contains("CI is set, so init does not ask"), "{out}");
     assert!(!out.contains("no terminal"), "{out}");
 
     let s = Pty::spawn_shell(d.path(), "CI=1 \"$EVNX\" init --with redis; echo \"rc=$?\"");
     let (out, _) = s.finish();
-    assert!(out.contains("rc=2"), "{out}");
+    assert!(out.contains("rc=4"), "{out}");
     assert!(out.contains("CI is set, so init does not ask"), "{out}");
     assert!(out.contains("evnx init --with redis --yes"), "{out}");
 }
@@ -576,7 +576,7 @@ fn t_i303_without_ci_a_missing_terminal_is_the_reason() {
     let d = TempDir::new().unwrap();
     let s = Pty::spawn_shell(d.path(), "\"$EVNX\" init 2>err.txt; echo \"rc=$?\"");
     let (out, _) = s.finish();
-    assert!(out.contains("rc=2"), "{out}");
+    assert!(out.contains("rc=4"), "{out}");
     let err = std::fs::read_to_string(d.path().join("err.txt")).unwrap();
     assert!(
         err.contains("there is no terminal to show the menu on"),

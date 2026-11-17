@@ -1,4 +1,5 @@
 use crate::core::mask::{Disclosure, ValueState};
+use crate::core::verdict::Verdict;
 use crate::core::Parser;
 use crate::docs;
 use crate::utils::string::pluralize;
@@ -191,13 +192,13 @@ pub struct DiffStats {
 // Main Entry Point ( returns exit code for CI/CD)
 // ─────────────────────────────────────────────────────────────
 
-pub fn run(opts: DiffOptions) -> Result<i32> {
+pub fn run(opts: DiffOptions) -> Result<Verdict> {
     // DEC-U8-5's skip, for the pre-commit hook (D-39): a fresh clone has a
     // template and no `.env`. Only the environment file is skipped — a missing
     // template is still "could not run".
     if opts.skip_without_env && !std::path::Path::new(&opts.env).exists() {
         crate::core::verdict::skipped(&format!("{} not found", opts.env));
-        return Ok(0);
+        return Ok(Verdict::Clean);
     }
 
     let parser = Parser::default();
@@ -317,9 +318,9 @@ pub fn run(opts: DiffOptions) -> Result<i32> {
     ui::print_docs_hint(&docs::DIFF);
 
     Ok(if opts.fail_on.fails(&diff_result) {
-        1
+        Verdict::Findings
     } else {
-        0
+        Verdict::Clean
     })
 }
 
@@ -807,7 +808,7 @@ fn output_patch_interactive(
 
     // The shared no-terminal rule (I-218): piped answers used to be read as
     // replies, and a closed stdin skipped every change.
-    crate::utils::prompt::require_terminal_or(
+    crate::utils::prompt::require_terminal_for_input(
         "--interactive asks about each change. Without a terminal, leave it out: \
          `evnx diff --format patch` prints every change.",
     )?;

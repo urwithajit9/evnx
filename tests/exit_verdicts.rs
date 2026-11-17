@@ -89,3 +89,60 @@ fn t_u4_diff_error_says_no_verdict() {
     out.assert_code(2);
     assert!(out.stderr.contains(NO_VERDICT), "{}", out.stderr);
 }
+
+// ── WP-9a: one exit contract, `main` alone maps results to codes ─────────────
+
+/// D3: a command that needs a confirmation, has no terminal and was given no
+/// `--yes` exits 4 — the code of a prompt answered no — and names `--yes`.
+/// `migrate`'s own case is `migrate_exit::t_i109_*`.
+#[test]
+fn t_wp9_d3_a_confirmation_nobody_can_give_exits_4() {
+    let p = Project::new().env("X=1\nY=2\n").example("X=\nOLD=\n");
+    for args in [&["remove", "X"][..], &["sync", "--prune"][..]] {
+        let out = run(p.path(), args);
+        out.assert_code(4);
+        assert!(out.stderr.contains("--yes"), "{args:?}: {}", out.stderr);
+    }
+    assert_eq!(p.read(".env"), "X=1\nY=2\n", "nothing was changed");
+    assert_eq!(p.read(".env.example"), "X=\nOLD=\n", "nothing was changed");
+
+    // A copy to put back or delete, then the same refusal from `undo`.
+    run(p.path(), &["remove", "Y", "--yes"]).assert_code(0);
+    let out = run(p.path(), &["undo", "--clear"]);
+    out.assert_code(4);
+    assert!(out.stderr.contains("--yes"), "{}", out.stderr);
+
+    // And `init`'s menu: it is asked, and nobody can answer.
+    let q = Project::new();
+    let out = run(q.path(), &["init"]);
+    out.assert_code(4);
+    assert!(out.stderr.contains("--yes"), "{}", out.stderr);
+}
+
+/// D3's other half: a refusal that is not about confirming stays 2. `add
+/// custom` with no arguments needs a terminal to *type* the variables, which
+/// no `--yes` answers.
+#[test]
+fn t_wp9_d3_a_refusal_that_is_not_a_confirmation_stays_2() {
+    let p = Project::new();
+    run(p.path(), &["add", "custom", "--yes"]).assert_code(2);
+}
+
+/// `main` used to return `Err` for a working directory it could not read, which
+/// Rust numbers **1** — "findings". It is 2, with the "did not run" footer.
+#[cfg(unix)]
+#[test]
+fn t_wp9_an_unreadable_current_directory_is_exit_2_not_1() {
+    let bin = env!("CARGO_BIN_EXE_evnx");
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "d=$(mktemp -d) && cd \"$d\" && mkdir gone && cd gone && rmdir ../gone && exec '{bin}' validate"
+        ))
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{err}");
+    assert!(err.contains("reading the current directory"), "{err}");
+    assert!(err.contains("did not run"), "{err}");
+}

@@ -184,7 +184,7 @@ fn b4_s17_a_default_that_resolves_to_production_still_asks() {
         .file(".env.production", "X=1\n")
         .toml("[defaults]\nenv_name = \"production\"\n");
     evnx(&p, &["remove", "X"])
-        .assert_code(2)
+        .assert_code(4)
         .assert_contains("--yes");
     assert_eq!(p.read(".env.production"), "X=1\n");
 
@@ -360,8 +360,9 @@ fn snapshot(p: &Project) -> Vec<(String, Vec<u8>)> {
 #[test]
 fn d1_s8_no_terminal_and_no_yes_refuses() {
     let p = Project::new().env("X=1\n");
+    // Exit 4 since 0.15.0 (WP-9, D3): a confirmation nobody could give.
     evnx(&p, &["remove", "X"])
-        .assert_code(2)
+        .assert_code(4)
         .assert_contains("--yes");
     assert_eq!(p.read(".env"), "X=1\n");
 }
@@ -691,7 +692,7 @@ fn i2_help_shows_exit_codes_and_examples() {
     let p = Project::new();
     evnx(&p, &["remove", "--help"])
         .assert_code(0)
-        .assert_contains("4 you answered no")
+        .assert_contains("\n    4  Declined: answered no")
         .assert_contains("evnx rm 'TEST_*'")
         .assert_contains("--ignore-missing");
 }

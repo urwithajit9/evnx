@@ -106,8 +106,11 @@ Examples:
   evnx diff --env-name production --against staging
   evnx diff --format json | jq -e '.summary.missing == 0'
 
-Exit codes: 0 nothing --fail-on counts (default: missing, extra, different);
-1 differences found; 2 could not run (missing file, unknown name, bad flag).
+Exit codes:
+    0  Ran, nothing to report
+    1  Ran, and found something: findings, problems, a difference, not in sync
+    2  Could not run: usage, config, I/O, or refused before any change
+  141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/diff
 [exit 0]

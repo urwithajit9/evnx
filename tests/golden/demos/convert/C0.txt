@@ -163,10 +163,12 @@ Aliases:
   k8s → kubernetes, tf → terraform, yml → yaml
   compose → docker-compose
 
-Exit codes: 0 converted; 2 nothing converted (bad flag, missing file, names that
-collide, a filter or file with no variables).
-
 Use 'evnx convert' without --to for interactive format selection.
+
+Exit codes:
+    0  Ran, nothing to report
+    2  Could not run: usage, config, I/O, or refused before any change
+  141  Output closed early (broken pipe)
 
 📖  Full guide: https://docs.evnx.dev/cli/commands/convert
 [exit 0]

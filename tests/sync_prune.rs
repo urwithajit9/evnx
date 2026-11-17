@@ -74,11 +74,12 @@ fn a_dry_run_writes_nothing() {
 }
 
 #[test]
-fn no_terminal_and_no_yes_refuses_with_exit_2() {
+fn no_terminal_and_no_yes_refuses_with_exit_4() {
     let p = project();
     let before = p.read(".env.example");
+    // Exit 4 since 0.15.0 (WP-9, D3): a confirmation nobody could give. It was 2.
     evnx(&p, &["sync", "--prune"])
-        .assert_code(2)
+        .assert_code(4)
         .assert_contains("--yes");
     assert_eq!(p.read(".env.example"), before);
 }

@@ -85,7 +85,10 @@ one (--no-backup to skip); a .bak that .gitignore does not cover is refused,
 since it would hold the secrets. If a later file fails, the ones already
 replaced are put back. Another evnx run writing the same file stops this one.
 
-Exit codes: 0 aligned (or written, or a dry run); 1 --check found a file out
-of alignment; 2 could not run (missing file, parse error, same file twice).
+Exit codes:
+    0  Ran, nothing to report
+    1  Ran, and found something: findings, problems, a difference, not in sync
+    2  Could not run: usage, config, I/O, or refused before any change
+  141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/align

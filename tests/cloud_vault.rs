@@ -610,7 +610,7 @@ fn t_i312_leaving_without_a_terminal_names_yes() {
     let (mut s, never) = members_server("viewer", &members);
     let delete = s.mock("DELETE", mockito::Matcher::Any).expect(0).create();
     let out = signed_in(&Project::new(), &s.url(), &["vault", "leave", "app"], None);
-    out.assert_code(2);
+    out.assert_code(4);
     assert!(out.stderr.contains("--yes"), "{}", out.stderr);
     delete.assert();
     for m in never {

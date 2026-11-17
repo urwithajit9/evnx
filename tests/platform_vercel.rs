@@ -969,7 +969,7 @@ fn pull_without_a_terminal_needs_yes() {
     let v = Vercel::start();
     let p = pull_project();
     let out = run(&p, &v.url(), &pull_args(&["--no-gitignore"]));
-    out.assert_code(2);
+    out.assert_code(4);
     out.assert_contains("--yes");
     quiet(&out);
     assert_eq!(p.read(".env.development"), PULL_BEFORE);
@@ -1773,7 +1773,7 @@ fn push_without_a_terminal_needs_yes() {
     let writes = v.no_writes();
     let p = push_project(&format!("LOG_LEVEL={P_LOG}\n"));
     let out = run(&p, &v.url(), &push_args(&["--no-gitignore"]));
-    out.assert_code(2);
+    out.assert_code(4);
     out.assert_contains("--yes");
     quiet_push(&out);
     for m in &writes {
@@ -2165,7 +2165,7 @@ fn prune_in_ci_needs_yes_and_says_so_before_any_request() {
         .collect();
     let p = prune_project();
     let out = run(&p, &s.url(), &push_args(&["--prune", "--no-gitignore"]));
-    out.assert_code(2);
+    out.assert_code(4);
     quiet_push(&out);
     out.assert_contains("--prune");
     out.assert_contains("--yes");

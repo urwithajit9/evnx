@@ -1,4 +1,5 @@
 pub mod args;
+pub mod backup_error;
 pub mod backups;
 pub mod build;
 pub mod classify;
@@ -8,6 +9,8 @@ pub mod dialect;
 pub mod env_name;
 pub mod envfile;
 pub mod envsource;
+pub mod error;
+pub mod exit_table;
 pub mod gitignore;
 pub mod glob;
 #[cfg(feature = "net")]
@@ -23,6 +26,7 @@ pub mod placeholder;
 pub mod presence;
 pub mod project;
 pub mod resolve;
+pub mod restore_error;
 pub mod safe_write;
 pub mod secretscan;
 pub mod shell;

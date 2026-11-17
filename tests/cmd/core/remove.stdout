@@ -2,7 +2,7 @@ Remove variables from the env file, and the template and contract too.
 
 By default only the env file changes: `--env-name`, else `[defaults] env_name`, else `.env`. The run then lists where each name still is, with the flag that clears it. Every byte that is not part of a removed entry stays as it was; the env file is kept as a `.bak` copy first.
 
-Exit codes: 0 removed (or nothing to do with --ignore-missing, or a dry run); 1 only with --check, a name is still somewhere; 2 could not run or refused (a name that is not there, a file it cannot read, no terminal to ask on); 4 you answered no.
+With --check, the exit code is 1 when a name is still somewhere.
 
 Usage: evnx remove [OPTIONS] <NAME>...
 
@@ -81,5 +81,12 @@ Examples:
   evnx remove OLD_TOKEN --all --dry-run     every file, the template and .evnx.toml: preview
   evnx rm 'TEST_*' --env-name staging --yes from .env.staging, without asking
   evnx remove OLD_TOKEN --check             CI: exit 1 if it is still in any env file, the template or .evnx.toml
+
+Exit codes:
+    0  Ran, nothing to report
+    1  Ran, and found something: findings, problems, a difference, not in sync
+    2  Could not run: usage, config, I/O, or refused before any change
+    4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
+  141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/remove

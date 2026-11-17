@@ -318,7 +318,8 @@ mod catalogue {
             &cat,
             &["scan", "rules", "update", "acme"],
         );
-        assert_eq!(out.status.code(), Some(2), "{}", text(&out));
+        // Exit 4 since 0.15.0 (WP-9, D3): a confirmation nobody could give.
+        assert_eq!(out.status.code(), Some(4), "{}", text(&out));
         assert!(text(&out).contains("acme: 1 → 2 rules"), "{}", text(&out));
         assert!(text(&out).contains("+ acme-two"), "{}", text(&out));
         assert!(text(&out).contains("--yes"), "{}", text(&out));

@@ -365,7 +365,8 @@ fn named_only_init_without_a_terminal_or_yes_asks_for_yes() {
     let l = Layout::new("named-only");
     let before = l.snapshot();
     let out = l.evnx(&["init"]);
-    out.assert_code(2);
+    // No terminal and no --yes: declined (WP-9 D3).
+    out.assert_code(4);
     out.assert_contains("evnx init --yes");
     assert_eq!(l.snapshot(), before);
 }

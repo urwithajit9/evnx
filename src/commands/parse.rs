@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use crate::core::classify::{self, Strictness};
 use crate::core::parser::Document;
+use crate::core::verdict::Verdict;
 use crate::core::Parser;
 
 /// `--format json`. `schema_version` changes only when a field changes meaning.
@@ -39,9 +40,9 @@ struct ProblemOut {
     message: String,
 }
 
-/// Read `env` (`-` for stdin) and print its entries. Exits 1 when the file has
-/// problems; returns an error only when it could not be read.
-pub fn run(env: &str, json: bool, values: bool, show_values: bool) -> Result<()> {
+/// Read `env` (`-` for stdin) and print its entries. `Findings` (exit 1) when
+/// the file has problems; returns an error only when it could not be read.
+pub fn run(env: &str, json: bool, values: bool, show_values: bool) -> Result<Verdict> {
     if values && !show_values && std::io::IsTerminal::is_terminal(&std::io::stdout()) {
         anyhow::bail!(
             "--values prints every value in plain text, and stdout is a terminal, \
@@ -73,10 +74,11 @@ pub fn run(env: &str, json: bool, values: bool, show_values: bool) -> Result<()>
     } else {
         print_pretty(&report);
     }
-    if !report.problems.is_empty() {
-        std::process::exit(1);
-    }
-    Ok(())
+    Ok(if report.problems.is_empty() {
+        Verdict::Clean
+    } else {
+        Verdict::Findings
+    })
 }
 
 fn report(doc: &Document, file: String, values: bool) -> Report {

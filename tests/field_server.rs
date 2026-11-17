@@ -134,7 +134,8 @@ fn init3_a_misspelt_environment_is_caught() {
         p.path(),
         &["add", "custom", "K=v", "--env-name", "prodution"],
     );
-    out.assert_code(2);
+    // No terminal and no --yes to confirm a new environment: declined (WP-9 D3).
+    out.assert_code(4);
     out.assert_contains("did you mean 'production'?");
     assert!(!p.exists(".env.prodution"));
     let out = run(p.path(), &["init", "--env-name", "stagng", "--yes"]);

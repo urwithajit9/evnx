@@ -9,7 +9,7 @@ use anyhow::Result;
 ///
 /// ⚠️ Without a terminal dialoguer fails with "IO error: not a terminal" (twice),
 /// which says nothing about what to do. A script that forgot `--yes` got
-/// exactly that (init N-08, add I-020). Exit code stays 2.
+/// exactly that (init N-08, add I-020). Exit code 4 (D3), like a "no".
 ///
 /// `example` is the command line that would work: the same one with `--yes`.
 pub fn require_terminal(example: &str) -> Result<()> {
@@ -40,6 +40,18 @@ pub fn require_terminal_or(hint: &str) -> Result<()> {
     Ok(())
 }
 
+/// [`require_terminal_or`] for a prompt that asks for *input*, not a yes or no:
+/// there is no `--yes` to answer it, so it is a plain error (exit 2), not a
+/// refusal to confirm (exit 4).
+pub fn require_terminal_for_input(hint: &str) -> Result<()> {
+    if !crate::utils::term::interactive() {
+        return Err(anyhow::anyhow!(
+            "there is no terminal to confirm with.\n\n{hint}"
+        ));
+    }
+    Ok(())
+}
+
 /// A choice that has a flag, asked for with no flag and no terminal to ask on.
 ///
 /// ⚠️ Without this, dialoguer's `Select` fails with "IO error: not a terminal",
@@ -61,8 +73,9 @@ pub fn choice_needed(flag: &str, example: &str, available: &[&str]) -> anyhow::E
 
 /// A prompt was needed and there was no terminal to show it on.
 ///
-/// `main` reports it like any other error — exit 2, "No verdict" — and `hint`
-/// names the flag that makes the question unnecessary. Typed so a caller can
+/// `main` reports it as exit 4 (D3: a confirmation nobody could give), with the
+/// "No verdict" line, and `hint` names the flag that makes the question
+/// unnecessary. Typed so a caller can
 /// tell it apart (`err.downcast_ref::<NoTerminal>()`) from a prompt that failed
 /// for another reason.
 #[derive(Debug, thiserror::Error)]
@@ -349,7 +362,7 @@ pub struct Declined;
 /// A destructive action's yes/no, the same way in every command (A-39, DEC-AU7).
 ///
 /// * `yes` (`--yes`/`-y`): no question, no stdin read — `Ok(true)`.
-/// * No terminal: [`NoTerminal`] naming `--yes` and `example` — exit 2. Never a
+/// * No terminal: [`NoTerminal`] naming `--yes` and `example` — exit 4. Never a
 ///   silent "no" and never a silent "yes": `org` read raw stdin, so `echo y |`
 ///   confirmed and end of input read as "Cancelled" with exit 0, while other
 ///   commands failed with dialoguer's bare "not a terminal" (I-218).

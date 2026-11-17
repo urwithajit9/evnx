@@ -200,9 +200,9 @@ pub fn can_ask() -> bool {
 /// same command with `--yes`.
 pub fn require_terminal(example: &str) -> anyhow::Result<()> {
     if crate::utils::term::ci() {
-        return Err(anyhow::anyhow!(
+        return Err(crate::core::verdict::needs_yes(format!(
             "{CI_REASON}.\n\nAdd --yes to write without asking:\n  {example}"
-        ));
+        )));
     }
     if !can_ask() {
         return Err(crate::utils::prompt::no_terminal(example));

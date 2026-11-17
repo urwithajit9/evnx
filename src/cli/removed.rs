@@ -4,8 +4,7 @@
 //! exit 2 and a line saying what to type instead. [`check`] runs in `main`
 //! before clap parses, so nothing is written and no banner is printed.
 
-use crate::cli::Cli;
-use clap::{Arg, Command, CommandFactory};
+use clap::{Arg, Command};
 use std::ffi::OsString;
 
 /// One removed spelling.
@@ -402,7 +401,7 @@ fn check_with(table: &[Removed], argv: &[OsString]) -> Option<String> {
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
     let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
-    let mut root = Cli::command();
+    let mut root = crate::cli::exit_help::command();
     root.build();
     let (path, cmd) = resolve(&root, &refs);
     let entries: Vec<&Removed> = table

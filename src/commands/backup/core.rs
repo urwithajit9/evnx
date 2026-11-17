@@ -262,7 +262,7 @@ pub fn backup_inner(
 /// `out.2` (I-146). None of them may be a directory: rotation renamed one
 /// (DEC-B3).
 ///
-/// A missing directory is not refused here; the write reports it (exit 5).
+/// A missing directory is not refused here; the write reports it (exit 2).
 ///
 /// # Errors
 ///

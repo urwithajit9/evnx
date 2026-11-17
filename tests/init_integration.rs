@@ -1119,8 +1119,8 @@ fn force_is_refused_with_from_source() {
 }
 
 /// I-014 (fixed in 0.10.1, group A11; was `known_i014_*`): no terminal and no
-/// flags names the flags to use instead of a raw, doubled IO error. Exit 2 is
-/// unchanged.
+/// flags names the flags to use instead of a raw, doubled IO error. Exit 4
+/// since 0.15.0 (WP-9, D3): a question nobody could answer.
 #[test]
 fn no_terminal_names_the_flags_to_use() {
     let d = TempDir::new().unwrap();
@@ -1130,7 +1130,7 @@ fn no_terminal_names_the_flags_to_use() {
         .write_stdin("1\n")
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(4));
     let text = text_of(&out);
     for flag in ["--yes", "--blueprint", "--with", "--detect"] {
         assert!(text.contains(flag), "{flag} not suggested:\n{text}");
@@ -1508,7 +1508,7 @@ fn a_confirmation_without_a_terminal_says_add_yes() {
         let d = TempDir::new().unwrap();
         let out = init_in(d.path(), args);
         let text = text_of(&out);
-        assert_eq!(out.status.code(), Some(2), "{text}");
+        assert_eq!(out.status.code(), Some(4), "{text}");
         assert!(text.contains(suggestion), "{text}");
         assert!(!text.contains("not a terminal: not a terminal"), "{text}");
         assert!(!d.path().join(".env.example").exists());

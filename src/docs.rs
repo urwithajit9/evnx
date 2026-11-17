@@ -126,9 +126,6 @@ Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
 \x20 and the heuristics: Sensitive config key, High-entropy string,\n\
 \x20 AWS Secret Access Key.\n\
 \n\
-Exit codes: 0 nothing at or above --severity; 1 findings, or a file that\n\
-could not be read; 2 could not run (bad path, flag or config, nothing scanned).\n\
-\n\
 Full guide: https://docs.evnx.dev/cli/commands/scan",
 };
 
@@ -151,9 +148,6 @@ Examples:\n\
 \x20 evnx diff --fail-on missing                # fail only when .env lacks a template key\n\
 \x20 evnx diff --env-name production --against staging\n\
 \x20 evnx diff --format json | jq -e '.summary.missing == 0'\n\
-\n\
-Exit codes: 0 nothing --fail-on counts (default: missing, extra, different);\n\
-1 differences found; 2 could not run (missing file, unknown name, bad flag).\n\
 \n\
 Full guide: https://docs.evnx.dev/cli/commands/diff",
 };
@@ -211,9 +205,6 @@ one (--no-backup to skip); a .bak that .gitignore does not cover is refused,\n\
 since it would hold the secrets. If a later file fails, the ones already\n\
 replaced are put back. Another evnx run writing the same file stops this one.\n\
 \n\
-Exit codes: 0 aligned (or written, or a dry run); 1 --check found a file out\n\
-of alignment; 2 could not run (missing file, parse error, same file twice).\n\
-\n\
 Full guide: https://docs.evnx.dev/cli/commands/align",
 };
 
@@ -246,10 +237,6 @@ Examples:\n\
 \x20 evnx doctor --fix                       # repair .gitignore and file modes\n\
 \x20 evnx doctor --strict --format json      # a CI gate: warnings fail too\n\
 \x20 evnx doctor --skip-without-env          # a pre-commit hook on a fresh clone\n\
-\n\
-Exit codes: 0 healthy (warnings pass unless --strict); 1 problems found;\n\
-2 could not run (bad path or flag, nothing to diagnose), or a check could\n\
-not finish.\n\
 \n\
 Full guide: https://docs.evnx.dev/cli/commands/doctor",
 };
@@ -288,15 +275,6 @@ pub const BACKUP: CommandDoc = CommandDoc {
 Passphrase: --password-file, then EVNX_PASSWORD, then a prompt (asked twice). A new\n\
 backup needs at least 8 characters from any of them.\n\
 \n\
-Exit codes:\n\
-\x20 0  Backup written (and verified, with --verify)\n\
-\x20 2  Could not run: source file, key file or passphrase, an output that is the\n\
-\x20    source or a directory, no terminal to ask on\n\
-\x20 3  Password confirmation did not match\n\
-\x20 4  Encryption failed\n\
-\x20 5  Could not write the backup file\n\
-\x20 6  Integrity check failed after writing (--verify)\n\
-\n\
 A backup is a file you keep, behind a passphrase you choose; it needs no account\n\
 and no network. To share and version secrets instead, see `evnx cloud push`.\n\
 \n\
@@ -312,14 +290,6 @@ Replacing a file: an existing --output is never replaced silently. With a\n\
 terminal evnx asks; without one, pass --yes. Either way the\n\
 replaced file is kept beside it as <output>.bak. Content identical to the\n\
 backup is left alone.\n\
-\n\
-Exit codes:\n\
-\x20 0  Restored, inspected, checked (--dry-run), or already up to date\n\
-\x20 2  Could not run: wrong password, unreadable backup, output problem, no\n\
-\x20    terminal to ask on\n\
-\x20 3  Backup file not found\n\
-\x20 4  Cancelled at the overwrite question\n\
-\x20 5  Not a .env evnx can read: written to <output>.restored instead\n\
 \n\
 A backup file is not a vault. For evnx cloud, use `evnx cloud pull` (one\n\
 version) or `evnx cloud export` (all of them).\n\
@@ -432,11 +402,8 @@ pub const UPDATE: CommandDoc = CommandDoc {
     url: "https://docs.evnx.dev/cli/commands/update",
     description: "How to upgrade, and whether a newer release exists",
     after_help: "\
-Exit codes:\n\
-\x20 0  without --check, always (--list too, however many copies it finds);\n\
-\x20    with it, this is the latest release or newer\n\
-\x20 1  --check: a newer release exists\n\
-\x20 2  --check could not tell: no network support, no answer, or rate-limited\n\
+Without --check the exit code is 0, however many copies --list finds. With\n\
+--check, 1 means a newer release exists, and 2 that it could not tell.\n\
 \n\
 More than one evnx installed? `evnx update --list` shows each copy, its\n\
 version, which one runs, and how to remove the rest. Only --check uses the\n\

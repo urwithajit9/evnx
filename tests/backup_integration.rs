@@ -267,16 +267,16 @@ fn t_br43_source_problems_exit_2() {
         .assert_contains("Not a regular file");
 }
 
-/// A missing output directory is a write failure, exit 5, named plainly
-/// (I-152, fixed in 0.10.3).
+/// A missing output directory is a write failure, named plainly (I-152, fixed
+/// in 0.10.3). Exit 2 since 0.15.0 (WP-9, D2): it was 5.
 #[test]
-fn t_br43_a_missing_output_directory_is_exit_5() {
+fn t_br43_a_missing_output_directory_is_exit_2() {
     let p = project();
     run(
         p.path(),
         &["backup", "--password-file", "pw", "--output", "nodir/x.bak"],
     )
-    .assert_code(5)
+    .assert_code(2)
     .assert_contains("nodir")
     .assert_not_contains("symlink");
 }
@@ -287,7 +287,8 @@ fn t_dec_b9_help_lists_the_codes_backup_uses() {
     let out = run(Project::new().path(), &["backup", "--help"]);
     out.assert_code(0)
         .assert_contains("2  Could not run")
-        .assert_contains("6  ")
+        .assert_not_contains("3  ")
+        .assert_not_contains("6  ")
         .assert_not_contains("1  Generic");
 }
 

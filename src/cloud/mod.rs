@@ -78,7 +78,37 @@ use anyhow::Result;
 /// `server_override` is the `--server` flag. It is resolved here rather than in
 /// each subcommand so every command agrees on which server it is talking to, and
 /// so the credential store is always keyed the same way.
-pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool) -> Result<()> {
+///
+/// `diff --local` is the one with an answer: `Findings` when the file and the
+/// version differ. The rest are clean or an error.
+pub fn run(
+    command: CloudCommands,
+    server_override: Option<&str>,
+    verbose: bool,
+) -> Result<crate::core::verdict::Verdict> {
+    if let CloudCommands::Diff {
+        local: true,
+        vault,
+        version,
+        env: file,
+        env_name,
+        password_stdin,
+        ..
+    } = command
+    {
+        return sync::diff_local(
+            server_override,
+            vault,
+            file,
+            env_name,
+            version,
+            password_stdin,
+        );
+    }
+    dispatch(command, server_override, verbose).map(|()| crate::core::verdict::Verdict::Clean)
+}
+
+fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool) -> Result<()> {
     match command {
         CloudCommands::Push {
             vault,
@@ -164,18 +194,9 @@ pub fn run(command: CloudCommands, server_override: Option<&str>, verbose: bool)
             env_name,
             password_stdin,
         } => {
-            if local {
-                sync::diff_local(
-                    server_override,
-                    vault,
-                    file,
-                    env_name,
-                    version,
-                    password_stdin,
-                )
-            } else {
-                sync::diff(server_override, vault, from, to, verbose)
-            }
+            // `local` was answered by `run`.
+            let _ = (local, version, file, env_name, password_stdin);
+            sync::diff(server_override, vault, from, to, verbose)
         }
         CloudCommands::Audit { vault, last, event } => {
             audit::run(server_override, vault, &last, event, verbose)

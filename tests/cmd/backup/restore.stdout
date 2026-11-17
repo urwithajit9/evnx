@@ -19,7 +19,7 @@ Options:
   -y, --yes
           Replace an existing --output without asking.
           
-          For scripts and CI, where there is no terminal to ask on. The file it replaces is kept beside it as <output>.bak (replacing the previous copy). Without it, and without a terminal, an existing output stops the run (exit 2).
+          For scripts and CI, where there is no terminal to ask on. The file it replaces is kept beside it as <output>.bak (replacing the previous copy). Without it, and without a terminal, an existing output stops the run (exit 4).
 
       --gitignore
           Add the restored file to .gitignore without asking (no prompt)
@@ -70,15 +70,14 @@ terminal evnx asks; without one, pass --yes. Either way the
 replaced file is kept beside it as <output>.bak. Content identical to the
 backup is left alone.
 
-Exit codes:
-  0  Restored, inspected, checked (--dry-run), or already up to date
-  2  Could not run: wrong password, unreadable backup, output problem, no
-     terminal to ask on
-  3  Backup file not found
-  4  Cancelled at the overwrite question
-  5  Not a .env evnx can read: written to <output>.restored instead
-
 A backup file is not a vault. For evnx cloud, use `evnx cloud pull` (one
 version) or `evnx cloud export` (all of them).
+
+Exit codes:
+    0  Ran, nothing to report
+    2  Could not run: usage, config, I/O, or refused before any change
+    4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
+    5  restore wrote the result aside, to <output>.restored
+  141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/restore

@@ -55,9 +55,8 @@
 //! being a breaking change to anybody's workflow. The **human** output carries
 //! no such promise and is not something to parse.
 
-use crate::cli::Cli;
 use anyhow::Result;
-use clap::{Command, CommandFactory};
+use clap::Command;
 use serde::Serialize;
 
 /// Bumped when the shape below changes in a way a consumer would notice.
@@ -115,6 +114,12 @@ struct CommandNode {
     docs_url: Option<&'static str>,
     /// Spellings that no longer work here, and what replaced them.
     removed: Vec<RemovedNode>,
+    /// Every exit code this command can produce, from `core::exit_table` — the
+    /// same table `--help` prints and `docs/exit-codes.md` is generated from.
+    exit_codes: Vec<crate::core::exit_table::ExitRow>,
+    /// The command returns its child's own exit code once the child started
+    /// (`run`, `cloud run`).
+    child_exit_code: bool,
     args: Vec<ArgNode>,
 }
 
@@ -237,6 +242,12 @@ fn walk(cmd: &Command, prefix: &[String], out: &mut Vec<CommandNode>) {
                     new: r.new_spelling(),
                 })
                 .collect(),
+            exit_codes: crate::core::exit_table::exit_codes(
+                &path.iter().map(String::as_str).collect::<Vec<_>>(),
+            ),
+            child_exit_code: crate::core::exit_table::passes_child_code(
+                &path.iter().map(String::as_str).collect::<Vec<_>>(),
+            ),
             args: sub
                 .get_arguments()
                 // `--help` and `--version` are on every command and say nothing
@@ -261,7 +272,7 @@ fn build_surface() -> Surface {
     //
     // Found by 5.4 checking 5.1, which is the arrangement working: a generated
     // artefact nobody cross-checks is just a confident list.
-    let mut cmd = Cli::command();
+    let mut cmd = crate::cli::exit_help::command();
     cmd.build();
     let mut commands = Vec::new();
     walk(&cmd, &[], &mut commands);
@@ -400,7 +411,7 @@ mod tests {
     use super::*;
 
     fn surface() -> Vec<CommandNode> {
-        let mut cmd = Cli::command();
+        let mut cmd = crate::cli::exit_help::command();
         cmd.build();
         let mut out = Vec::new();
         walk(&cmd, &[], &mut out);
@@ -416,7 +427,7 @@ mod tests {
     /// in the output.
     #[test]
     fn every_top_level_command_is_emitted() {
-        let mut cmd = Cli::command();
+        let mut cmd = crate::cli::exit_help::command();
         cmd.build();
         let expected: Vec<String> = cmd
             .get_subcommands()
@@ -586,7 +597,7 @@ mod tests {
     /// Serialising must not panic, and must produce the keys consumers read.
     #[test]
     fn the_payload_serialises_with_the_documented_keys() {
-        let mut cmd = Cli::command();
+        let mut cmd = crate::cli::exit_help::command();
         cmd.build();
         let mut commands = Vec::new();
         walk(&cmd, &[], &mut commands);

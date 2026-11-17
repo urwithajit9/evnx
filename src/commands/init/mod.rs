@@ -134,7 +134,7 @@ pub fn run(
             let choice = if no_questions || dry_run {
                 adopt::Choice::Adopt
             } else if !shared::can_ask() {
-                return Err(crate::core::verdict::stopped(format!(
+                return Err(crate::core::verdict::stopped_needs_yes(format!(
                     "{}.\n\n\
                      This project already has env files. To record them in .evnx.toml \
                      (no env file is changed):\n  \
@@ -189,10 +189,10 @@ pub fn run(
         // terminal and says only "IO error: not a terminal" (twice, once from
         // each layer), which tells a CI job or an agent nothing about what to do
         // instead. The detected and from-source paths already refuse this way;
-        // this was the one door that did not (I-014). Exit code stays 2. "A
+        // this was the one door that did not (I-014). Exit code 4 (D3). "A
         // terminal" means stdin and stderr, outside CI (I-299, DQ-30).
         if !shared::can_ask() {
-            return Err(crate::core::verdict::stopped(format!(
+            return Err(crate::core::verdict::stopped_needs_yes(format!(
                 "{}.\n\n\
                  Name what you want instead:\n  \
                  evnx init --yes                     blank files\n  \

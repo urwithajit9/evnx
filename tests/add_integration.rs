@@ -904,8 +904,9 @@ fn no_terminal_says_to_add_yes() {
         ),
     ] {
         let p = Project::new();
+        // Exit 4 since 0.15.0 (WP-9, D3): a confirmation nobody could give.
         run(p.path(), args)
-            .assert_code(2)
+            .assert_code(4)
             .assert_contains("there is no terminal to confirm with")
             .assert_contains(example)
             .assert_not_contains("Preview:")

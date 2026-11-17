@@ -49,4 +49,10 @@ Options:
   -V, --version
           Print version
 
+Exit codes:
+    0  Ran, nothing to report
+    2  Could not run: usage, config, I/O, or refused before any change
+  141  Output closed early (broken pipe)
+    N  Once the command has started: its own exit code
+
 Full guide: https://docs.evnx.dev/cli/commands/run

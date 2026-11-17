@@ -39,14 +39,14 @@
 //! holds, nothing is asked or written ("already up to date", DEC-B12).
 //! Otherwise, with a terminal, evnx asks (default No); without one, `--yes`
 //! (alias `--force`, as in `cloud pull`) answers, and without it the run
-//! stops with exit 2 naming `--yes` and `--output` (DEC-B1, I-148). Either way
+//! stops with exit 4 naming `--yes` and `--output` (DEC-B1, I-148, D3). Either way
 //! the replaced file is kept as `<output>.bak` (DEC-B11). The output may not be
 //! the backup itself (DEC-B3).
 //!
 //! ⚠️ The module header once said "there is intentionally no `--force`
 //! flag". Without one a script had no way past an existing file but
 //! `--output <new>` and `mv`, and with no terminal the question failed as
-//! "IO error: not a terminal" — exit 2, not the documented 4.
+//! "IO error: not a terminal" — exit 2, not the 4 it is now.
 //!
 //! ## Validation failure fallback
 //!
@@ -67,9 +67,8 @@
 //! | Code | Meaning                                              |
 //! |------|------------------------------------------------------|
 //! | 0    | Success (or inspected, dry run, already up to date)  |
-//! | 2    | Could not run or could not decrypt — "No verdict"    |
-//! | 3    | Backup file not found                                |
-//! | 4    | User cancelled overwrite prompt                      |
+//! | 2    | Could not run, could not decrypt, backup file not found (was 3 until 0.15.0) |
+//! | 4    | User cancelled the overwrite prompt, or no terminal to ask on and no `--yes` |
 //! | 5    | Restored to `.restored` fallback (bad content)       |
 //!
 //! Exit 1 is never produced (DEC-B9). Exit 6 was "evnx-cloud restore not yet
@@ -105,7 +104,8 @@
 pub mod core;
 
 #[cfg(feature = "backup")]
-pub mod error;
+// Defined in `core` so that `core::error::EvnxError` can name it.
+pub use crate::core::restore_error as error;
 
 #[cfg(feature = "backup")]
 pub mod source;
