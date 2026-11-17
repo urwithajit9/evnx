@@ -441,18 +441,9 @@ pub(crate) fn say_names_env_lacks(target: &Target, env: &str) {
     if lacking.is_empty() {
         return;
     }
-    let shown = lacking
-        .iter()
-        .take(5)
-        .copied()
-        .collect::<Vec<_>>()
-        .join(", ");
-    let more = match lacking.len() {
-        n if n > 5 => format!(" and {} more", n - 5),
-        _ => String::new(),
-    };
+    let shown = crate::utils::string::name_list(&lacking);
     ui::info(format!(
-        "{env} lacks {}: {shown}{more}. init does not add them; run `evnx sync --direction reverse`",
+        "{env} lacks {}: {shown}. init does not add them; run `evnx sync --direction reverse`",
         crate::utils::string::count(lacking.len(), "name"),
     ));
 }

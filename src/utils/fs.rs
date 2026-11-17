@@ -26,7 +26,7 @@ use std::path::Path;
 /// Always returns `true` on non-Unix platforms where the concept does not apply.
 #[deprecated(
     since = "0.10.15",
-    note = "use `core::permissions::is_private`, the one definition of a private file (A-29, I-170)"
+    note = "use `core::permissions::is_private`, the one definition of a private file"
 )]
 pub fn has_secure_permissions(path: &Path) -> bool {
     crate::core::permissions::is_private(path)
@@ -38,10 +38,7 @@ pub fn has_secure_permissions(path: &Path) -> bool {
 ///
 /// Returns an error if the permissions cannot be applied (e.g. the caller does
 /// not own the file).
-#[deprecated(
-    since = "0.10.15",
-    note = "use `core::permissions::make_private` (A-29, I-170)"
-)]
+#[deprecated(since = "0.10.15", note = "use `core::permissions::make_private`")]
 pub fn set_secure_permissions(path: &Path) -> Result<()> {
     crate::core::permissions::make_private(path).map(|_| ())
 }

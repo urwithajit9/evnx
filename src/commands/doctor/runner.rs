@@ -668,9 +668,6 @@ impl DiagnosticCheck for EnvFileCheck {
     }
 }
 
-/// How many nested env files doctor names before "and N more" (I-331).
-const NESTED_LISTED: usize = 5;
-
 /// The info lines for env files in subfolders (I-331): a monorepo's
 /// `apps/web/.env` is not what doctor checks, and saying so beats a green tick
 /// that reads as "all env files are fine". Dependency, build and hidden folders
@@ -683,15 +680,7 @@ fn nested_env_lines(project_root: &Path) -> Vec<String> {
         return Vec::new();
     };
     let dir = first.rsplit_once('/').map_or(".", |(dir, _)| dir);
-    let mut names = nested
-        .iter()
-        .take(NESTED_LISTED)
-        .cloned()
-        .collect::<Vec<_>>()
-        .join(", ");
-    if nested.len() > NESTED_LISTED {
-        names.push_str(&format!(" and {} more", nested.len() - NESTED_LISTED));
-    }
+    let names = crate::utils::string::name_list(&nested);
     vec![
         format!("· also in subfolders, not checked here: {names}"),
         format!("→ check one with: evnx doctor {dir}"),

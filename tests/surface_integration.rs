@@ -620,12 +620,13 @@ mod check {
         }
     }
 
-    /// T-SF-43: nothing listening is exit 2 with one line of reason.
+    /// T-SF-43: nothing listening is exit 2 with one line of reason, naming the
+    /// host and the port it tried.
     #[test]
     fn t_sf43_no_server_is_exit_2() {
         check("http://127.0.0.1:9/latest", &[])
             .assert_code(2)
-            .assert_contains("could not reach api.github.com");
+            .assert_contains("could not reach 127.0.0.1:9");
     }
 
     /// DEC-SF5: `--check -q` prints only the status line and the command.

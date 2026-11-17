@@ -114,10 +114,14 @@ pub fn run(opts: Options) -> Result<()> {
 /// change a file under a run (E-5) or break the third write (E-3).
 pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> Result<()> {
     if opts.json && !opts.yes && !opts.dry_run {
-        bail!("--json needs --yes or --dry-run: it never asks.");
+        return Err(crate::core::verdict::usage(
+            "--json needs --yes or --dry-run: it never asks.",
+        ));
     }
     if opts.no_backup && !opts.yes && !opts.dry_run {
-        bail!("--no-backup needs --yes: the backup is the only copy of what is removed.");
+        return Err(crate::core::verdict::usage(
+            "--no-backup needs --yes: the backup is the only copy of what is removed.",
+        ));
     }
     if opts.json {
         ui::set_quiet(true);
@@ -432,7 +436,7 @@ pub fn run_with(opts: Options, before_commit: &mut dyn FnMut(usize, &Path)) -> R
             .collect();
         let question = format!(
             "Remove {} from {}{}{}?",
-            removed_names.iter().cloned().collect::<Vec<_>>().join(", "),
+            crate::utils::string::name_list(&removed_names.iter().collect::<Vec<_>>()),
             count(changes.len(), "place"),
             if required_in_contract.is_empty() {
                 String::new()
@@ -770,8 +774,26 @@ fn print_still(still: &[(String, String, &'static str)]) {
         return;
     }
     ui::say("  still present in:");
-    for (n, place, flag) in still {
-        ui::say(format!("    {place:<18} {n:<16} add {flag}"));
+    for (n, place, _) in still {
+        ui::say(format!("    {place:<18} {n}"));
+    }
+    // Commands to copy, one per place the name is still in (WP-10): "add
+    // --template" read as a hint about a flag, not as something to run.
+    ui::say("  to remove it there too, run:");
+    let mut flags: Vec<&'static str> = Vec::new();
+    for (_, _, flag) in still {
+        if !flags.contains(flag) {
+            flags.push(flag);
+        }
+    }
+    for flag in flags {
+        let mut names: Vec<&str> = Vec::new();
+        for (n, _, f) in still {
+            if *f == flag && !names.contains(&n.as_str()) {
+                names.push(n);
+            }
+        }
+        ui::say(format!("    evnx remove {} {flag}", names.join(" ")));
     }
 }
 

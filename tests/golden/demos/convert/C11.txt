@@ -43,9 +43,7 @@ Error: --to is required when there is no terminal to ask.
   Pass one explicitly:
     evnx convert --to <FORMAT>
 
-  Available: json, yaml, shell, aws-secrets, gcp-secrets, azure-keyvault, github-actions, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway
-
-No verdict: evnx did not finish. This is not a clean result.
+  Available: json, yaml, shell, aws-secrets, gcp-secrets, azure-keyvault, github, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway
 [exit 2]
   ok: FIXED I-083: one error naming --to and the formats, as migrate says it (exit 2)
 

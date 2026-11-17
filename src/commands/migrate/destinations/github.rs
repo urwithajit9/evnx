@@ -130,9 +130,19 @@ impl Api<'_> {
 
     /// Send, wording a request that never completed as `core::http` does.
     fn send(&self, request: RequestBuilder) -> Result<Response> {
+        let host = reqwest::Url::parse(self.base)
+            .ok()
+            .and_then(|u| {
+                u.host_str()
+                    .map(|h| u.port().map_or(h.to_string(), |p| format!("{h}:{p}")))
+            })
+            .map_or_else(
+                || "the GitHub API".to_string(),
+                |h| format!("the GitHub API at {h}"),
+            );
         request.send().map_err(|e| {
             anyhow!(
-                "could not reach the GitHub API: {}",
+                "could not reach {host}: {}",
                 http::transport_reason(&e, TIMEOUT)
             )
         })

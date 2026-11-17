@@ -153,7 +153,11 @@ pub fn check(
 
     let report = |title: String, names: &[&str]| {
         if !names.is_empty() {
-            println!("  {} {title}: {}", "✗".red(), names.join(", "));
+            println!(
+                "  {} {title}: {}",
+                "✗".red(),
+                crate::utils::string::name_list(names)
+            );
         }
     };
     report(
@@ -262,12 +266,13 @@ pub fn run(source: Source, stdout: bool, merge: bool, force: bool, verbose: bool
         );
     }
 
-    ui::print_header("evnx spec", Some("Generate the variable contract"));
-
+    // Read before the banner (WP-10): a file that is not there is said first.
     let (entries, left_out) = match source {
         Source::Components(ids) => from_components(&ids)?,
         Source::Project(inputs) => from_project(&inputs)?,
     };
+
+    ui::print_header("evnx spec", Some("Generate the variable contract"));
 
     // ⚠️ Exit 2, not 0 (I-186, DEC-SP8): `spec init --with "$X" && git add
     // .evnx.toml` must not carry on with no file.

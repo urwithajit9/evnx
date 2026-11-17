@@ -32,7 +32,7 @@ Options:
           
           A value with `*`, `?` or `[` is a glob, matched against the path from the folder and against the file name: `'fixtures/**'`, `'*.log'`. Any other value matches a whole path component, or several in a row: `--exclude test` skips `test/` and a file named `test`, not `latest/` or `contest.py`; `third_party/cache` skips that folder wherever it is.
           
-          ⚠️ This narrows the scan. Below the folder scanned, `.git`, `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`, `.turbo`, `__pycache__`, Python virtualenvs (a `venv` or `.venv` holding `pyvenv.cfg`) and dependency `vendor` folders (beside `go.mod`, `composer.json` or `Gemfile`, or holding `modules.txt`) are skipped, unless git tracks files inside them, and so is the `.env.example` family; `--include-dir` walks a skipped folder. A file named on the command line is read regardless.
+          This narrows the scan. Below the folder scanned, `.git`, `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`, `.turbo`, `__pycache__`, Python virtualenvs (a `venv` or `.venv` holding `pyvenv.cfg`) and dependency `vendor` folders (beside `go.mod`, `composer.json` or `Gemfile`, or holding `modules.txt`) are skipped, unless git tracks files inside them, and so is the `.env.example` family; `--include-dir` walks a skipped folder. A file named on the command line is read regardless.
           
           [default: .env.example]
 
@@ -44,7 +44,7 @@ Options:
       --extensions <EXT>
           Read only files with these extensions in folders (comma-separated: `env,yml,json`). By default every file is read, and binary or very large files are skipped with a note.
           
-          ⚠️ This narrows the scan, and the run says so. A file named on the command line is read whatever this says. `[scan] extensions` in `.evnx.toml` sets the same thing for a project.
+          This narrows the scan, and the run says so. A file named on the command line is read whatever this says. `[scan] extensions` in `.evnx.toml` sets the same thing for a project.
 
       --pattern <REGEX>
           Also report values matching this regular expression. Repeatable.
@@ -66,7 +66,7 @@ Options:
       --severity <LEVEL>
           Lowest severity worth reporting: critical, high, medium or low.
           
-          Severity is how bad a finding is if it is real: `critical` for cloud, payment and AI keys and private keys, `high` for account tokens, database passwords and variables named like a secret, `low` for test keys and keys meant to ship in a web page. Filters what is reported, counted and exited on. `--severity high` is the usual blocking CI gate. ⚠️ Until 0.13.0 this filtered on confidence; that is now `--confidence`. Defaults to `low` (report everything), or `[scan] severity` from `.evnx.toml`.
+          Severity is how bad a finding is if it is real: `critical` for cloud, payment and AI keys and private keys, `high` for account tokens, database passwords and variables named like a secret, `low` for test keys and keys meant to ship in a web page. Filters what is reported, counted and exited on. `--severity high` is the usual blocking CI gate. Until 0.13.0 this filtered on confidence; that is now `--confidence`. Defaults to `low` (report everything), or `[scan] severity` from `.evnx.toml`.
           
           [possible values: critical, high, medium, low]
 
@@ -91,7 +91,7 @@ Options:
       --exit-zero
           Always exit 0, even when secrets are found.
           
-          ⚠️ Suppresses exit 1 only. A scan that could not run still exits 2 — the flag means "do not fail my build over findings", not "never tell me the scan was impossible" (an invalid `--exclude`, a path that does not exist, nothing to scan). Files that could not be read are listed and counted but are findings-class (exit 1), so this flag lets them pass.
+          Suppresses exit 1 only. A scan that could not run still exits 2 — the flag means "do not fail my build over findings", not "never tell me the scan was impossible" (an invalid `--exclude`, a path that does not exist, nothing to scan). Files that could not be read are listed and counted but are findings-class (exit 1), so this flag lets them pass.
 
       --include-ignored
           Report findings in files git ignores and does not track.

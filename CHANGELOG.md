@@ -132,8 +132,64 @@ New in the same change:
 - `migrate --github-token` is hidden, and warns when used (it still works).
 - `platform` keeps `--to` required and `--target` as the Vercel environment.
 
+### Changed
+
+Messages and help (WP-10). No exit code and no JSON shape changed, except the
+new `network` field below.
+
+- **`evnx --help` lists the commands in four groups**: Local files (`init`,
+  `add`, `remove`, `validate`, `sync`, `align`, `diff`, `scan`, `doctor`),
+  Convert and run (`convert`, `template`, `run`, `migrate`, `parse`, `spec`,
+  `backup`, `restore`, `undo`, `history`), Cloud (`auth`, `org`, `vault`,
+  `cloud`, `platform`) and This tool (`update`, `completions`, `commands`),
+  then a three-line "Start here" block. `evnx commands` prints the same four
+  groups instead of "On this machine" and "With an evnx account".
+- **`evnx commands --json` says which group a command is in and what it needs
+  from the network.** Each command has `group` (top-level commands only) and
+  `network`: `local` (files only), `local-with-network` (some modes reach
+  GitHub, Vercel or the release list) or `account` (an evnx account and a
+  connection). A subcommand has its command's `network`. `schema` stays 1: the
+  fields are additions.
+- **Arguments are checked before the banner.** A missing `--env` or
+  `--example` (`validate`), an unknown `--blueprint` or `--with` (`init`), a
+  missing input or key file (`backup`, `restore`, `template`, `spec init`), a
+  path that does not exist (`scan`) and a destination that lacks `--repo`,
+  `--project` or an app name with no terminal to ask on (`migrate`) are said
+  first, with no banner above them.
+- **The line under an error says why there is no verdict.** "No verdict: evnx
+  did not finish" is gone. A missing file, an unreachable or refusing server,
+  a question with no terminal to answer it, and a plain failure each have their
+  own wording. A usage error (a value that is not valid, flags that do not go
+  together, a required choice not made) prints only the error, with no footer.
+  Exit codes are unchanged.
+- **`--help` carries no tracker ids, history or markup.** Ids such as `RM-34`,
+  notes such as "since 0.11.0" or "until 2026-10-07", `**bold**`, and the
+  warning and book emoji are gone from every command's help; the cloud
+  commands' help reads as plain sentences. A test walks every `--help` and
+  fails on a tracker id, `**` or an emoji.
+- **`remove` ends with commands to copy.** What was removed from `.env` but is
+  still in the template or the contract is followed by
+  `evnx remove NAME --template` (or `--contract`, `--all`), not "add
+  --template".
+- **`sync` next steps name `evnx scan` and `evnx cloud push`.**
+- **A long list of names shows three and a count**: "A, B, C and 12 more" (in
+  `remove`'s question, `spec check`, `doctor`'s nested env files, `init`'s kept
+  template and the platform "changed on Vercel" error).
+- **`migrate` without a GitHub token says to set `GITHUB_TOKEN`**; the hidden
+  `--github-token` is no longer suggested, and the `--dry-run` placeholder reads
+  `<GITHUB_TOKEN not set>`.
+
 ### Fixed
 
+- `update --help` lists all eight channels (cargo, Homebrew, Scoop, winget, npm,
+  pip, pipx and the install script).
+- An unreachable server's error names the port when it is not the default
+  (`platform`, `update --check`, `migrate --to github`; `cloud` already did).
+- `sync --prune --yes` says what it compared (`compared ./.env.example against
+  ./.env`), as the preview and the dry run do.
+- `convert` without a terminal lists `github`, not `github-actions`, among the
+  formats `--to` takes; `history --help` names `diff --format patch
+  --interactive`, not `diff --apply`.
 - **Projects with only named env files** (`.env.prod`, no `.env`) are
   understood. A command that needs `.env` names the env files that are there,
   the one-off `--env-name`, and the `[defaults]` block that makes it stick,

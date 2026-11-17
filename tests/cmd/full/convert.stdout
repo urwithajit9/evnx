@@ -162,4 +162,4 @@ Exit codes:
     2  Could not run: usage, config, I/O, or refused before any change
   141  Output closed early (broken pipe)
 
-📖  Full guide: https://docs.evnx.dev/cli/commands/convert
+Full guide: https://docs.evnx.dev/cli/commands/convert

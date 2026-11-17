@@ -9,7 +9,7 @@ Options:
       --output <OUTPUT>
           Where to write the rendered file, or `-` for stdout.
           
-          ⚠️ The result usually contains real values — see `--gitignore`. A new file is created readable by you only (0600). An existing file is only replaced with `--force`, and keeps its mode. The template and the env file are never overwritten.
+          The result usually contains real values — see `--gitignore`. A new file is created readable by you only (0600). An existing file is only replaced with `--force`, and keeps its mode. The template and the env file are never overwritten.
 
       --force
           Replace an existing output file
@@ -37,10 +37,10 @@ Options:
       --allow-unresolved
           Write an unresolved placeholder through literally and exit 0.
           
-          Since 0.11.0 a placeholder with no value is an error: nothing is written, every unresolved name is listed, and the exit code is 2. An unresolved `{{DATABASE_URL}}` in a generated config is read by whatever runs next as the literal setting. Give a variable a fallback with `{{NAME|default:value}}` to keep it optional.
+          A placeholder with no value is an error: nothing is written, every unresolved name is listed, and the exit code is 2. An unresolved `{{DATABASE_URL}}` in a generated config is read by whatever runs next as the literal setting. Give a variable a fallback with `{{NAME|default:value}}` to keep it optional.
 
       --strict
-          The default since 0.11.0; accepted, and removed in 1.0
+          Accepted for scripts that pass it; it changes nothing, and it goes away in 1.0
 
       --no-color
           Disable colored output

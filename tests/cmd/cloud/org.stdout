@@ -1,6 +1,6 @@
 Manage organisations — billing and a directory.
 
-⛔ An organisation does **not** give anyone access to a vault. It owns a plan and a set of seats; a seat decides which plan's limits apply to the holder. Sharing a vault is `evnx vault share`, and only someone who holds the key can do it.
+An organisation does not give anyone access to a vault. It owns a plan and a set of seats; a seat decides which plan's limits apply to the holder. Sharing a vault is `evnx vault share`, and only someone who holds the key can do it.
 
 Usage: evnx org [OPTIONS] <COMMAND>
 

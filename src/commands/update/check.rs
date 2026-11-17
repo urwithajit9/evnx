@@ -97,9 +97,18 @@ pub fn run(channel: Channel, json: bool, other_copies: usize) -> Result<Verdict>
 fn fetch() -> Result<Release> {
     let client = http::client(TIMEOUT, None).context("building the HTTP client")?;
 
-    let resp = client.get(latest_release_url()).send().map_err(|e| {
+    let url = latest_release_url();
+    // The host and port the request went to, not a fixed name.
+    let host = reqwest::Url::parse(&url)
+        .ok()
+        .and_then(|u| {
+            u.host_str()
+                .map(|h| u.port().map_or(h.to_string(), |p| format!("{h}:{p}")))
+        })
+        .unwrap_or_else(|| "api.github.com".to_string());
+    let resp = client.get(url).send().map_err(|e| {
         anyhow::anyhow!(
-            "could not reach api.github.com: {}",
+            "could not reach {host}: {}",
             http::transport_reason(&e, TIMEOUT)
         )
     })?;

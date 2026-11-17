@@ -14,7 +14,7 @@ Options:
           
           Fixes are conservative and local: `.gitignore` gains the `.env*` entries `evnx init` writes, and every env file other users can read is set to 0600 — a symlinked one only when its target is inside the project. Every fix is checked again afterwards; one that did not work says "not fixed". Nothing is deleted, nothing is committed, and no file's contents are edited.
           
-          ⚠️ `EVNX_AUTO_FIX=1` does the same thing and still works. Either saying yes is enough — a flag can turn repair on, never off.
+          `EVNX_AUTO_FIX=1` does the same thing. Either saying yes is enough — a flag can turn repair on, never off.
 
       --strict
           Count warnings as problems, so they affect the exit code.
@@ -24,7 +24,7 @@ Options:
       --skip-without-env
           With no env file, skip (exit 0) and say so.
           
-          For pre-commit hooks: a fresh clone has a template and no `.env`, and doctor calls that an error, which would block every new contributor's first commit. ⚠️ Not for CI, where a check that never ran must not pass.
+          For pre-commit hooks: a fresh clone has a template and no `.env`, and doctor calls that an error, which would block every new contributor's first commit. Not for CI, where a check that never ran must not pass.
 
   -v, --verbose
           Show detailed diagnostic output
@@ -49,7 +49,7 @@ Output:
       --format <FORMAT>
           Output format: `pretty` or `json`.
           
-          ⚠️ `EVNX_OUTPUT_JSON=1` does the same thing and still works. It shipped first and is documented, but an environment variable is not a discoverable surface — which is how `--fix` came to be documented into existence before it existed. `--format` and `--json` win when given.
+          `EVNX_OUTPUT_JSON=1` does the same thing. `--format` and `--json` win when given.
           
           Unknown values are an error, not a silent fall back to `pretty`: a typo in a CI step must not quietly turn a JSON contract into prose that the next `jq` in the pipeline cannot read.
           

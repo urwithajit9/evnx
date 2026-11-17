@@ -51,7 +51,7 @@ Options:
           
           For pre-commit hooks: a fresh clone has a template and no `.env`, and a hook that exits 2 there blocks every new contributor's first commit. A spec (`[vars]` in `.evnx.toml`) is still checked. Forward only.
           
-          ⚠️ Not for CI: without it, `--check` with nothing to compare exits 2, so a gate cannot pass on a check that never ran.
+          Not for CI: without it, `--check` with nothing to compare exits 2, so a gate cannot pass on a check that never ran.
 
       --template-config <PATH>
           A JSON file of placeholder rules: `patterns`, `default`, `allow_actual`.

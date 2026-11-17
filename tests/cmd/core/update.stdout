@@ -1,8 +1,8 @@
 Show how to upgrade, and optionally whether a newer release exists.
 
-Without `--check` this contacts nothing: it reads the path of the running binary, and the files pip leaves beside it, to work out which channel installed it — cargo, Homebrew, Scoop, winget, npm, pip or the install script — and prints that channel's upgrade command. Where the install script and pip share a folder and nothing tells them apart, it prints both; where it cannot tell at all, every channel's.
+Without `--check` this contacts nothing: it reads the path of the running binary, and the files pip leaves beside it, to work out which channel installed it — cargo, Homebrew, Scoop, winget, npm, pip, pipx or the install script — and prints that channel's upgrade command. Where the install script and pip share a folder and nothing tells them apart, it prints both; where it cannot tell at all, every channel's.
 
-⚠️ evnx never replaces its own binary. Each package manager owns the file it installed, and a self-updating binary fights it — Homebrew and winget would then report a version they did not install.
+evnx never replaces its own binary. Each package manager owns the file it installed, and a self-updating binary fights it — Homebrew and winget would then report a version they did not install.
 
 `--check` trusts evnx's bundled root certificates plus any in the PEM bundle named by SSL_CERT_FILE or the directory named by SSL_CERT_DIR. Behind a TLS-inspecting proxy, set SSL_CERT_FILE to your organisation's CA bundle.
 
