@@ -37,11 +37,11 @@ Options:
   -v, --verbose
           Show detailed diagnostic output
 
-  -q, --quiet
-          Print nothing on success. Findings, warnings, errors and requested data still print
-
       --no-color
           Disable colored output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
 
   -h, --help
           Print help (see a summary with '-h')

@@ -19,14 +19,14 @@ Options:
       --show-values
           Print --values to a terminal anyway
 
-  -v, --verbose
-          Enable verbose output
+      --no-color
+          Disable colored output
 
   -q, --quiet
           Print nothing on success. Findings, warnings, errors and requested data still print
 
-      --no-color
-          Disable colored output
+  -v, --verbose
+          Enable verbose output
 
   -h, --help
           Print help (see a summary with '-h')

@@ -34,14 +34,14 @@ Options:
           
           Costs one more Argon2id round (a fraction of a second to about a second, depending on the machine) but proves the backup is readable before you discard the source file. Exit code 6 on failure.
 
-  -v, --verbose
-          Enable verbose output
+      --no-color
+          Disable colored output
 
   -q, --quiet
           Print nothing on success. Findings, warnings, errors and requested data still print
 
-      --no-color
-          Disable colored output
+  -v, --verbose
+          Enable verbose output
 
   -h, --help
           Print help (see a summary with '-h')

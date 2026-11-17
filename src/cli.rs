@@ -2223,15 +2223,15 @@ pub struct Cli {
     pub command: Commands,
 
     /// Enable verbose output.
-    #[arg(short, long, global = true)]
+    #[arg(short, long, global = true, display_order = 900)]
     pub verbose: bool,
 
     /// Print nothing on success. Findings, warnings, errors and requested data still print.
-    #[arg(short, long, global = true)]
+    #[arg(short, long, global = true, display_order = 900)]
     pub quiet: bool,
 
     /// Disable colored output.
-    #[arg(long, global = true)]
+    #[arg(long, global = true, display_order = 900)]
     pub no_color: bool,
 }
 

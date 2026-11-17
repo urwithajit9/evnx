@@ -43,14 +43,14 @@ Options:
           
           Read-only, for CI. Always looks everywhere (`.env`, every `.env.<NAME>`, the template, `[vars]`), so it takes no scope flags. Exit 2 means no verdict: a file it cannot read whole.
 
-  -v, --verbose
-          Enable verbose output
+      --no-color
+          Disable colored output
 
   -q, --quiet
           Print nothing on success. Findings, warnings, errors and requested data still print
 
-      --no-color
-          Disable colored output
+  -v, --verbose
+          Enable verbose output
 
   -h, --help
           Print help (see a summary with '-h')
