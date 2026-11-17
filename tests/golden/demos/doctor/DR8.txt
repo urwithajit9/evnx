@@ -126,6 +126,13 @@ No complete verdict: 1 check could not run. This is not a clean result.
 
 $ evnx doctor --format json
 {
+  "run": {
+    "tool": "evnx",
+    "version": "<version>",
+    "schema_version": 1,
+    "ruleset": null,
+    "features": "<features>"
+  },
   "project_path": ".",
   "checks": [
     {

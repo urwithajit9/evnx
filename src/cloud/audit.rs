@@ -30,7 +30,7 @@
 use crate::cloud::client::api_path;
 use anyhow::{anyhow, Result};
 use colored::Colorize;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::client::Client;
 use super::config::CloudConfig;
@@ -49,7 +49,7 @@ struct AuditResponse {
     hidden_by_retention: usize,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct AuditEvent {
     event_type: String,
     /// `None` when that account has since been deleted.
@@ -188,6 +188,7 @@ pub fn run(
     vault_target: Option<String>,
     last: &str,
     event_filter: Option<String>,
+    json: bool,
     verbose: bool,
 ) -> Result<()> {
     let window_days = parse_window(last)?;
@@ -218,6 +219,18 @@ pub fn run(
             _ => true,
         })
         .collect();
+
+    if json {
+        return crate::core::json::emit(
+            &serde_json::json!({
+                "events": rows,
+                "retention_days": res.retention_days,
+                "hidden_by_retention": res.hidden_by_retention,
+            }),
+            1,
+            None,
+        );
+    }
 
     crate::say!();
     crate::say!("  {}  {}", "evnx cloud audit".bold(), vault_ref.label());

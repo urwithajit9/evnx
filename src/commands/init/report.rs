@@ -307,7 +307,7 @@ pub(crate) fn print_dry_run(p: &Planned, root: &Path) {
 /// Fields shared with `add --json` (DQ-21): `dry_run`, `written`, `added`,
 /// `skipped`, `conflicts`, `env_added`, `env_created`, `env_committable`,
 /// `template`, `gitignore`, `contract` (`action`, `file`, `added`), `notices`.
-pub(crate) fn print_json(p: &Planned, dry_run: bool, root: &Path) {
+pub(crate) fn print_json(p: &Planned, dry_run: bool, root: &Path) -> anyhow::Result<()> {
     let env_committable = !dry_run && !gitignore::env_file_is_protected(root, &p.env_file);
     let doc = serde_json::json!({
         "dry_run": dry_run,
@@ -332,5 +332,5 @@ pub(crate) fn print_json(p: &Planned, dry_run: bool, root: &Path) {
     if let Some(name) = &p.defaults {
         doc["defaults"] = serde_json::json!({ "env_name": name });
     }
-    println!("{doc:#}");
+    crate::core::json::emit(&doc, 1, None)
 }

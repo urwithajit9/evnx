@@ -633,7 +633,7 @@ pub fn confirm_and_apply(
 
     if mode.dry_run {
         if let Some(extra) = &extra {
-            print_json(&plan, true, &Applied::default(), extra);
+            print_json(&plan, true, &Applied::default(), extra)?;
         } else {
             print_dry_run(&plan, flow);
         }
@@ -641,7 +641,7 @@ pub fn confirm_and_apply(
     }
     if plan.is_empty() {
         if let Some(extra) = &extra {
-            print_json(&plan, false, &Applied::default(), extra);
+            print_json(&plan, false, &Applied::default(), extra)?;
         } else {
             report(&plan, flow, true);
         }
@@ -704,7 +704,7 @@ pub fn confirm_and_apply(
         !mode.json,
     )?;
     if let Some(extra) = &extra {
-        print_json(&plan, false, &applied, extra);
+        print_json(&plan, false, &applied, extra)?;
     } else {
         // Asked: the conflicts were shown with the question.
         report(&plan, flow, !mode.interactive());
@@ -832,7 +832,7 @@ fn print_dry_run(plan: &Plan, flow: &Flow) {
 /// 0.10.16, shared with `init --json` (DQ-21, T-INIT-36): `template`,
 /// `gitignore` (entries added), `contract` (`action`, `file`, `added`),
 /// `notices`.
-fn print_json(plan: &Plan, dry_run: bool, applied: &Applied, extra: &JsonExtra) {
+fn print_json(plan: &Plan, dry_run: bool, applied: &Applied, extra: &JsonExtra) -> Result<()> {
     fn sorted(v: &VarCollection) -> Vec<&str> {
         let mut n: Vec<&str> = v.vars.keys().map(String::as_str).collect();
         n.sort_unstable();
@@ -865,7 +865,7 @@ fn print_json(plan: &Plan, dry_run: bool, applied: &Applied, extra: &JsonExtra) 
         "contract": extra.contract,
         "notices": Vec::<String>::new(),
     });
-    println!("{doc:#}");
+    crate::core::json::emit(&doc, 1, None)
 }
 
 /// The `--json` fields worked out before the write.

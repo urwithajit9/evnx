@@ -70,7 +70,7 @@ pub fn run(env: &str, json: bool, values: bool, show_values: bool) -> Result<Ver
     let doc = Parser::default().parse_document(&content);
     let report = report(&doc, file, values);
     if json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+        crate::core::json::emit(&report, 1, None)?;
     } else {
         print_pretty(&report);
     }

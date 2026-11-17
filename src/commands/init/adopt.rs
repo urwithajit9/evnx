@@ -198,7 +198,7 @@ pub(crate) fn handle(target: &Target, opts: WriteOptions, found: &Found) -> Resu
         if !opts.json {
             eprintln!("{}", found.line(&target.root));
         }
-        shared::emit(planned.as_ref(), opts, &target.root);
+        shared::emit(planned.as_ref(), opts, &target.root)?;
         return Ok(Outcome::DryRun);
     }
 
@@ -238,7 +238,7 @@ pub(crate) fn handle(target: &Target, opts: WriteOptions, found: &Found) -> Resu
     } else {
         say();
     }
-    shared::emit(planned.as_ref(), opts, &target.root);
+    shared::emit(planned.as_ref(), opts, &target.root)?;
     Ok(Outcome::KeptExisting)
 }
 

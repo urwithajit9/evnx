@@ -654,8 +654,7 @@ fn output_json(diff: &DiffResult, compared: Compare) -> Result<()> {
             total: diff.missing.len() + diff.extra.len() + diff.different.len(),
         },
     };
-    println!("{}", serde_json::to_string_pretty(&report)?);
-    Ok(())
+    crate::core::json::emit(&report, SCHEMA_VERSION, None)
 }
 
 fn output_patch(

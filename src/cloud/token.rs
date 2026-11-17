@@ -96,7 +96,7 @@ fn deliver(
             vault_id,
             created.expires_at.as_deref(),
             bundle.as_deref(),
-        )
+        )?
     } else {
         format!("{}\n", created.raw_token)
     };
@@ -120,6 +120,7 @@ fn deliver(
                 );
             }
         }
+        None if json => crate::core::json::emit_rendered(&body)?,
         None => print!("{body}"),
     }
     Ok(())
@@ -158,7 +159,7 @@ fn created_json(
     vault_id: Option<&str>,
     expires_at: Option<&str>,
     key_bundle: Option<&str>,
-) -> String {
+) -> Result<String> {
     let doc = serde_json::json!({
         "name": name,
         "token": token,
@@ -167,7 +168,7 @@ fn created_json(
         "expires_at": expires_at,
         "key_bundle": key_bundle,
     });
-    format!("{doc:#}\n")
+    Ok(crate::core::json::render(&doc, 1, None, true)? + "\n")
 }
 
 /// Mint a token.

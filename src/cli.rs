@@ -890,13 +890,19 @@ pub enum OrgCommands {
     },
 
     /// List the organisations this account belongs to.
-    List,
+    List {
+        #[command(flatten)]
+        output: args::OutputArgs,
+    },
 
     /// Who is in an organisation, and who holds a seat.
     Members {
         /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
 
     /// Invite someone by email.
@@ -923,6 +929,9 @@ pub enum OrgCommands {
         /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
 
     /// Withdraw an invitation.
@@ -956,6 +965,9 @@ pub enum OrgCommands {
         /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
         #[arg(long, value_name = "SLUG")]
         org: Option<String>,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
 
     /// Show or set how many seats are purchased.
@@ -1204,7 +1216,14 @@ pub enum AuthCommands {
     ///
     /// Makes an authenticated request. For local state without a network call,
     /// use `evnx cloud status`.
-    Status,
+    Status {
+        /// Exit 10 when signed out and 0 when signed in, for scripts.
+        #[arg(long)]
+        check: bool,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
+    },
 
     /// Change your master password.
     ///
@@ -1424,7 +1443,10 @@ pub enum TotpCommands {
 #[derive(Subcommand, Debug)]
 pub enum SessionCommands {
     /// List active sessions.
-    List,
+    List {
+        #[command(flatten)]
+        output: args::OutputArgs,
+    },
 
     /// Revoke one session by id, or by the short form the listing shows.
     Revoke {
@@ -1449,7 +1471,10 @@ pub enum SessionCommands {
 #[derive(Subcommand, Debug)]
 pub enum DeviceCommands {
     /// List the networks and browsers this account has signed in from.
-    List,
+    List {
+        #[command(flatten)]
+        output: args::OutputArgs,
+    },
 
     /// Report that a device was not you.
     ///
@@ -1488,7 +1513,10 @@ pub enum VaultCommands {
     },
 
     /// List the vaults you can reach.
-    List,
+    List {
+        #[command(flatten)]
+        output: args::OutputArgs,
+    },
 
     /// Delete a vault and every version in it.
     Delete {
@@ -1543,6 +1571,9 @@ pub enum VaultCommands {
     Members {
         /// Vault to inspect: `name`, `name/environment`, or an id.
         target: String,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
 
     /// Change a member's role.
@@ -1891,6 +1922,9 @@ pub enum CloudCommands {
         /// How many versions to show.
         #[arg(long, default_value_t = 20)]
         limit: usize,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
 
     /// Watch a vault and report when someone pushes a new version.
@@ -1989,6 +2023,9 @@ pub enum CloudCommands {
         /// With --local: read the master password from stdin.
         #[arg(long, requires = "local")]
         password_stdin: bool,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
 
     /// Who did what to a vault, newest first.
@@ -2018,6 +2055,9 @@ pub enum CloudCommands {
         /// Show only this event type, e.g. `pull`.
         #[arg(long, value_name = "TYPE")]
         event: Option<String>,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
 
     /// Delete one version of a vault, and its encrypted blob.
@@ -2166,6 +2206,13 @@ pub enum CloudCommands {
         /// reached, so it can be used as a health check in a script.
         #[arg(long)]
         ping: bool,
+
+        /// Exit 10 when signed out and 0 when signed in, for scripts.
+        #[arg(long)]
+        check: bool,
+
+        #[command(flatten)]
+        output: args::OutputArgs,
     },
 }
 

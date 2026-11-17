@@ -463,3 +463,65 @@ fn t_a302_the_master_password_is_proven_in_one_place() {
         "the master key outside auth::unlock: {offenders:?}"
     );
 }
+
+/// WP-9b: one writer for JSON on stdout. `core::json::emit` puts the `run`
+/// header first and is the only code that prints a JSON document.
+///
+/// Two checks. (1) No `print!`/`println!` line formats a `serde_json` result or
+/// a pretty `Value` (`{doc:#}`). (2) `serde_json::to_string*`/`to_vec*`/
+/// `to_writer*` appear in non-test code only in files on the list below, each a
+/// documented non-stdout use: a file written, a request body, a data conversion.
+#[test]
+fn t_wp9b_json_on_stdout_goes_through_core_json() {
+    // File (relative to src/) -> why it may serialise.
+    let allowed: &[(&str, &str)] = &[
+        ("core/json.rs", "the writer"),
+        ("platform/vercel/state.rs", "state file"),
+        ("platform/vercel/api.rs", "request body"),
+        ("formats/", "converted file contents"),
+        ("cloud/creds.rs", "credentials file"),
+        ("cloud/client.rs", "request bodies"),
+        ("cloud/highwater.rs", "state file"),
+        ("cloud/rotate.rs", "recovery file"),
+        ("cloud/export.rs", "export files"),
+        ("cloud/keybundle.rs", "encoded bundle"),
+        ("cloud/auth.rs", "account export file"),
+        ("core/backups.rs", "backup registry file"),
+        ("commands/scan/runner.rs", "baseline file"),
+        ("commands/template.rs", "rendered value, not an envelope"),
+        ("commands/backup/core.rs", "backup file"),
+        ("commands/migrate/destinations/", "request bodies"),
+    ];
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    for f in files {
+        let rel = f
+            .strip_prefix(src())
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        let text = std::fs::read_to_string(&f).unwrap();
+        for (n, l) in code_lines(&text) {
+            let serialises = l.contains("serde_json::to_string")
+                || l.contains("serde_json::to_vec")
+                || l.contains("serde_json::to_writer");
+            let prints = l.contains("println!(") || l.contains("print!(");
+            let pretty_value = prints && (l.contains("{doc:#}") || l.contains("{json}"));
+            if rel != "core/json.rs" && prints && serialises {
+                offenders.push(format!("{rel}:{} prints serde_json output", n + 1));
+            }
+            if pretty_value {
+                offenders.push(format!("{rel}:{} prints a pretty Value", n + 1));
+            }
+            if serialises && !allowed.iter().any(|(p, _)| rel.starts_with(p)) {
+                offenders.push(format!("{rel}:{} serialises outside the allow-list", n + 1));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "route JSON stdout through core::json::emit:\n{}",
+        offenders.join("\n")
+    );
+}

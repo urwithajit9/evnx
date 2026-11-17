@@ -278,7 +278,7 @@ pub(crate) fn write(
         None
     };
     if opts.dry_run {
-        emit(planned.as_ref(), opts, &target.root);
+        emit(planned.as_ref(), opts, &target.root)?;
         return Ok(Outcome::DryRun);
     }
     let (outcome, talk) = write_files(target, vars, example_content, env_content, opts)?;
@@ -297,19 +297,24 @@ pub(crate) fn write(
         )?,
         Outcome::Aborted | Outcome::DryRun => {}
     }
-    emit(planned.as_ref(), opts, &target.root);
+    emit(planned.as_ref(), opts, &target.root)?;
     Ok(outcome)
 }
 
 /// Print a plan the way the flags ask: the dry-run listing, the JSON
 /// document, or nothing.
-pub(crate) fn emit(planned: Option<&super::report::Planned>, opts: WriteOptions, root: &Path) {
-    let Some(p) = planned else { return };
+pub(crate) fn emit(
+    planned: Option<&super::report::Planned>,
+    opts: WriteOptions,
+    root: &Path,
+) -> Result<()> {
+    let Some(p) = planned else { return Ok(()) };
     if opts.json {
-        super::report::print_json(p, opts.dry_run, root);
+        super::report::print_json(p, opts.dry_run, root)?;
     } else if opts.dry_run {
         super::report::print_dry_run(p, root);
     }
+    Ok(())
 }
 
 /// The error for a template that would be overwritten with nobody to ask.
@@ -467,11 +472,11 @@ pub(crate) fn set_up_from_template(target: &Target, opts: WriteOptions) -> Resul
         None
     };
     if opts.dry_run {
-        emit(planned.as_ref(), opts, &target.root);
+        emit(planned.as_ref(), opts, &target.root)?;
         return Ok(Outcome::DryRun);
     }
     let outcome = set_up(target, name)?;
-    emit(planned.as_ref(), opts, &target.root);
+    emit(planned.as_ref(), opts, &target.root)?;
     Ok(outcome)
 }
 

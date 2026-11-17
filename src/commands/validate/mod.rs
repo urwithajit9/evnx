@@ -1167,8 +1167,7 @@ fn listed_problems(mut problems: Vec<crate::core::parser::Problem>, path: &str) 
 }
 
 fn output_json(result: &ValidationResult) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(result)?);
-    Ok(())
+    crate::core::json::emit(result, 1, None)
 }
 
 /// Which line of `.env` assigns `key`, if any.

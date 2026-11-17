@@ -660,6 +660,11 @@ fn git_steps(results: &ScanResults) -> Vec<String> {
     steps
 }
 
+/// `run.ruleset` on `scan --format json`: the built-in rule set, which is
+/// versioned with the binary. Rule packs added with `scan rules add` are listed
+/// in `rules.lock`, not here.
+const RULESET: &str = concat!("builtin@", env!("CARGO_PKG_VERSION"));
+
 /// Render results in JSON format.
 ///
 /// Suitable for machine parsing, CI/CD integration, and custom tooling.
@@ -681,13 +686,15 @@ fn render_json(results: &ScanResults) -> Result<()> {
         summary: super::models::Summary,
     }
 
-    let json = serde_json::to_string_pretty(&JsonReport {
-        schema_version: 2,
-        results,
-        summary: results.summary(),
-    })?;
-    println!("{}", json);
-    Ok(())
+    crate::core::json::emit(
+        &JsonReport {
+            schema_version: 2,
+            results,
+            summary: results.summary(),
+        },
+        2,
+        Some(RULESET),
+    )
 }
 
 /// Split a finding's `location` into (file, line).
@@ -927,8 +934,8 @@ fn render_sarif(results: &ScanResults) -> Result<()> {
         }]
     });
 
-    println!("{}", serde_json::to_string_pretty(&sarif)?);
-    Ok(())
+    // SARIF has its own schema: no `run` header.
+    crate::core::json::emit_unwrapped(&sarif)
 }
 
 #[cfg(test)]

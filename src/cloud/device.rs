@@ -29,7 +29,7 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::client::Client;
 use super::config::CloudConfig;
@@ -39,7 +39,7 @@ struct DeviceList {
     devices: Vec<DeviceSummary>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 struct DeviceSummary {
     id: String,
     first_seen: String,
@@ -58,12 +58,15 @@ struct DisavowResponse {
 }
 
 /// `evnx auth devices list`
-pub fn list(server_override: Option<&str>, verbose: bool) -> Result<()> {
+pub fn list(server_override: Option<&str>, json: bool, verbose: bool) -> Result<()> {
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
     let listed: DeviceList = client.get("/api/v1/auth/devices")?;
+    if json {
+        return crate::core::json::emit(&serde_json::json!({ "devices": listed.devices }), 1, None);
+    }
 
     if listed.devices.is_empty() {
         println!("  No sign-ins recorded on {server} yet.");

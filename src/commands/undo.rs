@@ -53,7 +53,7 @@ pub fn history(json: bool) -> Result<()> {
                 })
             })
             .collect();
-        println!("{:#}", serde_json::json!({ "backups": doc }));
+        crate::core::json::emit(&serde_json::json!({ "backups": doc }), 1, None)?;
         return Ok(());
     }
     if entries.is_empty() {
