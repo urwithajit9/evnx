@@ -34,8 +34,8 @@ use std::fmt;
 
 /// Structured errors for the `evnx backup` subcommand.
 ///
-/// Returned from [`run`](super::run) (and ultimately from
-/// [`backup_inner`](super::core::backup_inner)) as `anyhow::Error` payloads.
+/// Returned from [`run`](crate::commands::backup::run) (and ultimately from
+/// [`backup_inner`](crate::commands::backup::core::backup_inner)) as `anyhow::Error` payloads.
 /// `main.rs` downcasts to this type to obtain the correct exit code.
 ///
 /// All variants return `is_silent() = false`: the error message is always
