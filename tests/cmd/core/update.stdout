@@ -48,16 +48,19 @@ Output:
       --json
           With `--check` or `--list`: the answer as JSON on stdout. Same as --format json.
 
-Exit codes:
-  0  without --check, always (--list too, however many copies it finds);
-     with it, this is the latest release or newer
-  1  --check: a newer release exists
-  2  --check could not tell: no network support, no answer, or rate-limited
+Without --check the exit code is 0, however many copies --list finds. With
+--check, 1 means a newer release exists, and 2 that it could not tell.
 
 More than one evnx installed? `evnx update --list` shows each copy, its
 version, which one runs, and how to remove the rest. Only --check uses the
 network.
 
 -q prints only the upgrade command; with --check, the status line and the command.
+
+Exit codes:
+  0  Ran, nothing to report
+  1  Ran, and found something: findings, problems, a difference, not in sync
+  2  Could not run: usage, config, I/O, or refused before any change
+  141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/update

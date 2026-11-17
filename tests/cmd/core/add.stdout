@@ -2,7 +2,7 @@ Add environment variables to existing .env files.
 
 Subcommands: • service (or infra): Add vars for any catalogue id (e.g., postgresql, vercel) • framework: Add vars for a framework (e.g., django) • blueprint: Add vars from a stack blueprint • custom: Interactive custom variable addition
 
-Exit codes: 0 when the variables were added, were already there, the run was a --dry-run, or you backed out of a menu or a custom question (Esc); 2 when it could not run (unknown id, bad argument, no terminal to ask, a write error); 4 you answered no (or Esc) at the write confirmation.
+Backing out of a menu or a custom question (Esc) ends the run with nothing written. Without a terminal, --yes is required for the write.
 
 Usage: evnx add [OPTIONS] [COMMAND]
 
@@ -61,5 +61,11 @@ Output:
 
       --json
           Print the result as one JSON document on stdout (needs --yes or --dry-run: it never asks).
+
+Exit codes:
+  0  Ran, nothing to report
+  2  Could not run: usage, config, I/O, or refused before any change
+  4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
+  141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/add

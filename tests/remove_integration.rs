@@ -692,7 +692,7 @@ fn i2_help_shows_exit_codes_and_examples() {
     let p = Project::new();
     evnx(&p, &["remove", "--help"])
         .assert_code(0)
-        .assert_contains("4 you answered no")
+        .assert_contains("\n  4  Declined: answered no")
         .assert_contains("evnx rm 'TEST_*'")
         .assert_contains("--ignore-missing");
 }

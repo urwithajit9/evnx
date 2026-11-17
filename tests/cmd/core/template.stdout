@@ -86,4 +86,9 @@ $VAR is replaced only when VAR is defined, and never reported.
 A placeholder with no value is an error too (exit 2); --allow-unresolved
 writes it through as it is.
 
+Exit codes:
+  0  Ran, nothing to report
+  2  Could not run: usage, config, I/O, or refused before any change
+  141  Output closed early (broken pipe)
+
 Full guide: https://docs.evnx.dev/cli/commands/template

@@ -5,6 +5,7 @@
 use crate::docs;
 
 pub mod args;
+pub mod exit_help;
 pub mod removed;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
@@ -583,8 +584,6 @@ pub enum PlatformCommands {
     /// exists on both sides is shown as `= present` (write-only, not compared)
     /// and is not a difference. --strict counts it as one.
     ///
-    /// Exit 0 when nothing differs, 1 when something does, 2 when it could not
-    /// run, and 10, 11, 13, 15 for a Vercel failure (see `evnx platform --help`).
     #[command(after_help = "\
 Examples:
   evnx platform diff --to vercel                         .env.development (or .env) vs development
@@ -609,8 +608,8 @@ Full guide: https://docs.evnx.dev/cli/commands/platform")]
     /// the local file has are kept.
     ///
     /// Shows what will change (never a value) and asks first. The replaced file is
-    /// kept as a .bak copy. Without a terminal, --yes is required; declining exits
-    /// 4. --dry-run shows the plan and writes nothing.
+    /// kept as a .bak copy. Without a terminal, --yes is required.
+    /// --dry-run shows the plan and writes nothing.
     ///
     /// After a pull, `.evnx/platform/vercel.json` records each variable's id,
     /// targets, type and updatedAt. It holds no values and no hashes.
@@ -638,9 +637,9 @@ Full guide: https://docs.evnx.dev/cli/commands/platform")]
     ///
     /// Before writing, each variable is checked against `.evnx/platform/vercel.json`
     /// (written by `pull` and `push`): if Vercel changed it since, nothing is
-    /// written and the exit code is 14. Without a terminal, --yes is required;
-    /// declining exits 4. Exit 1 when Vercel refused some variables (the rest
-    /// stays applied). --dry-run shows the plan and sends nothing.
+    /// written and the exit code is 14. Without a terminal, --yes is required.
+    /// When Vercel refused some variables the exit code is 1 (the rest stays
+    /// applied). --dry-run shows the plan and sends nothing.
     #[command(after_help = "Examples:
   evnx platform push --to vercel --dry-run                   the plan, nothing sent
   evnx platform push --to vercel                             .env.development (or .env), after asking
@@ -650,10 +649,6 @@ Full guide: https://docs.evnx.dev/cli/commands/platform")]
 
 Legend: + create   ~ update   = unchanged   - skipped (empty value)
         ! type differs (not changed)   ! remote only (kept; deleting is --prune, coming)
-
-Exit codes: 0 done, 1 Vercel refused some variables, 2 could not run, 4 declined,
-10 token refused, 11 forbidden, 13 unreachable, 14 changed on Vercel since your last
-pull, 15 Vercel error or rate limit.
 
 Full guide: https://docs.evnx.dev/cli/commands/platform")]
     Push(PlatformPushArgs),
@@ -1134,8 +1129,6 @@ pub enum AuthCommands {
     /// The server allows 3 per hour per address; past that it says when to
     /// try again. An API token cannot do this: sign in with `evnx auth login`.
     ///
-    /// EXIT CODES: 0 sent, or already verified; 10 not signed in; 15 rate
-    /// limited, or the server failed; 13 the server could not be reached.
     #[command(name = "resend-verification")]
     ResendVerification,
 
@@ -2371,11 +2364,8 @@ pub enum Commands {
     /// • blueprint: Add vars from a stack blueprint
     /// • custom: Interactive custom variable addition
     ///
-    /// Exit codes: 0 when the variables were added, were already there, the
-    /// run was a --dry-run, or you backed out of a menu or a custom question
-    /// (Esc); 2 when it could not run (unknown id, bad argument, no terminal
-    /// to ask, a write error); 4 you answered no (or Esc) at the write
-    /// confirmation.
+    /// Backing out of a menu or a custom question (Esc) ends the run with
+    /// nothing written. Without a terminal, --yes is required for the write.
     // ⚠️ Not `args_conflicts_with_subcommands`: that also refuses every flag
     // written before the subcommand (`evnx add --path api service redis`),
     // which has always worked. `--list` with a subcommand is refused in `run`.
@@ -2431,10 +2421,7 @@ pub enum Commands {
     /// with the flag that clears it. Every byte that is not part of a removed
     /// entry stays as it was; the env file is kept as a `.bak` copy first.
     ///
-    /// Exit codes: 0 removed (or nothing to do with --ignore-missing, or a dry
-    /// run); 1 only with --check, a name is still somewhere; 2 could not run or
-    /// refused (a name that is not there, a file it cannot read, no terminal to
-    /// ask on); 4 you answered no.
+    /// With --check, the exit code is 1 when a name is still somewhere.
     #[command(
         visible_alias = "rm",
         after_help = docs::REMOVE.after_help,
@@ -2953,9 +2940,6 @@ Aliases:
   k8s → kubernetes, tf → terraform, yml → yaml
   compose → docker-compose
 
-Exit codes: 0 converted; 2 nothing converted (bad flag, missing file, names that
-collide, a filter or file with no variables).
-
 Use 'evnx convert' without --to for interactive format selection.
 
 📖  Full guide: https://docs.evnx.dev/cli/commands/convert
@@ -3136,9 +3120,6 @@ Destinations:
                    doppler, infisical, railway
   Uploads:         github (--repo; GITHUB_TOKEN)
 
-Exit codes: 0 done; 1 some GitHub uploads failed; 2 could not run (bad flag, missing
-file, names that collide, a filter that leaves nothing).
-
 TLS (GitHub upload): evnx trusts its bundled root certificates plus any in the PEM bundle
 named by SSL_CERT_FILE or the directory named by SSL_CERT_DIR. Behind a TLS-inspecting
 proxy, set SSL_CERT_FILE to your organisation's CA bundle.
@@ -3296,7 +3277,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
         ///
         /// Costs one more Argon2id round (a fraction of a second to about a
         /// second, depending on the machine) but proves the backup is readable
-        /// before you discard the source file. Exit code 6 on failure.
+        /// before you discard the source file. A failed check exits 2.
         #[arg(long)]
         verify: bool,
     },
@@ -3424,19 +3405,9 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     /// Secrets are encrypted on this machine before upload. The server stores
     /// ciphertext and cannot read them.
     ///
-    /// EXIT CODES when a request to the server fails (the same for `evnx auth`,
-    /// `evnx vault` and `evnx org`):
-    ///
-    ///   10  not signed in, or the session or API token was refused
-    ///   11  forbidden: your role does not allow it, or the email is not verified
-    ///   12  the plan's limit is reached
-    ///   13  the server could not be reached, or something that is not evnx
-    ///       (a proxy, firewall or captive portal) answered
-    ///   14  conflict (someone else pushed first) or the account is locked
-    ///   15  the server failed, or is rate limiting you
-    ///
-    /// Other failures keep the command's usual code. `evnx cloud run` returns
-    /// the command's own code once it has started.
+    /// A failed request to the server has its own exit code (10-15), the same
+    /// for `evnx auth`, `evnx vault` and `evnx org`; `evnx cloud run` returns the
+    /// command's own code once it has started. See the table below.
     ///
     /// TLS: evnx trusts its bundled root certificates plus any in the PEM
     /// bundle named by SSL_CERT_FILE or the directory named by SSL_CERT_DIR
@@ -3444,8 +3415,7 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     /// TLS-inspecting proxy, set SSL_CERT_FILE to your organisation's CA
     /// bundle. A variable that names a missing path or a file with no
     /// certificate is an error, exit 13.
-    // `verbatim_doc_comment`: without it clap rewraps the exit-code table into
-    // one run-on paragraph.
+    // `verbatim_doc_comment` keeps the line breaks of the paragraph above.
     #[cfg(feature = "cloud")]
     #[command(verbatim_doc_comment, after_help = docs::CLOUD.after_help)]
     Cloud {
@@ -3471,17 +3441,9 @@ proxy, set SSL_CERT_FILE to your organisation's CA bundle.
     /// Needs a Vercel token in VERCEL_TOKEN (or --token-file) and a project
     /// (--project, VERCEL_PROJECT_ID, or .vercel/project.json from `vercel link`).
     ///
-    /// Exit codes:
-    ///   0   done, or no differences
-    ///   1   `diff` found differences
-    ///   2   could not run (bad flag, no token, no project, unreadable file)
-    ///   4   `pull` was declined at the confirmation
-    ///   10  Vercel refused the token
-    ///   11  the token may not read that project
-    ///   13  Vercel could not be reached
-    ///   15  Vercel server error, or the rate limit never cleared
-    // `verbatim_doc_comment`: without it clap rewraps the exit-code table into
-    // one run-on paragraph.
+    /// A failed Vercel request has its own exit code (10, 11, 13, 15; 14 when
+    /// `push` finds a variable changed on Vercel). See the table below.
+    // `verbatim_doc_comment` keeps the line breaks of the paragraph above.
     #[cfg(feature = "net")]
     #[command(verbatim_doc_comment, after_help = docs::PLATFORM.after_help)]
     Platform {
@@ -4080,23 +4042,23 @@ pub enum SpecAction {
     },
 }
 
-/// `spec check --help`: what each exit code means (RM-41).
+/// `spec check --help`: what is a finding and what is no verdict (RM-41). The
+/// codes themselves are the generated "Exit codes" block (`core::exit_table`).
 const SPEC_CHECK_EXIT_CODES: &str = "\
-Exit codes:
-  0  the template and .env agree with [vars], or there is no [vars] (skipped)
-  1  they disagree: a name missing from the template, one it has that [vars]
-     does not declare, a required variable missing from .env, or a value in
-     .env that breaks the `format` declared for it
-  2  no verdict: the template is missing or does not parse, or a file named
-     by --env or --env-name does not exist";
+Findings: a name missing from the template, one it has that [vars] does not
+declare, a required variable missing from .env, or a value in .env that
+breaks the `format` declared for it. With no [vars] there is nothing to
+check: it is skipped, and the answer is clean.
 
-/// `spec init --help`: what each exit code means (D-131).
+No verdict: the template is missing or does not parse, or a file named by
+--env or --env-name does not exist.";
+
+/// `spec init --help`: when nothing is written (D-131).
 const SPEC_INIT_EXIT_CODES: &str = "\
-Exit codes:
-  0  the contract was written, printed, or every variable was already declared
-  2  nothing was written: no variables to read, nothing to write, a file named
-     by --env or --example that does not exist, a file that does not parse,
-     [vars] already present without --merge, or an unknown component
+Clean: the contract was written, printed, or every variable was already
+declared. Nothing is written when there are no variables to read, nothing to
+write, a file named by --env or --example does not exist, a file does not
+parse, [vars] is already present without --merge, or a component is unknown.
 
 The project's one .evnx.toml is written: the one in force (found at or above
 this directory), else a new one at the git root.";

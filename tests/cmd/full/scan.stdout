@@ -171,7 +171,10 @@ Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
   and the heuristics: Sensitive config key, High-entropy string,
   AWS Secret Access Key.
 
-Exit codes: 0 nothing at or above --severity; 1 findings, or a file that
-could not be read; 2 could not run (bad path, flag or config, nothing scanned).
+Exit codes:
+  0  Ran, nothing to report
+  1  Ran, and found something: findings, problems, a difference, not in sync
+  2  Could not run: usage, config, I/O, or refused before any change
+  141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/scan

@@ -108,14 +108,14 @@ fn run() -> Result<Verdict, EvnxError> {
     //
     // A usage error, `--help` and `--version` are clap's to print; its code
     // (2, 0, 0) is returned, not exited with.
-    let matches = match <Cli as clap::CommandFactory>::command().try_get_matches() {
+    let matches = match evnx::cli::exit_help::command().try_get_matches() {
         Ok(m) => m,
         Err(e) => return clap_done(e),
     };
     let cli = match <Cli as clap::FromArgMatches>::from_arg_matches(&matches) {
         Ok(cli) => cli,
         Err(e) => {
-            return clap_done(e.format(&mut <Cli as clap::CommandFactory>::command()));
+            return clap_done(e.format(&mut evnx::cli::exit_help::command()));
         }
     };
     evnx::utils::ui::set_quiet(cli.quiet);

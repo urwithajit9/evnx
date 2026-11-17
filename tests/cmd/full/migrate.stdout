@@ -153,11 +153,15 @@ Destinations:
                    doppler, infisical, railway
   Uploads:         github (--repo; GITHUB_TOKEN)
 
-Exit codes: 0 done; 1 some GitHub uploads failed; 2 could not run (bad flag, missing
-file, names that collide, a filter that leaves nothing).
-
 TLS (GitHub upload): evnx trusts its bundled root certificates plus any in the PEM bundle
 named by SSL_CERT_FILE or the directory named by SSL_CERT_DIR. Behind a TLS-inspecting
 proxy, set SSL_CERT_FILE to your organisation's CA bundle.
+
+Exit codes:
+  0  Ran, nothing to report
+  1  Ran, and found something: findings, problems, a difference, not in sync
+  2  Could not run: usage, config, I/O, or refused before any change
+  4  Declined: answered no, or a confirmation was needed with no terminal and no --yes
+  141  Output closed early (broken pipe)
 
 📖  Full guide: https://docs.evnx.dev/cli/commands/migrate

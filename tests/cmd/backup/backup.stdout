@@ -32,7 +32,7 @@ Options:
       --verify
           Re-decrypt the backup after writing and verify content integrity.
           
-          Costs one more Argon2id round (a fraction of a second to about a second, depending on the machine) but proves the backup is readable before you discard the source file. Exit code 6 on failure.
+          Costs one more Argon2id round (a fraction of a second to about a second, depending on the machine) but proves the backup is readable before you discard the source file. A failed check exits 2.
 
       --no-color
           Disable colored output
@@ -52,13 +52,12 @@ Options:
 Passphrase: --password-file, then EVNX_PASSWORD, then a prompt (asked twice). A new
 backup needs at least 8 characters from any of them.
 
-Exit codes:
-  0  Backup written (and verified, with --verify)
-  2  Could not run: source file, key file or passphrase (or the confirmation did
-     not match), an output that is the source or a directory, encryption, writing
-     the file, or the integrity check after it (--verify); the message says which
-
 A backup is a file you keep, behind a passphrase you choose; it needs no account
 and no network. To share and version secrets instead, see `evnx cloud push`.
+
+Exit codes:
+  0  Ran, nothing to report
+  2  Could not run: usage, config, I/O, or refused before any change
+  141  Output closed early (broken pipe)
 
 📖  Full guide: https://docs.evnx.dev/cli/commands/backup

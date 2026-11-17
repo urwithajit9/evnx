@@ -23,9 +23,7 @@ pub use add::run as run_add;
 pub use init::run as run_init;
 
 pub mod completions {
-    use crate::cli::Cli;
     use anyhow::{Context, Result};
-    use clap::CommandFactory;
     use clap_complete::{generate, Shell};
 
     /// Print the completion script for `shell`.
@@ -34,7 +32,7 @@ pub mod completions {
     /// straight to stdout: clap_complete panicked on a closed pipe with a
     /// message the broken-pipe hook does not match (I-185, exit 101).
     pub fn run(shell: Shell) -> Result<()> {
-        let mut cmd = Cli::command();
+        let mut cmd = crate::cli::exit_help::command();
         let mut script = Vec::new();
         generate(shell, &mut cmd, "evnx", &mut script);
         crate::utils::term::write_stdout(&script).context("writing the completion script")

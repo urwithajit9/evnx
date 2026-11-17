@@ -29,6 +29,12 @@ Options:
   -V, --version
           Print version
 
+Exit codes:
+  0  Ran, nothing to report
+  1  Ran, and found something: findings, problems, a difference, not in sync
+  2  Could not run: usage, config, I/O, or refused before any change
+  141  Output closed early (broken pipe)
+
 Full guide: https://docs.evnx.dev/cli/commands/spec
 [exit 0]
 
@@ -80,14 +86,18 @@ Files:
       --example <FILE>
           The template that decides which variables are in the contract. Defaults to `.env.example`, or `[defaults] example` from `.evnx.toml`. A file named here must exist.
 
-Exit codes:
-  0  the contract was written, printed, or every variable was already declared
-  2  nothing was written: no variables to read, nothing to write, a file named
-     by --env or --example that does not exist, a file that does not parse,
-     [vars] already present without --merge, or an unknown component
+Clean: the contract was written, printed, or every variable was already
+declared. Nothing is written when there are no variables to read, nothing to
+write, a file named by --env or --example does not exist, a file does not
+parse, [vars] is already present without --merge, or a component is unknown.
 
 The project's one .evnx.toml is written: the one in force (found at or above
 this directory), else a new one at the git root.
+
+Exit codes:
+  0  Ran, nothing to report
+  2  Could not run: usage, config, I/O, or refused before any change
+  141  Output closed early (broken pipe)
 [exit 0]
   ok: the --help example names django,postgres,redis
 

@@ -82,9 +82,11 @@ Examples:
   evnx doctor --strict --format json      # a CI gate: warnings fail too
   evnx doctor --skip-without-env          # a pre-commit hook on a fresh clone
 
-Exit codes: 0 healthy (warnings pass unless --strict); 1 problems found;
-2 could not run (bad path or flag, nothing to diagnose), or a check could
-not finish.
+Exit codes:
+  0  Ran, nothing to report
+  1  Ran, and found something: findings, problems, a difference, not in sync
+  2  Could not run: usage, config, I/O, or refused before any change
+  141  Output closed early (broken pipe)
 
 Full guide: https://docs.evnx.dev/cli/commands/doctor
 [exit 0]
