@@ -676,7 +676,10 @@ mod backup_restore {
         );
         out.assert_code(5);
         let full = p.join("out.txt.restored");
-        out.assert_contains(&format!("Full path: {}", full.display()));
+        // The full path is printed canonical: on macOS the temp folder
+        // `/var/folders/...` is really `/private/var/folders/...`.
+        let shown = p.path().canonicalize().unwrap().join("out.txt.restored");
+        out.assert_contains(&format!("Full path: {}", shown.display()));
         out.assert_contains("holds plaintext secrets");
         let mode = std::fs::metadata(&full).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
@@ -990,10 +993,10 @@ mod update {
             .unwrap_or_else(|| panic!("the running copy is not listed: {v}"));
         assert_eq!(this["runs"], false);
         assert_eq!(this["version"], VERSION);
-        assert!(this["path"]
-            .as_str()
-            .unwrap()
-            .ends_with("target/release/evnx"));
+        // Windows prints `target\release\evnx.exe`.
+        let path = this["path"].as_str().unwrap().replace('\\', "/");
+        let path = path.strip_suffix(".exe").unwrap_or(&path);
+        assert!(path.ends_with("target/release/evnx"), "{path}");
         let pretty = install.run_with(
             &["update", "--list"],
             &[("PATH", "/usr/bin:/bin"), ("HOME", "/nonexistent-home")],
