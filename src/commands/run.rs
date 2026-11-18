@@ -10,6 +10,7 @@ use crate::core::Parser;
 /// Read `env`, then run `command` with its variables. The result is the
 /// command's code (`inject::ChildExit`) or an error before it started; with no
 /// masking on Unix the command replaces evnx and this does not return.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     env: &str,
     include: Option<&[String]>,
@@ -17,6 +18,7 @@ pub fn run(
     allow_unsafe_names: bool,
     mask: bool,
     verbose: bool,
+    prefer: inject::Prefer,
     command: &[String],
 ) -> Result<()> {
     let (program, args) = command
@@ -39,6 +41,11 @@ pub fn run(
         );
     }
     inject::check_names(&vars, allow_unsafe_names, env, &format!("edit {env}"))?;
+
+    // After the name check (which looks at the file's names whichever side
+    // wins) and before the masker, so it holds what the child really gets.
+    let shadowed = prefer.resolve(&mut vars);
+    inject::report_shadowed(prefer, &shadowed, verbose);
 
     let masker = mask.then(|| inject::Masker::new(&vars)).flatten();
     let status = inject::run_with_env(program, args, &vars, masker.as_ref());

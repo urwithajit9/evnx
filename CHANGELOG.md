@@ -255,6 +255,17 @@ new `network` field below.
 
 ### Added
 
+- **`evnx run --prefer env|vault` and `evnx cloud run --prefer env|vault`.**
+  The default, `vault`, is today's behaviour: the env file or vault replaces a
+  variable your environment already holds. `--prefer env` keeps a variable that
+  is already set (an empty one counts as set) and only fills the names you left
+  unset, so `DB_URL=postgres://localhost evnx run --prefer env -- npm test`
+  tests against a local value. A stderr line names what was kept (names only,
+  never values; not under `-q`); with the default, `--verbose` names what was
+  replaced. A kept value is not masked in the command's output, and the
+  unsafe-name check still runs on the file's or vault's names. `cloud run
+  --allow-override` (several vaults) is unchanged.
+
 - **`evnx set` and `evnx get`: one variable, in place.** `evnx set NAME[=VALUE]`
   changes one line of the env file and keeps its position, comments, `export`
   prefix and quoting; a name that is not there is appended. The file is written

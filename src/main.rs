@@ -1183,6 +1183,7 @@ fn run() -> Result<Verdict, EvnxError> {
             allow_unsafe_names,
             mask,
             no_mask,
+            prefer,
             command,
         } => {
             let env = resolve_env(
@@ -1198,6 +1199,7 @@ fn run() -> Result<Verdict, EvnxError> {
                 allow_unsafe_names,
                 evnx::core::inject::masking(mask, no_mask),
                 cli.verbose,
+                prefer,
                 &command,
             )
             .map(clean)

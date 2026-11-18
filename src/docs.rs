@@ -369,6 +369,11 @@ pub const RUN: CommandDoc = CommandDoc {
     url: "https://docs.evnx.dev/cli/commands/run",
     description: "Run a command with a .env's variables, secrets masked in its output",
     after_help: "\
+Which value wins: by default the env file replaces a variable your environment\n\
+already holds. --prefer env reverses that, so a local value is kept and the file\n\
+only fills the names you did not set. Testing with a local value:\n\
+\x20 DB_URL=postgres://localhost evnx run --prefer env -- npm test\n\
+\n\
 Signals and exit (Unix): without masking the command replaces evnx, so signals,\n\
 the terminal and the exit status are the command's own. With masking evnx stays\n\
 to filter the output and passes SIGTERM, SIGHUP, SIGQUIT and SIGINT on to the\n\

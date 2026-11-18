@@ -57,6 +57,7 @@ pub fn run(
     mask: bool,
     allow_override: bool,
     verbose: bool,
+    prefer: crate::core::inject::Prefer,
     command: Vec<String>,
 ) -> Result<()> {
     let (program, args) = command
@@ -193,6 +194,10 @@ pub fn run(
         "the vault",
         "push to this vault",
     )?;
+
+    // After the name check, before the masker: it holds what the child gets.
+    let shadowed = prefer.resolve(&mut env_vars);
+    crate::core::inject::report_shadowed(prefer, &shadowed, verbose);
 
     let masker = mask
         .then(|| crate::core::inject::Masker::new(&env_vars))

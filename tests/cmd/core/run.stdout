@@ -34,6 +34,17 @@ Options:
       --no-mask
           Never mask the command's output
 
+      --prefer <SIDE>
+          Which side wins when a variable is set both in your environment and in the env file: `vault` (default) or `env`.
+          
+          `vault` lets the vault or env file replace what your environment holds (today's behaviour). `env` keeps a variable your environment already holds, even an empty one, and only fills the names it leaves unset: for testing with a local value over a shared one. A line on stderr names what was kept, never a value. Names are checked either way; a kept value is not masked, since evnx did not inject it.
+
+          Possible values:
+          - vault: The vault or env file wins: today's behaviour
+          - env:   A variable already set in the environment wins (even when empty); the vault or file only fills names that are unset
+          
+          [default: vault]
+
       --no-color
           Disable colored output
 
@@ -48,6 +59,11 @@ Options:
 
   -V, --version
           Print version
+
+Which value wins: by default the env file replaces a variable your environment
+already holds. --prefer env reverses that, so a local value is kept and the file
+only fills the names you did not set. Testing with a local value:
+  DB_URL=postgres://localhost evnx run --prefer env -- npm test
 
 Signals and exit (Unix): without masking the command replaces evnx, so signals,
 the terminal and the exit status are the command's own. With masking evnx stays

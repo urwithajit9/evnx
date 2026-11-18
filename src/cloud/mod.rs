@@ -164,6 +164,7 @@ fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool
             allow_unsafe_names,
             mask,
             no_mask,
+            prefer,
             command,
         } => run::run(
             server_override,
@@ -176,6 +177,7 @@ fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool
             crate::core::inject::masking(mask, no_mask),
             allow_override,
             verbose,
+            prefer,
             command,
         ),
         CloudCommands::Watch {

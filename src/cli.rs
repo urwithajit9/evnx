@@ -1892,6 +1892,19 @@ pub enum CloudCommands {
         #[arg(long)]
         no_mask: bool,
 
+        /// Which side wins when a variable is set both in your environment and
+        /// in the vault: `vault` (default) or `env`.
+        ///
+        /// `vault` lets the vault replace what your environment holds (today's
+        /// behaviour).
+        /// `env` keeps a variable your environment already holds, even an
+        /// empty one, and only fills the names it leaves unset: for testing with
+        /// a local value over a shared one. A line on stderr names what was
+        /// kept, never a value. Names are checked either way; a kept value is
+        /// not masked, since evnx did not inject it.
+        #[arg(long, value_enum, value_name = "SIDE", default_value = "vault")]
+        prefer: crate::core::inject::Prefer,
+
         /// The command to run, after `--`.
         ///
         /// `last = true` makes the separator mandatory, so a flag meant for the
@@ -3738,6 +3751,19 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         /// Never mask the command's output.
         #[arg(long)]
         no_mask: bool,
+
+        /// Which side wins when a variable is set both in your environment and
+        /// in the env file: `vault` (default) or `env`.
+        ///
+        /// `vault` lets the vault or env file replace what your environment holds
+        /// (today's behaviour).
+        /// `env` keeps a variable your environment already holds, even an
+        /// empty one, and only fills the names it leaves unset: for testing with
+        /// a local value over a shared one. A line on stderr names what was
+        /// kept, never a value. Names are checked either way; a kept value is
+        /// not masked, since evnx did not inject it.
+        #[arg(long, value_enum, value_name = "SIDE", default_value = "vault")]
+        prefer: crate::core::inject::Prefer,
 
         /// The command to run, after `--`.
         #[arg(
