@@ -302,9 +302,21 @@ if $bash_ok && [ -f "$HOME_/.config/fish/config.fish" ] \
 else bad "modify_path_zsh_bash_fish_targets"; fi
 
 # An unknown shell is told what to do and nothing is written, even with the variable.
+# True when the home folder holds nothing but `.local` and `.config` (a glob
+# loop, not `ls | grep`, so any file name is handled).
+home_has_only_local_and_config() {
+    for f in "$HOME_"/* "$HOME_"/.[!.]* "$HOME_"/..?*; do
+        [ -e "$f" ] || continue
+        case "${f##*/}" in
+            .local | .config) ;;
+            *) return 1 ;;
+        esac
+    done
+    return 0
+}
 fresh modify-other
 install "" SHELL=/bin/tcsh EVNX_MODIFY_PATH=1
-if [ $CODE -eq 0 ] && has "Use it now" && has "nothing was offered" && [ -z "$(ls -A "$HOME_" | grep -v '^\.local$\|^\.config$')" ]; then
+if [ $CODE -eq 0 ] && has "Use it now" && has "nothing was offered" && home_has_only_local_and_config; then
     ok "modify_path_unknown_shell_writes_nothing"
 else bad "modify_path_unknown_shell_writes_nothing"; fi
 
