@@ -1857,6 +1857,22 @@ pub enum CloudCommands {
         #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..))]
         version: Option<i32>,
 
+        /// Refuse to run when a vault is below this version.
+        ///
+        /// Checked for each vault before the master password is asked for:
+        /// a server that serves an old version (a rollback) must not quietly
+        /// run a deploy with stale secrets. Exits 2 and the command does not
+        /// run. With `--version V`, V below N is refused without any request.
+        /// Also read from `EVNX_MIN_VERSION`, which the command does not
+        /// inherit.
+        #[arg(
+            long,
+            value_name = "N",
+            env = "EVNX_MIN_VERSION",
+            value_parser = clap::value_parser!(i32).range(1..)
+        )]
+        min_version: Option<i32>,
+
         /// Inject only variables whose name matches one of these globs.
         ///
         /// Example: --include "DB_*,AWS_*"

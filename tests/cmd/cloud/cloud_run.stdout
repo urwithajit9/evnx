@@ -38,6 +38,13 @@ Options:
       --version <N>
           Version to inject. Defaults to the latest
 
+      --min-version <N>
+          Refuse to run when a vault is below this version.
+          
+          Checked for each vault before the master password is asked for: a server that serves an old version (a rollback) must not quietly run a deploy with stale secrets. Exits 2 and the command does not run. With `--version V`, V below N is refused without any request. Also read from `EVNX_MIN_VERSION`, which the command does not inherit.
+          
+          [env: EVNX_MIN_VERSION=]
+
       --include <GLOB>
           Inject only variables whose name matches one of these globs.
           

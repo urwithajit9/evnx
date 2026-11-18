@@ -510,7 +510,7 @@ pub fn pull(
     // or "acme/shared v3 + acme/prod v7" for a merge.
     let (plaintext, what, production): (Vec<u8>, String, bool) = if multi {
         let merged =
-            super::merge::fetch_merged(&client, vault_refs, password_stdin, allow_override)?;
+            super::merge::fetch_merged(&client, vault_refs, password_stdin, allow_override, None)?;
         let text = merged.to_env_text();
         (text.to_vec(), merged.describe(), merged.is_production())
     } else {

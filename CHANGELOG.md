@@ -262,6 +262,13 @@ new `network` field below.
 
 ### Added
 
+- **`evnx cloud run --min-version N` (or `EVNX_MIN_VERSION`).** Refuses to
+  run, with exit 2, when a vault is below version N, so a server that serves an
+  old version cannot make a deploy run with stale secrets. It applies to each
+  `--vault`, is checked before the master password is asked for, and names
+  every vault that is too old; the command does not run. `--version V` with V
+  below N is refused before any request. The variable is not passed to the
+  command.
 - **`run` and `cloud run` warn about proxy and certificate names.**
   `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`,
   `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` and
