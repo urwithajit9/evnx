@@ -202,6 +202,105 @@ pub fn check_names(
     ))
 }
 
+/// Which side wins when a name is in evnx's own environment and also in the
+/// variables being injected (`--prefer`, WP-11b).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum Prefer {
+    /// The vault or env file wins: today's behaviour.
+    #[default]
+    Vault,
+    /// A variable already set in the environment wins (even when empty); the
+    /// vault or file only fills names that are unset.
+    Env,
+}
+
+/// What [`Prefer::resolve`] decided. Names only; no value is kept here.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Shadowed {
+    /// Names whose environment value was kept over a different injected one
+    /// (`--prefer env`).
+    pub kept: Vec<String>,
+    /// Names whose environment value was replaced by a different injected one
+    /// (the default).
+    pub replaced: Vec<String>,
+}
+
+impl Prefer {
+    /// Apply the precedence to `vars`: with [`Prefer::Env`], names already set
+    /// in the environment (an empty value counts as set) are removed, so what
+    /// remains is exactly what the child receives from evnx, and the masker is
+    /// built from it. Returns the names where the two sides held different
+    /// values. `current` reads a name from the environment.
+    pub fn resolve_with(
+        self,
+        vars: &mut IndexMap<String, String>,
+        current: impl Fn(&str) -> Option<std::ffi::OsString>,
+    ) -> Shadowed {
+        let mut shadowed = Shadowed::default();
+        let mut drop: Vec<String> = Vec::new();
+        for (name, value) in vars.iter() {
+            let Some(existing) = current(name) else {
+                continue;
+            };
+            let differs = existing.to_str() != Some(value.as_str());
+            match self {
+                Prefer::Env => {
+                    if differs {
+                        shadowed.kept.push(name.clone());
+                    }
+                    drop.push(name.clone());
+                }
+                Prefer::Vault => {
+                    if differs {
+                        shadowed.replaced.push(name.clone());
+                    }
+                }
+            }
+        }
+        for name in drop {
+            if let Some(mut v) = vars.shift_remove(&name) {
+                zeroize::Zeroize::zeroize(&mut v);
+            }
+        }
+        shadowed
+    }
+
+    /// [`Self::resolve_with`] against the process environment.
+    pub fn resolve(self, vars: &mut IndexMap<String, String>) -> Shadowed {
+        self.resolve_with(vars, |n| std::env::var_os(n))
+    }
+}
+
+/// The one stderr line about names where one side won over a different value
+/// on the other (names only, never a value or a length). With `--prefer env`
+/// it prints unless `-q`; with the default it prints only with `--verbose`,
+/// so today's output does not change.
+pub fn report_shadowed(prefer: Prefer, shadowed: &Shadowed, verbose: bool) {
+    if crate::utils::ui::is_quiet() {
+        return;
+    }
+    // `--verbose` lists every name; otherwise a long list is shortened.
+    let list = |names: &[String]| {
+        if verbose {
+            names.join(", ")
+        } else {
+            crate::utils::string::name_list(names)
+        }
+    };
+    match prefer {
+        Prefer::Env if !shadowed.kept.is_empty() => {
+            eprintln!("  kept from your environment: {}", list(&shadowed.kept));
+        }
+        Prefer::Vault if verbose && !shadowed.replaced.is_empty() => {
+            eprintln!(
+                "  replaced from the vault or env file: {}",
+                list(&shadowed.replaced)
+            );
+        }
+        _ => {}
+    }
+}
+
 /// How the child is started.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Launch {
@@ -456,6 +555,33 @@ mod tests {
         let err =
             spawn_with_env("evnx-no-such-binary-xyz", &[], &IndexMap::new(), None).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    // ─── precedence (WP-11b) ───────────────────────────────────────────────
+
+    fn env_of(
+        pairs: &[(&'static str, &'static str)],
+    ) -> impl Fn(&str) -> Option<std::ffi::OsString> {
+        let m: Vec<(&'static str, &'static str)> = pairs.to_vec();
+        move |n| m.iter().find(|(k, _)| *k == n).map(|(_, v)| (*v).into())
+    }
+
+    #[test]
+    fn prefer_env_drops_set_names_and_reports_only_differing_ones() {
+        let mut v = vars(&[("A", "file"), ("B", "same"), ("C", "file"), ("D", "file")]);
+        let s = Prefer::Env.resolve_with(&mut v, env_of(&[("A", "env"), ("B", "same"), ("C", "")]));
+        assert_eq!(v.keys().collect::<Vec<_>>(), ["D"]);
+        assert_eq!(s.kept, ["A", "C"]);
+        assert!(s.replaced.is_empty());
+    }
+
+    #[test]
+    fn prefer_vault_keeps_everything_and_reports_replaced() {
+        let mut v = vars(&[("A", "file"), ("B", "same")]);
+        let s = Prefer::Vault.resolve_with(&mut v, env_of(&[("A", "env"), ("B", "same")]));
+        assert_eq!(v.len(), 2);
+        assert_eq!(s.replaced, ["A"]);
+        assert!(s.kept.is_empty());
     }
 
     // ─── masking (RM-43) ───────────────────────────────────────────────────
