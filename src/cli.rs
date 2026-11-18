@@ -810,8 +810,16 @@ pub struct PlatformPushArgs {
     /// other environments is not deleted: this environment is taken out of its
     /// targets instead. A key that is in the local file with an empty value
     /// (`KEY=`) is not remote-only and is never pruned.
+    ///
+    /// When that would remove more than half of the variables in this
+    /// environment (and there are at least 4), it stops unless --prune-all is
+    /// also given: a wrong project or target would otherwise wipe it.
     #[arg(long)]
     pub prune: bool,
+
+    /// Allow --prune to remove more than half of the remote variables.
+    #[arg(long, requires = "prune")]
+    pub prune_all: bool,
 
     /// The type of a variable that does not exist on Vercel yet.
     ///

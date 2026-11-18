@@ -99,6 +99,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   10), then asks (default No). `--yes` goes ahead; without a terminal and
   without `--yes` it exits 4. A deploy script that shrinks a vault needs
   `--yes`.
+- **`platform push --prune` stops when it would remove most of an environment**
+  (WP-12). If the prune would delete or detach more than half of the
+  variables in the environment (and there are at least 4), it exits 2 after
+  showing the plan, unless `--prune-all` is also given. `--dry-run` is not
+  affected.
+- **`platform` warns about a readable token file and names an overridden API**
+  (WP-12). A `--token-file` that group or others can read gets a warning with
+  the `chmod 600` that fixes it (Unix). When `--api-url` or
+  `EVNX_VERCEL_API_URL` points elsewhere than api.vercel.com, stderr gets one
+  `API  scheme://host:port` line, since the token is sent there.
 
 ### Breaking: one flag vocabulary (WP-8)
 
@@ -390,6 +400,8 @@ new `network` field below.
 - **`org accept --token-stdin`** (WP-12) reads the invitation token from one
   line of stdin; with no token and a terminal, `org accept` asks for it with
   the input hidden. With neither, it exits 2.
+- **`platform push --prune-all`** (WP-12): the opt-in for a prune that removes
+  more than half of the remote variables. It needs `--prune`.
 
 ## [0.14.1] - 2026-11-14
 

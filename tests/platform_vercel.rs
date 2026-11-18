@@ -139,7 +139,21 @@ impl Vercel {
     }
 }
 
+/// `evnx` against the mock. The `API  <address>` line that an overridden API
+/// prints (WP-12) is taken out of stderr, so the tests that count its lines
+/// keep counting warnings; `run_raw` keeps it.
 fn run(p: &Project, url: &str, args: &[&str]) -> Output {
+    let mut out = run_raw(p, url, args);
+    out.stderr = out
+        .stderr
+        .lines()
+        .filter(|l| !l.starts_with("API  "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    out
+}
+
+fn run_raw(p: &Project, url: &str, args: &[&str]) -> Output {
     run_with(
         p.path(),
         args,
@@ -2093,7 +2107,7 @@ fn prune_deletes_vercel_only_variables_by_id_and_takes_a_shared_one_out_of_this_
     let out = run(
         &p,
         &v.url(),
-        &push_args(&["--prune", "--yes", "--no-gitignore"]),
+        &push_args(&["--prune", "--prune-all", "--yes", "--no-gitignore"]),
     );
     out.assert_code(0);
     quiet_push(&out);
@@ -2125,7 +2139,12 @@ fn quiet_prune_with_yes_is_silent_on_stdout() {
     #[cfg(unix)]
     let p = p.mode(".env.development", 0o600);
     let mut args = vec!["-q"];
-    args.extend(push_args(&["--prune", "--yes", "--no-gitignore"]));
+    args.extend(push_args(&[
+        "--prune",
+        "--prune-all",
+        "--yes",
+        "--no-gitignore",
+    ]));
     let out = run(&p, &v.url(), &args);
     out.assert_code(0);
     quiet_push(&out);
@@ -2225,7 +2244,7 @@ fn a_refused_delete_is_exit_1_naming_the_key_and_code_and_never_the_answer() {
     let out = run(
         &p,
         &v.url(),
-        &push_args(&["--prune", "--yes", "--no-gitignore"]),
+        &push_args(&["--prune", "--prune-all", "--yes", "--no-gitignore"]),
     );
     out.assert_code(1);
     quiet_push(&out);
@@ -2416,7 +2435,14 @@ fn prune_in_a_custom_environment_deletes_its_own_and_detaches_the_shared() {
     let out = run(
         &p,
         &v.url(),
-        &push_args(&["--target", "staging", "--prune", "--yes", "--no-gitignore"]),
+        &push_args(&[
+            "--target",
+            "staging",
+            "--prune",
+            "--prune-all",
+            "--yes",
+            "--no-gitignore",
+        ]),
     );
     out.assert_code(0);
     quiet_push(&out);
@@ -2542,6 +2568,7 @@ fn git_branch_with_prune_deletes_only_the_branchs_own_entries() {
             "--git-branch",
             "feature",
             "--prune",
+            "--prune-all",
             "--yes",
             "--no-gitignore",
         ]),
@@ -2604,4 +2631,134 @@ fn without_git_branch_branch_scoped_preview_variables_are_skipped_and_the_warnin
         "{}",
         out.stderr
     );
+}
+
+// ── WP-12: token file mode, API address, prune guard ─────────────────────────
+
+/// `platform diff` with the token in a file, not in `VERCEL_TOKEN`.
+fn diff_with_token_file(mode: u32) -> Output {
+    let v = Vercel::start_for_diff();
+    let p = diff_project().file("tok", &format!("{TOKEN}\n"));
+    #[cfg(unix)]
+    let p = p.mode("tok", mode);
+    #[cfg(not(unix))]
+    let _ = mode;
+    let args = diff_args(&["--token-file", "tok"]);
+    run_with(
+        p.path(),
+        &args,
+        &[
+            ("EVNX_VERCEL_API_URL", v.url().as_str()),
+            ("VERCEL_PROJECT_ID", ""),
+            ("VERCEL_ORG_ID", ""),
+            ("VERCEL_TOKEN", ""),
+        ],
+        None,
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn wp12_token_file_world_readable_warns() {
+    let out = diff_with_token_file(0o644);
+    out.assert_contains("tok is readable by other users");
+    out.assert_contains("chmod 600");
+    out.assert_not_contains(TOKEN);
+}
+
+#[cfg(unix)]
+#[test]
+fn wp12_token_file_0600_silent() {
+    let out = diff_with_token_file(0o600);
+    out.assert_not_contains("readable by other users");
+    out.assert_not_contains(TOKEN);
+}
+
+#[test]
+fn wp12_api_override_prints_host_not_token() {
+    let v = Vercel::start_for_diff();
+    let p = diff_project();
+    let out = run_raw(&p, &v.url(), &diff_args(&[]));
+    // The address, as scheme://host:port.
+    out.assert_contains(&format!("API  {}", v.url()));
+    out.assert_not_contains(TOKEN);
+}
+
+#[test]
+fn wp12_prune_over_half_needs_prune_all() {
+    // prune_project removes 3 of the 5 variables in development.
+    let mut v = Vercel::start_for_diff();
+    let deletes: Vec<Mock> = ["e1", "e2", "e4"]
+        .iter()
+        .map(|id| v.delete(id, 200, 0))
+        .collect();
+    let leave = v.patch("e1", json!({ "target": ["preview"] }), 0);
+    let p = prune_project();
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--prune", "--yes", "--no-gitignore"]),
+    );
+    out.assert_code(2);
+    quiet_push(&out);
+    out.assert_contains("--prune-all");
+    out.assert_contains("3 of the 5 variables");
+    for m in &deletes {
+        m.assert();
+    }
+    leave.assert();
+}
+
+#[test]
+fn wp12_prune_all_goes_ahead() {
+    let mut v = Vercel::start_for_diff();
+    let del_e2 = v.delete("e2", 200, 1);
+    let del_e4 = v.delete("e4", 200, 1);
+    let leave = v.patch("e1", json!({ "target": ["preview"] }), 1);
+    let p = prune_project();
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--prune", "--prune-all", "--yes", "--no-gitignore"]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    del_e2.assert();
+    del_e4.assert();
+    leave.assert();
+}
+
+#[test]
+fn wp12_prune_under_half_unchanged() {
+    // Only NEW_REMOTE (e4) is Vercel-only: 1 of 5.
+    let mut v = Vercel::start_for_diff();
+    let del_e4 = v.delete("e4", 200, 1);
+    let p = push_project(&format!(
+        "API_URL={R_API}\nDB_URL={L_DB}\nLOG_LEVEL={R_LOG}\nREDIS_URL=\n"
+    ));
+    let out = run(
+        &p,
+        &v.url(),
+        &push_args(&["--prune", "--yes", "--no-gitignore", "--only-new"]),
+    );
+    out.assert_code(0);
+    quiet_push(&out);
+    out.assert_not_contains("--prune-all");
+    del_e4.assert();
+}
+
+#[test]
+fn wp12_prune_all_needs_prune() {
+    let s = Server::new();
+    let p = prune_project();
+    let out = run(&p, &s.url(), &push_args(&["--prune-all", "--yes"]));
+    out.assert_code(2);
+}
+
+#[test]
+fn wp12_prune_dry_run_is_not_stopped() {
+    let v = Vercel::start_for_diff();
+    let p = prune_project();
+    let out = run(&p, &v.url(), &push_args(&["--prune", "--dry-run"]));
+    out.assert_code(0);
 }
