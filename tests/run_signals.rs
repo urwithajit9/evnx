@@ -464,7 +464,10 @@ fn x6_a_failing_child_adds_nothing_to_stderr() {
 /// forwarded signals while it spawns; if that mask leaked into the child, a
 /// SIGTERM sent to evnx would be forwarded to a child that can never receive it.
 /// (The standard library clears the mask on some versions and not on others,
-/// so this is pinned here rather than assumed.)
+/// so this is pinned here rather than assumed.) Linux only: it reads
+/// `/proc/self/status`, which macOS does not have. On macOS the S1-S4 rows
+/// cover the same failure, since a blocked mask makes them time out.
+#[cfg(target_os = "linux")]
 #[test]
 fn s10_the_command_starts_with_no_signal_blocked() {
     let p = Project::new().env(ENV);
