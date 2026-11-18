@@ -2378,109 +2378,7 @@ pub enum Commands {
     #[command(mut_arg("yes", |a| a.help("Skip all prompts. Creates blank .env files unless --blueprint names a stack.")))]
     #[command(mut_arg("dry_run", |a| a.help("Show what would be written — the template, `.env`, `.gitignore` and `.evnx.toml` — and write nothing. Asks no confirmation; a menu is still shown when nothing was named.")))]
     #[command(mut_arg("json", |a| a.help("Print the result as one JSON document on stdout (needs --yes or --dry-run: it never asks). The same fields as `evnx add --json`.")))]
-    Init {
-        #[command(flatten)]
-        dir: args::DirArgs,
-
-        #[command(flatten)]
-        confirm: args::ConfirmArgs,
-
-        /// Generate from a named stack blueprint, e.g. `t3_modern`.
-        ///
-        /// Selects Blueprint mode without prompting. An unknown id is an error
-        /// that lists the valid ones, so this doubles as the way to see them.
-        ///
-        /// A blueprint is a shorthand for a component list — `t3_modern` is
-        /// `--with nextjs,postgresql,clerk,aws_s3,stripe,github_actions,vercel`.
-        #[arg(long, value_name = "ID", conflicts_with = "with")]
-        blueprint: Option<String>,
-
-        /// Name the components directly, e.g. `--with nextjs,postgresql,stripe`.
-        ///
-        /// Ten fixed blueprints cannot span the stacks people have — "Django +
-        /// Kafka + Clerk" needed someone to add a `django_kafka_clerk` stack
-        /// before it could be expressed. This names the pieces instead.
-        ///
-        /// Repeatable and comma-separated: `--with a,b --with c` is the same as
-        /// `--with a,b,c`. An unknown name is an error that suggests near
-        /// matches; `--list-components` prints them all.
-        #[arg(long, value_name = "LIST", value_delimiter = ',', num_args = 1..)]
-        with: Vec<String>,
-
-        /// Print every component `--with` accepts, and exit.
-        #[arg(long, conflicts_with_all = ["with", "blueprint", "yes"])]
-        list_components: bool,
-
-        /// Accept what the project declares, without asking.
-        ///
-        /// Run interactively with no flags, `init` reads `package.json`,
-        /// `docker-compose.yml` and friends and proposes what it finds. This is
-        /// how a script says yes to that proposal.
-        ///
-        /// Detection is a heuristic — a `stripe` dependency in a test fixture
-        /// looks exactly like one in a checkout flow. Prefer `--with` where the
-        /// answer is known; this is for bootstrapping a project you trust.
-        // ⚠️ No longer conflicts with `--yes`. `--detect` already implies it —
-        // `init/mod.rs` passes `yes: yes || detect_flag`, because accepting the
-        // proposal without asking is what detection is for. Rejecting the
-        // combination meant a CI script that passes `--yes` out of habit got an
-        // argument error for asking twice for the same thing.
-        #[arg(long, conflicts_with_all = ["with", "blueprint"])]
-        detect: bool,
-
-        /// Build the template from the variables the code actually reads.
-        ///
-        /// Scans the project's source and compares it to `.env.example`, so it
-        /// finds both what is missing and what is declared but named nowhere —
-        /// the second being something no other evnx command can tell you, since
-        /// they all treat `.env.example` as the definition of "required".
-        ///
-        /// A heuristic. Variables consumed entirely inside a library, and
-        /// dynamic access like `process.env[key]`, are invisible in principle.
-        ///
-        /// Only ever appends, so it cannot be combined with --force.
-        // `force` used to be accepted here and silently ignored (I-012).
-        #[arg(long, conflicts_with_all = ["with", "blueprint", "detect", "list_components", "force"])]
-        from_source: bool,
-
-        /// Overwrite an existing .env.example.
-        ///
-        /// `.env.example` is normally a tracked, hand-maintained file, so init
-        /// asks before replacing it and refuses outright under --yes. This is how
-        /// a script says it meant to replace it. `.env` is never overwritten.
-        /// Not valid with --from-source, which only appends.
-        #[arg(long)]
-        force: bool,
-
-        /// Write `.env.<NAME>` instead of `.env`.
-        ///
-        /// `--env-name production` creates or fills `.env.production` from the
-        /// template; the template and `.gitignore` are the project's, as without
-        /// it. Defaults to `[defaults] env_name` from `.evnx.toml`.
-        #[arg(long, value_name = "NAME")]
-        env_name: Option<String>,
-
-        #[command(flatten)]
-        dry: args::DryRunArgs,
-
-        #[command(flatten)]
-        output: args::OutputArgs,
-
-        /// Make this folder a project of its own: write `.evnx.toml` here,
-        /// even when the repository's root already has one, and do not take
-        /// `[defaults]` from it. Without it, a folder inside a repository
-        /// records its names in the root's `.evnx.toml`.
-        #[arg(long)]
-        here: bool,
-
-        /// Write no `[vars]` contract into `.evnx.toml`: only the env files and
-        /// `.gitignore`, as `cp .env.example .env` would. The contract is what
-        /// `evnx validate` checks names and formats against; it is safe to
-        /// delete, and `evnx spec init` writes one later. When init adopts named
-        /// env files it still sets `[defaults] env_name`.
-        #[arg(long)]
-        no_contract: bool,
-    },
+    Init(Box<InitArgs>),
 
     /// Add environment variables to existing .env files.
     ///
@@ -2501,44 +2399,7 @@ pub enum Commands {
     #[command(mut_arg("dry_run", |a| a.global(true).help("Show what would be added, skipped and kept; write nothing. Needs no terminal.")))]
     #[command(mut_arg("json", |a| a.global(true).help("Print the result as one JSON document on stdout (needs --yes or --dry-run: it never asks).")))]
     #[command(mut_arg("format", |a| a.global(true)))]
-    Add {
-        #[command(subcommand)]
-        target: Option<AddTarget>,
-
-        /// List every id `add` takes: services, infrastructure, frameworks
-        /// and blueprints.
-        #[arg(long)]
-        list: bool,
-
-        #[command(flatten)]
-        dry: args::DryRunArgs,
-
-        #[command(flatten)]
-        output: args::OutputArgs,
-
-        #[command(flatten)]
-        dir: args::DirArgs,
-
-        #[command(flatten)]
-        confirm: args::ConfirmArgs,
-
-        /// Write to `.env.<NAME>` instead of `.env` (one file per run; loop
-        /// over names for several). `prod` and `.env.prod` both work.
-        /// Defaults to `[defaults] env_name`.
-        #[arg(long, value_name = "NAME", global = true)]
-        env_name: Option<String>,
-
-        /// The template to add names to, from the project folder. Default:
-        /// the environment's own (`.env.<NAME>.example`) when there is one,
-        /// else `[defaults] example`, else `.env.example`.
-        #[arg(long, value_name = "FILE", global = true)]
-        example: Option<String>,
-
-        /// Write only the env file: no names into the template, and no
-        /// template created. For a server that keeps `.env.prod` alone.
-        #[arg(long, global = true, conflicts_with = "example")]
-        no_template: bool,
-    },
+    Add(Box<AddArgs>),
 
     /// Remove variables from the env file, and the template and contract too.
     ///
@@ -2555,76 +2416,7 @@ pub enum Commands {
     )]
     #[command(mut_arg("dry_run", |a| a.help("Show what would be removed; write nothing. Needs no terminal.")))]
     #[command(mut_arg("json", |a| a.help("Print the result as one JSON document (needs --yes or --dry-run; with --check it never asks, so neither is needed).")))]
-    Remove {
-        /// Variable names, or quoted globs (`'TEST_*'`). Case-sensitive.
-        #[arg(required = true, value_name = "NAME")]
-        names: Vec<String>,
-
-        #[command(flatten)]
-        dir: args::DirArgs,
-
-        #[command(flatten)]
-        dry: args::DryRunArgs,
-
-        #[command(flatten)]
-        confirm: args::ConfirmArgs,
-
-        #[command(flatten)]
-        output: args::OutputArgs,
-
-        /// Remove from `.env.<NAME>` instead of `.env`. Defaults to
-        /// `[defaults] env_name`.
-        #[arg(long, value_name = "NAME", conflicts_with = "all")]
-        env_name: Option<String>,
-
-        /// Also remove from the template (`.env.example`, or `[defaults] example`).
-        #[arg(long)]
-        template: bool,
-
-        /// Also remove the `[vars.NAME]` declaration from `.evnx.toml`.
-        #[arg(long)]
-        contract: bool,
-
-        /// Remove from every environment file, the template and the contract.
-        #[arg(long)]
-        all: bool,
-
-        /// A name found nowhere is not an error (for scripts that run twice).
-        #[arg(long)]
-        ignore_missing: bool,
-
-        /// Keep no `.bak` copy of the env files (needs --yes; refused for a
-        /// file git tracks).
-        #[arg(long)]
-        no_backup: bool,
-
-        /// Remove a name even when a line that stays refers to it
-        /// (`URL=http://h/${PORT}`). Without it, remove names those lines and
-        /// changes nothing.
-        #[arg(long)]
-        allow_dangling: bool,
-
-        /// Let a pattern remove every variable in a file (`remove '*'`). Needed
-        /// with --yes or without a terminal; in a terminal, typing the count
-        /// does the same.
-        #[arg(long)]
-        all_names: bool,
-
-        /// Only look: exit 1 if any NAME is still in an environment file, the
-        /// template or `.evnx.toml`, listing where; 0 if it is gone everywhere.
-        ///
-        /// Read-only, for CI. Always looks everywhere (`.env`, every
-        /// `.env.<NAME>`, the template, `[vars]`), so it takes no scope flags.
-        /// Exit 2 means no verdict: a file it cannot read whole.
-        #[arg(
-            long,
-            conflicts_with_all = [
-                "template", "contract", "all", "env_name", "dry_run", "yes",
-                "ignore_missing", "no_backup", "allow_dangling", "all_names",
-            ]
-        )]
-        check: bool,
-    },
+    Remove(Box<RemoveArgs>),
 
     /// Set one variable in the env file, in place.
     ///
@@ -2715,113 +2507,7 @@ pub enum Commands {
     #[command(mut_arg("format", |a| a.ignore_case(true).long_help("Output format. `json` is the machine-readable form, with a `summary` object for `jq`. `github` emits `::error` annotations that appear inline on a pull request.")))]
     #[command(mut_arg("dry_run", |a| a.help("With `--fix`, show what it would change and write nothing").long_help("With `--fix`, show what it would change and write nothing.\n\nNo `.env` change and no backup. The report and the exit code are those of the file as it stands; a secret `--fix` would generate is not shown, because the real run makes a new one.").requires("fix")))]
     #[command(mut_arg("yes", |a| a.help("With `--fix`, apply the fixes without asking").long_help("With `--fix`, apply the fixes without asking.\n\n`--fix` never stops to ask, so this changes nothing today; it is accepted so a script can say so, and holds if a confirmation is ever added.").requires("fix")))]
-    Validate {
-        #[command(flatten)]
-        files: args::FileArgs,
-
-        /// How to read `--env`: `dotenv` or `json`.
-        ///
-        /// `json` takes a flat `{"KEY": "value"}` object, or what
-        /// `evnx parse --format json --values` prints. It is never guessed:
-        /// `.env` text may start with `{`.
-        #[arg(long, value_enum, value_name = "FORMAT", default_value = "dotenv")]
-        input_format: crate::commands::validate::InputFormat,
-
-        /// Also report variables that are present but not declared.
-        ///
-        /// Measured against `.env.example`, or against `[vars]` when the project
-        /// has a contract. Without it, an undeclared variable is not mentioned.
-        #[arg(long)]
-        strict: bool,
-
-        /// Repair what can be repaired, instead of only reporting it.
-        ///
-        /// Fills missing variables, replaces placeholder values and corrects
-        /// boolean traps. Only `.env` is written, the template is never touched,
-        /// and the original is kept beside it as `.env.bak`.
-        ///
-        /// A missing variable gets the template's value. A new secret is
-        /// generated only for one the app holds alone — its own signing key
-        /// (`SECRET_KEY`, `JWT_SECRET`, `SESSION_SECRET`, …) or a password; a
-        /// key a provider issues (`STRIPE_KEY`, an AWS secret, a token) gets a
-        /// placeholder, because evnx cannot invent it. Those are listed under
-        /// "Needs your input", not as fixed, and the run exits 1 until they are
-        /// filled in.
-        ///
-        /// It will not overwrite a value that is not a placeholder. A
-        /// weak secret with a real value behind it is reported and left alone —
-        /// see `--rotate-weak-secrets`.
-        #[arg(long)]
-        fix: bool,
-
-        #[command(flatten)]
-        dry: args::DryRunArgs,
-
-        #[command(flatten)]
-        confirm: args::ConfirmArgs,
-
-        /// With `--fix`, also replace weak secrets that hold a real value.
-        ///
-        /// This destroys credentials, and that is what it is for:
-        /// `DATABASE_PASSWORD="p@ss word#1"` becomes `DATABASE_PASSWORD=ad0da713…c508`.
-        /// Without this flag, `--fix` leaves a weak secret with a real value alone.
-        ///
-        /// The check behind it judges length and wording. It cannot tell a
-        /// placeholder nobody filled in from the real password, short because
-        /// someone chose a short one — and the second is the common case,
-        /// because shortness is what trips it. Whether anything else holds
-        /// the credential is not a fact in the file, so evnx cannot decide it;
-        /// you can.
-        ///
-        /// Rotate at the provider first. A new value here that the provider
-        /// does not have is an outage, not a repair — so a key a provider
-        /// issues is never replaced, even with this flag: only the app's own
-        /// secrets and passwords are.
-        #[arg(long, requires = "fix")]
-        rotate_weak_secrets: bool,
-
-        #[command(flatten)]
-        output: args::OutputArgs<args::ValidateFormat>,
-
-        /// Always exit 0, even when problems are found.
-        ///
-        /// For a step that should report without failing the build. It
-        /// suppresses the findings exit code only — a file that cannot be read
-        /// still exits 2, because "I found nothing" and "I could not look" are
-        /// different answers.
-        #[arg(long)]
-        exit_zero: bool,
-
-        /// Comma-separated list of issue types to ignore
-        ///
-        /// Added to `[validate] ignore` in `.evnx.toml`. An unknown type is an
-        /// error that lists the valid ones, so a typo cannot silence nothing.
-        #[arg(long, value_delimiter = ',')]
-        ignore: Vec<String>,
-
-        /// Accepted and ignored: the URL, port and email checks are on by default.
-        #[arg(long, hide = true)]
-        validate_formats: bool,
-
-        /// Turn off the URL, port and email checks by variable name.
-        ///
-        /// They are on by default and always warnings: a name ending in `_URL`,
-        /// `_URI` or `_ENDPOINT` should hold a URL, one with `PORT` a port from 1
-        /// to 65535, one with `EMAIL` an address. A variable declared in `[vars]`
-        /// is checked against its declared `format` instead, with or without
-        /// this flag. `[validate] validate_formats = false` in `.evnx.toml` does
-        /// the same for the project.
-        #[arg(long)]
-        no_formats: bool,
-
-        /// The lowest severity that fails the run: `error` or `warning`.
-        ///
-        /// Defaults to `error`, or `[validate] fail_on` from `.evnx.toml`.
-        /// `warning` makes warnings exit 1 too, for gates that want them
-        /// fixed. `--exit-zero` still wins.
-        #[arg(long, value_enum, value_name = "LEVEL")]
-        fail_on: Option<crate::commands::validate::FailOn>,
-    },
+    Validate(Box<ValidateArgs>),
 
     /// Detect secrets that look real (AWS keys, tokens, etc.).
     ///
@@ -2831,226 +2517,7 @@ pub enum Commands {
     #[command(after_help = docs::SCAN.after_help, args_conflicts_with_subcommands = true)]
     #[command(mut_arg("format", |a| a.ignore_case(true).long_help("Output format: `pretty`, `json`, `sarif` or `github`.\n\n`sarif` uploads to GitHub's Security tab; `github` emits `::error` annotations inline on a pull request; `json` carries a `summary` object for `jq`.")))]
     #[command(mut_arg("json", |a| a.help("Same as --format json: one JSON document with a `summary` object for `jq`.")))]
-    Scan {
-        #[command(subcommand)]
-        action: Option<ScanAction>,
-
-        /// Files or folders to scan. Repeatable; defaults to the current folder.
-        ///
-        /// A folder is walked. A file named here is always read — whatever
-        /// `--exclude`, `--extensions` or the size limit say — and always
-        /// reported in full, even one git ignores. `-` reads stdin, in memory
-        /// (`git diff | evnx scan -`): as a `.env` when it parses as one,
-        /// otherwise as text. Empty stdin is an error, not a clean result.
-        #[arg(default_value = ".")]
-        path: Vec<String>,
-
-        /// Skip paths in a folder walk. Repeatable; adds to `[scan] exclude`.
-        ///
-        /// A value with `*`, `?` or `[` is a glob, matched against the path
-        /// from the folder and against the file name: `'fixtures/**'`,
-        /// `'*.log'`. Any other value matches a whole path component, or
-        /// several in a row: `--exclude test` skips `test/` and a file named
-        /// `test`, not `latest/` or `contest.py`; `third_party/cache` skips that
-        /// folder wherever it is.
-        ///
-        /// This narrows the scan. Below the folder scanned, `.git`,
-        /// `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`,
-        /// `.turbo`, `__pycache__`, Python virtualenvs (a
-        /// `venv` or `.venv` holding `pyvenv.cfg`) and dependency `vendor`
-        /// folders (beside `go.mod`, `composer.json` or `Gemfile`, or holding
-        /// `modules.txt`) are skipped, unless git tracks files inside them, and
-        /// so is the `.env.example` family; `--include-dir` walks a skipped
-        /// folder. A file named on the command
-        /// line is read regardless.
-        #[arg(long, default_value = ".env.example")]
-        exclude: Vec<String>,
-
-        /// Skip walked files larger than this: `500K`, `5MB`, `2MiB`.
-        ///
-        /// Defaults to 1 MiB, or `[scan] max_file_size` from `.evnx.toml`. A
-        /// skipped file is counted and, with `-v`, listed. A file named on the
-        /// command line is read whatever its size.
-        #[arg(long, value_name = "SIZE", value_parser = crate::core::args::parse_size, allow_hyphen_values = true)]
-        max_file_size: Option<u64>,
-
-        /// Read only files with these extensions in folders (comma-separated:
-        /// `env,yml,json`). By default every file is read, and binary or very
-        /// large files are skipped with a note.
-        ///
-        /// This narrows the scan, and the run says so. A file named on the
-        /// command line is read whatever this says. `[scan] extensions` in
-        /// `.evnx.toml` sets the same thing for a project.
-        #[arg(long, value_delimiter = ',', value_name = "EXT")]
-        extensions: Option<Vec<String>>,
-
-        /// Also report values matching this regular expression. Repeatable.
-        ///
-        /// For the formats evnx does not ship with — an internal token, a
-        /// vendor key shape. `--pattern 'ACME-[A-Z0-9]{32}'` reports matches as
-        /// `Custom pattern 1`, numbered in the order the flags are given.
-        ///
-        /// It takes an expression and nothing else. For a name that means
-        /// something, and for a rule the whole team scans with, declare it under
-        /// `[[scan.patterns]]` in `.evnx.toml` instead; both sets apply
-        /// together.
-        ///
-        /// An expression that does not compile exits 2 — no verdict — rather
-        /// than reporting a clean scan it never ran.
-        #[arg(long, value_name = "REGEX")]
-        pattern: Vec<String>,
-
-        /// Skip values evnx recognises as filler.
-        ///
-        /// `changeme`, `your_api_key_here`, `xxx` and similar. Useful on a first
-        /// run over a template-heavy repository; prefer `--severity high` if the
-        /// goal is simply less noise.
-        #[arg(long, overrides_with = "no_ignore_placeholders")]
-        ignore_placeholders: bool,
-
-        /// Report filler-looking values even when `[scan] ignore_placeholders`
-        /// is `true`. The last of the two flags wins.
-        #[arg(long, overrides_with = "ignore_placeholders")]
-        no_ignore_placeholders: bool,
-
-        /// Lowest severity worth reporting: critical, high, medium or low.
-        ///
-        /// Severity is how bad a finding is if it is real: `critical` for
-        /// cloud, payment and AI keys and private keys, `high` for account
-        /// tokens, database passwords and variables named like a secret, `low`
-        /// for test keys and keys meant to ship in a web page. Filters what is
-        /// reported, counted and exited on. `--severity high` is the usual
-        /// blocking CI gate. Until 0.13.0 this filtered on confidence; that
-        /// is now `--confidence`. Defaults to `low` (report everything), or
-        /// `[scan] severity` from `.evnx.toml`.
-        #[arg(long, value_name = "LEVEL", value_enum, ignore_case = true)]
-        severity: Option<ScanSeverity>,
-
-        /// A rule file for this run, on top of `.evnx/rules/` and your personal
-        /// rules. Repeatable. Same format as those: see `evnx scan rules new`.
-        #[arg(long = "rules", value_name = "FILE")]
-        rule_files: Vec<String>,
-
-        /// Findings accepted earlier: matching ones are reported as `known`
-        /// and do not fail the run.
-        ///
-        /// Defaults to `.evnx/baseline.json` when it exists. Write it with
-        /// `--update-baseline`. It holds a fingerprint, a rule and a file per
-        /// finding, never a value, so it is safe to commit.
-        #[arg(long, value_name = "FILE")]
-        baseline: Option<String>,
-
-        /// Write this run's findings to the baseline (`--baseline`, or
-        /// `.evnx/baseline.json`) and exit 0. Run it once to accept what a
-        /// project already has; new findings fail from then on.
-        #[arg(long)]
-        update_baseline: bool,
-
-        /// Lowest confidence worth reporting: high, medium or low.
-        ///
-        /// Confidence is how sure evnx is that a match is a real credential of
-        /// that kind. Combine with `--severity`: both must pass. Defaults to
-        /// `low`, or `[scan] confidence` from `.evnx.toml`.
-        #[arg(long, value_name = "LEVEL", value_enum, ignore_case = true)]
-        confidence: Option<ScanConfidence>,
-
-        #[command(flatten)]
-        output: args::OutputArgs<args::ScanFormat>,
-
-        /// Always exit 0, even when secrets are found.
-        ///
-        /// Suppresses exit 1 only. A scan that could not run still exits 2 —
-        /// the flag means "do not fail my build over findings", not "never tell
-        /// me the scan was impossible" (an invalid `--exclude`, a path that does
-        /// not exist, nothing to scan). Files that could not be read are listed and
-        /// counted but are findings-class (exit 1), so this flag lets them pass.
-        #[arg(long)]
-        exit_zero: bool,
-
-        /// Report findings in files git ignores and does not track.
-        ///
-        /// In a git repository a folder walk counts what git would commit: a
-        /// filled-in `.env` that `.gitignore` covers is where secrets belong, so
-        /// its findings are summarised in one line and do not fail the run. This
-        /// lists them as findings instead. A file named on the command line, and
-        /// any folder outside a repository, is always reported in full.
-        #[arg(long)]
-        include_ignored: bool,
-
-        /// Scan what is staged for the next commit, read from the git index.
-        ///
-        /// A file staged and then edited on disk is scanned as staged, because
-        /// that is what the commit records. Paths limit it to staged files
-        /// under them. Nothing staged exits 0. `evnx scan hook install` runs
-        /// this before every commit.
-        #[arg(long)]
-        staged: bool,
-
-        /// Ignore the repository's `.evnx.toml` and use the built-in defaults.
-        ///
-        /// For a CI gate that must not depend on settings the scanned change
-        /// can edit: no disabled rules, no severity floor, no excludes, no
-        /// default `.evnx/baseline.json`. A `--baseline` you name is still
-        /// read.
-        ///
-        /// Still in force: rule files in `.evnx/rules/`, your personal rules
-        /// and `--rules` files, which can only add rules (a rule's own
-        /// `allow` lists apply to that rule alone; none can disable or
-        /// replace one of evnx's), and `evnx:allow` comments inside the
-        /// scanned files, which silence the line they sit on (`-v` lists
-        /// them).
-        #[arg(long)]
-        no_config: bool,
-
-        /// Walk a folder the scan skips by default, by name. Repeatable.
-        ///
-        /// `--include-dir vendor` reads a `vendor/` folder, `--include-dir
-        /// .venv` a virtualenv. Needed only for the folders the run lists as
-        /// "skipped dependency folders", or `.next` and the like.
-        #[arg(long, value_name = "NAME")]
-        include_dir: Vec<String>,
-
-        /// Read a symlinked file in a folder walk when its target is inside
-        /// the scanned folder.
-        ///
-        /// By default a symlink is skipped and counted. A link to a file
-        /// outside the folder, or to a folder, is skipped either way.
-        #[arg(long)]
-        follow_symlinks: bool,
-
-        /// A policy file the repository's `.evnx.toml` cannot lower.
-        ///
-        /// Read after `.evnx.toml`, and also with `--no-config`. TOML with
-        /// three optional keys: `required_rules` (detectors that may not be
-        /// disabled), `max_severity_floor` (the highest `--severity` or
-        /// `[scan] severity` allowed) and `allow_disable` (`false`, or the
-        /// only detectors a repository may disable). A setting that conflicts
-        /// exits 2 before any file is read, naming the key and this file. A
-        /// missing or invalid file exits 2. Also read from `EVNX_POLICY`; the
-        /// flag wins. A hook installed by `evnx scan hook install` honours
-        /// `EVNX_POLICY` too.
-        #[arg(long, value_name = "FILE", env = "EVNX_POLICY")]
-        policy: Option<String>,
-
-        /// Treat an unknown key in `.evnx.toml` as an error (exit 2).
-        ///
-        /// Without it an unknown key is a warning, with a "did you mean"
-        /// when it is close to a known one, and the key is ignored. A
-        /// misspelt `severty` then lowers nothing and raises nothing; for a
-        /// CI gate that is better stopped.
-        #[arg(long)]
-        strict: bool,
-
-        /// Print nothing; the exit code is the answer: 0 clean, 1 findings,
-        /// 2 could not run.
-        ///
-        /// Not even an error message or the config line: for a script that
-        /// only branches on the code. The global `-q` still prints findings.
-        /// Cannot be combined with `--format` or `--json`. A usage error from
-        /// the command line itself is still printed.
-        #[arg(long, conflicts_with_all = ["format", "json"])]
-        exit_only: bool,
-    },
+    Scan(Box<ScanArgs>),
 
     /// Compare two env files: keys missing or extra, and values between environments.
     ///
@@ -3065,108 +2532,7 @@ pub enum Commands {
     #[command(mut_arg("env", |a| a.help("The env file on the left of the comparison. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
     #[command(mut_arg("example", |a| a.help("The template on the right: key names only, unless `--values` is given. Defaults to `.env.example`, or `[defaults] example`")))]
     #[command(mut_arg("format", |a| a.long_help("Output format. `patch` is a unified diff of the left file that `patch -p1` applies: it adds the missing names and, when values are compared, replaces the different ones. Keys only in the left file are kept and named in comment lines.")))]
-    Diff {
-        /// The file on the left. With a second file, the two are compared
-        /// key by key and value by value.
-        ///
-        /// `evnx diff .env.staging .env.production`. With one file, it is
-        /// compared with the template (key names only). Instead of the
-        /// positionals, `--env`, `--env-name`, `--example` and `--against` name
-        /// the files.
-        #[arg(
-            value_name = "A",
-            conflicts_with_all = ["env", "env_name", "example", "against"]
-        )]
-        left: Option<String>,
-
-        /// The file on the right.
-        #[arg(
-            value_name = "B",
-            requires = "left",
-            conflicts_with_all = ["env", "env_name", "example", "against"]
-        )]
-        right: Option<String>,
-
-        #[command(flatten)]
-        files: args::FileArgs,
-
-        /// Compare against the environment `.env.<NAME>`: keys and values.
-        ///
-        /// `evnx diff --env-name production --against staging` lists the keys
-        /// one environment lacks and the keys whose values differ (values are
-        /// shown only with `--show-values`).
-        #[arg(long, value_name = "NAME", conflicts_with = "example")]
-        against: Option<String>,
-
-        /// Compare values against a template too, not only key names.
-        ///
-        /// Every filled-in value differs from its placeholder, so expect each
-        /// one to be listed. `--against` compares values without it.
-        #[arg(long)]
-        values: bool,
-
-        /// Print the values, not just which keys differ.
-        ///
-        /// In `pretty` and `json` a secret stays masked: by its name, or by the
-        /// value itself (`postgres://admin:***@db`). A `patch` that carries
-        /// real values (`--values`, `--against`, `--reverse`) needs this flag,
-        /// and then has the exact values so it applies; `--interactive` shows
-        /// `<withheld>` in its questions without it.
-        ///
-        /// With `patch` and `--interactive` this puts real secrets on your
-        /// terminal and into its scrollback, and into any CI log.
-        #[arg(long)]
-        show_values: bool,
-
-        #[command(flatten)]
-        output: args::OutputArgs<args::DiffFormat>,
-
-        /// Swap the two sides: compare the example against the environment.
-        #[arg(long)]
-        reverse: bool,
-
-        /// Leave these keys out of the comparison (comma-separated, exact case).
-        ///
-        /// Added to `[diff] ignore_keys` from `.evnx.toml`. The summary says how
-        /// many keys were ignored; `-v` lists names that matched nothing.
-        #[arg(long, value_delimiter = ',', value_name = "KEYS")]
-        ignore_keys: Vec<String>,
-
-        /// What fails the run (exit 1): `missing`, `extra`, `different`.
-        ///
-        /// Comma-separated; all three by default. Only the exit code changes —
-        /// the report lists everything. `--fail-on missing` fails only when the
-        /// left file lacks a key the right one has. `different` needs values to
-        /// be compared (`--against`, or `--values`).
-        #[arg(
-            long,
-            value_delimiter = ',',
-            value_name = "WHAT",
-            value_parser = ["missing", "extra", "different"]
-        )]
-        fail_on: Vec<String>,
-
-        /// With no `.env`, skip (exit 0) and say so.
-        ///
-        /// For pre-commit hooks: a fresh clone has a template and no `.env`, and
-        /// a hook that exits 2 there blocks every new contributor's first
-        /// commit. Only the left file is skipped; a missing template is still
-        /// an error. Not for CI, where a check that never ran must not pass.
-        #[arg(long)]
-        skip_without_env: bool,
-
-        /// Add a `stats` object to the JSON (`--format json` only).
-        #[arg(long, default_value_t = false)]
-        with_stats: bool,
-
-        /// Prompt for each change and write the chosen ones (`--format patch`
-        /// only).
-        ///
-        /// The previous file is kept as `.bak`. Needs a terminal. Not with
-        /// `--reverse`, which would write `.env`'s values into the template.
-        #[arg(short, long, default_value_t = false)]
-        interactive: bool,
-    },
+    Diff(Box<DiffArgs>),
 
     /// Transform `.env` files into multiple output formats.
     ///
@@ -3229,158 +2595,7 @@ Full guide: https://docs.evnx.dev/cli/commands/convert
     #[command(mut_arg("env", |a| a.help("Input file, or `-` to read standard input. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
     #[command(mut_arg("yes", |a| a.help("Add the --output file to .gitignore without asking; with no --to, fail instead of showing the menu").long_help("Do not ask: add the --output file to .gitignore without the prompt (as `--gitignore`). With no `--to` it is an error naming `--to`, because the format menu is a question too.")))]
     #[command(mut_arg("dry_run", |a| a.help("With --output, check everything and say what would be written, but write nothing").requires("output")))]
-    Convert {
-        #[command(flatten)]
-        env: args::EnvArgs,
-
-        /// What the input is: `dotenv` (default) or `json`
-        ///
-        /// `json` reads a flat `{"KEY": "value"}` object, the same shape
-        /// `validate --input-format json` reads. Every value must be a string.
-        #[arg(long, value_enum, value_name = "FORMAT", default_value = "dotenv")]
-        from: args::ConvertFrom,
-
-        /// Target output format (omit for interactive selection)
-        ///
-        /// Supported: json, yaml, shell, dotenv, aws-secrets, gcp-secrets,
-        /// azure-keyvault, github, docker-compose, kubernetes,
-        /// terraform, doppler, heroku, vercel, railway
-        #[arg(long, value_enum, value_name = "FORMAT", ignore_case = true)]
-        to: Option<args::ConvertTarget>,
-
-        /// Write output to file instead of stdout
-        #[arg(long, short, value_name = "FILE")]
-        output: Option<String>,
-
-        /// Replace FILE when it already exists (with --output).
-        ///
-        /// Without it an existing output is refused and nothing is written.
-        /// The input file is never replaced, even with --force.
-        #[arg(long, requires = "output")]
-        force: bool,
-
-        /// Add the --output file to .gitignore without asking (no prompt).
-        ///
-        /// The file holds every value from the .env. Without this flag evnx
-        /// asks when there is a terminal, and warns when there is not.
-        #[arg(long, requires = "output", conflicts_with = "no_gitignore")]
-        gitignore: bool,
-
-        /// Skip the .gitignore check for the --output file.
-        #[arg(long, requires = "output", conflicts_with = "gitignore")]
-        no_gitignore: bool,
-
-        /// Include only variables whose name matches a glob pattern
-        ///
-        /// `*` matches any run of characters, `?` exactly one; case-sensitive.
-        /// Repeat the flag or separate patterns with commas.
-        /// Examples: "AWS_*", "*_URL", "DB_*_URL", "PORT,API_*"
-        #[arg(long, value_name = "PATTERN", value_delimiter = ',')]
-        include: Vec<String>,
-
-        /// Exclude variables whose name matches a glob pattern
-        ///
-        /// Same patterns as --include; exclude wins over include.
-        /// Examples: "*_DEBUG", "TEST_*"
-        #[arg(long, value_name = "PATTERN", value_delimiter = ',')]
-        exclude: Vec<String>,
-
-        /// Keep only the secrets, or only the rest
-        ///
-        /// A variable is a secret when its name says so (`*_PASSWORD`,
-        /// `*_SECRET`, `*_TOKEN`, …) or its value does (a provider key, a
-        /// private key, a URL with a password). Applied with --include and
-        /// --exclude. For example, public values to a build system and secrets
-        /// to a secret manager.
-        #[arg(long, value_enum, value_name = "WHICH")]
-        only: Option<crate::core::converter::Only>,
-
-        /// Convert even when no variable is left (an empty .env, or filters
-        /// that match nothing). Without it that is an error, exit 2.
-        #[arg(long)]
-        allow_empty: bool,
-
-        /// When two names become one name in the output, keep the last value.
-        ///
-        /// `--transform` can merge names (`Api` and `API` under uppercase), and
-        /// so can a format's own naming: gcp-secrets lowercases and uses `-`,
-        /// and Azure Key Vault and GitHub ignore case.
-        /// Without this flag that is an error naming both, exit 2.
-        #[arg(long)]
-        allow_collisions: bool,
-
-        /// Base64-encode all values before output.
-        ///
-        /// For `kubernetes` this chooses the field: with the flag values are
-        /// base64 under `data:`; without it they are literal under
-        /// `stringData:`, which Kubernetes encodes itself on apply.
-        #[arg(long)]
-        base64: bool,
-
-        /// Prefix to prepend to all variable names
-        ///
-        /// Example: --prefix "APP_" transforms "KEY" → "APP_KEY"
-        /// Applied before key casing transformation
-        ///
-        /// Letters, digits and `_`, not starting with a digit, so every name
-        /// stays a variable name.
-        #[arg(long, value_name = "PREFIX")]
-        prefix: Option<String>,
-
-        /// Transform variable name casing
-        ///
-        /// Options: uppercase, lowercase, camelCase, snake_case
-        ///
-        /// Examples:
-        ///   "database_url" --transform uppercase → "DATABASE_URL"
-        ///   "DATABASE_URL" --transform camelCase → "databaseUrl"
-        ///   "DatabaseURL" --transform snake_case → "database_url"
-        #[arg(long, value_name = "MODE")]
-        transform: Option<String>,
-
-        /// Google Cloud project for --to gcp-secrets (required there)
-        #[arg(long, value_name = "PROJECT")]
-        project: Option<String>,
-
-        /// Azure Key Vault for --to azure-keyvault (required there)
-        #[arg(long, value_name = "NAME")]
-        vault_name: Option<String>,
-
-        /// Heroku app for --to heroku (required there)
-        #[arg(long, value_name = "APP")]
-        heroku_app: Option<String>,
-
-        /// Name of the Kubernetes Secret for --to kubernetes (required there)
-        #[arg(long, value_name = "NAME")]
-        name: Option<String>,
-
-        /// Kubernetes namespace for --to kubernetes (optional)
-        #[arg(long, value_name = "NAMESPACE")]
-        namespace: Option<String>,
-
-        /// What --to kubernetes writes: `secret` (default), `configmap`, or `split`
-        ///
-        /// `configmap` writes every variable as plain text (not with --base64).
-        /// `split` writes two documents: a Secret for the variables that look
-        /// secret and a ConfigMap named `<name>-config` for the rest.
-        #[arg(long, value_enum, value_name = "KIND")]
-        kind: Option<crate::formats::KubeKind>,
-
-        /// With --to terraform, write a .tf of `variable` blocks instead of
-        /// the .tfvars values.
-        ///
-        /// A secret-looking variable gets `sensitive = true` and no default;
-        /// supply its value from the .tfvars output or TF_VAR_<name>. Others
-        /// keep their value as the default.
-        #[arg(long)]
-        terraform_declarations: bool,
-
-        #[command(flatten)]
-        confirm: args::ConfirmArgs,
-
-        #[command(flatten)]
-        dry: args::DryRunArgs,
-    },
+    Convert(Box<ConvertArgs>),
 
     /// Move a .env into a secret manager: print the commands, or upload to GitHub.
     ///
@@ -3465,83 +2680,7 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
     #[command(mut_arg("env", |a| a.help("The environment file to take values from. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
     #[command(mut_arg("dry_run", |a| a.long_help("Render and report what would be written, and write nothing.\n\nFails where the real run would (an unknown filter, an unresolved placeholder without `--allow-unresolved`, a missing directory without `--mkdir`). Never prints the rendered text, and leaves `.gitignore` alone.")))]
     #[command(mut_arg("yes", |a| a.help("Add the output file to .gitignore without asking").long_help("Do not ask: add the output file to .gitignore without the prompt (as `--gitignore`). An explicit `--no-gitignore` wins.")))]
-    Template {
-        /// The template to render. `{{VAR}}`, `${VAR}` and `$VAR` are
-        /// substituted; filters are listed below.
-        #[arg(value_name = "INPUT", index = 1, required_unless_present = "input_flag", conflicts_with_all = ["input_flag", "output_flag"])]
-        input: Option<String>,
-
-        /// Where to write the rendered file, or `-` for stdout.
-        ///
-        /// The result usually contains real values — see `--gitignore`. A
-        /// new file is created readable by you only (0600). An existing file is
-        /// only replaced with `--force`, and keeps its mode. The template and
-        /// the env file are never overwritten.
-        #[arg(value_name = "OUTPUT", index = 2, required_unless_present = "output_flag", conflicts_with_all = ["input_flag", "output_flag"])]
-        output: Option<String>,
-
-        /// The template to render: the same as the INPUT argument.
-        ///
-        /// Give the two arguments or the two flags, not a mix.
-        #[arg(long = "input", value_name = "FILE", conflicts_with_all = ["input", "output"])]
-        input_flag: Option<String>,
-
-        /// Where to write the rendered file, or `-` for stdout: the same as the
-        /// OUTPUT argument.
-        #[arg(long = "output", value_name = "FILE", conflicts_with_all = ["input", "output"])]
-        output_flag: Option<String>,
-
-        /// Replace an existing output file.
-        #[arg(long)]
-        force: bool,
-
-        /// Write through an output that is a symlink to a file outside this
-        /// folder. Without it, such an output is refused.
-        #[arg(long)]
-        follow_symlinks: bool,
-
-        /// File mode for the output, in octal (e.g. 0640). Applied to a new or
-        /// an existing file. Without it a new file is 0600.
-        #[arg(long, value_name = "MODE", value_parser = parse_mode)]
-        mode: Option<u32>,
-
-        /// Create the output's missing directories, readable by you only (0700).
-        #[arg(long)]
-        mkdir: bool,
-
-        #[command(flatten)]
-        dry: args::DryRunArgs,
-
-        #[command(flatten)]
-        env: args::EnvArgs,
-
-        #[command(flatten)]
-        confirm: args::ConfirmArgs,
-
-        /// Automatically add the output file to .gitignore (no prompt).
-        /// Useful in CI scripts. Mutually exclusive with --no-gitignore.
-        #[arg(long, conflicts_with = "no_gitignore")]
-        gitignore: bool,
-
-        /// Skip all .gitignore checks and warnings.
-        /// Use when you manage .gitignore externally. Mutually exclusive with --gitignore.
-        #[arg(long, conflicts_with = "gitignore")]
-        no_gitignore: bool,
-
-        /// Write an unresolved placeholder through literally and exit 0.
-        ///
-        /// A placeholder with no value is an error: nothing is
-        /// written, every unresolved name is listed, and the exit code is 2. An
-        /// unresolved `{{DATABASE_URL}}` in a generated config is read by
-        /// whatever runs next as the literal setting. Give a variable a fallback
-        /// with `{{NAME|default:value}}` to keep it optional.
-        #[arg(long, conflicts_with = "strict")]
-        allow_unresolved: bool,
-
-        /// Accepted for scripts that pass it; it changes nothing, and it goes away in 1.0.
-        #[arg(long)]
-        strict: bool,
-    },
+    Template(Box<TemplateArgs>),
 
     /// Create encrypted backup of .env.
     #[cfg(feature = "backup")]
@@ -3614,96 +2753,14 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
     /// Restore from encrypted backup.
     #[cfg(feature = "backup")]
     #[command(after_help = docs::RESTORE.after_help)]
-    Restore {
-        /// The backup file to decrypt, as written by `evnx backup`.
-        ///
-        /// A file on disk. For a vault in evnx cloud, use `evnx cloud pull`.
-        backup: String,
-
-        /// Where to write the restored file.
-        ///
-        /// Defaults to the file the backup was made from — `.env.staging` for a
-        /// backup of `.env.staging` — in the current folder. A recorded name that is not `.env` or `.env.<name>`
-        /// restores to `.env`.
-        ///
-        /// An existing file is never replaced silently: evnx asks, or takes
-        /// --yes, and keeps the replaced file as <output>.bak. Content that is
-        /// not a .env evnx can read goes to <output>.restored instead (exit 5);
-        /// that file is private (0600) and holds plaintext secrets.
-        ///
-        /// `-` prints the decrypted text to stdout, and every status line goes to
-        /// stderr. Nothing is written, so there is no .bak and no .gitignore
-        /// question. On a terminal it is refused unless --show-values.
-        #[arg(long)]
-        output: Option<String>,
-
-        /// Print the decrypted text to a terminal anyway, with `--output -`.
-        ///
-        /// A value printed there stays in the scrollback. Piped, it is not needed.
-        #[arg(long)]
-        show_values: bool,
-
-        /// Replace an existing --output without asking.
-        ///
-        /// For scripts and CI, where there is no terminal to ask on. The file
-        /// it replaces is kept beside it as <output>.bak (replacing the previous
-        /// copy). Without it, and without a terminal, an existing output
-        /// stops the run (exit 4).
-        #[arg(long, short = 'y')]
-        yes: bool,
-
-        /// Add the restored file to .gitignore without asking (no prompt).
-        #[arg(long, conflicts_with = "no_gitignore")]
-        gitignore: bool,
-
-        /// Skip the .gitignore check for the restored file.
-        #[arg(long, conflicts_with = "gitignore")]
-        no_gitignore: bool,
-
-        /// Decrypt and validate but do not write any files.
-        #[arg(short = 'n', long)]
-        dry_run: bool,
-        /// List variable names (never values) without writing any files.
-        ///
-        /// Decrypts the backup and prints each key name to stdout.
-        /// Values are never displayed. No files are written and no overwrite
-        /// prompt is shown. Use this to answer "what keys are in this backup?"
-        /// before committing to a full restore.
-        ///
-        /// Example:
-        ///   evnx restore .env.backup --inspect
-        #[arg(long)]
-        inspect: bool,
-
-        /// Read the passphrase from a file instead of prompting.
-        ///
-        /// The file should contain only the passphrase; leading and trailing
-        /// whitespace, such as a final newline, is trimmed. Intended for CI/CD
-        /// pipelines where interactive prompts are not possible.
-        ///
-        /// Security: less secure than the interactive prompt. The file path
-        /// may appear in process listings and shell history. Use a secrets
-        /// manager or a tmpfs-backed path (e.g. /run/secrets/) in production.
-        ///
-        /// EVNX_PASSWORD environment variable is also accepted and takes
-        /// lower priority than --key-file; when both are set, the file
-        /// wins and a warning says so.
-        ///
-        /// `evnx backup` takes the same flag, so one file round-trips.
-        ///
-        /// Examples:
-        ///   evnx restore .env.backup --key-file /run/secrets/evnx-pass
-        ///   EVNX_PASSWORD=mypass evnx restore .env.backup
-        #[arg(long = "key-file", alias = "password-file", value_name = "PATH")]
-        password_file: Option<String>,
-    },
+    Restore(Box<RestoreArgs>),
 
     /// Manage your evnx cloud account.
     #[cfg(feature = "cloud")]
     #[command(after_help = docs::AUTH.after_help)]
     Auth {
         #[command(subcommand)]
-        command: AuthCommands,
+        command: Box<AuthCommands>,
 
         /// evnx server to talk to. Overrides EVNX_SERVER and config.toml.
         #[arg(long, value_name = "URL", global = true)]
@@ -3759,7 +2816,7 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
     #[command(verbatim_doc_comment, after_help = docs::CLOUD.after_help)]
     Cloud {
         #[command(subcommand)]
-        command: CloudCommands,
+        command: Box<CloudCommands>,
 
         /// evnx server to talk to. Overrides EVNX_SERVER and config.toml.
         ///
@@ -3787,7 +2844,7 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
     #[command(verbatim_doc_comment, after_help = docs::PLATFORM.after_help)]
     Platform {
         #[command(subcommand)]
-        command: PlatformCommands,
+        command: Box<PlatformCommands>,
     },
 
     /// Diagnose common setup issues.
@@ -3943,59 +3000,7 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
     /// The command runs directly, not through a shell. For a pipeline or a
     /// builtin, ask for one: `-- sh -c 'a | b'`. Exits with the command's code.
     #[command(after_help = docs::RUN.after_help)]
-    Run {
-        /// The file to read. Defaults to `.env`, or `[defaults] env_name`.
-        #[arg(long)]
-        env: Option<String>,
-
-        /// Read `.env.<NAME>` instead of `.env`.
-        #[arg(long, value_name = "NAME", conflicts_with = "env")]
-        env_name: Option<String>,
-
-        /// Inject only variables whose name matches one of these globs.
-        #[arg(long, value_delimiter = ',', value_name = "GLOB")]
-        include: Option<Vec<String>>,
-
-        /// Skip variables whose name matches one of these globs.
-        #[arg(long, value_delimiter = ',', value_name = "GLOB")]
-        exclude: Option<Vec<String>>,
-
-        /// Inject variables that make a program load or run other code
-        /// (`PATH`, `LD_*`, `NODE_OPTIONS`, `EDITOR`, `PAGER`, `GIT_ASKPASS`,
-        /// `npm_config_*`, …), refused by default.
-        #[arg(long)]
-        allow_unsafe_names: bool,
-
-        /// Mask secret values in the command's output as `***`.
-        ///
-        /// On by default when output is not a terminal (a CI log, an agent),
-        /// where what is printed is kept. Only values the classifier calls
-        /// secret (by name or by value) are masked. It prevents accidents, not
-        /// exfiltration: a command that transforms a value gets past it.
-        #[arg(long, conflicts_with = "no_mask")]
-        mask: bool,
-
-        /// Never mask the command's output.
-        #[arg(long)]
-        no_mask: bool,
-
-        /// Which side wins when a variable is set both in your environment and
-        /// in the env file: `vault` (default) or `env`.
-        ///
-        /// `vault` lets the vault or env file replace what your environment holds
-        /// (today's behaviour).
-        /// `env` keeps a variable your environment already holds, even an
-        /// empty one, and only fills the names it leaves unset: for testing with
-        /// a local value over a shared one. A line on stderr names what was
-        /// kept, never a value. Names are checked either way; a kept value is
-        /// not masked, since evnx did not inject it.
-        #[arg(long, value_enum, value_name = "SIDE", default_value = "vault")]
-        prefer: crate::core::inject::Prefer,
-
-        /// The command to run, after `--`.
-        #[arg(last = true, allow_hyphen_values = true, value_name = "COMMAND")]
-        command: Vec<String>,
-    },
+    Run(Box<RunArgs>),
 
     /// Every command this build has, and which features it was compiled with.
     ///
@@ -4076,8 +3081,1056 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
     },
 }
 
+/// The options of `evnx init`, boxed in [`Commands::Init`] so the enum stays small (RUST-16).
+#[derive(Args, Debug)]
+pub struct InitArgs {
+    #[command(flatten)]
+    pub dir: args::DirArgs,
+
+    #[command(flatten)]
+    pub confirm: args::ConfirmArgs,
+
+    /// Generate from a named stack blueprint, e.g. `t3_modern`.
+    ///
+    /// Selects Blueprint mode without prompting. An unknown id is an error
+    /// that lists the valid ones, so this doubles as the way to see them.
+    ///
+    /// A blueprint is a shorthand for a component list — `t3_modern` is
+    /// `--with nextjs,postgresql,clerk,aws_s3,stripe,github_actions,vercel`.
+    #[arg(long, value_name = "ID", conflicts_with = "with")]
+    pub blueprint: Option<String>,
+
+    /// Name the components directly, e.g. `--with nextjs,postgresql,stripe`.
+    ///
+    /// Ten fixed blueprints cannot span the stacks people have — "Django +
+    /// Kafka + Clerk" needed someone to add a `django_kafka_clerk` stack
+    /// before it could be expressed. This names the pieces instead.
+    ///
+    /// Repeatable and comma-separated: `--with a,b --with c` is the same as
+    /// `--with a,b,c`. An unknown name is an error that suggests near
+    /// matches; `--list-components` prints them all.
+    #[arg(long, value_name = "LIST", value_delimiter = ',', num_args = 1..)]
+    pub with: Vec<String>,
+
+    /// Print every component `--with` accepts, and exit.
+    #[arg(long, conflicts_with_all = ["with", "blueprint", "yes"])]
+    pub list_components: bool,
+
+    /// Accept what the project declares, without asking.
+    ///
+    /// Run interactively with no flags, `init` reads `package.json`,
+    /// `docker-compose.yml` and friends and proposes what it finds. This is
+    /// how a script says yes to that proposal.
+    ///
+    /// Detection is a heuristic — a `stripe` dependency in a test fixture
+    /// looks exactly like one in a checkout flow. Prefer `--with` where the
+    /// answer is known; this is for bootstrapping a project you trust.
+    // ⚠️ No longer conflicts with `--yes`. `--detect` already implies it —
+    // `init/mod.rs` passes `yes: yes || detect_flag`, because accepting the
+    // proposal without asking is what detection is for. Rejecting the
+    // combination meant a CI script that passes `--yes` out of habit got an
+    // argument error for asking twice for the same thing.
+    #[arg(long, conflicts_with_all = ["with", "blueprint"])]
+    pub detect: bool,
+
+    /// Build the template from the variables the code actually reads.
+    ///
+    /// Scans the project's source and compares it to `.env.example`, so it
+    /// finds both what is missing and what is declared but named nowhere —
+    /// the second being something no other evnx command can tell you, since
+    /// they all treat `.env.example` as the definition of "required".
+    ///
+    /// A heuristic. Variables consumed entirely inside a library, and
+    /// dynamic access like `process.env[key]`, are invisible in principle.
+    ///
+    /// Only ever appends, so it cannot be combined with --force.
+    // `force` used to be accepted here and silently ignored (I-012).
+    #[arg(long, conflicts_with_all = ["with", "blueprint", "detect", "list_components", "force"])]
+    pub from_source: bool,
+
+    /// Overwrite an existing .env.example.
+    ///
+    /// `.env.example` is normally a tracked, hand-maintained file, so init
+    /// asks before replacing it and refuses outright under --yes. This is how
+    /// a script says it meant to replace it. `.env` is never overwritten.
+    /// Not valid with --from-source, which only appends.
+    #[arg(long)]
+    pub force: bool,
+
+    /// Write `.env.<NAME>` instead of `.env`.
+    ///
+    /// `--env-name production` creates or fills `.env.production` from the
+    /// template; the template and `.gitignore` are the project's, as without
+    /// it. Defaults to `[defaults] env_name` from `.evnx.toml`.
+    #[arg(long, value_name = "NAME")]
+    pub env_name: Option<String>,
+
+    #[command(flatten)]
+    pub dry: args::DryRunArgs,
+
+    #[command(flatten)]
+    pub output: args::OutputArgs,
+
+    /// Make this folder a project of its own: write `.evnx.toml` here,
+    /// even when the repository's root already has one, and do not take
+    /// `[defaults]` from it. Without it, a folder inside a repository
+    /// records its names in the root's `.evnx.toml`.
+    #[arg(long)]
+    pub here: bool,
+
+    /// Write no `[vars]` contract into `.evnx.toml`: only the env files and
+    /// `.gitignore`, as `cp .env.example .env` would. The contract is what
+    /// `evnx validate` checks names and formats against; it is safe to
+    /// delete, and `evnx spec init` writes one later. When init adopts named
+    /// env files it still sets `[defaults] env_name`.
+    #[arg(long)]
+    pub no_contract: bool,
+}
+
+/// The options of `evnx add`, boxed in [`Commands::Add`] so the enum stays small (RUST-16).
+#[derive(Args, Debug)]
+pub struct AddArgs {
+    #[command(subcommand)]
+    pub target: Option<AddTarget>,
+
+    /// List every id `add` takes: services, infrastructure, frameworks
+    /// and blueprints.
+    #[arg(long)]
+    pub list: bool,
+
+    #[command(flatten)]
+    pub dry: args::DryRunArgs,
+
+    #[command(flatten)]
+    pub output: args::OutputArgs,
+
+    #[command(flatten)]
+    pub dir: args::DirArgs,
+
+    #[command(flatten)]
+    pub confirm: args::ConfirmArgs,
+
+    /// Write to `.env.<NAME>` instead of `.env` (one file per run; loop
+    /// over names for several). `prod` and `.env.prod` both work.
+    /// Defaults to `[defaults] env_name`.
+    #[arg(long, value_name = "NAME", global = true)]
+    pub env_name: Option<String>,
+
+    /// The template to add names to, from the project folder. Default:
+    /// the environment's own (`.env.<NAME>.example`) when there is one,
+    /// else `[defaults] example`, else `.env.example`.
+    #[arg(long, value_name = "FILE", global = true)]
+    pub example: Option<String>,
+
+    /// Write only the env file: no names into the template, and no
+    /// template created. For a server that keeps `.env.prod` alone.
+    #[arg(long, global = true, conflicts_with = "example")]
+    pub no_template: bool,
+}
+
+/// The options of `evnx remove`, boxed in [`Commands::Remove`] so the enum stays small (RUST-16).
+#[derive(Args, Debug)]
+pub struct RemoveArgs {
+    /// Variable names, or quoted globs (`'TEST_*'`). Case-sensitive.
+    #[arg(required = true, value_name = "NAME")]
+    pub names: Vec<String>,
+
+    #[command(flatten)]
+    pub dir: args::DirArgs,
+
+    #[command(flatten)]
+    pub dry: args::DryRunArgs,
+
+    #[command(flatten)]
+    pub confirm: args::ConfirmArgs,
+
+    #[command(flatten)]
+    pub output: args::OutputArgs,
+
+    /// Remove from `.env.<NAME>` instead of `.env`. Defaults to
+    /// `[defaults] env_name`.
+    #[arg(long, value_name = "NAME", conflicts_with = "all")]
+    pub env_name: Option<String>,
+
+    /// Also remove from the template (`.env.example`, or `[defaults] example`).
+    #[arg(long)]
+    pub template: bool,
+
+    /// Also remove the `[vars.NAME]` declaration from `.evnx.toml`.
+    #[arg(long)]
+    pub contract: bool,
+
+    /// Remove from every environment file, the template and the contract.
+    #[arg(long)]
+    pub all: bool,
+
+    /// A name found nowhere is not an error (for scripts that run twice).
+    #[arg(long)]
+    pub ignore_missing: bool,
+
+    /// Keep no `.bak` copy of the env files (needs --yes; refused for a
+    /// file git tracks).
+    #[arg(long)]
+    pub no_backup: bool,
+
+    /// Remove a name even when a line that stays refers to it
+    /// (`URL=http://h/${PORT}`). Without it, remove names those lines and
+    /// changes nothing.
+    #[arg(long)]
+    pub allow_dangling: bool,
+
+    /// Let a pattern remove every variable in a file (`remove '*'`). Needed
+    /// with --yes or without a terminal; in a terminal, typing the count
+    /// does the same.
+    #[arg(long)]
+    pub all_names: bool,
+
+    /// Only look: exit 1 if any NAME is still in an environment file, the
+    /// template or `.evnx.toml`, listing where; 0 if it is gone everywhere.
+    ///
+    /// Read-only, for CI. Always looks everywhere (`.env`, every
+    /// `.env.<NAME>`, the template, `[vars]`), so it takes no scope flags.
+    /// Exit 2 means no verdict: a file it cannot read whole.
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "template", "contract", "all", "env_name", "dry_run", "yes",
+            "ignore_missing", "no_backup", "allow_dangling", "all_names",
+        ]
+    )]
+    pub check: bool,
+}
+
+/// The options of `evnx validate`, boxed in [`Commands::Validate`] so the enum stays small (RUST-16).
+#[derive(Args, Debug)]
+pub struct ValidateArgs {
+    #[command(flatten)]
+    pub files: args::FileArgs,
+
+    /// How to read `--env`: `dotenv` or `json`.
+    ///
+    /// `json` takes a flat `{"KEY": "value"}` object, or what
+    /// `evnx parse --format json --values` prints. It is never guessed:
+    /// `.env` text may start with `{`.
+    #[arg(long, value_enum, value_name = "FORMAT", default_value = "dotenv")]
+    pub input_format: crate::commands::validate::InputFormat,
+
+    /// Also report variables that are present but not declared.
+    ///
+    /// Measured against `.env.example`, or against `[vars]` when the project
+    /// has a contract. Without it, an undeclared variable is not mentioned.
+    #[arg(long)]
+    pub strict: bool,
+
+    /// Repair what can be repaired, instead of only reporting it.
+    ///
+    /// Fills missing variables, replaces placeholder values and corrects
+    /// boolean traps. Only `.env` is written, the template is never touched,
+    /// and the original is kept beside it as `.env.bak`.
+    ///
+    /// A missing variable gets the template's value. A new secret is
+    /// generated only for one the app holds alone — its own signing key
+    /// (`SECRET_KEY`, `JWT_SECRET`, `SESSION_SECRET`, …) or a password; a
+    /// key a provider issues (`STRIPE_KEY`, an AWS secret, a token) gets a
+    /// placeholder, because evnx cannot invent it. Those are listed under
+    /// "Needs your input", not as fixed, and the run exits 1 until they are
+    /// filled in.
+    ///
+    /// It will not overwrite a value that is not a placeholder. A
+    /// weak secret with a real value behind it is reported and left alone —
+    /// see `--rotate-weak-secrets`.
+    #[arg(long)]
+    pub fix: bool,
+
+    #[command(flatten)]
+    pub dry: args::DryRunArgs,
+
+    #[command(flatten)]
+    pub confirm: args::ConfirmArgs,
+
+    /// With `--fix`, also replace weak secrets that hold a real value.
+    ///
+    /// This destroys credentials, and that is what it is for:
+    /// `DATABASE_PASSWORD="p@ss word#1"` becomes `DATABASE_PASSWORD=ad0da713…c508`.
+    /// Without this flag, `--fix` leaves a weak secret with a real value alone.
+    ///
+    /// The check behind it judges length and wording. It cannot tell a
+    /// placeholder nobody filled in from the real password, short because
+    /// someone chose a short one — and the second is the common case,
+    /// because shortness is what trips it. Whether anything else holds
+    /// the credential is not a fact in the file, so evnx cannot decide it;
+    /// you can.
+    ///
+    /// Rotate at the provider first. A new value here that the provider
+    /// does not have is an outage, not a repair — so a key a provider
+    /// issues is never replaced, even with this flag: only the app's own
+    /// secrets and passwords are.
+    #[arg(long, requires = "fix")]
+    pub rotate_weak_secrets: bool,
+
+    #[command(flatten)]
+    pub output: args::OutputArgs<args::ValidateFormat>,
+
+    /// Always exit 0, even when problems are found.
+    ///
+    /// For a step that should report without failing the build. It
+    /// suppresses the findings exit code only — a file that cannot be read
+    /// still exits 2, because "I found nothing" and "I could not look" are
+    /// different answers.
+    #[arg(long)]
+    pub exit_zero: bool,
+
+    /// Comma-separated list of issue types to ignore
+    ///
+    /// Added to `[validate] ignore` in `.evnx.toml`. An unknown type is an
+    /// error that lists the valid ones, so a typo cannot silence nothing.
+    #[arg(long, value_delimiter = ',')]
+    pub ignore: Vec<String>,
+
+    /// Accepted and ignored: the URL, port and email checks are on by default.
+    #[arg(long, hide = true)]
+    pub validate_formats: bool,
+
+    /// Turn off the URL, port and email checks by variable name.
+    ///
+    /// They are on by default and always warnings: a name ending in `_URL`,
+    /// `_URI` or `_ENDPOINT` should hold a URL, one with `PORT` a port from 1
+    /// to 65535, one with `EMAIL` an address. A variable declared in `[vars]`
+    /// is checked against its declared `format` instead, with or without
+    /// this flag. `[validate] validate_formats = false` in `.evnx.toml` does
+    /// the same for the project.
+    #[arg(long)]
+    pub no_formats: bool,
+
+    /// The lowest severity that fails the run: `error` or `warning`.
+    ///
+    /// Defaults to `error`, or `[validate] fail_on` from `.evnx.toml`.
+    /// `warning` makes warnings exit 1 too, for gates that want them
+    /// fixed. `--exit-zero` still wins.
+    #[arg(long, value_enum, value_name = "LEVEL")]
+    pub fail_on: Option<crate::commands::validate::FailOn>,
+}
+
+/// The options of `evnx scan`, boxed in [`Commands::Scan`] so the enum stays small (RUST-16).
+#[derive(Args, Debug)]
+pub struct ScanArgs {
+    #[command(subcommand)]
+    pub action: Option<ScanAction>,
+
+    /// Files or folders to scan. Repeatable; defaults to the current folder.
+    ///
+    /// A folder is walked. A file named here is always read — whatever
+    /// `--exclude`, `--extensions` or the size limit say — and always
+    /// reported in full, even one git ignores. `-` reads stdin, in memory
+    /// (`git diff | evnx scan -`): as a `.env` when it parses as one,
+    /// otherwise as text. Empty stdin is an error, not a clean result.
+    #[arg(default_value = ".")]
+    pub path: Vec<String>,
+
+    /// Skip paths in a folder walk. Repeatable; adds to `[scan] exclude`.
+    ///
+    /// A value with `*`, `?` or `[` is a glob, matched against the path
+    /// from the folder and against the file name: `'fixtures/**'`,
+    /// `'*.log'`. Any other value matches a whole path component, or
+    /// several in a row: `--exclude test` skips `test/` and a file named
+    /// `test`, not `latest/` or `contest.py`; `third_party/cache` skips that
+    /// folder wherever it is.
+    ///
+    /// This narrows the scan. Below the folder scanned, `.git`,
+    /// `node_modules`, `target`, `dist`, `build`, `.next`, `.nuxt`,
+    /// `.turbo`, `__pycache__`, Python virtualenvs (a
+    /// `venv` or `.venv` holding `pyvenv.cfg`) and dependency `vendor`
+    /// folders (beside `go.mod`, `composer.json` or `Gemfile`, or holding
+    /// `modules.txt`) are skipped, unless git tracks files inside them, and
+    /// so is the `.env.example` family; `--include-dir` walks a skipped
+    /// folder. A file named on the command
+    /// line is read regardless.
+    #[arg(long, default_value = ".env.example")]
+    pub exclude: Vec<String>,
+
+    /// Skip walked files larger than this: `500K`, `5MB`, `2MiB`.
+    ///
+    /// Defaults to 1 MiB, or `[scan] max_file_size` from `.evnx.toml`. A
+    /// skipped file is counted and, with `-v`, listed. A file named on the
+    /// command line is read whatever its size.
+    #[arg(long, value_name = "SIZE", value_parser = crate::core::args::parse_size, allow_hyphen_values = true)]
+    pub max_file_size: Option<u64>,
+
+    /// Read only files with these extensions in folders (comma-separated:
+    /// `env,yml,json`). By default every file is read, and binary or very
+    /// large files are skipped with a note.
+    ///
+    /// This narrows the scan, and the run says so. A file named on the
+    /// command line is read whatever this says. `[scan] extensions` in
+    /// `.evnx.toml` sets the same thing for a project.
+    #[arg(long, value_delimiter = ',', value_name = "EXT")]
+    pub extensions: Option<Vec<String>>,
+
+    /// Also report values matching this regular expression. Repeatable.
+    ///
+    /// For the formats evnx does not ship with — an internal token, a
+    /// vendor key shape. `--pattern 'ACME-[A-Z0-9]{32}'` reports matches as
+    /// `Custom pattern 1`, numbered in the order the flags are given.
+    ///
+    /// It takes an expression and nothing else. For a name that means
+    /// something, and for a rule the whole team scans with, declare it under
+    /// `[[scan.patterns]]` in `.evnx.toml` instead; both sets apply
+    /// together.
+    ///
+    /// An expression that does not compile exits 2 — no verdict — rather
+    /// than reporting a clean scan it never ran.
+    #[arg(long, value_name = "REGEX")]
+    pub pattern: Vec<String>,
+
+    /// Skip values evnx recognises as filler.
+    ///
+    /// `changeme`, `your_api_key_here`, `xxx` and similar. Useful on a first
+    /// run over a template-heavy repository; prefer `--severity high` if the
+    /// goal is simply less noise.
+    #[arg(long, overrides_with = "no_ignore_placeholders")]
+    pub ignore_placeholders: bool,
+
+    /// Report filler-looking values even when `[scan] ignore_placeholders`
+    /// is `true`. The last of the two flags wins.
+    #[arg(long, overrides_with = "ignore_placeholders")]
+    pub no_ignore_placeholders: bool,
+
+    /// Lowest severity worth reporting: critical, high, medium or low.
+    ///
+    /// Severity is how bad a finding is if it is real: `critical` for
+    /// cloud, payment and AI keys and private keys, `high` for account
+    /// tokens, database passwords and variables named like a secret, `low`
+    /// for test keys and keys meant to ship in a web page. Filters what is
+    /// reported, counted and exited on. `--severity high` is the usual
+    /// blocking CI gate. Until 0.13.0 this filtered on confidence; that
+    /// is now `--confidence`. Defaults to `low` (report everything), or
+    /// `[scan] severity` from `.evnx.toml`.
+    #[arg(long, value_name = "LEVEL", value_enum, ignore_case = true)]
+    pub severity: Option<ScanSeverity>,
+
+    /// A rule file for this run, on top of `.evnx/rules/` and your personal
+    /// rules. Repeatable. Same format as those: see `evnx scan rules new`.
+    #[arg(long = "rules", value_name = "FILE")]
+    pub rule_files: Vec<String>,
+
+    /// Findings accepted earlier: matching ones are reported as `known`
+    /// and do not fail the run.
+    ///
+    /// Defaults to `.evnx/baseline.json` when it exists. Write it with
+    /// `--update-baseline`. It holds a fingerprint, a rule and a file per
+    /// finding, never a value, so it is safe to commit.
+    #[arg(long, value_name = "FILE")]
+    pub baseline: Option<String>,
+
+    /// Write this run's findings to the baseline (`--baseline`, or
+    /// `.evnx/baseline.json`) and exit 0. Run it once to accept what a
+    /// project already has; new findings fail from then on.
+    #[arg(long)]
+    pub update_baseline: bool,
+
+    /// Lowest confidence worth reporting: high, medium or low.
+    ///
+    /// Confidence is how sure evnx is that a match is a real credential of
+    /// that kind. Combine with `--severity`: both must pass. Defaults to
+    /// `low`, or `[scan] confidence` from `.evnx.toml`.
+    #[arg(long, value_name = "LEVEL", value_enum, ignore_case = true)]
+    pub confidence: Option<ScanConfidence>,
+
+    #[command(flatten)]
+    pub output: args::OutputArgs<args::ScanFormat>,
+
+    /// Always exit 0, even when secrets are found.
+    ///
+    /// Suppresses exit 1 only. A scan that could not run still exits 2 —
+    /// the flag means "do not fail my build over findings", not "never tell
+    /// me the scan was impossible" (an invalid `--exclude`, a path that does
+    /// not exist, nothing to scan). Files that could not be read are listed and
+    /// counted but are findings-class (exit 1), so this flag lets them pass.
+    #[arg(long)]
+    pub exit_zero: bool,
+
+    /// Report findings in files git ignores and does not track.
+    ///
+    /// In a git repository a folder walk counts what git would commit: a
+    /// filled-in `.env` that `.gitignore` covers is where secrets belong, so
+    /// its findings are summarised in one line and do not fail the run. This
+    /// lists them as findings instead. A file named on the command line, and
+    /// any folder outside a repository, is always reported in full.
+    #[arg(long)]
+    pub include_ignored: bool,
+
+    /// Scan what is staged for the next commit, read from the git index.
+    ///
+    /// A file staged and then edited on disk is scanned as staged, because
+    /// that is what the commit records. Paths limit it to staged files
+    /// under them. Nothing staged exits 0. `evnx scan hook install` runs
+    /// this before every commit.
+    #[arg(long)]
+    pub staged: bool,
+
+    /// Ignore the repository's `.evnx.toml` and use the built-in defaults.
+    ///
+    /// For a CI gate that must not depend on settings the scanned change
+    /// can edit: no disabled rules, no severity floor, no excludes, no
+    /// default `.evnx/baseline.json`. A `--baseline` you name is still
+    /// read.
+    ///
+    /// Still in force: rule files in `.evnx/rules/`, your personal rules
+    /// and `--rules` files, which can only add rules (a rule's own
+    /// `allow` lists apply to that rule alone; none can disable or
+    /// replace one of evnx's), and `evnx:allow` comments inside the
+    /// scanned files, which silence the line they sit on (`-v` lists
+    /// them).
+    #[arg(long)]
+    pub no_config: bool,
+
+    /// Walk a folder the scan skips by default, by name. Repeatable.
+    ///
+    /// `--include-dir vendor` reads a `vendor/` folder, `--include-dir
+    /// .venv` a virtualenv. Needed only for the folders the run lists as
+    /// "skipped dependency folders", or `.next` and the like.
+    #[arg(long, value_name = "NAME")]
+    pub include_dir: Vec<String>,
+
+    /// Read a symlinked file in a folder walk when its target is inside
+    /// the scanned folder.
+    ///
+    /// By default a symlink is skipped and counted. A link to a file
+    /// outside the folder, or to a folder, is skipped either way.
+    #[arg(long)]
+    pub follow_symlinks: bool,
+
+    /// A policy file the repository's `.evnx.toml` cannot lower.
+    ///
+    /// Read after `.evnx.toml`, and also with `--no-config`. TOML with
+    /// three optional keys: `required_rules` (detectors that may not be
+    /// disabled), `max_severity_floor` (the highest `--severity` or
+    /// `[scan] severity` allowed) and `allow_disable` (`false`, or the
+    /// only detectors a repository may disable). A setting that conflicts
+    /// exits 2 before any file is read, naming the key and this file. A
+    /// missing or invalid file exits 2. Also read from `EVNX_POLICY`; the
+    /// flag wins. A hook installed by `evnx scan hook install` honours
+    /// `EVNX_POLICY` too.
+    #[arg(long, value_name = "FILE", env = "EVNX_POLICY")]
+    pub policy: Option<String>,
+
+    /// Treat an unknown key in `.evnx.toml` as an error (exit 2).
+    ///
+    /// Without it an unknown key is a warning, with a "did you mean"
+    /// when it is close to a known one, and the key is ignored. A
+    /// misspelt `severty` then lowers nothing and raises nothing; for a
+    /// CI gate that is better stopped.
+    #[arg(long)]
+    pub strict: bool,
+
+    /// Print nothing; the exit code is the answer: 0 clean, 1 findings,
+    /// 2 could not run.
+    ///
+    /// Not even an error message or the config line: for a script that
+    /// only branches on the code. The global `-q` still prints findings.
+    /// Cannot be combined with `--format` or `--json`. A usage error from
+    /// the command line itself is still printed.
+    #[arg(long, conflicts_with_all = ["format", "json"])]
+    pub exit_only: bool,
+}
+
+/// The options of `evnx diff`, boxed in [`Commands::Diff`] so the enum stays small (RUST-16).
+#[derive(Args, Debug)]
+pub struct DiffArgs {
+    /// The file on the left. With a second file, the two are compared
+    /// key by key and value by value.
+    ///
+    /// `evnx diff .env.staging .env.production`. With one file, it is
+    /// compared with the template (key names only). Instead of the
+    /// positionals, `--env`, `--env-name`, `--example` and `--against` name
+    /// the files.
+    #[arg(
+        value_name = "A",
+        conflicts_with_all = ["env", "env_name", "example", "against"]
+    )]
+    pub left: Option<String>,
+
+    /// The file on the right.
+    #[arg(
+        value_name = "B",
+        requires = "left",
+        conflicts_with_all = ["env", "env_name", "example", "against"]
+    )]
+    pub right: Option<String>,
+
+    #[command(flatten)]
+    pub files: args::FileArgs,
+
+    /// Compare against the environment `.env.<NAME>`: keys and values.
+    ///
+    /// `evnx diff --env-name production --against staging` lists the keys
+    /// one environment lacks and the keys whose values differ (values are
+    /// shown only with `--show-values`).
+    #[arg(long, value_name = "NAME", conflicts_with = "example")]
+    pub against: Option<String>,
+
+    /// Compare values against a template too, not only key names.
+    ///
+    /// Every filled-in value differs from its placeholder, so expect each
+    /// one to be listed. `--against` compares values without it.
+    #[arg(long)]
+    pub values: bool,
+
+    /// Print the values, not just which keys differ.
+    ///
+    /// In `pretty` and `json` a secret stays masked: by its name, or by the
+    /// value itself (`postgres://admin:***@db`). A `patch` that carries
+    /// real values (`--values`, `--against`, `--reverse`) needs this flag,
+    /// and then has the exact values so it applies; `--interactive` shows
+    /// `<withheld>` in its questions without it.
+    ///
+    /// With `patch` and `--interactive` this puts real secrets on your
+    /// terminal and into its scrollback, and into any CI log.
+    #[arg(long)]
+    pub show_values: bool,
+
+    #[command(flatten)]
+    pub output: args::OutputArgs<args::DiffFormat>,
+
+    /// Swap the two sides: compare the example against the environment.
+    #[arg(long)]
+    pub reverse: bool,
+
+    /// Leave these keys out of the comparison (comma-separated, exact case).
+    ///
+    /// Added to `[diff] ignore_keys` from `.evnx.toml`. The summary says how
+    /// many keys were ignored; `-v` lists names that matched nothing.
+    #[arg(long, value_delimiter = ',', value_name = "KEYS")]
+    pub ignore_keys: Vec<String>,
+
+    /// What fails the run (exit 1): `missing`, `extra`, `different`.
+    ///
+    /// Comma-separated; all three by default. Only the exit code changes —
+    /// the report lists everything. `--fail-on missing` fails only when the
+    /// left file lacks a key the right one has. `different` needs values to
+    /// be compared (`--against`, or `--values`).
+    #[arg(
+        long,
+        value_delimiter = ',',
+        value_name = "WHAT",
+        value_parser = ["missing", "extra", "different"]
+    )]
+    pub fail_on: Vec<String>,
+
+    /// With no `.env`, skip (exit 0) and say so.
+    ///
+    /// For pre-commit hooks: a fresh clone has a template and no `.env`, and
+    /// a hook that exits 2 there blocks every new contributor's first
+    /// commit. Only the left file is skipped; a missing template is still
+    /// an error. Not for CI, where a check that never ran must not pass.
+    #[arg(long)]
+    pub skip_without_env: bool,
+
+    /// Add a `stats` object to the JSON (`--format json` only).
+    #[arg(long, default_value_t = false)]
+    pub with_stats: bool,
+
+    /// Prompt for each change and write the chosen ones (`--format patch`
+    /// only).
+    ///
+    /// The previous file is kept as `.bak`. Needs a terminal. Not with
+    /// `--reverse`, which would write `.env`'s values into the template.
+    #[arg(short, long, default_value_t = false)]
+    pub interactive: bool,
+}
+
+/// The options of `evnx convert`, boxed in [`Commands::Convert`] so the enum stays small (RUST-16).
+#[derive(Args, Debug)]
+pub struct ConvertArgs {
+    #[command(flatten)]
+    pub env: args::EnvArgs,
+
+    /// What the input is: `dotenv` (default) or `json`
+    ///
+    /// `json` reads a flat `{"KEY": "value"}` object, the same shape
+    /// `validate --input-format json` reads. Every value must be a string.
+    #[arg(long, value_enum, value_name = "FORMAT", default_value = "dotenv")]
+    pub from: args::ConvertFrom,
+
+    /// Target output format (omit for interactive selection)
+    ///
+    /// Supported: json, yaml, shell, dotenv, aws-secrets, gcp-secrets,
+    /// azure-keyvault, github, docker-compose, kubernetes,
+    /// terraform, doppler, heroku, vercel, railway
+    #[arg(long, value_enum, value_name = "FORMAT", ignore_case = true)]
+    pub to: Option<args::ConvertTarget>,
+
+    /// Write output to file instead of stdout
+    #[arg(long, short, value_name = "FILE")]
+    pub output: Option<String>,
+
+    /// Replace FILE when it already exists (with --output).
+    ///
+    /// Without it an existing output is refused and nothing is written.
+    /// The input file is never replaced, even with --force.
+    #[arg(long, requires = "output")]
+    pub force: bool,
+
+    /// Add the --output file to .gitignore without asking (no prompt).
+    ///
+    /// The file holds every value from the .env. Without this flag evnx
+    /// asks when there is a terminal, and warns when there is not.
+    #[arg(long, requires = "output", conflicts_with = "no_gitignore")]
+    pub gitignore: bool,
+
+    /// Skip the .gitignore check for the --output file.
+    #[arg(long, requires = "output", conflicts_with = "gitignore")]
+    pub no_gitignore: bool,
+
+    /// Include only variables whose name matches a glob pattern
+    ///
+    /// `*` matches any run of characters, `?` exactly one; case-sensitive.
+    /// Repeat the flag or separate patterns with commas.
+    /// Examples: "AWS_*", "*_URL", "DB_*_URL", "PORT,API_*"
+    #[arg(long, value_name = "PATTERN", value_delimiter = ',')]
+    pub include: Vec<String>,
+
+    /// Exclude variables whose name matches a glob pattern
+    ///
+    /// Same patterns as --include; exclude wins over include.
+    /// Examples: "*_DEBUG", "TEST_*"
+    #[arg(long, value_name = "PATTERN", value_delimiter = ',')]
+    pub exclude: Vec<String>,
+
+    /// Keep only the secrets, or only the rest
+    ///
+    /// A variable is a secret when its name says so (`*_PASSWORD`,
+    /// `*_SECRET`, `*_TOKEN`, …) or its value does (a provider key, a
+    /// private key, a URL with a password). Applied with --include and
+    /// --exclude. For example, public values to a build system and secrets
+    /// to a secret manager.
+    #[arg(long, value_enum, value_name = "WHICH")]
+    pub only: Option<crate::core::converter::Only>,
+
+    /// Convert even when no variable is left (an empty .env, or filters
+    /// that match nothing). Without it that is an error, exit 2.
+    #[arg(long)]
+    pub allow_empty: bool,
+
+    /// When two names become one name in the output, keep the last value.
+    ///
+    /// `--transform` can merge names (`Api` and `API` under uppercase), and
+    /// so can a format's own naming: gcp-secrets lowercases and uses `-`,
+    /// and Azure Key Vault and GitHub ignore case.
+    /// Without this flag that is an error naming both, exit 2.
+    #[arg(long)]
+    pub allow_collisions: bool,
+
+    /// Base64-encode all values before output.
+    ///
+    /// For `kubernetes` this chooses the field: with the flag values are
+    /// base64 under `data:`; without it they are literal under
+    /// `stringData:`, which Kubernetes encodes itself on apply.
+    #[arg(long)]
+    pub base64: bool,
+
+    /// Prefix to prepend to all variable names
+    ///
+    /// Example: --prefix "APP_" transforms "KEY" → "APP_KEY"
+    /// Applied before key casing transformation
+    ///
+    /// Letters, digits and `_`, not starting with a digit, so every name
+    /// stays a variable name.
+    #[arg(long, value_name = "PREFIX")]
+    pub prefix: Option<String>,
+
+    /// Transform variable name casing
+    ///
+    /// Options: uppercase, lowercase, camelCase, snake_case
+    ///
+    /// Examples:
+    ///   "database_url" --transform uppercase → "DATABASE_URL"
+    ///   "DATABASE_URL" --transform camelCase → "databaseUrl"
+    ///   "DatabaseURL" --transform snake_case → "database_url"
+    #[arg(long, value_name = "MODE")]
+    pub transform: Option<String>,
+
+    /// Google Cloud project for --to gcp-secrets (required there)
+    #[arg(long, value_name = "PROJECT")]
+    pub project: Option<String>,
+
+    /// Azure Key Vault for --to azure-keyvault (required there)
+    #[arg(long, value_name = "NAME")]
+    pub vault_name: Option<String>,
+
+    /// Heroku app for --to heroku (required there)
+    #[arg(long, value_name = "APP")]
+    pub heroku_app: Option<String>,
+
+    /// Name of the Kubernetes Secret for --to kubernetes (required there)
+    #[arg(long, value_name = "NAME")]
+    pub name: Option<String>,
+
+    /// Kubernetes namespace for --to kubernetes (optional)
+    #[arg(long, value_name = "NAMESPACE")]
+    pub namespace: Option<String>,
+
+    /// What --to kubernetes writes: `secret` (default), `configmap`, or `split`
+    ///
+    /// `configmap` writes every variable as plain text (not with --base64).
+    /// `split` writes two documents: a Secret for the variables that look
+    /// secret and a ConfigMap named `<name>-config` for the rest.
+    #[arg(long, value_enum, value_name = "KIND")]
+    pub kind: Option<crate::formats::KubeKind>,
+
+    /// With --to terraform, write a .tf of `variable` blocks instead of
+    /// the .tfvars values.
+    ///
+    /// A secret-looking variable gets `sensitive = true` and no default;
+    /// supply its value from the .tfvars output or TF_VAR_<name>. Others
+    /// keep their value as the default.
+    #[arg(long)]
+    pub terraform_declarations: bool,
+
+    #[command(flatten)]
+    pub confirm: args::ConfirmArgs,
+
+    #[command(flatten)]
+    pub dry: args::DryRunArgs,
+}
+
+/// The options of `evnx template`, boxed in [`Commands::Template`] so the enum stays small (RUST-16).
+#[derive(Args, Debug)]
+pub struct TemplateArgs {
+    /// The template to render. `{{VAR}}`, `${VAR}` and `$VAR` are
+    /// substituted; filters are listed below.
+    #[arg(value_name = "INPUT", index = 1, required_unless_present = "input_flag", conflicts_with_all = ["input_flag", "output_flag"])]
+    pub input: Option<String>,
+
+    /// Where to write the rendered file, or `-` for stdout.
+    ///
+    /// The result usually contains real values — see `--gitignore`. A
+    /// new file is created readable by you only (0600). An existing file is
+    /// only replaced with `--force`, and keeps its mode. The template and
+    /// the env file are never overwritten.
+    #[arg(value_name = "OUTPUT", index = 2, required_unless_present = "output_flag", conflicts_with_all = ["input_flag", "output_flag"])]
+    pub output: Option<String>,
+
+    /// The template to render: the same as the INPUT argument.
+    ///
+    /// Give the two arguments or the two flags, not a mix.
+    #[arg(long = "input", value_name = "FILE", conflicts_with_all = ["input", "output"])]
+    pub input_flag: Option<String>,
+
+    /// Where to write the rendered file, or `-` for stdout: the same as the
+    /// OUTPUT argument.
+    #[arg(long = "output", value_name = "FILE", conflicts_with_all = ["input", "output"])]
+    pub output_flag: Option<String>,
+
+    /// Replace an existing output file.
+    #[arg(long)]
+    pub force: bool,
+
+    /// Write through an output that is a symlink to a file outside this
+    /// folder. Without it, such an output is refused.
+    #[arg(long)]
+    pub follow_symlinks: bool,
+
+    /// File mode for the output, in octal (e.g. 0640). Applied to a new or
+    /// an existing file. Without it a new file is 0600.
+    #[arg(long, value_name = "MODE", value_parser = parse_mode)]
+    pub mode: Option<u32>,
+
+    /// Create the output's missing directories, readable by you only (0700).
+    #[arg(long)]
+    pub mkdir: bool,
+
+    #[command(flatten)]
+    pub dry: args::DryRunArgs,
+
+    #[command(flatten)]
+    pub env: args::EnvArgs,
+
+    #[command(flatten)]
+    pub confirm: args::ConfirmArgs,
+
+    /// Automatically add the output file to .gitignore (no prompt).
+    /// Useful in CI scripts. Mutually exclusive with --no-gitignore.
+    #[arg(long, conflicts_with = "no_gitignore")]
+    pub gitignore: bool,
+
+    /// Skip all .gitignore checks and warnings.
+    /// Use when you manage .gitignore externally. Mutually exclusive with --gitignore.
+    #[arg(long, conflicts_with = "gitignore")]
+    pub no_gitignore: bool,
+
+    /// Write an unresolved placeholder through literally and exit 0.
+    ///
+    /// A placeholder with no value is an error: nothing is
+    /// written, every unresolved name is listed, and the exit code is 2. An
+    /// unresolved `{{DATABASE_URL}}` in a generated config is read by
+    /// whatever runs next as the literal setting. Give a variable a fallback
+    /// with `{{NAME|default:value}}` to keep it optional.
+    #[arg(long, conflicts_with = "strict")]
+    pub allow_unresolved: bool,
+
+    /// Accepted for scripts that pass it; it changes nothing, and it goes away in 1.0.
+    #[arg(long)]
+    pub strict: bool,
+}
+
+/// The options of `evnx restore`, boxed in [`Commands::Restore`] so the enum stays small (RUST-16).
+#[derive(Args, Debug)]
+pub struct RestoreArgs {
+    /// The backup file to decrypt, as written by `evnx backup`.
+    ///
+    /// A file on disk. For a vault in evnx cloud, use `evnx cloud pull`.
+    pub backup: String,
+
+    /// Where to write the restored file.
+    ///
+    /// Defaults to the file the backup was made from — `.env.staging` for a
+    /// backup of `.env.staging` — in the current folder. A recorded name that is not `.env` or `.env.<name>`
+    /// restores to `.env`.
+    ///
+    /// An existing file is never replaced silently: evnx asks, or takes
+    /// --yes, and keeps the replaced file as <output>.bak. Content that is
+    /// not a .env evnx can read goes to <output>.restored instead (exit 5);
+    /// that file is private (0600) and holds plaintext secrets.
+    ///
+    /// `-` prints the decrypted text to stdout, and every status line goes to
+    /// stderr. Nothing is written, so there is no .bak and no .gitignore
+    /// question. On a terminal it is refused unless --show-values.
+    #[arg(long)]
+    pub output: Option<String>,
+
+    /// Print the decrypted text to a terminal anyway, with `--output -`.
+    ///
+    /// A value printed there stays in the scrollback. Piped, it is not needed.
+    #[arg(long)]
+    pub show_values: bool,
+
+    /// Replace an existing --output without asking.
+    ///
+    /// For scripts and CI, where there is no terminal to ask on. The file
+    /// it replaces is kept beside it as <output>.bak (replacing the previous
+    /// copy). Without it, and without a terminal, an existing output
+    /// stops the run (exit 4).
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+
+    /// Add the restored file to .gitignore without asking (no prompt).
+    #[arg(long, conflicts_with = "no_gitignore")]
+    pub gitignore: bool,
+
+    /// Skip the .gitignore check for the restored file.
+    #[arg(long, conflicts_with = "gitignore")]
+    pub no_gitignore: bool,
+
+    /// Decrypt and validate but do not write any files.
+    #[arg(short = 'n', long)]
+    pub dry_run: bool,
+    /// List variable names (never values) without writing any files.
+    ///
+    /// Decrypts the backup and prints each key name to stdout.
+    /// Values are never displayed. No files are written and no overwrite
+    /// prompt is shown. Use this to answer "what keys are in this backup?"
+    /// before committing to a full restore.
+    ///
+    /// Example:
+    ///   evnx restore .env.backup --inspect
+    #[arg(long)]
+    pub inspect: bool,
+
+    /// Read the passphrase from a file instead of prompting.
+    ///
+    /// The file should contain only the passphrase; leading and trailing
+    /// whitespace, such as a final newline, is trimmed. Intended for CI/CD
+    /// pipelines where interactive prompts are not possible.
+    ///
+    /// Security: less secure than the interactive prompt. The file path
+    /// may appear in process listings and shell history. Use a secrets
+    /// manager or a tmpfs-backed path (e.g. /run/secrets/) in production.
+    ///
+    /// EVNX_PASSWORD environment variable is also accepted and takes
+    /// lower priority than --key-file; when both are set, the file
+    /// wins and a warning says so.
+    ///
+    /// `evnx backup` takes the same flag, so one file round-trips.
+    ///
+    /// Examples:
+    ///   evnx restore .env.backup --key-file /run/secrets/evnx-pass
+    ///   EVNX_PASSWORD=mypass evnx restore .env.backup
+    #[arg(long = "key-file", alias = "password-file", value_name = "PATH")]
+    pub password_file: Option<String>,
+}
+
+/// The options of `evnx run`, boxed in [`Commands::Run`] so the enum stays small (RUST-16).
+#[derive(Args, Debug)]
+pub struct RunArgs {
+    /// The file to read. Defaults to `.env`, or `[defaults] env_name`.
+    #[arg(long)]
+    pub env: Option<String>,
+
+    /// Read `.env.<NAME>` instead of `.env`.
+    #[arg(long, value_name = "NAME", conflicts_with = "env")]
+    pub env_name: Option<String>,
+
+    /// Inject only variables whose name matches one of these globs.
+    #[arg(long, value_delimiter = ',', value_name = "GLOB")]
+    pub include: Option<Vec<String>>,
+
+    /// Skip variables whose name matches one of these globs.
+    #[arg(long, value_delimiter = ',', value_name = "GLOB")]
+    pub exclude: Option<Vec<String>>,
+
+    /// Inject variables that make a program load or run other code
+    /// (`PATH`, `LD_*`, `NODE_OPTIONS`, `EDITOR`, `PAGER`, `GIT_ASKPASS`,
+    /// `npm_config_*`, …), refused by default.
+    #[arg(long)]
+    pub allow_unsafe_names: bool,
+
+    /// Mask secret values in the command's output as `***`.
+    ///
+    /// On by default when output is not a terminal (a CI log, an agent),
+    /// where what is printed is kept. Only values the classifier calls
+    /// secret (by name or by value) are masked. It prevents accidents, not
+    /// exfiltration: a command that transforms a value gets past it.
+    #[arg(long, conflicts_with = "no_mask")]
+    pub mask: bool,
+
+    /// Never mask the command's output.
+    #[arg(long)]
+    pub no_mask: bool,
+
+    /// Which side wins when a variable is set both in your environment and
+    /// in the env file: `vault` (default) or `env`.
+    ///
+    /// `vault` lets the vault or env file replace what your environment holds
+    /// (today's behaviour).
+    /// `env` keeps a variable your environment already holds, even an
+    /// empty one, and only fills the names it leaves unset: for testing with
+    /// a local value over a shared one. A line on stderr names what was
+    /// kept, never a value. Names are checked either way; a kept value is
+    /// not masked, since evnx did not inject it.
+    #[arg(long, value_enum, value_name = "SIDE", default_value = "vault")]
+    pub prefer: crate::core::inject::Prefer,
+
+    /// The command to run, after `--`.
+    #[arg(last = true, allow_hyphen_values = true, value_name = "COMMAND")]
+    pub command: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
+    /// RUST-16: `Commands` is built and moved on the stack before any command
+    /// runs. A variant with many inline fields made the whole enum large (it was
+    /// the Windows debug stack problem's most visible suspect), so the big ones
+    /// are boxed; this keeps a new one from undoing that.
+    #[test]
+    fn commands_enum_stays_small() {
+        let size = std::mem::size_of::<super::Commands>();
+        assert!(
+            size <= 128,
+            "size_of::<Commands>() is {size}; box the new variant"
+        );
+    }
+
     use super::*;
     use clap::CommandFactory;
 
