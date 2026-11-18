@@ -10,14 +10,41 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::{NamingPolicy, SyncDirection};
 use crate::core::envfile::{self, only_in};
+use crate::core::output::{Mode, Out, Report};
 use crate::core::placeholder::{generate_placeholder, is_generated_value, PlaceholderConfig};
 use crate::core::Parser;
 use crate::docs;
 use crate::utils::string::{count, pluralize};
 use crate::utils::ui;
 
-use super::models::{SyncAction, SyncPreview, VarChange};
+use super::models::{PreviewRow, SyncAction, SyncPreview};
 use super::security::{log_security_event, validate_var_name};
+
+/// A planned change to one variable, with its values.
+///
+/// ⛔ Internal to sync, and deliberately not in `models.rs`: this type holds
+/// [`Secret`]s, and a report type must not (WP-17, `tests/architecture.rs`).
+/// [`VarChange::row`] is the one way out: the line the preview prints.
+#[derive(Debug, Clone)]
+pub struct VarChange {
+    pub key: String,
+    pub old_value: Option<Secret>,
+    pub new_value: Secret,
+    pub is_placeholder: bool,
+}
+
+impl VarChange {
+    /// The row a [`SyncPreview`] holds.
+    pub fn row(&self) -> PreviewRow {
+        PreviewRow {
+            key: self.key.clone(),
+            // The dry-run preview shows the value sync would write: a
+            // placeholder, or a non-credential's value (I-113).
+            shown: self.new_value.expose().to_string(),
+            is_placeholder: self.is_placeholder,
+        }
+    }
+}
 
 /// Write the env file sync manages: atomic, new files 0600, an existing file
 /// keeps its mode, a symlink is written through (DEC-S6, DEC-S7, core::safe_write).
@@ -55,7 +82,7 @@ fn write_template(path: &Path, content: &str) -> Result<()> {
 /// at all — `.env.production` was simply unreachable, and there was nowhere to
 /// put a path even if you wanted one. Messages named the literals for longer
 /// still: `--env nope.env` reported "File not found: .env" (I-125).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct SyncPaths {
     pub env: PathBuf,
     pub example: PathBuf,
@@ -367,9 +394,65 @@ pub fn execute(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<bool> {
     ui::print_docs_hint(&docs::SYNC);
 
     if ctx.check && drift.out_of_step() {
-        print_verdict(ctx, &drift);
+        Out::new(Mode::Text).emit(&super::report_of(ctx, &drift))?;
     }
     Ok(drift.out_of_step())
+}
+
+/// What the text of a [`SyncReport`](super::SyncReport) needs and its JSON
+/// does not carry (names, counts and paths: no value).
+#[derive(Debug, Default)]
+pub(super) struct SyncText {
+    pub paths: SyncPaths,
+    pub direction: SyncDirection,
+    /// Names the target lacks.
+    pub missing: usize,
+    /// Two-way: names only the template has.
+    pub template_only: usize,
+    /// `--check` with no `.env`: required `[vars]` that apply.
+    pub required: usize,
+    /// ... and the ones the template lacks, in contract order.
+    pub names: Vec<String>,
+}
+
+impl Report for super::SyncReport {
+    fn text(&self, _out: &Out) -> Result<()> {
+        let t = &self.text;
+        if self.compared_with == Some("spec") {
+            let example = t.paths.example_str();
+            if self.in_sync {
+                ui::success(format!(
+                    "{example} declares every required variable ({})",
+                    t.required
+                ));
+                ui::print_docs_hint(&docs::SYNC);
+            } else {
+                ui::error(format!(
+                    "{example} is missing {} required variable(s):",
+                    t.missing
+                ));
+                for name in &t.names {
+                    println!("  • {name}");
+                }
+                eprintln!();
+                eprintln!("✗ Out of sync. Add them to {example} and commit the result.");
+            }
+        } else if !self.in_sync {
+            print_verdict(t);
+        }
+        Ok(())
+    }
+}
+
+impl Report for SyncPreview {
+    fn text(&self, _out: &Out) -> Result<()> {
+        print_preview(self);
+        Ok(())
+    }
+}
+
+fn emit_preview(preview: &SyncPreview) -> Result<()> {
+    Out::new(Mode::Text).emit(preview)
 }
 
 /// The `--check` verdict: one line per side that drifted, each naming the
@@ -377,38 +460,38 @@ pub fn execute(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<bool> {
 ///
 /// ⚠️ It said "Run `evnx sync --direction X` and commit the result" whatever
 /// the direction — but reverse writes `.env`, which is never committed.
-fn print_verdict(ctx: &SyncCtx, drift: &Drift) {
-    let (env, example) = (ctx.paths.env_str(), ctx.paths.example_str());
+fn print_verdict(t: &SyncText) {
+    let (env, example) = (t.paths.env_str(), t.paths.example_str());
     eprintln!();
     eprintln!("✗ Out of sync.");
-    let n = drift.missing.len();
+    let n = t.missing;
     if n > 0 {
-        match ctx.direction {
+        match t.direction {
             SyncDirection::Forward => eprintln!(
                 "  · {} in {env} {} missing from {example}: run `{}` and commit {example}.",
                 count(n, "variable"),
                 is_are(n),
-                fix_command(&ctx.paths, SyncDirection::Forward)
+                fix_command(&t.paths, SyncDirection::Forward)
             ),
             SyncDirection::Reverse => eprintln!(
                 "  · {} {} missing from {env}: run `{}` to add {} to {env}.",
                 count(n, "variable"),
                 is_are(n),
-                fix_command(&ctx.paths, SyncDirection::Reverse),
+                fix_command(&t.paths, SyncDirection::Reverse),
                 it_them(n)
             ),
         }
     }
-    let t = drift.template_only.len();
-    if t > 0 {
+    let n = t.template_only;
+    if n > 0 {
         eprintln!(
             "  · {} in {example} {} not in {env}: remove {} from {example}, or add {} to {env} \
              with `{}`.",
-            count(t, "variable"),
-            is_are(t),
-            it_them(t),
-            it_them(t),
-            fix_command(&ctx.paths, SyncDirection::Reverse)
+            count(n, "variable"),
+            is_are(n),
+            it_them(n),
+            it_them(n),
+            fix_command(&t.paths, SyncDirection::Reverse)
         );
     }
 }
@@ -768,12 +851,12 @@ To fill {} from the template instead, run `{}`.",
         }
         let preview = add_with_placeholders_preview(&missing, &env_vars, config)?;
         if ctx.dry_run {
-            print_preview(&SyncPreview {
-                target_file: target_label(&paths.example),
-                action: SyncAction::Add,
-                variables: preview,
-                warnings: vec![],
-            });
+            emit_preview(&SyncPreview::new(
+                target_label(&paths.example),
+                SyncAction::Add,
+                &preview,
+                vec![],
+            ))?;
             return Ok(drift);
         }
         add_with_placeholders(paths, &missing, &env_vars, config, None)?;
@@ -958,12 +1041,12 @@ fn handle_new_example_file(ctx: &SyncCtx, vars: &Vars, config: &PlaceholderConfi
     };
 
     if ctx.dry_run {
-        print_preview(&SyncPreview {
-            target_file: target_label(&paths.example),
-            action: SyncAction::Add,
-            variables: preview,
-            warnings: vec!["New file would be created".into()],
-        });
+        emit_preview(&SyncPreview::new(
+            target_label(&paths.example),
+            SyncAction::Add,
+            &preview,
+            vec!["New file would be created".into()],
+        ))?;
         return Ok(());
     }
 
@@ -1142,12 +1225,12 @@ fn sync_reverse(ctx: &SyncCtx, config: &PlaceholderConfig) -> Result<Drift> {
         }
         let preview = add_from_example_preview(&missing, &example_vars, true, config)?;
         if ctx.dry_run {
-            print_preview(&SyncPreview {
-                target_file: target_label(&paths.env),
-                action: SyncAction::Add,
-                variables: preview,
-                warnings: placeholder_reminder(&missing, &example_vars, config),
-            });
+            emit_preview(&SyncPreview::new(
+                target_label(&paths.env),
+                SyncAction::Add,
+                &preview,
+                placeholder_reminder(&missing, &example_vars, config),
+            ))?;
             return Ok(drift);
         }
         add_from_example(paths, &missing, &example_vars, true, config)?;
@@ -1292,12 +1375,12 @@ fn handle_new_env_file(
                 is_placeholder: generated,
             }
         }));
-        print_preview(&SyncPreview {
-            target_file: target_label(&paths.env),
-            action: SyncAction::Add,
-            variables: preview,
-            warnings: vec!["Replace placeholder values with real credentials!".into()],
-        });
+        emit_preview(&SyncPreview::new(
+            target_label(&paths.env),
+            SyncAction::Add,
+            &preview,
+            vec!["Replace placeholder values with real credentials!".into()],
+        ))?;
         return Ok(());
     }
 
@@ -1636,7 +1719,7 @@ fn print_preview(preview: &SyncPreview) {
             } else {
                 ui::glyph::WARN
             };
-            let shown = value_preview(var.new_value.expose(), var.is_placeholder);
+            let shown = value_preview(&var.shown, var.is_placeholder);
             println!("  {} {} = {}", marker, key_highlight(&var.key), shown);
         }
     }
@@ -1850,5 +1933,28 @@ mod tests {
         assert_eq!(preview.len(), 1);
         assert!(!preview[0].is_placeholder);
         assert_eq!(preview[0].new_value, "example_default");
+    }
+
+    /// The preview report holds the line as it prints and nothing else: a
+    /// credential's value never reaches it, so `Debug` and JSON are clean
+    /// (WP-17).
+    #[test]
+    fn the_preview_report_holds_no_credential_value() {
+        let canary = crate::core::output::canary::value();
+        let config = PlaceholderConfig::default();
+        let mut vars = Vars::new();
+        vars.insert("API_SECRET".to_string(), Secret::new(canary.clone()));
+        vars.insert("PORT".to_string(), Secret::new("8000"));
+        let keys: Vec<&String> = vars.keys().collect();
+        let changes = add_with_placeholders_preview(&keys, &vars, &config).unwrap();
+        let preview = SyncPreview::new(
+            ".env.example".to_string(),
+            SyncAction::Add,
+            &changes,
+            vec![],
+        );
+        assert_eq!(preview.variables.len(), 2);
+        crate::core::output::canary::assert_report_clean(&canary, &preview);
+        assert_eq!(changes[1].row().shown, changes[1].new_value.expose());
     }
 }

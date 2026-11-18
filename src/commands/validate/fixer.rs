@@ -86,6 +86,23 @@ fn shown_old_value(key: &str, value: &str) -> Option<String> {
     })
 }
 
+/// The written value as a report may show it: nothing for a generated one,
+/// `(empty)`, a placeholder as it is, anything else masked. What `print_fix`
+/// always printed, worked out where the value is still at hand.
+fn shown_new(key: &str, value: &Secret, generated: bool) -> String {
+    if generated {
+        return String::new();
+    }
+    let written = value.expose();
+    if written.is_empty() {
+        "(empty)".to_string()
+    } else if is_placeholder(key, written) {
+        written.to_string()
+    } else {
+        crate::core::mask::mask(key, written)
+    }
+}
+
 pub fn apply_fix(
     key: &str,
     value: &str,
@@ -103,7 +120,8 @@ pub fn apply_fix(
                 old_value: shown_old_value(key, value),
                 old_value_withheld: !show,
                 new_length: new_val.char_count(),
-                new_value: new_val,
+                new_shown: shown_new(key, &new_val, true),
+                placeholder: is_placeholder(key, new_val.expose()),
                 generated: true,
             })
         }
@@ -117,7 +135,8 @@ pub fn apply_fix(
                 old_value: shown_old_value(key, value),
                 old_value_withheld: !show,
                 new_length: new_val.char_count(),
-                new_value: new_val,
+                new_shown: shown_new(key, &new_val, false),
+                placeholder: is_placeholder(key, new_val.expose()),
                 generated: false,
             })
         }
@@ -131,7 +150,8 @@ pub fn apply_fix(
                 old_value: shown_old_value(key, value),
                 old_value_withheld: !show,
                 new_length: new_val.char_count(),
-                new_value: new_val,
+                new_shown: shown_new(key, &new_val, false),
+                placeholder: is_placeholder(key, new_val.expose()),
                 generated: false,
             })
         }
@@ -145,7 +165,8 @@ pub fn apply_fix(
                 old_value: None,
                 old_value_withheld: false,
                 new_length: new_val.char_count(),
-                new_value: new_val,
+                new_shown: shown_new(key, &new_val, true),
+                placeholder: is_placeholder(key, new_val.expose()),
                 generated: true,
             })
         }
@@ -160,7 +181,8 @@ pub fn apply_fix(
                 old_value: None,
                 old_value_withheld: false,
                 new_length: new_val.char_count(),
-                new_value: new_val,
+                new_shown: shown_new(key, &new_val, false),
+                placeholder: is_placeholder(key, new_val.expose()),
                 generated: false,
             })
         }
@@ -679,8 +701,9 @@ mod tests {
         assert!(result.is_some());
         let fix = result.unwrap();
         assert_eq!(fix.variable, "SECRET_KEY");
-        assert_eq!(fix.new_value.len(), 64); // 32 bytes = 64 hex chars
-        assert_eq!(env.get("SECRET_KEY"), Some(&fix.new_value));
+        assert_eq!(fix.new_length, 64); // 32 bytes = 64 hex chars
+        assert_eq!(env.get("SECRET_KEY").map(Secret::char_count), Some(64));
+        assert!(fix.new_shown.is_empty(), "a generated value is never shown");
     }
 
     /// ⚠️ The test above passed for two years against a generator that returned

@@ -668,3 +668,59 @@ fn t_wp17_secret_has_no_display_serialize_deref_or_asref() {
         }
     }
 }
+
+/// A report struct holds names, counts, lengths and text that is already
+/// masked, never a `Secret` or a `Vars` map (WP-17, RUST-8). The report files
+/// of the five commands, and the renderer itself, name neither type in shipped
+/// code; a value the fixer or the writer needs lives in its own internal type
+/// (`sync::executor::VarChange`) or in the map it writes.
+#[test]
+fn t_wp17_report_structs_hold_no_secret() {
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    for f in files {
+        let rel = f
+            .strip_prefix(src())
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        let name = rel.rsplit('/').next().unwrap_or("");
+        let in_five = ["init", "add", "validate", "sync", "scan"]
+            .iter()
+            .any(|c| rel.starts_with(&format!("commands/{c}/")));
+        let report_file = ["output.rs", "report.rs", "models.rs", "types.rs"].contains(&name);
+        if !(rel == "core/output.rs" || (in_five && report_file)) {
+            continue;
+        }
+        checked += 1;
+        let text = std::fs::read_to_string(&f).unwrap();
+        for (n, l) in code_lines(&text) {
+            // Types only: not a comment, not a string literal.
+            let code = l.split("//").next().unwrap_or("");
+            let code: String = code
+                .split('"')
+                .enumerate()
+                .filter(|(i, _)| i % 2 == 0)
+                .map(|(_, part)| part)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let words = code
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .collect::<Vec<_>>();
+            if words.contains(&"Secret")
+                || words.contains(&"Vars")
+                || words.contains(&"SecretString")
+            {
+                offenders.push(format!("{rel}:{}: {}", n + 1, l.trim()));
+            }
+        }
+    }
+    assert!(checked >= 6, "the report files moved; update this test");
+    assert!(
+        offenders.is_empty(),
+        "a report struct holds a Secret or Vars; keep the value in an internal type and report its masked text or length:\n{}",
+        offenders.join("\n")
+    );
+}

@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 use crate::cli::{NamingPolicy, SyncDirection};
+use crate::core::output::{Mode, Out};
 use crate::core::verdict::Verdict;
 use crate::utils::ui;
 
@@ -18,7 +19,8 @@ mod security;
 // `PlaceholderConfig` lives in `core::placeholder` since 0.10.12 (DEC-S19);
 // re-exported so `evnx::commands::sync::PlaceholderConfig` keeps working.
 pub use crate::core::placeholder::PlaceholderConfig;
-pub use models::{SyncAction, SyncPreview, VarChange};
+pub use executor::VarChange;
+pub use models::{PreviewRow, SyncAction, SyncPreview};
 
 /// Public entry point called from main.rs.
 ///
@@ -221,8 +223,8 @@ mod tests {
 ///
 /// The shape answers the question a CI gate asks — *what* drifted, not just that
 /// something did.
-#[derive(serde::Serialize)]
-struct CheckReport {
+#[derive(Debug, serde::Serialize)]
+pub(super) struct SyncReport {
     in_sync: bool,
     direction: &'static str,
     env: String,
@@ -245,9 +247,12 @@ struct CheckReport {
     /// for the usual comparison is unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     compared_with: Option<&'static str>,
+    /// What the text needs and the JSON does not carry.
+    #[serde(skip)]
+    text: executor::SyncText,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, serde::Serialize)]
 struct CheckSummary {
     missing: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -272,7 +277,7 @@ fn check_as_json(
     let loaded = executor::load(ctx, config, false)?;
     let report = report_of(ctx, &loaded.drift);
     // stdout, and nothing else on it — the property the golden tests pin.
-    crate::core::json::emit(&report, 1, None)?;
+    Out::new(Mode::Json).emit(&report)?;
     Ok(loaded.drift.out_of_step())
 }
 
@@ -301,14 +306,14 @@ fn run_as_json(
     if !ctx.dry_run {
         executor::execute(ctx, config)?;
     }
-    crate::core::json::emit(&report, 1, None)?;
+    Out::new(Mode::Json).emit(&report)?;
     Ok(Verdict::Clean)
 }
 
-fn report_of(ctx: &executor::SyncCtx, drift: &executor::Drift) -> CheckReport {
+fn report_of(ctx: &executor::SyncCtx, drift: &executor::Drift) -> SyncReport {
     let template_only = (ctx.two_way && ctx.direction == SyncDirection::Forward)
         .then(|| sorted(drift.template_only.clone()));
-    CheckReport {
+    SyncReport {
         in_sync: !drift.out_of_step(),
         direction: match ctx.direction {
             SyncDirection::Forward => "forward",
@@ -324,6 +329,14 @@ fn report_of(ctx: &executor::SyncCtx, drift: &executor::Drift) -> CheckReport {
         template_only,
         added: None,
         compared_with: None,
+        text: executor::SyncText {
+            paths: ctx.paths.clone(),
+            direction: ctx.direction,
+            missing: drift.missing.len(),
+            template_only: drift.template_only.len(),
+            required: 0,
+            names: Vec::new(),
+        },
     }
 }
 
@@ -409,22 +422,30 @@ fn check_without_env(
             .map(String::from)
             .collect();
 
-    if json {
-        let report = CheckReport {
-            in_sync: missing.is_empty(),
-            direction: "forward",
-            env: env_path.clone(),
-            example: paths.example_str(),
-            summary: CheckSummary {
-                missing: missing.len(),
-                template_only: None,
-            },
-            missing: sorted(missing.clone()),
+    let report = SyncReport {
+        in_sync: missing.is_empty(),
+        direction: "forward",
+        env: env_path.clone(),
+        example: paths.example_str(),
+        summary: CheckSummary {
+            missing: missing.len(),
             template_only: None,
-            added: None,
-            compared_with: Some("spec"),
-        };
-        crate::core::json::emit(&report, 1, None)?;
+        },
+        missing: sorted(missing.clone()),
+        template_only: None,
+        added: None,
+        compared_with: Some("spec"),
+        text: executor::SyncText {
+            paths: paths.clone(),
+            direction: SyncDirection::Forward,
+            missing: missing.len(),
+            template_only: 0,
+            required,
+            names: missing.clone(),
+        },
+    };
+    if json {
+        Out::new(Mode::Json).emit(&report)?;
     } else {
         ui::print_header(
             "evnx sync",
@@ -438,27 +459,7 @@ fn check_without_env(
             "{env_path} not found: checking {} against the contract ([vars] in .evnx.toml)",
             paths.example_str()
         ));
-        if missing.is_empty() {
-            ui::success(format!(
-                "{} declares every required variable ({required})",
-                paths.example_str()
-            ));
-            ui::print_docs_hint(&crate::docs::SYNC);
-        } else {
-            ui::error(format!(
-                "{} is missing {} required variable(s):",
-                paths.example_str(),
-                missing.len()
-            ));
-            for name in &missing {
-                println!("  • {name}");
-            }
-            eprintln!();
-            eprintln!(
-                "✗ Out of sync. Add them to {} and commit the result.",
-                paths.example_str()
-            );
-        }
+        Out::new(Mode::Text).emit(&report)?;
     }
 
     Ok(if missing.is_empty() {

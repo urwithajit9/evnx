@@ -519,7 +519,8 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
                 if config.dry_run
                     && matches!(action, FixAction::GenerateSecret | FixAction::AddSecret)
                 {
-                    fix.new_value = "(a new random secret)".into();
+                    fix.new_shown = "(a new random secret)".to_string();
+                    fix.placeholder = policy::is_placeholder(&fix.variable, &fix.new_shown);
                 }
                 fixes_applied.push(fix);
             }
@@ -543,9 +544,8 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
 
     // ⚠️ I-037: a variable `--fix` could only add with a placeholder is not
     // fixed. It is listed apart, and is not counted as a repair.
-    let (needs_input, fixed): (Vec<_>, Vec<_>) = fixes_applied
-        .into_iter()
-        .partition(|f| policy::is_placeholder(&f.variable, f.new_value.expose()));
+    let (needs_input, fixed): (Vec<_>, Vec<_>) =
+        fixes_applied.into_iter().partition(|f| f.placeholder);
 
     // ─────────────────────────────────────────
     // Build Result
@@ -801,11 +801,16 @@ pub fn run(opts: Options) -> Result<Verdict> {
     // ─────────────────────────────────────────
     // Output (Improvement #6: UI integration)
     // ─────────────────────────────────────────
-    match format {
-        Format::Json => output_json(&result)?,
-        Format::Github => output_github_actions(&result, &origin)?,
-        Format::Pretty => output_pretty(&result, &env_path)?,
-    }
+    crate::core::output::Out::new(crate::core::output::Mode::of(match format {
+        Format::Json => "Json",
+        Format::Github => "Github",
+        Format::Pretty => "Pretty",
+    }))
+    .emit(&ValidateReport {
+        result: &result,
+        env_path: &env_path,
+        origin: &origin,
+    })?;
 
     // ─────────────────────────────────────────
     // Exit Code Handling
@@ -915,14 +920,10 @@ fn print_fix(fix: &FixApplied, env_path: &str, dry_run: bool) {
         );
         return;
     }
-    let written = fix.new_value.expose();
-    let new = if written.is_empty() {
+    let new = if fix.new_shown.is_empty() {
         "(empty)".to_string()
-    } else if policy::is_placeholder(&fix.variable, written) {
-        // A placeholder is what the file asks the user to replace.
-        written.to_string()
     } else {
-        crate::core::mask::mask(&fix.variable, written)
+        fix.new_shown.clone()
     };
     println!(
         "  • {}: {} → {}",
@@ -1130,8 +1131,31 @@ fn listed_problems(mut problems: Vec<crate::core::parser::Problem>, path: &str) 
     )
 }
 
-fn output_json(result: &ValidationResult) -> Result<()> {
-    crate::core::json::emit(result, 1, None)
+/// What `validate` prints at the end: the result, and the two names the text
+/// and the annotations call the file by. Serialises as the result alone.
+#[derive(Debug)]
+struct ValidateReport<'a> {
+    result: &'a ValidationResult,
+    /// The path as the pretty output names it.
+    env_path: &'a str,
+    /// The path as annotations name it (`<stdin>` for stdin).
+    origin: &'a str,
+}
+
+impl serde::Serialize for ValidateReport<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(self.result, s)
+    }
+}
+
+impl crate::core::output::Report for ValidateReport<'_> {
+    fn text(&self, _out: &crate::core::output::Out) -> Result<()> {
+        output_pretty(self.result, self.env_path)
+    }
+
+    fn github(&self) -> Option<Result<()>> {
+        Some(output_github_actions(self.result, self.origin))
+    }
 }
 
 /// Which line of `.env` assigns `key`, if any.
@@ -1290,5 +1314,56 @@ mod tests {
             ..fix
         };
         assert!(validate(&input, &dry).write.is_none());
+    }
+
+    /// The report holds names, counts and masked text, never a value: a canary
+    /// under secret-looking names, replaced by `--fix`, shows in neither the
+    /// report's `Debug` nor its JSON (WP-17).
+    #[test]
+    fn the_report_holds_no_value() {
+        let canary = crate::core::output::canary::value();
+        let text = format!(
+            "SECRET_KEY={canary}\nDB_PASSWORD=changeme\nAPI_TOKEN={canary}\n\
+             DATABASE_URL=postgres://app:{canary}@db:5432/app\nDEBUG=True\n"
+        );
+        let input = Input {
+            doc: Parser::default().parse_document(&text),
+            template: [
+                "SECRET_KEY",
+                "DB_PASSWORD",
+                "API_TOKEN",
+                "DATABASE_URL",
+                "DEBUG",
+                "NEW_SECRET_KEY",
+            ]
+            .into_iter()
+            .map(|k| (k.to_string(), "".into()))
+            .collect(),
+            origin: ".env".to_string(),
+            spec: Default::default(),
+            surroundings: Surroundings {
+                docker: false,
+                exposure: None,
+                known_environments: Vec::new(),
+                readers: Vec::new(),
+                environments: Vec::new(),
+            },
+        };
+        let config = ValidationConfig {
+            fix: true,
+            rotate_weak_secrets: true,
+            ..ValidationConfig::default()
+        };
+        let result = validate(&input, &config).result;
+        assert!(
+            !result.fixed.is_empty() && !result.issues.is_empty(),
+            "the canary run must have something to report"
+        );
+        let report = ValidateReport {
+            result: &result,
+            env_path: ".env",
+            origin: ".env",
+        };
+        crate::core::output::canary::assert_report_clean(&canary, &report);
     }
 }
