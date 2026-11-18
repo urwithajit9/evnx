@@ -83,7 +83,8 @@ fn t_share_01_placeholder_and_mask_have_one_definition() {
 
 /// Nothing in `src/` ends the process itself but the two places that cannot
 /// return (WP-9, RUST-2): `utils/term.rs` (a broken pipe, exit 141, from a panic
-/// hook) and `core/inject.rs` (`exit_as`, the child's own code). Everything else
+/// hook) and `core/inject.rs`, which allows it but no longer uses it (WP-11a: the
+/// child's code returns through `main`, so destructors run). Everything else
 /// returns a `Verdict` or an error, and `main` alone turns it into a code
 /// (`core::error::report`): a `process::exit` inside a command skips `main`, so
 /// its error got its own wording and, under `sync --check`, the wrong code

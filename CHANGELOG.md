@@ -134,6 +134,20 @@ New in the same change:
 
 ### Changed
 
+- **`run` and `cloud run` hand the terminal to the command (Unix).** Without
+  masking, the command now replaces evnx (`exec`): signals, the terminal and
+  the exit status are the command's own, and evnx's copy of the secrets is
+  gone while it runs. With masking evnx stays to filter the output and passes
+  `SIGTERM`, `SIGHUP`, `SIGQUIT` and `SIGINT` on to the command (not to what it
+  starts). A terminal Ctrl-C reaches the command twice there; commands that
+  count interrupts should use `--no-mask`.
+- **A command killed by a signal exits 128+n**, not 1, with a note on stderr
+  (not under `-q`). Exit 1 means "findings" everywhere else. `--help` of `run`
+  and `docs/exit-codes.md` say so.
+- **On Windows, `run` still spawns and waits.** No signal forwarding and no job
+  object: the command can outlive evnx when the console closes. Documented in
+  `run --help`; its exit code is passed through.
+
 Messages and help (WP-10). No exit code and no JSON shape changed, except the
 new `network` field below.
 
@@ -181,6 +195,12 @@ new `network` field below.
 
 ### Fixed
 
+- **`SIGTERM`, `SIGHUP` and `SIGQUIT` sent to `evnx run` or `evnx cloud run`
+  no longer leave the command running.** evnx died and the command was
+  orphaned.
+- **A masked `run` returns the command's code through `main`**, so the masker's
+  zeroize runs, instead of ending the process. A closed stdout still ends the
+  copy quietly and the command's code is still returned.
 - `update --help` lists all eight channels (cargo, Homebrew, Scoop, winget, npm,
   pip, pipx and the install script).
 - An unreachable server's error names the port when it is not the default

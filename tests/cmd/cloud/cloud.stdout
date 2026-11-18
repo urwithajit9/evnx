@@ -64,6 +64,6 @@ Exit codes:
    14  Conflict, or locked
    15  Server error, or rate limited
   141  Output closed early (broken pipe)
-    N  Once the command has started: its own exit code
+    N  Once the command has started: its own exit code, or 128+n if signal n killed it
 
 Full guide: https://docs.evnx.dev/cli/commands/cloud

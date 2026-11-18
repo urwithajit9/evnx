@@ -15,7 +15,7 @@
 //! command from reaching its answer is an `Err`, and `main` alone turns it into
 //! a code (`core::error::report`), so the stderr line is the same everywhere.
 //! No command calls `process::exit`: the only exceptions are `utils::term`
-//! (broken pipe, 141) and `core::inject::exit_as` (the child's code).
+//! (broken pipe, 141).
 
 /// Ran, nothing to report.
 pub const EXIT_OK: u8 = 0;

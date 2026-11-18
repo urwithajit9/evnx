@@ -32,6 +32,8 @@ pub mod restore_error;
 pub mod safe_write;
 pub mod secretscan;
 pub mod shell;
+#[cfg(unix)]
+pub mod signals;
 pub mod spec;
 pub mod value;
 pub mod verdict;

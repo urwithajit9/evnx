@@ -189,7 +189,7 @@ pub fn render_block(command_path: &[&str]) -> String {
         out.push_str(&format!("\n  {:>3}  {}", r.code, r.meaning));
     }
     if passes_child_code(command_path) {
-        out.push_str("\n    N  Once the command has started: its own exit code");
+        out.push_str("\n    N  Once the command has started: its own exit code, or 128+n if signal n killed it");
     }
     out
 }
