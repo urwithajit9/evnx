@@ -25,6 +25,7 @@ pub mod destinations; // per-platform modules + registry
 pub mod filtering; // include/exclude/prefix transforms
 pub mod sources; // load_secrets()
 
+use crate::core::secret::Vars;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use dialoguer::Select;
@@ -323,9 +324,10 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
     } else {
         Collisions::Refuse
     };
-    let secrets: IndexMap<String, String> = options
+    let secrets: Vars = options
         .prepare_with(&raw, dest.as_ref(), "Nothing was printed or sent.")?
         .into_iter()
+        .map(|(k, v)| (k, v.into()))
         .collect();
     options.announce_kept(&raw, dest.as_ref());
 
@@ -361,10 +363,10 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         && !args.dry_run
         && dest.kind() == DestinationKind::EmitsCommands
         && std::io::IsTerminal::is_terminal(&std::io::stdout());
-    let hidden: IndexMap<String, String> = if masked {
+    let hidden: Vars = if masked {
         secrets
             .keys()
-            .map(|k| (k.clone(), "<hidden>".to_string()))
+            .map(|k| (k.clone(), "<hidden>".into()))
             .collect()
     } else {
         IndexMap::new()

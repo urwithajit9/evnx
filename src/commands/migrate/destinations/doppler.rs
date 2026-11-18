@@ -16,10 +16,10 @@
 //!
 //! Install Doppler CLI: <https://docs.doppler.com/docs/cli>
 
+use crate::core::secret::Vars;
 use crate::core::shell;
 use anyhow::Result;
 use colored::Colorize;
-use indexmap::IndexMap;
 
 use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};
 
@@ -41,11 +41,7 @@ impl MigrationDestination for DopplerDestination {
         "Doppler"
     }
 
-    fn migrate(
-        &self,
-        secrets: &IndexMap<String, String>,
-        opts: &MigrationOptions,
-    ) -> Result<MigrationResult> {
+    fn migrate(&self, secrets: &Vars, opts: &MigrationOptions) -> Result<MigrationResult> {
         let out = opts.out;
         out.status(format!(
             "\n{} Doppler migration",
@@ -89,7 +85,7 @@ impl MigrationDestination for DopplerDestination {
             out.command(format!(
                 "doppler secrets set {}{}",
                 project_flags,
-                shell::assignment(key, value)
+                shell::assignment(key, value.expose())
             ));
         }
         out.warn_values_in_argv();
@@ -111,11 +107,12 @@ impl MigrationDestination for DopplerDestination {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     #[test]
     fn test_dry_run() {
         let dest = DopplerDestination::new(Some("myapp".into()), Some("dev".into()));
-        let mut secrets = IndexMap::new();
+        let mut secrets = Vars::new();
         secrets.insert("DB_URL".into(), "postgres://".into());
         let opts = MigrationOptions {
             dry_run: true,

@@ -11,10 +11,10 @@
 //!
 //! Install Azure CLI: <https://learn.microsoft.com/cli/azure/install-azure-cli>
 
+use crate::core::secret::Vars;
 use crate::formats::azure::secret_name;
 use anyhow::Result;
 use colored::Colorize;
-use indexmap::IndexMap;
 
 use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};
 
@@ -42,11 +42,7 @@ impl MigrationDestination for AzureDestination {
         true
     }
 
-    fn migrate(
-        &self,
-        secrets: &IndexMap<String, String>,
-        opts: &MigrationOptions,
-    ) -> Result<MigrationResult> {
+    fn migrate(&self, secrets: &Vars, opts: &MigrationOptions) -> Result<MigrationResult> {
         let out = opts.out;
         out.status(format!(
             "\n{} Azure Key Vault migration",
@@ -88,7 +84,7 @@ impl MigrationDestination for AzureDestination {
             out.command(crate::formats::azure::set_secret_script(
                 &self.vault_name,
                 &akv_name,
-                value,
+                value.expose(),
             ));
         }
 
@@ -117,6 +113,7 @@ impl MigrationDestination for AzureDestination {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     #[test]
     fn test_underscore_conversion() {
@@ -127,7 +124,7 @@ mod tests {
     fn test_dry_run() {
         // new() — no dialoguer, safe in non-TTY
         let dest = AzureDestination::new("test-vault".into());
-        let mut secrets = IndexMap::new();
+        let mut secrets = Vars::new();
         secrets.insert("DB_URL".into(), "postgres://".into());
         let opts = MigrationOptions {
             dry_run: true,

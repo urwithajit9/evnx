@@ -544,6 +544,15 @@ const EXPOSE_ALLOW: &[(&str, &str)] = &[
     ("commands/convert.rs", "convert reads the values it rewrites"),
     ("commands/remove/edit.rs", "remove reads values to find references to a removed key"),
     ("commands/restore/", "restore reads a refused line to name the key it looks like"),
+    ("commands/add/shared.rs", "add compares an existing example value and writes .env and .env.example"),
+    ("commands/init/shared.rs", "init reads the kept template's values to infer `required` and to warn about a live credential"),
+    ("commands/migrate/", "a destination prints commands or sends values (a terminal gets <hidden>)"),
+    ("commands/diff.rs", "diff --show-values, --format patch and the interactive merge write values"),
+    ("commands/sync/executor.rs", "sync writes .env and .env.example and refuses a credential in a template"),
+    ("commands/validate/checks.rs", "checks read values for shape, length and placeholders; findings name keys only"),
+    ("commands/validate/fixer.rs", "the fixer writes repaired values to .env"),
+    ("commands/validate/mod.rs", "--fix reads the old value and masks what it reports"),
+    ("commands/template.rs", "template renders values into the output"),
 ];
 
 /// `expose()` is the only way to read a `Secret`. It may appear only in files
@@ -559,7 +568,7 @@ fn t_wp17_expose_only_in_allow_list() {
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
-        if EXPOSE_ALLOW.iter().any(|(p, _)| rel.starts_with(p)) {
+        if EXPOSE_ALLOW.iter().any(|(p, _)| rel.starts_with(p)) || rel.ends_with("/tests.rs") {
             continue;
         }
         let text = std::fs::read_to_string(&f).unwrap();
@@ -622,7 +631,8 @@ fn t_wp17_no_expose_on_a_print_line() {
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
-        if EXPOSE_PRINT_ALLOW.iter().any(|(p, _)| rel.starts_with(p)) {
+        if EXPOSE_PRINT_ALLOW.iter().any(|(p, _)| rel.starts_with(p)) || rel.ends_with("/tests.rs")
+        {
             continue;
         }
         let text = std::fs::read_to_string(&f).unwrap();

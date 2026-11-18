@@ -16,6 +16,7 @@
 //! (N-11). Only `blueprint` skipped anything, and only names whose value in
 //! `.env.example` differed.
 
+use crate::core::secret::Vars;
 use anyhow::{Context, Result};
 use colored::*;
 use indexmap::IndexMap;
@@ -295,7 +296,7 @@ pub fn plan_with(
             Some(existing) => {
                 plan.conflicts.push(Conflict {
                     var_name: name.clone(),
-                    existing_value: existing.clone(),
+                    existing_value: existing.expose().to_string(),
                     new_value: meta.example_value.clone(),
                 });
                 continue; // not into .env either
@@ -352,7 +353,7 @@ fn env_only(
 /// ⚠️ Lossily, not line by line: a line inside a multiline value is value
 /// text. Read line by line, `KEY=x` there counted as `KEY` being set, so `add`
 /// skipped a variable the file did not have.
-pub(crate) fn read_assignments(path: &Path) -> Result<Option<IndexMap<String, String>>> {
+pub(crate) fn read_assignments(path: &Path) -> Result<Option<Vars>> {
     if !path.exists() {
         return Ok(None);
     }

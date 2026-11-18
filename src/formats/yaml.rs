@@ -3,6 +3,7 @@
 // ============================================================================
 
 use crate::core::converter::{ConvertOptions, Converter};
+use crate::core::secret::Vars;
 use anyhow::Result;
 use indexmap::IndexMap;
 pub struct YamlConverter;
@@ -17,7 +18,7 @@ pub struct YamlConverter;
 /// quoted string ([`crate::formats::quoting::yaml_scalar`], the rule the
 /// Kubernetes and Docker formats use).
 impl Converter for YamlConverter {
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String> {
         let transformed: IndexMap<String, String> =
             options.prepare(vars, self)?.into_iter().collect();
         if transformed.is_empty() {
@@ -67,11 +68,12 @@ fn yaml_key(key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     fn convert(pairs: &[(&str, &str)]) -> String {
-        let vars: IndexMap<String, String> = pairs
+        let vars: Vars = pairs
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), (*v).into()))
             .collect();
         YamlConverter
             .convert(&vars, &ConvertOptions::default())

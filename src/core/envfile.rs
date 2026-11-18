@@ -163,7 +163,7 @@ mod tests {
         let vars = Parser::default()
             .parse_content(&content)
             .unwrap_or_else(|e| panic!("{value:?} as {content:?}: {e}"));
-        vars["KEY"].clone()
+        vars["KEY"].expose().to_string()
     }
 
     const TRICKY: &[&str] = &[

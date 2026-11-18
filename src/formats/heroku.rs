@@ -3,9 +3,9 @@
 //! Converts environment variables to Heroku CLI commands for setting config vars.
 
 use crate::core::converter::{ConvertOptions, Converter};
+use crate::core::secret::Vars;
 use anyhow::Result;
 // use std::collections::HashMap;
-use indexmap::IndexMap;
 
 /// Heroku Config Vars converter
 ///
@@ -33,7 +33,7 @@ impl HerokuConfigConverter {
 }
 
 impl Converter for HerokuConfigConverter {
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String> {
         let mut output = String::new();
 
         // ⚠️ With an app the comments name it too. They said `--app
@@ -104,6 +104,7 @@ impl Converter for HerokuConfigConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     #[test]
     fn test_default_converter() {
@@ -125,9 +126,9 @@ mod tests {
 
     #[test]
     fn test_convert_basic() {
-        let mut vars = IndexMap::new();
-        vars.insert("DATABASE_URL".to_string(), "postgresql://...".to_string());
-        vars.insert("SECRET_KEY".to_string(), "secret123".to_string());
+        let mut vars = Vars::new();
+        vars.insert("DATABASE_URL".to_string(), "postgresql://...".into());
+        vars.insert("SECRET_KEY".to_string(), "secret123".into());
 
         let converter = HerokuConfigConverter::new("test-app".to_string());
         let options = ConvertOptions::default();
@@ -141,8 +142,8 @@ mod tests {
 
     #[test]
     fn test_convert_without_app() {
-        let mut vars = IndexMap::new();
-        vars.insert("KEY".to_string(), "value".to_string());
+        let mut vars = Vars::new();
+        vars.insert("KEY".to_string(), "value".into());
 
         let converter = HerokuConfigConverter::without_app();
         let options = ConvertOptions::default();
@@ -153,11 +154,8 @@ mod tests {
 
     #[test]
     fn test_convert_with_special_chars() {
-        let mut vars = IndexMap::new();
-        vars.insert(
-            "KEY".to_string(),
-            "value with \"quotes\" and $vars".to_string(),
-        );
+        let mut vars = Vars::new();
+        vars.insert("KEY".to_string(), "value with \"quotes\" and $vars".into());
 
         let converter = HerokuConfigConverter::default();
         let options = ConvertOptions::default();
@@ -182,9 +180,9 @@ mod tests {
 
     #[test]
     fn one_call_sets_every_variable() {
-        let mut vars = IndexMap::new();
-        vars.insert("A".to_string(), "1".to_string());
-        vars.insert("B".to_string(), "it's".to_string());
+        let mut vars = Vars::new();
+        vars.insert("A".to_string(), "1".into());
+        vars.insert("B".to_string(), "it's".into());
         let out = HerokuConfigConverter::new("my-app".to_string())
             .convert(&vars, &ConvertOptions::default())
             .unwrap();

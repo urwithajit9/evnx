@@ -11,6 +11,7 @@ pub mod fixer;
 pub mod policy;
 pub mod types;
 
+use crate::core::secret::{Secret, Vars};
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -209,7 +210,7 @@ pub struct Input {
     /// The env file, parsed; its variables are what the checks judge.
     pub doc: crate::core::parser::Document,
     /// The template's (`.env.example`'s) variables.
-    pub template: indexmap::IndexMap<String, String>,
+    pub template: Vars,
     /// Where the env file came from: each finding's location starts with it.
     pub origin: String,
     pub spec: crate::core::spec::Spec,
@@ -221,10 +222,7 @@ pub struct Outcome {
     pub result: ValidationResult,
     /// The env file's variables after `--fix`, and the keys it changed. `None`
     /// when there is nothing to write, including every dry run.
-    pub write: Option<(
-        indexmap::IndexMap<String, String>,
-        std::collections::BTreeSet<String>,
-    )>,
+    pub write: Option<(Vars, std::collections::BTreeSet<String>)>,
 }
 
 /// Every check, and `--fix`'s repairs worked out in memory, with no IO: the
@@ -254,7 +252,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
     // Recounting by re-running the same checks, rather than by subtracting the
     // fixes that were applied, is what keeps the two from drifting: a fix that
     // does not actually resolve its issue stays visible.
-    let collect_issues = |vars: &indexmap::IndexMap<String, String>| -> Vec<Issue> {
+    let collect_issues = |vars: &Vars| -> Vec<Issue> {
         let mut issues = Vec::new();
 
         // ⚠️ The spec replaces the template as the source of requiredness when the
@@ -422,10 +420,10 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
                 } else {
                     FixAction::AddMissing(policy::fill_for_missing(
                         &issue.variable,
-                        input.template.get(&issue.variable).map(String::as_str),
+                        input.template.get(&issue.variable).map(Secret::expose),
                     ))
                 };
-                fixes_to_apply.push((issue.variable.clone(), String::new(), action));
+                fixes_to_apply.push((issue.variable.clone(), Secret::default(), action));
             }
         }
 
@@ -435,7 +433,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
-                        val,
+                        val.expose(),
                         &IssueType::PlaceholderValue,
                         weak_secret_policy,
                     );
@@ -452,7 +450,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
-                        val,
+                        val.expose(),
                         &IssueType::BooleanTrap,
                         weak_secret_policy,
                     );
@@ -474,7 +472,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
                 if let Some(val) = env_vars.get(&issue.variable) {
                     let action = suggest_fix(
                         &issue.variable,
-                        val,
+                        val.expose(),
                         &IssueType::WeakSecret,
                         weak_secret_policy,
                     );
@@ -514,14 +512,14 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
 
         // Apply all collected fixes
         for (key, old_val, action) in fixes_to_apply {
-            if let Some(mut fix) = apply_fix(&key, &old_val, &action, &mut env_vars) {
+            if let Some(mut fix) = apply_fix(&key, old_val.expose(), &action, &mut env_vars) {
                 // ⚠️ A dry run never shows a generated secret: the real run
                 // makes a different one, and a value printed here would be
                 // copied somewhere and match nothing.
                 if config.dry_run
                     && matches!(action, FixAction::GenerateSecret | FixAction::AddSecret)
                 {
-                    fix.new_value = "(a new random secret)".to_string();
+                    fix.new_value = "(a new random secret)".into();
                 }
                 fixes_applied.push(fix);
             }
@@ -547,7 +545,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
     // fixed. It is listed apart, and is not counted as a repair.
     let (needs_input, fixed): (Vec<_>, Vec<_>) = fixes_applied
         .into_iter()
-        .partition(|f| policy::is_placeholder(&f.variable, &f.new_value));
+        .partition(|f| policy::is_placeholder(&f.variable, f.new_value.expose()));
 
     // ─────────────────────────────────────────
     // Build Result
@@ -917,13 +915,14 @@ fn print_fix(fix: &FixApplied, env_path: &str, dry_run: bool) {
         );
         return;
     }
-    let new = if fix.new_value.is_empty() {
+    let written = fix.new_value.expose();
+    let new = if written.is_empty() {
         "(empty)".to_string()
-    } else if policy::is_placeholder(&fix.variable, &fix.new_value) {
+    } else if policy::is_placeholder(&fix.variable, written) {
         // A placeholder is what the file asks the user to replace.
-        fix.new_value.clone()
+        written.to_string()
     } else {
-        crate::core::mask::mask(&fix.variable, &fix.new_value)
+        crate::core::mask::mask(&fix.variable, written)
     };
     println!(
         "  • {}: {} → {}",
@@ -1214,7 +1213,7 @@ pub use types::{
 fn required_total(
     spec: &crate::core::spec::Spec,
     env_name: Option<&str>,
-    example_vars: &indexmap::IndexMap<String, String>,
+    example_vars: &Vars,
 ) -> usize {
     if spec.is_empty() {
         return example_vars.len();
@@ -1232,9 +1231,9 @@ fn required_total(
 /// present requirements. It counts the declared names that are there.
 fn required_present(
     spec: &crate::core::spec::Spec,
-    env_vars: &indexmap::IndexMap<String, String>,
+    env_vars: &Vars,
     env_name: Option<&str>,
-    example_vars: &indexmap::IndexMap<String, String>,
+    example_vars: &Vars,
 ) -> usize {
     if spec.is_empty() {
         return example_vars
@@ -1260,7 +1259,7 @@ mod tests {
             doc: Parser::default().parse_document("DEBUG=True\n"),
             template: [("DEBUG", ""), ("PORT", "8080")]
                 .into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .map(|(k, v)| (k.to_string(), (*v).into()))
                 .collect(),
             origin: "stdin".to_string(),
             spec: Default::default(),

@@ -11,6 +11,7 @@
 //! evnx migrate --to aws --dry-run
 //! ```
 
+use crate::core::secret::Vars;
 use crate::core::shell;
 use anyhow::Result;
 use colored::Colorize;
@@ -59,18 +60,15 @@ impl MigrationDestination for AwsDestination {
         "AWS Secrets Manager"
     }
 
-    fn migrate(
-        &self,
-        secrets: &IndexMap<String, String>,
-        opts: &MigrationOptions,
-    ) -> Result<MigrationResult> {
+    fn migrate(&self, secrets: &Vars, opts: &MigrationOptions) -> Result<MigrationResult> {
         let out = opts.out;
         out.status(format!(
             "\n{} AWS Secrets Manager migration",
             crate::utils::ui::glyph::INFO.cyan()
         ));
 
-        let json = serde_json::to_string_pretty(secrets)?;
+        let json = // EXPOSE: the payload of the printed command.
+        serde_json::to_string_pretty(&crate::core::secret::exposed_map(secrets))?;
         let profile_flag = self
             .profile
             .as_deref()
@@ -158,9 +156,10 @@ impl MigrationDestination for AwsDestination {
 mod tests {
     use super::super::super::destination::DestinationKind;
     use super::*;
+    use crate::core::secret::Vars;
 
-    fn make_secrets() -> IndexMap<String, String> {
-        let mut m = IndexMap::new();
+    fn make_secrets() -> Vars {
+        let mut m = Vars::new();
         m.insert("DB_URL".into(), "postgres://localhost/test".into());
         m.insert("API_KEY".into(), "secret123".into());
         m

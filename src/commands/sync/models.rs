@@ -20,8 +20,8 @@ pub enum SyncAction {
 #[derive(Debug, Clone)]
 pub struct VarChange {
     pub key: String,
-    pub old_value: Option<String>,
-    pub new_value: String,
+    pub old_value: Option<crate::core::secret::Secret>,
+    pub new_value: crate::core::secret::Secret,
     pub is_placeholder: bool,
 }
 
@@ -43,8 +43,8 @@ mod tests {
     fn test_var_change_clone() {
         let change = VarChange {
             key: "TEST".to_string(),
-            old_value: Some("old".to_string()),
-            new_value: "new".to_string(),
+            old_value: Some("old".into()),
+            new_value: "new".into(),
             is_placeholder: true,
         };
         let cloned = change.clone();

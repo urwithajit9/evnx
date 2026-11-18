@@ -12,6 +12,7 @@
 pub mod infer;
 pub mod writeback;
 
+use crate::core::secret::{Secret, Vars};
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
@@ -48,7 +49,7 @@ pub fn check(
         }
         return Ok(Verdict::Clean);
     }
-    let keys = |path: &str| -> Result<indexmap::IndexMap<String, String>> {
+    let keys = |path: &str| -> Result<Vars> {
         let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
         Parser::new(Default::default())
             .parse_content(&text)
@@ -464,7 +465,7 @@ fn from_project(inputs: &Inputs) -> Result<(Vec<Entry>, LeftOut)> {
         .into_iter()
         .map(|n| {
             let required = !from_template
-                || infer::required(n, template.get(n).map(String::as_str).unwrap_or(""));
+                || infer::required(n, template.get(n).map(Secret::expose).unwrap_or(""));
             (n, required)
         })
         .chain(extras.into_iter().map(|n| (n, false)))
@@ -473,7 +474,7 @@ fn from_project(inputs: &Inputs) -> Result<(Vec<Entry>, LeftOut)> {
         let sample = actual
             .get(name)
             .or_else(|| template.get(name))
-            .map(String::as_str)
+            .map(Secret::expose)
             .unwrap_or("");
         let (spec, dropped) = entry(name, sample, required, None);
         if let Some(f) = dropped {
@@ -502,7 +503,7 @@ fn from_project(inputs: &Inputs) -> Result<(Vec<Entry>, LeftOut)> {
 
 /// The variables in `path`, in file order. A file nobody named may be absent
 /// and reads as empty; a named one must exist (I-182, DEC-SP8).
-fn read(path: &str, named_by: Option<&str>) -> Result<indexmap::IndexMap<String, String>> {
+fn read(path: &str, named_by: Option<&str>) -> Result<Vars> {
     let parser = Parser::default();
     match named_by {
         Some(by) => Ok(parser

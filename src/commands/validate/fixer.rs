@@ -6,7 +6,7 @@
 //! - Writing fixed content back to .env files
 
 // use std::collections::HashMap;
-use indexmap::IndexMap;
+use crate::core::secret::{Secret, Vars};
 use std::collections::{BTreeSet, HashMap};
 
 use anyhow::{Context, Result};
@@ -90,11 +90,11 @@ pub fn apply_fix(
     key: &str,
     value: &str,
     action: &FixAction,
-    env_vars: &mut IndexMap<String, String>,
+    env_vars: &mut Vars,
 ) -> Option<FixApplied> {
     match action {
         FixAction::GenerateSecret => {
-            let new_val = generate_secure_secret();
+            let new_val = Secret::new(generate_secure_secret());
             env_vars.insert(key.to_string(), new_val.clone());
             let show = old_value_is_safe_to_show(key, value);
             Some(FixApplied {
@@ -102,12 +102,13 @@ pub fn apply_fix(
                 action: "Generated secure secret".to_string(),
                 old_value: shown_old_value(key, value),
                 old_value_withheld: !show,
-                new_length: new_val.chars().count(),
+                new_length: new_val.char_count(),
                 new_value: new_val,
                 generated: true,
             })
         }
         FixAction::ReplacePlaceholder(new_val) => {
+            let new_val = Secret::from(new_val.as_str());
             env_vars.insert(key.to_string(), new_val.clone());
             let show = old_value_is_safe_to_show(key, value);
             Some(FixApplied {
@@ -115,12 +116,13 @@ pub fn apply_fix(
                 action: "Replaced placeholder".to_string(),
                 old_value: shown_old_value(key, value),
                 old_value_withheld: !show,
-                new_length: new_val.chars().count(),
-                new_value: new_val.clone(),
+                new_length: new_val.char_count(),
+                new_value: new_val,
                 generated: false,
             })
         }
         FixAction::FixBoolean(new_val) => {
+            let new_val = Secret::from(new_val.as_str());
             env_vars.insert(key.to_string(), new_val.clone());
             let show = old_value_is_safe_to_show(key, value);
             Some(FixApplied {
@@ -128,13 +130,13 @@ pub fn apply_fix(
                 action: "Fixed boolean format".to_string(),
                 old_value: shown_old_value(key, value),
                 old_value_withheld: !show,
-                new_length: new_val.chars().count(),
-                new_value: new_val.clone(),
+                new_length: new_val.char_count(),
+                new_value: new_val,
                 generated: false,
             })
         }
         FixAction::AddSecret => {
-            let new_val = generate_secure_secret();
+            let new_val = Secret::new(generate_secure_secret());
             env_vars.insert(key.to_string(), new_val.clone());
             Some(FixApplied {
                 variable: key.to_string(),
@@ -142,12 +144,13 @@ pub fn apply_fix(
                 // There was no previous value.
                 old_value: None,
                 old_value_withheld: false,
-                new_length: new_val.chars().count(),
+                new_length: new_val.char_count(),
                 new_value: new_val,
                 generated: true,
             })
         }
         FixAction::AddMissing(new_val) => {
+            let new_val = Secret::from(new_val.as_str());
             env_vars.insert(key.to_string(), new_val.clone());
             Some(FixApplied {
                 variable: key.to_string(),
@@ -156,8 +159,8 @@ pub fn apply_fix(
                 // declining to show one.
                 old_value: None,
                 old_value_withheld: false,
-                new_length: new_val.chars().count(),
-                new_value: new_val.clone(),
+                new_length: new_val.char_count(),
+                new_value: new_val,
                 generated: false,
             })
         }
@@ -216,7 +219,7 @@ pub fn apply_fix(
 /// the shared path (C-04).
 pub fn write_fixed_file(
     env_path: &str,
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     original_content: &str,
     changed: &BTreeSet<String>,
 ) -> Result<(
@@ -267,7 +270,7 @@ pub fn write_fixed_file(
                 }
                 output.push_str(key);
                 output.push('=');
-                output.push_str(&render_value(key, value)?);
+                output.push_str(&render_value(key, value.expose())?);
                 output.push('\n');
                 replaced_to = entry.map_or(n, |e| e.span.end_line);
             }
@@ -297,7 +300,7 @@ pub fn write_fixed_file(
         if let Some(value) = env_vars.get(key) {
             output.push_str(key);
             output.push('=');
-            output.push_str(&render_value(key, value)?);
+            output.push_str(&render_value(key, value.expose())?);
             output.push('\n');
         }
     }
@@ -330,6 +333,7 @@ mod tests {
     use super::super::policy::{suggest_fix, WeakSecretPolicy};
     use super::super::types::IssueType;
     use super::*;
+    use crate::core::secret::Vars;
     use std::fs;
 
     // ─────────────────────────────────────────────────────────
@@ -349,9 +353,9 @@ mod tests {
         let path = dir.join(".env");
         fs::write(&path, original).unwrap();
 
-        let map: IndexMap<String, String> = vars
+        let map: Vars = vars
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), (*v).into()))
             .collect();
         let set: BTreeSet<String> = changed.iter().map(|k| k.to_string()).collect();
 
@@ -478,7 +482,7 @@ mod tests {
                 .parse_content(&line)
                 .expect("evnx could not parse what evnx wrote");
             assert_eq!(
-                parsed.get("K").map(String::as_str),
+                parsed.get("K").map(Secret::expose),
                 Some(value),
                 "round trip changed the value: wrote {line:?}"
             );
@@ -538,7 +542,7 @@ mod tests {
     /// into `--format json`, which serialises this struct verbatim.
     #[test]
     fn a_replaced_credential_is_not_repeated_back() {
-        let mut env = IndexMap::new();
+        let mut env = Vars::new();
         let fix = apply_fix(
             "DATABASE_PASSWORD",
             "p@ss word#1",
@@ -560,7 +564,7 @@ mod tests {
     /// `"True" → true` is the whole point of the report.
     #[test]
     fn a_harmless_old_value_is_still_shown() {
-        let mut env = IndexMap::new();
+        let mut env = Vars::new();
         let boolean = apply_fix(
             "DEBUG",
             "True",
@@ -591,13 +595,13 @@ mod tests {
 
         let first = "A=one\n";
         fs::write(&path, first).unwrap();
-        let mut map = IndexMap::new();
-        map.insert("A".to_string(), "two".to_string());
+        let mut map = Vars::new();
+        map.insert("A".to_string(), "two".into());
         let (b1, _) =
             write_fixed_file(p, &map, first, &["A".to_string()].into_iter().collect()).unwrap();
 
         let second = fs::read_to_string(&path).unwrap();
-        map.insert("A".to_string(), "three".to_string());
+        map.insert("A".to_string(), "three".into());
         let (b2, _) =
             write_fixed_file(p, &map, &second, &["A".to_string()].into_iter().collect()).unwrap();
 
@@ -668,7 +672,7 @@ mod tests {
 
     #[test]
     fn test_apply_fix_generates_secret() {
-        let mut env = IndexMap::new();
+        let mut env = Vars::new();
         let action = FixAction::GenerateSecret;
         let result = apply_fix("SECRET_KEY", "weak", &action, &mut env);
 
@@ -725,12 +729,12 @@ mod tests {
 
     #[test]
     fn test_apply_fix_boolean() {
-        let mut env = IndexMap::new();
+        let mut env = Vars::new();
         let action = FixAction::FixBoolean("false".to_string());
         let result = apply_fix("DEBUG", "True", &action, &mut env);
 
         assert!(result.is_some());
-        assert_eq!(env.get("DEBUG"), Some(&"false".to_string()));
+        assert_eq!(env.get("DEBUG"), Some(&"false".into()));
     }
 
     #[test]

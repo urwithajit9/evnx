@@ -11,8 +11,8 @@
 //! config), not exfiltration: a child that transforms a value (base64, split
 //! it) gets past it.
 
+use crate::core::secret::Vars;
 use anyhow::{anyhow, Result};
-use indexmap::IndexMap;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 
@@ -44,11 +44,11 @@ impl Masker {
     /// multi-line value on its own; short values (under 6 bytes) are left
     /// alone, or every `1` and `true` would become `***`. `None` when there
     /// is nothing to mask.
-    pub fn new(vars: &IndexMap<String, String>) -> Option<Self> {
+    pub fn new(vars: &Vars) -> Option<Self> {
         let mut secrets: Vec<Vec<u8>> = vars
             .iter()
-            .filter(|(k, v)| crate::core::classify::holds_secret(k, v))
-            .flat_map(|(_, v)| v.lines().map(|l| l.trim().as_bytes().to_vec()))
+            .filter(|(k, v)| crate::core::classify::holds_secret(k, v.expose()))
+            .flat_map(|(_, v)| v.expose().lines().map(|l| l.trim().as_bytes().to_vec()))
             .filter(|s| s.len() >= 6)
             .collect();
         secrets.sort_by_key(|s| std::cmp::Reverse(s.len()));
@@ -176,12 +176,7 @@ pub fn exit_as(status: std::process::ExitStatus) -> Result<()> {
 ///
 /// `source` names where the variables came from, and `who` who can change
 /// it: `("the vault", "push to this vault")` or `(".env", "edit .env")`.
-pub fn check_names(
-    env_vars: &IndexMap<String, String>,
-    allow: bool,
-    source: &str,
-    who: &str,
-) -> Result<()> {
+pub fn check_names(env_vars: &Vars, allow: bool, source: &str, who: &str) -> Result<()> {
     if allow {
         return Ok(());
     }
@@ -214,7 +209,7 @@ pub fn check_names(
 /// network traffic or change which certificate authorities are trusted
 /// (`HTTPS_PROXY`, `SSL_CERT_FILE`, ...). The command still runs. Hidden by
 /// `-q` like the other notices; never prints a value (WP-11c).
-pub fn warn_sensitive_names(env_vars: &IndexMap<String, String>) {
+pub fn warn_sensitive_names(env_vars: &Vars) {
     if crate::utils::ui::is_quiet() {
         return;
     }
@@ -264,7 +259,7 @@ impl Prefer {
     /// values. `current` reads a name from the environment.
     pub fn resolve_with(
         self,
-        vars: &mut IndexMap<String, String>,
+        vars: &mut Vars,
         current: impl Fn(&str) -> Option<std::ffi::OsString>,
     ) -> Shadowed {
         let mut shadowed = Shadowed::default();
@@ -273,7 +268,7 @@ impl Prefer {
             let Some(existing) = current(name) else {
                 continue;
             };
-            let differs = existing.to_str() != Some(value.as_str());
+            let differs = existing.to_str() != Some(value.expose());
             match self {
                 Prefer::Env => {
                     if differs {
@@ -297,7 +292,7 @@ impl Prefer {
     }
 
     /// [`Self::resolve_with`] against the process environment.
-    pub fn resolve(self, vars: &mut IndexMap<String, String>) -> Shadowed {
+    pub fn resolve(self, vars: &mut Vars) -> Shadowed {
         self.resolve_with(vars, |n| std::env::var_os(n))
     }
 }
@@ -355,7 +350,7 @@ enum Launch {
 pub fn spawn_with_env(
     program: &str,
     args: &[String],
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     mask: Option<&Masker>,
 ) -> std::io::Result<std::process::ExitStatus> {
     launch(Launch::Wait, program, args, env_vars, mask)
@@ -367,7 +362,7 @@ pub fn spawn_with_env(
 pub fn run_with_env(
     program: &str,
     args: &[String],
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     mask: Option<&Masker>,
 ) -> std::io::Result<std::process::ExitStatus> {
     let how = if cfg!(unix) && mask.is_none() {
@@ -382,7 +377,7 @@ fn launch(
     how: Launch,
     program: &str,
     args: &[String],
-    env_vars: &IndexMap<String, String>,
+    env_vars: &Vars,
     mask: Option<&Masker>,
 ) -> std::io::Result<std::process::ExitStatus> {
     let mut cmd = Command::new(program);
@@ -401,7 +396,8 @@ fn launch(
     for (key, value) in env_vars {
         // `env`, never an argument. This one line is the whole reason to prefer
         // this command over `export $(cat .env | xargs)`.
-        cmd.env(key, value);
+        // EXPOSE: the child process receives the values.
+        cmd.env(key, value.expose());
     }
     #[cfg(unix)]
     if how == Launch::Replace {
@@ -441,13 +437,14 @@ fn launch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     // ─── spawn_with_env ─────────────────────────────────────────────────────
 
-    fn vars(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+    fn vars(pairs: &[(&str, &str)]) -> Vars {
         pairs
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), (*v).into()))
             .collect()
     }
 
@@ -500,7 +497,7 @@ mod tests {
     fn the_childs_exit_code_comes_back_unchanged() {
         for code in [0, 1, 7, 42] {
             let status =
-                spawn_with_env("sh", &sh(&format!("exit {code}")), &IndexMap::new(), None).unwrap();
+                spawn_with_env("sh", &sh(&format!("exit {code}")), &Vars::new(), None).unwrap();
             assert_eq!(status.code(), Some(code), "exit {code} was not preserved");
         }
     }
@@ -512,7 +509,7 @@ mod tests {
         let status = spawn_with_env(
             "sh",
             &sh(r#"[ "$RUN_INHERIT_PROBE" = "from-parent" ]"#),
-            &IndexMap::new(),
+            &Vars::new(),
             None,
         )
         .unwrap();
@@ -543,7 +540,7 @@ mod tests {
         let status = spawn_with_env(
             "sh",
             &sh(r#"[ -z "${EVNX_TOKEN_PROBE_I227+set}" ]"#),
-            &IndexMap::new(),
+            &Vars::new(),
             None,
         )
         .unwrap();
@@ -583,8 +580,7 @@ mod tests {
     /// the "use sh -c" hint rather than a bare OS error.
     #[test]
     fn a_missing_command_is_reported_as_not_found() {
-        let err =
-            spawn_with_env("evnx-no-such-binary-xyz", &[], &IndexMap::new(), None).unwrap_err();
+        let err = spawn_with_env("evnx-no-such-binary-xyz", &[], &Vars::new(), None).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
     }
 

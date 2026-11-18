@@ -68,6 +68,7 @@
 //! | `core/converter.rs`    | `EnvFile.vars`     | None — field name preserved |
 //! | Tests                  | `parse_content`    | None — method name preserved |
 
+use crate::core::secret::Vars;
 use indexmap::IndexMap;
 use std::collections::HashSet;
 // use std::collections::HashMap;
@@ -277,7 +278,7 @@ pub struct EnvFile {
     /// `HashMap`. Use an `IndexMap` if deterministic ordering is needed.
     /// Changed from `HashMap` to `IndexMap` to preserve key order for
     /// predictable diff output and consistent user experience.
-    pub vars: IndexMap<String, String>,
+    pub vars: Vars,
 
     /// The file path this was parsed from, or `None` when parsed from a string.
     ///
@@ -527,7 +528,7 @@ impl Parser {
     pub fn parse_content_located(
         &self,
         content: &str,
-    ) -> ParseResult<(IndexMap<String, String>, IndexMap<String, usize>)> {
+    ) -> ParseResult<(Vars, IndexMap<String, usize>)> {
         self.parse_document(content).into_result()
     }
 
@@ -720,7 +721,7 @@ impl Parser {
     /// is the same work and also returns where each key was written — needed by
     /// anything that reports a position, which until D21 meant `scan` kept its
     /// own `.env` splitting instead.
-    pub fn parse_content(&self, content: &str) -> ParseResult<IndexMap<String, String>> {
+    pub fn parse_content(&self, content: &str) -> ParseResult<Vars> {
         self.parse_content_located(content).map(|(vars, _)| vars)
     }
 }

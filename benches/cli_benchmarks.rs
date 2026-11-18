@@ -190,7 +190,7 @@ fn bench_convert_to_json(c: &mut Criterion) {
 
     let mut vars = IndexMap::new();
     for i in 0..50 {
-        vars.insert(format!("KEY_{}", i), format!("value_{}", i));
+        vars.insert(format!("KEY_{}", i), format!("value_{}", i).into());
     }
 
     c.bench_function("convert_to_json", |b| {
@@ -210,8 +210,8 @@ fn bench_convert_with_filtering(c: &mut Criterion) {
 
     let mut vars = IndexMap::new();
     for i in 0..50 {
-        vars.insert(format!("AWS_{}", i), format!("value_{}", i));
-        vars.insert(format!("DB_{}", i), format!("value_{}", i));
+        vars.insert(format!("AWS_{}", i), format!("value_{}", i).into());
+        vars.insert(format!("DB_{}", i), format!("value_{}", i).into());
     }
 
     c.bench_function("convert_with_filtering", |b| {

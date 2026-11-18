@@ -380,11 +380,11 @@ pub(crate) fn template_vars(target: &Target) -> Result<VarCollection> {
         return Ok(vars);
     };
     for (name, value) in map {
-        let required = crate::commands::spec::infer::required(&name, &value);
+        let required = crate::commands::spec::infer::required(&name, value.expose());
         vars.vars.insert(
             name,
             VarMetadata {
-                example_value: value,
+                example_value: value.expose().to_string(),
                 description: None,
                 category: None,
                 required,
@@ -408,8 +408,8 @@ pub(crate) fn warn_template_secrets(target: &Target) {
         .iter()
         // `user:password@localhost` is evnx's own sample, as `scan` knows (N-20).
         .filter(|(_, v)| {
-            crate::core::classify::is_secret_shaped(v)
-                && !crate::core::placeholder::is_url_placeholder(v)
+            crate::core::classify::is_secret_shaped(v.expose())
+                && !crate::core::placeholder::is_url_placeholder(v.expose())
         })
         .map(|(n, _)| n.as_str())
         .collect();

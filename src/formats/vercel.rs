@@ -3,9 +3,9 @@
 // ============================================================================
 
 use crate::core::converter::{ConvertOptions, Converter};
+use crate::core::secret::Vars;
 use anyhow::Result;
 // use std::collections::HashMap;
-use indexmap::IndexMap;
 
 pub struct VercelEnvConverter;
 
@@ -34,7 +34,7 @@ impl Converter for VercelEnvConverter {
     /// `{key, value, type, target}`, where `type` is `plain` or `sensitive`
     /// (RM-65, I-092). It was a map keyed by name, which that endpoint does
     /// not take.
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String> {
         let entries: Vec<serde_json::Value> = options
             .prepare(vars, self)?
             .into_iter()
@@ -68,6 +68,7 @@ impl Converter for VercelEnvConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     fn run(pairs: &[(&str, &str)]) -> serde_json::Value {
         let list = run_list(pairs);
@@ -79,9 +80,9 @@ mod tests {
     }
 
     fn run_list(pairs: &[(&str, &str)]) -> serde_json::Value {
-        let vars: IndexMap<String, String> = pairs
+        let vars: Vars = pairs
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), (*v).into()))
             .collect();
         let out = VercelEnvConverter
             .convert(&vars, &ConvertOptions::default())

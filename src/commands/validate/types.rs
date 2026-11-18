@@ -159,7 +159,7 @@ pub struct FixApplied {
     /// value is ([`new_length`](Self::new_length)), not what it is, because a
     /// generated secret printed here lands in terminal scrollback and CI logs.
     #[serde(skip_serializing, default)]
-    pub new_value: String,
+    pub new_value: crate::core::secret::Secret,
     /// Characters in the value that was written.
     #[serde(default)]
     pub new_length: usize,

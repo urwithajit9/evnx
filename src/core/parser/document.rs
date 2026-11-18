@@ -17,7 +17,7 @@
 use indexmap::IndexMap;
 
 use super::{ParseError, ParseResult};
-use crate::core::secret::Secret;
+use crate::core::secret::{Secret, Vars};
 
 /// Where something was written: 1-based lines, inclusive. `end_line > line`
 /// only for a value that spans lines. `line == 0` means it did not come from a
@@ -125,10 +125,10 @@ impl Document {
     /// One value per key: the **last** assignment's value, in the **first**
     /// assignment's position. That is `IndexMap::insert`, which is what the
     /// parser always returned, and every command depends on that order.
-    pub fn vars(&self) -> IndexMap<String, String> {
+    pub fn vars(&self) -> Vars {
         let mut out = IndexMap::with_capacity(self.entries.len());
         for e in &self.entries {
-            out.insert(e.key.clone(), e.value.expose().to_string());
+            out.insert(e.key.clone(), e.value.clone());
         }
         out
     }
@@ -209,7 +209,7 @@ impl Document {
     }
 
     /// The strict reading: the variables and their lines, or the first problem.
-    pub fn into_result(self) -> ParseResult<(IndexMap<String, String>, IndexMap<String, usize>)> {
+    pub fn into_result(self) -> ParseResult<(Vars, IndexMap<String, usize>)> {
         if self.problems.is_empty() {
             return Ok((self.vars(), self.lines()));
         }

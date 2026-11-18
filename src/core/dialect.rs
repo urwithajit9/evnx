@@ -257,6 +257,7 @@ fn join(n: Vec<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Secret;
 
     const NODE: Reader = Reader::NodeDotenv {
         expand: Some(false),
@@ -295,8 +296,8 @@ mod tests {
                 .parse_content(&case.fixture)
                 .unwrap();
             assert_eq!(
-                vars.get(&case.key),
-                case.values["evnx"].as_ref(),
+                vars.get(&case.key).map(Secret::expose),
+                case.values["evnx"].as_deref(),
                 "{}: evnx's column is not what evnx reads",
                 case.id
             );

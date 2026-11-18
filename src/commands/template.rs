@@ -56,11 +56,11 @@
 //! ## Basic template processing
 //!
 //! ```no_run
-//! # use indexmap::IndexMap;
+//! # use evnx::core::secret::Vars;
 //! # use evnx::commands::template::process_template;
 //! let template = "url={{DATABASE_URL}}";
-//! let mut vars = IndexMap::new();
-//! vars.insert("DATABASE_URL".to_string(), "postgresql://localhost".to_string());
+//! let mut vars = Vars::new();
+//! vars.insert("DATABASE_URL".to_string(), "postgresql://localhost".into());
 //!
 //! let result = process_template(template, &vars).unwrap();
 //! assert_eq!(result, "url=postgresql://localhost");
@@ -69,12 +69,12 @@
 //! ## Using filters
 //!
 //! ```no_run
-//! # use indexmap::IndexMap;
+//! # use evnx::core::secret::Vars;
 //! # use evnx::commands::template::process_template;
 //! let template = "ENV={{ENV|upper}}, debug={{DEBUG|bool}}";
-//! let mut vars = IndexMap::new();
-//! vars.insert("ENV".to_string(), "production".to_string());
-//! vars.insert("DEBUG".to_string(), "yes".to_string());
+//! let mut vars = Vars::new();
+//! vars.insert("ENV".to_string(), "production".into());
+//! vars.insert("DEBUG".to_string(), "yes".into());
 //!
 //! let result = process_template(template, &vars).unwrap();
 //! assert_eq!(result, "ENV=PRODUCTION, debug=true");
@@ -111,8 +111,8 @@
 //! - Template paths should be validated by the caller to prevent path traversal
 //! - For JSON output, use `|json` filter to properly escape special characters
 
+use crate::core::secret::Vars;
 use anyhow::{Context, Result};
-use indexmap::IndexMap;
 use std::fs;
 
 use colored::Colorize;
@@ -513,12 +513,7 @@ const FILTERS: &[&str] = &[
 /// Every `{{ NAME | … }}` counts when NAME is an identifier or a key in the
 /// env file, whether it has a value or not (owner, 2026-10-17). Text that is
 /// not an evnx reference — Helm's `{{ .Values.x | quote }}` — is left alone.
-fn check_filters(
-    template: &str,
-    vars: &IndexMap<String, String>,
-    input: &str,
-    output: &str,
-) -> Result<()> {
+fn check_filters(template: &str, vars: &Vars, input: &str, output: &str) -> Result<()> {
     let mut problems = Vec::new();
     for token in tokens(template, vars) {
         let Token::Ref(r) = token else { continue };
@@ -660,7 +655,7 @@ fn parse_filters(tail: &str) -> Vec<Filter<'_>> {
 /// Read `template` once, left to right (B3). `vars` decides whether a
 /// non-identifier name such as `VAR.WITH.DOTS` is a key or someone else's
 /// syntax.
-fn tokens<'a>(template: &'a str, vars: &IndexMap<String, String>) -> Vec<Token<'a>> {
+fn tokens<'a>(template: &'a str, vars: &Vars) -> Vec<Token<'a>> {
     let is_name = |n: &str| is_identifier(n) || vars.contains_key(n);
     let mut out = Vec::new();
     let (mut i, mut text, mut line) = (0, 0, 1);
@@ -770,8 +765,8 @@ fn tokens<'a>(template: &'a str, vars: &IndexMap<String, String>) -> Vec<Token<'
 
 /// What `r` renders as, or `None` when it stays unresolved: no value, and no
 /// `default:` in its chain.
-fn resolve(r: &Ref, vars: &IndexMap<String, String>) -> Result<Option<String>> {
-    let mut value = vars.get(r.name).cloned();
+fn resolve(r: &Ref, vars: &Vars) -> Result<Option<String>> {
+    let mut value: Option<String> = vars.get(r.name).map(|v| v.expose().to_string());
     for f in &r.filters {
         value = match (f, value) {
             (Filter::Default(text), v) => match v {
@@ -896,17 +891,17 @@ fn toml_escape(c: char, out: &mut String) {
 /// # Example
 ///
 /// ```
-/// # use indexmap::IndexMap;
+/// # use evnx::core::secret::Vars;
 /// # use evnx::commands::template::process_template;
 /// let template = "host={{HOST|upper}}, port=${PORT}";
-/// let mut vars = IndexMap::new();
-/// vars.insert("HOST".to_string(), "localhost".to_string());
-/// vars.insert("PORT".to_string(), "3000".to_string());
+/// let mut vars = Vars::new();
+/// vars.insert("HOST".to_string(), "localhost".into());
+/// vars.insert("PORT".to_string(), "3000".into());
 ///
 /// let result = process_template(template, &vars).unwrap();
 /// assert_eq!(result, "host=LOCALHOST, port=3000");
 /// ```
-pub fn process_template(template: &str, vars: &IndexMap<String, String>) -> Result<String> {
+pub fn process_template(template: &str, vars: &Vars) -> Result<String> {
     let mut out = String::with_capacity(template.len());
     for token in tokens(template, vars) {
         match token {
@@ -922,10 +917,7 @@ pub fn process_template(template: &str, vars: &IndexMap<String, String>) -> Resu
 
 /// The shell expansions in `template` (`${X:-d}` and the like), with their
 /// lines: evnx writes them through as they are (I-136).
-fn shell_expansions<'a>(
-    template: &'a str,
-    vars: &IndexMap<String, String>,
-) -> Vec<(usize, &'a str)> {
+fn shell_expansions<'a>(template: &'a str, vars: &Vars) -> Vec<(usize, &'a str)> {
     tokens(template, vars)
         .into_iter()
         .filter_map(|t| match t {
@@ -972,17 +964,17 @@ fn shown(key: &str, value: &str) -> String {
 /// # Example
 ///
 /// ```
-/// # use indexmap::IndexMap;
+/// # use evnx::core::secret::Vars;
 /// # use evnx::commands::template::detect_undefined_vars;
 /// let template = "url=${DATABASE_URL}, host={{HOST}}";
-/// let mut vars = IndexMap::new();
-/// vars.insert("DATABASE_URL".to_string(), "postgresql://localhost".to_string());
+/// let mut vars = Vars::new();
+/// vars.insert("DATABASE_URL".to_string(), "postgresql://localhost".into());
 /// // HOST is not defined
 ///
 /// let undefined = detect_undefined_vars(template, &vars);
 /// assert_eq!(undefined, vec!["HOST"]);
 /// ```
-pub fn detect_undefined_vars(template: &str, vars: &IndexMap<String, String>) -> Vec<String> {
+pub fn detect_undefined_vars(template: &str, vars: &Vars) -> Vec<String> {
     let mut undefined: Vec<String> = Vec::new();
     for token in tokens(template, vars) {
         let Token::Ref(r) = token else { continue };
@@ -1004,13 +996,14 @@ pub fn detect_undefined_vars(template: &str, vars: &IndexMap<String, String>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     /// Render through the real engine. Tests read the output, never a
     /// pattern: a pattern test cannot see that a value gets re-scanned.
     fn render(template: &str, pairs: &[(&str, &str)]) -> String {
-        let vars: IndexMap<String, String> = pairs
+        let vars: Vars = pairs
             .iter()
-            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .map(|(k, v)| ((*k).to_string(), (*v).into()))
             .collect();
         process_template(template, &vars).unwrap()
     }
@@ -1036,11 +1029,8 @@ mod tests {
     #[test]
     fn test_process_template_simple_substitution() {
         let template = "DATABASE_URL=${DATABASE_URL}";
-        let mut vars = IndexMap::new();
-        vars.insert(
-            "DATABASE_URL".to_string(),
-            "postgresql://localhost".to_string(),
-        );
+        let mut vars = Vars::new();
+        vars.insert("DATABASE_URL".to_string(), "postgresql://localhost".into());
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "DATABASE_URL=postgresql://localhost");
@@ -1049,11 +1039,8 @@ mod tests {
     #[test]
     fn test_process_template_double_braces() {
         let template = "url: {{DATABASE_URL}}";
-        let mut vars = IndexMap::new();
-        vars.insert(
-            "DATABASE_URL".to_string(),
-            "postgresql://localhost".to_string(),
-        );
+        let mut vars = Vars::new();
+        vars.insert("DATABASE_URL".to_string(), "postgresql://localhost".into());
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "url: postgresql://localhost");
@@ -1062,9 +1049,9 @@ mod tests {
     #[test]
     fn test_process_template_simple_prefix() {
         let template = "host: $HOST port: $PORT";
-        let mut vars = IndexMap::new();
-        vars.insert("HOST".to_string(), "localhost".to_string());
-        vars.insert("PORT".to_string(), "3000".to_string());
+        let mut vars = Vars::new();
+        vars.insert("HOST".to_string(), "localhost".into());
+        vars.insert("PORT".to_string(), "3000".into());
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "host: localhost port: 3000");
@@ -1074,8 +1061,8 @@ mod tests {
     fn test_filter_order_prevents_conflicts() {
         // Ensure {{VAR|upper}} is not partially replaced by {{VAR}} substitution
         let template = "env={{ENV|upper}} raw={{ENV}}";
-        let mut vars = IndexMap::new();
-        vars.insert("ENV".to_string(), "production".to_string());
+        let mut vars = Vars::new();
+        vars.insert("ENV".to_string(), "production".into());
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "env=PRODUCTION raw=production");
@@ -1084,8 +1071,8 @@ mod tests {
     #[test]
     fn test_filter_upper() {
         let template = "ENV={{ENV|upper}}";
-        let mut vars = IndexMap::new();
-        vars.insert("ENV".to_string(), "production".to_string());
+        let mut vars = Vars::new();
+        vars.insert("ENV".to_string(), "production".into());
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "ENV=PRODUCTION");
@@ -1094,8 +1081,8 @@ mod tests {
     #[test]
     fn test_filter_lower() {
         let template = "ENV={{ENV|lower}}";
-        let mut vars = IndexMap::new();
-        vars.insert("ENV".to_string(), "PRODUCTION".to_string());
+        let mut vars = Vars::new();
+        vars.insert("ENV".to_string(), "PRODUCTION".into());
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "ENV=production");
@@ -1104,8 +1091,8 @@ mod tests {
     #[test]
     fn test_filter_title() {
         let template = "name={{NAME|title}}";
-        let mut vars = IndexMap::new();
-        vars.insert("NAME".to_string(), "hello world".to_string());
+        let mut vars = Vars::new();
+        vars.insert("NAME".to_string(), "hello world".into());
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "name=Hello World");
@@ -1113,8 +1100,8 @@ mod tests {
 
     #[test]
     fn test_filter_capitalize_keeps_the_rest() {
-        let mut vars = IndexMap::new();
-        vars.insert("NAME".to_string(), "hello wORLD".to_string());
+        let mut vars = Vars::new();
+        vars.insert("NAME".to_string(), "hello wORLD".into());
         let result = process_template("name={{NAME|capitalize}}", &vars).unwrap();
         assert_eq!(result, "name=Hello wORLD");
     }
@@ -1133,8 +1120,8 @@ mod tests {
         let test_cases = vec!["true", "True", "TRUE", "yes", "Yes", "1", "on", "Y"];
         for truthy in test_cases {
             let template = "debug={{DEBUG|bool}}";
-            let mut vars = IndexMap::new();
-            vars.insert("DEBUG".to_string(), truthy.to_string());
+            let mut vars = Vars::new();
+            vars.insert("DEBUG".to_string(), truthy.into());
 
             let result = process_template(template, &vars).unwrap();
             assert_eq!(result, "debug=true", "Failed for truthy value: {}", truthy);
@@ -1144,8 +1131,8 @@ mod tests {
     #[test]
     fn test_filter_bool_unknown_words_are_an_error() {
         for word in ["maybe", "", "enabled"] {
-            let mut vars = IndexMap::new();
-            vars.insert("DEBUG".to_string(), word.to_string());
+            let mut vars = Vars::new();
+            vars.insert("DEBUG".to_string(), word.into());
             let err = process_template("debug={{DEBUG|bool}}", &vars).unwrap_err();
             assert!(err.to_string().contains("not a boolean"), "{word:?}: {err}");
         }
@@ -1156,8 +1143,8 @@ mod tests {
         let test_cases = vec!["false", "no", "0", "off", "N"];
         for falsy in test_cases {
             let template = "debug={{DEBUG|bool}}";
-            let mut vars = IndexMap::new();
-            vars.insert("DEBUG".to_string(), falsy.to_string());
+            let mut vars = Vars::new();
+            vars.insert("DEBUG".to_string(), falsy.into());
 
             let result = process_template(template, &vars).unwrap();
             assert_eq!(result, "debug=false", "Failed for falsy value: {}", falsy);
@@ -1167,8 +1154,8 @@ mod tests {
     #[test]
     fn test_filter_int_valid() {
         let template = "port={{PORT|int}}";
-        let mut vars = IndexMap::new();
-        vars.insert("PORT".to_string(), "8000".to_string());
+        let mut vars = Vars::new();
+        vars.insert("PORT".to_string(), "8000".into());
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "port=8000");
@@ -1177,8 +1164,8 @@ mod tests {
     #[test]
     fn test_filter_int_invalid_error() {
         let template = "port={{PORT|int}}";
-        let mut vars = IndexMap::new();
-        vars.insert("PORT".to_string(), "not-a-number".to_string());
+        let mut vars = Vars::new();
+        vars.insert("PORT".to_string(), "not-a-number".into());
 
         let result = process_template(template, &vars);
         assert!(result.is_err());
@@ -1191,9 +1178,9 @@ mod tests {
     #[test]
     fn test_filter_json_proper_escaping() {
         let template = r#"value={{VALUE|json}}"#;
-        let mut vars = IndexMap::new();
+        let mut vars = Vars::new();
         // Value containing quotes and special chars
-        vars.insert("VALUE".to_string(), r#"hello "world" & <test>"#.to_string());
+        vars.insert("VALUE".to_string(), r#"hello "world" & <test>"#.into());
 
         let result = process_template(template, &vars).unwrap();
         // Should be properly JSON-escaped WITH quotes
@@ -1203,8 +1190,8 @@ mod tests {
     #[test]
     fn test_filter_default_when_empty() {
         let template = "opt={{OPTIONAL|default:fallback}}";
-        let mut vars = IndexMap::new();
-        vars.insert("OPTIONAL".to_string(), "".to_string()); // empty value
+        let mut vars = Vars::new();
+        vars.insert("OPTIONAL".to_string(), "".into()); // empty value
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "opt=fallback");
@@ -1213,8 +1200,8 @@ mod tests {
     #[test]
     fn test_filter_default_when_defined() {
         let template = "opt={{OPTIONAL|default:fallback}}";
-        let mut vars = IndexMap::new();
-        vars.insert("OPTIONAL".to_string(), "actual_value".to_string());
+        let mut vars = Vars::new();
+        vars.insert("OPTIONAL".to_string(), "actual_value".into());
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "opt=actual_value");
@@ -1223,8 +1210,8 @@ mod tests {
     #[test]
     fn test_detect_undefined_vars_all_styles() {
         let template = "${UNDEF1} {{UNDEF2}} $UNDEF3 {{DEFINED|upper}}";
-        let mut vars = IndexMap::new();
-        vars.insert("DEFINED".to_string(), "value".to_string());
+        let mut vars = Vars::new();
+        vars.insert("DEFINED".to_string(), "value".into());
 
         // I-135, DEC-T3: bare `$UNDEF3` is another program's syntax, not a
         // missing variable.
@@ -1235,7 +1222,7 @@ mod tests {
     #[test]
     fn test_detect_undefined_vars_no_duplicates() {
         let template = "${VAR} {{VAR}} ${ VAR }";
-        let vars = IndexMap::new(); // VAR not defined
+        let vars = Vars::new(); // VAR not defined
 
         let undefined = detect_undefined_vars(template, &vars);
         // Should report VAR only once despite 3 references
@@ -1246,8 +1233,8 @@ mod tests {
     fn test_regex_escaping_for_special_var_names() {
         // Test that variable names with regex special chars are handled safely
         let template = "${VAR_NAME}";
-        let mut vars = IndexMap::new();
-        vars.insert("VAR_NAME".to_string(), "value".to_string());
+        let mut vars = Vars::new();
+        vars.insert("VAR_NAME".to_string(), "value".into());
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "value");
@@ -1256,10 +1243,10 @@ mod tests {
     #[test]
     fn test_mixed_substitution_styles() {
         let template = "${A} {{B}} $C";
-        let mut vars = IndexMap::new();
-        vars.insert("A".to_string(), "1".to_string());
-        vars.insert("B".to_string(), "2".to_string());
-        vars.insert("C".to_string(), "3".to_string());
+        let mut vars = Vars::new();
+        vars.insert("A".to_string(), "1".into());
+        vars.insert("B".to_string(), "2".into());
+        vars.insert("C".to_string(), "3".into());
 
         let result = process_template(template, &vars).unwrap();
         assert_eq!(result, "1 2 3");
@@ -1390,7 +1377,7 @@ mod tests {
         // No value and no default: written as it is.
         assert_eq!(render("{{NOPE|upper}}", &[]), "{{NOPE|upper}}");
         assert!(
-            detect_undefined_vars("{{NOPE|upper}} {{N2|upper|default:x}}", &IndexMap::new())
+            detect_undefined_vars("{{NOPE|upper}} {{N2|upper|default:x}}", &Vars::new())
                 == ["NOPE"]
         );
     }
@@ -1404,9 +1391,9 @@ mod tests {
             render(t, &[("PORT", "80")]),
             "root $document_root; $1 $HOME 80 80"
         );
-        assert!(detect_undefined_vars("$HOME $host", &IndexMap::new()).is_empty());
+        assert!(detect_undefined_vars("$HOME $host", &Vars::new()).is_empty());
         assert_eq!(
-            detect_undefined_vars("${HOME} {{host}}", &IndexMap::new()),
+            detect_undefined_vars("${HOME} {{host}}", &Vars::new()),
             ["HOME", "host"]
         );
     }
@@ -1419,7 +1406,7 @@ mod tests {
         assert_eq!(render(r"\${X} \{{X}} \$X", v), "${X} {{X}} $X");
         assert_eq!(render(r"\\${X} \\{{X}}", v), r"\v \v");
         assert_eq!(render(r#""C:\\dir\n" \x"#, v), r#""C:\\dir\n" \x"#);
-        assert!(detect_undefined_vars(r"\${NOPE} \{{NOPE}}", &IndexMap::new()).is_empty());
+        assert!(detect_undefined_vars(r"\${NOPE} \{{NOPE}}", &Vars::new()).is_empty());
     }
 
     /// DEC-T10: values quoted for the syntax they land in.
@@ -1442,7 +1429,7 @@ mod tests {
     fn b3_i136_shell_expansions_are_written_through_and_found() {
         let t = "a\nb=${X:-d} ${Y?e} ${1}";
         assert_eq!(render(t, &[("X", "x")]), t);
-        let found = shell_expansions(t, &IndexMap::new());
+        let found = shell_expansions(t, &Vars::new());
         assert_eq!(found, [(2, "${X:-d}"), (2, "${Y?e}")]);
     }
 
@@ -1450,8 +1437,8 @@ mod tests {
     /// (debug builds included).
     #[test]
     fn b3_i143_two_thousand_keys_render_within_budget() {
-        let vars: IndexMap<String, String> = (0..2000)
-            .map(|i| (format!("KEY_{i}"), format!("value-{i}")))
+        let vars: Vars = (0..2000)
+            .map(|i| (format!("KEY_{i}"), format!("value-{i}").into()))
             .collect();
         let template: String = (0..3000)
             .map(|i| {

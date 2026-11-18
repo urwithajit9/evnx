@@ -10,7 +10,7 @@
 //! .env file
 //!     │
 //!     ▼
-//! Parser::parse_file() → IndexMap<String, String>
+//! Parser::parse_file() → Vars
 //!     │
 //!     ▼
 //! ConvertOptions::prepare() → filter, rename, the format's own names,
@@ -626,11 +626,7 @@ fn read_input(config: &ConvertConfig) -> Result<crate::core::parser::EnvFile> {
         ConvertFrom::Json => {
             let doc = crate::core::envjson::document_from_json(&text)
                 .with_context(|| format!("Failed to read {origin} as --from json"))?;
-            let vars = doc
-                .entries
-                .into_iter()
-                .map(|e| (e.key, e.value.expose().to_string()))
-                .collect();
+            let vars = doc.entries.into_iter().map(|e| (e.key, e.value)).collect();
             (vars, Default::default())
         }
         ConvertFrom::Dotenv => parser
@@ -873,7 +869,7 @@ fn write_output(
 mod tests {
     use super::*;
     use crate::core::converter::KeyTransform;
-    use indexmap::IndexMap;
+    use crate::core::secret::Vars;
     use std::fs;
     use tempfile::TempDir;
 
@@ -1014,8 +1010,7 @@ mod tests {
     #[test]
     fn every_format_normalises_to_exactly_one_trailing_newline() {
         use crate::core::converter::newline_terminated;
-        let vars: IndexMap<String, String> =
-            [("A".to_string(), "1".to_string())].into_iter().collect();
+        let vars: Vars = [("A".to_string(), "1".into())].into_iter().collect();
 
         for name in [
             "json",
@@ -1059,10 +1054,10 @@ mod tests {
 
     #[test]
     fn test_glob_filter_integration() {
-        let mut vars = IndexMap::new(); // ✅ IndexMap now imported
-        vars.insert("AWS_KEY".to_string(), "aws_val".to_string());
-        vars.insert("DB_KEY".to_string(), "db_val".to_string());
-        vars.insert("APP_URL".to_string(), "app_val".to_string());
+        let mut vars = Vars::new(); // ✅ IndexMap now imported
+        vars.insert("AWS_KEY".to_string(), "aws_val".into());
+        vars.insert("DB_KEY".to_string(), "db_val".into());
+        vars.insert("APP_URL".to_string(), "app_val".into());
 
         let options = ConvertOptions {
             include: vec!["AWS_*".to_string()],

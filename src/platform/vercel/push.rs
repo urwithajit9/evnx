@@ -37,12 +37,12 @@
 //!   has a value in it. A response body is never printed: create and delete
 //!   answers echo ciphertext.
 
+use crate::core::secret::{Secret, Vars};
 use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
-use indexmap::IndexMap;
 use serde_json::json;
 
 use super::api::{Created, Failure, Kind, NewEnv, RemoteVar};
@@ -237,14 +237,20 @@ impl PushPlan {
 
 /// A new entry for `env` (and the branch, for preview): a built-in environment
 /// by `target`, a custom one by `customEnvironmentIds` with no `target`.
-fn new_entry(env: &Environment, opts: &Options, key: &str, value: &str, type_: String) -> NewEnv {
+fn new_entry(
+    env: &Environment,
+    opts: &Options,
+    key: &str,
+    value: &Secret,
+    type_: String,
+) -> NewEnv {
     let (target, custom_environment_ids) = match env {
         Environment::Custom(c) => (vec![], c.id.iter().cloned().collect()),
         built_in => (vec![built_in.name().to_string()], vec![]),
     };
     NewEnv {
         key: key.to_string(),
-        value: SecretString::new(value),
+        value: value.clone(),
         type_,
         target,
         custom_environment_ids,
@@ -321,15 +327,10 @@ fn existing_type(r: &Remote) -> String {
 
 /// Work out what push does. `remote` holds the chosen environment's entries,
 /// with the Config values the local file has keys for already read.
-pub fn build(
-    local: &IndexMap<String, String>,
-    remote: &[Remote],
-    env: &Environment,
-    opts: &Options,
-) -> PushPlan {
+pub fn build(local: &Vars, remote: &[Remote], env: &Environment, opts: &Options) -> PushPlan {
     // A key with an empty value is out of the comparison altogether, so that it
     // is neither "remote only" nor an update that would blank a Secret.
-    let sendable: IndexMap<String, String> = local
+    let sendable: Vars = local
         .iter()
         .filter(|(_, v)| !v.is_empty())
         .map(|(k, v)| (k.clone(), v.clone()))
@@ -346,7 +347,7 @@ pub fn build(
             let (kind, note) = match remote_by_key.get(key.as_str()) {
                 Some(r) => (r.kind, "empty value locally; Vercel's is left as it is"),
                 None => (
-                    plan::suggested_kind(key, value),
+                    plan::suggested_kind(key, value.expose()),
                     "empty value; nothing to create",
                 ),
             };
@@ -416,7 +417,7 @@ pub fn build(
                             out.patches.push(Patch {
                                 key: key.clone(),
                                 id: r.var.id.clone(),
-                                value: SecretString::new(value.as_str()),
+                                value: value.clone(),
                             });
                         } else {
                             push_row.note = Some(format!(
@@ -1149,6 +1150,7 @@ mod tests {
     }
 
     use super::*;
+    use crate::core::secret::Vars;
     use serde_json::Value;
 
     fn remote(id: &str, key: &str, kind: Kind, target: &[&str], value: Option<&str>) -> Remote {
@@ -1173,10 +1175,10 @@ mod tests {
         }
     }
 
-    fn local(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+    fn local(pairs: &[(&str, &str)]) -> Vars {
         pairs
             .iter()
-            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .map(|(k, v)| ((*k).to_string(), (*v).into()))
             .collect()
     }
 

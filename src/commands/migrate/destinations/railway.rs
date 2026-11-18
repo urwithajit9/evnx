@@ -25,10 +25,10 @@
 //!
 //! Install Railway CLI: <https://docs.railway.com/cli>
 
+use crate::core::secret::Vars;
 use crate::core::shell;
 use anyhow::Result;
 use colored::Colorize;
-use indexmap::IndexMap;
 
 use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};
 
@@ -75,11 +75,7 @@ impl MigrationDestination for RailwayDestination {
         "Railway"
     }
 
-    fn migrate(
-        &self,
-        secrets: &IndexMap<String, String>,
-        opts: &MigrationOptions,
-    ) -> Result<MigrationResult> {
+    fn migrate(&self, secrets: &Vars, opts: &MigrationOptions) -> Result<MigrationResult> {
         let out = opts.out;
         out.status(format!(
             "\n{} Railway migration",
@@ -115,7 +111,10 @@ impl MigrationDestination for RailwayDestination {
         // One call sets every variable, and triggers one deploy.
         let mut command = self.set_command();
         for (key, value) in secrets {
-            command.push_str(&format!(" \\\n  {}", shell::assignment(key, value)));
+            command.push_str(&format!(
+                " \\\n  {}",
+                shell::assignment(key, value.expose())
+            ));
         }
         out.command(command);
         out.warn_values_in_argv();

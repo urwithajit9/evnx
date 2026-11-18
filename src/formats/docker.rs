@@ -3,14 +3,14 @@
 // ============================================================================
 
 use crate::core::converter::{ConvertOptions, Converter};
+use crate::core::secret::Vars;
 use anyhow::Result;
 // use std::collections::HashMap;
-use indexmap::IndexMap;
 
 pub struct DockerComposeConverter;
 
 impl Converter for DockerComposeConverter {
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String> {
         let mut output = String::new();
         output.push_str("environment:\n");
 

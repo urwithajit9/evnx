@@ -28,9 +28,9 @@
 //! difference between this and every `export`-based workaround. There is a test
 //! that checks exactly that by reading `/proc`.
 
+use crate::core::secret::Vars;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
-use indexmap::IndexMap;
 
 use zeroize::Zeroize;
 
@@ -279,7 +279,7 @@ pub(crate) fn stale_message(stale: &[(String, i32)], min: i32) -> Option<String>
 /// `pub(crate)` so `cloud export` parses a pulled version exactly the way `cloud
 /// run` does. Two copies of "bytes to variables" inside one module is how `scan`
 /// came to miss a secret in a multiline value (D21) — one parser, one answer.
-pub(crate) fn parse_env(plaintext: &[u8]) -> Result<IndexMap<String, String>> {
+pub(crate) fn parse_env(plaintext: &[u8]) -> Result<Vars> {
     let text = std::str::from_utf8(plaintext)
         .context("the vault's contents are not UTF-8, so they cannot be parsed into variables")?;
     crate::core::parser::Parser::new(Default::default())
@@ -290,6 +290,8 @@ pub(crate) fn parse_env(plaintext: &[u8]) -> Result<IndexMap<String, String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Secret;
+    use crate::core::secret::Vars;
 
     #[test]
     fn the_stale_message_names_every_vault_below_and_nothing_else() {
@@ -312,8 +314,8 @@ mod tests {
     #[test]
     fn parsing_reuses_the_ordinary_env_parser() {
         let vars = parse_env(b"A=1\n# comment\nB=two words\n").unwrap();
-        assert_eq!(vars.get("A").map(String::as_str), Some("1"));
-        assert_eq!(vars.get("B").map(String::as_str), Some("two words"));
+        assert_eq!(vars.get("A").map(Secret::expose), Some("1"));
+        assert_eq!(vars.get("B").map(Secret::expose), Some("two words"));
         assert_eq!(vars.len(), 2, "comments must not become variables");
     }
 
@@ -329,10 +331,10 @@ mod tests {
         assert!(parse_env(b"# only a comment\n").unwrap().is_empty());
     }
 
-    fn vars(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+    fn vars(pairs: &[(&str, &str)]) -> Vars {
         pairs
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), (*v).into()))
             .collect()
     }
 
@@ -351,7 +353,7 @@ mod tests {
         all: &[(&str, &str)],
         include: Option<&[String]>,
         exclude: Option<&[String]>,
-    ) -> IndexMap<String, String> {
+    ) -> Vars {
         let mut m = vars(all);
         m.retain(|name, _| crate::core::glob::admits(name, include, exclude));
         m

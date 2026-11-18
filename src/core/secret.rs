@@ -26,6 +26,9 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 #[derive(Clone, Default, Zeroize, ZeroizeOnDrop)]
 pub struct Secret(String);
 
+/// The variables of an env file, in file order: name to value.
+pub type Vars = IndexMap<String, Secret>;
+
 /// The name tokens and platform values were given before there was one type.
 pub type SecretString = Secret;
 
@@ -111,7 +114,7 @@ pub fn serialize_exposed<S: Serializer>(v: &Secret, s: S) -> Result<S::Ok, S::Er
 }
 
 /// A borrowed `name -> text` view of a map, for writers (`serde_json`, templates).
-pub fn exposed_map(vars: &IndexMap<String, Secret>) -> IndexMap<&str, &str> {
+pub fn exposed_map(vars: &Vars) -> IndexMap<&str, &str> {
     vars.iter().map(|(k, v)| (k.as_str(), v.expose())).collect()
 }
 

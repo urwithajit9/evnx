@@ -12,6 +12,7 @@
 
 use super::detector::{Detection, DetectorRegistry};
 use crate::core::parser::{strip_export, Document, Parser, ParserConfig};
+use crate::core::secret::Secret;
 
 /// How to read the text: as a `.env`, through the parser, as a structured
 /// file (C8), or line by line.
@@ -207,7 +208,7 @@ fn scan_env(doc: &Document, ctx: &Context, out: &mut Vec<Found>) {
     for (key, value) in &vars {
         let line_num = lines.get(key).copied().unwrap_or(1);
         let location = format!("{}:{} ({})", ctx.path, line_num, key);
-        if let Some(detection) = best(ctx.registry.scan_kv(key, value, &location)) {
+        if let Some(detection) = best(ctx.registry.scan_kv(key, value.expose(), &location)) {
             out.push(Found {
                 line: line_num,
                 variable: Some(key.clone()),
@@ -245,7 +246,7 @@ fn scan_env(doc: &Document, ctx: &Context, out: &mut Vec<Found>) {
     }
     for e in &doc.entries {
         let shadowed = lines.get(&e.key) != Some(&e.span.line);
-        if shadowed && vars.get(&e.key).map(String::as_str) != Some(e.value.expose()) {
+        if shadowed && vars.get(&e.key).map(Secret::expose) != Some(e.value.expose()) {
             dropped.push((e.span.line, &e.key, e.value.expose()));
         }
     }

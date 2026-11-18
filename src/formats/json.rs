@@ -3,6 +3,7 @@
 // ============================================================================
 
 use crate::core::converter::{ConvertOptions, Converter};
+use crate::core::secret::Vars;
 use anyhow::Result;
 // use std::collections::HashMap;
 use indexmap::IndexMap;
@@ -10,7 +11,7 @@ use indexmap::IndexMap;
 pub struct JsonConverter;
 
 impl Converter for JsonConverter {
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String> {
         let transformed: IndexMap<String, String> =
             options.prepare(vars, self)?.into_iter().collect();
 
@@ -30,12 +31,13 @@ impl Converter for JsonConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
     // use std::collections::HashMap;
 
     #[test]
     fn test_json_converter() {
-        let mut vars = IndexMap::new();
-        vars.insert("KEY".to_string(), "value".to_string());
+        let mut vars = Vars::new();
+        vars.insert("KEY".to_string(), "value".into());
 
         let converter = JsonConverter;
         let options = ConvertOptions::default();

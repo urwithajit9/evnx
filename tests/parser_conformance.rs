@@ -87,7 +87,7 @@ fn reading(parser: &Parser, content: &str) -> String {
         Ok((vars, lines)) => {
             writeln!(out, "strict: ok").unwrap();
             for (k, v) in &vars {
-                writeln!(out, "  L{} {k} = {v:?}", lines[k]).unwrap();
+                writeln!(out, "  L{} {k} = {:?}", lines[k], v.expose()).unwrap();
             }
         }
         Err(e) => writeln!(out, "strict: error: {e}").unwrap(),

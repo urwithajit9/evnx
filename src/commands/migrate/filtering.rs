@@ -6,7 +6,7 @@
 //! only one with no collision check. It stays as a library function, now a
 //! thin wrapper over that pipeline, for callers that want the old map.
 
-use indexmap::IndexMap;
+use crate::core::secret::Vars;
 
 use crate::core::converter::{ConvertOptions, Naming};
 
@@ -65,12 +65,12 @@ impl Naming for AsIs {
 /// assert!(!filtered.contains_key("HOME"));
 /// ```
 pub fn apply_filters(
-    secrets: &IndexMap<String, String>,
+    secrets: &Vars,
     include: Option<&[String]>,
     exclude: Option<&[String]>,
     strip_prefix: Option<&str>,
     add_prefix: Option<&str>,
-) -> IndexMap<String, String> {
+) -> Vars {
     let options = ConvertOptions {
         include: include.map(<[String]>::to_vec).unwrap_or_default(),
         exclude: exclude.map(<[String]>::to_vec).unwrap_or_default(),
@@ -82,6 +82,7 @@ pub fn apply_filters(
         .prepare(secrets, &AsIs)
         .expect("unchecked collisions never refuse")
         .into_iter()
+        .map(|(k, v)| (k, v.into()))
         .collect()
 }
 
@@ -96,10 +97,11 @@ pub use crate::core::glob::glob_match;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     #[test]
     fn test_apply_filters_include() {
-        let mut s = IndexMap::new();
+        let mut s = Vars::new();
         s.insert("DB_HOST".into(), "localhost".into());
         s.insert("AWS_KEY".into(), "key".into());
         s.insert("HOME".into(), "/root".into());
@@ -111,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_apply_filters_exclude() {
-        let mut s = IndexMap::new();
+        let mut s = Vars::new();
         s.insert("DB_HOST".into(), "localhost".into());
         s.insert("DB_LOCAL".into(), "test".into());
 
@@ -122,7 +124,7 @@ mod tests {
 
     #[test]
     fn test_apply_filters_strip_prefix() {
-        let mut s = IndexMap::new();
+        let mut s = Vars::new();
         s.insert("APP_DB_URL".into(), "postgres://".into());
         s.insert("APP_SECRET".into(), "abc".into());
 
@@ -134,7 +136,7 @@ mod tests {
 
     #[test]
     fn test_apply_filters_add_prefix() {
-        let mut s = IndexMap::new();
+        let mut s = Vars::new();
         s.insert("DB_URL".into(), "postgres://".into());
 
         let result = apply_filters(&s, None, None, None, Some("PROD_"));
@@ -143,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_apply_filters_combined() {
-        let mut s = IndexMap::new();
+        let mut s = Vars::new();
         s.insert("APP_DB_HOST".into(), "localhost".into());
         s.insert("APP_DB_LOCAL".into(), "test".into());
         s.insert("OTHER_VAR".into(), "val".into());
@@ -162,7 +164,7 @@ mod tests {
     /// The old map: two names that become one keep the last value.
     #[test]
     fn t_i104_the_wrapper_keeps_the_last_value() {
-        let mut s = IndexMap::new();
+        let mut s = Vars::new();
         s.insert("API_X".into(), "1".into());
         s.insert("X".into(), "2".into());
         let result = apply_filters(&s, None, None, Some("API_"), None);

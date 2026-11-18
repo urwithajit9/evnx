@@ -1,4 +1,5 @@
 use crate::core::mask::{Disclosure, ValueState};
+use crate::core::secret::{Secret, Vars};
 use crate::core::verdict::Verdict;
 use crate::core::Parser;
 use crate::docs;
@@ -376,8 +377,8 @@ fn say_what_was_compared(
 // ─────────────────────────────────────────────────────────────
 
 fn compute_diff(
-    left: &IndexMap<String, String>,
-    right: &IndexMap<String, String>,
+    left: &Vars,
+    right: &Vars,
     ignore_keys: &HashSet<String>,
     compare: Compare,
     // ⚠️ `compute_diff` did not take this, so the JSON path had no way to
@@ -411,8 +412,8 @@ fn compute_diff(
         if let (Some(left_val), Some(right_val)) = (left_filtered.get(key), right_filtered.get(key))
         {
             if left_val != right_val {
-                let example = disclose(key, right_val, show_values);
-                let env = disclose(key, left_val, show_values);
+                let example = disclose(key, right_val.expose(), show_values);
+                let env = disclose(key, left_val.expose(), show_values);
                 different.push(DiffItem {
                     key: key.clone(),
                     example_value: example.text().map(str::to_string),
@@ -461,11 +462,7 @@ fn disclose(key: &str, value: &str, show_values: bool) -> Disclosure {
 }
 
 // Compute statistics for JSON output
-fn compute_stats(
-    left: &IndexMap<String, String>,
-    right: &IndexMap<String, String>,
-    _diff: &DiffResult,
-) -> DiffStats {
+fn compute_stats(left: &Vars, right: &Vars, _diff: &DiffResult) -> DiffStats {
     let left_keys: HashSet<_> = left.keys().collect();
     let right_keys: HashSet<_> = right.keys().collect();
 
@@ -497,8 +494,8 @@ fn compute_stats(
 
 fn output_pretty(
     diff: &DiffResult,
-    left: &IndexMap<String, String>,
-    right: &IndexMap<String, String>,
+    left: &Vars,
+    right: &Vars,
     left_name: &str,
     right_name: &str,
     compare: Compare,
@@ -536,7 +533,7 @@ fn output_pretty(
                 // printed missing and extra values **completely unredacted,
                 // including credential-shaped ones**, while the `different`
                 // section three lines below masked them correctly.
-                match disclose(key, val, show_values).text() {
+                match disclose(key, val.expose(), show_values).text() {
                     Some(d) => println!("  {} {} = {}", "+".green(), key.bold(), d.dimmed()),
                     None => println!("  {} {}", "+".green(), key.bold()),
                 }
@@ -552,7 +549,7 @@ fn output_pretty(
         );
         for key in &diff.extra {
             if let Some(val) = left.get(key) {
-                match disclose(key, val, show_values).text() {
+                match disclose(key, val.expose(), show_values).text() {
                     Some(d) => println!("  {} {} = {}", "-".red(), key.bold(), d.dimmed()),
                     None => println!("  {} {}", "-".red(), key.bold()),
                 }
@@ -660,8 +657,8 @@ fn output_json(diff: &DiffResult, compared: Compare) -> Result<()> {
 
 fn output_patch(
     diff: &DiffResult,
-    left: &IndexMap<String, String>,
-    right: &IndexMap<String, String>,
+    left: &Vars,
+    right: &Vars,
     left_path: &str,
     values_needed: bool,
     show_values: bool,
@@ -678,12 +675,12 @@ fn output_patch(
         );
     }
     let raw = std::fs::read_to_string(left_path).with_context(|| format!("reading {left_path}"))?;
-    let additions: Vec<(String, String)> = diff
+    let additions: Vec<(String, Secret)> = diff
         .missing
         .iter()
         .filter_map(|k| right.get(k).map(|v| (k.clone(), v.clone())))
         .collect();
-    let updates: Vec<(String, String)> = diff
+    let updates: Vec<(String, Secret)> = diff
         .different
         .iter()
         .filter_map(|item| right.get(&item.key).map(|v| (item.key.clone(), v.clone())))
@@ -723,9 +720,9 @@ struct Edit {
 /// is left for the user, never half-replaced.
 fn plan_edit(
     raw: &str,
-    current: &IndexMap<String, String>,
-    additions: &[(String, String)],
-    updates: &[(String, String)],
+    current: &Vars,
+    additions: &[(String, Secret)],
+    updates: &[(String, Secret)],
 ) -> Result<Edit> {
     let mut lines: Vec<String> = raw.lines().map(String::from).collect();
     let mut hunks = Vec::new();
@@ -735,7 +732,7 @@ fn plan_edit(
     // another key's value.
     let doc = crate::core::Parser::default().parse_document(raw);
     for (key, value) in updates {
-        let multiline = current.get(key).is_some_and(|v| v.contains('\n'));
+        let multiline = current.get(key).is_some_and(|v| v.expose().contains('\n'));
         let at = doc
             .entries
             .iter()
@@ -743,7 +740,7 @@ fn plan_edit(
             .map(|e| e.span.line - 1);
         match at {
             Some(i) if !multiline => {
-                let new = crate::core::envfile::line(key, value);
+                let new = crate::core::envfile::line(key, value.expose());
                 hunks.push(format!(
                     "@@ -{n},1 +{n},1 @@\n-{}\n+{new}\n",
                     lines[i],
@@ -764,7 +761,7 @@ fn plan_edit(
         let n = lines.len();
         let added: Vec<String> = additions
             .iter()
-            .map(|(k, v)| crate::core::envfile::line(k, v))
+            .map(|(k, v)| crate::core::envfile::line(k, v.expose()))
             .collect();
         let mut hunk = format!("@@ -{n},0 +{},{} @@\n", n + 1, added.len());
         for line in &added {
@@ -786,9 +783,9 @@ fn plan_edit(
 
 /// A value as interactive prints it: exact when values were asked for,
 /// `<withheld>` otherwise (I-071, DEC-G7).
-fn shown(value: &str, show_values: bool) -> &str {
+fn shown(value: &Secret, show_values: bool) -> &str {
     if show_values {
-        value
+        value.expose()
     } else {
         crate::core::mask::WITHHELD
     }
@@ -799,8 +796,8 @@ fn shown(value: &str, show_values: bool) -> &str {
 /// write nothing while saying "Applied changes" (I-073).
 fn output_patch_interactive(
     diff: &DiffResult,
-    left: &IndexMap<String, String>,
-    right: &IndexMap<String, String>,
+    left: &Vars,
+    right: &Vars,
     target_file: &str,
     show_values: bool,
 ) -> Result<()> {
@@ -816,8 +813,8 @@ fn output_patch_interactive(
     println!("\n{}", "Interactive merge".bold());
     println!("Prompts: (y)es, (n)o, (s)kip rest\n");
 
-    let mut additions: Vec<(String, String)> = Vec::new();
-    let mut updates: Vec<(String, String)> = Vec::new();
+    let mut additions: Vec<(String, Secret)> = Vec::new();
+    let mut updates: Vec<(String, Secret)> = Vec::new();
     let mut stop = false;
 
     for key in &diff.missing {
@@ -930,14 +927,14 @@ mod tests {
     #[test]
     fn test_compute_diff_basic() {
         let left = indexmap! {
-            "KEY1".to_string() => "value1".to_string(),
-            "KEY2".to_string() => "value2".to_string(),
-            "EXTRA".to_string() => "extra".to_string(),
+            "KEY1".to_string() => "value1".into(),
+            "KEY2".to_string() => "value2".into(),
+            "EXTRA".to_string() => "extra".into(),
         };
         let right = indexmap! {
-            "KEY1".to_string() => "value1".to_string(),
-            "KEY2".to_string() => "different".to_string(),
-            "MISSING".to_string() => "missing".to_string(),
+            "KEY1".to_string() => "value1".into(),
+            "KEY2".to_string() => "different".into(),
+            "MISSING".to_string() => "missing".into(),
         };
         let ignore = HashSet::new();
 
@@ -951,8 +948,8 @@ mod tests {
 
     #[test]
     fn test_ignore_keys_filtering() {
-        let left = indexmap! { "IGNORED".to_string() => "a".to_string() };
-        let right = indexmap! { "IGNORED".to_string() => "b".to_string() };
+        let left = indexmap! { "IGNORED".to_string() => "a".into() };
+        let right = indexmap! { "IGNORED".to_string() => "b".into() };
         let mut ignore = HashSet::new();
         ignore.insert("IGNORED".to_string());
 
@@ -980,12 +977,12 @@ mod tests {
     #[test]
     fn json_never_carries_a_sensitive_value() {
         let left = indexmap! {
-            "DB_PASSWORD".to_string() => "HUNTER2_live".to_string(),
-            "API_KEY".to_string()     => "sk_live_abc".to_string(),
+            "DB_PASSWORD".to_string() => "HUNTER2_live".into(),
+            "API_KEY".to_string()     => "sk_live_abc".into(),
         };
         let right = indexmap! {
-            "DB_PASSWORD".to_string() => "example_pw".to_string(),
-            "API_KEY".to_string()     => "sk_test_xyz".to_string(),
+            "DB_PASSWORD".to_string() => "example_pw".into(),
+            "API_KEY".to_string()     => "sk_test_xyz".into(),
         };
         // Both ways: the flag must not be able to turn the mask off.
         for show_values in [false, true] {
@@ -1011,8 +1008,8 @@ mod tests {
     /// are not credential-shaped.
     #[test]
     fn show_values_governs_non_sensitive_values_and_nothing_else() {
-        let left = indexmap! { "LOG_LEVEL".to_string() => "debug".to_string() };
-        let right = indexmap! { "LOG_LEVEL".to_string() => "info".to_string() };
+        let left = indexmap! { "LOG_LEVEL".to_string() => "debug".into() };
+        let right = indexmap! { "LOG_LEVEL".to_string() => "info".into() };
 
         let withheld = compute_diff(&left, &right, &HashSet::new(), Compare::Values, false);
         assert_eq!(withheld.different[0].env_value, None, "withheld");
@@ -1033,8 +1030,8 @@ mod tests {
     #[test]
     fn a_non_ascii_secret_does_not_panic() {
         for value in ["日本語のパスワード", "中", "é", "🔑key", ""] {
-            let left = indexmap! { "DB_PASSWORD".to_string() => value.to_string() };
-            let right = indexmap! { "DB_PASSWORD".to_string() => "x".to_string() };
+            let left = indexmap! { "DB_PASSWORD".to_string() => value.into() };
+            let right = indexmap! { "DB_PASSWORD".to_string() => "x".into() };
             let diff = compute_diff(&left, &right, &HashSet::new(), Compare::Values, true);
             if let Some(item) = diff.different.first() {
                 assert_eq!(item.env_value.as_deref(), Some(crate::core::mask::MASK));
@@ -1046,8 +1043,8 @@ mod tests {
     /// the credential's issuer; the key name beside it already said more.
     #[test]
     fn the_mask_reveals_no_part_of_the_value() {
-        let left = indexmap! { "STRIPE_SECRET".to_string() => "sk_live_zzz".to_string() };
-        let right = indexmap! { "STRIPE_SECRET".to_string() => "sk_test_aaa".to_string() };
+        let left = indexmap! { "STRIPE_SECRET".to_string() => "sk_live_zzz".into() };
+        let right = indexmap! { "STRIPE_SECRET".to_string() => "sk_test_aaa".into() };
         let diff = compute_diff(&left, &right, &HashSet::new(), Compare::Values, true);
         assert_eq!(diff.different[0].env_value.as_deref(), Some("***"));
         assert_eq!(diff.different[0].example_value.as_deref(), Some("***"));
@@ -1076,8 +1073,8 @@ mod tests {
     /// I-078: against a template, values are not compared.
     #[test]
     fn t_i078_keys_mode_compares_no_values() {
-        let left = indexmap! { "A".to_string() => "real".to_string() };
-        let right = indexmap! { "A".to_string() => "placeholder".to_string() };
+        let left = indexmap! { "A".to_string() => "real".into() };
+        let right = indexmap! { "A".to_string() => "placeholder".into() };
         let diff = compute_diff(&left, &right, &HashSet::new(), Compare::Keys, true);
         assert!(!diff.has_changes(), "{diff:?}");
         let diff = compute_diff(&left, &right, &HashSet::new(), Compare::Values, true);
@@ -1106,14 +1103,14 @@ mod tests {
     fn test_order_preservation() {
         // IndexMap should preserve insertion order
         let left = indexmap! {
-            "A".to_string() => "1".to_string(),
-            "B".to_string() => "2".to_string(),
-            "C".to_string() => "3".to_string(),
+            "A".to_string() => "1".into(),
+            "B".to_string() => "2".into(),
+            "C".to_string() => "3".into(),
         };
         let right = indexmap! {
-            "C".to_string() => "3".to_string(),
-            "D".to_string() => "4".to_string(),  // Missing in left
-            "A".to_string() => "1".to_string(),
+            "C".to_string() => "3".into(),
+            "D".to_string() => "4".into(),  // Missing in left
+            "A".to_string() => "1".into(),
         };
         let ignore = HashSet::new();
 
@@ -1148,10 +1145,8 @@ mod tests {
 
     #[test]
     fn test_compute_stats() {
-        let left =
-            indexmap! { "A".to_string() => "1".to_string(), "B".to_string() => "2".to_string() };
-        let right =
-            indexmap! { "A".to_string() => "1".to_string(), "C".to_string() => "3".to_string() };
+        let left = indexmap! { "A".to_string() => "1".into(), "B".to_string() => "2".into() };
+        let right = indexmap! { "A".to_string() => "1".into(), "C".to_string() => "3".into() };
         let ignore = HashSet::new();
 
         let diff = compute_diff(&left, &right, &ignore, Compare::Values, false);

@@ -8,6 +8,7 @@
 //! The values it does hold (a Config value read from Vercel, for comparing or
 //! pulling) stay in [`SecretString`]s and are never formatted.
 
+use crate::core::secret::Vars;
 use indexmap::IndexMap;
 use serde_json::json;
 
@@ -374,11 +375,11 @@ impl Plan {
 /// readable Config for something that looks like a credential, or a Secret under
 /// a public prefix. A Secret where evnx would have chosen Config is left alone;
 /// over-protecting is not a problem to flag.
-pub fn diff(local: &IndexMap<String, String>, remote: &[Remote]) -> Plan {
+pub fn diff(local: &Vars, remote: &[Remote]) -> Plan {
     let by_key: IndexMap<&str, &Remote> = remote.iter().map(|r| (r.var.key.as_str(), r)).collect();
     let mut rows = Vec::new();
     for (key, value) in local {
-        let suggested = suggested_kind(key, value);
+        let suggested = suggested_kind(key, value.expose());
         let Some(r) = by_key.get(key.as_str()) else {
             rows.push(Row {
                 key: key.clone(),
@@ -396,7 +397,7 @@ pub fn diff(local: &IndexMap<String, String>, remote: &[Remote]) -> Plan {
             Action::TypeDiffers
         } else {
             match (r.kind, &r.value) {
-                (Kind::Config, Some(v)) if v.expose() == value => Action::Unchanged,
+                (Kind::Config, Some(v)) if v == value => Action::Unchanged,
                 (Kind::Config, Some(_)) => Action::Update(Why::ValueDiffers),
                 _ => Action::Update(Why::WriteOnly),
             }
@@ -552,14 +553,14 @@ pub struct PullChange {
 
 /// Work out what pull does. `remote` has been read in full. Local-only keys are
 /// not listed: they are never touched.
-pub fn pull_plan(local: &IndexMap<String, String>, remote: Vec<Remote>) -> Vec<PullChange> {
+pub fn pull_plan(local: &Vars, remote: Vec<Remote>) -> Vec<PullChange> {
     remote
         .into_iter()
         .map(|r| {
             let key = r.var.key.clone();
             let local_value = local.get(&key);
             let (op, value) = match (r.kind, r.value, local_value) {
-                (Kind::Config, Some(v), Some(l)) if v.expose() == l => (PullOp::Same, None),
+                (Kind::Config, Some(v), Some(l)) if v == *l => (PullOp::Same, None),
                 (Kind::Config, Some(v), Some(_)) => (PullOp::Update, Some(v)),
                 (Kind::Config, Some(v), None) => (PullOp::Add, Some(v)),
                 (_, _, Some(_)) => (PullOp::KeepLocal, None),
@@ -578,6 +579,7 @@ pub fn pull_plan(local: &IndexMap<String, String>, remote: Vec<Remote>) -> Vec<P
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
     use serde_json::Value;
 
     /// F14-5: Vercel and `scan`/`validate` share one prefix list.
@@ -618,10 +620,10 @@ mod tests {
         }
     }
 
-    fn local(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+    fn local(pairs: &[(&str, &str)]) -> Vars {
         pairs
             .iter()
-            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .map(|(k, v)| ((*k).to_string(), (*v).into()))
             .collect()
     }
 

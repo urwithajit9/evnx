@@ -7,8 +7,8 @@
 //! | `env-file`      | Parse a `.env` file via `crate::core::Parser` |
 //! | `environment`   | Read from current process environment vars |
 
+use crate::core::secret::Vars;
 use anyhow::{anyhow, Result};
-use indexmap::IndexMap;
 
 use crate::core::Parser;
 
@@ -19,7 +19,7 @@ use crate::core::Parser;
 /// * `source`   — one of `"env-file"` or `"environment"`.
 /// * `file`     — path to the `.env` file (only used when `source == "env-file"`).
 /// * `verbose`  — if `true`, print diagnostic messages.
-pub fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<IndexMap<String, String>> {
+pub fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<Vars> {
     if verbose {
         println!("Loading secrets from source='{}' file='{}'", source, file);
     }
@@ -33,7 +33,10 @@ pub fn load_secrets(source: &str, file: &str, verbose: bool) -> Result<IndexMap<
             )?;
             Ok(env_file.vars)
         }
-        "environment" => Ok(crate::core::envsource::read()),
+        "environment" => Ok(crate::core::envsource::read()
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect()),
         other => Err(anyhow!(
             "Unsupported source: '{}'. Valid options: env-file, environment",
             other

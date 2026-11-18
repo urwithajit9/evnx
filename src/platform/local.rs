@@ -9,6 +9,7 @@
 //! end. The result is read back and compared with what was intended before
 //! anything is written.
 
+use crate::core::secret::Vars;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -61,7 +62,7 @@ pub struct LocalFile {
     /// Every entry, with spans.
     pub doc: Document,
     /// One value per key, the last assignment winning.
-    pub vars: IndexMap<String, String>,
+    pub vars: Vars,
 }
 
 fn parser() -> Parser {
@@ -160,7 +161,7 @@ pub fn edit(
     // Read it back: the old values, with exactly these changes.
     let mut expected = doc.vars();
     for (k, v) in set.iter().chain(add.iter()) {
-        expected.insert((*k).to_string(), (*v).to_string());
+        expected.insert((*k).to_string(), (*v).into());
     }
     let reread = parser().parse_document(&out);
     if !reread.problems.is_empty() || reread.vars() != expected {

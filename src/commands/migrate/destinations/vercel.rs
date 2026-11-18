@@ -32,10 +32,10 @@
 //! evnx migrate --to vercel --vercel-project my-project
 //! ```
 
+use crate::core::secret::Vars;
 use crate::core::shell;
 use anyhow::Result;
 use colored::Colorize;
-use indexmap::IndexMap;
 
 use super::super::destination::{MigrationDestination, MigrationOptions, MigrationResult, Out};
 
@@ -124,11 +124,7 @@ impl MigrationDestination for VercelDestination {
         "Vercel"
     }
 
-    fn migrate(
-        &self,
-        secrets: &IndexMap<String, String>,
-        opts: &MigrationOptions,
-    ) -> Result<MigrationResult> {
+    fn migrate(&self, secrets: &Vars, opts: &MigrationOptions) -> Result<MigrationResult> {
         let out = opts.out;
         out.status(format!(
             "\n{} Vercel environment variable migration",
@@ -178,8 +174,11 @@ impl MigrationDestination for VercelDestination {
             // and ran `$(…)` (I-101), and `echo` adds a newline.
             out.command(format!(
                 "printf '%s' {} | {}",
-                shell::quote(value),
-                self.add_command(key, crate::formats::vercel::is_sensitive(key, value))
+                shell::quote(value.expose()),
+                self.add_command(
+                    key,
+                    crate::formats::vercel::is_sensitive(key, value.expose())
+                )
             ));
         }
 

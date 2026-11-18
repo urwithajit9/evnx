@@ -3,9 +3,9 @@
 // ============================================================================
 
 use crate::core::converter::{ConvertOptions, Converter};
+use crate::core::secret::Vars;
 use anyhow::Result;
 // use std::collections::HashMap;
-use indexmap::IndexMap;
 
 pub struct GcpSecretConverter {
     pub project_id: String,
@@ -80,7 +80,7 @@ pub fn upsert_line(name: &str, value: &str) -> String {
 }
 
 impl Converter for GcpSecretConverter {
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String> {
         let mut output = String::new();
         output.push_str("#!/bin/bash\n");
         output.push_str("# Upload secrets to GCP Secret Manager\n");
@@ -119,14 +119,12 @@ impl Converter for GcpSecretConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
     #[test]
     fn test_gcp_converter() {
-        let mut vars = IndexMap::new();
-        vars.insert(
-            "DATABASE_URL".to_string(),
-            "postgresql://localhost".to_string(),
-        );
+        let mut vars = Vars::new();
+        vars.insert("DATABASE_URL".to_string(), "postgresql://localhost".into());
 
         let converter = GcpSecretConverter::default();
         let result = converter

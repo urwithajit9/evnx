@@ -30,6 +30,7 @@ fn parse(text: &str) -> Vec<(String, String)> {
         .parse_content(text)
         .unwrap_or_else(|e| panic!("does not parse: {e}\n{text}"))
         .into_iter()
+        .map(|(k, v)| (k, v.expose().to_string()))
         .collect()
 }
 

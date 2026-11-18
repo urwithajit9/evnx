@@ -252,11 +252,7 @@ pub fn typed(key: &str, value: Option<&str>) -> Option<String> {
 }
 
 /// Generate placeholder using built-in rules + custom config
-pub fn generate_placeholder(
-    key: &str,
-    value: Option<&String>,
-    config: &PlaceholderConfig,
-) -> String {
+pub fn generate_placeholder(key: &str, value: Option<&str>, config: &PlaceholderConfig) -> String {
     // The project asked for this key's real value to go into the template.
     //
     // ⚠️ Safe only because `executor::check_allow_actual` has already refused the
@@ -264,7 +260,7 @@ pub fn generate_placeholder(
     // the value was examined and is configuration, not a secret.
     if config.allow_actual.iter().any(|k| k == key) {
         if let Some(v) = value {
-            return v.clone();
+            return v.to_string();
         }
     }
 
@@ -288,7 +284,7 @@ pub fn generate_placeholder(
     }
 
     // GEN-20, SYNC-3: the shared typed rule, for init, add and sync alike.
-    if let Some(t) = typed(key, value.map(String::as_str)) {
+    if let Some(t) = typed(key, value) {
         return t;
     }
 
@@ -735,21 +731,15 @@ mod tests {
         let config = PlaceholderConfig::default();
 
         let pg_url = "postgresql://user:pass@localhost:5432/db";
-        assert!(
-            generate_placeholder("DATABASE_URL", Some(&pg_url.to_string()), &config)
-                .contains("postgresql")
-        );
+        assert!(generate_placeholder("DATABASE_URL", Some(pg_url), &config).contains("postgresql"));
 
         let redis_url = "redis://localhost:6379/0";
-        assert!(
-            generate_placeholder("REDIS_URL", Some(&redis_url.to_string()), &config)
-                .contains("redis")
-        );
+        assert!(generate_placeholder("REDIS_URL", Some(redis_url), &config).contains("redis"));
 
         // ✅ FIXED: Use a key that actually contains "URL"
         let https_url = "https://api.example.com/v1";
         assert!(
-            generate_placeholder("API_URL", Some(&https_url.to_string()), &config) // Changed from API_ENDPOINT
+            generate_placeholder("API_URL", Some(https_url), &config) // Changed from API_ENDPOINT
                 .contains("https://")
         );
     }
@@ -974,15 +964,15 @@ mod tests {
             ("REDIS://cache:6379", "redis://"),
             ("https://api.example.com/v1", "https://"),
         ] {
-            let got = generate_placeholder("DB_URL", Some(&value.to_string()), &config);
+            let got = generate_placeholder("DB_URL", Some(value), &config);
             assert!(got.starts_with(scheme), "{value} -> {got}");
             assert!(!got.contains("s3cr3t"), "{value} -> {got}");
             assert!(is_generated_value(&got, &config), "{got}");
         }
-        let got = generate_placeholder("DB_URL", Some(&"ftp://x".to_string()), &config);
+        let got = generate_placeholder("DB_URL", Some("ftp://x"), &config);
         assert_eq!(got, "YOUR_URL_HERE");
         // URI and DSN are URL words too.
-        let got = generate_placeholder("MONGO_URI", Some(&"mongodb://h/db".to_string()), &config);
+        let got = generate_placeholder("MONGO_URI", Some("mongodb://h/db"), &config);
         assert!(got.starts_with("mongodb://"), "{got}");
     }
 

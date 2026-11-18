@@ -3,9 +3,9 @@
 // ============================================================================
 
 use crate::core::converter::{ConvertOptions, Converter, Only};
+use crate::core::secret::Vars;
 use anyhow::Result;
 // use std::collections::HashMap;
-use indexmap::IndexMap;
 
 /// What `--to kubernetes` writes (`--kind`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
@@ -80,7 +80,7 @@ impl KubernetesSecretConverter {
 }
 
 impl Converter for KubernetesSecretConverter {
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String> {
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String> {
         match self.kind {
             KubeKind::Secret => {
                 let entries = options.prepare(vars, self)?;

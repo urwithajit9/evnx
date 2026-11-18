@@ -3,6 +3,7 @@
 // Provides the core trait and configuration for converting environment variables
 // to different output formats.
 
+use crate::core::secret::Vars;
 use anyhow::Result;
 use indexmap::IndexMap;
 
@@ -135,9 +136,9 @@ impl ConvertOptions {
     }
 
     /// Filter variables based on include/exclude patterns
-    pub fn filter_vars(&self, vars: &IndexMap<String, String>) -> IndexMap<String, String> {
+    pub fn filter_vars(&self, vars: &Vars) -> Vars {
         vars.iter()
-            .filter(|(key, value)| self.should_include(key, value))
+            .filter(|(key, value)| self.should_include(key, value.expose()))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     }
@@ -186,14 +187,14 @@ impl ConvertOptions {
     /// filters admit, in file order.
     fn named<'a, N: Naming + ?Sized>(
         &self,
-        vars: &'a IndexMap<String, String>,
+        vars: &'a Vars,
         converter: &N,
     ) -> Vec<(&'a str, String, &'a str)> {
         vars.iter()
-            .filter(|(k, v)| self.should_include(k, v))
+            .filter(|(k, v)| self.should_include(k, v.expose()))
             .map(|(k, v)| {
                 let target = converter.target_name(&self.transform_key(k));
-                (k.as_str(), target, v.as_str())
+                (k.as_str(), target, v.expose())
             })
             .collect()
     }
@@ -216,11 +217,7 @@ impl ConvertOptions {
     }
 
     /// Every set of names that become one name in `converter`'s output.
-    pub fn collisions_in<N: Naming + ?Sized>(
-        &self,
-        vars: &IndexMap<String, String>,
-        converter: &N,
-    ) -> Vec<Collision> {
+    pub fn collisions_in<N: Naming + ?Sized>(&self, vars: &Vars, converter: &N) -> Vec<Collision> {
         let named = self.named(vars, converter);
         Self::groups(&named, converter)
             .into_iter()
@@ -242,7 +239,7 @@ impl ConvertOptions {
     /// format emits now come from here, and so does the check.
     pub fn prepare<N: Naming + ?Sized>(
         &self,
-        vars: &IndexMap<String, String>,
+        vars: &Vars,
         converter: &N,
     ) -> Result<Vec<(String, String)>> {
         self.prepare_with(vars, converter, "Nothing was written.")
@@ -253,7 +250,7 @@ impl ConvertOptions {
     /// (I-104), and "Nothing was written" would not say that.
     pub fn prepare_with<N: Naming + ?Sized>(
         &self,
-        vars: &IndexMap<String, String>,
+        vars: &Vars,
         converter: &N,
         consequence: &str,
     ) -> Result<Vec<(String, String)>> {
@@ -306,7 +303,7 @@ impl ConvertOptions {
 
     /// Warn once per collision that `--allow-collisions` resolved, naming the
     /// value kept. Nothing to say under the other two rules.
-    pub fn announce_kept<N: Naming + ?Sized>(&self, vars: &IndexMap<String, String>, naming: &N) {
+    pub fn announce_kept<N: Naming + ?Sized>(&self, vars: &Vars, naming: &N) {
         if self.collisions != Collisions::LastWins {
             return;
         }
@@ -410,7 +407,7 @@ pub trait Converter {
     /// # Returns
     ///
     /// Formatted output as a string
-    fn convert(&self, vars: &IndexMap<String, String>, options: &ConvertOptions) -> Result<String>;
+    fn convert(&self, vars: &Vars, options: &ConvertOptions) -> Result<String>;
 
     /// Get the name of this format
     ///
@@ -538,18 +535,19 @@ fn to_snake_case(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::secret::Vars;
 
-    fn vars(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+    fn vars(pairs: &[(&str, &str)]) -> Vars {
         pairs
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), (*v).into()))
             .collect()
     }
 
     /// A format that lowercases and hyphenates, like gcp.
     struct Hyphens;
     impl Converter for Hyphens {
-        fn convert(&self, _: &IndexMap<String, String>, _: &ConvertOptions) -> Result<String> {
+        fn convert(&self, _: &Vars, _: &ConvertOptions) -> Result<String> {
             Ok(String::new())
         }
         fn name(&self) -> &str {
@@ -566,7 +564,7 @@ mod tests {
     /// A format whose target ignores case, like Key Vault.
     struct Folds;
     impl Converter for Folds {
-        fn convert(&self, _: &IndexMap<String, String>, _: &ConvertOptions) -> Result<String> {
+        fn convert(&self, _: &Vars, _: &ConvertOptions) -> Result<String> {
             Ok(String::new())
         }
         fn name(&self) -> &str {
@@ -582,7 +580,7 @@ mod tests {
 
     struct Plain;
     impl Converter for Plain {
-        fn convert(&self, _: &IndexMap<String, String>, _: &ConvertOptions) -> Result<String> {
+        fn convert(&self, _: &Vars, _: &ConvertOptions) -> Result<String> {
             Ok(String::new())
         }
         fn name(&self) -> &str {
