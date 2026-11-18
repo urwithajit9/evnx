@@ -152,6 +152,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`restore --output -` writes the decrypted text to stdout** (WP-15). It was
   refused. Status lines go to stderr, nothing is written to disk, and a terminal
   refuses it unless `--show-values`, as `parse --values` does.
+- **The install URL is `https://evnx.dev/install.sh` everywhere** (WP-16).
+  `evnx update` prints `curl -fsSL https://evnx.dev/install.sh | bash` for a copy
+  the script installed, the `scan hook` message names the same address, and the
+  README, the guides and the release notes use it, in place of
+  `dotenv.space/install.sh`, the `raw.githubusercontent.com` link and
+  `evnx.dev/install`. A pinned old address keeps working only while its redirect
+  does. The CI job that compares the served script with `scripts/install.sh`
+  is in `ci.yml` but switched off until the host is confirmed.
 
 ### Breaking: one flag vocabulary (WP-8)
 
@@ -345,6 +353,31 @@ new `network` field below.
 
 ### Added
 
+- **The install script says how to use `evnx` now and how to keep it** (WP-16).
+  When the install folder is not on `PATH` it prints **Use it now** (a line for
+  this terminal) and **Keep it** (the line for the shell's startup file:
+  `~/.zshrc`, `~/.bashrc`, `~/.bash_profile` on macOS, or fish's `config.fish`
+  with fish syntax). It edits that file only with `EVNX_MODIFY_PATH=1` or a "y"
+  typed at a terminal (default no); with no terminal it only prints. The line is
+  added once, and the script says what it wrote. The checksum and `gh
+  attestation verify` checks are unchanged.
+- **Shell completions ship with the release** (WP-16). The Linux and macOS
+  archives carry `completions/` (`evnx.bash`, `_evnx`, `evnx.fish`) next to the
+  binary, which stays at the top level. The install script copies each file into
+  its shell's folder only if that folder already exists, and creates none. The
+  generated Homebrew formula installs them. Scoop, npm and pip are unchanged.
+- **`docs/STABILITY.md`** (WP-16): what is stable, how a removal is announced,
+  and this release's changed defaults, taken from this Breaking list. `README`
+  has a one-minute start; the correction notes it carried moved to
+  `docs/HISTORY.md`.
+- **Docs** (WP-16): CI examples pin `EVNX_VERSION` and the GitLab example keeps
+  the scan as a plain artifact (GitLab's `sast` report takes its own schema, not
+  SARIF); `--env-name` and `[defaults]` examples for `validate`, `sync`, `add` and
+  `remove`; a project-local install for JavaScript projects (`npm install
+  --save-dev @evnx/cli`, `npx evnx`); `run`'s `--prefer`, signals and the limits
+  of masking; `convert --from`/`--kind`, `diff A B`, `restore --output -` and
+  `migrate --to vercel --overwrite`. The `backup`/`restore` exit-code table
+  matches the single exit table.
 - **`doctor --all`** (WP-15) runs the doctor checks, then `validate`, `sync
   --check` (both ways) and `scan`, as one report with one verdict: 2 if any part
   could not run, else 1 if any found something, else 0. A part with nothing to

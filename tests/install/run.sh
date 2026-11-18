@@ -28,12 +28,23 @@ release() { # version
     mkdir -p "$dir/build"
     printf '#!/bin/sh\necho "evnx %s"\n' "$1" > "$dir/build/evnx-x86_64-unknown-linux-gnu"
     chmod +x "$dir/build/evnx-x86_64-unknown-linux-gnu"
-    tar -czf "$dir/$ASSET" -C "$dir/build" evnx-x86_64-unknown-linux-gnu
+    # From v0.15.0 the archive also carries completions/ (WP-16).
+    local members="evnx-x86_64-unknown-linux-gnu"
+    if [ "$1" = "0.15.0" ]; then
+        mkdir -p "$dir/build/completions"
+        echo "# bash completions for evnx" > "$dir/build/completions/evnx.bash"
+        echo "#compdef evnx" > "$dir/build/completions/_evnx"
+        echo "# fish completions for evnx" > "$dir/build/completions/evnx.fish"
+        members="$members completions"
+    fi
+    # shellcheck disable=SC2086  # a short list of names without spaces
+    tar -czf "$dir/$ASSET" -C "$dir/build" $members
     (cd "$dir" && if command -v sha256sum >/dev/null; then sha256sum "$ASSET"; else shasum -a 256 "$ASSET"; fi > "$ASSET.sha256")
 }
 release 0.10.18
 release 0.10.15
 release 0.11.0
+release 0.15.0
 
 # ── Stubs ────────────────────────────────────────────────────────────────────
 STUBS="$WORK/stubs"
@@ -246,6 +257,117 @@ if [ $CODE -eq 0 ] && has "releases before v0.11.0 carry no attestation" \
     && [ ! -s "$WORK/gh.log" ] && [ -x "$HOME_/.local/bin/evnx" ]; then
     ok "RM-83: a release before v0.11.0 is never checked, so never refused"
 else bad "RM-83: pre-0.11.0"; fi
+
+# WP-16: not on PATH prints "use now" and "keep" lines, and edits nothing
+# without consent. HOME is the case's own, so a profile written here is checked
+# in the case folder.
+fresh modify-off
+install "" SHELL=/bin/zsh
+if [ $CODE -eq 0 ] && has "Use it now" && has "Keep it" \
+    && has 'export PATH="$HOME/.local/bin:$PATH"' && has "$HOME_/.zshrc" \
+    && has "Nothing was changed" && [ ! -e "$HOME_/.zshrc" ]; then
+    ok "modify_path_off_prints_two_lines_edits_nothing"
+else bad "modify_path_off_prints_two_lines_edits_nothing"; fi
+
+fresh modify-on
+install "" SHELL=/bin/zsh EVNX_MODIFY_PATH=1
+if [ $CODE -eq 0 ] && [ "$(grep -c 'export PATH="$HOME/.local/bin:$PATH"' "$HOME_/.zshrc")" = 1 ] \
+    && has "Use it now" && has "added to $HOME_/.zshrc" && ! has "Nothing was changed"; then
+    ok "modify_path_on_appends_once"
+else bad "modify_path_on_appends_once"; fi
+# A second run finds the exact line and writes nothing more.
+install "" SHELL=/bin/zsh EVNX_MODIFY_PATH=1
+if [ $CODE -eq 0 ] && [ "$(grep -c 'export PATH=' "$HOME_/.zshrc")" = 1 ] && has "already has that line"; then
+    ok "modify_path_second_run_no_duplicate"
+else bad "modify_path_second_run_no_duplicate"; fi
+
+# Content already in the profile is kept; the line goes at the end.
+fresh modify-keeps
+printf 'alias ll="ls -l"\n' > "$HOME_/.zshrc"
+install "" SHELL=/bin/zsh EVNX_MODIFY_PATH=1
+if [ "$(head -1 "$HOME_/.zshrc")" = 'alias ll="ls -l"' ] && grep -q 'export PATH=' "$HOME_/.zshrc"; then
+    ok "modify_path_keeps_the_existing_profile"
+else bad "modify_path_keeps_the_existing_profile"; fi
+
+fresh modify-bash
+install "" SHELL=/bin/bash EVNX_MODIFY_PATH=1
+bash_ok=false
+[ -f "$HOME_/.bashrc" ] && grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$HOME_/.bashrc" && [ ! -e "$HOME_/.zshrc" ] && bash_ok=true
+fresh modify-fish
+install "" SHELL=/usr/bin/fish EVNX_MODIFY_PATH=1
+if $bash_ok && [ -f "$HOME_/.config/fish/config.fish" ] \
+    && grep -q 'set -gx PATH "$HOME/.local/bin" $PATH' "$HOME_/.config/fish/config.fish" \
+    && ! grep -q 'export PATH' "$HOME_/.config/fish/config.fish"; then
+    ok "modify_path_zsh_bash_fish_targets"
+else bad "modify_path_zsh_bash_fish_targets"; fi
+
+# An unknown shell is told what to do and nothing is written, even with the variable.
+fresh modify-other
+install "" SHELL=/bin/tcsh EVNX_MODIFY_PATH=1
+if [ $CODE -eq 0 ] && has "Use it now" && has "nothing was offered" && [ -z "$(ls -A "$HOME_" | grep -v '^\.local$\|^\.config$')" ]; then
+    ok "modify_path_unknown_shell_writes_nothing"
+else bad "modify_path_unknown_shell_writes_nothing"; fi
+
+# A terminal answer: y edits, anything else does not. `_EVNX_TTY` stands in for /dev/tty.
+fresh tty-yes
+echo y > "$CASE/answer"
+install "" SHELL=/bin/zsh _EVNX_TTY="$CASE/answer"
+yes_ok=false
+[ -f "$HOME_/.zshrc" ] && grep -q 'export PATH=' "$HOME_/.zshrc" && yes_ok=true
+fresh tty-no
+echo n > "$CASE/answer"
+install "" SHELL=/bin/zsh _EVNX_TTY="$CASE/answer"
+if $yes_ok && [ ! -e "$HOME_/.zshrc" ] && has "Nothing was changed"; then
+    ok "modify_path_terminal_answer_decides"
+else bad "modify_path_terminal_answer_decides"; fi
+
+# EVNX_MODIFY_PATH=0 never asks, even with a terminal answer on offer.
+fresh modify-zero
+echo y > "$CASE/answer"
+install "" SHELL=/bin/zsh EVNX_MODIFY_PATH=0 _EVNX_TTY="$CASE/answer"
+if [ ! -e "$HOME_/.zshrc" ]; then ok "modify_path_zero_means_no"; else bad "modify_path_zero_means_no"; fi
+
+# On PATH already: no PATH lines at all.
+fresh on-path
+install "$HOME_/.local/bin:" SHELL=/bin/zsh EVNX_MODIFY_PATH=1
+if [ $CODE -eq 0 ] && ! has "Use it now" && ! has "Keep it" && [ ! -e "$HOME_/.zshrc" ]; then
+    ok "modify_path_on_path_says_nothing"
+else bad "modify_path_on_path_says_nothing"; fi
+
+# CMP-3: completions are copied only into folders that already exist.
+fresh comp-some
+mkdir -p "$HOME_/.local/share/bash-completion/completions"
+install "$HOME_/.local/bin:" EVNX_VERSION=0.15.0
+if [ $CODE -eq 0 ] && [ -f "$HOME_/.local/share/bash-completion/completions/evnx" ] \
+    && [ ! -e "$HOME_/.local/share/zsh" ] && [ ! -e "$HOME_/.config/fish" ] \
+    && has "Installed bash completions" && ! has "zsh completions"; then
+    ok "completions_copied_only_into_existing_dirs"
+else bad "completions_copied_only_into_existing_dirs"; fi
+
+fresh comp-all
+mkdir -p "$HOME_/.local/share/bash-completion/completions" "$HOME_/.local/share/zsh/site-functions" "$HOME_/.config/fish/completions"
+install "$HOME_/.local/bin:" EVNX_VERSION=0.15.0
+if [ $CODE -eq 0 ] && [ -f "$HOME_/.local/share/zsh/site-functions/_evnx" ] \
+    && [ -f "$HOME_/.config/fish/completions/evnx.fish" ] && [ -x "$HOME_/.local/bin/evnx" ]; then
+    ok "completions_all_three_shells_when_their_folders_exist"
+else bad "completions_all_three_shells_when_their_folders_exist"; fi
+
+# An archive from before 0.15.0 has no completions/: the install is unaffected.
+fresh comp-old
+mkdir -p "$HOME_/.local/share/bash-completion/completions"
+install "$HOME_/.local/bin:" EVNX_VERSION=0.11.0
+if [ $CODE -eq 0 ] && [ -x "$HOME_/.local/bin/evnx" ] \
+    && [ ! -e "$HOME_/.local/share/bash-completion/completions/evnx" ] && ! has "completions"; then
+    ok "completions_absent_from_an_old_archive_is_fine"
+else bad "completions_absent_from_an_old_archive_is_fine"; fi
+
+# The attestation check still runs on the new archive layout.
+fresh att-new
+: > "$WORK/gh.log"
+install "$HOME_/.local/bin:" EVNX_VERSION=0.15.0 _EVNX_GH="$STUBS/gh" STUB_GH=ok
+if [ $CODE -eq 0 ] && has "Provenance verified" && grep -q -- "--source-ref refs/tags/v0.15.0" "$WORK/gh.log"; then
+    ok "attestation_still_runs_when_gh_present"
+else bad "attestation_still_runs_when_gh_present"; fi
 
 echo
 echo "== $pass ok, $fail failed =="

@@ -19,7 +19,7 @@ if [ "$(git config --bool hooks.evnx-scan)" = "false" ]; then
   echo "evnx scan: skipped (git config hooks.evnx-scan is false)" >&2
 elif ! command -v evnx >/dev/null 2>&1; then
   echo "evnx scan: evnx is not on PATH, so this commit was not checked and is blocked." >&2
-  echo "  Install it (https://www.evnx.dev/install), or commit with git commit --no-verify" >&2
+  echo "  Install it (https://evnx.dev/install.sh), or commit with git commit --no-verify" >&2
   exit 1
 else
   evnx scan --staged
@@ -172,6 +172,13 @@ pub fn status(cwd: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WP-16: the message in the hook names the one install URL.
+    #[test]
+    fn wp16_hook_message_uses_the_install_url() {
+        assert!(BLOCK.contains(&format!("({})", crate::core::build::INSTALL_URL)));
+        assert!(!BLOCK.contains("www.evnx.dev"));
+    }
 
     #[test]
     fn the_block_comes_out_whole_and_nothing_else_does() {

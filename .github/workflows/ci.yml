@@ -269,7 +269,7 @@ jobs:
           command: check licenses bans sources
 
   # ⚠️ scripts/install.sh ships on merge to main, not with a tag:
-  # dotenv.space/install.sh proxies it from there. Nothing tested it before
+  # evnx.dev/install.sh serves it from there (dotenv.space redirects to it). Nothing tested it before
   # RM-20. The harness stubs curl, uname and ldd, so it needs no network and
   # writes nothing outside its temp folder. macOS too: its bash is 3.2 and it
   # has shasum, not sha256sum.
@@ -289,6 +289,29 @@ jobs:
         run: shellcheck -S warning scripts/install.sh tests/install/run.sh
       - name: harness
         run: bash tests/install/run.sh
+
+  # WP-16 (owner decision D4): the one install URL must serve exactly
+  # scripts/install.sh. ⚠️ DISABLED (`if: false`): the owner enables it after
+  # confirming that https://evnx.dev/install.sh serves the script from `main`
+  # (and that dotenv.space/install.sh redirects there). To enable: delete the
+  # `if: false` line for
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  # so it runs on pushes to main only, never on a pull request: the script
+  # ships on merge, and a PR would compare the served (old) file with the PR's
+  # new one. A hosting cache of up to an hour can make a push right after a
+  # merge fail once; run it again.
+  install-url:
+    name: install URL serves scripts/install.sh
+    if: false # the owner enables this after confirming the host (D4)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: served script equals scripts/install.sh
+        run: |
+          set -euo pipefail
+          curl -fsSL https://evnx.dev/install.sh -o served-install.sh
+          diff -u scripts/install.sh served-install.sh \
+            || { echo "::error::https://evnx.dev/install.sh differs from scripts/install.sh"; exit 1; }
 
   # C9: .pre-commit-hooks.yaml under both managers that read it. Pinned to
   # the versions checked on 2026-11-02.

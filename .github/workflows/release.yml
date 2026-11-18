@@ -9,8 +9,51 @@ permissions:
   contents: write
 
 jobs:
+  # ── Shell completions (WP-16, CMP-3) ────────────────────────────────────────
+  #
+  # One set per release, from a build with every feature on (the shipped
+  # binaries are built with `--all-features`, and the scripts cover the
+  # commands the binary has). Generated here because the cross-compiled
+  # targets cannot run their own binary. Each archive except the Windows zip
+  # carries it as `completions/`, and scripts/install.sh copies the files into
+  # the shells' folders that already exist.
+  completions:
+    name: Shell completions
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+
+      - name: Generate the scripts
+        run: |
+          set -euo pipefail
+          cargo build --all-features
+          mkdir -p completions
+          target/debug/evnx completions bash > completions/evnx.bash
+          target/debug/evnx completions zsh  > completions/_evnx
+          target/debug/evnx completions fish > completions/evnx.fish
+          for f in completions/evnx.bash completions/_evnx completions/evnx.fish; do
+            [ -s "$f" ] || { echo "::error::$f is empty"; exit 1; }
+            grep -q evnx "$f" || { echo "::error::$f does not mention evnx"; exit 1; }
+          done
+          ls -l completions
+
+      - name: Upload the scripts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: evnx-completions
+          path: completions/*
+          retention-days: 5
+
   build:
     name: Build ${{ matrix.target }}
+    needs: completions
     runs-on: ${{ matrix.os }}
     # Read-only checkout, plus what attest-build-provenance needs (RM-81): an
     # OIDC token to sign with Sigstore and the right to store the attestation.
@@ -130,6 +173,13 @@ jobs:
           CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build --release --all-features --target ${{ matrix.target }}
 
+      - name: Download the completions
+        if: ${{ !contains(matrix.target, 'windows') }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: evnx-completions
+          path: completions
+
       - name: Package
         shell: bash
         run: |
@@ -141,8 +191,18 @@ jobs:
           cp target/${{ matrix.target }}/release/$BINARY dist/evnx-${{ matrix.target }}${BINARY##evnx}
           cd dist
 
-          # Create tar.gz for all targets
-          tar -czf evnx-${{ matrix.target }}.tar.gz evnx-${{ matrix.target }}${BINARY##evnx}
+          # Create tar.gz for all targets. The binary stays at the top level
+          # (install.sh, Homebrew and npm look for `evnx-<target>` there); the
+          # Unix archives also carry `completions/` (WP-16). Built from a
+          # staging folder so the loose folder is not uploaded beside it.
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            tar -czf evnx-${{ matrix.target }}.tar.gz evnx-${{ matrix.target }}${BINARY##evnx}
+          else
+            mkdir ../stage
+            cp evnx-${{ matrix.target }} ../stage/
+            cp -R ../completions ../stage/completions
+            tar -czf evnx-${{ matrix.target }}.tar.gz -C ../stage evnx-${{ matrix.target }} completions
+          fi
           sha256sum evnx-${{ matrix.target }}.tar.gz > evnx-${{ matrix.target }}.tar.gz.sha256
 
           # Create ZIP for Windows (required by Scoop and Winget)
@@ -324,7 +384,7 @@ jobs:
 
           ### Linux / macOS (shell script)
           \`\`\`bash
-          curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | bash
+          curl -fsSL https://evnx.dev/install.sh | bash
           \`\`\`
 
           ### Homebrew (macOS and Linux)
@@ -583,6 +643,10 @@ jobs:
                 on_arm   { bin.install "evnx-aarch64-unknown-linux-gnu"  => "evnx" }
                 on_intel { bin.install "evnx-x86_64-unknown-linux-musl"  => "evnx" }
               end
+              # WP-16: the archive's completions/ folder, the names Homebrew expects.
+              bash_completion.install "completions/evnx.bash" => "evnx"
+              zsh_completion.install "completions/_evnx"
+              fish_completion.install "completions/evnx.fish"
             end
 
             def caveats

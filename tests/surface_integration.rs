@@ -332,7 +332,7 @@ t evnx completions ""
 
 // ── update, offline ─────────────────────────────────────────────────────────
 
-const SCRIPT: &str = "curl -fsSL https://dotenv.space/install.sh | bash";
+const SCRIPT: &str = "curl -fsSL https://evnx.dev/install.sh | bash";
 const PIP: &str = "pip install --upgrade evnx";
 
 /// T-SF-30: each package manager's location names its channel, run from the

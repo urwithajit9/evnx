@@ -32,15 +32,22 @@ Full documentation and guides are available at [evnx.dev](https://www.evnx.dev).
 ### Linux / macOS
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
+curl -fsSL https://evnx.dev/install.sh | bash
 ```
 
-The script detects your OS and architecture, downloads the correct binary from GitHub Releases, installs it to `~/.local/bin`, and verifies the checksum.
+The script detects your OS and architecture, downloads the correct binary from GitHub Releases, verifies the checksum, and installs it to `/usr/local/bin` when you can write there, else `~/.local/bin`. If that folder is not on your `PATH` it prints a "Use it now" line for this terminal and a "Keep it" line for your shell's startup file; it edits the file only if you answer yes at a terminal or set `EVNX_MODIFY_PATH=1`. `EVNX_VERSION=0.15.0` pins a release; `EVNX_INSTALL_DIR` picks the folder.
 
 ### npm
 
 ```bash
 npm install -g @evnx/cli
+```
+
+In a JavaScript project, add it as a development dependency instead and run it with `npx evnx`:
+
+```bash
+npm install --save-dev @evnx/cli
+npx evnx validate
 ```
 
 ### pipx (recommended for Python environments)
@@ -627,12 +634,18 @@ The `.pre-commit-config.yaml` approach is better for teams — the configuration
 
 ## CI/CD integration
 
+Pin the version in CI (`EVNX_VERSION`) so a run is repeatable.
+
 ### GitHub Actions
 
 ```yaml
 name: Validate environment
 
 on: [push, pull_request]
+
+permissions:
+  contents: read
+  security-events: write   # for the SARIF upload
 
 jobs:
   validate:
@@ -641,8 +654,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install evnx
+        env:
+          EVNX_VERSION: "0.15.0"
+          EVNX_INSTALL_DIR: ${{ github.workspace }}/.evnx-bin
+          GH_TOKEN: ${{ github.token }}   # lets the installer check build provenance with the runner's gh
         run: |
-          curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
+          curl -fsSL https://evnx.dev/install.sh | bash
+          echo "$EVNX_INSTALL_DIR" >> "$GITHUB_PATH"
 
       - name: Validate configuration
         run: evnx validate --strict --format github
@@ -662,17 +680,25 @@ jobs:
 ```yaml
 validate-env:
   stage: validate
-  image: alpine:latest
+  image: alpine:3.21
+  variables:
+    EVNX_VERSION: "0.15.0"
   before_script:
     - apk add --no-cache curl bash
-    - curl -sSL https://raw.githubusercontent.com/urwithajit9/evnx/main/scripts/install.sh | bash
+    - curl -fsSL https://evnx.dev/install.sh | bash
   script:
     - evnx validate --strict --format json
-    - evnx scan --format sarif > scan.sarif
+    - evnx scan --format json > scan.json
   artifacts:
-    reports:
-      sast: scan.sarif
+    when: always          # keep the report when the scan fails the job
+    paths:
+      - scan.json
 ```
+
+The job fails when `scan` finds something (exit 1), which is the gate. GitLab's
+`reports: sast:` expects GitLab's own SAST JSON schema, not SARIF, and evnx does not
+write that schema, so the findings are kept as a plain artifact rather than shown in
+the merge request's security widget.
 
 ### Docker
 
