@@ -2,43 +2,152 @@
 ================ M2 ================
 
 $ evnx migrate --to aws-secrets-manager --dry-run
+
+✓ Loaded 8 secrets from .env
+
+· AWS Secrets Manager migration
+
+Dry-run — would print commands for AWS Secrets Manager:
+  Secret name : <--secret-name not set>
+  Secrets     : 8
+
+  JSON preview (first 300 chars; values hidden):
+  {
+  "APP_NAME": "<hidden>",
+  "DATABASE_URL": "<hidden>",
+  "API_SECRET": "<hidden>",
+  "DEBUG": "<hidden>",
+  "PORT": "<hidden>",
+  "GREETING": "<hidden>",
+  "EMPTY": "<hidden>",
+  "PRICE": "<hidden>"
+}
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+· A real run needs --secret-name.
+
+Next step:
+  Re-run without --dry-run to apply this.
 [stderr]
-Error: AWS secret name (e.g. prod/myapp/config) is required for this destination. Pass `--secret-name`.
-  --dry-run still needs it: without it evnx would print a command
-  with a placeholder where the name should be.
-[exit 2]
-  ok: dry run still needs the name it would print: aws-secrets-manager (exit 2)
+
+  evnx migrate  convert writes a file; migrate talks to a provider
+
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: WP-14 (D8): a dry run works without the name, shows a placeholder and says which flag a real run needs: aws-secrets-manager (exit 0)
 
 $ evnx migrate --to gcp-secret-manager --dry-run
+
+✓ Loaded 8 secrets from .env
+
+· GCP Secret Manager migration
+· Requires Google Cloud CLI (`gcloud`)
+  Install: https://cloud.google.com/sdk/docs/install
+
+Dry-run — would print commands for GCP Secret Manager:
+  Project : <--project not set>
+  Secrets : 8
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+· A real run needs --project.
+
+Next step:
+  Re-run without --dry-run to apply this.
 [stderr]
-Error: GCP project ID is required for this destination. Pass `--project`.
-  --dry-run still needs it: without it evnx would print a command
-  with a placeholder where the name should be.
-[exit 2]
-  ok: dry run still needs the name it would print: gcp-secret-manager (exit 2)
+
+  evnx migrate  convert writes a file; migrate talks to a provider
+
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: WP-14 (D8): a dry run works without the name, shows a placeholder and says which flag a real run needs: gcp-secret-manager (exit 0)
 
 $ evnx migrate --to azure-keyvault --dry-run
+
+✓ Loaded 8 secrets from .env
+
+· Azure Key Vault migration
+· Requires Azure CLI (`az`)
+  Install: https://learn.microsoft.com/cli/azure/install-azure-cli
+
+Dry-run — would print commands for Azure Key Vault:
+  Vault   : <--vault-name not set>
+  Secrets : 8
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+· A real run needs --vault-name.
+
+Next step:
+  Re-run without --dry-run to apply this.
 [stderr]
-Error: Azure Key Vault name is required for this destination. Pass `--vault-name`.
-  --dry-run still needs it: without it evnx would print a command
-  with a placeholder where the name should be.
-[exit 2]
-  ok: dry run still needs the name it would print: azure-keyvault (exit 2)
+
+  evnx migrate  convert writes a file; migrate talks to a provider
+
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: WP-14 (D8): a dry run works without the name, shows a placeholder and says which flag a real run needs: azure-keyvault (exit 0)
 
 $ evnx migrate --to heroku --dry-run
+
+✓ Loaded 8 secrets from .env
+
+· Heroku Config Vars migration
+· Requires Heroku CLI
+  Install: https://devcenter.heroku.com/articles/heroku-cli
+
+Dry-run — would print commands for Heroku:
+  App     : <--heroku-app not set>
+  Secrets : 8
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+· A real run needs --heroku-app.
+
+Next step:
+  Re-run without --dry-run to apply this.
 [stderr]
-Error: Heroku app name is required for this destination. Pass `--heroku-app`.
-  --dry-run still needs it: without it evnx would print a command
-  with a placeholder where the name should be.
-[exit 2]
-  ok: dry run still needs the name it would print: heroku (exit 2)
+
+  evnx migrate  convert writes a file; migrate talks to a provider
+
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: WP-14 (D8): a dry run works without the name, shows a placeholder and says which flag a real run needs: heroku (exit 0)
 
 $ evnx migrate --to github --dry-run
+
+✓ Loaded 8 secrets from .env
+
+· Migrating to GitHub Actions Secrets…
+
+Migration plan:
+  • 8 to upload
+
+· Dry-run — no changes made.
+
+Summary:
+  ·  8 secret(s) previewed
+     dry run — nothing was uploaded and nothing was written
+
+· A real run needs --repo.
+
+Next step:
+  Re-run without --dry-run to apply this.
 [stderr]
-Error: GitHub repository (owner/repo) is required for this destination. Pass `--repo`.
-  --dry-run still needs it: without it evnx would print a command
-  with a placeholder where the name should be.
-[exit 2]
-  ok: dry run still needs the name it would print: github (exit 2)
+
+  evnx migrate  convert writes a file; migrate talks to a provider
+
+  Docs: https://docs.evnx.dev/cli/commands/migrate
+[exit 0]
+  ok: WP-14 (D8): a dry run works without the name, shows a placeholder and says which flag a real run needs: github (exit 0)
 
 ================ summary: 5 ok, 0 mismatch   ================

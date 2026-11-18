@@ -119,6 +119,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   warning; `credentials.json` is not written. Messages say "owner-only (ACL)"
   instead of "inherited from the parent directory". Setups that read these
   files from another account must grant it access again.
+- **`diff A B` compares two files, and the left file is printed first**
+  (WP-14). `evnx diff .env.staging .env.production` compares key names and
+  values, as `--against` does. In the "Different values" section the left
+  file's value is now listed before the right one (it was the other way round),
+  in the order of the `left ↔ right` heading. The positionals cannot be
+  combined with `--env`, `--env-name`, `--example` or `--against`. The JSON
+  keeps `env_value` (the left file) and `example_value` (the right).
+- **`migrate --to vercel` prints `--force` only with `--overwrite`** (WP-14).
+  The printed `vercel env add` commands used to replace an existing variable
+  every time. Now Vercel stops on one that exists, and `--overwrite` (now
+  accepted for vercel; `--skip-existing` still is not) adds `--force`. A script
+  that re-runs the printed commands to change a value passes `--overwrite`.
+  The output also points to `evnx platform push`, which talks to Vercel itself.
 
 ### Breaking: one flag vocabulary (WP-8)
 
@@ -151,9 +164,6 @@ Every command now spells the same idea the same way. The old spellings are remov
 | `evnx doctor` | `--format text` | `--format pretty` |
 | `evnx migrate` | `--source-file` | `--env` |
 | `evnx migrate` | `--to github-actions` | `--to github` |
-| `evnx migrate` | `--to aws` | `--to aws-secrets-manager` |
-| `evnx migrate` | `--to gcp` | `--to gcp-secret-manager` |
-| `evnx migrate` | `--to azure` | `--to azure-keyvault` |
 | `evnx migrate` | `--from env` | `--from env-file` |
 | `evnx platform diff` | `--env-name` | `--target` |
 | `evnx platform diff` | `-f, --file` | `--env` |
@@ -307,6 +317,31 @@ new `network` field below.
 
 ### Added
 
+- **`convert --from json|dotenv`, `--to dotenv`, and `-` for standard input**
+  (WP-14). `evnx convert --from json --to dotenv --env vars.json` reads a flat
+  `{"KEY": "value"}` object (the shape `validate --input-format json` reads;
+  every value must be a string, and an error names the key, never the value).
+  `--to dotenv` writes a `.env` with the quoting evnx's own parser reads back
+  exactly, so `convert --to json` followed by `convert --from json --to dotenv`
+  returns the same names, values and order, whatever they hold (quotes, `#`,
+  spaces, newlines, `$`, empty values, unicode). `--env -` reads stdin for
+  either `--from`. `cloud export --to dotenv` comes with the shared format list.
+- **`convert --to kubernetes --kind secret|configmap|split`** (WP-14).
+  `configmap` writes a `ConfigMap` (not with `--base64`); `split` writes a
+  `Secret` for the variables that look secret and a `ConfigMap` named
+  `<name>-config` for the rest, as two documents. `--kind` with another
+  `--to` is refused, as the other format flags are.
+- **`migrate --to` takes the names `convert --to` takes** (WP-14): `aws`,
+  `aws-secrets`, `gcp`, `gcp-secrets`, `azure`, `azure-key-vault`. They were
+  removed earlier in this release's WP-8 and are accepted again. `convert --to`
+  keeps its short names (`yml`, `k8s`, `tf`, `compose`).
+- **`migrate --dry-run` works without the provider's target flag** (WP-14).
+  `evnx migrate --to heroku --dry-run` shows `<--heroku-app not set>` where the
+  app goes and says "A real run needs --heroku-app"; a real run still requires
+  it. The dry run of `--to aws-secrets-manager` no longer prints the secret
+  values in its JSON preview (names only).
+- **`convert` and `migrate` say what they are for**: "convert writes a file;
+  migrate talks to a provider" in both helps and in `migrate`'s banner.
 - **`evnx scan --policy FILE` (or `EVNX_POLICY`): a floor the repository cannot
   lower.** A committed `.evnx.toml` can disable a detector or raise the
   severity floor for everyone who scans the repository. A policy file kept

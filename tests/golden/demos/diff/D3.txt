@@ -11,14 +11,14 @@ Extra in ./.env (not in ./.env.example):
 
 Different values:
   ~ DATABASE_URL
-    ./.env.example: postgres://user:***@localhost:5432/app
     ./.env: postgres://admin:***@db.internal:5432/app
+    ./.env.example: postgres://user:***@localhost:5432/app
   ~ API_SECRET
-    ./.env.example: ***
     ./.env: ***
+    ./.env.example: ***
   ~ API_PORT
-    ./.env.example: 8080
     ./.env: 9090
+    ./.env.example: 8080
 
   2 missing from ./.env  ·  1 not in ./.env.example  ·  3 different values
 [stderr]

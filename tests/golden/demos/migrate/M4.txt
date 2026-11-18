@@ -26,7 +26,7 @@ Next steps:
   3. Remove your local .env file.
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 ! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
   Docs: https://docs.evnx.dev/cli/commands/migrate
@@ -39,7 +39,7 @@ $ evnx migrate --to heroku --heroku-app demo-app --include NOPE_*
 · After filtering: 0 of 8 secrets remain.
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
   Docs: https://docs.evnx.dev/cli/commands/migrate
 Error: every one of the 8 variable(s) in .env was filtered out, so there is nothing to migrate.
@@ -55,7 +55,7 @@ $ evnx migrate --env empty.env --to heroku --heroku-app demo-app
 ✓ Loaded 0 secrets from empty.env
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
   Docs: https://docs.evnx.dev/cli/commands/migrate
 Error: empty.env holds no variables, so there is nothing to migrate.
@@ -71,7 +71,7 @@ $ evnx migrate --env col.env --to heroku --heroku-app demo-app --strip-prefix AP
 ✓ Loaded 2 secrets from col.env
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 Error: these names become the same name after renaming, and one value would be lost:
   API_X, X → X
@@ -104,7 +104,7 @@ Next steps:
   3. Remove your local .env file.
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 ! API_X, X → X: kept the value of X (--allow-collisions)
 ! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.

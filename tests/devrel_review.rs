@@ -910,21 +910,38 @@ fn f9_annotations_point_at_the_real_line() {
     );
 }
 
-/// ⚠️ F11, as actually filed. `--dry-run` printed
-/// `heroku config --app <--heroku-app not set>` — an internal placeholder inside
-/// the command it tells the user to run — and exited 0.
+/// ⚠️ F11, as actually filed: `--dry-run` printed
+/// `heroku config --app <--heroku-app not set>` — a placeholder inside a command
+/// it tells the user to run — and exited 0. A dry run prints no command to run
+/// (the commands are what a real run prints), so since WP-14 (D8) it works
+/// without the target flag, shows the placeholder as the target, and names the
+/// flag a real run needs. A real run still refuses.
 #[test]
 #[cfg(feature = "migrate")]
-fn f11_dry_run_needs_the_identifier_it_would_print() {
+fn f11_dry_run_shows_a_placeholder_and_names_the_flag_a_real_run_needs() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join(".env"), "A=1\n").unwrap();
 
-    let assert = cargo_bin_cmd!("evnx")
+    let dry = cargo_bin_cmd!("evnx")
         .current_dir(dir.path())
         .args(["migrate", "--to", "heroku", "--dry-run"])
         .assert()
+        .code(0);
+    let out = String::from_utf8_lossy(&dry.get_output().stdout).to_string();
+    assert!(out.contains("<--heroku-app not set>"), "{out}");
+    assert!(out.contains("A real run needs --heroku-app"), "{out}");
+    assert!(
+        !out.contains("heroku config:set"),
+        "no command is printed:\n{out}"
+    );
+
+    // A real run still needs it.
+    let real = cargo_bin_cmd!("evnx")
+        .current_dir(dir.path())
+        .args(["migrate", "--to", "heroku"])
+        .assert()
         .code(2);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let stderr = String::from_utf8_lossy(&real.get_output().stderr).to_string();
     assert!(stderr.contains("--heroku-app"), "{stderr}");
 
     // Given the name, the preview works.

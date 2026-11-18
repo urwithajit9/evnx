@@ -122,16 +122,12 @@ pub(crate) fn resolve_arg_with(
         return Ok(v);
     }
     if dry_run {
-        if let ArgKind::Credential { env } = kind {
-            return Ok(format!("<{env} not set>"));
-        }
-    }
-    if dry_run {
-        return Err(anyhow!(
-            "{prompt} is required for this destination. Pass `{flag}`.\n\
-             \x20 --dry-run still needs it: without it evnx would print a command\n\
-             \x20 with a placeholder where the name should be."
-        ));
+        // Nothing is printed to run and nothing is sent, so a placeholder
+        // costs nothing; the dry run says which flag a real run needs.
+        return Ok(match kind {
+            ArgKind::Credential { env } => format!("<{env} not set>"),
+            ArgKind::Identifier => format!("<{flag} not set>"),
+        });
     }
     if interactive {
         return Ok(dialoguer::Input::new()
@@ -150,6 +146,39 @@ pub(crate) fn resolve_arg_with(
     ))
 }
 
+/// Whether `value` is the stand-in a dry run shows for a flag that was not
+/// given (`<--heroku-app not set>`).
+fn is_unset_stand_in(value: &str) -> bool {
+    value.starts_with('<') && value.ends_with(" not set>")
+}
+
+/// [`args::check`], except on a dry run's placeholder.
+fn check_unless_placeholder(flag: &str, value: &str, rule: Name) -> Result<()> {
+    if is_unset_stand_in(value) {
+        Ok(())
+    } else {
+        args::check(flag, value, rule)
+    }
+}
+
+/// The target flags a real run of `slug` needs and `args` lacks: what a dry
+/// run, which works without them, tells the reader to add.
+pub fn flags_a_real_run_needs(slug: &str, args: &MigrateArgs) -> Vec<&'static str> {
+    let (flag, given) = match slug {
+        "github-actions" | "github" => ("--repo", args.repo.is_some()),
+        "aws-secrets-manager" | "aws" => ("--secret-name", args.secret_name.is_some()),
+        "gcp-secret-manager" | "gcp" => ("--project", args.project.is_some()),
+        "azure-keyvault" | "azure" => ("--vault-name", args.vault_name.is_some()),
+        "heroku" => ("--heroku-app", args.heroku_app.is_some()),
+        _ => return Vec::new(),
+    };
+    if given {
+        Vec::new()
+    } else {
+        vec![flag]
+    }
+}
+
 /// Resolve a destination slug to a boxed `MigrationDestination`.
 ///
 /// Called once per `evnx migrate` run from `migrate/mod.rs`.
@@ -166,7 +195,7 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                     args.dry_run,
                     ArgKind::Identifier,
                 )?;
-                args::check("--repo", &repo, Name::GitHubRepo)?;
+                check_unless_placeholder("--repo", &repo, Name::GitHubRepo)?;
                 // I-108: the warning about a token typed as a flag is printed by
                 // `main`, once, before anything runs.
                 // ⚠️ `GITHUB_TOKEN` stays ahead of the prompt. Inside a GitHub
@@ -206,7 +235,7 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 args.dry_run,
                 ArgKind::Identifier,
             )?;
-            args::check("--secret-name", &name, Name::AwsSecretName)?;
+            check_unless_placeholder("--secret-name", &name, Name::AwsSecretName)?;
             args::check_opt("--aws-profile", args.aws_profile.as_deref(), Name::Slug)?;
             Ok(Box::new(aws::AwsDestination::new(
                 name,
@@ -244,7 +273,7 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 args.dry_run,
                 ArgKind::Identifier,
             )?;
-            args::check("--project", &project, Name::GcpProject)?;
+            check_unless_placeholder("--project", &project, Name::GcpProject)?;
             Ok(Box::new(gcp::GcpDestination::new(project)))
         }
         "azure-keyvault" | "azure" => {
@@ -255,7 +284,7 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 args.dry_run,
                 ArgKind::Identifier,
             )?;
-            args::check("--vault-name", &name, Name::AzureVault)?;
+            check_unless_placeholder("--vault-name", &name, Name::AzureVault)?;
             Ok(Box::new(azure::AzureDestination::new(name)))
         }
 
@@ -268,7 +297,8 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
             )?;
             Ok(Box::new(
                 vercel::VercelDestination::new(args.vercel_project.clone())
-                    .for_env_file(&args.source_file),
+                    .for_env_file(&args.source_file)
+                    .overwriting(args.overwrite),
             ))
         }
         "heroku" => {
@@ -279,7 +309,7 @@ pub fn get_destination(name: &str, args: &MigrateArgs) -> Result<Box<dyn Migrati
                 args.dry_run,
                 ArgKind::Identifier,
             )?;
-            args::check("--heroku-app", &app, Name::HerokuApp)?;
+            check_unless_placeholder("--heroku-app", &app, Name::HerokuApp)?;
             Ok(Box::new(heroku::HerokuDestination::new(app)))
         }
         "railway" => {
@@ -535,14 +565,13 @@ mod tests {
         );
     }
 
-    /// ⚠️ An **identifier** is different: it is printed into the command evnx
-    /// tells the user to run. `evnx migrate --to heroku --dry-run` without
-    /// `--heroku-app` used to emit
-    /// `heroku config --app <--heroku-app not set>` and exit 0, so someone
-    /// pasting the preview got an error with no visible cause.
+    /// D8 (WP-14): an **identifier** under `--dry-run` is a placeholder that
+    /// names the flag, and the run says which flag a real run needs. A dry run
+    /// prints no command to run, so the placeholder cannot be pasted. Not a
+    /// dry run, no terminal: still refused, naming the flag.
     #[test]
-    fn resolve_arg_under_dry_run_still_needs_an_identifier() {
-        let err = resolve_arg_with(
+    fn resolve_arg_under_dry_run_shows_a_placeholder_for_an_identifier() {
+        let got = resolve_arg_with(
             None,
             "--heroku-app",
             "Heroku app name",
@@ -550,9 +579,20 @@ mod tests {
             ArgKind::Identifier,
             false,
         )
-        .expect_err("a dry run cannot print a command it does not know");
-        let msg = err.to_string();
-        assert!(msg.contains("--heroku-app"), "flag not named: {msg}");
+        .expect("a dry run works without the identifier");
+        assert_eq!(got, "<--heroku-app not set>");
+        assert!(is_unset_stand_in(&got));
+        assert!(!is_unset_stand_in("my-app"));
+        let err = resolve_arg_with(
+            None,
+            "--heroku-app",
+            "Heroku app name",
+            false,
+            ArgKind::Identifier,
+            false,
+        )
+        .expect_err("a real run still needs it");
+        assert!(err.to_string().contains("--heroku-app"), "{err}");
     }
 
     /// Not a terminal and not a dry run: fail, but name the flag. The old error

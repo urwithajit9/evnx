@@ -1,7 +1,7 @@
 //! Convert command — transform `.env` files to multiple output formats.
 //!
 //! This module implements the `evnx convert` subcommand, which parses a `.env`
-//! file and transforms its variables into 14 target formats including JSON,
+//! file (or JSON, with `--from json`) and transforms its variables into 15 target formats including JSON,
 //! YAML, cloud provider configs, CI/CD formats, and infrastructure-as-code.
 //!
 //! # Architecture
@@ -33,7 +33,7 @@
 //!
 //! | Category | Formats |
 //! |----------|---------|
-//! | Generic | `json`, `yaml`, `yml`, `shell`, `bash`, `export` |
+//! | Generic | `json`, `yaml`, `yml`, `shell`, `bash`, `export`, `dotenv`, `env` |
 //! | Cloud | `aws-secrets`, `gcp-secrets`, `azure-keyvault` |
 //! | CI/CD | `github-actions`, `gh-actions` |
 //! | Containers | `docker-compose`, `kubernetes`, `k8s` |
@@ -79,6 +79,7 @@ use colored::*;
 use dialoguer::Select;
 // use indexmap::IndexMap;
 
+use crate::cli::args::ConvertFrom;
 use crate::core::{
     converter::{Collisions, ConvertOptions, KeyTransform},
     Parser,
@@ -110,8 +111,10 @@ use crate::utils::ui;
 /// ```
 #[derive(Debug, Clone)]
 pub struct ConvertConfig {
-    /// Path to input .env file
+    /// Path to the input file, or `-` for standard input
     pub env_path: String,
+    /// What the input is (`--from`).
+    pub from: ConvertFrom,
     /// Target format (None = interactive mode)
     pub target_format: Option<String>,
     /// Output file path (None = stdout)
@@ -177,6 +180,7 @@ impl Default for ConvertConfig {
     fn default() -> Self {
         Self {
             env_path: ".env".to_string(),
+            from: ConvertFrom::Dotenv,
             target_format: None,
             output_path: None,
             options: ConvertOptions {
@@ -216,6 +220,7 @@ impl Default for ConvertConfig {
 #[derive(Debug, Default)]
 pub struct ConfigBuilder {
     env_path: Option<String>,
+    from: Option<ConvertFrom>,
     target_format: Option<String>,
     output_path: Option<String>,
     include: Vec<String>,
@@ -257,6 +262,12 @@ impl ConfigBuilder {
     }
 
     /// Set the target output format (optional).
+    #[must_use]
+    pub fn from(mut self, from: ConvertFrom) -> Self {
+        self.from = Some(from);
+        self
+    }
+
     #[must_use]
     pub fn target_format<S: Into<String>>(mut self, format: Option<S>) -> Self {
         self.target_format = format.map(Into::into);
@@ -359,6 +370,7 @@ impl ConfigBuilder {
     pub fn build(self) -> ConvertConfig {
         ConvertConfig {
             env_path: self.env_path.unwrap_or_else(|| ".env".to_string()),
+            from: self.from.unwrap_or_default(),
             target_format: self.target_format,
             output_path: self.output_path,
             options: ConvertOptions {
@@ -445,18 +457,22 @@ pub fn run(config: ConvertConfig) -> Result<()> {
         );
     }
 
-    // Parse .env file. A missing one is the error `validate` and `diff` give,
+    // Read the input. A missing file is the error `validate` and `diff` give,
     // not three nested contexts (I-091).
-    let parser = Parser::default();
-    let env_file = parser.parse_file_or_hint(
-        &config.env_path,
-        &Parser::missing_env_hint(&config.env_path),
-    )?;
+    let env_file = read_input(&config)?;
+    let stdin = config.env_path == STDIN;
 
     // ⚠️ Before anything is converted, so a refusal writes nothing (I-081,
     // DEC-G5).
     if let Some(out) = config.output_path.as_deref() {
-        check_output(&config.env_path, out, config.force)?;
+        if stdin {
+            // Nothing on disk to protect: only an existing output is refused.
+            if !config.force && std::fs::symlink_metadata(out).is_ok() {
+                anyhow::bail!("'{out}' already exists. Pass --force to replace it.");
+            }
+        } else {
+            check_output(&config.env_path, out, config.force)?;
+        }
     }
 
     if config.verbose {
@@ -487,7 +503,7 @@ pub fn run(config: ConvertConfig) -> Result<()> {
     };
 
     // ⚠️ The refusal lives here, not in the dispatch. `formats::get_converter`
-    // returns an error so that `cloud export` can reach the same 14 formats
+    // returns an error so that `cloud export` can reach the same 15 formats
     // without a library function ending the process underneath it — but
     // `convert`'s own contract is unchanged: unknown format, this help, exit 2
     // (`Said`: what is printed here is all that is printed).
@@ -574,6 +590,54 @@ pub fn run(config: ConvertConfig) -> Result<()> {
     ui::print_docs_hint(&docs::CONVERT);
 
     Ok(())
+}
+
+/// `--env -`: read standard input.
+const STDIN: &str = "-";
+
+/// The variables in the input, from a file or from standard input, read as
+/// `--from` says.
+fn read_input(config: &ConvertConfig) -> Result<crate::core::parser::EnvFile> {
+    use crate::core::parser::EnvFile;
+    let path = config.env_path.as_str();
+    let parser = Parser::default();
+    if config.from == ConvertFrom::Dotenv && path != STDIN {
+        return parser.parse_file_or_hint(path, &Parser::missing_env_hint(path));
+    }
+    let (origin, text) = if path == STDIN {
+        (
+            "<stdin>".to_string(),
+            crate::utils::term::read_piped("evnx convert --env -")?,
+        )
+    } else {
+        let text = std::fs::read_to_string(path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                crate::core::verdict::missing_file(format!(
+                    "{path} does not exist\n\n{}",
+                    Parser::missing_env_hint(path)
+                ))
+            } else {
+                anyhow::Error::new(e).context(format!("could not read {path}"))
+            }
+        })?;
+        (path.to_string(), text)
+    };
+    let (vars, lines) = match config.from {
+        ConvertFrom::Json => {
+            let doc = crate::core::envjson::document_from_json(&text)
+                .with_context(|| format!("Failed to read {origin} as --from json"))?;
+            let vars = doc.entries.into_iter().map(|e| (e.key, e.value)).collect();
+            (vars, Default::default())
+        }
+        ConvertFrom::Dotenv => parser
+            .parse_content_located(&text)
+            .with_context(|| format!("Failed to parse {origin}"))?,
+    };
+    Ok(EnvFile {
+        vars,
+        source: Some(origin),
+        lines,
+    })
 }
 
 /// Targets whose output usually ends up somewhere public: `json` feeds an app

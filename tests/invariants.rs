@@ -484,6 +484,12 @@ fn read_back(format: &str, out: &str, p: &Project) -> Result<BTreeMap<String, St
                 })
                 .collect()
         }
+        // The parser evnx reads a `.env` with: the output is written to be read
+        // back by it exactly (WP-14).
+        "dotenv" => evnx::core::Parser::default()
+            .parse_content(out)
+            .map(|vars| vars.into_iter().collect())
+            .map_err(|e| e.to_string()),
         "github-actions" => {
             github_blocks(out).map(|m| m.into_iter().map(|(k, v)| (k, lf(&v))).collect())
         }

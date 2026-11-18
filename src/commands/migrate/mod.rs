@@ -125,11 +125,23 @@ fn check_combinations(args: &MigrateArgs, source: &str, destination: &str) -> Re
     // both flags in silence — no warning, no effect, exit 0 (F10, flagged in
     // three consecutive reviews). Refusing is better than a warning: a flag
     // that cannot work should not look like it did.
-    if !destinations::uploads(destination) && (args.skip_existing || args.overwrite) {
-        let which = match (args.skip_existing, args.overwrite) {
+    //
+    // Vercel is the one printing destination `--overwrite` means something
+    // for: it decides whether the printed commands carry `--force`.
+    let overwrite_applies = destinations::uploads(destination) || destination == "vercel";
+    let refused = (args.skip_existing, args.overwrite && !overwrite_applies);
+    if !destinations::uploads(destination) && (refused.0 || refused.1) {
+        let which = match refused {
             (true, true) => "--skip-existing and --overwrite",
             (true, false) => "--skip-existing",
             _ => "--overwrite",
+        };
+        let only = if destination == "vercel" {
+            "Only `--to github` uploads, and it honours both. For `--to vercel`, \
+             `--overwrite` adds `--force` to the printed commands; `evnx platform push` \
+             talks to Vercel itself."
+        } else {
+            "Only `--to github` uploads, and it honours both."
         };
         return Err(usage(format!(
             "{which} cannot apply to `{destination}`.\n\n\
@@ -137,7 +149,7 @@ fn check_combinations(args: &MigrateArgs, source: &str, destination: &str) -> Re
              you to run, so it cannot see which secrets are already there. \
              Drop the flag, or pass the platform's own equivalent to the \
              printed command.\n\n\
-             Only `--to github` uploads, and it honours both."
+             {only}"
         )));
     }
     Ok(())
@@ -398,6 +410,16 @@ pub fn run(args: MigrateArgs) -> Result<Verdict> {
         // steps are written for a migration that happened — "verify secrets
         // were set", "redeploy your project" — and printing them directly under
         // "nothing was uploaded" contradicts the line above them (F12).
+        let needed = destinations::flags_a_real_run_needs(&destination, &args);
+        if !needed.is_empty() {
+            // The preview shows a placeholder where the name goes; say what
+            // replaces it, because a real run refuses to start without it.
+            out.result(format!(
+                "\n{} A real run needs {}.",
+                "·".cyan(),
+                needed.join(" and ")
+            ));
+        }
         out.status("\nNext step:");
         out.status("  Re-run without --dry-run to apply this.");
     } else if result.failed == 0 {
@@ -431,7 +453,7 @@ fn print_banner() {
     // search for `print_box`, which is what made the claim easy to make twice.
     ui::print_header(
         "evnx migrate",
-        Some("Generate destination commands from your .env"),
+        Some("convert writes a file; migrate talks to a provider"),
     );
 }
 

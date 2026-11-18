@@ -10,7 +10,16 @@ Compare two env files: keys missing or extra, and values between environments.
 
 Against a template (`.env.example`) only key names are compared; between two environments (`--against`) values are compared too.
 
-Usage: evnx diff [OPTIONS]
+Usage: evnx diff [OPTIONS] [A] [B]
+
+Arguments:
+  [A]
+          The file on the left. With a second file, the two are compared key by key and value by value.
+          
+          `evnx diff .env.staging .env.production`. With one file, it is compared with the template (key names only). Instead of the positionals, `--env`, `--env-name`, `--example` and `--against` name the files.
+
+  [B]
+          The file on the right
 
 Options:
       --against <NAME>
@@ -97,11 +106,13 @@ What is compared:
   .env against a template (.env.example, [defaults] example, or --example)
       key names only: a filled-in value differs from its placeholder by design.
       --values compares the values too.
-  two environments (--env-name production --against staging)
+  two environments (--env-name production --against staging, or two files)
       key names, and which values differ (values hidden unless --show-values).
+      With two files the left one is listed first.
 
 Examples:
   evnx diff                                  # keys .env lacks, or the template lacks
+  evnx diff .env.staging .env.production     # two files: keys and values, left first
   evnx diff --fail-on missing                # fail only when .env lacks a template key
   evnx diff --env-name production --against staging
   evnx diff --format json | jq -e '.summary.missing == 0'

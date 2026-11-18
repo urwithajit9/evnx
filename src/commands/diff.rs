@@ -569,8 +569,9 @@ fn output_pretty(
             // between here. A masked key prints its mask; a withheld one prints
             // nothing but the key name.
             if let (Some(ex), Some(env)) = (&item.example_value, &item.env_value) {
-                println!("    {}: {}", right_name, ex.dimmed());
+                // The left file first: the order of the `left ↔ right` heading.
                 println!("    {}: {}", left_name, env.dimmed());
+                println!("    {}: {}", right_name, ex.dimmed());
             }
         }
         println!();

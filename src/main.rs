@@ -671,6 +671,8 @@ fn run() -> Result<Verdict, EvnxError> {
         }
 
         Commands::Diff {
+            left,
+            right,
             files: file_args,
             against,
             values,
@@ -686,15 +688,20 @@ fn run() -> Result<Verdict, EvnxError> {
             use commands::diff::{Compare, DiffOptions, FailOn};
             let here = Path::new(".");
             let format = output.resolved().to_string();
-            let flags = file_args.flags();
+            let mut flags = file_args.flags();
+            // `diff A B`: A is the left file, B the right one (positionals
+            // exclude the flags, so these are the only ones set).
+            flags.env = left.as_deref().or(flags.env);
+            flags.example = right.as_deref().or(flags.example);
+            let two_files = right.is_some();
             let files = resolve_files(
                 flags.env,
                 flags.env_name,
                 flags.example,
                 &cfg,
                 evnx::core::resolve::Need::Existing,
-                cli.quiet || against.is_some(),
-                cli.verbose && against.is_none(),
+                cli.quiet || against.is_some() || two_files,
+                cli.verbose && against.is_none() && !two_files,
             )?;
             let env = files.env.clone();
             // The right-hand side, and with it what is compared (I-078):
@@ -705,7 +712,7 @@ fn run() -> Result<Verdict, EvnxError> {
             // consulted here: it names the *left* side.
             let (example, compare) = match against.as_deref() {
                 Some(name) => (resolve_env(here, None, Some(name), None)?, Compare::Values),
-                None if values => (files.template.clone(), Compare::Values),
+                None if values || two_files => (files.template.clone(), Compare::Values),
                 None => (files.template.clone(), Compare::Keys),
             };
             if let Err(e) =
@@ -736,6 +743,7 @@ fn run() -> Result<Verdict, EvnxError> {
 
         Commands::Convert {
             env: env_args,
+            from,
             to,
             output,
             force,
@@ -755,6 +763,7 @@ fn run() -> Result<Verdict, EvnxError> {
             name,
             namespace,
             terraform_declarations,
+            kind,
             confirm,
             dry,
         } => {
@@ -773,13 +782,24 @@ fn run() -> Result<Verdict, EvnxError> {
                 name,
                 namespace,
                 terraform_declarations,
+                kind,
             };
             let early = evnx::core::args::check_opt(
                 "--prefix",
                 prefix.as_deref(),
                 evnx::core::args::Name::VarPrefix,
             )
-            .and_then(|()| targets.check(to.and_then(evnx::formats::find)));
+            .and_then(|()| targets.check(to.and_then(evnx::formats::find)))
+            .and_then(|()| {
+                if kind == Some(evnx::formats::KubeKind::Configmap) && base64 {
+                    anyhow::bail!(
+                        "--base64 is for a Secret's `data:`; a ConfigMap holds plain text. \
+                         Use --kind secret or --kind split, or drop --base64. Nothing was \
+                         printed."
+                    );
+                }
+                Ok(())
+            });
             if let Err(e) = early {
                 return Err(EvnxError::Config(e));
             }
@@ -795,6 +815,7 @@ fn run() -> Result<Verdict, EvnxError> {
             let gitignore = gitignore || (confirm.yes && output.is_some() && !no_gitignore);
             let config = commands::convert::ConvertConfig::builder()
                 .env(env)
+                .from(from)
                 .target_format(to)
                 .output_path(output)
                 .include(include)

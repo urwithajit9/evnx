@@ -9,6 +9,7 @@ pub mod dialect;
 pub mod env_name;
 pub mod env_set;
 pub mod envfile;
+pub mod envjson;
 pub mod envsource;
 pub mod error;
 pub mod exit_table;

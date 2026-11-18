@@ -7,8 +7,8 @@ Missing from ./left (present in ./right):
 
 Different values:
   ~ C
-    ./right: 1
     ./left: 
+    ./right: 1
 
   1 missing from ./left  ·  1 different value
 [stderr]

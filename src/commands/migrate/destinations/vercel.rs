@@ -3,7 +3,7 @@
 //! Generates `vercel env add` commands, one per variable, each value on stdin:
 //!
 //! ```text
-//! printf '%s' 'VALUE' | vercel env add NAME production [--project P] --force --yes
+//! printf '%s' 'VALUE' | vercel env add NAME production [--project P] [--force] --yes
 //! ```
 //!
 //! ⚠️ Checked against vercel 64.7.0 (`packages/cli/src/commands/env/`), I-268:
@@ -12,9 +12,10 @@
 //!   command evnx printed with `--vercel-project` was a usage error. Without
 //!   the flag vercel uses the linked project (`vercel link`,
 //!   `VERCEL_PROJECT_ID`).
-//! - `--force`: an existing variable is an error without it, so a re-run —
-//!   the normal way to change a value — failed. Every other destination evnx
-//!   prints for replaces a value too.
+//! - `--force`: an existing variable is an error without it. It is printed
+//!   only with `--overwrite` (WP-14): a printed command that silently replaces
+//!   a value is not what a first run should do. `evnx platform push` talks to
+//!   Vercel itself and is what the output points to.
 //! - `--yes`: `env add` can still ask how to store the value ("Store this
 //!   value as?"); the printed command should run without a question.
 //!
@@ -42,6 +43,8 @@ pub struct VercelDestination {
     pub project: Option<String>,
     /// `development`, `preview`, or `production` (default: `production`).
     pub environment: String,
+    /// `--overwrite`: the printed commands carry `--force`.
+    pub overwrite: bool,
 }
 
 impl VercelDestination {
@@ -49,7 +52,15 @@ impl VercelDestination {
         Self {
             project,
             environment: "production".into(),
+            overwrite: false,
         }
+    }
+
+    /// `--overwrite`: replace a variable that already exists. Without it the
+    /// printed commands leave `--force` off, and Vercel refuses to replace one.
+    pub fn overwriting(mut self, overwrite: bool) -> Self {
+        self.overwrite = overwrite;
+        self
     }
 
     /// Target the Vercel environment the source file stands for: `.env.development`
@@ -64,7 +75,7 @@ impl VercelDestination {
         self
     }
 
-    /// `vercel env add NAME ENVIRONMENT [--project P] --force --yes`.
+    /// `vercel env add NAME ENVIRONMENT [--project P] [--force] --yes`.
     ///
     /// ⚠️ `--sensitive` for a secret-looking variable, in every environment.
     /// 0.13.0 left it off for `development` because Vercel then rejected it
@@ -84,7 +95,9 @@ impl VercelDestination {
         if sensitive {
             words.push("--sensitive".into());
         }
-        words.push("--force".into());
+        if self.overwrite {
+            words.push("--force".into());
+        }
         words.push("--yes".into());
         words.join(" ")
     }
@@ -126,6 +139,9 @@ impl MigrationDestination for VercelDestination {
             crate::utils::ui::glyph::INFO.cyan()
         ));
         out.status("  Install: npm install -g vercel");
+        out.status(
+            "  To keep Vercel and a file in step without copying commands: `evnx platform push`",
+        );
 
         if opts.dry_run {
             out.result(format!(
@@ -135,6 +151,14 @@ impl MigrationDestination for VercelDestination {
             if let Some(p) = &self.project {
                 out.result(format!("  Project     : {}", p));
             }
+            out.result(format!(
+                "  Existing    : {}",
+                if self.overwrite {
+                    "replaced (--force)"
+                } else {
+                    "an error from vercel (--overwrite replaces them)"
+                }
+            ));
             out.result(format!("  Environment : {}", self.environment));
             out.result(format!("  Secrets     : {}", secrets.len()));
             return Ok(MigrationResult {
@@ -182,18 +206,18 @@ mod tests {
         let with = VercelDestination::new(Some("prj_1".into()));
         assert_eq!(
             with.add_command("A", false),
-            "vercel env add A production --project prj_1 --force --yes"
+            "vercel env add A production --project prj_1 --yes"
         );
         let without = VercelDestination::new(None);
         assert_eq!(
             without.add_command("A", false),
-            "vercel env add A production --force --yes"
+            "vercel env add A production --yes"
         );
         assert_eq!(
             without.add_command("A", true),
-            "vercel env add A production --sensitive --force --yes"
+            "vercel env add A production --sensitive --yes"
         );
-        let mut dev = VercelDestination::new(None);
+        let mut dev = VercelDestination::new(None).overwriting(true);
         dev.environment = "development".into();
         assert_eq!(
             dev.add_command("A", true),

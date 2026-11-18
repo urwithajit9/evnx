@@ -16,7 +16,6 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use serde_json;
 
 use crate::core::verdict::Verdict;
 use crate::core::{Parser, ParserConfig};
@@ -79,60 +78,7 @@ pub enum InputFormat {
 /// How a finding names stdin, as `scan -` does.
 const STDIN_LABEL: &str = "<stdin>";
 
-/// `--input-format json` (B2): a flat `{"KEY": "value"}` object, or
-/// `evnx parse --format json --values`'s output. Every line number is 0: JSON
-/// has no line to point at. Never names a value in an error.
-fn document_from_json(text: &str) -> Result<crate::core::parser::Document> {
-    use serde_json::Value;
-    let json: Value = serde_json::from_str(text).context("it is not valid JSON")?;
-    let Value::Object(object) = json else {
-        anyhow::bail!("expected an object of variables");
-    };
-    let pairs: Vec<(String, String)> = if object.contains_key("schema_version") {
-        let entries = object
-            .get("entries")
-            .and_then(Value::as_array)
-            .context("`entries` is not a list")?;
-        entries
-            .iter()
-            .map(|e| {
-                let key = e
-                    .get("key")
-                    .and_then(Value::as_str)
-                    .context("an entry has no `key`")?;
-                let value = e.get("value").and_then(Value::as_str).with_context(|| {
-                    format!("{key} has no value: write it with `evnx parse --format json --values`")
-                })?;
-                Ok((key.to_string(), value.to_string()))
-            })
-            .collect::<Result<_>>()?
-    } else {
-        object
-            .iter()
-            .map(|(k, v)| {
-                let v = v
-                    .as_str()
-                    .with_context(|| format!("{k}'s value is not a string"))?;
-                Ok((k.clone(), v.to_string()))
-            })
-            .collect::<Result<_>>()?
-    };
-    let mut doc = crate::core::parser::Document::default();
-    for (key, value) in pairs {
-        if !crate::core::parser::is_env_key(&key) {
-            anyhow::bail!("'{key}' is not a variable name: use letters, digits, _, ., -, [ and ]");
-        }
-        doc.entries.push(crate::core::parser::Entry {
-            key,
-            value,
-            span: crate::core::parser::Span::line(0),
-            raw: String::new(),
-            exported: false,
-            quote: None,
-        });
-    }
-    Ok(doc)
-}
+use crate::core::envjson::document_from_json;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum FailOn {

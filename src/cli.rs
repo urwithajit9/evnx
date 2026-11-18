@@ -366,10 +366,13 @@ impl MigrateSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum MigrateTarget {
     Github,
+    #[value(aliases = ["aws-secrets", "aws"])]
     AwsSecretsManager,
     Doppler,
     Infisical,
+    #[value(aliases = ["gcp-secrets", "gcp"])]
     GcpSecretManager,
+    #[value(aliases = ["azure", "azure-key-vault"])]
     AzureKeyvault,
     Vercel,
     Heroku,
@@ -412,6 +415,10 @@ pub struct MigrateOptions {
     // ── Destination ───────────────────────────────────────────────────────────
     /// Destination system: github | aws-secrets-manager | doppler | infisical |
     /// gcp-secret-manager | azure-keyvault | vercel | heroku | railway
+    ///
+    /// The names `convert --to` takes work too: aws and aws-secrets for
+    /// aws-secrets-manager, gcp and gcp-secrets for gcp-secret-manager, azure
+    /// for azure-keyvault.
     #[arg(long, value_enum)]
     pub to: Option<MigrateTarget>,
 
@@ -455,6 +462,9 @@ pub struct MigrateOptions {
     pub skip_existing: bool,
 
     /// Overwrite secrets that already exist without prompting
+    ///
+    /// For `--to vercel` the printed commands carry `--force`, so Vercel
+    /// replaces a variable that exists. Without it Vercel refuses to.
     #[arg(long)]
     pub overwrite: bool,
 
@@ -2189,7 +2199,7 @@ pub enum CloudCommands {
     ///
     /// With no --to the files are the bytes that were pushed, verbatim:
     /// comments, ordering and quoting all survive, because that is how they
-    /// were encrypted. --to converts instead, through the same 14 formats
+    /// were encrypted. --to converts instead, through the same 15 formats
     /// `evnx convert` offers, and a conversion keeps only keys and values.
     ///
     /// Not the same as `evnx auth download-data`, which writes account
@@ -3041,6 +3051,27 @@ pub enum Commands {
     #[command(mut_arg("example", |a| a.help("The template on the right: key names only, unless `--values` is given. Defaults to `.env.example`, or `[defaults] example`")))]
     #[command(mut_arg("format", |a| a.long_help("Output format. `patch` is a unified diff of the left file that `patch -p1` applies: it adds the missing names and, when values are compared, replaces the different ones. Keys only in the left file are kept and named in comment lines.")))]
     Diff {
+        /// The file on the left. With a second file, the two are compared
+        /// key by key and value by value.
+        ///
+        /// `evnx diff .env.staging .env.production`. With one file, it is
+        /// compared with the template (key names only). Instead of the
+        /// positionals, `--env`, `--env-name`, `--example` and `--against` name
+        /// the files.
+        #[arg(
+            value_name = "A",
+            conflicts_with_all = ["env", "env_name", "example", "against"]
+        )]
+        left: Option<String>,
+
+        /// The file on the right.
+        #[arg(
+            value_name = "B",
+            requires = "left",
+            conflicts_with_all = ["env", "env_name", "example", "against"]
+        )]
+        right: Option<String>,
+
         #[command(flatten)]
         files: args::FileArgs,
 
@@ -3124,8 +3155,9 @@ pub enum Commands {
 
     /// Transform `.env` files into multiple output formats.
     ///
-    /// Supports 14 formats including JSON, YAML, cloud configs,
-    /// CI/CD variables, and infrastructure-as-code.
+    /// Supports 15 formats including JSON, YAML, cloud configs,
+    /// CI/CD variables, and infrastructure-as-code. It writes a file or prints
+    /// one; `evnx migrate` talks to a provider instead.
     //
     // ⚠️ The examples live in `after_help` below, not here. clap strips the
     // markdown fence and collapses newlines in a doc comment, so a fenced block
@@ -3149,11 +3181,20 @@ Examples:
   # A script that creates or updates every secret in a GCP project
   evnx convert --to gcp-secrets --project my-gcp-project -o upload.sh
 
+  # A Kubernetes Secret for the secrets and a ConfigMap for the rest
+  evnx convert --to kubernetes --name myapp --kind split -o k8s.yaml
+
+  # A JSON file back into a .env, and a pipe in place of a file
+  evnx convert --from json --to dotenv --env vars.json -o .env
+  cat vars.json | evnx convert --from json --to dotenv --env -
+
   # Interactive mode (opens the format selector)
   evnx convert
 
+convert writes a file; migrate talks to a provider.
+
 Supported formats:
-  Generic:        json, yaml, shell
+  Generic:        json, yaml, shell, dotenv
   Cloud:          aws-secrets (JSON for create-secret),
                   gcp-secrets (--project), azure-keyvault (--vault-name)
   CI/CD:          github (text to paste into the GitHub web form)
@@ -3163,23 +3204,30 @@ Supported formats:
                   railway (experimental)
 
 Aliases:
-  k8s → kubernetes, tf → terraform, yml → yaml
+  k8s → kubernetes, tf → terraform, yml → yaml, env → dotenv
   compose → docker-compose
 
 Use 'evnx convert' without --to for interactive format selection.
 
 Full guide: https://docs.evnx.dev/cli/commands/convert
 ")]
-    #[command(mut_arg("env", |a| a.help("Path to input .env file. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
+    #[command(mut_arg("env", |a| a.help("Input file, or `-` to read standard input. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`")))]
     #[command(mut_arg("yes", |a| a.help("Add the --output file to .gitignore without asking; with no --to, fail instead of showing the menu").long_help("Do not ask: add the --output file to .gitignore without the prompt (as `--gitignore`). With no `--to` it is an error naming `--to`, because the format menu is a question too.")))]
     #[command(mut_arg("dry_run", |a| a.help("With --output, check everything and say what would be written, but write nothing").requires("output")))]
     Convert {
         #[command(flatten)]
         env: args::EnvArgs,
 
+        /// What the input is: `dotenv` (default) or `json`
+        ///
+        /// `json` reads a flat `{"KEY": "value"}` object, the same shape
+        /// `validate --input-format json` reads. Every value must be a string.
+        #[arg(long, value_enum, value_name = "FORMAT", default_value = "dotenv")]
+        from: args::ConvertFrom,
+
         /// Target output format (omit for interactive selection)
         ///
-        /// Supported: json, yaml, shell, aws-secrets, gcp-secrets,
+        /// Supported: json, yaml, shell, dotenv, aws-secrets, gcp-secrets,
         /// azure-keyvault, github, docker-compose, kubernetes,
         /// terraform, doppler, heroku, vercel, railway
         #[arg(long, value_enum, value_name = "FORMAT", ignore_case = true)]
@@ -3295,6 +3343,14 @@ Full guide: https://docs.evnx.dev/cli/commands/convert
         #[arg(long, value_name = "NAMESPACE")]
         namespace: Option<String>,
 
+        /// What --to kubernetes writes: `secret` (default), `configmap`, or `split`
+        ///
+        /// `configmap` writes every variable as plain text (not with --base64).
+        /// `split` writes two documents: a Secret for the variables that look
+        /// secret and a ConfigMap named `<name>-config` for the rest.
+        #[arg(long, value_enum, value_name = "KIND")]
+        kind: Option<crate::formats::KubeKind>,
+
         /// With --to terraform, write a .tf of `variable` blocks instead of
         /// the .tfvars values.
         ///
@@ -3315,6 +3371,7 @@ Full guide: https://docs.evnx.dev/cli/commands/convert
     ///
     /// For eight destinations evnx prints the commands for you to run and
     /// contacts nothing; only github uploads (over the GitHub API).
+    /// `convert` writes a file; `migrate` talks to a provider.
     // ⚠️ The first line said "Full migration workflow to secret managers", and
     // the banner "Generate destination commands" — true for eight of nine
     // (D-59). The examples were a `///` block, which clap folded into one line
@@ -3337,8 +3394,13 @@ Examples:
   # Upload to GitHub Actions from CI (token from GITHUB_TOKEN)
   evnx migrate --to github --repo owner/repo --yes --skip-existing
 
-  # Preview: no commands printed, nothing uploaded
+  # Preview: no commands printed, nothing uploaded. The target flags
+  # (--heroku-app and the like) are optional here; a real run needs them.
   evnx migrate --to doppler --project myapp --doppler-config dev --dry-run
+  evnx migrate --to heroku --dry-run
+
+  # Vercel: the commands fail on a variable that exists unless --overwrite
+  evnx migrate --to vercel --overwrite
 
 Destinations:
   Prints commands: aws-secrets-manager (--secret-name), gcp-secret-manager (--project),

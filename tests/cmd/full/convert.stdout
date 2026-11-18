@@ -1,16 +1,27 @@
 Transform `.env` files into multiple output formats.
 
-Supports 14 formats including JSON, YAML, cloud configs, CI/CD variables, and infrastructure-as-code.
+Supports 15 formats including JSON, YAML, cloud configs, CI/CD variables, and infrastructure-as-code. It writes a file or prints one; `evnx migrate` talks to a provider instead.
 
 Usage: evnx convert [OPTIONS]
 
 Options:
+      --from <FORMAT>
+          What the input is: `dotenv` (default) or `json`
+          
+          `json` reads a flat `{"KEY": "value"}` object, the same shape `validate --input-format json` reads. Every value must be a string.
+
+          Possible values:
+          - dotenv: A `.env` file
+          - json:   A flat `{"KEY": "value"}` object
+          
+          [default: dotenv]
+
       --to <FORMAT>
           Target output format (omit for interactive selection)
           
-          Supported: json, yaml, shell, aws-secrets, gcp-secrets, azure-keyvault, github, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway
+          Supported: json, yaml, shell, dotenv, aws-secrets, gcp-secrets, azure-keyvault, github, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway
           
-          [possible values: json, yaml, shell, aws-secrets, gcp-secrets, azure-keyvault, github, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway]
+          [possible values: json, yaml, shell, dotenv, aws-secrets, gcp-secrets, azure-keyvault, github, docker-compose, kubernetes, terraform, doppler, heroku, vercel, railway]
 
   -o, --output <FILE>
           Write output to file instead of stdout
@@ -89,6 +100,16 @@ Options:
       --namespace <NAMESPACE>
           Kubernetes namespace for --to kubernetes (optional)
 
+      --kind <KIND>
+          What --to kubernetes writes: `secret` (default), `configmap`, or `split`
+          
+          `configmap` writes every variable as plain text (not with --base64). `split` writes two documents: a Secret for the variables that look secret and a ConfigMap named `<name>-config` for the rest.
+
+          Possible values:
+          - secret:    One `Secret` holding every variable (the default)
+          - configmap: One `ConfigMap` holding every variable, as plain text
+          - split:     Two documents: a `Secret` for the variables that look secret and a `ConfigMap` (`<name>-config`) for the rest
+
       --terraform-declarations
           With --to terraform, write a .tf of `variable` blocks instead of the .tfvars values.
           
@@ -114,7 +135,7 @@ Options:
 
 Files:
       --env <FILE>
-          Path to input .env file. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`
+          Input file, or `-` to read standard input. Defaults to `.env`, or `[defaults] env_name` from `.evnx.toml`
 
       --env-name <NAME>
           Use `.env.<NAME>` instead of `.env`
@@ -138,11 +159,20 @@ Examples:
   # A script that creates or updates every secret in a GCP project
   evnx convert --to gcp-secrets --project my-gcp-project -o upload.sh
 
+  # A Kubernetes Secret for the secrets and a ConfigMap for the rest
+  evnx convert --to kubernetes --name myapp --kind split -o k8s.yaml
+
+  # A JSON file back into a .env, and a pipe in place of a file
+  evnx convert --from json --to dotenv --env vars.json -o .env
+  cat vars.json | evnx convert --from json --to dotenv --env -
+
   # Interactive mode (opens the format selector)
   evnx convert
 
+convert writes a file; migrate talks to a provider.
+
 Supported formats:
-  Generic:        json, yaml, shell
+  Generic:        json, yaml, shell, dotenv
   Cloud:          aws-secrets (JSON for create-secret),
                   gcp-secrets (--project), azure-keyvault (--vault-name)
   CI/CD:          github (text to paste into the GitHub web form)
@@ -152,7 +182,7 @@ Supported formats:
                   railway (experimental)
 
 Aliases:
-  k8s → kubernetes, tf → terraform, yml → yaml
+  k8s → kubernetes, tf → terraform, yml → yaml, env → dotenv
   compose → docker-compose
 
 Use 'evnx convert' without --to for interactive format selection.

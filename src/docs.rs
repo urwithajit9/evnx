@@ -153,11 +153,13 @@ What is compared:\n\
 \x20 .env against a template (.env.example, [defaults] example, or --example)\n\
 \x20     key names only: a filled-in value differs from its placeholder by design.\n\
 \x20     --values compares the values too.\n\
-\x20 two environments (--env-name production --against staging)\n\
+\x20 two environments (--env-name production --against staging, or two files)\n\
 \x20     key names, and which values differ (values hidden unless --show-values).\n\
+\x20     With two files the left one is listed first.\n\
 \n\
 Examples:\n\
 \x20 evnx diff                                  # keys .env lacks, or the template lacks\n\
+\x20 evnx diff .env.staging .env.production     # two files: keys and values, left first\n\
 \x20 evnx diff --fail-on missing                # fail only when .env lacks a template key\n\
 \x20 evnx diff --env-name production --against staging\n\
 \x20 evnx diff --format json | jq -e '.summary.missing == 0'\n\
@@ -168,7 +170,7 @@ Full guide: https://docs.evnx.dev/cli/commands/diff",
 pub const CONVERT: CommandDoc = CommandDoc {
     command: "convert",
     url: "https://docs.evnx.dev/cli/commands/convert",
-    description: "All 14 output formats and filtering options",
+    description: "All 15 output formats and filtering options",
     after_help: "Full guide: https://docs.evnx.dev/cli/commands/convert",
 };
 

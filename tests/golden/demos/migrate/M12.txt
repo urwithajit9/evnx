@@ -24,7 +24,7 @@ Next steps:
   3. Remove your local .env file.
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 ! These commands pass the values as command-line arguments, which can show in `ps` and in your shell history: run them on a trusted machine.
   Docs: https://docs.evnx.dev/cli/commands/migrate
@@ -63,7 +63,7 @@ Summary:
 $ evnx migrate --env nope.env --to heroku --heroku-app demo-app
 [stderr]
 
-  evnx migrate  Generate destination commands from your .env
+  evnx migrate  convert writes a file; migrate talks to a provider
 
 Error: nope.env does not exist
 

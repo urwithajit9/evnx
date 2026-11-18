@@ -84,10 +84,18 @@ impl MigrationDestination for AwsDestination {
             ));
             out.result(format!("  Secret name : {}", self.secret_name));
             out.result(format!("  Secrets     : {}", secrets.len()));
-            out.result("\n  JSON preview (first 300 chars):");
-            out.result(format!("  {}", json.chars().take(300).collect::<String>()));
-            if json.len() > 300 {
-                out.result(format!("  … ({} more chars)", json.len() - 300));
+            // ⚠️ Names only: a dry run prints no value (it printed the first
+            // 300 characters of the real JSON).
+            let names: IndexMap<&str, &str> =
+                secrets.keys().map(|k| (k.as_str(), "<hidden>")).collect();
+            let preview = serde_json::to_string_pretty(&names)?;
+            out.result("\n  JSON preview (first 300 chars; values hidden):");
+            out.result(format!(
+                "  {}",
+                preview.chars().take(300).collect::<String>()
+            ));
+            if preview.len() > 300 {
+                out.result(format!("  … ({} more chars)", preview.len() - 300));
             }
             return Ok(MigrationResult {
                 skipped: secrets.len(),
