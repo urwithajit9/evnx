@@ -249,6 +249,18 @@ fn t_i316_pull_with_the_right_password_still_decrypts() {
 /// `vault rekey` already did, and re-wrapped for the recipient.
 #[test]
 fn t_i311_an_admin_shares_a_vault_shared_with_them() {
+    admin_shares(&["--role", "developer"], "developer");
+}
+
+/// WP-12: without `--role` the recipient is a viewer, and the output says how
+/// to raise it.
+#[test]
+fn wp12_share_without_a_role_sends_viewer() {
+    let out = admin_shares(&[], "viewer");
+    assert!(out.stdout.contains("evnx vault role app"), "{}", out.stdout);
+}
+
+fn admin_shares(extra: &[&str], role: &str) -> support::Output {
     let admin = account(RIGHT);
     let vk = VaultKey::generate();
     let mine = wrap_vault_key_for_user(
@@ -303,33 +315,37 @@ fn t_i311_an_admin_shares_a_vault_shared_with_them() {
         )
         .match_body(mockito::Matcher::PartialJson(serde_json::json!({
             "user_email": "new@example.com",
-            "role": "developer"
+            "role": role
         })))
         .with_status(201)
         .expect(1)
         .create();
 
+    let mut args = vec![
+        "vault",
+        "share",
+        "app",
+        "--with",
+        "new@example.com",
+        "--password-stdin",
+    ];
+    args.extend_from_slice(extra);
     let out = signed_in(
         &Project::new(),
         &s.url(),
-        &[
-            "vault",
-            "share",
-            "app",
-            "--with",
-            "new@example.com",
-            "--password-stdin",
-        ],
+        &args,
         Some(format!("{RIGHT}\n").as_bytes()),
     );
     out.assert_code(0);
     assert!(
-        out.stdout
-            .contains("shared app/development with new@example.com as developer"),
+        out.stdout.contains(&format!(
+            "shared app/development with new@example.com as {role}"
+        )),
         "{}",
         out.stdout
     );
     add.assert();
+    out
 }
 
 /// I-218: `cloud pull` over a different `.env` asks first; with no terminal it

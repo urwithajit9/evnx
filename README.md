@@ -1175,14 +1175,14 @@ with `--password-stdin`, and give the job `EVNX_KEY_BUNDLE` ([CI/CD](#cicd)).
 ### Sharing with a team
 
 ```bash
-evnx vault share app/production --with teammate@example.com --role developer
+evnx vault share app/production --with teammate@example.com   # viewer by default; --role developer or admin to widen
 evnx vault members app/production
 evnx vault role app/production --user teammate@example.com --role viewer
 evnx vault revoke app/production --user teammate@example.com
 evnx vault rekey app/production      # rotate the key, nobody removed
 evnx vault leave app/production      # leave a vault shared with you
 evnx vault list --verbose            # every vault you can reach, with ids
-evnx vault delete app/production     # the owner only; no undelete
+evnx vault delete app/production     # the owner only; asks you to type the full name; no undelete
 ```
 
 | | viewer | developer | admin | owner |

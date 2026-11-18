@@ -49,9 +49,18 @@ fn t_i225_quiet_status_commands_print_nothing_on_success() {
         .with_status(204)
         .create();
     for args in [
-        &["-q", "vault", "delete", "app", "-y"][..],
+        &["-q", "vault", "delete", "app/development", "-y"][..],
         // The role bob already holds: "nothing changed", a status line.
-        &["-q", "vault", "share", "app", "--with", "bob@example.com"][..],
+        &[
+            "-q",
+            "vault",
+            "share",
+            "app",
+            "--with",
+            "bob@example.com",
+            "--role",
+            "developer",
+        ][..],
         &["-q", "org", "create", "Acme", "--slug", "acme"][..],
         &["-q", "auth", "logout"][..],
     ] {

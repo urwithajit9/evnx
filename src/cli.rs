@@ -1529,11 +1529,16 @@ pub enum VaultCommands {
     },
 
     /// Delete a vault and every version in it.
+    ///
+    /// Asks you to type the vault's full `name/environment` before it deletes.
+    /// With --yes there is no question, so the target must be the full
+    /// `name/environment` or an id, not a short name.
     Delete {
-        /// Vault to delete: `name`, `name/environment`, or an id.
+        /// Vault to delete: `name/environment`, or an id. A short name is
+        /// accepted only at the prompt.
         target: String,
 
-        /// Skip the confirmation prompt.
+        /// Skip the question. Needs the full `name/environment` or an id.
         #[arg(long, short = 'y')]
         yes: bool,
     },
@@ -1560,8 +1565,8 @@ pub enum VaultCommands {
         #[arg(long, visible_alias = "user")]
         with: String,
 
-        /// Permission level: viewer, developer, or admin.
-        #[arg(long, default_value = "developer")]
+        /// Permission level: viewer, developer, or admin. Default viewer.
+        #[arg(long, default_value = "viewer")]
         role: String,
 
         /// Read the master password from stdin instead of prompting.

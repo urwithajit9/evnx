@@ -150,3 +150,216 @@ fn wp12_token_list_shows_expiry_and_scope() {
     assert!(out.stdout.contains("2027-02-16"), "{}", out.stdout);
     assert!(out.stdout.contains("read"), "{}", out.stdout);
 }
+
+// ─── vault share and delete ──────────────────────────────────────────────────
+
+fn vault_server(role: &str, members: &str) -> mockito::ServerGuard {
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/vaults")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"vaults":[{{"id":"{VAULT_ID}","name":"app","environment":"production",
+            "role":"{role}","version_count":3,"updated_at":"2026-10-20T09:00:00Z"}}]}}"#
+        ))
+        .create();
+    s.mock("GET", format!("/api/v1/vaults/{VAULT_ID}/members").as_str())
+        .with_status(200)
+        .with_body(format!(r#"{{"members":[{members}]}}"#))
+        .create();
+    s
+}
+
+fn member(email: &str, role: &str, you: bool) -> String {
+    format!(
+        r#"{{"user_id":"u-{email}","email":"{email}","role":"{role}",
+        "granted_at":"2026-10-20T09:00:00Z","has_mlkem_key":true,"is_you":{you}}}"#
+    )
+}
+
+fn members_of(bob_role: &str) -> String {
+    format!(
+        "{},{}",
+        member("me@example.com", "owner", true),
+        member("bob@example.com", bob_role, false)
+    )
+}
+
+#[test]
+fn wp12_share_defaults_to_viewer() {
+    // A member who already is a viewer: "nothing changed" is only said when the
+    // requested role, here the default, equals theirs. No key lookup, no POST.
+    let mut s = vault_server("owner", &members_of("viewer"));
+    let none = s.mock("POST", Matcher::Any).expect(0).create();
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "vault",
+            "share",
+            "app/production",
+            "--with",
+            "bob@example.com",
+        ],
+        None,
+    );
+    out.assert_code(0);
+    assert!(
+        out.stdout.contains("already a viewer") && out.stdout.contains("nothing changed"),
+        "{}",
+        out.stdout
+    );
+    none.assert();
+}
+
+#[test]
+fn wp12_share_default_is_named_in_help() {
+    let out = support::run(Project::new().path(), &["vault", "share", "--help"]);
+    assert!(out.stdout.contains("[default: viewer]"), "{}", out.stdout);
+}
+
+#[test]
+fn wp12_share_explicit_developer_still_works() {
+    let s = vault_server("owner", &members_of("developer"));
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &[
+            "vault",
+            "share",
+            "app/production",
+            "--with",
+            "bob@example.com",
+            "--role",
+            "developer",
+        ],
+        None,
+    );
+    out.assert_code(0);
+    assert!(out.stdout.contains("already a developer"), "{}", out.stdout);
+}
+
+fn delete_mock(s: &mut mockito::ServerGuard, hits: usize) -> mockito::Mock {
+    s.mock("DELETE", format!("/api/v1/vaults/{VAULT_ID}").as_str())
+        .with_status(204)
+        .expect(hits)
+        .create()
+}
+
+#[test]
+fn wp12_delete_yes_with_bare_name_refused_exit_2() {
+    let mut s = vault_server("owner", &members_of("viewer"));
+    let del = delete_mock(&mut s, 0);
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["vault", "delete", "app", "--yes"],
+        None,
+    );
+    out.assert_code(2);
+    assert!(
+        out.stderr.contains("full name/environment"),
+        "{}",
+        out.stderr
+    );
+    del.assert();
+}
+
+#[test]
+fn wp12_delete_yes_with_full_name_deletes() {
+    let mut s = vault_server("owner", &members_of("viewer"));
+    let del = delete_mock(&mut s, 1);
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["vault", "delete", "app/production", "--yes"],
+        None,
+    );
+    out.assert_code(0);
+    assert!(
+        out.stdout.contains("deleted app/production"),
+        "{}",
+        out.stdout
+    );
+    del.assert();
+}
+
+#[test]
+fn wp12_delete_yes_with_an_id_deletes() {
+    let mut s = vault_server("owner", &members_of("viewer"));
+    let del = delete_mock(&mut s, 1);
+    signed_in(
+        &Project::new(),
+        &s.url(),
+        &["vault", "delete", VAULT_ID, "-y"],
+        None,
+    )
+    .assert_code(0);
+    del.assert();
+}
+
+#[test]
+fn wp12_delete_no_terminal_no_yes_exit_4() {
+    let mut s = vault_server("owner", &members_of("viewer"));
+    let del = delete_mock(&mut s, 0);
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["vault", "delete", "app/production"],
+        None,
+    );
+    out.assert_code(4);
+    assert!(
+        out.stderr
+            .contains("evnx vault delete app/production --yes"),
+        "{}",
+        out.stderr
+    );
+    del.assert();
+}
+
+#[cfg(unix)]
+mod delete_prompt {
+    use super::*;
+    use support::pty::Pty;
+
+    fn run_delete(typed: &str) -> (String, i32, bool) {
+        let mut s = vault_server("owner", &members_of("viewer"));
+        let hits = usize::from(typed == "app/production");
+        let del = delete_mock(&mut s, hits);
+        let p = Project::new();
+        let cfg = p.path().join("cfg");
+        support::cloud::login(&cfg, &s.url());
+        let url = s.url();
+        let mut run = Pty::spawn_with(
+            p.path(),
+            &["vault", "delete", "app"],
+            &[
+                ("EVNX_SERVER", url.as_str()),
+                ("EVNX_CONFIG_DIR", cfg.to_str().unwrap()),
+            ],
+        );
+        run.wait_for("Type app/production to confirm");
+        run.type_line(typed);
+        let (rest, code) = run.finish();
+        del.assert();
+        let deleted = rest.contains("deleted app/production");
+        (rest, code, deleted)
+    }
+
+    #[test]
+    fn wp12_delete_prompt_requires_typed_full_name() {
+        let (rest, code, deleted) = run_delete("app/production");
+        assert_eq!(code, 0, "{rest}");
+        assert!(deleted, "{rest}");
+    }
+
+    #[test]
+    fn wp12_delete_wrong_typed_name_cancels() {
+        for typed in ["app", "y", "app/staging"] {
+            let (rest, code, deleted) = run_delete(typed);
+            assert_eq!(code, 0, "{typed}: {rest}");
+            assert!(!deleted, "{typed}: {rest}");
+            assert!(rest.contains("Cancelled; nothing was deleted"), "{rest}");
+        }
+    }
+}

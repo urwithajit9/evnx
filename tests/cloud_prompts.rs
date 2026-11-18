@@ -62,7 +62,7 @@ fn t_i218_every_cloud_confirmation_names_yes_without_a_terminal() {
     for (args, example) in [
         (
             &["vault", "delete", "app"][..],
-            "evnx vault delete app --yes",
+            "evnx vault delete app/development --yes",
         ),
         (
             &["vault", "revoke", "app", "--user", "bob@example.com"][..],

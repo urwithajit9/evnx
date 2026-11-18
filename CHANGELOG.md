@@ -80,6 +80,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   given (the two conflict); a bare `auth token create NAME` exits 2. A token
   that never expires, or that reaches every vault, is called out in the
   output.
+- **`vault share` gives the `viewer` role by default** (WP-12), not `developer`.
+  A script that relied on write access for the recipient passes
+  `--role developer`. The success line says how to raise the role.
+- **`vault delete` needs the full vault name** (WP-12). The question asks you to
+  type `name/environment` (anything else cancels, nothing is deleted), and with
+  `--yes` the target must be the full `name/environment` or an id: `vault delete
+  myapp --yes` now exits 2. With no terminal and no `--yes` it still exits 4.
 
 ### Breaking: one flag vocabulary (WP-8)
 
