@@ -13,6 +13,7 @@ use std::path::Path;
 pub mod blueprint;
 pub mod custom;
 pub mod framework;
+pub mod report;
 pub mod service;
 pub mod shared;
 use crate::{

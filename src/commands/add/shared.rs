@@ -23,8 +23,9 @@ use indexmap::IndexMap;
 use std::fs;
 use std::path::Path;
 
+use super::report::Step;
+use crate::core::output::{Mode as OutMode, Out};
 use crate::schema::models::VarCollection;
-use crate::utils::string::count;
 use crate::utils::ui;
 use crate::utils::ui::glyph;
 
@@ -633,19 +634,24 @@ pub fn confirm_and_apply(
     };
 
     if mode.dry_run {
-        if let Some(extra) = &extra {
-            print_json(&plan, true, &Applied::default(), extra)?;
-        } else {
-            print_dry_run(&plan, flow);
-        }
+        let json = extra
+            .as_ref()
+            .map(|e| json_doc(&plan, true, &Applied::default(), e));
+        emit(&plan, flow, Step::DryRun, json)?;
         return Ok(Outcome::Unchanged);
     }
     if plan.is_empty() {
-        if let Some(extra) = &extra {
-            print_json(&plan, false, &Applied::default(), extra)?;
-        } else {
-            report(&plan, flow, true);
-        }
+        let json = extra
+            .as_ref()
+            .map(|e| json_doc(&plan, false, &Applied::default(), e));
+        emit(
+            &plan,
+            flow,
+            Step::Done {
+                show_conflicts: true,
+            },
+            json,
+        )?;
         return Ok(Outcome::Unchanged);
     }
 
@@ -704,12 +710,16 @@ pub fn confirm_and_apply(
         Some(mode.interactive()),
         !mode.json,
     )?;
-    if let Some(extra) = &extra {
-        print_json(&plan, false, &applied, extra)?;
-    } else {
-        // Asked: the conflicts were shown with the question.
-        report(&plan, flow, !mode.interactive());
-    }
+    // Asked: the conflicts were shown with the question.
+    let json = extra.as_ref().map(|e| json_doc(&plan, false, &applied, e));
+    emit(
+        &plan,
+        flow,
+        Step::Done {
+            show_conflicts: !mode.interactive(),
+        },
+        json,
+    )?;
     let without_value = |name: &String| {
         flow.values
             .is_none_or(|v| v.get(name).is_none_or(Option::is_none))
@@ -757,72 +767,6 @@ fn keep_differing(
     Ok(())
 }
 
-/// `--dry-run`: what [`apply`] would do, file by file. Printed whatever `-q`
-/// says: it is the output that was asked for.
-fn print_dry_run(plan: &Plan, flow: &Flow) {
-    let names = |v: &VarCollection| {
-        let mut n: Vec<&str> = v.vars.keys().map(String::as_str).collect();
-        n.sort_unstable();
-        n.join(", ")
-    };
-    let what = flow.what.trim();
-    println!(
-        "Dry run{}: nothing was written.",
-        if what.is_empty() {
-            String::new()
-        } else {
-            format!(" ({what})")
-        }
-    );
-    if plan.to_example.vars.is_empty() {
-        println!("  {}: nothing to add", plan.template.name);
-    } else {
-        println!(
-            "  {}: would add {}: {}",
-            plan.template.name,
-            count(plan.to_example.vars.len(), "variable"),
-            names(&plan.to_example)
-        );
-    }
-    if !plan.present.is_empty() {
-        println!("  already there, would skip: {}", plan.present.join(", "));
-    }
-    for c in &plan.conflicts {
-        println!(
-            "  different value, would keep: {} (existing: \"{}\", new: \"{}\")",
-            c.var_name, c.existing_value, c.new_value
-        );
-    }
-    for name in &plan.env_kept {
-        println!(
-            "  already set to a different value in {}, would keep: {name}",
-            plan.env_file
-        );
-    }
-    if plan.env_exists {
-        if !plan.to_env.vars.is_empty() {
-            println!(
-                "  {}: would add {}: {}",
-                plan.env_file,
-                count(plan.to_env.vars.len(), "variable"),
-                names(&plan.to_env)
-            );
-        }
-    } else if plan.create_env_file && !plan.to_env.vars.is_empty() {
-        println!(
-            "  {}: would be created with {} (with .gitignore first): {}",
-            plan.env_file,
-            count(plan.to_env.vars.len(), "variable"),
-            names(&plan.to_env)
-        );
-    } else if !plan.is_empty() {
-        println!(
-            "  {}: would be created from {} (with .gitignore first)",
-            plan.env_file, plan.template.name
-        );
-    }
-}
-
 /// `--json`: the result as one document. Names only, and conflicts with the
 /// `.env.example` values they compare; nothing from `.env`, ever.
 ///
@@ -833,13 +777,13 @@ fn print_dry_run(plan: &Plan, flow: &Flow) {
 /// 0.10.16, shared with `init --json` (DQ-21, T-INIT-36): `template`,
 /// `gitignore` (entries added), `contract` (`action`, `file`, `added`),
 /// `notices`.
-fn print_json(plan: &Plan, dry_run: bool, applied: &Applied, extra: &JsonExtra) -> Result<()> {
+fn json_doc(plan: &Plan, dry_run: bool, applied: &Applied, extra: &JsonExtra) -> serde_json::Value {
     fn sorted(v: &VarCollection) -> Vec<&str> {
         let mut n: Vec<&str> = v.vars.keys().map(String::as_str).collect();
         n.sort_unstable();
         n
     }
-    let doc = serde_json::json!({
+    serde_json::json!({
         "dry_run": dry_run,
         "written": !dry_run && !plan.is_empty(),
         "added": sorted(&plan.to_example),
@@ -865,8 +809,7 @@ fn print_json(plan: &Plan, dry_run: bool, applied: &Applied, extra: &JsonExtra) 
         },
         "contract": extra.contract,
         "notices": Vec::<String>::new(),
-    });
-    crate::core::json::emit(&doc, 1, None)
+    })
 }
 
 /// The `--json` fields worked out before the write.
@@ -892,135 +835,36 @@ impl JsonExtra {
     }
 }
 
-/// Print what [`apply`] did: the conflicts (when `show_conflicts`), then one
-/// result line, and a second when `.env` caught up with `.env.example`.
-///
-/// Conflicts are a finding and print under `-q`; the result lines do not.
-pub fn report(plan: &Plan, flow: &Flow, show_conflicts: bool) {
-    if show_conflicts {
-        print_conflicts(plan);
-    }
-    if flow.values.is_some() {
-        report_values(plan, flow);
-        return;
-    }
-    let what = &flow.what;
-    let added = plan.to_example.vars.len();
-    let skipped = plan.present.len() + plan.conflicts.len();
-    let sentence = |n: usize| {
-        let mut s = format!("{} {}", count(n, flow.noun), what);
-        s.truncate(s.trim_end().len());
-        s
-    };
-    if added > 0 {
-        let tail = if skipped > 0 {
-            format!(", skipped {skipped} already present")
-        } else {
-            String::new()
-        };
-        ui::success(format!("Added {}{tail}", sentence(added)));
-    } else if plan.to_env.vars.is_empty() {
-        ui::info(format!(
-            "Nothing to add: {} already in {}",
-            sentence(plan.requested.vars.len()),
-            plan.template.name
-        ));
-    }
-    let env_only = plan.env_only();
-    if plan.env_exists && !env_only.is_empty() {
-        ui::info(format!(
-            "Added {} to {} that {} already had: {}",
-            count(env_only.len(), "variable"),
-            plan.env_file,
-            plan.template.name,
-            env_only.join(", ")
-        ));
-    }
-}
-
-/// The result of a run that was given values (`add custom`): what each name
-/// became, and a count of only the names written to the env file.
-///
-/// A name is written, kept (the env file has another value), or added to the
-/// template only (the env file already has the value given).
-fn report_values(plan: &Plan, flow: &Flow) {
-    let written = plan.to_env.vars.len();
-    let asked = plan.requested.vars.len();
-    let skipped = asked
-        .saturating_sub(written)
-        .saturating_sub(plan.env_kept.len());
-    if written > 0 {
-        let tail = if skipped > 0 {
-            format!(", skipped {skipped} already present")
-        } else {
-            String::new()
-        };
-        ui::success(format!(
-            "Added {} to {}{tail}",
-            count(written, flow.noun),
-            plan.env_file
-        ));
-    } else if plan.env_kept.is_empty() {
-        ui::info(format!(
-            "Nothing to add: {} already in {}",
-            count(asked, flow.noun),
-            plan.env_file
-        ));
-    } else {
-        ui::info(format!("Nothing was written to {}", plan.env_file));
-    }
-    let mut template_only: Vec<&str> = plan
-        .to_example
-        .vars
-        .keys()
-        .filter(|n| !plan.to_env.vars.contains_key(*n))
-        .map(String::as_str)
-        .collect();
-    template_only.sort_unstable();
-    if !template_only.is_empty() {
-        ui::info(format!(
-            "Added to {} only (the value is already in {}): {}",
-            plan.template.name,
-            plan.env_file,
-            template_only.join(", ")
-        ));
-    }
-}
-
-/// The conflicts in `plan`, as a warning and one line each. Values shown are
-/// `.env.example`'s, never `.env`'s; a name the env file already sets to
-/// another value is listed without either value.
+/// The conflicts in `plan`, as a warning and one line each (the question
+/// shows them before it asks). Values shown are `.env.example`'s, never
+/// `.env`'s; a name the env file already sets to another value is listed
+/// without either value.
 pub fn print_conflicts(plan: &Plan) {
-    if !plan.env_kept.is_empty() {
-        ui::warning(format!(
-            "{} already set to a different value in {}: the existing value was kept",
-            count(plan.env_kept.len(), "variable"),
-            plan.env_file
-        ));
-        for name in &plan.env_kept {
-            ui::warning_detail(format!(
-                "  • {} (kept, not changed; edit {} to change it)",
-                name.bold(),
-                plan.env_file
-            ));
-        }
-    }
-    if plan.conflicts.is_empty() {
-        return;
-    }
-    ui::warning(format!(
-        "{} with a different value in {}: kept as it is",
-        count(plan.conflicts.len(), "variable"),
-        plan.template.name
-    ));
-    for c in &plan.conflicts {
-        ui::warning_detail(format!(
-            "  • {} (existing: \"{}\", new: \"{}\")",
-            c.var_name.bold(),
-            c.existing_value.dimmed(),
-            c.new_value.dimmed()
-        ));
-    }
+    super::report::print_conflicts(&super::report::PlanView::of(plan));
+}
+
+/// Say what happened, in the form the flags ask for: one document under
+/// `--json`, else the dry-run listing or the result lines.
+fn emit(
+    plan: &Plan,
+    flow: &Flow,
+    step: super::report::Step,
+    json: Option<serde_json::Value>,
+) -> Result<()> {
+    let mode = if json.is_some() {
+        OutMode::Json
+    } else {
+        OutMode::Text
+    };
+    let report = super::report::AddReport::new(
+        plan,
+        flow.what.clone(),
+        flow.noun,
+        flow.values.is_some(),
+        step,
+        json,
+    );
+    Out::new(mode).emit(&report)
 }
 
 /// `tail`, in the line endings `existing` already uses.

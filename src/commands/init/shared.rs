@@ -309,10 +309,18 @@ pub(crate) fn emit(
     root: &Path,
 ) -> Result<()> {
     let Some(p) = planned else { return Ok(()) };
-    if opts.json {
-        super::report::print_json(p, opts.dry_run, root)?;
-    } else if opts.dry_run {
-        super::report::print_dry_run(p, root);
+    // A real run without `--json` says nothing here: its lines came as it worked.
+    if opts.json || opts.dry_run {
+        let mode = if opts.json {
+            crate::core::output::Mode::Json
+        } else {
+            crate::core::output::Mode::Text
+        };
+        crate::core::output::Out::new(mode).emit(&super::report::InitReport::new(
+            p,
+            opts.dry_run,
+            root,
+        ))?;
     }
     Ok(())
 }
