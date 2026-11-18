@@ -950,9 +950,17 @@ pub enum OrgCommands {
     ///
     /// Takes no `--org`: the token names the organisation, and you are not a
     /// member yet. Only the invited address can redeem it.
+    ///
+    /// Give the token on stdin (`--token-stdin`) or type it at the prompt: a
+    /// token on the command line stays in shell history and shows in `ps`.
     Accept {
-        /// The `evnx_inv_…` token from the invitation.
-        token: String,
+        /// The `evnx_inv_…` token. Deprecated here: prefer --token-stdin or the prompt.
+        #[arg(conflicts_with = "token_stdin")]
+        token: Option<String>,
+
+        /// Read the token from stdin (one line) instead of the command line.
+        #[arg(long)]
+        token_stdin: bool,
     },
 
     /// What this organisation is on, and until when.
@@ -974,7 +982,8 @@ pub enum OrgCommands {
     /// Show or set how many seats are purchased.
     ///
     /// Bare, it shows. Setting the count is owner-only — it is what an invoice
-    /// is computed from.
+    /// is computed from — so --set and --unlimited show the change and ask
+    /// first (default No). Without a terminal they need --yes.
     Seats {
         /// Set the purchased seat count.
         #[arg(long, value_name = "N")]
@@ -983,6 +992,9 @@ pub enum OrgCommands {
         /// No seat limit.
         #[arg(long)]
         unlimited: bool,
+
+        #[command(flatten)]
+        confirm: args::ConfirmArgs,
 
         /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
 

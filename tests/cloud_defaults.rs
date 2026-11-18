@@ -363,3 +363,218 @@ mod delete_prompt {
         }
     }
 }
+
+// ─── org seats and accept ────────────────────────────────────────────────────
+
+const ORG_ID: &str = "11111111-1111-1111-1111-111111111111";
+
+fn org_server(subscription: bool) -> mockito::ServerGuard {
+    let mut s = mockito::Server::new();
+    s.mock("GET", "/api/v1/orgs")
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"organizations":[{{"id":"{ORG_ID}","name":"Acme","slug":"acme","plan":"team",
+            "your_role":"owner","you_hold_a_seat":true,"seats":{{"used":2,"purchased":5}}}}]}}"#
+        ))
+        .create();
+    s.mock("GET", format!("/api/v1/orgs/{ORG_ID}/billing").as_str())
+        .with_status(200)
+        .with_body(format!(
+            r#"{{"plan":"team","seats":{{"used":2,"purchased":5}},"over_seated":false,
+            "your_role":"owner","billing_configured":true,
+            "subscription":{{"exists":{subscription},"status":null,"current_period_ends_at":null,"scheduled_change":null}}}}"#
+        ))
+        .create();
+    s
+}
+
+fn seats_put(s: &mut mockito::ServerGuard, hits: usize) -> mockito::Mock {
+    s.mock("PUT", format!("/api/v1/orgs/{ORG_ID}/seats").as_str())
+        .with_status(200)
+        .with_body(r#"{"seats":{"used":2,"purchased":8},"over_seated":false}"#)
+        .expect(hits)
+        .create()
+}
+
+#[test]
+fn wp12_seats_set_without_terminal_exits_4_and_sends_nothing() {
+    let mut s = org_server(false);
+    let put = seats_put(&mut s, 0);
+    // A piped "y" is not consent.
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["org", "seats", "--set", "8"],
+        Some(b"y\n"),
+    );
+    out.assert_code(4);
+    assert!(
+        out.stderr.contains("evnx org seats --set 8 --yes"),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        out.stdout.contains("seats purchased 5 -> 8"),
+        "{}",
+        out.stdout
+    );
+    put.assert();
+}
+
+#[test]
+fn wp12_seats_set_yes_puts() {
+    let mut s = org_server(false);
+    let put = seats_put(&mut s, 1);
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["org", "seats", "--set", "8", "-y"],
+        None,
+    );
+    out.assert_code(0);
+    assert!(
+        out.stdout.contains("seats purchased 5 -> 8"),
+        "{}",
+        out.stdout
+    );
+    put.assert();
+}
+
+#[test]
+fn wp12_seats_unlimited_asks_too() {
+    let mut s = org_server(false);
+    let put = seats_put(&mut s, 0);
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["org", "seats", "--unlimited"],
+        None,
+    );
+    out.assert_code(4);
+    assert!(out.stderr.contains("--unlimited --yes"), "{}", out.stderr);
+    put.assert();
+}
+
+#[test]
+fn wp12_seats_bare_never_writes() {
+    let mut s = org_server(false);
+    let put = seats_put(&mut s, 0);
+    let out = signed_in(&Project::new(), &s.url(), &["org", "seats"], None);
+    out.assert_code(0);
+    assert!(out.stdout.contains("2 / 5"), "{}", out.stdout);
+    put.assert();
+}
+
+#[test]
+fn wp12_seats_subscription_path_unchanged() {
+    let mut s = org_server(true);
+    let put = seats_put(&mut s, 0);
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["org", "seats", "--set", "8", "--yes"],
+        None,
+    );
+    out.assert_code(0);
+    assert!(out.stdout.contains("has a subscription"), "{}", out.stdout);
+    put.assert();
+}
+
+#[cfg(unix)]
+#[test]
+fn wp12_seats_cancel_at_the_prompt_sends_nothing() {
+    use support::pty::Pty;
+    let mut s = org_server(false);
+    let put = seats_put(&mut s, 0);
+    let p = Project::new();
+    let cfg = p.path().join("cfg");
+    support::cloud::login(&cfg, &s.url());
+    let url = s.url();
+    let mut run = Pty::spawn_with(
+        p.path(),
+        &["org", "seats", "--set", "8"],
+        &[
+            ("EVNX_SERVER", url.as_str()),
+            ("EVNX_CONFIG_DIR", cfg.to_str().unwrap()),
+        ],
+    );
+    run.wait_for("Change the seat count of acme?");
+    run.type_line("n");
+    let (rest, code) = run.finish();
+    assert_eq!(code, 0, "{rest}");
+    assert!(rest.contains("Cancelled"), "{rest}");
+    put.assert();
+}
+
+const INVITE: &str = "evnx_inv_0123456789abcdef";
+
+fn accept_mock(s: &mut mockito::ServerGuard, hits: usize) -> mockito::Mock {
+    s.mock("POST", "/api/v1/orgs/invites/accept")
+        .match_body(Matcher::Json(serde_json::json!({ "token": INVITE })))
+        .with_status(200)
+        .with_body(r#"{"organization":"Acme","role":"member"}"#)
+        .expect(hits)
+        .create()
+}
+
+#[test]
+fn wp12_accept_token_from_stdin() {
+    let mut s = mockito::Server::new();
+    let m = accept_mock(&mut s, 1);
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["org", "accept", "--token-stdin"],
+        Some(format!("{INVITE}\n").as_bytes()),
+    );
+    out.assert_code(0);
+    m.assert();
+    assert!(out.stdout.contains("joined Acme"), "{}", out.stdout);
+    assert!(!out.stderr.contains("shell history"), "{}", out.stderr);
+}
+
+#[test]
+fn wp12_accept_positional_warns_but_works() {
+    let mut s = mockito::Server::new();
+    let m = accept_mock(&mut s, 1);
+    let out = signed_in(&Project::new(), &s.url(), &["org", "accept", INVITE], None);
+    out.assert_code(0);
+    m.assert();
+    assert!(out.stderr.contains("shell history"), "{}", out.stderr);
+    assert!(out.stderr.contains("--token-stdin"), "{}", out.stderr);
+    // The warning never repeats the token.
+    assert!(!out.stderr.contains(INVITE), "{}", out.stderr);
+}
+
+#[test]
+fn wp12_accept_no_input_exit_2() {
+    let mut s = mockito::Server::new();
+    let m = accept_mock(&mut s, 0);
+    let out = signed_in(&Project::new(), &s.url(), &["org", "accept"], Some(b""));
+    out.assert_code(2);
+    assert!(out.stderr.contains("--token-stdin"), "{}", out.stderr);
+    m.assert();
+    // An empty stdin line is no input either.
+    let out = signed_in(
+        &Project::new(),
+        &s.url(),
+        &["org", "accept", "--token-stdin"],
+        Some(b"\n"),
+    );
+    out.assert_code(2);
+    m.assert();
+}
+
+#[test]
+fn wp12_accept_positional_conflicts_with_stdin_flag() {
+    let mut s = mockito::Server::new();
+    let m = accept_mock(&mut s, 0);
+    signed_in(
+        &Project::new(),
+        &s.url(),
+        &["org", "accept", INVITE, "--token-stdin"],
+        None,
+    )
+    .assert_code(2);
+    m.assert();
+}

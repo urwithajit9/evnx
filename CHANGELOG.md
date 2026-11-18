@@ -87,6 +87,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   type `name/environment` (anything else cancels, nothing is deleted), and with
   `--yes` the target must be the full `name/environment` or an id: `vault delete
   myapp --yes` now exits 2. With no terminal and no `--yes` it still exits 4.
+- **`org seats --set` and `--unlimited` ask first** (WP-12). They print
+  `seats purchased X -> N` and ask (default No); `--yes` skips the question,
+  and without a terminal they exit 4. Bare `org seats` still only shows.
+- **`org accept TOKEN` is deprecated** (WP-12). The positional token still works
+  in this release, with a warning that it stays in shell history and `ps`; it
+  will stop working in a later release. Use `--token-stdin` or the prompt.
 
 ### Breaking: one flag vocabulary (WP-8)
 
@@ -375,6 +381,9 @@ new `network` field below.
     Exits: 0 aligned, 1 `--check` found drift, 2 no verdict. `sync` is
     unchanged.
 - **Token flags** (WP-12): `auth token create --all-vaults` and `--no-expiry`.
+- **`org accept --token-stdin`** (WP-12) reads the invitation token from one
+  line of stdin; with no token and a terminal, `org accept` asks for it with
+  the input hidden. With neither, it exits 2.
 
 ## [0.14.1] - 2026-11-14
 

@@ -417,15 +417,25 @@ pub fn run_org(command: OrgCommands, server_override: Option<&str>, verbose: boo
             invite_id,
             org: which,
         } => org::uninvite(server_override, &invite_id, which.as_deref(), verbose),
-        OrgCommands::Accept { token } => org::accept(server_override, &token, verbose),
+        OrgCommands::Accept { token, token_stdin } => {
+            org::accept(server_override, token, token_stdin, verbose)
+        }
         OrgCommands::Billing { org: which, output } => {
             org::billing(server_override, which.as_deref(), is_json(&output), verbose)
         }
         OrgCommands::Seats {
             set,
             unlimited,
+            confirm,
             org: which,
-        } => org::seats(server_override, set, unlimited, which.as_deref(), verbose),
+        } => org::seats(
+            server_override,
+            set,
+            unlimited,
+            confirm.yes,
+            which.as_deref(),
+            verbose,
+        ),
         OrgCommands::Assign { who, org: which } => {
             org::assign(server_override, &who, which.as_deref(), verbose)
         }

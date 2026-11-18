@@ -140,6 +140,7 @@ fn spec(path: &[&str]) -> (Vec<u8>, bool) {
         ["cloud", "unlink"] => (vec![0, 2], false),
         ["cloud", "push" | "pull" | "delete-version"] => (s(&[0, 2, 4], &[SERVER]), false),
         ["auth" | "org" | "vault"] => (s(&[0, 2, 4], &[SERVER]), false),
+        ["org", "seats"] => (s(&[0, 2, 4], &[SERVER]), false),
         ["auth", "token"] | ["auth", "sessions"] | ["auth", "devices"] => {
             (s(&[0, 2, 4], &[SERVER]), false)
         }

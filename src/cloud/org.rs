@@ -30,7 +30,7 @@
 
 use crate::cloud::client::api_path;
 use crate::core::shell::word;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context as _, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
@@ -565,18 +565,68 @@ pub fn uninvite(
     Ok(())
 }
 
-/// `evnx org accept <token>`
+/// Where the invitation token comes from: stdin (`--token-stdin`, one line),
+/// the command line (deprecated, with a warning), or a hidden prompt.
+fn invite_token(positional: Option<String>, from_stdin: bool) -> Result<String> {
+    use std::io::{BufRead as _, IsTerminal as _};
+    let no_input = || {
+        crate::core::verdict::usage(
+            "org accept needs the invitation token.\n\n\
+             \x20 Pipe it in:   printf '%s\\n' \"$TOKEN\" | evnx org accept --token-stdin\n\
+             \x20 Or run it at a terminal and type it at the prompt.",
+        )
+    };
+    let token = if from_stdin {
+        let mut line = String::new();
+        std::io::stdin()
+            .lock()
+            .read_line(&mut line)
+            .context("reading the token from stdin")?;
+        line
+    } else if let Some(t) = positional {
+        crate::utils::ui::warning(
+            "a token on the command line stays in your shell history and shows in `ps`.",
+        );
+        crate::utils::ui::warning_detail(
+            "  Use `--token-stdin`, or run `evnx org accept` and type it at the prompt.\n  \
+             The positional token will stop working in a later release.",
+        );
+        t
+    } else if std::io::stdin().is_terminal() && crate::utils::term::can_prompt() {
+        dialoguer::Password::new()
+            .with_prompt("Invitation token")
+            .interact()
+            .context("reading the token")?
+    } else {
+        return Err(no_input());
+    };
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        return Err(no_input());
+    }
+    Ok(token)
+}
+
+/// `evnx org accept [--token-stdin]`
 ///
 /// ⚠️ Takes no `--org`: the token names the organisation, and the caller is not a
 /// member yet so there would be nothing to resolve a slug against.
-pub fn accept(server_override: Option<&str>, token: &str, _verbose: bool) -> Result<()> {
+pub fn accept(
+    server_override: Option<&str>,
+    token: Option<String>,
+    token_stdin: bool,
+    _verbose: bool,
+) -> Result<()> {
+    // Before any request: a token that cannot be read is a usage error, and a
+    // positional one is said to be on its way out.
+    let token = invite_token(token, token_stdin)?;
     let server = CloudConfig::resolve_server(server_override)?;
     let client = Client::new(server.clone())?;
     require_login(&client, &server)?;
 
     let joined: AcceptedInvite = client.post(
         "/api/v1/orgs/invites/accept",
-        &serde_json::json!({ "token": token.trim() }),
+        &serde_json::json!({ "token": token }),
     )?;
 
     crate::say!();
@@ -601,6 +651,7 @@ pub fn seats(
     server_override: Option<&str>,
     set: Option<i64>,
     unlimited: bool,
+    assume_yes: bool,
     org: Option<&str>,
     _verbose: bool,
 ) -> Result<()> {
@@ -656,6 +707,36 @@ pub fn seats(
         if n < 0 {
             return Err(anyhow!("--set takes zero or more"));
         }
+    }
+
+    // The change is shown, then asked about: the seat count is what an invoice
+    // is computed from. Nothing is sent on a no.
+    let wanted = if unlimited {
+        "unlimited".to_string()
+    } else {
+        set.map_or_else(String::new, |n| n.to_string())
+    };
+    println!(
+        "  seats purchased {} -> {}",
+        target
+            .seats
+            .purchased
+            .map_or_else(|| "unlimited".to_string(), |p| p.to_string()),
+        wanted.bold()
+    );
+    let example = if unlimited {
+        "evnx org seats --unlimited --yes".to_string()
+    } else {
+        format!("evnx org seats --set {wanted} --yes")
+    };
+    let ok = crate::utils::prompt::confirm(
+        &format!("Change the seat count of {}?", target.slug),
+        assume_yes,
+        &example,
+    )?;
+    if !ok {
+        println!("  Cancelled; the seat count was not changed.");
+        return Ok(());
     }
 
     let body = serde_json::json!({ "seats": if unlimited { serde_json::Value::Null } else { serde_json::json!(set) } });
