@@ -7,11 +7,18 @@
 //! ⚠️ **Windows:** there is no mode to read. [`is_private`] answers `true`
 //! (an ACL cannot be checked cheaply) and [`MODES_APPLY`] is `false`, so no
 //! caller prints "0600" there. What evnx does set is an ACL: [`owner_only`]
-//! runs `icacls <file> /inheritance:r /grant:r <DOMAIN\USER>:(F)`, which drops
-//! the entries inherited from the folder and leaves the current account as the
-//! only one with access (Administrators and SYSTEM included: an administrator
-//! can take ownership, as with any file). The argument list is built by a pure
-//! function, [`icacls_owner_only_args`], so the Linux tests cover it.
+//! runs two `icacls` calls. `icacls <file> /reset` turns every explicit entry
+//! into the folder's inherited ones (a file can carry explicit entries for
+//! SYSTEM, Administrators or other accounts, which `/inheritance:r` alone keeps);
+//! then `icacls <file> /inheritance:r /grant:r <DOMAIN\USER>:(F) *S-1-5-18:(F)
+//! *S-1-5-32-544:(F)` drops everything inherited and leaves exactly three
+//! entries: the current account, SYSTEM and Administrators. That is the Windows
+//! form of mode 0600, where root can always read: backup and antivirus tools
+//! that run as SYSTEM keep working, and every other account (Users, Everyone,
+//! Authenticated Users, other people) loses access. SYSTEM and Administrators
+//! are named by SID so a localised Windows works. The argument lists are built
+//! by pure functions, [`icacls_reset_args`] and [`icacls_owner_only_args`], so
+//! the Linux tests cover them.
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -108,8 +115,19 @@ pub fn account_name(domain: Option<&str>, user: Option<&str>) -> Option<String> 
     (ok(d) && ok(u)).then(|| format!("{d}\\{u}"))
 }
 
-/// The arguments of the `icacls` call that leaves `path` to `account` alone:
-/// inheritance removed, one full-control grant. Pure, so it is tested
+/// SID of the local SYSTEM account (named by SID: the name is localised).
+pub const SID_SYSTEM: &str = "*S-1-5-18";
+/// SID of the local Administrators group.
+pub const SID_ADMINISTRATORS: &str = "*S-1-5-32-544";
+
+/// The first `icacls` call: every explicit entry on `path` is replaced by the
+/// folder's inherited ones, so the second call can drop them all. Pure.
+pub fn icacls_reset_args(path: &Path) -> Vec<OsString> {
+    vec![path.as_os_str().to_owned(), "/reset".into()]
+}
+
+/// The second `icacls` call: inheritance removed, full control for `account`,
+/// SYSTEM and Administrators, nothing for anyone else. Pure, so it is tested
 /// everywhere.
 pub fn icacls_owner_only_args(path: &Path, account: &str) -> Vec<OsString> {
     vec![
@@ -117,6 +135,8 @@ pub fn icacls_owner_only_args(path: &Path, account: &str) -> Vec<OsString> {
         "/inheritance:r".into(),
         "/grant:r".into(),
         format!("{account}:(F)").into(),
+        format!("{SID_SYSTEM}:(F)").into(),
+        format!("{SID_ADMINISTRATORS}:(F)").into(),
     ]
 }
 
@@ -150,9 +170,11 @@ pub fn owner_only(path: &Path, policy: AclFailure) -> Result<bool> {
         let Some(account) = account else {
             return acl_failure(policy, path, "USERDOMAIN or USERNAME is not usable");
         };
-        let out = std::process::Command::new("icacls")
-            .args(icacls_owner_only_args(path, &account))
-            .output();
+        let icacls = |args: Vec<OsString>| std::process::Command::new("icacls").args(args).output();
+        let out = match icacls(icacls_reset_args(path)) {
+            Ok(o) if o.status.success() => icacls(icacls_owner_only_args(path, &account)),
+            other => other,
+        };
         match out {
             Ok(o) if o.status.success() => Ok(true),
             Ok(o) => {
@@ -301,11 +323,23 @@ mod acl_tests {
             .collect();
         assert_eq!(
             args,
-            ["C:\\p\\.env", "/inheritance:r", "/grant:r", "PC\\ajit:(F)"]
+            [
+                "C:\\p\\.env",
+                "/inheritance:r",
+                "/grant:r",
+                "PC\\ajit:(F)",
+                "*S-1-5-18:(F)",
+                "*S-1-5-32-544:(F)"
+            ]
         );
-        // One grant, full control, to the one account: nothing for Everyone,
-        // Users or Administrators.
+        // One grant switch: the account, SYSTEM and Administrators, as root
+        // can read a 0600 file. Nothing for Everyone or Users.
         assert_eq!(args.iter().filter(|a| a.contains("/grant")).count(), 1);
+        let reset = icacls_reset_args(Path::new("C:\\p\\.env"));
+        assert_eq!(
+            reset,
+            [OsString::from("C:\\p\\.env"), OsString::from("/reset")]
+        );
         assert!(!args
             .iter()
             .any(|a| a.contains("Everyone") || a.contains("Users")));
@@ -341,14 +375,15 @@ mod acl_tests {
         let text = String::from_utf8_lossy(&out.stdout).to_string();
         let user = std::env::var("USERNAME").unwrap();
         assert!(text.contains(&format!("{user}:(F)")), "{text}");
-        // Nothing inherited from the folder, and no one else.
+        // Nothing inherited from the folder; SYSTEM and Administrators keep
+        // access (as root does for a 0600 file); no one else.
         assert!(!text.contains("(I)"), "{text}");
-        for other in [
-            "Everyone",
-            "BUILTIN\\Users",
-            "BUILTIN\\Administrators",
-            "NT AUTHORITY\\SYSTEM",
-        ] {
+        let entries = text.lines().filter(|l| l.contains(":(")).count();
+        assert_eq!(
+            entries, 3,
+            "exactly the account, SYSTEM and Administrators:\n{text}"
+        );
+        for other in ["Everyone", "BUILTIN\\Users", "Authenticated Users"] {
             assert!(!text.contains(other), "{other} still has access:\n{text}");
         }
         // The file is still ours to read.

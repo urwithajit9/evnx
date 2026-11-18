@@ -110,10 +110,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `EVNX_VERCEL_API_URL` points elsewhere than api.vercel.com, stderr gets one
   `API  scheme://host:port` line, since the token is sent there.
 - **Windows: `.env`, backups and `credentials.json` become owner-only**
-  (WP-12). evnx now runs `icacls <file> /inheritance:r /grant:r DOMAIN\USER:(F)`
-  on files that hold secrets, so the folder's inherited access (other users,
-  groups, a shared folder's readers) no longer applies and only the current
-  account has access. If `icacls` fails, a file is still written with a
+  (WP-12). evnx now runs `icacls <file> /reset`, then `icacls <file>
+  /inheritance:r /grant:r DOMAIN\USER:(F)` plus full control for SYSTEM and
+  Administrators, on files that hold secrets. Every other entry, inherited or
+  explicit (other users, groups, a shared folder's readers), is removed. SYSTEM
+  and Administrators keep access, as root does for a 0600 file, so backup and
+  antivirus tools keep working. If `icacls` fails, a file is still written with a
   warning; `credentials.json` is not written. Messages say "owner-only (ACL)"
   instead of "inherited from the parent directory". Setups that read these
   files from another account must grant it access again.
