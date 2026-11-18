@@ -74,6 +74,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that holds one now stops with exit 2 and the child never runs; pass
   `--allow-unsafe-names` (as for `PATH` and `LD_*`) or `--exclude` the name.
   On Windows the match ignores case; elsewhere it is exact.
+- **`auth token create` expires in 90 days and needs a scope** (WP-12). Without
+  `--expires-in-days` a token now expires after 90 days; `--no-expiry` makes
+  one that never does. `--vault VAULT` is required unless `--all-vaults` is
+  given (the two conflict); a bare `auth token create NAME` exits 2. A token
+  that never expires, or that reaches every vault, is called out in the
+  output.
 
 ### Breaking: one flag vocabulary (WP-8)
 
@@ -361,6 +367,7 @@ new `network` field below.
   - Output, `--format json` and errors name files, keys and lines only.
     Exits: 0 aligned, 1 `--check` found drift, 2 no verdict. `sync` is
     unchanged.
+- **Token flags** (WP-12): `auth token create --all-vaults` and `--no-expiry`.
 
 ## [0.14.1] - 2026-11-14
 

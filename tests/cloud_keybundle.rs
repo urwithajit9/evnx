@@ -339,7 +339,7 @@ fn token_create_prints_a_bundle_that_a_token_can_pull_with() {
     let out = signed_in(
         &Project::new(),
         &s.url(),
-        &["auth", "token", "create", "ci"],
+        &["auth", "token", "create", "ci", "--all-vaults"],
         None,
     );
     out.assert_code(0);
@@ -360,7 +360,14 @@ fn token_create_can_skip_the_bundle() {
     let out = signed_in(
         &Project::new(),
         &s.url(),
-        &["auth", "token", "create", "ci", "--no-key-bundle"],
+        &[
+            "auth",
+            "token",
+            "create",
+            "ci",
+            "--all-vaults",
+            "--no-key-bundle",
+        ],
         None,
     );
     out.assert_code(0);
@@ -377,7 +384,7 @@ fn token_create_still_succeeds_when_the_bundle_cannot_be_made() {
     let out = signed_in(
         &Project::new(),
         &s.url(),
-        &["auth", "token", "create", "ci"],
+        &["auth", "token", "create", "ci", "--all-vaults"],
         None,
     );
     out.assert_code(0);
@@ -494,7 +501,15 @@ fn token_create_format_json_has_the_token_and_the_bundle_as_fields() {
     let out = signed_in(
         &Project::new(),
         &s.url(),
-        &["auth", "token", "create", "ci", "--format", "json"],
+        &[
+            "auth",
+            "token",
+            "create",
+            "ci",
+            "--all-vaults",
+            "--format",
+            "json",
+        ],
         None,
     );
     out.assert_code(0);
@@ -515,7 +530,15 @@ fn token_create_output_writes_a_private_file_not_stdout() {
     let out = signed_in(
         &p,
         &s.url(),
-        &["auth", "token", "create", "ci", "-o", "tok.txt"],
+        &[
+            "auth",
+            "token",
+            "create",
+            "ci",
+            "--all-vaults",
+            "-o",
+            "tok.txt",
+        ],
         None,
     );
     out.assert_code(0);
@@ -536,7 +559,15 @@ fn token_create_output_to_an_existing_file_mints_nothing() {
     let out = signed_in(
         &p,
         &s.url(),
-        &["auth", "token", "create", "ci", "-o", "tok.txt"],
+        &[
+            "auth",
+            "token",
+            "create",
+            "ci",
+            "--all-vaults",
+            "-o",
+            "tok.txt",
+        ],
         None,
     );
     assert_ne!(out.code, Some(0));
@@ -552,7 +583,15 @@ fn token_create_output_into_a_missing_folder_mints_nothing() {
     let out = signed_in(
         &p,
         &s.url(),
-        &["auth", "token", "create", "ci", "-o", "nope/tok.txt"],
+        &[
+            "auth",
+            "token",
+            "create",
+            "ci",
+            "--all-vaults",
+            "-o",
+            "nope/tok.txt",
+        ],
         None,
     );
     assert_ne!(out.code, Some(0));
@@ -577,7 +616,16 @@ fn output_with_force_tightens_an_existing_file_to_0600() {
     let path = p.join("out.txt");
     for args in [
         &["auth", "key-bundle", "-o", "out.txt", "--force"][..],
-        &["auth", "token", "create", "ci", "-o", "out.txt", "--force"][..],
+        &[
+            "auth",
+            "token",
+            "create",
+            "ci",
+            "--all-vaults",
+            "-o",
+            "out.txt",
+            "--force",
+        ][..],
     ] {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         signed_in(&p, &s.url(), args, None).assert_code(0);

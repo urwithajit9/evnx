@@ -93,7 +93,7 @@ fn t_i225_quiet_token_create_prints_only_the_token() {
     let out = signed_in(
         &Project::new(),
         &s.url(),
-        &["-q", "auth", "token", "create", "ci"],
+        &["-q", "auth", "token", "create", "ci", "--all-vaults"],
         None,
     );
     out.assert_code(0);

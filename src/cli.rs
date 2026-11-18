@@ -1372,13 +1372,25 @@ pub enum TokenCommands {
         #[arg(long, default_value = "read")]
         scope: String,
 
-        /// Restrict the token to one vault. Strongly recommended for CI.
-        #[arg(long, value_name = "VAULT")]
+        /// Restrict the token to one vault. Required unless --all-vaults is given.
+        #[arg(long, value_name = "VAULT", conflicts_with = "all_vaults")]
         vault: Option<String>,
 
-        /// Expire after this many days, 1 to 3650. Omit for a token that never expires.
-        #[arg(long, value_name = "DAYS", value_parser = crate::core::args::parse_days, allow_hyphen_values = true)]
+        /// Let the token reach every vault on the account.
+        ///
+        /// A leaked token then exposes all of them. Prefer --vault.
+        #[arg(long)]
+        all_vaults: bool,
+
+        /// Expire after this many days, 1 to 3650. Default 90.
+        #[arg(long, value_name = "DAYS", value_parser = crate::core::args::parse_days, allow_hyphen_values = true, conflicts_with = "no_expiry")]
         expires_in_days: Option<i64>,
+
+        /// Create a token that never expires.
+        ///
+        /// Without this and without --expires-in-days a token expires in 90 days.
+        #[arg(long)]
+        no_expiry: bool,
 
         /// Do not print a CI key bundle with the token.
         ///
