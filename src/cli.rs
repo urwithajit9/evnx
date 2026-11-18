@@ -1713,6 +1713,10 @@ pub enum CloudCommands {
     /// The file is encrypted here, byte for byte — comments, ordering and
     /// quoting all survive. Only the key names are sent in the clear, so the
     /// dashboard can list what a vault holds.
+    ///
+    /// When the file drops more than half of the previous version's keys (and
+    /// that version had at least 4), the names are listed and you are asked
+    /// first. Without a terminal that needs --yes.
     Push {
         /// Vault to push to: `name`, `name/environment`, or an id.
         ///
@@ -1747,9 +1751,11 @@ pub enum CloudCommands {
         #[arg(long)]
         password_stdin: bool,
 
-        /// Push the default `.env` into a production vault without asking.
+        /// Do not ask: push the default `.env` into a production vault, or a
+        /// file that removes more than half of the keys.
         ///
-        /// Only that case asks: a file named with --env or --env-name never does.
+        /// A file named with --env or --env-name is never asked about for
+        /// production, but a large removal is asked about whichever file it is.
         #[arg(long, short = 'y')]
         yes: bool,
     },

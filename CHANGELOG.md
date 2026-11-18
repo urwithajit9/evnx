@@ -93,6 +93,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`org accept TOKEN` is deprecated** (WP-12). The positional token still works
   in this release, with a warning that it stays in shell history and `ps`; it
   will stop working in a later release. Use `--token-stdin` or the prompt.
+- **`cloud push` asks before removing most of the keys** (WP-12). When the file
+  lacks more than half of the previous version's keys (and that version had at
+  least 4), it prints `removes N of M keys: A, B, ...` (names only, the first
+  10), then asks (default No). `--yes` goes ahead; without a terminal and
+  without `--yes` it exits 4. A deploy script that shrinks a vault needs
+  `--yes`.
 
 ### Breaking: one flag vocabulary (WP-8)
 
