@@ -60,9 +60,11 @@ pub fn run(
     prefer: crate::core::inject::Prefer,
     command: Vec<String>,
 ) -> Result<()> {
-    let (program, args) = command
-        .split_first()
-        .ok_or_else(|| anyhow!("no command given. Usage: evnx cloud run --vault <V> -- <cmd>"))?;
+    let (program, args) = command.split_first().ok_or_else(|| {
+        crate::core::verdict::usage(
+            "no command given. Usage: evnx cloud run --vault <V> -- <cmd> [args]",
+        )
+    })?;
 
     // RM-59 (X4): before any request. A version number belongs to one vault.
     super::merge::check_usage(vault_targets.len(), version, allow_override)?;
@@ -194,6 +196,7 @@ pub fn run(
         "the vault",
         "push to this vault",
     )?;
+    crate::core::inject::warn_sensitive_names(&env_vars);
 
     // After the name check, before the masker: it holds what the child gets.
     let shadowed = prefer.resolve(&mut env_vars);

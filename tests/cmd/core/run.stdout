@@ -4,10 +4,10 @@ The local `evnx cloud run`: the file is read and handed to the child process in 
 
 The command runs directly, not through a shell. For a pipeline or a builtin, ask for one: `-- sh -c 'a | b'`. Exits with the command's code.
 
-Usage: evnx run [OPTIONS] -- <COMMAND>...
+Usage: evnx run [OPTIONS] [-- <COMMAND>...]
 
 Arguments:
-  <COMMAND>...
+  [COMMAND]...
           The command to run, after `--`
 
 Options:
@@ -24,7 +24,7 @@ Options:
           Skip variables whose name matches one of these globs
 
       --allow-unsafe-names
-          Inject variables that make a program load or run other code (`PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, …), refused by default
+          Inject variables that make a program load or run other code (`PATH`, `LD_*`, `NODE_OPTIONS`, `EDITOR`, `PAGER`, `GIT_ASKPASS`, `npm_config_*`, …), refused by default
 
       --mask
           Mask secret values in the command's output as `***`.
@@ -64,6 +64,18 @@ Which value wins: by default the env file replaces a variable your environment
 already holds. --prefer env reverses that, so a local value is kept and the file
 only fills the names you did not set. Testing with a local value:
   DB_URL=postgres://localhost evnx run --prefer env -- npm test
+
+What masking does not cover: values the command transforms (encoded, split,
+hashed), files it writes, core dumps, /proc/<pid>/environ (readable by the same
+user), and programs that log their own environment. Masking pipes stdout and
+stderr, so the command sees no terminal: colour and progress output turn off,
+and Python holds its output in a buffer, so set PYTHONUNBUFFERED=1. --no-mask
+leaves the streams as they are.
+
+Names that start a program or load code (PATH, LD_*, EDITOR, PAGER, VISUAL,
+GIT_ASKPASS, SSH_ASKPASS, CLASSPATH, npm_config_*, GIT_CONFIG_*, ...) are
+refused unless --allow-unsafe-names. Proxy and certificate names (HTTPS_PROXY,
+SSL_CERT_FILE, ...) only produce a warning that names them.
 
 Signals and exit (Unix): without masking the command replaces evnx, so signals,
 the terminal and the exit status are the command's own. With masking evnx stays

@@ -67,6 +67,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `--yes` exits **4** everywhere (it was 2 on `migrate` and some others).
     The message names `--yes`.
   - A current folder that cannot be read exits **2**, not 1.
+- **`run` and `cloud run` refuse more names that start a program or load
+  code** (WP-11c): `EDITOR`, `PAGER`, `VISUAL`, `GIT_PAGER`, `GIT_ASKPASS`,
+  `SSH_ASKPASS`, `RUSTC_WRAPPER`, `CLASSPATH`, `PERL5DB`, `PYTHONINSPECT`, and
+  the prefixes `npm_config_`, `NPM_CONFIG_` and `GIT_CONFIG_`. A `.env` or vault
+  that holds one now stops with exit 2 and the child never runs; pass
+  `--allow-unsafe-names` (as for `PATH` and `LD_*`) or `--exclude` the name.
+  On Windows the match ignores case; elsewhere it is exact.
 
 ### Breaking: one flag vocabulary (WP-8)
 
@@ -255,6 +262,14 @@ new `network` field below.
 
 ### Added
 
+- **`run` and `cloud run` warn about proxy and certificate names.**
+  `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`,
+  `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` and
+  `NODE_EXTRA_CA_CERTS` (and their lower-case forms) run as before, with one
+  warning on stderr that names them, never their values. `-q` hides it.
+  `--help` and the `run` guide now list what masking does not cover and say to
+  set `PYTHONUNBUFFERED=1` for Python. An empty command (`evnx run --`) is a
+  usage error that shows the form.
 - **`evnx run --prefer env|vault` and `evnx cloud run --prefer env|vault`.**
   The default, `vault`, is today's behaviour: the env file or vault replaces a
   variable your environment already holds. `--prefer env` keeps a variable that

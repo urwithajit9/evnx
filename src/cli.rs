@@ -1813,6 +1813,17 @@ pub enum CloudCommands {
     /// The command runs directly, not through a shell. For a pipeline or a
     /// shell builtin, ask for one: `-- sh -c 'a | b'`.
     ///
+    /// Masking does not cover values the command transforms, files it writes,
+    /// core dumps, `/proc/<pid>/environ` (readable by the same user) or
+    /// programs that log their own environment. It pipes stdout and stderr, so
+    /// the command sees no terminal: colour and progress output turn off, and
+    /// Python holds its output in a buffer, so set `PYTHONUNBUFFERED=1`.
+    /// Without a terminal, `--password-stdin` is required.
+    ///
+    /// Names that start a program or load code (`EDITOR`, `PAGER`,
+    /// `GIT_ASKPASS`, `npm_config_*`, ...) are refused unless
+    /// `--allow-unsafe-names`; proxy and certificate names only warn.
+    ///
     /// Once the command has started, evnx exits with the command's own exit
     /// code. The codes 10–15 listed in `evnx cloud --help` apply only to a
     /// failure before it starts (not signed in, server unreachable, …).
@@ -1872,8 +1883,8 @@ pub enum CloudCommands {
 
         /// Inject variables that make a program load or run other code.
         ///
-        /// `PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV` and similar are
-        /// refused by default: anyone who can push to the vault could use them
+        /// `PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, `EDITOR`, `PAGER`,
+        /// `GIT_ASKPASS`, `npm_config_*` and similar are refused by default: anyone who can push to the vault could use them
         /// to run code in your process. Pass this only if the vault is meant to
         /// set them.
         #[arg(long)]
@@ -1910,12 +1921,7 @@ pub enum CloudCommands {
         /// `last = true` makes the separator mandatory, so a flag meant for the
         /// child — `-- npm run build --prod` — cannot be mistaken for one of
         /// evnx's own.
-        #[arg(
-            last = true,
-            required = true,
-            allow_hyphen_values = true,
-            value_name = "COMMAND"
-        )]
+        #[arg(last = true, allow_hyphen_values = true, value_name = "COMMAND")]
         command: Vec<String>,
     },
 
@@ -3734,8 +3740,8 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         exclude: Option<Vec<String>>,
 
         /// Inject variables that make a program load or run other code
-        /// (`PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, …), refused by
-        /// default.
+        /// (`PATH`, `LD_*`, `NODE_OPTIONS`, `EDITOR`, `PAGER`, `GIT_ASKPASS`,
+        /// `npm_config_*`, …), refused by default.
         #[arg(long)]
         allow_unsafe_names: bool,
 
@@ -3766,12 +3772,7 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         prefer: crate::core::inject::Prefer,
 
         /// The command to run, after `--`.
-        #[arg(
-            last = true,
-            required = true,
-            allow_hyphen_values = true,
-            value_name = "COMMAND"
-        )]
+        #[arg(last = true, allow_hyphen_values = true, value_name = "COMMAND")]
         command: Vec<String>,
     },
 

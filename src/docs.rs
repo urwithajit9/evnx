@@ -374,6 +374,18 @@ already holds. --prefer env reverses that, so a local value is kept and the file
 only fills the names you did not set. Testing with a local value:\n\
 \x20 DB_URL=postgres://localhost evnx run --prefer env -- npm test\n\
 \n\
+What masking does not cover: values the command transforms (encoded, split,\n\
+hashed), files it writes, core dumps, /proc/<pid>/environ (readable by the same\n\
+user), and programs that log their own environment. Masking pipes stdout and\n\
+stderr, so the command sees no terminal: colour and progress output turn off,\n\
+and Python holds its output in a buffer, so set PYTHONUNBUFFERED=1. --no-mask\n\
+leaves the streams as they are.\n\
+\n\
+Names that start a program or load code (PATH, LD_*, EDITOR, PAGER, VISUAL,\n\
+GIT_ASKPASS, SSH_ASKPASS, CLASSPATH, npm_config_*, GIT_CONFIG_*, ...) are\n\
+refused unless --allow-unsafe-names. Proxy and certificate names (HTTPS_PROXY,\n\
+SSL_CERT_FILE, ...) only produce a warning that names them.\n\
+\n\
 Signals and exit (Unix): without masking the command replaces evnx, so signals,\n\
 the terminal and the exit status are the command's own. With masking evnx stays\n\
 to filter the output and passes SIGTERM, SIGHUP, SIGQUIT and SIGINT on to the\n\

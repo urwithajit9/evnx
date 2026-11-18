@@ -1,0 +1,111 @@
+Run a command with a vault's variables in its environment.
+
+The secrets are decrypted in memory and handed to the child process. Nothing is written to disk, nothing enters your shell history, and nothing appears in `ps` — values travel in the environment block, never in the argument vector.
+
+This removes the plaintext file, not the master password. The vault key is wrapped under your master key, so decryption needs it wherever this runs; in CI, feed it with --password-stdin.
+
+The command runs directly, not through a shell. For a pipeline or a shell builtin, ask for one: `-- sh -c 'a | b'`.
+
+Masking does not cover values the command transforms, files it writes, core dumps, `/proc/<pid>/environ` (readable by the same user) or programs that log their own environment. It pipes stdout and stderr, so the command sees no terminal: colour and progress output turn off, and Python holds its output in a buffer, so set `PYTHONUNBUFFERED=1`. Without a terminal, `--password-stdin` is required.
+
+Names that start a program or load code (`EDITOR`, `PAGER`, `GIT_ASKPASS`, `npm_config_*`, ...) are refused unless `--allow-unsafe-names`; proxy and certificate names only warn.
+
+Once the command has started, evnx exits with the command's own exit code. The codes 10–15 listed in `evnx cloud --help` apply only to a failure before it starts (not signed in, server unreachable, …).
+
+`--version` here means the vault version, so clap's auto-generated `--version` is disabled on this subcommand, as it is on `pull`. Use `evnx --version` for the program version.
+
+Usage: evnx cloud run [OPTIONS] [-- <COMMAND>...]
+
+Arguments:
+  [COMMAND]...
+          The command to run, after `--`.
+          
+          `last = true` makes the separator mandatory, so a flag meant for the child — `-- npm run build --prod` — cannot be mistaken for one of evnx's own.
+
+Options:
+      --vault <VAULT>
+          Vault to read: `name`, `name/environment`, or an id.
+          
+          Optional in a directory bound with `evnx cloud link`.
+          
+          Repeatable: with several, one master-password unlock opens them all and they are merged left to right. A key in more than one of them is refused (the command does not run) unless `--allow-override` is given. `--version` belongs to one vault, so it is refused with more than one. `--include`/`--exclude` apply to the merged result.
+
+      --allow-override
+          With several `--vault`, let the later vault win a key both hold.
+          
+          Each overlap is named on stderr (key and winning vault, never a value). Without it an overlap stops the run. Does nothing with one vault.
+
+      --version <N>
+          Version to inject. Defaults to the latest
+
+      --include <GLOB>
+          Inject only variables whose name matches one of these globs.
+          
+          Example: --include "DB_*,AWS_*"
+          
+          Least privilege for a subprocess: a build step that needs only `NEXT_PUBLIC_*` has no reason to be handed your database password.
+
+      --exclude <GLOB>
+          Skip variables whose name matches one of these globs.
+          
+          Example: --exclude "*_LOCAL,*_TEST"
+          
+          Applied after --include, so a name matching both is skipped.
+
+      --password-stdin
+          Read the master password from stdin instead of prompting.
+          
+          Only the first line is consumed; the child inherits the rest of stdin.
+
+      --allow-unsafe-names
+          Inject variables that make a program load or run other code.
+          
+          `PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, `EDITOR`, `PAGER`, `GIT_ASKPASS`, `npm_config_*` and similar are refused by default: anyone who can push to the vault could use them to run code in your process. Pass this only if the vault is meant to set them.
+
+      --mask
+          Mask secret values in the command's output as `***`.
+          
+          On by default when output is not a terminal (a CI log, an agent), where what is printed is kept. Only values the classifier calls secret (by name or by value) are masked. It prevents accidents, not exfiltration: a command that transforms a value gets past it.
+
+      --no-mask
+          Never mask the command's output
+
+      --prefer <SIDE>
+          Which side wins when a variable is set both in your environment and in the vault: `vault` (default) or `env`.
+          
+          `vault` lets the vault replace what your environment holds (today's behaviour). `env` keeps a variable your environment already holds, even an empty one, and only fills the names it leaves unset: for testing with a local value over a shared one. A line on stderr names what was kept, never a value. Names are checked either way; a kept value is not masked, since evnx did not inject it.
+
+          Possible values:
+          - vault: The vault or env file wins: today's behaviour
+          - env:   A variable already set in the environment wins (even when empty); the vault or file only fills names that are unset
+          
+          [default: vault]
+
+      --server <URL>
+          evnx server to talk to. Overrides EVNX_SERVER and config.toml.
+          
+          Plain http:// is refused for anything but a loopback address, because the access and refresh tokens travel in request headers.
+
+      --no-color
+          Disable colored output
+
+  -q, --quiet
+          Print nothing on success. Findings, warnings, errors and requested data still print
+
+  -v, --verbose
+          Enable verbose output
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Exit codes:
+    0  Ran, nothing to report
+    2  Could not run: usage, config, I/O, or refused before any change
+   10  Not signed in, or the token was rejected
+   11  Forbidden, or the email is not verified
+   12  The plan's limit is reached
+   13  Server unreachable, not an evnx server, or TLS roots unusable
+   14  Conflict, or locked
+   15  Server error, or rate limited
+  141  Output closed early (broken pipe)
+    N  Once the command has started: its own exit code, or 128+n if signal n killed it
