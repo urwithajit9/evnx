@@ -54,6 +54,7 @@
 //! `SIGKILL` cannot be caught: if evnx is killed that way the child is orphaned.
 
 use std::mem::MaybeUninit;
+use std::os::unix::process::CommandExt;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
@@ -196,6 +197,21 @@ impl Forwarder {
             me.old_actions.push(old);
         }
 
+        // The child must not start with the four signals blocked: `spawn` blocks
+        // them in this thread, and a blocked mask survives `exec`. Whether the
+        // standard library clears the mask before exec depends on its version and
+        // on whether it uses `posix_spawn`, so it is not relied on: the child gets
+        // exactly the mask evnx itself was started with.
+        let child_mask = me.old_mask;
+        // SAFETY: the closure runs in the forked child before exec and only calls
+        // `sigprocmask`, which is async-signal-safe, with a valid, initialised set
+        // that was copied into the closure.
+        unsafe {
+            cmd.pre_exec(move || {
+                libc::sigprocmask(libc::SIG_SETMASK, &child_mask, std::ptr::null_mut());
+                Ok(())
+            });
+        }
         let child = cmd.spawn()?;
         CHILD.store(child.id() as libc::pid_t, Ordering::SeqCst);
 

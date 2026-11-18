@@ -460,6 +460,23 @@ fn x6_a_failing_child_adds_nothing_to_stderr() {
     assert_eq!(d.stderr, "err\n");
 }
 
+/// S10: the command must start with no signal blocked. evnx blocks the four
+/// forwarded signals while it spawns; if that mask leaked into the child, a
+/// SIGTERM sent to evnx would be forwarded to a child that can never receive it.
+/// (The standard library clears the mask on some versions and not on others,
+/// so this is pinned here rather than assumed.)
+#[test]
+fn s10_the_command_starts_with_no_signal_blocked() {
+    let p = Project::new().env(ENV);
+    let d = finish(local(&p, true, "grep SigBlk /proc/self/status"), START);
+    assert_eq!(d.status.code(), Some(0), "{}", d.stderr);
+    assert!(
+        d.stdout.contains("0000000000000000"),
+        "the command started with blocked signals: {}",
+        d.stdout
+    );
+}
+
 #[test]
 fn s9_secrets_are_not_printed_by_the_signal_paths() {
     let p = Project::new().env(ENV);
