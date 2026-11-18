@@ -94,11 +94,29 @@ pub fn is_quiet() -> bool {
     QUIET.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// With the data on stdout (`restore --output -`), the status lines that
+/// would go there ([`say`], [`success`], [`info`]) go to stderr instead.
+static STATUS_TO_STDERR: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Send [`say`], [`success`] and [`info`] to stderr for the rest of the run, so
+/// stdout holds only the data a command was asked to print.
+pub fn set_status_to_stderr(on: bool) {
+    STATUS_TO_STDERR.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn status_line(line: std::fmt::Arguments<'_>) {
+    if STATUS_TO_STDERR.load(std::sync::atomic::Ordering::Relaxed) {
+        eprintln!("{line}");
+    } else {
+        println!("{line}");
+    }
+}
+
 /// Print a progress or status line that `-q` suppresses. For the plain
 /// `println!`s that report what a command did rather than what it found.
 pub fn say(line: impl std::fmt::Display) {
     if !is_quiet() {
-        println!("{line}");
+        status_line(format_args!("{line}"));
     }
 }
 
@@ -385,7 +403,7 @@ pub fn success(message: impl AsRef<str>) {
     if is_quiet() {
         return;
     }
-    println!("{} {}", glyph::OK.green(), message.as_ref());
+    status_line(format_args!("{} {}", glyph::OK.green(), message.as_ref()));
 }
 
 /// Print a red error message with cross.
@@ -428,7 +446,11 @@ pub fn info(message: impl AsRef<str>) {
     if is_quiet() {
         return;
     }
-    println!("{} {}", glyph::INFO.dimmed(), message.as_ref().dimmed());
+    status_line(format_args!(
+        "{} {}",
+        glyph::INFO.dimmed(),
+        message.as_ref().dimmed()
+    ));
 }
 
 /// Print a bold important notice.

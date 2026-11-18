@@ -421,7 +421,8 @@ fn run() -> Result<Verdict, EvnxError> {
             output,
             exit_zero,
             ignore,
-            validate_formats,
+            validate_formats: _,
+            no_formats,
             fail_on,
         } => {
             let flags = file_args.flags();
@@ -453,10 +454,8 @@ fn run() -> Result<Verdict, EvnxError> {
                 // source (I-038).
                 ignore,
                 ignore_configured: cfg.validate.ignore.clone().unwrap_or_default(),
-                validate_formats: evnx::core::config::any(
-                    validate_formats,
-                    cfg.validate.validate_formats,
-                ),
+                // On unless `--no-formats` or `[validate] validate_formats = false`.
+                validate_formats: !no_formats && cfg.validate.validate_formats.unwrap_or(true),
                 spec: cfg.vars.clone(),
             })
         }
@@ -1033,6 +1032,8 @@ fn run() -> Result<Verdict, EvnxError> {
         Commands::Template {
             input,
             output,
+            input_flag,
+            output_flag,
             env: env_args,
             confirm,
             gitignore,
@@ -1045,6 +1046,12 @@ fn run() -> Result<Verdict, EvnxError> {
             force,
             follow_symlinks,
         } => {
+            // Clap guarantees one of each form is present.
+            let (Some(input), Some(output)) = (input.or(input_flag), output.or(output_flag)) else {
+                return Err(EvnxError::Config(anyhow::anyhow!(
+                    "template needs an INPUT and an OUTPUT: evnx template INPUT OUTPUT"
+                )));
+            };
             // RM-14 (DEC-T2): refusing is the default; --strict asked for it.
             if strict {
                 evnx::utils::ui::info(
@@ -1089,6 +1096,8 @@ fn run() -> Result<Verdict, EvnxError> {
             password_file,
             keep,
             verify,
+            gitignore,
+            no_gitignore,
         } => commands::backup::run(
             resolve_env(
                 Path::new("."),
@@ -1101,6 +1110,7 @@ fn run() -> Result<Verdict, EvnxError> {
             password_file,
             evnx::core::config::pick(keep, cfg.backup.keep, 3),
             verify,
+            evnx::utils::protect::GitignoreMode::from_flags(gitignore, no_gitignore),
         )
         .map(clean),
 
@@ -1108,6 +1118,7 @@ fn run() -> Result<Verdict, EvnxError> {
         Commands::Restore {
             backup,
             output,
+            show_values,
             yes,
             gitignore,
             no_gitignore,
@@ -1118,6 +1129,7 @@ fn run() -> Result<Verdict, EvnxError> {
             backup,
             commands::restore::Options {
                 output,
+                show_values,
                 verbose: cli.verbose,
                 dry_run,
                 inspect,
@@ -1158,11 +1170,16 @@ fn run() -> Result<Verdict, EvnxError> {
             path,
             dir,
             fix,
+            all,
             strict,
             skip_without_env,
             output,
             verbose,
-        } => evnx::commands::doctor::run(
+        } => (if all {
+            evnx::commands::doctor::run_all
+        } else {
+            evnx::commands::doctor::run
+        })(
             dir.dir
                 .map(|d| d.to_string_lossy().into_owned())
                 .unwrap_or(path),
@@ -1341,6 +1358,7 @@ fn run() -> Result<Verdict, EvnxError> {
             check,
             list,
             output.resolved() == evnx::cli::args::Format::Json,
+            cli.verbose,
         ),
     };
 

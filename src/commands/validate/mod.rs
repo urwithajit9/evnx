@@ -387,6 +387,7 @@ pub fn validate(input: &Input, config: &ValidationConfig) -> Outcome {
             vars,
             env_path,
             config.validate_formats,
+            spec,
             &config.ignore_issues,
         ));
 
@@ -717,8 +718,12 @@ pub fn run(opts: Options) -> Result<Verdict> {
             let text = if stdin {
                 crate::utils::term::read_piped("evnx validate --env -")?
             } else {
-                std::fs::read_to_string(&env_path)
-                    .with_context(|| format!("could not read {env_path}"))?
+                crate::core::parser::read_env_text(Path::new(&env_path)).map_err(|e| match e {
+                    e @ crate::core::parser::ParseError::Utf16 { .. } => {
+                        crate::core::verdict::usage(e.to_string())
+                    }
+                    e => anyhow::Error::from(e).context(format!("could not read {env_path}")),
+                })?
             };
             document_from_json(&text)
                 .with_context(|| format!("Failed to read {origin} as --input-format json"))?

@@ -29,6 +29,19 @@ struct EntryOut {
     empty: bool,
     placeholder: bool,
     secret: bool,
+    /// How the value is quoted: `none`, `single`, `double` or `backtick`.
+    quoted: &'static str,
+    /// The line starts with `export`.
+    exported: bool,
+    /// The value runs over more than one line.
+    multiline: bool,
+    /// A later line assigns the same key (the last one wins).
+    duplicate: bool,
+    /// The value holds a `${NAME}` or `$NAME` reference that is expanded when
+    /// read (a single-quoted value is never expanded).
+    expands: bool,
+    /// The value's length in characters. Facts only: never the value.
+    length: usize,
     /// Only with `--values`.
     #[serde(skip_serializing_if = "Option::is_none")]
     value: Option<String>,
@@ -56,16 +69,21 @@ pub fn run(env: &str, json: bool, values: bool, show_values: bool) -> Result<Ver
             crate::utils::term::read_piped("evnx parse -")?,
         )
     } else {
-        let content = std::fs::read_to_string(env).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                crate::core::verdict::missing_file(format!(
-                    "{env} does not exist\n\n{}",
-                    Parser::missing_env_hint(env)
-                ))
-            } else {
-                anyhow::Error::new(e).context(format!("could not read {env}"))
-            }
-        })?;
+        let content =
+            crate::core::parser::read_env_text(std::path::Path::new(env)).map_err(|e| {
+                use crate::core::parser::ParseError;
+                match e {
+                    ParseError::FileNotFound { .. } => crate::core::verdict::missing_file(format!(
+                        "{env} does not exist\n\n{}",
+                        Parser::missing_env_hint(env)
+                    )),
+                    e @ ParseError::Utf16 { .. } => crate::core::verdict::usage(e.to_string()),
+                    ParseError::FileReadError(e) => {
+                        anyhow::Error::new(e).context(format!("could not read {env}"))
+                    }
+                    e => anyhow::Error::new(e),
+                }
+            })?;
         // RM-32: `./.env`, as `validate` reports the same file.
         (crate::utils::path::label(env), content)
     };
@@ -73,7 +91,7 @@ pub fn run(env: &str, json: bool, values: bool, show_values: bool) -> Result<Ver
     let doc = Parser::default().parse_document(&content);
     let report = report(&doc, file, values);
     if json {
-        crate::core::json::emit(&report, 1, None)?;
+        crate::core::json::emit(&report, 2, None)?;
     } else {
         print_pretty(&report);
     }
@@ -88,9 +106,21 @@ fn report(doc: &Document, file: String, values: bool) -> Report {
     let entries = doc
         .entries
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             let empty = e.value.is_empty();
             EntryOut {
+                quoted: match e.quote {
+                    None => "none",
+                    Some('\'') => "single",
+                    Some('"') => "double",
+                    Some(_) => "backtick",
+                },
+                exported: e.exported,
+                multiline: e.raw.contains('\n'),
+                duplicate: doc.entries[i + 1..].iter().any(|later| later.key == e.key),
+                expands: e.quote != Some('\'') && expands(&e.raw),
+                length: e.value.chars().count(),
                 key: e.key.clone(),
                 line: e.span.line,
                 empty,
@@ -112,11 +142,21 @@ fn report(doc: &Document, file: String, values: bool) -> Report {
         .collect();
     problems.sort_by_key(|p| p.line);
     Report {
-        schema_version: 1,
+        schema_version: 2,
         file,
         entries,
         problems,
     }
+}
+
+/// Whether source text has a `${…}` or `$NAME` reference. A `\$` is escaped.
+fn expands(raw: &str) -> bool {
+    let b = raw.as_bytes();
+    (0..b.len().saturating_sub(1)).any(|i| {
+        b[i] == b'$'
+            && (i == 0 || b[i - 1] != b'\\')
+            && (b[i + 1] == b'{' || b[i + 1] == b'_' || b[i + 1].is_ascii_alphabetic())
+    })
 }
 
 /// `LINE  KEY  flags`, then `value` with `--values`; problems on stderr.
@@ -129,6 +169,10 @@ fn print_pretty(report: &Report) {
                 (e.empty, "empty"),
                 (e.placeholder, "placeholder"),
                 (e.secret, "secret"),
+                (e.exported, "exported"),
+                (e.multiline, "multiline"),
+                (e.duplicate, "duplicate"),
+                (e.expands, "expands"),
             ]
             .into_iter()
             .filter_map(|(on, name)| on.then_some(name))

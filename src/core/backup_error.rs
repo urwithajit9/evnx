@@ -97,7 +97,7 @@ impl fmt::Display for BackupError {
         match self {
             Self::FileNotFound(path) => write!(f, "File not found: {}", path),
             Self::NotAFile(path) => write!(f, "Not a regular file: {}", path),
-            Self::PasswordMismatch => write!(f, "Passwords do not match"),
+            Self::PasswordMismatch => write!(f, "Passphrases do not match"),
             Self::EncryptionFailed(msg) => write!(f, "Encryption failed: {}", msg),
             Self::WriteFailed(msg) => write!(f, "Failed to write backup file: {}", msg),
             Self::VerifyFailed(msg) => write!(f, "Backup integrity check failed: {}", msg),

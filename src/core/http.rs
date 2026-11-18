@@ -206,9 +206,22 @@ pub fn client(
     timeout: Duration,
     connect_timeout: Option<Duration>,
 ) -> Result<reqwest::blocking::Client> {
+    client_with(timeout, connect_timeout, true)
+}
+
+/// [`client`], with `follow_redirects` off for a caller that reads the
+/// `Location` header itself (`update --check`'s fallback).
+pub fn client_with(
+    timeout: Duration,
+    connect_timeout: Option<Duration>,
+    follow_redirects: bool,
+) -> Result<reqwest::blocking::Client> {
     let mut builder = reqwest::blocking::Client::builder()
         .timeout(timeout)
         .user_agent(USER_AGENT);
+    if !follow_redirects {
+        builder = builder.redirect(reqwest::redirect::Policy::none());
+    }
     if let Some(connect) = connect_timeout {
         builder = builder.connect_timeout(connect);
     }

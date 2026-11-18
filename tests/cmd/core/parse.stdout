@@ -1,6 +1,6 @@
 List what evnx reads from a `.env`: line, key and flags, never a value.
 
-Flags say whether each value is empty, a placeholder or a secret. Every problem in the file is listed, and the exit code is 1 when there is one. `--format json` is what `evnx validate --input-format json` reads.
+Flags say whether each value is empty, a placeholder or a secret, and whether the line is exported, spans several lines, is overridden by a later line (`duplicate`) or holds a `${NAME}` reference (`expands`). The JSON adds how it is quoted and the value's length. Every problem in the file is listed, and the exit code is 1 when there is one. A file saved by PowerShell's `>` is refused (exit 2): save it as UTF-8. `--format json` is what `evnx validate --input-format json` reads.
 
 Usage: evnx parse [OPTIONS]
 

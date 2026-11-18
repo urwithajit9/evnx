@@ -124,17 +124,8 @@ pub const REMOVED: &[Removed] = &[
         old: &["-p", "--path"],
         new: "-C/--dir",
     },
-    // backup, restore: the password file is `--password-file` everywhere.
-    Removed::Flag {
-        path: &["backup"],
-        old: &["--key-file"],
-        new: "--password-file",
-    },
-    Removed::Flag {
-        path: &["restore"],
-        old: &["--key-file"],
-        new: "--password-file",
-    },
+    // backup, restore: the file holding the passphrase is `--key-file`
+    // everywhere; `--password-file` stays as a hidden alias, so neither is here.
     // restore: `--yes` is the one spelling of "replace without asking".
     Removed::Flag {
         path: &["restore"],

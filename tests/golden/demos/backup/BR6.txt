@@ -37,6 +37,8 @@ Next steps:
   Inspect the file manually, then rename it if the content looks correct:
     mv ./r.env.restored ./r.env
 ! Wrote the backup's content to ./r.env.restored, not to ./r.env
+  Full path: <dir>/scenes/BR6/r.env.restored
+  This file holds plaintext secrets. Keep it out of git.
   Docs: https://docs.evnx.dev/cli/commands/restore
 [exit 5]
   ok: fallback: .restored, exit 5 (exit 5)

@@ -14,7 +14,19 @@ $ evnx validate --ignore placeholder_value,weak_secret,missing_variable
      →  Use false or 0 for proper boolean handling
      ·  fixable with --fix
 
-  2 warnings
+  !  DATABASE_URL does not appear to be a valid URL
+     ./.env
+     →  Expected format: https://example.com/path
+
+  !  API_PORT is not a valid port number (1-65535)
+     ./.env
+     →  Expected format: 8080
+
+  !  ADMIN_EMAIL does not appear to be a valid email
+     ./.env
+     →  Expected format: user@example.com
+
+  5 warnings
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 0]
   ok: ignored types disappear; warnings alone exit 0 (exit 0)
@@ -32,8 +44,20 @@ $ evnx validate --ignore placeholder_value,weak_secret,missing_variable --fail-o
      →  Use false or 0 for proper boolean handling
      ·  fixable with --fix
 
-  2 warnings
-Validation failed: 2 warnings
+  !  DATABASE_URL does not appear to be a valid URL
+     ./.env
+     →  Expected format: https://example.com/path
+
+  !  API_PORT is not a valid port number (1-65535)
+     ./.env
+     →  Expected format: 8080
+
+  !  ADMIN_EMAIL does not appear to be a valid email
+     ./.env
+     →  Expected format: user@example.com
+
+  5 warnings
+Validation failed: 5 warnings
   Docs: https://docs.evnx.dev/cli/commands/validate
 [exit 1]
   ok: NEW S2: --fail-on warning makes the warnings fail the run (exit 1)
@@ -66,7 +90,19 @@ $ evnx validate --exit-zero
      →  Use false or 0 for proper boolean handling
      ·  fixable with --fix
 
-  3 errors  ·  2 warnings
+  !  DATABASE_URL does not appear to be a valid URL
+     ./.env
+     →  Expected format: https://example.com/path
+
+  !  API_PORT is not a valid port number (1-65535)
+     ./.env
+     →  Expected format: 8080
+
+  !  ADMIN_EMAIL does not appear to be a valid email
+     ./.env
+     →  Expected format: user@example.com
+
+  3 errors  ·  5 warnings
 
 Next steps:
   1. Review and fix the errors above

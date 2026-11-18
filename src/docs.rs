@@ -234,9 +234,9 @@ pub const DOCTOR: CommandDoc = CommandDoc {
     command: "doctor",
     url: "https://docs.evnx.dev/cli/commands/doctor",
     description: "Diagnosing setup and gitignore issues",
-    // ⚠️ The exit codes and the two variables are here because nothing else
-    // said them (D-118, DEC-D12): a CI image exporting EVNX_AUTO_FIX=1 turns
-    // every doctor run into a repair run.
+    // The exit codes and the variable are here because nothing else said them
+    // (D-118). EVNX_AUTO_FIX is no longer read: a CI image that exports it
+    // gets one warning and no repair.
     after_help: "\
 Env files: .env and .env.<name> (not .envrc), and plaintext copies such as\n\
 .env.bak; each must be ignored by git and not tracked, valid dotenv, and\n\
@@ -245,11 +245,14 @@ committed: [defaults] example in .evnx.toml, else .env.example, .env.sample\n\
 or .env.template, whichever is there.\n\
 \n\
 Environment:\n\
-\x20 EVNX_AUTO_FIX=1     same as --fix (stderr says so when it turns repair on)\n\
 \x20 EVNX_OUTPUT_JSON=1  same as --format json; an explicit --format wins\n\
+\n\
+EVNX_AUTO_FIX is no longer read: it prints one warning and repairs nothing.\n\
+Pass --fix.\n\
 \n\
 Examples:\n\
 \x20 evnx doctor --fix                       # repair .gitignore and file modes\n\
+\x20 evnx doctor --all                       # doctor, validate, sync --check and scan in one report\n\
 \x20 evnx doctor --strict --format json      # a CI gate: warnings fail too\n\
 \x20 evnx doctor --skip-without-env          # a pre-commit hook on a fresh clone\n\
 \n\
@@ -279,6 +282,10 @@ $VAR is replaced only when VAR is defined, and never reported.\n\
 A placeholder with no value is an error too (exit 2); --allow-unresolved\n\
 writes it through as it is.\n\
 \n\
+Examples:\n\
+\x20 evnx template config.tpl config.yml     # INPUT OUTPUT\n\
+\x20 evnx template config.tpl -              # to stdout\n\
+\n\
 Full guide: https://docs.evnx.dev/cli/commands/template",
 };
 
@@ -287,8 +294,12 @@ pub const BACKUP: CommandDoc = CommandDoc {
     url: "https://docs.evnx.dev/cli/commands/backup",
     description: "AES-256-GCM encrypted backups",
     after_help: "\
-Passphrase: --password-file, then EVNX_PASSWORD, then a prompt (asked twice). A new\n\
-backup needs at least 8 characters from any of them.\n\
+Passphrase: --key-file, then EVNX_PASSWORD, then a prompt (asked twice). A new\n\
+backup needs at least 8 characters from any of them, and is told when the\n\
+passphrase is weak (under 12 characters, digits only, a common word).\n\
+\n\
+The backup file is encrypted: committing it is as safe as its passphrase.\n\
+--gitignore adds it to .gitignore; --no-gitignore leaves .gitignore alone.\n\
 \n\
 A backup is a file you keep, behind a passphrase you choose; it needs no account\n\
 and no network. To share and version secrets instead, see `evnx cloud push`.\n\
@@ -305,6 +316,13 @@ Replacing a file: an existing --output is never replaced silently. With a\n\
 terminal evnx asks; without one, pass --yes. Either way the\n\
 replaced file is kept beside it as <output>.bak. Content identical to the\n\
 backup is left alone.\n\
+\n\
+Passphrase: --key-file, then EVNX_PASSWORD, then a prompt.\n\
+\n\
+--output - prints the decrypted text to stdout, with every status line on\n\
+stderr; a terminal refuses it unless --show-values. Text that is not a .env\n\
+goes to <output>.restored instead: a private file (0600) that holds plaintext\n\
+secrets, printed with its full path.\n\
 \n\
 A backup file is not a vault. For evnx cloud, use `evnx cloud pull` (one\n\
 version) or `evnx cloud export` (all of them).\n\

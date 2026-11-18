@@ -249,9 +249,9 @@ fn t_i149_tamper_and_a_wrong_password_stay_one_message() {
     );
     wrong
         .assert_code(2)
-        .assert_contains("Wrong password or corrupt backup");
+        .assert_contains("Wrong passphrase or corrupt backup");
     flip.assert_code(2)
-        .assert_contains("Wrong password or corrupt backup");
+        .assert_contains("Wrong passphrase or corrupt backup");
 }
 
 // ── I-154 / DEC-B5: the fallback is not a success ───────────────────────────
@@ -455,20 +455,17 @@ fn rm18_a_backup_of_dot_env_restores_to_dot_env() {
     assert_eq!(p.read(".env"), ENV);
 }
 
-/// Q1: `--output -` wrote the decrypted `.env` to a file named `-`, then told
-/// the user to run `evnx validate --env -`, which reads stdin. Refused, with
-/// no file named `-` created, in every mode.
+/// Q1: `--output -` once wrote the decrypted `.env` to a file named `-`, then
+/// told the user to run `evnx validate --env -`, which reads stdin. It was
+/// refused; since WP-15 it is stdout, and still never a file named `-`.
 #[test]
-fn q1_output_dash_is_refused_and_no_file_named_dash_appears() {
+fn q1_output_dash_is_stdout_and_no_file_named_dash_appears() {
     let p = backed_up();
-    for extra in [&[][..], &["--yes"], &["--dry-run"]] {
-        let mut args = vec!["--output", "-"];
-        args.extend_from_slice(extra);
-        restore(&p, &args)
-            .assert_code(2)
-            .assert_contains("cannot write to stdout yet");
-        assert!(!p.exists("-"), "{extra:?}");
-    }
+    let out = restore(&p, &["--output", "-"]);
+    out.assert_code(0);
+    assert_eq!(out.stdout, ENV);
+    assert!(!p.exists("-"));
+    assert!(!p.exists(".env"));
     // `./-` is a file named `-`, on purpose.
     restore(&p, &["--output", "./-"]).assert_code(0);
     assert_eq!(p.read("-"), ENV);

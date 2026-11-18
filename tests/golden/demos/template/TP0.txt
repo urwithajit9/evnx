@@ -8,10 +8,11 @@ evnx <version>
 $ evnx template
 [stderr]
 error: the following required arguments were not provided:
-  --input <INPUT>
-  --output <OUTPUT>
+  <INPUT>
+  <OUTPUT>
 
-Usage: evnx template --input <INPUT> --output <OUTPUT>
+Usage: evnx template [OPTIONS] <INPUT> <OUTPUT>
+       evnx template [OPTIONS] --input <FILE> --output <FILE>
 
 For more information, try '--help'.
 [exit 2]
@@ -21,7 +22,8 @@ $ evnx template --input config.tpl.yml --output o --gitignore --no-gitignore
 [stderr]
 error: the argument '--gitignore' cannot be used with '--no-gitignore'
 
-Usage: evnx template --input <INPUT> --output <OUTPUT> --gitignore
+Usage: evnx template [OPTIONS] <INPUT> <OUTPUT>
+       evnx template [OPTIONS] --input <FILE> --output <FILE>
 
 For more information, try '--help'.
 [exit 2]

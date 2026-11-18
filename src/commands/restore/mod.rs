@@ -26,7 +26,7 @@
 //!
 //! [`crate::utils::secret_source`], the same rule `backup` uses:
 //!
-//! 1. `--password-file <path>` — read from a file (CI/CD friendly).
+//! 1. `--key-file <path>` — read from a file (CI/CD friendly).
 //! 2. `EVNX_PASSWORD` environment variable — read and immediately unset.
 //! 3. Interactive prompt — default; most secure.
 //!
@@ -94,7 +94,7 @@
 //! EVNX_PASSWORD=mypass evnx restore .env.backup --yes
 //!
 //! # Non-interactive via password file
-//! evnx restore .env.backup --password-file /run/secrets/evnx-pass --output .env.production
+//! evnx restore .env.backup --key-file /run/secrets/evnx-pass --output .env.production
 //!
 //! # Validate without writing
 //! evnx restore .env.backup --dry-run
@@ -120,6 +120,8 @@ use anyhow::Result;
 pub struct Options {
     /// Destination path. `None`: the file the backup was made from (RM-18).
     pub output: Option<String>,
+    /// `--show-values`: with `--output -`, print to a terminal anyway.
+    pub show_values: bool,
     /// Emit a diagnostic line at each pipeline stage.
     pub verbose: bool,
     /// Decrypt and validate, but do not write any files.
@@ -165,6 +167,7 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
 
         let Options {
             output,
+            show_values,
             verbose,
             dry_run,
             inspect,
@@ -173,18 +176,28 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
             gitignore,
         } = opts;
 
-        // ⛔ `-` is stdout in `template` and `cloud pull`, and was a file
-        // named `-` here: the decrypted `.env` landed in `./-`, and the next
-        // step printed was `evnx validate --env -`, which reads stdin (Q1).
-        // Refused until stdout output exists (DEC-B8).
-        if output
+        // `--output -` is the decrypted text on stdout (D5): the data is the
+        // secret, so a terminal refuses it unless `--show-values`, the rule
+        // `parse --values` follows. Every status line goes to stderr, nothing
+        // is written, so there is no `.bak` and no `.gitignore` question.
+        // `--inspect` and `--dry-run` print names only and need no terminal.
+        let to_stdout = output
             .as_deref()
-            .is_some_and(crate::core::safe_write::is_stdout)
+            .is_some_and(crate::core::safe_write::is_stdout);
+        if to_stdout
+            && !inspect
+            && !dry_run
+            && !show_values
+            && std::io::IsTerminal::is_terminal(&std::io::stdout())
         {
             anyhow::bail!(
-                "restore cannot write to stdout yet; name a file with --output, \
-                 e.g. --output .env (a file literally named - is ./-)"
+                "--output - prints every value in plain text, and stdout is a terminal, \
+                 where it stays in the scrollback. Pipe it, or pass --show-values."
             );
+        }
+
+        if to_stdout {
+            ui::set_status_to_stderr(true);
         }
 
         // ── Fetch encoded blob, and check the key file ────────────────────────
@@ -208,7 +221,13 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
             ui::verbose_stderr(format!("Dry-run: {dry_run}"));
         }
 
-        ui::success(format!("Read backup from {backup}"));
+        if to_stdout {
+            if !ui::is_quiet() {
+                eprintln!("✓ Read backup from {backup}");
+            }
+        } else {
+            ui::success(format!("Read backup from {backup}"));
+        }
 
         // ── The output may not be the backup itself (DEC-B3) ──────────────────
         // Restoring a backup over itself replaces the only copy of the
@@ -216,7 +235,10 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
         // nothing, so where `--output` points does not matter to them.
         // Without `--output` the destination is in the backup, so the same
         // check runs once it is decrypted, below, before anything is written.
-        if let Some(output) = output.as_deref().filter(|_| !inspect && !dry_run) {
+        if let Some(output) = output
+            .as_deref()
+            .filter(|_| !inspect && !dry_run && !to_stdout)
+        {
             if let Err(e) = writable_destination(output, &backup) {
                 encoded.zeroize();
                 return Err(e);
@@ -244,6 +266,7 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
             inspect,
             dry_run,
             verbose,
+            to_stdout,
         };
 
         let result = prepare_restore(&encoded, password, &options);
@@ -260,6 +283,17 @@ pub fn run(backup: String, opts: Options) -> Result<()> {
 
             PrepareResult::Ready(outcome) => outcome,
         };
+        if to_stdout {
+            // The text, then nothing else on stdout. Not a file: no `.restored`
+            // fallback either, the reader of the pipe decides what it is.
+            let count = crate::utils::count_dotenv_vars(&outcome.content);
+            crate::utils::term::write_stdout(outcome.content.as_bytes())
+                .map_err(|e| anyhow::Error::new(e).context("writing to stdout"))?;
+            if !ui::is_quiet() {
+                eprintln!("✓ Restored {count} variable(s) to stdout");
+            }
+            return Ok(());
+        }
         if options.output.is_none() {
             writable_destination(&outcome.output.to_string_lossy(), &backup)?;
         }

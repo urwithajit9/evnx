@@ -70,7 +70,32 @@ pub fn render<T: Serialize>(
     .context("serialising the JSON output")
 }
 
+thread_local! {
+    /// While set, documents are kept here instead of being printed ([`capture`]).
+    static CAPTURED: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` and keep every JSON document it would have printed, instead of
+/// printing it. `doctor --all` runs `validate`, `sync` and `scan` this way and
+/// puts their documents under one `sections` object, so no check is written twice.
+pub fn capture<R>(f: impl FnOnce() -> R) -> (R, Vec<String>) {
+    let before = CAPTURED.with(|c| c.borrow_mut().replace(Vec::new()));
+    let out = f();
+    let docs = CAPTURED.with(|c| std::mem::replace(&mut *c.borrow_mut(), before));
+    (out, docs.unwrap_or_default())
+}
+
 fn write(mut text: String) -> Result<()> {
+    let kept = CAPTURED.with(|c| match c.borrow_mut().as_mut() {
+        Some(docs) => {
+            docs.push(std::mem::take(&mut text));
+            true
+        }
+        None => false,
+    });
+    if kept {
+        return Ok(());
+    }
     text.push('\n');
     crate::utils::term::write_stdout(text.as_bytes()).context("writing to stdout")
 }

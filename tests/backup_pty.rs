@@ -25,7 +25,7 @@ fn type_secret(run: &mut Pty, prompt: &str, secret: &str) {
 fn t_br06_a_short_typed_passphrase_is_refused() {
     let p = Project::new().env(ENV);
     let mut run = Pty::spawn(p.path(), &["backup"]);
-    type_secret(&mut run, "Enter encryption password", "short");
+    type_secret(&mut run, "Enter encryption passphrase", "short");
     let (rest, code) = run.finish();
     assert_eq!(code, 2, "{rest}");
     assert!(rest.contains("at least 8 characters (got 5)"), "{rest}");
@@ -36,8 +36,8 @@ fn t_br06_a_short_typed_passphrase_is_refused() {
 fn t_br06_a_mismatched_confirmation_is_exit_2() {
     let p = Project::new().env(ENV);
     let mut run = Pty::spawn(p.path(), &["backup"]);
-    type_secret(&mut run, "Enter encryption password", "long-enough-1");
-    type_secret(&mut run, "Confirm password", "long-enough-2");
+    type_secret(&mut run, "Enter encryption passphrase", "long-enough-1");
+    type_secret(&mut run, "Confirm passphrase", "long-enough-2");
     let (rest, code) = run.finish();
     assert_eq!(code, 2, "{rest}");
     assert!(!p.exists(".env.backup"));
@@ -47,12 +47,12 @@ fn t_br06_a_mismatched_confirmation_is_exit_2() {
 fn t_br06_a_typed_passphrase_round_trips() {
     let p = Project::new().env(ENV);
     let mut b = Pty::spawn(p.path(), &["backup"]);
-    type_secret(&mut b, "Enter encryption password", "long-enough-1");
-    type_secret(&mut b, "Confirm password", "long-enough-1");
+    type_secret(&mut b, "Enter encryption passphrase", "long-enough-1");
+    type_secret(&mut b, "Confirm passphrase", "long-enough-1");
     assert_eq!(b.finish().1, 0);
 
     let mut r = Pty::spawn(p.path(), &["restore", ".env.backup", "--output", "out.env"]);
-    type_secret(&mut r, "Enter decryption password", "long-enough-1");
+    type_secret(&mut r, "Enter decryption passphrase", "long-enough-1");
     assert_eq!(r.finish().1, 0);
     assert_eq!(p.read("out.env"), ENV);
 }

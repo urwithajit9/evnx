@@ -21,10 +21,11 @@ $ evnx backup --password-file pw --keep 1
   Verified: no
 
 ! Important:
-  • Keep your password (or key file) safe — it cannot be recovered
+  • Keep your passphrase (or key file) safe — it cannot be recovered
   • Store the backup in a secure, separate location
   • To restore: evnx restore .env.backup --output .env
   • Test the restore before deleting the original .env
+· This file is encrypted. Committing it is as safe as its passphrase.
 [stderr]
 
   evnx backup  Encrypt and back up your .env file
@@ -45,10 +46,11 @@ $ evnx backup --password-file pw --keep 0
   Verified: no
 
 ! Important:
-  • Keep your password (or key file) safe — it cannot be recovered
+  • Keep your passphrase (or key file) safe — it cannot be recovered
   • Store the backup in a secure, separate location
   • To restore: evnx restore .env.backup --output .env
   • Test the restore before deleting the original .env
+· This file is encrypted. Committing it is as safe as its passphrase.
 [stderr]
 
   evnx backup  Encrypt and back up your .env file

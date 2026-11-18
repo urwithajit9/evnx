@@ -34,7 +34,7 @@ $ evnx spec init --merge
 Next steps:
   1. Read the generated entries — every field is a guess from your files
   2. Mark optional variables with `required = false`
-  3. Commit .evnx.toml; the spec is the contract
+  3. Commit .evnx.toml; it holds the contract
 [stderr]
   config    .evnx.toml (scan.severity=high)
 

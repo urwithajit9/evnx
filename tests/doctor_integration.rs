@@ -117,8 +117,8 @@ fn auto_fix_covers_every_env_file_and_keeps_the_example_committable() {
     // Bound rather than dropped, because Assert is #[must_use].
     let _ = cargo_bin_cmd!("evnx")
         .arg("doctor")
+        .arg("--fix")
         .arg(dir.path())
-        .env("EVNX_AUTO_FIX", "1")
         .assert();
 
     let gitignore = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
@@ -191,9 +191,9 @@ fn fix_repairs_what_it_reports() {
         .success();
 }
 
-/// `EVNX_AUTO_FIX=1` shipped first and is documented; the flag does not replace it.
+/// `EVNX_AUTO_FIX` is no longer read (WP-15): one warning, and no repair.
 #[test]
-fn the_environment_variable_still_works() {
+fn the_environment_variable_is_no_longer_read() {
     let d = unhealthy_project();
 
     cargo_bin_cmd!("evnx")
@@ -201,11 +201,12 @@ fn the_environment_variable_still_works() {
         .arg(d.path())
         .env("EVNX_AUTO_FIX", "1")
         .assert()
-        .success();
+        .stderr(predicate::str::contains(
+            "EVNX_AUTO_FIX is no longer read; pass --fix",
+        ));
 
-    assert!(fs::read_to_string(d.path().join(".gitignore"))
-        .unwrap()
-        .contains(".env*"));
+    let gitignore = fs::read_to_string(d.path().join(".gitignore")).unwrap_or_default();
+    assert!(!gitignore.contains(".env*"), "{gitignore}");
 }
 
 /// Warnings are reported and exit 0; `--strict` is what makes them count.

@@ -8,7 +8,7 @@ $ evnx restore .env.backup --password-file bad --inspect
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-Error: Wrong password or corrupt backup — decryption failed
+Error: Wrong passphrase or corrupt backup — decryption failed
 [exit 2]
   ok: wrong password (exit 2)
 
@@ -64,7 +64,7 @@ $ evnx restore flip.bak --password-file pw --inspect
 
   evnx restore  Decrypt and restore from an encrypted backup
 
-Error: Wrong password or corrupt backup — decryption failed
+Error: Wrong passphrase or corrupt backup — decryption failed
 [exit 2]
   ok: a flipped byte: tamper (stays one message with wrong password) (exit 2)
 

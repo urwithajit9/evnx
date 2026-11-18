@@ -47,7 +47,7 @@ mod check;
 /// [`Verdict::Findings`] (exit 1) only from `--check`, when a newer release
 /// exists (DEC-SF4); without `--check` there is nothing to find. `--list`
 /// exits 0 however many copies it finds (D8).
-pub fn run(check: bool, list: bool, json: bool) -> Result<Verdict> {
+pub fn run(check: bool, list: bool, json: bool, verbose: bool) -> Result<Verdict> {
     if json && !check && !list {
         anyhow::bail!(
             "--format json goes with --check or --list: plain `evnx update` has no data to print"
@@ -60,7 +60,7 @@ pub fn run(check: bool, list: bool, json: bool) -> Result<Verdict> {
     let others = copies::find().iter().filter(|c| !c.this).count();
 
     if check {
-        let verdict = run_check(channel, json, others)?;
+        let verdict = run_check(channel, json, others, verbose)?;
         if !json && !ui::is_quiet() {
             print_others(others);
         }
@@ -309,12 +309,12 @@ fn print_commands_only(channel: Channel) {
 }
 
 #[cfg(feature = "net")]
-fn run_check(channel: Channel, json: bool, others: usize) -> Result<Verdict> {
-    check::run(channel, json, others)
+fn run_check(channel: Channel, json: bool, others: usize, verbose: bool) -> Result<Verdict> {
+    check::run(channel, json, others, verbose)
 }
 
 #[cfg(not(feature = "net"))]
-fn run_check(_channel: Channel, _json: bool, _others: usize) -> Result<Verdict> {
+fn run_check(_channel: Channel, _json: bool, _others: usize, _verbose: bool) -> Result<Verdict> {
     anyhow::bail!(
         "`--check` needs network support, and this build has none.\n\
          \x20 It was compiled without the `cloud` or `migrate` feature — most likely \

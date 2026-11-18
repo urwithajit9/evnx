@@ -203,7 +203,7 @@ pub struct ValidationResult {
     pub summary: Summary,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ValidationConfig {
     pub strict: bool,
     pub fix: bool,
@@ -213,11 +213,27 @@ pub struct ValidationConfig {
     /// ⛔ Off by default, and that default is the whole of S1. See the flag's
     /// own documentation in `cli.rs`.
     pub rotate_weak_secrets: bool,
+    /// The URL, port and email checks by variable name. On by default (as
+    /// warnings); `--no-formats` or `[validate] validate_formats = false`
+    /// turn them off.
     pub validate_formats: bool,
     /// `--fix --dry-run`: work the fixes out, write nothing.
     pub dry_run: bool,
     /// Issue types the caller asked to suppress, from `--ignore`.
     pub ignore_issues: std::collections::HashSet<String>,
+}
+
+impl Default for ValidationConfig {
+    fn default() -> Self {
+        Self {
+            strict: false,
+            fix: false,
+            rotate_weak_secrets: false,
+            validate_formats: true,
+            dry_run: false,
+            ignore_issues: Default::default(),
+        }
+    }
 }
 
 #[cfg(test)]

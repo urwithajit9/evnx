@@ -343,7 +343,7 @@ cat staged.env | evnx validate --env -    # v0.12.0+: stdin, nothing written to 
 evnx parse --format json --values | evnx validate --env - --input-format json   # v0.12.0+
 ```
 
-Detects: missing required variables, placeholder values (`YOUR_KEY_HERE`, `CHANGE_ME`), the boolean string trap (`DEBUG="False"` is truthy in most runtimes), weak secret keys, duplicate keys, `localhost` in a project with Docker files, an env file `.gitignore` does not cover (a warning) or git already tracks (an error), and, with `--validate-formats`, malformed URLs, ports and emails. Warnings alone exit 0 unless `--fail-on warning`.
+Detects: missing required variables, placeholder values (`YOUR_KEY_HERE`, `CHANGE_ME`), the boolean string trap (`DEBUG="False"` is truthy in most runtimes), weak secret keys, duplicate keys, `localhost` in a project with Docker files, an env file `.gitignore` does not cover (a warning) or git already tracks (an error), and malformed URLs, ports and emails (warnings; `--no-formats` turns them off). Warnings alone exit 0 unless `--fail-on warning`.
 
 A file that does not parse lists every problem in it at once (v0.12.0+). `--fix` is
 refused for stdin and JSON input: there is no file to rewrite.
@@ -353,7 +353,9 @@ refused for stdin and JSON input: there is no file to rewrite.
 ### `evnx parse`
 
 **v0.12.0+.** What evnx reads from a `.env`, line by line: each key, its line, and
-whether the value is empty, a placeholder or a secret. **Names only** — values appear
+whether the value is empty, a placeholder or a secret, exported, multiline, overridden by a
+later line (`duplicate`) or built from a `${NAME}` reference (`expands`); the JSON adds how it
+is quoted and its length (`run.schema_version` 2). **Names only** — values appear
 only with `--values`, which a terminal refuses without `--show-values`. Every problem in the
 file is listed, and the exit code is 1 when there is one.
 
@@ -779,8 +781,10 @@ readable env file to 600 (a symlinked one only when its target is inside the pro
 It checks again afterwards and says "not fixed" when the problem remains. It never runs
 git: a tracked file needs `git rm --cached`, which doctor prints.
 
-`EVNX_AUTO_FIX=1` does what `--fix` does, and says so on stderr; `EVNX_OUTPUT_JSON=1`
-does what `--format json` does. The JSON report has `checks[]` (`name`, `description`,
+`EVNX_OUTPUT_JSON=1` does what `--format json` does. `EVNX_AUTO_FIX` is no longer read:
+it prints one warning and repairs nothing, so pass `--fix`. `doctor --all` also runs
+`validate`, `sync --check` and `scan` and reports them in one document (`sections`,
+`run.schema_version` 2). The JSON report has `checks[]` (`name`, `description`,
 `severity`, `details`, `fixable`, `fixed`, `ran`) and `summary`.
 
 Exit codes: 0 healthy (warnings pass unless `--strict`), 1 problems found, 2 could not
@@ -794,10 +798,7 @@ finish (`ran: false`).
 Renders a config file from a template, filling in values from `.env`.
 
 ```bash
-evnx template \
-  --input config.template.yml \
-  --output config.yml \
-  --env .env
+evnx template config.template.yml config.yml --env .env
 ```
 
 The output usually holds real values, so a new file is created readable by you
@@ -807,7 +808,7 @@ template and the env file are never overwritten.
 
 | Option | What it does |
 |---|---|
-| `--input FILE`, `--output FILE` | the template, and where to write (`-` for stdout) |
+| `INPUT OUTPUT` | the template, and where to write (`-` for stdout); `--input FILE --output FILE` still work, but not mixed with the two arguments |
 | `--env FILE`, `--env-name NAME` | the values: `.env` by default, `.env.NAME` with `--env-name` |
 | `--strict` | refuse to write when a placeholder has no value (the default warns, writes it through and exits 0) |
 | `--dry-run` | render and say what would be written; writes nothing, prints no value, leaves `.gitignore` alone |
@@ -858,7 +859,7 @@ evnx restore .env.backup --dry-run           # decrypt and check, write nothing
 evnx restore .env.backup --output .env       # asks before replacing an existing .env
 ```
 
-**The passphrase** comes from `--password-file`, then
+**The passphrase** comes from `--key-file`, then
 `EVNX_PASSWORD`, then a prompt. A new backup needs at least 8 characters from any
 of them; `restore` takes any length, so an older backup made with a shorter one
 still opens. A key file is trimmed of surrounding whitespace, or Base64-encoded
@@ -881,7 +882,7 @@ In CI:
 
 ```bash
 EVNX_PASSWORD="$BACKUP_PASSPHRASE" evnx backup --output "backups/env-$(date +%F).backup" --keep 0 --verify
-evnx restore backups/env-2026-10-20.backup --password-file /run/secrets/backup-key --yes
+evnx restore backups/env-2026-10-20.backup --key-file /run/secrets/backup-key --yes
 ```
 
 | Exit | `backup` | `restore` |
@@ -901,7 +902,7 @@ other's files:
 | Where the ciphertext lives | a file you keep | the evnx server, as versions |
 | Secret | a passphrase or key file you choose | your account's master password |
 | History | `--keep N` numbered files | server versions: `--version N`, `history`, `diff` |
-| Non-interactive | `--password-file`, `EVNX_PASSWORD` | `--password-stdin` |
+| Non-interactive | `--key-file`, `EVNX_PASSWORD` | `--password-stdin` |
 | Replacing a file | `--yes`, keeps `.bak` | `--yes`, keeps `.bak` |
 | Declining the question | exit 4, nothing changed | exit 4, nothing changed (v0.12.0+) |
 | Works with no account or network | yes | no |

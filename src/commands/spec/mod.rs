@@ -333,7 +333,7 @@ pub fn run(source: Source, stdout: bool, merge: bool, force: bool, verbose: bool
     ui::print_next_steps(&[
         "Read the generated entries — every field is a guess from your files",
         "Mark optional variables with `required = false`",
-        "Commit .evnx.toml; the spec is the contract",
+        "Commit .evnx.toml; it holds the contract",
     ]);
     ui::print_docs_hint(&docs::SPEC);
     Ok(())

@@ -132,6 +132,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   accepted for vercel; `--skip-existing` still is not) adds `--force`. A script
   that re-runs the printed commands to change a value passes `--overwrite`.
   The output also points to `evnx platform push`, which talks to Vercel itself.
+- **`validate` runs the URL, port and email checks by default, as warnings**
+  (WP-15). A name ending in `_URL`, `_URI` or `_ENDPOINT` should hold a URL, one
+  with `PORT` a port from 1 to 65535, one with `EMAIL` an address. These ran only
+  with `--validate-formats`; now every run reports them. They are always warnings
+  (the port finding was an error), so a default `validate` still exits 0 for
+  them; `--fail-on warning` exits 1. A name declared in `[vars]` is checked
+  against its declared `format` instead, with or without these. `--no-formats`
+  (or `[validate] validate_formats = false`) turns them off; `--validate-formats`
+  is still accepted and changes nothing.
+- **`EVNX_AUTO_FIX` is no longer read** (WP-15). `doctor` prints one warning,
+  "EVNX_AUTO_FIX is no longer read; pass --fix", and repairs nothing. A CI image
+  that exported it to repair on every run passes `doctor --fix`.
+- **`parse --format json` is `run.schema_version` 2** (WP-15). Additive: each
+  entry gains `quoted`, `exported`, `multiline`, `duplicate`, `expands` and
+  `length`; no key changed or went. `doctor --all --format json` is
+  `schema_version` 2 as well, and only with the new flag; `doctor` alone is
+  still 1.
+- **`restore --output -` writes the decrypted text to stdout** (WP-15). It was
+  refused. Status lines go to stderr, nothing is written to disk, and a terminal
+  refuses it unless `--show-values`, as `parse --values` does.
 
 ### Breaking: one flag vocabulary (WP-8)
 
@@ -152,8 +172,6 @@ Every command now spells the same idea the same way. The old spellings are remov
 | `evnx add blueprint` | `-p, --path` | `-C/--dir` |
 | `evnx add custom` | `-p, --path` | `-C/--dir` |
 | `evnx remove` | `-p, --path` | `-C/--dir` |
-| `evnx backup` | `--key-file` | `--password-file` |
-| `evnx restore` | `--key-file` | `--password-file` |
 | `evnx restore` | `--force` | `--yes` |
 | `evnx parse` | `--format text` | `--format pretty` |
 | `evnx parse` | `-y, --yes` | `--show-values` |
@@ -196,6 +214,13 @@ New in the same change:
 
 ### Changed
 
+- **`--key-file` is the name `backup` and `restore` show** (WP-15), and
+  `--password-file` is a hidden alias that still works; "passphrase" in every
+  message instead of "password". The earlier removal of `--key-file` (WP-8, in
+  the table below) is undone. `spec`'s help and messages say "contract".
+- **The first lines of `validate`, `spec check` and `sync --check` help say how
+  they differ**: "`validate` checks everything; `spec check` and `sync --check`
+  are fast name-only checks for hooks."
 - **`run` and `cloud run` hand the terminal to the command (Unix).** Without
   masking, the command now replaces evnx (`exec`): signals, the terminal and
   the exit status are the command's own, and evnx's copy of the secrets is
@@ -257,6 +282,9 @@ new `network` field below.
 
 ### Fixed
 
+- **A file saved as UTF-16 no longer reads as "stream did not contain valid
+  UTF-8"** (WP-15), which `parse` and `validate` gave for what PowerShell's `>`
+  writes. The message names the file and the fix.
 - **`SIGTERM`, `SIGHUP` and `SIGQUIT` sent to `evnx run` or `evnx cloud run`
   no longer leave the command running.** evnx died and the command was
   orphaned.
@@ -317,6 +345,41 @@ new `network` field below.
 
 ### Added
 
+- **`doctor --all`** (WP-15) runs the doctor checks, then `validate`, `sync
+  --check` (both ways) and `scan`, as one report with one verdict: 2 if any part
+  could not run, else 1 if any found something, else 0. A part with nothing to
+  read (no template, no env file) is skipped with a note. `--fix` repairs what
+  `doctor --fix` repairs and nothing more. JSON: one `run` header and a
+  `sections` object (`doctor`, `validate`, `sync`, `scan`), each with `status`
+  and its own `report`.
+- **`template INPUT OUTPUT`** (WP-15), with `-` for stdout. `--input` and
+  `--output` still work; mixing the two forms is a usage error.
+- **`parse` says more without showing a value** (WP-15): `exported`,
+  `multiline`, `duplicate` (a later line sets it again), `expands` (a `${NAME}`
+  or `$NAME` reference, never in single quotes), and in JSON `quoted` and
+  `length`.
+- **A UTF-16 env file is named, not misread** (WP-15): "<file> is UTF-16. Save
+  it as UTF-8 (in PowerShell: `Set-Content -Encoding utf8`).", exit 2, for every
+  command that reads an env file.
+- **`backup` says the file is encrypted and offers `--gitignore` /
+  `--no-gitignore`** (WP-15): "This file is encrypted. Committing it is as safe
+  as its passphrase." `--gitignore` adds the backup to `.gitignore`;
+  `--no-gitignore` leaves it alone and drops the line.
+- **A weak new passphrase gets a hint** (WP-15): under 12 characters, only
+  digits, one repeated character or a common word prints "This passphrase is
+  weak: <reason>. A backup can be attacked offline. 4 random words is
+  stronger." once, on stderr, naming the reason and never the passphrase. It
+  never changes the exit code, and a `--key-file` run prints it only at a
+  terminal.
+- **`restore`'s `<output>.restored` file is private** (WP-15): mode 600 even
+  when an older copy was wider, the same git-ignore check as the main output,
+  and its full path is printed with "This file holds plaintext secrets."
+- **`update --check` uses `GITHUB_TOKEN` (or `GH_TOKEN`)** (WP-15) as a bearer
+  for the GitHub API, and falls back to the `releases/latest` redirect (no
+  quota, no token sent) when the API fails or rate-limits. `-v` says which route
+  answered; the token is never printed.
+- **`update --list` shows the running copy** (WP-15) even when it is on no
+  `PATH` and in no install folder (`./target/release/evnx`), marked "this one".
 - **`convert --from json|dotenv`, `--to dotenv`, and `-` for standard input**
   (WP-14). `evnx convert --from json --to dotenv --env vars.json` reads a flat
   `{"KEY": "value"}` object (the shape `validate --input-format json` reads;

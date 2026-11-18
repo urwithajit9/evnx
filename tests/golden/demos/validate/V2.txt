@@ -29,7 +29,19 @@ $ evnx validate
      →  Use false or 0 for proper boolean handling
      ·  fixable with --fix
 
-  3 errors  ·  2 warnings
+  !  DATABASE_URL does not appear to be a valid URL
+     ./.env
+     →  Expected format: https://example.com/path
+
+  !  API_PORT is not a valid port number (1-65535)
+     ./.env
+     →  Expected format: 8080
+
+  !  ADMIN_EMAIL does not appear to be a valid email
+     ./.env
+     →  Expected format: user@example.com
+
+  3 errors  ·  5 warnings
 
 Next steps:
   1. Review and fix the errors above

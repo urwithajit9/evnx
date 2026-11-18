@@ -29,11 +29,16 @@ use crate::core::http;
 use crate::core::verdict::Verdict;
 use crate::utils::ui;
 
-/// Where the tag lives. Unauthenticated, and no identifiers are sent.
+/// Where the tag lives. Unauthenticated unless `GITHUB_TOKEN` (or `GH_TOKEN`)
+/// is set, and no other identifiers are sent.
 const LATEST_RELEASE: &str = "https://api.github.com/repos/urwithajit9/evnx/releases/latest";
 
 /// Shown when a release carries no `html_url`.
 const RELEASES_PAGE: &str = "https://github.com/urwithajit9/evnx/releases/latest";
+
+/// The page whose redirect names the latest tag: `…/releases/latest` answers
+/// `302 Location: …/releases/tag/vX.Y.Z`, and costs no API quota.
+const LATEST_REDIRECT: &str = "https://github.com/urwithajit9/evnx/releases/latest";
 
 /// Short, because this is interactive and a hang is worse than a failure.
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -64,7 +69,34 @@ fn latest_release_url() -> String {
     LATEST_RELEASE.to_string()
 }
 
-pub fn run(channel: Channel, json: bool, other_copies: usize) -> Result<Verdict> {
+/// Where the redirect fallback asks. A **debug** build with `EVNX_UPDATE_URL`
+/// set asks only what `EVNX_UPDATE_REDIRECT_URL` names (none when unset), so
+/// the tests never reach the real site.
+fn redirect_url() -> Option<String> {
+    #[cfg(debug_assertions)]
+    {
+        if std::env::var_os("EVNX_UPDATE_URL").is_some_and(|v| !v.is_empty()) {
+            return std::env::var("EVNX_UPDATE_REDIRECT_URL")
+                .ok()
+                .filter(|u| !u.is_empty());
+        }
+        if let Ok(url) = std::env::var("EVNX_UPDATE_REDIRECT_URL") {
+            if !url.is_empty() {
+                return Some(url);
+            }
+        }
+    }
+    Some(LATEST_REDIRECT.to_string())
+}
+
+/// The token for the API request, if one is set. Never printed, never logged.
+fn token() -> Option<String> {
+    ["GITHUB_TOKEN", "GH_TOKEN"]
+        .iter()
+        .find_map(|k| std::env::var(k).ok().filter(|v| !v.trim().is_empty()))
+}
+
+pub fn run(channel: Channel, json: bool, other_copies: usize, verbose: bool) -> Result<Verdict> {
     let quiet = ui::is_quiet();
 
     // Say what is about to happen before it happens: this is the only network
@@ -78,7 +110,7 @@ pub fn run(channel: Channel, json: bool, other_copies: usize) -> Result<Verdict>
         );
     }
 
-    let report = Report::new(env!("CARGO_PKG_VERSION"), &fetch()?, channel);
+    let report = Report::new(env!("CARGO_PKG_VERSION"), &fetch(verbose)?, channel);
     if json {
         crate::core::json::emit(&report.payload(other_copies), SCHEMA, None)?;
     } else if quiet {
@@ -93,8 +125,37 @@ pub fn run(channel: Channel, json: bool, other_copies: usize) -> Result<Verdict>
     Ok(report.verdict())
 }
 
-/// The one request: the latest release, or why there is no answer.
-fn fetch() -> Result<Release> {
+/// The latest release: from the API, and when that cannot answer (rate limit,
+/// any other failure), from the redirect, which has no quota. `-v` says which
+/// route answered.
+fn fetch(verbose: bool) -> Result<Release> {
+    let api = match fetch_api() {
+        Ok(release) => {
+            if verbose {
+                ui::verbose_stderr("latest release: answered by the API");
+            }
+            return Ok(release);
+        }
+        Err(e) => e,
+    };
+    let Some(url) = redirect_url() else {
+        return Err(api);
+    };
+    match fetch_redirect(&url) {
+        Ok(release) => {
+            if verbose {
+                ui::verbose_stderr(format!("the API did not answer ({api:#})"));
+                ui::verbose_stderr("latest release: answered by the releases/latest redirect");
+            }
+            Ok(release)
+        }
+        // The first failure is the one worth reading; the fallback is a spare.
+        Err(_) => Err(api),
+    }
+}
+
+/// The API request. With a token it is sent as a bearer, to this one URL.
+fn fetch_api() -> Result<Release> {
     let client = http::client(TIMEOUT, None).context("building the HTTP client")?;
 
     let url = latest_release_url();
@@ -106,24 +167,36 @@ fn fetch() -> Result<Release> {
                 .map(|h| u.port().map_or(h.to_string(), |p| format!("{h}:{p}")))
         })
         .unwrap_or_else(|| "api.github.com".to_string());
-    let resp = client.get(url).send().map_err(|e| {
+    let mut request = client.get(url);
+    let authenticated = if let Some(token) = token() {
+        request = request.bearer_auth(token);
+        true
+    } else {
+        false
+    };
+    let resp = request.send().map_err(|e| {
         anyhow::anyhow!(
             "could not reach {host}: {}",
             http::transport_reason(&e, TIMEOUT)
         )
     })?;
 
-    // ⚠️ 403 here is almost always the unauthenticated rate limit — 60 requests an
-    // hour per IP — not a permissions problem. Saying "forbidden" would send someone
-    // looking for a token they do not need.
+    // ⚠️ 403 here is almost always the rate limit — 60 requests an hour per IP
+    // without a token — not a permissions problem. Saying "forbidden" would send
+    // someone looking for a token they may not need.
     if resp.status() == reqwest::StatusCode::FORBIDDEN
         || resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS
     {
         anyhow::bail!(
             "api.github.com is rate-limiting this address (HTTP {}).\n\
-             \x20 Unauthenticated requests are capped at 60 an hour. Wait, or check \
+             \x20 {} Wait, or check \
              https://github.com/urwithajit9/evnx/releases/latest in a browser.",
-            resp.status().as_u16()
+            resp.status().as_u16(),
+            if authenticated {
+                "The token in GITHUB_TOKEN did not lift it."
+            } else {
+                "Requests without a token are capped at 60 an hour; set GITHUB_TOKEN to raise it."
+            }
         );
     }
     if !resp.status().is_success() {
@@ -135,6 +208,43 @@ fn fetch() -> Result<Release> {
 
     resp.json()
         .context("reading the release information from api.github.com")
+}
+
+/// `GET <releases/latest>` without following the redirect, and the tag read from
+/// `Location: …/tag/vX.Y.Z`. No token is sent: this goes to github.com, not
+/// the API.
+fn fetch_redirect(url: &str) -> Result<Release> {
+    let client = http::client_with(TIMEOUT, None, false).context("building the HTTP client")?;
+    let resp = client.get(url).send().map_err(|e| {
+        anyhow::anyhow!(
+            "could not reach {url}: {}",
+            http::transport_reason(&e, TIMEOUT)
+        )
+    })?;
+    let location = resp
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .filter(|_| resp.status().is_redirection())
+        .ok_or_else(|| anyhow::anyhow!("{url} did not redirect to a release"))?;
+    release_from_location(location)
+        .ok_or_else(|| anyhow::anyhow!("{url} redirected to something that is not a release tag"))
+}
+
+/// `https://github.com/o/r/releases/tag/v0.15.0` -> that release.
+fn release_from_location(location: &str) -> Option<Release> {
+    let tag = location
+        .split_once("/releases/tag/")?
+        .1
+        .split(['?', '#'])
+        .next()?
+        .trim_end_matches('/');
+    (tag.starts_with(|c: char| c == 'v' || c.is_ascii_digit()) && !tag.contains('/')).then(|| {
+        Release {
+            tag_name: tag.to_string(),
+            html_url: Some(location.to_string()),
+        }
+    })
 }
 
 /// The answer, apart from how it is printed.
@@ -328,6 +438,17 @@ mod tests {
     fn four_parts_and_a_pre_release_latest() {
         assert_eq!(cmp("0.7.0", "0.7.0.1"), "same");
         assert_eq!(cmp("0.7.0", "0.7.1-rc1"), "behind");
+    }
+
+    /// The redirect names the tag; a path that is not a tag names nothing.
+    #[test]
+    fn wp15_check_redirect_parses_tag() {
+        let r = release_from_location("https://github.com/urwithajit9/evnx/releases/tag/v0.15.1")
+            .unwrap();
+        assert_eq!(r.tag_name, "v0.15.1");
+        assert!(release_from_location("https://github.com/urwithajit9/evnx/releases").is_none());
+        assert!(release_from_location("https://github.com/x/y/releases/tag/").is_none());
+        assert!(release_from_location("https://github.com/x/y/releases/tag/v1/../x").is_none());
     }
 
     fn release(tag: &str, url: Option<&str>) -> Release {

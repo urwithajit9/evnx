@@ -3,7 +3,7 @@
 //!
 //! Highest priority first:
 //!
-//! 1. a password file (`--password-file`),
+//! 1. a key file (`--key-file`; `--password-file` is a hidden alias),
 //! 2. the `EVNX_PASSWORD` environment variable,
 //! 3. a hidden prompt, when there is a terminal to show it on.
 //!
@@ -58,7 +58,7 @@ impl Purpose {
 /// The typed confirmation did not match the passphrase. `backup` reports it
 /// as its own exit code 3.
 #[derive(Debug, thiserror::Error)]
-#[error("Passwords do not match")]
+#[error("Passphrases do not match")]
 pub struct Mismatch;
 
 /// The passphrase for `purpose`, from the first source that is set.
@@ -78,13 +78,73 @@ pub fn resolve(
     example: &str,
     verbose: bool,
 ) -> Result<Zeroizing<String>> {
-    if let Some(kf) = key_file {
-        return from_key_file(kf, purpose, verbose);
+    let (pw, from_file) = if let Some(kf) = key_file {
+        (from_key_file(kf, purpose, verbose)?, true)
+    } else if let Ok(pw) = std::env::var(ENV_VAR) {
+        (from_env(Zeroizing::new(pw), purpose, verbose)?, false)
+    } else {
+        (from_prompt(purpose, example, verbose)?, false)
+    };
+    if purpose == Purpose::Encrypt {
+        // A key file is a script's input: nobody is there to read the hint,
+        // unless a person runs it from a terminal.
+        if !from_file || crate::utils::term::interactive() {
+            if let Some(reason) = weakness(&pw) {
+                eprintln!(
+                    "{} This passphrase is weak: {reason}. A backup can be attacked offline. \
+                     4 random words is stronger.",
+                    ui::glyph::WARN
+                );
+            }
+        }
     }
-    if let Ok(pw) = std::env::var(ENV_VAR) {
-        return from_env(Zeroizing::new(pw), purpose, verbose);
+    Ok(pw)
+}
+
+/// Why a new passphrase is weak, in words that never carry it. A hint, not a
+/// refusal ([`MIN_LEN`] is the refusal).
+///
+/// Only digits, one character repeated, a common word (with digits or `!`
+/// after it), or under 12 characters.
+pub fn weakness(pw: &str) -> Option<&'static str> {
+    const COMMON: [&str; 20] = [
+        "password",
+        "passphrase",
+        "letmein",
+        "welcome",
+        "qwerty",
+        "qwertyuiop",
+        "iloveyou",
+        "admin",
+        "administrator",
+        "secret",
+        "changeme",
+        "monkey",
+        "dragon",
+        "football",
+        "baseball",
+        "sunshine",
+        "master",
+        "trustno1",
+        "abc123",
+        "evnx",
+    ];
+    let chars: Vec<char> = pw.chars().collect();
+    if chars.iter().all(char::is_ascii_digit) {
+        return Some("it is only digits");
     }
-    from_prompt(purpose, example, verbose)
+    if chars.windows(2).all(|w| w[0] == w[1]) {
+        return Some("it is one character repeated");
+    }
+    let lower = pw.to_lowercase();
+    let stem = lower.trim_end_matches(|c: char| c.is_ascii_digit() || c == '!');
+    if COMMON.contains(&stem) {
+        return Some("it is a common word");
+    }
+    if chars.len() < 12 {
+        return Some("it is under 12 characters");
+    }
+    None
 }
 
 /// Read a key file as the passphrase string Argon2id is given.
@@ -156,7 +216,7 @@ fn from_key_file(kf: &str, purpose: Purpose, verbose: bool) -> Result<Zeroizing<
     }
     if verbose {
         ui::verbose_stderr(format!(
-            "Password source: key file {kf} ({} characters)",
+            "Passphrase source: key file {kf} ({} characters)",
             pw.chars().count()
         ));
     }
@@ -195,11 +255,11 @@ fn from_env(pw: Zeroizing<String>, purpose: Purpose, verbose: bool) -> Result<Ze
         floor(ENV_VAR, &pw, true)?;
     }
     ui::warning(format!(
-        "Reading password from {ENV_VAR} environment variable.\n  \
+        "Reading passphrase from {ENV_VAR} environment variable.\n  \
          Less secure than interactive prompt — avoid in shared environments."
     ));
     if verbose {
-        ui::verbose_stderr(format!("Password source: {ENV_VAR} env var"));
+        ui::verbose_stderr(format!("Passphrase source: {ENV_VAR} env var"));
     }
     Ok(pw)
 }
@@ -211,38 +271,40 @@ fn from_prompt(purpose: Purpose, example: &str, verbose: bool) -> Result<Zeroizi
         return Err(anyhow!(
             "there is no terminal to ask for the passphrase on.\n\n\
              \x20 Give it without a prompt, from a file or the environment:\n\
-             \x20   {example} --password-file <path>\n\
+             \x20   {example} --key-file <path>\n\
              \x20   {ENV_VAR}=… {example}"
         ));
     }
     if verbose {
-        ui::verbose_stderr("Password source: interactive prompt");
+        ui::verbose_stderr("Passphrase source: interactive prompt");
     }
 
     let pw = Zeroizing::new(
         Password::new()
-            .with_prompt(format!("Enter {} password", purpose.word()))
+            .with_prompt(format!("Enter {} passphrase", purpose.word()))
             .interact()?,
     );
     if pw.is_empty() {
-        return Err(anyhow!("Password must not be empty"));
+        return Err(anyhow!("Passphrase must not be empty"));
     }
     if purpose == Purpose::Decrypt {
         return Ok(pw);
     }
 
-    floor("Password", &pw, false)?;
+    floor("Passphrase", &pw, false)?;
     if verbose {
-        ui::verbose_stderr("Password accepted — awaiting confirmation");
+        ui::verbose_stderr("Passphrase accepted — awaiting confirmation");
     }
-    let mut confirm = Password::new().with_prompt("Confirm password").interact()?;
+    let mut confirm = Password::new()
+        .with_prompt("Confirm passphrase")
+        .interact()?;
     let matches = *pw == confirm;
     confirm.zeroize();
     if !matches {
         return Err(Mismatch.into());
     }
     if verbose {
-        ui::verbose_stderr("Passwords match");
+        ui::verbose_stderr("Passphrases match");
     }
     Ok(pw)
 }
@@ -397,6 +459,19 @@ mod tests {
     }
 
     #[test]
+    fn weak_passphrases_are_named_without_being_shown() {
+        assert_eq!(weakness("12345678901234"), Some("it is only digits"));
+        assert_eq!(
+            weakness("aaaaaaaaaaaaaa"),
+            Some("it is one character repeated")
+        );
+        assert_eq!(weakness("Password123"), Some("it is a common word"));
+        assert_eq!(weakness("tr0ub4dor"), Some("it is under 12 characters"));
+        assert_eq!(weakness("correct horse battery staple"), None);
+        assert_eq!(weakness("x7Gq-92mLp0aZw"), None);
+    }
+
+    #[test]
     fn the_floor_counts_characters_and_names_its_source() {
         assert!(floor("EVNX_PASSWORD", "äöüßäöüß", true).is_ok());
         let e = floor("EVNX_PASSWORD", "abc", true).unwrap_err().to_string();
@@ -404,8 +479,8 @@ mod tests {
         assert!(e.contains("still restores"));
         // The prompt's message is the one it always printed.
         assert_eq!(
-            floor("Password", "abc", false).unwrap_err().to_string(),
-            "Password must be at least 8 characters (got 3)"
+            floor("Passphrase", "abc", false).unwrap_err().to_string(),
+            "Passphrase must be at least 8 characters (got 3)"
         );
     }
 

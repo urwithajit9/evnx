@@ -965,11 +965,17 @@ pub fn check_localhost_docker(
         .collect()
 }
 
-/// Check 7: Format validation (URL, port, email)
+/// Check 7: Format validation (URL, port, email), by the variable's name.
+///
+/// On by default, and always a warning: a name heuristic must not fail a build
+/// at the default `--fail-on error`. A name declared in `[vars]` is skipped,
+/// because its declared `format` is authoritative (and is checked whether or
+/// not this runs).
 pub fn check_formats(
     env_vars: &IndexMap<String, String>,
     env_path: &str,
     validate: bool,
+    spec: &Spec,
     ignore: &HashSet<String>,
 ) -> Vec<Issue> {
     if !validate {
@@ -979,6 +985,9 @@ pub fn check_formats(
     let mut issues = Vec::new();
 
     for (key, value) in env_vars.iter() {
+        if spec.get(key).is_some() {
+            continue;
+        }
         let key_upper = key.to_uppercase();
 
         // URL validation
@@ -1007,7 +1016,7 @@ pub fn check_formats(
             && !validate_port(value)
         {
             issues.push(Issue {
-                severity: Severity::Error,
+                severity: Severity::Warning,
                 issue_type: IssueType::InvalidPort,
                 variable: key.clone(),
                 message: format!("{} is not a valid port number (1-65535)", key),
