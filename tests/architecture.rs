@@ -539,6 +539,11 @@ const EXPOSE_ALLOW: &[(&str, &str)] = &[
     ("formats/", "a converter's job is to write values in another syntax"),
     ("platform/", "reads and pushes values to a hosting platform; tokens go in headers"),
     ("cloud/", "encryption, upload, credentials file and request bodies"),
+    ("commands/get.rs", "get --reveal prints the one value asked for; --json carries it"),
+    ("commands/parse.rs", "parse reports a value's length, class and, with --values, the value"),
+    ("commands/convert.rs", "convert reads the values it rewrites"),
+    ("commands/remove/edit.rs", "remove reads values to find references to a removed key"),
+    ("commands/restore/", "restore reads a refused line to name the key it looks like"),
 ];
 
 /// `expose()` is the only way to read a `Secret`. It may appear only in files

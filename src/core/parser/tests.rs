@@ -1027,7 +1027,7 @@ fn b1_duplicates_are_kept_and_the_last_one_counts() {
     let ks: Vec<(&str, &str, usize)> = doc
         .entries
         .iter()
-        .map(|e| (e.key.as_str(), e.value.as_str(), e.span.line))
+        .map(|e| (e.key.as_str(), e.value.expose(), e.span.line))
         .collect();
     assert_eq!(ks, [("K", "sk_live_x", 1), ("OTHER", "1", 2), ("K", "", 3)]);
     // First position, last value and line: what the parser always returned.
@@ -1041,7 +1041,7 @@ fn b1_entries_carry_their_form_and_comments_are_kept() {
         .parse_document("# top\nexport A='x'\nB=\"l1\nl2\"\n  #   indented\nC=plain\n");
     let a = &doc.entries[0];
     assert!(a.exported);
-    assert_eq!((a.quote, a.raw.as_str()), (Some('\''), "export A='x'"));
+    assert_eq!((a.quote, a.raw.expose()), (Some('\''), "export A='x'"));
     let b = &doc.entries[1];
     assert_eq!(
         b.span,
@@ -1051,7 +1051,7 @@ fn b1_entries_carry_their_form_and_comments_are_kept() {
         }
     );
     assert_eq!(
-        (b.value.as_str(), b.raw.as_str()),
+        (b.value.expose(), b.raw.expose()),
         ("l1\nl2", "B=\"l1\nl2\"")
     );
     assert_eq!(doc.entries[2].quote, None);

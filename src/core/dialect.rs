@@ -155,7 +155,7 @@ fn case_of_entry(doc: &Document, i: usize) -> Option<&'static str> {
 /// value, so `X=#ff0000` there is not an assignment for any reader.
 fn classify(e: &Entry) -> Option<&'static str> {
     // A key cannot contain `=`, so the first one ends it.
-    let (_, raw) = e.raw.split_once('=')?;
+    let (_, raw) = e.raw.expose().split_once('=')?;
     let v = raw.trim_start();
     match e.quote {
         Some('"') => return v.contains("${").then_some("expansion"),
@@ -182,7 +182,7 @@ fn classify(e: &Entry) -> Option<&'static str> {
 /// Whether an entry holds `$$`, which Compose reads as one `$` unquoted and in
 /// double quotes (D11). Checked beside [`classify`]: `${A}$$` is both cases.
 fn has_dollar_dollar(e: &Entry) -> bool {
-    let Some((_, raw)) = e.raw.split_once('=') else {
+    let Some((_, raw)) = e.raw.expose().split_once('=') else {
         return false;
     };
     let value = match e.quote {

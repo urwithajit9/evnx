@@ -106,7 +106,13 @@ fn lossy(doc: &Document, out: &mut String) {
         };
         let quote = e.quote.map(|q| format!(" quote={q}")).unwrap_or_default();
         let export = if e.exported { " export" } else { "" };
-        writeln!(out, "  {span} {} = {:?}{quote}{export}", e.key, e.value).unwrap();
+        writeln!(
+            out,
+            "  {span} {} = {:?}{quote}{export}",
+            e.key,
+            e.value.expose()
+        )
+        .unwrap();
     }
     for c in &doc.comments {
         writeln!(out, "  L{} # {:?}", c.line, c.text).unwrap();

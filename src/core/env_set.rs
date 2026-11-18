@@ -94,7 +94,7 @@ pub fn current(content: &str, name: &str, label: &str) -> Result<Option<Current>
     let doc = read(content, label)?;
     let all: Vec<&Entry> = doc.entries.iter().filter(|e| e.key == name).collect();
     Ok(all.last().map(|e| Current {
-        value: plain(&e.value),
+        value: plain(e.value.expose()),
         line: e.span.line,
         assignments: all.len(),
     }))
@@ -155,7 +155,7 @@ pub fn set(content: &str, name: &str, value: &str, label: &str) -> Result<Edit> 
     Ok(Edit {
         text,
         added: target.is_none(),
-        old: target.map(|i| plain(&doc.entries[i].value)),
+        old: target.map(|i| plain(doc.entries[i].value.expose())),
         line,
         assignments,
     })

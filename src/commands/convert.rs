@@ -626,7 +626,11 @@ fn read_input(config: &ConvertConfig) -> Result<crate::core::parser::EnvFile> {
         ConvertFrom::Json => {
             let doc = crate::core::envjson::document_from_json(&text)
                 .with_context(|| format!("Failed to read {origin} as --from json"))?;
-            let vars = doc.entries.into_iter().map(|e| (e.key, e.value)).collect();
+            let vars = doc
+                .entries
+                .into_iter()
+                .map(|e| (e.key, e.value.expose().to_string()))
+                .collect();
             (vars, Default::default())
         }
         ConvertFrom::Dotenv => parser

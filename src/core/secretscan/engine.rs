@@ -245,12 +245,12 @@ fn scan_env(doc: &Document, ctx: &Context, out: &mut Vec<Found>) {
     }
     for e in &doc.entries {
         let shadowed = lines.get(&e.key) != Some(&e.span.line);
-        if shadowed && vars.get(&e.key) != Some(&e.value) {
-            dropped.push((e.span.line, &e.key, &e.value));
+        if shadowed && vars.get(&e.key).map(String::as_str) != Some(e.value.expose()) {
+            dropped.push((e.span.line, &e.key, e.value.expose()));
         }
     }
     for p in &doc.problems {
-        for (i, line) in p.raw.lines().enumerate() {
+        for (i, line) in p.raw.expose().lines().enumerate() {
             if let Some((k, v)) = line.split_once('=') {
                 let k = k.trim();
                 let k = strip_export(k).unwrap_or(k);

@@ -93,7 +93,7 @@ pub fn run(opts: Options) -> Result<Verdict> {
         return Ok(Verdict::Clean);
     }
 
-    let secret = classify::holds_secret(&opts.name, &entry.value);
+    let secret = classify::holds_secret(&opts.name, entry.value.expose());
     if secret && !opts.reveal {
         if opts.json {
             emit(&opts, &file, true, true, None)?;
@@ -106,11 +106,11 @@ pub fn run(opts: Options) -> Result<Verdict> {
         )));
     }
     if opts.json {
-        emit(&opts, &file, true, secret, Some(&entry.value))?;
+        emit(&opts, &file, true, secret, Some(entry.value.expose()))?;
     } else {
         // The value and one line ending: `$(evnx get X)` strips it, and a
         // shell or `read` sees a whole line.
-        let mut out = entry.value.clone().into_bytes();
+        let mut out = entry.value.expose().as_bytes().to_vec();
         out.push(b'\n');
         crate::utils::term::write_stdout(&out)
             .map_err(|e| anyhow::anyhow!("writing to stdout: {e}"))?;

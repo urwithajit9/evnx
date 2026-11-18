@@ -57,9 +57,9 @@ pub fn document_from_json(text: &str) -> Result<Document> {
         }
         doc.entries.push(Entry {
             key,
-            value,
+            value: value.into(),
             span: Span::line(0),
-            raw: String::new(),
+            raw: String::new().into(),
             exported: false,
             quote: None,
         });

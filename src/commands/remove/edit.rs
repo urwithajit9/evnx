@@ -258,7 +258,7 @@ pub fn dangling(content: &str, removed: &BTreeSet<String>) -> Vec<(usize, String
     let defined: BTreeSet<&str> = kept.clone().map(|e| e.key.as_str()).collect();
     let mut out = Vec::new();
     for e in kept.filter(|e| e.quote != Some('\'')) {
-        for name in crate::core::parser::references(&e.value) {
+        for name in crate::core::parser::references(e.value.expose()) {
             if removed.contains(&name) && !defined.contains(name.as_str()) {
                 out.push((e.span.line, e.key.clone(), name));
             }

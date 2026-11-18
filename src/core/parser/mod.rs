@@ -598,12 +598,12 @@ impl Parser {
                 };
                 doc.entries.push(Entry {
                     key: o.key,
-                    value,
+                    value: value.into(),
                     span: Span {
                         line: o.start,
                         end_line: line_num,
                     },
-                    raw: o.raw,
+                    raw: o.raw.into(),
                     exported: o.exported,
                     quote: Some(o.quote),
                 });
@@ -635,7 +635,7 @@ impl Parser {
                 Err(error) => {
                     doc.problems.push(Problem {
                         span: Span::line(line_num),
-                        raw: raw_line.to_string(),
+                        raw: raw_line.into(),
                         error,
                     });
                     continue;
@@ -667,16 +667,16 @@ impl Parser {
                             .filter(|c| matches!(c, '"' | '\'' | '`'));
                         doc.entries.push(Entry {
                             key,
-                            value,
+                            value: value.into(),
                             span: Span::line(line_num),
-                            raw: raw_line.to_string(),
+                            raw: raw_line.into(),
                             exported,
                             quote,
                         });
                     }
                     Err(error) => doc.problems.push(Problem {
                         span: Span::line(line_num),
-                        raw: raw_line.to_string(),
+                        raw: raw_line.into(),
                         error,
                     }),
                 },
@@ -690,7 +690,7 @@ impl Parser {
                     line: o.start,
                     end_line: last_line,
                 },
-                raw: o.raw,
+                raw: o.raw.into(),
                 error: ParseError::UnterminatedString { line: o.start },
             });
         }
@@ -707,7 +707,7 @@ impl Parser {
             // noncharacter. `allow_expansion` is a library setting no CLI flag
             // reaches, so only a consumer of the crate could hit this.
             for e in &mut doc.entries {
-                e.value = strip_markers(&e.value);
+                e.value = strip_markers(e.value.expose()).into();
             }
         }
 

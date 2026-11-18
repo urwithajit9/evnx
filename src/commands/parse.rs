@@ -117,18 +117,18 @@ fn report(doc: &Document, file: String, values: bool) -> Report {
                     Some(_) => "backtick",
                 },
                 exported: e.exported,
-                multiline: e.raw.contains('\n'),
+                multiline: e.raw.expose().contains('\n'),
                 duplicate: doc.entries[i + 1..].iter().any(|later| later.key == e.key),
-                expands: e.quote != Some('\'') && expands(&e.raw),
-                length: e.value.chars().count(),
+                expands: e.quote != Some('\'') && expands(e.raw.expose()),
+                length: e.value.char_count(),
                 key: e.key.clone(),
                 line: e.span.line,
                 empty,
                 // `validate`'s question, Strict: empty is its own flag.
                 placeholder: !empty
-                    && classify::is_placeholder(&e.key, &e.value, Strictness::Strict),
-                secret: classify::holds_secret(&e.key, &e.value),
-                value: values.then(|| e.value.clone()),
+                    && classify::is_placeholder(&e.key, e.value.expose(), Strictness::Strict),
+                secret: classify::holds_secret(&e.key, e.value.expose()),
+                value: values.then(|| e.value.expose().to_string()),
             }
         })
         .collect();

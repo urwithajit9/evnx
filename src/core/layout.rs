@@ -638,7 +638,7 @@ impl Reference {
         let original: HashMap<&str, &str> = before
             .entries
             .iter()
-            .map(|e| (e.key.as_str(), e.raw.as_str()))
+            .map(|e| (e.key.as_str(), e.raw.expose()))
             .collect();
         let mut seen = HashSet::new();
         for e in &after.entries {
@@ -646,7 +646,7 @@ impl Reference {
                 return fail("a key is written twice");
             }
             match original.get(e.key.as_str()) {
-                Some(raw) if *raw == e.raw => {}
+                Some(raw) if *raw == e.raw.expose() => {}
                 Some(_) => return fail("an assignment changed"),
                 None => return fail("an assignment appeared"),
             }

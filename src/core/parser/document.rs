@@ -17,6 +17,7 @@
 use indexmap::IndexMap;
 
 use super::{ParseError, ParseResult};
+use crate::core::secret::Secret;
 
 /// Where something was written: 1-based lines, inclusive. `end_line > line`
 /// only for a value that spans lines. `line == 0` means it did not come from a
@@ -42,11 +43,11 @@ pub struct Entry {
     pub key: String,
     /// The final value: unescaped and expanded. An entry whose expansion failed
     /// keeps its unexpanded value, and the failure is a [`Problem`].
-    pub value: String,
+    pub value: Secret,
     pub span: Span,
     /// The source text of the whole entry; a multiline value's lines are
     /// joined with `\n`.
-    pub raw: String,
+    pub raw: Secret,
     pub exported: bool,
     /// `"`, `'` or a backtick; `None` for an unquoted value.
     pub quote: Option<char>,
@@ -64,7 +65,7 @@ pub struct Comment {
 #[derive(Debug)]
 pub struct Problem {
     pub span: Span,
-    pub raw: String,
+    pub raw: Secret,
     pub error: ParseError,
 }
 
@@ -106,7 +107,9 @@ impl Document {
     /// process can receive it: an environment is NUL-terminated C strings, so
     /// `exec` refuses it and Docker will not start the container.
     pub fn nul_bytes(&self) -> impl Iterator<Item = &Entry> {
-        self.entries.iter().filter(|e| e.value.contains('\0'))
+        self.entries
+            .iter()
+            .filter(|e| e.value.expose().contains('\0'))
     }
 
     /// Entries whose text holds a carriage return that does not end a CRLF
@@ -116,7 +119,7 @@ impl Document {
     pub fn lone_carriage_returns(&self) -> impl Iterator<Item = &Entry> {
         self.entries
             .iter()
-            .filter(|e| e.raw.replace("\r\n", "").contains('\r'))
+            .filter(|e| e.raw.expose().replace("\r\n", "").contains('\r'))
     }
 
     /// One value per key: the **last** assignment's value, in the **first**
@@ -125,7 +128,7 @@ impl Document {
     pub fn vars(&self) -> IndexMap<String, String> {
         let mut out = IndexMap::with_capacity(self.entries.len());
         for e in &self.entries {
-            out.insert(e.key.clone(), e.value.clone());
+            out.insert(e.key.clone(), e.value.expose().to_string());
         }
         out
     }
@@ -162,7 +165,7 @@ impl Document {
             .filter(|e| {
                 // The text after `=`. In double quotes `\$` is an escaped
                 // dollar, not a reference; unquoted, it is still expanded.
-                let value = e.raw.split_once('=').map_or("", |(_, v)| v);
+                let value = e.raw.expose().split_once('=').map_or("", |(_, v)| v);
                 let value = if e.quote == Some('"') {
                     value.replace("\\$", &super::expand::LITERAL_DOLLAR.to_string())
                 } else {
@@ -187,7 +190,7 @@ impl Document {
             if matches!(e.quote, Some('\'') | Some('`')) {
                 continue;
             }
-            let value = e.raw.split_once('=').map_or("", |(_, v)| v);
+            let value = e.raw.expose().split_once('=').map_or("", |(_, v)| v);
             let value = if e.quote == Some('"') {
                 value.replace("\\$", &super::expand::LITERAL_DOLLAR.to_string())
             } else {
