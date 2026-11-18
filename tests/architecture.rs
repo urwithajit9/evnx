@@ -526,3 +526,130 @@ fn t_wp9b_json_on_stdout_goes_through_core_json() {
         offenders.join("\n")
     );
 }
+
+/// Files (relative to `src/`, a trailing `/` means a directory) that may call
+/// `expose()`, `serialize_exposed` or `exposed_map`, each with the reason.
+///
+/// WP-17: a value is a `core::secret::Secret`; reading its text is a deliberate
+/// act. A command's renderer is not on this list: it gets lengths and
+/// disclosures, never the text. Adding a line here is the review checkpoint.
+const EXPOSE_ALLOW: &[(&str, &str)] = &[
+    ("core/secret.rs", "the type and its serde bridges"),
+    ("core/", "parsing, classification, masking, converting, injecting and the one safe writer work on the text"),
+    ("formats/", "a converter's job is to write values in another syntax"),
+    ("platform/", "reads and pushes values to a hosting platform; tokens go in headers"),
+    ("cloud/", "encryption, upload, credentials file and request bodies"),
+];
+
+/// `expose()` is the only way to read a `Secret`. It may appear only in files
+/// on the allow-list, so a renderer cannot grow a value by accident.
+#[test]
+fn t_wp17_expose_only_in_allow_list() {
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    for f in files {
+        let rel = f
+            .strip_prefix(src())
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        if EXPOSE_ALLOW.iter().any(|(p, _)| rel.starts_with(p)) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&f).unwrap();
+        for (n, l) in code_lines(&text) {
+            if l.contains(".expose()")
+                || l.contains("serialize_exposed")
+                || l.contains("exposed_map")
+            {
+                offenders.push(format!("{rel}:{}: {}", n + 1, l.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "expose() outside the allow-list; add the file with a reason to EXPOSE_ALLOW if it is a real value writer:\n{}\nallow-list:\n{}",
+        offenders.join("\n"),
+        EXPOSE_ALLOW
+            .iter()
+            .map(|(p, why)| format!("  {p}: {why}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+/// Files on the allow-list for `expose()` on a line that also prints or
+/// formats, because printing the value is their purpose.
+const EXPOSE_PRINT_ALLOW: &[(&str, &str)] = &[
+    ("commands/get.rs", "get --reveal"),
+    ("commands/parse.rs", "parse --values"),
+    ("formats/", "converted file contents"),
+    ("commands/template.rs", "rendered value"),
+    ("commands/restore/", "restore - writes values to stdout"),
+    ("core/safe_write.rs", "the one .env writer"),
+    ("core/envfile.rs", "the .env line formatter"),
+    ("core/converter.rs", "shell quoting helpers"),
+];
+
+/// `expose()` never shares a line with a print or format macro, except in the
+/// few files whose job is to print values. Everywhere else the text goes
+/// through a named variable on its own line, so the call is visible in review.
+#[test]
+fn t_wp17_no_expose_on_a_print_line() {
+    let macros = [
+        "println!(",
+        "eprintln!(",
+        "print!(",
+        "eprint!(",
+        "format!(",
+        "write!(",
+        "writeln!(",
+        "panic!(",
+        "dbg!(",
+    ];
+    let mut files = Vec::new();
+    rust_files(&src(), &mut files);
+    let mut offenders = Vec::new();
+    for f in files {
+        let rel = f
+            .strip_prefix(src())
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        if EXPOSE_PRINT_ALLOW.iter().any(|(p, _)| rel.starts_with(p)) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&f).unwrap();
+        for (n, l) in code_lines(&text) {
+            if l.contains(".expose()") && macros.iter().any(|m| l.contains(m)) {
+                offenders.push(format!("{rel}:{}: {}", n + 1, l.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "expose() on a print/format line:\n{}",
+        offenders.join("\n")
+    );
+}
+
+/// `core/secret.rs` keeps the type closed: no `Display`, `Serialize`, `Deref`
+/// or `AsRef<str>` (any of them would make a silent exposure possible).
+#[test]
+fn t_wp17_secret_has_no_display_serialize_deref_or_asref() {
+    let text = std::fs::read_to_string(src().join("core/secret.rs")).unwrap();
+    for (n, l) in code_lines(&text) {
+        for banned in [
+            "impl fmt::Display",
+            "impl std::fmt::Display",
+            "impl Display",
+            "Serialize for Secret",
+            "Deref for Secret",
+            "AsRef<str> for Secret",
+            "derive(Serialize",
+        ] {
+            assert!(!l.contains(banned), "core/secret.rs:{}: {banned}", n + 1);
+        }
+    }
+}

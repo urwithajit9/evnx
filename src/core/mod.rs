@@ -32,6 +32,7 @@ pub mod project;
 pub mod resolve;
 pub mod restore_error;
 pub mod safe_write;
+pub mod secret;
 pub mod secretscan;
 pub mod shell;
 #[cfg(unix)]
