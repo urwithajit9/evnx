@@ -1274,7 +1274,6 @@ struct RekeyRequest {
 /// cannot recall copies of what they could already read. If they had access to a
 /// secret, treat that secret as theirs and rotate it at its source — the same
 /// advice that applies to a leaked API token, and the step people skip.
-#[allow(clippy::too_many_arguments)]
 pub fn revoke(
     server_override: Option<&str>,
     target: String,
@@ -1659,7 +1658,6 @@ pub fn rekey(
 /// then **one** request swaps all the metadata atomically. Staged blobs that are
 /// never committed are orphans in object storage — wasted bytes, not a correctness
 /// problem, and unreachable because nothing references them.
-#[allow(clippy::too_many_arguments)]
 fn rotate_vault_key(
     client: &Client,
     vault: &VaultSummary,

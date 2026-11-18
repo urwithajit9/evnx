@@ -22,6 +22,25 @@ pub use crate::core::placeholder::PlaceholderConfig;
 pub use executor::VarChange;
 pub use models::{PreviewRow, SyncAction, SyncPreview};
 
+/// What `evnx sync` was asked for.
+pub struct SyncOptions {
+    pub env: String,
+    pub example: String,
+    // ⚠️ `Option` since 0.10.12 (DEC-S17): whether a direction was *given*
+    // decides how far `--check` looks. `None` is forward, looking both ways.
+    pub direction: Option<SyncDirection>,
+    pub placeholder: bool,
+    pub verbose: bool,
+    pub dry_run: bool,
+    pub force: bool,
+    pub check: bool,
+    pub format: String,
+    pub template_config: Option<PathBuf>,
+    pub naming_policy: NamingPolicy,
+    pub spec: crate::core::spec::Spec,
+    pub skip_without_env: bool,
+}
+
 /// Public entry point called from main.rs.
 ///
 /// # `--check` and its three exit codes
@@ -66,28 +85,22 @@ pub use models::{PreviewRow, SyncAction, SyncPreview};
 /// and `evnx sync --check || true` cannot distinguish `1` from `2`, so a user who
 /// only wants the preview needs a flag that never reports state through the exit
 /// code at all.
-// 8 flags. `SyncArgs` in `cli.rs` already holds exactly this set, so the tidier
-// signature is to pass that struct — but it would rewrite every call site for no
-// behavioural gain, so it is queued for the v0.5.0 command review instead.
-// `validate::run` carries the same allow for the same reason.
-#[allow(clippy::too_many_arguments)]
-pub fn run(
-    env: String,
-    example: String,
-    // ⚠️ `Option` since 0.10.12 (DEC-S17): whether a direction was *given*
-    // decides how far `--check` looks. `None` is forward, looking both ways.
-    direction: Option<SyncDirection>,
-    placeholder: bool,
-    verbose: bool,
-    dry_run: bool,
-    force: bool,
-    check: bool,
-    format: String,
-    template_config: Option<PathBuf>,
-    naming_policy: NamingPolicy,
-    spec: crate::core::spec::Spec,
-    skip_without_env: bool,
-) -> Result<Verdict> {
+pub fn run(options: SyncOptions) -> Result<Verdict> {
+    let SyncOptions {
+        env,
+        example,
+        direction,
+        placeholder,
+        verbose,
+        dry_run,
+        force,
+        check,
+        format,
+        template_config,
+        naming_policy,
+        spec,
+        skip_without_env,
+    } = options;
     let two_way = direction.is_none();
     let direction = direction.unwrap_or_default();
     let paths = executor::SyncPaths {
@@ -168,50 +181,26 @@ mod tests {
     // SyncDirection is defined in cli.rs, so test it there instead
     // But if you want to verify the run() function signature compiles:
 
-    /// Pins the public signature so a change to it has to be deliberate.
-    ///
-    /// ⚠️ Updated 2026-10-20 (R-sync, DEC-S17): `direction` is an `Option`,
-    /// because whether a direction was given decides how far `--check` looks.
-    ///
-    /// ⚠️ Updated 2026-10-17 (U8d): `skip_without_env` appended, for the
-    /// pre-commit hook on a clone with no `.env` (DEC-U8-5).
-    ///
-    /// ⚠️ Updated again for the spec: `[vars]` is now a source for the reverse
-    /// direction, so `run` takes it. This pin is the reason that change had to
-    /// be deliberate rather than discovered by a library consumer.
-    ///
-    /// ⚠️ Updated 2026-09-21 again: `env` and `example` lead the list. `sync` was
-    /// the only command that could not be pointed at a file, so the two paths it
-    /// operates on are now arguments rather than 37 literals in the executor.
-    ///
-    /// ⚠️ Updated 2026-09-21 twice. First `check: bool` was inserted after
-    /// `force`; then `format: String` after `check`. `evnx` is published as a
-    /// library as well as a binary, so each is a breaking change for a direct
-    /// caller — acceptable in 0.x, and the whole point of this pin is that it
-    /// cannot happen by accident. Six `bool`s in a row is also why the argument
-    /// list should become `SyncArgs`; see the note on `run`.
-    // ⚠️ `allow`, not a type alias. The complex type *is* the test: writing the
-    // signature out in full, one commented argument per line, is what makes a
-    // reordering visible in the diff. Hiding it behind an alias would move the
-    // thing being pinned somewhere the reviewer does not look.
-    #[allow(clippy::type_complexity)]
+    /// The public entry point takes a named struct: a new or reordered option
+    /// is a compile error here, and every field is named at the call site.
     #[test]
-    fn test_run_signature_compiles() {
-        let _func: fn(
-            String,                            // env
-            String,                            // example
-            Option<crate::cli::SyncDirection>, // DEC-S17: given or not
-            bool,                              // placeholder
-            bool,                              // verbose
-            bool,                              // dry_run
-            bool,                              // force
-            bool,                              // check
-            String,                            // format
-            Option<std::path::PathBuf>,
-            crate::cli::NamingPolicy,
-            crate::core::spec::Spec,
-            bool, // skip_without_env (U8d, DEC-U8-5)
-        ) -> anyhow::Result<Verdict> = run;
+    fn test_run_options_compile() {
+        let _options = SyncOptions {
+            env: String::new(),
+            example: String::new(),
+            direction: None, // DEC-S17: given or not
+            placeholder: false,
+            verbose: false,
+            dry_run: false,
+            force: false,
+            check: false,
+            format: String::new(),
+            template_config: None,
+            naming_policy: crate::cli::NamingPolicy::Warn,
+            spec: crate::core::spec::Spec::default(),
+            skip_without_env: false, // U8d, DEC-U8-5
+        };
+        let _func: fn(SyncOptions) -> anyhow::Result<Verdict> = run;
     }
 }
 

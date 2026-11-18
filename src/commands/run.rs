@@ -7,20 +7,32 @@ use anyhow::{anyhow, Result};
 use crate::core::inject;
 use crate::core::Parser;
 
+/// What `evnx run` was asked for.
+pub struct RunOptions<'a> {
+    pub env: &'a str,
+    pub include: Option<&'a [String]>,
+    pub exclude: Option<&'a [String]>,
+    pub allow_unsafe_names: bool,
+    pub mask: bool,
+    pub verbose: bool,
+    pub prefer: inject::Prefer,
+    pub command: &'a [String],
+}
+
 /// Read `env`, then run `command` with its variables. The result is the
 /// command's code (`inject::ChildExit`) or an error before it started; with no
 /// masking on Unix the command replaces evnx and this does not return.
-#[allow(clippy::too_many_arguments)]
-pub fn run(
-    env: &str,
-    include: Option<&[String]>,
-    exclude: Option<&[String]>,
-    allow_unsafe_names: bool,
-    mask: bool,
-    verbose: bool,
-    prefer: inject::Prefer,
-    command: &[String],
-) -> Result<()> {
+pub fn run(options: RunOptions<'_>) -> Result<()> {
+    let RunOptions {
+        env,
+        include,
+        exclude,
+        allow_unsafe_names,
+        mask,
+        verbose,
+        prefer,
+        command,
+    } = options;
     let (program, args) = command.split_first().ok_or_else(|| {
         crate::core::verdict::usage("no command given. Usage: evnx run -- <cmd> [args]")
     })?;

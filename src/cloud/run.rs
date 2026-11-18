@@ -39,28 +39,41 @@ use super::config::CloudConfig;
 use super::{auth, vault};
 use crate::utils::ui;
 
+/// What `cloud run` was asked for.
+pub struct CloudRunRequest {
+    pub vault_targets: Vec<String>,
+    pub version: Option<i32>,
+    pub min_version: Option<i32>,
+    pub include: Option<Vec<String>>,
+    pub exclude: Option<Vec<String>>,
+    pub password_stdin: bool,
+    pub allow_unsafe_names: bool,
+    pub mask: bool,
+    pub allow_override: bool,
+    pub prefer: crate::core::inject::Prefer,
+    pub command: Vec<String>,
+}
+
 /// Decrypt a vault and run `command` with its variables in the environment.
 ///
 /// Without masking (Unix) the child replaces evnx (`exec`) and this never
 /// returns on success. With masking it returns the child's status as a
 /// `ChildExit` error that `main` reports, so `evnx cloud run -- false` fails a
 /// pipeline the way `false` would.
-#[allow(clippy::too_many_arguments)]
-pub fn run(
-    server_override: Option<&str>,
-    vault_targets: Vec<String>,
-    version: Option<i32>,
-    min_version: Option<i32>,
-    include: Option<Vec<String>>,
-    exclude: Option<Vec<String>>,
-    password_stdin: bool,
-    allow_unsafe_names: bool,
-    mask: bool,
-    allow_override: bool,
-    verbose: bool,
-    prefer: crate::core::inject::Prefer,
-    command: Vec<String>,
-) -> Result<()> {
+pub fn run(server_override: Option<&str>, request: CloudRunRequest, verbose: bool) -> Result<()> {
+    let CloudRunRequest {
+        vault_targets,
+        version,
+        min_version,
+        include,
+        exclude,
+        password_stdin,
+        allow_unsafe_names,
+        mask,
+        allow_override,
+        prefer,
+        command,
+    } = request;
     let (program, args) = command.split_first().ok_or_else(|| {
         crate::core::verdict::usage(
             "no command given. Usage: evnx cloud run --vault <V> -- <cmd> [args]",

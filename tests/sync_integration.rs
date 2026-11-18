@@ -89,21 +89,21 @@ fn test_forward_sync_dry_run_adds_preview() -> Result<()> {
     env::set_current_dir(fixture.temp_dir.path())?;
 
     // Run sync in temp directory
-    let result = sync::run(
-        ".env".to_string(),
-        ".env.example".to_string(),
-        Some(SyncDirection::Forward),
-        true,
-        false,
-        true,
-        true,
-        false, // check
-        "pretty".to_string(),
-        None,
-        NamingPolicy::Ignore,
-        Default::default(),
-        false, // skip_without_env
-    );
+    let result = sync::run(sync::SyncOptions {
+        env: ".env".to_string(),
+        example: ".env.example".to_string(),
+        direction: Some(SyncDirection::Forward),
+        placeholder: true,
+        verbose: false,
+        dry_run: true,
+        force: true,
+        check: false,
+        format: "pretty".to_string(),
+        template_config: None,
+        naming_policy: NamingPolicy::Ignore,
+        spec: Default::default(),
+        skip_without_env: false,
+    });
 
     // ✅ Restore directory IMMEDIATELY (before fixture drops and deletes temp dir)
     let _ = env::set_current_dir(&original_dir);
@@ -138,21 +138,21 @@ fn dry_run_needs_no_terminal_forward() -> Result<()> {
     let original_dir = env::current_dir()?;
     env::set_current_dir(fixture.temp_dir.path())?;
 
-    let result = sync::run(
-        ".env".to_string(),
-        ".env.example".to_string(),
-        Some(SyncDirection::Forward),
-        true,
-        false,
-        true,  // dry_run
-        false, // force — the point of the test
-        false, // check
-        "pretty".to_string(),
-        None,
-        NamingPolicy::Ignore,
-        Default::default(),
-        false, // skip_without_env
-    );
+    let result = sync::run(sync::SyncOptions {
+        env: ".env".to_string(),
+        example: ".env.example".to_string(),
+        direction: Some(SyncDirection::Forward),
+        placeholder: true,
+        verbose: false,
+        dry_run: true,
+        force: false,
+        check: false,
+        format: "pretty".to_string(),
+        template_config: None,
+        naming_policy: NamingPolicy::Ignore,
+        spec: Default::default(),
+        skip_without_env: false,
+    });
 
     let _ = env::set_current_dir(&original_dir);
 
@@ -183,21 +183,21 @@ fn dry_run_needs_no_terminal_reverse() -> Result<()> {
     let original_dir = env::current_dir()?;
     env::set_current_dir(fixture.temp_dir.path())?;
 
-    let result = sync::run(
-        ".env".to_string(),
-        ".env.example".to_string(),
-        Some(SyncDirection::Reverse),
-        true,
-        false,
-        true,  // dry_run
-        false, // force
-        false, // check
-        "pretty".to_string(),
-        None,
-        NamingPolicy::Ignore,
-        Default::default(),
-        false, // skip_without_env
-    );
+    let result = sync::run(sync::SyncOptions {
+        env: ".env".to_string(),
+        example: ".env.example".to_string(),
+        direction: Some(SyncDirection::Reverse),
+        placeholder: true,
+        verbose: false,
+        dry_run: true,
+        force: false,
+        check: false,
+        format: "pretty".to_string(),
+        template_config: None,
+        naming_policy: NamingPolicy::Ignore,
+        spec: Default::default(),
+        skip_without_env: false,
+    });
 
     let _ = env::set_current_dir(&original_dir);
 
@@ -226,21 +226,21 @@ fn test_reverse_sync_creates_env_with_placeholders() -> Result<()> {
     let original_dir = env::current_dir()?;
     env::set_current_dir(fixture.temp_dir.path())?;
 
-    let result = sync::run(
-        ".env".to_string(),
-        ".env.example".to_string(),
-        Some(SyncDirection::Reverse),
-        true,
-        false,
-        false,
-        true,
-        false, // check
-        "pretty".to_string(),
-        None,
-        NamingPolicy::Ignore,
-        Default::default(),
-        false, // skip_without_env
-    );
+    let result = sync::run(sync::SyncOptions {
+        env: ".env".to_string(),
+        example: ".env.example".to_string(),
+        direction: Some(SyncDirection::Reverse),
+        placeholder: true,
+        verbose: false,
+        dry_run: false,
+        force: true,
+        check: false,
+        format: "pretty".to_string(),
+        template_config: None,
+        naming_policy: NamingPolicy::Ignore,
+        spec: Default::default(),
+        skip_without_env: false,
+    });
 
     // Restore BEFORE fixture drops
     let _ = env::set_current_dir(&original_dir);
@@ -269,21 +269,21 @@ fn test_forward_sync_security_warning_with_actual_values() -> Result<()> {
     let original_dir = env::current_dir()?;
     env::set_current_dir(fixture.temp_dir.path())?;
 
-    let result = sync::run(
-        ".env".to_string(),
-        ".env.example".to_string(),
-        Some(SyncDirection::Forward),
-        false,
-        false,
-        false,
-        true,
-        false, // check
-        "pretty".to_string(),
-        None,
-        NamingPolicy::Ignore,
-        Default::default(),
-        false, // skip_without_env
-    );
+    let result = sync::run(sync::SyncOptions {
+        env: ".env".to_string(),
+        example: ".env.example".to_string(),
+        direction: Some(SyncDirection::Forward),
+        placeholder: false,
+        verbose: false,
+        dry_run: false,
+        force: true,
+        check: false,
+        format: "pretty".to_string(),
+        template_config: None,
+        naming_policy: NamingPolicy::Ignore,
+        spec: Default::default(),
+        skip_without_env: false,
+    });
 
     let _ = env::set_current_dir(&original_dir);
 
@@ -316,21 +316,21 @@ fn test_sync_with_custom_placeholder_config() -> Result<()> {
     env::set_current_dir(fixture.temp_dir.path())?;
 
     // ✅ Use absolute path for config
-    let result = sync::run(
-        ".env".to_string(),
-        ".env.example".to_string(),
-        Some(SyncDirection::Forward),
-        true,
-        false,
-        false,
-        true,
-        false, // check
-        "pretty".to_string(),
-        Some(fixture.config_path.clone()), // Absolute path
-        NamingPolicy::Ignore,
-        Default::default(),
-        false, // skip_without_env
-    );
+    let result = sync::run(sync::SyncOptions {
+        env: ".env".to_string(),
+        example: ".env.example".to_string(),
+        direction: Some(SyncDirection::Forward),
+        placeholder: true,
+        verbose: false,
+        dry_run: false,
+        force: true,
+        check: false,
+        format: "pretty".to_string(),
+        template_config: Some(fixture.config_path.clone()),
+        naming_policy: NamingPolicy::Ignore,
+        spec: Default::default(),
+        skip_without_env: false,
+    });
 
     let _ = env::set_current_dir(&original_dir);
 
@@ -357,21 +357,21 @@ fn test_forward_sync_missing_env_file() -> Result<()> {
     let original_dir = env::current_dir()?;
     env::set_current_dir(fixture.temp_dir.path())?;
 
-    let result = sync::run(
-        ".env".to_string(),
-        ".env.example".to_string(),
-        Some(SyncDirection::Forward),
-        true,
-        false,
-        false,
-        true,
-        false, // check
-        "pretty".to_string(),
-        None,
-        NamingPolicy::Ignore,
-        Default::default(),
-        false, // skip_without_env
-    );
+    let result = sync::run(sync::SyncOptions {
+        env: ".env".to_string(),
+        example: ".env.example".to_string(),
+        direction: Some(SyncDirection::Forward),
+        placeholder: true,
+        verbose: false,
+        dry_run: false,
+        force: true,
+        check: false,
+        format: "pretty".to_string(),
+        template_config: None,
+        naming_policy: NamingPolicy::Ignore,
+        spec: Default::default(),
+        skip_without_env: false,
+    });
 
     let _ = env::set_current_dir(&original_dir);
 
@@ -393,21 +393,21 @@ fn test_reverse_sync_missing_example_file() -> Result<()> {
     let original_dir = env::current_dir()?;
     env::set_current_dir(fixture.temp_dir.path())?;
 
-    let result = sync::run(
-        ".env".to_string(),
-        ".env.example".to_string(),
-        Some(SyncDirection::Reverse),
-        true,
-        false,
-        false,
-        true,
-        false, // check
-        "pretty".to_string(),
-        None,
-        NamingPolicy::Ignore,
-        Default::default(),
-        false, // skip_without_env
-    );
+    let result = sync::run(sync::SyncOptions {
+        env: ".env".to_string(),
+        example: ".env.example".to_string(),
+        direction: Some(SyncDirection::Reverse),
+        placeholder: true,
+        verbose: false,
+        dry_run: false,
+        force: true,
+        check: false,
+        format: "pretty".to_string(),
+        template_config: None,
+        naming_policy: NamingPolicy::Ignore,
+        spec: Default::default(),
+        skip_without_env: false,
+    });
 
     let _ = env::set_current_dir(&original_dir);
 

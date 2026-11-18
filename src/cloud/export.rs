@@ -52,18 +52,26 @@ pub struct Conversion {
     pub allow_collisions: bool,
 }
 
+/// What `cloud export` was asked for.
+pub struct ExportRequest {
+    pub vault_target: Option<String>,
+    pub output: Option<PathBuf>,
+    pub all_versions: bool,
+    pub conversion: Conversion,
+    pub force: bool,
+    pub password_stdin: bool,
+}
+
 /// Export a vault's versions to a directory.
-#[allow(clippy::too_many_arguments)]
-pub fn export(
-    server_override: Option<&str>,
-    vault_target: Option<String>,
-    output: Option<PathBuf>,
-    all_versions: bool,
-    conversion: Conversion,
-    force: bool,
-    password_stdin: bool,
-    verbose: bool,
-) -> Result<()> {
+pub fn export(server_override: Option<&str>, request: ExportRequest, verbose: bool) -> Result<()> {
+    let ExportRequest {
+        vault_target,
+        output,
+        all_versions,
+        conversion,
+        force,
+        password_stdin,
+    } = request;
     // ⚠️ First, before anything that costs a round trip or a password. A
     // mistyped `--to` is the cheapest possible failure and should stay that way.
     //

@@ -60,8 +60,6 @@ struct RegisterRequest {
 #[derive(Deserialize)]
 struct RegisterResponse {
     user_id: String,
-    #[allow(dead_code)]
-    message: String,
 }
 
 /// Create an account.
@@ -1447,8 +1445,6 @@ struct SrpInitRequest {
 struct SrpInitResponse {
     session_id: String,
     srp_salt: String,
-    #[allow(dead_code)]
-    argon2_salt: String,
     /// B, hex-encoded.
     server_public: String,
 }
@@ -1828,12 +1824,9 @@ mod tests {
         let _g = ConfigDirGuard::new();
         let mut server = mockito::Server::new();
         let m = server.mock("GET", "/api/v1/auth/me").expect(0).create();
-        std::env::set_var(
-            super::super::client::ENV_TOKEN,
-            format!("evnx_tok_{}", "0".repeat(8)),
-        );
-        let client = Client::new(server.url()).unwrap();
-        std::env::remove_var(super::super::client::ENV_TOKEN);
+        let client =
+            Client::new_with_token(server.url(), Some(format!("evnx_tok_{}", "0".repeat(8))))
+                .unwrap();
         assert!(client.is_api_token());
         backfill_mlkem_key(&client, &pw("unused"), true);
         m.assert();

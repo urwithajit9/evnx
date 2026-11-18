@@ -353,7 +353,21 @@ pub fn spawn_with_env(
     env_vars: &Vars,
     mask: Option<&Masker>,
 ) -> std::io::Result<std::process::ExitStatus> {
-    launch(Launch::Wait, program, args, env_vars, mask)
+    launch(Launch::Wait, program, args, env_vars, mask, None)
+}
+
+/// [`spawn_with_env`] with the "parent" environment given instead of read from
+/// the process: the child gets exactly `base` (minus evnx's own settings), then
+/// `env_vars`. Lets tests state their environment without mutating this one.
+#[cfg(test)]
+fn spawn_with_env_from(
+    program: &str,
+    args: &[String],
+    env_vars: &Vars,
+    mask: Option<&Masker>,
+    base: &[(std::ffi::OsString, std::ffi::OsString)],
+) -> std::io::Result<std::process::ExitStatus> {
+    launch(Launch::Wait, program, args, env_vars, mask, Some(base))
 }
 
 /// What `run` and `cloud run` call. On Unix with nothing to mask the child
@@ -370,7 +384,7 @@ pub fn run_with_env(
     } else {
         Launch::Wait
     };
-    launch(how, program, args, env_vars, mask)
+    launch(how, program, args, env_vars, mask, None)
 }
 
 fn launch(
@@ -379,13 +393,26 @@ fn launch(
     args: &[String],
     env_vars: &Vars,
     mask: Option<&Masker>,
+    base: Option<&[(std::ffi::OsString, std::ffi::OsString)]>,
 ) -> std::io::Result<std::process::ExitStatus> {
     let mut cmd = Command::new(program);
     cmd.args(args);
+    if base.is_some() {
+        cmd.env_clear();
+    }
     // ⚠️ evnx's own settings stay with evnx (I-227, DEC-CL1). `EVNX_TOKEN`,
     // `EVNX_PASSWORD` and `EVNX_SERVER` were inherited, so every child of a CI
     // step held the pipeline's API token.
-    for (key, _) in std::env::vars_os() {
+    let inherited: Vec<std::ffi::OsString> = match base {
+        Some(base) => base.iter().map(|(k, _)| k.clone()).collect(),
+        None => std::env::vars_os().map(|(k, _)| k).collect(),
+    };
+    if let Some(base) = base {
+        for (key, value) in base {
+            cmd.env(key, value);
+        }
+    }
+    for key in inherited {
         if key
             .to_str()
             .is_some_and(crate::core::envsource::is_evnx_own)
@@ -448,6 +475,16 @@ mod tests {
             .collect()
     }
 
+    /// A stand-in for the parent environment: `PATH` (so `sh` resolves) plus `extra`.
+    fn base_with(extra: &[(&str, &str)]) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+        let mut base = Vec::new();
+        if let Some(path) = std::env::var_os("PATH") {
+            base.push(("PATH".into(), path));
+        }
+        base.extend(extra.iter().map(|(k, v)| ((*k).into(), (*v).into())));
+        base
+    }
+
     fn sh(script: &str) -> Vec<String> {
         vec!["-c".to_string(), script.to_string()]
     }
@@ -505,30 +542,28 @@ mod tests {
     /// Inherited, not cleared — otherwise PATH is gone and nothing runs.
     #[test]
     fn the_parent_environment_is_inherited() {
-        std::env::set_var("RUN_INHERIT_PROBE", "from-parent");
-        let status = spawn_with_env(
+        let status = spawn_with_env_from(
             "sh",
             &sh(r#"[ "$RUN_INHERIT_PROBE" = "from-parent" ]"#),
             &Vars::new(),
             None,
+            &base_with(&[("RUN_INHERIT_PROBE", "from-parent")]),
         )
         .unwrap();
-        std::env::remove_var("RUN_INHERIT_PROBE");
         assert!(status.success(), "the parent environment was not inherited");
     }
 
     /// And the vault wins where both define a name — that is what injection means.
     #[test]
     fn a_vault_variable_overrides_the_inherited_one() {
-        std::env::set_var("RUN_OVERRIDE_PROBE", "from-parent");
-        let status = spawn_with_env(
+        let status = spawn_with_env_from(
             "sh",
             &sh(r#"[ "$RUN_OVERRIDE_PROBE" = "from-vault" ]"#),
             &vars(&[("RUN_OVERRIDE_PROBE", "from-vault")]),
             None,
+            &base_with(&[("RUN_OVERRIDE_PROBE", "from-parent")]),
         )
         .unwrap();
-        std::env::remove_var("RUN_OVERRIDE_PROBE");
         assert!(status.success(), "the inherited value won");
     }
 
@@ -536,15 +571,14 @@ mod tests {
     /// reach the child. A test used to lock in that they did.
     #[test]
     fn t_i227_evnx_settings_are_not_inherited() {
-        std::env::set_var("EVNX_TOKEN_PROBE_I227", "evnx_tok_secret");
-        let status = spawn_with_env(
+        let status = spawn_with_env_from(
             "sh",
             &sh(r#"[ -z "${EVNX_TOKEN_PROBE_I227+set}" ]"#),
             &Vars::new(),
             None,
+            &base_with(&[("EVNX_TOKEN_PROBE_I227", "evnx_tok_secret")]),
         )
         .unwrap();
-        std::env::remove_var("EVNX_TOKEN_PROBE_I227");
         assert!(status.success(), "an EVNX_ variable reached the child");
     }
 

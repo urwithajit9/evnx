@@ -251,8 +251,6 @@ struct PushVersionRequest {
 #[derive(Deserialize)]
 struct PushVersionResponse {
     version_num: i32,
-    #[allow(dead_code)]
-    pushed_at: String,
 }
 
 /// Only the version number is needed; the rest of `/latest` is metadata for
@@ -329,7 +327,6 @@ struct MyKey {
 }
 
 /// Encrypt a `.env` and upload it as a new version.
-#[allow(clippy::too_many_arguments)]
 pub fn push(
     server_override: Option<&str>,
     vault_target: Option<String>,
@@ -555,20 +552,30 @@ fn confirm_shrink(
     })
 }
 
+/// What `cloud pull` was asked for.
+pub struct PullRequest {
+    pub vault_targets: Vec<String>,
+    pub file: Option<PathBuf>,
+    pub env_name: Option<String>,
+    pub version: Option<i32>,
+    pub force: bool,
+    pub password_stdin: bool,
+    pub gitignore: crate::utils::protect::GitignoreMode,
+    pub allow_override: bool,
+}
+
 /// Download a version and decrypt it to a file.
-#[allow(clippy::too_many_arguments)]
-pub fn pull(
-    server_override: Option<&str>,
-    vault_targets: Vec<String>,
-    file: Option<PathBuf>,
-    env_name: Option<String>,
-    version: Option<i32>,
-    force: bool,
-    password_stdin: bool,
-    gitignore: crate::utils::protect::GitignoreMode,
-    allow_override: bool,
-    verbose: bool,
-) -> Result<()> {
+pub fn pull(server_override: Option<&str>, request: PullRequest, verbose: bool) -> Result<()> {
+    let PullRequest {
+        vault_targets,
+        file,
+        env_name,
+        version,
+        force,
+        password_stdin,
+        gitignore,
+        allow_override,
+    } = request;
     // RM-59 (X4): before any request. A version number belongs to one vault.
     super::merge::check_usage(vault_targets.len(), version, allow_override)?;
     let multi = vault_targets.len() > 1;

@@ -83,8 +83,6 @@ struct ChallengeInit {
 struct ChallengeResponse {
     session_id: String,
     srp_salt: String,
-    #[allow(dead_code)]
-    argon2_salt: String,
     server_public: String,
 }
 

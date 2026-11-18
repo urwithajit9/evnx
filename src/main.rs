@@ -287,23 +287,23 @@ fn run() -> Result<Verdict, EvnxError> {
                     Err(e) => return Err(EvnxError::Config(e)),
                 }
             };
-            commands::init::run(
+            commands::init::run(commands::init::InitOptions {
                 path,
                 yes,
                 force,
                 blueprint,
                 with,
                 list_components,
-                detect,
+                detect_flag: detect,
                 from_source,
-                cli.verbose,
-                target_config,
+                verbose: cli.verbose,
+                config: target_config,
                 dry_run,
                 json,
                 env_name,
                 here,
                 no_contract,
-            )
+            })
             .map(clean)
         }
 
@@ -953,25 +953,25 @@ fn run() -> Result<Verdict, EvnxError> {
                 cli.quiet,
                 cli.verbose,
             )?;
-            commands::sync::run(
-                files.env,
-                files.template,
-                args.direction.or(args.to.map(Into::into)),
-                false,
-                cli.verbose,
-                args.dry.dry_run,
-                args.confirm.yes,
-                args.check,
-                args.output.resolved().to_string(),
-                args.template_config.clone(),
-                evnx::core::config::pick(
+            commands::sync::run(commands::sync::SyncOptions {
+                env: files.env,
+                example: files.template,
+                direction: args.direction.or(args.to.map(Into::into)),
+                placeholder: false,
+                verbose: cli.verbose,
+                dry_run: args.dry.dry_run,
+                force: args.confirm.yes,
+                check: args.check,
+                format: args.output.resolved().to_string(),
+                template_config: args.template_config.clone(),
+                naming_policy: evnx::core::config::pick(
                     args.naming_policy,
                     configured,
                     evnx::cli::NamingPolicy::Warn,
                 ),
-                cfg.vars.clone(),
-                args.skip_without_env,
-            )
+                spec: cfg.vars.clone(),
+                skip_without_env: args.skip_without_env,
+            })
         }
 
         Commands::Align { args } => {
@@ -1294,16 +1294,16 @@ fn run() -> Result<Verdict, EvnxError> {
                 env_name.as_deref(),
                 cfg.defaults.env_name.as_deref(),
             )?;
-            commands::run::run(
-                &env,
-                include.as_deref(),
-                exclude.as_deref(),
+            commands::run::run(commands::run::RunOptions {
+                env: &env,
+                include: include.as_deref(),
+                exclude: exclude.as_deref(),
                 allow_unsafe_names,
-                evnx::core::inject::masking(mask, no_mask),
-                cli.verbose,
+                mask: evnx::core::inject::masking(mask, no_mask),
+                verbose: cli.verbose,
                 prefer,
-                &command,
-            )
+                command: &command,
+            })
             .map(clean)
         }
 

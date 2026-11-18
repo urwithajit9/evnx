@@ -38,7 +38,12 @@ pub fn require_include(include: Option<&[String]>) -> Result<()> {
 
 /// Every variable of the process environment except [`SKIP`].
 pub fn read() -> IndexMap<String, String> {
-    std::env::vars().filter(|(k, _)| !is_skipped(k)).collect()
+    read_from(std::env::vars())
+}
+
+/// [`read`] over a given environment, so tests need not touch the process's.
+pub fn read_from(vars: impl IntoIterator<Item = (String, String)>) -> IndexMap<String, String> {
+    vars.into_iter().filter(|(k, _)| !is_skipped(k)).collect()
 }
 
 /// Variable names that make a program or its runtime load or run other code.

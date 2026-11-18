@@ -28,9 +28,15 @@ struct Table {
 struct Case {
     id: String,
     // Read by the test that pins evnx's column, and by the measurement script.
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "read by the tests that pin evnx's column")
+    )]
     fixture: String,
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "read by the tests that pin evnx's column")
+    )]
     key: String,
     /// `null` when the reader leaves the key unset (python-dotenv on a BOM).
     values: IndexMap<String, Option<String>>,
