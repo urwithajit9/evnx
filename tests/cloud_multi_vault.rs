@@ -249,3 +249,77 @@ fn the_flags_are_documented() {
         assert!(out.stdout.contains("Repeatable"), "{}", out.stdout);
     }
 }
+
+#[test]
+fn u1_cloud_run_refuses_editor_and_the_child_never_runs() {
+    let secret = "zq-vault-editor-value-77";
+    let s = server(&format!("EDITOR={secret}\nA=1\n"), "C=3\n");
+    let p = Project::new();
+    let marker = p.path().join("ran");
+    let script = format!("touch {}", marker.display());
+    let out = go(
+        &s,
+        &p,
+        &[
+            "cloud",
+            "run",
+            "--vault",
+            "shared",
+            "--password-stdin",
+            "--",
+            "sh",
+            "-c",
+            &script,
+        ],
+    );
+    out.assert_code(2);
+    assert!(!marker.exists(), "the child ran");
+    assert!(out.stderr.contains("EDITOR"), "{}", out.stderr);
+    assert!(out.stderr.contains("start a program"), "{}", out.stderr);
+    assert!(!out.all().contains(secret), "{}", out.all());
+}
+
+#[test]
+fn u1_cloud_run_warns_on_proxy_names_and_runs() {
+    let secret = "zq-vault-proxy-pass-88";
+    let s = server(
+        &format!("HTTPS_PROXY=http://u:{secret}@proxy.local:3128\n"),
+        "C=3\n",
+    );
+    let out = go(
+        &s,
+        &Project::new(),
+        &[
+            "cloud",
+            "run",
+            "--vault",
+            "shared",
+            "--password-stdin",
+            "--",
+            "sh",
+            "-c",
+            "echo ran",
+        ],
+    );
+    out.assert_code(0);
+    assert!(out.stderr.contains("HTTPS_PROXY"), "{}", out.stderr);
+    assert!(!out.all().contains(secret), "{}", out.all());
+}
+
+#[test]
+fn a1_cloud_run_empty_command_is_usage() {
+    let s = server("A=1\n", "C=3\n");
+    let out = go(
+        &s,
+        &Project::new(),
+        &["cloud", "run", "--vault", "shared", "--"],
+    );
+    out.assert_code(2);
+    assert!(
+        out.stderr
+            .contains("Usage: evnx cloud run --vault <V> -- <cmd>"),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.stderr.contains("stopped before"), "{}", out.stderr);
+}

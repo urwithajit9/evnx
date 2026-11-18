@@ -296,6 +296,7 @@ pub const DECLARED_SECRET: &str = "Declared secret";
 /// rule's: they are SARIF `ruleId`s.
 pub const DECLARED_SECRET_ID: &str = "declared-secret";
 pub const SENSITIVE_KEY_ID: &str = "sensitive-config-key";
+const SENSITIVE_KEY_NAME: &str = "Sensitive config key";
 
 /// The id and severity of a [`heuristic::detect_heuristic`] answer, by its
 /// name: an AWS secret key is critical; the shapeless entropy fallback,
@@ -355,6 +356,9 @@ pub struct DetectorRegistry {
     disabled_formats: super::patternset::PatternSet,
     /// Heuristics `[scan] disable` turned off, lower case.
     disabled_heuristics: Vec<String>,
+    /// Report a short value under a strong secret name (WP-13, D5). Off for
+    /// every caller but `scan` with `--confidence low` named.
+    short_values: bool,
 }
 
 impl DetectorRegistry {
@@ -377,12 +381,26 @@ impl DetectorRegistry {
             spec: Default::default(),
             disabled_formats: super::patternset::PatternSet::empty(),
             disabled_heuristics: Vec::new(),
+            short_values: false,
         };
         // Register default detectors
         registry.register(HeuristicDetector);
         registry.register(ConfigKeyDetector);
         // Future: registry.register(EntropyDetector::default());
         registry
+    }
+
+    /// Also report a 4 to 7 character value under a strong secret name, at
+    /// `Medium` severity and `Low` confidence (WP-13, D5).
+    ///
+    /// ⚠️ Off by default, and `scan` turns it on only when the confidence
+    /// floor was set to `low` on purpose (`--confidence low` or `[scan]
+    /// confidence`): `low` is also what an unset floor means, and the default
+    /// run must not start failing builds on `PASSWORD=admin`. `sync` and
+    /// `init` ask the registry too and never see these.
+    pub fn with_short_values(mut self, on: bool) -> Self {
+        self.short_values = on;
+        self
     }
 
     /// Give the registry the project's declared contract.
@@ -533,6 +551,23 @@ impl DetectorRegistry {
 
         if suppress_name_based {
             return found;
+        }
+
+        // A short value under a strong name: the name check wants 8 characters.
+        if self.short_values
+            && found.is_empty()
+            && !self.silenced(SENSITIVE_KEY_NAME, value)
+            && heuristic::short_secret_value(key, value)
+        {
+            found.push(Detection {
+                judged_value: false,
+                rule_id: SENSITIVE_KEY_ID.to_string(),
+                pattern: format!("{SENSITIVE_KEY_NAME}: {key}"),
+                confidence: Confidence::Low,
+                severity: Severity::Medium,
+                action_url: None,
+                matched_value: value.to_string(),
+            });
         }
 
         // Declared a secret and nothing recognised it — which is the case the

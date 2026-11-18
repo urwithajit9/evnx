@@ -50,6 +50,7 @@ pub fn run(
     server_override: Option<&str>,
     vault_targets: Vec<String>,
     version: Option<i32>,
+    min_version: Option<i32>,
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
     password_stdin: bool,
@@ -60,12 +61,22 @@ pub fn run(
     prefer: crate::core::inject::Prefer,
     command: Vec<String>,
 ) -> Result<()> {
-    let (program, args) = command
-        .split_first()
-        .ok_or_else(|| anyhow!("no command given. Usage: evnx cloud run --vault <V> -- <cmd>"))?;
+    let (program, args) = command.split_first().ok_or_else(|| {
+        crate::core::verdict::usage(
+            "no command given. Usage: evnx cloud run --vault <V> -- <cmd> [args]",
+        )
+    })?;
 
     // RM-59 (X4): before any request. A version number belongs to one vault.
     super::merge::check_usage(vault_targets.len(), version, allow_override)?;
+    // WP-11d: a pinned version below the minimum needs no request to refuse.
+    if let (Some(v), Some(min)) = (version, min_version) {
+        if v < min {
+            return Err(crate::core::verdict::stopped(format!(
+                "--version {v} is below --min-version {min}. Nothing was run."
+            )));
+        }
+    }
     let multi = vault_targets.len() > 1;
     let vault_targets = if multi {
         vault_targets
@@ -90,8 +101,13 @@ pub fn run(
             .map(|r| format!("--vault {}", r.label()))
             .collect::<Vec<_>>()
             .join(" ");
-        let merged =
-            super::merge::fetch_merged(&client, vault_refs, password_stdin, allow_override)?;
+        let merged = super::merge::fetch_merged(
+            &client,
+            vault_refs,
+            password_stdin,
+            allow_override,
+            min_version,
+        )?;
         let source = merged.describe();
         (merged.vars, source.clone(), source, flags)
     } else {
@@ -106,6 +122,13 @@ pub fn run(
                         vault_ref.label(),
                         vault_ref.label()
                     ));
+                }
+                // Before the blob and the password: a stale vault is refused
+                // on the version number alone (WP-11d).
+                if let Some(min) = min_version {
+                    if let Some(message) = stale_message(&[(vault_ref.label(), latest)], min) {
+                        return Err(crate::core::verdict::stopped(message));
+                    }
                 }
                 latest
             }
@@ -194,6 +217,7 @@ pub fn run(
         "the vault",
         "push to this vault",
     )?;
+    crate::core::inject::warn_sensitive_names(&env_vars);
 
     // After the name check, before the masker: it holds what the child gets.
     let shadowed = prefer.resolve(&mut env_vars);
@@ -233,6 +257,23 @@ pub fn run(
     crate::core::inject::exit_as(status)
 }
 
+/// The refusal for vaults below `--min-version`, naming each of them (label and
+/// version; never anything from inside a vault). `None` when none is below.
+pub(crate) fn stale_message(stale: &[(String, i32)], min: i32) -> Option<String> {
+    let below: Vec<&(String, i32)> = stale.iter().filter(|(_, v)| *v < min).collect();
+    if below.is_empty() {
+        return None;
+    }
+    let list = below
+        .iter()
+        .map(|(label, v)| format!("{label} is at version {v}"))
+        .collect::<Vec<_>>()
+        .join("; ");
+    Some(format!(
+        "{list}; --min-version {min} requires at least {min}. Nothing was run."
+    ))
+}
+
 /// Parse `KEY=value` lines, reusing the parser every other command uses.
 ///
 /// `pub(crate)` so `cloud export` parses a pulled version exactly the way `cloud
@@ -249,6 +290,24 @@ pub(crate) fn parse_env(plaintext: &[u8]) -> Result<IndexMap<String, String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_stale_message_names_every_vault_below_and_nothing_else() {
+        let vaults = vec![
+            ("app/production".to_string(), 3),
+            ("shared/dev".to_string(), 9),
+            ("app/staging".to_string(), 4),
+        ];
+        let m = stale_message(&vaults, 5).unwrap();
+        assert!(m.contains("app/production is at version 3"), "{m}");
+        assert!(m.contains("app/staging is at version 4"), "{m}");
+        assert!(!m.contains("shared/dev"), "{m}");
+        assert!(
+            m.contains("--min-version 5") && m.ends_with("Nothing was run."),
+            "{m}"
+        );
+        assert_eq!(stale_message(&vaults, 3), None);
+    }
 
     #[test]
     fn parsing_reuses_the_ordinary_env_parser() {

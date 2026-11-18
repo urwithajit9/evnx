@@ -67,6 +67,58 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `--yes` exits **4** everywhere (it was 2 on `migrate` and some others).
     The message names `--yes`.
   - A current folder that cannot be read exits **2**, not 1.
+- **`run` and `cloud run` refuse more names that start a program or load
+  code** (WP-11c): `EDITOR`, `PAGER`, `VISUAL`, `GIT_PAGER`, `GIT_ASKPASS`,
+  `SSH_ASKPASS`, `RUSTC_WRAPPER`, `CLASSPATH`, `PERL5DB`, `PYTHONINSPECT`, and
+  the prefixes `npm_config_`, `NPM_CONFIG_` and `GIT_CONFIG_`. A `.env` or vault
+  that holds one now stops with exit 2 and the child never runs; pass
+  `--allow-unsafe-names` (as for `PATH` and `LD_*`) or `--exclude` the name.
+  On Windows the match ignores case; elsewhere it is exact.
+- **`auth token create` expires in 90 days and needs a scope** (WP-12). Without
+  `--expires-in-days` a token now expires after 90 days; `--no-expiry` makes
+  one that never does. `--vault VAULT` is required unless `--all-vaults` is
+  given (the two conflict); a bare `auth token create NAME` exits 2. A token
+  that never expires, or that reaches every vault, is called out in the
+  output.
+- **`vault share` gives the `viewer` role by default** (WP-12), not `developer`.
+  A script that relied on write access for the recipient passes
+  `--role developer`. The success line says how to raise the role.
+- **`vault delete` needs the full vault name** (WP-12). The question asks you to
+  type `name/environment` (anything else cancels, nothing is deleted), and with
+  `--yes` the target must be the full `name/environment` or an id: `vault delete
+  myapp --yes` now exits 2. With no terminal and no `--yes` it still exits 4.
+- **`org seats --set` and `--unlimited` ask first** (WP-12). They print
+  `seats purchased X -> N` and ask (default No); `--yes` skips the question,
+  and without a terminal they exit 4. Bare `org seats` still only shows.
+- **`org accept TOKEN` is deprecated** (WP-12). The positional token still works
+  in this release, with a warning that it stays in shell history and `ps`; it
+  will stop working in a later release. Use `--token-stdin` or the prompt.
+- **`cloud push` asks before removing most of the keys** (WP-12). When the file
+  lacks more than half of the previous version's keys (and that version had at
+  least 4), it prints `removes N of M keys: A, B, ...` (names only, the first
+  10), then asks (default No). `--yes` goes ahead; without a terminal and
+  without `--yes` it exits 4. A deploy script that shrinks a vault needs
+  `--yes`.
+- **`platform push --prune` stops when it would remove most of an environment**
+  (WP-12). If the prune would delete or detach more than half of the
+  variables in the environment (and there are at least 4), it exits 2 after
+  showing the plan, unless `--prune-all` is also given. `--dry-run` is not
+  affected.
+- **`platform` warns about a readable token file and names an overridden API**
+  (WP-12). A `--token-file` that group or others can read gets a warning with
+  the `chmod 600` that fixes it (Unix). When `--api-url` or
+  `EVNX_VERCEL_API_URL` points elsewhere than api.vercel.com, stderr gets one
+  `API  scheme://host:port` line, since the token is sent there.
+- **Windows: `.env`, backups and `credentials.json` become owner-only**
+  (WP-12). evnx now runs `icacls <file> /reset`, then `icacls <file>
+  /inheritance:r /grant:r DOMAIN\USER:(F)` plus full control for SYSTEM and
+  Administrators, on files that hold secrets. Every other entry, inherited or
+  explicit (other users, groups, a shared folder's readers), is removed. SYSTEM
+  and Administrators keep access, as root does for a 0600 file, so backup and
+  antivirus tools keep working. If `icacls` fails, a file is still written with a
+  warning; `credentials.json` is not written. Messages say "owner-only (ACL)"
+  instead of "inherited from the parent directory". Setups that read these
+  files from another account must grant it access again.
 
 ### Breaking: one flag vocabulary (WP-8)
 
@@ -255,6 +307,43 @@ new `network` field below.
 
 ### Added
 
+- **`evnx scan --policy FILE` (or `EVNX_POLICY`): a floor the repository cannot
+  lower.** A committed `.evnx.toml` can disable a detector or raise the
+  severity floor for everyone who scans the repository. A policy file kept
+  outside it says what that may not do: `required_rules` may not be disabled
+  (and `scan.builtins = false` conflicts), `max_severity_floor` is the highest
+  `--severity` or `[scan] severity` allowed, and `allow_disable` is `false` or
+  the only detectors a repository may disable. A conflict exits 2 before any
+  file is read and names the key and the policy file; a missing or invalid
+  file exits 2. The policy is read after `.evnx.toml`, is not dropped by
+  `--no-config`, and `--policy` wins over `EVNX_POLICY`.
+- **`evnx scan --exit-only`.** Prints nothing at all, not even an error, and
+  answers with the exit code: 0 clean, 1 findings, 2 could not run. The global
+  `-q` keeps its meaning (findings still print). Cannot be combined with
+  `--format` or `--json`.
+- **`evnx scan --strict`.** An unknown key in `.evnx.toml` exits 2 instead of
+  a warning. Unknown keys in every section now get a "did you mean" hint, and
+  for `scan` the warning is shown under `-q`.
+- **Short values under secret names.** With `--confidence low` named (or
+  `[scan] confidence = "low"`), a 4 to 7 character value under `PASSWORD`,
+  `PASSWD`, `SECRET`, `TOKEN`, `API_KEY` or `PRIVATE_KEY` is reported as
+  `Sensitive config key`, medium severity and low confidence, without its
+  value. A default scan reports the same findings as before.
+- **`evnx cloud run --min-version N` (or `EVNX_MIN_VERSION`).** Refuses to
+  run, with exit 2, when a vault is below version N, so a server that serves an
+  old version cannot make a deploy run with stale secrets. It applies to each
+  `--vault`, is checked before the master password is asked for, and names
+  every vault that is too old; the command does not run. `--version V` with V
+  below N is refused before any request. The variable is not passed to the
+  command.
+- **`run` and `cloud run` warn about proxy and certificate names.**
+  `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`,
+  `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` and
+  `NODE_EXTRA_CA_CERTS` (and their lower-case forms) run as before, with one
+  warning on stderr that names them, never their values. `-q` hides it.
+  `--help` and the `run` guide now list what masking does not cover and say to
+  set `PYTHONUNBUFFERED=1` for Python. An empty command (`evnx run --`) is a
+  usage error that shows the form.
 - **`evnx run --prefer env|vault` and `evnx cloud run --prefer env|vault`.**
   The default, `vault`, is today's behaviour: the env file or vault replaces a
   variable your environment already holds. `--prefer env` keeps a variable that
@@ -339,6 +428,12 @@ new `network` field below.
   - Output, `--format json` and errors name files, keys and lines only.
     Exits: 0 aligned, 1 `--check` found drift, 2 no verdict. `sync` is
     unchanged.
+- **Token flags** (WP-12): `auth token create --all-vaults` and `--no-expiry`.
+- **`org accept --token-stdin`** (WP-12) reads the invitation token from one
+  line of stdin; with no token and a terminal, `org accept` asks for it with
+  the input hidden. With neither, it exits 2.
+- **`platform push --prune-all`** (WP-12): the opt-in for a prune that removes
+  more than half of the remote variables. It needs `--prune`.
 
 ## [0.14.1] - 2026-11-14
 

@@ -21,9 +21,9 @@ pub fn run(
     prefer: inject::Prefer,
     command: &[String],
 ) -> Result<()> {
-    let (program, args) = command
-        .split_first()
-        .ok_or_else(|| anyhow!("no command given. Usage: evnx run -- <cmd>"))?;
+    let (program, args) = command.split_first().ok_or_else(|| {
+        crate::core::verdict::usage("no command given. Usage: evnx run -- <cmd> [args]")
+    })?;
     let file = Parser::default().parse_file_or_hint(env, &Parser::missing_env_hint(env))?;
     let mut vars = file.vars;
 
@@ -41,6 +41,7 @@ pub fn run(
         );
     }
     inject::check_names(&vars, allow_unsafe_names, env, &format!("edit {env}"))?;
+    inject::warn_sensitive_names(&vars);
 
     // After the name check (which looks at the file's names whichever side
     // wins) and before the masker, so it holds what the child really gets.

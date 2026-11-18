@@ -70,8 +70,9 @@ pub fn write_secure<P: AsRef<Path>>(path: P, content: &[u8]) -> Result<()> {
 
     #[cfg(not(unix))]
     {
-        // ⚠️ No ACL is set here, so do not claim one is. Callers that print
-        // "0600" must not do so on Windows — see `describe_permissions`.
+        // This deprecated writer sets no ACL; production writers go through
+        // `core::safe_write`, which does. Callers that print "0600" must not do
+        // so on Windows — see `describe_permissions`.
         std::fs::write(path, content)?;
     }
 
@@ -88,7 +89,7 @@ pub fn describe_permissions() -> &'static str {
     if cfg!(unix) {
         "mode 0600"
     } else {
-        "inherited from the parent directory"
+        "owner-only (ACL)"
     }
 }
 

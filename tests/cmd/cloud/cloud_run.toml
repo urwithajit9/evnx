@@ -1,0 +1,3 @@
+bin.name = "evnx"
+args = ["cloud", "run", "--help"]
+status.code = 0

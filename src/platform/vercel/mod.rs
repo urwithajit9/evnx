@@ -43,6 +43,18 @@ pub struct Session {
     pub custom_names: std::collections::HashMap<String, String>,
 }
 
+/// `API  https://host:port` when `base` is not the default API, else `None`.
+fn api_override_line(base: &reqwest::Url) -> Option<String> {
+    let default = api::parse_base(api::DEFAULT_BASE).ok()?;
+    if base.origin() == default.origin() {
+        return None;
+    }
+    Some(format!(
+        "API  {}  (not api.vercel.com: the token is sent here)",
+        base.origin().ascii_serialization()
+    ))
+}
+
 impl Session {
     /// Resolve project, token and API base. A custom environment's slug is looked
     /// up here (one `GET`); nothing else is sent.
@@ -70,6 +82,11 @@ impl Session {
         )?;
         let token = auth::resolve(common.token_file.as_deref(), env)?;
         let base = api::parse_base(common.api_url.as_deref().unwrap_or(api::DEFAULT_BASE))?;
+        // The token goes to this address: when it is not Vercel's, say where.
+        // Host and port only, never a path or a query.
+        if let Some(line) = api_override_line(&base) {
+            eprintln!("{line}");
+        }
         let team = project.team.as_deref().map(Team::from_ref);
         let api = Api::new(base, token, team)?;
         let mut environment = common.environment();
@@ -270,4 +287,26 @@ fn protect_state(root: &Path, mode: &GitignoreMode, yes: bool) -> Result<()> {
 /// The path as the person typed it: `./.env` is shown as `.env`.
 pub fn shown(path: &Path) -> String {
     path.strip_prefix(".").unwrap_or(path).display().to_string()
+}
+
+#[cfg(test)]
+mod api_line_tests {
+    use super::*;
+
+    #[test]
+    fn the_default_api_prints_nothing() {
+        let base = api::parse_base(api::DEFAULT_BASE).unwrap();
+        assert_eq!(api_override_line(&base), None);
+    }
+
+    #[test]
+    fn another_api_prints_scheme_host_and_port_only() {
+        let base = api::parse_base("https://vercel.example.com:8443/v1/").unwrap();
+        let line = api_override_line(&base).unwrap();
+        assert!(
+            line.starts_with("API  https://vercel.example.com:8443  "),
+            "{line}"
+        );
+        assert!(!line.contains("/v1"), "{line}");
+    }
 }

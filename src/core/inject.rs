@@ -193,13 +193,44 @@ pub fn check_names(
     if unsafe_names.is_empty() {
         return Ok(());
     }
+    let programs = if unsafe_names
+        .iter()
+        .any(|n| crate::core::envsource::starts_a_program(n))
+    {
+        "\n\x20 EDITOR, PAGER and similar names start a program."
+    } else {
+        ""
+    };
     Err(anyhow!(
-        "{source} sets {}, which make a program load or run other code.\n\
+        "{source} sets {}, which make a program load or run other code.{programs}\n\
          \x20 Anyone who can {who} could use them to run code here.\n\
          \x20 Nothing was run. Exclude them with --exclude, or pass\n\
          \x20 --allow-unsafe-names if you meant to set them.",
         unsafe_names.join(", ")
     ))
+}
+
+/// Warn, by name only, when the variables about to be injected redirect
+/// network traffic or change which certificate authorities are trusted
+/// (`HTTPS_PROXY`, `SSL_CERT_FILE`, ...). The command still runs. Hidden by
+/// `-q` like the other notices; never prints a value (WP-11c).
+pub fn warn_sensitive_names(env_vars: &IndexMap<String, String>) {
+    if crate::utils::ui::is_quiet() {
+        return;
+    }
+    let names: Vec<&str> = env_vars
+        .keys()
+        .map(String::as_str)
+        .filter(|k| crate::core::envsource::is_sensitive_name(k))
+        .collect();
+    if names.is_empty() {
+        return;
+    }
+    crate::utils::ui::warning(format!(
+        "{} set proxy or certificate settings: the command's traffic may go \
+         through another host or trust other authorities",
+        names.join(", ")
+    ));
 }
 
 /// Which side wins when a name is in evnx's own environment and also in the

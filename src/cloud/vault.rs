@@ -350,21 +350,27 @@ pub fn delete(
         "\x20 Deleting a vault is for a signed-in member, not a pipeline — a leaked\n\x20 CI token must not be able to destroy it.\n",
     )?;
 
+    // With `--yes` there is no question to catch a wrong vault, so the target
+    // itself must say which one: the full `name/environment`, or an id.
+    if assume_yes && !looks_like_vault_id(&target) && !target.contains('/') {
+        return Err(crate::core::verdict::usage(format!(
+            "pass the full name/environment with --yes, so a short name cannot delete \
+             the wrong vault.\n\n\x20 evnx vault delete {target}/<environment> --yes"
+        )));
+    }
+
     let vault = list_and_pick(&client, &target)?;
+    let full = format!("{}/{}", vault.name, vault.environment);
 
     if !assume_yes {
         println!(
-            "  About to delete {}/{} and its {} version(s) from {server}.",
-            vault.name.bold(),
-            vault.environment,
+            "  About to delete {} and its {} version(s) from {server}.",
+            full.bold(),
             vault.version_count
         );
         println!("  {}", "There is no undelete in the CLI.".yellow());
-        let ok = crate::utils::prompt::confirm(
-            &format!("Delete {}/{}?", vault.name, vault.environment),
-            false,
-            &format!("evnx vault delete {target} --yes"),
-        )?;
+        let ok =
+            crate::utils::prompt::confirm_typed(&full, &format!("evnx vault delete {full} --yes"))?;
         if !ok {
             println!("  Cancelled; nothing was deleted.");
             return Ok(());
@@ -598,6 +604,16 @@ pub fn share(
         println!(
             "  ml-kem ct {} chars",
             wrapped.mlkem_ciphertext_base64().len()
+        );
+    }
+    if role != "admin" {
+        let next = if role == "viewer" {
+            "developer"
+        } else {
+            "admin"
+        };
+        crate::say!(
+            "  Role: {role}. To raise it:  evnx vault role {target} --user {recipient_email} --role {next}"
         );
     }
     crate::say!();

@@ -4,11 +4,23 @@
 //! Before this module the rule lived in three places (`utils::fs`, `sync`'s
 //! permission check and `doctor`), worded three ways.
 //!
-//! ⚠️ **Windows:** there is no mode to read or set. [`is_private`] answers
-//! `true` and [`make_private`] changes nothing and says so through
-//! [`MODES_APPLY`], so no caller prints "0600" on a platform where nothing set
-//! it.
+//! ⚠️ **Windows:** there is no mode to read. [`is_private`] answers `true`
+//! (an ACL cannot be checked cheaply) and [`MODES_APPLY`] is `false`, so no
+//! caller prints "0600" there. What evnx does set is an ACL: [`owner_only`]
+//! runs two `icacls` calls. `icacls <file> /reset` turns every explicit entry
+//! into the folder's inherited ones (a file can carry explicit entries for
+//! SYSTEM, Administrators or other accounts, which `/inheritance:r` alone keeps);
+//! then `icacls <file> /inheritance:r /grant:r <DOMAIN\USER>:(F) *S-1-5-18:(F)
+//! *S-1-5-32-544:(F)` drops everything inherited and leaves exactly three
+//! entries: the current account, SYSTEM and Administrators. That is the Windows
+//! form of mode 0600, where root can always read: backup and antivirus tools
+//! that run as SYSTEM keep working, and every other account (Users, Everyone,
+//! Authenticated Users, other people) loses access. SYSTEM and Administrators
+//! are named by SID so a localised Windows works. The argument lists are built
+//! by pure functions, [`icacls_reset_args`] and [`icacls_owner_only_args`], so
+//! the Linux tests cover them.
 
+use std::ffi::OsString;
 use std::path::Path;
 
 use anyhow::Result;
@@ -74,7 +86,112 @@ pub fn make_private(path: &Path) -> Result<bool> {
     }
     #[cfg(not(unix))]
     {
-        let _ = path;
+        // Windows: an ACL, not a mode. Anywhere else with no modes: nothing.
+        owner_only(path, AclFailure::Error)
+    }
+}
+
+/// What a failed ACL change does: a warning (the file is still written, the
+/// way an existing `.env` is kept) or an error (a `credentials.json` that
+/// cannot be restricted must not be written, as on Unix).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AclFailure {
+    Warn,
+    Error,
+}
+
+/// The `DOMAIN\USER` `icacls` grants to, from the two variables Windows sets
+/// (`USERDOMAIN`, `USERNAME`). `None` when either is missing or holds a
+/// character that would change the meaning of the grant (`:`, `(`, `)`, `/`,
+/// `*`, a quote or a control character).
+pub fn account_name(domain: Option<&str>, user: Option<&str>) -> Option<String> {
+    let ok = |s: &str| {
+        !s.trim().is_empty()
+            && !s
+                .chars()
+                .any(|c| c.is_control() || matches!(c, ':' | '(' | ')' | '/' | '*' | '"' | ','))
+    };
+    let (d, u) = (domain?.trim(), user?.trim());
+    (ok(d) && ok(u)).then(|| format!("{d}\\{u}"))
+}
+
+/// SID of the local SYSTEM account (named by SID: the name is localised).
+pub const SID_SYSTEM: &str = "*S-1-5-18";
+/// SID of the local Administrators group.
+pub const SID_ADMINISTRATORS: &str = "*S-1-5-32-544";
+
+/// The first `icacls` call: every explicit entry on `path` is replaced by the
+/// folder's inherited ones, so the second call can drop them all. Pure.
+pub fn icacls_reset_args(path: &Path) -> Vec<OsString> {
+    vec![path.as_os_str().to_owned(), "/reset".into()]
+}
+
+/// The second `icacls` call: inheritance removed, full control for `account`,
+/// SYSTEM and Administrators, nothing for anyone else. Pure, so it is tested
+/// everywhere.
+pub fn icacls_owner_only_args(path: &Path, account: &str) -> Vec<OsString> {
+    vec![
+        path.as_os_str().to_owned(),
+        "/inheritance:r".into(),
+        "/grant:r".into(),
+        format!("{account}:(F)").into(),
+        format!("{SID_SYSTEM}:(F)").into(),
+        format!("{SID_ADMINISTRATORS}:(F)").into(),
+    ]
+}
+
+/// Decide what a failed ACL change means. `Warn` prints the warning and
+/// carries on; `Error` returns it.
+pub fn acl_failure(policy: AclFailure, path: &Path, why: &str) -> Result<bool> {
+    let message = format!(
+        "could not restrict {} to your account ({why})",
+        path.display()
+    );
+    match policy {
+        AclFailure::Warn => {
+            crate::utils::ui::warning(message);
+            Ok(false)
+        }
+        AclFailure::Error => Err(anyhow::anyhow!(message)),
+    }
+}
+
+/// Leave `path` to the current account alone, where the platform expresses it
+/// as an ACL (Windows). `Ok(true)` when it was applied; `Ok(false)` where
+/// there is nothing to apply (Unix uses modes, see [`make_private`]) or the
+/// change failed under [`AclFailure::Warn`].
+pub fn owner_only(path: &Path, policy: AclFailure) -> Result<bool> {
+    #[cfg(windows)]
+    {
+        let account = account_name(
+            std::env::var("USERDOMAIN").ok().as_deref(),
+            std::env::var("USERNAME").ok().as_deref(),
+        );
+        let Some(account) = account else {
+            return acl_failure(policy, path, "USERDOMAIN or USERNAME is not usable");
+        };
+        let icacls = |args: Vec<OsString>| std::process::Command::new("icacls").args(args).output();
+        let out = match icacls(icacls_reset_args(path)) {
+            Ok(o) if o.status.success() => icacls(icacls_owner_only_args(path, &account)),
+            other => other,
+        };
+        match out {
+            Ok(o) if o.status.success() => Ok(true),
+            Ok(o) => {
+                let text = String::from_utf8_lossy(&o.stdout);
+                let err = String::from_utf8_lossy(&o.stderr);
+                let why = format!(
+                    "icacls: {}",
+                    err.trim().lines().next().unwrap_or(text.trim())
+                );
+                acl_failure(policy, path, &why)
+            }
+            Err(e) => acl_failure(policy, path, &format!("icacls could not run: {e}")),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (path, policy);
         Ok(false)
     }
 }
@@ -166,5 +283,110 @@ mod tests {
         let (_d, p) = file_with_mode(0o644);
         assert!(make_private(&p).unwrap());
         assert_eq!(mode(&p), Some(0o600));
+    }
+}
+
+#[cfg(test)]
+mod acl_tests {
+    use super::*;
+
+    #[test]
+    fn the_account_is_domain_backslash_user() {
+        assert_eq!(
+            account_name(Some("DESKTOP-1"), Some("ajit")).as_deref(),
+            Some("DESKTOP-1\\ajit")
+        );
+    }
+
+    #[test]
+    fn an_account_that_could_change_the_grant_is_refused() {
+        for (d, u) in [
+            (None, Some("u")),
+            (Some("D"), None),
+            (Some(""), Some("u")),
+            (Some("D"), Some("   ")),
+            (Some("D"), Some("u:(F)")),
+            (Some("D"), Some("u /grant Everyone")),
+            (Some("D"), Some("*S-1-1-0")),
+            (Some("D\"E"), Some("u")),
+        ] {
+            assert_eq!(account_name(d, u), None, "{d:?} {u:?}");
+        }
+    }
+
+    #[test]
+    fn wp12_icacls_args_are_owner_only() {
+        let args = icacls_owner_only_args(Path::new("C:\\p\\.env"), "PC\\ajit");
+        let args: Vec<String> = args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            [
+                "C:\\p\\.env",
+                "/inheritance:r",
+                "/grant:r",
+                "PC\\ajit:(F)",
+                "*S-1-5-18:(F)",
+                "*S-1-5-32-544:(F)"
+            ]
+        );
+        // One grant switch: the account, SYSTEM and Administrators, as root
+        // can read a 0600 file. Nothing for Everyone or Users.
+        assert_eq!(args.iter().filter(|a| a.contains("/grant")).count(), 1);
+        let reset = icacls_reset_args(Path::new("C:\\p\\.env"));
+        assert_eq!(
+            reset,
+            [OsString::from("C:\\p\\.env"), OsString::from("/reset")]
+        );
+        assert!(!args
+            .iter()
+            .any(|a| a.contains("Everyone") || a.contains("Users")));
+    }
+
+    #[test]
+    fn a_failed_acl_change_is_an_error_or_a_warning_by_policy() {
+        let p = Path::new("credentials.json");
+        let e = acl_failure(AclFailure::Error, p, "icacls: denied").unwrap_err();
+        assert!(e.to_string().contains("credentials.json"), "{e}");
+        assert!(e.to_string().contains("icacls: denied"), "{e}");
+        assert!(!acl_failure(AclFailure::Warn, p, "x").unwrap());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn owner_only_does_nothing_off_windows() {
+        assert!(!owner_only(Path::new("/nonexistent/f"), AclFailure::Error).unwrap());
+    }
+
+    /// Only on the `windows-latest` CI job: the real `icacls` call, read back.
+    #[cfg(windows)]
+    #[test]
+    fn wp12_acl_applied_on_windows() {
+        let d = tempfile::tempdir().unwrap();
+        let f = d.path().join(".env");
+        std::fs::write(&f, "A=1\n").unwrap();
+        assert!(owner_only(&f, AclFailure::Error).unwrap());
+        let out = std::process::Command::new("icacls")
+            .arg(&f)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let user = std::env::var("USERNAME").unwrap();
+        assert!(text.contains(&format!("{user}:(F)")), "{text}");
+        // Nothing inherited from the folder; SYSTEM and Administrators keep
+        // access (as root does for a 0600 file); no one else.
+        assert!(!text.contains("(I)"), "{text}");
+        let entries = text.lines().filter(|l| l.contains(":(")).count();
+        assert_eq!(
+            entries, 3,
+            "exactly the account, SYSTEM and Administrators:\n{text}"
+        );
+        for other in ["Everyone", "BUILTIN\\Users", "Authenticated Users"] {
+            assert!(!text.contains(other), "{other} still has access:\n{text}");
+        }
+        // The file is still ours to read.
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "A=1\n");
     }
 }

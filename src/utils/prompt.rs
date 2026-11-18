@@ -385,6 +385,29 @@ pub fn confirm(question: &str, yes: bool, example: &str) -> Result<bool> {
         .unwrap_or(false))
 }
 
+/// Ask for `expected` to be typed in full, as the answer to a question that
+/// must not be answered by habit (deleting a vault). Anything else, including
+/// an empty line, is a no: `Ok(false)`.
+///
+/// Without a terminal it stops with [`NoTerminal`] (exit 4) naming `example`,
+/// the same command with `--yes`.
+///
+/// # Errors
+///
+/// No terminal, or the terminal failed.
+pub fn confirm_typed(expected: &str, example: &str) -> Result<bool> {
+    use anyhow::Context as _;
+    require_terminal_or(&format!(
+        "Add --yes (-y) to go ahead without being asked:\n  {example}"
+    ))?;
+    let typed: String = dialoguer::Input::<String>::new()
+        .with_prompt(format!("Type {expected} to confirm"))
+        .allow_empty(true)
+        .interact_text()
+        .context("reading the confirmation")?;
+    Ok(typed.trim() == expected)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

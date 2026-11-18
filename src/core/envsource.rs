@@ -70,15 +70,92 @@ pub const UNSAFE_NAMES: &[&str] = &[
     "JDK_JAVA_OPTIONS",
     "GIT_SSH_COMMAND",
     "GIT_EXEC_PATH",
+    // Programs the child or its tools start (WP-11c): a pager, an editor or an
+    // askpass helper named by a vault writer runs as the reader.
+    "GIT_ASKPASS",
+    "SSH_ASKPASS",
+    "PAGER",
+    "GIT_PAGER",
+    "VISUAL",
+    "EDITOR",
+    "RUSTC_WRAPPER",
+    "CLASSPATH",
+    "PERL5DB",
+    "PYTHONINSPECT",
 ];
 
 /// Prefixes with the same effect: the dynamic loaders' `LD_*` (Linux) and
 /// `DYLD_*` (macOS).
-pub const UNSAFE_PREFIXES: &[&str] = &["LD_", "DYLD_"];
+///
+/// `npm_config_*` and `NPM_CONFIG_*` (npm reads both) and `GIT_CONFIG_*` (WP-11c)
+/// can set a registry, a script shell or a git hook path.
+pub const UNSAFE_PREFIXES: &[&str] = &["LD_", "DYLD_", "npm_config_", "NPM_CONFIG_", "GIT_CONFIG_"];
+
+/// Names whose value is a program to start, the plainest way to run code.
+/// A subset of [`UNSAFE_NAMES`], for the refusal message.
+const STARTS_A_PROGRAM: &[&str] = &[
+    "GIT_ASKPASS",
+    "SSH_ASKPASS",
+    "PAGER",
+    "GIT_PAGER",
+    "VISUAL",
+    "EDITOR",
+    "RUSTC_WRAPPER",
+];
+
+/// Names that send traffic through another host or trust other certificate
+/// authorities. Warned about, not refused: they are often meant (a corporate
+/// proxy), and the person running the command should know a vault sets them.
+pub const SENSITIVE_NAMES: &[&str] = &[
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "NODE_EXTRA_CA_CERTS",
+];
+
+/// Environment variable names are case-insensitive on Windows only, so
+/// `Path` is `PATH` there and a different, harmless variable elsewhere.
+fn same_name(name: &str, listed: &str) -> bool {
+    if cfg!(windows) {
+        name.eq_ignore_ascii_case(listed)
+    } else {
+        name == listed
+    }
+}
+
+fn has_prefix(name: &str, prefix: &str) -> bool {
+    if cfg!(windows) {
+        name.len() >= prefix.len()
+            && name.is_char_boundary(prefix.len())
+            && name[..prefix.len()].eq_ignore_ascii_case(prefix)
+    } else {
+        name.starts_with(prefix)
+    }
+}
 
 /// Whether `name` must not be injected into a child process without consent.
 pub fn is_unsafe_name(name: &str) -> bool {
-    UNSAFE_NAMES.contains(&name) || UNSAFE_PREFIXES.iter().any(|p| name.starts_with(p))
+    UNSAFE_NAMES.iter().any(|n| same_name(name, n))
+        || UNSAFE_PREFIXES.iter().any(|p| has_prefix(name, p))
+}
+
+/// Whether `name` is one of the unsafe names that starts a program.
+pub fn starts_a_program(name: &str) -> bool {
+    STARTS_A_PROGRAM.iter().any(|n| same_name(name, n))
+}
+
+/// Whether `name` is a proxy or certificate-authority setting: warned about,
+/// not refused. The lower-case spelling (`https_proxy`, which curl and many
+/// tools read) counts on every platform.
+pub fn is_sensitive_name(name: &str) -> bool {
+    SENSITIVE_NAMES
+        .iter()
+        .any(|n| same_name(name, n) || name == n.to_ascii_lowercase())
 }
 
 /// Whether `name` is one of evnx's own settings (`EVNX_TOKEN`, `EVNX_SERVER`,
@@ -124,6 +201,75 @@ mod tests {
         ] {
             assert!(!is_unsafe_name(n), "{n}");
         }
+    }
+
+    #[test]
+    fn t_wp11c_new_hijack_names_are_unsafe() {
+        for n in [
+            "GIT_ASKPASS",
+            "SSH_ASKPASS",
+            "PAGER",
+            "GIT_PAGER",
+            "VISUAL",
+            "EDITOR",
+            "RUSTC_WRAPPER",
+            "CLASSPATH",
+            "PERL5DB",
+            "PYTHONINSPECT",
+            "npm_config_registry",
+            "NPM_CONFIG_SCRIPT_SHELL",
+            "GIT_CONFIG_COUNT",
+            "GIT_CONFIG_KEY_0",
+        ] {
+            assert!(is_unsafe_name(n), "{n}");
+        }
+    }
+
+    #[test]
+    fn t_wp11c_lowercase_npm_config_is_unsafe() {
+        assert!(is_unsafe_name("npm_config_prefix"));
+        assert!(is_unsafe_name("NPM_CONFIG_PREFIX"));
+    }
+
+    #[test]
+    fn t_wp11c_proxy_and_ca_names_are_sensitive_not_unsafe() {
+        for n in SENSITIVE_NAMES {
+            assert!(is_sensitive_name(n), "{n}");
+            assert!(is_sensitive_name(&n.to_ascii_lowercase()), "{n}");
+            assert!(!is_unsafe_name(n), "{n}");
+        }
+        assert!(!is_sensitive_name("DATABASE_URL"));
+        assert!(!is_sensitive_name("PROXY_HOST"));
+    }
+
+    #[test]
+    fn t_wp11c_near_misses_are_safe() {
+        for n in [
+            "EDITORIAL",
+            "MY_PAGER",
+            "NPM_CONFIGURATION",
+            "GIT_CONFIGURED",
+            "CLASSPATHS",
+        ] {
+            assert!(!is_unsafe_name(n), "{n}");
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn t_wp11c_case_is_exact_off_windows() {
+        assert!(!is_unsafe_name("Path"));
+        assert!(!is_unsafe_name("editor"));
+        assert!(!is_unsafe_name("git_config_count"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn t_wp11c_case_insensitive_only_on_windows() {
+        assert!(is_unsafe_name("Path"));
+        assert!(is_unsafe_name("editor"));
+        assert!(is_unsafe_name("git_config_count"));
+        assert!(is_sensitive_name("Https_Proxy"));
     }
 
     #[test]

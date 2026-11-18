@@ -810,8 +810,16 @@ pub struct PlatformPushArgs {
     /// other environments is not deleted: this environment is taken out of its
     /// targets instead. A key that is in the local file with an empty value
     /// (`KEY=`) is not remote-only and is never pruned.
+    ///
+    /// When that would remove more than half of the variables in this
+    /// environment (and there are at least 4), it stops unless --prune-all is
+    /// also given: a wrong project or target would otherwise wipe it.
     #[arg(long)]
     pub prune: bool,
+
+    /// Allow --prune to remove more than half of the remote variables.
+    #[arg(long, requires = "prune")]
+    pub prune_all: bool,
 
     /// The type of a variable that does not exist on Vercel yet.
     ///
@@ -950,9 +958,17 @@ pub enum OrgCommands {
     ///
     /// Takes no `--org`: the token names the organisation, and you are not a
     /// member yet. Only the invited address can redeem it.
+    ///
+    /// Give the token on stdin (`--token-stdin`) or type it at the prompt: a
+    /// token on the command line stays in shell history and shows in `ps`.
     Accept {
-        /// The `evnx_inv_…` token from the invitation.
-        token: String,
+        /// The `evnx_inv_…` token. Deprecated here: prefer --token-stdin or the prompt.
+        #[arg(conflicts_with = "token_stdin")]
+        token: Option<String>,
+
+        /// Read the token from stdin (one line) instead of the command line.
+        #[arg(long)]
+        token_stdin: bool,
     },
 
     /// What this organisation is on, and until when.
@@ -974,7 +990,8 @@ pub enum OrgCommands {
     /// Show or set how many seats are purchased.
     ///
     /// Bare, it shows. Setting the count is owner-only — it is what an invoice
-    /// is computed from.
+    /// is computed from — so --set and --unlimited show the change and ask
+    /// first (default No). Without a terminal they need --yes.
     Seats {
         /// Set the purchased seat count.
         #[arg(long, value_name = "N")]
@@ -983,6 +1000,9 @@ pub enum OrgCommands {
         /// No seat limit.
         #[arg(long)]
         unlimited: bool,
+
+        #[command(flatten)]
+        confirm: args::ConfirmArgs,
 
         /// Organisation slug, e.g. `acme`. Needed only when you belong to more than one.
 
@@ -1372,13 +1392,25 @@ pub enum TokenCommands {
         #[arg(long, default_value = "read")]
         scope: String,
 
-        /// Restrict the token to one vault. Strongly recommended for CI.
-        #[arg(long, value_name = "VAULT")]
+        /// Restrict the token to one vault. Required unless --all-vaults is given.
+        #[arg(long, value_name = "VAULT", conflicts_with = "all_vaults")]
         vault: Option<String>,
 
-        /// Expire after this many days, 1 to 3650. Omit for a token that never expires.
-        #[arg(long, value_name = "DAYS", value_parser = crate::core::args::parse_days, allow_hyphen_values = true)]
+        /// Let the token reach every vault on the account.
+        ///
+        /// A leaked token then exposes all of them. Prefer --vault.
+        #[arg(long)]
+        all_vaults: bool,
+
+        /// Expire after this many days, 1 to 3650. Default 90.
+        #[arg(long, value_name = "DAYS", value_parser = crate::core::args::parse_days, allow_hyphen_values = true, conflicts_with = "no_expiry")]
         expires_in_days: Option<i64>,
+
+        /// Create a token that never expires.
+        ///
+        /// Without this and without --expires-in-days a token expires in 90 days.
+        #[arg(long)]
+        no_expiry: bool,
 
         /// Do not print a CI key bundle with the token.
         ///
@@ -1517,11 +1549,16 @@ pub enum VaultCommands {
     },
 
     /// Delete a vault and every version in it.
+    ///
+    /// Asks you to type the vault's full `name/environment` before it deletes.
+    /// With --yes there is no question, so the target must be the full
+    /// `name/environment` or an id, not a short name.
     Delete {
-        /// Vault to delete: `name`, `name/environment`, or an id.
+        /// Vault to delete: `name/environment`, or an id. A short name is
+        /// accepted only at the prompt.
         target: String,
 
-        /// Skip the confirmation prompt.
+        /// Skip the question. Needs the full `name/environment` or an id.
         #[arg(long, short = 'y')]
         yes: bool,
     },
@@ -1548,8 +1585,8 @@ pub enum VaultCommands {
         #[arg(long, visible_alias = "user")]
         with: String,
 
-        /// Permission level: viewer, developer, or admin.
-        #[arg(long, default_value = "developer")]
+        /// Permission level: viewer, developer, or admin. Default viewer.
+        #[arg(long, default_value = "viewer")]
         role: String,
 
         /// Read the master password from stdin instead of prompting.
@@ -1684,6 +1721,10 @@ pub enum CloudCommands {
     /// The file is encrypted here, byte for byte — comments, ordering and
     /// quoting all survive. Only the key names are sent in the clear, so the
     /// dashboard can list what a vault holds.
+    ///
+    /// When the file drops more than half of the previous version's keys (and
+    /// that version had at least 4), the names are listed and you are asked
+    /// first. Without a terminal that needs --yes.
     Push {
         /// Vault to push to: `name`, `name/environment`, or an id.
         ///
@@ -1718,9 +1759,11 @@ pub enum CloudCommands {
         #[arg(long)]
         password_stdin: bool,
 
-        /// Push the default `.env` into a production vault without asking.
+        /// Do not ask: push the default `.env` into a production vault, or a
+        /// file that removes more than half of the keys.
         ///
-        /// Only that case asks: a file named with --env or --env-name never does.
+        /// A file named with --env or --env-name is never asked about for
+        /// production, but a large removal is asked about whichever file it is.
         #[arg(long, short = 'y')]
         yes: bool,
     },
@@ -1813,6 +1856,17 @@ pub enum CloudCommands {
     /// The command runs directly, not through a shell. For a pipeline or a
     /// shell builtin, ask for one: `-- sh -c 'a | b'`.
     ///
+    /// Masking does not cover values the command transforms, files it writes,
+    /// core dumps, `/proc/<pid>/environ` (readable by the same user) or
+    /// programs that log their own environment. It pipes stdout and stderr, so
+    /// the command sees no terminal: colour and progress output turn off, and
+    /// Python holds its output in a buffer, so set `PYTHONUNBUFFERED=1`.
+    /// Without a terminal, `--password-stdin` is required.
+    ///
+    /// Names that start a program or load code (`EDITOR`, `PAGER`,
+    /// `GIT_ASKPASS`, `npm_config_*`, ...) are refused unless
+    /// `--allow-unsafe-names`; proxy and certificate names only warn.
+    ///
     /// Once the command has started, evnx exits with the command's own exit
     /// code. The codes 10–15 listed in `evnx cloud --help` apply only to a
     /// failure before it starts (not signed in, server unreachable, …).
@@ -1846,6 +1900,22 @@ pub enum CloudCommands {
         #[arg(long, value_name = "N", value_parser = clap::value_parser!(i32).range(1..))]
         version: Option<i32>,
 
+        /// Refuse to run when a vault is below this version.
+        ///
+        /// Checked for each vault before the master password is asked for:
+        /// a server that serves an old version (a rollback) must not quietly
+        /// run a deploy with stale secrets. Exits 2 and the command does not
+        /// run. With `--version V`, V below N is refused without any request.
+        /// Also read from `EVNX_MIN_VERSION`, which the command does not
+        /// inherit.
+        #[arg(
+            long,
+            value_name = "N",
+            env = "EVNX_MIN_VERSION",
+            value_parser = clap::value_parser!(i32).range(1..)
+        )]
+        min_version: Option<i32>,
+
         /// Inject only variables whose name matches one of these globs.
         ///
         /// Example: --include "DB_*,AWS_*"
@@ -1872,8 +1942,8 @@ pub enum CloudCommands {
 
         /// Inject variables that make a program load or run other code.
         ///
-        /// `PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV` and similar are
-        /// refused by default: anyone who can push to the vault could use them
+        /// `PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, `EDITOR`, `PAGER`,
+        /// `GIT_ASKPASS`, `npm_config_*` and similar are refused by default: anyone who can push to the vault could use them
         /// to run code in your process. Pass this only if the vault is meant to
         /// set them.
         #[arg(long)]
@@ -1910,12 +1980,7 @@ pub enum CloudCommands {
         /// `last = true` makes the separator mandatory, so a flag meant for the
         /// child — `-- npm run build --prod` — cannot be mistaken for one of
         /// evnx's own.
-        #[arg(
-            last = true,
-            required = true,
-            allow_hyphen_values = true,
-            value_name = "COMMAND"
-        )]
+        #[arg(last = true, allow_hyphen_values = true, value_name = "COMMAND")]
         command: Vec<String>,
     },
 
@@ -2927,6 +2992,39 @@ pub enum Commands {
         /// outside the folder, or to a folder, is skipped either way.
         #[arg(long)]
         follow_symlinks: bool,
+
+        /// A policy file the repository's `.evnx.toml` cannot lower.
+        ///
+        /// Read after `.evnx.toml`, and also with `--no-config`. TOML with
+        /// three optional keys: `required_rules` (detectors that may not be
+        /// disabled), `max_severity_floor` (the highest `--severity` or
+        /// `[scan] severity` allowed) and `allow_disable` (`false`, or the
+        /// only detectors a repository may disable). A setting that conflicts
+        /// exits 2 before any file is read, naming the key and this file. A
+        /// missing or invalid file exits 2. Also read from `EVNX_POLICY`; the
+        /// flag wins. A hook installed by `evnx scan hook install` honours
+        /// `EVNX_POLICY` too.
+        #[arg(long, value_name = "FILE", env = "EVNX_POLICY")]
+        policy: Option<String>,
+
+        /// Treat an unknown key in `.evnx.toml` as an error (exit 2).
+        ///
+        /// Without it an unknown key is a warning, with a "did you mean"
+        /// when it is close to a known one, and the key is ignored. A
+        /// misspelt `severty` then lowers nothing and raises nothing; for a
+        /// CI gate that is better stopped.
+        #[arg(long)]
+        strict: bool,
+
+        /// Print nothing; the exit code is the answer: 0 clean, 1 findings,
+        /// 2 could not run.
+        ///
+        /// Not even an error message or the config line: for a script that
+        /// only branches on the code. The global `-q` still prints findings.
+        /// Cannot be combined with `--format` or `--json`. A usage error from
+        /// the command line itself is still printed.
+        #[arg(long, conflicts_with_all = ["format", "json"])]
+        exit_only: bool,
     },
 
     /// Compare two env files: keys missing or extra, and values between environments.
@@ -3734,8 +3832,8 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         exclude: Option<Vec<String>>,
 
         /// Inject variables that make a program load or run other code
-        /// (`PATH`, `LD_*`, `DYLD_*`, `NODE_OPTIONS`, `BASH_ENV`, …), refused by
-        /// default.
+        /// (`PATH`, `LD_*`, `NODE_OPTIONS`, `EDITOR`, `PAGER`, `GIT_ASKPASS`,
+        /// `npm_config_*`, …), refused by default.
         #[arg(long)]
         allow_unsafe_names: bool,
 
@@ -3766,12 +3864,7 @@ Full guide: https://docs.evnx.dev/cli/commands/migrate
         prefer: crate::core::inject::Prefer,
 
         /// The command to run, after `--`.
-        #[arg(
-            last = true,
-            required = true,
-            allow_hyphen_values = true,
-            value_name = "COMMAND"
-        )]
+        #[arg(last = true, allow_hyphen_values = true, value_name = "COMMAND")]
         command: Vec<String>,
     },
 

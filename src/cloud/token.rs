@@ -171,17 +171,76 @@ fn created_json(
     Ok(crate::core::json::render(&doc, 1, None, true)? + "\n")
 }
 
+/// How many days a token lives when neither `--expires-in-days` nor
+/// `--no-expiry` is given.
+pub const DEFAULT_EXPIRY_DAYS: i64 = 90;
+
+/// Which vaults a new token reaches: `--vault V`, `--all-vaults`, or neither
+/// (refused).
+#[derive(Debug, PartialEq, Eq)]
+pub enum Reach {
+    Vault(String),
+    All,
+    Unspecified,
+}
+
+impl Reach {
+    pub fn from_flags(vault: Option<String>, all_vaults: bool) -> Self {
+        match (vault, all_vaults) {
+            (Some(v), _) => Reach::Vault(v),
+            (None, true) => Reach::All,
+            (None, false) => Reach::Unspecified,
+        }
+    }
+}
+
+/// How long a new token lives.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Lifetime {
+    Days(i64),
+    Never,
+}
+
+impl Lifetime {
+    pub fn from_flags(days: Option<i64>, no_expiry: bool) -> Self {
+        match (days, no_expiry) {
+            (_, true) => Lifetime::Never,
+            (Some(d), false) => Lifetime::Days(d),
+            (None, false) => Lifetime::Days(DEFAULT_EXPIRY_DAYS),
+        }
+    }
+
+    /// The field of the request: absent means the server never expires it.
+    fn request_days(&self) -> Option<i64> {
+        match self {
+            Lifetime::Days(d) => Some(*d),
+            Lifetime::Never => None,
+        }
+    }
+}
+
 /// Mint a token.
 pub fn create(
     server_override: Option<&str>,
     name: String,
     scope: String,
-    vault_target: Option<String>,
-    expires_in_days: Option<i64>,
+    reach: Reach,
+    lifetime: Lifetime,
     delivery: Delivery,
     verbose: bool,
 ) -> Result<()> {
     let no_key_bundle = delivery.no_key_bundle;
+    let vault_target = match reach {
+        Reach::Vault(v) => Some(v),
+        Reach::All => None,
+        Reach::Unspecified => {
+            return Err(crate::core::verdict::usage(
+                "a token needs a scope: pass --vault <VAULT> for one vault, or --all-vaults \
+                 to reach every vault on the account",
+            ))
+        }
+    };
+    let expires_in_days = lifetime.request_days();
     let scope = validate_scope(&scope)?;
     if name.trim().is_empty() {
         return Err(anyhow!(
@@ -243,12 +302,25 @@ pub fn create(
         Some(v) => crate::say!("  vault     {}/{} only", v.name, v.environment),
         None => crate::say!(
             "  vault     {} — reaches every vault on the account",
-            "unscoped".yellow()
+            "all vaults".yellow()
         ),
     }
     match &created.expires_at {
         Some(e) => crate::say!("  expires   {}", e.split('T').next().unwrap_or(e)),
         None => crate::say!("  expires   {}", "never".yellow()),
+    }
+    if vault_ref.is_none() || created.expires_at.is_none() {
+        crate::say!();
+        crate::say!(
+            "  {} {}",
+            "Warning:".yellow().bold(),
+            match (vault_ref.is_none(), created.expires_at.is_none()) {
+                (true, true) => "this token reaches every vault and never expires.",
+                (true, false) => "this token reaches every vault on the account.",
+                _ => "this token never expires.",
+            }
+        );
+        crate::say!("  Revoke it with `evnx auth token revoke` when it is no longer needed.");
     }
     if verbose {
         println!("  token id  {}", created.id);

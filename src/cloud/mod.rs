@@ -158,6 +158,7 @@ fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool
             vault,
             allow_override,
             version,
+            min_version,
             include,
             exclude,
             password_stdin,
@@ -170,6 +171,7 @@ fn dispatch(command: CloudCommands, server_override: Option<&str>, verbose: bool
             server_override,
             vault,
             version,
+            min_version,
             include,
             exclude,
             password_stdin,
@@ -357,7 +359,9 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
                 name,
                 scope,
                 vault,
+                all_vaults,
                 expires_in_days,
+                no_expiry,
                 no_key_bundle,
                 fmt,
                 output,
@@ -366,8 +370,8 @@ pub fn run_auth(command: AuthCommands, server_override: Option<&str>, verbose: b
                 server_override,
                 name,
                 scope,
-                vault,
-                expires_in_days,
+                token::Reach::from_flags(vault, all_vaults),
+                token::Lifetime::from_flags(expires_in_days, no_expiry),
                 token::Delivery {
                     no_key_bundle,
                     format: fmt.resolved(),
@@ -413,15 +417,25 @@ pub fn run_org(command: OrgCommands, server_override: Option<&str>, verbose: boo
             invite_id,
             org: which,
         } => org::uninvite(server_override, &invite_id, which.as_deref(), verbose),
-        OrgCommands::Accept { token } => org::accept(server_override, &token, verbose),
+        OrgCommands::Accept { token, token_stdin } => {
+            org::accept(server_override, token, token_stdin, verbose)
+        }
         OrgCommands::Billing { org: which, output } => {
             org::billing(server_override, which.as_deref(), is_json(&output), verbose)
         }
         OrgCommands::Seats {
             set,
             unlimited,
+            confirm,
             org: which,
-        } => org::seats(server_override, set, unlimited, which.as_deref(), verbose),
+        } => org::seats(
+            server_override,
+            set,
+            unlimited,
+            confirm.yes,
+            which.as_deref(),
+            verbose,
+        ),
         OrgCommands::Assign { who, org: which } => {
             org::assign(server_override, &who, which.as_deref(), verbose)
         }

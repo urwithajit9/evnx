@@ -778,6 +778,15 @@ impl Say {
     }
 }
 
+/// `--prune` removes more than half of the remote variables, when there are
+/// at least this many.
+const PRUNE_GUARD_MIN: usize = 4;
+
+/// Whether removing `removed` of `total` remote variables needs `--prune-all`.
+fn prune_needs_all(removed: usize, total: usize) -> bool {
+    total >= PRUNE_GUARD_MIN && removed * 2 > total
+}
+
 /// Push. `Findings` when Vercel refused some of it; `Err(Declined)` on a no.
 pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
     // `--prune` deletes: with nothing to ask on, it needs `--yes` — said before
@@ -860,6 +869,24 @@ pub fn run(args: &PlatformPushArgs) -> Result<Verdict> {
         say.line("  Dry run: nothing was sent.");
         finish_json(None, false)?;
         return Ok(Verdict::Clean);
+    }
+
+    // A prune that empties most of the environment is the shape of a wrong
+    // project or target. Stopped after the plan is shown, before any question.
+    if args.prune && !args.prune_all {
+        let removed = plan.deletes.len() + plan.detaches.len();
+        let distinct: std::collections::HashSet<&str> =
+            remote.iter().map(|r| r.var.key.as_str()).collect();
+        if prune_needs_all(removed, distinct.len()) {
+            return Err(crate::core::verdict::usage(format!(
+                "--prune would remove {removed} of the {} variables in {}, more than half.\n\n\
+                 \x20 Check the project and --target. If that is what you mean, add --prune-all:\n\
+                 \x20   evnx platform push --to vercel --target {} --prune --prune-all",
+                distinct.len(),
+                session.env_label(),
+                env.name()
+            )));
+        }
     }
 
     let sends = plan.writes() - plan.deletes.len() - plan.detaches.len();
@@ -1108,6 +1135,19 @@ fn to_json(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn prune_needs_all_over_half_with_at_least_four() {
+        // more than half of 5
+        assert!(prune_needs_all(3, 5));
+        // exactly half is allowed
+        assert!(!prune_needs_all(2, 4));
+        assert!(prune_needs_all(3, 4));
+        // under four variables: never
+        assert!(!prune_needs_all(3, 3));
+        assert!(!prune_needs_all(2, 2));
+        assert!(!prune_needs_all(0, 10));
+    }
+
     use super::*;
     use serde_json::Value;
 

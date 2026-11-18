@@ -21,7 +21,8 @@
 //! save atomically.
 //!
 //! ⚠️ Windows: modes do not apply (see [`super::permissions`]); the file is still
-//! written atomically.
+//! written atomically, and a private one gets an owner-only ACL (a warning if
+//! `icacls` fails).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -568,6 +569,17 @@ impl Staged {
                 .as_file()
                 .set_permissions(std::fs::Permissions::from_mode(m))
                 .with_context(|| format!("could not set the mode of {}", self.target.display()))?;
+        }
+
+        // Windows has no mode to set: a file meant to be private gets an ACL
+        // that leaves it to this account (a warning when that fails; the
+        // write is not undone). Before the rename, so the file is never
+        // visible with the folder's ACL.
+        let requested = match self.mode {
+            Mode::Always(m) | Mode::NewOnly(m) => m,
+        };
+        if !permissions::MODES_APPLY && permissions::is_private_mode(requested) {
+            permissions::owner_only(self.tmp.path(), permissions::AclFailure::Warn)?;
         }
 
         self.tmp

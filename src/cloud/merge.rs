@@ -135,8 +135,12 @@ pub(crate) fn fetch_merged(
     refs: Vec<VaultRef>,
     password_stdin: bool,
     allow_override: bool,
+    min_version: Option<i32>,
 ) -> Result<Merged> {
-    let mut fetched = Vec::with_capacity(refs.len());
+    // Every version is asked for first, so `--min-version` can name all the
+    // vaults that are too old before any blob is downloaded or any password
+    // is typed.
+    let mut latest = Vec::with_capacity(refs.len());
     for vault_ref in refs {
         let version = sync::current_version(client, &vault_ref)?;
         if version == 0 {
@@ -146,6 +150,20 @@ pub(crate) fn fetch_merged(
                 vault_ref.label()
             ));
         }
+        latest.push((vault_ref, version));
+    }
+    if let Some(min) = min_version {
+        let stale: Vec<(String, i32)> = latest
+            .iter()
+            .filter(|(_, v)| *v < min)
+            .map(|(r, v)| (r.label(), *v))
+            .collect();
+        if let Some(message) = super::run::stale_message(&stale, min) {
+            return Err(crate::core::verdict::stopped(message));
+        }
+    }
+    let mut fetched = Vec::with_capacity(latest.len());
+    for (vault_ref, version) in latest {
         let blob = sync::fetch_blob(client, &vault_ref, version)?;
         fetched.push((vault_ref, version, blob));
     }

@@ -629,6 +629,9 @@ pub struct Loaded {
     pub source: Option<PathBuf>,
     /// One entry per unrecognised key, ready to print.
     pub warnings: Vec<String>,
+    /// The subset of `warnings` that name an unknown key: what `scan --strict`
+    /// turns into an error (D10).
+    pub unknown: Vec<String>,
     /// Outside a git repository, a `.evnx.toml` in a parent folder that was
     /// not used (D2, FLD-11). Said under `-v`.
     pub ignored_parent: Option<PathBuf>,
@@ -843,6 +846,76 @@ fn lexical(path: &Path) -> PathBuf {
     out
 }
 
+/// Keys each section of `.evnx.toml` knows, for "did you mean" (D10). Kept
+/// beside the structs above; `known_keys_are_accepted_without_a_warning` fails
+/// when one drifts.
+const SECTIONS: [&str; 8] = [
+    "defaults", "scan", "validate", "sync", "diff", "backup", "cloud", "vars",
+];
+const DEFAULTS_KEYS: [&str; 2] = ["env_name", "example"];
+const SCAN_KEYS: [&str; 9] = [
+    "severity",
+    "confidence",
+    "exclude",
+    "ignore_placeholders",
+    "disable",
+    "builtins",
+    "patterns",
+    "extensions",
+    "max_file_size",
+];
+const VALIDATE_KEYS: [&str; 4] = ["strict", "validate_formats", "ignore", "fail_on"];
+const SYNC_KEYS: [&str; 1] = ["naming_policy"];
+const DIFF_KEYS: [&str; 1] = ["ignore_keys"];
+const BACKUP_KEYS: [&str; 1] = ["keep"];
+const CLOUD_KEYS: [&str; 2] = ["vault", "file"];
+const PATTERN_KEYS: [&str; 15] = [
+    "id",
+    "name",
+    "regex",
+    "confidence",
+    "severity",
+    "entropy",
+    "keywords",
+    "secret_group",
+    "allow",
+    "allow_line",
+    "positive",
+    "near_miss",
+    "url",
+    "provider",
+    "category",
+];
+
+/// The known key an unknown dotted `key` was probably meant to be.
+fn key_hint(key: &str) -> Option<String> {
+    let near = |word: &str, known: &[&str]| -> Option<String> {
+        crate::utils::string::closest(word, known.iter().map(|k| (*k, *k)))
+            .first()
+            .map(|k| (*k).to_string())
+    };
+    if let Some(rest) = key.strip_prefix("vars.") {
+        return crate::core::spec::known_key_like(rest.rsplit('.').next()?).map(str::to_string);
+    }
+    let Some((section, rest)) = key.split_once('.') else {
+        return near(key, &SECTIONS);
+    };
+    if section == "scan" && rest.starts_with("patterns[") {
+        return near(rest.rsplit('.').next()?, &PATTERN_KEYS);
+    }
+    let known: &[&str] = match section {
+        "defaults" => &DEFAULTS_KEYS,
+        "scan" => &SCAN_KEYS,
+        "validate" => &VALIDATE_KEYS,
+        "sync" => &SYNC_KEYS,
+        "diff" => &DIFF_KEYS,
+        "backup" => &BACKUP_KEYS,
+        "cloud" => &CLOUD_KEYS,
+        _ => return None,
+    };
+    near(rest, known)
+}
+
 /// Parse one specific file. Exposed for tests and for `--config`, later.
 pub fn load_file(path: &Path) -> Result<Loaded> {
     let text =
@@ -851,25 +924,23 @@ pub fn load_file(path: &Path) -> Result<Loaded> {
     let config: Config =
         toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
 
-    let warnings = config
+    let unknown: Vec<String> = config
         .unknown_keys()
         .into_iter()
         .map(|key| {
-            // A `[vars.X]` key has a short list to be a typo of (I-187).
-            let hint = key
-                .strip_prefix("vars.")
-                .and_then(|rest| rest.rsplit('.').next())
-                .and_then(crate::core::spec::known_key_like)
+            let hint = key_hint(&key)
                 .map(|k| format!(" — did you mean `{k}`?"))
                 .unwrap_or_default();
             format!("{}: unknown key `{key}` (ignored){hint}", path.display())
         })
         .collect();
+    let warnings = unknown.clone();
 
     Ok(Loaded {
         config,
         source: Some(path.to_path_buf()),
         warnings,
+        unknown,
         ignored_parent: None,
     })
 }
@@ -1445,5 +1516,64 @@ mod resolution_tests {
     #[test]
     fn an_absent_list_leaves_the_flag_alone() {
         assert_eq!(extend(vec!["a".into()], None), vec!["a"]);
+    }
+
+    #[test]
+    fn known_keys_are_accepted_without_a_warning() {
+        let toml = r#"
+[defaults]
+env_name = "dev"
+example = ".env.example"
+[scan]
+severity = "high"
+confidence = "low"
+exclude = ["a"]
+ignore_placeholders = true
+disable = ["x"]
+builtins = true
+extensions = ["env"]
+max_file_size = "1MB"
+[[scan.patterns]]
+name = "n"
+regex = "x"
+[validate]
+strict = true
+validate_formats = true
+ignore = ["a"]
+fail_on = "error"
+[sync]
+naming_policy = "warn"
+[diff]
+ignore_keys = ["a"]
+[backup]
+keep = 3
+[cloud]
+vault = "v"
+file = "f"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert!(cfg.unknown_keys().is_empty(), "{:?}", cfg.unknown_keys());
+        for known in SCAN_KEYS {
+            assert_eq!(key_hint(&format!("scan.{known}x")), Some(known.to_string()));
+        }
+    }
+
+    #[test]
+    fn a_misspelt_key_gets_a_hint_in_every_section() {
+        for (typo, want) in [
+            ("scan.severty", "severity"),
+            ("defaults.env_nme", "env_name"),
+            ("validate.fail_no", "fail_on"),
+            ("sync.naming_polcy", "naming_policy"),
+            ("diff.ignore_key", "ignore_keys"),
+            ("backup.kep", "keep"),
+            ("cloud.vaut", "vault"),
+            ("scan.patterns[0].regx", "regex"),
+            ("vars.A.requird", "required"),
+            ("scna", "scan"),
+        ] {
+            assert_eq!(key_hint(typo).as_deref(), Some(want), "{typo}");
+        }
+        assert_eq!(key_hint("scan.zzzzzzzz"), None);
     }
 }

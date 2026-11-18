@@ -126,6 +126,19 @@ Rules, by the names [scan] disable takes (or by id: evnx scan -v --format json):
 \x20 and the heuristics: Sensitive config key, High-entropy string,\n\
 \x20 AWS Secret Access Key.\n\
 \n\
+A short value under a secret name (PASSWORD=admin, 4 to 7 characters) is\n\
+reported as Sensitive config key, medium severity and low confidence, only\n\
+when --confidence low (or [scan] confidence = \"low\") is given.\n\
+\n\
+A policy the repository cannot lower:\n\
+\x20 evnx scan --policy ci/scan-policy.toml        (or EVNX_POLICY)\n\
+\x20 required_rules = [\"AWS Access Key\"]    detectors .evnx.toml may not disable\n\
+\x20 max_severity_floor = \"medium\"          highest --severity or [scan] severity\n\
+\x20 allow_disable = false | [\"Slack Token\"]   what .evnx.toml may disable\n\
+\x20 A conflict exits 2 before any file is read, naming the key and the policy.\n\
+\x20 --strict makes an unknown key in .evnx.toml exit 2; --exit-only prints\n\
+\x20 nothing and answers with the exit code: 0 clean, 1 findings, 2 could not run.\n\
+\n\
 Full guide: https://docs.evnx.dev/cli/commands/scan",
 };
 
@@ -373,6 +386,18 @@ Which value wins: by default the env file replaces a variable your environment\n
 already holds. --prefer env reverses that, so a local value is kept and the file\n\
 only fills the names you did not set. Testing with a local value:\n\
 \x20 DB_URL=postgres://localhost evnx run --prefer env -- npm test\n\
+\n\
+What masking does not cover: values the command transforms (encoded, split,\n\
+hashed), files it writes, core dumps, /proc/<pid>/environ (readable by the same\n\
+user), and programs that log their own environment. Masking pipes stdout and\n\
+stderr, so the command sees no terminal: colour and progress output turn off,\n\
+and Python holds its output in a buffer, so set PYTHONUNBUFFERED=1. --no-mask\n\
+leaves the streams as they are.\n\
+\n\
+Names that start a program or load code (PATH, LD_*, EDITOR, PAGER, VISUAL,\n\
+GIT_ASKPASS, SSH_ASKPASS, CLASSPATH, npm_config_*, GIT_CONFIG_*, ...) are\n\
+refused unless --allow-unsafe-names. Proxy and certificate names (HTTPS_PROXY,\n\
+SSL_CERT_FILE, ...) only produce a warning that names them.\n\
 \n\
 Signals and exit (Unix): without masking the command replaces evnx, so signals,\n\
 the terminal and the exit status are the command's own. With masking evnx stays\n\

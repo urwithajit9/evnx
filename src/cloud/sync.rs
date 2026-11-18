@@ -387,10 +387,27 @@ pub fn push(
     // it. `base_version` is what the server compares, so the longer the gap
     // between reading it and posting, the likelier a teammate's push lands in
     // it and this one answers 409. Only encryption is left between the two.
-    let current = current_version(&client, &vault_ref)?;
-    let target_version = current + 1;
+    let mut current = current_version(&client, &vault_ref)?;
 
     let (key_names, parse_note) = read_key_names(&plaintext);
+
+    // A push that drops most of the keys is usually the wrong file. Only when
+    // the file could be read for names, and there is a version to compare to.
+    if current > 0 && parse_note.is_none() {
+        let asked = confirm_shrink(&client, &vault_ref, current, &key_names, yes)?;
+        match asked {
+            Shrink::Proceed => {}
+            Shrink::Declined => {
+                println!("  Nothing was pushed.");
+                return Ok(());
+            }
+            Shrink::Confirmed => {
+                // Someone may have pushed while the question was open.
+                current = current_version(&client, &vault_ref)?;
+            }
+        }
+    }
+    let target_version = current + 1;
 
     let aad = vault_aad(&vault_ref.id, target_version as u32);
     let blob = encrypt_vault(&plaintext, &vault_key, &aad)
@@ -441,6 +458,101 @@ pub fn push(
         ));
     }
     Ok(())
+}
+
+/// A push removes more than half of the previous version's keys, when that
+/// version had at least this many.
+const SHRINK_MIN_KEYS: usize = 4;
+/// Names listed in the shrink question; the rest is counted.
+const SHRINK_NAMES_SHOWN: usize = 10;
+
+/// The keys of the previous version that the new file does not have, when that
+/// is more than half of them and the previous version had at least
+/// [`SHRINK_MIN_KEYS`]. Names only, sorted.
+fn removed_keys(previous: &[String], new: &[String]) -> Option<Vec<String>> {
+    if previous.len() < SHRINK_MIN_KEYS {
+        return None;
+    }
+    let keep: std::collections::HashSet<&str> = new.iter().map(String::as_str).collect();
+    let mut removed: Vec<String> = previous
+        .iter()
+        .filter(|k| !keep.contains(k.as_str()))
+        .cloned()
+        .collect();
+    removed.sort();
+    removed.dedup();
+    (removed.len() * 2 > previous.len()).then_some(removed)
+}
+
+/// `removes N of M keys: A, B, ...` (names, never values).
+fn shrink_line(removed: &[String], previous: usize) -> String {
+    let shown: Vec<&str> = removed
+        .iter()
+        .take(SHRINK_NAMES_SHOWN)
+        .map(String::as_str)
+        .collect();
+    let more = removed.len().saturating_sub(SHRINK_NAMES_SHOWN);
+    let tail = if more > 0 {
+        format!(", and {more} more")
+    } else {
+        String::new()
+    };
+    format!(
+        "removes {} of {previous} keys: {}{tail}",
+        removed.len(),
+        shown.join(", ")
+    )
+}
+
+/// What [`confirm_shrink`] decided.
+enum Shrink {
+    /// Nothing to ask about.
+    Proceed,
+    /// Asked and answered yes (or `--yes`).
+    Confirmed,
+    /// Asked and answered no.
+    Declined,
+}
+
+/// Compare the new file's key names with the version being replaced; ask when
+/// it removes more than half of them. `--yes` answers; without a terminal and
+/// without `--yes` it stops (exit 4).
+fn confirm_shrink(
+    client: &Client,
+    vault_ref: &VaultRef,
+    current: i32,
+    new_names: &[String],
+    yes: bool,
+) -> Result<Shrink> {
+    let previous = match list_versions(client, vault_ref) {
+        Ok(v) => v,
+        Err(e) => {
+            crate::utils::ui::warning(format!(
+                "could not read the previous version's keys, so the push was not \
+                 checked for removed keys: {e}"
+            ));
+            return Ok(Shrink::Proceed);
+        }
+    };
+    let Some(prev) = previous.iter().find(|v| v.version_num == current) else {
+        return Ok(Shrink::Proceed);
+    };
+    let Some(removed) = removed_keys(&prev.key_names, new_names) else {
+        return Ok(Shrink::Proceed);
+    };
+    crate::utils::ui::warning(format!(
+        "this push {} (version {current} has {}).",
+        shrink_line(&removed, prev.key_names.len()),
+        prev.key_names.len()
+    ));
+    let label = vault_ref.label();
+    let example = format!("evnx cloud push --vault {label} --yes");
+    let ok = crate::utils::prompt::confirm(&format!("Push it to {label} anyway?"), yes, &example)?;
+    Ok(if ok {
+        Shrink::Confirmed
+    } else {
+        Shrink::Declined
+    })
 }
 
 /// Download a version and decrypt it to a file.
@@ -510,7 +622,7 @@ pub fn pull(
     // or "acme/shared v3 + acme/prod v7" for a merge.
     let (plaintext, what, production): (Vec<u8>, String, bool) = if multi {
         let merged =
-            super::merge::fetch_merged(&client, vault_refs, password_stdin, allow_override)?;
+            super::merge::fetch_merged(&client, vault_refs, password_stdin, allow_override, None)?;
         let text = merged.to_env_text();
         (text.to_vec(), merged.describe(), merged.is_production())
     } else {
@@ -610,10 +722,10 @@ pub fn pull(
     if verbose {
         println!("  bytes     {} plaintext", plaintext.len());
         // The file's real mode: an existing file keeps the one it had (RM-34).
-        // Windows has none to report.
+        // Windows has none to report: its files are owner-only by ACL.
         match crate::core::permissions::mode(&written.target) {
             Some(m) => println!("  mode      {m:04o}"),
-            None => println!("  mode      inherited from the parent directory"),
+            None => println!("  mode      owner-only (ACL)"),
         }
     }
     // Plaintext secrets in the project: keep them out of git, the way
@@ -1145,6 +1257,46 @@ fn push_error(e: ApiError, based_on: i32) -> anyhow::Error {
 
 #[cfg(test)]
 mod tests {
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn removed_keys_needs_more_than_half_and_four_keys() {
+        let six = names(&["A", "B", "C", "D", "E", "F"]);
+        // exactly half: no
+        assert_eq!(removed_keys(&six, &names(&["A", "B", "C"])), None);
+        // more than half: yes, sorted
+        assert_eq!(
+            removed_keys(&six, &names(&["B", "A"])),
+            Some(names(&["C", "D", "E", "F"]))
+        );
+        // fewer than four keys before: never
+        assert_eq!(removed_keys(&names(&["A", "B", "C"]), &names(&["X"])), None);
+        // four keys, three gone: yes
+        assert_eq!(
+            removed_keys(&names(&["A", "B", "C", "D"]), &names(&["A"])),
+            Some(names(&["B", "C", "D"]))
+        );
+        // added keys do not count
+        assert_eq!(
+            removed_keys(&six, &names(&["A", "B", "C", "D", "E", "F", "G"])),
+            None
+        );
+    }
+
+    #[test]
+    fn shrink_line_lists_ten_names_then_counts() {
+        let removed: Vec<String> = (1..=13).map(|n| format!("K{n:02}")).collect();
+        let line = shrink_line(&removed, 14);
+        assert!(
+            line.starts_with("removes 13 of 14 keys: K01, K02"),
+            "{line}"
+        );
+        assert!(line.contains("K10, and 3 more"), "{line}");
+        assert!(!line.contains("K11"), "{line}");
+    }
+
     use super::*;
 
     /// I-244, DEC-U8-4: exactly `-` is stdout; a path that merely contains a

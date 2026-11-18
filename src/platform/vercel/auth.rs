@@ -34,6 +34,9 @@ pub fn resolve(
         if token.is_empty() {
             bail!("--token-file {} is empty", path.display());
         }
+        // A token other users can read is a token they can use. Said, not
+        // refused: the file may be on a share evnx cannot tighten. Unix only.
+        crate::core::permissions::warn_if_readable(path);
         check_shape(token).with_context(|| format!("--token-file {}", path.display()))?;
         return Ok(SecretString::new(token));
     }

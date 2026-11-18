@@ -398,7 +398,15 @@ fn t_i314_sharing_again_at_the_same_role_changes_nothing() {
     let out = signed_in(
         &Project::new(),
         &s.url(),
-        &["vault", "share", "app", "--with", "Bob@Example.com"],
+        &[
+            "vault",
+            "share",
+            "app",
+            "--with",
+            "Bob@Example.com",
+            "--role",
+            "developer",
+        ],
         None,
     );
     out.assert_code(0);

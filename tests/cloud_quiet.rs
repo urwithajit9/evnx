@@ -49,9 +49,18 @@ fn t_i225_quiet_status_commands_print_nothing_on_success() {
         .with_status(204)
         .create();
     for args in [
-        &["-q", "vault", "delete", "app", "-y"][..],
+        &["-q", "vault", "delete", "app/development", "-y"][..],
         // The role bob already holds: "nothing changed", a status line.
-        &["-q", "vault", "share", "app", "--with", "bob@example.com"][..],
+        &[
+            "-q",
+            "vault",
+            "share",
+            "app",
+            "--with",
+            "bob@example.com",
+            "--role",
+            "developer",
+        ][..],
         &["-q", "org", "create", "Acme", "--slug", "acme"][..],
         &["-q", "auth", "logout"][..],
     ] {
@@ -93,7 +102,7 @@ fn t_i225_quiet_token_create_prints_only_the_token() {
     let out = signed_in(
         &Project::new(),
         &s.url(),
-        &["-q", "auth", "token", "create", "ci"],
+        &["-q", "auth", "token", "create", "ci", "--all-vaults"],
         None,
     );
     out.assert_code(0);
