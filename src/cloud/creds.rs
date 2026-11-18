@@ -233,6 +233,16 @@ pub(crate) fn write_atomic_secure(path: &Path, bytes: &[u8]) -> Result<()> {
             .context("restricting the temporary credentials file to 0600")?;
     }
 
+    // Windows: an owner-only ACL in place of the mode. An error, as on Unix:
+    // a token must not be written into a file the folder's ACL shares.
+    if !crate::core::permissions::MODES_APPLY {
+        crate::core::permissions::owner_only(
+            tmp.path(),
+            crate::core::permissions::AclFailure::Error,
+        )
+        .context("restricting the temporary credentials file to this account")?;
+    }
+
     tmp.write_all(bytes).context("writing credentials")?;
     tmp.as_file().sync_all().context("flushing credentials")?;
     tmp.persist(path)

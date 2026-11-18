@@ -722,10 +722,10 @@ pub fn pull(
     if verbose {
         println!("  bytes     {} plaintext", plaintext.len());
         // The file's real mode: an existing file keeps the one it had (RM-34).
-        // Windows has none to report.
+        // Windows has none to report: its files are owner-only by ACL.
         match crate::core::permissions::mode(&written.target) {
             Some(m) => println!("  mode      {m:04o}"),
-            None => println!("  mode      inherited from the parent directory"),
+            None => println!("  mode      owner-only (ACL)"),
         }
     }
     // Plaintext secrets in the project: keep them out of git, the way
